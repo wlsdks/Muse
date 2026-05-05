@@ -81,6 +81,12 @@ export interface LoginResult {
   readonly expiresAt: Date;
 }
 
+export type PasswordChangeResult =
+  | "changed"
+  | "invalid_current_password"
+  | "unsupported"
+  | "user_not_found";
+
 export interface AuthServiceOptions {
   readonly authProvider: AuthProvider;
   readonly jwt: JwtTokenProvider;
@@ -375,6 +381,36 @@ export class AuthService {
     const token = this.options.jwt.createToken(user);
     const expiresAt = this.options.jwt.extractExpiration(token) ?? new Date(Date.now() + defaultJwtExpirationMs);
     return { expiresAt, token, user: publicUser(user) };
+  }
+
+  changePassword(input: {
+    readonly currentPassword: string;
+    readonly newPassword: string;
+    readonly userId: string;
+  }): PasswordChangeResult {
+    if (!this.userStore || !(this.options.authProvider instanceof DefaultAuthProvider)) {
+      return "unsupported";
+    }
+
+    const user = this.options.authProvider.getUserById(input.userId);
+
+    if (!user) {
+      return "user_not_found";
+    }
+
+    if (!this.options.authProvider.authenticate(user.email, input.currentPassword)) {
+      return "invalid_current_password";
+    }
+
+    this.userStore.update({
+      createdAt: user.createdAt,
+      email: user.email,
+      id: user.id,
+      name: user.name,
+      passwordHash: this.options.authProvider.hashPassword(input.newPassword),
+      role: user.role
+    });
+    return "changed";
   }
 
   authenticateBearer(token: string | undefined): AuthIdentity | undefined {

@@ -91,10 +91,23 @@ describe("AuthService registration and login", () => {
       password: "password-1"
     });
     const login = service.login("first_account", "password-1");
+    const changed = service.changePassword({
+      currentPassword: "password-1",
+      newPassword: "password-2",
+      userId: registered.user.id
+    });
 
     expect(registered.user.role).toBe("admin");
     expect(login?.token).toBeTruthy();
     expect(login?.user).not.toHaveProperty("passwordHash");
+    expect(changed).toBe("changed");
+    expect(service.login("first_account", "password-1")).toBeUndefined();
+    expect(service.login("first_account", "password-2")?.user.id).toBe(registered.user.id);
+    expect(service.changePassword({
+      currentPassword: "wrong",
+      newPassword: "password-3",
+      userId: registered.user.id
+    })).toBe("invalid_current_password");
   });
 });
 

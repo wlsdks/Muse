@@ -961,6 +961,23 @@ describe("api server", () => {
       provider: "test",
       userId: registered.user.id
     });
+    historyStore.updateRun({
+      completedAt: new Date("2026-01-01T00:00:02.000Z"),
+      costUsd: "0.12500000",
+      output: "ok",
+      runId: "run-compat",
+      status: "completed",
+      tokenUsage: { inputTokens: 10, outputTokens: 5 }
+    });
+    historyStore.recordToolCall({
+      completedAt: new Date("2026-01-01T00:00:01.000Z"),
+      id: "tool-call-1",
+      name: "read_file",
+      result: "ok",
+      risk: "read",
+      runId: "run-compat",
+      status: "completed"
+    });
     const server = buildServer({
       authService,
       defaultModel: "provider/model",
@@ -977,6 +994,31 @@ describe("api server", () => {
       payload: {
         email: "first_account",
         password: "password-1"
+      },
+      url: "/api/auth/login"
+    });
+    const passwordChanged = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        currentPassword: "password-1",
+        newPassword: "password-2"
+      },
+      url: "/api/auth/change-password"
+    });
+    const oldPasswordLogin = await server.inject({
+      method: "POST",
+      payload: {
+        email: "first_account",
+        password: "password-1"
+      },
+      url: "/api/auth/login"
+    });
+    const newPasswordLogin = await server.inject({
+      method: "POST",
+      payload: {
+        email: "first_account",
+        password: "password-2"
       },
       url: "/api/auth/login"
     });
@@ -1091,15 +1133,71 @@ describe("api server", () => {
       method: "GET",
       url: "/api/admin/platform/health"
     });
+    const adminSessions = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/sessions"
+    });
+    const sessionTag = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        label: "reviewed"
+      },
+      url: "/api/admin/sessions/run-compat/tags"
+    });
+    const adminSessionDetail = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/sessions/run-compat"
+    });
+    const adminUsers = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/users"
+    });
+    const toolCallRanking = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/tool-calls/ranking"
+    });
+    const usageByModel = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/users/usage/by-model"
+    });
+    const metricIngest = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        runId: "run-compat",
+        success: true,
+        toolName: "read_file"
+      },
+      url: "/api/admin/metrics/ingest/tool-call"
+    });
+    const deletedSession = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/admin/sessions/run-compat"
+    });
+    const deletedSessionDetail = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/sessions/run-compat"
+    });
     const adminFallback = await server.inject({
       headers,
       method: "GET",
-      url: "/api/admin/conversation-analytics/by-channel"
+      url: "/api/admin/unmapped-compat-route"
     });
 
     expect(card.statusCode).toBe(200);
     expect(card.json()).toMatchObject({ name: "Muse", capabilities: { modelAgnostic: true } });
     expect(apiLogin.statusCode).toBe(200);
+    expect(passwordChanged.json()).toEqual({ message: "Password changed successfully" });
+    expect(oldPasswordLogin.statusCode).toBe(401);
+    expect(newPasswordLogin.statusCode).toBe(200);
     expect(sessions.json()).toMatchObject([{ id: "run-compat", userId: registered.user.id }]);
     expect(models.json()).toEqual([{ id: "provider/model", model: "provider/model" }]);
     expect(spec.statusCode).toBe(201);
@@ -1122,6 +1220,24 @@ describe("api server", () => {
     expect(experiment.statusCode).toBe(200);
     expect(experimentStatus.json()).toMatchObject({ id: experiment.json().id, status: "draft" });
     expect(platformHealth.json()).toMatchObject({ status: "ok" });
+    expect(adminSessions.json()).toMatchObject({ items: [{ id: "run-compat" }], total: 1 });
+    expect(adminSessionDetail.json()).toMatchObject({
+      run: { id: "run-compat" },
+      tags: [{ label: "reviewed" }]
+    });
+    expect(adminUsers.json()).toMatchObject([{ runCount: 1, userId: registered.user.id }]);
+    expect(toolCallRanking.json()).toEqual([{ failures: 0, name: "read_file", total: 1 }]);
+    expect(usageByModel.json()).toEqual([{
+      costUsd: 0.125,
+      inputTokens: 10,
+      model: "provider/model",
+      outputTokens: 5
+    }]);
+    expect(metricIngest.statusCode).toBe(202);
+    expect(metricIngest.json()).toMatchObject({ accepted: true, kind: "tool-call" });
+    expect(sessionTag.statusCode).toBe(200);
+    expect(deletedSession.statusCode).toBe(204);
+    expect(deletedSessionDetail.statusCode).toBe(404);
     expect(adminFallback.json()).toMatchObject({ compatibility: true, data: [] });
   });
 

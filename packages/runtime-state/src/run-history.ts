@@ -118,12 +118,19 @@ export interface AgentRunHistoryStore {
   createRun(input: CreateAgentRunInput): Awaitable<AgentRunRecord>;
   updateRun(input: UpdateAgentRunInput): Awaitable<AgentRunRecord | undefined>;
   findRun(runId: string): Awaitable<AgentRunRecord | undefined>;
+  deleteRun(runId: string): Awaitable<boolean>;
+  listRuns(options?: ListAgentRunsOptions): Awaitable<readonly AgentRunRecord[]>;
   listRunsByUser(userId: string): Awaitable<readonly AgentRunRecord[]>;
   appendMessage(input: AppendConversationMessageInput): Awaitable<ConversationMessageRecord>;
   listMessages(runId: string): Awaitable<readonly ConversationMessageRecord[]>;
   recordToolCall(input: RecordToolCallInput): Awaitable<ToolCallRecord>;
   updateToolCall(input: UpdateToolCallInput): Awaitable<ToolCallRecord | undefined>;
   listToolCalls(runId: string): Awaitable<readonly ToolCallRecord[]>;
+}
+
+export interface ListAgentRunsOptions {
+  readonly limit?: number;
+  readonly offset?: number;
 }
 
 export interface InMemoryAgentRunHistoryStoreOptions {
@@ -189,6 +196,25 @@ export class InMemoryAgentRunHistoryStore implements AgentRunHistoryStore {
 
   findRun(runId: string): AgentRunRecord | undefined {
     return this.runs.get(runId);
+  }
+
+  deleteRun(runId: string): boolean {
+    const deleted = this.runs.delete(runId);
+
+    if (deleted) {
+      this.messagesByRunId.delete(runId);
+      this.toolCallsByRunId.delete(runId);
+    }
+
+    return deleted;
+  }
+
+  listRuns(options: ListAgentRunsOptions = {}): readonly AgentRunRecord[] {
+    const offset = Math.max(0, options.offset ?? 0);
+    const limit = Math.max(0, options.limit ?? this.runs.size);
+    return [...this.runs.values()]
+      .sort(compareRunsNewestFirst)
+      .slice(offset, offset + limit);
   }
 
   listRunsByUser(userId: string): readonly AgentRunRecord[] {
@@ -306,6 +332,29 @@ export class KyselyAgentRunHistoryStore implements AgentRunHistoryStore {
     const row = await this.db.selectFrom("agent_runs").selectAll().where("id", "=", runId).executeTakeFirst();
 
     return row ? mapAgentRunRow(row) : undefined;
+  }
+
+  async deleteRun(runId: string): Promise<boolean> {
+    const result = await this.db.deleteFrom("agent_runs").where("id", "=", runId).executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
+  }
+
+  async listRuns(options: ListAgentRunsOptions = {}): Promise<readonly AgentRunRecord[]> {
+    let query = this.db
+      .selectFrom("agent_runs")
+      .selectAll()
+      .orderBy("created_at", "desc");
+
+    if (options.limit !== undefined) {
+      query = query.limit(Math.max(0, options.limit));
+    }
+
+    if (options.offset !== undefined) {
+      query = query.offset(Math.max(0, options.offset));
+    }
+
+    const rows = await query.execute();
+    return rows.map(mapAgentRunRow);
   }
 
   async listRunsByUser(userId: string): Promise<readonly AgentRunRecord[]> {

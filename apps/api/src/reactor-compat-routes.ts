@@ -2,7 +2,7 @@ import type { AgentSpecInput, AgentSpecRegistry } from "@muse/agent-specs";
 import { AuthRateLimiter, AuthService, extractBearerToken, type LoginResult } from "@muse/auth";
 import type { ModelProvider } from "@muse/model";
 import type { RuntimeSettingsService, RuntimeSettingType } from "@muse/runtime-settings";
-import type { AgentRunHistoryStore, PendingApprovalStore } from "@muse/runtime-state";
+import type { AgentRunHistoryStore, AgentRunRecord, PendingApprovalStore, ToolCallRecord } from "@muse/runtime-state";
 import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AdminRouteState } from "./admin-routes.js";
@@ -38,9 +38,11 @@ interface CompatState {
   readonly intents: CompatCollection;
   readonly outputGuardRules: CompatCollection;
   readonly personas: CompatCollection;
+  readonly metricEvents: CompatCollection;
   readonly promptExperiments: CompatCollection;
   readonly promptTemplates: CompatCollection;
   readonly ragCandidates: CompatCollection;
+  readonly sessionTags: Map<string, CompatRecord[]>;
   readonly slackBots: CompatCollection;
   readonly slackFaq: CompatCollection;
   readonly swaggerSources: CompatCollection;
@@ -77,9 +79,11 @@ function createCompatState(): CompatState {
     intents: new Map(),
     outputGuardRules: new Map(),
     personas: new Map(),
+    metricEvents: new Map(),
     promptExperiments: new Map(),
     promptTemplates: new Map(),
     ragCandidates: new Map(),
+    sessionTags: new Map(),
     slackBots: new Map(),
     slackFaq: new Map(),
     swaggerSources: new Map(),
@@ -224,10 +228,53 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     revoked: options.authService?.logout(extractBearerToken(request.headers.authorization)) ?? false
   }));
 
-  server.post("/api/auth/change-password", async (_request, reply) => reply.status(501).send({
-    code: "CHANGE_PASSWORD_UNAVAILABLE",
-    message: "Password change requires a writable user store adapter"
-  }));
+  server.post("/api/auth/change-password", async (request, reply) => {
+    const authService = requireAuthService(options, reply);
+
+    if (!authService) {
+      return reply;
+    }
+
+    const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
+
+    if (!identity) {
+      return reply.status(401).send({
+        code: "UNAUTHENTICATED",
+        message: "A valid bearer token is required"
+      });
+    }
+
+    const currentPassword = readBodyString(request.body, "currentPassword");
+    const newPassword = readBodyString(request.body, "newPassword");
+
+    if (!currentPassword || !newPassword) {
+      return reply.status(400).send({
+        code: "INVALID_PASSWORD_CHANGE_REQUEST",
+        message: "Body must include currentPassword and newPassword"
+      });
+    }
+
+    const result = authService.changePassword({
+      currentPassword,
+      newPassword,
+      userId: identity.userId
+    });
+
+    if (result === "changed") {
+      return { message: "Password changed successfully" };
+    }
+
+    if (result === "user_not_found") {
+      return reply.status(404).send({ code: "USER_NOT_FOUND", message: "User not found" });
+    }
+
+    return reply.status(400).send({
+      code: result === "unsupported" ? "PASSWORD_CHANGE_UNSUPPORTED" : "CURRENT_PASSWORD_INCORRECT",
+      message: result === "unsupported"
+        ? "Password change is not supported by the configured auth provider"
+        : "Current password is incorrect"
+    });
+  });
 }
 
 function registerSessionCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
@@ -242,14 +289,21 @@ function registerSessionCompatibilityRoutes(server: FastifyInstance, options: Re
   });
 
   server.get("/api/sessions/:sessionId", async (request, reply) => sessionDetail(request, reply, options));
-  server.get("/api/sessions/:sessionId/export", async (request, reply) => sessionDetail(request, reply, options));
-  server.delete("/api/sessions/:sessionId", async (request) => {
+  server.get("/api/sessions/:sessionId/export", async (request, reply) => exportSession(request, reply, options));
+  server.delete("/api/sessions/:sessionId", async (request, reply) => {
     const { sessionId } = request.params as { readonly sessionId: string };
-    return {
-      deleted: false,
-      reason: "Run history deletion is not enabled for the compatibility store",
-      sessionId
-    };
+
+    if (!options.historyStore) {
+      return reply.status(404).send({
+        code: "RUN_HISTORY_UNAVAILABLE",
+        message: "Run history store is not configured"
+      });
+    }
+
+    const deleted = await options.historyStore.deleteRun(sessionId);
+    return deleted
+      ? reply.status(204).send()
+      : reply.status(404).send({ code: "SESSION_NOT_FOUND", message: `Session not found: ${sessionId}` });
   });
 
   server.get("/api/models", async () => listModelSummaries(options));
@@ -1040,6 +1094,244 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     return options.admin?.operations?.listSlos() ?? [];
   });
 
+  server.get("/api/admin/sessions/overview", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const runs = await listAllRuns(options);
+    const completed = runs.filter((run) => run.status === "completed").length;
+    const failed = runs.filter((run) => run.status === "failed").length;
+    return {
+      completed,
+      failed,
+      running: runs.filter((run) => run.status === "running").length,
+      total: runs.length
+    };
+  });
+  server.get("/api/admin/sessions", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const offset = readQueryInteger(request, "offset", 0);
+    const limit = readQueryInteger(request, "limit", 30);
+    const runs = await listAllRuns(options, { limit, offset });
+    return {
+      items: runs,
+      limit: Math.max(0, limit),
+      offset: Math.max(0, offset),
+      total: (await listAllRuns(options)).length
+    };
+  });
+  server.get("/api/admin/sessions/:sessionId/export", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return exportSession(request, reply, options);
+  });
+  server.post("/api/admin/sessions/:sessionId/tags", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { sessionId } = request.params as { readonly sessionId: string };
+    const label = readBodyString(request.body, "label");
+
+    if (!label) {
+      return reply.status(400).send({ code: "INVALID_SESSION_TAG", message: "Body must include label" });
+    }
+
+    const tag = createRecord(new Map(), {
+      comment: readBodyNullableString(request.body, "comment") ?? null,
+      label,
+      sessionId
+    }, "session_tag");
+    const tags = state.sessionTags.get(sessionId) ?? [];
+    state.sessionTags.set(sessionId, [...tags, tag]);
+    return tag;
+  });
+  server.delete("/api/admin/sessions/:sessionId/tags/:tagId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { sessionId, tagId } = request.params as { readonly sessionId: string; readonly tagId: string };
+    const tags = state.sessionTags.get(sessionId) ?? [];
+    const remaining = tags.filter((tag) => tag.id !== tagId);
+
+    if (remaining.length === tags.length) {
+      return notFound(reply, "SESSION_TAG_NOT_FOUND");
+    }
+
+    state.sessionTags.set(sessionId, remaining);
+    return reply.status(204).send();
+  });
+  server.get("/api/admin/sessions/:sessionId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const detail = await sessionDetail(request, reply, options);
+    const { sessionId } = request.params as { readonly sessionId: string };
+    return isRecord(detail) && "run" in detail ? { ...detail, tags: state.sessionTags.get(sessionId) ?? [] } : detail;
+  });
+  server.delete("/api/admin/sessions/:sessionId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { sessionId } = request.params as { readonly sessionId: string };
+
+    if (!options.historyStore) {
+      return reply.status(404).send({
+        code: "RUN_HISTORY_UNAVAILABLE",
+        message: "Run history store is not configured"
+      });
+    }
+
+    const deleted = await options.historyStore.deleteRun(sessionId);
+    state.sessionTags.delete(sessionId);
+    return deleted
+      ? reply.status(204).send()
+      : reply.status(404).send({ code: "SESSION_NOT_FOUND", message: `Session not found: ${sessionId}` });
+  });
+  server.get("/api/admin/users", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return summarizeUsers(await listAllRuns(options));
+  });
+  server.get("/api/admin/users/:userId/sessions", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { userId } = request.params as { readonly userId: string };
+    return options.historyStore?.listRunsByUser(userId) ?? [];
+  });
+  server.get("/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options));
+  server.get("/api/admin/traces", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return options.admin?.observability?.tracer?.recordedSpans() ?? [];
+  });
+  server.get("/api/admin/traces/:traceId/spans", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { traceId } = request.params as { readonly traceId: string };
+    return (options.admin?.observability?.tracer?.recordedSpans() ?? [])
+      .filter((span) =>
+        isRecord(span) &&
+        (span.id === traceId || (isRecord(span.attributes) && span.attributes.runId === traceId))
+      );
+  });
+  server.get("/api/admin/tool-calls", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const runId = readQueryString(request, "runId");
+    return runId && options.historyStore
+      ? options.historyStore.listToolCalls(runId)
+      : listAllToolCalls(options);
+  });
+  server.get("/api/admin/tool-calls/ranking", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return toolCallRanking(await listAllToolCalls(options));
+  });
+  server.get("/api/admin/users/usage/top", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return summarizeUsers(await listAllRuns(options));
+  });
+  server.get("/api/admin/users/usage/cost", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return usageByUser(await listAllRuns(options));
+  });
+  server.get("/api/admin/users/usage/daily", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return dailyUsage(await listAllRuns(options));
+  });
+  server.get("/api/admin/users/usage/by-model", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return usageByModel(await listAllRuns(options));
+  });
+  server.get("/api/admin/token-cost/by-session", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return (await listAllRuns(options)).map((run) => ({
+      costUsd: run.costUsd,
+      model: run.model,
+      runId: run.id,
+      tokenUsage: run.tokenUsage,
+      userId: run.userId ?? "anonymous"
+    }));
+  });
+  server.get("/api/admin/token-cost/daily", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return dailyUsage(await listAllRuns(options));
+  });
+  server.get("/api/admin/token-cost/top-expensive", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const runs = await listAllRuns(options);
+    return [...runs]
+      .sort((left, right) => Number(right.costUsd) - Number(left.costUsd))
+      .slice(0, 20);
+  });
+  server.get("/api/admin/conversation-analytics/by-channel", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return groupRunsByMetadata(await listAllRuns(options), "channel");
+  });
+  server.get("/api/admin/conversation-analytics/failure-patterns", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return (await listAllRuns(options))
+      .filter((run) => run.status === "failed")
+      .map((run) => ({ error: run.error ?? "unknown", runId: run.id }));
+  });
+  server.get("/api/admin/conversation-analytics/latency-distribution", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return latencyDistribution(await listAllRuns(options));
+  });
+  registerMetricIngestionRoutes(server, options);
+
   server.all("/api/admin/*", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -1147,6 +1439,214 @@ async function sessionDetail(
     options.historyStore.listToolCalls(sessionId)
   ]);
   return { messages, run, session: run, toolCalls };
+}
+
+async function exportSession(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions
+) {
+  const detail = await sessionDetail(request, reply, options);
+
+  if (!isRecord(detail) || !("messages" in detail)) {
+    return detail;
+  }
+
+  if (readQueryString(request, "format") === "markdown") {
+    const sessionId = (request.params as { readonly sessionId: string }).sessionId;
+    const messages = Array.isArray(detail.messages) ? detail.messages : [];
+    return [
+      `# Session: ${sessionId}`,
+      "",
+      `Exported at: ${nowIso()}`,
+      "",
+      ...messages.flatMap((message) => {
+        if (!isRecord(message)) {
+          return [];
+        }
+
+        return [`## ${String(message.role ?? "message")}`, "", String(message.content ?? ""), ""];
+      })
+    ].join("\n");
+  }
+
+  return {
+    exportedAt: nowIso(),
+    ...detail
+  };
+}
+
+async function listAllRuns(
+  options: ReactorCompatibilityRouteOptions,
+  listOptions: { readonly limit?: number; readonly offset?: number } = {}
+): Promise<readonly AgentRunRecord[]> {
+  return options.historyStore?.listRuns({
+    limit: listOptions.limit === undefined ? undefined : Math.max(0, listOptions.limit),
+    offset: listOptions.offset === undefined ? undefined : Math.max(0, listOptions.offset)
+  }) ?? [];
+}
+
+function summarizeUsers(runs: readonly AgentRunRecord[]) {
+  const byUser = new Map<string, { lastActiveAt: string; runCount: number; userId: string }>();
+
+  for (const run of runs) {
+    const userId = run.userId ?? "anonymous";
+    const existing = byUser.get(userId);
+    const updatedAt = run.updatedAt.toISOString();
+
+    byUser.set(userId, {
+      lastActiveAt: existing && existing.lastActiveAt > updatedAt ? existing.lastActiveAt : updatedAt,
+      runCount: (existing?.runCount ?? 0) + 1,
+      userId
+    });
+  }
+
+  return [...byUser.values()].sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt));
+}
+
+async function listAllToolCalls(options: ReactorCompatibilityRouteOptions): Promise<readonly ToolCallRecord[]> {
+  const runs = await listAllRuns(options);
+  const toolCalls: ToolCallRecord[] = [];
+
+  for (const run of runs) {
+    const calls = await (options.historyStore?.listToolCalls(run.id) ?? []);
+    toolCalls.push(...calls.map((call) => ({ ...call, runId: run.id })));
+  }
+
+  return toolCalls;
+}
+
+function toolCallRanking(toolCalls: readonly ToolCallRecord[]) {
+  const byName = new Map<string, { failures: number; name: string; total: number }>();
+
+  for (const call of toolCalls) {
+    const existing = byName.get(call.name) ?? { failures: 0, name: call.name, total: 0 };
+    byName.set(call.name, {
+      failures: existing.failures + (call.status === "failed" ? 1 : 0),
+      name: call.name,
+      total: existing.total + 1
+    });
+  }
+
+  return [...byName.values()].sort((left, right) => right.total - left.total);
+}
+
+function usageByUser(runs: readonly AgentRunRecord[]) {
+  const byUser = new Map<string, { costUsd: number; inputTokens: number; outputTokens: number; userId: string }>();
+
+  for (const run of runs) {
+    const userId = run.userId ?? "anonymous";
+    const existing = byUser.get(userId) ?? { costUsd: 0, inputTokens: 0, outputTokens: 0, userId };
+    byUser.set(userId, {
+      costUsd: existing.costUsd + Number(run.costUsd),
+      inputTokens: existing.inputTokens + numberField(run.tokenUsage, "inputTokens"),
+      outputTokens: existing.outputTokens + numberField(run.tokenUsage, "outputTokens"),
+      userId
+    });
+  }
+
+  return [...byUser.values()].sort((left, right) => right.costUsd - left.costUsd);
+}
+
+function usageByModel(runs: readonly AgentRunRecord[]) {
+  const byModel = new Map<string, { costUsd: number; inputTokens: number; model: string; outputTokens: number }>();
+
+  for (const run of runs) {
+    const existing = byModel.get(run.model) ?? { costUsd: 0, inputTokens: 0, model: run.model, outputTokens: 0 };
+    byModel.set(run.model, {
+      costUsd: existing.costUsd + Number(run.costUsd),
+      inputTokens: existing.inputTokens + numberField(run.tokenUsage, "inputTokens"),
+      model: run.model,
+      outputTokens: existing.outputTokens + numberField(run.tokenUsage, "outputTokens")
+    });
+  }
+
+  return [...byModel.values()].sort((left, right) => right.costUsd - left.costUsd);
+}
+
+function dailyUsage(runs: readonly AgentRunRecord[]) {
+  const byDay = new Map<string, { costUsd: number; date: string; runs: number }>();
+
+  for (const run of runs) {
+    const date = run.createdAt.toISOString().slice(0, 10);
+    const existing = byDay.get(date) ?? { costUsd: 0, date, runs: 0 };
+    byDay.set(date, {
+      costUsd: existing.costUsd + Number(run.costUsd),
+      date,
+      runs: existing.runs + 1
+    });
+  }
+
+  return [...byDay.values()].sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function groupRunsByMetadata(runs: readonly AgentRunRecord[], _key: string) {
+  const byChannel = new Map<string, { channel: string; failed: number; total: number }>();
+
+  for (const run of runs) {
+    const channel = run.workspaceId ?? "api";
+    const existing = byChannel.get(channel) ?? { channel, failed: 0, total: 0 };
+    byChannel.set(channel, {
+      channel,
+      failed: existing.failed + (run.status === "failed" ? 1 : 0),
+      total: existing.total + 1
+    });
+  }
+
+  return [...byChannel.values()].sort((left, right) => right.total - left.total);
+}
+
+function latencyDistribution(runs: readonly AgentRunRecord[]) {
+  const buckets = { "0-1s": 0, "1-5s": 0, "5-30s": 0, "30s+": 0, unknown: 0 };
+
+  for (const run of runs) {
+    if (!run.startedAt || !run.completedAt) {
+      buckets.unknown += 1;
+      continue;
+    }
+
+    const latencyMs = run.completedAt.getTime() - run.startedAt.getTime();
+
+    if (latencyMs < 1_000) {
+      buckets["0-1s"] += 1;
+    } else if (latencyMs < 5_000) {
+      buckets["1-5s"] += 1;
+    } else if (latencyMs < 30_000) {
+      buckets["5-30s"] += 1;
+    } else {
+      buckets["30s+"] += 1;
+    }
+  }
+
+  return buckets;
+}
+
+function numberField(value: JsonObject, key: string): number {
+  const item = value[key];
+  return typeof item === "number" && Number.isFinite(item) ? item : 0;
+}
+
+function registerMetricIngestionRoutes(
+  server: FastifyInstance,
+  options: ReactorCompatibilityRouteOptions
+): void {
+  for (const route of ["mcp-health", "tool-call", "eval-result", "eval-results", "batch"]) {
+    server.post(`/api/admin/metrics/ingest/${route}`, async (request, reply) => {
+      if (!options.authorizeAdmin(request, reply)) {
+        return reply;
+      }
+
+      const event = createRecord(state.metricEvents, {
+        kind: route,
+        payload: toJsonObject(request.body)
+      }, "metric_event");
+      return reply.status(route === "eval-results" || route === "batch" ? 200 : 202).send({
+        accepted: true,
+        id: event.id,
+        kind: route
+      });
+    });
+  }
 }
 
 function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): AuthService | undefined {

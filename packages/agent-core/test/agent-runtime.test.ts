@@ -844,8 +844,10 @@ describe("AgentRuntime", () => {
         createRun: () => {
           throw new Error("history unavailable");
         },
+        deleteRun: () => false,
         findRun: () => undefined,
         listMessages: () => [],
+        listRuns: () => [],
         listRunsByUser: () => [],
         listToolCalls: () => [],
         recordToolCall: () => {

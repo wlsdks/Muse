@@ -68,9 +68,14 @@ describe("InMemoryAgentRunHistoryStore", () => {
       status: "completed",
       tokenUsage: { inputTokens: 5, outputTokens: 3 }
     });
+    expect(store.listRuns()).toHaveLength(1);
     expect(store.listRunsByUser("user-1")).toHaveLength(1);
     expect(store.listMessages(run.id).map((item) => item.content)).toEqual(["Summarize this"]);
     expect(store.listToolCalls(run.id).map((item) => item.name)).toEqual(["read_file"]);
+    expect(store.deleteRun(run.id)).toBe(true);
+    expect(store.findRun(run.id)).toBeUndefined();
+    expect(store.listMessages(run.id)).toEqual([]);
+    expect(store.listToolCalls(run.id)).toEqual([]);
   });
 
   it("returns undefined when updating unknown records", () => {
@@ -78,6 +83,7 @@ describe("InMemoryAgentRunHistoryStore", () => {
 
     expect(store.updateRun({ runId: "missing", status: "failed" })).toBeUndefined();
     expect(store.updateToolCall({ id: "missing", status: "failed" })).toBeUndefined();
+    expect(store.deleteRun("missing")).toBe(false);
   });
 });
 
@@ -120,10 +126,14 @@ describe("Kysely run history mapping", () => {
     const runSql = db.insertInto("agent_runs").values(run).returningAll().compile();
     const messageSql = db.insertInto("conversation_messages").values(message).returningAll().compile();
     const toolSql = db.insertInto("tool_calls").values(toolCall).returningAll().compile();
+    const listSql = db.selectFrom("agent_runs").selectAll().orderBy("created_at", "desc").limit(10).compile();
+    const deleteSql = db.deleteFrom("agent_runs").where("id", "=", "run-1").compile();
 
     expect(runSql.sql).toContain('insert into "agent_runs"');
     expect(messageSql.sql).toContain('insert into "conversation_messages"');
     expect(toolSql.sql).toContain('insert into "tool_calls"');
+    expect(listSql.sql).toContain('from "agent_runs"');
+    expect(deleteSql.sql).toContain('delete from "agent_runs"');
     expect(run).toMatchObject({
       id: "run-1",
       input: "Run task",

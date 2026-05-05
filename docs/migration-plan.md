@@ -79,6 +79,8 @@ Continued work should be treated as new hardening or product expansion, not migr
 - HITL pending approvals are wired into API runtime assembly and tool execution can wait for human approval
   when an approval policy is configured.
 - `/api/chat/multipart` accepts Reactor-compatible multipart uploads and forwards file metadata to AgentRuntime.
+- Reactor-compatible password change, session deletion, admin session tags, trace/tool-call analytics,
+  user/model usage, token-cost summaries, and metric ingestion now use Muse runtime state instead of stubs.
 
 ## Execution Plan
 
