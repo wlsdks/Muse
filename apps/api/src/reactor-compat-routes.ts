@@ -1949,7 +1949,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     const templateId = readBodyString(request.body, "templateId")?.trim();
 
     if (!templateId) {
-      return badRequest(reply, "INVALID_AUTO_OPTIMIZE_REQUEST", "Body must include templateId");
+      return reply.status(400).send(errorResponse("Body must include templateId"));
     }
 
     await runPromptAutoOptimize(templateId, options, toBody(request.body));
@@ -1968,7 +1968,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     const templateId = readBodyString(request.body, "templateId")?.trim();
 
     if (!templateId) {
-      return badRequest(reply, "INVALID_FEEDBACK_ANALYSIS_REQUEST", "Body must include templateId");
+      return reply.status(400).send(errorResponse("Body must include templateId"));
     }
 
     return promptFeedbackAnalysis(templateId, readNullableNumber(toBody(request.body).maxSamples) ?? 50);
@@ -2070,7 +2070,7 @@ function registerMcpCompatibilityRoutes(server: FastifyInstance, options: Reacto
     const body = toBody(request.body);
 
     if (!readBodyString(body, "name") || !readBodyString(body, "url")) {
-      return badRequest(reply, "INVALID_SWAGGER_SOURCE", "Body must include name and url");
+      return reply.status(400).send(errorResponse("Body must include name and url"));
     }
 
     return proxySwaggerSourceRequest(request, reply, options, "POST", "/admin/swagger/spec-sources", toJsonObject(body));
@@ -2085,7 +2085,7 @@ function registerMcpCompatibilityRoutes(server: FastifyInstance, options: Reacto
     const body = toBody(request.body);
 
     if (!readBodyString(body, "revisionId")) {
-      return badRequest(reply, "INVALID_SWAGGER_REVISION", "Body must include revisionId");
+      return reply.status(400).send(errorResponse("Body must include revisionId"));
     }
 
     return proxySwaggerSourceRequest(request, reply, options, "POST", `${swaggerSourcePath(request)}/publish`, toJsonObject(body));
@@ -2612,7 +2612,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     const name = readBodyString(request.body, "name");
 
     if (!name) {
-      return reply.status(400).send({ code: "INVALID_TENANT", message: "Body must include name" });
+      return reply.status(400).send(errorResponse("Invalid request"));
     }
 
     return options.admin?.operations?.upsertTenant({
@@ -2626,9 +2626,10 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
+    const { id } = request.params as { readonly id: string };
     const tenants = await (options.admin?.operations?.listTenants() ?? []);
-    const tenant = tenants.find((item) => item.id === (request.params as { readonly id: string }).id);
-    return tenant ?? notFound(reply, "TENANT_NOT_FOUND");
+    const tenant = tenants.find((item) => item.id === id);
+    return tenant ?? reply.status(404).send(errorResponse(`Tenant not found: ${id}`));
   });
   server.post("/api/admin/platform/tenants/:id/activate", async (request, reply) =>
     updateTenantStatus(request, reply, options, "active")
@@ -2662,10 +2663,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     const metric = readBodyString(body, "metric");
 
     if (!name || !metric) {
-      return reply.status(400).send({
-        code: "INVALID_ALERT_RULE",
-        message: "Body must include name and metric"
-      });
+      return reply.status(400).send(errorResponse("Body must include name and metric"));
     }
 
     const saved = createRecord(state.platformAlertRules, {
@@ -2699,7 +2697,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const { id } = request.params as { readonly id: string };
     if (!state.platformAlertRules.delete(id)) {
-      return notFound(reply, "ALERT_RULE_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`Alert rule not found: ${id}`));
     }
 
     recordAdminAudit(request, {
@@ -2810,7 +2808,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     const label = readBodyString(request.body, "label");
 
     if (!label) {
-      return reply.status(400).send({ code: "INVALID_SESSION_TAG", message: "Body must include label" });
+      return reply.status(400).send(errorResponse("label is required"));
     }
 
     const tag = createRecord(new Map(), {
@@ -2832,7 +2830,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     const remaining = tags.filter((tag) => tag.id !== tagId);
 
     if (remaining.length === tags.length) {
-      return notFound(reply, "SESSION_TAG_NOT_FOUND");
+      return reply.status(404).send(errorResponse("Tag not found"));
     }
 
     state.sessionTags.set(sessionId, remaining);
@@ -3070,7 +3068,9 @@ function registerAdminAnalyticsCompatibilityRoutes(
 
     const { id } = request.params as { readonly id: string };
     const run = await options.historyStore?.findRun(id);
-    return run && run.status === "failed" ? debugReplayResponse(run) : notFound(reply, "DEBUG_REPLAY_NOT_FOUND");
+    return run && run.status === "failed"
+      ? debugReplayResponse(run)
+      : reply.status(404).send(errorResponse("Replay target not found"));
   });
 
   server.get("/api/admin/evals/runs", async (request, reply) => {
@@ -3254,12 +3254,12 @@ function registerAdminAnalyticsCompatibilityRoutes(
     const auth = (request as { auth?: { email?: string; role?: string; userId?: string } }).auth;
 
     if (!email) {
-      return reply.status(400).send({ code: "INVALID_EMAIL", message: "email is required" });
+      return reply.status(400).send(errorResponse("email is required"));
     }
 
     return auth?.email === email
       ? { email, id: auth.userId ?? "current-user", role: auth.role ?? "admin" }
-      : notFound(reply, "USER_NOT_FOUND");
+      : reply.status(404).send(errorResponse(`User not found: ${email}`));
   });
 
   server.post("/api/admin/platform/users/:id/role", async (request, reply) => {
@@ -3268,14 +3268,15 @@ function registerAdminAnalyticsCompatibilityRoutes(
     }
 
     const { id } = request.params as { readonly id: string };
-    const role = parseUserRole(readBodyString(request.body, "role"));
+    const rawRole = readBodyString(request.body, "role") ?? "";
+    const role = parseUserRole(rawRole);
 
     if (!role) {
-      return reply.status(400).send({ code: "INVALID_ROLE", message: "Body must include role" });
+      return reply.status(400).send(errorResponse(`invalid role: ${rawRole}`));
     }
 
     if (!options.authService?.updateUserRole(id, role)) {
-      return notFound(reply, "USER_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`User not found: ${id}`));
     }
 
     return { id, role: userRoleResponse(role) };
@@ -3386,7 +3387,7 @@ function registerAgentEvalCompatibilityRoutes(
     const run = await options.historyStore?.findRun(runId);
 
     if (!run) {
-      return notFound(reply, "AGENT_RUN_LOG_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`run log를 찾을 수 없습니다: ${runId}`));
     }
 
     const toolCalls = await (options.historyStore?.listToolCalls(runId) ?? []);
@@ -3425,7 +3426,7 @@ function registerAgentEvalCompatibilityRoutes(
     const existing = findCompatRecord(state.agentEvalCases, id);
 
     if (!existing) {
-      return notFound(reply, "AGENT_EVAL_CASE_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`eval case를 찾을 수 없습니다: ${id}`));
     }
 
     if (!options.agentRuntime) {
@@ -3471,13 +3472,13 @@ function registerAgentEvalCompatibilityRoutes(
     const existing = findCompatRecord(state.agentEvalCases, caseId);
 
     if (!existing) {
-      return notFound(reply, "AGENT_EVAL_CASE_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`eval case를 찾을 수 없습니다: ${caseId}`));
     }
 
     const run = await options.historyStore?.findRun(runId);
 
     if (!run) {
-      return notFound(reply, "AGENT_RUN_LOG_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`run log를 찾을 수 없습니다: ${runId}`));
     }
 
     const result = await evaluateRunAgainstCase(existing, run, options);
@@ -7015,7 +7016,7 @@ async function updateTenantStatus(
   const tenant = tenants.find((item) => item.id === id);
 
   if (!tenant) {
-    return notFound(reply, "TENANT_NOT_FOUND");
+    return reply.status(404).send(errorResponse(`Tenant not found: ${id}`));
   }
 
   return options.admin?.operations?.upsertTenant({
@@ -7580,7 +7581,7 @@ function updateUserMemory(request: FastifyRequest, reply: FastifyReply, key: "fa
   const itemValue = readBodyString(body, "value")?.trim();
 
   if (!itemKey || !itemValue) {
-    return badRequest(reply, "INVALID_USER_MEMORY_REQUEST", "Body must include non-empty key and value");
+    return reply.status(400).send(errorResponse("Body must include non-empty key and value"));
   }
 
   const existing = state.userMemory.get(userId) ?? {
@@ -7866,7 +7867,7 @@ function reviewRagCandidate(
   const candidate = findCompatRecord(state.ragCandidates, id);
 
   if (!candidate) {
-    return notFound(reply, "RAG_INGESTION_CANDIDATE_NOT_FOUND");
+    return reply.status(404).send(errorResponse(`Candidate not found: ${id}`));
   }
 
   if (candidateStatus(candidate.status) !== "PENDING") {
@@ -7880,7 +7881,7 @@ function reviewRagCandidate(
   const comment = readBodyNullableString(body, "comment");
 
   if (typeof comment === "string" && comment.length > 500) {
-    return badRequest(reply, "INVALID_RAG_INGESTION_REVIEW", "comment must not exceed 500 characters");
+    return reply.status(400).send(errorResponse("comment must not exceed 500 characters"));
   }
 
   const documentId = targetStatus === "INGESTED" ? createRunId("rag_document") : null;
