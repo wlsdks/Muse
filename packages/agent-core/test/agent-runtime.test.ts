@@ -27,6 +27,7 @@ import {
   createStructuredOutputResponseFilter,
   createSystemPromptLeakageOutputGuard,
   createToolResultQualityAuditFilter,
+  createVerifiedSourcesResponseFilter,
   createZeroResultOverclaimResponseFilter,
   GuardBlockedError,
   HookRegistry,
@@ -1025,6 +1026,131 @@ describe("AgentRuntime", () => {
 
     expect(result.response.output.startsWith("💡 인사이트")).toBe(true);
     expect(result.response.output).not.toContain("죄송합니다");
+  });
+
+  it("appends verified source blocks from tool result URLs", async () => {
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: {
+          description: "Searches docs.",
+          inputSchema: { type: "object" },
+          name: "confluence_search",
+          risk: "read"
+        },
+        execute: () => ({
+          results: [
+            { title: "배포 가이드", url: "https://example.test/wiki/deploy" }
+          ]
+        })
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        {
+          id: "tool",
+          model: "test-model",
+          output: "도구 호출",
+          toolCalls: [{ arguments: {}, id: "tool-1", name: "confluence_search" }]
+        },
+        {
+          id: "final",
+          model: "test-model",
+          output: "배포 가이드를 찾았습니다."
+        }
+      ]),
+      responseFilters: [createVerifiedSourcesResponseFilter()],
+      toolRegistry
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "배포 문서 찾아줘", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toContain("출처");
+    expect(result.response.output).toContain("[배포 가이드](https://example.test/wiki/deploy)");
+  });
+
+  it("builds fallback verified responses from tool insights when the model body is empty", async () => {
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: {
+          description: "Searches docs.",
+          inputSchema: { type: "object" },
+          name: "confluence_search",
+          risk: "read"
+        },
+        execute: () => ({ count: 3, results: [] })
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        {
+          id: "tool",
+          model: "test-model",
+          output: "도구 호출",
+          toolCalls: [{ arguments: {}, id: "tool-1", name: "confluence_search" }]
+        },
+        {
+          id: "final",
+          model: "test-model",
+          output: ""
+        }
+      ]),
+      responseFilters: [createVerifiedSourcesResponseFilter()],
+      toolRegistry
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "문서 찾아줘", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toContain("조회한 결과");
+    expect(result.response.output).toContain("총 3건");
+  });
+
+  it("does not append verified source blocks for casual prompts", async () => {
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: {
+          description: "Searches docs.",
+          inputSchema: { type: "object" },
+          name: "confluence_search",
+          risk: "read"
+        },
+        execute: () => ({
+          results: [{ title: "Doc", url: "https://example.test/wiki/doc" }]
+        })
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        {
+          id: "tool",
+          model: "test-model",
+          output: "도구 호출",
+          toolCalls: [{ arguments: {}, id: "tool-1", name: "confluence_search" }]
+        },
+        {
+          id: "final",
+          model: "test-model",
+          output: "감사하다고 전할게요."
+        }
+      ]),
+      responseFilters: [createVerifiedSourcesResponseFilter()],
+      toolRegistry
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "민혁님한테 감사하다고 전해줘", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toBe("감사하다고 전할게요.");
   });
 
   it("removes overconfident release-risk claims when source data has gaps", async () => {

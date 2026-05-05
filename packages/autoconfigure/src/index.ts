@@ -15,6 +15,7 @@ import {
   createSlackUserIdMaskResponseFilter,
   createStructuredOutputResponseFilter,
   createToolResultQualityAuditFilter,
+  createVerifiedSourcesResponseFilter,
   createZeroResultOverclaimResponseFilter,
   type AgentRuntime
 } from "@muse/agent-core";
@@ -494,6 +495,9 @@ function createResponseFilters(env: MuseEnvironment) {
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_SOURCE_FILTER_ENABLED, true)
       ? [createSourceBlockResponseFilter()]
+      : []),
+    ...(parseBoolean(env.MUSE_RESPONSE_VERIFIED_SOURCES_ENABLED, true)
+      ? [createVerifiedSourcesResponseFilter()]
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_TOOL_RESULT_QUALITY_AUDIT_ENABLED, true)
       ? [createToolResultQualityAuditFilter()]
