@@ -6224,7 +6224,54 @@ function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) 
     return notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
   }
 
-  return badRequest(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND", "No report available for this experiment");
+  const report = findCompatRecord(state.promptExperimentReports, id);
+
+  if (!report) {
+    return badRequest(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND", "No report available for this experiment");
+  }
+
+  const recommendation = jsonObjectField(report.recommendation);
+  const versionId = stringField(recommendation.bestVersionId, "");
+  const activated = activatePromptVersionById(stringField(existing.templateId, ""), versionId);
+
+  if (!activated) {
+    return badRequest(reply, "PROMPT_EXPERIMENT_ACTIVATION_FAILED", `Failed to activate version: ${versionId}`);
+  }
+
+  return {
+    activated: true,
+    templateId: stringField(existing.templateId, ""),
+    versionId: stringField(activated.id, ""),
+    versionNumber: readNumber(activated.version, 0)
+  };
+}
+
+function activatePromptVersionById(templateId: string, versionId: string): JsonObject | undefined {
+  const template = findCompatRecord(state.promptTemplates, templateId);
+
+  if (!template) {
+    return undefined;
+  }
+
+  let selected: JsonObject | undefined;
+  const versions = promptVersions(template).map((version) => {
+    if (version.id === versionId) {
+      selected = { ...version, status: "ACTIVE" };
+      return selected;
+    }
+
+    return version.status === "ACTIVE" ? { ...version, status: "ARCHIVED" } : version;
+  });
+
+  if (!selected) {
+    return undefined;
+  }
+
+  createRecord(state.promptTemplates, {
+    ...template,
+    versions
+  }, "prompt_template");
+  return toVersionResponse(selected);
 }
 
 function slackFaqAction(request: FastifyRequest, status: string) {

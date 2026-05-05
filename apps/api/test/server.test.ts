@@ -1385,6 +1385,33 @@ describe("api server", () => {
       method: "GET",
       url: `/api/prompt-lab/experiments/${experimentId}/report`
     });
+    const activated = await server.inject({
+      headers,
+      method: "POST",
+      url: `/api/prompt-lab/experiments/${experimentId}/activate`
+    });
+    const templateAfterActivate = await server.inject({
+      headers,
+      method: "GET",
+      url: `/api/prompt-templates/${templateId}`
+    });
+    const experimentWithoutReport = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        baselineVersionId: baseline.json().id,
+        candidateVersionIds: [candidate.json().id],
+        name: "Prompt without report",
+        templateId,
+        testQueries: [{ query: "Explain migration" }]
+      },
+      url: "/api/prompt-lab/experiments"
+    });
+    const activateWithoutReport = await server.inject({
+      headers,
+      method: "POST",
+      url: `/api/prompt-lab/experiments/${experimentWithoutReport.json().id}/activate`
+    });
     const deleted = await server.inject({
       headers,
       method: "DELETE",
@@ -1445,6 +1472,19 @@ describe("api server", () => {
         })
       ])
     });
+    expect(activated.json()).toEqual({
+      activated: true,
+      templateId,
+      versionId: baseline.json().id,
+      versionNumber: 1
+    });
+    expect(templateAfterActivate.json()).toMatchObject({
+      activeVersion: {
+        id: baseline.json().id,
+        status: "ACTIVE"
+      }
+    });
+    expect(activateWithoutReport.statusCode).toBe(400);
     expect(deleted.statusCode).toBe(204);
     expect(trialsAfterDelete.json()).toEqual([]);
     expect(reportAfterDelete.statusCode).toBe(404);
