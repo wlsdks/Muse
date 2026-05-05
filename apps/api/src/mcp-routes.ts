@@ -172,6 +172,36 @@ export function registerMcpRoutes(server: FastifyInstance, options: McpRouteOpti
       return { status: mcp.manager.getStatus(name) ?? "disconnected" };
     });
 
+    server.get(`${prefix}/servers/:name/health`, async (request, reply) => {
+      if (!options.authorizeAdmin(request, reply)) {
+        return reply;
+      }
+
+      return checkMcpServerHealth(request.params, options, reply);
+    });
+
+    server.post(`${prefix}/servers/:name/reconnect`, async (request, reply) => {
+      if (!options.authorizeAdmin(request, reply)) {
+        return reply;
+      }
+
+      return reconnectMcpServer(request.params, options, reply);
+    });
+
+    server.post(`${prefix}/reconnect-due`, async (request, reply) => {
+      if (!options.authorizeAdmin(request, reply)) {
+        return reply;
+      }
+
+      const mcp = requireMcp(options, reply);
+
+      if (!mcp) {
+        return reply;
+      }
+
+      return mcp.manager.reconnectDue();
+    });
+
     server.get(`${prefix}/servers/:name/tools`, async (request, reply) => {
       if (!options.authorizeAdmin(request, reply)) {
         return reply;
@@ -326,6 +356,59 @@ async function connectMcpServer(
   };
 }
 
+async function checkMcpServerHealth(
+  params: unknown,
+  options: McpRouteOptions,
+  reply: { status(statusCode: number): { send(payload: ApiError | unknown): void } }
+) {
+  const mcp = requireMcp(options, reply);
+
+  if (!mcp) {
+    return reply;
+  }
+
+  const { name } = params as { readonly name: string };
+
+  if (!(await findMcpServer(mcp.manager, name))) {
+    return sendMcpServerNotFound(reply, name);
+  }
+
+  return mcp.manager.healthCheck(name);
+}
+
+async function reconnectMcpServer(
+  params: unknown,
+  options: McpRouteOptions,
+  reply: { status(statusCode: number): { send(payload: ApiError | unknown): void } }
+) {
+  const mcp = requireMcp(options, reply);
+
+  if (!mcp) {
+    return reply;
+  }
+
+  const { name } = params as { readonly name: string };
+
+  if (!(await findMcpServer(mcp.manager, name))) {
+    return sendMcpServerNotFound(reply, name);
+  }
+
+  const connected = await mcp.manager.reconnect(name);
+
+  if (!connected) {
+    return reply.status(503).send({
+      code: "MCP_RECONNECT_FAILED",
+      message: `Failed to reconnect MCP server: ${name}`
+    });
+  }
+
+  return {
+    health: mcp.manager.getHealth(name),
+    status: mcp.manager.getStatus(name) ?? "failed",
+    tools: mcp.manager.getToolCatalog(name)
+  };
+}
+
 async function callMcpTool(
   params: unknown,
   body: unknown,
@@ -422,6 +505,7 @@ function toServerSummary(server: McpServer, manager: McpManager) {
     createdAt: server.createdAt.toISOString(),
     description: server.description,
     id: server.id,
+    health: manager.getHealth(server.name),
     name: server.name,
     status: manager.getStatus(server.name) ?? "pending",
     toolCount: manager.getToolCatalog(server.name).length,

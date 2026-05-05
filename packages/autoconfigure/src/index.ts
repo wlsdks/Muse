@@ -132,6 +132,12 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       allowPrivateAddresses: allowPrivateMcpAddresses,
       requestTimeoutMs: parseInteger(env.MUSE_MCP_REQUEST_TIMEOUT_MS, 15_000)
     }),
+    reconnect: {
+      enabled: parseBoolean(env.MUSE_MCP_RECONNECT_ENABLED, true),
+      initialDelayMs: parseInteger(env.MUSE_MCP_RECONNECT_INITIAL_DELAY_MS, 1_000),
+      maxAttempts: parseInteger(env.MUSE_MCP_RECONNECT_MAX_ATTEMPTS, 3),
+      maxDelayMs: parseInteger(env.MUSE_MCP_RECONNECT_MAX_DELAY_MS, 30_000)
+    },
     validation: {
       allowPrivateAddresses: allowPrivateMcpAddresses
     },

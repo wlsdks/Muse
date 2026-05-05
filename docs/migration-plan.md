@@ -13,8 +13,8 @@ Current Muse baseline:
 | Bucket | Count | Meaning |
 | --- | ---: | --- |
 | Reactor modules with Muse landing zones | 31 | Every source module has a package or API target |
-| Functionally exercised migration areas | 30 | Core behavior exists and is covered by package/API tests |
-| Deep-hardening areas still open | 4 | Behavior exists, but production depth is not complete |
+| Functionally exercised migration areas | 31 | Core behavior exists and is covered by package/API tests |
+| Deep-hardening areas still open | 3 | Behavior exists, but production depth is not complete |
 | Remaining unmapped modules | 0 | No source module is without a target |
 
 ## Completed Migration Areas
@@ -35,6 +35,7 @@ Current Muse baseline:
 | `hook-integrations` | `packages/integrations` | Lifecycle webhook dispatch and HMAC signing primitives exist |
 | `intent` | `packages/agent-specs` | Agent specs, resolver, registry, and Kysely mapping exist |
 | `memory` | `packages/memory`, `packages/runtime-state` | Context, checkpoints, run history, and stores exist |
+| `mcp` | `packages/mcp`, `apps/api` | SDK transports, health checks, reconnect, and management APIs exist |
 | `model-routing` | `packages/model` | Provider registry, prefix routing, and OpenAI-compatible provider exist |
 | `multi-agent` | `packages/multi-agent` | Supervisor, worker selection, fallback, and handoff trace primitives exist |
 | `observability` | `packages/observability`, `packages/runtime-state` | Tracing, metrics, and history stores exist |
@@ -56,7 +57,6 @@ Current Muse baseline:
 | --- | --- | --- |
 | `admin` | Tenant, alert, cost, and SLO operations are shallow | Add operational stores and routes |
 | `core` | Boundary stability needs continued review | Keep shared contracts minimal and versionable |
-| `mcp` | Reconnect and health policy are shallow | Add health checks, backoff, and reconnect state |
 | `scheduler` | No distributed lock for multi-instance deployment | Add lock abstraction before horizontal scale |
 
 ## Recent Completion Notes
@@ -71,13 +71,13 @@ Current Muse baseline:
 - Response filtering strips copied trailing source blocks and buffers text when filters or output guards are active.
 - Hook registry execution now records completed/failed hook traces in runtime state.
 - Structured output filtering normalizes JSON/YAML responses when requested by run metadata.
+- MCP health checks now mark unhealthy connections and reconnect due servers with backoff.
 
 ## Execution Plan
 
-1. Add MCP reconnect and health policy with backoff state.
-2. Expand admin into tenant, alert, cost, and SLO operations.
-3. Add scheduler distributed lock abstraction before multi-instance deployment.
-4. Replace in-memory default stores with production persistence wiring where needed.
+1. Expand admin into tenant, alert, cost, and SLO operations.
+2. Add scheduler distributed lock abstraction before multi-instance deployment.
+3. Replace in-memory default stores with production persistence wiring where needed.
 
 ## Migration Rules
 

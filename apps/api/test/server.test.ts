@@ -655,6 +655,16 @@ describe("api server", () => {
       method: "GET",
       url: "/mcp/servers/local/tools"
     });
+    const health = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/mcp/servers/local/health"
+    });
+    const reconnected = await server.inject({
+      headers,
+      method: "POST",
+      url: "/api/mcp/servers/local/reconnect"
+    });
     const toolCall = await server.inject({
       headers,
       method: "POST",
@@ -705,6 +715,8 @@ describe("api server", () => {
         risk: "read"
       }
     ]);
+    expect(health.json()).toMatchObject({ status: "healthy", toolCount: 1 });
+    expect(reconnected.json()).toMatchObject({ health: { status: "healthy" }, status: "connected" });
     expect(toolCall.json()).toEqual({
       output: {
         args: { path: "docs/input.md" },

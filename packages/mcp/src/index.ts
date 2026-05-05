@@ -17,6 +17,7 @@ import type { Insertable, Kysely, Selectable } from "kysely";
 export type Awaitable<T> = T | Promise<T>;
 export type McpTransportType = "stdio" | "sse" | "streamable" | "http";
 export type McpServerStatus = "pending" | "connecting" | "connected" | "disconnected" | "failed" | "disabled";
+export type McpHealthStatus = "unknown" | "healthy" | "unhealthy";
 
 export interface McpServer {
   readonly id: string;
@@ -101,10 +102,28 @@ export interface McpServerValidationOptions {
 
 export interface McpManagerOptions {
   readonly connector?: McpTransportConnector;
+  readonly reconnect?: Partial<McpReconnectPolicy>;
   readonly securityPolicyProvider?: McpSecurityPolicyProvider;
   readonly store?: McpServerStore;
   readonly validation?: McpServerValidationOptions;
   readonly now?: () => Date;
+}
+
+export interface McpReconnectPolicy {
+  readonly enabled: boolean;
+  readonly maxAttempts: number;
+  readonly initialDelayMs: number;
+  readonly maxDelayMs: number;
+}
+
+export interface McpHealthSnapshot {
+  readonly serverName: string;
+  readonly status: McpHealthStatus;
+  readonly checkedAt?: Date;
+  readonly error?: string;
+  readonly reconnectAttempts: number;
+  readonly nextReconnectAt?: Date;
+  readonly toolCount: number;
 }
 
 export interface InMemoryMcpServerStoreOptions {
@@ -135,6 +154,12 @@ type McpSecurityPolicyInsert = Insertable<McpSecurityPolicyTable>;
 const defaultAllowedStdioCommands = ["npx", "node", "python", "python3", "uvx", "uv", "docker", "deno", "bun"] as const;
 const defaultMaxToolOutputLength = 50_000;
 const defaultMcpRequestTimeoutMs = 15_000;
+const defaultMcpReconnectPolicy: McpReconnectPolicy = {
+  enabled: true,
+  initialDelayMs: 1_000,
+  maxAttempts: 3,
+  maxDelayMs: 30_000
+};
 const minToolOutputLength = 1_024;
 const maxToolOutputLength = 500_000;
 const singletonPolicyId = "default";
@@ -274,10 +299,13 @@ export class McpSecurityPolicyProvider {
 
 export class McpManager {
   private readonly connector?: McpTransportConnector;
+  private readonly now: () => Date;
+  private readonly reconnectPolicy: McpReconnectPolicy;
   private readonly securityPolicyProvider: McpSecurityPolicyProvider;
   private readonly validation: McpServerValidationOptions;
   private readonly statuses = new Map<string, McpServerStatus>();
   private readonly connections = new Map<string, McpConnection>();
+  private readonly health = new Map<string, McpHealthSnapshot>();
   private readonly tools = new Map<string, readonly McpRemoteTool[]>();
 
   constructor(
@@ -285,6 +313,8 @@ export class McpManager {
     options: McpManagerOptions = {}
   ) {
     this.connector = options.connector;
+    this.now = options.now ?? (() => new Date());
+    this.reconnectPolicy = normalizeReconnectPolicy(options.reconnect);
     this.securityPolicyProvider = options.securityPolicyProvider ?? new McpSecurityPolicyProvider();
     this.store = options.store ?? store;
     this.validation = options.validation ?? {};
@@ -293,11 +323,13 @@ export class McpManager {
   async register(input: McpServerInput): Promise<McpServer | undefined> {
     if (!(await this.securityPolicyProvider.isServerAllowed(input.name))) {
       this.statuses.set(input.name, "disabled");
+      this.health.set(input.name, this.createHealthSnapshot(input.name, "unhealthy", "Server denied by policy"));
       return undefined;
     }
 
     const saved = await this.store.save(input);
     this.statuses.set(saved.name, "pending");
+    this.health.set(saved.name, this.createHealthSnapshot(saved.name, "unknown"));
     return saved;
   }
 
@@ -315,12 +347,14 @@ export class McpManager {
     await this.disconnect(name);
     await this.store.delete(name);
     this.statuses.delete(name);
+    this.health.delete(name);
     this.tools.delete(name);
   }
 
   async initializeFromStore(): Promise<void> {
     for (const server of await this.store.list()) {
       this.statuses.set(server.name, "pending");
+      this.health.set(server.name, this.createHealthSnapshot(server.name, "unknown"));
 
       if (server.autoConnect) {
         await this.connect(server.name);
@@ -333,6 +367,7 @@ export class McpManager {
 
     if (!server || !(await this.securityPolicyProvider.isServerAllowed(name)) || !this.connector) {
       this.statuses.set(name, server ? "disabled" : "failed");
+      this.scheduleReconnect(name, server ? "Server denied or connector unavailable" : "Server not found");
       return false;
     }
 
@@ -340,6 +375,7 @@ export class McpManager {
 
     if (!validation.valid) {
       this.statuses.set(name, "failed");
+      this.scheduleReconnect(name, validation.reason ?? "MCP server validation failed");
       return false;
     }
 
@@ -352,9 +388,11 @@ export class McpManager {
       this.connections.set(name, connection);
       this.tools.set(name, tools);
       this.statuses.set(name, "connected");
+      this.health.set(name, this.createHealthSnapshot(name, "healthy"));
       return true;
-    } catch {
+    } catch (error) {
       this.statuses.set(name, "failed");
+      this.scheduleReconnect(name, toErrorMessage(error));
       return false;
     }
   }
@@ -368,6 +406,7 @@ export class McpManager {
       this.connections.delete(name);
       this.tools.delete(name);
       this.statuses.set(name, "disconnected");
+      this.health.set(name, this.createHealthSnapshot(name, "unknown"));
     }
   }
 
@@ -377,6 +416,64 @@ export class McpManager {
 
   getStatus(name: string): McpServerStatus | undefined {
     return this.statuses.get(name);
+  }
+
+  getHealth(name: string): McpHealthSnapshot {
+    return this.health.get(name) ?? this.createHealthSnapshot(name, "unknown");
+  }
+
+  async healthCheck(name: string): Promise<McpHealthSnapshot> {
+    const connection = this.connections.get(name);
+
+    if (!connection || this.statuses.get(name) !== "connected") {
+      const snapshot = this.createHealthSnapshot(name, "unknown", "MCP server is not connected");
+      this.health.set(name, snapshot);
+      return snapshot;
+    }
+
+    try {
+      const tools = await connection.listTools();
+      this.tools.set(name, tools);
+      this.statuses.set(name, "connected");
+
+      const snapshot = this.createHealthSnapshot(name, "healthy");
+      this.health.set(name, snapshot);
+      return snapshot;
+    } catch (error) {
+      await closeConnectionQuietly(connection);
+      this.connections.delete(name);
+      this.tools.delete(name);
+      this.statuses.set(name, "failed");
+      return this.scheduleReconnect(name, toErrorMessage(error));
+    }
+  }
+
+  async healthCheckAll(): Promise<readonly McpHealthSnapshot[]> {
+    return Promise.all((await this.store.list()).map((server) => this.healthCheck(server.name)));
+  }
+
+  async reconnect(name: string): Promise<boolean> {
+    if (this.connections.has(name)) {
+      await this.disconnect(name);
+    }
+
+    this.health.set(name, this.createHealthSnapshot(name, "unknown"));
+    return this.connect(name);
+  }
+
+  async reconnectDue(): Promise<readonly McpHealthSnapshot[]> {
+    const now = this.now().getTime();
+    const due = [...this.health.values()].filter((snapshot) =>
+      snapshot.nextReconnectAt !== undefined && snapshot.nextReconnectAt.getTime() <= now
+    );
+    const results: McpHealthSnapshot[] = [];
+
+    for (const snapshot of due) {
+      await this.reconnect(snapshot.serverName);
+      results.push(this.getHealth(snapshot.serverName));
+    }
+
+    return results;
   }
 
   getToolCatalog(name?: string): readonly McpRemoteTool[] {
@@ -391,6 +488,47 @@ export class McpManager {
     return [...this.connections.entries()].flatMap(([serverName, connection]) =>
       (this.tools.get(serverName) ?? []).map((tool) => createMcpMuseTool(serverName, tool, connection))
     );
+  }
+
+  private scheduleReconnect(name: string, error: string): McpHealthSnapshot {
+    const previous = this.health.get(name);
+    const attempts = (previous?.reconnectAttempts ?? 0) + 1;
+    const nextReconnectAt = this.nextReconnectAt(attempts);
+    const snapshot = this.createHealthSnapshot(name, "unhealthy", error, attempts, nextReconnectAt);
+
+    this.health.set(name, snapshot);
+    return snapshot;
+  }
+
+  private nextReconnectAt(attempts: number): Date | undefined {
+    if (!this.reconnectPolicy.enabled || attempts > this.reconnectPolicy.maxAttempts) {
+      return undefined;
+    }
+
+    const delay = Math.min(
+      this.reconnectPolicy.maxDelayMs,
+      this.reconnectPolicy.initialDelayMs * (2 ** Math.max(0, attempts - 1))
+    );
+
+    return new Date(this.now().getTime() + delay);
+  }
+
+  private createHealthSnapshot(
+    serverName: string,
+    status: McpHealthStatus,
+    error?: string,
+    reconnectAttempts = 0,
+    nextReconnectAt?: Date
+  ): McpHealthSnapshot {
+    return {
+      checkedAt: this.now(),
+      ...(error ? { error } : {}),
+      ...(nextReconnectAt ? { nextReconnectAt } : {}),
+      reconnectAttempts,
+      serverName,
+      status,
+      toolCount: this.tools.get(serverName)?.length ?? 0
+    };
   }
 }
 
@@ -688,6 +826,15 @@ export function normalizeMcpSecurityPolicy(input: McpSecurityPolicyInput, now: D
       maxToolOutputLength
     ),
     updatedAt: "updatedAt" in input && input.updatedAt instanceof Date ? input.updatedAt : now
+  };
+}
+
+export function normalizeReconnectPolicy(input: Partial<McpReconnectPolicy> | undefined): McpReconnectPolicy {
+  return {
+    enabled: input?.enabled ?? defaultMcpReconnectPolicy.enabled,
+    initialDelayMs: positiveInteger(input?.initialDelayMs, defaultMcpReconnectPolicy.initialDelayMs),
+    maxAttempts: positiveInteger(input?.maxAttempts, defaultMcpReconnectPolicy.maxAttempts),
+    maxDelayMs: positiveInteger(input?.maxDelayMs, defaultMcpReconnectPolicy.maxDelayMs)
   };
 }
 
@@ -1026,6 +1173,18 @@ async function closeQuietly(client: Client): Promise<void> {
   } catch {
     // Best-effort cleanup after failed MCP initialization.
   }
+}
+
+async function closeConnectionQuietly(connection: McpConnection): Promise<void> {
+  try {
+    await connection.close?.();
+  } catch {
+    // Best-effort cleanup after failed MCP health checks.
+  }
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
 function toErrorMessage(error: unknown): string {

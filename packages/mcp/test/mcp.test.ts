@@ -6,7 +6,7 @@ import {
   PostgresIntrospector,
   PostgresQueryCompiler
 } from "kysely";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createMcpSecurityPolicyInsert,
@@ -268,6 +268,59 @@ describe("McpManager", () => {
       })
     ).resolves.toBeUndefined();
     expect(manager.getStatus("blocked")).toBe("disabled");
+  });
+
+  it("tracks health failures and reconnects due servers with backoff", async () => {
+    let nowMs = 1_767_228_800_000;
+    const firstConnection: McpConnection = {
+      close: vi.fn(),
+      listTools: vi.fn()
+        .mockResolvedValueOnce([{ description: "Ping", name: "ping", risk: "read" }])
+        .mockRejectedValueOnce(new Error("connection lost"))
+    };
+    const secondConnection: McpConnection = {
+      listTools: vi.fn().mockResolvedValue([{ description: "Ping v2", name: "ping", risk: "read" }])
+    };
+    const connector = {
+      connect: vi.fn()
+        .mockResolvedValueOnce(firstConnection)
+        .mockResolvedValueOnce(secondConnection)
+    };
+    const manager = new McpManager(new InMemoryMcpServerStore(), {
+      connector,
+      now: () => new Date(nowMs),
+      reconnect: {
+        initialDelayMs: 100,
+        maxAttempts: 2
+      }
+    });
+
+    await manager.register({
+      config: { command: "node" },
+      name: "local",
+      transportType: "stdio"
+    });
+
+    await expect(manager.connect("local")).resolves.toBe(true);
+    await expect(manager.healthCheck("local")).resolves.toMatchObject({
+      error: "connection lost",
+      reconnectAttempts: 1,
+      status: "unhealthy"
+    });
+    expect(firstConnection.close).toHaveBeenCalledOnce();
+    expect(manager.getStatus("local")).toBe("failed");
+    expect(await manager.reconnectDue()).toEqual([]);
+
+    nowMs += 100;
+    await expect(manager.reconnectDue()).resolves.toEqual([
+      expect.objectContaining({
+        reconnectAttempts: 0,
+        status: "healthy",
+        toolCount: 1
+      })
+    ]);
+    expect(connector.connect).toHaveBeenCalledTimes(2);
+    expect(manager.getStatus("local")).toBe("connected");
   });
 });
 
