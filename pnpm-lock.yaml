@@ -29,6 +29,9 @@ importers:
       '@muse/agent-specs':
         specifier: workspace:*
         version: link:../../packages/agent-specs
+      '@muse/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@muse/runtime-settings':
         specifier: workspace:*
         version: link:../../packages/runtime-settings
@@ -83,6 +86,12 @@ importers:
       kysely:
         specifier: ^0.28.17
         version: 0.28.17
+
+  packages/auth:
+    dependencies:
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/cache:
     dependencies:

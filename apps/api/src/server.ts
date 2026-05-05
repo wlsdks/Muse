@@ -5,6 +5,13 @@ import {
   type AgentSpecRegistry
 } from "@muse/agent-specs";
 import {
+  AuthRateLimiter,
+  AuthService,
+  extractBearerToken,
+  type AuthIdentity,
+  type LoginResult
+} from "@muse/auth";
+import {
   InMemoryRuntimeSettingsStore,
   RuntimeSettingsService,
   type RuntimeSettingType
@@ -14,6 +21,9 @@ import Fastify, { type FastifyInstance } from "fastify";
 export interface ServerOptions {
   readonly logger?: boolean;
   readonly agentSpecRegistry?: AgentSpecRegistry;
+  readonly authService?: AuthService;
+  readonly authRateLimiter?: AuthRateLimiter;
+  readonly requireAuth?: boolean;
   readonly runtimeSettings?: RuntimeSettingsService;
 }
 
@@ -22,9 +32,35 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
   const runtimeSettings =
     options.runtimeSettings ?? new RuntimeSettingsService(new InMemoryRuntimeSettingsStore());
+  const authService = options.authService;
+  const authRateLimiter = options.authRateLimiter ?? new AuthRateLimiter();
   const server = Fastify({
     logger: options.logger ?? true
   });
+
+  if (authService) {
+    server.addHook("preHandler", async (request, reply) => {
+      if (isPublicRequest(request.method, request.url)) {
+        return;
+      }
+
+      if (!options.requireAuth) {
+        attachAuthIdentity(request, authService.authenticateBearer(extractBearerToken(request.headers.authorization)));
+        return;
+      }
+
+      const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
+
+      if (!identity) {
+        return reply.status(401).send({
+          code: "UNAUTHENTICATED",
+          message: "A valid bearer token is required"
+        });
+      }
+
+      attachAuthIdentity(request, identity);
+    });
+  }
 
   server.get("/health", async () => ({
     service: "muse-api",
@@ -37,6 +73,73 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     runner: "rust",
     server: "fastify"
   }));
+
+  if (authService) {
+    server.post("/auth/register", async (request, reply) => {
+      const parsed = parseAuthCredentials(request.body, "register");
+
+      if (!parsed.ok) {
+        return reply.status(400).send(parsed.error);
+      }
+
+      try {
+        return reply.status(201).send(toLoginResponse(authService.register(parsed.value)));
+      } catch (error) {
+        return reply.status(400).send({
+          code: error instanceof Error && "code" in error ? String(error.code) : "REGISTRATION_FAILED",
+          message: error instanceof Error ? error.message : "Registration failed"
+        });
+      }
+    });
+
+    server.post("/auth/login", async (request, reply) => {
+      const key = authRateLimitKey(request.headers["x-forwarded-for"], request.ip, "/auth/login");
+
+      if (authRateLimiter.isBlocked(key)) {
+        return reply.status(429).send({
+          code: "AUTH_RATE_LIMITED",
+          message: "Too many authentication attempts"
+        });
+      }
+
+      const parsed = parseAuthCredentials(request.body, "login");
+
+      if (!parsed.ok) {
+        authRateLimiter.recordFailure(key);
+        return reply.status(400).send(parsed.error);
+      }
+
+      const login = authService.login(parsed.value.email, parsed.value.password);
+
+      if (!login) {
+        authRateLimiter.recordFailure(key);
+        return reply.status(401).send({
+          code: "INVALID_CREDENTIALS",
+          message: "Invalid credentials"
+        });
+      }
+
+      authRateLimiter.recordSuccess(key);
+      return toLoginResponse(login);
+    });
+
+    server.get("/auth/me", async (request, reply) => {
+      const identity = getAuthIdentity(request);
+
+      if (!identity) {
+        return reply.status(401).send({
+          code: "UNAUTHENTICATED",
+          message: "A valid bearer token is required"
+        });
+      }
+
+      return { identity };
+    });
+
+    server.post("/auth/logout", async (request) => ({
+      revoked: authService.logout(extractBearerToken(request.headers.authorization))
+    }));
+  }
 
   server.get("/agent-specs", async () => agentSpecRegistry.list());
 
@@ -193,6 +296,32 @@ function parseRuntimeSettingInput(
   };
 }
 
+function parseAuthCredentials(
+  value: unknown,
+  mode: "login" | "register"
+): ParseResult<{ readonly email: string; readonly name: string; readonly password: string }> {
+  if (!isRecord(value) || typeof value.email !== "string" || typeof value.password !== "string") {
+    return invalid("INVALID_AUTH_REQUEST", "Body must include email and password strings");
+  }
+
+  if (value.email.trim().length === 0 || value.password.length === 0) {
+    return invalid("INVALID_AUTH_REQUEST", "Email and password must not be blank");
+  }
+
+  if (mode === "register" && (typeof value.name !== "string" || value.name.trim().length === 0)) {
+    return invalid("INVALID_AUTH_REQUEST", "Registration requires a non-empty name");
+  }
+
+  return {
+    ok: true,
+    value: {
+      email: value.email,
+      name: typeof value.name === "string" ? value.name : value.email,
+      password: value.password
+    }
+  };
+}
+
 function invalid(code: string, message: string): ParseResult<never> {
   return {
     error: { code, message },
@@ -228,4 +357,39 @@ function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined
   return value === "string" || value === "number" || value === "boolean" || value === "json"
     ? value
     : undefined;
+}
+
+function isPublicRequest(method: string, url: string): boolean {
+  const path = url.split("?")[0] ?? url;
+  return (
+    path === "/health" ||
+    path === "/spec" ||
+    (method === "POST" && (path === "/auth/login" || path === "/auth/register"))
+  );
+}
+
+function attachAuthIdentity(request: unknown, identity: AuthIdentity | undefined): void {
+  (request as { auth?: AuthIdentity }).auth = identity;
+}
+
+function getAuthIdentity(request: unknown): AuthIdentity | undefined {
+  return (request as { auth?: AuthIdentity }).auth;
+}
+
+function authRateLimitKey(
+  forwardedFor: string | string[] | undefined,
+  fallbackIp: string,
+  path: string
+): string {
+  const forwarded = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  const ip = forwarded?.split(",")[0]?.trim() || fallbackIp || "unknown";
+  return `${ip}:${path}`;
+}
+
+function toLoginResponse(login: LoginResult) {
+  return {
+    expiresAt: login.expiresAt.toISOString(),
+    token: login.token,
+    user: login.user
+  };
 }
