@@ -1648,6 +1648,30 @@ describe("api server", () => {
     expect(promptlabRun.json().ranking[0]).toMatchObject({ variantId: "variant-a" });
   });
 
+  it("reports Reactor vector store availability independently from document count", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "vector_store_admin",
+      name: "Vector Store Admin",
+      password: "password-1"
+    });
+    const server = buildServer({
+      authService,
+      logger: false,
+      requireAuth: true
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const stats = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/platform/vectorstore/stats"
+    });
+
+    expect(stats.statusCode).toBe(200);
+    expect(stats.json()).toEqual({ available: true, documentCount: 0 });
+  });
+
   it("persists Reactor prompt lab trials and reports after experiment runs", async () => {
     const authService = createAuthService();
     const registered = authService.register({

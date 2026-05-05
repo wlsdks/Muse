@@ -2588,7 +2588,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     return {
-      available: state.documents.size > 0,
+      available: true,
       documentCount: state.documents.size
     };
   });
