@@ -22,6 +22,7 @@
     "@muse/model": "workspace:*",
     "@muse/observability": "workspace:*",
     "@muse/policy": "workspace:*",
+    "@muse/runtime-state": "workspace:*",
     "@muse/shared": "workspace:*"
   }
 }

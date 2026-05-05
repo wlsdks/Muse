@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InMemoryAgentSpecRegistry, RuleBasedAgentSpecResolver } from "@muse/agent-specs";
 import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
+import { InMemoryAgentRunHistoryStore } from "@muse/runtime-state";
 import {
   createAgentRuntime,
   createInjectionInputGuard,
@@ -432,6 +433,91 @@ describe("AgentRuntime", () => {
         status: "completed"
       },
       type: "agent_run"
+    });
+  });
+
+  it("records run history when a history store is configured", async () => {
+    const historyStore = new InMemoryAgentRunHistoryStore({
+      idFactory: (prefix) => `${prefix}-recorded`,
+      now: () => new Date("2026-01-01T00:00:00.000Z")
+    });
+    const runtime = createAgentRuntime({
+      historyStore,
+      modelProvider: createProvider({
+        output: "Done",
+        toolCalls: [
+          {
+            arguments: { path: "docs/input.md" },
+            id: "tool-1",
+            name: "read_file"
+          }
+        ],
+        usage: { inputTokens: 4, outputTokens: 2 }
+      })
+    });
+
+    await runtime.run({
+      messages: [{ content: "Read the file", role: "user" }],
+      metadata: {
+        userId: "user-1",
+        workspaceId: "workspace-1"
+      },
+      model: "provider/model",
+      runId: "run-history"
+    });
+
+    expect(historyStore.findRun("run-history")).toMatchObject({
+      input: "Read the file",
+      output: "Done",
+      provider: "test",
+      status: "completed",
+      tokenUsage: { inputTokens: 4, outputTokens: 2 },
+      userId: "user-1",
+      workspaceId: "workspace-1"
+    });
+    expect(historyStore.listMessages("run-history").map((message) => message.role)).toEqual([
+      "user",
+      "assistant"
+    ]);
+    expect(historyStore.listToolCalls("run-history")).toEqual([
+      expect.objectContaining({
+        arguments: { path: "docs/input.md" },
+        id: "tool-1",
+        name: "read_file",
+        status: "queued"
+      })
+    ]);
+  });
+
+  it("continues when run history recording fails", async () => {
+    const runtime = createAgentRuntime({
+      historyStore: {
+        appendMessage: () => {
+          throw new Error("history unavailable");
+        },
+        createRun: () => {
+          throw new Error("history unavailable");
+        },
+        findRun: () => undefined,
+        listMessages: () => [],
+        listRunsByUser: () => [],
+        listToolCalls: () => [],
+        recordToolCall: () => {
+          throw new Error("history unavailable");
+        },
+        updateRun: () => undefined,
+        updateToolCall: () => undefined
+      },
+      modelProvider: createProvider()
+    });
+
+    await expect(
+      runtime.run({
+        messages: [{ content: "Hello", role: "user" }],
+        model: "provider/model"
+      })
+    ).resolves.toMatchObject({
+      response: { output: "Muse response" }
     });
   });
 

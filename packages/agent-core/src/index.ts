@@ -5,7 +5,8 @@ import {
   type ModelMessage,
   type ModelProvider,
   type ModelRequest,
-  type ModelResponse
+  type ModelResponse,
+  type ModelToolCall
 } from "@muse/model";
 import {
   createNoOpAgentMetrics,
@@ -14,6 +15,7 @@ import {
   type MuseTracer,
   type SpanHandle
 } from "@muse/observability";
+import type { AgentRunHistoryStore, AgentRunMode } from "@muse/runtime-state";
 import { trimConversationMessages, type ConversationTrimOptions } from "@muse/memory";
 import { detectSystemPromptLeakage, findInjectionPatterns, maskPii } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
@@ -74,6 +76,7 @@ export interface AgentRuntimeOptions {
   readonly modelProvider?: ModelProvider;
   readonly modelRegistry?: ModelProviderRegistry;
   readonly agentSpecResolver?: AgentSpecResolver;
+  readonly historyStore?: AgentRunHistoryStore;
   readonly contextWindow?: ConversationTrimOptions;
   readonly metrics?: AgentMetrics;
   readonly tracer?: MuseTracer;
@@ -142,6 +145,7 @@ export class AgentRuntime {
   private readonly modelProvider?: ModelProvider;
   private readonly modelRegistry?: ModelProviderRegistry;
   private readonly agentSpecResolver?: AgentSpecResolver;
+  private readonly historyStore?: AgentRunHistoryStore;
   private readonly contextWindow?: ConversationTrimOptions;
   private readonly metrics: AgentMetrics;
   private readonly tracer: MuseTracer;
@@ -154,6 +158,7 @@ export class AgentRuntime {
     this.modelProvider = options.modelProvider;
     this.modelRegistry = options.modelRegistry;
     this.agentSpecResolver = options.agentSpecResolver;
+    this.historyStore = options.historyStore;
     this.contextWindow = options.contextWindow;
     this.metrics = options.metrics ?? createNoOpAgentMetrics();
     this.tracer = options.tracer ?? createNoOpMuseTracer();
@@ -187,6 +192,7 @@ export class AgentRuntime {
 
       const selected = this.resolveProvider(context.input.model);
       runSpan.setAttribute("model.selected", selected.model);
+      await this.recordRunStart(context, selected.provider.id, selected.model);
 
       const preparedRequest = this.prepareModelRequest(context.input, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
@@ -198,11 +204,13 @@ export class AgentRuntime {
       });
       const guardedResponse = await this.applyOutputGuards(context, response);
 
+      await this.recordRunComplete(context, guardedResponse);
       await this.invokeHooks("afterComplete", context, guardedResponse);
       this.recordAgentRun(context, guardedResponse.model, "completed", startedAtMs);
       return createRunResult(context.runId, guardedResponse, preparedRequest.contextWindow, context.agentSpec);
     } catch (error) {
       runSpan.setError(error);
+      await this.recordRunFailure(context, error);
       this.recordAgentRun(context, context.input.model, "failed", startedAtMs);
       await this.invokeHooks("onError", context, error);
       throw error;
@@ -460,6 +468,96 @@ export class AgentRuntime {
       status
     });
   }
+
+  private async recordRunStart(
+    context: AgentRunContext,
+    provider: string,
+    model: string
+  ): Promise<void> {
+    if (!this.historyStore) {
+      return;
+    }
+
+    try {
+      await this.historyStore.createRun({
+        id: context.runId,
+        input: joinUserMessages(context.input.messages),
+        mode: toAgentRunMode(context.agentSpec?.spec.mode),
+        model,
+        provider,
+        startedAt: context.startedAt,
+        status: "running",
+        userId: metadataString(context.input.metadata, "userId"),
+        workspaceId: metadataString(context.input.metadata, "workspaceId")
+      });
+
+      for (const message of context.input.messages) {
+        await this.historyStore.appendMessage({
+          content: message.content,
+          metadata: message.toolCalls ? toolCallsMetadata(message.toolCalls) : {},
+          name: message.name,
+          role: message.role,
+          runId: context.runId,
+          toolCallId: message.toolCallId
+        });
+      }
+    } catch {
+      // History is observability state and must not block agent execution.
+    }
+  }
+
+  private async recordRunComplete(context: AgentRunContext, response: ModelResponse): Promise<void> {
+    if (!this.historyStore) {
+      return;
+    }
+
+    try {
+      await this.historyStore.appendMessage({
+        content: response.output,
+        metadata: response.toolCalls ? toolCallsMetadata(response.toolCalls) : {},
+        role: "assistant",
+        runId: context.runId
+      });
+
+      for (const toolCall of response.toolCalls ?? []) {
+        await this.historyStore.recordToolCall({
+          arguments: toolCall.arguments,
+          id: toolCall.id,
+          name: toolCall.name,
+          risk: "read",
+          runId: context.runId,
+          status: "queued"
+        });
+      }
+
+      await this.historyStore.updateRun({
+        completedAt: new Date(),
+        output: response.output,
+        runId: context.runId,
+        status: "completed",
+        tokenUsage: response.usage ? { ...response.usage } : undefined
+      });
+    } catch {
+      // History is observability state and must not block agent execution.
+    }
+  }
+
+  private async recordRunFailure(context: AgentRunContext, error: unknown): Promise<void> {
+    if (!this.historyStore) {
+      return;
+    }
+
+    try {
+      await this.historyStore.updateRun({
+        completedAt: new Date(),
+        error: error instanceof Error ? error.message : "unknown error",
+        runId: context.runId,
+        status: "failed"
+      });
+    } catch {
+      // History is observability state and must not block agent execution.
+    }
+  }
 }
 
 export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
@@ -643,6 +741,23 @@ function toAgentSpecRunReport(resolution: AgentSpecResolution): AgentSpecRunRepo
     name: resolution.spec.name,
     toolNames: [...resolution.spec.toolNames]
   };
+}
+
+function metadataString(metadata: JsonObject | undefined, key: string): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function toolCallsMetadata(toolCalls: readonly ModelToolCall[]): JsonObject {
+  return {
+    toolCallCount: toolCalls.length,
+    toolCallIds: toolCalls.map((toolCall) => toolCall.id),
+    toolCallNames: toolCalls.map((toolCall) => toolCall.name)
+  };
+}
+
+function toAgentRunMode(mode: AgentRunMode | undefined): AgentRunMode {
+  return mode ?? "react";
 }
 
 function failMissingProvider(): never {
