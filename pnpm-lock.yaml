@@ -62,6 +62,9 @@ importers:
       '@muse/agent-specs':
         specifier: workspace:*
         version: link:../agent-specs
+      '@muse/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@muse/memory':
         specifier: workspace:*
         version: link:../memory
@@ -74,12 +77,24 @@ importers:
       '@muse/policy':
         specifier: workspace:*
         version: link:../policy
+      '@muse/prompts':
+        specifier: workspace:*
+        version: link:../prompts
+      '@muse/rag':
+        specifier: workspace:*
+        version: link:../rag
+      '@muse/resilience':
+        specifier: workspace:*
+        version: link:../resilience
       '@muse/runtime-state':
         specifier: workspace:*
         version: link:../runtime-state
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared
+      '@muse/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/agent-specs:
     dependencies:

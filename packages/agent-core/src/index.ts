@@ -1,11 +1,19 @@
 import type { AgentSpecResolution } from "@muse/agent-specs";
 import {
+  buildCacheKey,
+  cacheableModelRequest,
+  cachedResponseFromModelResponse,
+  type CacheMetricsRecorder,
+  type ResponseCache
+} from "@muse/cache";
+import {
   ModelProviderRegistry,
   parseModelName,
   type ModelMessage,
   type ModelProvider,
   type ModelRequest,
   type ModelResponse,
+  type ModelTool,
   type ModelToolCall
 } from "@muse/model";
 import {
@@ -15,10 +23,20 @@ import {
   type MuseTracer,
   type SpanHandle
 } from "@muse/observability";
+import { renderRetrievedContext, renderToolResults } from "@muse/prompts";
+import type { RagPipeline } from "@muse/rag";
+import {
+  retry,
+  withTimeout,
+  type CircuitBreaker,
+  type FallbackStrategy,
+  type RetryOptions
+} from "@muse/resilience";
 import type { AgentRunHistoryStore, AgentRunMode } from "@muse/runtime-state";
 import { trimConversationMessages, type ConversationTrimOptions } from "@muse/memory";
 import { detectSystemPromptLeakage, findInjectionPatterns, maskPii } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
+import { ToolExecutor, ToolRegistry, type ToolExecutionResult } from "@muse/tools";
 
 type Awaitable<T> = T | Promise<T>;
 
@@ -77,6 +95,16 @@ export interface AgentRuntimeOptions {
   readonly modelRegistry?: ModelProviderRegistry;
   readonly agentSpecResolver?: AgentSpecResolver;
   readonly historyStore?: AgentRunHistoryStore;
+  readonly responseCache?: ResponseCache;
+  readonly cacheMetrics?: CacheMetricsRecorder;
+  readonly ragPipeline?: RagPipeline;
+  readonly toolRegistry?: ToolRegistry;
+  readonly toolExecutor?: ToolExecutor;
+  readonly maxToolCalls?: number;
+  readonly circuitBreaker?: CircuitBreaker;
+  readonly fallbackStrategy?: FallbackStrategy;
+  readonly retry?: RetryOptions;
+  readonly requestTimeoutMs?: number;
   readonly contextWindow?: ConversationTrimOptions;
   readonly metrics?: AgentMetrics;
   readonly tracer?: MuseTracer;
@@ -94,6 +122,8 @@ export interface AgentRunResult {
   readonly response: ModelResponse;
   readonly agentSpec?: AgentSpecRunReport;
   readonly contextWindow?: AgentContextWindowReport;
+  readonly fromCache?: boolean;
+  readonly toolsUsed?: readonly string[];
 }
 
 export interface AgentSpecRunReport {
@@ -146,6 +176,16 @@ export class AgentRuntime {
   private readonly modelRegistry?: ModelProviderRegistry;
   private readonly agentSpecResolver?: AgentSpecResolver;
   private readonly historyStore?: AgentRunHistoryStore;
+  private readonly responseCache?: ResponseCache;
+  private readonly cacheMetrics?: CacheMetricsRecorder;
+  private readonly ragPipeline?: RagPipeline;
+  private readonly toolRegistry?: ToolRegistry;
+  private readonly toolExecutor?: ToolExecutor;
+  private readonly maxToolCalls: number;
+  private readonly circuitBreaker?: CircuitBreaker;
+  private readonly fallbackStrategy?: FallbackStrategy;
+  private readonly retry?: RetryOptions;
+  private readonly requestTimeoutMs?: number;
   private readonly contextWindow?: ConversationTrimOptions;
   private readonly metrics: AgentMetrics;
   private readonly tracer: MuseTracer;
@@ -159,6 +199,17 @@ export class AgentRuntime {
     this.modelRegistry = options.modelRegistry;
     this.agentSpecResolver = options.agentSpecResolver;
     this.historyStore = options.historyStore;
+    this.responseCache = options.responseCache;
+    this.cacheMetrics = options.cacheMetrics;
+    this.ragPipeline = options.ragPipeline;
+    this.toolRegistry = options.toolRegistry;
+    this.toolExecutor = options.toolExecutor ??
+      (options.toolRegistry ? new ToolExecutor({ registry: options.toolRegistry }) : undefined);
+    this.maxToolCalls = Math.max(0, options.maxToolCalls ?? 10);
+    this.circuitBreaker = options.circuitBreaker;
+    this.fallbackStrategy = options.fallbackStrategy;
+    this.retry = options.retry;
+    this.requestTimeoutMs = options.requestTimeoutMs;
     this.contextWindow = options.contextWindow;
     this.metrics = options.metrics ?? createNoOpAgentMetrics();
     this.tracer = options.tracer ?? createNoOpMuseTracer();
@@ -194,20 +245,57 @@ export class AgentRuntime {
       runSpan.setAttribute("model.selected", selected.model);
       await this.recordRunStart(context, selected.provider.id, selected.model);
 
-      const preparedRequest = this.prepareModelRequest(context.input, selected.model);
+      const contextualizedInput = await this.applyRetrievedContext(context);
+      const preparedRequest = this.prepareModelRequest(contextualizedInput, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
+      const tools = this.modelTools();
+      const cacheKey = buildCacheKey(cacheableModelRequest(preparedRequest.request), tools.map((tool) => tool.name));
+      const cached = await this.readCache(cacheKey, selected.model);
 
-      const response = await this.generateWithTracing(context, selected.provider, {
+      if (cached) {
+        const cachedResponse: ModelResponse = {
+          id: `${context.runId}:cache`,
+          model: cached.model ?? selected.model,
+          output: cached.content
+        };
+        const guardedCachedResponse = await this.applyOutputGuards(context, cachedResponse);
+
+        await this.recordRunComplete(context, {
+          finalResponse: guardedCachedResponse,
+          intermediateMessages: [],
+          toolResults: [],
+          toolsUsed: cached.toolsUsed
+        });
+        await this.invokeHooks("afterComplete", context, guardedCachedResponse);
+        this.recordAgentRun(context, guardedCachedResponse.model, "completed", startedAtMs);
+        return createRunResult(
+          context.runId,
+          guardedCachedResponse,
+          preparedRequest.contextWindow,
+          context.agentSpec,
+          { fromCache: true, toolsUsed: cached.toolsUsed }
+        );
+      }
+
+      const execution = await this.executeModelLoop(context, selected.provider, {
         ...preparedRequest.request,
         maxOutputTokens: this.defaults?.maxOutputTokens,
-        temperature: this.defaults?.temperature
+        temperature: this.defaults?.temperature,
+        tools
       });
-      const guardedResponse = await this.applyOutputGuards(context, response);
+      const guardedResponse = await this.applyOutputGuards(context, execution.finalResponse);
 
-      await this.recordRunComplete(context, guardedResponse);
+      await this.recordRunComplete(context, { ...execution, finalResponse: guardedResponse });
+      await this.writeCache(cacheKey, guardedResponse, execution.toolsUsed);
       await this.invokeHooks("afterComplete", context, guardedResponse);
       this.recordAgentRun(context, guardedResponse.model, "completed", startedAtMs);
-      return createRunResult(context.runId, guardedResponse, preparedRequest.contextWindow, context.agentSpec);
+      return createRunResult(
+        context.runId,
+        guardedResponse,
+        preparedRequest.contextWindow,
+        context.agentSpec,
+        { toolsUsed: execution.toolsUsed }
+      );
     } catch (error) {
       runSpan.setError(error);
       await this.recordRunFailure(context, error);
@@ -319,6 +407,177 @@ export class AgentRuntime {
     };
   }
 
+  private async applyRetrievedContext(context: AgentRunContext): Promise<AgentRunInput> {
+    if (!this.ragPipeline) {
+      return context.input;
+    }
+
+    try {
+      const query = joinUserMessages(context.input.messages);
+
+      if (query.trim().length === 0) {
+        return context.input;
+      }
+
+      const ragContext = await this.ragPipeline.retrieve({
+        filters: ragFilters(context.input.metadata),
+        query
+      });
+      const retrieved = renderRetrievedContext(ragContext.context);
+
+      if (!retrieved) {
+        return context.input;
+      }
+
+      return {
+        ...context.input,
+        messages: appendSystemSection(context.input.messages, retrieved),
+        metadata: {
+          ...context.input.metadata,
+          ragDocumentCount: ragContext.documents.length,
+          ragTotalTokens: ragContext.totalTokens
+        }
+      };
+    } catch {
+      return {
+        ...context.input,
+        metadata: {
+          ...context.input.metadata,
+          ragRetrievalFailed: true
+        }
+      };
+    }
+  }
+
+  private modelTools(): readonly ModelTool[] {
+    return this.toolRegistry?.toModelTools() ?? [];
+  }
+
+  private async readCache(key: string, model: string) {
+    if (!this.responseCache) {
+      return undefined;
+    }
+
+    try {
+      const cached = await this.responseCache.get(key);
+
+      if (cached) {
+        this.cacheMetrics?.recordExactHit(model);
+      } else {
+        this.cacheMetrics?.recordMiss(model);
+      }
+
+      return cached;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async writeCache(
+    key: string,
+    response: ModelResponse,
+    toolsUsed: readonly string[]
+  ): Promise<void> {
+    if (!this.responseCache) {
+      return;
+    }
+
+    try {
+      await this.responseCache.put(key, cachedResponseFromModelResponse(response, toolsUsed));
+    } catch {
+      // Response cache is a performance feature and must fail open.
+    }
+  }
+
+  private async executeModelLoop(
+    context: AgentRunContext,
+    provider: ModelProvider,
+    request: ModelRequest
+  ): Promise<ModelLoopExecution> {
+    const intermediateMessages: ModelMessage[] = [];
+    const toolResults: ExecutedToolResult[] = [];
+    const toolsUsed: string[] = [];
+    let messages: readonly ModelMessage[] = [...request.messages];
+    let toolCallCount = 0;
+
+    while (true) {
+      const activeTools = toolCallCount < this.maxToolCalls ? request.tools : [];
+      const response = await this.generateWithTracing(context, provider, {
+        ...request,
+        messages,
+        tools: activeTools
+      });
+      const calls = response.toolCalls ?? [];
+
+      if (calls.length === 0 || (activeTools?.length ?? 0) === 0) {
+        return {
+          finalResponse: response,
+          intermediateMessages,
+          toolResults,
+          toolsUsed: [...new Set(toolsUsed)]
+        };
+      }
+
+      const assistantMessage: ModelMessage = {
+        content: response.output,
+        role: "assistant",
+        toolCalls: calls
+      };
+      const toolMessages: ModelMessage[] = [];
+
+      intermediateMessages.push(assistantMessage);
+      messages = [...messages, assistantMessage];
+
+      for (const toolCall of calls) {
+        const remaining = this.maxToolCalls - toolCallCount;
+        const executed = remaining > 0
+          ? await this.executeToolCall(context, toolCall)
+          : blockedToolResult(toolCall, "Error: max tool call limit reached");
+
+        toolCallCount += remaining > 0 ? 1 : 0;
+        toolsUsed.push(toolCall.name);
+        toolResults.push(executed);
+        toolMessages.push({
+          content: executed.result.output,
+          name: toolCall.name,
+          role: "tool",
+          toolCallId: toolCall.id
+        });
+      }
+
+      const toolSummary = renderToolResults(
+        toolResults.map((item) => `${item.result.name}: ${item.result.output}`).join("\n\n")
+      );
+      const nextMessages = [...messages, ...toolMessages];
+      messages = toolSummary
+        ? appendSystemSection(nextMessages, toolSummary, "tool-results")
+        : nextMessages;
+      intermediateMessages.push(...toolMessages);
+    }
+  }
+
+  private async executeToolCall(
+    context: AgentRunContext,
+    toolCall: ModelToolCall
+  ): Promise<ExecutedToolResult> {
+    if (!this.toolExecutor) {
+      return blockedToolResult(toolCall, "Error: tool executor is not configured");
+    }
+
+    const result = await this.toolExecutor.execute({
+      arguments: toolCall.arguments,
+      context: {
+        runId: context.runId,
+        userId: metadataString(context.input.metadata, "userId"),
+        workspaceId: metadataString(context.input.metadata, "workspaceId")
+      },
+      id: toolCall.id,
+      name: toolCall.name
+    });
+
+    return { result, toolCall };
+  }
+
   private async evaluateGuards(context: AgentRunContext): Promise<void> {
     for (const guard of this.guards) {
       let decision: GuardDecision;
@@ -364,7 +623,8 @@ export class AgentRuntime {
     });
 
     try {
-      const response = await provider.generate(request);
+      const generate = () => this.generateWithFallback(provider, request);
+      const response = await (this.circuitBreaker ? this.circuitBreaker.execute(generate) : generate());
       recordUsageSpanAttributes(span, response);
 
       if (response.usage) {
@@ -378,6 +638,44 @@ export class AgentRuntime {
     } finally {
       span.end();
     }
+  }
+
+  private async generateWithFallback(provider: ModelProvider, request: ModelRequest): Promise<ModelResponse> {
+    try {
+      return await this.generateWithResilience(provider, request);
+    } catch (error) {
+      const fallback = await this.fallbackStrategy?.execute(
+        {
+          maxOutputTokens: request.maxOutputTokens,
+          messages: request.messages,
+          metadata: request.metadata,
+          temperature: request.temperature
+        },
+        error
+      );
+
+      if (fallback) {
+        return fallback;
+      }
+
+      throw error;
+    }
+  }
+
+  private async generateWithResilience(provider: ModelProvider, request: ModelRequest): Promise<ModelResponse> {
+    const operation = () => {
+      if (this.requestTimeoutMs === undefined) {
+        return provider.generate(request);
+      }
+
+      return withTimeout(() => provider.generate(request), this.requestTimeoutMs);
+    };
+
+    if (!this.retry) {
+      return operation();
+    }
+
+    return retry(operation, this.retry);
   }
 
   private async applyOutputGuards(context: AgentRunContext, response: ModelResponse): Promise<ModelResponse> {
@@ -506,25 +804,53 @@ export class AgentRuntime {
     }
   }
 
-  private async recordRunComplete(context: AgentRunContext, response: ModelResponse): Promise<void> {
+  private async recordRunComplete(context: AgentRunContext, execution: ModelLoopExecution): Promise<void> {
     if (!this.historyStore) {
       return;
     }
 
     try {
+      for (const message of execution.intermediateMessages) {
+        await this.historyStore.appendMessage({
+          content: message.content,
+          metadata: message.toolCalls ? toolCallsMetadata(message.toolCalls) : {},
+          name: message.name,
+          role: message.role,
+          runId: context.runId,
+          toolCallId: message.toolCallId
+        });
+      }
+
       await this.historyStore.appendMessage({
-        content: response.output,
-        metadata: response.toolCalls ? toolCallsMetadata(response.toolCalls) : {},
+        content: execution.finalResponse.output,
+        metadata: execution.finalResponse.toolCalls ? toolCallsMetadata(execution.finalResponse.toolCalls) : {},
         role: "assistant",
         runId: context.runId
       });
 
-      for (const toolCall of response.toolCalls ?? []) {
+      for (const executed of execution.toolResults) {
+        await this.historyStore.recordToolCall({
+          arguments: executed.toolCall.arguments,
+          id: executed.toolCall.id,
+          name: executed.toolCall.name,
+          risk: this.resolveToolRisk(executed.toolCall.name),
+          runId: context.runId,
+          status: toHistoryToolStatus(executed.result.status)
+        });
+      }
+
+      const recordedToolCallIds = new Set(execution.toolResults.map((executed) => executed.toolCall.id));
+
+      for (const toolCall of execution.finalResponse.toolCalls ?? []) {
+        if (recordedToolCallIds.has(toolCall.id)) {
+          continue;
+        }
+
         await this.historyStore.recordToolCall({
           arguments: toolCall.arguments,
           id: toolCall.id,
           name: toolCall.name,
-          risk: "read",
+          risk: this.resolveToolRisk(toolCall.name),
           runId: context.runId,
           status: "queued"
         });
@@ -532,14 +858,18 @@ export class AgentRuntime {
 
       await this.historyStore.updateRun({
         completedAt: new Date(),
-        output: response.output,
+        output: execution.finalResponse.output,
         runId: context.runId,
         status: "completed",
-        tokenUsage: response.usage ? { ...response.usage } : undefined
+        tokenUsage: execution.finalResponse.usage ? { ...execution.finalResponse.usage } : undefined
       });
     } catch {
       // History is observability state and must not block agent execution.
     }
+  }
+
+  private resolveToolRisk(name: string): "read" | "write" | "execute" {
+    return this.toolRegistry?.get(name)?.definition.risk ?? "read";
   }
 
   private async recordRunFailure(context: AgentRunContext, error: unknown): Promise<void> {
@@ -564,21 +894,88 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
   return new AgentRuntime(options);
 }
 
+interface ModelLoopExecution {
+  readonly finalResponse: ModelResponse;
+  readonly intermediateMessages: readonly ModelMessage[];
+  readonly toolResults: readonly ExecutedToolResult[];
+  readonly toolsUsed: readonly string[];
+}
+
+interface ExecutedToolResult {
+  readonly toolCall: ModelToolCall;
+  readonly result: ToolExecutionResult;
+}
+
+function blockedToolResult(toolCall: ModelToolCall, output: string): ExecutedToolResult {
+  return {
+    result: {
+      id: toolCall.id,
+      name: toolCall.name,
+      output,
+      status: "blocked"
+    },
+    toolCall
+  };
+}
+
+function appendSystemSection(
+  messages: readonly ModelMessage[],
+  section: string,
+  sectionId = "context"
+): readonly ModelMessage[] {
+  const marker = `<!-- muse:${sectionId} -->`;
+  const content = `${marker}\n${section}`;
+  const systemIndex = messages.findIndex((message) => message.role === "system");
+
+  if (systemIndex < 0) {
+    return [{ content, role: "system" }, ...messages];
+  }
+
+  return messages.map((message, index) => {
+    if (index !== systemIndex) {
+      return message;
+    }
+
+    const withoutPrevious = message.content
+      .split(marker)[0]
+      ?.trimEnd();
+
+    return {
+      ...message,
+      content: [withoutPrevious, content].filter(Boolean).join("\n\n")
+    };
+  });
+}
+
+function toHistoryToolStatus(status: ToolExecutionResult["status"]): "blocked" | "completed" | "failed" {
+  return status;
+}
+
 function createRunResult(
   runId: string,
   response: ModelResponse,
   contextWindow: AgentContextWindowReport | undefined,
-  agentSpec: AgentSpecResolution | undefined
+  agentSpec: AgentSpecResolution | undefined,
+  execution: {
+    readonly fromCache?: boolean;
+    readonly toolsUsed?: readonly string[];
+  } = {}
 ): AgentRunResult {
   const agentSpecReport = agentSpec ? toAgentSpecRunReport(agentSpec) : undefined;
+  const base = {
+    ...(execution.fromCache ? { fromCache: true } : {}),
+    ...(execution.toolsUsed && execution.toolsUsed.length > 0 ? { toolsUsed: execution.toolsUsed } : {}),
+    response,
+    runId
+  };
 
   if (!contextWindow) {
-    return agentSpecReport ? { agentSpec: agentSpecReport, response, runId } : { response, runId };
+    return agentSpecReport ? { ...base, agentSpec: agentSpecReport } : base;
   }
 
   return agentSpecReport
-    ? { agentSpec: agentSpecReport, contextWindow, response, runId }
-    : { contextWindow, response, runId };
+    ? { ...base, agentSpec: agentSpecReport, contextWindow }
+    : { ...base, contextWindow };
 }
 
 function recordContextWindowSpanAttributes(
@@ -746,6 +1143,20 @@ function toAgentSpecRunReport(resolution: AgentSpecResolution): AgentSpecRunRepo
 function metadataString(metadata: JsonObject | undefined, key: string): string | undefined {
   const value = metadata?.[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function ragFilters(metadata: JsonObject | undefined): JsonObject | undefined {
+  const filters: Record<string, string> = {};
+
+  for (const key of ["tenantId", "workspaceId"] as const) {
+    const value = metadata?.[key];
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      filters[key] = value;
+    }
+  }
+
+  return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
 function toolCallsMetadata(toolCalls: readonly ModelToolCall[]): JsonObject {

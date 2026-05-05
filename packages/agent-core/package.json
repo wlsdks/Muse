@@ -18,11 +18,16 @@
   },
   "dependencies": {
     "@muse/agent-specs": "workspace:*",
+    "@muse/cache": "workspace:*",
     "@muse/memory": "workspace:*",
     "@muse/model": "workspace:*",
     "@muse/observability": "workspace:*",
     "@muse/policy": "workspace:*",
+    "@muse/prompts": "workspace:*",
+    "@muse/rag": "workspace:*",
+    "@muse/resilience": "workspace:*",
     "@muse/runtime-state": "workspace:*",
-    "@muse/shared": "workspace:*"
+    "@muse/shared": "workspace:*",
+    "@muse/tools": "workspace:*"
   }
 }

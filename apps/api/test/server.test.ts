@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createAgentRuntime } from "@muse/agent-core";
 import {
   AuthService,
   DefaultAuthProvider,
@@ -6,6 +7,7 @@ import {
   InMemoryUserStore,
   JwtTokenProvider
 } from "@muse/auth";
+import type { ModelProvider } from "@muse/model";
 import { InMemoryAgentRunHistoryStore } from "@muse/runtime-state";
 import { InMemoryScheduledJobExecutionStore, InMemoryScheduledJobStore } from "@muse/scheduler";
 import { buildServer } from "../src/server.js";
@@ -258,6 +260,68 @@ describe("api server", () => {
     expect(schedulerJobs.json()).toHaveLength(1);
     expect(executions.json()).toHaveLength(1);
   });
+
+  it("runs chat through AgentRuntime behind auth and exposes SSE-compatible output", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    const agentRuntime = createAgentRuntime({
+      historyStore,
+      modelProvider: createProvider("Runtime answer")
+    });
+    const server = buildServer({
+      agentRuntime,
+      authService,
+      defaultModel: "provider/model",
+      historyStore,
+      logger: false,
+      requireAuth: true
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const blocked = await server.inject({
+      method: "POST",
+      payload: { message: "Hello" },
+      url: "/api/chat"
+    });
+    const chat = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        message: "Hello",
+        metadata: { tenantId: "tenant-1", userId: "user-1" },
+        runId: "run-chat"
+      },
+      url: "/api/chat"
+    });
+    const stream = await server.inject({
+      headers,
+      method: "POST",
+      payload: { message: "Hello", runId: "run-stream" },
+      url: "/api/chat/stream"
+    });
+
+    expect(blocked.statusCode).toBe(401);
+    expect(chat.statusCode).toBe(200);
+    expect(chat.json()).toMatchObject({
+      model: "provider/model",
+      response: "Runtime answer",
+      runId: "run-chat"
+    });
+    expect(historyStore.findRun("run-chat")).toMatchObject({
+      input: "Hello",
+      status: "completed",
+      userId: "user-1"
+    });
+    expect(stream.statusCode).toBe(200);
+    expect(stream.headers["content-type"]).toContain("text/event-stream");
+    expect(stream.body).toContain("event: message");
+    expect(stream.body).toContain("event: done");
+  });
 });
 
 function createAuthService(): AuthService {
@@ -269,4 +333,21 @@ function createAuthService(): AuthService {
     revocationStore: new InMemoryTokenRevocationStore(),
     userStore
   });
+}
+
+function createProvider(output: string): ModelProvider {
+  return {
+    id: "test",
+    async generate(request) {
+      return {
+        id: "response-1",
+        model: request.model,
+        output
+      };
+    },
+    async listModels() {
+      return [];
+    },
+    async *stream() {}
+  };
 }

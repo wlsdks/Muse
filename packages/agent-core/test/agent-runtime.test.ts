@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryAgentSpecRegistry, RuleBasedAgentSpecResolver } from "@muse/agent-specs";
+import { InMemoryResponseCache } from "@muse/cache";
 import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
+import { DefaultRagPipeline, InMemoryRagCorpus, SimpleReranker } from "@muse/rag";
 import { InMemoryAgentRunHistoryStore } from "@muse/runtime-state";
+import { ToolRegistry } from "@muse/tools";
 import {
   createAgentRuntime,
   createInjectionInputGuard,
@@ -61,6 +64,27 @@ function createProvider(
         type: "done"
       };
     }
+  };
+}
+
+function createSequenceProvider(
+  responses: readonly ModelResponse[],
+  onGenerate?: (request: ModelRequest) => void
+): ModelProvider {
+  let index = 0;
+
+  return {
+    id: "test",
+    async generate(request) {
+      onGenerate?.(request);
+      const response = responses[Math.min(index, responses.length - 1)] ?? responses[responses.length - 1];
+      index += 1;
+      return { ...response, model: request.model };
+    },
+    async listModels() {
+      return [];
+    },
+    async *stream() {}
   };
 }
 
@@ -487,6 +511,96 @@ describe("AgentRuntime", () => {
         status: "queued"
       })
     ]);
+  });
+
+  it("runs RAG retrieval, tool execution, history, and cache as one execution graph", async () => {
+    const generated: ModelRequest[] = [];
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    const responseCache = new InMemoryResponseCache();
+    const corpus = new InMemoryRagCorpus();
+
+    corpus.add({
+      content: "The current invoice total is 42 credits.",
+      id: "doc-1",
+      metadata: { tenantId: "tenant-1" }
+    });
+
+    const ragPipeline = new DefaultRagPipeline({
+      retriever: corpus,
+      reranker: new SimpleReranker()
+    });
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: {
+          description: "Reads the current invoice total.",
+          inputSchema: { type: "object" },
+          name: "read_invoice",
+          risk: "read"
+        },
+        execute: () => ({ total: 42 })
+      }
+    ]);
+    const provider = createSequenceProvider(
+      [
+        {
+          id: "response-tool",
+          model: "test-model",
+          output: "I need the invoice tool.",
+          toolCalls: [{ arguments: {}, id: "tool-1", name: "read_invoice" }]
+        },
+        {
+          id: "response-final",
+          model: "test-model",
+          output: "The current invoice total is 42 credits."
+        }
+      ],
+      (request) => generated.push(request)
+    );
+    const runtime = createAgentRuntime({
+      historyStore,
+      maxToolCalls: 1,
+      modelProvider: provider,
+      ragPipeline,
+      responseCache,
+      toolRegistry
+    });
+    const input = {
+      messages: [{ content: "What is the current invoice total?", role: "user" as const }],
+      metadata: { tenantId: "tenant-1", userId: "user-1" },
+      model: "provider/model"
+    };
+
+    const first = await runtime.run({ ...input, runId: "run-integrated-1" });
+    const second = await runtime.run({ ...input, runId: "run-integrated-2" });
+
+    expect(first).toMatchObject({
+      response: { output: "The current invoice total is 42 credits." },
+      toolsUsed: ["read_invoice"]
+    });
+    expect(second).toMatchObject({
+      fromCache: true,
+      response: { output: "The current invoice total is 42 credits." }
+    });
+    expect(generated).toHaveLength(2);
+    expect(generated[0]).toMatchObject({
+      tools: [expect.objectContaining({ name: "read_invoice" })]
+    });
+    expect(generated[0]?.messages.find((message) => message.role === "system")?.content).toContain(
+      "[Retrieved Context]"
+    );
+    expect(generated[1]).toMatchObject({ tools: [] });
+    expect(generated[1]?.messages.map((message) => message.role)).toContain("tool");
+    expect(historyStore.listToolCalls("run-integrated-1")).toEqual([
+      expect.objectContaining({
+        id: "tool-1",
+        name: "read_invoice",
+        status: "completed"
+      })
+    ]);
+    expect(historyStore.findRun("run-integrated-2")).toMatchObject({
+      output: "The current invoice total is 42 credits.",
+      status: "completed"
+    });
   });
 
   it("continues when run history recording fails", async () => {

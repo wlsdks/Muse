@@ -1,4 +1,11 @@
 import {
+  GuardBlockedError,
+  OutputGuardBlockedError,
+  type AgentRunInput,
+  type AgentRuntime,
+  type AgentRunResult
+} from "@muse/agent-core";
+import {
   InMemoryAgentSpecRegistry,
   RuleBasedAgentSpecResolver,
   type AgentSpecInput,
@@ -23,10 +30,12 @@ import Fastify, { type FastifyInstance } from "fastify";
 
 export interface ServerOptions {
   readonly logger?: boolean;
+  readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry?: AgentSpecRegistry;
   readonly authService?: AuthService;
   readonly authRateLimiter?: AuthRateLimiter;
   readonly historyStore?: AgentRunHistoryStore;
+  readonly defaultModel?: string;
   readonly requireAuth?: boolean;
   readonly runtimeSettings?: RuntimeSettingsService;
   readonly scheduler?: {
@@ -81,6 +90,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     runner: "rust",
     server: "fastify"
   }));
+
+  server.post("/chat", async (request, reply) => runChat(request.body, reply, options));
+  server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options));
+  server.post("/chat/stream", async (request, reply) => runChatStream(request.body, reply, options));
+  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options));
 
   server.get("/admin/summary", async (request, reply) => {
     if (!authorizeAdmin(request, reply, Boolean(authService))) {
@@ -348,6 +362,138 @@ interface ApiError {
   readonly message: string;
 }
 
+async function runChat(
+  body: unknown,
+  reply: { status(statusCode: number): { send(payload: unknown): void } },
+  options: ServerOptions
+) {
+  if (!options.agentRuntime) {
+    return reply.status(503).send({
+      code: "AGENT_RUNTIME_UNAVAILABLE",
+      message: "Agent runtime is not configured"
+    });
+  }
+
+  const parsed = parseAgentRunInput(body, options.defaultModel ?? "default");
+
+  if (!parsed.ok) {
+    return reply.status(400).send(parsed.error);
+  }
+
+  try {
+    return toChatResponse(await options.agentRuntime.run(parsed.value));
+  } catch (error) {
+    return sendAgentError(reply, error);
+  }
+}
+
+async function runChatStream(
+  body: unknown,
+  reply: {
+    header(name: string, value: string): unknown;
+    status(statusCode: number): { send(payload: unknown): void };
+  },
+  options: ServerOptions
+) {
+  const response = await runChat(body, reply, options);
+
+  if (!isRecord(response) || typeof response.response !== "string") {
+    return response;
+  }
+
+  reply.header("content-type", "text/event-stream; charset=utf-8");
+  return [
+    `event: message\ndata: ${sseData(response.response)}\n`,
+    `event: done\ndata: ${sseData(JSON.stringify({ runId: response.runId }))}\n`
+  ].join("\n");
+}
+
+function parseAgentRunInput(value: unknown, defaultModel: string): ParseResult<AgentRunInput> {
+  if (!isRecord(value)) {
+    return invalid("INVALID_CHAT_REQUEST", "Body must be an object");
+  }
+
+  const messages = parseMessages(value.messages, value.message);
+
+  if (!messages) {
+    return invalid("INVALID_CHAT_REQUEST", "Body must include message or messages");
+  }
+
+  return {
+    ok: true,
+    value: {
+      messages,
+      metadata: isJsonObject(value.metadata) ? value.metadata : undefined,
+      model: typeof value.model === "string" && value.model.trim().length > 0 ? value.model : defaultModel,
+      runId: typeof value.runId === "string" && value.runId.trim().length > 0 ? value.runId : undefined
+    }
+  };
+}
+
+function parseMessages(messages: unknown, message: unknown): AgentRunInput["messages"] | undefined {
+  if (Array.isArray(messages)) {
+    const parsed = messages.flatMap((item) => {
+      if (!isRecord(item) || typeof item.content !== "string" || !isModelRole(item.role)) {
+        return [];
+      }
+
+      return [{
+        content: item.content,
+        name: optionalString(item.name),
+        role: item.role,
+        toolCallId: optionalString(item.toolCallId)
+      }];
+    });
+
+    return parsed.length === messages.length && parsed.length > 0 ? parsed : undefined;
+  }
+
+  return typeof message === "string" && message.trim().length > 0
+    ? [{ content: message, role: "user" }]
+    : undefined;
+}
+
+function isModelRole(value: unknown): value is AgentRunInput["messages"][number]["role"] {
+  return value === "system" || value === "user" || value === "assistant" || value === "tool";
+}
+
+function toChatResponse(result: AgentRunResult) {
+  return {
+    agentSpec: result.agentSpec,
+    contextWindow: result.contextWindow,
+    fromCache: result.fromCache ?? false,
+    model: result.response.model,
+    response: result.response.output,
+    runId: result.runId,
+    toolsUsed: result.toolsUsed ?? [],
+    usage: result.response.usage
+  };
+}
+
+function sendAgentError(
+  reply: { status(statusCode: number): { send(payload: ApiError): void } },
+  error: unknown
+) {
+  if (error instanceof GuardBlockedError) {
+    return reply.status(403).send({
+      code: error.code ?? "GUARD_BLOCKED",
+      message: error.message
+    });
+  }
+
+  if (error instanceof OutputGuardBlockedError) {
+    return reply.status(422).send({
+      code: error.code ?? "OUTPUT_GUARD_BLOCKED",
+      message: error.message
+    });
+  }
+
+  return reply.status(500).send({
+    code: "AGENT_RUN_FAILED",
+    message: error instanceof Error ? error.message : "Agent run failed"
+  });
+}
+
 function parseAgentSpecInput(value: unknown): ParseResult<AgentSpecInput> {
   if (!isRecord(value) || typeof value.name !== "string" || value.name.trim().length === 0) {
     return invalid("INVALID_AGENT_SPEC", "Body must include a non-empty name");
@@ -434,6 +580,34 @@ function invalid(code: string, message: string): ParseResult<never> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isJsonObject(value: unknown): value is NonNullable<AgentRunInput["metadata"]> {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.values(value).every(isJsonValue);
+}
+
+function isJsonValue(value: unknown): boolean {
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return true;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+
+  return isRecord(value) && Object.values(value).every(isJsonValue);
+}
+
+function sseData(value: string): string {
+  return value.split(/\r?\n/u).map((line) => line.length > 0 ? line : " ").join("\ndata: ");
 }
 
 function optionalString(value: unknown): string | undefined {
