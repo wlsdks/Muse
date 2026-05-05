@@ -1,4 +1,4 @@
-import { createAgentRuntime, type AgentRuntime } from "@muse/agent-core";
+import { createAgentRuntime, createSourceBlockResponseFilter, type AgentRuntime } from "@muse/agent-core";
 import { InMemoryAgentSpecRegistry, RuleBasedAgentSpecResolver } from "@muse/agent-specs";
 import {
   AuthService,
@@ -142,6 +142,9 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       metrics: agentMetrics,
       modelProvider,
       requestTimeoutMs: parseInteger(env.MUSE_MODEL_REQUEST_TIMEOUT_MS, 45_000),
+      responseFilters: parseBoolean(env.MUSE_RESPONSE_SOURCE_FILTER_ENABLED, true)
+        ? [createSourceBlockResponseFilter()]
+        : [],
       responseCache: parseBoolean(env.MUSE_CACHE_ENABLED, true) ? responseCache : undefined,
       retry: {
         initialDelayMs: parseInteger(env.MUSE_RETRY_INITIAL_DELAY_MS, 100),

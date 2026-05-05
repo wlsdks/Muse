@@ -35,7 +35,7 @@ import {
 } from "@muse/resilience";
 import type { AgentRunHistoryStore, AgentRunMode } from "@muse/runtime-state";
 import { trimConversationMessages, type ConversationTrimOptions } from "@muse/memory";
-import { detectSystemPromptLeakage, findInjectionPatterns, maskPii } from "@muse/policy";
+import { detectSystemPromptLeakage, findInjectionPatterns, maskPii, sanitizeSourceBlocks } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
 import { ToolExecutor, ToolRegistry, type ToolExecutionResult } from "@muse/tools";
 
@@ -87,6 +87,17 @@ export interface OutputGuardStage {
   check(content: string, context: OutputGuardContext): Awaitable<OutputGuardDecision>;
 }
 
+export interface ResponseFilterContext {
+  readonly runId: string;
+  readonly input: AgentRunInput;
+  readonly response: ModelResponse;
+}
+
+export interface ResponseFilterStage {
+  readonly id: string;
+  apply(response: ModelResponse, context: ResponseFilterContext): Awaitable<ModelResponse>;
+}
+
 export interface AgentSpecResolver {
   resolve(text: string): Awaitable<AgentSpecResolution | undefined>;
 }
@@ -112,6 +123,7 @@ export interface AgentRuntimeOptions {
   readonly guards?: readonly GuardStage[];
   readonly hooks?: readonly HookStage[];
   readonly outputGuards?: readonly OutputGuardStage[];
+  readonly responseFilters?: readonly ResponseFilterStage[];
   readonly defaults?: {
     readonly maxOutputTokens?: number;
     readonly temperature?: number;
@@ -199,6 +211,7 @@ export class AgentRuntime {
   private readonly guards: readonly GuardStage[];
   private readonly hooks: readonly HookStage[];
   private readonly outputGuards: readonly OutputGuardStage[];
+  private readonly responseFilters: readonly ResponseFilterStage[];
   private readonly defaults: AgentRuntimeOptions["defaults"];
 
   constructor(options: AgentRuntimeOptions) {
@@ -223,6 +236,7 @@ export class AgentRuntime {
     this.guards = options.guards ?? [];
     this.hooks = options.hooks ?? [];
     this.outputGuards = options.outputGuards ?? [];
+    this.responseFilters = options.responseFilters ?? [];
     this.defaults = options.defaults;
 
     if (!this.modelProvider && !this.modelRegistry) {
@@ -265,7 +279,8 @@ export class AgentRuntime {
           model: cached.model ?? selected.model,
           output: cached.content
         };
-        const guardedCachedResponse = await this.applyOutputGuards(context, cachedResponse);
+        const filteredCachedResponse = await this.applyResponseFilters(context, cachedResponse);
+        const guardedCachedResponse = await this.applyOutputGuards(context, filteredCachedResponse);
 
         await this.recordRunComplete(context, {
           finalResponse: guardedCachedResponse,
@@ -290,7 +305,8 @@ export class AgentRuntime {
         temperature: this.defaults?.temperature,
         tools
       });
-      const guardedResponse = await this.applyOutputGuards(context, execution.finalResponse);
+      const filteredResponse = await this.applyResponseFilters(context, execution.finalResponse);
+      const guardedResponse = await this.applyOutputGuards(context, filteredResponse);
 
       await this.recordRunComplete(context, { ...execution, finalResponse: guardedResponse });
       await this.writeCache(cacheKey, guardedResponse, execution.toolsUsed);
@@ -349,7 +365,8 @@ export class AgentRuntime {
           model: cached.model ?? selected.model,
           output: cached.content
         };
-        const guardedCachedResponse = await this.applyOutputGuards(context, cachedResponse);
+        const filteredCachedResponse = await this.applyResponseFilters(context, cachedResponse);
+        const guardedCachedResponse = await this.applyOutputGuards(context, filteredCachedResponse);
 
         await this.recordRunComplete(context, {
           finalResponse: guardedCachedResponse,
@@ -364,12 +381,13 @@ export class AgentRuntime {
         return;
       }
 
+      const forwardTextDeltas = this.canForwardRawStreamText();
       const stream = this.executeStreamingModelLoop(context, selected.provider, {
         ...preparedRequest.request,
         maxOutputTokens: this.defaults?.maxOutputTokens,
         temperature: this.defaults?.temperature,
         tools
-      });
+      }, { forwardTextDeltas });
 
       let next = await stream.next();
 
@@ -379,7 +397,8 @@ export class AgentRuntime {
       }
 
       const execution = next.value;
-      const response = await this.applyOutputGuards(context, execution.finalResponse);
+      const filteredResponse = await this.applyResponseFilters(context, execution.finalResponse);
+      const response = await this.applyOutputGuards(context, filteredResponse);
       await this.recordRunComplete(context, {
         ...execution,
         finalResponse: response
@@ -387,6 +406,9 @@ export class AgentRuntime {
       await this.writeCache(cacheKey, response, execution.toolsUsed);
       await this.invokeHooks("afterComplete", context, response);
       this.recordAgentRun(context, response.model, "completed", startedAtMs);
+      if (!forwardTextDeltas && response.output.length > 0) {
+        yield { runId: context.runId, text: response.output, type: "text-delta" };
+      }
       yield { response, runId: context.runId, type: "done" };
     } catch (error) {
       runSpan.setError(error);
@@ -651,7 +673,8 @@ export class AgentRuntime {
   private async *executeStreamingModelLoop(
     context: AgentRunContext,
     provider: ModelProvider,
-    request: ModelRequest
+    request: ModelRequest,
+    options: StreamExecutionOptions
   ): AsyncGenerator<AgentRuntimeStreamEvent, ModelLoopExecution, void> {
     const intermediateMessages: ModelMessage[] = [];
     const toolResults: ExecutedToolResult[] = [];
@@ -665,7 +688,7 @@ export class AgentRuntime {
         ...request,
         messages,
         tools: activeTools
-      });
+      }, options);
       let next = await turnStream.next();
 
       while (!next.done) {
@@ -726,7 +749,8 @@ export class AgentRuntime {
   private async *streamModelTurn(
     context: AgentRunContext,
     provider: ModelProvider,
-    request: ModelRequest
+    request: ModelRequest,
+    options: StreamExecutionOptions
   ): AsyncGenerator<AgentRuntimeStreamEvent, StreamedModelTurn, void> {
     const span = this.tracer.startSpan("muse.model.stream", {
       "model.id": request.model,
@@ -741,7 +765,9 @@ export class AgentRuntime {
       for await (const event of provider.stream(request)) {
         if (event.type === "text-delta") {
           streamedOutput += event.text;
-          yield { ...event, runId: context.runId };
+          if (options.forwardTextDeltas) {
+            yield { ...event, runId: context.runId };
+          }
           continue;
         }
 
@@ -914,6 +940,33 @@ export class AgentRuntime {
     return retry(operation, this.retry);
   }
 
+  private async applyResponseFilters(context: AgentRunContext, response: ModelResponse): Promise<ModelResponse> {
+    let filtered = response;
+
+    for (const stage of this.responseFilters) {
+      const span = this.tracer.startSpan("muse.response_filter.apply", {
+        "response_filter.id": stage.id,
+        "run.id": context.runId
+      });
+
+      try {
+        filtered = await stage.apply(filtered, {
+          input: context.input,
+          response: filtered,
+          runId: context.runId
+        });
+        span.setAttribute("response_filter.applied", true);
+      } catch (error) {
+        span.setError(error);
+        span.setAttribute("response_filter.applied", false);
+      } finally {
+        span.end();
+      }
+    }
+
+    return filtered;
+  }
+
   private async applyOutputGuards(context: AgentRunContext, response: ModelResponse): Promise<ModelResponse> {
     let guarded = response;
 
@@ -963,6 +1016,10 @@ export class AgentRuntime {
     }
 
     return guarded;
+  }
+
+  private canForwardRawStreamText(): boolean {
+    return this.responseFilters.length === 0 && this.outputGuards.length === 0;
   }
 
   private async invokeHooks(name: "beforeStart", context: AgentRunContext): Promise<void>;
@@ -1144,6 +1201,10 @@ interface ExecutedToolResult {
 
 interface StreamedModelTurn {
   readonly response: ModelResponse;
+}
+
+interface StreamExecutionOptions {
+  readonly forwardTextDeltas: boolean;
 }
 
 function blockedToolResult(toolCall: ModelToolCall, output: string): ExecutedToolResult {
@@ -1332,6 +1393,31 @@ export function createSystemPromptLeakageOutputGuard(options: {
   };
 }
 
+export function createSourceBlockResponseFilter(): ResponseFilterStage {
+  return {
+    apply: (response) => {
+      const result = sanitizeSourceBlocks(response.output);
+
+      if (!result.removed) {
+        return response;
+      }
+
+      return {
+        ...response,
+        output: result.content,
+        raw: {
+          ...(isRecord(response.raw) ? response.raw : {}),
+          museResponseFilter: {
+            id: "source-block-response-filter",
+            reason: result.reason
+          }
+        }
+      };
+    },
+    id: "source-block-response-filter"
+  };
+}
+
 function joinMessages(messages: readonly ModelMessage[]): string {
   return messages
     .filter((message) => message.role === "user" || message.role === "system")
@@ -1383,6 +1469,10 @@ function toAgentSpecRunReport(resolution: AgentSpecResolution): AgentSpecRunRepo
 function metadataString(metadata: JsonObject | undefined, key: string): string | undefined {
   const value = metadata?.[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function ragFilters(metadata: JsonObject | undefined): JsonObject | undefined {

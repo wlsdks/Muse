@@ -11,6 +11,7 @@ import {
   createInjectionInputGuard,
   createPiiInputGuard,
   createPiiMaskingOutputGuard,
+  createSourceBlockResponseFilter,
   createSystemPromptLeakageOutputGuard,
   GuardBlockedError,
   ModelRoutingError,
@@ -445,6 +446,66 @@ describe("AgentRuntime", () => {
       code: "SYSTEM_PROMPT_LEAKAGE",
       stageId: "system-prompt-leakage-output-guard"
     });
+  });
+
+  it("filters copied source blocks before output guards and hooks run", async () => {
+    const afterComplete = vi.fn();
+    const runtime = createAgentRuntime({
+      hooks: [{ afterComplete, id: "observer" }],
+      modelProvider: createProvider({
+        output: [
+          "The answer is 42.",
+          "",
+          "Sources:",
+          "- [Invoice docs](https://example.test/invoice)"
+        ].join("\n")
+      }),
+      responseFilters: [createSourceBlockResponseFilter()]
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "Summarize the invoice", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toBe("The answer is 42.");
+    expect(afterComplete).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ output: "The answer is 42." })
+    );
+  });
+
+  it("buffers streamed text when response filters are configured", async () => {
+    const provider = createStreamingSequenceProvider([
+      {
+        id: "stream-source",
+        model: "test-model",
+        output: [
+          "The answer is 42.",
+          "",
+          "Sources:",
+          "- [Invoice docs](https://example.test/invoice)"
+        ].join("\n")
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      modelProvider: provider,
+      responseFilters: [createSourceBlockResponseFilter()]
+    });
+    const events = [];
+
+    for await (const event of runtime.stream({
+      messages: [{ content: "Summarize the invoice", role: "user" }],
+      model: "provider/model"
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toMatchObject([
+      { text: "The answer is 42.", type: "text-delta" },
+      { response: { output: "The answer is 42." }, type: "done" }
+    ]);
+    expect(JSON.stringify(events)).not.toContain("https://example.test/invoice");
   });
 
   it("records spans and metrics around a successful run", async () => {
