@@ -28,6 +28,7 @@ import {
 } from "@muse/runtime-settings";
 import type { AgentRunHistoryStore } from "@muse/runtime-state";
 import Fastify, { type FastifyInstance } from "fastify";
+import { registerAdminRoutes, type AdminRouteState } from "./admin-routes.js";
 import { registerMcpRoutes, type McpRouteMcp } from "./mcp-routes.js";
 import { registerQualityRoutes } from "./quality-routes.js";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
@@ -36,6 +37,7 @@ import { registerSlackRoutes, type SlackRouteOptions } from "./slack-routes.js";
 export interface ServerOptions {
   readonly logger?: boolean;
   readonly agentRuntime?: AgentRuntime;
+  readonly admin?: AdminRouteState;
   readonly agentSpecRegistry?: AgentSpecRegistry;
   readonly authService?: AuthService;
   readonly authRateLimiter?: AuthRateLimiter;
@@ -177,6 +179,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     authorizeAdmin: (request, reply) => authorizeAdmin(request, reply, Boolean(authService)),
     defaultModel: options.defaultModel,
     modelProvider: options.modelProvider
+  });
+  registerAdminRoutes(server, {
+    admin: options.admin,
+    authorizeAdmin: (request, reply) => authorizeAdmin(request, reply, Boolean(authService))
   });
   registerSlackRoutes(server, {
     agentRuntime: options.agentRuntime,

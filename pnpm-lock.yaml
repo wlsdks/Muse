@@ -146,12 +146,21 @@ importers:
       '@muse/auth':
         specifier: workspace:*
         version: link:../auth
+      '@muse/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@muse/mcp':
         specifier: workspace:*
         version: link:../mcp
       '@muse/model':
         specifier: workspace:*
         version: link:../model
+      '@muse/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@muse/resilience':
+        specifier: workspace:*
+        version: link:../resilience
       '@muse/runtime-settings':
         specifier: workspace:*
         version: link:../runtime-settings

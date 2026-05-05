@@ -275,6 +275,96 @@ describe("api server", () => {
     expect(executions.json()).toHaveLength(1);
   });
 
+  it("exposes admin metrics, cache, and circuit breaker operations", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    let breakerState = "open";
+    let allInvalidated = false;
+    const server = buildServer({
+      admin: {
+        cache: {
+          metrics: {
+            snapshot: () => ({ exactHits: 1, misses: 2 })
+          },
+          responseCache: {
+            invalidate: (key) => key === "cache-key",
+            invalidateAll: () => {
+              allInvalidated = true;
+            },
+            invalidateByPattern: (pattern) => pattern.length,
+            size: () => 3
+          }
+        },
+        observability: {
+          metrics: {
+            recordedEvents: () => [{ type: "agent_run" }]
+          },
+          tracer: {
+            recordedSpans: () => [{ name: "muse.agent.run" }]
+          }
+        },
+        resilience: {
+          circuitBreakerRegistry: {
+            getIfExists: (name) => name === "model.generate"
+              ? {
+                  metrics: () => ({ failureCount: 2 }),
+                  reset: () => {
+                    breakerState = "closed";
+                  },
+                  state: () => breakerState
+                }
+              : undefined,
+            names: () => ["model.generate"],
+            resetAll: () => {
+              breakerState = "closed";
+            }
+          }
+        }
+      },
+      authService,
+      logger: false,
+      requireAuth: true
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const metrics = await server.inject({ headers, method: "GET", url: "/admin/metrics" });
+    const cache = await server.inject({ headers, method: "GET", url: "/admin/cache" });
+    const cacheKey = await server.inject({ headers, method: "DELETE", url: "/admin/cache/cache-key" });
+    const cachePattern = await server.inject({
+      headers,
+      method: "POST",
+      payload: { pattern: "prefix*" },
+      url: "/admin/cache/invalidate-pattern"
+    });
+    const cacheAll = await server.inject({ headers, method: "DELETE", url: "/admin/cache" });
+    const breakers = await server.inject({
+      headers,
+      method: "GET",
+      url: "/admin/resilience/circuit-breakers"
+    });
+    const reset = await server.inject({
+      headers,
+      method: "POST",
+      url: "/admin/resilience/circuit-breakers/model.generate/reset"
+    });
+
+    expect(metrics.json()).toMatchObject({
+      events: [{ type: "agent_run" }],
+      spans: [{ name: "muse.agent.run" }]
+    });
+    expect(cache.json()).toEqual({ metrics: { exactHits: 1, misses: 2 }, size: 3 });
+    expect(cacheKey.json()).toEqual({ invalidated: true, key: "cache-key" });
+    expect(cachePattern.json()).toEqual({ invalidated: 7, pattern: "prefix*" });
+    expect(cacheAll.json()).toEqual({ invalidated: true });
+    expect(allInvalidated).toBe(true);
+    expect(breakers.json()).toMatchObject([{ name: "model.generate", state: "open" }]);
+    expect(reset.json()).toEqual({ name: "model.generate", state: "closed" });
+  });
+
   it("runs chat through AgentRuntime behind auth and exposes SSE-compatible output", async () => {
     const authService = createAuthService();
     const registered = authService.register({

@@ -8,6 +8,11 @@ import {
   JwtTokenProvider
 } from "@muse/auth";
 import {
+  InMemoryCacheMetricsRecorder,
+  InMemoryCacheStatsStore,
+  InMemoryResponseCache
+} from "@muse/cache";
+import {
   DefaultMcpTransportConnector,
   InMemoryMcpSecurityPolicyStore,
   InMemoryMcpServerStore,
@@ -15,6 +20,8 @@ import {
   McpSecurityPolicyProvider
 } from "@muse/mcp";
 import { OpenAICompatibleProvider, type ModelProvider } from "@muse/model";
+import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
+import { CircuitBreakerRegistry } from "@muse/resilience";
 import { InMemoryRuntimeSettingsStore, RuntimeSettingsService } from "@muse/runtime-settings";
 import { InMemoryAgentRunHistoryStore } from "@muse/runtime-state";
 import {
@@ -35,6 +42,11 @@ export interface MuseRuntimeAssembly {
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: InMemoryAgentSpecRegistry;
   readonly authService?: AuthService;
+  readonly cache: {
+    readonly metrics: InMemoryCacheMetricsRecorder;
+    readonly responseCache: InMemoryResponseCache;
+    readonly statsStore: InMemoryCacheStatsStore;
+  };
   readonly defaultModel?: string;
   readonly historyStore: InMemoryAgentRunHistoryStore;
   readonly mcp: {
@@ -44,7 +56,14 @@ export interface MuseRuntimeAssembly {
     readonly serverStore: InMemoryMcpServerStore;
   };
   readonly modelProvider?: ModelProvider;
+  readonly observability: {
+    readonly metrics: InMemoryAgentMetrics;
+    readonly tracer: InMemoryMuseTracer;
+  };
   readonly requireAuth: boolean;
+  readonly resilience: {
+    readonly circuitBreakerRegistry: CircuitBreakerRegistry;
+  };
   readonly runtimeSettings: RuntimeSettingsService;
   readonly scheduler: {
     readonly executionStore: InMemoryScheduledJobExecutionStore;
@@ -72,6 +91,18 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const agentSpecRegistry = new InMemoryAgentSpecRegistry();
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
   const historyStore = new InMemoryAgentRunHistoryStore();
+  const cacheStatsStore = new InMemoryCacheStatsStore();
+  const cacheMetrics = new InMemoryCacheMetricsRecorder(cacheStatsStore);
+  const responseCache = new InMemoryResponseCache({
+    maxSize: parseInteger(env.MUSE_CACHE_MAX_SIZE, 1_000),
+    ttlMs: parseInteger(env.MUSE_CACHE_TTL_MS, 3_600_000)
+  });
+  const agentMetrics = new InMemoryAgentMetrics();
+  const tracer = new InMemoryMuseTracer();
+  const circuitBreakerRegistry = new CircuitBreakerRegistry({
+    failureThreshold: parseInteger(env.MUSE_CIRCUIT_BREAKER_FAILURE_THRESHOLD, 5),
+    resetTimeoutMs: parseInteger(env.MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS, 30_000)
+  });
   const modelProvider = createModelProvider(env);
   const defaultModel = parseOptionalString(env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL);
   const mcpServerStore = new InMemoryMcpServerStore({
@@ -100,8 +131,22 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
+      cacheMetrics,
+      circuitBreaker: circuitBreakerRegistry.get("model.generate"),
+      contextWindow: {
+        maxContextWindowTokens: parseInteger(env.MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS, 128_000),
+        outputReserveTokens: parseInteger(env.MUSE_LLM_MAX_OUTPUT_TOKENS, 4_096)
+      },
       historyStore,
+      metrics: agentMetrics,
       modelProvider,
+      requestTimeoutMs: parseInteger(env.MUSE_MODEL_REQUEST_TIMEOUT_MS, 45_000),
+      responseCache: parseBoolean(env.MUSE_CACHE_ENABLED, true) ? responseCache : undefined,
+      retry: {
+        initialDelayMs: parseInteger(env.MUSE_RETRY_INITIAL_DELAY_MS, 100),
+        maxAttempts: parseInteger(env.MUSE_RETRY_MAX_ATTEMPTS, 3)
+      },
+      tracer,
       toolRegistry
     })
     : undefined;
@@ -124,6 +169,11 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     agentRuntime,
     agentSpecRegistry,
     authService,
+    cache: {
+      metrics: cacheMetrics,
+      responseCache,
+      statsStore: cacheStatsStore
+    },
     defaultModel,
     historyStore,
     mcp: {
@@ -133,7 +183,14 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       serverStore: mcpServerStore
     },
     modelProvider,
+    observability: {
+      metrics: agentMetrics,
+      tracer
+    },
     requireAuth: parseBoolean(env.MUSE_REQUIRE_AUTH, Boolean(authService)),
+    resilience: {
+      circuitBreakerRegistry
+    },
     runtimeSettings: new RuntimeSettingsService(new InMemoryRuntimeSettingsStore()),
     toolRegistry,
     scheduler: {
@@ -149,6 +206,14 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
   const assembly = createMuseRuntimeAssembly(options);
 
   return {
+    admin: {
+      cache: {
+        metrics: assembly.cache.metrics,
+        responseCache: assembly.cache.responseCache
+      },
+      observability: assembly.observability,
+      resilience: assembly.resilience
+    },
     agentRuntime: assembly.agentRuntime,
     agentSpecRegistry: assembly.agentSpecRegistry,
     authService: assembly.authService,
