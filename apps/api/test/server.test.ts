@@ -3280,10 +3280,19 @@ describe("api server", () => {
       name: "Member",
       password: "password-1"
     });
+    const manager = authService.register({
+      email: "manager_account",
+      name: "Manager",
+      password: "password-1"
+    });
+    authService.updateUserRole(manager.user.id, "admin_manager");
+    const managerLogin = authService.login("manager_account", "password-1");
     const server = buildServer({ authService, logger: false, requireAuth: true });
     const headers = { authorization: `Bearer ${admin.token}` };
+    const managerHeaders = { authorization: `Bearer ${managerLogin?.token ?? ""}` };
 
     const roles = await server.inject({ headers, method: "GET", url: "/api/admin/rbac/roles" });
+    const managerRoles = await server.inject({ headers: managerHeaders, method: "GET", url: "/api/admin/rbac/roles" });
     const roleUpdate = await server.inject({
       headers,
       method: "PUT",
@@ -3370,6 +3379,17 @@ describe("api server", () => {
     const runtimeRefresh = await server.inject({ headers, method: "POST", url: "/api/admin/settings/refresh" });
     const capabilities = await server.inject({ headers, method: "GET", url: "/api/admin/capabilities" });
     const dashboard = await server.inject({ headers, method: "GET", url: "/api/ops/dashboard" });
+    const managerDashboard = await server.inject({
+      headers: managerHeaders,
+      method: "GET",
+      url: "/api/ops/dashboard"
+    });
+    const managerToolPolicy = await server.inject({
+      headers: managerHeaders,
+      method: "PUT",
+      payload: { enabled: true },
+      url: "/api/tool-policy"
+    });
     const ragInitial = await server.inject({ headers, method: "GET", url: "/api/rag-ingestion/policy" });
     const blockedRagCandidates = await server.inject({ method: "GET", url: "/api/rag-ingestion/candidates" });
     const missingCandidateApprove = await server.inject({
@@ -3402,6 +3422,8 @@ describe("api server", () => {
     expect(roles.json()).toEqual(expect.arrayContaining([
       expect.objectContaining({ permissions: expect.arrayContaining(["settings:write"]), role: "ADMIN", scope: "FULL" })
     ]));
+    expect(managerLogin).toBeDefined();
+    expect(managerRoles.statusCode).toBe(403);
     expect(roleUpdate.json()).toEqual({ role: "ADMIN_DEVELOPER", userId: member.user.id });
     expect(authService.getUserById(member.user.id)).toMatchObject({ role: "admin_developer" });
     expect(invalidRole.statusCode).toBe(400);
@@ -3492,6 +3514,8 @@ describe("api server", () => {
       mcp: { total: 0 },
       scheduler: { totalJobs: 0 }
     });
+    expect(managerDashboard.statusCode).toBe(200);
+    expect(managerToolPolicy.statusCode).toBe(403);
     expect(ragInitial.json()).toMatchObject({ stored: null });
     expect(blockedRagCandidates.statusCode).toBe(401);
     expect(missingCandidateApprove.statusCode).toBe(404);

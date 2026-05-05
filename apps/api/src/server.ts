@@ -17,6 +17,7 @@ import {
   AuthService,
   extractBearerToken,
   isAnyAdmin,
+  isDeveloperAdmin,
   type AuthIdentity,
   type LoginResult
 } from "@muse/auth";
@@ -219,6 +220,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     authRateLimiter,
     authService,
     authorizeAdmin: (request, reply) => authorizeAdmin(request, reply, Boolean(authService)),
+    authorizeAnyAdmin: (request, reply) => authorizeAnyAdmin(request, reply, Boolean(authService)),
     apiPathRegistry: () => [...apiPaths].sort(),
     defaultModel: options.defaultModel,
     followupSuggestionStore: options.followupSuggestionStore,
@@ -1099,13 +1101,30 @@ function authorizeAdmin(
   reply: { status(statusCode: number): { send(payload: unknown): void } },
   authEnabled: boolean
 ): boolean {
+  return authorizeAdminRole(request, reply, authEnabled, isDeveloperAdmin);
+}
+
+function authorizeAnyAdmin(
+  request: unknown,
+  reply: { status(statusCode: number): { send(payload: unknown): void } },
+  authEnabled: boolean
+): boolean {
+  return authorizeAdminRole(request, reply, authEnabled, isAnyAdmin);
+}
+
+function authorizeAdminRole(
+  request: unknown,
+  reply: { status(statusCode: number): { send(payload: unknown): void } },
+  authEnabled: boolean,
+  isAllowed: (role: Parameters<typeof isAnyAdmin>[0]) => boolean
+): boolean {
   if (!authEnabled) {
     return true;
   }
 
   const identity = getAuthIdentity(request);
 
-  if (isAnyAdmin(identity?.role)) {
+  if (isAllowed(identity?.role)) {
     return true;
   }
 

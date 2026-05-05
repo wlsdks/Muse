@@ -36,6 +36,7 @@ export interface ReactorCompatibilityRouteOptions {
   readonly authRateLimiter: AuthRateLimiter;
   readonly authService?: AuthService;
   readonly authorizeAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
+  readonly authorizeAnyAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
   readonly apiPathRegistry?: () => readonly string[];
   readonly defaultModel?: string;
   readonly followupSuggestionStore?: FollowupSuggestionStore;
@@ -2503,21 +2504,21 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
   });
 
   server.get("/api/ops/dashboard", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
     return dashboardSummary(options);
   });
   server.get("/api/ops/metrics/names", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
     return ["agent_run", "tool_call", "cache", "scheduler"];
   });
   server.get("/api/admin/capabilities", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2525,7 +2526,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
   });
 
   server.get("/api/admin/platform/health", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2534,7 +2535,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
   server.get("/api/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
   server.get("/api/admin/doctor/summary", async (request, reply) => adminDiagnostic(request, reply, options, "summary"));
   server.get("/api/admin/platform/cache/stats", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2602,7 +2603,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     return saved;
   });
   server.get("/api/admin/platform/vectorstore/stats", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2812,21 +2813,21 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
   server.get("/api/admin/tenant/overview", async (request, reply) => tenantSummary(request, reply, options));
   server.get("/api/admin/tenant/usage", async (request, reply) => tenantSummary(request, reply, options));
   server.get("/api/admin/tenant/cost", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
     return options.admin?.operations?.costSummary() ?? { byModel: {}, byTenant: {}, totalCostUsd: "0.00000000" };
   });
   server.get("/api/admin/tenant/alerts", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
     return options.admin?.operations?.listAlerts() ?? [];
   });
   server.get("/api/admin/tenant/slo", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2834,7 +2835,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
   });
 
   server.get("/api/admin/sessions/overview", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2849,7 +2850,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     };
   });
   server.get("/api/admin/sessions", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2908,7 +2909,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     return reply.status(204).send();
   });
   server.get("/api/admin/sessions/:sessionId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -2937,14 +2938,14 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       : reply.status(404).send({ code: "SESSION_NOT_FOUND", message: `Session not found: ${sessionId}` });
   });
   server.get("/api/admin/users", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
     return summarizeUsers(await listAllRuns(options));
   });
   server.get("/api/admin/users/:userId/sessions", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -3237,7 +3238,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
   });
 
   server.get("/api/admin/tenant/quality", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -3250,7 +3251,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
   });
 
   server.get("/api/admin/tenant/tools", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -3262,7 +3263,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
   });
 
   server.get("/api/admin/tenant/quota", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -3298,7 +3299,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
   });
 
   server.get("/api/admin/platform/tenants/analytics", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
+    if (!options.authorizeAnyAdmin(request, reply)) {
       return reply;
     }
 
@@ -7219,7 +7220,7 @@ async function tenantSummary(
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions
 ) {
-  if (!options.authorizeAdmin(request, reply)) {
+  if (!options.authorizeAnyAdmin(request, reply)) {
     return reply;
   }
 
@@ -7499,7 +7500,7 @@ async function adminDiagnostic(
   options: ReactorCompatibilityRouteOptions,
   mode: "report" | "summary"
 ) {
-  if (!options.authorizeAdmin(request, reply)) {
+  if (!options.authorizeAnyAdmin(request, reply)) {
     return reply;
   }
 
