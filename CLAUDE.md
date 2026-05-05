@@ -41,6 +41,18 @@ Workflow framework: no default LangGraph.js dependency
 - Message pair integrity must be preserved.
 - Prompt and protocol changes need tests or snapshots once the scaffold exists.
 
+## Migration Redaction Rules
+
+Before moving Reactor content into Muse, remove or generalize private identifiers.
+
+Redact personal names, usernames, emails, phone numbers, account IDs, company/customer/vendor/team names,
+workspace or tenant names, private domains, internal URLs, repository paths, secrets, API keys, tokens,
+connection strings, and business-specific examples.
+
+Use synthetic replacements such as `example-user`, `example-tenant`, `sample-workspace`, and
+`example.com`. Public model provider names are allowed when documenting supported adapters. If a migrated
+fixture needs private-looking data to test behavior, rewrite it with synthetic values before committing.
+
 ## Planned Layout
 
 ```text

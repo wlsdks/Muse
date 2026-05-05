@@ -72,6 +72,26 @@ Carry these Reactor concepts forward:
 Do not migrate Reactor by copying Spring module boundaries. The Spring Boot modules are historical
 implementation detail. The durable asset is the runtime discipline above.
 
+## Migration Redaction Rules
+
+When moving code, docs, prompts, fixtures, reports, or examples from Reactor into Muse, remove private
+or identifying material before committing it.
+
+Redact or generalize:
+
+- Personal names, usernames, emails, phone numbers, addresses, and account identifiers.
+- Company, customer, vendor, team, workspace, tenant, Slack, Jira, GitHub, or domain names from migrated
+  private content.
+- API keys, tokens, secrets, hostnames, connection strings, internal URLs, and private repository paths.
+- Business-specific prompt examples, reports, traces, or fixtures that reveal real organizations or people.
+
+Use neutral replacements such as `example-user`, `example-tenant`, `sample-workspace`, and
+`example.com`. Provider names such as OpenAI, Anthropic, Gemini, OpenRouter, and Ollama are allowed when
+they describe public adapter support.
+
+If redaction would make a behavior test meaningless, keep the behavior and rewrite the fixture with
+synthetic data. If a value might identify a person or organization, do not migrate it as-is.
+
 ## Model-Agnostic Runtime
 
 The core runtime must call a Muse-owned abstraction, not OpenAI, Anthropic, Vercel AI SDK, or LangGraph
