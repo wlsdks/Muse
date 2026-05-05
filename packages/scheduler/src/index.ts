@@ -3,6 +3,7 @@ import type { McpManager } from "@muse/mcp";
 import { TimeoutError, withTimeout } from "@muse/resilience";
 import { createRunId, type JsonObject, type JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
+import { CronExpressionParser } from "cron-parser";
 import type { Insertable, Kysely, Selectable } from "kysely";
 
 export type Awaitable<T> = T | Promise<T>;
@@ -157,6 +158,11 @@ export interface ScheduledTaskHandle {
 
 export interface CronScheduler {
   schedule(job: ScheduledJob, callback: () => void): ScheduledTaskHandle | undefined;
+}
+
+export interface NodeCronSchedulerOptions {
+  readonly maxDelayMs?: number;
+  readonly now?: () => Date;
 }
 
 export interface DynamicSchedulerServiceOptions {
@@ -656,6 +662,63 @@ export class NoOpDistributedSchedulerLock implements DistributedSchedulerLock {
   release(): void {}
 }
 
+export class NodeCronScheduler implements CronScheduler {
+  private readonly maxDelayMs: number;
+  private readonly now: () => Date;
+
+  constructor(options: NodeCronSchedulerOptions = {}) {
+    this.maxDelayMs = Math.max(1, options.maxDelayMs ?? 2_147_483_647);
+    this.now = options.now ?? (() => new Date());
+  }
+
+  schedule(job: ScheduledJob, callback: () => void): ScheduledTaskHandle | undefined {
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleNext = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const now = this.now();
+      const nextRunAt = computeNextRunAt(job, now);
+      const delayMs = Math.max(0, nextRunAt.getTime() - now.getTime());
+      const boundedDelayMs = Math.min(delayMs, this.maxDelayMs);
+
+      timeout = setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
+
+        if (delayMs <= this.maxDelayMs) {
+          callback();
+        }
+
+        scheduleNext();
+      }, boundedDelayMs);
+    };
+
+    try {
+      scheduleNext();
+      return {
+        cancel() {
+          cancelled = true;
+
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+        }
+      };
+    } catch {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+
+      return undefined;
+    }
+  }
+}
+
 export class DynamicSchedulerService {
   private readonly store: ScheduledJobStore;
   private readonly dispatcher: ScheduledJobDispatcher;
@@ -892,6 +955,16 @@ export function normalizeScheduledJob(
   };
 }
 
+export function computeNextRunAt(
+  job: Pick<ScheduledJob, "cronExpression" | "timezone">,
+  from: Date = new Date()
+): Date {
+  return CronExpressionParser
+    .parse(job.cronExpression, { currentDate: from, tz: job.timezone })
+    .next()
+    .toDate();
+}
+
 export function normalizeScheduledJobExecution(
   input: ScheduledJobExecutionInput,
   options: { readonly id: string; readonly now: () => Date }
@@ -1072,7 +1145,9 @@ function validateCronExpression(cron: string): void {
     throw new SchedulerValidationError(`Invalid cron expression: ${cron}`);
   }
 
-  if (!fields.every((field) => /^[\d*/?,#LWA-Z-]+$/iu.test(field))) {
+  try {
+    CronExpressionParser.parse(cron);
+  } catch {
     throw new SchedulerValidationError(`Invalid cron expression: ${cron}`);
   }
 }

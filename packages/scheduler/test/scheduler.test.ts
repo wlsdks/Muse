@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryMcpServerStore, McpManager, type McpConnection } from "@muse/mcp";
 import {
   DynamicSchedulerService,
@@ -6,6 +6,7 @@ import {
   InMemoryScheduledJobStore,
   KyselyScheduledJobExecutionStore,
   KyselyScheduledJobStore,
+  NodeCronScheduler,
   NoOpDistributedSchedulerLock,
   ScheduledJobDispatcher,
   ScheduledJobExecutionRecorder,
@@ -13,6 +14,7 @@ import {
   ScheduledMcpToolInvoker,
   SchedulerMessagingService,
   SchedulerValidationError,
+  computeNextRunAt,
   createScheduledJobExecutionInsert,
   createScheduledJobInsert,
   mapScheduledJobExecutionRow,
@@ -26,6 +28,10 @@ import {
 } from "../src/index.js";
 import type { Kysely } from "kysely";
 import type { MuseDatabase } from "@muse/db";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("ScheduledJobValidator", () => {
   it("validates cron, timezone, retry, timeout, and type-specific fields", () => {
@@ -56,6 +62,46 @@ describe("ScheduledJobValidator", () => {
         name: "Agent"
       })
     ).toThrow(SchedulerValidationError);
+  });
+});
+
+describe("NodeCronScheduler", () => {
+  it("computes next run times and triggers callbacks on schedule", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    const job = normalizeScheduledJob(
+      {
+        agentPrompt: "Run",
+        cronExpression: "* * * * * *",
+        jobType: "agent",
+        name: "Every second",
+        timezone: "UTC"
+      },
+      {
+        id: "job-1",
+        now: () => new Date("2026-01-01T00:00:00.000Z")
+      }
+    );
+    let calls = 0;
+    const scheduler = new NodeCronScheduler({
+      now: () => new Date(Date.now())
+    });
+
+    expect(computeNextRunAt(job, new Date("2026-01-01T00:00:00.000Z")).toISOString()).toBe(
+      "2026-01-01T00:00:01.000Z"
+    );
+
+    const handle = scheduler.schedule(job, () => {
+      calls += 1;
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(calls).toBe(1);
+
+    handle?.cancel();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(calls).toBe(1);
   });
 });
 

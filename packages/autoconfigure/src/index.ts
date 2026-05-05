@@ -28,6 +28,7 @@ import {
   DynamicSchedulerService,
   InMemoryScheduledJobExecutionStore,
   InMemoryScheduledJobStore,
+  NodeCronScheduler,
   ScheduledJobDispatcher,
   ScheduledMcpToolInvoker,
   type ScheduledAgentExecutor
@@ -161,6 +162,9 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       agentExecutor: createScheduledAgentExecutor(() => agentRuntime, defaultModel),
       mcpInvoker: new ScheduledMcpToolInvoker(mcpManager)
     }),
+    cronScheduler: parseBoolean(env.MUSE_SCHEDULER_CRON_ENABLED, true)
+      ? new NodeCronScheduler()
+      : undefined,
     executionStore: schedulerExecutionStore,
     store: schedulerStore
   });
