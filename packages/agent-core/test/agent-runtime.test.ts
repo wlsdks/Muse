@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ModelProviderRegistry, type ModelProvider, type ModelResponse } from "@muse/model";
+import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import {
   createAgentRuntime,
   createInjectionInputGuard,
@@ -10,10 +10,15 @@ import {
   OutputGuardBlockedError
 } from "../src/index.js";
 
-function createProvider(response: Partial<ModelResponse> = {}, id = "test"): ModelProvider {
+function createProvider(
+  response: Partial<ModelResponse> = {},
+  id = "test",
+  onGenerate?: (request: ModelRequest) => void
+): ModelProvider {
   return {
     id,
     async generate(request) {
+      onGenerate?.(request);
       return {
         id: "response-1",
         model: request.model,
@@ -114,6 +119,38 @@ describe("AgentRuntime", () => {
         model: "claude-sonnet",
         output: "Anthropic response"
       }
+    });
+  });
+
+  it("trims context before the provider call when a context window is configured", async () => {
+    const onGenerate = vi.fn();
+    const runtime = createAgentRuntime({
+      contextWindow: {
+        estimator: { estimate: (text) => text.length },
+        insertSummary: false,
+        maxContextWindowTokens: 45,
+        outputReserveTokens: 0
+      },
+      modelProvider: createProvider({}, "test", onGenerate)
+    });
+
+    const result = await runtime.run({
+      messages: [
+        { content: "old", role: "user" },
+        { content: "answer", role: "assistant" },
+        { content: "latest", role: "user" }
+      ],
+      model: "provider/model"
+    });
+
+    expect(onGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [{ content: "latest", role: "user" }]
+      })
+    );
+    expect(result.contextWindow).toMatchObject({
+      removedCount: 2,
+      summaryInserted: false
     });
   });
 

@@ -3,8 +3,10 @@ import {
   parseModelName,
   type ModelMessage,
   type ModelProvider,
+  type ModelRequest,
   type ModelResponse
 } from "@muse/model";
+import { trimConversationMessages, type ConversationTrimOptions } from "@muse/memory";
 import { findInjectionPatterns, maskPii } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
 
@@ -58,6 +60,7 @@ export interface OutputGuardStage {
 export interface AgentRuntimeOptions {
   readonly modelProvider?: ModelProvider;
   readonly modelRegistry?: ModelProviderRegistry;
+  readonly contextWindow?: ConversationTrimOptions;
   readonly guards?: readonly GuardStage[];
   readonly hooks?: readonly HookStage[];
   readonly outputGuards?: readonly OutputGuardStage[];
@@ -70,6 +73,14 @@ export interface AgentRuntimeOptions {
 export interface AgentRunResult {
   readonly runId: string;
   readonly response: ModelResponse;
+  readonly contextWindow?: AgentContextWindowReport;
+}
+
+export interface AgentContextWindowReport {
+  readonly budgetTokens: number;
+  readonly estimatedTokens: number;
+  readonly removedCount: number;
+  readonly summaryInserted: boolean;
 }
 
 export class GuardBlockedError extends Error {
@@ -106,6 +117,7 @@ export class ModelRoutingError extends Error {
 export class AgentRuntime {
   private readonly modelProvider?: ModelProvider;
   private readonly modelRegistry?: ModelProviderRegistry;
+  private readonly contextWindow?: ConversationTrimOptions;
   private readonly guards: readonly GuardStage[];
   private readonly hooks: readonly HookStage[];
   private readonly outputGuards: readonly OutputGuardStage[];
@@ -114,6 +126,7 @@ export class AgentRuntime {
   constructor(options: AgentRuntimeOptions) {
     this.modelProvider = options.modelProvider;
     this.modelRegistry = options.modelRegistry;
+    this.contextWindow = options.contextWindow;
     this.guards = options.guards ?? [];
     this.hooks = options.hooks ?? [];
     this.outputGuards = options.outputGuards ?? [];
@@ -136,17 +149,16 @@ export class AgentRuntime {
 
     try {
       const selected = this.resolveProvider(input.model);
+      const preparedRequest = this.prepareModelRequest(input, selected.model);
       const response = await selected.provider.generate({
+        ...preparedRequest.request,
         maxOutputTokens: this.defaults?.maxOutputTokens,
-        messages: input.messages,
-        metadata: input.metadata,
-        model: selected.model,
         temperature: this.defaults?.temperature
       });
       const guardedResponse = await this.applyOutputGuards(context, response);
 
       await this.invokeHooks("afterComplete", context, guardedResponse);
-      return { response: guardedResponse, runId: context.runId };
+      return createRunResult(context.runId, guardedResponse, preparedRequest.contextWindow);
     } catch (error) {
       await this.invokeHooks("onError", context, error);
       throw error;
@@ -164,6 +176,40 @@ export class AgentRuntime {
     return {
       model,
       provider: this.modelProvider ?? failMissingProvider()
+    };
+  }
+
+  private prepareModelRequest(
+    input: AgentRunInput,
+    model: string
+  ): {
+    readonly contextWindow?: AgentContextWindowReport;
+    readonly request: Pick<ModelRequest, "messages" | "metadata" | "model">;
+  } {
+    if (!this.contextWindow) {
+      return {
+        request: {
+          messages: input.messages,
+          metadata: input.metadata,
+          model
+        }
+      };
+    }
+
+    const trimResult = trimConversationMessages(input.messages, this.contextWindow);
+
+    return {
+      contextWindow: {
+        budgetTokens: trimResult.budgetTokens,
+        estimatedTokens: trimResult.estimatedTokens,
+        removedCount: trimResult.removedCount,
+        summaryInserted: trimResult.summaryInserted
+      },
+      request: {
+        messages: trimResult.messages,
+        metadata: input.metadata,
+        model
+      }
     };
   }
 
@@ -239,6 +285,18 @@ export class AgentRuntime {
 
 export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
   return new AgentRuntime(options);
+}
+
+function createRunResult(
+  runId: string,
+  response: ModelResponse,
+  contextWindow: AgentContextWindowReport | undefined
+): AgentRunResult {
+  if (!contextWindow) {
+    return { response, runId };
+  }
+
+  return { contextWindow, response, runId };
 }
 
 export function createInjectionInputGuard(): GuardStage {

@@ -44,6 +44,9 @@ importers:
 
   packages/agent-core:
     dependencies:
+      '@muse/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@muse/model':
         specifier: workspace:*
         version: link:../model
