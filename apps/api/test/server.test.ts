@@ -2345,6 +2345,39 @@ describe("api server", () => {
       },
       url: "/api/admin/input-guard/rules"
     });
+    const missingInputRule = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/input-guard/rules/missing"
+    });
+    const missingInputUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        action: "block",
+        category: "security",
+        name: "Missing",
+        pattern: "ignore",
+        patternType: "keyword",
+        priority: 10
+      },
+      url: "/api/admin/input-guard/rules/missing"
+    });
+    const missingInputDelete = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/admin/input-guard/rules/missing"
+    });
+    const invalidOutputRule = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        action: "BLOCK",
+        name: "Invalid action",
+        pattern: "secret-[0-9]+"
+      },
+      url: "/api/output-guard/rules"
+    });
     const outputRule = await server.inject({
       headers,
       method: "POST",
@@ -2365,10 +2398,27 @@ describe("api server", () => {
       },
       url: "/api/output-guard/rules/simulate"
     });
+    const invalidOutputSimulation = await server.inject({
+      headers,
+      method: "POST",
+      payload: { content: "" },
+      url: "/api/output-guard/rules/simulate"
+    });
     const audits = await server.inject({
       headers,
       method: "GET",
       url: "/api/output-guard/rules/audits?limit=5"
+    });
+    const missingOutputUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { enabled: false },
+      url: "/api/output-guard/rules/missing"
+    });
+    const missingOutputDelete = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/output-guard/rules/missing"
     });
     const deletedInput = await server.inject({
       headers,
@@ -2390,6 +2440,23 @@ describe("api server", () => {
     expect(typeof inputRule.json().createdAt).toBe("string");
     expect(inputRules.json()).toMatchObject({ rules: [{ id: inputRule.json().id }], total: 1 });
     expect(invalidInputRule.statusCode).toBe(400);
+    expect(invalidInputRule.json()).toMatchObject({
+      error: "유효하지 않은 정규식 패턴",
+      timestamp: expect.any(String)
+    });
+    expect(invalidInputRule.json()).not.toHaveProperty("code");
+    expect(missingInputRule.statusCode).toBe(404);
+    expect(missingInputRule.body).toBe("");
+    expect(missingInputUpdate.statusCode).toBe(404);
+    expect(missingInputUpdate.body).toBe("");
+    expect(missingInputDelete.statusCode).toBe(404);
+    expect(missingInputDelete.body).toBe("");
+    expect(invalidOutputRule.statusCode).toBe(400);
+    expect(invalidOutputRule.json()).toMatchObject({
+      error: "Invalid action: BLOCK",
+      timestamp: expect.any(String)
+    });
+    expect(invalidOutputRule.json()).not.toHaveProperty("code");
     expect(outputRule.statusCode).toBe(201);
     expect(outputRule.json()).toMatchObject({ action: "REJECT", name: "Secret reject" });
     expect(typeof outputRule.json().createdAt).toBe("number");
@@ -2398,10 +2465,29 @@ describe("api server", () => {
       blockedByRuleId: outputRuleId,
       matchedRules: [{ action: "REJECT", ruleId: outputRuleId }]
     });
+    expect(invalidOutputSimulation.statusCode).toBe(400);
+    expect(invalidOutputSimulation.json()).toMatchObject({
+      details: { content: "content must not be blank" },
+      error: "요청 형식이 올바르지 않습니다",
+      timestamp: expect.any(String)
+    });
+    expect(invalidOutputSimulation.json()).not.toHaveProperty("code");
     expect(audits.json()).toMatchObject([
       { action: "CREATE", ruleId: outputRuleId },
       { action: "SIMULATE", ruleId: null }
     ]);
+    expect(missingOutputUpdate.statusCode).toBe(404);
+    expect(missingOutputUpdate.json()).toMatchObject({
+      error: "Output guard rule 'missing' not found",
+      timestamp: expect.any(String)
+    });
+    expect(missingOutputUpdate.json()).not.toHaveProperty("code");
+    expect(missingOutputDelete.statusCode).toBe(404);
+    expect(missingOutputDelete.json()).toMatchObject({
+      error: "Output guard rule 'missing' not found",
+      timestamp: expect.any(String)
+    });
+    expect(missingOutputDelete.json()).not.toHaveProperty("code");
     expect(deletedInput.json()).toEqual({ deleted: true, id: inputRule.json().id });
     expect(deletedOutput.statusCode).toBe(204);
   });

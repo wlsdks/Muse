@@ -1019,7 +1019,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
 
     const { id } = request.params as { readonly id: string };
     const rule = findCompatRecord(state.inputGuardRules, id);
-    return rule ? toInputGuardRuleResponse(rule) : notFound(reply, "INPUT_GUARD_RULE_NOT_FOUND");
+    return rule ? toInputGuardRuleResponse(rule) : reply.status(404).send();
   });
   server.post("/api/admin/input-guard/rules", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1027,7 +1027,9 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const error = validateInputGuardRule(request.body);
-    return error ? badRequest(reply, "INVALID_INPUT_GUARD_RULE", error) : toInputGuardRuleResponse(createInputGuardRule(request.body));
+    return error
+      ? reply.status(400).send(error)
+      : toInputGuardRuleResponse(createInputGuardRule(request.body));
   });
   server.put("/api/admin/input-guard/rules/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1038,11 +1040,13 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
     const existing = findCompatRecord(state.inputGuardRules, id);
 
     if (!existing) {
-      return notFound(reply, "INPUT_GUARD_RULE_NOT_FOUND");
+      return reply.status(404).send();
     }
 
     const error = validateInputGuardRule(request.body);
-    return error ? badRequest(reply, "INVALID_INPUT_GUARD_RULE", error) : toInputGuardRuleResponse(updateInputGuardRule(existing, request.body));
+    return error
+      ? reply.status(400).send(error)
+      : toInputGuardRuleResponse(updateInputGuardRule(existing, request.body));
   });
   server.delete("/api/admin/input-guard/rules/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1051,7 +1055,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
 
     const { id } = request.params as { readonly id: string };
     const deleted = state.inputGuardRules.delete(id);
-    return deleted ? { deleted: true, id } : notFound(reply, "INPUT_GUARD_RULE_NOT_FOUND");
+    return deleted ? { deleted: true, id } : reply.status(404).send();
   });
 }
 
@@ -1079,7 +1083,7 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
     const error = validateOutputGuardRule(request.body);
 
     if (error) {
-      return badRequest(reply, "INVALID_OUTPUT_GUARD_RULE", error);
+      return reply.status(400).send(error);
     }
 
     const rule = createOutputGuardRule(request.body);
@@ -1089,6 +1093,12 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
   server.post("/api/output-guard/rules/simulate", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
+    }
+
+    const error = validateOutputGuardSimulation(request.body);
+
+    if (error) {
+      return reply.status(400).send(error);
     }
 
     const response = simulateOutputGuardRules(request.body);
@@ -1109,13 +1119,13 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
     const existing = findCompatRecord(state.outputGuardRules, id);
 
     if (!existing) {
-      return notFound(reply, "OUTPUT_GUARD_RULE_NOT_FOUND");
+      return outputGuardRuleNotFound(reply, id);
     }
 
     const error = validateOutputGuardRule(request.body, true);
 
     if (error) {
-      return badRequest(reply, "INVALID_OUTPUT_GUARD_RULE", error);
+      return reply.status(400).send(error);
     }
 
     const rule = updateOutputGuardRule(existing, request.body);
@@ -1131,7 +1141,7 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
     const existing = findCompatRecord(state.outputGuardRules, id);
 
     if (!existing) {
-      return notFound(reply, "OUTPUT_GUARD_RULE_NOT_FOUND");
+      return outputGuardRuleNotFound(reply, id);
     }
 
     state.outputGuardRules.delete(existing.id);
@@ -4952,26 +4962,31 @@ function toInputGuardRuleResponse(record: JsonObject) {
   };
 }
 
-function validateInputGuardRule(bodyValue: unknown): string | undefined {
+function validateInputGuardRule(bodyValue: unknown): JsonObject | undefined {
   const body = toBody(bodyValue);
+  const name = readBodyString(body, "name") ?? "";
   const pattern = readBodyString(body, "pattern") ?? "";
   const patternType = typeof body.patternType === "string" ? body.patternType.trim().toLowerCase() : "regex";
   const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : "block";
 
+  if (name.length === 0) {
+    return validationErrorResponse({ name: "name은 필수입니다" });
+  }
+
   if (pattern.length === 0) {
-    return "pattern must not be blank";
+    return validationErrorResponse({ pattern: "pattern은 필수입니다" });
   }
 
   if (patternType !== "regex" && patternType !== "keyword") {
-    return "patternType must be regex or keyword";
+    return errorResponse("patternType은 regex 또는 keyword 여야 합니다");
   }
 
   if (action !== "block" && action !== "warn" && action !== "flag") {
-    return "action must be block, warn, or flag";
+    return errorResponse("action은 block, warn 또는 flag 여야 합니다");
   }
 
   if (patternType === "regex") {
-    return validateRegexPattern(pattern) ? "Invalid regex pattern" : undefined;
+    return validateRegexPattern(pattern) ? errorResponse("유효하지 않은 정규식 패턴") : undefined;
   }
 
   return undefined;
@@ -5030,16 +5045,29 @@ function toOutputGuardRuleResponse(record: JsonObject) {
   };
 }
 
-function validateOutputGuardRule(bodyValue: unknown, partial = false): string | undefined {
+function validateOutputGuardRule(bodyValue: unknown, partial = false): JsonObject | undefined {
   const body = toBody(bodyValue);
   const action = body.action;
+  const name = body.name;
   const pattern = body.pattern;
+
+  if (!partial && !readBodyString(body, "name")) {
+    return validationErrorResponse({ name: "name must not be blank" });
+  }
+
+  if (typeof name === "string" && name.length > 120) {
+    return validationErrorResponse({ name: "name must not exceed 120 characters" });
+  }
 
   if (!partial || action !== undefined) {
     const normalizedAction = typeof action === "string" ? action.trim().toUpperCase() : "";
 
+    if (normalizedAction.length === 0) {
+      return validationErrorResponse({ action: "action must not be blank" });
+    }
+
     if (!["MASK", "REJECT"].includes(normalizedAction)) {
-      return `Invalid action: ${String(action)}`;
+      return errorResponse(`Invalid action: ${String(action)}`);
     }
   }
 
@@ -5047,17 +5075,36 @@ function validateOutputGuardRule(bodyValue: unknown, partial = false): string | 
     const trimmed = typeof pattern === "string" ? pattern.trim() : "";
 
     if (trimmed.length === 0) {
-      return "Invalid pattern: pattern must not be blank after trimming";
+      return validationErrorResponse({ pattern: "pattern must not be blank" });
     }
 
     const regexError = validateRegexPattern(trimmed);
 
     if (regexError) {
-      return `Invalid pattern: ${regexError}`;
+      return errorResponse(`Invalid pattern: ${regexError}`);
     }
   }
 
   return undefined;
+}
+
+function validateOutputGuardSimulation(bodyValue: unknown): JsonObject | undefined {
+  const body = toBody(bodyValue);
+  const content = body.content;
+
+  if (!readBodyString(body, "content")) {
+    return validationErrorResponse({ content: "content must not be blank" });
+  }
+
+  if (typeof content === "string" && content.length > 50_000) {
+    return validationErrorResponse({ content: "content must not exceed 50000 characters" });
+  }
+
+  return undefined;
+}
+
+function outputGuardRuleNotFound(reply: FastifyReply, id: string) {
+  return reply.status(404).send(errorResponse(`Output guard rule '${id}' not found`));
 }
 
 function outputGuardAction(value: unknown): string {
