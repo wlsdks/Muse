@@ -865,12 +865,12 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
     const unknown = order.filter((stageName) => !known.has(stageName));
 
     if (order.length === 0 || unknown.length > 0) {
-      return reply.status(400).send({
-        code: "INVALID_INPUT_GUARD_ORDER",
-        message: unknown.length > 0
-          ? `Unknown stage: ${unknown.join(", ")}`
-          : "order must not be empty"
-      });
+      const knownStages = [...known].join(", ");
+      return reply.status(400).send(errorResponse(
+        unknown.length > 0
+          ? `알 수 없는 stage: [${unknown.join(", ")}] (등록된 stage: [${knownStages}])`
+          : "요청 형식이 올바르지 않습니다"
+      ));
     }
 
     await Promise.all(order.map((stageName, index) =>
@@ -926,12 +926,12 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
     const unknown = Object.keys(config).filter((key) => !allowed.has(key));
 
     if (stage.config.length === 0 || Object.keys(config).length === 0 || unknown.length > 0) {
-      return reply.status(400).send({
-        code: "INVALID_INPUT_GUARD_STAGE_CONFIG",
-        message: unknown.length > 0
-          ? `Unknown config key: ${unknown.join(", ")}`
-          : `${stageName} has no exposed tunable config`
-      });
+      const allowedKeys = [...allowed].join(", ");
+      return reply.status(400).send(errorResponse(
+        unknown.length > 0
+          ? `알 수 없는 config 키: [${unknown.join(", ")}] (허용: [${allowedKeys}])`
+          : `${stageName} 에는 노출된 tunable 파라미터가 없습니다`
+      ));
     }
 
     await Promise.all(Object.entries(config).map(([key, value]) =>
@@ -1917,7 +1917,10 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     }
 
     const record = findCompatRecord(state.promptExperiments, (request.params as { id: string }).id);
-    return record ? toPromptExperimentStatusResponse(record) : notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
+    const id = (request.params as { readonly id: string }).id;
+    return record
+      ? toPromptExperimentStatusResponse(record)
+      : reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
   });
   server.get("/api/prompt-lab/experiments/:id/trials", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1933,7 +1936,10 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     }
 
     const report = findCompatRecord(state.promptExperimentReports, (request.params as { readonly id: string }).id);
-    return report ? toPromptReportResponse(report) : notFound(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND");
+    const id = (request.params as { readonly id: string }).id;
+    return report
+      ? toPromptReportResponse(report)
+      : reply.status(404).send(errorResponse(`Experiment report not found: ${id}`));
   });
   server.post("/api/prompt-lab/auto-optimize", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -4914,8 +4920,9 @@ function findRecordByParam(
 }
 
 function respondPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
-  const record = findCompatRecord(state.promptExperiments, (request.params as { readonly id: string }).id);
-  return record ? toPromptExperimentResponse(record) : notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
+  const id = (request.params as { readonly id: string }).id;
+  const record = findCompatRecord(state.promptExperiments, id);
+  return record ? toPromptExperimentResponse(record) : reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
 }
 
 function createInputGuardRule(bodyValue: unknown): CompatRecord {
@@ -6300,15 +6307,11 @@ async function runPromptExperiment(
   const existing = findCompatRecord(state.promptExperiments, id);
 
   if (!existing) {
-    return notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
+    return reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
   }
 
   if (reactorEnumString(existing.status, "PENDING") !== "PENDING") {
-    return badRequest(
-      reply,
-      "INVALID_PROMPT_EXPERIMENT_STATUS",
-      `Experiment must be PENDING to run, current: ${existing.status}`
-    );
+    return reply.status(400).send(errorResponse(`Experiment must be PENDING to run, current: ${existing.status}`));
   }
 
   const running = await completePromptExperimentRun(existing, options);
@@ -6665,11 +6668,11 @@ function cancelPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
   const existing = findCompatRecord(state.promptExperiments, id);
 
   if (!existing) {
-    return notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
+    return reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
   }
 
   if (reactorEnumString(existing.status, "PENDING") !== "RUNNING") {
-    return badRequest(reply, "INVALID_PROMPT_EXPERIMENT_STATUS", "Only RUNNING experiments can be cancelled");
+    return reply.status(400).send(errorResponse("Only RUNNING experiments can be cancelled"));
   }
 
   const updated = createRecord(state.promptExperiments, {
@@ -6685,13 +6688,13 @@ function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) 
   const existing = findCompatRecord(state.promptExperiments, id);
 
   if (!existing) {
-    return notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
+    return reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
   }
 
   const report = findCompatRecord(state.promptExperimentReports, id);
 
   if (!report) {
-    return badRequest(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND", "No report available for this experiment");
+    return reply.status(400).send(errorResponse("No report available for this experiment"));
   }
 
   const recommendation = jsonObjectField(report.recommendation);
@@ -6699,7 +6702,7 @@ function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) 
   const activated = activatePromptVersionById(stringField(existing.templateId, ""), versionId);
 
   if (!activated) {
-    return badRequest(reply, "PROMPT_EXPERIMENT_ACTIVATION_FAILED", `Failed to activate version: ${versionId}`);
+    return reply.status(400).send(errorResponse(`Failed to activate version: ${versionId}`));
   }
 
   return {

@@ -1753,6 +1753,11 @@ describe("api server", () => {
       method: "POST",
       url: `/api/prompt-lab/experiments/${experimentId}/activate`
     });
+    const rerunCompleted = await server.inject({
+      headers,
+      method: "POST",
+      url: `/api/prompt-lab/experiments/${experimentId}/run`
+    });
     const templateAfterActivate = await server.inject({
       headers,
       method: "GET",
@@ -1770,6 +1775,11 @@ describe("api server", () => {
       },
       url: "/api/prompt-lab/experiments"
     });
+    const cancelPending = await server.inject({
+      headers,
+      method: "POST",
+      url: `/api/prompt-lab/experiments/${experimentWithoutReport.json().id}/cancel`
+    });
     const activateWithoutReport = await server.inject({
       headers,
       method: "POST",
@@ -1784,6 +1794,16 @@ describe("api server", () => {
       headers,
       method: "GET",
       url: `/api/prompt-lab/experiments/${experimentId}/trials`
+    });
+    const statusAfterDelete = await server.inject({
+      headers,
+      method: "GET",
+      url: `/api/prompt-lab/experiments/${experimentId}/status`
+    });
+    const experimentAfterDelete = await server.inject({
+      headers,
+      method: "GET",
+      url: `/api/prompt-lab/experiments/${experimentId}`
     });
     const reportAfterDelete = await server.inject({
       headers,
@@ -1864,10 +1884,44 @@ describe("api server", () => {
         status: "ACTIVE"
       }
     });
+    expect(rerunCompleted.statusCode).toBe(400);
+    expect(rerunCompleted.json()).toMatchObject({
+      error: "Experiment must be PENDING to run, current: COMPLETED",
+      timestamp: expect.any(String)
+    });
+    expect(rerunCompleted.json()).not.toHaveProperty("code");
+    expect(cancelPending.statusCode).toBe(400);
+    expect(cancelPending.json()).toMatchObject({
+      error: "Only RUNNING experiments can be cancelled",
+      timestamp: expect.any(String)
+    });
+    expect(cancelPending.json()).not.toHaveProperty("code");
     expect(activateWithoutReport.statusCode).toBe(400);
+    expect(activateWithoutReport.json()).toMatchObject({
+      error: "No report available for this experiment",
+      timestamp: expect.any(String)
+    });
+    expect(activateWithoutReport.json()).not.toHaveProperty("code");
     expect(deleted.statusCode).toBe(204);
     expect(trialsAfterDelete.json()).toEqual([]);
+    expect(statusAfterDelete.statusCode).toBe(404);
+    expect(statusAfterDelete.json()).toMatchObject({
+      error: `Experiment not found: ${experimentId}`,
+      timestamp: expect.any(String)
+    });
+    expect(statusAfterDelete.json()).not.toHaveProperty("code");
+    expect(experimentAfterDelete.statusCode).toBe(404);
+    expect(experimentAfterDelete.json()).toMatchObject({
+      error: `Experiment not found: ${experimentId}`,
+      timestamp: expect.any(String)
+    });
+    expect(experimentAfterDelete.json()).not.toHaveProperty("code");
     expect(reportAfterDelete.statusCode).toBe(404);
+    expect(reportAfterDelete.json()).toMatchObject({
+      error: `Experiment report not found: ${experimentId}`,
+      timestamp: expect.any(String)
+    });
+    expect(reportAfterDelete.json()).not.toHaveProperty("code");
   });
 
   it("runs Reactor prompt lab auto optimization from stored negative feedback", async () => {
@@ -3037,10 +3091,22 @@ describe("api server", () => {
       payload: { config: { requestsPerMinute: "12" } },
       url: "/api/admin/input-guard/stages/RateLimit/config"
     });
+    const invalidStageUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { config: { unknownKey: "12" } },
+      url: "/api/admin/input-guard/stages/RateLimit/config"
+    });
     const reorder = await server.inject({
       headers,
       method: "PUT",
       payload: { order: ["InputValidation", "RateLimit"] },
+      url: "/api/admin/input-guard/pipeline/reorder"
+    });
+    const invalidReorder = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { order: ["UnknownStage"] },
       url: "/api/admin/input-guard/pipeline/reorder"
     });
     const runtimeSet = await server.inject({
@@ -3134,6 +3200,18 @@ describe("api server", () => {
       updated: 1
     });
     expect(reorder.json()).toMatchObject({ order: ["InputValidation", "RateLimit"] });
+    expect(invalidStageUpdate.statusCode).toBe(400);
+    expect(invalidStageUpdate.json()).toMatchObject({
+      error: "알 수 없는 config 키: [unknownKey] (허용: [requestsPerMinute, requestsPerHour])",
+      timestamp: expect.any(String)
+    });
+    expect(invalidStageUpdate.json()).not.toHaveProperty("code");
+    expect(invalidReorder.statusCode).toBe(400);
+    expect(invalidReorder.json()).toMatchObject({
+      error: expect.stringContaining("알 수 없는 stage: [UnknownStage]"),
+      timestamp: expect.any(String)
+    });
+    expect(invalidReorder.json()).not.toHaveProperty("code");
     expect(runtimeSet.json()).toEqual({ key: "model.default", status: "updated", value: "provider/model" });
     expect(runtimeGet.json()).toMatchObject({ key: "model.default", type: "STRING", value: "provider/model" });
     expect(missingRuntimeSetting.statusCode).toBe(404);
