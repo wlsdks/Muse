@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MuseDatabase } from "@muse/db";
 import { KyselyAgentSpecRegistry } from "@muse/agent-specs";
+import { InMemoryTaskMemoryStore } from "@muse/memory";
 import { KyselyMcpSecurityPolicyStore, KyselyMcpServerStore } from "@muse/mcp";
 import { KyselyRuntimeSettingsStore } from "@muse/runtime-settings";
 import {
@@ -44,6 +45,17 @@ describe("autoconfigure", () => {
     expect(await assembly.adminOperationsStore.listTenants()).toEqual([]);
     expect(assembly.scheduler.store.list()).toEqual([]);
     expect(assembly.scheduler.service).toBeTruthy();
+    expect(assembly.taskMemoryStore).toBeInstanceOf(InMemoryTaskMemoryStore);
+
+    await assembly.taskMemoryStore.save({
+      goal: "Keep runtime migration context",
+      sessionId: "session-1",
+      taskId: "task-1"
+    });
+
+    expect(await assembly.taskMemoryStore.findActiveBySession("session-1")).toMatchObject({
+      taskId: "task-1"
+    });
   });
 
   it("assembles auth and API options when JWT secret is configured", () => {
@@ -60,6 +72,7 @@ describe("autoconfigure", () => {
     expect(options.requireAuth).toBe(true);
     expect(options.mcp.manager).toBeTruthy();
     expect(options.scheduler.store.list()).toEqual([]);
+    expect(options.taskMemoryMaintenance.purgeExpired(new Date())).toBe(0);
   });
 
   it("uses Kysely-backed stores when a database handle is provided", () => {

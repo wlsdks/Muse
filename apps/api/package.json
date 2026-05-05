@@ -18,6 +18,7 @@
     "@muse/autoconfigure": "workspace:*",
     "@muse/eval": "workspace:*",
     "@muse/integrations": "workspace:*",
+    "@muse/memory": "workspace:*",
     "@muse/mcp": "workspace:*",
     "@muse/model": "workspace:*",
     "@muse/promptlab": "workspace:*",

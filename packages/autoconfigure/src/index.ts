@@ -34,6 +34,7 @@ import {
   type McpSecurityPolicyStore,
   type McpServerStore
 } from "@muse/mcp";
+import { InMemoryTaskMemoryStore } from "@muse/memory";
 import { OpenAICompatibleProvider, type ModelProvider } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
 import { CircuitBreakerRegistry } from "@muse/resilience";
@@ -102,6 +103,7 @@ export interface MuseRuntimeAssembly {
     readonly serverStore: McpServerStore;
   };
   readonly modelProvider?: ModelProvider;
+  readonly taskMemoryStore: InMemoryTaskMemoryStore;
   readonly observability: {
     readonly metrics: InMemoryAgentMetrics;
     readonly tracer: InMemoryMuseTracer;
@@ -155,6 +157,10 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     resetTimeoutMs: parseInteger(env.MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS, 30_000)
   });
   const modelProvider = createModelProvider(env);
+  const taskMemoryStore = new InMemoryTaskMemoryStore({
+    maxTasks: parseInteger(env.MUSE_TASK_MEMORY_MAX_TASKS, 10_000),
+    retentionMs: parseInteger(env.MUSE_TASK_MEMORY_RETENTION_MS, 30 * 24 * 60 * 60 * 1_000)
+  });
   const defaultModel = parseOptionalString(env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL);
   const mcpServerStore = createMcpServerStore(db, env);
   const initialMcpPolicy = {
@@ -245,6 +251,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       serverStore: mcpServerStore
     },
     modelProvider,
+    taskMemoryStore,
     observability: {
       metrics: agentMetrics,
       tracer
@@ -354,6 +361,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     requireAuth: assembly.requireAuth,
     runtimeSettings: assembly.runtimeSettings,
     scheduler: assembly.scheduler,
+    taskMemoryMaintenance: assembly.taskMemoryStore,
     slack: {
       enabled: parseBoolean(env.MUSE_SLACK_ENABLED, false),
       signingSecret: parseOptionalString(env.MUSE_SLACK_SIGNING_SECRET)

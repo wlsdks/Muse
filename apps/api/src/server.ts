@@ -20,6 +20,7 @@ import {
   type AuthIdentity,
   type LoginResult
 } from "@muse/auth";
+import type { TaskMemoryMaintenance } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import {
   InMemoryRuntimeSettingsStore,
@@ -52,6 +53,7 @@ export interface ServerOptions {
   readonly runtimeSettings?: RuntimeSettingsService;
   readonly scheduler?: SchedulerRouteScheduler;
   readonly slack?: SlackRouteOptions;
+  readonly taskMemoryMaintenance?: TaskMemoryMaintenance;
 }
 
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
@@ -213,7 +215,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     modelProvider: options.modelProvider,
     pendingApprovalStore: options.pendingApprovalStore,
     runtimeSettings,
-    scheduler: options.scheduler
+    scheduler: options.scheduler,
+    taskMemoryMaintenance: options.taskMemoryMaintenance
   });
 
   if (authService) {

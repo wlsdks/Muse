@@ -110,6 +110,8 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
   always storing an unavailable judge result.
 - Agent eval replay compatibility now invokes the configured Muse agent runtime for a fresh replay run instead of
   re-evaluating the promoted source run.
+- Task Memory maintenance compatibility now uses a real Muse task memory store and Reactor-style unavailable errors
+  instead of static zero-delete responses.
 - Slack webhook compatibility now keeps `/api/slack/events` and `/api/slack/commands` registered when Slack is not
   enabled, returning 503 for socket-mode-style disabled POSTs and 405 for probe GETs.
 - Scheduler compatibility now matches Reactor's disabled-service stub: empty list/read-history responses stay 200,

@@ -34,12 +34,217 @@ export interface ConversationTrimResult {
   readonly summaryInserted: boolean;
 }
 
+type Awaitable<T> = T | Promise<T>;
+
+export type TaskStatus = "active" | "blocked" | "completed" | "cancelled";
+export type TaskPlanItemStatus = "pending" | "in_progress" | "completed" | "cancelled";
+
+export interface TaskPlanItem {
+  readonly step: string;
+  readonly status?: TaskPlanItemStatus;
+  readonly updatedAt?: Date;
+}
+
+export interface TaskDecision {
+  readonly summary: string;
+  readonly reason?: string;
+  readonly decidedAt?: Date;
+}
+
+export interface TaskBlocker {
+  readonly description: string;
+  readonly owner?: string;
+  readonly createdAt?: Date;
+}
+
+export interface TaskState {
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly userId?: string;
+  readonly goal: string;
+  readonly status?: TaskStatus;
+  readonly plan?: readonly TaskPlanItem[];
+  readonly decisions?: readonly TaskDecision[];
+  readonly blockers?: readonly TaskBlocker[];
+  readonly metadata?: Readonly<Record<string, string>>;
+  readonly createdAt?: Date;
+  readonly updatedAt?: Date;
+}
+
+export interface TaskMemoryStore {
+  save(state: TaskState): Awaitable<void>;
+  findById(taskId: string): Awaitable<TaskState | undefined>;
+  findActiveBySession(sessionId: string, userId?: string): Awaitable<TaskState | undefined>;
+  clear(taskId: string): Awaitable<void>;
+}
+
+export interface TaskMemoryMaintenance {
+  purgeExpired(now?: Date): Awaitable<number>;
+  purgeTerminalOlderThan(cutoff: Date): Awaitable<number>;
+}
+
 export const DEFAULT_CACHE_KEY_MAX_CHARS = 2_000;
 export const DEFAULT_TOKEN_CACHE_MAX_ENTRIES = 50_000;
 export const DEFAULT_TOKEN_CACHE_TTL_MS = 5 * 60 * 1_000;
 export const DEFAULT_MESSAGE_STRUCTURE_OVERHEAD = 20;
 export const DEFAULT_COMPACTION_THRESHOLD = 3;
 export const COMPACTION_SUMMARY_PREFIX = "[Conversation summary";
+export const DEFAULT_TASK_MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+
+export class InMemoryTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaintenance {
+  private readonly tasks = new Map<string, RequiredTaskState>();
+  private readonly activeTaskBySession = new Map<string, string>();
+  private readonly maxTasks: number;
+  private readonly retentionMs: number;
+
+  constructor(options: { readonly maxTasks?: number; readonly retentionMs?: number } = {}) {
+    this.maxTasks = Math.max(1, options.maxTasks ?? 10_000);
+    this.retentionMs = Math.max(1, options.retentionMs ?? DEFAULT_TASK_MEMORY_RETENTION_MS);
+  }
+
+  save(state: TaskState): void {
+    const normalized = normalizeTaskState(state);
+    this.tasks.set(normalized.taskId, normalized);
+
+    if (isActiveLike(normalized.status)) {
+      this.activeTaskBySession.set(sessionKey(normalized.sessionId, normalized.userId), normalized.taskId);
+
+      if (!normalized.userId) {
+        this.activeTaskBySession.set(sessionKey(normalized.sessionId), normalized.taskId);
+      }
+    } else {
+      this.removeActiveIndexFor(normalized.taskId);
+    }
+
+    this.trimOldest();
+  }
+
+  findById(taskId: string): TaskState | undefined {
+    const state = this.tasks.get(taskId);
+
+    if (!state || this.isExpired(state, new Date())) {
+      if (state) {
+        this.clear(taskId);
+      }
+
+      return undefined;
+    }
+
+    return state;
+  }
+
+  findActiveBySession(sessionId: string, userId?: string): TaskState | undefined {
+    const ids = [
+      userId ? this.activeTaskBySession.get(sessionKey(sessionId, userId)) : undefined,
+      this.activeTaskBySession.get(sessionKey(sessionId))
+    ].filter((value): value is string => Boolean(value));
+
+    for (const id of ids) {
+      const state = this.findById(id);
+
+      if (state && isActiveLike(state.status ?? "active") && isVisibleTo(state, userId)) {
+        return state;
+      }
+    }
+
+    return undefined;
+  }
+
+  clear(taskId: string): void {
+    this.tasks.delete(taskId);
+    this.removeActiveIndexFor(taskId);
+  }
+
+  purgeExpired(now = new Date()): number {
+    const ids = [...this.tasks.values()]
+      .filter((state) => this.isExpired(state, now))
+      .map((state) => state.taskId);
+
+    for (const id of ids) {
+      this.clear(id);
+    }
+
+    return ids.length;
+  }
+
+  purgeTerminalOlderThan(cutoff: Date): number {
+    const ids = [...this.tasks.values()]
+      .filter((state) => !isActiveLike(state.status) && state.updatedAt < cutoff)
+      .map((state) => state.taskId);
+
+    for (const id of ids) {
+      this.clear(id);
+    }
+
+    return ids.length;
+  }
+
+  private isExpired(state: RequiredTaskState, now: Date): boolean {
+    return state.updatedAt.getTime() + this.retentionMs <= now.getTime();
+  }
+
+  private trimOldest(): void {
+    while (this.tasks.size > this.maxTasks) {
+      const oldest = [...this.tasks.values()].sort((left, right) =>
+        left.updatedAt.getTime() - right.updatedAt.getTime()
+      )[0];
+
+      if (!oldest) {
+        return;
+      }
+
+      this.clear(oldest.taskId);
+    }
+  }
+
+  private removeActiveIndexFor(taskId: string): void {
+    for (const [key, value] of this.activeTaskBySession) {
+      if (value === taskId) {
+        this.activeTaskBySession.delete(key);
+      }
+    }
+  }
+}
+
+type RequiredTaskState = Omit<
+  Required<TaskState>,
+  "blockers" | "decisions" | "metadata" | "plan" | "userId"
+> & {
+  readonly blockers: readonly TaskBlocker[];
+  readonly decisions: readonly TaskDecision[];
+  readonly metadata: Readonly<Record<string, string>>;
+  readonly plan: readonly TaskPlanItem[];
+  readonly userId?: string;
+};
+
+function normalizeTaskState(state: TaskState): RequiredTaskState {
+  const now = new Date();
+  return {
+    blockers: state.blockers ?? [],
+    createdAt: state.createdAt ?? now,
+    decisions: state.decisions ?? [],
+    goal: state.goal,
+    metadata: state.metadata ?? {},
+    plan: state.plan ?? [],
+    sessionId: state.sessionId,
+    status: state.status ?? "active",
+    taskId: state.taskId,
+    updatedAt: state.updatedAt ?? state.createdAt ?? now,
+    ...(state.userId ? { userId: state.userId } : {})
+  };
+}
+
+function sessionKey(sessionId: string, userId?: string): string {
+  return userId && userId.length > 0 ? `${sessionId}::${userId}` : sessionId;
+}
+
+function isActiveLike(status: TaskStatus): boolean {
+  return status === "active" || status === "blocked";
+}
+
+function isVisibleTo(state: TaskState, userId: string | undefined): boolean {
+  return !userId || !state.userId || state.userId === userId;
+}
 
 export function createApproximateTokenEstimator(options: TokenEstimatorOptions = {}): TokenEstimator {
   const cacheKeyMaxChars = options.cacheKeyMaxChars ?? DEFAULT_CACHE_KEY_MAX_CHARS;

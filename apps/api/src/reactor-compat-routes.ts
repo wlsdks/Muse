@@ -9,6 +9,7 @@ import {
   type UserRole
 } from "@muse/auth";
 import type { McpServer } from "@muse/mcp";
+import type { TaskMemoryMaintenance } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import type { RuntimeSetting, RuntimeSettingsService, RuntimeSettingType } from "@muse/runtime-settings";
 import type {
@@ -39,6 +40,7 @@ export interface ReactorCompatibilityRouteOptions {
   readonly pendingApprovalStore?: PendingApprovalStore;
   readonly runtimeSettings: RuntimeSettingsService;
   readonly scheduler?: SchedulerRouteScheduler;
+  readonly taskMemoryMaintenance?: TaskMemoryMaintenance;
 }
 
 type CompatRecord = JsonObject & {
@@ -3085,7 +3087,12 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    return { actor: readAuthUserId(request) ?? "admin", deleted: 0 };
+    if (!options.taskMemoryMaintenance) {
+      return taskMemoryMaintenanceUnavailable(reply);
+    }
+
+    const deleted = await options.taskMemoryMaintenance.purgeExpired();
+    return { actor: readAuthUserId(request) ?? "admin", deleted };
   });
 
   server.post("/api/admin/task-memory/maintenance/purge-terminal", async (request, reply) => {
@@ -3099,8 +3106,22 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply.status(400).send({ code: "INVALID_RETENTION_WINDOW", message: "olderThanDays must be >= 1" });
     }
 
-    return { cutoff: new Date(Date.now() - olderThanDays * 86_400_000).toISOString(), deleted: 0 };
+    if (!options.taskMemoryMaintenance) {
+      return taskMemoryMaintenanceUnavailable(reply);
+    }
+
+    const cutoff = new Date(Date.now() - olderThanDays * 86_400_000);
+    const deleted = await options.taskMemoryMaintenance.purgeTerminalOlderThan(cutoff);
+    return { cutoff: cutoff.toISOString(), deleted };
   });
+}
+
+function taskMemoryMaintenanceUnavailable(reply: FastifyReply) {
+  return badRequest(
+    reply,
+    "TASK_MEMORY_MAINTENANCE_UNAVAILABLE",
+    "TaskMemoryMaintenance 미등록 — task memory 유지보수를 사용할 수 없습니다"
+  );
 }
 
 function registerAgentEvalCompatibilityRoutes(

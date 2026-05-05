@@ -16,6 +16,7 @@ import {
   McpSecurityPolicyProvider,
   type McpConnection
 } from "@muse/mcp";
+import { InMemoryTaskMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import {
   InMemoryAdminOperationsStore,
@@ -1972,7 +1973,8 @@ describe("api server", () => {
       logger: false,
       modelProvider: createProvider("{\"pass\":true,\"score\":0.92,\"reason\":\"acceptable run\"}"),
       pendingApprovalStore,
-      requireAuth: true
+      requireAuth: true,
+      taskMemoryMaintenance: new InMemoryTaskMemoryStore()
     });
     const headers = { authorization: `Bearer ${registered.token}` };
 
@@ -2828,6 +2830,50 @@ describe("api server", () => {
       }
     });
     expect(replay.json().deterministic.runId).not.toBe("run-source-eval");
+  });
+
+  it("matches Reactor task memory maintenance availability and purge semantics", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "task_memory_admin",
+      name: "Task Memory Admin",
+      password: "password-1"
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+    const unavailableServer = buildServer({
+      authService,
+      logger: false,
+      requireAuth: true
+    });
+    const unavailable = await unavailableServer.inject({
+      headers,
+      method: "POST",
+      url: "/api/admin/task-memory/maintenance/purge-expired"
+    });
+    const taskMemory = new InMemoryTaskMemoryStore();
+    await taskMemory.save({
+      goal: "Old completed task",
+      sessionId: "session-1",
+      status: "completed",
+      taskId: "task-old",
+      updatedAt: new Date("2026-01-01T00:00:00.000Z")
+    });
+    const server = buildServer({
+      authService,
+      logger: false,
+      requireAuth: true,
+      taskMemoryMaintenance: taskMemory
+    });
+    const purgeTerminal = await server.inject({
+      headers,
+      method: "POST",
+      url: "/api/admin/task-memory/maintenance/purge-terminal?olderThanDays=30"
+    });
+
+    expect(unavailable.statusCode).toBe(400);
+    expect(unavailable.json()).toMatchObject({ code: "TASK_MEMORY_MAINTENANCE_UNAVAILABLE" });
+    expect(purgeTerminal.statusCode).toBe(200);
+    expect(purgeTerminal.json()).toMatchObject({ deleted: 1 });
   });
 
   it("keeps Slack webhook probe routes available when Slack is not enabled", async () => {

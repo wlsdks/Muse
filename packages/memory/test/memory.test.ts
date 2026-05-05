@@ -4,6 +4,7 @@ import {
   computeApproximateTokens,
   createApproximateTokenEstimator,
   estimateConversationTokens,
+  InMemoryTaskMemoryStore,
   trimConversationMessages,
   type ConversationMessage,
   type TokenEstimator
@@ -168,6 +169,70 @@ describe("conversation trimming", () => {
     expect(result.summaryInserted).toBe(true);
     expect(result.messages[0]?.role).toBe("system");
     expect(result.messages[0]?.content.startsWith(COMPACTION_SUMMARY_PREFIX)).toBe(true);
+  });
+});
+
+describe("task memory store", () => {
+  it("finds active task memory by session and user fallback rules", async () => {
+    const store = new InMemoryTaskMemoryStore();
+
+    await store.save({
+      goal: "Keep migration context",
+      sessionId: "session-1",
+      taskId: "task-session"
+    });
+    await store.save({
+      goal: "User-specific context",
+      sessionId: "session-1",
+      taskId: "task-user",
+      userId: "user-1"
+    });
+
+    expect(await store.findActiveBySession("session-1", "user-1")).toMatchObject({
+      taskId: "task-user"
+    });
+    expect(await store.findActiveBySession("session-1")).toMatchObject({
+      taskId: "task-session"
+    });
+  });
+
+  it("purges terminal task memory older than the cutoff", async () => {
+    const store = new InMemoryTaskMemoryStore({ retentionMs: 365 * 24 * 60 * 60 * 1000 });
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    const fresh = new Date("2026-04-01T00:00:00.000Z");
+
+    await store.save({
+      goal: "Old completed task",
+      sessionId: "session-1",
+      status: "completed",
+      taskId: "old-task",
+      updatedAt: old
+    });
+    await store.save({
+      goal: "Fresh completed task",
+      sessionId: "session-1",
+      status: "completed",
+      taskId: "fresh-task",
+      updatedAt: fresh
+    });
+
+    expect(await store.purgeTerminalOlderThan(new Date("2026-02-01T00:00:00.000Z"))).toBe(1);
+    expect(await store.findById("old-task")).toBeUndefined();
+    expect(await store.findById("fresh-task")).toMatchObject({ taskId: "fresh-task" });
+  });
+
+  it("purges expired task memory by retention window", async () => {
+    const store = new InMemoryTaskMemoryStore({ retentionMs: 1000 });
+
+    await store.save({
+      goal: "Expired task",
+      sessionId: "session-1",
+      taskId: "expired-task",
+      updatedAt: new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    expect(await store.purgeExpired(new Date("2026-01-01T00:00:01.001Z"))).toBe(1);
+    expect(await store.findById("expired-task")).toBeUndefined();
   });
 });
 
