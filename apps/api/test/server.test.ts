@@ -475,6 +475,12 @@ describe("api server", () => {
       method: "GET",
       url: "/api/approvals?limit=500"
     });
+    const invalidLongReason = await server.inject({
+      headers: adminHeaders,
+      method: "POST",
+      payload: { reason: "x".repeat(501) },
+      url: "/api/approvals/approval-1/reject"
+    });
     await server.inject({
       headers: adminHeaders,
       method: "POST",
@@ -508,6 +514,12 @@ describe("api server", () => {
       items: [{ id: "approval-3", runId: "run-manager" }],
       limit: 200,
       total: 1
+    });
+    expect(invalidLongReason.statusCode).toBe(400);
+    expect(invalidLongReason.json()).toMatchObject({
+      details: { reason: "reason 은 500자 이하여야 합니다" },
+      error: "요청 형식이 올바르지 않습니다",
+      timestamp: expect.any(String)
     });
     await expect(adminApproval).resolves.toMatchObject({ approved: false, reason: "cleanup" });
     await expect(memberApproval).resolves.toMatchObject({ approved: false, reason: "cleanup" });

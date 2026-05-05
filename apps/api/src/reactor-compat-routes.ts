@@ -704,7 +704,13 @@ function registerApprovalCompatibilityRoutes(server: FastifyInstance, options: R
     }
 
     const { id } = request.params as { readonly id: string };
-    const success = await store.reject(id, readBodyNullableString(request.body, "reason") ?? undefined);
+    const reason = readBodyNullableString(request.body, "reason") ?? undefined;
+
+    if (reason && reason.length > 500) {
+      return reply.status(400).send(validationErrorResponse({ reason: "reason 은 500자 이하여야 합니다" }));
+    }
+
+    const success = await store.reject(id, reason);
     return {
       message: success ? "Rejected" : "Approval not found or already resolved",
       success
