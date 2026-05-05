@@ -145,6 +145,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
 }
 
 export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
+  const env = options.env ?? process.env;
   const assembly = createMuseRuntimeAssembly(options);
 
   return {
@@ -161,7 +162,11 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     modelProvider: assembly.modelProvider,
     requireAuth: assembly.requireAuth,
     runtimeSettings: assembly.runtimeSettings,
-    scheduler: assembly.scheduler
+    scheduler: assembly.scheduler,
+    slack: {
+      enabled: parseBoolean(env.MUSE_SLACK_ENABLED, false),
+      signingSecret: parseOptionalString(env.MUSE_SLACK_SIGNING_SECRET)
+    }
   };
 }
 

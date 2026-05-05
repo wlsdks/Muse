@@ -14,9 +14,10 @@
   "dependencies": {
     "@muse/agent-core": "workspace:*",
     "@muse/agent-specs": "workspace:*",
-    "@muse/autoconfigure": "workspace:*",
     "@muse/auth": "workspace:*",
+    "@muse/autoconfigure": "workspace:*",
     "@muse/eval": "workspace:*",
+    "@muse/integrations": "workspace:*",
     "@muse/mcp": "workspace:*",
     "@muse/model": "workspace:*",
     "@muse/promptlab": "workspace:*",

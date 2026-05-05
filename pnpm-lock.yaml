@@ -38,6 +38,9 @@ importers:
       '@muse/eval':
         specifier: workspace:*
         version: link:../../packages/eval
+      '@muse/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@muse/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp

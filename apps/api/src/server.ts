@@ -31,6 +31,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { registerMcpRoutes, type McpRouteMcp } from "./mcp-routes.js";
 import { registerQualityRoutes } from "./quality-routes.js";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
+import { registerSlackRoutes, type SlackRouteOptions } from "./slack-routes.js";
 
 export interface ServerOptions {
   readonly logger?: boolean;
@@ -45,6 +46,7 @@ export interface ServerOptions {
   readonly requireAuth?: boolean;
   readonly runtimeSettings?: RuntimeSettingsService;
   readonly scheduler?: SchedulerRouteScheduler;
+  readonly slack?: SlackRouteOptions;
 }
 
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
@@ -175,6 +177,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     authorizeAdmin: (request, reply) => authorizeAdmin(request, reply, Boolean(authService)),
     defaultModel: options.defaultModel,
     modelProvider: options.modelProvider
+  });
+  registerSlackRoutes(server, {
+    agentRuntime: options.agentRuntime,
+    defaultModel: options.defaultModel,
+    slack: options.slack
   });
 
   if (authService) {

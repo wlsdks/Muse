@@ -47,6 +47,20 @@ describe("autoconfigure", () => {
     expect(assembly.modelProvider?.id).toBe("openai-compatible");
   });
 
+  it("maps Slack API options from environment", () => {
+    const options = createApiServerOptions({
+      env: {
+        MUSE_SLACK_ENABLED: "true",
+        MUSE_SLACK_SIGNING_SECRET: "signing-secret"
+      }
+    });
+
+    expect(options.slack).toEqual({
+      enabled: true,
+      signingSecret: "signing-secret"
+    });
+  });
+
   it("parses primitive env values conservatively", () => {
     expect(parseBoolean(undefined, true)).toBe(true);
     expect(parseBoolean("yes", false)).toBe(true);

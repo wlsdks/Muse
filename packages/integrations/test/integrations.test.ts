@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   CommandRouter,
+  FetchSlackResponseUrlTransport,
+  SlackSignatureVerifier,
   WebhookDispatcher,
   parseSlackSlashCommand,
+  parseSlackUrlEncodedBody,
+  signSlackRequestBody,
   signWebhookPayload,
+  toSlackCommandAck,
+  verifySlackSignature,
   verifyWebhookSignature
 } from "../src/index.js";
 
@@ -31,6 +37,37 @@ describe("Slack command parsing", () => {
       userId: "user-1",
       workspaceId: "workspace-1"
     });
+  });
+
+  it("parses urlencoded Slack payloads and formats ack responses", () => {
+    const raw = "command=%2Fmuse&text=hello+world&user_id=user-1&channel_id=channel-1";
+    const payload = parseSlackUrlEncodedBody(raw);
+
+    expect(payload).toMatchObject({
+      channel_id: "channel-1",
+      command: "/muse",
+      text: "hello world",
+      user_id: "user-1"
+    });
+    expect(toSlackCommandAck({ text: "ok", visibility: "public" })).toEqual({
+      response_type: "in_channel",
+      text: "ok"
+    });
+  });
+
+  it("verifies Slack signatures and rejects replayed timestamps", () => {
+    const raw = "command=%2Fmuse&text=hello";
+    const timestamp = "1770000000";
+    const signature = signSlackRequestBody(raw, timestamp, "signing-secret");
+    const verifier = new SlackSignatureVerifier({
+      nowSeconds: () => 1_770_000_010,
+      signingSecret: "signing-secret"
+    });
+
+    expect(verifySlackSignature(raw, timestamp, signature, "signing-secret")).toBe(true);
+    expect(verifier.verify(timestamp, signature, raw)).toEqual({ ok: true });
+    expect(verifier.verify("1769990000", signature, raw)).toMatchObject({ ok: false });
+    expect(verifier.verify(timestamp, "v0=bad", raw)).toMatchObject({ ok: false });
   });
 });
 
@@ -94,5 +131,29 @@ describe("WebhookDispatcher", () => {
 
     expect(verifyWebhookSignature("{\"ok\":true}", signature, "secret-1")).toBe(true);
     expect(verifyWebhookSignature("{\"ok\":false}", signature, "secret-1")).toBe(false);
+  });
+
+  it("posts Slack response_url payloads as JSON", async () => {
+    const posts: Array<{ body: string | undefined; headers: HeadersInit | undefined; url: string }> = [];
+    const transport = new FetchSlackResponseUrlTransport(async (url, init) => {
+      posts.push({
+        body: typeof init?.body === "string" ? init.body : undefined,
+        headers: init?.headers,
+        url: String(url)
+      });
+
+      return new Response(null, { status: 204 });
+    });
+
+    await expect(transport.post("https://example.invalid/respond", { text: "ok" })).resolves.toEqual({
+      statusCode: 204
+    });
+    expect(posts).toEqual([
+      {
+        body: "{\"text\":\"ok\"}",
+        headers: { "content-type": "application/json" },
+        url: "https://example.invalid/respond"
+      }
+    ]);
   });
 });

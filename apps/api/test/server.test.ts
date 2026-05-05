@@ -7,6 +7,7 @@ import {
   InMemoryUserStore,
   JwtTokenProvider
 } from "@muse/auth";
+import { signSlackRequestBody, type SlackResponseUrlTransport } from "@muse/integrations";
 import {
   InMemoryMcpSecurityPolicyStore,
   InMemoryMcpServerStore,
@@ -637,6 +638,92 @@ describe("api server", () => {
     expect(evalRun.json().summary).toMatchObject({ passed: 1, total: 1 });
     expect(promptlabRun.statusCode).toBe(200);
     expect(promptlabRun.json().ranking[0]).toMatchObject({ variantId: "variant-a" });
+  });
+
+  it("handles signed Slack slash commands and posts response_url results", async () => {
+    let resolvePost!: (value: { readonly body: unknown; readonly url: string }) => void;
+    const posted = new Promise<{ readonly body: unknown; readonly url: string }>((resolve) => {
+      resolvePost = resolve;
+    });
+    const responseTransport: SlackResponseUrlTransport = {
+      post: async (url, body) => {
+        resolvePost({ body, url });
+        return { statusCode: 200 };
+      }
+    };
+    const agentRuntime = createAgentRuntime({
+      modelProvider: createProvider("Slack answer")
+    });
+    const server = buildServer({
+      agentRuntime,
+      defaultModel: "provider/model",
+      logger: false,
+      slack: {
+        enabled: true,
+        now: () => new Date(1_770_000_000_000),
+        responseTransport,
+        signingSecret: "signing-secret"
+      }
+    });
+    const raw = new URLSearchParams({
+      channel_id: "channel-1",
+      command: "/muse",
+      response_url: "https://example.invalid/respond",
+      team_id: "workspace-1",
+      text: "hello",
+      trigger_id: "trigger-1",
+      user_id: "user-1"
+    }).toString();
+    const timestamp = "1770000000";
+    const response = await server.inject({
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-slack-request-timestamp": timestamp,
+        "x-slack-signature": signSlackRequestBody(raw, timestamp, "signing-secret")
+      },
+      method: "POST",
+      payload: raw,
+      url: "/api/slack/commands"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      response_type: "ephemeral",
+      text: "Processing your request..."
+    });
+    await expect(posted).resolves.toEqual({
+      body: {
+        response_type: "in_channel",
+        text: "Slack answer"
+      },
+      url: "https://example.invalid/respond"
+    });
+  });
+
+  it("handles signed Slack URL verification events", async () => {
+    const server = buildServer({
+      logger: false,
+      slack: {
+        enabled: true,
+        now: () => new Date(1_770_000_000_000),
+        signingSecret: "signing-secret"
+      }
+    });
+    const raw = "{\"type\":\"url_verification\",\"challenge\":\"challenge-1\"}";
+    const timestamp = "1770000000";
+    const response = await server.inject({
+      headers: {
+        "content-type": "application/json",
+        "x-slack-request-timestamp": timestamp,
+        "x-slack-signature": signSlackRequestBody(raw, timestamp, "signing-secret")
+      },
+      method: "POST",
+      payload: raw,
+      url: "/api/slack/events"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ challenge: "challenge-1" });
   });
 });
 
