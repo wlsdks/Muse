@@ -5,6 +5,7 @@ import {
   createInternalBrandMaskResponseFilter,
   createMarkdownStripResponseFilter,
   createMaxLengthResponseFilter,
+  createPolicyStrongPriorWarningFilter,
   createReleaseRiskDataGapResponseFilter,
   createSanitizedTextResponseFilter,
   createSourceBlockResponseFilter,
@@ -480,6 +481,9 @@ function createResponseFilters(env: MuseEnvironment) {
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_FABRICATION_REFUSAL_ENABLED, true)
       ? [createFabricationRequestRefusalFilter()]
+      : []),
+    ...(parseBoolean(env.MUSE_RESPONSE_POLICY_STRONG_PRIOR_WARNING_ENABLED, true)
+      ? [createPolicyStrongPriorWarningFilter()]
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_SOURCE_FILTER_ENABLED, true)
       ? [createSourceBlockResponseFilter()]

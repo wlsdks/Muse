@@ -1759,6 +1759,57 @@ export function createFabricationRequestRefusalFilter(): ResponseFilterStage {
   };
 }
 
+export function createPolicyStrongPriorWarningFilter(): ResponseFilterStage {
+  const disclaimer =
+    ":warning: *참고*: 위 내용은 사내 Confluence 문서에서 확인된 정보가 아닙니다. " +
+    "실제 사내 규정은 Confluence 또는 인사팀에 직접 확인해 주세요.";
+  const policyQueryPattern =
+    /휴가|연차|반차|병가|경조사|출산휴가|육아휴직|재택근무|야근|수당|급여|상여금|명절|떡값|출장비|경비|정산|근태|복리후생|복지|사내\s*정책|회사\s*정책|규정|가이드라인|인사\s*규정|취업\s*규칙|윤리|컴플라이언스/i;
+  const genericFallbackPatterns = [
+    /회사마다\s*다를?/,
+    /회사마다\s*달라/,
+    /근로기준법(에|상|\s*에\s*따르면|\s*에\s*따라)/,
+    /고용보험법(에|상|\s*에\s*따르면|\s*에\s*따라)/,
+    /법적으로|법에\s*따라|법\s*상/,
+    /보통\s*회사들은/,
+    /일반적으로\s*(회사|기업|정책|\d|수당|휴가)/,
+    /기본적으로\s*\d+\s*일/,
+    /\d+\s*일까지\s*(사용|쓸\s*수)/,
+    /\d+\s*일\s*이상은?\s*출산\s*후에/
+  ];
+  const confluenceUrlPattern = /https?:\/\/[^\s]*\.atlassian\.net\/wiki\//i;
+
+  return {
+    apply: (response, context) => {
+      if (response.output.trim().length < 20) {
+        return response;
+      }
+
+      const userPrompt = joinUserMessages(context.input.messages);
+
+      if (!policyQueryPattern.test(userPrompt)) {
+        return response;
+      }
+      if (!genericFallbackPatterns.some((pattern) => pattern.test(response.output))) {
+        return response;
+      }
+      if ((context.toolsUsed ?? []).some((tool) => tool.startsWith("confluence_"))) {
+        return response;
+      }
+      if (confluenceUrlPattern.test(response.output)) {
+        return response;
+      }
+
+      return {
+        ...response,
+        output: `${response.output.trimEnd()}\n\n${disclaimer}`,
+        raw: withResponseFilterRaw(response, "policy-strong-prior-warning-filter")
+      };
+    },
+    id: "policy-strong-prior-warning-filter"
+  };
+}
+
 export function createZeroResultOverclaimResponseFilter(): ResponseFilterStage {
   const zeroResultPattern = /(0\s*건|검색 결과 0건|조회된 이슈가 없어|이슈는 없습니다|이슈가 없습니다)/i;
   const overclaimPattern =

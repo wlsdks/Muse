@@ -16,6 +16,7 @@ import {
   createMaxLengthResponseFilter,
   createPiiInputGuard,
   createPiiMaskingOutputGuard,
+  createPolicyStrongPriorWarningFilter,
   createReleaseRiskDataGapResponseFilter,
   createSanitizedTextResponseFilter,
   createSourceBlockResponseFilter,
@@ -704,6 +705,62 @@ describe("AgentRuntime", () => {
 
     expect(result.response.output).toContain("제공할 수 없습니다");
     expect(result.response.output).not.toContain("임의로 만든");
+  });
+
+  it("adds a warning when policy answers rely on generic prior without Confluence tools", async () => {
+    const runtime = createAgentRuntime({
+      modelProvider: createProvider({
+        output: "출산휴가는 근로기준법에 따르면 기본적으로 90일까지 사용할 수 있어요."
+      }),
+      responseFilters: [createPolicyStrongPriorWarningFilter()]
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "출산휴가 며칠까지 가능해?", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toContain(":warning:");
+    expect(result.response.output).toContain("Confluence");
+  });
+
+  it("does not add policy prior warnings when Confluence tools were used", async () => {
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: {
+          description: "Answers from Confluence.",
+          inputSchema: { type: "object" },
+          name: "confluence_answer_question",
+          risk: "read"
+        },
+        execute: () => ({ answer: "policy" })
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        {
+          id: "tool",
+          model: "test-model",
+          output: "도구 호출",
+          toolCalls: [{ arguments: {}, id: "tool-1", name: "confluence_answer_question" }]
+        },
+        {
+          id: "final",
+          model: "test-model",
+          output: "경조사 휴가는 회사마다 다를 수 있어요. 확인 부탁드려요."
+        }
+      ]),
+      responseFilters: [createPolicyStrongPriorWarningFilter()],
+      toolRegistry
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "경조사 휴가 며칠?", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toBe("경조사 휴가는 회사마다 다를 수 있어요. 확인 부탁드려요.");
   });
 
   it("removes zero-result overclaims when workspace tools were used", async () => {
