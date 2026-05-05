@@ -1,4 +1,14 @@
+import { lookup } from "node:dns/promises";
 import net from "node:net";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import {
+  getDefaultEnvironment,
+  StdioClientTransport,
+  type StdioServerParameters
+} from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { McpSecurityPolicyTable, McpServerTable, MuseDatabase } from "@muse/db";
 import { createRunId, type JsonObject, type JsonValue } from "@muse/shared";
 import type { MuseTool, ToolRisk } from "@muse/tools";
@@ -77,10 +87,23 @@ export interface McpTransportConnector {
   connect(server: McpServer, policy: McpSecurityPolicy): Promise<McpConnection>;
 }
 
+export interface DefaultMcpTransportConnectorOptions {
+  readonly clientName?: string;
+  readonly clientVersion?: string;
+  readonly requestTimeoutMs?: number;
+  readonly allowPrivateAddresses?: boolean;
+  readonly stderr?: StdioServerParameters["stderr"];
+}
+
+export interface McpServerValidationOptions {
+  readonly allowPrivateAddresses?: boolean;
+}
+
 export interface McpManagerOptions {
   readonly connector?: McpTransportConnector;
   readonly securityPolicyProvider?: McpSecurityPolicyProvider;
   readonly store?: McpServerStore;
+  readonly validation?: McpServerValidationOptions;
   readonly now?: () => Date;
 }
 
@@ -111,6 +134,7 @@ type McpSecurityPolicyInsert = Insertable<McpSecurityPolicyTable>;
 
 const defaultAllowedStdioCommands = ["npx", "node", "python", "python3", "uvx", "uv", "docker", "deno", "bun"] as const;
 const defaultMaxToolOutputLength = 50_000;
+const defaultMcpRequestTimeoutMs = 15_000;
 const minToolOutputLength = 1_024;
 const maxToolOutputLength = 500_000;
 const singletonPolicyId = "default";
@@ -251,6 +275,7 @@ export class McpSecurityPolicyProvider {
 export class McpManager {
   private readonly connector?: McpTransportConnector;
   private readonly securityPolicyProvider: McpSecurityPolicyProvider;
+  private readonly validation: McpServerValidationOptions;
   private readonly statuses = new Map<string, McpServerStatus>();
   private readonly connections = new Map<string, McpConnection>();
   private readonly tools = new Map<string, readonly McpRemoteTool[]>();
@@ -262,6 +287,7 @@ export class McpManager {
     this.connector = options.connector;
     this.securityPolicyProvider = options.securityPolicyProvider ?? new McpSecurityPolicyProvider();
     this.store = options.store ?? store;
+    this.validation = options.validation ?? {};
   }
 
   async register(input: McpServerInput): Promise<McpServer | undefined> {
@@ -310,7 +336,7 @@ export class McpManager {
       return false;
     }
 
-    const validation = validateMcpServer(server, await this.securityPolicyProvider.currentPolicy());
+    const validation = validateMcpServer(server, await this.securityPolicyProvider.currentPolicy(), this.validation);
 
     if (!validation.valid) {
       this.statuses.set(name, "failed");
@@ -365,6 +391,156 @@ export class McpManager {
     return [...this.connections.entries()].flatMap(([serverName, connection]) =>
       (this.tools.get(serverName) ?? []).map((tool) => createMcpMuseTool(serverName, tool, connection))
     );
+  }
+}
+
+export class DefaultMcpTransportConnector implements McpTransportConnector {
+  private readonly clientName: string;
+  private readonly clientVersion: string;
+  private readonly requestTimeoutMs: number;
+  private readonly allowPrivateAddresses: boolean;
+  private readonly stderr: StdioServerParameters["stderr"];
+
+  constructor(options: DefaultMcpTransportConnectorOptions = {}) {
+    this.allowPrivateAddresses = options.allowPrivateAddresses ?? false;
+    this.clientName = options.clientName ?? "muse";
+    this.clientVersion = options.clientVersion ?? "1.0.0";
+    this.requestTimeoutMs = options.requestTimeoutMs ?? defaultMcpRequestTimeoutMs;
+    this.stderr = options.stderr ?? "inherit";
+  }
+
+  async connect(server: McpServer, policy: McpSecurityPolicy): Promise<McpConnection> {
+    const validation = validateMcpServer(server, policy, {
+      allowPrivateAddresses: this.allowPrivateAddresses
+    });
+
+    if (!validation.valid) {
+      throw new McpConnectionError(validation.reason ?? "MCP server validation failed");
+    }
+
+    const client = new Client({
+      name: this.clientName,
+      version: this.clientVersion
+    });
+
+    try {
+      await this.validateRemoteHost(server);
+      const transport = this.createTransport(server, policy);
+
+      await client.connect(transport, { timeout: this.requestTimeoutMs });
+      return new SdkMcpConnection(client, this.requestTimeoutMs);
+    } catch (error) {
+      await closeQuietly(client);
+      throw new McpConnectionError(toErrorMessage(error));
+    }
+  }
+
+  private createTransport(server: McpServer, policy: McpSecurityPolicy): Transport {
+    if (server.transportType === "stdio") {
+      return this.createStdioTransport(server, policy);
+    }
+
+    if (server.transportType === "sse") {
+      return new SSEClientTransport(this.resolveRemoteUrl(server), {
+        requestInit: createRemoteRequestInit(server)
+      });
+    }
+
+    if (server.transportType === "streamable") {
+      return new StreamableHTTPClientTransport(this.resolveRemoteUrl(server), {
+        requestInit: createRemoteRequestInit(server)
+      });
+    }
+
+    throw new McpConnectionError("HTTP MCP transport is deprecated; use streamable instead");
+  }
+
+  private createStdioTransport(server: McpServer, policy: McpSecurityPolicy): StdioClientTransport {
+    const command = typeof server.config.command === "string" ? server.config.command : undefined;
+    const args = resolveStdioArgs(server);
+
+    if (!command || !validateStdioCommand(command, server.name, policy)) {
+      throw new McpConnectionError("STDIO command is not allowed");
+    }
+
+    if (!validateStdioArgs(args, server.name)) {
+      throw new McpConnectionError("STDIO args contain unsafe control characters");
+    }
+
+    return new StdioClientTransport({
+      args: [...args],
+      command,
+      cwd: resolveOptionalString(server.config.cwd),
+      env: resolveStdioEnv(server.config.env),
+      stderr: this.stderr
+    });
+  }
+
+  private resolveRemoteUrl(server: McpServer): URL {
+    const url = resolveOptionalString(server.config.url);
+
+    if (!url || !isPublicHttpUrl(url, { allowPrivateAddresses: this.allowPrivateAddresses })) {
+      throw new McpConnectionError("Remote MCP URL is not allowed");
+    }
+
+    return new URL(url);
+  }
+
+  private async validateRemoteHost(server: McpServer): Promise<void> {
+    if (this.allowPrivateAddresses || (server.transportType !== "sse" && server.transportType !== "streamable")) {
+      return;
+    }
+
+    const url = this.resolveRemoteUrl(server);
+
+    try {
+      const addresses = await lookup(url.hostname, { all: true });
+
+      if (addresses.length === 0 || addresses.some((address) => isPrivateOrReservedHost(address.address))) {
+        throw new McpConnectionError("Remote MCP URL resolves to a private or reserved address");
+      }
+    } catch (error) {
+      if (error instanceof McpConnectionError) {
+        throw error;
+      }
+
+      throw new McpConnectionError("Remote MCP URL host could not be verified");
+    }
+  }
+}
+
+class SdkMcpConnection implements McpConnection {
+  constructor(
+    private readonly client: Client,
+    private readonly requestTimeoutMs: number
+  ) {}
+
+  async listTools(): Promise<readonly McpRemoteTool[]> {
+    const result = await this.client.listTools(undefined, { timeout: this.requestTimeoutMs });
+
+    return result.tools.map((tool) => ({
+      description: tool.description ?? tool.title ?? tool.name,
+      inputSchema: toJsonObject(normalizeJsonValue(tool.inputSchema)),
+      name: tool.name,
+      risk: riskFromMcpAnnotations(tool.annotations)
+    }));
+  }
+
+  async callTool(toolName: string, args: JsonObject): Promise<string | JsonValue> {
+    const result = await this.client.callTool(
+      {
+        arguments: args,
+        name: toolName
+      },
+      undefined,
+      { timeout: this.requestTimeoutMs }
+    );
+
+    return formatMcpToolResult(result);
+  }
+
+  async close(): Promise<void> {
+    await this.client.close();
   }
 }
 
@@ -472,6 +648,13 @@ export class McpRegistryError extends Error {
   }
 }
 
+export class McpConnectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "McpConnectionError";
+  }
+}
+
 export function normalizeMcpServerInput(
   input: McpServerInput,
   options: {
@@ -508,7 +691,11 @@ export function normalizeMcpSecurityPolicy(input: McpSecurityPolicyInput, now: D
   };
 }
 
-export function validateMcpServer(server: McpServer, policy: McpSecurityPolicy): {
+export function validateMcpServer(
+  server: McpServer,
+  policy: McpSecurityPolicy,
+  options: McpServerValidationOptions = {}
+): {
   readonly reason?: string;
   readonly valid: boolean;
 } {
@@ -519,20 +706,39 @@ export function validateMcpServer(server: McpServer, policy: McpSecurityPolicy):
   if (server.transportType === "stdio") {
     const command = typeof server.config.command === "string" ? server.config.command : undefined;
 
-    if (!command || !policy.allowedStdioCommands.includes(command)) {
+    if (!command || !validateStdioCommand(command, server.name, policy)) {
       return { reason: "STDIO command is not allowed", valid: false };
+    }
+
+    if (!validateStdioArgs(resolveStdioArgs(server), server.name)) {
+      return { reason: "STDIO args contain unsafe control characters", valid: false };
     }
   }
 
-  if (server.transportType === "sse" || server.transportType === "streamable" || server.transportType === "http") {
+  if (server.transportType === "http") {
+    return { reason: "HTTP MCP transport is deprecated; use streamable instead", valid: false };
+  }
+
+  if (server.transportType === "sse" || server.transportType === "streamable") {
     const url = typeof server.config.url === "string" ? server.config.url : undefined;
 
-    if (!url || !isPublicHttpUrl(url)) {
+    if (!url || !isPublicHttpUrl(url, options)) {
       return { reason: "Remote MCP URL is not allowed", valid: false };
     }
   }
 
   return { valid: true };
+}
+
+export function validateStdioCommand(command: string, _serverName: string, policy: McpSecurityPolicy): boolean {
+  return !command.includes("..") &&
+    !command.includes("/") &&
+    !command.includes("\\") &&
+    policy.allowedStdioCommands.includes(command);
+}
+
+export function validateStdioArgs(args: readonly string[], _serverName: string): boolean {
+  return args.every((arg) => !/[\x00-\x08\x0B-\x1F]/u.test(arg));
 }
 
 export function isPrivateOrReservedHost(host: string | undefined): boolean {
@@ -567,14 +773,18 @@ export function isPrivateOrReservedHost(host: string | undefined): boolean {
     );
   }
 
-  return normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80");
+  return normalized === "::1" ||
+    normalized.startsWith("fc") ||
+    normalized.startsWith("fd") ||
+    normalized.startsWith("fe80");
 }
 
-export function isPublicHttpUrl(value: string): boolean {
+export function isPublicHttpUrl(value: string, options: McpServerValidationOptions = {}): boolean {
   try {
     const url = new URL(value);
 
-    return (url.protocol === "https:" || url.protocol === "http:") && !isPrivateOrReservedHost(url.hostname);
+    return (url.protocol === "https:" || url.protocol === "http:") &&
+      (options.allowPrivateAddresses || !isPrivateOrReservedHost(url.hostname));
   } catch {
     return false;
   }
@@ -689,10 +899,135 @@ function toStringArray(value: JsonValue): readonly string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function toJsonObject(value: JsonValue): JsonObject {
+function resolveStdioArgs(server: McpServer): readonly string[] {
+  return Array.isArray(server.config.args)
+    ? server.config.args.filter((arg): arg is string => typeof arg === "string")
+    : [];
+}
+
+function resolveOptionalString(value: JsonValue | undefined): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function resolveStdioEnv(value: JsonValue | undefined): Record<string, string> | undefined {
+  const custom = resolveStringRecord(value);
+  return custom ? { ...getDefaultEnvironment(), ...custom } : undefined;
+}
+
+function resolveStringRecord(value: JsonValue | undefined): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function createRemoteRequestInit(server: McpServer): RequestInit | undefined {
+  const token = resolveOptionalString(server.config.authToken) ?? resolveOptionalString(server.config.bearerToken);
+
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : undefined;
+}
+
+function riskFromMcpAnnotations(annotations: unknown): ToolRisk {
+  if (!annotations || typeof annotations !== "object" || Array.isArray(annotations)) {
+    return "read";
+  }
+
+  const values = annotations as Record<string, unknown>;
+
+  if (values.destructiveHint === true) {
+    return "execute";
+  }
+
+  if (values.readOnlyHint === false || values.idempotentHint === false) {
+    return "write";
+  }
+
+  return "read";
+}
+
+function formatMcpToolResult(result: unknown): string | JsonValue {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return normalizeJsonValue(result);
+  }
+
+  const value = result as Record<string, unknown>;
+  const prefix = value.isError === true ? "Error: " : "";
+
+  if ("structuredContent" in value && value.structuredContent !== undefined) {
+    return value.isError === true
+      ? `${prefix}${JSON.stringify(value.structuredContent)}`
+      : normalizeJsonValue(value.structuredContent);
+  }
+
+  if (Array.isArray(value.content)) {
+    const textBlocks = value.content
+      .map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          return undefined;
+        }
+
+        const block = item as Record<string, unknown>;
+        return block.type === "text" && typeof block.text === "string" ? block.text : undefined;
+      })
+      .filter((text): text is string => typeof text === "string");
+
+    if (textBlocks.length === value.content.length) {
+      return `${prefix}${textBlocks.join("\n")}`;
+    }
+
+    return value.isError === true ? `${prefix}${JSON.stringify(value.content)}` : normalizeJsonValue(value.content);
+  }
+
+  if ("toolResult" in value) {
+    return value.isError === true ? `${prefix}${String(value.toolResult)}` : normalizeJsonValue(value.toolResult);
+  }
+
+  return value.isError === true ? `${prefix}${JSON.stringify(value)}` : normalizeJsonValue(value);
+}
+
+function normalizeJsonValue(value: unknown): JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return Number.isNaN(value) ? null : value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(normalizeJsonValue);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter((entry) => entry[1] !== undefined && typeof entry[1] !== "function" && typeof entry[1] !== "symbol")
+        .map(([key, item]) => [key, normalizeJsonValue(item)])
+    );
+  }
+
+  return String(value);
+}
+
+function toJsonObject(value: unknown): JsonObject {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
 }
 
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
+}
+
+async function closeQuietly(client: Client): Promise<void> {
+  try {
+    await client.close();
+  } catch {
+    // Best-effort cleanup after failed MCP initialization.
+  }
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

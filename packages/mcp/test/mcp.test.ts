@@ -12,6 +12,7 @@ import {
   createMcpSecurityPolicyInsert,
   createMcpServerInsert,
   createMcpServerUpdate,
+  DefaultMcpTransportConnector,
   InMemoryMcpSecurityPolicyStore,
   InMemoryMcpServerStore,
   isPrivateOrReservedHost,
@@ -24,6 +25,8 @@ import {
   McpSecurityPolicyProvider,
   normalizeMcpSecurityPolicy,
   validateMcpServer,
+  validateStdioArgs,
+  validateStdioCommand,
   type McpConnection
 } from "../src/index.js";
 
@@ -139,6 +142,63 @@ describe("MCP security policy", () => {
         policy
       )
     ).toMatchObject({ valid: false });
+    expect(validateStdioCommand("node", "local", policy)).toBe(true);
+    expect(validateStdioCommand("./node", "local", policy)).toBe(false);
+    expect(validateStdioCommand("node/child", "local", policy)).toBe(false);
+    expect(validateStdioArgs(["--input-type=module", "line\nbreak"], "local")).toBe(true);
+    expect(validateStdioArgs([`bad${String.fromCharCode(0)}`], "local")).toBe(false);
+  });
+
+  it("allows private remote MCP URLs only when explicitly configured", () => {
+    expect(isPublicHttpUrl("http://127.0.0.1/mcp")).toBe(false);
+    expect(isPublicHttpUrl("http://127.0.0.1/mcp", { allowPrivateAddresses: true })).toBe(true);
+  });
+});
+
+describe("DefaultMcpTransportConnector", () => {
+  it("connects stdio MCP servers and calls tools through the SDK client", async () => {
+    const serverCode = [
+      'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";',
+      'import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";',
+      'const server = new McpServer({ name: "fixture-mcp", version: "1.0.0" });',
+      'server.registerTool("ping", { description: "Ping tool" }, async () => ({',
+      '  content: [{ type: "text", text: "pong" }]',
+      "}));",
+      "await server.connect(new StdioServerTransport());"
+    ].join("\n");
+    const policy = normalizeMcpSecurityPolicy({ allowedStdioCommands: ["node"] }, new Date());
+    const connector = new DefaultMcpTransportConnector({
+      requestTimeoutMs: 5_000,
+      stderr: "pipe"
+    });
+    const connection = await connector.connect(
+      {
+        autoConnect: false,
+        config: {
+          args: ["--input-type=module", "-e", serverCode],
+          command: "node"
+        },
+        createdAt: new Date(),
+        id: "server-1",
+        name: "local",
+        transportType: "stdio",
+        updatedAt: new Date()
+      },
+      policy
+    );
+
+    try {
+      expect(await connection.listTools()).toMatchObject([
+        {
+          description: "Ping tool",
+          name: "ping",
+          risk: "read"
+        }
+      ]);
+      await expect(connection.callTool?.("ping", {})).resolves.toBe("pong");
+    } finally {
+      await connection.close?.();
+    }
   });
 });
 
