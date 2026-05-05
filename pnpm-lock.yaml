@@ -93,6 +93,21 @@ importers:
         specifier: ^0.28.17
         version: 0.28.17
 
+  packages/mcp:
+    dependencies:
+      '@muse/db':
+        specifier: workspace:*
+        version: link:../db
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@muse/tools':
+        specifier: workspace:*
+        version: link:../tools
+      kysely:
+        specifier: ^0.28.17
+        version: 0.28.17
+
   packages/memory:
     dependencies:
       '@muse/model':

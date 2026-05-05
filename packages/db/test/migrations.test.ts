@@ -17,7 +17,9 @@ describe("db migrations", () => {
       "checkpoints",
       "trace_events",
       "runtime_settings",
-      "agent_specs"
+      "agent_specs",
+      "mcp_servers",
+      "mcp_security_policy"
     ]) {
       expect(sql).toContain(`CREATE TABLE IF NOT EXISTS ${table}`);
     }

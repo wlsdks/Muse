@@ -11,6 +11,8 @@ export interface MuseDatabase {
   readonly agent_specs: AgentSpecTable;
   readonly checkpoints: CheckpointTable;
   readonly conversation_messages: ConversationMessageTable;
+  readonly mcp_security_policy: McpSecurityPolicyTable;
+  readonly mcp_servers: McpServerTable;
   readonly pending_approvals: PendingApprovalTable;
   readonly runtime_settings: RuntimeSettingTable;
   readonly tool_calls: ToolCallTable;
@@ -116,6 +118,27 @@ export interface AgentSpecTable {
   readonly mode: "react" | "standard" | "plan_execute";
   readonly enabled: boolean;
   readonly independent_execution: boolean;
+  readonly created_at: Timestamp;
+  readonly updated_at: Timestamp;
+}
+
+export interface McpServerTable {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly transport_type: "stdio" | "sse" | "streamable" | "http";
+  readonly config: JsonColumn;
+  readonly version: string | null;
+  readonly auto_connect: boolean;
+  readonly created_at: Timestamp;
+  readonly updated_at: Timestamp;
+}
+
+export interface McpSecurityPolicyTable {
+  readonly id: string;
+  readonly allowed_server_names: JsonColumn;
+  readonly max_tool_output_length: number;
+  readonly allowed_stdio_commands: JsonColumn;
   readonly created_at: Timestamp;
   readonly updated_at: Timestamp;
 }

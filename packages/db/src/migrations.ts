@@ -9,6 +9,8 @@ export const migrations: readonly SqlMigration[] = [
     down: `
       DROP TABLE IF EXISTS trace_events;
       DROP TABLE IF EXISTS checkpoints;
+      DROP TABLE IF EXISTS mcp_security_policy;
+      DROP TABLE IF EXISTS mcp_servers;
       DROP TABLE IF EXISTS pending_approvals;
       DROP TABLE IF EXISTS tool_calls;
       DROP TABLE IF EXISTS conversation_messages;
@@ -148,6 +150,30 @@ export const migrations: readonly SqlMigration[] = [
         mode VARCHAR(32) NOT NULL DEFAULT 'react',
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
         independent_execution BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_servers (
+        id VARCHAR(128) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        description TEXT,
+        transport_type VARCHAR(32) NOT NULL,
+        config JSONB NOT NULL DEFAULT '{}'::jsonb,
+        version VARCHAR(128),
+        auto_connect BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_servers_transport_name
+        ON mcp_servers(transport_type, name);
+
+      CREATE TABLE IF NOT EXISTS mcp_security_policy (
+        id VARCHAR(32) PRIMARY KEY,
+        allowed_server_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+        max_tool_output_length INTEGER NOT NULL DEFAULT 50000,
+        allowed_stdio_commands JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
