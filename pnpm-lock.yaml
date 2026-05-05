@@ -137,6 +137,15 @@ importers:
 
   packages/prompts: {}
 
+  packages/resilience:
+    dependencies:
+      '@muse/model':
+        specifier: workspace:*
+        version: link:../model
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/runtime-settings:
     dependencies:
       '@muse/db':
