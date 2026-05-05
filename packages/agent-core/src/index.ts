@@ -1,4 +1,10 @@
-import type { ModelMessage, ModelProvider, ModelResponse } from "@muse/model";
+import {
+  ModelProviderRegistry,
+  parseModelName,
+  type ModelMessage,
+  type ModelProvider,
+  type ModelResponse
+} from "@muse/model";
 import { findInjectionPatterns, maskPii } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
 
@@ -50,7 +56,8 @@ export interface OutputGuardStage {
 }
 
 export interface AgentRuntimeOptions {
-  readonly modelProvider: ModelProvider;
+  readonly modelProvider?: ModelProvider;
+  readonly modelRegistry?: ModelProviderRegistry;
   readonly guards?: readonly GuardStage[];
   readonly hooks?: readonly HookStage[];
   readonly outputGuards?: readonly OutputGuardStage[];
@@ -89,8 +96,16 @@ export class OutputGuardBlockedError extends Error {
   }
 }
 
+export class ModelRoutingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelRoutingError";
+  }
+}
+
 export class AgentRuntime {
-  private readonly modelProvider: ModelProvider;
+  private readonly modelProvider?: ModelProvider;
+  private readonly modelRegistry?: ModelProviderRegistry;
   private readonly guards: readonly GuardStage[];
   private readonly hooks: readonly HookStage[];
   private readonly outputGuards: readonly OutputGuardStage[];
@@ -98,10 +113,15 @@ export class AgentRuntime {
 
   constructor(options: AgentRuntimeOptions) {
     this.modelProvider = options.modelProvider;
+    this.modelRegistry = options.modelRegistry;
     this.guards = options.guards ?? [];
     this.hooks = options.hooks ?? [];
     this.outputGuards = options.outputGuards ?? [];
     this.defaults = options.defaults;
+
+    if (!this.modelProvider && !this.modelRegistry) {
+      throw new ModelRoutingError("AgentRuntime requires either modelProvider or modelRegistry");
+    }
   }
 
   async run(input: AgentRunInput): Promise<AgentRunResult> {
@@ -115,11 +135,12 @@ export class AgentRuntime {
     await this.invokeHooks("beforeStart", context);
 
     try {
-      const response = await this.modelProvider.generate({
+      const selected = this.resolveProvider(input.model);
+      const response = await selected.provider.generate({
         maxOutputTokens: this.defaults?.maxOutputTokens,
         messages: input.messages,
         metadata: input.metadata,
-        model: input.model,
+        model: selected.model,
         temperature: this.defaults?.temperature
       });
       const guardedResponse = await this.applyOutputGuards(context, response);
@@ -130,6 +151,20 @@ export class AgentRuntime {
       await this.invokeHooks("onError", context, error);
       throw error;
     }
+  }
+
+  private resolveProvider(model: string): { readonly provider: ModelProvider; readonly model: string } {
+    if (this.modelRegistry) {
+      return {
+        model: parseModelName(model).modelId,
+        provider: this.modelRegistry.getProvider(model)
+      };
+    }
+
+    return {
+      model,
+      provider: this.modelProvider ?? failMissingProvider()
+    };
   }
 
   private async evaluateGuards(context: AgentRunContext): Promise<void> {
@@ -268,4 +303,8 @@ function joinMessages(messages: readonly ModelMessage[]): string {
     .filter((message) => message.role === "user" || message.role === "system")
     .map((message) => message.content)
     .join("\n");
+}
+
+function failMissingProvider(): never {
+  throw new ModelRoutingError("AgentRuntime model provider is unavailable");
 }

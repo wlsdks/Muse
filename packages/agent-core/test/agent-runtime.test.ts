@@ -1,17 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ModelProvider, ModelResponse } from "@muse/model";
+import { ModelProviderRegistry, type ModelProvider, type ModelResponse } from "@muse/model";
 import {
   createAgentRuntime,
   createInjectionInputGuard,
   createPiiInputGuard,
   createPiiMaskingOutputGuard,
   GuardBlockedError,
+  ModelRoutingError,
   OutputGuardBlockedError
 } from "../src/index.js";
 
-function createProvider(response: Partial<ModelResponse> = {}): ModelProvider {
+function createProvider(response: Partial<ModelResponse> = {}, id = "test"): ModelProvider {
   return {
-    id: "test",
+    id,
     async generate(request) {
       return {
         id: "response-1",
@@ -21,7 +22,25 @@ function createProvider(response: Partial<ModelResponse> = {}): ModelProvider {
       };
     },
     async listModels() {
-      return [];
+      return [
+        {
+          capabilities: {
+            cost: "unknown",
+            latencyProfile: "unknown",
+            local: false,
+            maxInputTokens: 128000,
+            maxOutputTokens: 4096,
+            promptCaching: false,
+            reasoning: false,
+            streaming: true,
+            structuredOutput: true,
+            toolCalling: true,
+            vision: false
+          },
+          modelId: response.model ?? "test-model",
+          providerId: id
+        }
+      ];
     },
     async *stream() {
       yield {
@@ -48,6 +67,58 @@ describe("AgentRuntime", () => {
     ).resolves.toMatchObject({
       response: { output: "Muse response" }
     });
+  });
+
+  it("routes provider-prefixed models through a registry", async () => {
+    const runtime = createAgentRuntime({
+      modelRegistry: new ModelProviderRegistry(
+        [
+          createProvider({ output: "OpenAI response" }, "openai"),
+          createProvider({ output: "Anthropic response" }, "anthropic")
+        ],
+        "openai"
+      )
+    });
+
+    await expect(
+      runtime.run({
+        messages: [{ content: "Help me choose", role: "user" }],
+        model: "anthropic/claude-sonnet"
+      })
+    ).resolves.toMatchObject({
+      response: {
+        model: "claude-sonnet",
+        output: "Anthropic response"
+      }
+    });
+  });
+
+  it("routes model names through known provider prefixes", async () => {
+    const runtime = createAgentRuntime({
+      modelRegistry: new ModelProviderRegistry(
+        [
+          createProvider({ output: "OpenAI response" }, "openai"),
+          createProvider({ output: "Anthropic response" }, "anthropic")
+        ],
+        "openai"
+      )
+    });
+
+    await expect(
+      runtime.run({
+        messages: [{ content: "Help me choose", role: "user" }],
+        model: "claude-sonnet"
+      })
+    ).resolves.toMatchObject({
+      response: {
+        model: "claude-sonnet",
+        output: "Anthropic response"
+      }
+    });
+  });
+
+  it("requires either a provider or a provider registry", () => {
+    expect(() => createAgentRuntime({})).toThrow(ModelRoutingError);
   });
 
   it("blocks when a guard denies the run", async () => {
