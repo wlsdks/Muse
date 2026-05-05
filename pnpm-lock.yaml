@@ -32,6 +32,9 @@ importers:
       '@muse/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@muse/autoconfigure':
+        specifier: workspace:*
+        version: link:../../packages/autoconfigure
       '@muse/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -119,12 +122,21 @@ importers:
 
   packages/autoconfigure:
     dependencies:
+      '@muse/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
       '@muse/agent-specs':
         specifier: workspace:*
         version: link:../agent-specs
       '@muse/auth':
         specifier: workspace:*
         version: link:../auth
+      '@muse/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@muse/model':
+        specifier: workspace:*
+        version: link:../model
       '@muse/runtime-settings':
         specifier: workspace:*
         version: link:../runtime-settings
@@ -134,6 +146,9 @@ importers:
       '@muse/scheduler':
         specifier: workspace:*
         version: link:../scheduler
+      '@muse/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/cache:
     dependencies:

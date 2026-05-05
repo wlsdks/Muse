@@ -82,6 +82,16 @@ export interface ModelProvider {
   stream(request: ModelRequest): AsyncIterable<ModelEvent>;
 }
 
+export interface OpenAICompatibleProviderOptions {
+  readonly id?: string;
+  readonly apiKey?: string;
+  readonly baseUrl: string;
+  readonly defaultModel?: string;
+  readonly fetch?: typeof globalThis.fetch;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly models?: readonly string[];
+}
+
 export class ModelProviderError extends Error {
   readonly providerId: string;
   readonly retryable: boolean;
@@ -91,6 +101,70 @@ export class ModelProviderError extends Error {
     this.name = "ModelProviderError";
     this.providerId = providerId;
     this.retryable = retryable;
+  }
+}
+
+export class OpenAICompatibleProvider implements ModelProvider {
+  readonly id: string;
+
+  private readonly apiKey?: string;
+  private readonly baseUrl: string;
+  private readonly defaultModel?: string;
+  private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly headers: Readonly<Record<string, string>>;
+  private readonly models: readonly string[];
+
+  constructor(options: OpenAICompatibleProviderOptions) {
+    this.id = options.id ?? "openai-compatible";
+    this.apiKey = options.apiKey;
+    this.baseUrl = options.baseUrl.replace(/\/+$/u, "");
+    this.defaultModel = options.defaultModel;
+    this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.headers = options.headers ?? {};
+    this.models = options.models ?? (options.defaultModel ? [options.defaultModel] : []);
+  }
+
+  async listModels(): Promise<readonly ModelInfo[]> {
+    return this.models.map((modelId) => ({
+      capabilities: defaultRemoteModelCapabilities(),
+      displayName: modelId,
+      modelId,
+      providerId: this.id
+    }));
+  }
+
+  async generate(request: ModelRequest): Promise<ModelResponse> {
+    const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+      body: JSON.stringify(toOpenAIChatRequest(request, this.defaultModel)),
+      headers: this.requestHeaders(),
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new ModelProviderError(
+        this.id,
+        `OpenAI-compatible request failed with ${response.status}: ${body || response.statusText}`,
+        response.status >= 500
+      );
+    }
+
+    const payload = await response.json();
+    return fromOpenAIChatResponse(this.id, request.model, payload);
+  }
+
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const response = await this.generate(request);
+    yield { text: response.output, type: "text-delta" };
+    yield { response, type: "done" };
+  }
+
+  private requestHeaders(): Record<string, string> {
+    return {
+      "content-type": "application/json",
+      ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
+      ...this.headers
+    };
   }
 }
 
@@ -259,4 +333,184 @@ function modelMatchesCapabilities(model: ModelInfo, criteria: ModelSelectionCrit
   }
 
   return true;
+}
+
+function toOpenAIChatRequest(request: ModelRequest, defaultModel: string | undefined) {
+  return {
+    max_tokens: request.maxOutputTokens,
+    messages: request.messages.map(toOpenAIMessage),
+    model: parseModelName(request.model || defaultModel || "").modelId,
+    temperature: request.temperature,
+    tools: request.tools?.map((tool) => ({
+      function: {
+        description: tool.description,
+        name: tool.name,
+        parameters: tool.inputSchema
+      },
+      type: "function"
+    }))
+  };
+}
+
+function toOpenAIMessage(message: ModelMessage) {
+  if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
+    return {
+      content: message.content,
+      role: message.role,
+      tool_calls: message.toolCalls.map((toolCall) => ({
+        function: {
+          arguments: JSON.stringify(toolCall.arguments),
+          name: toolCall.name
+        },
+        id: toolCall.id,
+        type: "function"
+      }))
+    };
+  }
+
+  if (message.role === "tool") {
+    return {
+      content: message.content,
+      role: message.role,
+      tool_call_id: message.toolCallId
+    };
+  }
+
+  return {
+    content: message.content,
+    name: message.name,
+    role: message.role
+  };
+}
+
+function fromOpenAIChatResponse(providerId: string, requestedModel: string, payload: unknown): ModelResponse {
+  if (!isRecord(payload)) {
+    throw new ModelProviderError(providerId, "OpenAI-compatible response was not an object");
+  }
+
+  const choice = Array.isArray(payload.choices) && isRecord(payload.choices[0]) ? payload.choices[0] : undefined;
+  const message = isRecord(choice?.message) ? choice.message : undefined;
+  const output = readOpenAIContent(message?.content);
+
+  return {
+    id: typeof payload.id === "string" ? payload.id : `${providerId}-response`,
+    model: typeof payload.model === "string" ? payload.model : requestedModel,
+    output,
+    raw: payload,
+    toolCalls: parseOpenAIToolCalls(message?.tool_calls),
+    usage: parseOpenAIUsage(payload.usage)
+  };
+}
+
+function readOpenAIContent(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => isRecord(entry) && typeof entry.text === "string" ? entry.text : "")
+      .filter((entry) => entry.length > 0)
+      .join("");
+  }
+
+  return "";
+}
+
+function parseOpenAIToolCalls(value: unknown): readonly ModelToolCall[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+
+  return value.flatMap((entry, index) => {
+    if (!isRecord(entry) || !isRecord(entry.function) || typeof entry.function.name !== "string") {
+      return [];
+    }
+
+    return [{
+      arguments: parseToolArguments(entry.function.arguments),
+      id: typeof entry.id === "string" ? entry.id : `tool_call_${index}`,
+      name: entry.function.name
+    }];
+  });
+}
+
+function parseToolArguments(value: unknown): JsonObject {
+  if (isJsonObject(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseOpenAIUsage(value: unknown): ModelUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    cachedInputTokens: readFiniteNumber(value.prompt_tokens_details, "cached_tokens"),
+    inputTokens: readFiniteNumber(value, "prompt_tokens"),
+    outputTokens: readFiniteNumber(value, "completion_tokens"),
+    reasoningTokens: readFiniteNumber(value.completion_tokens_details, "reasoning_tokens")
+  };
+}
+
+function readFiniteNumber(value: unknown, key: string): number | undefined {
+  return isRecord(value) && typeof value[key] === "number" && Number.isFinite(value[key])
+    ? value[key]
+    : undefined;
+}
+
+function defaultRemoteModelCapabilities(): ModelCapabilities {
+  return {
+    cost: "unknown",
+    latencyProfile: "unknown",
+    local: false,
+    maxInputTokens: 128_000,
+    maxOutputTokens: 16_384,
+    promptCaching: false,
+    reasoning: true,
+    streaming: true,
+    structuredOutput: true,
+    toolCalling: true,
+    vision: true
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.values(value).every(isJsonValue);
+}
+
+function isJsonValue(value: unknown): boolean {
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return true;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+
+  return isRecord(value) && Object.values(value).every(isJsonValue);
 }

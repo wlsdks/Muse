@@ -14,6 +14,7 @@
   "dependencies": {
     "@muse/agent-core": "workspace:*",
     "@muse/agent-specs": "workspace:*",
+    "@muse/autoconfigure": "workspace:*",
     "@muse/auth": "workspace:*",
     "@muse/mcp": "workspace:*",
     "@muse/runtime-settings": "workspace:*",

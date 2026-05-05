@@ -14,7 +14,10 @@ describe("autoconfigure", () => {
 
     expect(assembly.authService).toBeUndefined();
     expect(assembly.requireAuth).toBe(false);
+    expect(assembly.agentRuntime).toBeUndefined();
+    expect(assembly.mcp.manager.getToolCatalog()).toEqual([]);
     expect(assembly.scheduler.store.list()).toEqual([]);
+    expect(assembly.scheduler.service).toBeTruthy();
   });
 
   it("assembles auth and API options when JWT secret is configured", () => {
@@ -27,7 +30,21 @@ describe("autoconfigure", () => {
 
     expect(options.authService).toBeTruthy();
     expect(options.requireAuth).toBe(true);
+    expect(options.mcp.manager).toBeTruthy();
     expect(options.scheduler.store.list()).toEqual([]);
+  });
+
+  it("assembles AgentRuntime when an OpenAI-compatible model endpoint is configured", () => {
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "provider/model-a",
+        MUSE_MODEL_BASE_URL: "https://llm.example.test/v1"
+      }
+    });
+
+    expect(assembly.agentRuntime).toBeTruthy();
+    expect(assembly.defaultModel).toBe("provider/model-a");
+    expect(assembly.modelProvider?.id).toBe("openai-compatible");
   });
 
   it("parses primitive env values conservatively", () => {

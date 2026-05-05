@@ -4,6 +4,7 @@ import {
   knownModelPrefixes,
   ModelProviderError,
   ModelProviderRegistry,
+  OpenAICompatibleProvider,
   parseModelName,
   type ModelInfo,
   type ModelProvider
@@ -151,5 +152,65 @@ describe("parseModelName", () => {
 
   it("exposes known model prefix aliases", () => {
     expect(knownModelPrefixes()["gpt-"]).toBe("openai");
+  });
+});
+
+describe("OpenAICompatibleProvider", () => {
+  it("sends chat completions requests and maps text, tool calls, and usage", async () => {
+    let requestBody: unknown;
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "test-key",
+      baseUrl: "https://llm.example.test/v1/",
+      defaultModel: "gpt-test",
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "hello",
+                tool_calls: [
+                  {
+                    function: {
+                      arguments: "{\"path\":\"docs/input.md\"}",
+                      name: "read_file"
+                    },
+                    id: "call-1"
+                  }
+                ]
+              }
+            }
+          ],
+          id: "chatcmpl-1",
+          model: "gpt-test",
+          usage: {
+            completion_tokens: 3,
+            prompt_tokens: 5
+          }
+        }))
+      }
+    });
+
+    const response = await provider.generate({
+      messages: [{ content: "hi", role: "user" }],
+      model: "openai/gpt-test",
+      tools: [{
+        description: "Read file",
+        inputSchema: { type: "object" },
+        name: "read_file",
+        risk: "read"
+      }]
+    });
+
+    expect(requestBody).toMatchObject({
+      model: "gpt-test",
+      tools: [{ function: { name: "read_file" }, type: "function" }]
+    });
+    expect(response).toMatchObject({
+      id: "chatcmpl-1",
+      output: "hello",
+      toolCalls: [{ arguments: { path: "docs/input.md" }, id: "call-1", name: "read_file" }],
+      usage: { inputTokens: 5, outputTokens: 3 }
+    });
   });
 });

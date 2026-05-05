@@ -17,10 +17,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@muse/agent-core": "workspace:*",
     "@muse/agent-specs": "workspace:*",
     "@muse/auth": "workspace:*",
+    "@muse/mcp": "workspace:*",
+    "@muse/model": "workspace:*",
     "@muse/runtime-settings": "workspace:*",
     "@muse/runtime-state": "workspace:*",
-    "@muse/scheduler": "workspace:*"
+    "@muse/scheduler": "workspace:*",
+    "@muse/tools": "workspace:*"
   }
 }
