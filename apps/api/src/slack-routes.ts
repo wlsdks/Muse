@@ -11,6 +11,7 @@ import {
   type CommandHandler,
   type CommandResponse,
   type SlackInteractionHandler,
+  type SlackBotResponseTracker,
   type SlackMessageTransport,
   type SlackResponseUrlTransport,
   type SlackSlashCommandPayload
@@ -24,6 +25,7 @@ export interface SlackRouteOptions {
   readonly commandHandler?: CommandHandler;
   readonly botToken?: string;
   readonly interactionHandlers?: readonly SlackInteractionHandler[];
+  readonly responseTracker?: SlackBotResponseTracker;
   readonly messageTransport?: SlackMessageTransport;
   readonly responseTransport?: SlackResponseUrlTransport;
   readonly now?: () => Date;
@@ -172,11 +174,20 @@ async function dispatchSlashCommandResponse(
     visibility: "ephemeral" as const
   }));
 
-  await transport.postMessage({
+  const answer = await transport.postMessage({
     channelId: slashCommandTargetChannelId(envelope),
     text: prependSlackUserMention(toSlackCommandAck(response).text, envelope.userId),
     threadTs: question.ts
   });
+
+  if (answer.ok && answer.ts) {
+    options.slack?.responseTracker?.track(
+      slashCommandTargetChannelId(envelope),
+      answer.ts,
+      `slack-${envelope.channelId ?? "unknown"}-${question.ts}`,
+      envelope.text
+    );
+  }
 }
 
 async function handleEventCallback(
@@ -313,11 +324,15 @@ async function dispatchSlackEventResponse(
     return;
   }
 
-  await transport.postMessage({
+  const sent = await transport.postMessage({
     channelId,
     text: prependSlackUserMention(toSlackCommandAck(response).text, envelope.userId),
     threadTs
   });
+
+  if (sent.ok && sent.ts) {
+    options.slack?.responseTracker?.track(channelId, sent.ts, `slack-${channelId}-${threadTs}`, envelope.text);
+  }
 }
 
 function createSlackMessageTransport(options: RegisterSlackRoutesOptions): SlackMessageTransport | undefined {

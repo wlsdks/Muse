@@ -9,6 +9,7 @@ import {
   JwtTokenProvider
 } from "@muse/auth";
 import {
+  SlackBotResponseTracker,
   signSlackRequestBody,
   type SlackInteractionHandler,
   type SlackMessageTransport,
@@ -5265,6 +5266,7 @@ describe("api server", () => {
         };
       }
     };
+    const responseTracker = new SlackBotResponseTracker();
     const agentRuntime = createAgentRuntime({
       modelProvider: createProvider("Threaded Slack answer")
     });
@@ -5276,6 +5278,7 @@ describe("api server", () => {
         enabled: true,
         messageTransport,
         now: () => new Date(1_770_000_000_000),
+        responseTracker,
         signingSecret: "signing-secret"
       }
     });
@@ -5316,6 +5319,10 @@ describe("api server", () => {
         threadTs: "1770000000.000100"
       }
     ]);
+    expect(responseTracker.lookup("channel-1", "1770000000.000200")).toMatchObject({
+      sessionId: "slack-channel-1-1770000000.000100",
+      userPrompt: "hello"
+    });
   });
 
   it("handles signed Slack URL verification events", async () => {

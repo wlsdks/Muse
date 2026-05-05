@@ -3,6 +3,8 @@ import {
   CommandRouter,
   FetchSlackResponseUrlTransport,
   FetchSlackWebApiMessageTransport,
+  SlackBotResponseTracker,
+  SlackFeedbackButtonHandler,
   SlackInteractionDispatcher,
   SlackSignatureVerifier,
   WebhookDispatcher,
@@ -226,6 +228,87 @@ describe("SlackInteractionDispatcher", () => {
       dispatched: false,
       reason: "no_handler"
     });
+  });
+
+  it("stores tracked feedback button clicks and posts an ack in thread", async () => {
+    const feedback: unknown[] = [];
+    const messages: unknown[] = [];
+    const tracker = new SlackBotResponseTracker({ now: () => 1_770_000_000_000 });
+    tracker.track("channel-1", "1770000000.000100", "session-1", "original question");
+    const handler = new SlackFeedbackButtonHandler({
+      messageTransport: {
+        postMessage: (input) => {
+          messages.push(input);
+          return { ok: true, statusCode: 200, ts: "1770000000.000200" };
+        }
+      },
+      onFeedback: (input) => {
+        feedback.push(input);
+      },
+      tracker
+    });
+
+    await expect(
+      handler.handle({
+        actionId: "feedback.down",
+        channelId: "channel-1",
+        messageTs: "1770000000.000100",
+        type: "block_actions",
+        userId: "user-1"
+      })
+    ).resolves.toBe(true);
+    expect(feedback).toEqual([
+      {
+        query: "original question",
+        rating: "thumbs_down",
+        response: "",
+        sessionId: "session-1",
+        userId: "user-1"
+      }
+    ]);
+    expect(messages).toEqual([
+      {
+        channelId: "channel-1",
+        text: "Thanks for the candid feedback. I will do better next time.",
+        threadTs: "1770000000.000100"
+      }
+    ]);
+  });
+
+  it("acks expired feedback button clicks via response_url", async () => {
+    const posts: unknown[] = [];
+    const handler = new SlackFeedbackButtonHandler({
+      onFeedback: () => {
+        throw new Error("should not save");
+      },
+      responseTransport: {
+        post: (url, body) => {
+          posts.push({ body, url });
+          return { statusCode: 200 };
+        }
+      },
+      tracker: new SlackBotResponseTracker()
+    });
+
+    await expect(
+      handler.handle({
+        actionId: "feedback.up",
+        channelId: "channel-1",
+        messageTs: "1770000000.000100",
+        responseUrl: "https://example.invalid/respond",
+        type: "block_actions",
+        userId: "user-1"
+      })
+    ).resolves.toBe(true);
+    expect(posts).toEqual([
+      {
+        body: {
+          response_type: "ephemeral",
+          text: "This message is expired or no longer tracked."
+        },
+        url: "https://example.invalid/respond"
+      }
+    ]);
   });
 });
 
