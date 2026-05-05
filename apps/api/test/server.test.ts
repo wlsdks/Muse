@@ -1209,6 +1209,16 @@ describe("api server", () => {
       method: "GET",
       url: "/admin/scheduler/jobs/job-1/executions?limit=10"
     });
+    const reactorClampedJobs = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/scheduler/jobs?limit=150"
+    });
+    const reactorClampedExecutions = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/scheduler/jobs/job-1/executions?limit=10&pageLimit=150"
+    });
     const updated = await server.inject({
       headers,
       method: "PATCH",
@@ -1252,6 +1262,8 @@ describe("api server", () => {
       ],
       total: 2
     });
+    expect(reactorClampedJobs.json()).toMatchObject({ limit: 150, total: 1 });
+    expect(reactorClampedExecutions.json()).toMatchObject({ limit: 150, total: 2 });
     expect(updated.json()).toMatchObject({ enabled: false, name: "Renamed agent job" });
     expect(listed.json()).toMatchObject({ items: [{ id: "job-1" }], total: 1 });
     expect(deleted.statusCode).toBe(204);

@@ -55,7 +55,7 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
       return paginate(
         filtered.map(toScheduledJobResponse),
         parseOffset(query.offset),
-        parseLimit(query.limit, 50)
+        parseLimit(query.limit, 50, 200)
       );
     });
 
@@ -178,7 +178,7 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
       return paginate(
         executions.map(toScheduledJobExecutionResponse),
         parseOffset(query.offset),
-        parseLimit(query.pageLimit, 50)
+        parseLimit(query.pageLimit, 50, 200)
       );
     });
   }
@@ -427,14 +427,14 @@ function parseScheduledJobType(value: unknown): ScheduledJobType | undefined {
   return normalized === "mcp_tool" ? "mcp_tool" : undefined;
 }
 
-function parseLimit(value: number | string | undefined, fallback = 20): number {
+function parseLimit(value: number | string | undefined, fallback = 20, max = 100): number {
   const parsed = typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
 
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
   }
 
-  return Math.min(100, Math.floor(parsed));
+  return Math.min(max, Math.floor(parsed));
 }
 
 function parseOffset(value: number | string | undefined): number {
