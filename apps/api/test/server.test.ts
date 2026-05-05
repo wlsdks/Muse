@@ -1043,6 +1043,127 @@ describe("api server", () => {
     expect(deleted.statusCode).toBe(204);
   });
 
+  it("matches Reactor persona and intent management contracts", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const server = buildServer({ authService, logger: false, requireAuth: true });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const blockedPersonaList = await server.inject({
+      method: "GET",
+      url: "/api/personas"
+    });
+    const persona = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        name: "Assistant",
+        systemPrompt: "Answer with reliable context."
+      },
+      url: "/api/personas"
+    });
+    const personaId = persona.json().id as string;
+    const updatedPersona = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        isActive: false,
+        welcomeMessage: "Ready."
+      },
+      url: `/api/personas/${personaId}`
+    });
+    const activePersonas = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/personas?activeOnly=true"
+    });
+    const personaDetail = await server.inject({
+      headers,
+      method: "GET",
+      url: `/api/personas/${personaId}`
+    });
+    const intent = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        description: "Research requests",
+        examples: ["find sources"],
+        keywords: ["research"],
+        name: "research",
+        profile: { allowedTools: ["web_search"], model: "provider/model" }
+      },
+      url: "/api/intents"
+    });
+    const duplicateIntent = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        description: "Duplicate",
+        name: "research"
+      },
+      url: "/api/intents"
+    });
+    const updatedIntent = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        enabled: false,
+        keywords: ["analysis"]
+      },
+      url: "/api/intents/research"
+    });
+    const deletedPersona = await server.inject({
+      headers,
+      method: "DELETE",
+      url: `/api/personas/${personaId}`
+    });
+    const deletedIntent = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/intents/research"
+    });
+
+    expect(blockedPersonaList.statusCode).toBe(401);
+    expect(persona.statusCode).toBe(201);
+    expect(persona.json()).toMatchObject({
+      description: null,
+      isActive: true,
+      isDefault: false,
+      name: "Assistant",
+      systemPrompt: "Answer with reliable context."
+    });
+    expect(typeof persona.json().createdAt).toBe("number");
+    expect(updatedPersona.json()).toMatchObject({
+      id: personaId,
+      isActive: false,
+      welcomeMessage: "Ready."
+    });
+    expect(activePersonas.json()).toEqual([]);
+    expect(personaDetail.json()).toMatchObject({ id: personaId, isActive: false });
+    expect(intent.statusCode).toBe(201);
+    expect(intent.json()).toMatchObject({
+      description: "Research requests",
+      enabled: true,
+      examples: ["find sources"],
+      keywords: ["research"],
+      name: "research",
+      profile: { allowedTools: ["web_search"], model: "provider/model" }
+    });
+    expect(typeof intent.json().createdAt).toBe("number");
+    expect(duplicateIntent.statusCode).toBe(409);
+    expect(updatedIntent.json()).toMatchObject({
+      enabled: false,
+      keywords: ["analysis"],
+      name: "research"
+    });
+    expect(deletedPersona.statusCode).toBe(204);
+    expect(deletedIntent.statusCode).toBe(204);
+  });
+
   it("serves Reactor-compatible aliases with stateful management behavior", async () => {
     const authService = createAuthService();
     const registered = authService.register({

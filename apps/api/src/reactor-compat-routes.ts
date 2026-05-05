@@ -651,6 +651,58 @@ function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: React
   }));
 }
 
+function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+  server.get("/api/personas", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const activeOnly = readQueryBoolean(request, "activeOnly", false);
+    const personas = [...state.personas.values()].map(toPersonaResponse);
+    return activeOnly ? personas.filter((persona) => persona.isActive) : personas;
+  });
+  server.get("/api/personas/:personaId", async (request, reply) => {
+    const { personaId } = request.params as { readonly personaId: string };
+    const persona = findCompatRecord(state.personas, personaId);
+    return persona ? toPersonaResponse(persona) : notFound(reply, "PERSONA_NOT_FOUND");
+  });
+  server.post("/api/personas", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return reply.status(201).send(toPersonaResponse(createPersona(request.body)));
+  });
+  server.put("/api/personas/:personaId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { personaId } = request.params as { readonly personaId: string };
+    const existing = findCompatRecord(state.personas, personaId);
+
+    if (!existing) {
+      return notFound(reply, "PERSONA_NOT_FOUND");
+    }
+
+    return toPersonaResponse(updatePersona(existing, request.body));
+  });
+  server.delete("/api/personas/:personaId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { personaId } = request.params as { readonly personaId: string };
+    const existing = findCompatRecord(state.personas, personaId);
+
+    if (existing) {
+      state.personas.delete(existing.id);
+    }
+
+    return reply.status(204).send();
+  });
+}
+
 function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/prompt-templates", async () => [...state.promptTemplates.values()].map(toTemplateResponse));
   server.get("/api/prompt-templates/:templateId", async (request, reply) => {
@@ -724,17 +776,77 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
   });
 }
 
+function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+  server.get("/api/intents", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return [...state.intents.values()].map(toIntentResponse);
+  });
+  server.get("/api/intents/:intentName", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { intentName } = request.params as { readonly intentName: string };
+    const intent = findCompatRecord(state.intents, intentName);
+    return intent ? toIntentResponse(intent) : notFound(reply, "INTENT_NOT_FOUND");
+  });
+  server.post("/api/intents", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const name = readBodyString(request.body, "name") ?? "";
+
+    if (findCompatRecord(state.intents, name)) {
+      return reply.status(409).send({
+        code: "INTENT_ALREADY_EXISTS",
+        message: `Intent '${name}' already exists`
+      });
+    }
+
+    return reply.status(201).send(toIntentResponse(createIntent(request.body)));
+  });
+  server.put("/api/intents/:intentName", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { intentName } = request.params as { readonly intentName: string };
+    const existing = findCompatRecord(state.intents, intentName);
+
+    if (!existing) {
+      return notFound(reply, "INTENT_NOT_FOUND");
+    }
+
+    return toIntentResponse(updateIntent(existing, request.body));
+  });
+  server.delete("/api/intents/:intentName", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { intentName } = request.params as { readonly intentName: string };
+    const existing = findCompatRecord(state.intents, intentName);
+
+    if (existing) {
+      state.intents.delete(existing.id);
+    }
+
+    return reply.status(204).send();
+  });
+}
+
 function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  registerCollectionRoutes(server, "/api/personas", state.personas, { idParamName: "personaId" });
+  registerPersonaRoutes(server, options);
   registerPromptTemplateRoutes(server, options);
   registerCollectionRoutes(server, "/api/documents", state.documents, {
     authorize: options.authorizeAdmin,
     onCreate: (record) => ({ ...record, indexed: true })
   });
-  registerCollectionRoutes(server, "/api/intents", state.intents, {
-    idParamName: "intentName",
-    inputIdKey: "name"
-  });
+  registerIntentRoutes(server, options);
   server.post("/api/documents/batch", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -3099,6 +3211,54 @@ function respondPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
   return record ? toPromptExperimentResponse(record) : notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
 }
 
+function createPersona(bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  return createRecord(state.personas, {
+    description: readNullableStringField(body, "description"),
+    icon: readNullableStringField(body, "icon"),
+    isActive: readBoolean(body.isActive, true),
+    isDefault: readBoolean(body.isDefault, false),
+    name: readBodyString(body, "name") ?? "",
+    promptTemplateId: readNullableStringField(body, "promptTemplateId"),
+    responseGuideline: readNullableStringField(body, "responseGuideline"),
+    systemPrompt: readBodyString(body, "systemPrompt") ?? "",
+    welcomeMessage: readNullableStringField(body, "welcomeMessage")
+  }, "persona");
+}
+
+function updatePersona(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  return createRecord(state.personas, {
+    ...existing,
+    description: readOptionalStringField(body, "description", existing.description),
+    icon: readOptionalStringField(body, "icon", existing.icon),
+    isActive: readBoolean(body.isActive, readBoolean(existing.isActive, true)),
+    isDefault: readBoolean(body.isDefault, readBoolean(existing.isDefault, false)),
+    name: readBodyString(body, "name") ?? stringField(existing.name, ""),
+    promptTemplateId: readOptionalStringField(body, "promptTemplateId", existing.promptTemplateId),
+    responseGuideline: readOptionalStringField(body, "responseGuideline", existing.responseGuideline),
+    systemPrompt: readBodyString(body, "systemPrompt") ?? stringField(existing.systemPrompt, ""),
+    welcomeMessage: readOptionalStringField(body, "welcomeMessage", existing.welcomeMessage)
+  }, "persona");
+}
+
+function toPersonaResponse(record: JsonObject) {
+  return {
+    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
+    description: nullableStringResponse(record.description),
+    icon: nullableStringResponse(record.icon),
+    id: stringField(record.id, ""),
+    isActive: readBoolean(record.isActive, true),
+    isDefault: readBoolean(record.isDefault, false),
+    name: stringField(record.name, ""),
+    promptTemplateId: nullableStringResponse(record.promptTemplateId),
+    responseGuideline: nullableStringResponse(record.responseGuideline),
+    systemPrompt: stringField(record.systemPrompt, ""),
+    updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now(),
+    welcomeMessage: nullableStringResponse(record.welcomeMessage)
+  };
+}
+
 function createPromptTemplate(bodyValue: unknown): CompatRecord {
   const body = toBody(bodyValue);
   return createRecord(state.promptTemplates, {
@@ -3200,6 +3360,45 @@ function toVersionResponse(record: JsonObject) {
     status: reactorEnumString(record.status, "DRAFT"),
     templateId: typeof record.templateId === "string" ? record.templateId : "",
     version: typeof record.version === "number" ? record.version : readNumber(record.version, 1)
+  };
+}
+
+function createIntent(bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  const name = readBodyString(body, "name") ?? "";
+  return createRecord(state.intents, {
+    description: readBodyString(body, "description") ?? "",
+    enabled: readBoolean(body.enabled, true),
+    examples: stringArrayField(body.examples, []),
+    id: name,
+    keywords: stringArrayField(body.keywords, []),
+    name,
+    profile: jsonObjectField(body.profile)
+  }, "intent");
+}
+
+function updateIntent(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  return createRecord(state.intents, {
+    ...existing,
+    description: readBodyString(body, "description") ?? stringField(existing.description, ""),
+    enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
+    examples: stringArrayField(body.examples, stringArrayField(existing.examples, [])),
+    keywords: stringArrayField(body.keywords, stringArrayField(existing.keywords, [])),
+    profile: isRecord(body.profile) ? toJsonObject(body.profile) : jsonObjectField(existing.profile)
+  }, "intent");
+}
+
+function toIntentResponse(record: JsonObject) {
+  return {
+    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
+    description: stringField(record.description, ""),
+    enabled: readBoolean(record.enabled, true),
+    examples: stringArrayField(record.examples, []),
+    keywords: stringArrayField(record.keywords, []),
+    name: stringField(record.name, stringField(record.id, "")),
+    profile: jsonObjectField(record.profile),
+    updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now()
   };
 }
 
@@ -3582,6 +3781,33 @@ function readBodyString(value: unknown, key: string): string | undefined {
 function readBodyNullableString(value: unknown, key: string): string | null | undefined {
   const item = toBody(value)[key];
   return item === null || typeof item === "string" ? item : undefined;
+}
+
+function readNullableStringField(value: CompatBody, key: string): string | null {
+  const item = value[key];
+  return typeof item === "string" ? item : null;
+}
+
+function readOptionalStringField(value: CompatBody, key: string, fallback: unknown): string | null {
+  const item = value[key];
+  return typeof item === "string" ? item : nullableStringResponse(fallback);
+}
+
+function nullableStringResponse(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function stringField(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function stringArrayField(value: unknown, fallback: string[]): string[] {
+  const parsed = readStringArray(value);
+  return parsed ? [...parsed] : fallback;
+}
+
+function jsonObjectField(value: unknown): JsonObject {
+  return isRecord(value) ? toJsonObject(value) : {};
 }
 
 function toJsonObject(value: unknown): JsonObject {

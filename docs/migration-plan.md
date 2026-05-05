@@ -105,6 +105,8 @@ Continued work should be treated as new hardening or product expansion, not migr
   timestamps, status envelopes, `202` run acknowledgements, and `204` deletes.
 - Prompt Template compatibility now returns Reactor-style template/version DTOs, uppercase version statuses,
   epoch-millis timestamps, `201` version creates, active-version detail payloads, and `204` deletes.
+- Persona and Intent compatibility now match Reactor management semantics for admin-gated lists/writes,
+  epoch-millis DTOs, `activeOnly` filtering, duplicate-intent `409`, and idempotent `204` deletes.
 
 ## Execution Plan
 
