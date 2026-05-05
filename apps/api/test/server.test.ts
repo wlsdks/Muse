@@ -276,8 +276,8 @@ describe("api server", () => {
     expect(summary.statusCode).toBe(200);
     expect(summary.json()).toMatchObject({ authEnabled: true, schedulerJobCount: 1 });
     expect(runDetail.json()).toMatchObject({ run: { id: "run-1" }, messages: [{ content: "hello" }] });
-    expect(schedulerJobs.json()).toHaveLength(1);
-    expect(executions.json()).toHaveLength(1);
+    expect(schedulerJobs.json()).toMatchObject({ items: [{ id: "job-1" }], total: 1 });
+    expect(executions.json()).toMatchObject({ items: [{ jobId: "job-1" }], total: 1 });
   });
 
   it("exposes admin metrics, cache, and circuit breaker operations", async () => {
@@ -726,14 +726,17 @@ describe("api server", () => {
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({ id: "job-1", jobType: "AGENT", name: "Agent job" });
     expect(typeof created.json().createdAt).toBe("number");
-    expect(trigger.json()).toEqual({ dryRun: false, jobId: "job-1", result: "executed:Run" });
-    expect(dryRun.json()).toEqual({ dryRun: true, jobId: "job-1", result: "executed:Run" });
-    expect(executions.json()).toMatchObject([
-      { dryRun: true, jobId: "job-1", resultPreview: "executed:Run", status: "SUCCESS" },
-      { dryRun: false, jobId: "job-1", resultPreview: "executed:Run", status: "SUCCESS" }
-    ]);
+    expect(trigger.json()).toEqual({ result: "executed:Run" });
+    expect(dryRun.json()).toEqual({ dryRun: true, result: "executed:Run" });
+    expect(executions.json()).toMatchObject({
+      items: [
+        { dryRun: true, jobId: "job-1", resultPreview: "executed:Run", status: "SUCCESS" },
+        { dryRun: false, jobId: "job-1", resultPreview: "executed:Run", status: "SUCCESS" }
+      ],
+      total: 2
+    });
     expect(updated.json()).toMatchObject({ enabled: false, name: "Renamed agent job" });
-    expect(listed.json()).toHaveLength(1);
+    expect(listed.json()).toMatchObject({ items: [{ id: "job-1" }], total: 1 });
     expect(deleted.statusCode).toBe(204);
     expect(afterDelete.statusCode).toBe(404);
   });

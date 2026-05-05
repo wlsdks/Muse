@@ -44,7 +44,18 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
       }
 
       const jobs = await (options.scheduler.service?.list() ?? options.scheduler.store.list());
-      return jobs.map(toScheduledJobResponse);
+      const query = request.query as {
+        readonly limit?: number | string;
+        readonly offset?: number | string;
+        readonly tag?: string;
+      };
+      const tag = typeof query.tag === "string" && query.tag.trim().length > 0 ? query.tag.trim() : undefined;
+      const filtered = tag ? jobs.filter((job) => job.tags.includes(tag)) : jobs;
+      return paginate(
+        filtered.map(toScheduledJobResponse),
+        parseOffset(query.offset),
+        parseLimit(query.limit, 50)
+      );
     });
 
     server.get(`${prefix}/jobs/:jobId`, async (request, reply) => {
@@ -149,11 +160,25 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
       }
 
       const { jobId } = request.params as { readonly jobId: string };
-      const { limit } = request.query as { readonly limit?: number | string };
-      const executions = await (options.scheduler.service?.getExecutions(jobId, parseLimit(limit))
-        ?? options.scheduler.executionStore?.findByJobId(jobId, parseLimit(limit))
+
+      if (options.scheduler.service && !(await options.scheduler.service.findById(jobId))) {
+        return sendSchedulerJobNotFound(reply, jobId);
+      }
+
+      const query = request.query as {
+        readonly limit?: number | string;
+        readonly offset?: number | string;
+        readonly pageLimit?: number | string;
+      };
+      const executionLimit = parseLimit(query.limit, 20);
+      const executions = await (options.scheduler.service?.getExecutions(jobId, executionLimit)
+        ?? options.scheduler.executionStore?.findByJobId(jobId, executionLimit)
         ?? []);
-      return executions.map(toScheduledJobExecutionResponse);
+      return paginate(
+        executions.map(toScheduledJobExecutionResponse),
+        parseOffset(query.offset),
+        parseLimit(query.pageLimit, 50)
+      );
     });
   }
 }
@@ -205,13 +230,11 @@ async function runScheduledJob(
     return sendSchedulerJobNotFound(reply, jobId);
   }
 
-  return {
-    dryRun,
-    jobId,
-    result: dryRun
-      ? await options.scheduler.service.dryRun(jobId)
-      : await options.scheduler.service.trigger(jobId)
-  };
+  const result = dryRun
+    ? await options.scheduler.service.dryRun(jobId)
+    : await options.scheduler.service.trigger(jobId);
+
+  return dryRun ? { dryRun: true, result } : { result };
 }
 
 function sendSchedulerUnavailable(reply: { status(statusCode: number): { send(payload: ApiError): void } }) {
@@ -409,14 +432,32 @@ function parseScheduledJobType(value: unknown): ScheduledJobType | undefined {
   return normalized === "mcp_tool" ? "mcp_tool" : undefined;
 }
 
-function parseLimit(value: number | string | undefined): number {
+function parseLimit(value: number | string | undefined, fallback = 20): number {
   const parsed = typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
 
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 20;
+    return fallback;
   }
 
   return Math.min(100, Math.floor(parsed));
+}
+
+function parseOffset(value: number | string | undefined): number {
+  const parsed = typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
+
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
+function paginate<T>(items: readonly T[], offset: number, limit: number) {
+  const safeOffset = Math.max(0, offset);
+  const safeLimit = Math.min(500, Math.max(1, limit));
+
+  return {
+    items: items.slice(safeOffset, safeOffset + safeLimit),
+    limit: safeLimit,
+    offset: safeOffset,
+    total: items.length
+  };
 }
 
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
