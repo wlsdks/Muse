@@ -2609,6 +2609,17 @@ describe("api server", () => {
       },
       url: "/api/auth/login"
     });
+    const apiMe = await server.inject({ headers, method: "GET", url: "/api/auth/me" });
+    const exchangeDisabled = await server.inject({
+      method: "POST",
+      payload: { token: "iam-token" },
+      url: "/api/auth/exchange"
+    });
+    const apiLogout = await server.inject({
+      headers: { authorization: `Bearer ${String(newPasswordLogin.json().token)}` },
+      method: "POST",
+      url: "/api/auth/logout"
+    });
     const sessions = await server.inject({ headers, method: "GET", url: "/api/sessions" });
     const models = await server.inject({ headers, method: "GET", url: "/api/models" });
     const spec = await server.inject({
@@ -3115,9 +3126,37 @@ describe("api server", () => {
       version: "1.0.0"
     });
     expect(apiLogin.statusCode).toBe(200);
+    expect(apiLogin.json()).toMatchObject({
+      error: null,
+      user: {
+        adminScope: "FULL",
+        email: "first_account",
+        name: "First",
+        role: "ADMIN"
+      }
+    });
+    expect(apiLogin.json()).not.toHaveProperty("expiresAt");
     expect(passwordChanged.json()).toEqual({ message: "Password changed successfully" });
     expect(oldPasswordLogin.statusCode).toBe(401);
+    expect(oldPasswordLogin.json()).toEqual({
+      error: "Invalid email or password",
+      token: "",
+      user: null
+    });
     expect(newPasswordLogin.statusCode).toBe(200);
+    expect(apiMe.json()).toMatchObject({
+      adminScope: "FULL",
+      email: "first_account",
+      name: "First",
+      role: "ADMIN"
+    });
+    expect(exchangeDisabled.statusCode).toBe(404);
+    expect(exchangeDisabled.json()).toEqual({
+      error: "IAM token exchange is not enabled",
+      token: "",
+      user: null
+    });
+    expect(apiLogout.json()).toEqual({ message: "Logged out" });
     expect(sessions.json()).toMatchObject({
       items: [{ messageCount: 2, preview: "hello", sessionId: "run-compat" }],
       total: 1

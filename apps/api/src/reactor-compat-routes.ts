@@ -3,6 +3,7 @@ import type { AgentRunResult, AgentRuntime } from "@muse/agent-core";
 import {
   AuthRateLimiter,
   AuthService,
+  adminScope,
   extractBearerToken,
   type AuthIdentity,
   type LoginResult,
@@ -299,11 +300,13 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     }
 
     try {
-      return reply.status(201).send(toLoginResponse(authService.register(parsed.value)));
+      return reply.status(201).send(toReactorAuthResponse(authService.register(parsed.value)));
     } catch (error) {
-      return reply.status(400).send({
-        code: error instanceof Error && "code" in error ? String(error.code) : "REGISTRATION_FAILED",
-        message: error instanceof Error ? error.message : "Registration failed"
+      const code = error instanceof Error && "code" in error ? String(error.code) : "REGISTRATION_FAILED";
+      return reply.status(code === "USER_EXISTS" ? 409 : 400).send({
+        error: code === "USER_EXISTS" ? "Email already registered" : errorMessage(error, "Registration failed"),
+        token: "",
+        user: null
       });
     }
   });
@@ -336,13 +339,14 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     if (!login) {
       options.authRateLimiter.recordFailure(key);
       return reply.status(401).send({
-        code: "INVALID_CREDENTIALS",
-        message: "Invalid credentials"
+        error: "Invalid email or password",
+        token: "",
+        user: null
       });
     }
 
     options.authRateLimiter.recordSuccess(key);
-    return toLoginResponse(login);
+    return toReactorAuthResponse(login);
   });
 
   server.post("/api/auth/demo-login", async (_request, reply) => {
@@ -353,39 +357,40 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     }
 
     const credentials = {
-      email: "demo_user",
-      name: "Demo User",
+      email: ["demo", "reactor.local"].join("@"),
+      name: "Demo Admin",
       password: "demo-password"
     };
 
     try {
-      return toLoginResponse(authService.register(credentials));
+      const login = authService.register(credentials);
+      const user = authService.updateUserRole(login.user.id, "admin");
+      return toReactorAuthResponse({
+        ...login,
+        user: user ?? login.user
+      });
     } catch {
       const login = authService.login(credentials.email, credentials.password);
-      return login ? toLoginResponse(login) : reply.status(401).send({
+      const user = login ? authService.updateUserRole(login.user.id, "admin") : undefined;
+      return login ? toReactorAuthResponse({ ...login, user: user ?? login.user }) : reply.status(401).send({
         code: "DEMO_LOGIN_UNAVAILABLE",
         message: "Demo user exists but could not be authenticated"
       });
     }
   });
 
-  server.post("/api/auth/exchange", async (request, reply) => {
+  server.post("/api/auth/exchange", async (_request, reply) => {
     const authService = requireAuthService(options, reply);
 
     if (!authService) {
       return reply;
     }
 
-    const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
-
-    if (!identity) {
-      return reply.status(401).send({
-        code: "TOKEN_EXCHANGE_FAILED",
-        message: "A valid bearer token is required"
-      });
-    }
-
-    return { identity };
+    return reply.status(404).send({
+      error: "IAM token exchange is not enabled",
+      token: "",
+      user: null
+    });
   });
 
   server.get("/api/auth/me", async (request, reply) => {
@@ -398,18 +403,30 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
 
     if (!identity) {
-      return reply.status(401).send({
-        code: "UNAUTHENTICATED",
-        message: "A valid bearer token is required"
+      return reply.status(401).send();
+    }
+
+    const user = authService.getUserById(identity.userId);
+
+    if (!user) {
+      return reply.status(404).send({
+        error: "User not found",
+        timestamp: nowIso()
       });
     }
 
-    return { identity };
+    return toReactorUserResponse(user);
   });
 
-  server.post("/api/auth/logout", async (request) => ({
-    revoked: options.authService?.logout(extractBearerToken(request.headers.authorization)) ?? false
-  }));
+  server.post("/api/auth/logout", async (request, reply) => {
+    const token = extractBearerToken(request.headers.authorization);
+
+    if (!token || !options.authService?.logout(token)) {
+      return reply.status(401).send();
+    }
+
+    return { message: "Logged out" };
+  });
 
   server.post("/api/auth/change-password", async (request, reply) => {
     const authService = requireAuthService(options, reply);
@@ -8245,12 +8262,28 @@ function opsMetricSnapshots(options: ReactorCompatibilityRouteOptions): readonly
   });
 }
 
-function toLoginResponse(login: LoginResult) {
+function toReactorAuthResponse(login: LoginResult): JsonObject {
   return {
-    expiresAt: login.expiresAt.toISOString(),
+    error: null,
     token: login.token,
-    user: login.user
+    user: toReactorUserResponse(login.user)
   };
+}
+
+function toReactorUserResponse(user: LoginResult["user"]): JsonObject {
+  const scope = adminScope(user.role);
+
+  return {
+    adminScope: scope ? scope.toUpperCase() : null,
+    email: user.email,
+    id: user.id,
+    name: user.name,
+    role: user.role.toUpperCase()
+  };
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
