@@ -1,0 +1,44 @@
+import { describe, expect, it } from "vitest";
+import {
+  ConfigurationError,
+  createApiServerOptions,
+  createMuseRuntimeAssembly,
+  parseBoolean,
+  parseInteger,
+  requireEnv
+} from "../src/index.js";
+
+describe("autoconfigure", () => {
+  it("assembles default runtime without auth when no secret is configured", () => {
+    const assembly = createMuseRuntimeAssembly({ env: {} });
+
+    expect(assembly.authService).toBeUndefined();
+    expect(assembly.requireAuth).toBe(false);
+    expect(assembly.scheduler.store.list()).toEqual([]);
+  });
+
+  it("assembles auth and API options when JWT secret is configured", () => {
+    const options = createApiServerOptions({
+      env: {
+        MUSE_AUTH_JWT_SECRET: "0123456789abcdef0123456789abcdef",
+        MUSE_REQUIRE_AUTH: "true"
+      }
+    });
+
+    expect(options.authService).toBeTruthy();
+    expect(options.requireAuth).toBe(true);
+    expect(options.scheduler.store.list()).toEqual([]);
+  });
+
+  it("parses primitive env values conservatively", () => {
+    expect(parseBoolean(undefined, true)).toBe(true);
+    expect(parseBoolean("yes", false)).toBe(true);
+    expect(parseBoolean("no", true)).toBe(false);
+    expect(parseInteger("42", 1)).toBe(42);
+    expect(parseInteger("bad", 7)).toBe(7);
+  });
+
+  it("fails clearly for required missing variables", () => {
+    expect(() => requireEnv({}, "MUSE_REQUIRED")).toThrow(ConfigurationError);
+  });
+});

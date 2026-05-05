@@ -99,6 +99,24 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/autoconfigure:
+    dependencies:
+      '@muse/agent-specs':
+        specifier: workspace:*
+        version: link:../agent-specs
+      '@muse/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@muse/runtime-settings':
+        specifier: workspace:*
+        version: link:../runtime-settings
+      '@muse/runtime-state':
+        specifier: workspace:*
+        version: link:../runtime-state
+      '@muse/scheduler':
+        specifier: workspace:*
+        version: link:../scheduler
+
   packages/cache:
     dependencies:
       '@muse/model':
@@ -155,6 +173,18 @@ importers:
 
   packages/model:
     dependencies:
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
+
+  packages/multi-agent:
+    dependencies:
+      '@muse/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@muse/model':
+        specifier: workspace:*
+        version: link:../model
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared
