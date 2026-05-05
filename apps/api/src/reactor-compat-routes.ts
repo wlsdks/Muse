@@ -4941,7 +4941,7 @@ function toAgentSpecResponse(spec: AgentSpec): JsonObject {
   const preview = prompt
     ? prompt.length <= 120
       ? prompt
-      : `${prompt.slice(0, 120)}...`
+      : `${prompt.slice(0, 120)}…`
     : null;
 
   return {

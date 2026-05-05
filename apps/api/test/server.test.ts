@@ -3493,6 +3493,16 @@ describe("api server", () => {
       },
       url: "/api/admin/agent-specs"
     });
+    const longSystemPrompt = "x".repeat(121);
+    const longPromptSpec = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        name: "long-prompt",
+        systemPrompt: longSystemPrompt
+      },
+      url: "/api/admin/agent-specs"
+    });
     const partialSpecUpdate = await server.inject({
       headers,
       method: "PUT",
@@ -4154,6 +4164,9 @@ describe("api server", () => {
       timestamp: expect.any(String)
     });
     expect(invalidSpecMode.json()).not.toHaveProperty("code");
+    expect(longPromptSpec.json()).toMatchObject({
+      systemPromptPreview: `${"x".repeat(120)}…`
+    });
     expect(partialSpecUpdate.json()).toMatchObject({
       enabled: false,
       id: specId,
