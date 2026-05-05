@@ -57,6 +57,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/policy: {}
+
   packages/shared: {}
 
 packages:
