@@ -816,6 +816,7 @@ describe("AgentRuntime", () => {
 
     expect(events).toMatchObject([
       { toolCall: { id: "tool-1", name: "read_invoice" }, type: "tool-call" },
+      { toolCall: { id: "tool-1", name: "read_invoice" }, type: "tool-result" },
       { text: "The current invoice total is 42 credits.", type: "text-delta" },
       { response: { output: "The current invoice total is 42 credits." }, type: "done" }
     ]);

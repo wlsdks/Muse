@@ -160,6 +160,7 @@ export interface AgentRunResult {
 export type AgentRuntimeStreamEvent =
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "text-delta" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call" }>)
+  | { readonly runId: string; readonly toolCall: ModelToolCall; readonly type: "tool-result" }
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "done" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "error" }>);
 
@@ -774,6 +775,7 @@ export class AgentRuntime {
           ? await this.executeToolCall(context, toolCall)
           : blockedToolResult(toolCall, "Error: max tool call limit reached");
 
+        yield { runId: context.runId, toolCall, type: "tool-result" };
         toolCallCount += remaining > 0 ? 1 : 0;
         toolsUsed.push(toolCall.name);
         toolResults.push(executed);

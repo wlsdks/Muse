@@ -68,6 +68,9 @@ importers:
       '@muse/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@muse/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       fastify:
         specifier: ^5.8.5
         version: 5.8.5

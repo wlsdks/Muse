@@ -122,8 +122,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   server.post("/chat", async (request, reply) => runChat(request.body, reply, options, "extended"));
   server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options, "reactor"));
-  server.post("/chat/stream", async (request, reply) => runChatStream(request.body, reply, options));
-  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options));
+  server.post("/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "extended"));
+  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "reactor"));
   server.post("/api/chat/multipart", async (request, reply) => runMultipartChat(request.body, reply, options));
 
   server.get("/admin/summary", async (request, reply) => {
@@ -440,7 +440,8 @@ async function runChatStream(
     status(statusCode: number): { send(payload: unknown): void };
     send(payload: unknown): unknown;
   },
-  options: ServerOptions
+  options: ServerOptions,
+  responseMode: "extended" | "reactor"
 ) {
   if (!options.agentRuntime) {
     return reply.status(503).send({
@@ -457,7 +458,7 @@ async function runChatStream(
 
   reply.header("content-type", "text/event-stream; charset=utf-8");
   reply.header("cache-control", "no-cache");
-  return reply.send(Readable.from(toSseStream(options.agentRuntime.stream(parsed.value))));
+  return reply.send(Readable.from(toSseStream(options.agentRuntime.stream(parsed.value), responseMode)));
 }
 
 async function runMultipartChat(
@@ -972,7 +973,10 @@ function sseData(value: string): string {
   return value.split(/\r?\n/u).map((line) => line.length > 0 ? line : " ").join("\ndata: ");
 }
 
-async function* toSseStream(events: ReturnType<AgentRuntime["stream"]>): AsyncIterable<string> {
+async function* toSseStream(
+  events: ReturnType<AgentRuntime["stream"]>,
+  responseMode: "extended" | "reactor"
+): AsyncIterable<string> {
   for await (const event of events) {
     if (event.type === "text-delta") {
       yield `event: message\ndata: ${sseData(event.text)}\n\n`;
@@ -980,12 +984,30 @@ async function* toSseStream(events: ReturnType<AgentRuntime["stream"]>): AsyncIt
     }
 
     if (event.type === "tool-call") {
+      if (responseMode === "reactor") {
+        yield `event: tool_start\ndata: ${sseData(event.toolCall.name)}\n\n`;
+        continue;
+      }
+
       yield `event: tool_call\ndata: ${sseData(JSON.stringify(event.toolCall))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "tool-result") {
+      if (responseMode === "reactor") {
+        yield `event: tool_end\ndata: ${sseData(event.toolCall.name)}\n\n`;
+      }
+
       continue;
     }
 
     if (event.type === "error") {
       yield `event: error\ndata: ${sseData(event.error.message)}\n\n`;
+      continue;
+    }
+
+    if (responseMode === "reactor") {
+      yield "event: done\ndata:\n\n";
       continue;
     }
 

@@ -31,6 +31,7 @@ import {
   ScheduledJobDispatcher,
   ScheduledMcpToolInvoker
 } from "@muse/scheduler";
+import { ToolRegistry } from "@muse/tools";
 import { buildServer } from "../src/server.js";
 
 describe("api server", () => {
@@ -942,6 +943,94 @@ describe("api server", () => {
     expect(stream.headers["content-type"]).toContain("text/event-stream");
     expect(stream.body).toContain("event: message");
     expect(stream.body).toContain("event: done");
+    expect(stream.body).not.toContain("runId");
+    expect(stream.body).not.toContain("response");
+  });
+
+  it("emits Reactor-compatible SSE tool lifecycle events", async () => {
+    const toolCall = {
+      arguments: { path: "docs/input.md" },
+      id: "tool-1",
+      name: "read_file"
+    };
+    let streamTurns = 0;
+    const modelProvider: ModelProvider = {
+      id: "test",
+      async generate(request) {
+        return {
+          id: "response-final",
+          model: request.model,
+          output: "Tool complete"
+        };
+      },
+      async listModels() {
+        return [];
+      },
+      async *stream(request) {
+        streamTurns += 1;
+
+        if (streamTurns === 1) {
+          yield { toolCall, type: "tool-call" };
+          yield {
+            response: {
+              id: "response-tool",
+              model: request.model,
+              output: "",
+              toolCalls: [toolCall]
+            },
+            type: "done"
+          };
+          return;
+        }
+
+        yield { text: "Tool complete", type: "text-delta" };
+        yield {
+          response: {
+            id: "response-final",
+            model: request.model,
+            output: "Tool complete"
+          },
+          type: "done"
+        };
+      }
+    };
+    const agentRuntime = createAgentRuntime({
+      modelProvider,
+      toolRegistry: new ToolRegistry([
+        {
+          definition: {
+            description: "Read a file",
+            inputSchema: { type: "object" },
+            name: "read_file",
+            risk: "read"
+          },
+          execute: () => "file contents"
+        }
+      ])
+    });
+    const server = buildServer({
+      agentRuntime,
+      defaultModel: "provider/model",
+      logger: false
+    });
+
+    const stream = await server.inject({
+      method: "POST",
+      payload: { message: "Read the file", runId: "run-stream-tools" },
+      url: "/api/chat/stream"
+    });
+
+    const toolStartIndex = stream.body.indexOf("event: tool_start");
+    const toolEndIndex = stream.body.indexOf("event: tool_end");
+
+    expect(stream.statusCode).toBe(200);
+    expect(toolStartIndex).toBeGreaterThanOrEqual(0);
+    expect(toolEndIndex).toBeGreaterThan(toolStartIndex);
+    expect(stream.body).toContain("data: read_file");
+    expect(stream.body).toContain("event: message");
+    expect(stream.body).toContain("event: done\ndata:\n\n");
+    expect(stream.body).not.toContain("event: tool_call");
+    expect(stream.body).not.toContain("run-stream-tools");
   });
 
   it("accepts Reactor-compatible multipart chat uploads", async () => {
