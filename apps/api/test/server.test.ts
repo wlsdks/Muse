@@ -3198,6 +3198,7 @@ describe("api server", () => {
     ]);
     expect(evalPassRate.json()).toMatchObject([{ passed: 2, total: 2 }]);
     expect(alertRule.json()).toMatchObject({ metric: "token_cost", name: "Cost threshold" });
+    expect(alertRule.json()).not.toHaveProperty("updatedAt");
     expect(alertRules.json()).toMatchObject([{ id: alertRule.json().id }]);
     expect(pricing.json()).toMatchObject({ model: "provider/model", provider: "provider" });
     expect(pricingList.json()).toMatchObject([{ id: "provider:provider/model" }]);

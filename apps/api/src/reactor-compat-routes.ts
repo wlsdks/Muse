@@ -2595,7 +2595,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return [...state.platformAlertRules.values()];
+    return [...state.platformAlertRules.values()].map(toPlatformAlertRuleResponse);
   });
   server.post("/api/admin/platform/alerts/rules", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2635,7 +2635,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       resourceType: "alert_rule"
     });
 
-    return saved;
+    return toPlatformAlertRuleResponse(saved);
   });
   server.delete("/api/admin/platform/alerts/rules/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -6851,6 +6851,23 @@ async function tenantSummary(
   ]);
 
   return { alerts, cost, slos, tenants };
+}
+
+function toPlatformAlertRuleResponse(record: JsonObject): JsonObject {
+  return {
+    createdAt: stringField(record.createdAt, nowIso()),
+    description: stringField(record.description, ""),
+    enabled: readBoolean(record.enabled, true),
+    id: stringField(record.id, ""),
+    metric: stringField(record.metric, ""),
+    name: stringField(record.name, ""),
+    platformOnly: readBoolean(record.platformOnly, false),
+    severity: stringField(record.severity, "WARNING"),
+    tenantId: nullableStringResponse(record.tenantId),
+    threshold: readNumber(record.threshold, 0),
+    type: stringField(record.type, "STATIC_THRESHOLD"),
+    windowMinutes: readNumber(record.windowMinutes, 15)
+  };
 }
 
 async function dashboardSummary(options: ReactorCompatibilityRouteOptions) {
