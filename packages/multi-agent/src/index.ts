@@ -21,6 +21,28 @@ export interface MultiAgentRunResult extends AgentRunResult {
   readonly handoffs: readonly HandoffDecision[];
 }
 
+export type OrchestrationMode = "sequential" | "parallel";
+
+export interface OrchestrationStepResult {
+  readonly workerId: string;
+  readonly status: "completed" | "failed";
+  readonly result?: AgentRunResult;
+  readonly error?: string;
+}
+
+export interface OrchestrationRunOptions {
+  readonly mode?: OrchestrationMode;
+  readonly workerIds?: readonly string[];
+  readonly maxWorkers?: number;
+}
+
+export interface MultiAgentOrchestrationResult {
+  readonly mode: OrchestrationMode;
+  readonly runId: string;
+  readonly results: readonly OrchestrationStepResult[];
+  readonly response: AgentRunResult["response"];
+}
+
 export interface SupervisorOptions {
   readonly workers: readonly AgentWorker[];
   readonly defaultWorkerId?: string;
@@ -179,6 +201,87 @@ export class SupervisorAgent {
   }
 }
 
+export class MultiAgentOrchestrator {
+  private readonly workers: readonly AgentWorker[];
+  private readonly idFactory: () => string;
+
+  constructor(options: { readonly workers: readonly AgentWorker[]; readonly idFactory?: () => string }) {
+    if (options.workers.length === 0) {
+      throw new NoAgentWorkerError("MultiAgentOrchestrator requires at least one worker");
+    }
+
+    this.workers = options.workers;
+    this.idFactory = options.idFactory ?? (() => createRunId("multi_agent_orchestration"));
+  }
+
+  async run(input: AgentRunInput, options: OrchestrationRunOptions = {}): Promise<MultiAgentOrchestrationResult> {
+    const mode = options.mode ?? "sequential";
+    const runId = input.runId ?? this.idFactory();
+    const selectedWorkers = this.selectWorkers(options.workerIds, options.maxWorkers);
+    const results = mode === "parallel"
+      ? await this.runParallel({ ...input, runId }, selectedWorkers)
+      : await this.runSequential({ ...input, runId }, selectedWorkers);
+
+    if (!results.some((result) => result.status === "completed")) {
+      throw new NoAgentWorkerError("No worker completed the orchestration");
+    }
+
+    return {
+      mode,
+      response: buildOrchestrationResponse(runId, input.model, results),
+      results,
+      runId
+    };
+  }
+
+  private selectWorkers(workerIds: readonly string[] | undefined, maxWorkers: number | undefined): readonly AgentWorker[] {
+    const selected = workerIds
+      ? workerIds.map((id) => this.requireWorker(id))
+      : this.workers;
+    const limit = Math.max(1, maxWorkers ?? selected.length);
+    return selected.slice(0, limit);
+  }
+
+  private async runSequential(input: AgentRunInput, workers: readonly AgentWorker[]): Promise<readonly OrchestrationStepResult[]> {
+    const results: OrchestrationStepResult[] = [];
+    let currentInput = input;
+
+    for (const worker of workers) {
+      try {
+        const result = await worker.run(withSelectedWorker(currentInput, worker.id));
+        results.push({ result, status: "completed", workerId: worker.id });
+        currentInput = addWorkerResultMessage(currentInput, worker.id, result.response.output);
+      } catch (error) {
+        results.push({ error: errorMessage(error), status: "failed", workerId: worker.id });
+        currentInput = addHandoffMessage(currentInput, worker.id, error);
+      }
+    }
+
+    return results;
+  }
+
+  private async runParallel(input: AgentRunInput, workers: readonly AgentWorker[]): Promise<readonly OrchestrationStepResult[]> {
+    return Promise.all(workers.map(async (worker): Promise<OrchestrationStepResult> => {
+      try {
+        const result = await worker.run(withSelectedWorker(input, worker.id));
+        return { result, status: "completed", workerId: worker.id };
+      } catch (error) {
+        return { error: errorMessage(error), status: "failed", workerId: worker.id };
+      }
+    }));
+  }
+
+  private requireWorker(id: string): AgentWorker {
+    const worker = this.workers.find((candidate) => candidate.id === id);
+
+    if (!worker) {
+      throw new NoAgentWorkerError(`Worker not found: ${id}`);
+    }
+
+    return worker;
+  }
+}
+
 export function createWorkerResult(
   workerId: string,
   output: string,
@@ -196,9 +299,31 @@ export function createWorkerResult(
   };
 }
 
+function withSelectedWorker(input: AgentRunInput, workerId: string): AgentRunInput {
+  return {
+    ...input,
+    metadata: {
+      ...input.metadata,
+      selectedAgentId: workerId
+    }
+  };
+}
+
+function addWorkerResultMessage(input: AgentRunInput, workerId: string, output: string): AgentRunInput {
+  const message: ModelMessage = {
+    content: `Worker '${workerId}' completed:\n${output}`,
+    role: "system"
+  };
+
+  return {
+    ...input,
+    messages: [message, ...input.messages]
+  };
+}
+
 function addHandoffMessage(input: AgentRunInput, workerId: string, error: unknown): AgentRunInput {
   const message: ModelMessage = {
-    content: `Worker '${workerId}' failed: ${error instanceof Error ? error.message : "unknown error"}`,
+    content: `Worker '${workerId}' failed: ${errorMessage(error)}`,
     role: "system"
   };
 
@@ -210,6 +335,37 @@ function addHandoffMessage(input: AgentRunInput, workerId: string, error: unknow
 
 function joinMessages(messages: readonly ModelMessage[]): string {
   return messages.map((message) => message.content).join("\n");
+}
+
+function buildOrchestrationResponse(
+  runId: string,
+  model: string,
+  results: readonly OrchestrationStepResult[]
+): AgentRunResult["response"] {
+  const output = results
+    .map((result) =>
+      result.status === "completed"
+        ? `## ${result.workerId}\n${result.result?.response.output ?? ""}`
+        : `## ${result.workerId}\nError: ${result.error ?? "unknown error"}`
+    )
+    .join("\n\n");
+
+  return {
+    id: createRunId("multi_agent_response"),
+    model,
+    output,
+    raw: {
+      runId,
+      workers: results.map((result) => ({
+        status: result.status,
+        workerId: result.workerId
+      }))
+    }
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }
 
 function clamp(value: number, min: number, max: number): number {

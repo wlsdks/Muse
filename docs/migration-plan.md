@@ -64,7 +64,7 @@ multiple source modules.
 | Context handling | `packages/memory`, `packages/agent-core` | Context trimming, pinned-entity compaction summaries, and assistant/tool message-pair handling exist |
 | Response filtering | `packages/policy`, `packages/agent-core` | Output guards, verified-source rendering, source/structured filters, markdown/sanitized-text cleanup, greeting/lure stripping, fabrication refusal, policy-prior warning, max-length truncation, Slack ID masking, internal brand masking, tool-result quality audit, response-count injection/consistency, zero-result overclaim cleanup, and release-risk data-gap cleanup exist |
 | Hook lifecycle | `packages/agent-core`, `packages/runtime-state`, `packages/integrations` | Agent/tool hook callbacks, trace persistence, and webhook signing exist |
-| Multi-agent orchestration | `packages/multi-agent` | Supervisor, worker selection, fallback, and handoff trace primitives exist |
+| Multi-agent orchestration | `packages/multi-agent` | Supervisor, worker selection, fallback, sequential/parallel delegation, and handoff trace primitives exist |
 
 ## Remaining Deep-Hardening Areas
 
@@ -196,6 +196,8 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
   (`beforeTool` and `afterTool`) and records completed/failed traces without blocking the ReAct loop.
 - Context compaction compatibility now carries pinned entities from dropped user messages into generated summaries,
   preserving issue keys and quoted terms for pronoun resolution across later turns.
+- Multi-agent compatibility now includes package-level sequential and parallel delegation modes in addition to
+  supervisor worker selection and failure fallback.
 
 ## Execution Plan
 
