@@ -1205,7 +1205,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     const rating = parseFeedbackRating(body.rating);
 
     if (!rating) {
-      return badRequest(reply, "INVALID_FEEDBACK_RATING", "Invalid rating value");
+      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
     }
 
     return reply.status(201).send(toFeedbackResponse(createFeedback(request)));
@@ -1220,22 +1220,22 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     const status = readQueryString(request, "status");
 
     if (q && q.trim().length > 0 && q.trim().length < 2) {
-      return badRequest(reply, "INVALID_FEEDBACK_QUERY", "q must be at least 2 characters");
+      return reply.status(400).send(errorResponse("q는 최소 2자 이상이어야 합니다"));
     }
 
     if (rating && !parseFeedbackRating(rating)) {
-      return badRequest(reply, "INVALID_FEEDBACK_RATING", "Invalid rating value");
+      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
     }
 
     if (status && !parseFeedbackReviewStatus(status)) {
-      return badRequest(reply, "INVALID_FEEDBACK_STATUS", "Invalid review status");
+      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
     }
 
     for (const key of ["from", "to"]) {
       const raw = readQueryString(request, key);
 
       if (raw && readQueryInstantMillis(request, key) === undefined) {
-        return badRequest(reply, "INVALID_FEEDBACK_TIMESTAMP", `Invalid timestamp for ${key}`);
+        return reply.status(400).send(errorResponse("잘못된 요청입니다"));
       }
     }
 
@@ -1285,7 +1285,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     const failed: JsonObject[] = [];
 
     if (ids.length === 0) {
-      return badRequest(reply, "INVALID_FEEDBACK_BULK_UPDATE", "ids must not be empty");
+      return reply.status(400).send(errorResponse("요청 형식이 올바르지 않습니다"));
     }
 
     if (ids.length > 100) {
@@ -1293,7 +1293,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     }
 
     if (typeof body.status === "string" && !parseFeedbackReviewStatus(body.status)) {
-      return badRequest(reply, "INVALID_FEEDBACK_STATUS", "Invalid review status");
+      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
     }
 
     for (const id of ids) {
@@ -1313,7 +1313,9 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
   server.get("/api/feedback/:feedbackId", async (request, reply) => {
     const { feedbackId } = request.params as { readonly feedbackId: string };
     const feedback = findCompatRecord(state.feedback, feedbackId);
-    return feedback ? toFeedbackResponse(feedback) : notFound(reply, "FEEDBACK_NOT_FOUND");
+    return feedback
+      ? toFeedbackResponse(feedback)
+      : reply.status(404).send(errorResponse(`Feedback not found: ${feedbackId}`));
   });
   server.patch("/api/feedback/:feedbackId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1324,13 +1326,13 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     const feedback = findCompatRecord(state.feedback, feedbackId);
 
     if (!feedback) {
-      return notFound(reply, "FEEDBACK_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`Feedback not found: ${feedbackId}`));
     }
 
     const expectedVersion = readIfMatchVersion(request);
 
     if (expectedVersion === undefined) {
-      return badRequest(reply, "MISSING_IF_MATCH", "If-Match header is required");
+      return reply.status(400).send(errorResponse("If-Match 헤더가 필수입니다 (current version)"));
     }
 
     const currentVersion = readNumber(feedback.version, 1);
@@ -1346,7 +1348,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     const body = toBody(request.body);
 
     if (typeof body.status === "string" && !parseFeedbackReviewStatus(body.status)) {
-      return badRequest(reply, "INVALID_FEEDBACK_STATUS", "Invalid review status");
+      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
     }
 
     return toFeedbackResponse(updateFeedbackReview(feedback, body, readAuthUserId(request) ?? "admin"));

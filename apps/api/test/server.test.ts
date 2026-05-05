@@ -625,6 +625,11 @@ describe("api server", () => {
     });
 
     expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({
+      error: "관리자 권한이 필요합니다",
+      timestamp: expect.any(String)
+    });
+    expect(denied.json()).not.toHaveProperty("code");
     expect(activeBefore.json()).toMatchObject([{ id: "alert-1", status: "open" }]);
     expect(evaluated.json()).toEqual({ status: "evaluation complete" });
     expect(resolved.statusCode).toBe(200);
@@ -2301,6 +2306,12 @@ describe("api server", () => {
       method: "GET",
       url: "/api/feedback?q=x"
     });
+    const missingIfMatch = await server.inject({
+      headers,
+      method: "PATCH",
+      payload: { status: "done" },
+      url: `/api/feedback/${feedbackId}`
+    });
     const conflict = await server.inject({
       headers: { ...headers, "if-match": "2" },
       method: "PATCH",
@@ -2350,6 +2361,11 @@ describe("api server", () => {
 
     expect(submitted.statusCode).toBe(201);
     expect(invalidRating.statusCode).toBe(400);
+    expect(invalidRating.json()).toMatchObject({
+      error: "잘못된 요청입니다",
+      timestamp: expect.any(String)
+    });
+    expect(invalidRating.json()).not.toHaveProperty("code");
     expect(submitted.json()).toMatchObject({
       feedbackId,
       rating: "thumbs_down",
@@ -2363,8 +2379,24 @@ describe("api server", () => {
       prevCursor: null
     });
     expect(shortQuery.statusCode).toBe(400);
+    expect(shortQuery.json()).toMatchObject({
+      error: "q는 최소 2자 이상이어야 합니다",
+      timestamp: expect.any(String)
+    });
+    expect(shortQuery.json()).not.toHaveProperty("code");
+    expect(missingIfMatch.statusCode).toBe(400);
+    expect(missingIfMatch.json()).toMatchObject({
+      error: "If-Match 헤더가 필수입니다 (current version)",
+      timestamp: expect.any(String)
+    });
+    expect(missingIfMatch.json()).not.toHaveProperty("code");
     expect(conflict.statusCode).toBe(409);
     expect(invalidStatus.statusCode).toBe(400);
+    expect(invalidStatus.json()).toMatchObject({
+      error: "잘못된 요청입니다",
+      timestamp: expect.any(String)
+    });
+    expect(invalidStatus.json()).not.toHaveProperty("code");
     expect(reviewed.json()).toMatchObject({
       feedbackId,
       reviewNote: "Added to prompt backlog",

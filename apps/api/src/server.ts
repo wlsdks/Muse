@@ -1074,7 +1074,7 @@ function toLoginResponse(login: LoginResult) {
 
 function authorizeAdmin(
   request: unknown,
-  reply: { status(statusCode: number): { send(payload: ApiError): void } },
+  reply: { status(statusCode: number): { send(payload: unknown): void } },
   authEnabled: boolean
 ): boolean {
   if (!authEnabled) {
@@ -1088,8 +1088,8 @@ function authorizeAdmin(
   }
 
   reply.status(403).send({
-    code: "FORBIDDEN",
-    message: "Admin access is required"
+    error: "관리자 권한이 필요합니다",
+    timestamp: new Date().toISOString()
   });
   return false;
 }
