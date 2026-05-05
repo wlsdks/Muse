@@ -77,6 +77,18 @@ importers:
 
   packages/shared: {}
 
+  packages/tools:
+    dependencies:
+      '@muse/model':
+        specifier: workspace:*
+        version: link:../model
+      '@muse/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
+
 packages:
 
   '@clack/core@1.3.0':
