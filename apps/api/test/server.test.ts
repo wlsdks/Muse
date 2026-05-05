@@ -388,6 +388,81 @@ describe("api server", () => {
     expect(ownDelete.statusCode).toBe(204);
   });
 
+  it("scopes Reactor approval lists to the authenticated user", async () => {
+    const authService = createAuthService();
+    const admin = authService.register({
+      email: "approval_admin",
+      name: "Approval Admin",
+      password: "password-1"
+    });
+    const member = authService.register({
+      email: "approval_member",
+      name: "Approval Member",
+      password: "password-1"
+    });
+    let approvalIndex = 0;
+    const pendingApprovalStore = new InMemoryPendingApprovalStore({
+      idFactory: () => `approval-${++approvalIndex}`
+    });
+    const adminApproval = pendingApprovalStore.requestApproval({
+      arguments: { path: "admin.md" },
+      runId: "run-admin",
+      timeoutMs: 10_000,
+      toolName: "write_file",
+      userId: admin.user.id
+    });
+    const memberApproval = pendingApprovalStore.requestApproval({
+      arguments: { path: "member.md" },
+      runId: "run-member",
+      timeoutMs: 10_000,
+      toolName: "write_file",
+      userId: member.user.id
+    });
+    const server = buildServer({
+      authService,
+      logger: false,
+      pendingApprovalStore,
+      requireAuth: true
+    });
+    const adminHeaders = { authorization: `Bearer ${admin.token}` };
+    const memberHeaders = { authorization: `Bearer ${member.token}` };
+
+    const spoofedMemberList = await server.inject({
+      headers: memberHeaders,
+      method: "GET",
+      url: `/api/approvals?userId=${admin.user.id}&limit=500`
+    });
+    const adminList = await server.inject({
+      headers: adminHeaders,
+      method: "GET",
+      url: "/api/approvals?limit=500"
+    });
+    await server.inject({
+      headers: adminHeaders,
+      method: "POST",
+      payload: { reason: "cleanup" },
+      url: "/api/approvals/approval-1/reject"
+    });
+    await server.inject({
+      headers: adminHeaders,
+      method: "POST",
+      payload: { reason: "cleanup" },
+      url: "/api/approvals/approval-2/reject"
+    });
+
+    expect(spoofedMemberList.json()).toMatchObject({
+      items: [{ id: "approval-2", runId: "run-member" }],
+      limit: 200,
+      total: 1
+    });
+    expect(adminList.json()).toMatchObject({
+      limit: 200,
+      total: 2
+    });
+    await expect(adminApproval).resolves.toMatchObject({ approved: false, reason: "cleanup" });
+    await expect(memberApproval).resolves.toMatchObject({ approved: false, reason: "cleanup" });
+  });
+
   it("rate limits failed auth attempts", async () => {
     const authService = createAuthService();
     authService.register({

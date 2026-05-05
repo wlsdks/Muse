@@ -667,12 +667,18 @@ function registerApprovalCompatibilityRoutes(server: FastifyInstance, options: R
 
     const offset = readQueryInteger(request, "offset", 0);
     const limit = readQueryInteger(request, "limit", 50);
-    const userId = readQueryString(request, "userId") ?? readAuthUserId(request);
-    const items = isAdminLikeRequest(request) || !userId
+    const userId = readAuthUserId(request);
+    const isAdmin = isAuthenticatedAdminLikeRequest(request);
+
+    if (!isAdmin && !userId) {
+      return reply.status(403).send(errorResponse("관리자 권한이 필요합니다"));
+    }
+
+    const items = isAdmin
       ? await store.listPending()
-      : await store.listPendingByUser(userId);
+      : await store.listPendingByUser(userId ?? "");
     const safeOffset = Math.max(0, offset);
-    const safeLimit = Math.min(100, Math.max(1, limit));
+    const safeLimit = clampLimit(limit);
     const paged = items.slice(safeOffset, safeOffset + safeLimit);
 
     return {
@@ -8625,6 +8631,11 @@ function readAuthUserId(request: FastifyRequest): string | undefined {
 function isAdminLikeRequest(request: FastifyRequest): boolean {
   const role = (request as { auth?: { role?: string } }).auth?.role;
   return role === undefined || role === "admin" || role === "admin_manager" || role === "admin_developer";
+}
+
+function isAuthenticatedAdminLikeRequest(request: FastifyRequest): boolean {
+  const role = (request as { auth?: { role?: string } }).auth?.role;
+  return role === "admin" || role === "admin_manager" || role === "admin_developer";
 }
 
 function readBodyString(value: unknown, key: string): string | undefined {
