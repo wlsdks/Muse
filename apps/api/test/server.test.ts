@@ -18,7 +18,7 @@ import {
 } from "@muse/mcp";
 import { InMemoryTaskMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
-import { InMemoryFollowupSuggestionStore } from "@muse/observability";
+import { InMemoryAgentMetrics, InMemoryFollowupSuggestionStore } from "@muse/observability";
 import {
   InMemoryAdminOperationsStore,
   InMemoryAgentRunHistoryStore,
@@ -2581,7 +2581,11 @@ describe("api server", () => {
     expect(toolStats.json()).toMatchObject({ accuracy: 1, byOutcome: { ok: 1 }, total: 1 });
     expect(toolAccuracy.json()).toMatchObject({ accuracy: 1, ok: 1, total: 1 });
     expect(followupStats.json()).toMatchObject({ totalClicks: 0, totalImpressions: 0, windowHours: 24 });
-    expect(inputGuardStats.json()).toMatchObject({ blockRate: 0, total: 0 });
+    expect(inputGuardStats.json()).toMatchObject({
+      blockRate: 0,
+      periodHours: 24,
+      totalRequests: 0
+    });
     expect(inputGuardAudits.json()).toMatchObject({
       audits: [{ action: "SIMULATE", category: "input_guard" }],
       total: 1
@@ -2924,6 +2928,48 @@ describe("api server", () => {
       totalClicks: 1,
       totalImpressions: 1,
       windowHours: 24
+    });
+  });
+
+  it("returns Reactor input guard stats from recorded guard rejection metrics", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "guard_stats_admin",
+      name: "Guard Stats Admin",
+      password: "password-1"
+    });
+    const metrics = new InMemoryAgentMetrics();
+
+    metrics.recordGuardRejection("InjectionDetection", "prompt_injection");
+
+    const server = buildServer({
+      admin: { observability: { metrics } },
+      authService,
+      logger: false,
+      requireAuth: true
+    });
+    const response = await server.inject({
+      headers: { authorization: `Bearer ${registered.token}` },
+      method: "GET",
+      url: "/api/admin/input-guard/stats?hours=48"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      blockRate: 1,
+      byStage: [{
+        allowed: 0,
+        errors: 0,
+        rejected: 1,
+        stage: "InjectionDetection",
+        topReasons: [{ count: 1, reason: "prompt_injection" }],
+        triggered: 1
+      }],
+      periodHours: 48,
+      totalAllowed: 0,
+      totalErrors: 0,
+      totalRejected: 1,
+      totalRequests: 1
     });
   });
 

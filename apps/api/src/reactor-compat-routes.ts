@@ -2951,19 +2951,8 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    const hours = Math.max(1, readQueryInteger(request, "hours", 24));
-    return {
-      blockRate: 0,
-      byReason: {},
-      byStage: [...state.inputGuardRules.values()].map((rule) => ({
-        allowed: 0,
-        rejected: 0,
-        stageName: String(rule.name ?? rule.id),
-        triggered: 0
-      })),
-      hours,
-      total: 0
-    };
+    const hours = Math.min(168, Math.max(1, readQueryInteger(request, "hours", 24)));
+    return inputGuardStatsResponse(options, hours);
   });
 
   server.get("/api/admin/metrics/latency/summary", async (request, reply) => {
@@ -4217,6 +4206,58 @@ function toInputGuardAuditResponse(record: JsonObject): JsonObject {
     resourceId: nullableStringResponse(record.resourceId),
     resourceType: nullableStringResponse(record.resourceType),
     timestamp: stringField(record.createdAt, nowIso())
+  };
+}
+
+function inputGuardStatsResponse(options: ReactorCompatibilityRouteOptions, periodHours: number): JsonObject {
+  const events = (options.admin?.observability?.metrics?.recordedEvents() ?? [])
+    .map(toJsonObject)
+    .filter((event) => event.type === "guard_rejection");
+  const byStage = new Map<string, {
+    errors: number;
+    reasons: Map<string, number>;
+    rejected: number;
+    stage: string;
+  }>();
+
+  for (const event of events) {
+    const payload = jsonObjectField(event.payload);
+    const stage = stringField(payload.stage, "unknown");
+    const reason = stringField(payload.reason, "unknown");
+    const stats = byStage.get(stage) ?? {
+      errors: 0,
+      reasons: new Map<string, number>(),
+      rejected: 0,
+      stage
+    };
+
+    stats.rejected += 1;
+    stats.reasons.set(reason, (stats.reasons.get(reason) ?? 0) + 1);
+    byStage.set(stage, stats);
+  }
+
+  const totalRejected = events.length;
+
+  return {
+    blockRate: totalRejected > 0 ? 1 : 0,
+    byStage: [...byStage.values()]
+      .sort((left, right) => right.rejected - left.rejected || left.stage.localeCompare(right.stage))
+      .map((stage) => ({
+        allowed: 0,
+        errors: stage.errors,
+        rejected: stage.rejected,
+        stage: stage.stage,
+        topReasons: [...stage.reasons.entries()]
+          .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+          .slice(0, 5)
+          .map(([reason, count]) => ({ count, reason })),
+        triggered: stage.rejected + stage.errors
+      })),
+    periodHours,
+    totalAllowed: 0,
+    totalErrors: 0,
+    totalRejected,
+    totalRequests: totalRejected
   };
 }
 
