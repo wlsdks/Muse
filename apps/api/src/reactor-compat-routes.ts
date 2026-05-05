@@ -2180,28 +2180,39 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
     const body = toJsonObject(request.body);
     const channelId = readBodyString(body, "channelId");
 
-    if (!channelId) {
-      return reply.status(400).send({ code: "INVALID_SLACK_FAQ_CHANNEL", message: "Body must include channelId" });
+    const validation = validateSlackFaqChannelId(channelId, reply);
+    if (validation) {
+      return validation;
     }
 
-    return createRecord(state.slackFaq, {
-      autoReplyMode: readBodyString(body, "autoReplyMode") ?? "MENTION_ONLY",
-      channelId,
+    const channelKey = channelId ?? "";
+    const registeredAt = nowIso();
+    const saved = createRecord(state.slackFaq, {
+      autoReplyMode: slackFaqAutoReplyMode(readBodyString(body, "autoReplyMode")),
+      channelId: channelKey,
       channelName: readBodyNullableString(body, "channelName") ?? null,
-      confidenceThreshold: readNumber(body.confidenceThreshold, 0.78),
+      confidenceThreshold: readNumber(body.confidenceThreshold, 0.8),
       daysBack: readNumber(body.daysBack, 30),
       enabled: readBoolean(body.enabled, true),
-      id: channelId,
+      id: channelKey,
       reIngestIntervalHours: readNumber(body.reIngestIntervalHours, 24),
-      status: "registered"
+      lastChunkCount: null,
+      lastError: null,
+      lastIngestedAt: null,
+      lastMessageCount: null,
+      lastStatus: null,
+      registeredAt,
+      registeredBy: readAuthUserId(request) ?? null,
+      updatedAt: registeredAt
     }, "slack_faq");
+    return toSlackFaqRegistration(saved);
   });
   server.get("/api/admin/slack/channels/faq", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return { registrations: [...state.slackFaq.values()] };
+    return { registrations: [...state.slackFaq.values()].map(toSlackFaqRegistration) };
   });
   server.get("/api/admin/slack/channels/faq/stats", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2215,21 +2226,58 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return { enabled: Boolean(options.scheduler?.service), status: "ok" };
+    return { enabled: false };
   });
   server.get("/api/admin/slack/channels/faq/:channelId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return findRecordByParam(state.slackFaq, request, reply, "channelId");
+    const { channelId } = request.params as { readonly channelId: string };
+    const validation = validateSlackFaqChannelId(channelId, reply);
+    if (validation) {
+      return validation;
+    }
+
+    const record = findCompatRecord(state.slackFaq, channelId);
+    return record ? toSlackFaqRegistration(record) : slackFaqNotFound(reply, channelId);
   });
   server.patch("/api/admin/slack/channels/faq/:channelId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return upsertByParam(state.slackFaq, request, "channelId", "slack_faq");
+    const { channelId } = request.params as { readonly channelId: string };
+    const validation = validateSlackFaqChannelId(channelId, reply);
+    if (validation) {
+      return validation;
+    }
+
+    const existing = findCompatRecord(state.slackFaq, channelId);
+    if (!existing) {
+      return slackFaqNotFound(reply, channelId);
+    }
+
+    const body = toBody(request.body);
+    const saved = createRecord(state.slackFaq, {
+      ...existing,
+      autoReplyMode: body.autoReplyMode === undefined
+        ? stringField(existing.autoReplyMode, "MENTION")
+        : slackFaqAutoReplyMode(readBodyString(body, "autoReplyMode")),
+      channelId,
+      channelName: readBodyNullableString(body, "channelName") ?? nullableStringResponse(existing.channelName),
+      confidenceThreshold: body.confidenceThreshold === undefined
+        ? readNumber(existing.confidenceThreshold, 0.8)
+        : readNumber(body.confidenceThreshold, 0.8),
+      daysBack: body.daysBack === undefined ? readNumber(existing.daysBack, 30) : readNumber(body.daysBack, 30),
+      enabled: body.enabled === undefined ? readBoolean(existing.enabled, true) : readBoolean(body.enabled, true),
+      id: channelId,
+      reIngestIntervalHours: body.reIngestIntervalHours === undefined
+        ? readNumber(existing.reIngestIntervalHours, 24)
+        : readNumber(body.reIngestIntervalHours, 24),
+      updatedAt: nowIso()
+    }, "slack_faq");
+    return toSlackFaqRegistration(saved);
   });
   server.delete("/api/admin/slack/channels/faq/:channelId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2237,31 +2285,36 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { channelId } = request.params as { readonly channelId: string };
+    const validation = validateSlackFaqChannelId(channelId, reply);
+    if (validation) {
+      return validation;
+    }
+
     const deleted = state.slackFaq.delete(channelId);
     state.slackFaqEvents.delete(channelId);
     state.slackFaqFeedback.delete(channelId);
-    return deleted ? { deleted: channelId } : notFound(reply, "SLACK_FAQ_CHANNEL_NOT_FOUND");
+    return deleted ? { deleted: channelId } : slackFaqNotFound(reply, channelId);
   });
   server.post("/api/admin/slack/channels/faq/:channelId/ingest", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return slackFaqAction(request, "ingested");
+    return slackFaqIngest(request, reply);
   });
   server.post("/api/admin/slack/channels/faq/:channelId/probe", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return slackFaqAction(request, "probed");
+    return slackFaqProbe(request, reply);
   });
   server.post("/api/admin/slack/channels/faq/:channelId/dry-run", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return slackFaqAction(request, "dry_run");
+    return slackFaqDryRun(request, reply);
   });
   server.get("/api/admin/slack/channels/faq/:channelId/stats", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2277,8 +2330,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { channelId } = request.params as { readonly channelId: string };
-    const limit = readQueryInteger(request, "limit", 50);
-    return { events: (state.slackFaqEvents.get(channelId) ?? []).slice(0, Math.max(0, limit)) };
+    return { events: (state.slackFaqEvents.get(channelId) ?? []).slice(0, 50).map(toSlackFaqEvent) };
   });
   server.get("/api/admin/slack/channels/faq/:channelId/feedback", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2304,7 +2356,12 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return { reloaded: true };
+    const sections = reactorPromptSectionKeys();
+    return {
+      reloaded: true,
+      sectionCount: sections.length,
+      sections
+    };
   });
 }
 
@@ -2398,10 +2455,10 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return { status: "ok", summary: await dashboardSummary(options) };
+    return platformHealthDashboard(options);
   });
-  server.get("/api/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options));
-  server.get("/api/admin/doctor/summary", async (request, reply) => adminDiagnostic(request, reply, options));
+  server.get("/api/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
+  server.get("/api/admin/doctor/summary", async (request, reply) => adminDiagnostic(request, reply, options, "summary"));
   server.get("/api/admin/platform/cache/stats", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -2457,8 +2514,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     return {
       available: state.documents.size > 0,
-      documentCount: state.documents.size,
-      indexedDocuments: [...state.documents.values()].filter((document) => document.deleted !== true).length
+      documentCount: state.documents.size
     };
   });
   server.post("/api/admin/platform/cache/invalidate", async (request, reply) => {
@@ -2771,7 +2827,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     const { userId } = request.params as { readonly userId: string };
     return options.historyStore?.listRunsByUser(userId) ?? [];
   });
-  server.get("/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options));
+  server.get("/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
   server.get("/api/admin/traces", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -3552,6 +3608,23 @@ async function exportSession(
   if (readQueryString(request, "format") === "markdown") {
     const sessionId = (request.params as { readonly sessionId: string }).sessionId;
     const messages = Array.isArray(detail.messages) ? detail.messages : [];
+    reply.header("content-disposition", `attachment; filename="${sanitizeFilename(sessionId)}.md"`);
+    reply.header("content-type", "text/markdown; charset=utf-8");
+
+    if (mode === "reactor") {
+      return [
+        `# Conversation: ${sessionId}`,
+        "",
+        ...messages.flatMap((message) => {
+          if (!isRecord(message)) {
+            return [];
+          }
+
+          return [`## ${String(message.role ?? "message")}`, "", String(message.content ?? ""), ""];
+        })
+      ].join("\n");
+    }
+
     return [
       `# Session: ${sessionId}`,
       "",
@@ -3566,6 +3639,11 @@ async function exportSession(
       })
     ].join("\n");
   }
+
+  reply.header(
+    "content-disposition",
+    `attachment; filename="${sanitizeFilename((request.params as { readonly sessionId: string }).sessionId)}.json"`
+  );
 
   return {
     exportedAt: mode === "reactor" ? Date.now() : nowIso(),
@@ -6471,53 +6549,227 @@ function activatePromptVersionById(templateId: string, versionId: string): JsonO
   return toVersionResponse(selected);
 }
 
-function slackFaqAction(request: FastifyRequest, status: string) {
-  const { channelId } = request.params as { readonly channelId: string };
-  const existing = findCompatRecord(state.slackFaq, channelId);
-  const query = readBodyString(request.body, "query");
-  const outcome = existing ? "HIT" : "SKIP_NOT_REGISTERED";
-  const event = createRecord(new Map(), {
-    matchedDocId: existing ? `slack-faq:${channelId}` : null,
-    outcome,
-    query: query?.slice(0, 200) ?? null,
-    score: existing ? 1 : null,
-    timestamp: Date.now()
-  }, "slack_faq_event");
-  const events = state.slackFaqEvents.get(channelId) ?? [];
-  state.slackFaqEvents.set(channelId, [event, ...events].slice(0, 50));
-
-  if (existing) {
-    state.slackFaqFeedback.set(channelId, state.slackFaqFeedback.get(channelId) ?? {});
+function validateSlackFaqChannelId(channelId: string | undefined, reply: FastifyReply) {
+  if (!channelId || channelId.trim().length === 0 || channelId.length > 64) {
+    return reply.status(400).send({ error: "channelId 가 유효하지 않습니다" });
   }
 
-  return createRecord(state.slackFaq, {
-    ...existing,
+  return undefined;
+}
+
+function slackFaqNotFound(reply: FastifyReply, channelId: string) {
+  return reply.status(404).send({ error: `등록되지 않은 채널: ${channelId}` });
+}
+
+function slackFaqAutoReplyMode(value: string | undefined): string {
+  const normalized = value?.trim().toUpperCase();
+  return normalized === "ALWAYS" || normalized === "OFF" ? normalized : "MENTION";
+}
+
+function toSlackFaqRegistration(record: JsonObject): JsonObject {
+  return {
+    autoReplyMode: slackFaqAutoReplyMode(stringField(record.autoReplyMode, "MENTION")),
+    channelId: stringField(record.channelId, stringField(record.id, "")),
+    channelName: nullableStringResponse(record.channelName),
+    confidenceThreshold: readNumber(record.confidenceThreshold, 0.8),
+    daysBack: readNumber(record.daysBack, 30),
+    enabled: readBoolean(record.enabled, true),
+    lastChunkCount: nullableNumberResponse(record.lastChunkCount),
+    lastError: nullableStringResponse(record.lastError),
+    lastIngestedAt: nullableStringResponse(record.lastIngestedAt),
+    lastMessageCount: nullableNumberResponse(record.lastMessageCount),
+    lastStatus: record.lastStatus === null ? null : stringField(record.lastStatus, ""),
+    registeredAt: stringField(record.registeredAt, stringField(record.createdAt, nowIso())),
+    registeredBy: nullableStringResponse(record.registeredBy),
+    updatedAt: stringField(record.updatedAt, nowIso())
+  };
+}
+
+function slackFaqIngest(request: FastifyRequest, reply: FastifyReply) {
+  const { channelId } = request.params as { readonly channelId: string };
+  const validation = validateSlackFaqChannelId(channelId, reply);
+  if (validation) {
+    return validation;
+  }
+
+  const existing = findCompatRecord(state.slackFaq, channelId);
+  if (!existing) {
+    return slackFaqNotFound(reply, channelId);
+  }
+
+  const documentCount = slackFaqDocuments(channelId).length;
+  const result = {
+    apiCalls: 0,
     channelId,
-    id: channelId,
-    lastActionAt: nowIso(),
-    status
+    chunkCount: documentCount,
+    documentCount,
+    messagesScanned: documentCount
+  };
+  createRecord(state.slackFaq, {
+    ...existing,
+    lastChunkCount: result.chunkCount,
+    lastError: null,
+    lastIngestedAt: nowIso(),
+    lastMessageCount: result.messagesScanned,
+    lastStatus: "OK"
   }, "slack_faq");
+  return result;
+}
+
+function slackFaqProbe(request: FastifyRequest, reply: FastifyReply) {
+  const { channelId } = request.params as { readonly channelId: string };
+  const validation = validateSlackFaqChannelId(channelId, reply);
+  if (validation) {
+    return validation;
+  }
+
+  const query = readBodyString(request.body, "query");
+  if (!query) {
+    return reply.status(400).send({ error: "query 는 필수입니다" });
+  }
+
+  return {
+    candidates: slackFaqCandidates(channelId, query, readNumber(toBody(request.body).topK, 5)),
+    channelId,
+    query
+  };
+}
+
+function slackFaqDryRun(request: FastifyRequest, reply: FastifyReply) {
+  const { channelId } = request.params as { readonly channelId: string };
+  const validation = validateSlackFaqChannelId(channelId, reply);
+  if (validation) {
+    return validation;
+  }
+
+  const query = readBodyString(request.body, "query");
+  if (!query) {
+    return reply.status(400).send({ error: "query 는 필수입니다" });
+  }
+
+  const registration = findCompatRecord(state.slackFaq, channelId);
+  const threshold = readNumber(registration?.confidenceThreshold, 0.8);
+  const matched = registration && readBoolean(registration.enabled, true)
+    && slackFaqShouldTrigger(stringField(registration.autoReplyMode, "MENTION"), readBoolean(toBody(request.body).asMention, true))
+    ? slackFaqCandidates(channelId, query, 3)
+      .find((candidate) => readNumber(candidate.score, 0) >= threshold)
+    : undefined;
+
+  if (!matched) {
+    return {
+      channelId,
+      matched: false,
+      query,
+      reason: "Responder 가 null 반환 (registration / mode / cooldown / confidence / 검색 결과 중 하나 실패). /stats 엔드포인트로 outcome breakdown 확인"
+    };
+  }
+
+  const docs = slackFaqCandidates(channelId, query, 3);
+  return {
+    channelId,
+    matched: true,
+    query,
+    reply: {
+      matchedDocIds: docs.map((candidate) => stringField(candidate.id, "")),
+      score: readNumber(matched.score, 0),
+      text: slackFaqReplyText(matched, threshold)
+    }
+  };
+}
+
+function slackFaqShouldTrigger(mode: string, isMention: boolean): boolean {
+  switch (slackFaqAutoReplyMode(mode)) {
+    case "ALWAYS":
+      return true;
+    case "OFF":
+      return false;
+    default:
+      return isMention;
+  }
+}
+
+function slackFaqReplyText(candidate: JsonObject, threshold: number): string {
+  const preview = stringField(candidate.preview, "");
+  const user = nullableStringResponse(candidate.user);
+  const ts = nullableStringResponse(candidate.ts);
+  const source = user || ts
+    ? `\n\n_${user ? `게시자: <@${user}>` : ""}${user && ts ? " · " : ""}${ts ? `ts=${ts}` : ""}_`
+    : "";
+  return `*FAQ 매칭*\n${preview}${source}\n_신뢰도 ${readNumber(candidate.score, 0).toFixed(2)} (임계값 ${threshold.toFixed(2)})_`;
+}
+
+function slackFaqCandidates(channelId: string, query: string, topK: number): JsonObject[] {
+  const clamped = Math.min(20, Math.max(1, Math.trunc(topK)));
+  return slackFaqDocuments(channelId)
+    .map((document) => {
+      const metadata = jsonObjectField(document.metadata);
+      return {
+        id: stringField(document.id, ""),
+        preview: stringField(document.content, "").slice(0, 200),
+        score: slackFaqSimilarityScore(query, stringField(document.content, "")),
+        ts: nullableStringResponse(metadata.ts),
+        user: nullableStringResponse(metadata.user)
+      };
+    })
+    .sort((left, right) => readNumber(right.score, 0) - readNumber(left.score, 0))
+    .slice(0, clamped);
+}
+
+function slackFaqDocuments(channelId: string): CompatRecord[] {
+  return [...state.documents.values()].filter((document) => {
+    const metadata = jsonObjectField(document.metadata);
+    const source = stringField(metadata.source, stringField(metadata.type, ""));
+    const channel = stringField(metadata.channel_id, stringField(metadata.channelId, ""));
+    return source === "slack-faq" && channel === channelId && document.deleted !== true;
+  });
+}
+
+function slackFaqSimilarityScore(query: string, content: string): number {
+  const queryTerms = new Set(query.toLowerCase().split(/\W+/).filter((term) => term.length > 1));
+  if (queryTerms.size === 0) {
+    return 0;
+  }
+
+  const contentTerms = new Set(content.toLowerCase().split(/\W+/).filter((term) => term.length > 1));
+  let overlap = 0;
+  for (const term of queryTerms) {
+    if (contentTerms.has(term)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap === 0 ? 0 : Math.min(1, overlap / queryTerms.size);
+}
+
+function toSlackFaqEvent(event: JsonObject): JsonObject {
+  return {
+    matchedDocId: nullableStringResponse(event.matchedDocId),
+    outcome: stringField(event.outcome, ""),
+    query: nullableStringResponse(event.query),
+    score: nullableNumberResponse(event.score),
+    timestamp: readNumber(event.timestamp, Date.now())
+  };
 }
 
 function slackFaqStats(channelId?: string): JsonObject {
   const events = channelId
     ? state.slackFaqEvents.get(channelId) ?? []
     : [...state.slackFaqEvents.values()].flat();
-  const hits = events.filter((event) => event.outcome === "HIT").length;
-  const errors = events.filter((event) => event.outcome === "ERROR").length;
+  const hits = events.filter((event) => event.outcome === "hit").length;
+  const errors = events.filter((event) => event.outcome === "error").length;
   const skipsByReason: Record<string, number> = {};
   let lastHitAt: number | null = null;
   let totalHitScore = 0;
 
   for (const event of events) {
-    if (event.outcome === "HIT") {
+    if (event.outcome === "hit") {
       const timestamp = readNumber(event.timestamp, 0);
       lastHitAt = lastHitAt === null ? timestamp : Math.max(lastHitAt, timestamp);
       totalHitScore += readNumber(event.score, 0);
       continue;
     }
 
-    if (typeof event.outcome === "string" && event.outcome.startsWith("SKIP_")) {
+    if (typeof event.outcome === "string" && event.outcome.startsWith("skip_")) {
       skipsByReason[event.outcome] = (skipsByReason[event.outcome] ?? 0) + 1;
     }
   }
@@ -6532,6 +6784,28 @@ function slackFaqStats(channelId?: string): JsonObject {
     skipsByReason,
     total
   };
+}
+
+function reactorPromptSectionKeys(): string[] {
+  return [
+    "accuracy",
+    "cross-tool",
+    "critical",
+    "domain:aggregate",
+    "domain:marketing",
+    "domain:onboarding",
+    "domain:policy",
+    "domain:summon",
+    "domain:workspace",
+    "format-slack",
+    "identity",
+    "proactive",
+    "rules",
+    "safety",
+    "tools",
+    "workflow:ask",
+    "workflow:search"
+  ];
 }
 
 async function updateTenantStatus(
@@ -6611,6 +6885,20 @@ async function dashboardSummary(options: ReactorCompatibilityRouteOptions) {
       runningJobs,
       totalJobs: scheduledJobs.length
     }
+  };
+}
+
+async function platformHealthDashboard(options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
+  const alerts = await (options.admin?.operations?.listAlerts() ?? []);
+  return {
+    activeAlerts: alerts.filter((alert) => toJsonObject(alert).status === "open").length,
+    cacheExactHits: 0,
+    cacheMisses: 0,
+    cacheSemanticHits: 0,
+    pipelineBufferUsage: 0,
+    pipelineDropRate: 0,
+    pipelineWriteLatencyMs: 0,
+    services: []
   };
 }
 
@@ -6811,20 +7099,213 @@ function schedulerResultPreview(result: string | undefined, maxLength = 140): st
 async function adminDiagnostic(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
+  options: ReactorCompatibilityRouteOptions,
+  mode: "report" | "summary"
 ) {
   if (!options.authorizeAdmin(request, reply)) {
     return reply;
   }
 
+  const report = doctorReport(options);
+  const status = doctorOverallStatus(report);
+  reply.header("x-doctor-status", status);
+
+  const format = resolveDoctorFormat(request);
+  if (mode === "summary") {
+    if (format === "text") {
+      reply.header("content-type", "text/plain; charset=utf-8");
+      return `${doctorSummary(report)} | ${doctorStatusLabel(report)} | ${stringField(report.generatedAt, nowIso())}`;
+    }
+
+    if (format === "markdown") {
+      reply.header("content-type", "text/markdown; charset=utf-8");
+      return `*[${status}]* ${doctorSummary(report)} _(${stringField(report.generatedAt, nowIso())})_`;
+    }
+
+    return {
+      allHealthy: doctorAllHealthy(report),
+      generatedAt: stringField(report.generatedAt, nowIso()),
+      status,
+      summary: doctorSummary(report)
+    };
+  }
+
+  if (format === "text") {
+    reply.header("content-type", "text/plain; charset=utf-8");
+    return doctorHumanReadable(report);
+  }
+
+  if (format === "markdown") {
+    reply.header("content-type", "text/markdown; charset=utf-8");
+    return doctorMarkdown(report);
+  }
+
+  return report;
+}
+
+function doctorReport(options: ReactorCompatibilityRouteOptions): JsonObject {
   return {
-    checks: [
-      { name: "runtimeSettings", status: "ok" },
-      { name: "scheduler", status: options.scheduler?.service ? "ok" : "not_configured" },
-      { name: "modelProvider", status: options.modelProvider ? "ok" : "not_configured" }
-    ],
-    status: "ok"
+    generatedAt: nowIso(),
+    sections: [
+      doctorSection("Runtime Settings", "OK", "활성", [
+        doctorCheck("runtimeSettings bean", "OK", "등록됨")
+      ]),
+      doctorSection(
+        "Dynamic Scheduler",
+        options.scheduler?.service ? "OK" : "SKIPPED",
+        options.scheduler?.service ? "활성" : "비활성",
+        [doctorCheck("scheduler service", options.scheduler?.service ? "OK" : "SKIPPED", options.scheduler?.service ? "등록됨" : "등록 안 됨")]
+      ),
+      doctorSection(
+        "Model Provider",
+        options.modelProvider ? "OK" : "SKIPPED",
+        options.modelProvider ? "활성" : "비활성",
+        [doctorCheck("model provider", options.modelProvider ? "OK" : "SKIPPED", options.modelProvider ? "등록됨" : "등록 안 됨")]
+      ),
+      doctorSection(
+        "MCP Live Health",
+        options.mcp?.manager ? "OK" : "SKIPPED",
+        options.mcp?.manager ? "활성" : "비활성",
+        [doctorCheck("mcp manager", options.mcp?.manager ? "OK" : "SKIPPED", options.mcp?.manager ? "등록됨" : "등록 안 됨")]
+      ),
+      doctorSection(
+        "Response Cache",
+        options.admin?.cache?.responseCache ? "OK" : "SKIPPED",
+        options.admin?.cache?.responseCache ? "활성" : "비활성",
+        [doctorCheck("response cache", options.admin?.cache?.responseCache ? "OK" : "SKIPPED", options.admin?.cache?.responseCache ? "등록됨" : "등록 안 됨")]
+      ),
+      doctorSection(
+        "Observability Assets",
+        options.admin?.observability ? "OK" : "SKIPPED",
+        options.admin?.observability ? "활성" : "비활성",
+        [doctorCheck("observability state", options.admin?.observability ? "OK" : "SKIPPED", options.admin?.observability ? "등록됨" : "등록 안 됨")]
+      )
+    ]
   };
+}
+
+function doctorSection(
+  name: string,
+  status: string,
+  message: string,
+  checks: readonly JsonObject[]
+): JsonObject {
+  return {
+    checks: [...checks],
+    message,
+    name,
+    status
+  };
+}
+
+function doctorCheck(name: string, status: string, detail: string): JsonObject {
+  return {
+    detail,
+    name,
+    status
+  };
+}
+
+function doctorSections(report: JsonObject): JsonObject[] {
+  return Array.isArray(report.sections) ? report.sections.filter(isRecord).map(toJsonObject) : [];
+}
+
+function doctorSummary(report: JsonObject): string {
+  const sections = doctorSections(report);
+  const counts = new Map<string, number>();
+  for (const section of sections) {
+    const status = stringField(section.status, "OK");
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
+
+  const order = ["OK", "SKIPPED", "WARN", "ERROR"];
+  const summary = order
+    .filter((status) => (counts.get(status) ?? 0) > 0)
+    .map((status) => `${status} ${counts.get(status) ?? 0}`)
+    .join(", ");
+  return `${sections.length} 섹션 — ${summary}`;
+}
+
+function doctorOverallStatus(report: JsonObject): "ERROR" | "OK" | "WARN" {
+  const statuses = doctorSections(report).map((section) => stringField(section.status, "OK"));
+  if (statuses.includes("ERROR")) {
+    return "ERROR";
+  }
+
+  if (statuses.includes("WARN")) {
+    return "WARN";
+  }
+
+  return "OK";
+}
+
+function doctorAllHealthy(report: JsonObject): boolean {
+  return doctorSections(report).every((section) => {
+    const status = stringField(section.status, "OK");
+    return status === "OK" || status === "SKIPPED";
+  });
+}
+
+function doctorStatusLabel(report: JsonObject): string {
+  const status = doctorOverallStatus(report);
+  return status === "ERROR" ? "오류 포함" : status === "WARN" ? "경고 포함" : "정상";
+}
+
+function resolveDoctorFormat(request: FastifyRequest): "json" | "markdown" | "text" {
+  const accept = String(request.headers.accept ?? "").toLowerCase();
+  if (accept.includes("text/markdown") || accept.includes("text/x-markdown")) {
+    return "markdown";
+  }
+
+  if (accept.includes("text/plain")) {
+    return "text";
+  }
+
+  return "json";
+}
+
+function doctorHumanReadable(report: JsonObject): string {
+  const lines = [
+    "=== Reactor Doctor Report ===",
+    `생성 시각: ${stringField(report.generatedAt, nowIso())}`,
+    `요약: ${doctorSummary(report)}`,
+    `전체 상태: ${doctorStatusLabel(report)}`,
+    ""
+  ];
+
+  for (const section of doctorSections(report)) {
+    lines.push(`[${doctorStatusShortCode(stringField(section.status, "OK"))}] ${stringField(section.name, "")}`);
+    lines.push(`     ${stringField(section.message, "")}`);
+    const checks = Array.isArray(section.checks) ? section.checks.filter(isRecord).map(toJsonObject) : [];
+    for (const check of checks) {
+      lines.push(
+        `     [${doctorStatusShortCode(stringField(check.status, "OK"))}] ${stringField(check.name, "")}: ${stringField(check.detail, "")}`
+      );
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
+function doctorMarkdown(report: JsonObject): string {
+  const lines = ["*Reactor Doctor Report*", `> ${doctorSummary(report)}`, ""];
+  for (const section of doctorSections(report)) {
+    lines.push(
+      "`[" +
+        doctorStatusShortCode(stringField(section.status, "OK")) +
+        "]` *" +
+        stringField(section.name, "") +
+        "* — " +
+        stringField(section.message, "")
+    );
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
+function doctorStatusShortCode(status: string): string {
+  return status === "SKIPPED" ? "SKIP" : status;
 }
 
 function simulateGuard(value: unknown) {
@@ -7671,6 +8152,10 @@ function nullableStringResponse(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function nullableNumberResponse(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function stringField(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
@@ -7720,6 +8205,10 @@ function authRateLimitKey(
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function sanitizeFilename(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
 }
 
 function epochMillisOrNull(value: unknown): number | null {

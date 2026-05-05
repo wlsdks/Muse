@@ -2697,6 +2697,16 @@ describe("api server", () => {
       method: "GET",
       url: "/api/admin/platform/health"
     });
+    const doctor = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/doctor"
+    });
+    const doctorSummary = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/doctor/summary"
+    });
     const adminSessions = await server.inject({
       headers,
       method: "GET",
@@ -2940,6 +2950,20 @@ describe("api server", () => {
       },
       url: "/api/admin/slack/channels/faq"
     });
+    const slackFaqSourceDocument = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        content: "reset access from account settings",
+        metadata: {
+          channel_id: "channel-1",
+          source: "slack-faq",
+          ts: "123.456",
+          user: "U123"
+        }
+      },
+      url: "/api/documents"
+    });
     const slackFaqList = await server.inject({
       headers,
       method: "GET",
@@ -2949,9 +2973,33 @@ describe("api server", () => {
       headers,
       method: "POST",
       payload: {
-        query: "How do I reset access?"
+        query: "reset access"
       },
       url: "/api/admin/slack/channels/faq/channel-1/dry-run"
+    });
+    const slackFaqProbe = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        query: "reset access",
+        topK: 3
+      },
+      url: "/api/admin/slack/channels/faq/channel-1/probe"
+    });
+    const slackFaqIngest = await server.inject({
+      headers,
+      method: "POST",
+      url: "/api/admin/slack/channels/faq/channel-1/ingest"
+    });
+    const slackFaqSchedulerHealth = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/slack/channels/faq/scheduler/health"
+    });
+    const slackPromptReload = await server.inject({
+      headers,
+      method: "POST",
+      url: "/api/admin/slack/prompts/reload"
     });
     const slackFaqStats = await server.inject({
       headers,
@@ -3081,7 +3129,29 @@ describe("api server", () => {
       startedAt: null,
       status: "PENDING"
     });
-    expect(platformHealth.json()).toMatchObject({ status: "ok" });
+    expect(platformHealth.json()).toMatchObject({
+      activeAlerts: 0,
+      cacheExactHits: 0,
+      cacheMisses: 0,
+      cacheSemanticHits: 0,
+      pipelineBufferUsage: 0,
+      pipelineDropRate: 0,
+      pipelineWriteLatencyMs: 0,
+      services: []
+    });
+    expect(doctor.headers["x-doctor-status"]).toBe("OK");
+    expect(doctor.json()).toMatchObject({
+      sections: expect.arrayContaining([
+        expect.objectContaining({
+          checks: expect.arrayContaining([
+            expect.objectContaining({ name: "runtimeSettings bean", status: "OK" })
+          ]),
+          name: "Runtime Settings",
+          status: "OK"
+        })
+      ])
+    });
+    expect(doctorSummary.json()).toMatchObject({ allHealthy: true, status: "OK" });
     expect(adminSessions.json()).toMatchObject({ items: [{ id: "run-compat" }], total: 1 });
     expect(adminSessionDetail.json()).toMatchObject({
       run: { id: "run-compat" },
@@ -3131,7 +3201,7 @@ describe("api server", () => {
     expect(alertRules.json()).toMatchObject([{ id: alertRule.json().id }]);
     expect(pricing.json()).toMatchObject({ model: "provider/model", provider: "provider" });
     expect(pricingList.json()).toMatchObject([{ id: "provider:provider/model" }]);
-    expect(vectorStoreStats.json()).toMatchObject({ available: true, documentCount: 1, indexedDocuments: 1 });
+    expect(vectorStoreStats.json()).toEqual({ available: true, documentCount: 1 });
     expect(policySeed.json()).toMatchObject({ chunkCount: 1, documentCount: 1, keys: ["policy-1"] });
     expect(toolStats.json()).toMatchObject({ accuracy: 1, byOutcome: { ok: 1 }, total: 1 });
     expect(toolAccuracy.json()).toMatchObject({ accuracy: 1, ok: 1, total: 1 });
@@ -3161,11 +3231,36 @@ describe("api server", () => {
     expect(platformUserRole.json()).toMatchObject({ id: registered.user.id, role: "ADMIN_DEVELOPER" });
     expect(taskPurgeExpired.json()).toMatchObject({ deleted: 0 });
     expect(taskPurgeTerminal.json()).toMatchObject({ deleted: 0 });
-    expect(slackFaq.json()).toMatchObject({ channelId: "channel-1", id: "channel-1", status: "registered" });
+    expect(slackFaq.json()).toMatchObject({
+      autoReplyMode: "MENTION",
+      channelId: "channel-1",
+      confidenceThreshold: 0.8,
+      lastStatus: null
+    });
+    expect(slackFaq.json()).not.toHaveProperty("id");
+    expect(slackFaqSourceDocument.statusCode).toBe(201);
     expect(slackFaqList.json()).toMatchObject({ registrations: [{ channelId: "channel-1" }] });
-    expect(slackFaqDryRun.json()).toMatchObject({ channelId: "channel-1", status: "dry_run" });
-    expect(slackFaqStats.json()).toMatchObject({ hits: 1, total: 1 });
-    expect(slackFaqEvents.json()).toMatchObject({ events: [{ outcome: "HIT" }] });
+    expect(slackFaqDryRun.json()).toMatchObject({
+      channelId: "channel-1",
+      matched: true,
+      reply: { matchedDocIds: [slackFaqSourceDocument.json().id], score: 1 }
+    });
+    expect(slackFaqProbe.json()).toMatchObject({
+      candidates: [{ id: slackFaqSourceDocument.json().id, score: 1 }],
+      channelId: "channel-1",
+      query: "reset access"
+    });
+    expect(slackFaqIngest.json()).toEqual({
+      apiCalls: 0,
+      channelId: "channel-1",
+      chunkCount: 1,
+      documentCount: 1,
+      messagesScanned: 1
+    });
+    expect(slackFaqSchedulerHealth.json()).toEqual({ enabled: false });
+    expect(slackPromptReload.json()).toMatchObject({ reloaded: true, sectionCount: 17 });
+    expect(slackFaqStats.json()).toMatchObject({ hits: 0, total: 0 });
+    expect(slackFaqEvents.json()).toEqual({ events: [] });
     expect(slackFaqFeedback.json()).toEqual({ feedback: {} });
     expect(slackFaqDelete.json()).toEqual({ deleted: "channel-1" });
     expect(metricIngest.statusCode).toBe(202);
