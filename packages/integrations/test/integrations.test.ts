@@ -4,6 +4,7 @@ import {
   FetchSlackResponseUrlTransport,
   SlackSignatureVerifier,
   WebhookDispatcher,
+  formatSlackMrkdwn,
   parseSlackSlashCommand,
   parseSlackUrlEncodedBody,
   signSlackRequestBody,
@@ -53,6 +54,48 @@ describe("Slack command parsing", () => {
       response_type: "in_channel",
       text: "ok"
     });
+  });
+
+  it("converts LLM markdown into Slack mrkdwn for command responses", () => {
+    const ack = toSlackCommandAck({
+      text: [
+        "안녕하세요, 진안님! 📋",
+        "### 요약",
+        "문서는 [가이드](https://example.invalid/guide)를 보세요.",
+        "**중요**: 담당자는 `U12345678` 입니다.",
+        "",
+        "| 상태 | 건수 |",
+        "| --- | --- |",
+        "| Done | 3 |"
+      ].join("\n"),
+      visibility: "public"
+    });
+
+    expect(ack).toEqual({
+      response_type: "in_channel",
+      text: [
+        "*요약*",
+        "",
+        "문서는 <https://example.invalid/guide|가이드>를 보세요.",
+        "*중요*: 담당자는 <@U12345678> 입니다.",
+        "",
+        "• *상태*: Done — *건수*: 3"
+      ].join("\n")
+    });
+  });
+
+  it("preserves fenced code while converting surrounding Slack text", () => {
+    expect(
+      formatSlackMrkdwn(
+        [
+          "### 결과",
+          "```",
+          "**keep** [link](https://example.invalid)",
+          "```",
+          "[문서](https://example.invalid/doc)"
+        ].join("\n")
+      )
+    ).toBe(["*결과*", "```", "**keep** [link](https://example.invalid)", "```", "<https://example.invalid/doc|문서>"].join("\n"));
   });
 
   it("verifies Slack signatures and rejects replayed timestamps", () => {
@@ -133,7 +176,7 @@ describe("WebhookDispatcher", () => {
     expect(verifyWebhookSignature("{\"ok\":false}", signature, "secret-1")).toBe(false);
   });
 
-  it("posts Slack response_url payloads as JSON", async () => {
+  it("posts Slack response_url payloads as formatted JSON", async () => {
     const posts: Array<{ body: string | undefined; headers: HeadersInit | undefined; url: string }> = [];
     const transport = new FetchSlackResponseUrlTransport(async (url, init) => {
       posts.push({
@@ -145,12 +188,14 @@ describe("WebhookDispatcher", () => {
       return new Response(null, { status: 204 });
     });
 
-    await expect(transport.post("https://example.invalid/respond", { text: "ok" })).resolves.toEqual({
+    await expect(
+      transport.post("https://example.invalid/respond", { response_type: "in_channel", text: "### ok\n**done**" })
+    ).resolves.toEqual({
       statusCode: 204
     });
     expect(posts).toEqual([
       {
-        body: "{\"text\":\"ok\"}",
+        body: "{\"response_type\":\"in_channel\",\"text\":\"*ok*\\n\\n*done*\"}",
         headers: { "content-type": "application/json" },
         url: "https://example.invalid/respond"
       }

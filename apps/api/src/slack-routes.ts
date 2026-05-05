@@ -143,9 +143,10 @@ async function dispatchResponseUrl(envelope: CommandEnvelope, options: RegisterS
     visibility: "ephemeral" as const
   }));
 
+  const ack = toSlackCommandAck(response);
   await transport.post(envelope.responseUrl ?? "", {
-    response_type: response.visibility === "public" ? "in_channel" : "ephemeral",
-    text: response.text
+    response_type: ack.response_type,
+    text: ack.text
   });
 }
 

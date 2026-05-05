@@ -50,7 +50,7 @@ Current Muse baseline:
 | `resilience` | `packages/resilience` | Circuit breaker registry, retry, timeout, and model fallback primitives exist |
 | `runtime-settings` | `packages/runtime-settings`, `apps/api` | Runtime settings service/store and API surface exist |
 | `scheduler` | `packages/scheduler`, `apps/api` | CRUD, execution records, cron, and scheduler locks exist |
-| `slack` | `packages/integrations`, `apps/api` | Signed Events API, slash command, and response_url integration exist |
+| `slack` | `packages/integrations`, `apps/api` | Signed Events API, slash command, response_url integration, and Slack mrkdwn response formatting exist |
 | `tool` | `packages/tools` | Tool registry, executor, sanitizer, and approval path exist |
 | `web` | `apps/api` | HTTP/SSE run endpoints and typed error surfaces exist |
 
@@ -74,7 +74,7 @@ fully done:
 
 1. Response filters: compare Reactor's verified-source extractor edge cases against Muse extraction
    (nested URL fields, synthesized source directories, and source relevance filtering still need broader parity tests).
-2. Slack behavior: verify Slack-only formatting, event handling, response URL, and API fallback behavior together.
+2. Slack behavior: verify Events API callbacks, slash-command fallback behavior, and response URL delivery together.
 3. Hook/context behavior: verify fail-open hook execution, trace persistence, context trimming, and message-pair
    integrity together under runtime smoke tests.
 
@@ -190,6 +190,9 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
   Reactor-style tool-result quality audit and response-count injection/consistency filters.
 - Verified-source response rendering now appends source blocks from extracted tool-result URLs, builds fallback
   verified responses from tool insights, and suppresses source blocks for casual prompts.
+- Slack response formatting now converts LLM Markdown to Slack mrkdwn for both immediate slash-command acknowledgements
+  and delayed response_url payloads, including headings, bold, links, pipe tables, raw Slack user IDs, decorative emoji,
+  duplicated paragraphs, and fenced-code preservation.
 
 ## Execution Plan
 
