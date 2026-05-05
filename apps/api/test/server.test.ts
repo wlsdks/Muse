@@ -278,6 +278,56 @@ describe("api server", () => {
     expect(afterLogout.statusCode).toBe(401);
   });
 
+  it("keeps api session ownership scoped to the authenticated user", async () => {
+    const authService = createAuthService();
+    const ownerEmail = ["owner", "example.invalid"].join("@");
+    const memberEmail = ["member", "example.invalid"].join("@");
+    const owner = authService.register({ email: ownerEmail, name: "Owner", password: "password-1" });
+    const member = authService.register({ email: memberEmail, name: "Member", password: "password-1" });
+    const memberLogin = authService.login(memberEmail, "password-1");
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    historyStore.createRun({
+      id: "owner-run",
+      input: "owner prompt",
+      model: "provider/model",
+      provider: "provider",
+      userId: owner.user.id
+    });
+    historyStore.createRun({
+      id: "member-run",
+      input: "member prompt",
+      model: "provider/model",
+      provider: "provider",
+      userId: member.user.id
+    });
+    const server = buildServer({ authService, historyStore, logger: false, requireAuth: true });
+    const headers = { authorization: `Bearer ${memberLogin?.token ?? ""}` };
+
+    const spoofedList = await server.inject({
+      headers,
+      method: "GET",
+      url: `/api/sessions?userId=${owner.user.id}`
+    });
+    const forbiddenDelete = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/sessions/owner-run"
+    });
+    const ownDelete = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/sessions/member-run"
+    });
+
+    expect(spoofedList.json()).toMatchObject({
+      items: [{ preview: "member prompt", sessionId: "member-run" }],
+      total: 1
+    });
+    expect(forbiddenDelete.statusCode).toBe(403);
+    expect(forbiddenDelete.json()).toMatchObject({ error: "Access denied to session" });
+    expect(ownDelete.statusCode).toBe(204);
+  });
+
   it("rate limits failed auth attempts", async () => {
     const authService = createAuthService();
     authService.register({

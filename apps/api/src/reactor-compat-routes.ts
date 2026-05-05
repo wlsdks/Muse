@@ -495,7 +495,7 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
 
 function registerSessionCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/sessions", async (request, reply) => {
-    const userId = readQueryString(request, "userId") ?? readAuthUserId(request);
+    const userId = readAuthUserId(request);
     const offset = Math.max(0, readQueryInteger(request, "offset", 0));
     const limit = clampLimit(readQueryInteger(request, "limit", 50));
 
@@ -533,6 +533,14 @@ function registerSessionCompatibilityRoutes(server: FastifyInstance, options: Re
   );
   server.delete("/api/sessions/:sessionId", async (request, reply) => {
     const { sessionId } = request.params as { readonly sessionId: string };
+    const userId = readAuthUserId(request);
+
+    if (!userId) {
+      return reply.status(401).send({
+        error: "인증이 필요합니다",
+        timestamp: nowIso()
+      });
+    }
 
     if (!options.historyStore) {
       return reply.status(404).send({
@@ -541,10 +549,24 @@ function registerSessionCompatibilityRoutes(server: FastifyInstance, options: Re
       });
     }
 
-    const deleted = await options.historyStore.deleteRun(sessionId);
-    return deleted
-      ? reply.status(204).send()
-      : reply.status(404).send({ code: "SESSION_NOT_FOUND", message: `Session not found: ${sessionId}` });
+    const run = await options.historyStore.findRun(sessionId);
+
+    if (!run) {
+      return reply.status(404).send({
+        error: `Session not found: ${sessionId}`,
+        timestamp: nowIso()
+      });
+    }
+
+    if (run.userId && run.userId !== userId && !isAdminLikeRequest(request)) {
+      return reply.status(403).send({
+        error: "Access denied to session",
+        timestamp: nowIso()
+      });
+    }
+
+    await options.historyStore.deleteRun(sessionId);
+    return reply.status(204).send();
   });
 
   server.get("/api/models", async () => listSessionModels(options));
