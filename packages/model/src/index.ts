@@ -437,6 +437,7 @@ async function* parseOpenAIStream(
   let output = "";
   let responseId = `${providerId}-stream`;
   let model = requestedModel;
+  const streamedToolCalls = new Map<number, MutableOpenAIStreamToolCall>();
 
   while (true) {
     const { done, value } = await reader.read();
@@ -471,14 +472,25 @@ async function* parseOpenAIStream(
         output += delta;
         yield { text: delta, type: "text-delta" };
       }
+
+      for (const toolCall of readOpenAIStreamToolCallDeltas(parsed)) {
+        mergeOpenAIStreamToolCall(streamedToolCalls, toolCall);
+      }
     }
+  }
+
+  const toolCalls = materializeOpenAIStreamToolCalls(streamedToolCalls);
+
+  for (const toolCall of toolCalls) {
+    yield { toolCall, type: "tool-call" };
   }
 
   yield {
     response: {
       id: responseId,
       model,
-      output
+      output,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined
     },
     type: "done"
   };
@@ -497,6 +509,70 @@ function readOpenAIStreamDelta(payload: Record<string, unknown>): string {
   const choice = Array.isArray(payload.choices) && isRecord(payload.choices[0]) ? payload.choices[0] : undefined;
   const delta = isRecord(choice?.delta) ? choice.delta : undefined;
   return readOpenAIContent(delta?.content);
+}
+
+interface OpenAIStreamToolCallDelta {
+  readonly index: number;
+  readonly id?: string;
+  readonly name?: string;
+  readonly argumentsChunk?: string;
+}
+
+interface MutableOpenAIStreamToolCall {
+  id?: string;
+  name?: string;
+  argumentsText: string;
+}
+
+function readOpenAIStreamToolCallDeltas(payload: Record<string, unknown>): readonly OpenAIStreamToolCallDelta[] {
+  const choice = Array.isArray(payload.choices) && isRecord(payload.choices[0]) ? payload.choices[0] : undefined;
+  const delta = isRecord(choice?.delta) ? choice.delta : undefined;
+  const toolCalls = Array.isArray(delta?.tool_calls) ? delta.tool_calls : [];
+
+  return toolCalls.flatMap((entry, fallbackIndex) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const fn = isRecord(entry.function) ? entry.function : {};
+    return [{
+      argumentsChunk: typeof fn.arguments === "string" ? fn.arguments : undefined,
+      id: typeof entry.id === "string" ? entry.id : undefined,
+      index: typeof entry.index === "number" ? entry.index : fallbackIndex,
+      name: typeof fn.name === "string" ? fn.name : undefined
+    }];
+  });
+}
+
+function mergeOpenAIStreamToolCall(
+  target: Map<number, MutableOpenAIStreamToolCall>,
+  delta: OpenAIStreamToolCallDelta
+): void {
+  const current = target.get(delta.index) ?? { argumentsText: "" };
+
+  target.set(delta.index, {
+    argumentsText: current.argumentsText + (delta.argumentsChunk ?? ""),
+    id: delta.id ?? current.id,
+    name: delta.name ?? current.name
+  });
+}
+
+function materializeOpenAIStreamToolCalls(
+  source: ReadonlyMap<number, MutableOpenAIStreamToolCall>
+): readonly ModelToolCall[] {
+  return [...source.entries()]
+    .sort(([left], [right]) => left - right)
+    .flatMap(([index, value]) => {
+      if (!value.name) {
+        return [];
+      }
+
+      return [{
+        arguments: parseToolArguments(value.argumentsText),
+        id: value.id ?? `tool_call_${index}`,
+        name: value.name
+      }];
+    });
 }
 
 function parseJson(value: string): unknown {

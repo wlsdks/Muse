@@ -244,4 +244,43 @@ describe("OpenAICompatibleProvider", () => {
       { response: { output: "hello" }, type: "done" }
     ]);
   });
+
+  it("streams server-sent event tool call deltas into model events", async () => {
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://llm.example.test/v1",
+      defaultModel: "gpt-test",
+      fetch: async () => new Response(new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          controller.enqueue(encoder.encode(
+            "data: {\"id\":\"chunk-2\",\"model\":\"gpt-test\",\"choices\":[{\"delta\":{\"tool_calls\":[{" +
+            "\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"search\"," +
+            "\"arguments\":\"{\\\"query\\\":\\\"hel\"}}]}}]}\n\n"
+          ));
+          controller.enqueue(encoder.encode(
+            "data: {\"id\":\"chunk-2\",\"model\":\"gpt-test\",\"choices\":[{\"delta\":{\"tool_calls\":[{" +
+            "\"index\":0,\"function\":{\"arguments\":\"lo\\\"}\"}}]}}]}\n\n"
+          ));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }
+      }))
+    });
+    const events = [];
+
+    for await (const event of provider.stream({ messages: [], model: "gpt-test" })) {
+      events.push(event);
+    }
+
+    expect(events).toMatchObject([
+      { toolCall: { arguments: { query: "hello" }, id: "call-1", name: "search" }, type: "tool-call" },
+      {
+        response: {
+          output: "",
+          toolCalls: [{ arguments: { query: "hello" }, id: "call-1", name: "search" }]
+        },
+        type: "done"
+      }
+    ]);
+  });
 });
