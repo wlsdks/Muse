@@ -442,11 +442,18 @@ function parseMessages(messages: unknown, message: unknown): AgentRunInput["mess
         return [];
       }
 
+      const toolCalls = parseToolCalls(item.toolCalls);
+
+      if (item.toolCalls !== undefined && !toolCalls) {
+        return [];
+      }
+
       return [{
         content: item.content,
         name: optionalString(item.name),
         role: item.role,
-        toolCallId: optionalString(item.toolCallId)
+        toolCallId: optionalString(item.toolCallId),
+        toolCalls
       }];
     });
 
@@ -460,6 +467,39 @@ function parseMessages(messages: unknown, message: unknown): AgentRunInput["mess
 
 function isModelRole(value: unknown): value is AgentRunInput["messages"][number]["role"] {
   return value === "system" || value === "user" || value === "assistant" || value === "tool";
+}
+
+function parseToolCalls(value: unknown): AgentRunInput["messages"][number]["toolCalls"] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  if (value.length === 0) {
+    return [];
+  }
+
+  const parsed = value.flatMap((item) => {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.name !== "string" ||
+      !isJsonObject(item.arguments)
+    ) {
+      return [];
+    }
+
+    return [{
+      arguments: item.arguments,
+      id: item.id,
+      name: item.name
+    }];
+  });
+
+  return parsed.length === value.length ? parsed : undefined;
 }
 
 function toChatResponse(result: AgentRunResult) {

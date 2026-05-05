@@ -427,6 +427,54 @@ describe("api server", () => {
     expect(stream.body).toContain("event: done");
   });
 
+  it("preserves assistant tool call messages in chat requests", async () => {
+    let capturedMessages: unknown;
+    const agentRuntime = createAgentRuntime({
+      modelProvider: createProviderFrom(async (request) => {
+        capturedMessages = request.messages;
+        return {
+          id: "response-1",
+          model: request.model,
+          output: "Done"
+        };
+      })
+    });
+    const server = buildServer({
+      agentRuntime,
+      defaultModel: "provider/model",
+      logger: false
+    });
+
+    const response = await server.inject({
+      method: "POST",
+      payload: {
+        messages: [
+          { content: "Read the file", role: "user" },
+          {
+            content: "",
+            role: "assistant",
+            toolCalls: [{ arguments: { path: "docs/input.md" }, id: "tool-1", name: "read_file" }]
+          },
+          { content: "file contents", role: "tool", toolCallId: "tool-1" }
+        ]
+      },
+      url: "/api/chat"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedMessages).toEqual([
+      { content: "Read the file", name: undefined, role: "user", toolCallId: undefined, toolCalls: undefined },
+      {
+        content: "",
+        name: undefined,
+        role: "assistant",
+        toolCallId: undefined,
+        toolCalls: [{ arguments: { path: "docs/input.md" }, id: "tool-1", name: "read_file" }]
+      },
+      { content: "file contents", name: undefined, role: "tool", toolCallId: "tool-1", toolCalls: undefined }
+    ]);
+  });
+
   it("manages scheduler jobs through the service API and records executions", async () => {
     const authService = createAuthService();
     const registered = authService.register({
