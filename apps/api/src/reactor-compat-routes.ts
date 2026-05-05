@@ -1901,24 +1901,52 @@ function registerMcpCompatibilityRoutes(server: FastifyInstance, options: Reacto
 
     return proxyMcpAdminRequest(reply, serverConfig, "POST", "/admin/access-policy/emergency-deny-all");
   });
-  server.get("/api/mcp/servers/:name/swagger/sources", async () => [...state.swaggerSources.values()]);
+  server.get("/api/mcp/servers/:name/swagger/sources", async (request, reply) =>
+    proxySwaggerSourceRequest(request, reply, options, "GET", "/admin/swagger/spec-sources")
+  );
   server.get("/api/mcp/servers/:name/swagger/sources/:sourceName", async (request, reply) =>
-    findRecordByParam(state.swaggerSources, request, reply, "sourceName")
+    proxySwaggerSourceRequest(request, reply, options, "GET", swaggerSourcePath(request))
   );
-  server.post("/api/mcp/servers/:name/swagger/sources", async (request) =>
-    createRecord(state.swaggerSources, toJsonObject(request.body), "swagger_source")
+  server.post("/api/mcp/servers/:name/swagger/sources", async (request, reply) => {
+    const body = toBody(request.body);
+
+    if (!readBodyString(body, "name") || !readBodyString(body, "url")) {
+      return badRequest(reply, "INVALID_SWAGGER_SOURCE", "Body must include name and url");
+    }
+
+    return proxySwaggerSourceRequest(request, reply, options, "POST", "/admin/swagger/spec-sources", toJsonObject(body));
+  });
+  server.put("/api/mcp/servers/:name/swagger/sources/:sourceName", async (request, reply) =>
+    proxySwaggerSourceRequest(request, reply, options, "PUT", swaggerSourcePath(request), toJsonObject(request.body))
   );
-  server.put("/api/mcp/servers/:name/swagger/sources/:sourceName", async (request) =>
-    upsertByParam(state.swaggerSources, request, "sourceName", "swagger_source")
+  server.post("/api/mcp/servers/:name/swagger/sources/:sourceName/sync", async (request, reply) =>
+    proxySwaggerSourceRequest(request, reply, options, "POST", `${swaggerSourcePath(request)}/sync`, {})
   );
-  server.post("/api/mcp/servers/:name/swagger/sources/:sourceName/sync", async (request) =>
-    sourceAction(request, "synced")
-  );
-  server.post("/api/mcp/servers/:name/swagger/sources/:sourceName/publish", async (request) =>
-    sourceAction(request, "published")
-  );
-  server.get("/api/mcp/servers/:name/swagger/sources/:sourceName/revisions", async () => []);
-  server.get("/api/mcp/servers/:name/swagger/sources/:sourceName/diff", async () => ({ changes: [] }));
+  server.post("/api/mcp/servers/:name/swagger/sources/:sourceName/publish", async (request, reply) => {
+    const body = toBody(request.body);
+
+    if (!readBodyString(body, "revisionId")) {
+      return badRequest(reply, "INVALID_SWAGGER_REVISION", "Body must include revisionId");
+    }
+
+    return proxySwaggerSourceRequest(request, reply, options, "POST", `${swaggerSourcePath(request)}/publish`, toJsonObject(body));
+  });
+  server.get("/api/mcp/servers/:name/swagger/sources/:sourceName/revisions", async (request, reply) => {
+    const limit = readQueryString(request, "limit");
+    const suffix = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+    return proxySwaggerSourceRequest(request, reply, options, "GET", `${swaggerSourcePath(request)}/revisions${suffix}`);
+  });
+  server.get("/api/mcp/servers/:name/swagger/sources/:sourceName/diff", async (request, reply) => {
+    const params = new URLSearchParams();
+    const from = readQueryString(request, "from");
+    const to = readQueryString(request, "to");
+
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return proxySwaggerSourceRequest(request, reply, options, "GET", `${swaggerSourcePath(request)}/diff${suffix}`);
+  });
 }
 
 function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
@@ -5371,11 +5399,6 @@ function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) 
   return badRequest(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND", "No report available for this experiment");
 }
 
-function sourceAction(request: FastifyRequest, status: string) {
-  const { sourceName } = request.params as { readonly sourceName: string };
-  return createRecord(state.swaggerSources, { id: sourceName, status }, "swagger_source");
-}
-
 function slackFaqAction(request: FastifyRequest, status: string) {
   const { channelId } = request.params as { readonly channelId: string };
   const existing = findCompatRecord(state.slackFaq, channelId);
@@ -5909,6 +5932,39 @@ function mcpProxyUnavailable(
     error: `MCP server '${name}' not found`,
     timestamp: nowIso()
   });
+}
+
+async function proxySwaggerSourceRequest(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions,
+  method: "GET" | "POST" | "PUT",
+  path: string,
+  body?: JsonObject
+) {
+  if (!options.authorizeAdmin(request, reply)) {
+    return reply;
+  }
+
+  const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
+
+  if (!serverConfig) {
+    return mcpProxyUnavailable(request, reply, options);
+  }
+
+  if (method === "GET" && path === "/admin/swagger/spec-sources" && !readBodyString(serverConfig.config, "adminToken")) {
+    return reply
+      .header("X-Mcp-Admin-Available", "false")
+      .header("X-Mcp-Admin-Reason", "no-admin-token")
+      .send([]);
+  }
+
+  return proxyMcpAdminRequest(reply, serverConfig, method, path, body);
+}
+
+function swaggerSourcePath(request: FastifyRequest): string {
+  const { sourceName } = request.params as { readonly sourceName: string };
+  return `/admin/swagger/spec-sources/${encodeURIComponent(sourceName)}`;
 }
 
 function readAdminUrl(config: JsonObject): string | null {

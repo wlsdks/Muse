@@ -878,6 +878,52 @@ describe("api server", () => {
       method: "POST",
       url: "/api/mcp/servers/local/access-policy/emergency-deny-all"
     });
+    const blockedSwaggerSources = await server.inject({
+      method: "GET",
+      url: "/api/mcp/servers/local/swagger/sources"
+    });
+    const swaggerSource = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        name: "orders",
+        url: "https://api.example.invalid/openapi.json"
+      },
+      url: "/api/mcp/servers/local/swagger/sources"
+    });
+    const swaggerSources = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/mcp/servers/local/swagger/sources"
+    });
+    const swaggerSourceDetail = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/mcp/servers/local/swagger/sources/orders"
+    });
+    const swaggerSync = await server.inject({
+      headers,
+      method: "POST",
+      url: "/api/mcp/servers/local/swagger/sources/orders/sync"
+    });
+    const swaggerRevisions = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/mcp/servers/local/swagger/sources/orders/revisions?limit=1"
+    });
+    const swaggerDiff = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/mcp/servers/local/swagger/sources/orders/diff?from=rev-1&to=rev-2"
+    });
+    const swaggerPublish = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        revisionId: "rev-2"
+      },
+      url: "/api/mcp/servers/local/swagger/sources/orders/publish"
+    });
     const reconnected = await server.inject({
       headers,
       method: "POST",
@@ -964,6 +1010,15 @@ describe("api server", () => {
       allowPreviewReads: false,
       publishedOnly: true
     });
+    expect(blockedSwaggerSources.statusCode).toBe(401);
+    expect(swaggerSource.statusCode).toBe(201);
+    expect(swaggerSource.json()).toMatchObject({ name: "orders" });
+    expect(swaggerSources.json()).toMatchObject([{ name: "orders" }]);
+    expect(swaggerSourceDetail.json()).toMatchObject({ name: "orders" });
+    expect(swaggerSync.json()).toMatchObject({ name: "orders", status: "synced" });
+    expect(swaggerRevisions.json()).toMatchObject([{ id: "rev-2", sourceName: "orders" }]);
+    expect(swaggerDiff.json()).toEqual({ changes: [{ from: "rev-1", to: "rev-2", type: "updated" }] });
+    expect(swaggerPublish.json()).toMatchObject({ publishedRevisionId: "rev-2" });
     expect(reconnected.json()).toMatchObject({ health: { status: "healthy" }, status: "CONNECTED" });
     expect(toolCall.json()).toEqual({
       output: {
@@ -2781,7 +2836,10 @@ async function createFakeMcpAdminServer(): Promise<FakeMcpAdminServer> {
     allowPreviewWrites: null,
     publishedOnly: null
   };
+  const swaggerSources = new Map<string, Record<string, unknown>>();
   const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
     if (request.url === "/admin/preflight" && request.method === "GET") {
       return sendJson(response, {
         checks: [{ message: null, name: "registered", status: "PASS" }],
@@ -2823,6 +2881,67 @@ async function createFakeMcpAdminServer(): Promise<FakeMcpAdminServer> {
         publishedOnly: true
       };
       return sendJson(response, accessPolicy);
+    }
+
+    if (url.pathname === "/admin/swagger/spec-sources" && request.method === "GET") {
+      return sendJson(response, [...swaggerSources.values()]);
+    }
+
+    if (url.pathname === "/admin/swagger/spec-sources" && request.method === "POST") {
+      const body = await readJsonBody(request);
+      const source = {
+        enabled: true,
+        ...body,
+        revisionId: "rev-1",
+        status: "registered"
+      };
+      swaggerSources.set(String(body.name), source);
+      response.statusCode = 201;
+      return sendJson(response, source);
+    }
+
+    const swaggerMatch = url.pathname.match(/^\/admin\/swagger\/spec-sources\/([^/]+)(?:\/([^/]+))?$/u);
+
+    if (swaggerMatch) {
+      const sourceName = decodeURIComponent(swaggerMatch[1] ?? "");
+      const action = swaggerMatch[2];
+      const source = swaggerSources.get(sourceName);
+
+      if (!source) {
+        response.statusCode = 404;
+        return sendJson(response, { error: "not_found" });
+      }
+
+      if (!action && request.method === "GET") {
+        return sendJson(response, source);
+      }
+
+      if (!action && request.method === "PUT") {
+        const updated = { ...source, ...await readJsonBody(request) };
+        swaggerSources.set(sourceName, updated);
+        return sendJson(response, updated);
+      }
+
+      if (action === "sync" && request.method === "POST") {
+        const synced = { ...source, revisionId: "rev-2", status: "synced" };
+        swaggerSources.set(sourceName, synced);
+        return sendJson(response, synced);
+      }
+
+      if (action === "revisions" && request.method === "GET") {
+        return sendJson(response, [{ id: "rev-2", sourceName }, { id: "rev-1", sourceName }].slice(0, 1));
+      }
+
+      if (action === "diff" && request.method === "GET") {
+        return sendJson(response, {
+          changes: [{ from: url.searchParams.get("from"), to: url.searchParams.get("to"), type: "updated" }]
+        });
+      }
+
+      if (action === "publish" && request.method === "POST") {
+        const body = await readJsonBody(request);
+        return sendJson(response, { name: sourceName, publishedRevisionId: body.revisionId });
+      }
     }
 
     response.statusCode = 404;
