@@ -2012,6 +2012,24 @@ describe("api server", () => {
       method: "GET",
       url: `/api/prompt-templates/${templateId}`
     });
+    const missingTemplate = await server.inject({
+      method: "GET",
+      url: "/api/prompt-templates/missing"
+    });
+    const missingTemplateUpdate = await server.inject({
+      method: "PUT",
+      payload: { name: "Missing template" },
+      url: "/api/prompt-templates/missing"
+    });
+    const missingTemplateVersion = await server.inject({
+      method: "POST",
+      payload: { content: "Draft content" },
+      url: "/api/prompt-templates/missing/versions"
+    });
+    const missingVersionActivate = await server.inject({
+      method: "PUT",
+      url: `/api/prompt-templates/${templateId}/versions/missing/activate`
+    });
     const archived = await server.inject({
       method: "PUT",
       url: `/api/prompt-templates/${templateId}/versions/${versionId}/archive`
@@ -2022,6 +2040,12 @@ describe("api server", () => {
     });
 
     expect(invalidTemplate.statusCode).toBe(400);
+    expect(invalidTemplate.json()).toMatchObject({
+      details: { name: "name must not be blank" },
+      error: "요청 형식이 올바르지 않습니다",
+      timestamp: expect.any(String)
+    });
+    expect(invalidTemplate.json()).not.toHaveProperty("code");
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({
       description: "Reusable answer format",
@@ -2031,6 +2055,12 @@ describe("api server", () => {
     expect(typeof created.json().createdAt).toBe("number");
     expect(typeof created.json().updatedAt).toBe("number");
     expect(invalidVersion.statusCode).toBe(400);
+    expect(invalidVersion.json()).toMatchObject({
+      details: { content: "content must not be blank" },
+      error: "요청 형식이 올바르지 않습니다",
+      timestamp: expect.any(String)
+    });
+    expect(invalidVersion.json()).not.toHaveProperty("code");
     expect(version.statusCode).toBe(201);
     expect(version.json()).toMatchObject({
       changeLog: "Initial draft",
@@ -2046,6 +2076,30 @@ describe("api server", () => {
       id: templateId,
       versions: [{ id: versionId, status: "ACTIVE", version: 1 }]
     });
+    expect(missingTemplate.statusCode).toBe(404);
+    expect(missingTemplate.json()).toMatchObject({
+      error: "Prompt template not found: missing",
+      timestamp: expect.any(String)
+    });
+    expect(missingTemplate.json()).not.toHaveProperty("code");
+    expect(missingTemplateUpdate.statusCode).toBe(404);
+    expect(missingTemplateUpdate.json()).toMatchObject({
+      error: "Prompt template not found: missing",
+      timestamp: expect.any(String)
+    });
+    expect(missingTemplateUpdate.json()).not.toHaveProperty("code");
+    expect(missingTemplateVersion.statusCode).toBe(404);
+    expect(missingTemplateVersion.json()).toMatchObject({
+      error: "Prompt template not found: missing",
+      timestamp: expect.any(String)
+    });
+    expect(missingTemplateVersion.json()).not.toHaveProperty("code");
+    expect(missingVersionActivate.statusCode).toBe(404);
+    expect(missingVersionActivate.json()).toMatchObject({
+      error: `Template or version not found: ${templateId}/missing`,
+      timestamp: expect.any(String)
+    });
+    expect(missingVersionActivate.json()).not.toHaveProperty("code");
     expect(archived.json()).toMatchObject({ id: versionId, status: "ARCHIVED", templateId });
     expect(deleted.statusCode).toBe(204);
   });
@@ -2100,6 +2154,17 @@ describe("api server", () => {
       headers,
       method: "GET",
       url: `/api/personas/${personaId}`
+    });
+    const missingPersona = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/personas/missing"
+    });
+    const missingPersonaUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { welcomeMessage: "Ready." },
+      url: "/api/personas/missing"
     });
     const invalidIntent = await server.inject({
       headers,
@@ -2163,6 +2228,12 @@ describe("api server", () => {
 
     expect(blockedPersonaList.statusCode).toBe(401);
     expect(invalidPersona.statusCode).toBe(400);
+    expect(invalidPersona.json()).toMatchObject({
+      details: { systemPrompt: "systemPrompt must not be blank" },
+      error: "요청 형식이 올바르지 않습니다",
+      timestamp: expect.any(String)
+    });
+    expect(invalidPersona.json()).not.toHaveProperty("code");
     expect(persona.statusCode).toBe(201);
     expect(persona.json()).toMatchObject({
       description: null,
@@ -2179,6 +2250,18 @@ describe("api server", () => {
     });
     expect(activePersonas.json()).toEqual([]);
     expect(personaDetail.json()).toMatchObject({ id: personaId, isActive: false });
+    expect(missingPersona.statusCode).toBe(404);
+    expect(missingPersona.json()).toMatchObject({
+      error: "Persona not found: missing",
+      timestamp: expect.any(String)
+    });
+    expect(missingPersona.json()).not.toHaveProperty("code");
+    expect(missingPersonaUpdate.statusCode).toBe(404);
+    expect(missingPersonaUpdate.json()).toMatchObject({
+      error: "Persona not found: missing",
+      timestamp: expect.any(String)
+    });
+    expect(missingPersonaUpdate.json()).not.toHaveProperty("code");
     expect(invalidIntent.statusCode).toBe(400);
     expect(invalidIntent.json()).toMatchObject({
       details: { name: "name must not be blank" },

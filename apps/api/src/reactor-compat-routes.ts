@@ -1362,7 +1362,7 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
   server.get("/api/personas/:personaId", async (request, reply) => {
     const { personaId } = request.params as { readonly personaId: string };
     const persona = findCompatRecord(state.personas, personaId);
-    return persona ? toPersonaResponse(persona) : notFound(reply, "PERSONA_NOT_FOUND");
+    return persona ? toPersonaResponse(persona) : reply.status(404).send(errorResponse(`Persona not found: ${personaId}`));
   });
   server.post("/api/personas", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1372,7 +1372,7 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
     const validationError = validatePersonaBody(toBody(request.body), "create");
 
     if (validationError) {
-      return badRequest(reply, "INVALID_PERSONA", validationError);
+      return reply.status(400).send(validationErrorResponse(validationError));
     }
 
     return reply.status(201).send(toPersonaResponse(createPersona(request.body)));
@@ -1386,13 +1386,13 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
     const existing = findCompatRecord(state.personas, personaId);
 
     if (!existing) {
-      return notFound(reply, "PERSONA_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`Persona not found: ${personaId}`));
     }
 
     const validationError = validatePersonaBody(toBody(request.body), "update");
 
     if (validationError) {
-      return badRequest(reply, "INVALID_PERSONA", validationError);
+      return reply.status(400).send(validationErrorResponse(validationError));
     }
 
     return toPersonaResponse(updatePersona(existing, request.body));
@@ -1418,7 +1418,9 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
   server.get("/api/prompt-templates/:templateId", async (request, reply) => {
     const { templateId } = request.params as { readonly templateId: string };
     const template = findCompatRecord(state.promptTemplates, templateId);
-    return template ? toTemplateDetailResponse(template) : notFound(reply, "PROMPT_TEMPLATE_NOT_FOUND");
+    return template
+      ? toTemplateDetailResponse(template)
+      : reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`));
   });
   server.post("/api/prompt-templates", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1428,7 +1430,7 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     const validationError = validatePromptTemplateBody(toBody(request.body), "create");
 
     if (validationError) {
-      return badRequest(reply, "INVALID_PROMPT_TEMPLATE", validationError);
+      return reply.status(400).send(validationErrorResponse(validationError));
     }
 
     return reply.status(201).send(toTemplateResponse(createPromptTemplate(request.body)));
@@ -1442,14 +1444,14 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     const existing = findCompatRecord(state.promptTemplates, templateId);
 
     if (!existing) {
-      return notFound(reply, "PROMPT_TEMPLATE_NOT_FOUND");
+      return reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`));
     }
 
     const body = toBody(request.body);
     const validationError = validatePromptTemplateBody(body, "update");
 
     if (validationError) {
-      return badRequest(reply, "INVALID_PROMPT_TEMPLATE", validationError);
+      return reply.status(400).send(validationErrorResponse(validationError));
     }
 
     const description = readBodyString(body, "description")
@@ -1480,11 +1482,13 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     const validationError = validatePromptVersionBody(toBody(request.body));
 
     if (validationError) {
-      return badRequest(reply, "INVALID_PROMPT_TEMPLATE_VERSION", validationError);
+      return reply.status(400).send(validationErrorResponse(validationError));
     }
 
     const version = appendPromptVersion(templateId, request.body);
-    return "error" in version ? notFound(reply, "PROMPT_TEMPLATE_NOT_FOUND") : reply.status(201).send(version);
+    return "error" in version
+      ? reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`))
+      : reply.status(201).send(version);
   });
   server.put("/api/prompt-templates/:templateId/versions/:versionId/activate", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1492,7 +1496,9 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const version = setPromptVersionStatus(request, "ACTIVE");
-    return "error" in version ? notFound(reply, "PROMPT_TEMPLATE_VERSION_NOT_FOUND") : version;
+    return "error" in version
+      ? promptTemplateVersionNotFound(reply, request)
+      : version;
   });
   server.put("/api/prompt-templates/:templateId/versions/:versionId/archive", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1500,8 +1506,15 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const version = setPromptVersionStatus(request, "ARCHIVED");
-    return "error" in version ? notFound(reply, "PROMPT_TEMPLATE_VERSION_NOT_FOUND") : version;
+    return "error" in version
+      ? promptTemplateVersionNotFound(reply, request)
+      : version;
   });
+}
+
+function promptTemplateVersionNotFound(reply: FastifyReply, request: FastifyRequest) {
+  const { templateId, versionId } = request.params as { readonly templateId: string; readonly versionId: string };
+  return reply.status(404).send(errorResponse(`Template or version not found: ${templateId}/${versionId}`));
 }
 
 function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
@@ -5406,7 +5419,7 @@ function createPersona(bodyValue: unknown): CompatRecord {
   }, "persona");
 }
 
-function validatePersonaBody(body: CompatBody, mode: "create" | "update"): string | undefined {
+function validatePersonaBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
   const checks: Array<readonly [keyof CompatBody, number, string]> = [
     ["name", 200, "name must not exceed 200 characters"],
     ["systemPrompt", 50_000, "systemPrompt must not exceed 50000 characters"],
@@ -5418,18 +5431,18 @@ function validatePersonaBody(body: CompatBody, mode: "create" | "update"): strin
   ];
 
   if (mode === "create" && !readBodyString(body, "name")) {
-    return "name must not be blank";
+    return { name: "name must not be blank" };
   }
 
   if (mode === "create" && !readBodyString(body, "systemPrompt")) {
-    return "systemPrompt must not be blank";
+    return { systemPrompt: "systemPrompt must not be blank" };
   }
 
   for (const [key, max, message] of checks) {
     const value = body[key];
 
     if (typeof value === "string" && value.length > max) {
-      return message;
+      return { [key]: message };
     }
   }
 
@@ -5478,39 +5491,39 @@ function createPromptTemplate(bodyValue: unknown): CompatRecord {
   }, "prompt_template");
 }
 
-function validatePromptTemplateBody(body: CompatBody, mode: "create" | "update"): string | undefined {
+function validatePromptTemplateBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
   const name = body.name;
   const description = body.description;
 
   if (mode === "create" && !readBodyString(body, "name")) {
-    return "name must not be blank";
+    return { name: "name must not be blank" };
   }
 
   if (typeof name === "string" && name.length > 200) {
-    return "name must not exceed 200 characters";
+    return { name: "name must not exceed 200 characters" };
   }
 
   if (typeof description === "string" && description.length > 2000) {
-    return "description must not exceed 2000 characters";
+    return { description: "description must not exceed 2000 characters" };
   }
 
   return undefined;
 }
 
-function validatePromptVersionBody(body: CompatBody): string | undefined {
+function validatePromptVersionBody(body: CompatBody): JsonObject | undefined {
   const content = body.content;
   const changeLog = body.changeLog;
 
   if (!readBodyString(body, "content")) {
-    return "content must not be blank";
+    return { content: "content must not be blank" };
   }
 
   if (typeof content === "string" && content.length > 100_000) {
-    return "content must not exceed 100000 characters";
+    return { content: "content must not exceed 100000 characters" };
   }
 
   if (typeof changeLog === "string" && changeLog.length > 2000) {
-    return "changeLog must not exceed 2000 characters";
+    return { changeLog: "changeLog must not exceed 2000 characters" };
   }
 
   return undefined;
