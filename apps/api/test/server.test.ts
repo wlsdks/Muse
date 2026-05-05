@@ -9,7 +9,13 @@ import {
 } from "@muse/auth";
 import type { ModelProvider } from "@muse/model";
 import { InMemoryAgentRunHistoryStore } from "@muse/runtime-state";
-import { InMemoryScheduledJobExecutionStore, InMemoryScheduledJobStore } from "@muse/scheduler";
+import {
+  DynamicSchedulerService,
+  InMemoryScheduledJobExecutionStore,
+  InMemoryScheduledJobStore,
+  ScheduledJobDispatcher,
+  ScheduledMcpToolInvoker
+} from "@muse/scheduler";
 import { buildServer } from "../src/server.js";
 
 describe("api server", () => {
@@ -322,6 +328,117 @@ describe("api server", () => {
     expect(stream.body).toContain("event: message");
     expect(stream.body).toContain("event: done");
   });
+
+  it("manages scheduler jobs through the service API and records executions", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const schedulerStore = new InMemoryScheduledJobStore({ idFactory: () => "job-1" });
+    let executionIndex = 0;
+    const schedulerExecutionStore = new InMemoryScheduledJobExecutionStore({
+      idFactory: () => `exec-${++executionIndex}`
+    });
+    const schedulerService = new DynamicSchedulerService({
+      dispatcher: new ScheduledJobDispatcher({
+        agentExecutor: { execute: async (job) => `executed:${job.agentPrompt}` },
+        mcpInvoker: createUnusedMcpInvoker()
+      }),
+      executionStore: schedulerExecutionStore,
+      store: schedulerStore
+    });
+    const server = buildServer({
+      authService,
+      logger: false,
+      requireAuth: true,
+      scheduler: {
+        executionStore: schedulerExecutionStore,
+        service: schedulerService,
+        store: schedulerStore
+      }
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const invalid = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        cronExpression: "0 * * * * *",
+        jobType: "agent",
+        name: "Missing prompt"
+      },
+      url: "/api/scheduler/jobs"
+    });
+    const created = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        agentPrompt: "Run",
+        cronExpression: "0 * * * * *",
+        enabled: true,
+        jobType: "agent",
+        name: "Agent job",
+        retryOnFailure: true
+      },
+      url: "/api/scheduler/jobs"
+    });
+    const trigger = await server.inject({
+      headers,
+      method: "POST",
+      url: "/api/scheduler/jobs/job-1/trigger"
+    });
+    const dryRun = await server.inject({
+      headers,
+      method: "POST",
+      url: "/scheduler/jobs/job-1/dry-run"
+    });
+    const executions = await server.inject({
+      headers,
+      method: "GET",
+      url: "/admin/scheduler/jobs/job-1/executions?limit=10"
+    });
+    const updated = await server.inject({
+      headers,
+      method: "PATCH",
+      payload: {
+        enabled: false,
+        name: "Renamed agent job"
+      },
+      url: "/api/scheduler/jobs/job-1"
+    });
+    const listed = await server.inject({
+      headers,
+      method: "GET",
+      url: "/scheduler/jobs"
+    });
+    const deleted = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/scheduler/jobs/job-1"
+    });
+    const afterDelete = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/scheduler/jobs/job-1"
+    });
+
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({ code: "INVALID_SCHEDULED_JOB" });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ id: "job-1", jobType: "agent", name: "Agent job" });
+    expect(trigger.json()).toEqual({ dryRun: false, jobId: "job-1", result: "executed:Run" });
+    expect(dryRun.json()).toEqual({ dryRun: true, jobId: "job-1", result: "executed:Run" });
+    expect(executions.json()).toMatchObject([
+      { dryRun: true, jobId: "job-1", status: "success" },
+      { dryRun: false, jobId: "job-1", status: "success" }
+    ]);
+    expect(updated.json()).toMatchObject({ enabled: false, name: "Renamed agent job" });
+    expect(listed.json()).toHaveLength(1);
+    expect(deleted.json()).toEqual({ deleted: true, jobId: "job-1" });
+    expect(afterDelete.statusCode).toBe(404);
+  });
 });
 
 function createAuthService(): AuthService {
@@ -350,4 +467,12 @@ function createProvider(output: string): ModelProvider {
     },
     async *stream() {}
   };
+}
+
+function createUnusedMcpInvoker(): ScheduledMcpToolInvoker {
+  return new ScheduledMcpToolInvoker({
+    connect: async () => false,
+    getStatus: () => "disconnected",
+    toMuseTools: () => []
+  } as never);
 }

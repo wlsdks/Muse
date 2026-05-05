@@ -25,8 +25,8 @@ import {
   type RuntimeSettingType
 } from "@muse/runtime-settings";
 import type { AgentRunHistoryStore } from "@muse/runtime-state";
-import type { ScheduledJobExecutionStore, ScheduledJobStore } from "@muse/scheduler";
 import Fastify, { type FastifyInstance } from "fastify";
+import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
 
 export interface ServerOptions {
   readonly logger?: boolean;
@@ -38,10 +38,7 @@ export interface ServerOptions {
   readonly defaultModel?: string;
   readonly requireAuth?: boolean;
   readonly runtimeSettings?: RuntimeSettingsService;
-  readonly scheduler?: {
-    readonly executionStore?: ScheduledJobExecutionStore;
-    readonly store: ScheduledJobStore;
-  };
+  readonly scheduler?: SchedulerRouteScheduler;
 }
 
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
@@ -160,35 +157,9 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     return { messages, run, toolCalls };
   });
 
-  server.get("/admin/scheduler/jobs", async (request, reply) => {
-    if (!authorizeAdmin(request, reply, Boolean(authService))) {
-      return reply;
-    }
-
-    if (!options.scheduler) {
-      return reply.status(404).send({
-        code: "SCHEDULER_UNAVAILABLE",
-        message: "Scheduler store is not configured"
-      });
-    }
-
-    return options.scheduler.store.list();
-  });
-
-  server.get("/admin/scheduler/jobs/:jobId/executions", async (request, reply) => {
-    if (!authorizeAdmin(request, reply, Boolean(authService))) {
-      return reply;
-    }
-
-    if (!options.scheduler?.executionStore) {
-      return reply.status(404).send({
-        code: "SCHEDULER_EXECUTIONS_UNAVAILABLE",
-        message: "Scheduler execution store is not configured"
-      });
-    }
-
-    const { jobId } = request.params as { readonly jobId: string };
-    return options.scheduler.executionStore.findByJobId(jobId);
+  registerSchedulerRoutes(server, {
+    authorizeAdmin: (request, reply) => authorizeAdmin(request, reply, Boolean(authService)),
+    scheduler: options.scheduler
   });
 
   if (authService) {
