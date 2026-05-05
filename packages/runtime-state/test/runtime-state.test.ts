@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryCheckpointStore, InMemoryHookTraceStore, InMemoryPendingApprovalStore } from "../src/index.js";
+import {
+  InMemoryAdminOperationsStore,
+  InMemoryCheckpointStore,
+  InMemoryHookTraceStore,
+  InMemoryPendingApprovalStore
+} from "../src/index.js";
 
 describe("InMemoryPendingApprovalStore", () => {
   it("resolves a pending approval when approved", async () => {
@@ -175,6 +180,50 @@ describe("InMemoryHookTraceStore", () => {
       })
     ]);
     expect(store.listRecent().map((trace) => trace.hookId)).toEqual(["third", "second"]);
+  });
+});
+
+describe("InMemoryAdminOperationsStore", () => {
+  it("tracks tenants, alerts, SLO status, and cost summaries", async () => {
+    const store = new InMemoryAdminOperationsStore({
+      idFactory: (kind) => `${kind}-1`,
+      now: () => new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    const tenant = await store.upsertTenant({
+      id: "tenant-1",
+      monthlyBudgetUsd: "100.00000000",
+      name: "Tenant One"
+    });
+    const alert = await store.createAlert({
+      message: "Budget threshold crossed",
+      severity: "critical",
+      target: "tenant-1"
+    });
+    const acknowledged = await store.acknowledgeAlert(alert.id);
+    const slo = await store.upsertSlo({
+      actual: 94,
+      id: "availability",
+      name: "Availability",
+      target: 99.9,
+      window: "30d"
+    });
+    const costs = await store.recordCost({
+      costUsd: "1.25000000",
+      model: "provider/model",
+      tenantId: "tenant-1"
+    });
+
+    expect(tenant).toMatchObject({ id: "tenant-1", status: "active" });
+    expect(await store.listTenants()).toHaveLength(1);
+    expect(acknowledged).toMatchObject({ id: alert.id, status: "acknowledged" });
+    expect(await store.listAlerts()).toHaveLength(1);
+    expect(slo).toMatchObject({ id: "availability", status: "violated" });
+    expect(costs).toEqual({
+      byModel: { "provider/model": "1.25000000" },
+      byTenant: { "tenant-1": "1.25000000" },
+      totalCostUsd: "1.25000000"
+    });
   });
 });
 

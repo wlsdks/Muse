@@ -16,7 +16,7 @@ import {
   type McpConnection
 } from "@muse/mcp";
 import type { ModelProvider } from "@muse/model";
-import { InMemoryAgentRunHistoryStore } from "@muse/runtime-state";
+import { InMemoryAdminOperationsStore, InMemoryAgentRunHistoryStore } from "@muse/runtime-state";
 import {
   DynamicSchedulerService,
   InMemoryScheduledJobExecutionStore,
@@ -363,6 +363,94 @@ describe("api server", () => {
     expect(allInvalidated).toBe(true);
     expect(breakers.json()).toMatchObject([{ name: "model.generate", state: "open" }]);
     expect(reset.json()).toEqual({ name: "model.generate", state: "closed" });
+  });
+
+  it("exposes tenant, alert, cost, and SLO admin operations", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const operations = new InMemoryAdminOperationsStore({
+      idFactory: (kind) => `${kind}-1`,
+      now: () => new Date("2026-01-01T00:00:00.000Z")
+    });
+    const server = buildServer({
+      admin: { operations },
+      authService,
+      logger: false,
+      requireAuth: true
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const tenant = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        monthlyBudgetUsd: "100",
+        name: "Tenant One",
+        status: "active"
+      },
+      url: "/admin/tenants/tenant-1"
+    });
+    const alert = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        message: "High spend",
+        severity: "critical",
+        target: "tenant-1"
+      },
+      url: "/admin/alerts"
+    });
+    const alertId = alert.json().id as string;
+    const acknowledged = await server.inject({
+      headers,
+      method: "POST",
+      url: `/admin/alerts/${alertId}/ack`
+    });
+    const slo = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        actual: 94,
+        name: "Availability",
+        target: 99.9,
+        window: "30d"
+      },
+      url: "/admin/slos/availability"
+    });
+    const cost = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        costUsd: "1.25",
+        model: "provider/model",
+        tenantId: "tenant-1"
+      },
+      url: "/admin/costs/usage"
+    });
+    const summary = await server.inject({
+      headers,
+      method: "GET",
+      url: "/admin/costs/summary"
+    });
+
+    expect(tenant.json()).toMatchObject({
+      id: "tenant-1",
+      monthlyBudgetUsd: "100.00000000",
+      name: "Tenant One"
+    });
+    expect(alert.statusCode).toBe(201);
+    expect(acknowledged.json()).toMatchObject({ id: alertId, status: "acknowledged" });
+    expect(slo.json()).toMatchObject({ id: "availability", status: "violated" });
+    expect(cost.json()).toEqual({
+      byModel: { "provider/model": "1.25000000" },
+      byTenant: { "tenant-1": "1.25000000" },
+      totalCostUsd: "1.25000000"
+    });
+    expect(summary.json()).toEqual(cost.json());
   });
 
   it("runs chat through AgentRuntime behind auth and exposes SSE-compatible output", async () => {

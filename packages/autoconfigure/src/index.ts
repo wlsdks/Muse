@@ -28,7 +28,11 @@ import { OpenAICompatibleProvider, type ModelProvider } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
 import { CircuitBreakerRegistry } from "@muse/resilience";
 import { InMemoryRuntimeSettingsStore, RuntimeSettingsService } from "@muse/runtime-settings";
-import { InMemoryAgentRunHistoryStore, InMemoryHookTraceStore } from "@muse/runtime-state";
+import {
+  InMemoryAdminOperationsStore,
+  InMemoryAgentRunHistoryStore,
+  InMemoryHookTraceStore
+} from "@muse/runtime-state";
 import {
   DynamicSchedulerService,
   InMemoryDistributedSchedulerLock,
@@ -57,6 +61,7 @@ export interface MuseRuntimeAssembly {
   readonly defaultModel?: string;
   readonly historyStore: InMemoryAgentRunHistoryStore;
   readonly hookTraceStore: InMemoryHookTraceStore;
+  readonly adminOperationsStore: InMemoryAdminOperationsStore;
   readonly mcp: {
     readonly manager: McpManager;
     readonly securityPolicyProvider: McpSecurityPolicyProvider;
@@ -102,6 +107,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const hookTraceStore = new InMemoryHookTraceStore({
     maxTraces: parseInteger(env.MUSE_HOOK_TRACE_MAX_ENTRIES, 10_000)
   });
+  const adminOperationsStore = new InMemoryAdminOperationsStore();
   const cacheStatsStore = new InMemoryCacheStatsStore();
   const cacheMetrics = new InMemoryCacheMetricsRecorder(cacheStatsStore);
   const responseCache = new InMemoryResponseCache({
@@ -202,6 +208,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     defaultModel,
     historyStore,
     hookTraceStore,
+    adminOperationsStore,
     mcp: {
       manager: mcpManager,
       securityPolicyProvider: mcpSecurityPolicyProvider,
@@ -238,6 +245,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
         responseCache: assembly.cache.responseCache
       },
       observability: assembly.observability,
+      operations: assembly.adminOperationsStore,
       resilience: assembly.resilience
     },
     agentRuntime: assembly.agentRuntime,

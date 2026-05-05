@@ -14,7 +14,7 @@ Current Muse baseline:
 | --- | ---: | --- |
 | Reactor modules with Muse landing zones | 31 | Every source module has a package or API target |
 | Functionally exercised migration areas | 31 | Core behavior exists and is covered by package/API tests |
-| Deep-hardening areas still open | 2 | Behavior exists, but production depth is not complete |
+| Deep-hardening areas still open | 1 | Behavior exists, but production depth is not complete |
 | Remaining unmapped modules | 0 | No source module is without a target |
 
 ## Completed Migration Areas
@@ -23,6 +23,7 @@ Current Muse baseline:
 | --- | --- | --- |
 | `agent` | `packages/agent-core` | ReAct loop, tool execution, streaming, guards, hooks, cache, RAG, history |
 | `api` | `apps/api` | Chat, SSE chat, auth, settings, agent specs, history, MCP, scheduler, quality routes |
+| `admin` | `apps/api`, `packages/runtime-state` | Metrics, cache, resilience, tenant, alert, cost, and SLO operations |
 | `approval` | `packages/policy`, `packages/runtime-state` | Approval policies and pending approval stores exist |
 | `auth` | `packages/auth`, `apps/api` | JWT auth, password hashing, user store, revocation, guard, rate limiting |
 | `autoconfigure` | `packages/autoconfigure` | Environment-driven runtime assembly for API defaults exists |
@@ -55,7 +56,6 @@ Current Muse baseline:
 
 | Area | Current gap | Target |
 | --- | --- | --- |
-| `admin` | Tenant, alert, cost, and SLO operations are shallow | Add operational stores and routes |
 | `core` | Boundary stability needs continued review | Keep shared contracts minimal and versionable |
 
 ## Recent Completion Notes
@@ -72,11 +72,11 @@ Current Muse baseline:
 - Structured output filtering normalizes JSON/YAML responses when requested by run metadata.
 - MCP health checks now mark unhealthy connections and reconnect due servers with backoff.
 - Scheduler now has in-memory and Kysely-backed distributed lock implementations.
+- Admin operations now include tenant, alert acknowledgement, cost summary, and SLO state APIs.
 
 ## Execution Plan
 
-1. Expand admin into tenant, alert, cost, and SLO operations.
-2. Replace in-memory default stores with production persistence wiring where needed.
+1. Replace in-memory default stores with production persistence wiring where needed.
 
 ## Migration Rules
 

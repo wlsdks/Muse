@@ -397,4 +397,5 @@ export type {
   KyselyHookTraceStoreOptions,
   KyselyPendingApprovalStoreOptions
 } from "./kysely-stores.js";
+export * from "./admin-operations.js";
 export * from "./run-history.js";

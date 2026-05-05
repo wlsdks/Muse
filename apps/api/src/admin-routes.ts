@@ -1,4 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type {
+  AdminAlertInput,
+  AdminAlertSeverity,
+  AdminCostUsage,
+  AdminOperationsStore,
+  AdminSloInput,
+  AdminTenantInput,
+  AdminTenantStatus
+} from "@muse/runtime-state";
 
 export interface AdminRouteOptions {
   readonly authorizeAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
@@ -26,6 +35,7 @@ export interface AdminRouteState {
       resetAll(): void;
     };
   };
+  readonly operations?: AdminOperationsStore;
 }
 
 interface CircuitBreakerView {
@@ -146,8 +156,355 @@ export function registerAdminRoutes(server: FastifyInstance, options: AdminRoute
     options.admin?.resilience?.circuitBreakerRegistry?.resetAll();
     return { reset: true };
   });
+
+  server.get("/admin/tenants", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+    return operations ? operations.listTenants() : reply;
+  });
+
+  server.put("/admin/tenants/:tenantId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+
+    if (!operations) {
+      return reply;
+    }
+
+    const { tenantId } = request.params as { readonly tenantId: string };
+    const parsed = parseTenantInput(request.body, tenantId);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    return operations.upsertTenant(parsed.value);
+  });
+
+  server.get("/admin/alerts", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+    return operations ? operations.listAlerts() : reply;
+  });
+
+  server.post("/admin/alerts", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+
+    if (!operations) {
+      return reply;
+    }
+
+    const parsed = parseAlertInput(request.body);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    return reply.status(201).send(await operations.createAlert(parsed.value));
+  });
+
+  server.post("/admin/alerts/:alertId/ack", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+
+    if (!operations) {
+      return reply;
+    }
+
+    const { alertId } = request.params as { readonly alertId: string };
+    const alert = await operations.acknowledgeAlert(alertId);
+
+    if (!alert) {
+      return reply.status(404).send({
+        code: "ADMIN_ALERT_NOT_FOUND",
+        message: `Admin alert not found: ${alertId}`
+      });
+    }
+
+    return alert;
+  });
+
+  server.get("/admin/slos", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+    return operations ? operations.listSlos() : reply;
+  });
+
+  server.put("/admin/slos/:sloId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+
+    if (!operations) {
+      return reply;
+    }
+
+    const { sloId } = request.params as { readonly sloId: string };
+    const parsed = parseSloInput(request.body, sloId);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    return operations.upsertSlo(parsed.value);
+  });
+
+  server.get("/admin/costs/summary", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+    return operations ? operations.costSummary() : reply;
+  });
+
+  server.post("/admin/costs/usage", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const operations = requireOperations(options, reply);
+
+    if (!operations) {
+      return reply;
+    }
+
+    const parsed = parseCostUsage(request.body);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    return operations.recordCost(parsed.value);
+  });
+}
+
+type ParseResult<T> = { readonly ok: true; readonly value: T } | { readonly error: ApiError; readonly ok: false };
+
+interface ApiError {
+  readonly code: string;
+  readonly message: string;
+}
+
+function requireOperations(options: AdminRouteOptions, reply: FastifyReply): AdminOperationsStore | undefined {
+  const operations = options.admin?.operations;
+
+  if (!operations) {
+    reply.status(404).send({
+      code: "ADMIN_OPERATIONS_UNAVAILABLE",
+      message: "Admin operations store is not configured"
+    });
+    return undefined;
+  }
+
+  return operations;
+}
+
+function parseTenantInput(value: unknown, tenantId: string): ParseResult<AdminTenantInput> {
+  if (!isRecord(value) || typeof value.name !== "string" || value.name.trim().length === 0) {
+    return invalid("INVALID_ADMIN_TENANT", "Body must include a non-empty name");
+  }
+
+  const status = parseTenantStatus(value.status);
+
+  if (!status.ok) {
+    return status;
+  }
+
+  const monthlyBudgetUsd = parseOptionalCost(value.monthlyBudgetUsd, "INVALID_ADMIN_TENANT");
+
+  if (!monthlyBudgetUsd.ok) {
+    return monthlyBudgetUsd;
+  }
+
+  return {
+    ok: true,
+    value: {
+      id: tenantId,
+      ...(monthlyBudgetUsd.value ? { monthlyBudgetUsd: monthlyBudgetUsd.value } : {}),
+      name: value.name.trim(),
+      ...(status.value ? { status: status.value } : {})
+    }
+  };
+}
+
+function parseAlertInput(value: unknown): ParseResult<AdminAlertInput> {
+  if (!isRecord(value) || typeof value.message !== "string" || value.message.trim().length === 0) {
+    return invalid("INVALID_ADMIN_ALERT", "Body must include a non-empty message");
+  }
+
+  const severity = parseAlertSeverity(value.severity);
+
+  if (!severity.ok) {
+    return severity;
+  }
+
+  const target = optionalString(value.target);
+  return {
+    ok: true,
+    value: {
+      message: value.message.trim(),
+      ...(severity.value ? { severity: severity.value } : {}),
+      ...(target ? { target } : {})
+    }
+  };
+}
+
+function parseSloInput(value: unknown, sloId: string): ParseResult<AdminSloInput> {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    value.name.trim().length === 0 ||
+    typeof value.window !== "string" ||
+    value.window.trim().length === 0
+  ) {
+    return invalid("INVALID_ADMIN_SLO", "Body must include non-empty name and window strings");
+  }
+
+  const target = parseNumber(value.target, "INVALID_ADMIN_SLO", "SLO target must be a finite number");
+
+  if (!target.ok) {
+    return target;
+  }
+
+  const actual = value.actual === undefined
+    ? ({ ok: true, value: undefined } as const)
+    : parseNumber(value.actual, "INVALID_ADMIN_SLO", "SLO actual must be a finite number");
+
+  if (!actual.ok) {
+    return actual;
+  }
+
+  return {
+    ok: true,
+    value: {
+      id: sloId,
+      ...(actual.value !== undefined ? { actual: actual.value } : {}),
+      name: value.name.trim(),
+      target: target.value,
+      window: value.window.trim()
+    }
+  };
+}
+
+function parseCostUsage(value: unknown): ParseResult<AdminCostUsage> {
+  if (!isRecord(value)) {
+    return invalid("INVALID_ADMIN_COST_USAGE", "Body must be an object");
+  }
+
+  const costUsd = parseRequiredCost(value.costUsd, "INVALID_ADMIN_COST_USAGE");
+
+  if (!costUsd.ok) {
+    return costUsd;
+  }
+
+  const model = optionalString(value.model);
+  const tenantId = optionalString(value.tenantId);
+  return {
+    ok: true,
+    value: {
+      costUsd: costUsd.value,
+      ...(model ? { model } : {}),
+      ...(tenantId ? { tenantId } : {})
+    }
+  };
+}
+
+function parseTenantStatus(value: unknown): ParseResult<AdminTenantStatus | undefined> {
+  if (value === undefined) {
+    return { ok: true, value: undefined };
+  }
+
+  if (value === "active" || value === "suspended" || value === "disabled") {
+    return { ok: true, value };
+  }
+
+  return invalid("INVALID_ADMIN_TENANT", "Tenant status must be active, suspended, or disabled");
+}
+
+function parseAlertSeverity(value: unknown): ParseResult<AdminAlertSeverity | undefined> {
+  if (value === undefined) {
+    return { ok: true, value: undefined };
+  }
+
+  if (value === "info" || value === "warning" || value === "critical") {
+    return { ok: true, value };
+  }
+
+  return invalid("INVALID_ADMIN_ALERT", "Alert severity must be info, warning, or critical");
+}
+
+function parseRequiredCost(value: unknown, code: string): ParseResult<string> {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return invalid(code, "Cost must be a finite numeric value");
+  }
+
+  return parseCost(value, code);
+}
+
+function parseOptionalCost(value: unknown, code: string): ParseResult<string | undefined> {
+  if (value === undefined) {
+    return { ok: true, value: undefined };
+  }
+
+  if (typeof value !== "string" && typeof value !== "number") {
+    return invalid(code, "Cost must be a finite numeric value");
+  }
+
+  return parseCost(value, code);
+}
+
+function parseCost(value: string | number, code: string): ParseResult<string> {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return invalid(code, "Cost must be a finite non-negative value");
+  }
+
+  return { ok: true, value: parsed.toFixed(8) };
+}
+
+function parseNumber(value: unknown, code: string, message: string): ParseResult<number> {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return invalid(code, message);
+  }
+
+  return { ok: true, value };
+}
+
+function invalid(code: string, message: string): ParseResult<never> {
+  return {
+    error: { code, message },
+    ok: false
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  const trimmed = typeof value === "string" ? value.trim() : undefined;
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }

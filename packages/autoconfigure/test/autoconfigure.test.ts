@@ -9,7 +9,7 @@ import {
 } from "../src/index.js";
 
 describe("autoconfigure", () => {
-  it("assembles default runtime without auth when no secret is configured", () => {
+  it("assembles default runtime without auth when no secret is configured", async () => {
     const assembly = createMuseRuntimeAssembly({ env: {} });
 
     expect(assembly.authService).toBeUndefined();
@@ -19,6 +19,7 @@ describe("autoconfigure", () => {
     expect(assembly.cache.responseCache.size()).toBe(0);
     expect(assembly.observability.metrics.recordedEvents()).toEqual([]);
     expect(assembly.resilience.circuitBreakerRegistry.names()).toEqual([]);
+    expect(await assembly.adminOperationsStore.listTenants()).toEqual([]);
     expect(assembly.scheduler.store.list()).toEqual([]);
     expect(assembly.scheduler.service).toBeTruthy();
   });
@@ -33,6 +34,7 @@ describe("autoconfigure", () => {
 
     expect(options.authService).toBeTruthy();
     expect(options.admin.cache.responseCache.size()).toBe(0);
+    expect(options.admin.operations.listAlerts()).toEqual([]);
     expect(options.requireAuth).toBe(true);
     expect(options.mcp.manager).toBeTruthy();
     expect(options.scheduler.store.list()).toEqual([]);
