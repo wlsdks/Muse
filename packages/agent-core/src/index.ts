@@ -1,4 +1,5 @@
 import type { ModelMessage, ModelProvider, ModelResponse } from "@muse/model";
+import { findInjectionPatterns, maskPii } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
 
 type Awaitable<T> = T | Promise<T>;
@@ -32,10 +33,27 @@ export interface HookStage {
   onError?(context: AgentRunContext, error: unknown): Awaitable<void>;
 }
 
+export type OutputGuardDecision =
+  | { readonly action: "allow" }
+  | { readonly action: "modify"; readonly content: string; readonly reason: string }
+  | { readonly action: "reject"; readonly reason: string; readonly code?: string };
+
+export interface OutputGuardContext {
+  readonly runId: string;
+  readonly input: AgentRunInput;
+  readonly response: ModelResponse;
+}
+
+export interface OutputGuardStage {
+  readonly id: string;
+  check(content: string, context: OutputGuardContext): Awaitable<OutputGuardDecision>;
+}
+
 export interface AgentRuntimeOptions {
   readonly modelProvider: ModelProvider;
   readonly guards?: readonly GuardStage[];
   readonly hooks?: readonly HookStage[];
+  readonly outputGuards?: readonly OutputGuardStage[];
   readonly defaults?: {
     readonly maxOutputTokens?: number;
     readonly temperature?: number;
@@ -59,16 +77,30 @@ export class GuardBlockedError extends Error {
   }
 }
 
+export class OutputGuardBlockedError extends Error {
+  readonly stageId: string;
+  readonly code?: string;
+
+  constructor(stageId: string, reason: string, code?: string) {
+    super(reason);
+    this.name = "OutputGuardBlockedError";
+    this.stageId = stageId;
+    this.code = code;
+  }
+}
+
 export class AgentRuntime {
   private readonly modelProvider: ModelProvider;
   private readonly guards: readonly GuardStage[];
   private readonly hooks: readonly HookStage[];
+  private readonly outputGuards: readonly OutputGuardStage[];
   private readonly defaults: AgentRuntimeOptions["defaults"];
 
   constructor(options: AgentRuntimeOptions) {
     this.modelProvider = options.modelProvider;
     this.guards = options.guards ?? [];
     this.hooks = options.hooks ?? [];
+    this.outputGuards = options.outputGuards ?? [];
     this.defaults = options.defaults;
   }
 
@@ -90,9 +122,10 @@ export class AgentRuntime {
         model: input.model,
         temperature: this.defaults?.temperature
       });
+      const guardedResponse = await this.applyOutputGuards(context, response);
 
-      await this.invokeHooks("afterComplete", context, response);
-      return { response, runId: context.runId };
+      await this.invokeHooks("afterComplete", context, guardedResponse);
+      return { response: guardedResponse, runId: context.runId };
     } catch (error) {
       await this.invokeHooks("onError", context, error);
       throw error;
@@ -114,6 +147,35 @@ export class AgentRuntime {
         throw new GuardBlockedError(guard.id, decision.reason, decision.code);
       }
     }
+  }
+
+  private async applyOutputGuards(context: AgentRunContext, response: ModelResponse): Promise<ModelResponse> {
+    let guarded = response;
+
+    for (const stage of this.outputGuards) {
+      let decision: OutputGuardDecision;
+
+      try {
+        decision = await stage.check(guarded.output, {
+          input: context.input,
+          response: guarded,
+          runId: context.runId
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Output guard failed closed";
+        throw new OutputGuardBlockedError(stage.id, message, "OUTPUT_GUARD_ERROR");
+      }
+
+      if (decision.action === "reject") {
+        throw new OutputGuardBlockedError(stage.id, decision.reason, decision.code);
+      }
+
+      if (decision.action === "modify") {
+        guarded = { ...guarded, output: decision.content };
+      }
+    }
+
+    return guarded;
   }
 
   private async invokeHooks(name: "beforeStart", context: AgentRunContext): Promise<void>;
@@ -142,4 +204,68 @@ export class AgentRuntime {
 
 export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
   return new AgentRuntime(options);
+}
+
+export function createInjectionInputGuard(): GuardStage {
+  return {
+    evaluate: (context) => {
+      const findings = findInjectionPatterns(joinMessages(context.input.messages));
+
+      if (findings.length === 0) {
+        return { allowed: true };
+      }
+
+      return {
+        allowed: false,
+        code: "INJECTION_DETECTED",
+        reason: `Input guard detected injection patterns: ${findings.map((finding) => finding.name).join(", ")}`
+      };
+    },
+    id: "injection-input-guard"
+  };
+}
+
+export function createPiiInputGuard(): GuardStage {
+  return {
+    evaluate: (context) => {
+      const result = maskPii(joinMessages(context.input.messages));
+
+      if (result.findings.length === 0) {
+        return { allowed: true };
+      }
+
+      return {
+        allowed: false,
+        code: "PII_DETECTED",
+        reason: `Input guard detected private identifiers: ${result.findings.map((finding) => finding.name).join(", ")}`
+      };
+    },
+    id: "pii-input-guard"
+  };
+}
+
+export function createPiiMaskingOutputGuard(): OutputGuardStage {
+  return {
+    check: (content) => {
+      const result = maskPii(content);
+
+      if (result.findings.length === 0) {
+        return { action: "allow" };
+      }
+
+      return {
+        action: "modify",
+        content: result.text,
+        reason: `Output guard masked private identifiers: ${result.findings.map((finding) => finding.name).join(", ")}`
+      };
+    },
+    id: "pii-output-mask"
+  };
+}
+
+function joinMessages(messages: readonly ModelMessage[]): string {
+  return messages
+    .filter((message) => message.role === "user" || message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
 }

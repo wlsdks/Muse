@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@muse/model": "workspace:*",
+    "@muse/policy": "workspace:*",
     "@muse/shared": "workspace:*"
   }
 }
