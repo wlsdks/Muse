@@ -730,6 +730,12 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
       return reply;
     }
 
+    const validationError = validateToolPolicyBody(toBody(request.body));
+
+    if (validationError) {
+      return reply.status(400).send(validationErrorResponse(validationError));
+    }
+
     state.toolPolicy = updateToolPolicy(request.body);
     state.toolPolicyStored = true;
     return toToolPolicyResponse(state.toolPolicy);
@@ -5353,6 +5359,32 @@ function updateToolPolicy(bodyValue: unknown): JsonObject {
     updatedAt: timestamp,
     writeToolNames: toolPolicyStringSet(body.writeToolNames)
   };
+}
+
+function validateToolPolicyBody(body: CompatBody): JsonObject | undefined {
+  const errors: Record<string, string> = {};
+
+  if (toolPolicyStringSet(body.writeToolNames).length > 500) {
+    errors.writeToolNames = "writeToolNames must not exceed 500 entries";
+  }
+
+  if (toolPolicyStringSet(body.denyWriteChannels).length > 50) {
+    errors.denyWriteChannels = "denyWriteChannels must not exceed 50 entries";
+  }
+
+  if (toolPolicyStringSet(body.allowWriteToolNamesInDenyChannels).length > 500) {
+    errors.allowWriteToolNamesInDenyChannels = "allowWriteToolNamesInDenyChannels must not exceed 500 entries";
+  }
+
+  if (isRecord(body.allowWriteToolNamesByChannel) && Object.keys(body.allowWriteToolNamesByChannel).length > 200) {
+    errors.allowWriteToolNamesByChannel = "allowWriteToolNamesByChannel must not exceed 200 channels";
+  }
+
+  if (typeof body.denyWriteMessage === "string" && body.denyWriteMessage.length > 500) {
+    errors.denyWriteMessage = "denyWriteMessage must not exceed 500 characters";
+  }
+
+  return Object.keys(errors).length > 0 ? errors : undefined;
 }
 
 function toolPolicyStringSet(value: unknown, lowercase = false): string[] {

@@ -3287,6 +3287,12 @@ describe("api server", () => {
       payload: { enabled: true },
       url: "/api/tool-policy"
     });
+    const oversized = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { writeToolNames: Array.from({ length: 501 }, (_, index) => `tool_${index}`) },
+      url: "/api/tool-policy"
+    });
     const deleted = await server.inject({
       headers,
       method: "DELETE",
@@ -3321,6 +3327,12 @@ describe("api server", () => {
       denyWriteMessage: "Error: This tool is not allowed in this channel",
       enabled: true,
       writeToolNames: []
+    });
+    expect(oversized.statusCode).toBe(400);
+    expect(oversized.json()).toMatchObject({
+      details: { writeToolNames: "writeToolNames must not exceed 500 entries" },
+      error: "요청 형식이 올바르지 않습니다",
+      timestamp: expect.any(String)
     });
     expect(deleted.statusCode).toBe(204);
     expect(afterDelete.json()).toMatchObject({
