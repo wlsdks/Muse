@@ -1963,6 +1963,9 @@ describe("api server", () => {
       status: "completed"
     });
     const server = buildServer({
+      agentRuntime: createAgentRuntime({
+        modelProvider: createProvider("ok")
+      }),
       authService,
       defaultModel: "provider/model",
       historyStore,
@@ -2174,7 +2177,6 @@ describe("api server", () => {
       method: "POST",
       payload: {
         expectedAnswerContains: ["ok"],
-        expectedToolNames: ["read_file"],
         name: "Regression case",
         runId: "run-compat",
         tags: ["migration"]
@@ -2537,7 +2539,7 @@ describe("api server", () => {
     }]);
     expect(agentEvalCase.statusCode).toBe(200);
     expect(agentEvalCase.json()).toMatchObject({
-      assertionCount: 4,
+      assertionCount: 3,
       model: "provider/model",
       name: "Regression case",
       sourceRunId: "run-compat",
@@ -2551,12 +2553,13 @@ describe("api server", () => {
     }]);
     expect(agentEvalReplay.json()).toMatchObject({
       caseId: agentEvalCaseId,
-      deterministic: { passed: true, runId: "run-compat" },
+      deterministic: { passed: true },
       storedResults: [
         { caseId: agentEvalCaseId, tier: "deterministic" },
         { caseId: agentEvalCaseId, passed: true, score: 0.92, tier: "llm_judge" }
       ]
     });
+    expect(agentEvalReplay.json().deterministic.runId).not.toBe("run-compat");
     expect(agentEvalResults.json()).toMatchObject([
       { caseId: agentEvalCaseId, passed: true, tier: "deterministic" },
       { caseId: agentEvalCaseId, passed: true, tier: "llm_judge" }
@@ -2723,6 +2726,9 @@ describe("api server", () => {
       status: "completed"
     });
     const server = buildServer({
+      agentRuntime: createAgentRuntime({
+        modelProvider: createProvider("replayed answer")
+      }),
       authService,
       historyStore,
       logger: false,
@@ -2754,6 +2760,74 @@ describe("api server", () => {
         score: 1
       }
     });
+  });
+
+  it("replays Reactor agent eval cases through AgentRuntime instead of reusing the source run", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "agent_eval_replay_account",
+      name: "Agent Eval Replay",
+      password: "password-1"
+    });
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    historyStore.createRun({
+      id: "run-source-eval",
+      input: "repeat the fresh phrase",
+      model: "provider/model",
+      provider: "test",
+      userId: registered.user.id
+    });
+    historyStore.updateRun({
+      output: "old source answer",
+      runId: "run-source-eval",
+      status: "completed"
+    });
+    let replayRequests = 0;
+    const server = buildServer({
+      agentRuntime: createAgentRuntime({
+        modelProvider: createProviderFrom(async (request) => {
+          replayRequests += 1;
+          return {
+            id: "replay-response",
+            model: request.model,
+            output: "fresh replay phrase"
+          };
+        })
+      }),
+      authService,
+      defaultModel: "provider/model",
+      historyStore,
+      logger: false,
+      requireAuth: true
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const agentEvalCase = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        expectedAnswerContains: ["fresh replay phrase"],
+        runId: "run-source-eval"
+      },
+      url: "/api/admin/agent-eval/cases/promote"
+    });
+    const replay = await server.inject({
+      headers,
+      method: "POST",
+      url: `/api/admin/agent-eval/cases/${agentEvalCase.json().id}/replay`
+    });
+
+    expect(agentEvalCase.statusCode).toBe(200);
+    expect(replay.statusCode).toBe(200);
+    expect(replayRequests).toBe(1);
+    expect(replay.json()).toMatchObject({
+      deterministic: {
+        passed: true,
+        reasons: ["all assertions passed"],
+        score: 1
+      }
+    });
+    expect(replay.json().deterministic.runId).not.toBe("run-source-eval");
   });
 
   it("keeps Slack webhook probe routes available when Slack is not enabled", async () => {

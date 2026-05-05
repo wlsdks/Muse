@@ -1,4 +1,5 @@
 import type { AgentSpec, AgentSpecInput, AgentSpecRegistry } from "@muse/agent-specs";
+import type { AgentRunResult, AgentRuntime } from "@muse/agent-core";
 import {
   AuthRateLimiter,
   AuthService,
@@ -26,6 +27,7 @@ import type { SchedulerRouteScheduler } from "./scheduler-routes.js";
 
 export interface ReactorCompatibilityRouteOptions {
   readonly admin?: AdminRouteState;
+  readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
   readonly authRateLimiter: AuthRateLimiter;
   readonly authService?: AuthService;
@@ -3210,15 +3212,33 @@ function registerAgentEvalCompatibilityRoutes(
       return notFound(reply, "AGENT_EVAL_CASE_NOT_FOUND");
     }
 
-    const sourceRunId = typeof existing.sourceRunId === "string" ? existing.sourceRunId : undefined;
-    const run = sourceRunId ? await options.historyStore?.findRun(sourceRunId) : undefined;
-
-    if (!run) {
-      return notFound(reply, "AGENT_RUN_LOG_NOT_FOUND");
+    if (!options.agentRuntime) {
+      return badRequest(
+        reply,
+        "AGENT_EVAL_UNAVAILABLE",
+        "AgentExecutor 미등록 — eval 기능을 사용할 수 없습니다"
+      );
     }
 
-    const result = await evaluateRunAgainstCase(existing, run, options);
-    const stored = await storeEvalResult(result, readQueryBoolean(request, "llmJudge", false), options, existing, run);
+    let replay;
+
+    try {
+      replay = await replayEvalCase(existing, request, options);
+    } catch (error) {
+      return reply.status(500).send({
+        code: "AGENT_EVAL_REPLAY_FAILED",
+        message: error instanceof Error ? error.message : "Agent eval replay failed"
+      });
+    }
+
+    const result = await evaluateRunAgainstCase(existing, replay.run, options, replay.toolCalls);
+    const stored = await storeEvalResult(
+      result,
+      readQueryBoolean(request, "llmJudge", false),
+      options,
+      existing,
+      replay.run
+    );
     return {
       caseId: id,
       deterministic: result,
@@ -3487,9 +3507,10 @@ async function listAllToolCalls(options: ReactorCompatibilityRouteOptions): Prom
 
 async function runLogRecord(
   run: AgentRunRecord,
-  options: ReactorCompatibilityRouteOptions
+  options: ReactorCompatibilityRouteOptions,
+  toolCallsOverride?: readonly ToolCallRecord[]
 ): Promise<CompatRecord> {
-  const toolCalls = await (options.historyStore?.listToolCalls(run.id) ?? []);
+  const toolCalls = toolCallsOverride ?? await (options.historyStore?.listToolCalls(run.id) ?? []);
   const toolExposureNames = [...new Set(toolCalls.map((toolCall) => toolCall.name))];
   return createRecord(state.agentEvalRunLogs, {
     agentType: run.mode,
@@ -3570,7 +3591,8 @@ function toEvalCaseResponse(record: JsonObject): JsonObject {
 async function evaluateRunAgainstCase(
   evalCase: JsonObject,
   run: AgentRunRecord,
-  options: ReactorCompatibilityRouteOptions
+  options: ReactorCompatibilityRouteOptions,
+  toolCallsOverride?: readonly ToolCallRecord[]
 ): Promise<JsonObject> {
   const assertionCount = countEvalAssertions(evalCase);
   const behaviorAssertionCount = countBehaviorAssertions(evalCase);
@@ -3587,7 +3609,7 @@ async function evaluateRunAgainstCase(
     return agentEvalResult(evalCase, run, false, 0, ["case has no behavior assertions"]);
   }
 
-  const toolCalls = await (options.historyStore?.listToolCalls(run.id) ?? []);
+  const toolCalls = toolCallsOverride ?? await (options.historyStore?.listToolCalls(run.id) ?? []);
   const toolNames = toolCalls.map((toolCall) => toolCall.name);
   const successfulToolNames = toolCalls
     .filter((toolCall) => toolCall.status === "completed")
@@ -3655,6 +3677,102 @@ async function evaluateRunAgainstCase(
     score: numericScore,
     toolExposureCountExceeded
   };
+}
+
+async function replayEvalCase(
+  evalCase: JsonObject,
+  request: FastifyRequest,
+  options: ReactorCompatibilityRouteOptions
+): Promise<{ readonly run: AgentRunRecord; readonly toolCalls?: readonly ToolCallRecord[] }> {
+  const id = typeof evalCase.id === "string" ? evalCase.id : createRunId("eval_case");
+  const userInput = typeof evalCase.userInput === "string" ? evalCase.userInput : "";
+  const model = typeof evalCase.model === "string" && evalCase.model.length > 0
+    ? evalCase.model
+    : options.defaultModel ?? "default";
+  const actor = readAuthUserId(request);
+  const metadata: JsonObject = {
+    agentEvalReplay: true,
+    evalCaseId: id,
+    ...(actor ? { userId: actor } : {})
+  };
+
+  const result = await options.agentRuntime?.run({
+    messages: [
+      {
+        content: "You are an eval replay agent. Follow the user's request exactly.",
+        role: "system"
+      },
+      {
+        content: userInput,
+        role: "user"
+      }
+    ],
+    metadata,
+    model,
+    runId: replayRunId(id)
+  });
+
+  if (!result) {
+    throw new Error("AgentRuntime is not configured");
+  }
+
+  const recordedRun = await options.historyStore?.findRun(result.runId);
+  const run = recordedRun ?? syntheticReplayRun(evalCase, result, userInput, actor);
+  const toolCalls = recordedRun ? undefined : replayToolCalls(result, run.id);
+  await runLogRecord(run, options, toolCalls);
+  return { run, ...(toolCalls ? { toolCalls } : {}) };
+}
+
+function replayRunId(evalCaseId: string): string {
+  return `replay-${evalCaseId.replace(/[^A-Za-z0-9_-]/gu, "_")}-${Date.now()}`;
+}
+
+function syntheticReplayRun(
+  evalCase: JsonObject,
+  result: AgentRunResult,
+  input: string,
+  userId: string | undefined
+): AgentRunRecord {
+  const now = new Date();
+  return {
+    completedAt: now,
+    costUsd: "0",
+    createdAt: now,
+    id: result.runId,
+    input,
+    mode: evalCaseRunMode(evalCase.agentType),
+    model: result.response.model,
+    output: result.response.output,
+    provider: "agent_runtime",
+    startedAt: now,
+    status: "completed",
+    tokenUsage: result.response.usage ? { ...result.response.usage } : {},
+    updatedAt: now,
+    ...(userId ? { userId } : {})
+  };
+}
+
+function evalCaseRunMode(value: unknown): AgentRunRecord["mode"] {
+  return value === "react" || value === "standard" || value === "plan_execute" ? value : "standard";
+}
+
+function replayToolCalls(result: AgentRunResult, runId: string): readonly ToolCallRecord[] | undefined {
+  if (!result.toolsUsed || result.toolsUsed.length === 0) {
+    return undefined;
+  }
+
+  const now = new Date();
+  return result.toolsUsed.map((name, index) => ({
+    arguments: {},
+    completedAt: now,
+    createdAt: now,
+    id: `${runId}:tool:${index + 1}`,
+    name,
+    risk: "read",
+    runId,
+    startedAt: now,
+    status: "completed"
+  }));
 }
 
 function agentEvalResult(

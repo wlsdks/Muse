@@ -108,6 +108,8 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
 - Input Guard audit compatibility now returns the Reactor `{ audits, total }` envelope.
 - Agent eval LLM judge compatibility now calls the configured Muse model provider when `llmJudge=true` instead of
   always storing an unavailable judge result.
+- Agent eval replay compatibility now invokes the configured Muse agent runtime for a fresh replay run instead of
+  re-evaluating the promoted source run.
 - Slack webhook compatibility now keeps `/api/slack/events` and `/api/slack/commands` registered when Slack is not
   enabled, returning 503 for socket-mode-style disabled POSTs and 405 for probe GETs.
 - Scheduler compatibility now matches Reactor's disabled-service stub: empty list/read-history responses stay 200,

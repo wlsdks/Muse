@@ -202,6 +202,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
   registerReactorCompatibilityRoutes(server, {
     admin: options.admin,
+    agentRuntime: options.agentRuntime,
     agentSpecRegistry,
     authRateLimiter,
     authService,
