@@ -447,27 +447,18 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
 
     if (!identity) {
-      return reply.status(401).send({
-        code: "UNAUTHENTICATED",
-        message: "A valid bearer token is required"
-      });
+      return reply.status(401).send();
     }
 
     const currentPassword = readBodyString(request.body, "currentPassword");
     const newPassword = readBodyString(request.body, "newPassword");
 
     if (!currentPassword || !newPassword) {
-      return reply.status(400).send({
-        code: "INVALID_PASSWORD_CHANGE_REQUEST",
-        message: "Body must include currentPassword and newPassword"
-      });
+      return reply.status(400).send(errorResponse("Body must include currentPassword and newPassword"));
     }
 
     if (newPassword.length < 8) {
-      return reply.status(400).send({
-        code: "INVALID_PASSWORD_CHANGE_REQUEST",
-        message: "New password must be at least 8 characters"
-      });
+      return reply.status(400).send(errorResponse("New password must be at least 8 characters"));
     }
 
     const result = authService.changePassword({
@@ -481,15 +472,12 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     }
 
     if (result === "user_not_found") {
-      return reply.status(404).send({ code: "USER_NOT_FOUND", message: "User not found" });
+      return reply.status(404).send(errorResponse("User not found"));
     }
 
-    return reply.status(400).send({
-      code: result === "unsupported" ? "PASSWORD_CHANGE_UNSUPPORTED" : "CURRENT_PASSWORD_INCORRECT",
-      message: result === "unsupported"
-        ? "Password change is not supported by the configured auth provider"
-        : "Current password is incorrect"
-    });
+    return reply.status(400).send(errorResponse(result === "unsupported"
+      ? "Password change not supported with custom AuthProvider"
+      : "Current password is incorrect"));
   });
 }
 
@@ -7592,6 +7580,13 @@ function notFound(reply: FastifyReply, code: string) {
 
 function badRequest(reply: FastifyReply, code: string, message: string) {
   return reply.status(400).send({ code, message });
+}
+
+function errorResponse(error: string): JsonObject {
+  return {
+    error,
+    timestamp: nowIso()
+  };
 }
 
 function clampLimit(limit: number): number {

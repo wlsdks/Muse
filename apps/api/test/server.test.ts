@@ -2716,6 +2716,15 @@ describe("api server", () => {
       },
       url: "/api/auth/login"
     });
+    const wrongPasswordChange = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        currentPassword: "wrong-password",
+        newPassword: "password-2"
+      },
+      url: "/api/auth/change-password"
+    });
     const passwordChanged = await server.inject({
       headers,
       method: "POST",
@@ -3268,6 +3277,10 @@ describe("api server", () => {
       }
     });
     expect(apiLogin.json()).not.toHaveProperty("expiresAt");
+    expect(wrongPasswordChange.statusCode).toBe(400);
+    expect(wrongPasswordChange.json()).toMatchObject({ error: "Current password is incorrect" });
+    expect(wrongPasswordChange.json()).toHaveProperty("timestamp");
+    expect(wrongPasswordChange.json()).not.toHaveProperty("code");
     expect(passwordChanged.json()).toEqual({ message: "Password changed successfully" });
     expect(oldPasswordLogin.statusCode).toBe(401);
     expect(oldPasswordLogin.json()).toEqual({
