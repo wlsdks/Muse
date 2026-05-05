@@ -300,6 +300,12 @@ describe("api server", () => {
       provider: "provider",
       userId: member.user.id
     });
+    historyStore.createRun({
+      id: "orphan-run",
+      input: "orphan prompt",
+      model: "provider/model",
+      provider: "provider"
+    });
     const server = buildServer({ authService, historyStore, logger: false, requireAuth: true });
     const headers = { authorization: `Bearer ${memberLogin?.token ?? ""}` };
 
@@ -313,6 +319,16 @@ describe("api server", () => {
       method: "DELETE",
       url: "/api/sessions/owner-run"
     });
+    const orphanDetail = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/sessions/orphan-run"
+    });
+    const orphanDelete = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/sessions/orphan-run"
+    });
     const ownDelete = await server.inject({
       headers,
       method: "DELETE",
@@ -324,7 +340,14 @@ describe("api server", () => {
       total: 1
     });
     expect(forbiddenDelete.statusCode).toBe(403);
-    expect(forbiddenDelete.json()).toMatchObject({ error: "Access denied to session" });
+    expect(forbiddenDelete.json()).toMatchObject({ error: "세션 접근이 거부되었습니다", timestamp: expect.any(String) });
+    expect(forbiddenDelete.json()).not.toHaveProperty("code");
+    expect(orphanDetail.statusCode).toBe(403);
+    expect(orphanDetail.json()).toMatchObject({ error: "세션 접근이 거부되었습니다", timestamp: expect.any(String) });
+    expect(orphanDetail.json()).not.toHaveProperty("code");
+    expect(orphanDelete.statusCode).toBe(403);
+    expect(orphanDelete.json()).toMatchObject({ error: "세션 접근이 거부되었습니다", timestamp: expect.any(String) });
+    expect(orphanDelete.json()).not.toHaveProperty("code");
     expect(ownDelete.statusCode).toBe(204);
   });
 

@@ -546,9 +546,9 @@ function registerSessionCompatibilityRoutes(server: FastifyInstance, options: Re
       });
     }
 
-    if (run.userId && run.userId !== userId && !isAdminLikeRequest(request)) {
+    if ((!run.userId || run.userId !== userId) && !isAdminLikeRequest(request)) {
       return reply.status(403).send({
-        error: "Access denied to session",
+        error: "세션 접근이 거부되었습니다",
         timestamp: nowIso()
       });
     }
@@ -3547,31 +3547,30 @@ async function reactorSessionDetail(
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions
 ) {
-  const detail = await sessionDetail(request, reply, options);
-
-  if (!isRecord(detail) || !("run" in detail)) {
-    return detail;
-  }
-
-  const run = detail.run as AgentRunRecord;
+  const { sessionId } = request.params as { readonly sessionId: string };
   const userId = readAuthUserId(request);
 
   if (!userId) {
-    return reply.status(401).send({
-      code: "UNAUTHENTICATED",
-      message: "Missing authenticated user context"
-    });
+    return reply.status(401).send(errorResponse("인증이 필요합니다"));
   }
 
-  if (run.userId && run.userId !== userId && !isAdminLikeRequest(request)) {
-    return reply.status(403).send({
-      code: "FORBIDDEN",
-      message: "Access denied to session"
-    });
+  if (!options.historyStore) {
+    return reply.status(404).send(errorResponse("Run history store is not configured"));
   }
 
+  const run = await options.historyStore.findRun(sessionId);
+
+  if (!run) {
+    return reply.status(404).send(errorResponse(`Session not found: ${sessionId}`));
+  }
+
+  if ((!run.userId || run.userId !== userId) && !isAdminLikeRequest(request)) {
+    return reply.status(403).send(errorResponse("세션 접근이 거부되었습니다"));
+  }
+
+  const messages = await options.historyStore.listMessages(sessionId);
   return {
-    messages: toSessionMessages(Array.isArray(detail.messages) ? detail.messages : [], run),
+    messages: toSessionMessages(messages, run),
     sessionId: run.id
   };
 }
