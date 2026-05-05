@@ -57,7 +57,11 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/policy: {}
+  packages/policy:
+    dependencies:
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/shared: {}
 
