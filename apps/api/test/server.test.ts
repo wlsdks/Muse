@@ -660,7 +660,7 @@ describe("api server", () => {
       method: "POST",
       payload: {
         cronExpression: "0 * * * * *",
-        jobType: "agent",
+        jobType: "AGENT",
         name: "Missing prompt"
       },
       url: "/api/scheduler/jobs"
@@ -672,7 +672,7 @@ describe("api server", () => {
         agentPrompt: "Run",
         cronExpression: "0 * * * * *",
         enabled: true,
-        jobType: "agent",
+        jobType: "AGENT",
         name: "Agent job",
         retryOnFailure: true
       },
@@ -721,16 +721,17 @@ describe("api server", () => {
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toMatchObject({ code: "INVALID_SCHEDULED_JOB" });
     expect(created.statusCode).toBe(201);
-    expect(created.json()).toMatchObject({ id: "job-1", jobType: "agent", name: "Agent job" });
+    expect(created.json()).toMatchObject({ id: "job-1", jobType: "AGENT", name: "Agent job" });
+    expect(typeof created.json().createdAt).toBe("number");
     expect(trigger.json()).toEqual({ dryRun: false, jobId: "job-1", result: "executed:Run" });
     expect(dryRun.json()).toEqual({ dryRun: true, jobId: "job-1", result: "executed:Run" });
     expect(executions.json()).toMatchObject([
-      { dryRun: true, jobId: "job-1", status: "success" },
-      { dryRun: false, jobId: "job-1", status: "success" }
+      { dryRun: true, jobId: "job-1", resultPreview: "executed:Run", status: "SUCCESS" },
+      { dryRun: false, jobId: "job-1", resultPreview: "executed:Run", status: "SUCCESS" }
     ]);
     expect(updated.json()).toMatchObject({ enabled: false, name: "Renamed agent job" });
     expect(listed.json()).toHaveLength(1);
-    expect(deleted.json()).toEqual({ deleted: true, jobId: "job-1" });
+    expect(deleted.statusCode).toBe(204);
     expect(afterDelete.statusCode).toBe(404);
   });
 
@@ -745,7 +746,7 @@ describe("api server", () => {
     });
     const create = await server.inject({
       method: "POST",
-      payload: { cronExpression: "0 * * * * *", jobType: "agent", name: "Agent job" },
+      payload: { cronExpression: "0 * * * * *", jobType: "AGENT", name: "Agent job" },
       url: "/api/scheduler/jobs"
     });
     const trigger = await server.inject({
@@ -878,14 +879,22 @@ describe("api server", () => {
     });
 
     expect(blocked.statusCode).toBe(401);
-    expect(policy.json().effective).toMatchObject({ allowedServerNames: ["local"] });
+    expect(policy.json()).toMatchObject({
+      configDefault: { allowedServerNames: [] },
+      effective: { allowedServerNames: ["local"] },
+      stored: { allowedServerNames: ["local"] }
+    });
+    expect(typeof policy.json().effective.createdAt).toBe("number");
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({
       config: { apiToken: "[redacted]", command: "node" },
       name: "local",
-      status: "connected",
-      toolCount: 1
+      status: "CONNECTED",
+      toolCount: 1,
+      tools: ["read_file"],
+      transportType: "STDIO"
     });
+    expect(typeof created.json().createdAt).toBe("number");
     expect(tools.json()).toEqual([
       {
         description: "Read a file",
@@ -895,7 +904,7 @@ describe("api server", () => {
       }
     ]);
     expect(health.json()).toMatchObject({ status: "healthy", toolCount: 1 });
-    expect(reconnected.json()).toMatchObject({ health: { status: "healthy" }, status: "connected" });
+    expect(reconnected.json()).toMatchObject({ health: { status: "healthy" }, status: "CONNECTED" });
     expect(toolCall.json()).toEqual({
       output: {
         args: { path: "docs/input.md" },
@@ -903,7 +912,7 @@ describe("api server", () => {
       }
     });
     expect(updated.json()).toMatchObject({ autoConnect: false, description: "Local tool server" });
-    expect(disconnected.json()).toEqual({ status: "disconnected" });
+    expect(disconnected.json()).toEqual({ status: "DISCONNECTED" });
     expect(deleted.statusCode).toBe(204);
     expect(afterDelete.statusCode).toBe(404);
   });

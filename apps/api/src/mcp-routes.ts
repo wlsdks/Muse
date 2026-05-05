@@ -2,6 +2,7 @@ import {
   McpRegistryError,
   McpSecurityPolicyProvider,
   type McpManager,
+  type McpSecurityPolicy,
   type McpSecurityPolicyInput,
   type McpSecurityPolicyStore,
   type McpServer,
@@ -169,7 +170,7 @@ export function registerMcpRoutes(server: FastifyInstance, options: McpRouteOpti
       }
 
       await mcp.manager.disconnect(name);
-      return { status: mcp.manager.getStatus(name) ?? "disconnected" };
+      return { status: toReactorEnum(mcp.manager.getStatus(name) ?? "disconnected") };
     });
 
     server.get(`${prefix}/servers/:name/health`, async (request, reply) => {
@@ -351,8 +352,8 @@ async function connectMcpServer(
   }
 
   return {
-    status,
-    tools: mcp.manager.getToolCatalog(name)
+    status: toReactorEnum(status),
+    tools: mcp.manager.getToolCatalog(name).map((tool) => tool.name)
   };
 }
 
@@ -404,7 +405,7 @@ async function reconnectMcpServer(
 
   return {
     health: mcp.manager.getHealth(name),
-    status: mcp.manager.getStatus(name) ?? "failed",
+    status: toReactorEnum(mcp.manager.getStatus(name) ?? "failed"),
     tools: mcp.manager.getToolCatalog(name)
   };
 }
@@ -456,9 +457,13 @@ async function getMcpSecurityPolicy(
     return sendMcpSecurityUnavailable(reply);
   }
 
+  const effective = await provider.currentPolicy();
+  const stored = await options.mcp?.securityPolicyStore?.getOrNull();
+
   return {
-    effective: await provider.currentPolicy(),
-    stored: await options.mcp?.securityPolicyStore?.getOrNull()
+    configDefault: toMcpSecurityPolicyResponse(provider.configDefaultPolicy()),
+    effective: toMcpSecurityPolicyResponse(effective),
+    stored: stored ? toMcpSecurityPolicyResponse(stored) : null
   };
 }
 
@@ -477,7 +482,7 @@ async function updateMcpSecurityPolicy(
     return reply.status(400).send(parsed.error);
   }
 
-  return options.mcp.securityPolicyStore.save(parsed.value);
+  return toMcpSecurityPolicyResponse(await options.mcp.securityPolicyStore.save(parsed.value));
 }
 
 function requireMcp(
@@ -502,16 +507,16 @@ async function findMcpServer(manager: McpManager, name: string): Promise<McpServ
 function toServerSummary(server: McpServer, manager: McpManager) {
   return {
     autoConnect: server.autoConnect,
-    createdAt: server.createdAt.toISOString(),
-    description: server.description,
+    createdAt: server.createdAt.getTime(),
+    description: server.description ?? null,
     id: server.id,
     health: manager.getHealth(server.name),
     name: server.name,
-    status: manager.getStatus(server.name) ?? "pending",
+    status: toReactorEnum(manager.getStatus(server.name) ?? "pending"),
     toolCount: manager.getToolCatalog(server.name).length,
-    transportType: server.transportType,
-    updatedAt: server.updatedAt.toISOString(),
-    version: server.version
+    transportType: toReactorEnum(server.transportType),
+    updatedAt: server.updatedAt.getTime(),
+    version: server.version ?? null
   };
 }
 
@@ -519,7 +524,7 @@ function toServerDetail(server: McpServer, manager: McpManager) {
   return {
     ...toServerSummary(server, manager),
     config: sanitizeConfig(server.config),
-    tools: manager.getToolCatalog(server.name)
+    tools: manager.getToolCatalog(server.name).map((tool) => tool.name)
   };
 }
 
@@ -650,6 +655,19 @@ function parseTransportType(value: unknown): McpTransportType | undefined {
   return normalized === "stdio" || normalized === "sse" || normalized === "streamable" || normalized === "http"
     ? normalized
     : undefined;
+}
+
+function toReactorEnum(value: string): string {
+  return value.toUpperCase();
+}
+
+function toMcpSecurityPolicyResponse(policy: McpSecurityPolicy) {
+  return {
+    allowedServerNames: [...policy.allowedServerNames],
+    createdAt: policy.createdAt.getTime(),
+    maxToolOutputLength: policy.maxToolOutputLength,
+    updatedAt: policy.updatedAt.getTime()
+  };
 }
 
 function sanitizeConfig(config: JsonObject): JsonObject {

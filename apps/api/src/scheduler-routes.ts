@@ -2,6 +2,7 @@ import {
   SchedulerValidationError,
   type DynamicSchedulerService,
   type ScheduledJob,
+  type ScheduledJobExecution,
   type ScheduledJobExecutionStore,
   type ScheduledJobInput,
   type ScheduledJobStore,
@@ -42,7 +43,8 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
         return [];
       }
 
-      return options.scheduler.service?.list() ?? options.scheduler.store.list();
+      const jobs = await (options.scheduler.service?.list() ?? options.scheduler.store.list());
+      return jobs.map(toScheduledJobResponse);
     });
 
     server.get(`${prefix}/jobs/:jobId`, async (request, reply) => {
@@ -61,7 +63,7 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
         return sendSchedulerJobNotFound(reply, jobId);
       }
 
-      return job;
+      return toScheduledJobResponse(job);
     });
 
     server.post(`${prefix}/jobs`, async (request, reply) => {
@@ -80,7 +82,7 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
       }
 
       try {
-        return reply.status(201).send(await options.scheduler.service.create(parsed.value));
+        return reply.status(201).send(toScheduledJobResponse(await options.scheduler.service.create(parsed.value)));
       } catch (error) {
         return sendSchedulerError(reply, error);
       }
@@ -118,7 +120,7 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
       }
 
       await options.scheduler.service.delete(jobId);
-      return { deleted: true, jobId };
+      return reply.status(204).send(undefined);
     });
 
     server.post(`${prefix}/jobs/:jobId/trigger`, async (request, reply) => {
@@ -148,9 +150,10 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
 
       const { jobId } = request.params as { readonly jobId: string };
       const { limit } = request.query as { readonly limit?: number | string };
-      return options.scheduler.service?.getExecutions(jobId, parseLimit(limit))
+      const executions = await (options.scheduler.service?.getExecutions(jobId, parseLimit(limit))
         ?? options.scheduler.executionStore?.findByJobId(jobId, parseLimit(limit))
-        ?? [];
+        ?? []);
+      return executions.map(toScheduledJobExecutionResponse);
     });
   }
 }
@@ -179,7 +182,8 @@ async function updateScheduledJob(
   }
 
   try {
-    return await options.scheduler.service.update(jobId, parsed.value);
+    const updated = await options.scheduler.service.update(jobId, parsed.value);
+    return updated ? toScheduledJobResponse(updated) : sendSchedulerJobNotFound(reply, jobId);
   } catch (error) {
     return sendSchedulerError(reply, error);
   }
@@ -247,6 +251,80 @@ function sendSchedulerError(
     code: "SCHEDULER_OPERATION_FAILED",
     message: error instanceof Error ? error.message : "Scheduler operation failed"
   });
+}
+
+function toScheduledJobResponse(job: ScheduledJob) {
+  return {
+    agentMaxToolCalls: job.agentMaxToolCalls ?? null,
+    agentModel: job.agentModel ?? null,
+    agentPrompt: job.agentPrompt ?? null,
+    agentSystemPrompt: job.agentSystemPrompt ?? null,
+    createdAt: job.createdAt.getTime(),
+    cronExpression: job.cronExpression,
+    description: job.description ?? null,
+    enabled: job.enabled,
+    executionTimeoutMs: job.executionTimeoutMs ?? null,
+    id: job.id,
+    jobType: toReactorSchedulerEnum(job.jobType),
+    lastFailureReason: schedulerFailureReason(job.lastResult) ?? null,
+    lastResult: job.lastResult ?? null,
+    lastResultPreview: schedulerResultPreview(job.lastResult) ?? null,
+    lastRunAt: job.lastRunAt?.getTime() ?? null,
+    lastStatus: job.lastStatus ? toReactorSchedulerEnum(job.lastStatus) : null,
+    maxRetryCount: job.maxRetryCount,
+    mcpServerName: job.mcpServerName ?? null,
+    name: job.name,
+    personaId: job.personaId ?? null,
+    retryOnFailure: job.retryOnFailure,
+    slackChannelId: job.notificationChannelId ?? null,
+    tags: job.tags,
+    teamsWebhookUrl: job.webhookUrl ?? null,
+    timezone: job.timezone,
+    toolArguments: job.toolArguments,
+    toolName: job.toolName ?? null,
+    updatedAt: job.updatedAt.getTime()
+  };
+}
+
+function toScheduledJobExecutionResponse(execution: ScheduledJobExecution) {
+  return {
+    completedAt: execution.completedAt?.getTime() ?? null,
+    dryRun: execution.dryRun,
+    durationMs: execution.durationMs,
+    failureReason: schedulerFailureReason(execution.result) ?? null,
+    id: execution.id,
+    jobId: execution.jobId,
+    jobName: execution.jobName,
+    result: execution.result ?? null,
+    resultPreview: schedulerResultPreview(execution.result) ?? null,
+    startedAt: execution.startedAt.getTime(),
+    status: toReactorSchedulerEnum(execution.status)
+  };
+}
+
+function toReactorSchedulerEnum(value: string): string {
+  return value.toUpperCase();
+}
+
+function schedulerFailureReason(result: string | undefined): string | undefined {
+  const value = result?.trim() ?? "";
+
+  if (!value || !value.toLowerCase().includes("failed:")) {
+    return undefined;
+  }
+
+  const cleaned = value.replace(/^Job\s+'[^']+'\s+failed:\s*/iu, "").trim();
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+function schedulerResultPreview(result: string | undefined, maxLength = 140): string | undefined {
+  const normalized = result?.replaceAll(/\s+/gu, " ").trim() ?? "";
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 function parseScheduledJobInput(value: unknown, existing?: ScheduledJob): ParseResult<ScheduledJobInput> {
@@ -318,7 +396,17 @@ function invalid(code: string, message: string): ParseResult<never> {
 }
 
 function parseScheduledJobType(value: unknown): ScheduledJobType | undefined {
-  return value === "agent" || value === "mcp_tool" ? value : undefined;
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "agent") {
+    return "agent";
+  }
+
+  return normalized === "mcp_tool" ? "mcp_tool" : undefined;
 }
 
 function parseLimit(value: number | string | undefined): number {

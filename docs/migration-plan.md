@@ -97,6 +97,10 @@ Continued work should be treated as new hardening or product expansion, not migr
   enabled, returning 503 for socket-mode-style disabled POSTs and 405 for probe GETs.
 - Scheduler compatibility now matches Reactor's disabled-service stub: empty list/read-history responses stay 200,
   while write and execution operations return 503.
+- MCP server and security policy responses now use Reactor-compatible enum casing, epoch-millis timestamps,
+  tool-name lists, and `{ effective, stored, configDefault }` policy envelopes.
+- Scheduler job and execution responses now use Reactor-compatible enum casing, epoch-millis timestamps,
+  result previews/failure reasons, and `204 No Content` deletes.
 
 ## Execution Plan
 

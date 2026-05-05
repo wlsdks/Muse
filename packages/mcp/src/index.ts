@@ -287,6 +287,10 @@ export class McpSecurityPolicyProvider {
       return normalizeMcpSecurityPolicy(stored, stored.updatedAt);
     }
 
+    return this.configDefaultPolicy();
+  }
+
+  configDefaultPolicy(): McpSecurityPolicy {
     return normalizeMcpSecurityPolicy(this.defaults, new Date(0));
   }
 
