@@ -271,16 +271,7 @@ function createCompatState(): CompatState {
       metricRetentionDays: 180,
       sessionRetentionDays: 90
     },
-    toolPolicy: {
-      allowWriteToolNamesByChannel: {},
-      allowWriteToolNamesInDenyChannels: [],
-      createdAt: nowIso(),
-      denyWriteChannels: [],
-      denyWriteMessage: "Write tools are disabled for this channel.",
-      enabled: true,
-      updatedAt: nowIso(),
-      writeToolNames: []
-    },
+    toolPolicy: defaultToolPolicy(),
     toolPolicyStored: false
   };
 }
@@ -756,7 +747,7 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
       return reply;
     }
 
-    state.toolPolicy = updateToolPolicy({ enabled: true });
+    state.toolPolicy = defaultToolPolicy();
     state.toolPolicyStored = false;
     return reply.status(204).send();
   });
@@ -5341,6 +5332,20 @@ function updateToolPolicy(bodyValue: unknown): JsonObject {
     enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
     updatedAt: nowIso(),
     writeToolNames: stringArrayField(body.writeToolNames, stringArrayField(existing.writeToolNames, []))
+  };
+}
+
+function defaultToolPolicy(): JsonObject {
+  const timestamp = nowIso();
+  return {
+    allowWriteToolNamesByChannel: {},
+    allowWriteToolNamesInDenyChannels: [],
+    createdAt: timestamp,
+    denyWriteChannels: [],
+    denyWriteMessage: "Write tools are disabled for this channel.",
+    enabled: true,
+    updatedAt: timestamp,
+    writeToolNames: []
   };
 }
 

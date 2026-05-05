@@ -3197,7 +3197,14 @@ describe("api server", () => {
       stored: { writeToolNames: ["write_file"] }
     });
     expect(deleted.statusCode).toBe(204);
-    expect(afterDelete.json()).toMatchObject({ stored: null });
+    expect(afterDelete.json()).toMatchObject({
+      effective: {
+        allowWriteToolNamesByChannel: {},
+        denyWriteChannels: [],
+        writeToolNames: []
+      },
+      stored: null
+    });
   });
 
   it("matches Reactor admin policy, settings, and dashboard contracts", async () => {
