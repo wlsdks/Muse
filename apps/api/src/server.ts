@@ -27,7 +27,7 @@ import {
   type RuntimeSettingType
 } from "@muse/runtime-settings";
 import type { AgentRunHistoryStore, PendingApprovalStore } from "@muse/runtime-state";
-import type { JsonObject } from "@muse/shared";
+import type { JsonObject, JsonValue } from "@muse/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAdminRoutes, type AdminRouteState } from "./admin-routes.js";
 import { registerMcpRoutes, type McpRouteMcp } from "./mcp-routes.js";
@@ -488,24 +488,30 @@ function parseAgentRunInput(value: unknown, defaultModel: string): ParseResult<A
     return invalid("INVALID_CHAT_REQUEST", "Body must be an object");
   }
 
-  const messages = parseMessages(value.messages, value.message);
+  const messages = parseMessages(value.messages, value.message, value.systemPrompt);
 
   if (!messages) {
     return invalid("INVALID_CHAT_REQUEST", "Body must include message or messages");
   }
 
+  const metadata = reactorChatMetadata(value);
+
   return {
     ok: true,
     value: {
       messages,
-      metadata: isJsonObject(value.metadata) ? value.metadata : undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       model: typeof value.model === "string" && value.model.trim().length > 0 ? value.model : defaultModel,
       runId: typeof value.runId === "string" && value.runId.trim().length > 0 ? value.runId : undefined
     }
   };
 }
 
-function parseMessages(messages: unknown, message: unknown): AgentRunInput["messages"] | undefined {
+function parseMessages(
+  messages: unknown,
+  message: unknown,
+  systemPrompt: unknown
+): AgentRunInput["messages"] | undefined {
   if (Array.isArray(messages)) {
     const parsed = messages.flatMap((item) => {
       if (!isRecord(item) || typeof item.content !== "string" || !isModelRole(item.role)) {
@@ -527,12 +533,70 @@ function parseMessages(messages: unknown, message: unknown): AgentRunInput["mess
       }];
     });
 
-    return parsed.length === messages.length && parsed.length > 0 ? parsed : undefined;
+    if (parsed.length !== messages.length || parsed.length === 0) {
+      return undefined;
+    }
+
+    return prependSystemPrompt(parsed, systemPrompt);
   }
 
-  return typeof message === "string" && message.trim().length > 0
-    ? [{ content: message, role: "user" }]
-    : undefined;
+  if (typeof message !== "string" || message.trim().length === 0) {
+    return undefined;
+  }
+
+  return prependSystemPrompt([{ content: message, role: "user" }], systemPrompt);
+}
+
+function prependSystemPrompt(
+  messages: AgentRunInput["messages"],
+  systemPrompt: unknown
+): AgentRunInput["messages"] {
+  if (typeof systemPrompt !== "string" || systemPrompt.trim().length === 0) {
+    return messages;
+  }
+
+  return messages[0]?.role === "system"
+    ? messages
+    : [{ content: systemPrompt, role: "system" }, ...messages];
+}
+
+function reactorChatMetadata(value: Record<string, unknown>): JsonObject {
+  const entries: Record<string, JsonValue> = isJsonObject(value.metadata) ? { ...value.metadata } : {};
+  const userId = optionalString(value.userId);
+  const personaId = optionalString(value.personaId);
+  const promptTemplateId = optionalString(value.promptTemplateId);
+  const responseFormat = optionalString(value.responseFormat);
+  const responseSchema = optionalString(value.responseSchema);
+
+  if (userId) {
+    entries.userId = userId;
+  }
+
+  if (personaId) {
+    entries.personaId = personaId;
+  }
+
+  if (promptTemplateId) {
+    entries.promptTemplateId = promptTemplateId;
+  }
+
+  if (responseFormat) {
+    entries.responseFormat = responseFormat;
+  }
+
+  if (responseSchema) {
+    entries.responseSchema = responseSchema;
+  }
+
+  if (Array.isArray(value.mediaUrls)) {
+    const mediaUrls = value.mediaUrls.filter(isJsonObject);
+
+    if (mediaUrls.length === value.mediaUrls.length) {
+      entries.mediaUrls = mediaUrls;
+    }
+  }
+
+  return entries;
 }
 
 function isModelRole(value: unknown): value is AgentRunInput["messages"][number]["role"] {
@@ -573,15 +637,73 @@ function parseToolCalls(value: unknown): AgentRunInput["messages"][number]["tool
 }
 
 function toChatResponse(result: AgentRunResult) {
+  const tokenUsage = reactorTokenUsage(result.response.usage);
+  const metadata = reactorResponseMetadata(result);
+
   return {
     agentSpec: result.agentSpec,
+    blockReason: typeof metadata.blockReason === "string" ? metadata.blockReason : null,
+    content: result.response.output,
     contextWindow: result.contextWindow,
+    durationMs: null,
+    errorCode: null,
+    errorMessage: null,
     fromCache: result.fromCache ?? false,
+    grounded: typeof metadata.grounded === "boolean" ? metadata.grounded : null,
+    metadata,
     model: result.response.model,
     response: result.response.output,
     runId: result.runId,
+    success: true,
+    tokenUsage,
     toolsUsed: result.toolsUsed ?? [],
-    usage: result.response.usage
+    usage: result.response.usage,
+    verifiedSourceCount: typeof metadata.verifiedSourceCount === "number" ? metadata.verifiedSourceCount : null
+  };
+}
+
+function reactorTokenUsage(usage: AgentRunResult["response"]["usage"]) {
+  if (!usage) {
+    return null;
+  }
+
+  const promptTokens = usage.inputTokens ?? 0;
+  const completionTokens = usage.outputTokens ?? 0;
+  return {
+    cachedContentTokens: usage.cachedInputTokens ?? null,
+    completionTokens,
+    promptTokens,
+    thoughtsTokens: usage.reasoningTokens ?? null,
+    toolUsePromptTokens: null,
+    totalTokens: promptTokens + completionTokens,
+    trafficType: null
+  };
+}
+
+function reactorResponseMetadata(result: AgentRunResult): JsonObject {
+  return {
+    ...(result.agentSpec
+      ? {
+        agentSpec: {
+          confidence: result.agentSpec.confidence,
+          matchedKeywords: [...result.agentSpec.matchedKeywords],
+          name: result.agentSpec.name,
+          toolNames: [...result.agentSpec.toolNames]
+        }
+      }
+      : {}),
+    ...(result.contextWindow
+      ? {
+        contextWindow: {
+          budgetTokens: result.contextWindow.budgetTokens,
+          estimatedTokens: result.contextWindow.estimatedTokens,
+          removedCount: result.contextWindow.removedCount,
+          summaryInserted: result.contextWindow.summaryInserted
+        }
+      }
+      : {}),
+    fromCache: result.fromCache ?? false,
+    runId: result.runId
   };
 }
 
@@ -591,22 +713,36 @@ function sendAgentError(
 ) {
   if (error instanceof GuardBlockedError) {
     return reply.status(403).send({
+      blockReason: error.message,
       code: error.code ?? "GUARD_BLOCKED",
-      message: error.message
-    });
+      content: null,
+      errorCode: error.code ?? "GUARD_BLOCKED",
+      errorMessage: error.message,
+      message: error.message,
+      success: false
+    } as ApiError);
   }
 
   if (error instanceof OutputGuardBlockedError) {
     return reply.status(422).send({
+      blockReason: error.message,
       code: error.code ?? "OUTPUT_GUARD_BLOCKED",
-      message: error.message
-    });
+      content: null,
+      errorCode: error.code ?? "OUTPUT_GUARD_BLOCKED",
+      errorMessage: error.message,
+      message: error.message,
+      success: false
+    } as ApiError);
   }
 
   return reply.status(500).send({
     code: "AGENT_RUN_FAILED",
-    message: error instanceof Error ? error.message : "Agent run failed"
-  });
+    content: null,
+    errorCode: "AGENT_RUN_FAILED",
+    errorMessage: error instanceof Error ? error.message : "Agent run failed",
+    message: error instanceof Error ? error.message : "Agent run failed",
+    success: false
+  } as ApiError);
 }
 
 function parseAgentSpecInput(value: unknown): ParseResult<AgentSpecInput> {

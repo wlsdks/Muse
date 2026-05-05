@@ -505,9 +505,11 @@ describe("api server", () => {
     expect(blocked.statusCode).toBe(401);
     expect(chat.statusCode).toBe(200);
     expect(chat.json()).toMatchObject({
+      content: "Runtime answer",
       model: "provider/model",
       response: "Runtime answer",
-      runId: "run-chat"
+      runId: "run-chat",
+      success: true
     });
     expect(historyStore.findRun("run-chat")).toMatchObject({
       input: "Hello",
@@ -562,7 +564,7 @@ describe("api server", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ response: "Multipart answer" });
+    expect(response.json()).toMatchObject({ content: "Multipart answer", response: "Multipart answer", success: true });
     expect(capturedMetadata).toMatchObject({
       channel: "web",
       media: [
@@ -1870,8 +1872,8 @@ describe("api server", () => {
     const memory = await server.inject({
       headers,
       method: "PUT",
-      payload: { prefersConcise: true },
-      url: "/api/user-memory/user-1/preferences"
+      payload: { key: "prefersConcise", value: "true" },
+      url: `/api/user-memory/${registered.user.id}/preferences`
     });
     const feedback = await server.inject({
       headers,
@@ -1931,7 +1933,11 @@ describe("api server", () => {
       headers,
       method: "POST",
       payload: {
-        name: "Prompt trial"
+        baselineVersionId: "baseline-v1",
+        candidateVersionIds: ["candidate-v1"],
+        name: "Prompt trial",
+        templateId: "template-1",
+        testQueries: [{ query: "How should we answer?" }]
       },
       url: "/api/prompt-lab/experiments"
     });
@@ -2263,7 +2269,10 @@ describe("api server", () => {
       items: [{ messageCount: 2, preview: "hello", sessionId: "run-compat" }],
       total: 1
     });
-    expect(models.json()).toEqual([{ id: "provider/model", model: "provider/model" }]);
+    expect(models.json()).toEqual({
+      defaultModel: "provider/model",
+      models: [{ isDefault: true, name: "provider/model" }]
+    });
     expect(spec.statusCode).toBe(201);
     expect(spec.json()).toMatchObject({
       hasSystemPrompt: true,
@@ -2283,7 +2292,7 @@ describe("api server", () => {
       approved: true,
       modifiedArguments: { path: "docs/approved.md" }
     });
-    expect(memory.json()).toMatchObject({ preferences: { prefersConcise: true }, userId: "user-1" });
+    expect(memory.json()).toEqual({ updated: true });
     expect(reviewed.json()).toMatchObject({ feedbackId, reviewStatus: "done", version: 2 });
     expect(feedbackStats.json()).toMatchObject({ doneCount: 1, positive: 1, total: 1 });
     expect(inputGuard.json()).toMatchObject({
@@ -2400,6 +2409,93 @@ describe("api server", () => {
     expect(deletedSession.statusCode).toBe(204);
     expect(deletedSessionDetail.statusCode).toBe(404);
     expect(unmappedAdminRoute.statusCode).toBe(404);
+  });
+
+  it("enforces Reactor-compatible user memory ownership and proactive channel DTOs", async () => {
+    const authService = createAuthService();
+    const owner = authService.register({
+      email: "owner_account",
+      name: "Owner",
+      password: "password-1"
+    });
+    const other = authService.register({
+      email: "other_account",
+      name: "Other",
+      password: "password-1"
+    });
+    const server = buildServer({
+      authService,
+      logger: false,
+      requireAuth: true
+    });
+    const ownerHeaders = { authorization: `Bearer ${owner.token}` };
+    const otherHeaders = { authorization: `Bearer ${other.token}` };
+
+    const update = await server.inject({
+      headers: ownerHeaders,
+      method: "PUT",
+      payload: { key: "tone", value: "concise" },
+      url: `/api/user-memory/${owner.user.id}/preferences`
+    });
+    const memory = await server.inject({
+      headers: ownerHeaders,
+      method: "GET",
+      url: `/api/user-memory/${owner.user.id}`
+    });
+    const forbidden = await server.inject({
+      headers: otherHeaders,
+      method: "GET",
+      url: `/api/user-memory/${owner.user.id}`
+    });
+    const proactive = await server.inject({
+      headers: ownerHeaders,
+      method: "POST",
+      payload: { channelId: "channel-ops", channelName: "ops" },
+      url: "/api/proactive-channels"
+    });
+    const duplicate = await server.inject({
+      headers: ownerHeaders,
+      method: "POST",
+      payload: { channelId: "channel-ops" },
+      url: "/api/proactive-channels"
+    });
+    const channels = await server.inject({
+      headers: ownerHeaders,
+      method: "GET",
+      url: "/api/proactive-channels"
+    });
+    const adminModels = await server.inject({
+      headers: ownerHeaders,
+      method: "GET",
+      url: "/api/admin/models"
+    });
+    const deleted = await server.inject({
+      headers: ownerHeaders,
+      method: "DELETE",
+      url: "/api/proactive-channels/channel-ops"
+    });
+
+    expect(update.json()).toEqual({ updated: true });
+    expect(memory.json()).toMatchObject({
+      facts: {},
+      preferences: { tone: "concise" },
+      recentTopics: []
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(proactive.statusCode).toBe(201);
+    expect(proactive.json()).toMatchObject({ channelId: "channel-ops", channelName: "ops" });
+    expect(typeof proactive.json().addedAt).toBe("number");
+    expect(duplicate.statusCode).toBe(409);
+    expect(channels.json()).toMatchObject([{ channelId: "channel-ops" }]);
+    expect(adminModels.json()).toEqual(expect.arrayContaining([
+      {
+        inputPricePerMillionTokens: 0.15,
+        isDefault: false,
+        name: "gemini-3-flash",
+        outputPricePerMillionTokens: 0.6
+      }
+    ]));
+    expect(deleted.statusCode).toBe(204);
   });
 
   it("keeps Slack webhook probe routes available when Slack is not enabled", async () => {

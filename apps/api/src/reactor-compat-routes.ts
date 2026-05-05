@@ -1,5 +1,12 @@
 import type { AgentSpec, AgentSpecInput, AgentSpecRegistry } from "@muse/agent-specs";
-import { AuthRateLimiter, AuthService, extractBearerToken, type LoginResult, type UserRole } from "@muse/auth";
+import {
+  AuthRateLimiter,
+  AuthService,
+  extractBearerToken,
+  type AuthIdentity,
+  type LoginResult,
+  type UserRole
+} from "@muse/auth";
 import type { McpServer } from "@muse/mcp";
 import type { ModelProvider } from "@muse/model";
 import type { RuntimeSetting, RuntimeSettingsService, RuntimeSettingType } from "@muse/runtime-settings";
@@ -55,6 +62,7 @@ interface CompatState {
   readonly platformPricing: CompatCollection;
   readonly metricEvents: CompatCollection;
   readonly promptExperiments: CompatCollection;
+  readonly proactiveChannels: CompatCollection;
   readonly promptTemplates: CompatCollection;
   readonly ragCandidates: CompatCollection;
   ragIngestionPolicy: JsonObject;
@@ -65,7 +73,12 @@ interface CompatState {
   readonly slackFaqEvents: Map<string, CompatRecord[]>;
   readonly slackFaqFeedback: Map<string, Record<string, { thumbsDown: number; thumbsUp: number }>>;
   readonly swaggerSources: CompatCollection;
-  readonly userMemory: Map<string, { facts: JsonObject; preferences: JsonObject; updatedAt: string }>;
+  readonly userMemory: Map<string, {
+    facts: Record<string, string>;
+    preferences: Record<string, string>;
+    recentTopics: string[];
+    updatedAt: string;
+  }>;
   retentionPolicy: JsonObject;
   toolPolicyStored: boolean;
   toolPolicy: JsonObject;
@@ -215,6 +228,7 @@ function createCompatState(): CompatState {
     platformPricing: new Map(),
     metricEvents: new Map(),
     promptExperiments: new Map(),
+    proactiveChannels: new Map(),
     promptTemplates: new Map(),
     ragCandidates: new Map(),
     ragIngestionPolicy: {
@@ -485,7 +499,7 @@ function registerSessionCompatibilityRoutes(server: FastifyInstance, options: Re
       : reply.status(404).send({ code: "SESSION_NOT_FOUND", message: `Session not found: ${sessionId}` });
   });
 
-  server.get("/api/models", async () => listModelSummaries(options));
+  server.get("/api/models", async () => listSessionModels(options));
 }
 
 function registerAgentCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
@@ -605,7 +619,7 @@ function registerAgentCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return listModelSummaries(options);
+    return listAdminModelRegistry(options);
   });
 }
 
@@ -1058,15 +1072,37 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
 }
 
 function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/user-memory/:userId", async (request) => {
+  server.get("/api/user-memory/:userId", async (request, reply) => {
     const { userId } = request.params as { readonly userId: string };
-    return getUserMemory(userId);
+    if (!canAccessUserMemory(request, options, userId)) {
+      return userForbidden(reply);
+    }
+
+    const memory = state.userMemory.get(userId);
+    return memory ? toUserMemoryResponse(memory) : userMemoryNotFound(reply, userId);
   });
-  server.put("/api/user-memory/:userId/facts", async (request) => updateUserMemory(request, "facts"));
-  server.put("/api/user-memory/:userId/preferences", async (request) => updateUserMemory(request, "preferences"));
-  server.delete("/api/user-memory/:userId", async (request) => {
+  server.put("/api/user-memory/:userId/facts", async (request, reply) => {
+    if (!canAccessUserMemory(request, options, (request.params as { readonly userId: string }).userId)) {
+      return userForbidden(reply);
+    }
+
+    return updateUserMemory(request, reply, "facts");
+  });
+  server.put("/api/user-memory/:userId/preferences", async (request, reply) => {
+    if (!canAccessUserMemory(request, options, (request.params as { readonly userId: string }).userId)) {
+      return userForbidden(reply);
+    }
+
+    return updateUserMemory(request, reply, "preferences");
+  });
+  server.delete("/api/user-memory/:userId", async (request, reply) => {
     const { userId } = request.params as { readonly userId: string };
-    return { deleted: state.userMemory.delete(userId), userId };
+    if (!canAccessUserMemory(request, options, userId)) {
+      return userForbidden(reply);
+    }
+
+    state.userMemory.delete(userId);
+    return reply.status(204).send();
   });
 
   registerFeedbackRoutes(server, options);
@@ -1558,18 +1594,33 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       return reply;
     }
 
-    return reply.status(201).send(toPromptExperimentResponse(createPromptExperiment(request)));
+    const parsed = parsePromptExperimentRequest(request);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    return reply.status(201).send(toPromptExperimentResponse(createPromptExperiment(request, options, parsed.value)));
   });
   server.get("/api/prompt-lab/experiments", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return [...state.promptExperiments.values()].map(toPromptExperimentResponse);
+    const status = readQueryString(request, "status")?.toUpperCase();
+    const templateId = readQueryString(request, "templateId");
+    return [...state.promptExperiments.values()]
+      .filter((experiment) => !status || reactorEnumString(experiment.status, "PENDING") === status)
+      .filter((experiment) => !templateId || experiment.templateId === templateId)
+      .map(toPromptExperimentResponse);
   });
-  server.get("/api/prompt-lab/experiments/:id", async (request, reply) =>
-    respondPromptExperiment(request, reply)
-  );
+  server.get("/api/prompt-lab/experiments/:id", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return respondPromptExperiment(request, reply);
+  });
   server.delete("/api/prompt-lab/experiments/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -1579,34 +1630,85 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     state.promptExperiments.delete(id);
     return reply.status(204).send();
   });
-  server.post("/api/prompt-lab/experiments/:id/run", async (request, reply) =>
-    promptExperimentAction(request, reply, "RUNNING")
-  );
-  server.post("/api/prompt-lab/experiments/:id/cancel", async (request, reply) =>
-    promptExperimentAction(request, reply, "CANCELLED")
-  );
-  server.post("/api/prompt-lab/experiments/:id/activate", async (request, reply) =>
-    promptExperimentAction(request, reply, "ACTIVATED")
-  );
+  server.post("/api/prompt-lab/experiments/:id/run", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return runPromptExperiment(request, reply);
+  });
+  server.post("/api/prompt-lab/experiments/:id/cancel", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return cancelPromptExperiment(request, reply);
+  });
+  server.post("/api/prompt-lab/experiments/:id/activate", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return activatePromptExperiment(request, reply);
+  });
   server.get("/api/prompt-lab/experiments/:id/status", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
     const record = findCompatRecord(state.promptExperiments, (request.params as { id: string }).id);
     return record ? toPromptExperimentStatusResponse(record) : notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
   });
-  server.get("/api/prompt-lab/experiments/:id/trials", async () => []);
-  server.get("/api/prompt-lab/experiments/:id/report", async (_request, reply) =>
-    notFound(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND")
-  );
-  server.post("/api/prompt-lab/auto-optimize", async (request, reply) =>
-    reply.status(202).send({
+  server.get("/api/prompt-lab/experiments/:id/trials", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return [];
+  });
+  server.get("/api/prompt-lab/experiments/:id/report", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return notFound(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND");
+  });
+  server.post("/api/prompt-lab/auto-optimize", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const templateId = readBodyString(request.body, "templateId")?.trim();
+
+    if (!templateId) {
+      return badRequest(reply, "INVALID_AUTO_OPTIMIZE_REQUEST", "Body must include templateId");
+    }
+
+    return reply.status(202).send({
       jobId: createRunId("prompt_auto"),
       status: "STARTED",
-      templateId: readBodyString(request.body, "templateId") ?? ""
-    })
-  );
-  server.post("/api/prompt-lab/analyze", async (request) => ({
-    findings: [],
-    request: toJsonObject(request.body)
-  }));
+      templateId
+    });
+  });
+  server.post("/api/prompt-lab/analyze", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const templateId = readBodyString(request.body, "templateId")?.trim();
+
+    if (!templateId) {
+      return badRequest(reply, "INVALID_FEEDBACK_ANALYSIS_REQUEST", "Body must include templateId");
+    }
+
+    return {
+      analyzedAt: Date.now(),
+      negativeCount: 0,
+      sampleQueryCount: 0,
+      totalFeedback: 0,
+      weaknesses: []
+    };
+  });
 }
 
 function registerMcpCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
@@ -1777,12 +1879,56 @@ function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompati
 
 function registerSlackCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   registerSlackBotRoutes(server, options);
-  server.get("/api/proactive-channels", async () => []);
-  server.post("/api/proactive-channels", async (request) => ({ created: true, ...toJsonObject(request.body) }));
-  server.delete("/api/proactive-channels/:channelId", async (request) => ({
-    channelId: (request.params as { readonly channelId: string }).channelId,
-    deleted: true
-  }));
+  server.get("/api/proactive-channels", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return [...state.proactiveChannels.values()].map(toProactiveChannelResponse);
+  });
+  server.post("/api/proactive-channels", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const body = toBody(request.body);
+    const channelId = readBodyString(body, "channelId")?.trim();
+
+    if (!channelId) {
+      return badRequest(reply, "INVALID_PROACTIVE_CHANNEL", "Body must include channelId");
+    }
+
+    if (state.proactiveChannels.has(channelId)) {
+      return reply.status(409).send({
+        error: "Channel already in proactive list",
+        timestamp: nowIso()
+      });
+    }
+
+    const record = createRecord(state.proactiveChannels, {
+      addedAt: Date.now(),
+      channelId,
+      channelName: readNullableStringField(body, "channelName"),
+      id: channelId
+    }, "proactive_channel");
+    return reply.status(201).send(toProactiveChannelResponse(record));
+  });
+  server.delete("/api/proactive-channels/:channelId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { channelId } = request.params as { readonly channelId: string };
+
+    if (!state.proactiveChannels.delete(channelId)) {
+      return reply.status(404).send({
+        error: "Channel not found in proactive list",
+        timestamp: nowIso()
+      });
+    }
+
+    return reply.status(204).send();
+  });
 
   server.post("/api/admin/slack/channels/faq", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -4702,26 +4848,142 @@ function toSlackBotResponse(record: JsonObject) {
   };
 }
 
+function toProactiveChannelResponse(record: JsonObject) {
+  return {
+    addedAt: readNumber(record.addedAt, epochMillisOrNull(record.createdAt) ?? Date.now()),
+    channelId: stringField(record.channelId, ""),
+    channelName: nullableStringResponse(record.channelName)
+  };
+}
+
 function maskSlackToken(value: unknown): string {
   const token = typeof value === "string" ? value : "";
   return `${token.slice(0, 6)}***`;
 }
 
-function createPromptExperiment(request: FastifyRequest): CompatRecord {
+interface PromptExperimentInput {
+  readonly autoGenerated: boolean;
+  readonly baselineVersionId: string;
+  readonly candidateVersionIds: readonly string[];
+  readonly description: string;
+  readonly evaluationConfig: JsonObject;
+  readonly judgeModel: string | null;
+  readonly model: string | null;
+  readonly name: string;
+  readonly repetitions: number;
+  readonly templateId: string;
+  readonly temperature: number;
+  readonly testQueries: readonly JsonObject[];
+}
+
+function parsePromptExperimentRequest(request: FastifyRequest): ParseResult<PromptExperimentInput> {
   const body = toBody(request.body);
+  const name = readBodyString(body, "name")?.trim();
+  const templateId = readBodyString(body, "templateId")?.trim();
+  const baselineVersionId = readBodyString(body, "baselineVersionId")?.trim();
+  const candidateVersionIds = readStringSet(body.candidateVersionIds);
+  const testQueries = parsePromptTestQueries(body.testQueries);
+
+  if (!name) {
+    return invalid("INVALID_PROMPT_EXPERIMENT", "Body must include name");
+  }
+
+  if (!templateId) {
+    return invalid("INVALID_PROMPT_EXPERIMENT", "Body must include templateId");
+  }
+
+  if (!baselineVersionId) {
+    return invalid("INVALID_PROMPT_EXPERIMENT", "Body must include baselineVersionId");
+  }
+
+  if (candidateVersionIds.length === 0) {
+    return invalid("INVALID_PROMPT_EXPERIMENT", "Body must include candidateVersionIds");
+  }
+
+  if (testQueries.length === 0) {
+    return invalid("INVALID_PROMPT_EXPERIMENT", "Body must include testQueries");
+  }
+
+  return {
+    ok: true,
+    value: {
+      autoGenerated: Boolean(body.autoGenerated),
+      baselineVersionId,
+      candidateVersionIds,
+      description: readBodyString(body, "description") ?? "",
+      evaluationConfig: promptEvaluationConfig(body.evaluationConfig),
+      judgeModel: readNullableStringField(body, "judgeModel"),
+      model: readNullableStringField(body, "model"),
+      name,
+      repetitions: Math.max(1, Math.trunc(readNumber(body.repetitions, 1))),
+      templateId,
+      temperature: readNumber(body.temperature, 0.3),
+      testQueries
+    }
+  };
+}
+
+function createPromptExperiment(
+  request: FastifyRequest,
+  options: ReactorCompatibilityRouteOptions,
+  input: PromptExperimentInput
+): CompatRecord {
   return createRecord(state.promptExperiments, {
-    autoGenerated: Boolean(body.autoGenerated),
-    baselineVersionId: readBodyString(body, "baselineVersionId") ?? "",
-    candidateVersionIds: readStringSet(body.candidateVersionIds),
+    autoGenerated: input.autoGenerated,
+    baselineVersionId: input.baselineVersionId,
+    candidateVersionIds: [...input.candidateVersionIds],
     completedAt: null,
-    createdBy: readBodyString(body, "createdBy") ?? "admin",
-    description: readBodyString(body, "description") ?? "",
+    createdBy: currentAuthIdentity(request, options)?.userId ?? "admin",
+    description: input.description,
     errorMessage: null,
-    name: readBodyString(body, "name") ?? "",
+    evaluationConfig: input.evaluationConfig,
+    judgeModel: input.judgeModel,
+    model: input.model,
+    name: input.name,
+    repetitions: input.repetitions,
     startedAt: null,
     status: "PENDING",
-    templateId: readBodyString(body, "templateId") ?? ""
+    templateId: input.templateId,
+    temperature: input.temperature,
+    testQueries: [...input.testQueries]
   }, "prompt_experiment");
+}
+
+function parsePromptTestQueries(value: unknown): JsonObject[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+
+    const query = typeof item.query === "string" ? item.query.trim() : "";
+
+    if (!query) {
+      return [];
+    }
+
+    return [{
+      domain: nullableStringResponse(item.domain),
+      expectedBehavior: nullableStringResponse(item.expectedBehavior),
+      intent: nullableStringResponse(item.intent),
+      query,
+      tags: readStringSet(item.tags)
+    }];
+  });
+}
+
+function promptEvaluationConfig(value: unknown): JsonObject {
+  const body = toBody(value);
+  return {
+    customRubric: readNullableStringField(body, "customRubric"),
+    llmJudgeBudgetTokens: Math.trunc(readNumber(body.llmJudgeBudgetTokens, 100_000)),
+    llmJudgeEnabled: readBoolean(body.llmJudgeEnabled, true),
+    rulesEnabled: readBoolean(body.rulesEnabled, true),
+    structuralEnabled: readBoolean(body.structuralEnabled, true)
+  };
 }
 
 function toPromptExperimentResponse(record: JsonObject) {
@@ -4771,7 +5033,7 @@ function updateCandidate(request: FastifyRequest, status: string) {
   return createRecord(state.ragCandidates, { id, status }, "rag_candidate");
 }
 
-function promptExperimentAction(request: FastifyRequest, reply: FastifyReply, status: string) {
+function runPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { readonly id: string };
   const existing = findCompatRecord(state.promptExperiments, id);
 
@@ -4779,18 +5041,55 @@ function promptExperimentAction(request: FastifyRequest, reply: FastifyReply, st
     return notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
   }
 
+  if (reactorEnumString(existing.status, "PENDING") !== "PENDING") {
+    return badRequest(
+      reply,
+      "INVALID_PROMPT_EXPERIMENT_STATUS",
+      `Experiment must be PENDING to run, current: ${existing.status}`
+    );
+  }
+
   const now = nowIso();
   const updated = createRecord(state.promptExperiments, {
     ...existing,
-    completedAt: status === "RUNNING" ? existing.completedAt ?? null : now,
-    startedAt: status === "RUNNING" ? now : existing.startedAt ?? null,
-    status,
+    completedAt: existing.completedAt ?? null,
+    startedAt: now,
+    status: "RUNNING",
     updatedAt: now
   }, "prompt_experiment");
 
-  return status === "RUNNING"
-    ? reply.status(202).send({ experimentId: id, status: "RUNNING" })
-    : toPromptExperimentResponse(updated);
+  return reply.status(202).send({ experimentId: updated.id, status: "RUNNING" });
+}
+
+function cancelPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { readonly id: string };
+  const existing = findCompatRecord(state.promptExperiments, id);
+
+  if (!existing) {
+    return notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
+  }
+
+  if (reactorEnumString(existing.status, "PENDING") !== "RUNNING") {
+    return badRequest(reply, "INVALID_PROMPT_EXPERIMENT_STATUS", "Only RUNNING experiments can be cancelled");
+  }
+
+  const updated = createRecord(state.promptExperiments, {
+    ...existing,
+    completedAt: nowIso(),
+    status: "CANCELLED"
+  }, "prompt_experiment");
+  return toPromptExperimentResponse(updated);
+}
+
+function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { readonly id: string };
+  const existing = findCompatRecord(state.promptExperiments, id);
+
+  if (!existing) {
+    return notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
+  }
+
+  return badRequest(reply, "PROMPT_EXPERIMENT_REPORT_NOT_FOUND", "No report available for this experiment");
 }
 
 function sourceAction(request: FastifyRequest, status: string) {
@@ -5031,38 +5330,115 @@ function feedbackStats() {
   };
 }
 
-function getUserMemory(userId: string) {
-  const existing = state.userMemory.get(userId);
+function updateUserMemory(request: FastifyRequest, reply: FastifyReply, key: "facts" | "preferences") {
+  const { userId } = request.params as { readonly userId: string };
+  const body = toBody(request.body);
+  const itemKey = readBodyString(body, "key")?.trim();
+  const itemValue = readBodyString(body, "value")?.trim();
 
-  if (existing) {
-    return { userId, ...existing };
+  if (!itemKey || !itemValue) {
+    return badRequest(reply, "INVALID_USER_MEMORY_REQUEST", "Body must include non-empty key and value");
   }
 
-  const created = { facts: {}, preferences: {}, updatedAt: nowIso() };
-  state.userMemory.set(userId, created);
-  return { userId, ...created };
-}
-
-function updateUserMemory(request: FastifyRequest, key: "facts" | "preferences") {
-  const { userId } = request.params as { readonly userId: string };
-  const existing = getUserMemory(userId);
+  const existing = state.userMemory.get(userId) ?? {
+    facts: {},
+    preferences: {},
+    recentTopics: [],
+    updatedAt: nowIso()
+  };
   const updated = {
-    facts: key === "facts" ? toJsonObject(request.body) : existing.facts,
-    preferences: key === "preferences" ? toJsonObject(request.body) : existing.preferences,
+    facts: key === "facts" ? { ...existing.facts, [itemKey]: itemValue } : existing.facts,
+    preferences: key === "preferences" ? { ...existing.preferences, [itemKey]: itemValue } : existing.preferences,
+    recentTopics: existing.recentTopics,
     updatedAt: nowIso()
   };
   state.userMemory.set(userId, updated);
-  return { userId, ...updated };
+  return { updated: true };
 }
 
-async function listModelSummaries(options: ReactorCompatibilityRouteOptions) {
-  const models = await options.modelProvider?.listModels();
-
-  if (models && models.length > 0) {
-    return models.map((model) => ({ id: model, model }));
+function canAccessUserMemory(
+  request: FastifyRequest,
+  options: ReactorCompatibilityRouteOptions,
+  userId: string
+): boolean {
+  if (userId.trim().length === 0 || userId.toLowerCase() === "anonymous") {
+    return false;
   }
 
-  return options.defaultModel ? [{ id: options.defaultModel, model: options.defaultModel }] : [];
+  const identity = currentAuthIdentity(request, options);
+  return Boolean(identity?.userId && identity.userId === userId && identity.userId.toLowerCase() !== "anonymous");
+}
+
+function currentAuthIdentity(
+  request: FastifyRequest,
+  options: ReactorCompatibilityRouteOptions
+): AuthIdentity | undefined {
+  return (request as { auth?: AuthIdentity }).auth
+    ?? options.authService?.authenticateBearer(extractBearerToken(request.headers.authorization));
+}
+
+function toUserMemoryResponse(memory: {
+  readonly facts: Record<string, string>;
+  readonly preferences: Record<string, string>;
+  readonly recentTopics: readonly string[];
+  readonly updatedAt: string;
+}) {
+  return {
+    facts: memory.facts,
+    preferences: memory.preferences,
+    recentTopics: [...memory.recentTopics],
+    updatedAt: memory.updatedAt
+  };
+}
+
+function userForbidden(reply: FastifyReply) {
+  return reply.status(403).send({
+    error: "관리자 권한이 필요합니다",
+    timestamp: nowIso()
+  });
+}
+
+function userMemoryNotFound(reply: FastifyReply, userId: string) {
+  return reply.status(404).send({
+    error: `User memory not found: ${userId}`,
+    timestamp: nowIso()
+  });
+}
+
+async function listSessionModels(options: ReactorCompatibilityRouteOptions) {
+  const models = await options.modelProvider?.listModels();
+  const names = models && models.length > 0
+    ? models.map((model) => `${model.providerId}/${model.modelId}`)
+    : options.defaultModel ? [options.defaultModel] : [];
+  const defaultModel = options.defaultModel ?? names[0] ?? "";
+
+  return {
+    defaultModel,
+    models: names.map((name) => ({ isDefault: name === defaultModel, name }))
+  };
+}
+
+function listAdminModelRegistry(options: ReactorCompatibilityRouteOptions) {
+  const defaultModel = options.defaultModel ?? "";
+  const pricing = [
+    { input: 0.15, name: "gemini-3-flash-preview", output: 0.6 },
+    { input: 0.15, name: "gemini-3-flash", output: 0.6 },
+    { input: 1.25, name: "gemini-3-pro-preview", output: 10 },
+    { input: 1.25, name: "gemini-3-pro", output: 10 },
+    { input: 0.15, name: "gemini-2.5-flash", output: 0.6 },
+    { input: 1.25, name: "gemini-2.5-pro", output: 10 },
+    { input: 2.5, name: "gpt-4o", output: 10 },
+    { input: 0.15, name: "gpt-4o-mini", output: 0.6 },
+    { input: 3, name: "claude-sonnet-4-20250514", output: 15 },
+    { input: 15, name: "claude-opus-4-20250514", output: 75 }
+  ];
+
+  return pricing.map((model) => ({
+    inputPricePerMillionTokens: model.input,
+    isDefault: model.name === defaultModel,
+    name: model.name,
+    outputPricePerMillionTokens: model.output
+  }));
 }
 
 function notFound(reply: FastifyReply, code: string) {
