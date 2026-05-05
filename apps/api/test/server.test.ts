@@ -55,6 +55,7 @@ describe("api server", () => {
     const created = await server.inject({
       method: "POST",
       payload: {
+        description: "Research with verifiable sources.",
         keywords: ["research", "sources"],
         name: "researcher",
         systemPrompt: "Use verifiable sources.",
@@ -69,9 +70,14 @@ describe("api server", () => {
       },
       url: "/agent-specs/resolve"
     });
+    const card = await server.inject({
+      method: "GET",
+      url: "/.well-known/agent-card.json"
+    });
 
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({
+      description: "Research with verifiable sources.",
       name: "researcher",
       systemPrompt: "Use verifiable sources.",
       toolNames: ["web_search"]
@@ -85,6 +91,25 @@ describe("api server", () => {
         toolNames: ["web_search"]
       }
     });
+    expect(card.json()).toMatchObject({
+      description: "Muse AI Agent",
+      name: "Muse",
+      supportedInputFormats: ["text", "json"],
+      supportedOutputFormats: ["text", "json", "yaml"],
+      version: "1.0.0"
+    });
+    expect(card.json().capabilities).toEqual(expect.arrayContaining([
+      {
+        description: "Available tool: web_search",
+        inputSchema: null,
+        name: "web_search"
+      },
+      {
+        description: "Research with verifiable sources.",
+        inputSchema: null,
+        name: "persona:researcher"
+      }
+    ]));
   });
 
   it("manages runtime settings", async () => {
@@ -3082,7 +3107,13 @@ describe("api server", () => {
     });
 
     expect(card.statusCode).toBe(200);
-    expect(card.json()).toMatchObject({ name: "Muse", capabilities: { modelAgnostic: true } });
+    expect(card.json()).toMatchObject({
+      capabilities: [],
+      name: "Muse",
+      supportedInputFormats: ["text", "json"],
+      supportedOutputFormats: ["text", "json", "yaml"],
+      version: "1.0.0"
+    });
     expect(apiLogin.statusCode).toBe(200);
     expect(passwordChanged.json()).toEqual({ message: "Password changed successfully" });
     expect(oldPasswordLogin.statusCode).toBe(401);

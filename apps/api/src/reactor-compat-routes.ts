@@ -518,17 +518,7 @@ function registerSessionCompatibilityRoutes(server: FastifyInstance, options: Re
 }
 
 function registerAgentCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/.well-known/agent-card.json", async () => ({
-    capabilities: {
-      modelAgnostic: true,
-      streaming: true,
-      tools: true
-    },
-    defaultModel: options.defaultModel ?? null,
-    name: "Muse",
-    protocolVersion: "0.1.0",
-    service: "muse-api"
-  }));
+  server.get("/.well-known/agent-card.json", async () => agentCardResponse(options));
 
   server.get("/api/admin/agent-specs", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -4769,6 +4759,43 @@ function toAgentSpecResponse(spec: AgentSpec): JsonObject {
     toolNames: [...spec.toolNames],
     updatedAt: spec.updatedAt.toISOString()
   };
+}
+
+async function agentCardResponse(options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
+  const specs = await options.agentSpecRegistry.listEnabled();
+
+  return {
+    capabilities: agentCardCapabilities(specs),
+    description: "Muse AI Agent",
+    name: "Muse",
+    supportedInputFormats: ["text", "json"],
+    supportedOutputFormats: ["text", "json", "yaml"],
+    version: "1.0.0"
+  };
+}
+
+function agentCardCapabilities(specs: readonly AgentSpec[]): JsonObject[] {
+  const tools = new Map<string, JsonObject>();
+
+  for (const spec of specs) {
+    for (const toolName of spec.toolNames) {
+      if (!tools.has(toolName)) {
+        tools.set(toolName, {
+          description: `Available tool: ${toolName}`,
+          inputSchema: null,
+          name: toolName
+        });
+      }
+    }
+  }
+
+  const personas = specs.map((spec) => ({
+    description: spec.description || spec.name,
+    inputSchema: null,
+    name: `persona:${spec.name}`
+  }));
+
+  return [...tools.values(), ...personas];
 }
 
 function createRecord(collection: CompatCollection, input: JsonObject, prefix: string): CompatRecord {
