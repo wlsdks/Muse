@@ -2202,6 +2202,18 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply.status(400).send(validationErrorResponse({ channelId: "channelId must not be blank" }));
     }
 
+    if (channelId.length > 50) {
+      return reply.status(400).send(validationErrorResponse({
+        channelId: "channelId must not exceed 50 characters"
+      }));
+    }
+
+    if (typeof body.channelName === "string" && body.channelName.length > 200) {
+      return reply.status(400).send(validationErrorResponse({
+        channelName: "channelName must not exceed 200 characters"
+      }));
+    }
+
     if (state.proactiveChannels.has(channelId)) {
       return reply.status(409).send({
         error: "Channel already in proactive list",

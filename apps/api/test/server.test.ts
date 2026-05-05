@@ -4671,6 +4671,12 @@ describe("api server", () => {
       payload: { channelName: "ops" },
       url: "/api/proactive-channels"
     });
+    const invalidLongProactive = await server.inject({
+      headers: ownerHeaders,
+      method: "POST",
+      payload: { channelId: "c".repeat(51), channelName: "ops" },
+      url: "/api/proactive-channels"
+    });
     const duplicate = await server.inject({
       headers: ownerHeaders,
       method: "POST",
@@ -4715,6 +4721,13 @@ describe("api server", () => {
       timestamp: expect.any(String)
     });
     expect(invalidProactive.json()).not.toHaveProperty("code");
+    expect(invalidLongProactive.statusCode).toBe(400);
+    expect(invalidLongProactive.json()).toMatchObject({
+      details: { channelId: "channelId must not exceed 50 characters" },
+      error: "요청 형식이 올바르지 않습니다",
+      timestamp: expect.any(String)
+    });
+    expect(invalidLongProactive.json()).not.toHaveProperty("code");
     expect(duplicate.statusCode).toBe(409);
     expect(channels.json()).toMatchObject([{ channelId: "channel-ops" }]);
     expect(adminModels.json()).toEqual(expect.arrayContaining([
