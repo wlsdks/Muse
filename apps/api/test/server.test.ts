@@ -1450,6 +1450,15 @@ describe("api server", () => {
       method: "GET",
       url: "/api/mcp/security"
     });
+    const invalidSecurityPolicy = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        allowedServerNames: ["local"],
+        maxToolOutputLength: 100
+      },
+      url: "/api/mcp/security"
+    });
     const created = await server.inject({
       headers,
       method: "POST",
@@ -1609,6 +1618,11 @@ describe("api server", () => {
       stored: { allowedServerNames: ["local"] }
     });
     expect(typeof policy.json().effective.createdAt).toBe("number");
+    expect(invalidSecurityPolicy.statusCode).toBe(400);
+    expect(invalidSecurityPolicy.json()).toMatchObject({
+      code: "INVALID_MCP_SECURITY_POLICY",
+      message: "maxToolOutputLength must be between 1024 and 500000"
+    });
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({
       name: "local",

@@ -634,6 +634,17 @@ function parseMcpSecurityPolicyInput(value: unknown): ParseResult<McpSecurityPol
 
   const maxToolOutputLength = readNumber(value, "maxToolOutputLength");
 
+  if (allowedServerNames && allowedServerNames.length > 500) {
+    return invalid("INVALID_MCP_SECURITY_POLICY", "allowedServerNames must not exceed 500 entries");
+  }
+
+  if (
+    maxToolOutputLength !== undefined &&
+    (!Number.isInteger(maxToolOutputLength) || maxToolOutputLength < 1024 || maxToolOutputLength > 500000)
+  ) {
+    return invalid("INVALID_MCP_SECURITY_POLICY", "maxToolOutputLength must be between 1024 and 500000");
+  }
+
   return {
     ok: true,
     value: {
