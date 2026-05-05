@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { InMemoryAgentSpecRegistry, RuleBasedAgentSpecResolver } from "@muse/agent-specs";
 import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
 import {
@@ -154,6 +155,74 @@ describe("AgentRuntime", () => {
       removedCount: 2,
       summaryInserted: false
     });
+  });
+
+  it("applies a resolved agent spec before the provider call", async () => {
+    const onGenerate = vi.fn();
+    const registry = new InMemoryAgentSpecRegistry([
+      {
+        keywords: ["research", "sources"],
+        name: "researcher",
+        systemPrompt: "Use verifiable sources.",
+        toolNames: ["web_search", "read_file"]
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      agentSpecResolver: new RuleBasedAgentSpecResolver(registry, { confidenceThreshold: 0.5 }),
+      modelProvider: createProvider({}, "test", onGenerate)
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "Research this with sources", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(onGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          { content: "Use verifiable sources.", role: "system" },
+          { content: "Research this with sources", role: "user" }
+        ],
+        metadata: expect.objectContaining({
+          agentSpecMatchedKeywords: ["research", "sources"],
+          agentSpecName: "researcher",
+          agentSpecResolutionAttempted: true,
+          agentSpecToolNames: ["web_search", "read_file"]
+        })
+      })
+    );
+    expect(result.agentSpec).toEqual({
+      confidence: 1,
+      matchedKeywords: ["research", "sources"],
+      name: "researcher",
+      toolNames: ["web_search", "read_file"]
+    });
+  });
+
+  it("fails open when agent spec resolution fails", async () => {
+    const onGenerate = vi.fn();
+    const runtime = createAgentRuntime({
+      agentSpecResolver: {
+        resolve: () => {
+          throw new Error("resolver unavailable");
+        }
+      },
+      modelProvider: createProvider({}, "test", onGenerate)
+    });
+
+    await runtime.run({
+      messages: [{ content: "Hello", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(onGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          agentSpecResolutionAttempted: true,
+          agentSpecResolutionFailed: true
+        })
+      })
+    );
   });
 
   it("requires either a provider or a provider registry", () => {

@@ -1,3 +1,4 @@
+import type { AgentSpecResolution } from "@muse/agent-specs";
 import {
   ModelProviderRegistry,
   parseModelName,
@@ -30,6 +31,7 @@ export interface AgentRunContext {
   readonly runId: string;
   readonly input: AgentRunInput;
   readonly startedAt: Date;
+  readonly agentSpec?: AgentSpecResolution;
 }
 
 export type GuardDecision =
@@ -64,9 +66,14 @@ export interface OutputGuardStage {
   check(content: string, context: OutputGuardContext): Awaitable<OutputGuardDecision>;
 }
 
+export interface AgentSpecResolver {
+  resolve(text: string): Awaitable<AgentSpecResolution | undefined>;
+}
+
 export interface AgentRuntimeOptions {
   readonly modelProvider?: ModelProvider;
   readonly modelRegistry?: ModelProviderRegistry;
+  readonly agentSpecResolver?: AgentSpecResolver;
   readonly contextWindow?: ConversationTrimOptions;
   readonly metrics?: AgentMetrics;
   readonly tracer?: MuseTracer;
@@ -82,7 +89,15 @@ export interface AgentRuntimeOptions {
 export interface AgentRunResult {
   readonly runId: string;
   readonly response: ModelResponse;
+  readonly agentSpec?: AgentSpecRunReport;
   readonly contextWindow?: AgentContextWindowReport;
+}
+
+export interface AgentSpecRunReport {
+  readonly name: string;
+  readonly confidence: number;
+  readonly matchedKeywords: readonly string[];
+  readonly toolNames: readonly string[];
 }
 
 export interface AgentContextWindowReport {
@@ -126,6 +141,7 @@ export class ModelRoutingError extends Error {
 export class AgentRuntime {
   private readonly modelProvider?: ModelProvider;
   private readonly modelRegistry?: ModelProviderRegistry;
+  private readonly agentSpecResolver?: AgentSpecResolver;
   private readonly contextWindow?: ConversationTrimOptions;
   private readonly metrics: AgentMetrics;
   private readonly tracer: MuseTracer;
@@ -137,6 +153,7 @@ export class AgentRuntime {
   constructor(options: AgentRuntimeOptions) {
     this.modelProvider = options.modelProvider;
     this.modelRegistry = options.modelRegistry;
+    this.agentSpecResolver = options.agentSpecResolver;
     this.contextWindow = options.contextWindow;
     this.metrics = options.metrics ?? createNoOpAgentMetrics();
     this.tracer = options.tracer ?? createNoOpMuseTracer();
@@ -152,8 +169,10 @@ export class AgentRuntime {
 
   async run(input: AgentRunInput): Promise<AgentRunResult> {
     const startedAtMs = Date.now();
+    const specApplied = await this.applyAgentSpec(input);
     const context: AgentRunContext = {
-      input,
+      agentSpec: specApplied.agentSpec,
+      input: specApplied.input,
       runId: input.runId ?? createRunId(),
       startedAt: new Date()
     };
@@ -166,10 +185,10 @@ export class AgentRuntime {
       await this.evaluateGuards(context);
       await this.invokeHooks("beforeStart", context);
 
-      const selected = this.resolveProvider(input.model);
+      const selected = this.resolveProvider(context.input.model);
       runSpan.setAttribute("model.selected", selected.model);
 
-      const preparedRequest = this.prepareModelRequest(input, selected.model);
+      const preparedRequest = this.prepareModelRequest(context.input, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
 
       const response = await this.generateWithTracing(context, selected.provider, {
@@ -181,14 +200,66 @@ export class AgentRuntime {
 
       await this.invokeHooks("afterComplete", context, guardedResponse);
       this.recordAgentRun(context, guardedResponse.model, "completed", startedAtMs);
-      return createRunResult(context.runId, guardedResponse, preparedRequest.contextWindow);
+      return createRunResult(context.runId, guardedResponse, preparedRequest.contextWindow, context.agentSpec);
     } catch (error) {
       runSpan.setError(error);
-      this.recordAgentRun(context, input.model, "failed", startedAtMs);
+      this.recordAgentRun(context, context.input.model, "failed", startedAtMs);
       await this.invokeHooks("onError", context, error);
       throw error;
     } finally {
       runSpan.end();
+    }
+  }
+
+  private async applyAgentSpec(input: AgentRunInput): Promise<{
+    readonly agentSpec?: AgentSpecResolution;
+    readonly input: AgentRunInput;
+  }> {
+    if (!this.agentSpecResolver) {
+      return { input };
+    }
+
+    try {
+      const resolution = await this.agentSpecResolver.resolve(joinUserMessages(input.messages));
+
+      if (!resolution) {
+        return {
+          input: {
+            ...input,
+            metadata: {
+              ...input.metadata,
+              agentSpecResolutionAttempted: true
+            }
+          }
+        };
+      }
+
+      return {
+        agentSpec: resolution,
+        input: {
+          ...input,
+          messages: applyAgentSpecSystemPrompt(input.messages, resolution),
+          metadata: {
+            ...input.metadata,
+            agentSpecConfidence: resolution.confidence,
+            agentSpecMatchedKeywords: [...resolution.matchedKeywords],
+            agentSpecName: resolution.spec.name,
+            agentSpecResolutionAttempted: true,
+            agentSpecToolNames: [...resolution.spec.toolNames]
+          }
+        }
+      };
+    } catch {
+      return {
+        input: {
+          ...input,
+          metadata: {
+            ...input.metadata,
+            agentSpecResolutionAttempted: true,
+            agentSpecResolutionFailed: true
+          }
+        }
+      };
     }
   }
 
@@ -398,13 +469,18 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
 function createRunResult(
   runId: string,
   response: ModelResponse,
-  contextWindow: AgentContextWindowReport | undefined
+  contextWindow: AgentContextWindowReport | undefined,
+  agentSpec: AgentSpecResolution | undefined
 ): AgentRunResult {
+  const agentSpecReport = agentSpec ? toAgentSpecRunReport(agentSpec) : undefined;
+
   if (!contextWindow) {
-    return { response, runId };
+    return agentSpecReport ? { agentSpec: agentSpecReport, response, runId } : { response, runId };
   }
 
-  return { contextWindow, response, runId };
+  return agentSpecReport
+    ? { agentSpec: agentSpecReport, contextWindow, response, runId }
+    : { contextWindow, response, runId };
 }
 
 function recordContextWindowSpanAttributes(
@@ -526,6 +602,47 @@ function joinMessages(messages: readonly ModelMessage[]): string {
     .filter((message) => message.role === "user" || message.role === "system")
     .map((message) => message.content)
     .join("\n");
+}
+
+function joinUserMessages(messages: readonly ModelMessage[]): string {
+  return messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content)
+    .join("\n");
+}
+
+function applyAgentSpecSystemPrompt(
+  messages: readonly ModelMessage[],
+  resolution: AgentSpecResolution
+): readonly ModelMessage[] {
+  const systemPrompt = resolution.spec.systemPrompt;
+
+  if (!systemPrompt) {
+    return messages;
+  }
+
+  const [first, ...rest] = messages;
+
+  if (first?.role === "system") {
+    return [
+      {
+        ...first,
+        content: `${systemPrompt}\n\n${first.content}`
+      },
+      ...rest
+    ];
+  }
+
+  return [{ content: systemPrompt, role: "system" }, ...messages];
+}
+
+function toAgentSpecRunReport(resolution: AgentSpecResolution): AgentSpecRunReport {
+  return {
+    confidence: resolution.confidence,
+    matchedKeywords: [...resolution.matchedKeywords],
+    name: resolution.spec.name,
+    toolNames: [...resolution.spec.toolNames]
+  };
 }
 
 function failMissingProvider(): never {
