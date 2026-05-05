@@ -1,5 +1,6 @@
 import {
   createAgentRuntime,
+  createCasualLureStripResponseFilter,
   createFabricationRequestRefusalFilter,
   createGreetingStripResponseFilter,
   createInternalBrandMaskResponseFilter,
@@ -475,6 +476,9 @@ function createResponseFilters(env: MuseEnvironment) {
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_INTERNAL_BRAND_MASK_ENABLED, true)
       ? [createInternalBrandMaskResponseFilter()]
+      : []),
+    ...(parseBoolean(env.MUSE_RESPONSE_CASUAL_LURE_STRIP_ENABLED, true)
+      ? [createCasualLureStripResponseFilter()]
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_GREETING_STRIP_ENABLED, true)
       ? [createGreetingStripResponseFilter()]

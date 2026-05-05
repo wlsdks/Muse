@@ -1684,6 +1684,105 @@ export function createGreetingStripResponseFilter(): ResponseFilterStage {
   };
 }
 
+export function createCasualLureStripResponseFilter(): ResponseFilterStage {
+  const casualMaxChars = 500;
+  const reactionOnlyTools = new Set(["add_reaction"]);
+  const suggestionBlockPattern =
+    /(\n+|(?<=[.!?])\s+)(예를\s*들어\s+)?(\*\*)?\s*(?:[\p{So}\p{Sk}]{0,3}\s*)?(함께|이렇게|이런\s*건|이런\s*걸|이런\s*것들?|이런\s*질문|아래처럼|궁금하신|궁금한|다음에\s*\S{1,6}|추가로|도움이\s*필요|어떤|오늘의)[^\n]{0,40}(볼까요|어떠세요|해\s*보세요|활용해\s*보세요|있나요|있으신가요|물어보세요|물어보셔도|물어보실\s*수\s*있어요|도와드릴까요|좋아요|하신가요|하실까요|수\s*있어요|보세요|드릴까요|골라주세요)[?!.:]\s*(\*\*)?\s+((\s*[*\-0-9.][^\n]*|\s*["'][^\n]*)\n?){2,}$/su;
+  const quotedBulletTailPattern = /\n\n+([^\n]{0,80}\n)?(\s*[*\-]\s*[*`]*["'][^\n]*\n?){2,}$/su;
+  const trailingSymbolPattern = /[\p{So}\p{Sk}\p{Sc}\s~*_:)(-]+$/u;
+  const workLurePatterns = [
+    /(지라|jira|컨플루언스|confluence|비트버킷|bitbucket)[^\n]*?(확인|조회|검색|요약|정리|찾|알려)/i,
+    /업무[^\n]*?(이슈|문서|PR|티켓)[^\n]*?(확인|검색|조회)/,
+    /(이슈|문서|티켓|PR)\s*(확인|검색|조회)[^\n]{0,20}(나|이나)[^\n]{0,30}(문서|이슈|PR)\s*(검색|확인|조회)/,
+    /(도와드릴|해드릴|챙겨드릴|추가로\s*도와드릴|살펴\s*드릴|필요하신|필요한|알려드릴|궁금하신)[^\n]{0,30}(지라|jira|컨플루언스|confluence|비트버킷|bitbucket|이슈|문서|PR|티켓)/i,
+    /업무\s*(조회|정리|확인|검색|요약|지원|관리|처리)/i,
+    /도움이\s*필요(하신|하실|한|하시?면)?[^\n]{0,30}(업무|이슈|문서|PR|티켓|있으신가요|있으시면|하시면|말씀해|말해|언제든|물어봐|문의)/i,
+    /(이슈|문서|PR|티켓|프로젝트)[^\n]{0,20}(궁금하신가요|궁금하시면|필요하신가요|필요하시면|있으신가요|있으시면|있나요|없나요|챙겨야)/i,
+    /(혹시|만약)[^\n]{0,40}(있다면|있으시면|필요하시면|있으면)[^\n]{0,40}(말씀해|알려|얘기해|들려|문의)/i,
+    /(무엇을|어떤\s*걸|뭘|어떤\s*업무를)\s*도와드릴까요/i
+  ];
+  const lurePatterns = [
+    /(도와드릴|찾아드릴|정리해\s*드릴|보여드릴|확인해\s*드릴|알려\s*드릴|봐드릴|체크해\s*드릴|브리핑해\s*드릴|요약해\s*드릴).{0,120}[?!.]\s*\$?\s*$/s,
+    /혹시.{0,60}(필요하시?면|있으시?면|있을까요).{0,80}[?!.]\s*\$?\s*$/s,
+    /(궁금|문의|얘기|질문).{0,50}언제든.{0,80}[?!.]\s*\$?\s*$/s,
+    /말씀해\s*주세요[!.]\s*$/,
+    /(무엇을|어떤\s*걸|뭘)\s*도와드릴까요[?]\s*$/,
+    /더\s*궁금.{0,20}[?]\s*$/,
+    /(지금\s*바로\s*)?확인.{0,30}(싶은|하고\s*싶).{0,50}[?]\s*$/s,
+    /(언제든|편하게)\s*불러주세요[!.]\s*$/,
+    /(계속|이어|시작)해?\s*(드릴까요|볼까요|할까요)[?]\s*$/,
+    /(어떨까요|어떠세요|해보시겠어요|해보시는\s*건\s*어때[요]?|\s물어보시?는\s*건)[?!.]\s*$/,
+    /예를\s*들[어면].{0,200}[?!.]\s*$/s,
+    /(물어봐\s*주세요|말씀하시거나|말씀해\s*주시거나|얘기해\s*주세요)[!.?]\s*$/,
+    /^\s*\(?\s*예\s*[:：].{0,200}\)?\s*$/s,
+    /(후속\s*질문으로|예시\s*질문|질문\s*예시|예시로[는는]?)[^\n]{0,150}[!.?]\s*$/
+  ];
+
+  return {
+    apply: (response, context) => {
+      if (response.output.trim().length === 0 || response.output.length > casualMaxChars) {
+        return response;
+      }
+
+      const toolsUsed = context.toolsUsed ?? [];
+      const hasWorkTool = toolsUsed.some((tool) => !reactionOnlyTools.has(tool));
+
+      if (hasWorkTool) {
+        return response;
+      }
+
+      let preStripped = response.output.replace(suggestionBlockPattern, "").trimEnd();
+      preStripped = preStripped.replace(quotedBulletTailPattern, "").trimEnd();
+
+      const sentences = splitPreservingSentencePunctuation(preStripped);
+
+      if (sentences.length === 0) {
+        return response;
+      }
+
+      const withoutWorkLure = sentences.filter((sentence) => !workLurePatterns.some((pattern) => pattern.test(sentence)));
+      const remaining = [...withoutWorkLure];
+      let dropCount = 0;
+
+      while (remaining.length > 0 && dropCount < 3) {
+        const last = remaining.at(-1) ?? "";
+        const normalized = last.trimEnd().replace(trailingSymbolPattern, "").trimEnd();
+
+        if (!lurePatterns.some((pattern) => pattern.test(normalized))) {
+          break;
+        }
+
+        remaining.pop();
+        dropCount++;
+      }
+
+      if (remaining.length === 0) {
+        return {
+          ...response,
+          output: response.output.trimEnd(),
+          raw: withResponseFilterRaw(response, "casual-lure-strip-response-filter")
+        };
+      }
+
+      const preStripChanged = preStripped.length !== response.output.trimEnd().length;
+
+      if (!preStripChanged && remaining.length === sentences.length && dropCount === 0) {
+        return response;
+      }
+
+      const output = remaining.join(" ").trimEnd();
+
+      return {
+        ...response,
+        output,
+        raw: withResponseFilterRaw(response, "casual-lure-strip-response-filter")
+      };
+    },
+    id: "casual-lure-strip-response-filter"
+  };
+}
+
 export function createInternalBrandMaskResponseFilter(): ResponseFilterStage {
   const patterns: readonly (readonly [RegExp, string])[] = [
     [/\*\*?Reactor\s*\(\s*Reactor\s*\)\*\*?/g, "*Reactor*"],
@@ -2028,6 +2127,28 @@ function removeOverconfidentReleaseFragments(line: string, pattern: RegExp): str
   const fragments = line.trim().split(/(?<=[.!?])\s+/).filter((fragment) => fragment.trim().length > 0);
   const kept = fragments.filter((fragment) => !pattern.test(fragment));
   return kept.length === 0 ? "" : `${indent}${kept.join(" ")}`;
+}
+
+function splitPreservingSentencePunctuation(text: string): readonly string[] {
+  const sentences: string[] = [];
+  let start = 0;
+  const boundaryPattern = /[.!?]+/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = boundaryPattern.exec(text)) !== null) {
+    sentences.push(text.slice(start, match.index + match[0].length).trim());
+    start = match.index + match[0].length;
+  }
+
+  if (start < text.length) {
+    const tail = text.slice(start).trim();
+
+    if (tail.length > 0) {
+      sentences.push(tail);
+    }
+  }
+
+  return sentences.filter((sentence) => /\p{L}/u.test(sentence));
 }
 
 function joinMessages(messages: readonly ModelMessage[]): string {

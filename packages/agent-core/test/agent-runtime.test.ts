@@ -8,6 +8,7 @@ import { InMemoryAgentRunHistoryStore, InMemoryHookTraceStore } from "@muse/runt
 import { ToolRegistry } from "@muse/tools";
 import {
   createAgentRuntime,
+  createCasualLureStripResponseFilter,
   createFabricationRequestRefusalFilter,
   createGreetingStripResponseFilter,
   createInternalBrandMaskResponseFilter,
@@ -688,6 +689,89 @@ describe("AgentRuntime", () => {
     });
 
     expect(result.response.output).toBe("저는 Muse입니다.");
+  });
+
+  it("strips casual lure endings when no work tools were used", async () => {
+    const runtime = createAgentRuntime({
+      modelProvider: createProvider({
+        output: "별말씀을요. 제가 도움이 되었다니 기쁘네요.\n\n오늘 더 도와드릴 일이 있을까요?"
+      }),
+      responseFilters: [createCasualLureStripResponseFilter()]
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "고마워", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toContain("별말씀을요");
+    expect(result.response.output).not.toContain("도와드릴 일이");
+  });
+
+  it("keeps casual lure endings when work tools were used", async () => {
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: {
+          description: "Reads an issue.",
+          inputSchema: { type: "object" },
+          name: "jira_get_issue",
+          risk: "read"
+        },
+        execute: () => ({ key: "WS-1" })
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        {
+          id: "tool",
+          model: "test-model",
+          output: "도구 호출",
+          toolCalls: [{ arguments: {}, id: "tool-1", name: "jira_get_issue" }]
+        },
+        {
+          id: "final",
+          model: "test-model",
+          output: "WS-1 이슈는 진행 중입니다.\n\n더 자세한 내용을 정리해 드릴까요?"
+        }
+      ]),
+      responseFilters: [createCasualLureStripResponseFilter()],
+      toolRegistry
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "이슈 알려줘", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toContain("정리해 드릴까요");
+  });
+
+  it("strips casual suggestion blocks and work lure sentences", async () => {
+    const runtime = createAgentRuntime({
+      modelProvider: createProvider({
+        output: [
+          "감사합니다. 제가 더 감사하죠.",
+          "",
+          "혹시 지금 제가 추가로 도와드릴 Jira 이슈나 Confluence 문서가 있을까요?",
+          "",
+          "**함께 확인해 볼까요?**",
+          "* \"내 이슈 현황 알려줘\"",
+          "* \"오늘 새로 올라온 PR 있어?\""
+        ].join("\n")
+      }),
+      responseFilters: [createCasualLureStripResponseFilter()]
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "고마워", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toContain("감사합니다");
+    expect(result.response.output).not.toContain("Jira");
+    expect(result.response.output).not.toContain("함께 확인해");
+    expect(result.response.output).not.toContain("내 이슈 현황");
   });
 
   it("refuses explicit fabrication requests after model generation", async () => {
