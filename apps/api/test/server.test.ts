@@ -822,6 +822,8 @@ describe("api server", () => {
       payload: {
         autoConnect: true,
         config: {
+          adminToken: "admin-token-value",
+          adminUrl: "https://mcp-admin.example.invalid",
           command: "node",
           apiToken: "redacted-test-value"
         },
@@ -839,6 +841,30 @@ describe("api server", () => {
       headers,
       method: "GET",
       url: "/api/mcp/servers/local/health"
+    });
+    const preflight = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/mcp/servers/local/preflight"
+    });
+    const accessPolicy = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/mcp/servers/local/access-policy"
+    });
+    const accessPolicyUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        allowedJiraProjectKeys: ["ENG"],
+        allowPreviewReads: true
+      },
+      url: "/api/mcp/servers/local/access-policy"
+    });
+    const accessPolicyEmergency = await server.inject({
+      headers,
+      method: "POST",
+      url: "/api/mcp/servers/local/access-policy/emergency-deny-all"
     });
     const reconnected = await server.inject({
       headers,
@@ -904,6 +930,20 @@ describe("api server", () => {
       }
     ]);
     expect(health.json()).toMatchObject({ status: "healthy", toolCount: 1 });
+    expect(preflight.json()).toMatchObject({
+      ok: true,
+      readyForProduction: true,
+      summary: { failCount: 0, passCount: 1, warnCount: 0 }
+    });
+    expect(accessPolicy.json()).toMatchObject({ allowedJiraProjectKeys: [], allowPreviewReads: null });
+    expect(accessPolicyUpdate.json()).toMatchObject({
+      allowedJiraProjectKeys: ["ENG"],
+      allowPreviewReads: true
+    });
+    expect(accessPolicyEmergency.json()).toMatchObject({
+      allowPreviewReads: false,
+      publishedOnly: true
+    });
     expect(reconnected.json()).toMatchObject({ health: { status: "healthy" }, status: "CONNECTED" });
     expect(toolCall.json()).toEqual({
       output: {
@@ -1564,6 +1604,132 @@ describe("api server", () => {
     expect(afterDelete.json()).toMatchObject({ stored: null });
   });
 
+  it("matches Reactor admin policy, settings, and dashboard contracts", async () => {
+    const authService = createAuthService();
+    const admin = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const member = authService.register({
+      email: "member_account",
+      name: "Member",
+      password: "password-1"
+    });
+    const server = buildServer({ authService, logger: false, requireAuth: true });
+    const headers = { authorization: `Bearer ${admin.token}` };
+
+    const roles = await server.inject({ headers, method: "GET", url: "/api/admin/rbac/roles" });
+    const roleUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { role: "ADMIN_DEVELOPER" },
+      url: `/api/admin/rbac/users/${member.user.id}/role`
+    });
+    const retention = await server.inject({ headers, method: "GET", url: "/api/admin/retention" });
+    const retentionUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { sessionRetentionDays: 30 },
+      url: "/api/admin/retention"
+    });
+    const pipeline = await server.inject({ headers, method: "GET", url: "/api/admin/input-guard/pipeline" });
+    const settingsUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { settings: { "feature.unrelated": "ignored", "guard.stage.RateLimit.enabled": "false" } },
+      url: "/api/admin/input-guard/settings"
+    });
+    const stageConfig = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/input-guard/stages/RateLimit/config"
+    });
+    const stageUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { config: { requestsPerMinute: "12" } },
+      url: "/api/admin/input-guard/stages/RateLimit/config"
+    });
+    const reorder = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { order: ["InputValidation", "RateLimit"] },
+      url: "/api/admin/input-guard/pipeline/reorder"
+    });
+    const runtimeSet = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { category: "llm", type: "STRING", value: "provider/model" },
+      url: "/api/admin/settings/model.default"
+    });
+    const runtimeGet = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/settings/model.default"
+    });
+    const runtimeRefresh = await server.inject({ headers, method: "POST", url: "/api/admin/settings/refresh" });
+    const capabilities = await server.inject({ headers, method: "GET", url: "/api/admin/capabilities" });
+    const dashboard = await server.inject({ headers, method: "GET", url: "/api/ops/dashboard" });
+    const ragInitial = await server.inject({ headers, method: "GET", url: "/api/rag-ingestion/policy" });
+    const ragUpdate = await server.inject({
+      headers,
+      method: "PUT",
+      payload: { allowedChannels: ["Slack"], blockedPatterns: ["secret"], enabled: true },
+      url: "/api/rag-ingestion/policy"
+    });
+    const ragAfterUpdate = await server.inject({ headers, method: "GET", url: "/api/rag-ingestion/policy" });
+    const runtimeDelete = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/admin/settings/model.default"
+    });
+    const ragDelete = await server.inject({ headers, method: "DELETE", url: "/api/rag-ingestion/policy" });
+
+    expect(roles.json()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ permissions: expect.arrayContaining(["settings:write"]), role: "ADMIN", scope: "FULL" })
+    ]));
+    expect(roleUpdate.json()).toEqual({ role: "ADMIN_DEVELOPER", userId: member.user.id });
+    expect(authService.getUserById(member.user.id)).toMatchObject({ role: "admin_developer" });
+    expect(retention.json()).toEqual({
+      auditRetentionDays: 730,
+      conversationRetentionDays: 365,
+      metricRetentionDays: 180,
+      sessionRetentionDays: 90
+    });
+    expect(retentionUpdate.json()).toMatchObject({ sessionRetentionDays: 30 });
+    expect(pipeline.json()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ className: "RateLimitStage", name: "RateLimit", order: 0 })
+    ]));
+    expect(settingsUpdate.json()).toEqual({ note: "Some changes require a server restart", updated: 1 });
+    expect(stageConfig.json()).toMatchObject({
+      config: { requestsPerMinute: { default: "60", value: "60" } },
+      stageName: "RateLimit"
+    });
+    expect(stageUpdate.json()).toMatchObject({
+      restartRequired: ["requestsPerMinute"],
+      stageName: "RateLimit",
+      updated: 1
+    });
+    expect(reorder.json()).toMatchObject({ order: ["InputValidation", "RateLimit"] });
+    expect(runtimeSet.json()).toEqual({ key: "model.default", status: "updated", value: "provider/model" });
+    expect(runtimeGet.json()).toMatchObject({ key: "model.default", type: "STRING", value: "provider/model" });
+    expect(runtimeRefresh.json()).toEqual({ status: "cache_refreshed" });
+    expect(capabilities.json()).toMatchObject({ source: "request-mappings" });
+    expect(capabilities.json().paths).toContain("/api/admin/settings");
+    expect(dashboard.json()).toMatchObject({
+      approvals: { pendingCount: 0 },
+      mcp: { total: 0 },
+      scheduler: { totalJobs: 0 }
+    });
+    expect(ragInitial.json()).toMatchObject({ stored: null });
+    expect(ragUpdate.json()).toMatchObject({ allowedChannels: ["slack"], blockedPatterns: ["secret"], enabled: true });
+    expect(typeof ragUpdate.json().createdAt).toBe("number");
+    expect(ragAfterUpdate.json()).toMatchObject({ stored: { enabled: true } });
+    expect(runtimeDelete.statusCode).toBe(204);
+    expect(ragDelete.statusCode).toBe(204);
+  });
+
   it("serves Reactor-compatible aliases with stateful management behavior", async () => {
     const authService = createAuthService();
     const registered = authService.register({
@@ -2090,10 +2256,18 @@ describe("api server", () => {
     expect(passwordChanged.json()).toEqual({ message: "Password changed successfully" });
     expect(oldPasswordLogin.statusCode).toBe(401);
     expect(newPasswordLogin.statusCode).toBe(200);
-    expect(sessions.json()).toMatchObject([{ id: "run-compat", userId: registered.user.id }]);
+    expect(sessions.json()).toMatchObject({
+      items: [{ messageCount: 2, preview: "hello", sessionId: "run-compat" }],
+      total: 1
+    });
     expect(models.json()).toEqual([{ id: "provider/model", model: "provider/model" }]);
     expect(spec.statusCode).toBe(201);
-    expect(systemPrompt.json()).toMatchObject({ name: "researcher", systemPrompt: "Use verifiable sources." });
+    expect(spec.json()).toMatchObject({
+      hasSystemPrompt: true,
+      mode: "REACT",
+      systemPromptPreview: "Use verifiable sources."
+    });
+    expect(systemPrompt.json()).toEqual({ systemPrompt: "Use verifiable sources." });
     expect(setting.json()).toMatchObject({ key: "model.default", value: "provider/model" });
     expect(policy.json()).toMatchObject({
       denyWriteChannels: ["slack"],
@@ -2109,7 +2283,11 @@ describe("api server", () => {
     expect(memory.json()).toMatchObject({ preferences: { prefersConcise: true }, userId: "user-1" });
     expect(reviewed.json()).toMatchObject({ feedbackId, reviewStatus: "done", version: 2 });
     expect(feedbackStats.json()).toMatchObject({ doneCount: 1, positive: 1, total: 1 });
-    expect(inputGuard.json()).toMatchObject({ allowed: false });
+    expect(inputGuard.json()).toMatchObject({
+      blockingStage: "InjectionDetection",
+      finalAction: "block",
+      passed: false
+    });
     expect(outputGuardRule.statusCode).toBe(201);
     expect(outputGuard.json()).toMatchObject({
       blocked: false,
@@ -2202,7 +2380,7 @@ describe("api server", () => {
     expect(tenantToolsExport.body).toContain("read_file");
     expect(platformTenantAnalytics.json()).toEqual([]);
     expect(platformUserByEmail.json()).toMatchObject({ email: "first_account", id: registered.user.id });
-    expect(platformUserRole.json()).toMatchObject({ id: registered.user.id, role: "admin_developer", updated: true });
+    expect(platformUserRole.json()).toMatchObject({ id: registered.user.id, role: "ADMIN_DEVELOPER" });
     expect(taskPurgeExpired.json()).toMatchObject({ deleted: 0 });
     expect(taskPurgeTerminal.json()).toMatchObject({ deleted: 0 });
     expect(slackFaq.json()).toMatchObject({ channelId: "channel-1", id: "channel-1", status: "registered" });

@@ -413,6 +413,25 @@ export class AuthService {
     return "changed";
   }
 
+  getUserById(userId: string): Omit<User, "passwordHash"> | undefined {
+    const user = this.options.authProvider.getUserById(userId);
+    return user ? publicUser(user) : undefined;
+  }
+
+  updateUserRole(userId: string, role: UserRole): Omit<User, "passwordHash"> | undefined {
+    if (!this.userStore) {
+      return undefined;
+    }
+
+    const user = this.options.authProvider.getUserById(userId);
+
+    if (!user) {
+      return undefined;
+    }
+
+    return publicUser(this.userStore.update({ ...user, role }));
+  }
+
   authenticateBearer(token: string | undefined): AuthIdentity | undefined {
     if (!token) {
       return undefined;

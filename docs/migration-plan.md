@@ -117,6 +117,11 @@ Continued work should be treated as new hardening or product expansion, not migr
   fields, ISO timestamps, partial updates, and `204` deletes.
 - Tool Policy compatibility now matches Reactor state envelopes with `effective`/`stored`, epoch-millis policy DTOs,
   channel-specific write allowlists, and delete-to-config-default `204` semantics.
+- Session, Agent Spec, RBAC, Retention, Input Guard pipeline/settings, Runtime Settings, Admin Capabilities,
+  Ops Dashboard, and RAG Ingestion Policy compatibility now match Reactor response DTOs and delete/reset semantics
+  instead of Muse-specific convenience envelopes.
+- MCP preflight and access-policy compatibility now requires registered MCP servers, returns Reactor-style
+  preflight summaries, and keeps access-policy updates stateful per server instead of returning static OK stubs.
 
 ## Execution Plan
 

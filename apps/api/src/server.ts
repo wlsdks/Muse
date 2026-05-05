@@ -208,6 +208,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     authorizeAdmin: (request, reply) => authorizeAdmin(request, reply, Boolean(authService)),
     defaultModel: options.defaultModel,
     historyStore: options.historyStore,
+    mcp: options.mcp,
     modelProvider: options.modelProvider,
     pendingApprovalStore: options.pendingApprovalStore,
     runtimeSettings,

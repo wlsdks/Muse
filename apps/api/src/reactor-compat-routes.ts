@@ -1,11 +1,19 @@
-import type { AgentSpecInput, AgentSpecRegistry } from "@muse/agent-specs";
-import { AuthRateLimiter, AuthService, extractBearerToken, type LoginResult } from "@muse/auth";
+import type { AgentSpec, AgentSpecInput, AgentSpecRegistry } from "@muse/agent-specs";
+import { AuthRateLimiter, AuthService, extractBearerToken, type LoginResult, type UserRole } from "@muse/auth";
+import type { McpServer } from "@muse/mcp";
 import type { ModelProvider } from "@muse/model";
-import type { RuntimeSettingsService, RuntimeSettingType } from "@muse/runtime-settings";
-import type { AgentRunHistoryStore, AgentRunRecord, PendingApprovalStore, ToolCallRecord } from "@muse/runtime-state";
+import type { RuntimeSetting, RuntimeSettingsService, RuntimeSettingType } from "@muse/runtime-settings";
+import type {
+  AgentRunHistoryStore,
+  AgentRunRecord,
+  ConversationMessageRecord,
+  PendingApprovalStore,
+  ToolCallRecord
+} from "@muse/runtime-state";
 import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AdminRouteState } from "./admin-routes.js";
+import type { McpRouteMcp } from "./mcp-routes.js";
 import type { SchedulerRouteScheduler } from "./scheduler-routes.js";
 
 export interface ReactorCompatibilityRouteOptions {
@@ -16,6 +24,7 @@ export interface ReactorCompatibilityRouteOptions {
   readonly authorizeAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
   readonly defaultModel?: string;
   readonly historyStore?: AgentRunHistoryStore;
+  readonly mcp?: McpRouteMcp;
   readonly modelProvider?: ModelProvider;
   readonly pendingApprovalStore?: PendingApprovalStore;
   readonly runtimeSettings: RuntimeSettingsService;
@@ -45,9 +54,12 @@ interface CompatState {
   readonly platformAlertRules: CompatCollection;
   readonly platformPricing: CompatCollection;
   readonly metricEvents: CompatCollection;
+  readonly mcpAccessPolicies: Map<string, JsonObject>;
   readonly promptExperiments: CompatCollection;
   readonly promptTemplates: CompatCollection;
   readonly ragCandidates: CompatCollection;
+  ragIngestionPolicy: JsonObject;
+  ragIngestionPolicyStored: boolean;
   readonly sessionTags: Map<string, CompatRecord[]>;
   readonly slackBots: CompatCollection;
   readonly slackFaq: CompatCollection;
@@ -60,7 +72,115 @@ interface CompatState {
   toolPolicy: JsonObject;
 }
 
+interface CompatGuardStage {
+  readonly className: string;
+  readonly config: readonly CompatGuardStageField[];
+  readonly enabled: boolean;
+  readonly name: string;
+  readonly order: number;
+}
+
+interface CompatGuardStageField {
+  readonly defaultValue: string;
+  readonly description: string;
+  readonly key: string;
+  readonly restartRequired: boolean;
+  readonly type: string;
+}
+
 let state: CompatState = createCompatState();
+
+const inputGuardStages: readonly CompatGuardStage[] = [
+  {
+    className: "RateLimitStage",
+    config: [
+      {
+        defaultValue: "60",
+        description: "Requests per minute per user",
+        key: "requestsPerMinute",
+        restartRequired: true,
+        type: "int"
+      },
+      {
+        defaultValue: "1800",
+        description: "Requests per hour per user",
+        key: "requestsPerHour",
+        restartRequired: true,
+        type: "int"
+      }
+    ],
+    enabled: true,
+    name: "RateLimit",
+    order: 0
+  },
+  {
+    className: "InputValidationStage",
+    config: [
+      {
+        defaultValue: "10000",
+        description: "Maximum input character length",
+        key: "maxLength",
+        restartRequired: true,
+        type: "int"
+      },
+      {
+        defaultValue: "1",
+        description: "Minimum input character length",
+        key: "minLength",
+        restartRequired: true,
+        type: "int"
+      }
+    ],
+    enabled: true,
+    name: "InputValidation",
+    order: 1
+  },
+  {
+    className: "InjectionDetectionStage",
+    config: [
+      {
+        defaultValue: "medium",
+        description: "Prompt injection detection sensitivity",
+        key: "sensitivityLevel",
+        restartRequired: true,
+        type: "enum(low|medium|high)"
+      }
+    ],
+    enabled: true,
+    name: "InjectionDetection",
+    order: 2
+  },
+  {
+    className: "CompositeClassificationStage",
+    config: [
+      {
+        defaultValue: "false",
+        description: "Whether to use LLM classification",
+        key: "llmEnabled",
+        restartRequired: true,
+        type: "bool"
+      }
+    ],
+    enabled: true,
+    name: "Classification",
+    order: 3
+  },
+  {
+    className: "UnicodeNormalizationStage",
+    config: [
+      {
+        defaultValue: "0.1",
+        description: "Allowed ratio of zero-width characters",
+        key: "maxZeroWidthRatio",
+        restartRequired: true,
+        type: "float"
+      }
+    ],
+    enabled: true,
+    name: "UnicodeNormalization",
+    order: 4
+  }
+];
 
 export function registerReactorCompatibilityRoutes(
   server: FastifyInstance,
@@ -95,9 +215,21 @@ function createCompatState(): CompatState {
     platformAlertRules: new Map(),
     platformPricing: new Map(),
     metricEvents: new Map(),
+    mcpAccessPolicies: new Map(),
     promptExperiments: new Map(),
     promptTemplates: new Map(),
     ragCandidates: new Map(),
+    ragIngestionPolicy: {
+      allowedChannels: [],
+      blockedPatterns: [],
+      createdAt: nowIso(),
+      enabled: false,
+      minQueryChars: 10,
+      minResponseChars: 20,
+      requireReview: true,
+      updatedAt: nowIso()
+    },
+    ragIngestionPolicyStored: false,
     sessionTags: new Map(),
     slackBots: new Map(),
     slackFaq: new Map(),
@@ -106,9 +238,10 @@ function createCompatState(): CompatState {
     swaggerSources: new Map(),
     userMemory: new Map(),
     retentionPolicy: {
-      auditRetentionDays: 90,
-      feedbackRetentionDays: 365,
-      runRetentionDays: 30
+      auditRetentionDays: 730,
+      conversationRetentionDays: 365,
+      metricRetentionDays: 180,
+      sessionRetentionDays: 90
     },
     toolPolicy: {
       allowWriteToolNamesByChannel: {},
@@ -303,16 +436,41 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
 function registerSessionCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/sessions", async (request, reply) => {
     const userId = readQueryString(request, "userId") ?? readAuthUserId(request);
+    const offset = Math.max(0, readQueryInteger(request, "offset", 0));
+    const limit = clampLimit(readQueryInteger(request, "limit", 50));
 
-    if (!userId || !options.historyStore) {
-      return [];
+    if (!userId) {
+      return reply.status(401).send({
+        code: "UNAUTHENTICATED",
+        message: "Missing authenticated user context"
+      });
     }
 
-    return options.historyStore.listRunsByUser(userId);
+    if (!options.historyStore) {
+      return {
+        items: [],
+        limit,
+        offset,
+        total: 0
+      };
+    }
+
+    const runs = await options.historyStore.listRunsByUser(userId);
+    const paged = runs.slice(offset, offset + limit);
+    const items = await Promise.all(paged.map((run) => toSessionResponse(run, options)));
+
+    return {
+      items,
+      limit,
+      offset,
+      total: runs.length
+    };
   });
 
-  server.get("/api/sessions/:sessionId", async (request, reply) => sessionDetail(request, reply, options));
-  server.get("/api/sessions/:sessionId/export", async (request, reply) => exportSession(request, reply, options));
+  server.get("/api/sessions/:sessionId", async (request, reply) => reactorSessionDetail(request, reply, options));
+  server.get("/api/sessions/:sessionId/export", async (request, reply) =>
+    exportSession(request, reply, options, "reactor")
+  );
   server.delete("/api/sessions/:sessionId", async (request, reply) => {
     const { sessionId } = request.params as { readonly sessionId: string };
 
@@ -350,7 +508,11 @@ function registerAgentCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return options.agentSpecRegistry.list();
+    const enabled = readQueryBoolean(request, "enabled", false);
+    const specs = enabled
+      ? await options.agentSpecRegistry.listEnabled()
+      : await options.agentSpecRegistry.list();
+    return specs.map(toAgentSpecResponse);
   });
 
   server.get("/api/admin/agent-specs/:id", async (request, reply) => {
@@ -368,7 +530,7 @@ function registerAgentCompatibilityRoutes(server: FastifyInstance, options: Reac
       });
     }
 
-    return spec;
+    return toAgentSpecResponse(spec);
   });
 
   server.get("/api/admin/agent-specs/:id/system-prompt", async (request, reply) => {
@@ -387,7 +549,14 @@ function registerAgentCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply.status(400).send(parsed.error);
     }
 
-    return reply.status(201).send(await options.agentSpecRegistry.save(parsed.value));
+    if (await options.agentSpecRegistry.getByName(parsed.value.name)) {
+      return reply.status(409).send({
+        code: "AGENT_SPEC_NAME_CONFLICT",
+        message: `Agent spec name is already used: ${parsed.value.name}`
+      });
+    }
+
+    return reply.status(201).send(toAgentSpecResponse(await options.agentSpecRegistry.save(parsed.value)));
   });
 
   server.put("/api/admin/agent-specs/:id", async (request, reply) => {
@@ -402,7 +571,16 @@ function registerAgentCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply.status(400).send(parsed.error);
     }
 
-    return options.agentSpecRegistry.save(parsed.value);
+    const existing = await options.agentSpecRegistry.getById(id);
+
+    if (!existing) {
+      return reply.status(404).send({
+        code: "AGENT_SPEC_NOT_FOUND",
+        message: `Agent spec not found: ${id}`
+      });
+    }
+
+    return toAgentSpecResponse(await options.agentSpecRegistry.save({ ...parsed.value, id }));
   });
 
   server.delete("/api/admin/agent-specs/:id", async (request, reply) => {
@@ -411,9 +589,17 @@ function registerAgentCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { id } = request.params as { readonly id: string };
-    await options.agentSpecRegistry.deleteById(id);
-    await options.agentSpecRegistry.deleteByName(id);
-    return { deleted: true, id };
+    const spec = await findAgentSpec(options.agentSpecRegistry, id);
+
+    if (!spec) {
+      return reply.status(404).send({
+        code: "AGENT_SPEC_NOT_FOUND",
+        message: `Agent spec not found: ${id}`
+      });
+    }
+
+    await options.agentSpecRegistry.deleteById(spec.id);
+    return reply.status(204).send();
   });
 
   server.get("/api/admin/models", async (request, reply) => {
@@ -528,12 +714,7 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
       return reply;
     }
 
-    return [
-      { role: "user", scopes: [] },
-      { role: "admin", scopes: ["full"] },
-      { role: "admin_manager", scopes: ["manager"] },
-      { role: "admin_developer", scopes: ["developer"] }
-    ];
+    return roleDefinitions();
   });
 
   server.put("/api/admin/rbac/users/:userId/role", async (request, reply) => {
@@ -542,7 +723,26 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
     }
 
     const { userId } = request.params as { readonly userId: string };
-    return { updated: true, userId, ...toJsonObject(request.body) };
+    const role = parseUserRole(readBodyString(request.body, "role"));
+
+    if (!role) {
+      return reply.status(400).send({
+        code: "INVALID_ROLE",
+        message: `Invalid role: ${readBodyString(request.body, "role") ?? ""}`
+      });
+    }
+
+    if (!options.authService?.updateUserRole(userId, role)) {
+      return reply.status(404).send({
+        code: "USER_NOT_FOUND",
+        message: `User not found: ${userId}`
+      });
+    }
+
+    return {
+      role: userRoleResponse(role),
+      userId
+    };
   });
 
   server.get("/api/admin/retention", async (request, reply) => {
@@ -558,7 +758,13 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
       return reply;
     }
 
-    state.retentionPolicy = { ...state.retentionPolicy, ...toJsonObject(request.body), updatedAt: nowIso() };
+    const parsed = parseRetentionPolicy(request.body);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    state.retentionPolicy = { ...state.retentionPolicy, ...parsed.value };
     return state.retentionPolicy;
   });
 }
@@ -572,14 +778,7 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return {
-      enabled: true,
-      stages: [
-        { name: "length", order: 0 },
-        { name: "prompt_injection", order: 1 },
-        { name: "pii", order: 2 }
-      ]
-    };
+    return Promise.all(inputGuardStages.map((stage) => toGuardStageResponse(stage, options)));
   });
 
   server.put("/api/admin/input-guard/settings", async (request, reply) => {
@@ -587,7 +786,27 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return { updated: true, ...toJsonObject(request.body) };
+    const settings = stringMapField(toBody(request.body).settings);
+    let updated = 0;
+
+    for (const [key, value] of Object.entries(settings)) {
+      if (!key.startsWith("guard.")) {
+        continue;
+      }
+
+      await options.runtimeSettings.set({
+        category: "guard",
+        key,
+        type: "string",
+        value
+      });
+      updated += 1;
+    }
+
+    return {
+      note: "Some changes require a server restart",
+      updated
+    };
   });
 
   server.put("/api/admin/input-guard/pipeline/reorder", async (request, reply) => {
@@ -595,7 +814,32 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return { reordered: true, ...toJsonObject(request.body) };
+    const order = readStringArray(toBody(request.body).order) ?? [];
+    const known = new Set(inputGuardStages.map((stage) => stage.name));
+    const unknown = order.filter((stageName) => !known.has(stageName));
+
+    if (order.length === 0 || unknown.length > 0) {
+      return reply.status(400).send({
+        code: "INVALID_INPUT_GUARD_ORDER",
+        message: unknown.length > 0
+          ? `Unknown stage: ${unknown.join(", ")}`
+          : "order must not be empty"
+      });
+    }
+
+    await Promise.all(order.map((stageName, index) =>
+      options.runtimeSettings.set({
+        category: "guard",
+        key: `guard.stage.${stageName}.order`,
+        type: "number",
+        value: String(index)
+      })
+    ));
+
+    return {
+      note: "Changed order applies after server restart",
+      order
+    };
   });
 
   server.get("/api/admin/input-guard/stages/:stageName/config", async (request, reply) => {
@@ -604,7 +848,13 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { stageName } = request.params as { readonly stageName: string };
-    return { enabled: true, stageName };
+    const stage = inputGuardStages.find((item) => item.name === stageName);
+
+    if (!stage) {
+      return reply.status(404).send();
+    }
+
+    return stageConfigResponse(stage, options);
   });
 
   server.put("/api/admin/input-guard/stages/:stageName/config", async (request, reply) => {
@@ -613,7 +863,46 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { stageName } = request.params as { readonly stageName: string };
-    return { stageName, updated: true, ...toJsonObject(request.body) };
+    const stage = inputGuardStages.find((item) => item.name === stageName);
+
+    if (!stage) {
+      return reply.status(404).send();
+    }
+
+    const config = stringMapField(toBody(request.body).config);
+    const allowed = new Set(stage.config.map((item) => item.key));
+    const unknown = Object.keys(config).filter((key) => !allowed.has(key));
+
+    if (stage.config.length === 0 || Object.keys(config).length === 0 || unknown.length > 0) {
+      return reply.status(400).send({
+        code: "INVALID_INPUT_GUARD_STAGE_CONFIG",
+        message: unknown.length > 0
+          ? `Unknown config key: ${unknown.join(", ")}`
+          : `${stageName} has no exposed tunable config`
+      });
+    }
+
+    await Promise.all(Object.entries(config).map(([key, value]) =>
+      options.runtimeSettings.set({
+        category: "guard",
+        key: `guard.stage.${stageName}.${key}`,
+        type: "string",
+        value
+      })
+    ));
+
+    const restartRequired = stage.config
+      .filter((item) => item.restartRequired && Object.prototype.hasOwnProperty.call(config, item.key))
+      .map((item) => item.key);
+
+    return {
+      note: restartRequired.length === 0
+        ? "Changes apply immediately"
+        : `The following keys apply after restart: ${restartRequired.join(", ")}`,
+      restartRequired,
+      stageName,
+      updated: Object.keys(config).length
+    };
   });
 
   server.get("/api/admin/input-guard/audits", async (request, reply) => {
@@ -1219,9 +1508,45 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       keys
     };
   });
-  server.get("/api/rag-ingestion/policy", async () => ({ enabled: true, requireApproval: true }));
-  server.put("/api/rag-ingestion/policy", async (request) => ({ updated: true, ...toJsonObject(request.body) }));
-  server.delete("/api/rag-ingestion/policy", async () => ({ deleted: true }));
+  server.get("/api/rag-ingestion/policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return {
+      configEnabled: Boolean(state.ragIngestionPolicy.enabled),
+      dynamicEnabled: true,
+      effective: toRagIngestionPolicyResponse(state.ragIngestionPolicy),
+      stored: state.ragIngestionPolicyStored ? toRagIngestionPolicyResponse(state.ragIngestionPolicy) : null
+    };
+  });
+  server.put("/api/rag-ingestion/policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const parsed = parseRagIngestionPolicy(request.body);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    state.ragIngestionPolicy = {
+      ...state.ragIngestionPolicy,
+      ...parsed.value,
+      updatedAt: nowIso()
+    };
+    state.ragIngestionPolicyStored = true;
+    return toRagIngestionPolicyResponse(state.ragIngestionPolicy);
+  });
+  server.delete("/api/rag-ingestion/policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    state.ragIngestionPolicyStored = false;
+    return reply.status(204).send();
+  });
   server.get("/api/rag-ingestion/candidates", async () => [...state.ragCandidates.values()]);
   server.post("/api/rag-ingestion/candidates/:id/approve", async (request) =>
     updateCandidate(request, "approved")
@@ -1287,28 +1612,108 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
 }
 
 function registerMcpCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/mcp/servers/:name/preflight", async (request) => ({
-    checks: [{ name: "registered", status: "ok" }],
-    name: (request.params as { readonly name: string }).name,
-    status: "ok"
-  }));
-  server.get("/api/mcp/servers/:name/access-policy", async (request) => ({
-    denyAll: false,
-    name: (request.params as { readonly name: string }).name
-  }));
-  server.put("/api/mcp/servers/:name/access-policy", async (request) => ({
-    name: (request.params as { readonly name: string }).name,
-    policy: toJsonObject(request.body),
-    updated: true
-  }));
-  server.delete("/api/mcp/servers/:name/access-policy", async (request) => ({
-    deleted: true,
-    name: (request.params as { readonly name: string }).name
-  }));
-  server.post("/api/mcp/servers/:name/access-policy/emergency-deny-all", async (request) => ({
-    denyAll: true,
-    name: (request.params as { readonly name: string }).name
-  }));
+  server.get("/api/mcp/servers/:name/preflight", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
+
+    if (!serverConfig) {
+      return mcpProxyUnavailable(request, reply, options);
+    }
+
+    const adminUrl = readAdminUrl(serverConfig.config);
+
+    if (!adminUrl) {
+      return reply.status(400).send({
+        error: `MCP server '${serverConfig.name}' has invalid admin URL`,
+        timestamp: nowIso()
+      });
+    }
+
+    if (!readBodyString(serverConfig.config, "adminToken")) {
+      return reply.header("X-Preflight-Skipped", "no-admin-token").status(204).send();
+    }
+
+    return {
+      checks: [{ message: null, name: "registered", status: "PASS" }],
+      ok: true,
+      policySource: "muse-compat",
+      readyForProduction: true,
+      summary: { failCount: 0, passCount: 1, warnCount: 0 }
+    };
+  });
+  server.get("/api/mcp/servers/:name/access-policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
+
+    if (!serverConfig) {
+      return mcpProxyUnavailable(request, reply, options);
+    }
+
+    return toMcpAccessPolicyResponse(serverConfig.name);
+  });
+  server.put("/api/mcp/servers/:name/access-policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
+
+    if (!serverConfig) {
+      return mcpProxyUnavailable(request, reply, options);
+    }
+
+    const parsed = parseMcpAccessPolicy(request.body);
+
+    if (!parsed.ok) {
+      return reply.status(400).send(parsed.error);
+    }
+
+    state.mcpAccessPolicies.set(serverConfig.name, parsed.value);
+    return toMcpAccessPolicyResponse(serverConfig.name);
+  });
+  server.delete("/api/mcp/servers/:name/access-policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
+
+    if (!serverConfig) {
+      return mcpProxyUnavailable(request, reply, options);
+    }
+
+    state.mcpAccessPolicies.delete(serverConfig.name);
+    return toMcpAccessPolicyResponse(serverConfig.name);
+  });
+  server.post("/api/mcp/servers/:name/access-policy/emergency-deny-all", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
+
+    if (!serverConfig) {
+      return mcpProxyUnavailable(request, reply, options);
+    }
+
+    state.mcpAccessPolicies.set(serverConfig.name, {
+      allowedBitbucketRepositories: [],
+      allowedConfluenceSpaceKeys: [],
+      allowedJiraProjectKeys: [],
+      allowedSourceNames: [],
+      allowDirectUrlLoads: false,
+      allowPreviewReads: false,
+      allowPreviewWrites: false,
+      publishedOnly: true
+    });
+    return toMcpAccessPolicyResponse(serverConfig.name);
+  });
   server.get("/api/mcp/servers/:name/swagger/sources", async () => [...state.swaggerSources.values()]);
   server.get("/api/mcp/servers/:name/swagger/sources/:sourceName", async (request, reply) =>
     findRecordByParam(state.swaggerSources, request, reply, "sourceName")
@@ -1541,7 +1946,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return options.runtimeSettings.list();
+    return (await options.runtimeSettings.list()).map(toReactorRuntimeSetting);
   });
   server.get("/api/admin/settings/:key", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1550,7 +1955,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const { key } = request.params as { readonly key: string };
     const setting = await options.runtimeSettings.find(key);
-    return setting ?? notFound(reply, "RUNTIME_SETTING_NOT_FOUND");
+    return setting ? toReactorRuntimeSetting(setting) : notFound(reply, "RUNTIME_SETTING_NOT_FOUND");
   });
   server.put("/api/admin/settings/:key", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1559,14 +1964,26 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const { key } = request.params as { readonly key: string };
     const body = toBody(request.body);
-    return options.runtimeSettings.set({
+    const value = readBodyString(body, "value");
+
+    if (value === undefined) {
+      return reply.status(400).send({ code: "INVALID_RUNTIME_SETTING", message: "Body must include value" });
+    }
+
+    await options.runtimeSettings.set({
       category: readBodyString(body, "category"),
       description: readBodyNullableString(body, "description"),
       key,
       type: parseRuntimeSettingType(body.type),
       updatedBy: readBodyNullableString(body, "updatedBy"),
-      value: readBodyString(body, "value") ?? JSON.stringify(toJsonObject(body))
+      value
     });
+
+    return {
+      key,
+      status: "updated",
+      value
+    };
   });
   server.delete("/api/admin/settings/:key", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1575,14 +1992,15 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const { key } = request.params as { readonly key: string };
     await options.runtimeSettings.delete(key);
-    return { deleted: true, key };
+    return reply.status(204).send();
   });
   server.post("/api/admin/settings/refresh", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return { refreshed: true };
+    options.runtimeSettings.refreshCache();
+    return { status: "cache_refreshed" };
   });
 
   server.get("/api/ops/dashboard", async () => dashboardSummary(options));
@@ -1592,12 +2010,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return {
-      admin: true,
-      analytics: true,
-      compatibility: true,
-      scheduler: Boolean(options.scheduler?.service)
-    };
+    return adminCapabilitiesResponse();
   });
 
   server.get("/api/admin/platform/health", async (request, reply) => {
@@ -2335,13 +2748,17 @@ function registerAdminAnalyticsCompatibilityRoutes(
     }
 
     const { id } = request.params as { readonly id: string };
-    const role = readBodyString(request.body, "role");
+    const role = parseUserRole(readBodyString(request.body, "role"));
 
     if (!role) {
       return reply.status(400).send({ code: "INVALID_ROLE", message: "Body must include role" });
     }
 
-    return { id, role, updated: true };
+    if (!options.authService?.updateUserRole(id, role)) {
+      return notFound(reply, "USER_NOT_FOUND");
+    }
+
+    return { id, role: userRoleResponse(role) };
   });
 
   server.post("/api/admin/task-memory/maintenance/purge-expired", async (request, reply) => {
@@ -2589,12 +3006,98 @@ async function sessionDetail(
   return { messages, run, session: run, toolCalls };
 }
 
-async function exportSession(
+async function reactorSessionDetail(
   request: FastifyRequest,
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions
 ) {
   const detail = await sessionDetail(request, reply, options);
+
+  if (!isRecord(detail) || !("run" in detail)) {
+    return detail;
+  }
+
+  const run = detail.run as AgentRunRecord;
+  const userId = readAuthUserId(request);
+
+  if (!userId) {
+    return reply.status(401).send({
+      code: "UNAUTHENTICATED",
+      message: "Missing authenticated user context"
+    });
+  }
+
+  if (run.userId && run.userId !== userId && !isAdminLikeRequest(request)) {
+    return reply.status(403).send({
+      code: "FORBIDDEN",
+      message: "Access denied to session"
+    });
+  }
+
+  return {
+    messages: toSessionMessages(Array.isArray(detail.messages) ? detail.messages : [], run),
+    sessionId: run.id
+  };
+}
+
+async function toSessionResponse(
+  run: AgentRunRecord,
+  options: ReactorCompatibilityRouteOptions
+): Promise<JsonObject> {
+  const messages = options.historyStore ? await options.historyStore.listMessages(run.id) : [];
+  const synthesizedMessages = toSessionMessages(messages, run);
+
+  return {
+    lastActivity: run.updatedAt.getTime(),
+    messageCount: synthesizedMessages.length,
+    preview: run.input.slice(0, 120),
+    sessionId: run.id
+  };
+}
+
+function toSessionMessages(
+  messages: readonly unknown[],
+  run?: AgentRunRecord
+): readonly JsonObject[] {
+  if (messages.length > 0) {
+    return messages
+      .filter((message): message is ConversationMessageRecord => isRecord(message))
+      .map((message) => ({
+        content: message.content,
+        role: message.role,
+        timestamp: message.createdAt.getTime()
+      }));
+  }
+
+  if (!run) {
+    return [];
+  }
+
+  return [
+    {
+      content: run.input,
+      role: "user",
+      timestamp: run.createdAt.getTime()
+    },
+    ...(run.output
+      ? [{
+          content: run.output,
+          role: "assistant",
+          timestamp: (run.completedAt ?? run.updatedAt).getTime()
+        }]
+      : [])
+  ];
+}
+
+async function exportSession(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions,
+  mode: "admin" | "reactor" = "admin"
+) {
+  const detail = mode === "reactor"
+    ? await reactorSessionDetail(request, reply, options)
+    : await sessionDetail(request, reply, options);
 
   if (!isRecord(detail) || !("messages" in detail)) {
     return detail;
@@ -2619,8 +3122,9 @@ async function exportSession(
   }
 
   return {
-    exportedAt: nowIso(),
-    ...detail
+    exportedAt: mode === "reactor" ? Date.now() : nowIso(),
+    ...detail,
+    sessionId: (request.params as { readonly sessionId: string }).sessionId
   };
 }
 
@@ -3407,9 +3911,14 @@ function parseAgentSpecInput(value: unknown, id?: string): ParseResult<AgentSpec
   }
 
   const name = readBodyString(value, "name") ?? id;
+  const mode = parseAgentMode(value.mode);
 
   if (!name) {
     return invalid("INVALID_AGENT_SPEC", "Body must include a non-empty name");
+  }
+
+  if (value.mode !== undefined && !mode) {
+    return invalid("INVALID_AGENT_SPEC", `Invalid mode: ${String(value.mode)}`);
   }
 
   return {
@@ -3420,7 +3929,7 @@ function parseAgentSpecInput(value: unknown, id?: string): ParseResult<AgentSpec
       id,
       independentExecution: typeof value.independentExecution === "boolean" ? value.independentExecution : undefined,
       keywords: readStringArray(value.keywords),
-      mode: parseAgentMode(value.mode),
+      mode,
       name,
       systemPrompt: readBodyNullableString(value, "systemPrompt"),
       toolNames: readStringArray(value.toolNames)
@@ -3453,9 +3962,31 @@ async function findAgentSpecOrReply(
   }
 
   return {
-    id: spec.id,
-    name: spec.name,
     systemPrompt: spec.systemPrompt ?? null
+  };
+}
+
+function toAgentSpecResponse(spec: AgentSpec): JsonObject {
+  const prompt = spec.systemPrompt?.trim();
+  const preview = prompt
+    ? prompt.length <= 120
+      ? prompt
+      : `${prompt.slice(0, 120)}...`
+    : null;
+
+  return {
+    createdAt: spec.createdAt.toISOString(),
+    description: spec.description,
+    enabled: spec.enabled,
+    hasSystemPrompt: Boolean(prompt),
+    id: spec.id,
+    independentExecution: spec.independentExecution,
+    keywords: [...spec.keywords],
+    mode: agentModeResponse(spec.mode),
+    name: spec.name,
+    systemPromptPreview: preview,
+    toolNames: [...spec.toolNames],
+    updatedAt: spec.updatedAt.toISOString()
   };
 }
 
@@ -4396,17 +4927,52 @@ async function tenantSummary(
 }
 
 async function dashboardSummary(options: ReactorCompatibilityRouteOptions) {
-  const [settings, scheduledJobs] = await Promise.all([
-    options.runtimeSettings.list(),
-    options.scheduler?.store.list() ?? []
+  const [scheduledJobs, pendingApprovals] = await Promise.all([
+    options.scheduler?.store.list() ?? [],
+    options.pendingApprovalStore?.countPending() ?? 0
   ]);
+  const enabledJobs = scheduledJobs.filter((job) => job.enabled !== false).length;
 
   return {
-    cache: options.admin?.cache?.metrics?.snapshot() ?? null,
-    metrics: options.admin?.observability?.metrics?.recordedEvents() ?? [],
-    runtimeSettingCount: settings.length,
-    schedulerJobCount: scheduledJobs.length,
-    spans: options.admin?.observability?.tracer?.recordedSpans() ?? []
+    approvals: {
+      pendingCount: pendingApprovals
+    },
+    employeeValue: {
+      answerModes: {},
+      blockedResponses: 0,
+      channels: [],
+      groundedRatePercent: 0,
+      groundedResponses: 0,
+      interactiveResponses: 0,
+      lanes: [],
+      observedResponses: 0,
+      scheduledResponses: 0,
+      toolFamilies: [],
+      topMissingQueries: []
+    },
+    generatedAt: Date.now(),
+    mcp: {
+      statusCounts: {},
+      total: 0
+    },
+    metrics: opsMetricSnapshots(options),
+    ragEnabled: state.documents.size > 0 || state.ragCandidates.size > 0,
+    recentSchedulerExecutions: [],
+    recentTrustEvents: [],
+    responseTrust: {
+      boundaryFailures: 0,
+      outputGuardModified: 0,
+      outputGuardRejected: 0,
+      unverifiedResponses: 0
+    },
+    scheduler: {
+      agentJobs: scheduledJobs.filter((job) => job.jobType === "agent").length,
+      attentionBacklog: 0,
+      enabledJobs,
+      failedJobs: 0,
+      runningJobs: 0,
+      totalJobs: scheduledJobs.length
+    }
   };
 }
 
@@ -4430,16 +4996,33 @@ async function adminDiagnostic(
 }
 
 function simulateGuard(value: unknown) {
-  const text = readBodyString(value, "text") ?? readBodyString(value, "message") ?? "";
-  const findings = [
-    ...(/ignore|disregard|system prompt|developer mode/i.test(text) ? [{ name: "prompt_injection", count: 1 }] : []),
-    ...(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text) ? [{ name: "email", count: 1 }] : [])
+  const input = readBodyString(value, "input")
+    ?? readBodyString(value, "text")
+    ?? readBodyString(value, "message")
+    ?? "";
+  const stageResults = [
+    guardSimulationStage("InputValidation", 0, input.trim().length > 0, null),
+    guardSimulationStage(
+      "InjectionDetection",
+      1,
+      !/ignore|disregard|system prompt|developer mode/i.test(input),
+      "prompt_injection"
+    ),
+    guardSimulationStage(
+      "InputCredentialMasking",
+      2,
+      !/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(input),
+      "pii"
+    )
   ];
+  const blocking = stageResults.find((stage) => stage.passed === false);
 
   return {
-    allowed: findings.length === 0,
-    findings,
-    text
+    blockingStage: blocking?.stage ?? null,
+    finalAction: blocking ? "block" : "allow",
+    passed: !blocking,
+    stageResults,
+    totalDurationMs: stageResults.reduce((sum, stage) => sum + Number(stage.durationMs), 0)
   };
 }
 
@@ -4513,6 +5096,389 @@ function badRequest(reply: FastifyReply, code: string, message: string) {
   return reply.status(400).send({ code, message });
 }
 
+function clampLimit(limit: number): number {
+  return Math.min(500, Math.max(1, limit));
+}
+
+function userRoleResponse(role: UserRole): string {
+  return role.toUpperCase();
+}
+
+function userRoleScope(role: UserRole): string | null {
+  if (role === "admin") {
+    return "FULL";
+  }
+
+  if (role === "admin_manager") {
+    return "MANAGER";
+  }
+
+  if (role === "admin_developer") {
+    return "DEVELOPER";
+  }
+
+  return null;
+}
+
+function parseUserRole(value: unknown): UserRole | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase() as UserRole;
+  return normalized === "user"
+    || normalized === "admin"
+    || normalized === "admin_manager"
+    || normalized === "admin_developer"
+    ? normalized
+    : undefined;
+}
+
+function roleDefinitions(): readonly JsonObject[] {
+  const roles: readonly UserRole[] = ["user", "admin", "admin_manager", "admin_developer"];
+  return roles.map((role) => ({
+    permissions: [...permissionsForRole(role)],
+    role: userRoleResponse(role),
+    scope: userRoleScope(role)
+  }));
+}
+
+function permissionsForRole(role: UserRole): readonly string[] {
+  if (role === "admin") {
+    return [
+      "persona:read", "persona:write",
+      "prompt:read", "prompt:write",
+      "session:read", "session:export",
+      "feedback:read",
+      "guard:read", "guard:write",
+      "mcp:read", "mcp:write",
+      "scheduler:read", "scheduler:write",
+      "audit:read", "audit:export",
+      "user:read", "user:write",
+      "settings:read", "settings:write",
+      "agent-spec:read", "agent-spec:write"
+    ];
+  }
+
+  if (role === "admin_developer") {
+    return [
+      "persona:read", "persona:write",
+      "prompt:read", "prompt:write",
+      "session:read",
+      "feedback:read",
+      "guard:read", "guard:write",
+      "mcp:read", "mcp:write",
+      "scheduler:read", "scheduler:write",
+      "audit:read",
+      "agent-spec:read", "agent-spec:write"
+    ];
+  }
+
+  if (role === "admin_manager") {
+    return ["session:read", "session:export", "feedback:read", "audit:read", "persona:read"];
+  }
+
+  return ["chat:use", "persona:select"];
+}
+
+function parseRetentionPolicy(value: unknown): ParseResult<JsonObject> {
+  const body = toBody(value);
+  const parsed: Record<string, number> = {};
+
+  for (const key of [
+    "sessionRetentionDays",
+    "conversationRetentionDays",
+    "auditRetentionDays",
+    "metricRetentionDays"
+  ]) {
+    if (body[key] === undefined || body[key] === null) {
+      continue;
+    }
+
+    const parsedValue = readNumber(body[key], Number.NaN);
+
+    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+      return invalid("INVALID_RETENTION_POLICY", `${key} must be >= 1`);
+    }
+
+    parsed[key] = parsedValue;
+  }
+
+  return { ok: true, value: parsed };
+}
+
+function parseRagIngestionPolicy(value: unknown): ParseResult<JsonObject> {
+  const body = toBody(value);
+  const parsed: JsonObject = {
+    allowedChannels: readStringSet(body.allowedChannels).map((channel) => channel.toLowerCase()),
+    blockedPatterns: readStringSet(body.blockedPatterns),
+    enabled: typeof body.enabled === "boolean" ? body.enabled : false,
+    minQueryChars: Math.max(1, readNumber(body.minQueryChars, 10)),
+    minResponseChars: Math.max(1, readNumber(body.minResponseChars, 20)),
+    requireReview: typeof body.requireReview === "boolean" ? body.requireReview : true
+  };
+  const invalidPattern = readStringSet(body.blockedPatterns).find((pattern) =>
+    pattern.length > 500 || !isValidRegex(pattern));
+
+  if (invalidPattern) {
+    return invalid("INVALID_RAG_INGESTION_POLICY", `Invalid blocked pattern: ${invalidPattern.slice(0, 30)}`);
+  }
+
+  return { ok: true, value: parsed };
+}
+
+function toRagIngestionPolicyResponse(policy: JsonObject): JsonObject {
+  return {
+    allowedChannels: readStringSet(policy.allowedChannels),
+    blockedPatterns: readStringSet(policy.blockedPatterns),
+    createdAt: epochMillisOrNull(policy.createdAt) ?? Date.now(),
+    enabled: readBoolean(policy.enabled, false),
+    minQueryChars: readNumber(policy.minQueryChars, 10),
+    minResponseChars: readNumber(policy.minResponseChars, 20),
+    requireReview: readBoolean(policy.requireReview, true),
+    updatedAt: epochMillisOrNull(policy.updatedAt) ?? Date.now()
+  };
+}
+
+function isValidRegex(pattern: string): boolean {
+  try {
+    new RegExp(pattern);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findMcpCompatServer(
+  options: ReactorCompatibilityRouteOptions,
+  name: string
+): Promise<McpServer | undefined> {
+  return (await options.mcp?.manager.listServers())?.find((server) => server.name === name);
+}
+
+function mcpProxyUnavailable(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions
+) {
+  const { name } = request.params as { readonly name: string };
+
+  if (!options.mcp) {
+    return reply.status(503).send({
+      error: "MCP manager is not configured",
+      timestamp: nowIso()
+    });
+  }
+
+  return reply.status(404).send({
+    error: `MCP server '${name}' not found`,
+    timestamp: nowIso()
+  });
+}
+
+function readAdminUrl(config: JsonObject): string | null {
+  const adminUrl = readBodyString(config, "adminUrl");
+
+  if (adminUrl && isHttpUrl(adminUrl)) {
+    return adminUrl;
+  }
+
+  const url = readBodyString(config, "url");
+
+  if (url && isHttpUrl(url)) {
+    return url.replace(/\/sse\/?$/u, "");
+  }
+
+  return null;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function parseMcpAccessPolicy(value: unknown): ParseResult<JsonObject> {
+  const body = toBody(value);
+  const parsed: JsonObject = {
+    allowedBitbucketRepositories: readStringSet(body.allowedBitbucketRepositories),
+    allowedConfluenceSpaceKeys: readStringSet(body.allowedConfluenceSpaceKeys),
+    allowedJiraProjectKeys: readStringSet(body.allowedJiraProjectKeys),
+    allowedSourceNames: readStringSet(body.allowedSourceNames),
+    allowDirectUrlLoads: nullableBoolean(body.allowDirectUrlLoads),
+    allowPreviewReads: nullableBoolean(body.allowPreviewReads),
+    allowPreviewWrites: nullableBoolean(body.allowPreviewWrites),
+    publishedOnly: nullableBoolean(body.publishedOnly)
+  };
+
+  for (const [key, list] of Object.entries(parsed)) {
+    if (Array.isArray(list) && list.length > 300) {
+      return invalid("INVALID_MCP_ACCESS_POLICY", `${key} must not exceed 300 entries`);
+    }
+  }
+
+  return { ok: true, value: parsed };
+}
+
+function toMcpAccessPolicyResponse(name: string): JsonObject {
+  const stored = state.mcpAccessPolicies.get(name) ?? {};
+  return {
+    allowedBitbucketRepositories: readStringSet(stored.allowedBitbucketRepositories),
+    allowedConfluenceSpaceKeys: readStringSet(stored.allowedConfluenceSpaceKeys),
+    allowedJiraProjectKeys: readStringSet(stored.allowedJiraProjectKeys),
+    allowedSourceNames: readStringSet(stored.allowedSourceNames),
+    allowDirectUrlLoads: nullableBoolean(stored.allowDirectUrlLoads),
+    allowPreviewReads: nullableBoolean(stored.allowPreviewReads),
+    allowPreviewWrites: nullableBoolean(stored.allowPreviewWrites),
+    publishedOnly: nullableBoolean(stored.publishedOnly)
+  };
+}
+
+function nullableBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+async function toGuardStageResponse(
+  stage: CompatGuardStage,
+  options: ReactorCompatibilityRouteOptions
+): Promise<JsonObject> {
+  return {
+    className: stage.className,
+    enabled: stage.enabled,
+    name: stage.name,
+    order: await options.runtimeSettings.getInteger(`guard.stage.${stage.name}.order`, stage.order),
+    runtimeOverride: await runtimeSettingStringOrNull(options, `guard.stage.${stage.name}.enabled`)
+  };
+}
+
+async function stageConfigResponse(
+  stage: CompatGuardStage,
+  options: ReactorCompatibilityRouteOptions
+): Promise<JsonObject> {
+  const config: Record<string, JsonObject> = {};
+
+  for (const field of stage.config) {
+    const value = await runtimeSettingStringOrNull(options, `guard.stage.${stage.name}.${field.key}`);
+    config[field.key] = {
+      default: field.defaultValue,
+      description: field.description,
+      overridden: value !== null,
+      restartRequired: field.restartRequired,
+      type: field.type,
+      value: value ?? field.defaultValue
+    };
+  }
+
+  return {
+    className: stage.className,
+    config,
+    enabled: stage.enabled,
+    note: stage.config.length === 0 ? "This stage has no exposed tunable parameters." : null,
+    order: await options.runtimeSettings.getInteger(`guard.stage.${stage.name}.order`, stage.order),
+    stageName: stage.name
+  };
+}
+
+async function runtimeSettingStringOrNull(
+  options: ReactorCompatibilityRouteOptions,
+  key: string
+): Promise<string | null> {
+  const setting = await options.runtimeSettings.find(key);
+  return setting?.value && setting.value.trim().length > 0 ? setting.value : null;
+}
+
+function guardSimulationStage(stage: string, order: number, passed: boolean, category: string | null): JsonObject {
+  return {
+    action: passed ? "allow" : "block",
+    category,
+    durationMs: 0,
+    order,
+    passed,
+    reason: passed ? null : `Detected ${category ?? "input violation"}`,
+    stage
+  };
+}
+
+function stringMapField(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, string] =>
+        typeof entry[0] === "string" && typeof entry[1] === "string")
+  );
+}
+
+function toReactorRuntimeSetting(setting: RuntimeSetting): JsonObject {
+  return {
+    category: setting.category,
+    description: setting.description ?? null,
+    key: setting.key,
+    type: runtimeSettingTypeResponse(setting.type),
+    updatedAt: setting.updatedAt.toISOString(),
+    updatedBy: setting.updatedBy ?? null,
+    value: setting.value
+  };
+}
+
+function runtimeSettingTypeResponse(type: string): string {
+  return type.toUpperCase();
+}
+
+function adminCapabilitiesResponse(): JsonObject {
+  return {
+    generatedAt: Date.now(),
+    paths: [...compatibilityApiPaths()],
+    source: "request-mappings"
+  };
+}
+
+function compatibilityApiPaths(): readonly string[] {
+  return [
+    "/api/admin/agent-specs",
+    "/api/admin/capabilities",
+    "/api/admin/input-guard/pipeline",
+    "/api/admin/input-guard/rules",
+    "/api/admin/retention",
+    "/api/admin/settings",
+    "/api/admin/slack-bots",
+    "/api/approvals",
+    "/api/documents",
+    "/api/feedback",
+    "/api/mcp/servers",
+    "/api/models",
+    "/api/ops/dashboard",
+    "/api/output-guard/rules",
+    "/api/personas",
+    "/api/prompt-lab/experiments",
+    "/api/prompt-templates",
+    "/api/rag-ingestion/candidates",
+    "/api/rag-ingestion/policy",
+    "/api/sessions",
+    "/api/tool-policy",
+    "/api/user-memory/{userId}"
+  ].sort();
+}
+
+function opsMetricSnapshots(options: ReactorCompatibilityRouteOptions): readonly JsonObject[] {
+  const events = options.admin?.observability?.metrics?.recordedEvents() ?? [];
+
+  return events.map((event) => {
+    const record = isRecord(event) ? event : {};
+    return {
+    measurements: { count: 1 },
+    meterCount: 1,
+    name: String(record.name ?? "unknown"),
+    series: []
+    };
+  });
+}
+
 function toLoginResponse(login: LoginResult) {
   return {
     expiresAt: login.expiresAt.toISOString(),
@@ -4522,13 +5488,23 @@ function toLoginResponse(login: LoginResult) {
 }
 
 function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
-  return value === "string" || value === "number" || value === "boolean" || value === "json"
-    ? value
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : undefined;
+  return normalized === "string" || normalized === "number" || normalized === "boolean" || normalized === "json"
+    ? normalized
     : undefined;
 }
 
 function parseAgentMode(value: unknown): AgentSpecInput["mode"] | undefined {
-  return value === "standard" || value === "plan_execute" || value === "react" ? value : undefined;
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "standard" || normalized === "plan_execute" || normalized === "react" ? normalized : undefined;
+}
+
+function agentModeResponse(value: AgentSpecInput["mode"]): string {
+  return value === "plan_execute" ? "PLAN_EXECUTE" : (value ?? "react").toUpperCase();
 }
 
 function readStringArray(value: unknown): readonly string[] | undefined {
