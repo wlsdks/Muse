@@ -1501,6 +1501,69 @@ describe("api server", () => {
     expect(deleted.statusCode).toBe(204);
   });
 
+  it("matches Reactor tool policy state contracts", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const server = buildServer({ authService, logger: false, requireAuth: true });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const initial = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/tool-policy"
+    });
+    const updated = await server.inject({
+      headers,
+      method: "PUT",
+      payload: {
+        allowWriteToolNamesByChannel: { web: ["write_file"] },
+        denyWriteChannels: ["slack"],
+        denyWriteMessage: "Writes disabled.",
+        enabled: true,
+        writeToolNames: ["write_file"]
+      },
+      url: "/api/tool-policy"
+    });
+    const afterUpdate = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/tool-policy"
+    });
+    const deleted = await server.inject({
+      headers,
+      method: "DELETE",
+      url: "/api/tool-policy"
+    });
+    const afterDelete = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/tool-policy"
+    });
+
+    expect(initial.json()).toMatchObject({
+      configEnabled: true,
+      dynamicEnabled: true,
+      stored: null
+    });
+    expect(updated.json()).toMatchObject({
+      allowWriteToolNamesByChannel: { web: ["write_file"] },
+      denyWriteChannels: ["slack"],
+      denyWriteMessage: "Writes disabled.",
+      writeToolNames: ["write_file"]
+    });
+    expect(typeof updated.json().createdAt).toBe("number");
+    expect(afterUpdate.json()).toMatchObject({
+      effective: { writeToolNames: ["write_file"] },
+      stored: { writeToolNames: ["write_file"] }
+    });
+    expect(deleted.statusCode).toBe(204);
+    expect(afterDelete.json()).toMatchObject({ stored: null });
+  });
+
   it("serves Reactor-compatible aliases with stateful management behavior", async () => {
     const authService = createAuthService();
     const registered = authService.register({
@@ -1619,7 +1682,11 @@ describe("api server", () => {
     const policy = await server.inject({
       headers,
       method: "PUT",
-      payload: { enabled: true, maxToolsPerRequest: 12 },
+      payload: {
+        denyWriteChannels: ["slack"],
+        enabled: true,
+        writeToolNames: ["write_file"]
+      },
       url: "/api/tool-policy"
     });
     const approvals = await server.inject({ headers, method: "GET", url: "/api/approvals" });
@@ -2028,7 +2095,11 @@ describe("api server", () => {
     expect(spec.statusCode).toBe(201);
     expect(systemPrompt.json()).toMatchObject({ name: "researcher", systemPrompt: "Use verifiable sources." });
     expect(setting.json()).toMatchObject({ key: "model.default", value: "provider/model" });
-    expect(policy.json()).toMatchObject({ enabled: true, maxToolsPerRequest: 12 });
+    expect(policy.json()).toMatchObject({
+      denyWriteChannels: ["slack"],
+      enabled: true,
+      writeToolNames: ["write_file"]
+    });
     expect(approvals.json()).toMatchObject({ items: [{ id: "approval-1" }], total: 1 });
     expect(approved.json()).toEqual({ message: "Approved", success: true });
     await expect(pendingApproval).resolves.toEqual({

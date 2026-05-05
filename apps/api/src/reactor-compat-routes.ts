@@ -56,6 +56,7 @@ interface CompatState {
   readonly swaggerSources: CompatCollection;
   readonly userMemory: Map<string, { facts: JsonObject; preferences: JsonObject; updatedAt: string }>;
   retentionPolicy: JsonObject;
+  toolPolicyStored: boolean;
   toolPolicy: JsonObject;
 }
 
@@ -110,10 +111,16 @@ function createCompatState(): CompatState {
       runRetentionDays: 30
     },
     toolPolicy: {
-      approvalRequiredRisks: ["write", "execute"],
+      allowWriteToolNamesByChannel: {},
+      allowWriteToolNamesInDenyChannels: [],
+      createdAt: nowIso(),
+      denyWriteChannels: [],
+      denyWriteMessage: "Write tools are disabled for this channel.",
       enabled: true,
-      maxToolsPerRequest: 60
-    }
+      updatedAt: nowIso(),
+      writeToolNames: []
+    },
+    toolPolicyStored: false
   };
 }
 
@@ -485,14 +492,35 @@ function registerApprovalCompatibilityRoutes(server: FastifyInstance, options: R
 }
 
 function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/tool-policy", async () => state.toolPolicy);
-  server.put("/api/tool-policy", async (request) => {
-    state.toolPolicy = { ...state.toolPolicy, ...toJsonObject(request.body), updatedAt: nowIso() };
-    return state.toolPolicy;
+  server.get("/api/tool-policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return {
+      configEnabled: true,
+      dynamicEnabled: true,
+      effective: toToolPolicyResponse(state.toolPolicy),
+      stored: state.toolPolicyStored ? toToolPolicyResponse(state.toolPolicy) : null
+    };
   });
-  server.delete("/api/tool-policy", async () => {
-    state.toolPolicy = { enabled: false, updatedAt: nowIso() };
-    return { deleted: true };
+  server.put("/api/tool-policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    state.toolPolicy = updateToolPolicy(request.body);
+    state.toolPolicyStored = true;
+    return toToolPolicyResponse(state.toolPolicy);
+  });
+  server.delete("/api/tool-policy", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    state.toolPolicy = updateToolPolicy({ enabled: true });
+    state.toolPolicyStored = false;
+    return reply.status(204).send();
   });
 
   server.get("/api/admin/rbac/roles", async (request, reply) => {
@@ -3776,6 +3804,52 @@ function validateRegexPattern(pattern: string): string | undefined {
   } catch {
     return "Invalid regex pattern";
   }
+}
+
+function updateToolPolicy(bodyValue: unknown): JsonObject {
+  const body = toBody(bodyValue);
+  const existing = state.toolPolicy;
+  return {
+    allowWriteToolNamesByChannel: stringArrayMapField(
+      body.allowWriteToolNamesByChannel,
+      stringArrayMapField(existing.allowWriteToolNamesByChannel, {})
+    ),
+    allowWriteToolNamesInDenyChannels: stringArrayField(
+      body.allowWriteToolNamesInDenyChannels,
+      stringArrayField(existing.allowWriteToolNamesInDenyChannels, [])
+    ),
+    createdAt: stringField(existing.createdAt, nowIso()),
+    denyWriteChannels: stringArrayField(body.denyWriteChannels, stringArrayField(existing.denyWriteChannels, [])),
+    denyWriteMessage: stringField(body.denyWriteMessage, stringField(existing.denyWriteMessage, "")),
+    enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
+    updatedAt: nowIso(),
+    writeToolNames: stringArrayField(body.writeToolNames, stringArrayField(existing.writeToolNames, []))
+  };
+}
+
+function toToolPolicyResponse(record: JsonObject) {
+  return {
+    allowWriteToolNamesByChannel: stringArrayMapField(record.allowWriteToolNamesByChannel, {}),
+    allowWriteToolNamesInDenyChannels: stringArrayField(record.allowWriteToolNamesInDenyChannels, []),
+    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
+    denyWriteChannels: stringArrayField(record.denyWriteChannels, []),
+    denyWriteMessage: stringField(record.denyWriteMessage, ""),
+    enabled: readBoolean(record.enabled, true),
+    updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now(),
+    writeToolNames: stringArrayField(record.writeToolNames, [])
+  };
+}
+
+function stringArrayMapField(value: unknown, fallback: Record<string, string[]>): Record<string, string[]> {
+  if (!isRecord(value)) {
+    return fallback;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key.trim().length > 0)
+      .map(([key, item]) => [key, stringArrayField(item, [])])
+  );
 }
 
 function createFeedback(request: FastifyRequest): CompatRecord {

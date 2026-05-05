@@ -115,6 +115,8 @@ Continued work should be treated as new hardening or product expansion, not migr
   version checks, stats/export envelopes, bulk updates, and `204` deletes.
 - Slack bot compatibility now matches Reactor admin-gated bot CRUD, duplicate-name `409`, masked token response
   fields, ISO timestamps, partial updates, and `204` deletes.
+- Tool Policy compatibility now matches Reactor state envelopes with `effective`/`stored`, epoch-millis policy DTOs,
+  channel-specific write allowlists, and delete-to-config-default `204` semantics.
 
 ## Execution Plan
 
