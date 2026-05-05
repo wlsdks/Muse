@@ -153,7 +153,8 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
 - Prompt Lab experiment run compatibility now persists trial responses and reports, completes run state, and cascades
   trial/report cleanup on experiment delete instead of returning static empty trial/report data; recommended-version
   activation now applies the report recommendation to the linked prompt template version, and feedback analysis now
-  derives totals, negative samples, and weakness categories from stored feedback.
+  derives totals, negative samples, and weakness categories from stored feedback. Auto-optimize now creates candidate
+  prompt versions plus a completed auto-generated experiment when enough negative feedback exists.
 
 ## Execution Plan
 
