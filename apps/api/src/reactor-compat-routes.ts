@@ -974,14 +974,28 @@ function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibi
   });
 }
 
-function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  registerPersonaRoutes(server, options);
-  registerPromptTemplateRoutes(server, options);
-  registerCollectionRoutes(server, "/api/documents", state.documents, {
-    authorize: options.authorizeAdmin,
-    onCreate: (record) => ({ ...record, indexed: true })
+function registerDocumentRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+  server.get("/api/documents", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const limit = readQueryInteger(request, "limit", 100);
+    return [...state.documents.values()]
+      .slice(0, Math.min(Math.max(limit, 1), 1000))
+      .map((document) => ({
+        content: stringField(document.content, ""),
+        id: document.id,
+        metadata: jsonObjectField(document.metadata)
+      }));
   });
-  registerIntentRoutes(server, options);
+  server.post("/api/documents", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return reply.status(201).send(toDocumentResponse(createDocument(request.body)));
+  });
   server.post("/api/documents/batch", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -989,17 +1003,52 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
 
     const documents = toBody(request.body).documents;
     const items: readonly unknown[] = Array.isArray(documents) ? documents : [];
-    const saved = items.map((item) => createRecord(state.documents, toJsonObject(item), "document"));
-    return { count: saved.length, documents: saved };
+    const saved = items.map((item) => createDocument(item));
+    return reply.status(201).send({
+      count: saved.length,
+      ids: saved.map((document) => document.id),
+      totalChunks: saved.reduce((total, document) => total + readNumber(document.chunkCount, 1), 0)
+    });
   });
   server.post("/api/documents/search", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    const query = readBodyString(request.body, "query")?.toLowerCase() ?? "";
-    return [...state.documents.values()].filter((document) => JSON.stringify(document).toLowerCase().includes(query));
+    const query = (readBodyString(request.body, "query") ?? "").toLowerCase();
+    const topK = readNumber(toBody(request.body).topK, 5);
+    return [...state.documents.values()]
+      .filter((document) => JSON.stringify(document).toLowerCase().includes(query))
+      .slice(0, Math.min(Math.max(topK, 1), 100))
+      .map(toSearchResultResponse);
   });
+  server.delete("/api/documents", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    for (const id of stringArrayField(toBody(request.body).ids, [])) {
+      state.documents.delete(id);
+    }
+
+    return reply.status(204).send();
+  });
+  server.delete("/api/documents/:documentId", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { documentId } = request.params as { readonly documentId: string };
+    state.documents.delete(documentId);
+    return reply.status(204).send();
+  });
+}
+
+function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+  registerPersonaRoutes(server, options);
+  registerPromptTemplateRoutes(server, options);
+  registerDocumentRoutes(server, options);
+  registerIntentRoutes(server, options);
   server.post("/api/admin/rag/seed-policy", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -1045,29 +1094,6 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       keys
     };
   });
-  server.delete("/api/documents", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const rawIds = toBody(request.body).ids;
-    const ids = Array.isArray(rawIds)
-      ? rawIds.filter((id): id is string => typeof id === "string")
-      : [];
-    const before = state.documents.size;
-
-    if (ids.length === 0) {
-      state.documents.clear();
-      return reply.status(204).send();
-    }
-
-    for (const id of ids) {
-      state.documents.delete(id);
-    }
-
-    return { deleted: before - state.documents.size, ids };
-  });
-
   server.get("/api/rag-ingestion/policy", async () => ({ enabled: true, requireApproval: true }));
   server.put("/api/rag-ingestion/policy", async (request) => ({ updated: true, ...toJsonObject(request.body) }));
   server.delete("/api/rag-ingestion/policy", async () => ({ deleted: true }));
@@ -3783,6 +3809,43 @@ function toIntentResponse(record: JsonObject) {
     profile: jsonObjectField(record.profile),
     updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now()
   };
+}
+
+function createDocument(bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  return createRecord(state.documents, {
+    chunkCount: 1,
+    chunkIds: [],
+    content: readBodyString(body, "content") ?? "",
+    indexed: true,
+    metadata: documentMetadata(body)
+  }, "document");
+}
+
+function toDocumentResponse(record: JsonObject) {
+  return {
+    chunkCount: readNumber(record.chunkCount, 1),
+    chunkIds: stringArrayField(record.chunkIds, []),
+    content: stringField(record.content, ""),
+    id: stringField(record.id, ""),
+    metadata: jsonObjectField(record.metadata)
+  };
+}
+
+function toSearchResultResponse(record: JsonObject) {
+  return {
+    content: stringField(record.content, ""),
+    id: stringField(record.id, ""),
+    metadata: jsonObjectField(record.metadata),
+    score: null
+  };
+}
+
+function documentMetadata(body: CompatBody): JsonObject {
+  const metadata = jsonObjectField(body.metadata);
+  return typeof body.title === "string" && body.title.trim().length > 0
+    ? { ...metadata, title: body.title }
+    : metadata;
 }
 
 function createPromptExperiment(request: FastifyRequest): CompatRecord {

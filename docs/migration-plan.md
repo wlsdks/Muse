@@ -109,6 +109,8 @@ Continued work should be treated as new hardening or product expansion, not migr
   epoch-millis DTOs, `activeOnly` filtering, duplicate-intent `409`, and idempotent `204` deletes.
 - Input and Output Guard rule compatibility now matches Reactor list envelopes, action casing, timestamp formats,
   validation failures, output-rule audits/simulation payloads, and delete response semantics.
+- Document compatibility now matches Reactor `DocumentResponse`, `BatchDocumentResponse`, `SearchResultResponse`,
+  admin-gated search/list/write operations, and body-based `204` deletes.
 
 ## Execution Plan
 

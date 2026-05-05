@@ -1264,6 +1264,84 @@ describe("api server", () => {
     expect(deletedOutput.statusCode).toBe(204);
   });
 
+  it("matches Reactor document management response contracts", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const server = buildServer({ authService, logger: false, requireAuth: true });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const created = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        content: "Knowledge base entry",
+        metadata: { source: "manual" }
+      },
+      url: "/api/documents"
+    });
+    const batch = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        documents: [
+          { content: "Batch entry one", metadata: { source: "batch" } },
+          { content: "Batch entry two" }
+        ]
+      },
+      url: "/api/documents/batch"
+    });
+    const listed = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/documents?limit=10"
+    });
+    const search = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        query: "knowledge",
+        topK: 5
+      },
+      url: "/api/documents/search"
+    });
+    const deleted = await server.inject({
+      headers,
+      method: "DELETE",
+      payload: {
+        ids: [created.json().id]
+      },
+      url: "/api/documents"
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      chunkCount: 1,
+      chunkIds: [],
+      content: "Knowledge base entry",
+      metadata: { source: "manual" }
+    });
+    expect(batch.statusCode).toBe(201);
+    expect(batch.json()).toMatchObject({ count: 2, totalChunks: 2 });
+    expect(batch.json().ids).toHaveLength(2);
+    expect(listed.json()).toMatchObject([
+      { content: "Knowledge base entry", metadata: { source: "manual" } },
+      { content: "Batch entry one", metadata: { source: "batch" } },
+      { content: "Batch entry two", metadata: {} }
+    ]);
+    expect(search.json()).toMatchObject([
+      {
+        content: "Knowledge base entry",
+        metadata: { source: "manual" },
+        score: null
+      }
+    ]);
+    expect(deleted.statusCode).toBe(204);
+  });
+
   it("serves Reactor-compatible aliases with stateful management behavior", async () => {
     const authService = createAuthService();
     const registered = authService.register({
@@ -1810,7 +1888,12 @@ describe("api server", () => {
       resultContent: "contact [REDACTED]"
     });
     expect(document.statusCode).toBe(201);
-    expect(documentSearch.json()).toMatchObject([{ title: "Migration" }]);
+    expect(document.json()).toMatchObject({
+      chunkCount: 1,
+      content: "Reactor migration note",
+      metadata: { title: "Migration" }
+    });
+    expect(documentSearch.json()).toMatchObject([{ metadata: { title: "Migration" } }]);
     expect(experiment.statusCode).toBe(201);
     expect(experiment.json()).toMatchObject({ name: "Prompt trial", status: "PENDING" });
     expect(typeof experiment.json().createdAt).toBe("number");
