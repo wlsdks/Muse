@@ -1456,16 +1456,35 @@ describe("api server", () => {
       },
       url: "/api/feedback"
     });
+    const invalidRating = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        rating: "positive"
+      },
+      url: "/api/feedback"
+    });
     const feedbackId = submitted.json().feedbackId as string;
     const listed = await server.inject({
       headers,
       method: "GET",
       url: "/api/feedback?status=inbox&limit=10"
     });
+    const shortQuery = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/feedback?q=x"
+    });
     const conflict = await server.inject({
       headers: { ...headers, "if-match": "2" },
       method: "PATCH",
       payload: { status: "done" },
+      url: `/api/feedback/${feedbackId}`
+    });
+    const invalidStatus = await server.inject({
+      headers: { ...headers, "if-match": "1" },
+      method: "PATCH",
+      payload: { status: "closed" },
       url: `/api/feedback/${feedbackId}`
     });
     const reviewed = await server.inject({
@@ -1477,6 +1496,15 @@ describe("api server", () => {
         tags: ["resolved"]
       },
       url: `/api/feedback/${feedbackId}`
+    });
+    const bulkTooMany = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        ids: Array.from({ length: 101 }, (_, index) => `feedback-${index}`),
+        status: "done"
+      },
+      url: "/api/feedback/bulk-update"
     });
     const stats = await server.inject({
       headers,
@@ -1495,6 +1523,7 @@ describe("api server", () => {
     });
 
     expect(submitted.statusCode).toBe(201);
+    expect(invalidRating.statusCode).toBe(400);
     expect(submitted.json()).toMatchObject({
       feedbackId,
       rating: "thumbs_down",
@@ -1507,7 +1536,9 @@ describe("api server", () => {
       nextCursor: null,
       prevCursor: null
     });
+    expect(shortQuery.statusCode).toBe(400);
     expect(conflict.statusCode).toBe(409);
+    expect(invalidStatus.statusCode).toBe(400);
     expect(reviewed.json()).toMatchObject({
       feedbackId,
       reviewNote: "Added to prompt backlog",
@@ -1515,6 +1546,8 @@ describe("api server", () => {
       reviewTags: ["resolved"],
       version: 2
     });
+    expect(bulkTooMany.statusCode).toBe(422);
+    expect(bulkTooMany.json()).toEqual({ error: "too_many_ids", max: 100 });
     expect(stats.json()).toMatchObject({ doneCount: 1, negative: 1, total: 1 });
     expect(exported.json()).toMatchObject({
       items: [{ feedbackId, reviewStatus: "done" }],

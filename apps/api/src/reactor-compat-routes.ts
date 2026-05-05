@@ -1113,11 +1113,42 @@ function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: React
 
 function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.post("/api/feedback", async (request, reply) => {
+    const body = toBody(request.body);
+    const rating = parseFeedbackRating(body.rating);
+
+    if (!rating) {
+      return badRequest(reply, "INVALID_FEEDBACK_RATING", "Invalid rating value");
+    }
+
     return reply.status(201).send(toFeedbackResponse(createFeedback(request)));
   });
   server.get("/api/feedback", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
+    }
+
+    const q = readQueryString(request, "q");
+    const rating = readQueryString(request, "rating");
+    const status = readQueryString(request, "status");
+
+    if (q && q.trim().length > 0 && q.trim().length < 2) {
+      return badRequest(reply, "INVALID_FEEDBACK_QUERY", "q must be at least 2 characters");
+    }
+
+    if (rating && !parseFeedbackRating(rating)) {
+      return badRequest(reply, "INVALID_FEEDBACK_RATING", "Invalid rating value");
+    }
+
+    if (status && !parseFeedbackReviewStatus(status)) {
+      return badRequest(reply, "INVALID_FEEDBACK_STATUS", "Invalid review status");
+    }
+
+    for (const key of ["from", "to"]) {
+      const raw = readQueryString(request, key);
+
+      if (raw && readQueryInstantMillis(request, key) === undefined) {
+        return badRequest(reply, "INVALID_FEEDBACK_TIMESTAMP", `Invalid timestamp for ${key}`);
+      }
     }
 
     const items = filterFeedback(request).map(toFeedbackResponse);
@@ -1165,7 +1196,19 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     const updated: string[] = [];
     const failed: JsonObject[] = [];
 
-    for (const id of ids.slice(0, 100)) {
+    if (ids.length === 0) {
+      return badRequest(reply, "INVALID_FEEDBACK_BULK_UPDATE", "ids must not be empty");
+    }
+
+    if (ids.length > 100) {
+      return reply.status(422).send({ error: "too_many_ids", max: 100 });
+    }
+
+    if (typeof body.status === "string" && !parseFeedbackReviewStatus(body.status)) {
+      return badRequest(reply, "INVALID_FEEDBACK_STATUS", "Invalid review status");
+    }
+
+    for (const id of ids) {
       const existing = findCompatRecord(state.feedback, id);
 
       if (!existing) {
@@ -1212,7 +1255,13 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
       });
     }
 
-    return toFeedbackResponse(updateFeedbackReview(feedback, toBody(request.body), readAuthUserId(request) ?? "admin"));
+    const body = toBody(request.body);
+
+    if (typeof body.status === "string" && !parseFeedbackReviewStatus(body.status)) {
+      return badRequest(reply, "INVALID_FEEDBACK_STATUS", "Invalid review status");
+    }
+
+    return toFeedbackResponse(updateFeedbackReview(feedback, body, readAuthUserId(request) ?? "admin"));
   });
   server.delete("/api/feedback/:feedbackId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -4654,13 +4703,51 @@ function updateTags(existing: string[], incoming: string[], mode: string): strin
 function filterFeedback(request: FastifyRequest): CompatRecord[] {
   const rating = readQueryString(request, "rating");
   const status = readQueryString(request, "status");
+  const tag = readQueryString(request, "tag");
   const q = readQueryString(request, "q");
+  const hasComment = readQueryBoolean(request, "hasComment", false);
+  const hasCommentProvided = readQueryString(request, "hasComment") !== undefined;
+  const domain = readQueryString(request, "domain");
+  const intent = readQueryString(request, "intent");
+  const from = readQueryInstantMillis(request, "from");
+  const to = readQueryInstantMillis(request, "to");
   return [...state.feedback.values()].filter((feedback) => {
     if (rating && feedbackRating(feedback.rating) !== feedbackRating(rating)) {
       return false;
     }
 
     if (status && feedbackReviewStatus(feedback.reviewStatus) !== feedbackReviewStatus(status)) {
+      return false;
+    }
+
+    if (tag && !stringArrayField(feedback.reviewTags, []).includes(tag)) {
+      return false;
+    }
+
+    if (hasCommentProvided) {
+      const comment = nullableStringResponse(feedback.comment);
+      const matches = comment !== null && comment.trim().length > 0;
+
+      if (matches !== hasComment) {
+        return false;
+      }
+    }
+
+    if (domain && nullableStringResponse(feedback.domain) !== domain) {
+      return false;
+    }
+
+    if (intent && nullableStringResponse(feedback.intent) !== intent) {
+      return false;
+    }
+
+    const timestamp = epochMillisOrNull(feedback.timestamp);
+
+    if (from !== undefined && (timestamp === null || timestamp < from)) {
+      return false;
+    }
+
+    if (to !== undefined && (timestamp === null || timestamp > to)) {
       return false;
     }
 
@@ -4687,8 +4774,36 @@ function feedbackRating(value: unknown): string {
     : "thumbs_down";
 }
 
+function parseFeedbackRating(value: unknown): "thumbs_down" | "thumbs_up" | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "thumbs_up") {
+    return "thumbs_up";
+  }
+
+  return normalized === "thumbs_down" ? "thumbs_down" : undefined;
+}
+
 function feedbackReviewStatus(value: unknown): string {
   return typeof value === "string" && value.trim().toLowerCase() === "done" ? "done" : "inbox";
+}
+
+function parseFeedbackReviewStatus(value: unknown): "done" | "inbox" | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "done") {
+    return "done";
+  }
+
+  return normalized === "inbox" ? "inbox" : undefined;
 }
 
 function isUnreviewedNegativeFeedback(record: JsonObject): boolean {
@@ -6109,6 +6224,17 @@ function readQueryInteger(request: FastifyRequest, key: string, fallback: number
   const raw = readQueryString(request, key);
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function readQueryInstantMillis(request: FastifyRequest, key: string): number | undefined {
+  const raw = readQueryString(request, key);
+
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function readQueryBoolean(request: FastifyRequest, key: string, fallback: boolean): boolean {
