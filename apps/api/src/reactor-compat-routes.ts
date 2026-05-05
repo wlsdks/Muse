@@ -39,6 +39,7 @@ interface CompatState {
   readonly feedback: CompatCollection;
   readonly inputGuardRules: CompatCollection;
   readonly intents: CompatCollection;
+  readonly outputGuardRuleAudits: CompatCollection;
   readonly outputGuardRules: CompatCollection;
   readonly personas: CompatCollection;
   readonly platformAlertRules: CompatCollection;
@@ -87,6 +88,7 @@ function createCompatState(): CompatState {
     feedback: new Map(),
     inputGuardRules: new Map(),
     intents: new Map(),
+    outputGuardRuleAudits: new Map(),
     outputGuardRules: new Map(),
     personas: new Map(),
     platformAlertRules: new Map(),
@@ -534,10 +536,8 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
 }
 
 function registerGuardCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  registerCollectionRoutes(server, "/api/admin/input-guard/rules", state.inputGuardRules, {
-    authorize: options.authorizeAdmin
-  });
-  registerCollectionRoutes(server, "/api/output-guard/rules", state.outputGuardRules);
+  registerInputGuardRuleRoutes(server, options);
+  registerOutputGuardRuleRoutes(server, options);
 
   server.get("/api/admin/input-guard/pipeline", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -596,7 +596,6 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
     return { audits: [], total: 0 };
   });
 
-  server.get("/api/output-guard/rules/audits", async () => []);
   server.post("/api/admin/input-guard/simulate", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -604,7 +603,143 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     return simulateGuard(request.body);
   });
-  server.post("/api/output-guard/rules/simulate", async (request) => simulateGuard(request.body));
+}
+
+function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+  server.get("/api/admin/input-guard/rules", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const rules = [...state.inputGuardRules.values()].map(toInputGuardRuleResponse);
+    return { rules, total: rules.length };
+  });
+  server.get("/api/admin/input-guard/rules/:id", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { id } = request.params as { readonly id: string };
+    const rule = findCompatRecord(state.inputGuardRules, id);
+    return rule ? toInputGuardRuleResponse(rule) : notFound(reply, "INPUT_GUARD_RULE_NOT_FOUND");
+  });
+  server.post("/api/admin/input-guard/rules", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const error = validateInputGuardRule(request.body);
+    return error ? badRequest(reply, "INVALID_INPUT_GUARD_RULE", error) : toInputGuardRuleResponse(createInputGuardRule(request.body));
+  });
+  server.put("/api/admin/input-guard/rules/:id", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { id } = request.params as { readonly id: string };
+    const existing = findCompatRecord(state.inputGuardRules, id);
+
+    if (!existing) {
+      return notFound(reply, "INPUT_GUARD_RULE_NOT_FOUND");
+    }
+
+    const error = validateInputGuardRule(request.body);
+    return error ? badRequest(reply, "INVALID_INPUT_GUARD_RULE", error) : toInputGuardRuleResponse(updateInputGuardRule(existing, request.body));
+  });
+  server.delete("/api/admin/input-guard/rules/:id", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { id } = request.params as { readonly id: string };
+    const deleted = state.inputGuardRules.delete(id);
+    return deleted ? { deleted: true, id } : notFound(reply, "INPUT_GUARD_RULE_NOT_FOUND");
+  });
+}
+
+function registerOutputGuardRuleRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+  server.get("/api/output-guard/rules", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    return [...state.outputGuardRules.values()].map(toOutputGuardRuleResponse);
+  });
+  server.get("/api/output-guard/rules/audits", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const limit = readQueryInteger(request, "limit", 100);
+    return [...state.outputGuardRuleAudits.values()].slice(-Math.min(Math.max(limit, 1), 1000)).map(toOutputGuardAuditResponse);
+  });
+  server.post("/api/output-guard/rules", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const error = validateOutputGuardRule(request.body);
+
+    if (error) {
+      return badRequest(reply, "INVALID_OUTPUT_GUARD_RULE", error);
+    }
+
+    const rule = createOutputGuardRule(request.body);
+    recordOutputGuardAudit("CREATE", request, rule.id, outputGuardRuleDetail(rule));
+    return reply.status(201).send(toOutputGuardRuleResponse(rule));
+  });
+  server.post("/api/output-guard/rules/simulate", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const response = simulateOutputGuardRules(request.body);
+    recordOutputGuardAudit(
+      "SIMULATE",
+      request,
+      undefined,
+      `blocked=${response.blocked}, matched=${response.matchedRules.length}, includeDisabled=${readBoolean(toBody(request.body).includeDisabled, false)}`
+    );
+    return response;
+  });
+  server.put("/api/output-guard/rules/:id", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { id } = request.params as { readonly id: string };
+    const existing = findCompatRecord(state.outputGuardRules, id);
+
+    if (!existing) {
+      return notFound(reply, "OUTPUT_GUARD_RULE_NOT_FOUND");
+    }
+
+    const error = validateOutputGuardRule(request.body, true);
+
+    if (error) {
+      return badRequest(reply, "INVALID_OUTPUT_GUARD_RULE", error);
+    }
+
+    const rule = updateOutputGuardRule(existing, request.body);
+    recordOutputGuardAudit("UPDATE", request, rule.id, outputGuardRuleDetail(rule));
+    return toOutputGuardRuleResponse(rule);
+  });
+  server.delete("/api/output-guard/rules/:id", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+
+    const { id } = request.params as { readonly id: string };
+    const existing = findCompatRecord(state.outputGuardRules, id);
+
+    if (!existing) {
+      return notFound(reply, "OUTPUT_GUARD_RULE_NOT_FOUND");
+    }
+
+    state.outputGuardRules.delete(existing.id);
+    recordOutputGuardAudit("DELETE", request, existing.id, `name=${stringField(existing.name, "")}`);
+    return reply.status(204).send();
+  });
 }
 
 function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
@@ -3211,6 +3346,254 @@ function respondPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
   return record ? toPromptExperimentResponse(record) : notFound(reply, "PROMPT_EXPERIMENT_NOT_FOUND");
 }
 
+function createInputGuardRule(bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  return createRecord(state.inputGuardRules, {
+    action: inputGuardAction(body.action),
+    category: readBodyString(body, "category") ?? "custom",
+    description: readNullableStringField(body, "description"),
+    enabled: readBoolean(body.enabled, true),
+    name: readBodyString(body, "name") ?? "",
+    pattern: readBodyString(body, "pattern") ?? "",
+    patternType: inputGuardPatternType(body.patternType),
+    priority: readNumber(body.priority, 100)
+  }, "input_guard_rule");
+}
+
+function updateInputGuardRule(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  return createRecord(state.inputGuardRules, {
+    ...existing,
+    action: inputGuardAction(body.action),
+    category: readBodyString(body, "category") ?? "custom",
+    description: readNullableStringField(body, "description"),
+    enabled: readBoolean(body.enabled, true),
+    name: readBodyString(body, "name") ?? "",
+    pattern: readBodyString(body, "pattern") ?? "",
+    patternType: inputGuardPatternType(body.patternType),
+    priority: readNumber(body.priority, 100)
+  }, "input_guard_rule");
+}
+
+function toInputGuardRuleResponse(record: JsonObject) {
+  return {
+    action: inputGuardAction(record.action),
+    category: stringField(record.category, "custom"),
+    createdAt: stringField(record.createdAt, nowIso()),
+    description: nullableStringResponse(record.description),
+    enabled: readBoolean(record.enabled, true),
+    id: stringField(record.id, ""),
+    name: stringField(record.name, ""),
+    pattern: stringField(record.pattern, ""),
+    patternType: inputGuardPatternType(record.patternType),
+    priority: readNumber(record.priority, 100),
+    updatedAt: stringField(record.updatedAt, nowIso())
+  };
+}
+
+function validateInputGuardRule(bodyValue: unknown): string | undefined {
+  const body = toBody(bodyValue);
+  const pattern = readBodyString(body, "pattern") ?? "";
+  const patternType = typeof body.patternType === "string" ? body.patternType.trim().toLowerCase() : "regex";
+  const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : "block";
+
+  if (pattern.length === 0) {
+    return "pattern must not be blank";
+  }
+
+  if (patternType !== "regex" && patternType !== "keyword") {
+    return "patternType must be regex or keyword";
+  }
+
+  if (action !== "block" && action !== "warn" && action !== "flag") {
+    return "action must be block, warn, or flag";
+  }
+
+  if (patternType === "regex") {
+    return validateRegexPattern(pattern) ? "Invalid regex pattern" : undefined;
+  }
+
+  return undefined;
+}
+
+function inputGuardPatternType(value: unknown): string {
+  return typeof value === "string" && value.trim().toLowerCase() === "keyword" ? "keyword" : "regex";
+}
+
+function inputGuardAction(value: unknown): string {
+  if (typeof value !== "string") {
+    return "block";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "warn" || normalized === "flag" ? normalized : "block";
+}
+
+function createOutputGuardRule(bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  return createRecord(state.outputGuardRules, {
+    action: outputGuardAction(body.action),
+    enabled: readBoolean(body.enabled, true),
+    name: (readBodyString(body, "name") ?? "").trim(),
+    pattern: (readBodyString(body, "pattern") ?? "").trim(),
+    priority: readNumber(body.priority, 100),
+    replacement: stringField(body.replacement, "[REDACTED]")
+  }, "output_guard_rule");
+}
+
+function updateOutputGuardRule(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+  const body = toBody(bodyValue);
+  const pattern = typeof body.pattern === "string" ? body.pattern.trim() : stringField(existing.pattern, "");
+  return createRecord(state.outputGuardRules, {
+    ...existing,
+    action: typeof body.action === "string" ? outputGuardAction(body.action) : outputGuardAction(existing.action),
+    enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
+    name: typeof body.name === "string" ? body.name.trim() : stringField(existing.name, ""),
+    pattern,
+    priority: readNumber(body.priority, readNumber(existing.priority, 100)),
+    replacement: typeof body.replacement === "string" ? body.replacement : stringField(existing.replacement, "[REDACTED]")
+  }, "output_guard_rule");
+}
+
+function toOutputGuardRuleResponse(record: JsonObject) {
+  return {
+    action: outputGuardAction(record.action),
+    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
+    enabled: readBoolean(record.enabled, true),
+    id: stringField(record.id, ""),
+    name: stringField(record.name, ""),
+    pattern: stringField(record.pattern, ""),
+    priority: readNumber(record.priority, 100),
+    replacement: stringField(record.replacement, "[REDACTED]"),
+    updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now()
+  };
+}
+
+function validateOutputGuardRule(bodyValue: unknown, partial = false): string | undefined {
+  const body = toBody(bodyValue);
+  const action = body.action;
+  const pattern = body.pattern;
+
+  if (!partial || action !== undefined) {
+    const normalizedAction = typeof action === "string" ? action.trim().toUpperCase() : "";
+
+    if (!["MASK", "REJECT"].includes(normalizedAction)) {
+      return `Invalid action: ${String(action)}`;
+    }
+  }
+
+  if (!partial || pattern !== undefined) {
+    const trimmed = typeof pattern === "string" ? pattern.trim() : "";
+
+    if (trimmed.length === 0) {
+      return "Invalid pattern: pattern must not be blank after trimming";
+    }
+
+    const regexError = validateRegexPattern(trimmed);
+
+    if (regexError) {
+      return `Invalid pattern: ${regexError}`;
+    }
+  }
+
+  return undefined;
+}
+
+function outputGuardAction(value: unknown): string {
+  return typeof value === "string" && value.trim().toUpperCase() === "REJECT" ? "REJECT" : "MASK";
+}
+
+function simulateOutputGuardRules(bodyValue: unknown) {
+  const body = toBody(bodyValue);
+  const originalContent = readBodyString(body, "content") ?? readBodyString(body, "text") ?? "";
+  const includeDisabled = readBoolean(body.includeDisabled, false);
+  const matchedRules: JsonObject[] = [];
+  const invalidRules: JsonObject[] = [];
+  let blockedByRuleId: string | null = null;
+  let blockedByRuleName: string | null = null;
+  let resultContent = originalContent;
+
+  const rules = [...state.outputGuardRules.values()]
+    .filter((rule) => includeDisabled || readBoolean(rule.enabled, true))
+    .sort((left, right) => readNumber(left.priority, 100) - readNumber(right.priority, 100));
+
+  for (const rule of rules) {
+    const pattern = stringField(rule.pattern, "");
+    const regexError = validateRegexPattern(pattern);
+
+    if (regexError) {
+      invalidRules.push({ reason: regexError, ruleId: rule.id, ruleName: stringField(rule.name, "") });
+      continue;
+    }
+
+    const regex = new RegExp(pattern, "g");
+
+    if (!regex.test(resultContent)) {
+      continue;
+    }
+
+    const action = outputGuardAction(rule.action);
+    matchedRules.push({
+      action,
+      priority: readNumber(rule.priority, 100),
+      ruleId: rule.id,
+      ruleName: stringField(rule.name, "")
+    });
+
+    if (action === "REJECT") {
+      blockedByRuleId = rule.id;
+      blockedByRuleName = stringField(rule.name, "");
+      break;
+    }
+
+    resultContent = resultContent.replace(new RegExp(pattern, "g"), stringField(rule.replacement, "[REDACTED]"));
+  }
+
+  return {
+    blocked: blockedByRuleId !== null,
+    blockedByRuleId,
+    blockedByRuleName,
+    invalidRules,
+    matchedRules,
+    modified: resultContent !== originalContent,
+    originalContent,
+    resultContent
+  };
+}
+
+function recordOutputGuardAudit(action: string, request: FastifyRequest, ruleId?: string, detail?: string): CompatRecord {
+  return createRecord(state.outputGuardRuleAudits, {
+    action,
+    actor: readAuthUserId(request) ?? "anonymous",
+    detail: detail ?? null,
+    ruleId: ruleId ?? null
+  }, "output_guard_audit");
+}
+
+function toOutputGuardAuditResponse(record: JsonObject) {
+  return {
+    action: outputGuardAction(record.action) === "REJECT" ? "REJECT" : stringField(record.action, "CREATE"),
+    actor: stringField(record.actor, "anonymous"),
+    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
+    detail: nullableStringResponse(record.detail),
+    id: stringField(record.id, ""),
+    ruleId: nullableStringResponse(record.ruleId)
+  };
+}
+
+function outputGuardRuleDetail(rule: JsonObject): string {
+  return `name=${stringField(rule.name, "")}, action=${outputGuardAction(rule.action)}, priority=${readNumber(rule.priority, 100)}, enabled=${readBoolean(rule.enabled, true)}`;
+}
+
+function validateRegexPattern(pattern: string): string | undefined {
+  try {
+    new RegExp(pattern);
+    return undefined;
+  } catch {
+    return "Invalid regex pattern";
+  }
+}
+
 function createPersona(bodyValue: unknown): CompatRecord {
   const body = toBody(bodyValue);
   return createRecord(state.personas, {
@@ -3703,6 +4086,10 @@ function notFound(reply: FastifyReply, code: string) {
     code,
     message: "Compatibility record was not found"
   });
+}
+
+function badRequest(reply: FastifyReply, code: string, message: string) {
+  return reply.status(400).send({ code, message });
 }
 
 function toLoginResponse(login: LoginResult) {

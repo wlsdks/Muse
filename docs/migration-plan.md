@@ -107,6 +107,8 @@ Continued work should be treated as new hardening or product expansion, not migr
   epoch-millis timestamps, `201` version creates, active-version detail payloads, and `204` deletes.
 - Persona and Intent compatibility now match Reactor management semantics for admin-gated lists/writes,
   epoch-millis DTOs, `activeOnly` filtering, duplicate-intent `409`, and idempotent `204` deletes.
+- Input and Output Guard rule compatibility now matches Reactor list envelopes, action casing, timestamp formats,
+  validation failures, output-rule audits/simulation payloads, and delete response semantics.
 
 ## Execution Plan
 

@@ -1164,6 +1164,106 @@ describe("api server", () => {
     expect(deletedIntent.statusCode).toBe(204);
   });
 
+  it("matches Reactor input and output guard rule contracts", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "first_account",
+      name: "First",
+      password: "password-1"
+    });
+    const server = buildServer({ authService, logger: false, requireAuth: true });
+    const headers = { authorization: `Bearer ${registered.token}` };
+
+    const inputRule = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        action: "block",
+        category: "security",
+        name: "Prompt injection",
+        pattern: "ignore previous",
+        patternType: "keyword",
+        priority: 10
+      },
+      url: "/api/admin/input-guard/rules"
+    });
+    const inputRules = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/input-guard/rules"
+    });
+    const invalidInputRule = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        action: "block",
+        name: "Broken regex",
+        pattern: "[",
+        patternType: "regex"
+      },
+      url: "/api/admin/input-guard/rules"
+    });
+    const outputRule = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        action: "REJECT",
+        name: "Secret reject",
+        pattern: "secret-[0-9]+",
+        priority: 5
+      },
+      url: "/api/output-guard/rules"
+    });
+    const outputRuleId = outputRule.json().id as string;
+    const simulated = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        content: "contains secret-123"
+      },
+      url: "/api/output-guard/rules/simulate"
+    });
+    const audits = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/output-guard/rules/audits?limit=5"
+    });
+    const deletedInput = await server.inject({
+      headers,
+      method: "DELETE",
+      url: `/api/admin/input-guard/rules/${inputRule.json().id}`
+    });
+    const deletedOutput = await server.inject({
+      headers,
+      method: "DELETE",
+      url: `/api/output-guard/rules/${outputRuleId}`
+    });
+
+    expect(inputRule.statusCode).toBe(200);
+    expect(inputRule.json()).toMatchObject({
+      action: "block",
+      category: "security",
+      patternType: "keyword"
+    });
+    expect(typeof inputRule.json().createdAt).toBe("string");
+    expect(inputRules.json()).toMatchObject({ rules: [{ id: inputRule.json().id }], total: 1 });
+    expect(invalidInputRule.statusCode).toBe(400);
+    expect(outputRule.statusCode).toBe(201);
+    expect(outputRule.json()).toMatchObject({ action: "REJECT", name: "Secret reject" });
+    expect(typeof outputRule.json().createdAt).toBe("number");
+    expect(simulated.json()).toMatchObject({
+      blocked: true,
+      blockedByRuleId: outputRuleId,
+      matchedRules: [{ action: "REJECT", ruleId: outputRuleId }]
+    });
+    expect(audits.json()).toMatchObject([
+      { action: "CREATE", ruleId: outputRuleId },
+      { action: "SIMULATE", ruleId: null }
+    ]);
+    expect(deletedInput.json()).toEqual({ deleted: true, id: inputRule.json().id });
+    expect(deletedOutput.statusCode).toBe(204);
+  });
+
   it("serves Reactor-compatible aliases with stateful management behavior", async () => {
     const authService = createAuthService();
     const registered = authService.register({
@@ -1323,10 +1423,20 @@ describe("api server", () => {
       payload: { text: "ignore previous instructions" },
       url: "/api/admin/input-guard/simulate"
     });
+    const outputGuardRule = await server.inject({
+      headers,
+      method: "POST",
+      payload: {
+        action: "MASK",
+        name: "Email mask",
+        pattern: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+      },
+      url: "/api/output-guard/rules"
+    });
     const outputGuard = await server.inject({
       headers,
       method: "POST",
-      payload: { text: "contact test@example.invalid" },
+      payload: { content: "contact test@example.invalid" },
       url: "/api/output-guard/rules/simulate"
     });
     const document = await server.inject({
@@ -1692,7 +1802,13 @@ describe("api server", () => {
     expect(reviewed.json()).toMatchObject({ id: feedbackId, reviewed: true });
     expect(feedbackStats.json()).toEqual({ reviewed: 1, total: 1, unreviewed: 0 });
     expect(inputGuard.json()).toMatchObject({ allowed: false });
-    expect(outputGuard.json()).toMatchObject({ allowed: false });
+    expect(outputGuardRule.statusCode).toBe(201);
+    expect(outputGuard.json()).toMatchObject({
+      blocked: false,
+      matchedRules: [{ action: "MASK" }],
+      modified: true,
+      resultContent: "contact [REDACTED]"
+    });
     expect(document.statusCode).toBe(201);
     expect(documentSearch.json()).toMatchObject([{ title: "Migration" }]);
     expect(experiment.statusCode).toBe(201);
