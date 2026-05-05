@@ -979,6 +979,7 @@ function isPublicRequest(method: string, url: string): boolean {
       path === "/api/auth/register" ||
       path === "/api/auth/demo-login" ||
       path === "/api/auth/exchange" ||
+      path === "/api/error-report" ||
       path === "/api/slack/commands" ||
       path === "/api/slack/events" ||
       path === "/slack/commands" ||

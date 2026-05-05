@@ -2238,10 +2238,23 @@ describe("api server", () => {
       },
       url: "/api/admin/metrics/ingest/tool-call"
     });
+    const auditsList = await server.inject({
+      headers,
+      method: "GET",
+      url: "/api/admin/audits"
+    });
     const auditsExport = await server.inject({
       headers,
       method: "GET",
       url: "/api/admin/audits/export"
+    });
+    const errorReport = await server.inject({
+      method: "POST",
+      payload: {
+        kind: "client_error",
+        message: "UI failed"
+      },
+      url: "/api/error-report"
     });
     const deletedSession = await server.inject({
       headers,
@@ -2404,7 +2417,13 @@ describe("api server", () => {
     expect(slackFaqDelete.json()).toEqual({ deleted: "channel-1" });
     expect(metricIngest.statusCode).toBe(202);
     expect(metricIngest.json()).toMatchObject({ accepted: true, kind: "tool-call" });
+    expect(auditsList.json()).toMatchObject({
+      items: [{ action: "TOOL_CALL", category: "metric_event", resourceType: "metric_event" }],
+      total: 1
+    });
     expect(auditsExport.body).toContain("metric_event");
+    expect(errorReport.statusCode).toBe(204);
+    expect(errorReport.body).toBe("");
     expect(sessionTag.statusCode).toBe(200);
     expect(deletedSession.statusCode).toBe(204);
     expect(deletedSessionDetail.statusCode).toBe(404);

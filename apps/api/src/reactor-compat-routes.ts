@@ -1107,12 +1107,7 @@ function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: React
 
   registerFeedbackRoutes(server, options);
 
-  server.post("/api/error-report", async (request) => ({
-    accepted: true,
-    id: createRunId("error_report"),
-    receivedAt: nowIso(),
-    report: toJsonObject(request.body)
-  }));
+  server.post("/api/error-report", async (_request, reply) => reply.status(204).send());
 }
 
 function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
@@ -2618,12 +2613,13 @@ function registerAdminAnalyticsCompatibilityRoutes(
 
     const limit = Math.max(1, readQueryInteger(request, "limit", 1000));
     const offset = Math.max(0, readQueryInteger(request, "offset", 0));
-    const items = [...state.metricEvents.values()].slice(offset, offset + limit);
+    const rows = adminAuditRows(request, limit);
+    const pageLimit = clampLimit(readQueryInteger(request, "pageLimit", 50));
     return {
-      items,
-      limit,
+      items: rows.slice(offset, offset + pageLimit),
+      limit: pageLimit,
       offset,
-      total: state.metricEvents.size
+      total: Math.min(rows.length, limit)
     };
   });
 
@@ -2632,19 +2628,21 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    const rows = [...state.metricEvents.values()];
+    const rows = adminAuditRows(request, readQueryInteger(request, "limit", 5000));
+    const stamp = new Date().toISOString().slice(0, 16).replace(/\D/gu, "");
+    reply.header("content-disposition", `attachment; filename="audit-export-${stamp}.csv"`);
     reply.header("content-type", "text/csv; charset=utf-8");
     return csvRows(
       ["id", "timestamp", "category", "action", "actor", "resource_type", "resource_id", "detail"],
       rows.map((row) => [
         row.id,
-        row.createdAt,
-        "compat_metric",
-        String(row.kind ?? "ingest"),
-        "admin",
-        "metric_event",
-        row.id,
-        JSON.stringify(row.payload ?? {})
+        new Date(readNumber(row.createdAt, Date.now())).toISOString(),
+        row.category,
+        row.action,
+        row.actor,
+        row.resourceType ?? "",
+        row.resourceId ?? "",
+        row.detail ?? ""
       ])
     );
   });
@@ -3738,6 +3736,31 @@ function latencyDistribution(runs: readonly AgentRunRecord[]) {
   }
 
   return buckets;
+}
+
+function adminAuditRows(request: FastifyRequest, maxRows = 1000): readonly JsonObject[] {
+  const category = readQueryString(request, "category");
+  const action = readQueryString(request, "action")?.toUpperCase();
+
+  return [...state.metricEvents.values()]
+    .map(toAdminAuditResponse)
+    .filter((row) => !category || row.category === category)
+    .filter((row) => !action || row.action === action)
+    .slice(0, Math.max(1, maxRows));
+}
+
+function toAdminAuditResponse(record: JsonObject): JsonObject {
+  const kind = stringField(record.kind, "ingest");
+  return {
+    action: kind.toUpperCase().replace(/-/gu, "_"),
+    actor: "admin",
+    category: "metric_event",
+    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
+    detail: JSON.stringify(jsonObjectField(record.payload)),
+    id: stringField(record.id, ""),
+    resourceId: stringField(record.id, ""),
+    resourceType: "metric_event"
+  };
 }
 
 function latencySummary(runs: readonly AgentRunRecord[], days: number): JsonObject {
