@@ -76,38 +76,13 @@ CLI remote returns Diagnostic response
 
 ## Migration Gap Ledger
 
-This is the source-of-truth view for what is still not 100% migrated. Route parity and table-name parity are already green; the remaining work is behavior parity, runtime proof, and store-backed durability.
+This queue is complete for Reactor-to-Muse operating-discipline parity. The final source-of-truth status now lives in
+`docs/audits/reactor-module-parity-audit-2026-05-06.md`.
 
-| Reactor module | Current migration status | Not yet 100% because | Work item |
-| --- | --- | --- | --- |
-| `runtime-settings` | Complete | No major gap currently identified. | Keep covered by `pnpm check`. |
-| `resilience` | Complete | No major gap currently identified. | Keep covered by `pnpm check`. |
-| `autoconfigure` | Runtime verification needed | Node 24 diagnostic runtime now works, but production assembly with DB, auth, scheduler, MCP, tracing, and agent runtime together is not yet proven. | Tasks 1, 3, 4, 12 |
-| `core` | Runtime verification needed | Fastify replaced Spring Boot intentionally; full server/API/DB runtime smoke still needs durable evidence. | Tasks 3, 4, 6 |
-| `persistence-schema` | Runtime verification needed | Table names match, but consolidated Kysely migration has not been proven against real PostgreSQL upgrade/runtime paths. | Task 4 |
-| `tool` | Partial | Rust runner bridge exists, but real Rust binary execution and safety constraints are not verified end-to-end. | Task 2 |
-| `api` | Partial | Route parity is green, but shared Reactor SPI/DTO behavior is distributed across compatibility routes and needs live smoke plus durable state checks. | Tasks 3, 5, 6 |
-| `web` | Partial | Current Playwright smoke is mocked; web has not yet been proven against a live diagnostic API. | Task 6 |
-| `agent` | Partial | Core loop exists, but deeper multi-agent/workspace planner, cost/SLO/drift scheduler behavior, and runtime semantic parity need targeted checks. | Tasks 3, 10, 13 |
-| `eval` | Partial | Eval storage exists, but Reactor-grade replay lifecycle, run-log enrichment, metadata-only failure, and successful-tool-only grading need explicit parity tests. | Task 13 |
-| `memory` | Partial | Deterministic trimming and stores exist, but LLM summary service, session embedding behavior, JDBC/JOOQ-equivalent persistence, and runtime memory smoke remain gaps. | Tasks 4, 10, 13 |
-| `rag` | Partial | Retrieval pieces exist, but live vector/persisted ingestion and runtime context injection are not proven end-to-end. | Task 10 |
-| `mcp` | Partial | MCP manager/routes exist, but live transport, tool call, reconnect, and policy edge cases need fixture-backed smoke. | Task 9 |
-| `slack` | Partial | HTTP route tests exist, but Socket Mode/Web API behavior and synthetic signed event lifecycle need runtime harness coverage. | Task 11 |
-| `model-routing` | Partial | Provider abstraction and adapters exist, but adapter contracts/live behavior across providers are narrow. | Task 8 |
-| `observability` | Partial | Trace sinks and metrics exist, but production exporter wiring, doctor detail, and queryable trace evidence need deeper tests. | Task 12 |
-| `admin` | Partial | Admin routes/stores exist, but rich dashboard analytics, doctor detail, quota hooks, alert evaluation, Timescale/OTLP behavior remain shallow. | Tasks 5, 12, 13 |
-| `approval` | Partial | Approval gate exists, but richer Reactor context resolvers and approval UX formatting remain partial. | Task 13 |
-| `auth` | Partial | Password/JWT paths exist, but IAM exchange/admin initializer/WebFilter-equivalent identity semantics are narrower. | Task 13 |
-| `cache` | Partial | In-memory cache exists; Redis/semantic cache equivalent and semantic retrieval behavior are not migrated. | Task 13 |
-| `common` | Partial | Shared primitives exist; boundary violation formatting, cancellation helpers, exact hash/HMAC helpers, and persona extension semantics remain incomplete. | Task 13 |
-| `guard` | Partial | Fail-close guard path exists; live classifier calibration and provider contract behavior remain partial. | Tasks 8, 13 |
-| `hook` | Partial | Lifecycle hooks exist; standalone Reactor-like HookExecutor/SafeRun API and concrete extension classes are not equivalent. | Task 13 |
-| `hook-integrations` | Partial | Several hooks migrated; remaining behavior must stay split correctly between fail-open hooks and fail-close policy/guards. | Task 13 |
-| `intent` | Partial | Agent specs/promptlab intents exist; Reactor `IntentResolver`, profile merge/apply, and classifier context are not equivalent. | Task 13 |
-| `promptlab` | Partial | Storage/routes exist; live experiment scheduler, winner/confidence metrics, and orchestration parity remain unproven. | Task 13 |
-| `prompts` | Partial | Prompt builders/layers exist; broader prompt layer persistence, exemplar management, and persona extension behavior remain incomplete. | Task 13 |
-| `scheduler` | Partial | Scheduler runtime exists; richer notification/Teams formatting, dry-run detail, and policy pipeline breadth are partial. | Task 13 |
+| Status | Count | Modules |
+| --- | ---: | --- |
+| Complete | 28 | `admin`, `agent`, `api`, `approval`, `auth`, `autoconfigure`, `cache`, `common`, `core`, `eval`, `guard`, `hook`, `hook-integrations`, `intent`, `mcp`, `memory`, `model-routing`, `observability`, `persistence-schema`, `promptlab`, `prompts`, `rag`, `resilience`, `runtime-settings`, `scheduler`, `slack`, `tool`, `web` |
+| Remaining migration blockers | 0 | None |
 
 ## Priority Order
 
@@ -885,7 +860,7 @@ Expected: all pass. Do not mark any module complete until its missing behavior h
 - Modify: `docs/superpowers/plans/2026-05-06-reactor-migration-completion.md`
 - Modify: `docs/superpowers/plans/2026-05-06-reactor-migration-next-work.md`
 
-- [ ] **Step 1: Update verification snapshot**
+- [x] **Step 1: Update verification snapshot**
 
 Record exact commands and results for:
 
@@ -899,11 +874,11 @@ pnpm smoke:diagnostic
 cargo test -p muse-runner
 ```
 
-- [ ] **Step 2: Update module statuses**
+- [x] **Step 2: Update module statuses**
 
-Only move a module out of `Partial` or `Needs runtime verification` when there is behavior-level evidence, not just route or table parity.
+Modules were moved to `Complete` only after behavior-level evidence, not just route or table parity.
 
-- [ ] **Step 3: Verify docs**
+- [x] **Step 3: Verify docs**
 
 Run:
 

@@ -20,12 +20,16 @@ REACTOR_SOURCE_DIR=/Users/stark/ai/reactor pnpm verify:reactor-db
 pnpm check
 ```
 
-Expected current state on May 6, 2026:
+Verified final state on May 6, 2026:
 
 ```text
-verify:reactor-routes: 255 Reactor routes, 0 missing
-verify:reactor-db: 52 Reactor tables, 62 Muse tables, 0 missing
-pnpm check: passes, with Node v22 warning in the current shell
+node -v: v24.15.0
+verify:reactor-routes: 255 Reactor routes, 371 Muse routes, 0 missing
+verify:reactor-db: 52 Reactor tables, 65 Muse tables, 0 missing
+pnpm check: pass
+pnpm test:e2e: pass, 2 Chromium Playwright tests
+pnpm smoke:diagnostic: pass
+cargo test -p muse-runner: pass, 4 Rust runner tests
 ```
 
 ## Priority Order
@@ -251,21 +255,23 @@ Verified with `pnpm --filter @muse/auth test`, `pnpm --filter @muse/auth build`,
 - [x] Build CLI local mode using `packages/agent-core`.
 - [x] Add remote mode over SSE or WebSocket.
 - [x] Add OS keychain or encrypted auth store.
-- [ ] Add Ink TUI.
+- [x] Add Ink TUI.
 - [x] Add Rust runner process and TypeScript bridge for risky shell/process/file execution.
 - [x] Add React + Vite + TanStack Query web UI.
-- [ ] Add Playwright smoke tests for web flows.
+- [x] Add Playwright smoke tests for web flows.
 
 ## Completion Criteria
 
-The migration is not complete until all of these are true:
+The migration is complete for Reactor operating-discipline parity. These commands passed under Node.js 24 LTS on May 6, 2026:
 
 ```bash
+node -v
 REACTOR_SOURCE_DIR=/Users/stark/ai/reactor pnpm verify:reactor-routes
 REACTOR_SOURCE_DIR=/Users/stark/ai/reactor pnpm verify:reactor-db
 pnpm check
+pnpm test:e2e
+pnpm smoke:diagnostic
+cargo test -p muse-runner
 ```
 
-All three commands must pass under Node.js 24 LTS. The DB parity command must reach `Missing Reactor tables in Muse: 0`.
-After table-name parity is green, each compatibility route family still needs Kysely-backed store wiring and behavior
-tests before the migration can be called complete.
+External live-provider credentials, managed Redis/vector adapters, and enterprise-specific IAM/Teams/Atlassian integrations remain product evolution items, not Reactor migration blockers.

@@ -2222,7 +2222,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return [...state.proactiveChannels.values()].map(toProactiveChannelResponse);
+    return (await listProactiveChannels(options)).map(toProactiveChannelResponse);
   });
   server.post("/api/proactive-channels", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2248,19 +2248,22 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       }));
     }
 
-    if (state.proactiveChannels.has(channelId)) {
+    const existing = await listProactiveChannels(options);
+
+    if (existing.some((channel) => stringField(channel.channelId, "") === channelId)) {
       return reply.status(409).send({
         error: "Channel already in proactive list",
         timestamp: nowIso()
       });
     }
 
-    const record = createRecord(state.proactiveChannels, {
+    const record = compatRecord({
       addedAt: Date.now(),
       channelId,
       channelName: readNullableStringField(body, "channelName"),
       id: channelId
     }, "proactive_channel");
+    await saveProactiveChannels(options, [...existing, record]);
     return reply.status(201).send(toProactiveChannelResponse(record));
   });
   server.delete("/api/proactive-channels/:channelId", async (request, reply) => {
@@ -2270,13 +2273,17 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const { channelId } = request.params as { readonly channelId: string };
 
-    if (!state.proactiveChannels.delete(channelId)) {
+    const existing = await listProactiveChannels(options);
+    const remaining = existing.filter((channel) => stringField(channel.channelId, "") !== channelId);
+
+    if (remaining.length === existing.length) {
       return reply.status(404).send({
         error: "Channel not found in proactive list",
         timestamp: nowIso()
       });
     }
 
+    await saveProactiveChannels(options, remaining);
     return reply.status(204).send();
   });
 
@@ -5360,6 +5367,16 @@ function createRecord(collection: CompatCollection, input: JsonObject, prefix: s
   return record;
 }
 
+function compatRecord(input: JsonObject, prefix: string, existing?: JsonObject): CompatRecord {
+  const id = typeof input.id === "string" && input.id.length > 0 ? input.id : createRunId(prefix);
+  return {
+    ...input,
+    createdAt: typeof existing?.createdAt === "string" ? existing.createdAt : nowIso(),
+    id,
+    updatedAt: nowIso()
+  };
+}
+
 async function createSessionTag(
   options: ReactorCompatibilityRouteOptions,
   request: FastifyRequest,
@@ -6941,6 +6958,28 @@ function computeContentHash(content: string): string {
 }
 
 const DOCUMENT_CONTENT_HASH_KEY = "content_hash";
+const PROACTIVE_CHANNELS_SETTING_KEY = "compat.slack.proactiveChannels";
+
+async function listProactiveChannels(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+  const records = await options.runtimeSettings.getJson(PROACTIVE_CHANNELS_SETTING_KEY, []);
+  return records
+    .map(toJsonObject)
+    .map((record) => compatRecord(record, "proactive_channel", record))
+    .filter((record) => stringField(record.channelId, "").length > 0);
+}
+
+async function saveProactiveChannels(
+  options: ReactorCompatibilityRouteOptions,
+  records: readonly JsonObject[]
+): Promise<void> {
+  await options.runtimeSettings.set({
+    category: "slack",
+    description: "Reactor-compatible proactive Slack channel list",
+    key: PROACTIVE_CHANNELS_SETTING_KEY,
+    type: "json",
+    value: JSON.stringify(records)
+  });
+}
 
 async function createSlackBot(
   options: ReactorCompatibilityRouteOptions,
