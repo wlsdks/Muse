@@ -41,7 +41,7 @@ import {
   RuntimeSettingsService,
   type RuntimeSettingType
 } from "@muse/runtime-settings";
-import type { AgentRunHistoryStore, PendingApprovalStore, SessionTagStore } from "@muse/runtime-state";
+import type { AgentRunHistoryStore, AgentRunRecord, PendingApprovalStore, SessionTagStore } from "@muse/runtime-state";
 import type { JsonObject, JsonValue } from "@muse/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAdminRoutes, type AdminRouteState } from "./admin-routes.js";
@@ -200,15 +200,17 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       return reply;
     }
 
-    const [agentSpecs, settings, scheduledJobs] = await Promise.all([
+    const [agentSpecs, settings, scheduledJobs, recentRuns] = await Promise.all([
       agentSpecRegistry.list(),
       runtimeSettings.list(),
-      options.scheduler?.store.list() ?? []
+      options.scheduler?.store.list() ?? [],
+      options.historyStore?.listRuns({ limit: 5 }) ?? []
     ]);
 
     return {
       agentSpecCount: agentSpecs.length,
       authEnabled: Boolean(authService),
+      recentRuns: recentRuns.map(toAdminRunSummary),
       runtimeSettingCount: settings.length,
       schedulerJobCount: scheduledJobs.length
     };
@@ -895,6 +897,21 @@ function toReactorChatResponse(result: AgentRunResult) {
     toolsUsed: result.toolsUsed ?? [],
     verifiedSourceCount: typeof metadata.verifiedSourceCount === "number" ? metadata.verifiedSourceCount : null
   };
+}
+
+function toAdminRunSummary(run: AgentRunRecord) {
+  return {
+    id: run.id,
+    inputPreview: previewText(run.input, 120),
+    model: run.model,
+    provider: run.provider,
+    status: run.status
+  };
+}
+
+function previewText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
 }
 
 function toExtendedChatResponse(result: AgentRunResult) {

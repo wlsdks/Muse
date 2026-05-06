@@ -714,16 +714,12 @@ function registerApprovalCompatibilityRoutes(server: FastifyInstance, options: R
 
     const offset = readQueryInteger(request, "offset", 0);
     const limit = readQueryInteger(request, "limit", 50);
-    const userId = readAuthUserId(request);
-    const isAdmin = isAuthenticatedDeveloperAdminLikeRequest(request);
+    const items = await listVisiblePendingApprovals(store, request, reply);
 
-    if (!isAdmin && !userId) {
-      return reply.status(403).send(errorResponse("관리자 권한이 필요합니다"));
+    if (!items) {
+      return reply;
     }
 
-    const items = isAdmin
-      ? await store.listPending()
-      : await store.listPendingByUser(userId ?? "");
     const safeOffset = Math.max(0, offset);
     const safeLimit = clampLimit(limit);
     const paged = items.slice(safeOffset, safeOffset + safeLimit);
@@ -734,6 +730,17 @@ function registerApprovalCompatibilityRoutes(server: FastifyInstance, options: R
       offset: safeOffset,
       total: items.length
     };
+  });
+
+  server.get("/api/approvals/pending", async (request, reply) => {
+    const store = requirePendingApprovalStore(options, reply);
+
+    if (!store) {
+      return reply;
+    }
+
+    const items = await listVisiblePendingApprovals(store, request, reply);
+    return items ?? reply;
   });
 
   server.post("/api/approvals/:id/approve", async (request, reply) => {
@@ -780,6 +787,22 @@ function registerApprovalCompatibilityRoutes(server: FastifyInstance, options: R
       success
     };
   });
+}
+
+async function listVisiblePendingApprovals(
+  store: PendingApprovalStore,
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const userId = readAuthUserId(request);
+  const isAdmin = isAdminLikeRequest(request);
+
+  if (!isAdmin && !userId) {
+    reply.status(403).send(errorResponse("관리자 권한이 필요합니다"));
+    return undefined;
+  }
+
+  return isAdmin ? store.listPending() : store.listPendingByUser(userId ?? "");
 }
 
 function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {

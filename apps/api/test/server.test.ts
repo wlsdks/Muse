@@ -68,6 +68,33 @@ describe("api server", () => {
     });
   });
 
+  it("serves the web pending approvals alias as a plain array", async () => {
+    const pendingApprovalStore = new InMemoryPendingApprovalStore({ idFactory: () => "approval-web-1" });
+    pendingApprovalStore.requestApproval({
+      arguments: { path: "notes.md" },
+      runId: "run-web-approval",
+      toolName: "write_file",
+      userId: "example-user"
+    });
+    const server = buildServer({ logger: false, pendingApprovalStore });
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/api/approvals/pending"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      expect.objectContaining({
+        id: "approval-web-1",
+        runId: "run-web-approval",
+        status: "pending",
+        toolName: "write_file",
+        userId: "example-user"
+      })
+    ]);
+  });
+
   it("applies Reactor-compatible web contract headers", async () => {
     const server = buildServer({ logger: false });
 
@@ -941,7 +968,19 @@ describe("api server", () => {
     });
 
     expect(summary.statusCode).toBe(200);
-    expect(summary.json()).toMatchObject({ authEnabled: true, schedulerJobCount: 1 });
+    expect(summary.json()).toMatchObject({
+      authEnabled: true,
+      recentRuns: [
+        {
+          id: "run-1",
+          inputPreview: "hello",
+          model: "gpt-4o",
+          provider: "openai",
+          status: "queued"
+        }
+      ],
+      schedulerJobCount: 1
+    });
     expect(runDetail.json()).toMatchObject({ run: { id: "run-1" }, messages: [{ content: "hello" }] });
     expect(schedulerJobs.json()).toMatchObject({ items: [{ id: "job-1" }], total: 1 });
     expect(executions.json()).toMatchObject({ items: [{ jobId: "job-1" }], total: 1 });
