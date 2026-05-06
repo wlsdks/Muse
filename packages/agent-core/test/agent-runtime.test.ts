@@ -3,7 +3,7 @@ import { InMemoryAgentSpecRegistry, RuleBasedAgentSpecResolver } from "@muse/age
 import { InMemoryResponseCache } from "@muse/cache";
 import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
-import { InMemoryPromptLayerRegistry } from "@muse/prompts";
+import { InMemoryExemplarRetriever, InMemoryPromptLayerRegistry } from "@muse/prompts";
 import { DefaultRagPipeline, InMemoryRagCorpus, SimpleReranker } from "@muse/rag";
 import { InMemoryAgentRunHistoryStore, InMemoryCheckpointStore, InMemoryHookTraceStore } from "@muse/runtime-state";
 import { createToolPolicyConfig, GuardBlockRateMonitor, InMemoryGuardRuleStore } from "@muse/policy";
@@ -399,6 +399,37 @@ describe("AgentRuntime", () => {
     expect(system).toContain("Persona layer: compare tradeoffs.");
     expect(system).toContain("Provider layer: keep provider-neutral tool assumptions.");
     expect(system.indexOf("Template layer")).toBeLessThan(system.indexOf("Persona layer"));
+  });
+
+  it("applies retrieved prompt exemplars before the provider call", async () => {
+    const onGenerate = vi.fn();
+    const runtime = createAgentRuntime({
+      exemplarRetriever: new InMemoryExemplarRetriever(`
+[Example 1 - Evidence-first tradeoff]
+<scenario>User asks: "Compare hosted search and Postgres search"</scenario>
+<example type="good">Compare latency, cost, operations, and migration risk.</example>
+
+[Example 2 - Tool failure]
+<scenario>User asks: "Check linked pull request status"</scenario>
+<example type="good">State the successful lookup and the failed lookup separately.</example>
+`, { topK: 1 }),
+      modelProvider: createProvider({}, "test", onGenerate)
+    });
+
+    await runtime.run({
+      messages: [{ content: "Compare search options before choosing", role: "user" }],
+      model: "provider/model"
+    });
+
+    const request = onGenerate.mock.calls[0]?.[0] as ModelRequest;
+    const system = request.messages.find((message) => message.role === "system")?.content ?? "";
+
+    expect(system).toContain("[Answer Quality Examples]");
+    expect(system).toContain("[Example 1 - Evidence-first tradeoff]");
+    expect(system).not.toContain("[Example 2 - Tool failure]");
+    expect(request.metadata).toMatchObject({
+      promptExemplarApplied: true
+    });
   });
 
   it("requires either a provider or a provider registry", () => {

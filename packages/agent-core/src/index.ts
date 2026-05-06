@@ -27,8 +27,10 @@ import {
 } from "@muse/observability";
 import {
   buildLayeredSystemPrompt,
+  renderExemplarContext,
   renderRetrievedContext,
   renderToolResults,
+  type ExemplarRetriever,
   type PromptLayerRegistry
 } from "@muse/prompts";
 import type { RagPipeline } from "@muse/rag";
@@ -189,6 +191,8 @@ export interface AgentRuntimeOptions {
   readonly hooks?: readonly HookStage[];
   readonly outputGuards?: readonly OutputGuardStage[];
   readonly responseFilters?: readonly ResponseFilterStage[];
+  readonly exemplarRetriever?: ExemplarRetriever;
+  readonly exemplarTopK?: number;
   readonly promptLayerRegistry?: PromptLayerRegistry;
   readonly defaults?: {
     readonly maxOutputTokens?: number;
@@ -314,6 +318,8 @@ export class AgentRuntime {
   private readonly hooks: readonly HookStage[];
   private readonly outputGuards: readonly OutputGuardStage[];
   private readonly responseFilters: readonly ResponseFilterStage[];
+  private readonly exemplarRetriever?: ExemplarRetriever;
+  private readonly exemplarTopK: number;
   private readonly promptLayerRegistry?: PromptLayerRegistry;
   private readonly defaults: AgentRuntimeOptions["defaults"];
 
@@ -352,6 +358,8 @@ export class AgentRuntime {
     this.hooks = options.hooks ?? [];
     this.outputGuards = options.outputGuards ?? [];
     this.responseFilters = options.responseFilters ?? [];
+    this.exemplarRetriever = options.exemplarRetriever;
+    this.exemplarTopK = Math.max(1, options.exemplarTopK ?? 3);
     this.promptLayerRegistry = options.promptLayerRegistry;
     this.defaults = options.defaults;
 
@@ -381,7 +389,9 @@ export class AgentRuntime {
 
       const selected = this.resolveProvider(context.input.model);
       runSpan.setAttribute("model.selected", selected.model);
-      const layeredContext = this.applyPromptLayers(context, selected.provider.id, selected.model);
+      const layeredContext = await this.applyPromptExemplars(
+        this.applyPromptLayers(context, selected.provider.id, selected.model)
+      );
       await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
       const contextualizedInput = await this.applyRetrievedContext(layeredContext);
@@ -480,7 +490,9 @@ export class AgentRuntime {
 
       const selected = this.resolveProvider(context.input.model);
       runSpan.setAttribute("model.selected", selected.model);
-      const layeredContext = this.applyPromptLayers(context, selected.provider.id, selected.model);
+      const layeredContext = await this.applyPromptExemplars(
+        this.applyPromptLayers(context, selected.provider.id, selected.model)
+      );
       await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
       const contextualizedInput = await this.applyRetrievedContext(layeredContext);
@@ -734,6 +746,51 @@ export class AgentRuntime {
         }
       }
     };
+  }
+
+  private async applyPromptExemplars(context: AgentRunContext): Promise<AgentRunContext> {
+    if (!this.exemplarRetriever) {
+      return context;
+    }
+
+    try {
+      const query = joinUserMessages(context.input.messages);
+
+      if (query.trim().length === 0) {
+        return context;
+      }
+
+      const exemplars = renderExemplarContext(
+        await this.exemplarRetriever.retrieveTopK(query, this.exemplarTopK)
+      );
+
+      if (!exemplars) {
+        return context;
+      }
+
+      return {
+        ...context,
+        input: {
+          ...context.input,
+          messages: appendSystemSection(context.input.messages, exemplars, "prompt-exemplars"),
+          metadata: {
+            ...context.input.metadata,
+            promptExemplarApplied: true
+          }
+        }
+      };
+    } catch {
+      return {
+        ...context,
+        input: {
+          ...context.input,
+          metadata: {
+            ...context.input.metadata,
+            promptExemplarRetrievalFailed: true
+          }
+        }
+      };
+    }
   }
 
   private modelTools(context: AgentRunContext): readonly ModelTool[] {

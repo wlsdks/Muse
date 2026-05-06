@@ -3,9 +3,13 @@ import {
   MUSE_CACHE_BOUNDARY_MARKER,
   InMemoryPromptLayerRegistry,
   buildPromptContextPacket,
+  FullExemplarRetriever,
+  InMemoryExemplarRetriever,
   buildLayeredSystemPrompt,
   buildSystemPrompt,
   mergePromptContext,
+  parseExemplarMarkdown,
+  renderExemplarContext,
   renderJsonInstruction,
   renderRetrievedContext,
   renderToolResults,
@@ -133,5 +137,82 @@ describe("system prompt building", () => {
       toolResults: "tool",
       userMemoryContext: undefined
     });
+  });
+});
+
+describe("exemplar retrieval", () => {
+  const exemplarMarkdown = `
+[Answer quality examples]
+
+[Example 1 - Compare options]
+
+<scenario>User asks: "Should we choose hosted search or Postgres search?"</scenario>
+
+<example type="good">
+Compare latency, cost, operations, and migration risk before recommending one path.
+</example>
+
+[Example 2 - Missing evidence]
+
+<scenario>User asks: "Who approved the private roadmap?"</scenario>
+
+<example type="good">
+Say the available sources do not identify an approver, then ask for a source or owner.
+</example>
+
+[Example 3 - Tool failure recovery]
+
+<scenario>User asks: "Check the linked pull request status"</scenario>
+
+<example type="good">
+Report the successful issue lookup, state the pull request lookup failed, and offer the next retry path.
+</example>
+`;
+
+  it("parses markdown exemplar blocks with scenario search keys", () => {
+    const documents = parseExemplarMarkdown(exemplarMarkdown);
+
+    expect(documents).toHaveLength(3);
+    expect(documents[0]).toMatchObject({
+      id: "exemplar-1",
+      index: 1,
+      scenario: 'User asks: "Should we choose hosted search or Postgres search?"',
+      title: "[Example 1 - Compare options]"
+    });
+    expect(documents[0]?.body).toContain("<example type=\"good\">");
+  });
+
+  it("retrieves relevant exemplars with pinned examples and deduplication", async () => {
+    const retriever = new InMemoryExemplarRetriever(exemplarMarkdown, {
+      pinnedIds: ["exemplar-2"],
+      topK: 1
+    });
+    const rendered = await retriever.retrieveTopK("Compare search options before choosing", 1);
+
+    expect(rendered).toContain("[Answer Quality Examples]");
+    expect(rendered).toContain("[Example 1 - Compare options]");
+    expect(rendered).toContain("[Example 2 - Missing evidence]");
+    expect(rendered).not.toContain("[Example 3 - Tool failure recovery]");
+    expect(rendered.match(/\[Example 2 - Missing evidence\]/g)).toHaveLength(1);
+  });
+
+  it("falls back to full exemplar content when retrieval has no usable match", async () => {
+    const fallback = new FullExemplarRetriever("full fallback examples");
+    const retriever = new InMemoryExemplarRetriever(exemplarMarkdown, {
+      fallback,
+      minScore: 3
+    });
+
+    await expect(retriever.retrieveTopK("unrelated request", 2)).resolves.toBe("full fallback examples");
+  });
+
+  it("renders exemplar context into system prompts without leaking blank sections", () => {
+    const prompt = buildSystemPrompt({
+      exemplarContext: "Prefer evidence-first comparisons."
+    });
+
+    expect(renderExemplarContext(" Prefer evidence-first comparisons. ")).toContain("[Answer Quality Examples]");
+    expect(prompt).toContain("[Answer Quality Examples]");
+    expect(buildSystemPrompt({ exemplarContext: " " })).not.toContain("[Answer Quality Examples]");
   });
 });
