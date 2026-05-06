@@ -602,7 +602,7 @@ Expected: all pass.
 - Modify: `packages/agent-core/test/agent-runtime.test.ts`
 - Possibly modify: `apps/api/test/server.test.ts`
 
-- [ ] **Step 1: Add synthetic document fixture**
+- [x] **Step 1: Add synthetic document fixture**
 
 Use neutral content only:
 
@@ -611,15 +611,15 @@ Document A: "The release can use phased rollout with rollback gates."
 Document B: "The release can use big-bang migration with longer freeze."
 ```
 
-- [ ] **Step 2: Add retrieval assertion**
+- [x] **Step 2: Add retrieval assertion**
 
 Assert query `"Which release path has rollback gates?"` retrieves Document A above Document B.
 
-- [ ] **Step 3: Add runtime assertion**
+- [x] **Step 3: Add runtime assertion**
 
 Run agent-core with diagnostic provider and RAG context. Assert the model request receives the relevant context block before generation.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 

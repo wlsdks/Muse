@@ -402,6 +402,39 @@ describe("DefaultRagPipeline", () => {
     expect(context.totalTokens).toBeGreaterThan(0);
   });
 
+  it("retrieves the rollback-gated release path before the big-bang option", async () => {
+    const corpus = new InMemoryRagCorpus();
+    corpus.add({
+      content: "The release can use phased rollout with rollback gates.",
+      id: "document-a",
+      metadata: { workspaceId: "workspace-1" },
+      source: "release-options"
+    });
+    corpus.add({
+      content: "The release can use big-bang migration with longer freeze.",
+      id: "document-b",
+      metadata: { workspaceId: "workspace-1" },
+      source: "release-options"
+    });
+    const pipeline = new DefaultRagPipeline({
+      contextBuilder: new SimpleContextBuilder(),
+      queryTransformer: new PassthroughQueryTransformer(),
+      reranker: new SimpleReranker(),
+      retriever: corpus
+    });
+
+    const context = await pipeline.retrieve({
+      filters: { workspaceId: "workspace-1" },
+      query: "Which release path has rollback gates?",
+      topK: 2
+    });
+
+    expect(context.documents.map((document) => document.id)).toEqual(["document-a", "document-b"]);
+    expect(context.context.indexOf("phased rollout with rollback gates")).toBeLessThan(
+      context.context.indexOf("big-bang migration with longer freeze")
+    );
+  });
+
   it("returns an empty context when no documents match", async () => {
     const pipeline = new DefaultRagPipeline({ retriever: new InMemoryRagCorpus() });
 

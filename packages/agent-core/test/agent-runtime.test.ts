@@ -1909,6 +1909,47 @@ describe("AgentRuntime", () => {
     });
   });
 
+  it("injects retrieved rollback-gate context before model generation", async () => {
+    const generated: ModelRequest[] = [];
+    const corpus = new InMemoryRagCorpus();
+
+    corpus.add({
+      content: "The release can use phased rollout with rollback gates.",
+      id: "document-a",
+      metadata: { workspaceId: "workspace-1" },
+      source: "release-options"
+    });
+    corpus.add({
+      content: "The release can use big-bang migration with longer freeze.",
+      id: "document-b",
+      metadata: { workspaceId: "workspace-1" },
+      source: "release-options"
+    });
+
+    const runtime = createAgentRuntime({
+      modelProvider: createProvider({}, "test", (request) => generated.push(request)),
+      ragPipeline: new DefaultRagPipeline({
+        retriever: corpus,
+        reranker: new SimpleReranker()
+      })
+    });
+
+    await runtime.run({
+      messages: [{ content: "Which release path has rollback gates?", role: "user" }],
+      metadata: { workspaceId: "workspace-1" },
+      model: "provider/model",
+      runId: "run-rag-context"
+    });
+
+    const systemContent = generated[0]?.messages.find((message) => message.role === "system")?.content ?? "";
+
+    expect(systemContent).toContain("[Retrieved Context]");
+    expect(systemContent).toContain("The release can use phased rollout with rollback gates.");
+    expect(systemContent.indexOf("phased rollout with rollback gates")).toBeLessThan(
+      systemContent.indexOf("big-bang migration with longer freeze")
+    );
+  });
+
   it("continues streamed tool calls through the ReAct loop", async () => {
     const streamedRequests: ModelRequest[] = [];
     const historyStore = new InMemoryAgentRunHistoryStore();
