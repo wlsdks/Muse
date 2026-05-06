@@ -14,10 +14,16 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:postgres": "MUSE_DB_POSTGRES_TEST=1 vitest run test/postgres-runtime.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@muse/shared": "workspace:*",
     "kysely": "^0.28.17"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "pg": "^8.20.0",
+    "testcontainers": "^11.14.0"
   }
 }

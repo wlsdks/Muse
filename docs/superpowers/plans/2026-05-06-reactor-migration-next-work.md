@@ -328,7 +328,7 @@ Expected: both commands pass.
 - Possibly modify: `packages/db/src/migrations.ts`
 - Possibly modify: `packages/runtime-state/test/*.test.ts`
 
-- [ ] **Step 1: Decide test backend**
+- [x] **Step 1: Decide test backend**
 
 Use Testcontainers if Docker is available:
 
@@ -338,7 +338,7 @@ docker info
 
 Expected: Docker responds. If Docker is not available, use a local PostgreSQL URL through `MUSE_TEST_DATABASE_URL`.
 
-- [ ] **Step 2: Add migration smoke**
+- [x] **Step 2: Add migration smoke**
 
 Add a test that:
 
@@ -349,7 +349,7 @@ Add a test that:
 4. Inserts and reads one row through package-level Kysely stores rather than raw SQL where possible.
 ```
 
-- [ ] **Step 3: Add package script**
+- [x] **Step 3: Add package script**
 
 Modify `packages/db/package.json`:
 
@@ -357,7 +357,7 @@ Modify `packages/db/package.json`:
 "test:postgres": "vitest run test/postgres-runtime.test.ts"
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
