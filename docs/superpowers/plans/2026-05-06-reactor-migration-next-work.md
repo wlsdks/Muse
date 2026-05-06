@@ -479,7 +479,7 @@ Expected: mocked smoke and live diagnostic smoke both pass.
 - Modify: `apps/cli/src/program.ts`
 - Modify: `apps/cli/test/program.test.ts`
 
-- [ ] **Step 1: Add a failing CLI/TUI test**
+- [x] **Step 1: Add a failing CLI/TUI test**
 
 Test expected behavior:
 
@@ -487,15 +487,15 @@ Test expected behavior:
 `muse tui --local` can render chat mode with a prompt model, submit a user message, append assistant output, and keep the previous turn visible.
 ```
 
-- [ ] **Step 2: Implement local-mode chat state in Ink**
+- [x] **Step 2: Implement local-mode chat state in Ink**
 
 Use existing `AgentRuntime` assembly and diagnostic provider for testability. The TUI must not fork agent behavior; it must call the same runtime path as `muse chat --local`.
 
-- [ ] **Step 3: Implement remote-mode chat state in Ink**
+- [x] **Step 3: Implement remote-mode chat state in Ink**
 
 Use existing remote API request/stream helpers. Remote chat should share config and credentials resolution with non-TUI CLI chat.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 

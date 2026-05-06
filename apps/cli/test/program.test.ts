@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createProgram, defaultConfigPath } from "../src/program.js";
+import { appendChatTurn } from "../src/tui.js";
 
 function captureOutput() {
   const output: string[] = [];
@@ -342,7 +343,7 @@ describe("cli program", () => {
       .toContain("\"source\":\"cli.local\"");
   });
 
-  it("opens the Ink status TUI with the active endpoint and config paths", async () => {
+  it("opens the Ink chat TUI with the active endpoint and config paths", async () => {
     const { io } = captureOutput();
     const rendered: unknown[] = [];
     const configDir = await mkdtemp(path.join(tmpdir(), "muse-cli-tui-config-"));
@@ -371,15 +372,101 @@ describe("cli program", () => {
     ], { from: "node" });
 
     expect(rendered).toEqual([
-      {
+      expect.objectContaining({
         apiUrl: "http://api.test",
         auth: { hasToken: true },
-        chat: { defaultModel: "openai:gpt-test" },
+        chat: expect.objectContaining({ defaultModel: "openai:gpt-test", submit: expect.any(Function) }),
         configPath: path.join(configDir, "config.json"),
         credentialPath: path.join(configDir, "credentials.json"),
         mode: "remote",
         workspaceRunsPath: `${process.cwd()}/.muse/runs`
-      }
+      })
     ]);
+  });
+
+  it("runs local TUI chat through the shared runtime and keeps previous turns", async () => {
+    const { io } = captureOutput();
+    const rendered: unknown[] = [];
+    const workspaceDir = await mkdtemp(path.join(tmpdir(), "muse-cli-tui-local-"));
+    const program = createProgram({
+      ...io,
+      createRuntimeAssembly: () => ({
+        agentRuntime: {
+          run: async (input) => ({
+            response: {
+              id: "response-1",
+              model: input.model,
+              output: `local-tui:${input.messages[0]?.content ?? ""}`
+            },
+            runId: `local-tui-${input.messages[0]?.content ?? "run"}`
+          }),
+          stream: async function* () {}
+        },
+        defaultModel: "diagnostic/tui"
+      }),
+      renderTui: async (model) => {
+        rendered.push(model);
+        const first = await model.chat?.submit?.("first turn");
+        const second = await model.chat?.submit?.("second turn");
+        const turns = appendChatTurn(
+          appendChatTurn([], { assistant: first ?? "", user: "first turn" }),
+          { assistant: second ?? "", user: "second turn" }
+        );
+
+        expect(turns).toEqual([
+          { assistant: "local-tui:first turn", user: "first turn" },
+          { assistant: "local-tui:second turn", user: "second turn" }
+        ]);
+      },
+      workspaceDir
+    });
+
+    await program.parseAsync(["node", "muse", "tui", "--local"], { from: "node" });
+
+    expect(rendered).toEqual([
+      expect.objectContaining({
+        mode: "local",
+        chat: expect.objectContaining({
+          submit: expect.any(Function)
+        })
+      })
+    ]);
+    await expect(readFile(path.join(workspaceDir, ".muse/runs/local-tui-first turn.jsonl"), "utf8"))
+      .resolves
+      .toContain("\"source\":\"cli.local\"");
+    await expect(readFile(path.join(workspaceDir, ".muse/runs/local-tui-second turn.jsonl"), "utf8"))
+      .resolves
+      .toContain("\"message\":\"second turn\"");
+  });
+
+  it("runs remote TUI chat through the API chat route", async () => {
+    const { io } = captureOutput();
+    const rendered: unknown[] = [];
+    const workspaceDir = await mkdtemp(path.join(tmpdir(), "muse-cli-tui-remote-"));
+    const requests: Array<{ readonly body?: string; readonly url: string }> = [];
+    const program = createProgram({
+      ...io,
+      fetch: async (url, init) => {
+        requests.push({
+          body: String(init?.body),
+          url: String(url)
+        });
+        return new Response(JSON.stringify({ content: "remote tui answer", runId: "remote-tui-run" }));
+      },
+      renderTui: async (model) => {
+        rendered.push(model);
+        await expect(model.chat?.submit?.("remote turn")).resolves.toBe("remote tui answer");
+      },
+      workspaceDir
+    });
+
+    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "tui"], { from: "node" });
+
+    expect(requests[0]).toMatchObject({ url: "http://api.test/api/chat" });
+    expect(JSON.parse(requests[0]?.body ?? "{}")).toEqual({ message: "remote turn" });
+    expect(rendered).toEqual([expect.objectContaining({ mode: "remote" })]);
+    await expect(readFile(path.join(workspaceDir, ".muse/runs/remote-tui-run.jsonl"), "utf8"))
+      .resolves
+      .toContain("\"source\":\"cli.remote\"");
   });
 });

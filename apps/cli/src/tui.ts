@@ -1,6 +1,11 @@
 import React, { useState } from "react";
 import { Box, Text, render, useInput } from "ink";
 
+export interface MuseTuiChatTurn {
+  readonly assistant: string;
+  readonly user: string;
+}
+
 export interface MuseStatusTuiModel {
   readonly apiUrl: string;
   readonly auth?: {
@@ -8,6 +13,7 @@ export interface MuseStatusTuiModel {
   };
   readonly chat?: {
     readonly defaultModel?: string;
+    readonly submit?: (message: string) => Promise<string>;
   };
   readonly configPath: string;
   readonly credentialPath: string;
@@ -17,8 +23,40 @@ export interface MuseStatusTuiModel {
 
 export function MuseStatusTui({ model }: { readonly model: MuseStatusTuiModel }): React.ReactElement {
   const [panel, setPanel] = useState<"auth" | "chat" | "config">("chat");
+  const [chatInput, setChatInput] = useState("");
+  const [chatStatus, setChatStatus] = useState<"idle" | "running">("idle");
+  const [chatTurns, setChatTurns] = useState<readonly MuseTuiChatTurn[]>([]);
+  const [chatError, setChatError] = useState<string | undefined>();
 
   useInput((input, key) => {
+    if (panel === "chat" && model.chat?.submit) {
+      if (key.return && chatInput.trim().length > 0 && chatStatus !== "running") {
+        const message = chatInput.trim();
+        setChatInput("");
+        setChatError(undefined);
+        setChatStatus("running");
+        void model.chat.submit(message)
+          .then((assistant) => {
+            setChatTurns((turns) => appendChatTurn(turns, { assistant, user: message }));
+          })
+          .catch((error: unknown) => {
+            setChatError(error instanceof Error ? error.message : String(error));
+          })
+          .finally(() => setChatStatus("idle"));
+        return;
+      }
+
+      if (key.backspace || key.delete) {
+        setChatInput((current) => current.slice(0, -1));
+        return;
+      }
+
+      if (!key.ctrl && !key.meta && input.length > 0) {
+        setChatInput((current) => `${current}${input}`);
+        return;
+      }
+    }
+
     if (key.tab) {
       setPanel((current) => current === "chat" ? "auth" : current === "auth" ? "config" : "chat");
     }
@@ -47,7 +85,17 @@ export function MuseStatusTui({ model }: { readonly model: MuseStatusTuiModel })
       ? React.createElement(Box, { flexDirection: "column", marginTop: 1 },
         React.createElement(Text, { bold: true }, "Chat"),
         React.createElement(Text, null, `Default model: ${model.chat?.defaultModel ?? "not configured"}`),
-        React.createElement(Text, null, `Runs: ${model.workspaceRunsPath}`))
+        React.createElement(Text, null, `Runs: ${model.workspaceRunsPath}`),
+        React.createElement(Text, null, `Status: ${chatStatus}`),
+        React.createElement(Text, null, `> ${chatInput}`),
+        ...chatTurns.map((turn, index) => React.createElement(Box, {
+          flexDirection: "column",
+          key: `turn-${index}`,
+          marginTop: 1
+        },
+        React.createElement(Text, null, `You: ${turn.user}`),
+        React.createElement(Text, null, `Muse: ${turn.assistant}`))),
+        chatError ? React.createElement(Text, { color: "red" }, `Error: ${chatError}`) : undefined)
       : undefined,
     panel === "auth"
       ? React.createElement(Box, { flexDirection: "column", marginTop: 1 },
@@ -61,6 +109,13 @@ export function MuseStatusTui({ model }: { readonly model: MuseStatusTuiModel })
         React.createElement(Text, null, `Config: ${model.configPath}`))
       : undefined
   );
+}
+
+export function appendChatTurn(
+  turns: readonly MuseTuiChatTurn[],
+  turn: MuseTuiChatTurn
+): readonly MuseTuiChatTurn[] {
+  return [...turns, turn];
 }
 
 export async function renderMuseStatusTui(model: MuseStatusTuiModel): Promise<void> {

@@ -130,7 +130,13 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       await (io.renderTui ?? renderMuseStatusTui)({
         apiUrl: baseUrl,
         auth: { hasToken: Boolean(token) },
-        chat: { defaultModel: cliConfig.defaultModel },
+        chat: {
+          defaultModel: cliConfig.defaultModel,
+          submit: createTuiChatSubmitter(io, command, {
+            local: options.local === true,
+            model: cliConfig.defaultModel
+          })
+        },
         configPath: configPath(io),
         credentialPath: credentialPath(io),
         mode: options.local ? "local" : "remote",
@@ -491,6 +497,32 @@ async function streamRemoteChat(
   };
 }
 
+function createTuiChatSubmitter(
+  io: ProgramIO,
+  command: Command,
+  options: { readonly local: boolean; readonly model?: string }
+): (message: string) => Promise<string> {
+  return async (message: string) => {
+    const body = options.local
+      ? await runLocalChat(io, message, options.model)
+      : await apiRequest(io, command, "/api/chat", {
+        message,
+        model: options.model
+      });
+    const apiOptions = await readApiOptions(io, command, { includeStoredToken: false });
+
+    await writeRunLog(io.workspaceDir ?? process.cwd(), {
+      apiUrl: apiOptions.baseUrl,
+      message,
+      model: options.model,
+      response: body,
+      source: options.local ? "cli.local" : "cli.remote"
+    });
+
+    return readChatResponseText(body);
+  };
+}
+
 async function runLocalChat(io: ProgramIO, message: string, model: string | undefined) {
   const assembly = io.createRuntimeAssembly?.() ?? createMuseRuntimeAssembly();
 
@@ -508,6 +540,18 @@ async function runLocalChat(io: ProgramIO, message: string, model: string | unde
     runId: result.runId,
     toolsUsed: result.toolsUsed ?? []
   };
+}
+
+function readChatResponseText(value: unknown): string {
+  if (isRecord(value) && typeof value.response === "string") {
+    return value.response;
+  }
+
+  if (isRecord(value) && typeof value.content === "string") {
+    return value.content;
+  }
+
+  return JSON.stringify(value);
 }
 
 interface ApiOptions {
