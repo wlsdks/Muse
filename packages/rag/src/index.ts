@@ -104,6 +104,31 @@ export interface RagPipeline {
   retrieve(query: RagQuery): Promise<RagContext>;
 }
 
+export interface RetrievalEvalCase {
+  readonly id: string;
+  readonly query: string;
+  readonly expectedDocumentIds?: readonly string[];
+  readonly requiredSources?: readonly string[];
+  readonly filters?: JsonObject;
+  readonly topK?: number;
+  readonly maxTotalTokens?: number;
+}
+
+export interface RetrievalEvalResult {
+  readonly caseId: string;
+  readonly passed: boolean;
+  readonly recall: number;
+  readonly retrievedDocumentIds: readonly string[];
+  readonly missingDocumentIds: readonly string[];
+  readonly missingSources: readonly string[];
+  readonly totalTokens: number;
+  readonly reasons: readonly string[];
+}
+
+export interface RetrievalEvalRunnerOptions {
+  readonly pipeline: RagPipeline;
+}
+
 export type RagIngestionCandidateStatus = "PENDING" | "REJECTED" | "INGESTED";
 
 export interface RagIngestionPolicy {
@@ -1420,6 +1445,66 @@ export class DefaultRagPipeline implements RagPipeline {
       documents: compressed,
       totalTokens: this.tokenEstimator.estimate(context)
     };
+  }
+}
+
+export class RetrievalEvalRunner {
+  private readonly pipeline: RagPipeline;
+
+  constructor(options: RetrievalEvalRunnerOptions) {
+    this.pipeline = options.pipeline;
+  }
+
+  async runCase(testCase: RetrievalEvalCase): Promise<RetrievalEvalResult> {
+    const context = await this.pipeline.retrieve({
+      filters: testCase.filters,
+      query: testCase.query,
+      topK: testCase.topK
+    });
+    const retrievedDocumentIds = context.documents.map((document) => document.id);
+    const expectedDocumentIds = [...new Set(testCase.expectedDocumentIds ?? [])];
+    const requiredSources = [...new Set(testCase.requiredSources ?? [])];
+    const retrievedIdSet = new Set(retrievedDocumentIds);
+    const sourceSet = new Set(context.documents.flatMap((document) => document.source ? [document.source] : []));
+    const missingDocumentIds = expectedDocumentIds.filter((id) => !retrievedIdSet.has(id));
+    const missingSources = requiredSources.filter((source) => !sourceSet.has(source));
+    const recall = expectedDocumentIds.length === 0
+      ? 1
+      : (expectedDocumentIds.length - missingDocumentIds.length) / expectedDocumentIds.length;
+    const reasons: string[] = [];
+
+    if (missingDocumentIds.length > 0) {
+      reasons.push(`Missing expected documents: ${missingDocumentIds.join(", ")}`);
+    }
+
+    if (missingSources.length > 0) {
+      reasons.push(`Missing required sources: ${missingSources.join(", ")}`);
+    }
+
+    if (testCase.maxTotalTokens !== undefined && context.totalTokens > testCase.maxTotalTokens) {
+      reasons.push(`Context token budget exceeded: ${context.totalTokens} > ${testCase.maxTotalTokens}`);
+    }
+
+    return {
+      caseId: testCase.id,
+      missingDocumentIds,
+      missingSources,
+      passed: reasons.length === 0,
+      reasons,
+      recall,
+      retrievedDocumentIds,
+      totalTokens: context.totalTokens
+    };
+  }
+
+  async runSuite(cases: readonly RetrievalEvalCase[]): Promise<readonly RetrievalEvalResult[]> {
+    const results: RetrievalEvalResult[] = [];
+
+    for (const testCase of cases) {
+      results.push(await this.runCase(testCase));
+    }
+
+    return results;
   }
 }
 

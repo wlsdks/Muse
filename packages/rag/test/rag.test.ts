@@ -27,6 +27,7 @@ import {
   PassthroughQueryTransformer,
   ParentDocumentRetriever,
   HypotheticalDocumentQueryTransformer,
+  RetrievalEvalRunner,
   SimpleContextBuilder,
   SimpleReranker,
   StructuredContextBuilder,
@@ -378,6 +379,82 @@ describe("DefaultRagPipeline", () => {
     });
 
     expect(context.documents.map((document) => document.id)).toEqual(["slack-socket-mode"]);
+  });
+});
+
+describe("RetrievalEvalRunner", () => {
+  it("scores retrieval cases by expected document recall and required source coverage", async () => {
+    const corpus = new InMemoryRagCorpus();
+    corpus.add({
+      content: "Slack Socket Mode must acknowledge envelopes before routing app mentions.",
+      id: "slack-socket-mode",
+      metadata: { workspaceId: "workspace-1" },
+      source: "slack"
+    });
+    corpus.add({
+      content: "MCP runner governance requires dynamic policy checks before live calls.",
+      id: "mcp-runner-governance",
+      metadata: { workspaceId: "workspace-1" },
+      source: "mcp"
+    });
+    const runner = new RetrievalEvalRunner({
+      pipeline: new DefaultRagPipeline({
+        queryTransformer: new ConversationAwareQueryTransformer({
+          history: [{ content: "Review Slack Socket Mode migration risk.", role: "user" }]
+        }),
+        retriever: corpus
+      })
+    });
+
+    const result = await runner.runCase({
+      expectedDocumentIds: ["slack-socket-mode"],
+      id: "rag-case-1",
+      query: "What about acknowledgements?",
+      requiredSources: ["slack"],
+      topK: 3
+    });
+
+    expect(result).toMatchObject({
+      caseId: "rag-case-1",
+      missingDocumentIds: [],
+      missingSources: [],
+      passed: true,
+      recall: 1,
+      retrievedDocumentIds: ["slack-socket-mode"]
+    });
+  });
+
+  it("fails retrieval cases when expected documents or token budgets are missed", async () => {
+    const corpus = new InMemoryRagCorpus();
+    corpus.add({
+      content: "A long unrelated document that does not satisfy the expected migration evidence.",
+      id: "unrelated",
+      metadata: {},
+      source: "notes"
+    });
+    const runner = new RetrievalEvalRunner({
+      pipeline: new DefaultRagPipeline({
+        contextBuilder: new SimpleContextBuilder(),
+        retriever: corpus
+      })
+    });
+
+    const result = await runner.runCase({
+      expectedDocumentIds: ["target"],
+      id: "rag-case-2",
+      maxTotalTokens: 1,
+      query: "unrelated",
+      topK: 1
+    });
+
+    expect(result).toMatchObject({
+      caseId: "rag-case-2",
+      missingDocumentIds: ["target"],
+      passed: false,
+      recall: 0
+    });
+    expect(result.reasons).toContain("Missing expected documents: target");
+    expect(result.reasons.some((reason) => reason.startsWith("Context token budget exceeded:"))).toBe(true);
   });
 });
 
