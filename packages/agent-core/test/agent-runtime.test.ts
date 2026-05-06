@@ -40,7 +40,8 @@ import {
   GuardBlockedError,
   HookRegistry,
   ModelRoutingError,
-  OutputGuardBlockedError
+  OutputGuardBlockedError,
+  StepBudgetTracker
 } from "../src/index.js";
 
 function createProvider(
@@ -145,6 +146,53 @@ function createStreamingSequenceProvider(
     }
   };
 }
+
+describe("StepBudgetTracker", () => {
+  it("tracks model and tool output token budgets through soft and exhausted limits", () => {
+    const tracker = new StepBudgetTracker({ maxTokens: 100, softLimitPercent: 80 });
+
+    expect(tracker.trackStep("model:first", 30, 10)).toBe("ok");
+    expect(tracker.recordToolOutput("tool:search", 40)).toBe("soft_limit");
+    expect(tracker.trackStep("model:final", 20, 0)).toBe("exhausted");
+
+    expect(tracker.totalConsumed()).toBe(100);
+    expect(tracker.remaining()).toBe(0);
+    expect(tracker.isExhausted()).toBe(true);
+    expect(tracker.history()).toEqual([
+      {
+        cumulativeTokens: 40,
+        inputTokens: 30,
+        outputTokens: 10,
+        status: "ok",
+        step: "model:first"
+      },
+      {
+        cumulativeTokens: 80,
+        inputTokens: 40,
+        outputTokens: 0,
+        status: "soft_limit",
+        step: "tool:search"
+      },
+      {
+        cumulativeTokens: 100,
+        inputTokens: 20,
+        outputTokens: 0,
+        status: "exhausted",
+        step: "model:final"
+      }
+    ]);
+  });
+
+  it("rejects invalid budgets, blank steps, and negative token counts", () => {
+    expect(() => new StepBudgetTracker({ maxTokens: 0 })).toThrow("maxTokens");
+    expect(() => new StepBudgetTracker({ maxTokens: 100, softLimitPercent: 100 })).toThrow("softLimitPercent");
+
+    const tracker = new StepBudgetTracker({ maxTokens: 100 });
+    expect(() => tracker.trackStep(" ", 1, 0)).toThrow("step");
+    expect(() => tracker.trackStep("model", -1, 0)).toThrow("token counts");
+    expect(() => tracker.recordToolOutput("tool", Number.POSITIVE_INFINITY)).toThrow("token counts");
+  });
+});
 
 describe("AgentRuntime", () => {
   it("encodes checkpoint messages with replay-safe versioned payloads", () => {
