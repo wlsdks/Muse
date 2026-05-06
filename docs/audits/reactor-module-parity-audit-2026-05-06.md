@@ -17,7 +17,7 @@ but those checks do not prove behavior parity. This document tracks feature-leve
 - `pnpm check`: pass
 - Local caveat: current shell uses Node v22.18.0 while Muse requires Node >=24.
 - Rust caveat: `cargo test` could not run because Cargo is not installed in this shell.
-- Browser caveat: Playwright web smoke test files are not present yet.
+- Browser caveat: Playwright web smoke now covers the operator console against mocked API-backed chat, approvals, and recent runs; full live API/browser smoke still needs Node 24 environment coverage.
 
 ## Summary
 
@@ -35,7 +35,7 @@ but those checks do not prove behavior parity. This document tracks feature-leve
 | `admin` | `apps/api`, `packages/runtime-state`, `packages/db` | Partial | Admin routes, tenant/alert/SLO/cost/pricing/audit stores, metric ingestion, analytics/export compatibility endpoints. | Rich Reactor query services are shallower: dashboard analytics, doctor detail, quota enforcement hooks, alert evaluation scheduler, Timescale/OTLP tracing behavior need deeper parity tests or implementation. |
 | `agent` | `packages/agent-core`, `packages/tools`, `packages/memory`, `packages/rag` | Partial | Provider-neutral run/stream loop, tool execution, fail-close guards, fail-open hooks, output filters, cache/RAG/history/resilience wiring, message-pair integrity tests, versioned/base64 checkpoint message codec, and fail-open start/complete/failure checkpoint recorder. | Cost/SLO/drift schedulers, rich workspace planning/tool routing, forced tool routing validation, and multi-agent/workspace planner parity are not fully equivalent. |
 | `api` | `apps/api`, shared package contracts | Partial | Fastify chat/SSE/auth/settings/spec/history/MCP/scheduler/compat routes; route parity is 0 missing. | Reactor's large shared SPI/DTO surface is distributed across packages and route compatibility code, not fully behavior-equivalent as first-class contracts. |
-| `approval` | `packages/policy`, `packages/runtime-state`, `packages/tools` | Partial | Approval policy, pending approval stores, approve/reject routes, execution gate before risky tools. | Rich approval context resolvers and formatting are missing or shallow, including Atlassian context, redacted context, reversibility/scope inference, and detailed request rendering. |
+| `approval` | `packages/policy`, `packages/runtime-state`, `packages/tools` | Partial | Approval policy, pending approval stores, approve/reject routes, execution gate before risky tools, rich approval context inference, reversibility/scope inference, and redacted request rendering. | Atlassian-specific context resolvers and deeper approval UX formatting remain partial. |
 | `auth` | `packages/auth`, `apps/api`, `packages/db` | Partial | Password auth, JWT, revocation, admin roles, rate limiting, DB/in-memory user stores, Reactor auth aliases. | Real IAM exchange is disabled, no clear admin initializer equivalent, Fastify auth hook replaces but does not exactly mirror WebFilter semantics, identity resolver coverage is narrower. |
 | `autoconfigure` | `packages/autoconfigure` | Needs runtime verification | Environment-driven assembly switches many stores to Kysely when a DB handle exists; provider selection and runtime wiring exist. | Needs full Node 24 API/DB smoke to prove production assembly, migrations, auth, scheduler, MCP, tracing, and agent runtime all start together. |
 | `cache` | `packages/cache` | Partial | In-memory/no-op response cache, deterministic key builder, stats, invalidation, prompt-cache metadata helpers. | No Redis/semantic cache equivalent and no semantic retrieval implementation despite semantic metrics vocabulary. |
@@ -59,15 +59,14 @@ but those checks do not prove behavior parity. This document tracks feature-leve
 | `scheduler` | `packages/scheduler`, `apps/api` | Partial | Job/execution stores, cron runtime, trigger/dry-run, agent/MCP jobs, retry/timeout, distributed lock, management routes. | Reactor scheduler tools as first-class tools, richer notification/Teams formatting, dry-run details, and policy-pipeline breadth are partial. |
 | `slack` | `packages/integrations`, `apps/api` | Partial | Signed HTTP Events API, slash commands, interactions, response URL fallback, thread replies, feedback buttons, Slack admin stores, Socket Mode envelope ack and app mention routing gateway. | Live Slack runtime/WebSocket connection needs verification; some Slack-specific session/FAQ/proactive channel behavior remains compatibility-shaped. |
 | `tool` | `packages/tools`, `packages/mcp`, `crates/runner` | Partial | Tool registry, executor, approval before execution, idempotency-key result reuse, output sanitizer, MCP tool adapter, Rust runner bridge, tool description quality gate, dependency order planner. Workspace mutation intent detection now matches Reactor's conservative detector. A concrete tool response summary hook now captures bounded summaries and JSON item counts for completed tool calls. | Context-aware/local filtering, loop/relevance governance, and dynamic policy engine parity are missing or shallow. |
-| `web` | `apps/api`, `apps/web` | Partial | Fastify API/web surface and initial Vite/React/TanStack Query operator UI. Reactor-compatible security headers, request correlation, sensitive-route cache control, API version contract, configurable CORS headers/preflight handling, and generated OpenAPI JSON are now implemented on the API server. | Playwright smoke tests are still missing. |
+| `web` | `apps/api`, `apps/web` | Partial | Fastify API/web surface and initial Vite/React/TanStack Query operator UI. Reactor-compatible security headers, request correlation, sensitive-route cache control, API version contract, configurable CORS headers/preflight handling, generated OpenAPI JSON, and Playwright operator-console smoke coverage for chat/approvals/recent runs are now implemented. | Full live API/browser smoke under Node 24 is still required. |
 
 ## Highest-Priority Gaps
 
-1. Add Playwright smoke tests for `apps/web` and API-backed chat/approvals/recent runs.
-2. Expand the initial Ink TUI beyond status/config display into interactive chat/auth workflows; config show/set and config-backed chat defaults now exist.
-3. Install/enable Cargo in the verification environment and run `cargo test`.
-4. Add Node 24 LTS full smoke: API start, DB migration, chat, SSE, CLI local/remote, web.
-5. Audit `reactor-compat-routes.ts` fallback `Map` state route family by route family and eliminate remaining DB-backed gaps.
-6. Implement Timescale exporter, tenant span processor, and richer diagnostics.
-7. Keep write-tool blocking in guards/policy rather than fail-open hooks.
-8. Continue closing large behavior gaps in `rag`, `tool`, `guard`, `agent`, and `slack` Socket Mode.
+1. Expand the initial Ink TUI beyond status/config display into interactive chat/auth workflows; config show/set and config-backed chat defaults now exist.
+2. Install/enable Cargo in the verification environment and run `cargo test`.
+3. Add Node 24 LTS full smoke: API start, DB migration, chat, SSE, CLI local/remote, web.
+4. Audit `reactor-compat-routes.ts` fallback `Map` state route family by route family and eliminate remaining DB-backed gaps.
+5. Implement Timescale exporter, tenant span processor, and richer diagnostics.
+6. Keep write-tool blocking in guards/policy rather than fail-open hooks.
+7. Continue closing large behavior gaps in `rag`, `tool`, `guard`, `agent`, and `slack` Socket Mode.
