@@ -3,7 +3,11 @@ import type {
   AdminAlertInput,
   AdminAlertSeverity,
   AdminCostUsage,
+  AdminAuditStore,
+  MetricAuditEventStore,
   AdminOperationsStore,
+  PlatformAlertRuleStore,
+  PlatformPricingStore,
   AdminSloInput,
   AdminTenantInput,
   AdminTenantStatus
@@ -26,8 +30,12 @@ export interface AdminRouteState {
   };
   readonly observability?: {
     readonly metrics?: { recordedEvents(): readonly unknown[] };
-    readonly tracer?: { recordedSpans(): readonly unknown[] };
+    readonly tracer?: unknown;
   };
+  readonly auditStore?: AdminAuditStore;
+  readonly alertRuleStore?: PlatformAlertRuleStore;
+  readonly metricEventStore?: MetricAuditEventStore;
+  readonly pricingStore?: PlatformPricingStore;
   readonly resilience?: {
     readonly circuitBreakerRegistry?: {
       getIfExists(name: string): CircuitBreakerView | undefined;
@@ -52,7 +60,7 @@ export function registerAdminRoutes(server: FastifyInstance, options: AdminRoute
 
     return {
       events: options.admin?.observability?.metrics?.recordedEvents() ?? [],
-      spans: options.admin?.observability?.tracer?.recordedSpans() ?? []
+      spans: recordedSpans(options.admin?.observability?.tracer)
     };
   });
 
@@ -298,6 +306,15 @@ export function registerAdminRoutes(server: FastifyInstance, options: AdminRoute
 
     return operations.recordCost(parsed.value);
   });
+}
+
+export function recordedSpans(tracer: unknown): readonly unknown[] {
+  return tracer &&
+    typeof tracer === "object" &&
+    "recordedSpans" in tracer &&
+    typeof tracer.recordedSpans === "function"
+    ? tracer.recordedSpans() as readonly unknown[]
+    : [];
 }
 
 type ParseResult<T> = { readonly ok: true; readonly value: T } | { readonly error: ApiError; readonly ok: false };

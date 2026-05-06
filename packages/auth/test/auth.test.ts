@@ -1,4 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { MuseDatabase } from "@muse/db";
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler
+} from "kysely";
 import {
   AuthRateLimiter,
   AuthService,
@@ -6,6 +14,9 @@ import {
   InMemoryTokenRevocationStore,
   InMemoryUserStore,
   JwtTokenProvider,
+  createAuthTokenRevocationInsert,
+  createUserInsert,
+  mapUserRow,
   PasswordHasher,
   adminScope,
   anonymousActor,
@@ -36,6 +47,41 @@ describe("users and password auth", () => {
     expect(store.findByEmail("user_account")?.id).toBe(user.id);
     expect(provider.authenticate("user_account", "correct-password")?.id).toBe(user.id);
     expect(provider.authenticate("user_account", "wrong-password")).toBeUndefined();
+  });
+});
+
+describe("Kysely auth mapping", () => {
+  it("builds PostgreSQL payloads for users and token revocations", () => {
+    const db = createPostgresBuilder();
+    const createdAt = new Date("2026-05-06T00:00:00.000Z");
+    const expiresAt = new Date("2026-05-06T01:00:00.000Z");
+    const user = createUserInsert({
+      createdAt,
+      email: " USER_ACCOUNT ",
+      id: "user-1",
+      name: "User",
+      passwordHash: "hash",
+      role: "admin_developer",
+      tenantId: "tenant-1"
+    });
+    const revocation = createAuthTokenRevocationInsert("token-1", expiresAt, createdAt);
+    const userSql = db.insertInto("users").values(user).returningAll().compile();
+    const revocationSql = db.insertInto("auth_token_revocations").values(revocation).compile();
+
+    expect(userSql.sql).toContain('insert into "users"');
+    expect(revocationSql.sql).toContain('insert into "auth_token_revocations"');
+    expect(user).toMatchObject({
+      email: "user_account",
+      id: "user-1",
+      role: "admin_developer",
+      tenant_id: "tenant-1"
+    });
+    expect(mapUserRow(user)).toMatchObject({
+      email: "user_account",
+      id: "user-1",
+      role: "admin_developer",
+      tenantId: "tenant-1"
+    });
   });
 });
 
@@ -156,3 +202,14 @@ describe("AuthRateLimiter", () => {
     expect(limiter.isBlocked("ip:/auth/login")).toBe(false);
   });
 });
+
+function createPostgresBuilder(): Kysely<MuseDatabase> {
+  return new Kysely<MuseDatabase>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => new DummyDriver(),
+      createIntrospector: (db) => new PostgresIntrospector(db),
+      createQueryCompiler: () => new PostgresQueryCompiler()
+    }
+  });
+}

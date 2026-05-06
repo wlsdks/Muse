@@ -1,8 +1,23 @@
 import { describe, expect, it } from "vitest";
+import type { MuseDatabase } from "@muse/db";
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler
+} from "kysely";
 import {
   Bm25Scorer,
   DefaultRagPipeline,
+  buildRagIngestionPolicyUpsertQuery,
+  createRagIngestionCandidateInsert,
+  createRagIngestionPolicyInsert,
+  InMemoryRagIngestionCandidateStore,
+  InMemoryRagIngestionPolicyStore,
   InMemoryRagCorpus,
+  mapRagIngestionCandidateRow,
+  mapRagIngestionPolicyRow,
   PassthroughQueryTransformer,
   SimpleContextBuilder,
   SimpleReranker,
@@ -37,6 +52,97 @@ describe("TokenBasedDocumentChunker", () => {
     });
   });
 });
+
+describe("RAG ingestion stores", () => {
+  it("persists policy and candidate review state in memory", async () => {
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const policyStore = new InMemoryRagIngestionPolicyStore({ now: () => now });
+    const candidateStore = new InMemoryRagIngestionCandidateStore({
+      idFactory: () => "candidate-1",
+      now: () => now
+    });
+
+    const policy = await policyStore.save({
+      allowedChannels: ["Web"],
+      blockedPatterns: ["secret"],
+      enabled: true,
+      minQueryChars: 10,
+      minResponseChars: 20,
+      requireReview: true
+    });
+    const candidate = await candidateStore.save({
+      channel: "WEB",
+      query: "How should Muse handle RAG?",
+      response: "Use reviewed synthetic documents.",
+      runId: "run-1",
+      userId: "example-user"
+    });
+    const reviewed = await candidateStore.updateReview({
+      id: candidate.id,
+      ingestedDocumentId: "doc-1",
+      reviewComment: "approved",
+      reviewedBy: "admin",
+      status: "INGESTED"
+    });
+
+    expect(policy).toMatchObject({ allowedChannels: ["web"], enabled: true });
+    expect(candidate).toMatchObject({ channel: "web", id: "candidate-1", status: "PENDING" });
+    expect(reviewed).toMatchObject({ ingestedDocumentId: "doc-1", status: "INGESTED" });
+    expect(await candidateStore.list({ channel: "web", status: "INGESTED" })).toHaveLength(1);
+  });
+
+  it("builds PostgreSQL RAG ingestion queries and maps rows", () => {
+    const db = createPostgresBuilder();
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const policy = createRagIngestionPolicyInsert({
+      allowedChannels: ["web"],
+      blockedPatterns: ["secret"],
+      enabled: true,
+      minQueryChars: 8,
+      minResponseChars: 16,
+      requireReview: false
+    }, { now: () => now });
+    const candidate = createRagIngestionCandidateInsert({
+      channel: "web",
+      query: "Question",
+      response: "Answer",
+      runId: "run-1",
+      userId: "example-user"
+    }, {
+      idFactory: () => "candidate-1",
+      now: () => now
+    });
+    const compiled = buildRagIngestionPolicyUpsertQuery(db, {
+      allowedChannels: ["web"],
+      blockedPatterns: [],
+      enabled: true,
+      minQueryChars: 1,
+      minResponseChars: 1,
+      requireReview: true
+    }, { now: () => now }).compile();
+
+    expect(compiled.sql).toContain('insert into "rag_ingestion_policy"');
+    expect(compiled.sql).toContain('on conflict ("id") do update');
+    expect(mapRagIngestionPolicyRow(policy)).toMatchObject({ allowedChannels: ["web"], enabled: true });
+    expect(mapRagIngestionCandidateRow(candidate)).toMatchObject({
+      channel: "web",
+      id: "candidate-1",
+      runId: "run-1",
+      status: "PENDING"
+    });
+  });
+});
+
+function createPostgresBuilder(): Kysely<MuseDatabase> {
+  return new Kysely<MuseDatabase>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => new DummyDriver(),
+      createIntrospector: (db) => new PostgresIntrospector(db),
+      createQueryCompiler: () => new PostgresQueryCompiler()
+    }
+  });
+}
 
 describe("Bm25Scorer", () => {
   it("scores and filters indexed documents", () => {

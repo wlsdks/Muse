@@ -1,9 +1,12 @@
 import { createHmac, createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import type { AuthTokenRevocationTable, MuseDatabase, UserTable } from "@muse/db";
 import { createRunId } from "@muse/shared";
+import type { Insertable, Kysely, Selectable } from "kysely";
 
 export type UserRole = "user" | "admin" | "admin_manager" | "admin_developer";
 export type AdminScope = "full" | "manager" | "developer";
 export type TokenRevocationStoreType = "memory" | "jdbc" | "redis";
+export type Awaitable<T> = T | Promise<T>;
 
 export interface User {
   readonly id: string;
@@ -11,6 +14,7 @@ export interface User {
   readonly name: string;
   readonly passwordHash: string;
   readonly role: UserRole;
+  readonly tenantId?: string;
   readonly createdAt: Date;
 }
 
@@ -20,7 +24,9 @@ export interface UserInput {
   readonly name: string;
   readonly passwordHash: string;
   readonly role?: UserRole;
+  readonly tenantId?: string;
   readonly createdAt?: Date;
+  readonly updatedAt?: Date;
 }
 
 export interface AuthProperties {
@@ -40,6 +46,11 @@ export interface AuthProvider {
   getUserById(userId: string): User | undefined;
 }
 
+export interface AsyncAuthProvider {
+  authenticate(email: string, password: string): Promise<User | undefined>;
+  getUserById(userId: string): Promise<User | undefined>;
+}
+
 export interface UserStore {
   findByEmail(email: string): User | undefined;
   findById(id: string): User | undefined;
@@ -49,9 +60,23 @@ export interface UserStore {
   count(): number;
 }
 
+export interface AsyncUserStore {
+  findByEmail(email: string): Promise<User | undefined>;
+  findById(id: string): Promise<User | undefined>;
+  save(user: UserInput): Promise<User>;
+  update(user: UserInput): Promise<User>;
+  existsByEmail(email: string): Promise<boolean>;
+  count(): Promise<number>;
+}
+
 export interface TokenRevocationStore {
   revoke(tokenId: string, expiresAt: Date): void;
   isRevoked(tokenId: string): boolean;
+}
+
+export interface AsyncTokenRevocationStore {
+  revoke(tokenId: string, expiresAt: Date): Promise<void>;
+  isRevoked(tokenId: string): Promise<boolean>;
 }
 
 export interface JwtClaims {
@@ -92,6 +117,27 @@ export interface AuthServiceOptions {
   readonly jwt: JwtTokenProvider;
   readonly revocationStore?: TokenRevocationStore;
   readonly userStore?: UserStore;
+}
+
+export interface AsyncAuthServiceOptions {
+  readonly authProvider: AsyncAuthProvider;
+  readonly jwt: JwtTokenProvider;
+  readonly revocationStore?: AsyncTokenRevocationStore;
+  readonly userStore?: AsyncUserStore;
+}
+
+export interface MuseAuthService {
+  login(email: string, password: string): Awaitable<LoginResult | undefined>;
+  register(input: { readonly email: string; readonly name: string; readonly password: string }): Awaitable<LoginResult>;
+  changePassword(input: {
+    readonly currentPassword: string;
+    readonly newPassword: string;
+    readonly userId: string;
+  }): Awaitable<PasswordChangeResult>;
+  getUserById(userId: string): Awaitable<Omit<User, "passwordHash"> | undefined>;
+  updateUserRole(userId: string, role: UserRole): Awaitable<Omit<User, "passwordHash"> | undefined>;
+  authenticateBearer(token: string | undefined): Awaitable<AuthIdentity | undefined>;
+  logout(token: string | undefined): Awaitable<boolean>;
 }
 
 export interface AuthRateLimiterOptions {
@@ -194,6 +240,90 @@ export class InMemoryUserStore implements UserStore {
   }
 }
 
+type UserRow = Selectable<UserTable>;
+type UserInsert = Insertable<UserTable>;
+type AuthTokenRevocationInsert = Insertable<AuthTokenRevocationTable>;
+
+export class KyselyUserStore implements AsyncUserStore {
+  constructor(private readonly db: Kysely<MuseDatabase>) {}
+
+  async findByEmail(email: string): Promise<User | undefined> {
+    const row = await this.db
+      .selectFrom("users")
+      .selectAll()
+      .where("email", "=", normalizeEmail(email))
+      .executeTakeFirst();
+
+    return row ? mapUserRow(row) : undefined;
+  }
+
+  async findById(id: string): Promise<User | undefined> {
+    const row = await this.db.selectFrom("users").selectAll().where("id", "=", id).executeTakeFirst();
+    return row ? mapUserRow(row) : undefined;
+  }
+
+  async save(input: UserInput): Promise<User> {
+    if (await this.existsByEmail(input.email)) {
+      throw new AuthError("USER_EXISTS", `User already exists: ${normalizeEmail(input.email)}`);
+    }
+
+    const row = await this.db
+      .insertInto("users")
+      .values(createUserInsert(input))
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return mapUserRow(row);
+  }
+
+  async update(input: UserInput): Promise<User> {
+    const normalized = normalizeUserInput(input);
+    const now = input.updatedAt ?? new Date();
+    const duplicate = await this.findByEmail(normalized.email);
+
+    if (duplicate && duplicate.id !== normalized.id) {
+      throw new AuthError("USER_EXISTS", `User already exists: ${normalized.email}`);
+    }
+
+    const row = await this.db
+      .insertInto("users")
+      .values(createUserInsert({ ...input, id: normalized.id, email: normalized.email, updatedAt: now }))
+      .onConflict((oc) =>
+        oc.column("id").doUpdateSet({
+          email: normalized.email,
+          name: normalized.name,
+          password_hash: normalized.passwordHash,
+          role: normalized.role,
+          tenant_id: normalized.tenantId ?? null,
+          updated_at: now
+        })
+      )
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return mapUserRow(row);
+  }
+
+  async existsByEmail(email: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("users")
+      .select("id")
+      .where("email", "=", normalizeEmail(email))
+      .executeTakeFirst();
+
+    return Boolean(row);
+  }
+
+  async count(): Promise<number> {
+    const row = await this.db
+      .selectFrom("users")
+      .select((eb) => eb.fn.countAll<number>().as("count"))
+      .executeTakeFirst();
+
+    return Number(row?.count ?? 0);
+  }
+}
+
 export class PasswordHasher {
   hashPassword(password: string, salt = randomBytes(16).toString("base64url")): string {
     const hash = scryptSync(password, salt, passwordKeyLength).toString("base64url");
@@ -225,6 +355,26 @@ export class DefaultAuthProvider implements AuthProvider {
   }
 
   getUserById(userId: string): User | undefined {
+    return this.userStore.findById(userId);
+  }
+
+  hashPassword(password: string): string {
+    return this.passwordHasher.hashPassword(password);
+  }
+}
+
+export class KyselyAuthProvider implements AsyncAuthProvider {
+  constructor(
+    private readonly userStore: AsyncUserStore,
+    private readonly passwordHasher = new PasswordHasher()
+  ) {}
+
+  async authenticate(email: string, password: string): Promise<User | undefined> {
+    const user = await this.userStore.findByEmail(email);
+    return user && this.passwordHasher.verify(password, user.passwordHash) ? user : undefined;
+  }
+
+  async getUserById(userId: string): Promise<User | undefined> {
     return this.userStore.findById(userId);
   }
 
@@ -342,7 +492,47 @@ export class InMemoryTokenRevocationStore implements TokenRevocationStore {
   }
 }
 
-export class AuthService {
+export class KyselyTokenRevocationStore implements AsyncTokenRevocationStore {
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    private readonly now: () => Date = () => new Date()
+  ) {}
+
+  async revoke(tokenId: string, expiresAt: Date): Promise<void> {
+    if (expiresAt <= this.now()) {
+      return;
+    }
+
+    await this.db
+      .insertInto("auth_token_revocations")
+      .values(createAuthTokenRevocationInsert(tokenId, expiresAt, this.now()))
+      .onConflict((oc) =>
+        oc.column("token_id").doUpdateSet({
+          expires_at: expiresAt,
+          revoked_at: this.now()
+        })
+      )
+      .execute();
+    await this.purgeExpired();
+  }
+
+  async isRevoked(tokenId: string): Promise<boolean> {
+    await this.purgeExpired();
+    const row = await this.db
+      .selectFrom("auth_token_revocations")
+      .select("token_id")
+      .where("token_id", "=", tokenId)
+      .executeTakeFirst();
+
+    return Boolean(row);
+  }
+
+  async purgeExpired(): Promise<void> {
+    await this.db.deleteFrom("auth_token_revocations").where("expires_at", "<=", this.now()).execute();
+  }
+}
+
+export class AuthService implements MuseAuthService {
   private readonly revocationStore?: TokenRevocationStore;
   private readonly userStore?: UserStore;
 
@@ -467,6 +657,138 @@ export class AuthService {
 
     this.revocationStore.revoke(claims.jti, new Date(claims.exp * 1_000));
     return true;
+  }
+}
+
+export class AsyncAuthService implements MuseAuthService {
+  private readonly revocationStore?: AsyncTokenRevocationStore;
+  private readonly userStore?: AsyncUserStore;
+
+  constructor(private readonly options: AsyncAuthServiceOptions) {
+    this.revocationStore = options.revocationStore;
+    this.userStore = options.userStore;
+  }
+
+  async login(email: string, password: string): Promise<LoginResult | undefined> {
+    const user = await this.options.authProvider.authenticate(email, password);
+
+    if (!user) {
+      return undefined;
+    }
+
+    return this.createLoginResult(user);
+  }
+
+  async register(input: { readonly email: string; readonly name: string; readonly password: string }): Promise<LoginResult> {
+    if (!this.userStore) {
+      throw new AuthError("REGISTRATION_DISABLED", "Registration requires a user store");
+    }
+
+    const provider = this.options.authProvider;
+    const passwordHash =
+      provider instanceof KyselyAuthProvider ? provider.hashPassword(input.password) : new PasswordHasher().hashPassword(input.password);
+    const role: UserRole = (await this.userStore.count()) === 0 ? "admin" : "user";
+    const user = await this.userStore.save({
+      email: input.email,
+      name: input.name,
+      passwordHash,
+      role
+    });
+
+    return this.createLoginResult(user);
+  }
+
+  async changePassword(input: {
+    readonly currentPassword: string;
+    readonly newPassword: string;
+    readonly userId: string;
+  }): Promise<PasswordChangeResult> {
+    if (!this.userStore || !(this.options.authProvider instanceof KyselyAuthProvider)) {
+      return "unsupported";
+    }
+
+    const user = await this.options.authProvider.getUserById(input.userId);
+
+    if (!user) {
+      return "user_not_found";
+    }
+
+    if (!(await this.options.authProvider.authenticate(user.email, input.currentPassword))) {
+      return "invalid_current_password";
+    }
+
+    await this.userStore.update({
+      createdAt: user.createdAt,
+      email: user.email,
+      id: user.id,
+      name: user.name,
+      passwordHash: this.options.authProvider.hashPassword(input.newPassword),
+      role: user.role,
+      tenantId: user.tenantId
+    });
+    return "changed";
+  }
+
+  async getUserById(userId: string): Promise<Omit<User, "passwordHash"> | undefined> {
+    const user = await this.options.authProvider.getUserById(userId);
+    return user ? publicUser(user) : undefined;
+  }
+
+  async updateUserRole(userId: string, role: UserRole): Promise<Omit<User, "passwordHash"> | undefined> {
+    if (!this.userStore) {
+      return undefined;
+    }
+
+    const user = await this.options.authProvider.getUserById(userId);
+
+    if (!user) {
+      return undefined;
+    }
+
+    return publicUser(await this.userStore.update({ ...user, role }));
+  }
+
+  async authenticateBearer(token: string | undefined): Promise<AuthIdentity | undefined> {
+    if (!token) {
+      return undefined;
+    }
+
+    const claims = this.options.jwt.parseToken(token);
+
+    if (!claims || (await this.revocationStore?.isRevoked(claims.jti))) {
+      return undefined;
+    }
+
+    return {
+      accountId: claims.accountId,
+      email: claims.email,
+      expiresAt: new Date(claims.exp * 1_000),
+      role: claims.role,
+      tenantId: claims.tenantId,
+      tokenId: claims.jti,
+      userId: claims.sub
+    };
+  }
+
+  async logout(token: string | undefined): Promise<boolean> {
+    if (!token || !this.revocationStore) {
+      return false;
+    }
+
+    const claims = this.options.jwt.parseToken(token);
+
+    if (!claims) {
+      return false;
+    }
+
+    await this.revocationStore.revoke(claims.jti, new Date(claims.exp * 1_000));
+    return true;
+  }
+
+  private createLoginResult(user: User): LoginResult {
+    const token = this.options.jwt.createToken(user);
+    const expiresAt = this.options.jwt.extractExpiration(token) ?? new Date(Date.now() + defaultJwtExpirationMs);
+    return { expiresAt, token, user: publicUser(user) };
   }
 }
 
@@ -601,7 +923,8 @@ function normalizeUserInput(input: UserInput): User {
     id: input.id ?? createRunId("user"),
     name: input.name.trim(),
     passwordHash: input.passwordHash,
-    role: input.role ?? "user"
+    role: input.role ?? "user",
+    tenantId: input.tenantId
   };
 }
 
@@ -611,8 +934,53 @@ function publicUser(user: User): Omit<User, "passwordHash"> {
     email: user.email,
     id: user.id,
     name: user.name,
-    role: user.role
+    role: user.role,
+    tenantId: user.tenantId
   };
+}
+
+export function createUserInsert(input: UserInput): UserInsert {
+  const user = normalizeUserInput(input);
+  const updatedAt = input.updatedAt ?? user.createdAt;
+
+  return {
+    created_at: user.createdAt,
+    email: user.email,
+    id: user.id,
+    name: user.name,
+    password_hash: user.passwordHash,
+    role: user.role,
+    tenant_id: user.tenantId ?? null,
+    updated_at: updatedAt
+  };
+}
+
+export function mapUserRow(row: UserRow): User {
+  return {
+    createdAt: toDate(row.created_at),
+    email: row.email,
+    id: row.id,
+    name: row.name,
+    passwordHash: row.password_hash,
+    role: row.role,
+    tenantId: row.tenant_id ?? undefined
+  };
+}
+
+export function createAuthTokenRevocationInsert(
+  tokenId: string,
+  expiresAt: Date,
+  revokedAt: Date
+): AuthTokenRevocationInsert {
+  return {
+    expires_at: expiresAt,
+    revoked_at: revokedAt,
+    token_id: tokenId
+  };
+}
+
+function toDate(value: Date | string): Date {
+  return value instanceof Date ? value : new Date(value);
 }
 
 function signJwt(claims: JwtClaims, secret: Buffer): string {

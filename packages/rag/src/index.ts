@@ -1,5 +1,7 @@
 import { createApproximateTokenEstimator, type TokenEstimator } from "@muse/memory";
+import type { MuseDatabase, RagIngestionCandidateTable, RagIngestionPolicyTable } from "@muse/db";
 import { createRunId, type JsonObject, type JsonValue } from "@muse/shared";
+import type { Insertable, Kysely, Selectable } from "kysely";
 
 export type Awaitable<T> = T | Promise<T>;
 
@@ -56,6 +58,71 @@ export interface RagPipeline {
   retrieve(query: RagQuery): Promise<RagContext>;
 }
 
+export type RagIngestionCandidateStatus = "PENDING" | "REJECTED" | "INGESTED";
+
+export interface RagIngestionPolicy {
+  readonly enabled: boolean;
+  readonly requireReview: boolean;
+  readonly allowedChannels: readonly string[];
+  readonly minQueryChars: number;
+  readonly minResponseChars: number;
+  readonly blockedPatterns: readonly string[];
+  readonly createdAt?: Date;
+  readonly updatedAt?: Date;
+}
+
+export interface RagIngestionCandidate {
+  readonly id?: string;
+  readonly runId: string;
+  readonly userId: string;
+  readonly sessionId?: string | null;
+  readonly channel?: string | null;
+  readonly query: string;
+  readonly response: string;
+  readonly status?: RagIngestionCandidateStatus;
+  readonly capturedAt?: Date;
+  readonly reviewedAt?: Date | null;
+  readonly reviewedBy?: string | null;
+  readonly reviewComment?: string | null;
+  readonly ingestedDocumentId?: string | null;
+}
+
+export interface StoredRagIngestionCandidate extends Required<Omit<RagIngestionCandidate, "id" | "sessionId" | "channel" | "status" | "capturedAt" | "reviewedAt" | "reviewedBy" | "reviewComment" | "ingestedDocumentId">> {
+  readonly id: string;
+  readonly sessionId: string | null;
+  readonly channel: string | null;
+  readonly status: RagIngestionCandidateStatus;
+  readonly capturedAt: Date;
+  readonly reviewedAt: Date | null;
+  readonly reviewedBy: string | null;
+  readonly reviewComment: string | null;
+  readonly ingestedDocumentId: string | null;
+}
+
+export interface RagIngestionPolicyStore {
+  getOrNull(): Awaitable<RagIngestionPolicy | undefined>;
+  save(policy: RagIngestionPolicy): Awaitable<RagIngestionPolicy>;
+  delete(): Awaitable<boolean>;
+}
+
+export interface RagIngestionCandidateStore {
+  save(candidate: RagIngestionCandidate): Awaitable<StoredRagIngestionCandidate>;
+  findById(id: string): Awaitable<StoredRagIngestionCandidate | undefined>;
+  findByRunId(runId: string): Awaitable<StoredRagIngestionCandidate | undefined>;
+  list(options?: {
+    readonly limit?: number;
+    readonly status?: RagIngestionCandidateStatus;
+    readonly channel?: string;
+  }): Awaitable<readonly StoredRagIngestionCandidate[]>;
+  updateReview(input: {
+    readonly id: string;
+    readonly status: Exclude<RagIngestionCandidateStatus, "PENDING">;
+    readonly reviewedBy: string;
+    readonly reviewComment?: string | null;
+    readonly ingestedDocumentId?: string | null;
+  }): Awaitable<StoredRagIngestionCandidate | undefined>;
+}
+
 export interface TokenBasedDocumentChunkerOptions {
   readonly chunkSize?: number;
   readonly minChunkSizeChars?: number;
@@ -96,6 +163,375 @@ const defaultOverlap = 50;
 const defaultMaxNumChunks = 100;
 const minTokenLength = 2;
 const maxKoreanNgramLength = 4;
+const ragPolicyDefaultId = "default";
+const maxInMemoryRagCandidates = 20_000;
+
+type RagIngestionPolicyRow = Selectable<RagIngestionPolicyTable>;
+type RagIngestionPolicyInsert = Insertable<RagIngestionPolicyTable>;
+type RagIngestionCandidateRow = Selectable<RagIngestionCandidateTable>;
+type RagIngestionCandidateInsert = Insertable<RagIngestionCandidateTable>;
+
+export class InMemoryRagIngestionPolicyStore implements RagIngestionPolicyStore {
+  private policy?: RagIngestionPolicy;
+  private readonly now: () => Date;
+
+  constructor(options: { readonly initial?: RagIngestionPolicy; readonly now?: () => Date } = {}) {
+    this.policy = options.initial;
+    this.now = options.now ?? (() => new Date());
+  }
+
+  getOrNull(): RagIngestionPolicy | undefined {
+    return this.policy;
+  }
+
+  save(policy: RagIngestionPolicy): RagIngestionPolicy {
+    const now = this.now();
+    const saved = normalizeRagIngestionPolicy(policy, {
+      createdAt: this.policy?.createdAt ?? policy.createdAt ?? now,
+      updatedAt: policy.updatedAt ?? now
+    });
+
+    this.policy = saved;
+    return saved;
+  }
+
+  delete(): boolean {
+    const existed = this.policy !== undefined;
+    this.policy = undefined;
+    return existed;
+  }
+}
+
+export class KyselyRagIngestionPolicyStore implements RagIngestionPolicyStore {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: { readonly now?: () => Date } = {}
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async getOrNull(): Promise<RagIngestionPolicy | undefined> {
+    const row = await this.db
+      .selectFrom("rag_ingestion_policy")
+      .selectAll()
+      .where("id", "=", ragPolicyDefaultId)
+      .executeTakeFirst();
+
+    return row ? mapRagIngestionPolicyRow(row) : undefined;
+  }
+
+  async save(policy: RagIngestionPolicy): Promise<RagIngestionPolicy> {
+    const existing = await this.getOrNull();
+    const row = await buildRagIngestionPolicyUpsertQuery(this.db, policy, {
+      createdAt: existing?.createdAt,
+      now: this.now
+    }).executeTakeFirstOrThrow();
+
+    return mapRagIngestionPolicyRow(row);
+  }
+
+  async delete(): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("rag_ingestion_policy")
+      .where("id", "=", ragPolicyDefaultId)
+      .executeTakeFirst();
+
+    return Number(result.numDeletedRows ?? 0) > 0;
+  }
+}
+
+export class InMemoryRagIngestionCandidateStore implements RagIngestionCandidateStore {
+  private readonly byId = new Map<string, StoredRagIngestionCandidate>();
+  private readonly byRunId = new Map<string, string>();
+  private readonly orderedIds: string[] = [];
+  private readonly idFactory: () => string;
+  private readonly now: () => Date;
+
+  constructor(options: { readonly idFactory?: () => string; readonly now?: () => Date } = {}) {
+    this.idFactory = options.idFactory ?? (() => createRunId("rag_candidate"));
+    this.now = options.now ?? (() => new Date());
+  }
+
+  save(candidate: RagIngestionCandidate): StoredRagIngestionCandidate {
+    const existingId = this.byRunId.get(candidate.runId);
+    const existing = existingId ? this.byId.get(existingId) : undefined;
+
+    if (existing) {
+      return existing;
+    }
+
+    const saved = normalizeRagIngestionCandidate(candidate, {
+      idFactory: this.idFactory,
+      now: this.now
+    });
+    this.byId.set(saved.id, saved);
+    this.byRunId.set(saved.runId, saved.id);
+    this.orderedIds.unshift(saved.id);
+    this.evictOldest();
+    return saved;
+  }
+
+  findById(id: string): StoredRagIngestionCandidate | undefined {
+    return this.byId.get(id);
+  }
+
+  findByRunId(runId: string): StoredRagIngestionCandidate | undefined {
+    const id = this.byRunId.get(runId);
+    return id ? this.byId.get(id) : undefined;
+  }
+
+  list(options: {
+    readonly limit?: number;
+    readonly status?: RagIngestionCandidateStatus;
+    readonly channel?: string;
+  } = {}): readonly StoredRagIngestionCandidate[] {
+    const channel = normalizeOptionalLowercase(options.channel);
+    const limit = clampRagCandidateLimit(options.limit ?? 100);
+
+    return this.orderedIds
+      .map((id) => this.byId.get(id))
+      .filter((candidate): candidate is StoredRagIngestionCandidate => Boolean(candidate))
+      .filter((candidate) => !options.status || candidate.status === options.status)
+      .filter((candidate) => !channel || candidate.channel?.toLowerCase() === channel)
+      .slice(0, limit);
+  }
+
+  updateReview(input: {
+    readonly id: string;
+    readonly status: Exclude<RagIngestionCandidateStatus, "PENDING">;
+    readonly reviewedBy: string;
+    readonly reviewComment?: string | null;
+    readonly ingestedDocumentId?: string | null;
+  }): StoredRagIngestionCandidate | undefined {
+    const existing = this.byId.get(input.id);
+
+    if (!existing) {
+      return undefined;
+    }
+
+    const updated: StoredRagIngestionCandidate = {
+      ...existing,
+      ingestedDocumentId: input.ingestedDocumentId ?? null,
+      reviewComment: input.reviewComment ?? null,
+      reviewedAt: this.now(),
+      reviewedBy: input.reviewedBy,
+      status: input.status
+    };
+    this.byId.set(updated.id, updated);
+    return updated;
+  }
+
+  private evictOldest(): void {
+    while (this.orderedIds.length > maxInMemoryRagCandidates) {
+      const old = this.orderedIds.pop();
+      const removed = old ? this.byId.get(old) : undefined;
+
+      if (old) {
+        this.byId.delete(old);
+      }
+
+      if (removed) {
+        this.byRunId.delete(removed.runId);
+      }
+    }
+  }
+}
+
+export class KyselyRagIngestionCandidateStore implements RagIngestionCandidateStore {
+  private readonly idFactory: () => string;
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: { readonly idFactory?: () => string; readonly now?: () => Date } = {}
+  ) {
+    this.idFactory = options.idFactory ?? (() => createRunId("rag_candidate"));
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async save(candidate: RagIngestionCandidate): Promise<StoredRagIngestionCandidate> {
+    const existing = await this.findByRunId(candidate.runId);
+
+    if (existing) {
+      return existing;
+    }
+
+    const row = await this.db
+      .insertInto("rag_ingestion_candidates")
+      .values(createRagIngestionCandidateInsert(candidate, {
+        idFactory: this.idFactory,
+        now: this.now
+      }))
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return mapRagIngestionCandidateRow(row);
+  }
+
+  async findById(id: string): Promise<StoredRagIngestionCandidate | undefined> {
+    const row = await this.db
+      .selectFrom("rag_ingestion_candidates")
+      .selectAll()
+      .where("id", "=", id)
+      .executeTakeFirst();
+
+    return row ? mapRagIngestionCandidateRow(row) : undefined;
+  }
+
+  async findByRunId(runId: string): Promise<StoredRagIngestionCandidate | undefined> {
+    const row = await this.db
+      .selectFrom("rag_ingestion_candidates")
+      .selectAll()
+      .where("run_id", "=", runId)
+      .executeTakeFirst();
+
+    return row ? mapRagIngestionCandidateRow(row) : undefined;
+  }
+
+  async list(options: {
+    readonly limit?: number;
+    readonly status?: RagIngestionCandidateStatus;
+    readonly channel?: string;
+  } = {}): Promise<readonly StoredRagIngestionCandidate[]> {
+    const channel = normalizeOptionalLowercase(options.channel);
+    const query = this.db
+      .selectFrom("rag_ingestion_candidates")
+      .selectAll()
+      .$if(Boolean(options.status), (builder) => builder.where("status", "=", options.status as RagIngestionCandidateStatus))
+      .$if(Boolean(channel), (builder) => builder.where("channel", "=", channel ?? ""))
+      .orderBy("captured_at", "desc")
+      .limit(clampRagCandidateLimit(options.limit ?? 100));
+
+    const rows = await query.execute();
+    return rows.map(mapRagIngestionCandidateRow);
+  }
+
+  async updateReview(input: {
+    readonly id: string;
+    readonly status: Exclude<RagIngestionCandidateStatus, "PENDING">;
+    readonly reviewedBy: string;
+    readonly reviewComment?: string | null;
+    readonly ingestedDocumentId?: string | null;
+  }): Promise<StoredRagIngestionCandidate | undefined> {
+    const row = await this.db
+      .updateTable("rag_ingestion_candidates")
+      .set({
+        ingested_document_id: input.ingestedDocumentId ?? null,
+        review_comment: input.reviewComment ?? null,
+        reviewed_at: this.now(),
+        reviewed_by: input.reviewedBy,
+        status: input.status
+      })
+      .where("id", "=", input.id)
+      .returningAll()
+      .executeTakeFirst();
+
+    return row ? mapRagIngestionCandidateRow(row) : undefined;
+  }
+}
+
+export function buildRagIngestionPolicyUpsertQuery(
+  db: Kysely<MuseDatabase>,
+  policy: RagIngestionPolicy,
+  options: { readonly createdAt?: Date; readonly now: () => Date }
+) {
+  const row = createRagIngestionPolicyInsert(policy, options);
+
+  return db
+    .insertInto("rag_ingestion_policy")
+    .values(row)
+    .onConflict((oc) => oc.column("id").doUpdateSet({
+      allowed_channels: row.allowed_channels,
+      blocked_patterns: row.blocked_patterns,
+      enabled: row.enabled,
+      min_query_chars: row.min_query_chars,
+      min_response_chars: row.min_response_chars,
+      require_review: row.require_review,
+      updated_at: row.updated_at
+    }))
+    .returningAll();
+}
+
+export function createRagIngestionPolicyInsert(
+  policy: RagIngestionPolicy,
+  options: { readonly createdAt?: Date; readonly now: () => Date }
+): RagIngestionPolicyInsert {
+  const now = options.now();
+  const normalized = normalizeRagIngestionPolicy(policy, {
+    createdAt: options.createdAt ?? policy.createdAt ?? now,
+    updatedAt: policy.updatedAt ?? now
+  });
+
+  return {
+    allowed_channels: [...normalized.allowedChannels],
+    blocked_patterns: [...normalized.blockedPatterns],
+    created_at: normalized.createdAt,
+    enabled: normalized.enabled,
+    id: ragPolicyDefaultId,
+    min_query_chars: normalized.minQueryChars,
+    min_response_chars: normalized.minResponseChars,
+    require_review: normalized.requireReview,
+    updated_at: normalized.updatedAt
+  };
+}
+
+export function createRagIngestionCandidateInsert(
+  candidate: RagIngestionCandidate,
+  options: { readonly idFactory: () => string; readonly now: () => Date }
+): RagIngestionCandidateInsert {
+  const normalized = normalizeRagIngestionCandidate(candidate, options);
+
+  return {
+    captured_at: normalized.capturedAt,
+    channel: normalized.channel,
+    id: normalized.id,
+    ingested_document_id: normalized.ingestedDocumentId,
+    query: normalized.query,
+    response: normalized.response,
+    review_comment: normalized.reviewComment,
+    reviewed_at: normalized.reviewedAt,
+    reviewed_by: normalized.reviewedBy,
+    run_id: normalized.runId,
+    session_id: normalized.sessionId,
+    status: normalized.status,
+    user_id: normalized.userId
+  };
+}
+
+export function mapRagIngestionPolicyRow(row: RagIngestionPolicyRow): RagIngestionPolicy {
+  return {
+    allowedChannels: jsonStringArray(row.allowed_channels).map((channel) => channel.toLowerCase()),
+    blockedPatterns: jsonStringArray(row.blocked_patterns),
+    createdAt: dateValue(row.created_at),
+    enabled: row.enabled,
+    minQueryChars: row.min_query_chars,
+    minResponseChars: row.min_response_chars,
+    requireReview: row.require_review,
+    updatedAt: dateValue(row.updated_at)
+  };
+}
+
+export function mapRagIngestionCandidateRow(row: RagInestionCandidateRowAlias): StoredRagIngestionCandidate {
+  return {
+    capturedAt: dateValue(row.captured_at ?? null),
+    channel: row.channel ?? null,
+    id: row.id ?? "",
+    ingestedDocumentId: row.ingested_document_id ?? null,
+    query: row.query ?? "",
+    response: row.response ?? "",
+    reviewComment: row.review_comment ?? null,
+    reviewedAt: row.reviewed_at ? dateValue(row.reviewed_at) : null,
+    reviewedBy: row.reviewed_by ?? null,
+    runId: row.run_id ?? "",
+    sessionId: row.session_id ?? null,
+    status: candidateStatusValue(row.status),
+    userId: row.user_id ?? ""
+  };
+}
+
+type RagInestionCandidateRowAlias = RagIngestionCandidateRow | RagIngestionCandidateInsert;
 
 export class TokenBasedDocumentChunker implements DocumentChunker {
   private readonly chunkSize: number;
@@ -648,6 +1084,85 @@ function accumulateRrf(
   results.forEach(([documentId], rank) => {
     scores.set(documentId, (scores.get(documentId) ?? 0) + weight / (k + rank + 1));
   });
+}
+
+function normalizeRagIngestionPolicy(
+  policy: RagIngestionPolicy,
+  timestamps: { readonly createdAt: Date; readonly updatedAt: Date }
+): Required<RagIngestionPolicy> {
+  return {
+    allowedChannels: normalizeStringList(policy.allowedChannels).map((channel) => channel.toLowerCase()),
+    blockedPatterns: normalizeStringList(policy.blockedPatterns),
+    createdAt: timestamps.createdAt,
+    enabled: policy.enabled,
+    minQueryChars: Math.max(1, Math.trunc(policy.minQueryChars)),
+    minResponseChars: Math.max(1, Math.trunc(policy.minResponseChars)),
+    requireReview: policy.requireReview,
+    updatedAt: timestamps.updatedAt
+  };
+}
+
+function normalizeRagIngestionCandidate(
+  candidate: RagIngestionCandidate,
+  options: { readonly idFactory: () => string; readonly now: () => Date }
+): StoredRagIngestionCandidate {
+  return {
+    capturedAt: candidate.capturedAt ?? options.now(),
+    channel: normalizeOptionalLowercase(candidate.channel),
+    id: candidate.id ?? options.idFactory(),
+    ingestedDocumentId: nullableString(candidate.ingestedDocumentId),
+    query: candidate.query,
+    response: candidate.response,
+    reviewComment: nullableString(candidate.reviewComment),
+    reviewedAt: candidate.reviewedAt ?? null,
+    reviewedBy: nullableString(candidate.reviewedBy),
+    runId: candidate.runId,
+    sessionId: nullableString(candidate.sessionId),
+    status: candidateStatusValue(candidate.status),
+    userId: candidate.userId
+  };
+}
+
+function normalizeStringList(values: readonly string[]): readonly string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function normalizeOptionalLowercase(value: string | null | undefined): string | null {
+  const normalized = nullableString(value)?.toLowerCase();
+  return normalized ?? null;
+}
+
+function nullableString(value: string | null | undefined): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function candidateStatusValue(value: unknown): RagIngestionCandidateStatus {
+  return value === "REJECTED" || value === "INGESTED" ? value : "PENDING";
+}
+
+function clampRagCandidateLimit(value: number): number {
+  return Math.min(Math.max(Math.trunc(value), 1), 500);
+}
+
+function jsonStringArray(value: JsonValue): readonly string[] {
+  if (Array.isArray(value)) {
+    return normalizeStringList(value.filter((entry): entry is string => typeof entry === "string"));
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as JsonValue;
+      return jsonStringArray(parsed);
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function dateValue(value: Date | string | null): Date {
+  return value instanceof Date ? value : new Date(value ?? 0);
 }
 
 const sentenceEnds = new Set([".", "!", "?", "。", "！", "？"]);

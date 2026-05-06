@@ -9,6 +9,8 @@ import {
   JwtTokenProvider
 } from "@muse/auth";
 import {
+  InMemoryChannelFaqRegistrationStore,
+  InMemorySlackBotInstanceStore,
   SlackBotResponseTracker,
   signSlackRequestBody,
   type SlackInteractionHandler,
@@ -25,10 +27,12 @@ import {
 import { InMemoryTaskMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryFollowupSuggestionStore } from "@muse/observability";
+import { InMemoryRagIngestionCandidateStore, InMemoryRagIngestionPolicyStore } from "@muse/rag";
 import {
   InMemoryAdminOperationsStore,
   InMemoryAgentRunHistoryStore,
-  InMemoryPendingApprovalStore
+  InMemoryPendingApprovalStore,
+  InMemorySessionTagStore
 } from "@muse/runtime-state";
 import {
   DynamicSchedulerService,
@@ -410,6 +414,165 @@ describe("api server", () => {
     expect(markdownExport.headers["content-type"]).toContain("text/markdown");
     expect(markdownExport.body).toContain("# Conversation: member-run");
     expect(ownDelete.statusCode).toBe(204);
+  });
+
+  it("persists Reactor-compatible session tags through the configured store", async () => {
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    const sessionTagStore = new InMemorySessionTagStore({
+      idFactory: () => "session-tag-1",
+      now: () => Date.parse("2026-05-06T00:00:00.000Z")
+    });
+    historyStore.createRun({
+      id: "tagged-run",
+      input: "compare options",
+      model: "provider/model",
+      provider: "provider",
+      userId: "example-user"
+    });
+    const server = buildServer({ historyStore, logger: false, sessionTagStore });
+
+    const created = await server.inject({
+      method: "POST",
+      payload: {
+        comment: "ready for review",
+        label: "reviewed"
+      },
+      url: "/api/admin/sessions/tagged-run/tags"
+    });
+    const detail = await server.inject({
+      method: "GET",
+      url: "/api/admin/sessions/tagged-run"
+    });
+    const storedAfterCreate = await sessionTagStore.listBySession("tagged-run");
+    const deletedRun = await server.inject({
+      method: "DELETE",
+      url: "/api/admin/sessions/tagged-run"
+    });
+
+    expect(created.statusCode).toBe(200);
+    expect(created.json()).toMatchObject({
+      comment: "ready for review",
+      id: "session-tag-1",
+      label: "reviewed",
+      sessionId: "tagged-run"
+    });
+    expect(detail.json()).toMatchObject({
+      run: { id: "tagged-run" },
+      tags: [{ id: "session-tag-1", label: "reviewed" }]
+    });
+    expect(storedAfterCreate).toMatchObject([{ id: "session-tag-1", label: "reviewed" }]);
+    expect(deletedRun.statusCode).toBe(204);
+    expect(await sessionTagStore.listBySession("tagged-run")).toHaveLength(0);
+  });
+
+  it("persists Reactor-compatible RAG ingestion policy and candidate reviews through configured stores", async () => {
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const policyStore = new InMemoryRagIngestionPolicyStore({ now: () => now });
+    const candidateStore = new InMemoryRagIngestionCandidateStore({
+      idFactory: () => "candidate-1",
+      now: () => now
+    });
+    await candidateStore.save({
+      channel: "web",
+      query: "How should Muse migrate RAG ingestion?",
+      response: "Persist reviewed synthetic candidates.",
+      runId: "run-rag",
+      userId: "example-user"
+    });
+    const server = buildServer({
+      logger: false,
+      ragIngestion: { candidateStore, policyStore }
+    });
+
+    const savedPolicy = await server.inject({
+      method: "PUT",
+      payload: {
+        allowedChannels: ["web"],
+        blockedPatterns: ["secret"],
+        enabled: true,
+        minQueryChars: 8,
+        minResponseChars: 16,
+        requireReview: false
+      },
+      url: "/api/rag-ingestion/policy"
+    });
+    const policy = await server.inject({
+      method: "GET",
+      url: "/api/rag-ingestion/policy"
+    });
+    const candidates = await server.inject({
+      method: "GET",
+      url: "/api/rag-ingestion/candidates?status=PENDING&channel=web"
+    });
+    const approved = await server.inject({
+      method: "POST",
+      payload: { comment: "approved" },
+      url: "/api/rag-ingestion/candidates/candidate-1/approve"
+    });
+    const approvedAgain = await server.inject({
+      method: "POST",
+      payload: { comment: "approved again" },
+      url: "/api/rag-ingestion/candidates/candidate-1/approve"
+    });
+
+    expect(savedPolicy.json()).toMatchObject({ allowedChannels: ["web"], enabled: true });
+    expect(policy.json()).toMatchObject({
+      effective: { allowedChannels: ["web"], enabled: true },
+      stored: { allowedChannels: ["web"], enabled: true }
+    });
+    expect(candidates.json()).toMatchObject([{ id: "candidate-1", status: "PENDING" }]);
+    expect(approved.json()).toMatchObject({
+      id: "candidate-1",
+      reviewComment: "approved",
+      status: "INGESTED"
+    });
+    expect(approvedAgain.statusCode).toBe(409);
+  });
+
+  it("persists Reactor-compatible Slack bot and FAQ registrations through configured stores", async () => {
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const botStore = new InMemorySlackBotInstanceStore({ now: () => now });
+    const faqStore = new InMemoryChannelFaqRegistrationStore({ now: () => now });
+    const server = buildServer({
+      logger: false,
+      slackPersistence: { botStore, faqStore }
+    });
+
+    const bot = await server.inject({
+      method: "POST",
+      payload: {
+        appToken: "xapp-token",
+        botToken: "xoxb-token",
+        name: "Support Bot",
+        personaId: "persona-1"
+      },
+      url: "/api/admin/slack-bots"
+    });
+    const faq = await server.inject({
+      method: "POST",
+      payload: {
+        autoReplyMode: "ALWAYS",
+        channelId: "channel-1",
+        channelName: "support"
+      },
+      url: "/api/admin/slack/channels/faq"
+    });
+    const faqList = await server.inject({
+      method: "GET",
+      url: "/api/admin/slack/channels/faq"
+    });
+    const ingest = await server.inject({
+      method: "POST",
+      url: "/api/admin/slack/channels/faq/channel-1/ingest"
+    });
+
+    expect(bot.statusCode).toBe(201);
+    expect(bot.json()).toMatchObject({ name: "Support Bot", personaId: "persona-1" });
+    expect(await botStore.list()).toHaveLength(1);
+    expect(faq.json()).toMatchObject({ autoReplyMode: "ALWAYS", channelId: "channel-1" });
+    expect(faqList.json()).toMatchObject({ registrations: [{ channelId: "channel-1" }] });
+    expect(ingest.json()).toMatchObject({ channelId: "channel-1" });
+    expect(await faqStore.get("channel-1")).toMatchObject({ lastStatus: "OK" });
   });
 
   it("scopes Reactor approval lists to the authenticated user", async () => {
@@ -5319,9 +5482,10 @@ describe("api server", () => {
         threadTs: "1770000000.000100"
       }
     ]);
-    expect(responseTracker.lookup("channel-1", "1770000000.000200")).toMatchObject({
+    expect(await responseTracker.lookup("channel-1", "1770000000.000200")).toMatchObject({
       sessionId: "slack-channel-1-1770000000.000100",
-      userPrompt: "hello"
+      userPrompt: "hello",
+      response: "Threaded Slack answer"
     });
   });
 

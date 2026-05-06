@@ -1,5 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createRunId, type JsonObject } from "@muse/shared";
+import type {
+  ChannelFaqRegistrationTable,
+  MuseDatabase,
+  SlackBotInstanceTable,
+  SlackFeedbackEventTable,
+  SlackResponseTrackingTable
+} from "@muse/db";
+import { createRunId, type JsonObject, type JsonValue } from "@muse/shared";
+import type { Insertable, Kysely, Selectable } from "kysely";
 
 export type Awaitable<T> = T | Promise<T>;
 export type IntegrationEventType = "before_start" | "after_complete" | "on_error" | "before_tool" | "after_tool";
@@ -124,15 +132,101 @@ export interface SlackInteractionDispatchResult {
 export interface TrackedSlackBotResponse {
   readonly sessionId: string;
   readonly userPrompt: string;
+  readonly response?: string;
   readonly expiresAt: number;
 }
 
 export interface SlackFeedbackInput {
+  readonly channelId?: string;
+  readonly messageTs?: string;
+  readonly metadata?: JsonObject;
   readonly query: string;
   readonly rating: "thumbs_down" | "thumbs_up";
   readonly response: string;
   readonly sessionId: string;
   readonly userId: string;
+}
+
+export interface SlackResponseTrackingInput {
+  readonly channelId: string;
+  readonly messageTs: string;
+  readonly sessionId: string;
+  readonly userPrompt: string;
+  readonly response?: string;
+  readonly expiresAt: number;
+}
+
+export interface SlackResponseTrackerStore {
+  track(input: SlackResponseTrackingInput): Awaitable<void>;
+  lookup(channelId: string, messageTs: string, now?: number): Awaitable<TrackedSlackBotResponse | undefined>;
+  purgeExpired(now?: number): Awaitable<number>;
+}
+
+export interface SlackFeedbackEvent extends SlackFeedbackInput {
+  readonly id: string;
+  readonly channelId: string;
+  readonly createdAt: Date;
+  readonly messageTs: string;
+}
+
+export interface SlackFeedbackEventStore {
+  save(input: SlackFeedbackInput): Awaitable<SlackFeedbackEvent>;
+  listBySession(sessionId: string): Awaitable<readonly SlackFeedbackEvent[]>;
+}
+
+export type SlackFaqAutoReplyMode = "MENTION" | "ALWAYS" | "OFF";
+export type SlackFaqIngestStatus = "OK" | "FAILED" | "RUNNING";
+
+export interface SlackBotInstance {
+  readonly id: string;
+  readonly name: string;
+  readonly botToken: string;
+  readonly appToken: string;
+  readonly personaId: string;
+  readonly defaultChannel?: string | null;
+  readonly enabled?: boolean;
+  readonly createdAt?: Date;
+  readonly updatedAt?: Date;
+}
+
+export interface SlackBotInstanceStore {
+  list(): Awaitable<readonly SlackBotInstance[]>;
+  listEnabled(): Awaitable<readonly SlackBotInstance[]>;
+  get(id: string): Awaitable<SlackBotInstance | undefined>;
+  save(instance: SlackBotInstance): Awaitable<SlackBotInstance>;
+  delete(id: string): Awaitable<boolean>;
+}
+
+export interface ChannelFaqRegistration {
+  readonly channelId: string;
+  readonly channelName?: string | null;
+  readonly enabled?: boolean;
+  readonly autoReplyMode?: SlackFaqAutoReplyMode;
+  readonly confidenceThreshold?: number;
+  readonly daysBack?: number;
+  readonly reIngestIntervalHours?: number;
+  readonly lastIngestedAt?: Date | null;
+  readonly lastMessageCount?: number | null;
+  readonly lastChunkCount?: number | null;
+  readonly lastStatus?: SlackFaqIngestStatus | null;
+  readonly lastError?: string | null;
+  readonly registeredBy?: string | null;
+  readonly registeredAt?: Date;
+  readonly updatedAt?: Date;
+}
+
+export interface ChannelFaqRegistrationStore {
+  save(registration: ChannelFaqRegistration): Awaitable<ChannelFaqRegistration>;
+  get(channelId: string): Awaitable<ChannelFaqRegistration | undefined>;
+  list(options?: { readonly enabledOnly?: boolean }): Awaitable<readonly ChannelFaqRegistration[]>;
+  delete(channelId: string): Awaitable<boolean>;
+  updateIngestResult(input: {
+    readonly channelId: string;
+    readonly status: SlackFaqIngestStatus;
+    readonly messageCount?: number | null;
+    readonly chunkCount?: number | null;
+    readonly error?: string | null;
+  }): Awaitable<ChannelFaqRegistration | undefined>;
 }
 
 export interface SlackSignatureVerifierOptions {
@@ -229,6 +323,226 @@ export class CommandRouter implements CommandHandler {
   }
 }
 
+type SlackBotInstanceRow = Selectable<SlackBotInstanceTable>;
+type SlackBotInstanceInsert = Insertable<SlackBotInstanceTable>;
+type ChannelFaqRegistrationRow = Selectable<ChannelFaqRegistrationTable>;
+type ChannelFaqRegistrationInsert = Insertable<ChannelFaqRegistrationTable>;
+type SlackResponseTrackingRow = Selectable<SlackResponseTrackingTable>;
+type SlackResponseTrackingInsert = Insertable<SlackResponseTrackingTable>;
+type SlackFeedbackEventRow = Selectable<SlackFeedbackEventTable>;
+type SlackFeedbackEventInsert = Insertable<SlackFeedbackEventTable>;
+
+export class InMemorySlackBotInstanceStore implements SlackBotInstanceStore {
+  private readonly bots = new Map<string, RequiredSlackBotInstance>();
+  private readonly now: () => Date;
+
+  constructor(options: { readonly now?: () => Date } = {}) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  list(): readonly SlackBotInstance[] {
+    return [...this.bots.values()].sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  }
+
+  listEnabled(): readonly SlackBotInstance[] {
+    return this.list().filter((bot) => bot.enabled);
+  }
+
+  get(id: string): SlackBotInstance | undefined {
+    return this.bots.get(id);
+  }
+
+  save(instance: SlackBotInstance): SlackBotInstance {
+    const existing = this.bots.get(instance.id);
+    const now = this.now();
+    const normalized = normalizeSlackBotInstance(instance, {
+      createdAt: existing?.createdAt ?? instance.createdAt ?? now,
+      updatedAt: instance.updatedAt ?? now
+    });
+
+    this.bots.set(normalized.id, normalized);
+    return normalized;
+  }
+
+  delete(id: string): boolean {
+    return this.bots.delete(id);
+  }
+}
+
+export class KyselySlackBotInstanceStore implements SlackBotInstanceStore {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: { readonly now?: () => Date } = {}
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async list(): Promise<readonly SlackBotInstance[]> {
+    const rows = await this.db.selectFrom("slack_bot_instances").selectAll().orderBy("created_at", "asc").execute();
+    return rows.map(mapSlackBotInstanceRow);
+  }
+
+  async listEnabled(): Promise<readonly SlackBotInstance[]> {
+    const rows = await this.db
+      .selectFrom("slack_bot_instances")
+      .selectAll()
+      .where("enabled", "=", true)
+      .orderBy("created_at", "asc")
+      .execute();
+    return rows.map(mapSlackBotInstanceRow);
+  }
+
+  async get(id: string): Promise<SlackBotInstance | undefined> {
+    const row = await this.db.selectFrom("slack_bot_instances").selectAll().where("id", "=", id).executeTakeFirst();
+    return row ? mapSlackBotInstanceRow(row) : undefined;
+  }
+
+  async save(instance: SlackBotInstance): Promise<SlackBotInstance> {
+    const existing = await this.get(instance.id);
+    const row = await buildSlackBotInstanceUpsertQuery(this.db, instance, {
+      createdAt: existing?.createdAt,
+      now: this.now
+    }).executeTakeFirstOrThrow();
+    return mapSlackBotInstanceRow(row);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const result = await this.db.deleteFrom("slack_bot_instances").where("id", "=", id).executeTakeFirst();
+    return Number(result.numDeletedRows ?? 0) > 0;
+  }
+}
+
+export class InMemoryChannelFaqRegistrationStore implements ChannelFaqRegistrationStore {
+  private readonly registrations = new Map<string, RequiredChannelFaqRegistration>();
+  private readonly now: () => Date;
+
+  constructor(options: { readonly now?: () => Date } = {}) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  save(registration: ChannelFaqRegistration): ChannelFaqRegistration {
+    const existing = this.registrations.get(registration.channelId);
+    const now = this.now();
+    const normalized = normalizeChannelFaqRegistration(registration, {
+      registeredAt: existing?.registeredAt ?? registration.registeredAt ?? now,
+      updatedAt: registration.updatedAt ?? now
+    });
+
+    this.registrations.set(normalized.channelId, normalized);
+    return normalized;
+  }
+
+  get(channelId: string): ChannelFaqRegistration | undefined {
+    return this.registrations.get(channelId);
+  }
+
+  list(options: { readonly enabledOnly?: boolean } = {}): readonly ChannelFaqRegistration[] {
+    return [...this.registrations.values()]
+      .filter((registration) => !options.enabledOnly || registration.enabled)
+      .sort(compareFaqRegistrations);
+  }
+
+  delete(channelId: string): boolean {
+    return this.registrations.delete(channelId);
+  }
+
+  updateIngestResult(input: {
+    readonly channelId: string;
+    readonly status: SlackFaqIngestStatus;
+    readonly messageCount?: number | null;
+    readonly chunkCount?: number | null;
+    readonly error?: string | null;
+  }): ChannelFaqRegistration | undefined {
+    const existing = this.registrations.get(input.channelId);
+
+    if (!existing) {
+      return undefined;
+    }
+
+    return this.save({
+      ...existing,
+      lastChunkCount: input.chunkCount ?? null,
+      lastError: input.error ?? null,
+      lastIngestedAt: this.now(),
+      lastMessageCount: input.messageCount ?? null,
+      lastStatus: input.status
+    });
+  }
+}
+
+export class KyselyChannelFaqRegistrationStore implements ChannelFaqRegistrationStore {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: { readonly now?: () => Date } = {}
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async save(registration: ChannelFaqRegistration): Promise<ChannelFaqRegistration> {
+    const existing = await this.get(registration.channelId);
+    const row = await buildChannelFaqRegistrationUpsertQuery(this.db, registration, {
+      registeredAt: existing?.registeredAt,
+      now: this.now
+    }).executeTakeFirstOrThrow();
+    return mapChannelFaqRegistrationRow(row);
+  }
+
+  async get(channelId: string): Promise<ChannelFaqRegistration | undefined> {
+    const row = await this.db
+      .selectFrom("channel_faq_registrations")
+      .selectAll()
+      .where("channel_id", "=", channelId)
+      .executeTakeFirst();
+    return row ? mapChannelFaqRegistrationRow(row) : undefined;
+  }
+
+  async list(options: { readonly enabledOnly?: boolean } = {}): Promise<readonly ChannelFaqRegistration[]> {
+    const rows = await this.db
+      .selectFrom("channel_faq_registrations")
+      .selectAll()
+      .$if(Boolean(options.enabledOnly), (query) => query.where("enabled", "=", true))
+      .orderBy("last_ingested_at", "asc")
+      .orderBy("registered_at", "asc")
+      .execute();
+    return rows.map(mapChannelFaqRegistrationRow);
+  }
+
+  async delete(channelId: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("channel_faq_registrations")
+      .where("channel_id", "=", channelId)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows ?? 0) > 0;
+  }
+
+  async updateIngestResult(input: {
+    readonly channelId: string;
+    readonly status: SlackFaqIngestStatus;
+    readonly messageCount?: number | null;
+    readonly chunkCount?: number | null;
+    readonly error?: string | null;
+  }): Promise<ChannelFaqRegistration | undefined> {
+    const row = await this.db
+      .updateTable("channel_faq_registrations")
+      .set({
+        last_chunk_count: input.chunkCount ?? null,
+        last_error: input.error ?? null,
+        last_ingested_at: this.now(),
+        last_message_count: input.messageCount ?? null,
+        last_status: input.status,
+        updated_at: this.now()
+      })
+      .where("channel_id", "=", input.channelId)
+      .returningAll()
+      .executeTakeFirst();
+    return row ? mapChannelFaqRegistrationRow(row) : undefined;
+  }
+}
+
 export class SlackInteractionDispatcher {
   constructor(private readonly handlers: readonly SlackInteractionHandler[]) {}
 
@@ -264,65 +578,257 @@ export class SlackInteractionDispatcher {
   }
 }
 
-export class SlackBotResponseTracker {
-  private readonly entries = new Map<string, TrackedSlackBotResponse>();
-  private readonly ttlMs: number;
+export class InMemorySlackResponseTrackerStore implements SlackResponseTrackerStore {
+  private readonly entries = new Map<string, SlackResponseTrackingInput>();
   private readonly maxEntries: number;
-  private readonly now: () => number;
 
-  constructor(options: {
-    readonly maxEntries?: number;
-    readonly now?: () => number;
-    readonly ttlMs?: number;
-  } = {}) {
+  constructor(options: { readonly maxEntries?: number } = {}) {
     this.maxEntries = Math.max(1, options.maxEntries ?? 50_000);
-    this.now = options.now ?? (() => Date.now());
-    this.ttlMs = Math.max(1, options.ttlMs ?? 86_400_000);
   }
 
-  track(channelId: string, messageTs: string, sessionId: string, userPrompt: string): void {
-    if (channelId.trim().length === 0 || messageTs.trim().length === 0) {
+  track(input: SlackResponseTrackingInput): void {
+    if (input.channelId.trim().length === 0 || input.messageTs.trim().length === 0) {
       return;
     }
 
-    this.entries.set(this.key(channelId, messageTs), {
-      expiresAt: this.now() + this.ttlMs,
-      sessionId,
-      userPrompt
-    });
-    this.trim();
+    this.entries.set(slackResponseKey(input.channelId, input.messageTs), input);
+    this.trim(input.expiresAt - 1);
   }
 
-  lookup(channelId: string, messageTs: string): TrackedSlackBotResponse | undefined {
-    const key = this.key(channelId, messageTs);
+  lookup(channelId: string, messageTs: string, now: number = Date.now()): TrackedSlackBotResponse | undefined {
+    const key = slackResponseKey(channelId, messageTs);
     const entry = this.entries.get(key);
 
     if (!entry) {
       return undefined;
     }
 
-    if (entry.expiresAt <= this.now()) {
+    if (entry.expiresAt <= now) {
       this.entries.delete(key);
       return undefined;
     }
 
-    return entry;
+    return {
+      expiresAt: entry.expiresAt,
+      response: entry.response,
+      sessionId: entry.sessionId,
+      userPrompt: entry.userPrompt
+    };
   }
 
-  private trim(): void {
-    for (const [key, entry] of this.entries) {
-      if (entry.expiresAt <= this.now() || this.entries.size > this.maxEntries) {
-        this.entries.delete(key);
-      }
+  purgeExpired(now: number = Date.now()): number {
+    let deleted = 0;
 
-      if (this.entries.size <= this.maxEntries) {
-        break;
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt <= now) {
+        this.entries.delete(key);
+        deleted += 1;
       }
     }
+
+    return deleted;
   }
 
-  private key(channelId: string, messageTs: string): string {
-    return `${channelId}:${messageTs}`;
+  private trim(now: number): void {
+    this.purgeExpired(now);
+
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next().value as string | undefined;
+
+      if (!oldest) {
+        return;
+      }
+
+      this.entries.delete(oldest);
+    }
+  }
+}
+
+export class KyselySlackResponseTrackerStore implements SlackResponseTrackerStore {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: { readonly now?: () => Date } = {}
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async track(input: SlackResponseTrackingInput): Promise<void> {
+    if (input.channelId.trim().length === 0 || input.messageTs.trim().length === 0) {
+      return;
+    }
+
+    const row = createSlackResponseTrackingInsert(input, { now: this.now });
+    await this.db
+      .insertInto("slack_response_tracking")
+      .values(row)
+      .onConflict((oc) => oc.columns(["channel_id", "message_ts"]).doUpdateSet({
+        expires_at: row.expires_at,
+        response: row.response,
+        session_id: row.session_id,
+        updated_at: row.updated_at,
+        user_prompt: row.user_prompt
+      }))
+      .executeTakeFirst();
+  }
+
+  async lookup(channelId: string, messageTs: string, now: number = Date.now()): Promise<TrackedSlackBotResponse | undefined> {
+    const row = await this.db
+      .selectFrom("slack_response_tracking")
+      .selectAll()
+      .where("channel_id", "=", channelId)
+      .where("message_ts", "=", messageTs)
+      .executeTakeFirst();
+
+    if (!row) {
+      return undefined;
+    }
+
+    const tracked = mapSlackResponseTrackingRow(row);
+
+    if (tracked.expiresAt <= now) {
+      await this.db
+        .deleteFrom("slack_response_tracking")
+        .where("channel_id", "=", channelId)
+        .where("message_ts", "=", messageTs)
+        .executeTakeFirst();
+      return undefined;
+    }
+
+    return tracked;
+  }
+
+  async purgeExpired(now: number = Date.now()): Promise<number> {
+    const result = await this.db
+      .deleteFrom("slack_response_tracking")
+      .where("expires_at", "<=", new Date(now))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows ?? 0);
+  }
+}
+
+export class SlackBotResponseTracker {
+  private readonly ttlMs: number;
+  private readonly now: () => number;
+  private readonly store: SlackResponseTrackerStore;
+
+  constructor(options: {
+    readonly maxEntries?: number;
+    readonly now?: () => number;
+    readonly store?: SlackResponseTrackerStore;
+    readonly ttlMs?: number;
+  } = {}) {
+    this.now = options.now ?? (() => Date.now());
+    this.store = options.store ?? new InMemorySlackResponseTrackerStore({ maxEntries: options.maxEntries });
+    this.ttlMs = Math.max(1, options.ttlMs ?? 86_400_000);
+  }
+
+  track(
+    channelId: string,
+    messageTs: string,
+    sessionId: string,
+    userPrompt: string,
+    response?: string
+  ): Awaitable<void> {
+    if (channelId.trim().length === 0 || messageTs.trim().length === 0) {
+      return;
+    }
+
+    return this.store.track({
+      channelId,
+      expiresAt: this.now() + this.ttlMs,
+      messageTs,
+      response,
+      sessionId,
+      userPrompt
+    });
+  }
+
+  lookup(channelId: string, messageTs: string): Awaitable<TrackedSlackBotResponse | undefined> {
+    return this.store.lookup(channelId, messageTs, this.now());
+  }
+
+  purgeExpired(): Awaitable<number> {
+    return this.store.purgeExpired(this.now());
+  }
+}
+
+export class InMemorySlackFeedbackEventStore implements SlackFeedbackEventStore {
+  private readonly events: SlackFeedbackEvent[] = [];
+  private readonly idFactory: () => string;
+  private readonly maxEvents: number;
+  private readonly now: () => Date;
+
+  constructor(options: {
+    readonly idFactory?: () => string;
+    readonly maxEvents?: number;
+    readonly now?: () => Date;
+  } = {}) {
+    this.idFactory = options.idFactory ?? (() => createRunId("slack_feedback"));
+    this.maxEvents = Math.max(1, options.maxEvents ?? 50_000);
+    this.now = options.now ?? (() => new Date());
+  }
+
+  save(input: SlackFeedbackInput): SlackFeedbackEvent {
+    const event = normalizeSlackFeedbackEvent(input, {
+      createdAt: this.now(),
+      id: this.idFactory()
+    });
+
+    this.events.push(event);
+
+    while (this.events.length > this.maxEvents) {
+      this.events.shift();
+    }
+
+    return event;
+  }
+
+  listBySession(sessionId: string): readonly SlackFeedbackEvent[] {
+    return this.events.filter((event) => event.sessionId === sessionId);
+  }
+}
+
+export class KyselySlackFeedbackEventStore implements SlackFeedbackEventStore {
+  private readonly idFactory: () => string;
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: {
+      readonly idFactory?: () => string;
+      readonly now?: () => Date;
+    } = {}
+  ) {
+    this.idFactory = options.idFactory ?? (() => createRunId("slack_feedback"));
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async save(input: SlackFeedbackInput): Promise<SlackFeedbackEvent> {
+    const event = normalizeSlackFeedbackEvent(input, {
+      createdAt: this.now(),
+      id: this.idFactory()
+    });
+    const row = createSlackFeedbackEventInsert(event);
+
+    const saved = await this.db
+      .insertInto("slack_feedback_events")
+      .values(row)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return mapSlackFeedbackEventRow(saved);
+  }
+
+  async listBySession(sessionId: string): Promise<readonly SlackFeedbackEvent[]> {
+    const rows = await this.db
+      .selectFrom("slack_feedback_events")
+      .selectAll()
+      .where("session_id", "=", sessionId)
+      .orderBy("created_at", "desc")
+      .execute();
+    return rows.map(mapSlackFeedbackEventRow);
   }
 }
 
@@ -333,6 +839,7 @@ export class SlackFeedbackButtonHandler implements SlackInteractionHandler {
     readonly messageTransport?: SlackMessageTransport;
     readonly onFeedback: (feedback: SlackFeedbackInput) => Awaitable<void>;
     readonly responseTransport?: SlackResponseUrlTransport;
+    readonly feedbackStore?: SlackFeedbackEventStore;
     readonly tracker: SlackBotResponseTracker;
   }) {}
 
@@ -347,7 +854,7 @@ export class SlackFeedbackButtonHandler implements SlackInteractionHandler {
       return true;
     }
 
-    const tracked = this.options.tracker.lookup(payload.channelId, payload.messageTs);
+    const tracked = await this.options.tracker.lookup(payload.channelId, payload.messageTs);
 
     if (!tracked) {
       if (payload.responseUrl && this.options.responseTransport) {
@@ -360,13 +867,24 @@ export class SlackFeedbackButtonHandler implements SlackInteractionHandler {
       return true;
     }
 
-    const saved = await toBooleanPromise(this.options.onFeedback({
+    const feedback = {
+      channelId: payload.channelId,
+      messageTs: payload.messageTs,
+      metadata: {
+        actionId: payload.actionId,
+        responseUrl: payload.responseUrl ?? null,
+        type: payload.type
+      },
       query: tracked.userPrompt,
       rating,
-      response: "",
+      response: tracked.response ?? "",
       sessionId: tracked.sessionId,
       userId: payload.userId
-    }));
+    } satisfies SlackFeedbackInput;
+    const saved = await toBooleanPromise((async () => {
+      await this.options.feedbackStore?.save(feedback);
+      await this.options.onFeedback(feedback);
+    })());
     const ackText = saved
       ? rating === "thumbs_up"
         ? "Thanks for the feedback. I will keep improving."
@@ -512,6 +1030,296 @@ export class FetchSlackResponseUrlTransport implements SlackResponseUrlTransport
 
     return { statusCode: response.status };
   }
+}
+
+export function buildSlackBotInstanceUpsertQuery(
+  db: Kysely<MuseDatabase>,
+  instance: SlackBotInstance,
+  options: { readonly createdAt?: Date; readonly now: () => Date }
+) {
+  const row = createSlackBotInstanceInsert(instance, options);
+
+  return db
+    .insertInto("slack_bot_instances")
+    .values(row)
+    .onConflict((oc) => oc.column("id").doUpdateSet({
+      app_token: row.app_token,
+      bot_token: row.bot_token,
+      default_channel: row.default_channel,
+      enabled: row.enabled,
+      name: row.name,
+      persona_id: row.persona_id,
+      updated_at: row.updated_at
+    }))
+    .returningAll();
+}
+
+export function createSlackBotInstanceInsert(
+  instance: SlackBotInstance,
+  options: { readonly createdAt?: Date; readonly now: () => Date }
+): SlackBotInstanceInsert {
+  const now = options.now();
+  const normalized = normalizeSlackBotInstance(instance, {
+    createdAt: options.createdAt ?? instance.createdAt ?? now,
+    updatedAt: instance.updatedAt ?? now
+  });
+
+  return {
+    app_token: normalized.appToken,
+    bot_token: normalized.botToken,
+    created_at: normalized.createdAt,
+    default_channel: normalized.defaultChannel,
+    enabled: normalized.enabled,
+    id: normalized.id,
+    name: normalized.name,
+    persona_id: normalized.personaId,
+    updated_at: normalized.updatedAt
+  };
+}
+
+export function mapSlackBotInstanceRow(row: SlackBotInstanceRow | SlackBotInstanceInsert): SlackBotInstance {
+  return {
+    appToken: row.app_token ?? "",
+    botToken: row.bot_token ?? "",
+    createdAt: dateValue(row.created_at ?? null),
+    defaultChannel: row.default_channel ?? null,
+    enabled: row.enabled ?? true,
+    id: row.id ?? "",
+    name: row.name ?? "",
+    personaId: row.persona_id ?? "",
+    updatedAt: dateValue(row.updated_at ?? null)
+  };
+}
+
+export function buildChannelFaqRegistrationUpsertQuery(
+  db: Kysely<MuseDatabase>,
+  registration: ChannelFaqRegistration,
+  options: { readonly registeredAt?: Date; readonly now: () => Date }
+) {
+  const row = createChannelFaqRegistrationInsert(registration, options);
+
+  return db
+    .insertInto("channel_faq_registrations")
+    .values(row)
+    .onConflict((oc) => oc.column("channel_id").doUpdateSet({
+      auto_reply_mode: row.auto_reply_mode,
+      channel_name: row.channel_name,
+      confidence_threshold: row.confidence_threshold,
+      days_back: row.days_back,
+      enabled: row.enabled,
+      last_chunk_count: row.last_chunk_count,
+      last_error: row.last_error,
+      last_ingested_at: row.last_ingested_at,
+      last_message_count: row.last_message_count,
+      last_status: row.last_status,
+      re_ingest_interval_hours: row.re_ingest_interval_hours,
+      updated_at: row.updated_at
+    }))
+    .returningAll();
+}
+
+export function createChannelFaqRegistrationInsert(
+  registration: ChannelFaqRegistration,
+  options: { readonly registeredAt?: Date; readonly now: () => Date }
+): ChannelFaqRegistrationInsert {
+  const now = options.now();
+  const normalized = normalizeChannelFaqRegistration(registration, {
+    registeredAt: options.registeredAt ?? registration.registeredAt ?? now,
+    updatedAt: registration.updatedAt ?? now
+  });
+
+  return {
+    auto_reply_mode: normalized.autoReplyMode,
+    channel_id: normalized.channelId,
+    channel_name: normalized.channelName,
+    confidence_threshold: normalized.confidenceThreshold,
+    days_back: normalized.daysBack,
+    enabled: normalized.enabled,
+    last_chunk_count: normalized.lastChunkCount,
+    last_error: normalized.lastError,
+    last_ingested_at: normalized.lastIngestedAt,
+    last_message_count: normalized.lastMessageCount,
+    last_status: normalized.lastStatus,
+    re_ingest_interval_hours: normalized.reIngestIntervalHours,
+    registered_at: normalized.registeredAt,
+    registered_by: normalized.registeredBy,
+    updated_at: normalized.updatedAt
+  };
+}
+
+export function mapChannelFaqRegistrationRow(
+  row: ChannelFaqRegistrationRow | ChannelFaqRegistrationInsert
+): ChannelFaqRegistration {
+  return {
+    autoReplyMode: slackFaqAutoReplyMode(row.auto_reply_mode),
+    channelId: row.channel_id ?? "",
+    channelName: row.channel_name ?? null,
+    confidenceThreshold: row.confidence_threshold ?? 0.8,
+    daysBack: row.days_back ?? 30,
+    enabled: row.enabled ?? true,
+    lastChunkCount: row.last_chunk_count ?? null,
+    lastError: row.last_error ?? null,
+    lastIngestedAt: row.last_ingested_at ? dateValue(row.last_ingested_at) : null,
+    lastMessageCount: row.last_message_count ?? null,
+    lastStatus: slackFaqIngestStatus(row.last_status),
+    reIngestIntervalHours: row.re_ingest_interval_hours ?? 24,
+    registeredAt: dateValue(row.registered_at ?? null),
+    registeredBy: row.registered_by ?? null,
+    updatedAt: dateValue(row.updated_at ?? null)
+  };
+}
+
+export function createSlackResponseTrackingInsert(
+  input: SlackResponseTrackingInput,
+  options: { readonly now: () => Date }
+): SlackResponseTrackingInsert {
+  const now = options.now();
+
+  return {
+    channel_id: input.channelId,
+    created_at: now,
+    expires_at: new Date(input.expiresAt),
+    message_ts: input.messageTs,
+    response: input.response ?? null,
+    session_id: input.sessionId,
+    updated_at: now,
+    user_prompt: input.userPrompt
+  };
+}
+
+export function mapSlackResponseTrackingRow(
+  row: SlackResponseTrackingRow | SlackResponseTrackingInsert
+): TrackedSlackBotResponse {
+  return {
+    expiresAt: dateValue(row.expires_at ?? null).getTime(),
+    response: row.response ?? undefined,
+    sessionId: row.session_id ?? "",
+    userPrompt: row.user_prompt ?? ""
+  };
+}
+
+export function createSlackFeedbackEventInsert(event: SlackFeedbackEvent): SlackFeedbackEventInsert {
+  return {
+    channel_id: event.channelId,
+    created_at: event.createdAt,
+    id: event.id,
+    message_ts: event.messageTs,
+    metadata: event.metadata ?? {},
+    query: event.query,
+    rating: event.rating,
+    response: event.response,
+    session_id: event.sessionId,
+    user_id: event.userId
+  };
+}
+
+export function mapSlackFeedbackEventRow(row: SlackFeedbackEventRow | SlackFeedbackEventInsert): SlackFeedbackEvent {
+  return {
+    channelId: row.channel_id ?? "",
+    createdAt: dateValue(row.created_at ?? null),
+    id: row.id ?? "",
+    messageTs: row.message_ts ?? "",
+    metadata: jsonObjectValue(row.metadata),
+    query: row.query ?? "",
+    rating: row.rating === "thumbs_down" ? "thumbs_down" : "thumbs_up",
+    response: row.response ?? "",
+    sessionId: row.session_id ?? "",
+    userId: row.user_id ?? ""
+  };
+}
+
+function normalizeSlackBotInstance(
+  instance: SlackBotInstance,
+  timestamps: { readonly createdAt: Date; readonly updatedAt: Date }
+): RequiredSlackBotInstance {
+  return {
+    appToken: instance.appToken,
+    botToken: instance.botToken,
+    createdAt: timestamps.createdAt,
+    defaultChannel: nullableString(instance.defaultChannel),
+    enabled: instance.enabled ?? true,
+    id: instance.id,
+    name: instance.name.trim(),
+    personaId: instance.personaId,
+    updatedAt: timestamps.updatedAt
+  };
+}
+
+function normalizeChannelFaqRegistration(
+  registration: ChannelFaqRegistration,
+  timestamps: { readonly registeredAt: Date; readonly updatedAt: Date }
+): RequiredChannelFaqRegistration {
+  return {
+    autoReplyMode: slackFaqAutoReplyMode(registration.autoReplyMode),
+    channelId: registration.channelId,
+    channelName: nullableString(registration.channelName),
+    confidenceThreshold: registration.confidenceThreshold ?? 0.8,
+    daysBack: Math.max(1, Math.trunc(registration.daysBack ?? 30)),
+    enabled: registration.enabled ?? true,
+    lastChunkCount: registration.lastChunkCount ?? null,
+    lastError: nullableString(registration.lastError),
+    lastIngestedAt: registration.lastIngestedAt ?? null,
+    lastMessageCount: registration.lastMessageCount ?? null,
+    lastStatus: slackFaqIngestStatus(registration.lastStatus),
+    reIngestIntervalHours: Math.max(1, Math.trunc(registration.reIngestIntervalHours ?? 24)),
+    registeredAt: timestamps.registeredAt,
+    registeredBy: nullableString(registration.registeredBy),
+    updatedAt: timestamps.updatedAt
+  };
+}
+
+function compareFaqRegistrations(left: RequiredChannelFaqRegistration, right: RequiredChannelFaqRegistration): number {
+  const leftIngested = left.lastIngestedAt?.getTime() ?? 0;
+  const rightIngested = right.lastIngestedAt?.getTime() ?? 0;
+  return leftIngested - rightIngested || left.registeredAt.getTime() - right.registeredAt.getTime();
+}
+
+function nullableString(value: string | null | undefined): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeSlackFeedbackEvent(
+  input: SlackFeedbackInput,
+  generated: { readonly createdAt: Date; readonly id: string }
+): SlackFeedbackEvent {
+  return {
+    channelId: input.channelId?.trim() || "unknown",
+    createdAt: generated.createdAt,
+    id: generated.id,
+    messageTs: input.messageTs?.trim() || "unknown",
+    metadata: input.metadata ?? {},
+    query: input.query,
+    rating: input.rating,
+    response: input.response,
+    sessionId: input.sessionId,
+    userId: input.userId
+  };
+}
+
+function slackResponseKey(channelId: string, messageTs: string): string {
+  return `${channelId}:${messageTs}`;
+}
+
+function jsonObjectValue(value: unknown): JsonObject {
+  if (typeof value === "string") {
+    return (parseJsonObject(value) as JsonObject | undefined) ?? {};
+  }
+
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, JsonValue> : {};
+}
+
+function slackFaqAutoReplyMode(value: unknown): SlackFaqAutoReplyMode {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return normalized === "ALWAYS" || normalized === "OFF" ? normalized : "MENTION";
+}
+
+function slackFaqIngestStatus(value: unknown): SlackFaqIngestStatus | null {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return normalized === "OK" || normalized === "FAILED" || normalized === "RUNNING" ? normalized : null;
+}
+
+function dateValue(value: Date | string | null): Date {
+  return value instanceof Date ? value : new Date(value ?? 0);
 }
 
 export function parseSlackInteractionPayload(input: unknown): SlackInteractionPayload | undefined {
@@ -1137,4 +1945,34 @@ function splitSlackCodeFenceSegments(content: string): Array<{ readonly isCode: 
   }
 
   return segments;
+}
+
+interface RequiredSlackBotInstance {
+  readonly id: string;
+  readonly name: string;
+  readonly botToken: string;
+  readonly appToken: string;
+  readonly personaId: string;
+  readonly defaultChannel: string | null;
+  readonly enabled: boolean;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+interface RequiredChannelFaqRegistration {
+  readonly channelId: string;
+  readonly channelName: string | null;
+  readonly enabled: boolean;
+  readonly autoReplyMode: SlackFaqAutoReplyMode;
+  readonly confidenceThreshold: number;
+  readonly daysBack: number;
+  readonly reIngestIntervalHours: number;
+  readonly lastIngestedAt: Date | null;
+  readonly lastMessageCount: number | null;
+  readonly lastChunkCount: number | null;
+  readonly lastStatus: SlackFaqIngestStatus | null;
+  readonly lastError: string | null;
+  readonly registeredBy: string | null;
+  readonly registeredAt: Date;
+  readonly updatedAt: Date;
 }

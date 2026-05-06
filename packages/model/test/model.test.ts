@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  AnthropicProvider,
   canUseNativeTools,
+  GeminiProvider,
   knownModelPrefixes,
   ModelProviderError,
   ModelProviderRegistry,
+  OllamaProvider,
   OpenAICompatibleProvider,
+  OpenAIProvider,
+  OpenRouterProvider,
   parseModelName,
   type ModelInfo,
   type ModelProvider
@@ -282,5 +287,127 @@ describe("OpenAICompatibleProvider", () => {
         type: "done"
       }
     ]);
+  });
+});
+
+describe("provider adapters", () => {
+  it("configures OpenAI, OpenRouter, and Ollama adapter identities", async () => {
+    const openai = new OpenAIProvider({ defaultModel: "gpt-test" });
+    const openrouter = new OpenRouterProvider({
+      appName: "Muse",
+      defaultModel: "anthropic/claude-test",
+      siteUrl: "https://example.com"
+    });
+    const ollama = new OllamaProvider({ defaultModel: "llama3.2" });
+
+    expect(openai.id).toBe("openai");
+    expect(openrouter.id).toBe("openrouter");
+    expect((await ollama.listModels())[0]).toMatchObject({
+      capabilities: { cost: "free", local: true },
+      modelId: "llama3.2"
+    });
+  });
+
+  it("maps Anthropic message responses to provider-neutral responses", async () => {
+    let requestBody: unknown;
+    const provider = new AnthropicProvider({
+      apiKey: "anthropic-key",
+      defaultModel: "claude-test",
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          content: [
+            { text: "hello", type: "text" },
+            { id: "tool-1", input: { query: "muse" }, name: "search", type: "tool_use" }
+          ],
+          id: "msg-1",
+          model: "claude-test",
+          usage: {
+            input_tokens: 7,
+            output_tokens: 3
+          }
+        }));
+      }
+    });
+
+    const response = await provider.generate({
+      messages: [
+        { content: "Be useful", role: "system" },
+        { content: "hi", role: "user" }
+      ],
+      model: "anthropic/claude-test",
+      tools: [{
+        description: "Search",
+        inputSchema: { type: "object" },
+        name: "search",
+        risk: "read"
+      }]
+    });
+
+    expect(requestBody).toMatchObject({
+      model: "claude-test",
+      system: "Be useful",
+      tools: [{ name: "search" }]
+    });
+    expect(response).toMatchObject({
+      id: "msg-1",
+      output: "hello",
+      toolCalls: [{ arguments: { query: "muse" }, id: "tool-1", name: "search" }],
+      usage: { inputTokens: 7, outputTokens: 3 }
+    });
+  });
+
+  it("maps Gemini generateContent responses to provider-neutral responses", async () => {
+    let requestUrl = "";
+    let requestBody: unknown;
+    const provider = new GeminiProvider({
+      apiKey: "gemini-key",
+      defaultModel: "gemini-test",
+      fetch: async (url, init) => {
+        requestUrl = String(url);
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          candidates: [{
+            content: {
+              parts: [
+                { text: "hello" },
+                { functionCall: { args: { query: "muse" }, name: "search" } }
+              ]
+            }
+          }],
+          responseId: "gemini-1",
+          usageMetadata: {
+            candidatesTokenCount: 3,
+            promptTokenCount: 6
+          }
+        }));
+      }
+    });
+
+    const response = await provider.generate({
+      messages: [
+        { content: "Be useful", role: "system" },
+        { content: "hi", role: "user" }
+      ],
+      model: "gemini/gemini-test",
+      tools: [{
+        description: "Search",
+        inputSchema: { type: "object" },
+        name: "search",
+        risk: "read"
+      }]
+    });
+
+    expect(requestUrl).toContain("/models/gemini-test:generateContent?key=gemini-key");
+    expect(requestBody).toMatchObject({
+      contents: [{ parts: [{ text: "hi" }], role: "user" }],
+      tools: [{ functionDeclarations: [{ name: "search" }] }]
+    });
+    expect(response).toMatchObject({
+      id: "gemini-1",
+      output: "hello",
+      toolCalls: [{ arguments: { query: "muse" }, id: "gemini_tool_call_1", name: "search" }],
+      usage: { inputTokens: 6, outputTokens: 3 }
+    });
   });
 });

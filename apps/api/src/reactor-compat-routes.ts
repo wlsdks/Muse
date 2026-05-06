@@ -2,51 +2,92 @@ import type { AgentSpec, AgentSpecInput, AgentSpecRegistry } from "@muse/agent-s
 import type { AgentRunResult, AgentRuntime } from "@muse/agent-core";
 import {
   AuthRateLimiter,
-  AuthService,
   adminScope,
   extractBearerToken,
   type AuthIdentity,
   type LoginResult,
+  type MuseAuthService,
   type UserRole
 } from "@muse/auth";
 import type { McpServer } from "@muse/mcp";
-import type { TaskMemoryMaintenance } from "@muse/memory";
+import type {
+  ChannelFaqRegistration,
+  ChannelFaqRegistrationStore,
+  SlackBotInstance,
+  SlackBotInstanceStore,
+  SlackFeedbackEventStore,
+  SlackResponseTrackerStore
+} from "@muse/integrations";
+import type { AgentEvalStore } from "@muse/eval";
+import type { TaskMemoryMaintenance, UserMemory, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import type { FollowupSuggestionStore } from "@muse/observability";
+import type { GuardRuleStore, ToolPolicyInput, ToolPolicyStore } from "@muse/policy";
+import { toolPolicyToJson } from "@muse/policy";
+import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } from "@muse/promptlab";
+import type {
+  RagIngestionCandidateStatus,
+  RagIngestionCandidateStore,
+  RagIngestionPolicy,
+  RagIngestionPolicyStore,
+  StoredRagIngestionCandidate
+} from "@muse/rag";
 import type { RuntimeSetting, RuntimeSettingsService, RuntimeSettingType } from "@muse/runtime-settings";
 import type {
   AgentRunHistoryStore,
   AgentRunRecord,
   ConversationMessageRecord,
   PendingApprovalStore,
+  PlatformAlertRule,
+  PlatformModelPricing,
+  SessionTag,
+  SessionTagStore,
   ToolCallRecord
 } from "@muse/runtime-state";
 import type { ScheduledJobExecution } from "@muse/scheduler";
 import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
-import type { AdminRouteState } from "./admin-routes.js";
+import { recordedSpans, type AdminRouteState } from "./admin-routes.js";
 import type { McpRouteMcp } from "./mcp-routes.js";
 import type { SchedulerRouteScheduler } from "./scheduler-routes.js";
 
 export interface ReactorCompatibilityRouteOptions {
   readonly admin?: AdminRouteState;
+  readonly agentEvalStore?: AgentEvalStore;
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
   readonly authRateLimiter: AuthRateLimiter;
-  readonly authService?: AuthService;
+  readonly authService?: MuseAuthService;
   readonly authorizeAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
   readonly authorizeAnyAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
   readonly apiPathRegistry?: () => readonly string[];
   readonly defaultModel?: string;
+  readonly feedbackStore?: FeedbackStore;
+  readonly promptLabCatalogStore?: PromptLabCatalogStore;
+  readonly promptLabExperimentStore?: PromptLabExperimentStore;
   readonly followupSuggestionStore?: FollowupSuggestionStore;
   readonly historyStore?: AgentRunHistoryStore;
   readonly mcp?: McpRouteMcp;
   readonly modelProvider?: ModelProvider;
   readonly pendingApprovalStore?: PendingApprovalStore;
+  readonly ragIngestion?: {
+    readonly candidateStore: RagIngestionCandidateStore;
+    readonly policyStore: RagIngestionPolicyStore;
+  };
   readonly runtimeSettings: RuntimeSettingsService;
   readonly scheduler?: SchedulerRouteScheduler;
+  readonly slackPersistence?: {
+    readonly botStore: SlackBotInstanceStore;
+    readonly faqStore: ChannelFaqRegistrationStore;
+    readonly feedbackStore?: SlackFeedbackEventStore;
+    readonly responseTrackerStore?: SlackResponseTrackerStore;
+  };
+  readonly sessionTagStore?: SessionTagStore;
   readonly taskMemoryMaintenance?: TaskMemoryMaintenance;
+  readonly guardRuleStore?: GuardRuleStore;
+  readonly toolPolicyStore?: ToolPolicyStore;
+  readonly userMemoryStore?: UserMemoryStore;
 }
 
 type CompatRecord = JsonObject & {
@@ -283,12 +324,12 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     }
 
     try {
-      const login = authService.register(parsed.value);
+      const login = await authService.register(parsed.value);
       let normalizedLogin: LoginResult = login;
 
       if (login.user.role === "admin") {
-        const normalizedUser = authService.updateUserRole(login.user.id, "user");
-        const relogin = authService.login(parsed.value.email, parsed.value.password);
+        const normalizedUser = await authService.updateUserRole(login.user.id, "user");
+        const relogin = await authService.login(parsed.value.email, parsed.value.password);
         normalizedLogin = relogin ?? (normalizedUser ? { ...login, user: normalizedUser } : login);
       }
 
@@ -326,7 +367,7 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
       return reply.status(400).send(parsed.error);
     }
 
-    const login = authService.login(parsed.value.email, parsed.value.password);
+    const login = await authService.login(parsed.value.email, parsed.value.password);
 
     if (!login) {
       options.authRateLimiter.recordFailure(key);
@@ -355,15 +396,15 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
     };
 
     try {
-      const login = authService.register(credentials);
-      const user = authService.updateUserRole(login.user.id, "admin");
+      const login = await authService.register(credentials);
+      const user = await authService.updateUserRole(login.user.id, "admin");
       return toReactorAuthResponse({
         ...login,
         user: user ?? login.user
       });
     } catch {
-      const login = authService.login(credentials.email, credentials.password);
-      const user = login ? authService.updateUserRole(login.user.id, "admin") : undefined;
+      const login = await authService.login(credentials.email, credentials.password);
+      const user = login ? await authService.updateUserRole(login.user.id, "admin") : undefined;
       return login ? toReactorAuthResponse({ ...login, user: user ?? login.user }) : reply.status(401).send({
         code: "DEMO_LOGIN_UNAVAILABLE",
         message: "Demo user exists but could not be authenticated"
@@ -392,13 +433,13 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
       return reply;
     }
 
-    const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
+    const identity = await authService.authenticateBearer(extractBearerToken(request.headers.authorization));
 
     if (!identity) {
       return reply.status(401).send();
     }
 
-    const user = authService.getUserById(identity.userId);
+    const user = await authService.getUserById(identity.userId);
 
     if (!user) {
       return reply.status(404).send({
@@ -413,7 +454,7 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
   server.post("/api/auth/logout", async (request, reply) => {
     const token = extractBearerToken(request.headers.authorization);
 
-    if (!token || !options.authService?.logout(token)) {
+    if (!token || !(await options.authService?.logout(token))) {
       return reply.status(401).send();
     }
 
@@ -427,7 +468,7 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
       return reply;
     }
 
-    const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
+    const identity = await authService.authenticateBearer(extractBearerToken(request.headers.authorization));
 
     if (!identity) {
       return reply.status(401).send();
@@ -444,7 +485,7 @@ function registerAuthCompatibilityRoutes(server: FastifyInstance, options: React
       return reply.status(400).send(errorResponse("New password must be at least 8 characters"));
     }
 
-    const result = authService.changePassword({
+    const result = await authService.changePassword({
       currentPassword,
       newPassword,
       userId: identity.userId
@@ -724,11 +765,13 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
       return reply;
     }
 
+    const stored = await readStoredToolPolicy(options);
+
     return {
       configEnabled: true,
       dynamicEnabled: true,
-      effective: toToolPolicyResponse(state.toolPolicy),
-      stored: state.toolPolicyStored ? toToolPolicyResponse(state.toolPolicy) : null
+      effective: toToolPolicyResponse(stored ?? state.toolPolicy),
+      stored: stored ? toToolPolicyResponse(stored) : null
     };
   });
   server.put("/api/tool-policy", async (request, reply) => {
@@ -742,17 +785,15 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    state.toolPolicy = updateToolPolicy(request.body);
-    state.toolPolicyStored = true;
-    return toToolPolicyResponse(state.toolPolicy);
+    const policy = await saveToolPolicy(options, request.body);
+    return toToolPolicyResponse(policy);
   });
   server.delete("/api/tool-policy", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    state.toolPolicy = defaultToolPolicy();
-    state.toolPolicyStored = false;
+    await clearToolPolicy(options);
     return reply.status(204).send();
   });
 
@@ -776,7 +817,7 @@ function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: Rea
       return reply.status(400).send(errorResponse(`유효하지 않은 역할: ${readBodyString(request.body, "role") ?? ""}`));
     }
 
-    if (!options.authService?.updateUserRole(userId, role)) {
+    if (!(await options.authService?.updateUserRole(userId, role))) {
       return reply.status(404).send(errorResponse(`사용자를 찾을 수 없습니다: ${userId}`));
     }
 
@@ -844,7 +885,7 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       updated += 1;
     }
 
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "UPDATE_SETTINGS",
       category: "input_guard",
       detail: `keys=${Object.keys(settings).join(",")}`
@@ -883,7 +924,7 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       })
     ));
 
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "PIPELINE_REORDER",
       category: "input_guard",
       detail: `order=${order.join(",")}`
@@ -948,7 +989,7 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       .filter((item) => item.restartRequired && Object.prototype.hasOwnProperty.call(config, item.key))
       .map((item) => item.key);
 
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "STAGE_CONFIG_UPDATE",
       category: "input_guard",
       detail: `keys=${Object.keys(config).join(",")} restartRequired=${restartRequired.join(",")}`,
@@ -973,7 +1014,7 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const limit = Math.max(1, readQueryInteger(request, "limit", 200));
     const action = readQueryString(request, "action")?.toUpperCase();
-    const audits = [...state.adminAudits.values()]
+    const audits = (await listAdminAuditRecords(options, Math.min(500, limit)))
       .filter((row) => stringField(row.category, "") === "input_guard")
       .filter((row) => !action || stringField(row.action, "").toUpperCase() === action)
       .sort(compareCreatedAtDesc)
@@ -994,7 +1035,7 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       ?? readBodyString(request.body, "message")
       ?? "";
 
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "SIMULATE",
       category: "input_guard",
       detail: `input=${input.slice(0, 100)} passed=${result.passed === true}`
@@ -1010,7 +1051,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
       return reply;
     }
 
-    const rules = [...state.inputGuardRules.values()].map(toInputGuardRuleResponse);
+    const rules = (await listInputGuardRules(options)).map(toInputGuardRuleResponse);
     return { rules, total: rules.length };
   });
   server.get("/api/admin/input-guard/rules/:id", async (request, reply) => {
@@ -1019,7 +1060,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const { id } = request.params as { readonly id: string };
-    const rule = findCompatRecord(state.inputGuardRules, id);
+    const rule = await getInputGuardRule(options, id);
     return rule ? toInputGuardRuleResponse(rule) : reply.status(404).send();
   });
   server.post("/api/admin/input-guard/rules", async (request, reply) => {
@@ -1030,7 +1071,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
     const error = validateInputGuardRule(request.body);
     return error
       ? reply.status(400).send(error)
-      : toInputGuardRuleResponse(createInputGuardRule(request.body));
+      : toInputGuardRuleResponse(await createInputGuardRule(options, request.body));
   });
   server.put("/api/admin/input-guard/rules/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1038,7 +1079,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const { id } = request.params as { readonly id: string };
-    const existing = findCompatRecord(state.inputGuardRules, id);
+    const existing = await getInputGuardRule(options, id);
 
     if (!existing) {
       return reply.status(404).send();
@@ -1047,7 +1088,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
     const error = validateInputGuardRule(request.body);
     return error
       ? reply.status(400).send(error)
-      : toInputGuardRuleResponse(updateInputGuardRule(existing, request.body));
+      : toInputGuardRuleResponse(await updateInputGuardRule(options, existing, request.body));
   });
   server.delete("/api/admin/input-guard/rules/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1055,7 +1096,7 @@ function registerInputGuardRuleRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const { id } = request.params as { readonly id: string };
-    const deleted = state.inputGuardRules.delete(id);
+    const deleted = await deleteInputGuardRule(options, id);
     return deleted ? { deleted: true, id } : reply.status(404).send();
   });
 }
@@ -1066,7 +1107,7 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
       return reply;
     }
 
-    return [...state.outputGuardRules.values()].map(toOutputGuardRuleResponse);
+    return (await listOutputGuardRules(options)).map(toOutputGuardRuleResponse);
   });
   server.get("/api/output-guard/rules/audits", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1074,7 +1115,7 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
     }
 
     const limit = readQueryInteger(request, "limit", 100);
-    return [...state.outputGuardRuleAudits.values()].slice(-Math.min(Math.max(limit, 1), 1000)).map(toOutputGuardAuditResponse);
+    return (await listOutputGuardAudits(options, limit)).map(toOutputGuardAuditResponse);
   });
   server.post("/api/output-guard/rules", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1087,8 +1128,8 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
       return reply.status(400).send(error);
     }
 
-    const rule = createOutputGuardRule(request.body);
-    recordOutputGuardAudit("CREATE", request, rule.id, outputGuardRuleDetail(rule));
+    const rule = await createOutputGuardRule(options, request.body);
+    await recordOutputGuardAudit(options, "CREATE", request, rule.id, outputGuardRuleDetail(rule));
     return reply.status(201).send(toOutputGuardRuleResponse(rule));
   });
   server.post("/api/output-guard/rules/simulate", async (request, reply) => {
@@ -1102,8 +1143,9 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
       return reply.status(400).send(error);
     }
 
-    const response = simulateOutputGuardRules(request.body);
-    recordOutputGuardAudit(
+    const response = await simulateOutputGuardRules(options, request.body);
+    await recordOutputGuardAudit(
+      options,
       "SIMULATE",
       request,
       undefined,
@@ -1117,7 +1159,7 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
     }
 
     const { id } = request.params as { readonly id: string };
-    const existing = findCompatRecord(state.outputGuardRules, id);
+    const existing = await getOutputGuardRule(options, id);
 
     if (!existing) {
       return outputGuardRuleNotFound(reply, id);
@@ -1129,8 +1171,8 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
       return reply.status(400).send(error);
     }
 
-    const rule = updateOutputGuardRule(existing, request.body);
-    recordOutputGuardAudit("UPDATE", request, rule.id, outputGuardRuleDetail(rule));
+    const rule = await updateOutputGuardRule(options, existing, request.body);
+    await recordOutputGuardAudit(options, "UPDATE", request, rule.id, outputGuardRuleDetail(rule));
     return toOutputGuardRuleResponse(rule);
   });
   server.delete("/api/output-guard/rules/:id", async (request, reply) => {
@@ -1139,14 +1181,14 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
     }
 
     const { id } = request.params as { readonly id: string };
-    const existing = findCompatRecord(state.outputGuardRules, id);
+    const existing = await getOutputGuardRule(options, id);
 
     if (!existing) {
       return outputGuardRuleNotFound(reply, id);
     }
 
-    state.outputGuardRules.delete(existing.id);
-    recordOutputGuardAudit("DELETE", request, existing.id, `name=${stringField(existing.name, "")}`);
+    await deleteOutputGuardRule(options, existing.id);
+    await recordOutputGuardAudit(options, "DELETE", request, existing.id, `name=${stringField(existing.name, "")}`);
     return reply.status(204).send();
   });
 }
@@ -1154,34 +1196,34 @@ function registerOutputGuardRuleRoutes(server: FastifyInstance, options: Reactor
 function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/user-memory/:userId", async (request, reply) => {
     const { userId } = request.params as { readonly userId: string };
-    if (!canAccessUserMemory(request, options, userId)) {
+    if (!(await canAccessUserMemory(request, options, userId))) {
       return userForbidden(reply);
     }
 
-    const memory = state.userMemory.get(userId);
+    const memory = await readUserMemory(options, userId);
     return memory ? toUserMemoryResponse(memory) : userMemoryNotFound(reply, userId);
   });
   server.put("/api/user-memory/:userId/facts", async (request, reply) => {
-    if (!canAccessUserMemory(request, options, (request.params as { readonly userId: string }).userId)) {
+    if (!(await canAccessUserMemory(request, options, (request.params as { readonly userId: string }).userId))) {
       return userForbidden(reply);
     }
 
-    return updateUserMemory(request, reply, "facts");
+    return updateUserMemory(request, reply, "facts", options);
   });
   server.put("/api/user-memory/:userId/preferences", async (request, reply) => {
-    if (!canAccessUserMemory(request, options, (request.params as { readonly userId: string }).userId)) {
+    if (!(await canAccessUserMemory(request, options, (request.params as { readonly userId: string }).userId))) {
       return userForbidden(reply);
     }
 
-    return updateUserMemory(request, reply, "preferences");
+    return updateUserMemory(request, reply, "preferences", options);
   });
   server.delete("/api/user-memory/:userId", async (request, reply) => {
     const { userId } = request.params as { readonly userId: string };
-    if (!canAccessUserMemory(request, options, userId)) {
+    if (!(await canAccessUserMemory(request, options, userId))) {
       return userForbidden(reply);
     }
 
-    state.userMemory.delete(userId);
+    await deleteUserMemory(options, userId);
     return reply.status(204).send();
   });
 
@@ -1205,7 +1247,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    return reply.status(201).send(toFeedbackResponse(createFeedback(request)));
+    return reply.status(201).send(toFeedbackResponse(await createFeedback(request, options)));
   });
   server.get("/api/feedback", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1236,7 +1278,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
       }
     }
 
-    const items = filterFeedback(request).map(toFeedbackResponse);
+    const items = (await filterFeedback(request, options)).map(toFeedbackResponse);
     const limit = readQueryInteger(request, "limit", 50);
     return {
       approximateTotal: items.length,
@@ -1250,14 +1292,14 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
       return reply;
     }
 
-    return feedbackStats();
+    return feedbackStats(await listFeedback(options));
   });
   server.get("/api/feedback/unreviewed-count", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return { count: [...state.feedback.values()].filter(isUnreviewedNegativeFeedback).length };
+    return { count: (await listFeedback(options)).filter(isUnreviewedNegativeFeedback).length };
   });
   server.get("/api/feedback/export", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1266,7 +1308,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
 
     return {
       exportedAt: nowIso(),
-      items: [...state.feedback.values()].map(toFeedbackExportItem),
+      items: (await listFeedback(options)).map(toFeedbackExportItem),
       source: "reactor",
       version: 1
     };
@@ -1300,14 +1342,14 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     }
 
     for (const id of ids) {
-      const existing = findCompatRecord(state.feedback, id);
+      const existing = await getFeedback(options, id);
 
       if (!existing) {
         failed.push({ id, reason: "not_found" });
         continue;
       }
 
-      updateFeedbackReview(existing, body, readAuthUserId(request) ?? "admin");
+      await updateFeedbackReview(existing, body, readAuthUserId(request) ?? "admin", options);
       updated.push(existing.id);
     }
 
@@ -1315,7 +1357,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
   });
   server.get("/api/feedback/:feedbackId", async (request, reply) => {
     const { feedbackId } = request.params as { readonly feedbackId: string };
-    const feedback = findCompatRecord(state.feedback, feedbackId);
+    const feedback = await getFeedback(options, feedbackId);
     return feedback
       ? toFeedbackResponse(feedback)
       : reply.status(404).send(errorResponse(`Feedback not found: ${feedbackId}`));
@@ -1326,7 +1368,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     }
 
     const { feedbackId } = request.params as { readonly feedbackId: string };
-    const feedback = findCompatRecord(state.feedback, feedbackId);
+    const feedback = await getFeedback(options, feedbackId);
 
     if (!feedback) {
       return reply.status(404).send(errorResponse(`Feedback not found: ${feedbackId}`));
@@ -1360,7 +1402,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    return toFeedbackResponse(updateFeedbackReview(feedback, body, readAuthUserId(request) ?? "admin"));
+    return toFeedbackResponse(await updateFeedbackReview(feedback, body, readAuthUserId(request) ?? "admin", options));
   });
   server.delete("/api/feedback/:feedbackId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1368,11 +1410,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
     }
 
     const { feedbackId } = request.params as { readonly feedbackId: string };
-    const existing = findCompatRecord(state.feedback, feedbackId);
-
-    if (existing) {
-      state.feedback.delete(existing.id);
-    }
+    await deleteFeedback(options, feedbackId);
 
     return reply.status(204).send();
   });
@@ -1385,12 +1423,12 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
     }
 
     const activeOnly = readQueryBoolean(request, "activeOnly", false);
-    const personas = [...state.personas.values()].map(toPersonaResponse);
+    const personas = (await listPersonas(options)).map(toPersonaResponse);
     return activeOnly ? personas.filter((persona) => persona.isActive) : personas;
   });
   server.get("/api/personas/:personaId", async (request, reply) => {
     const { personaId } = request.params as { readonly personaId: string };
-    const persona = findCompatRecord(state.personas, personaId);
+    const persona = await getPersona(options, personaId);
     return persona ? toPersonaResponse(persona) : reply.status(404).send(errorResponse(`Persona not found: ${personaId}`));
   });
   server.post("/api/personas", async (request, reply) => {
@@ -1404,7 +1442,7 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    return reply.status(201).send(toPersonaResponse(createPersona(request.body)));
+    return reply.status(201).send(toPersonaResponse(await createPersona(options, request.body)));
   });
   server.put("/api/personas/:personaId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1412,7 +1450,7 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
     }
 
     const { personaId } = request.params as { readonly personaId: string };
-    const existing = findCompatRecord(state.personas, personaId);
+    const existing = await getPersona(options, personaId);
 
     if (!existing) {
       return reply.status(404).send(errorResponse(`Persona not found: ${personaId}`));
@@ -1424,7 +1462,7 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    return toPersonaResponse(updatePersona(existing, request.body));
+    return toPersonaResponse(await updatePersona(options, existing, request.body));
   });
   server.delete("/api/personas/:personaId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1432,21 +1470,17 @@ function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatib
     }
 
     const { personaId } = request.params as { readonly personaId: string };
-    const existing = findCompatRecord(state.personas, personaId);
-
-    if (existing) {
-      state.personas.delete(existing.id);
-    }
+    await deletePersona(options, personaId);
 
     return reply.status(204).send();
   });
 }
 
 function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/prompt-templates", async () => [...state.promptTemplates.values()].map(toTemplateResponse));
+  server.get("/api/prompt-templates", async () => (await listPromptTemplates(options)).map(toTemplateResponse));
   server.get("/api/prompt-templates/:templateId", async (request, reply) => {
     const { templateId } = request.params as { readonly templateId: string };
-    const template = findCompatRecord(state.promptTemplates, templateId);
+    const template = await getPromptTemplate(options, templateId);
     return template
       ? toTemplateDetailResponse(template)
       : reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`));
@@ -1462,7 +1496,7 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    return reply.status(201).send(toTemplateResponse(createPromptTemplate(request.body)));
+    return reply.status(201).send(toTemplateResponse(await createPromptTemplate(options, request.body)));
   });
   server.put("/api/prompt-templates/:templateId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1470,7 +1504,7 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const { templateId } = request.params as { readonly templateId: string };
-    const existing = findCompatRecord(state.promptTemplates, templateId);
+    const existing = await getPromptTemplate(options, templateId);
 
     if (!existing) {
       return reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`));
@@ -1486,11 +1520,11 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     const description = readBodyString(body, "description")
       ?? (typeof existing.description === "string" ? existing.description : "");
     const name = readBodyString(body, "name") ?? (typeof existing.name === "string" ? existing.name : "");
-    const updated = createRecord(state.promptTemplates, {
+    const updated = await savePromptTemplate(options, {
       ...existing,
       description,
       name
-    }, "prompt_template");
+    });
     return toTemplateResponse(updated);
   });
   server.delete("/api/prompt-templates/:templateId", async (request, reply) => {
@@ -1499,7 +1533,7 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
     }
 
     const { templateId } = request.params as { readonly templateId: string };
-    state.promptTemplates.delete(templateId);
+    await deletePromptTemplate(options, templateId);
     return reply.status(204).send();
   });
   server.post("/api/prompt-templates/:templateId/versions", async (request, reply) => {
@@ -1514,7 +1548,7 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    const version = appendPromptVersion(templateId, request.body);
+    const version = await appendPromptVersion(options, templateId, request.body);
     return "error" in version
       ? reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`))
       : reply.status(201).send(version);
@@ -1524,7 +1558,7 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
       return reply;
     }
 
-    const version = setPromptVersionStatus(request, "ACTIVE");
+    const version = await setPromptVersionStatus(options, request, "ACTIVE");
     return "error" in version
       ? promptTemplateVersionNotFound(reply, request)
       : version;
@@ -1534,7 +1568,7 @@ function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorC
       return reply;
     }
 
-    const version = setPromptVersionStatus(request, "ARCHIVED");
+    const version = await setPromptVersionStatus(options, request, "ARCHIVED");
     return "error" in version
       ? promptTemplateVersionNotFound(reply, request)
       : version;
@@ -1552,7 +1586,7 @@ function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibi
       return reply;
     }
 
-    return [...state.intents.values()].map(toIntentResponse);
+    return (await listIntents(options)).map(toIntentResponse);
   });
   server.get("/api/intents/:intentName", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1560,7 +1594,7 @@ function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibi
     }
 
     const { intentName } = request.params as { readonly intentName: string };
-    const intent = findCompatRecord(state.intents, intentName);
+    const intent = await getIntent(options, intentName);
     return intent ? toIntentResponse(intent) : reply.status(404).send(errorResponse(`Intent not found: ${intentName}`));
   });
   server.post("/api/intents", async (request, reply) => {
@@ -1576,11 +1610,11 @@ function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibi
 
     const name = readBodyString(request.body, "name") ?? "";
 
-    if (findCompatRecord(state.intents, name)) {
+    if (await getIntent(options, name)) {
       return reply.status(409).send(errorResponse(`Intent '${name}' already exists`));
     }
 
-    return reply.status(201).send(toIntentResponse(createIntent(request.body)));
+    return reply.status(201).send(toIntentResponse(await createIntent(options, request.body)));
   });
   server.put("/api/intents/:intentName", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1588,7 +1622,7 @@ function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibi
     }
 
     const { intentName } = request.params as { readonly intentName: string };
-    const existing = findCompatRecord(state.intents, intentName);
+    const existing = await getIntent(options, intentName);
 
     if (!existing) {
       return reply.status(404).send(errorResponse(`Intent not found: ${intentName}`));
@@ -1600,7 +1634,7 @@ function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibi
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    return toIntentResponse(updateIntent(existing, request.body));
+    return toIntentResponse(await updateIntent(options, existing, request.body));
   });
   server.delete("/api/intents/:intentName", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1608,11 +1642,7 @@ function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibi
     }
 
     const { intentName } = request.params as { readonly intentName: string };
-    const existing = findCompatRecord(state.intents, intentName);
-
-    if (existing) {
-      state.intents.delete(existing.id);
-    }
+    await deleteIntent(options, intentName);
 
     return reply.status(204).send();
   });
@@ -1811,11 +1841,14 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       return reply;
     }
 
+    const stored = await readStoredRagIngestionPolicy(options);
+    const effective = stored ?? state.ragIngestionPolicy;
+
     return {
       configEnabled: Boolean(state.ragIngestionPolicy.enabled),
       dynamicEnabled: true,
-      effective: toRagIngestionPolicyResponse(state.ragIngestionPolicy),
-      stored: state.ragIngestionPolicyStored ? toRagIngestionPolicyResponse(state.ragIngestionPolicy) : null
+      effective: toRagIngestionPolicyResponse(effective),
+      stored: stored ? toRagIngestionPolicyResponse(stored) : null
     };
   });
   server.put("/api/rag-ingestion/policy", async (request, reply) => {
@@ -1829,22 +1862,15 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       return reply.status(400).send(parsed.error);
     }
 
-    const timestamp = nowIso();
-    state.ragIngestionPolicy = {
-      ...parsed.value,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
-    state.ragIngestionPolicyStored = true;
-    return toRagIngestionPolicyResponse(state.ragIngestionPolicy);
+    const saved = await saveRagIngestionPolicy(options, parsed.value);
+    return toRagIngestionPolicyResponse(saved);
   });
   server.delete("/api/rag-ingestion/policy", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    state.ragIngestionPolicy = defaultRagIngestionPolicy();
-    state.ragIngestionPolicyStored = false;
+    await clearRagIngestionPolicy(options);
     return reply.status(204).send();
   });
   server.get("/api/rag-ingestion/candidates", async (request, reply) => {
@@ -1855,17 +1881,14 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     const status = readQueryString(request, "status")?.toUpperCase();
     const channel = readQueryString(request, "channel");
     const limit = Math.min(Math.max(readQueryInteger(request, "limit", 100), 1), 500);
-    return [...state.ragCandidates.values()]
-      .filter((candidate) => !status || candidateStatus(candidate.status) === status)
-      .filter((candidate) => !channel || nullableStringResponse(candidate.channel) === channel)
-      .slice(0, limit)
-      .map(toRagCandidateResponse);
+    const candidates = await listRagCandidates(options, { channel, limit, status });
+    return candidates.map(toRagCandidateResponse);
   });
   server.post("/api/rag-ingestion/candidates/:id/approve", async (request, reply) =>
-    reviewRagCandidate(request, reply, "INGESTED")
+    reviewRagCandidate(request, reply, options, "INGESTED")
   );
   server.post("/api/rag-ingestion/candidates/:id/reject", async (request, reply) =>
-    reviewRagCandidate(request, reply, "REJECTED")
+    reviewRagCandidate(request, reply, options, "REJECTED")
   );
 
   server.post("/api/prompt-lab/experiments", async (request, reply) => {
@@ -1879,7 +1902,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       return reply.status(400).send(parsed.error);
     }
 
-    return reply.status(201).send(toPromptExperimentResponse(createPromptExperiment(request, options, parsed.value)));
+    return reply.status(201).send(toPromptExperimentResponse(await createPromptExperiment(request, options, parsed.value)));
   });
   server.get("/api/prompt-lab/experiments", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1888,7 +1911,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
 
     const status = readQueryString(request, "status")?.toUpperCase();
     const templateId = readQueryString(request, "templateId");
-    return [...state.promptExperiments.values()]
+    return (await listPromptExperiments(options))
       .filter((experiment) => !status || reactorEnumString(experiment.status, "PENDING") === status)
       .filter((experiment) => !templateId || experiment.templateId === templateId)
       .map(toPromptExperimentResponse);
@@ -1898,7 +1921,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       return reply;
     }
 
-    return respondPromptExperiment(request, reply);
+    return respondPromptExperiment(request, reply, options);
   });
   server.delete("/api/prompt-lab/experiments/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -1906,9 +1929,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     }
 
     const { id } = request.params as { readonly id: string };
-    state.promptExperiments.delete(id);
-    state.promptExperimentReports.delete(id);
-    state.promptExperimentTrials.delete(id);
+    await deletePromptExperiment(options, id);
     return reply.status(204).send();
   });
   server.post("/api/prompt-lab/experiments/:id/run", async (request, reply) => {
@@ -1923,22 +1944,22 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       return reply;
     }
 
-    return cancelPromptExperiment(request, reply);
+    return cancelPromptExperiment(request, reply, options);
   });
   server.post("/api/prompt-lab/experiments/:id/activate", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return activatePromptExperiment(request, reply);
+    return activatePromptExperiment(request, reply, options);
   });
   server.get("/api/prompt-lab/experiments/:id/status", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    const record = findCompatRecord(state.promptExperiments, (request.params as { id: string }).id);
     const id = (request.params as { readonly id: string }).id;
+    const record = await getPromptExperiment(options, id);
     return record
       ? toPromptExperimentStatusResponse(record)
       : reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
@@ -1949,15 +1970,15 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
     }
 
     const { id } = request.params as { readonly id: string };
-    return (state.promptExperimentTrials.get(id) ?? []).map(toPromptTrialResponse);
+    return (await listPromptExperimentTrials(options, id)).map(toPromptTrialResponse);
   });
   server.get("/api/prompt-lab/experiments/:id/report", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    const report = findCompatRecord(state.promptExperimentReports, (request.params as { readonly id: string }).id);
     const id = (request.params as { readonly id: string }).id;
+    const report = await getPromptExperimentReport(options, id);
     return report
       ? toPromptReportResponse(report)
       : reply.status(404).send(errorResponse(`Experiment report not found: ${id}`));
@@ -1992,7 +2013,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
       return reply.status(400).send(errorResponse("Body must include templateId"));
     }
 
-    return promptFeedbackAnalysis(templateId, readNullableNumber(toBody(request.body).maxSamples) ?? 50);
+    return promptFeedbackAnalysis(templateId, readNullableNumber(toBody(request.body).maxSamples) ?? 50, options);
   });
 }
 
@@ -2135,7 +2156,7 @@ function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompati
       return reply;
     }
 
-    return [...state.slackBots.values()].map(toSlackBotResponse);
+    return (await listSlackBots(options)).map(toSlackBotResponse);
   });
   server.get("/api/admin/slack-bots/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2143,7 +2164,7 @@ function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompati
     }
 
     const { id } = request.params as { readonly id: string };
-    const bot = findCompatRecord(state.slackBots, id);
+    const bot = await getSlackBot(options, id);
     return bot ? toSlackBotResponse(bot) : slackBotNotFound(reply, id);
   });
   server.post("/api/admin/slack-bots", async (request, reply) => {
@@ -2158,11 +2179,11 @@ function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompati
       return reply.status(400).send(validationErrorResponse(validationError));
     }
 
-    if ([...state.slackBots.values()].some((bot) => bot.name === name)) {
+    if ((await listSlackBots(options)).some((bot) => bot.name === name)) {
       return reply.status(409).send(errorResponse(`이름 '${name}'은 이미 사용 중입니다`));
     }
 
-    return reply.status(201).send(toSlackBotResponse(createSlackBot(request.body)));
+    return reply.status(201).send(toSlackBotResponse(await createSlackBot(options, request.body)));
   });
   server.put("/api/admin/slack-bots/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2170,13 +2191,13 @@ function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompati
     }
 
     const { id } = request.params as { readonly id: string };
-    const existing = findCompatRecord(state.slackBots, id);
+    const existing = await getSlackBot(options, id);
 
     if (!existing) {
       return slackBotNotFound(reply, id);
     }
 
-    return toSlackBotResponse(updateSlackBot(existing, request.body));
+    return toSlackBotResponse(await updateSlackBot(options, existing, request.body));
   });
   server.delete("/api/admin/slack-bots/:id", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2184,13 +2205,13 @@ function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompati
     }
 
     const { id } = request.params as { readonly id: string };
-    const existing = findCompatRecord(state.slackBots, id);
+    const existing = await getSlackBot(options, id);
 
     if (!existing) {
       return slackBotNotFound(reply, id);
     }
 
-    state.slackBots.delete(existing.id);
+    await deleteSlackBot(options, stringField(existing.id, id));
     return reply.status(204).send();
   });
 }
@@ -2274,8 +2295,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const channelKey = channelId ?? "";
-    const registeredAt = nowIso();
-    const saved = createRecord(state.slackFaq, {
+    const saved = await saveSlackFaqRegistration(options, {
       autoReplyMode: slackFaqAutoReplyMode(readBodyString(body, "autoReplyMode")),
       channelId: channelKey,
       channelName: readBodyNullableString(body, "channelName") ?? null,
@@ -2283,16 +2303,14 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       daysBack: readNumber(body.daysBack, 30),
       enabled: readBoolean(body.enabled, true),
       id: channelKey,
-      reIngestIntervalHours: readNumber(body.reIngestIntervalHours, 24),
       lastChunkCount: null,
       lastError: null,
       lastIngestedAt: null,
       lastMessageCount: null,
       lastStatus: null,
-      registeredAt,
+      reIngestIntervalHours: readNumber(body.reIngestIntervalHours, 24),
       registeredBy: readAuthUserId(request) ?? null,
-      updatedAt: registeredAt
-    }, "slack_faq");
+    });
     return toSlackFaqRegistration(saved);
   });
   server.get("/api/admin/slack/channels/faq", async (request, reply) => {
@@ -2300,7 +2318,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return { registrations: [...state.slackFaq.values()].map(toSlackFaqRegistration) };
+    return { registrations: (await listSlackFaqRegistrations(options)).map(toSlackFaqRegistration) };
   });
   server.get("/api/admin/slack/channels/faq/stats", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2327,7 +2345,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return validation;
     }
 
-    const record = findCompatRecord(state.slackFaq, channelId);
+    const record = await getSlackFaqRegistration(options, channelId);
     return record ? toSlackFaqRegistration(record) : slackFaqNotFound(reply, channelId);
   });
   server.patch("/api/admin/slack/channels/faq/:channelId", async (request, reply) => {
@@ -2341,13 +2359,13 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return validation;
     }
 
-    const existing = findCompatRecord(state.slackFaq, channelId);
+    const existing = await getSlackFaqRegistration(options, channelId);
     if (!existing) {
       return slackFaqNotFound(reply, channelId);
     }
 
     const body = toBody(request.body);
-    const saved = createRecord(state.slackFaq, {
+    const saved = await saveSlackFaqRegistration(options, {
       ...existing,
       autoReplyMode: body.autoReplyMode === undefined
         ? stringField(existing.autoReplyMode, "MENTION")
@@ -2363,8 +2381,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       reIngestIntervalHours: body.reIngestIntervalHours === undefined
         ? readNumber(existing.reIngestIntervalHours, 24)
         : readNumber(body.reIngestIntervalHours, 24),
-      updatedAt: nowIso()
-    }, "slack_faq");
+    });
     return toSlackFaqRegistration(saved);
   });
   server.delete("/api/admin/slack/channels/faq/:channelId", async (request, reply) => {
@@ -2378,7 +2395,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return validation;
     }
 
-    const deleted = state.slackFaq.delete(channelId);
+    const deleted = await deleteSlackFaqRegistration(options, channelId);
     state.slackFaqEvents.delete(channelId);
     state.slackFaqFeedback.delete(channelId);
     return deleted ? { deleted: channelId } : slackFaqNotFound(reply, channelId);
@@ -2388,7 +2405,7 @@ function registerSlackCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return slackFaqIngest(request, reply);
+    return slackFaqIngest(request, reply, options);
   });
   server.post("/api/admin/slack/channels/faq/:channelId/probe", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2579,9 +2596,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return [...state.platformPricing.values()].sort((left, right) =>
-      String(right.effectiveFrom ?? right.createdAt).localeCompare(String(left.effectiveFrom ?? left.createdAt))
-    );
+    return listPlatformPricing(options);
   });
   server.post("/api/admin/platform/pricing", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2600,7 +2615,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const id = readBodyString(body, "id") ?? `${provider}:${model}`;
-    const saved = createRecord(state.platformPricing, {
+    return savePlatformPricing(options, {
       batchCompletionPricePer1k: numberOrString(body.batchCompletionPricePer1k, 0),
       batchPromptPricePer1k: numberOrString(body.batchPromptPricePer1k, 0),
       cachedInputPricePer1k: numberOrString(body.cachedInputPricePer1k, 0),
@@ -2612,8 +2627,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       promptPricePer1k: numberOrString(body.promptPricePer1k, 0),
       provider,
       reasoningPricePer1k: numberOrString(body.reasoningPricePer1k, 0)
-    }, "model_pricing");
-    return saved;
+    });
   });
   server.get("/api/admin/platform/vectorstore/stats", async (request, reply) => {
     if (!options.authorizeAnyAdmin(request, reply)) {
@@ -2736,7 +2750,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return [...state.platformAlertRules.values()].map(toPlatformAlertRuleResponse);
+    return (await listPlatformAlertRules(options)).map(toPlatformAlertRuleResponse);
   });
   server.post("/api/admin/platform/alerts/rules", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2751,7 +2765,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply.status(400).send(errorResponse("Body must include name and metric"));
     }
 
-    const saved = createRecord(state.platformAlertRules, {
+    const saved = await savePlatformAlertRule(options, {
       createdAt: readBodyString(body, "createdAt") ?? nowIso(),
       description: readBodyString(body, "description") ?? "",
       enabled: readBoolean(body.enabled, true),
@@ -2764,12 +2778,12 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       threshold: readNumber(body.threshold, 0),
       type: readBodyString(body, "type") ?? "STATIC_THRESHOLD",
       windowMinutes: readNumber(body.windowMinutes, 15)
-    }, "alert_rule");
+    });
 
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "RULE_UPSERT",
       category: "platform_alert",
-      resourceId: saved.id,
+      resourceId: stringField(saved.id, ""),
       resourceType: "alert_rule"
     });
 
@@ -2781,11 +2795,11 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { id } = request.params as { readonly id: string };
-    if (!state.platformAlertRules.delete(id)) {
+    if (!(await deletePlatformAlertRule(options, id))) {
       return reply.status(404).send(errorResponse(`Alert rule not found: ${id}`));
     }
 
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "RULE_DELETE",
       category: "platform_alert",
       resourceId: id,
@@ -2799,7 +2813,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "ALERT_EVALUATE",
       category: "platform_alert",
       resourceType: "alert_rule_set"
@@ -2814,7 +2828,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const { id } = request.params as { readonly id: string };
     await options.admin?.operations?.resolveAlert(id);
-    recordAdminAudit(request, {
+    await recordAdminAudit(request, options, {
       action: "ALERT_RESOLVE",
       category: "platform_alert",
       resourceId: id,
@@ -2896,14 +2910,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply.status(400).send(errorResponse("label is required"));
     }
 
-    const tag = createRecord(new Map(), {
-      comment: readBodyNullableString(request.body, "comment") ?? null,
-      label,
-      sessionId
-    }, "session_tag");
-    const tags = state.sessionTags.get(sessionId) ?? [];
-    state.sessionTags.set(sessionId, [...tags, tag]);
-    return tag;
+    return createSessionTag(options, request, sessionId, label, readBodyNullableString(request.body, "comment") ?? null);
   });
   server.delete("/api/admin/sessions/:sessionId/tags/:tagId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2911,14 +2918,12 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { sessionId, tagId } = request.params as { readonly sessionId: string; readonly tagId: string };
-    const tags = state.sessionTags.get(sessionId) ?? [];
-    const remaining = tags.filter((tag) => tag.id !== tagId);
+    const deleted = await deleteSessionTag(options, sessionId, tagId);
 
-    if (remaining.length === tags.length) {
+    if (!deleted) {
       return reply.status(404).send(errorResponse("Tag not found"));
     }
 
-    state.sessionTags.set(sessionId, remaining);
     return reply.status(204).send();
   });
   server.get("/api/admin/sessions/:sessionId", async (request, reply) => {
@@ -2928,7 +2933,8 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
     const detail = await sessionDetail(request, reply, options);
     const { sessionId } = request.params as { readonly sessionId: string };
-    return isRecord(detail) && "run" in detail ? { ...detail, tags: state.sessionTags.get(sessionId) ?? [] } : detail;
+    const tags = await listSessionTags(options, sessionId);
+    return isRecord(detail) && "run" in detail ? { ...detail, tags } : detail;
   });
   server.delete("/api/admin/sessions/:sessionId", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2945,7 +2951,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const deleted = await options.historyStore.deleteRun(sessionId);
-    state.sessionTags.delete(sessionId);
+    await deleteSessionTags(options, sessionId);
     return deleted
       ? reply.status(204).send()
       : reply.status(404).send({ code: "SESSION_NOT_FOUND", message: `Session not found: ${sessionId}` });
@@ -2971,7 +2977,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return options.admin?.observability?.tracer?.recordedSpans() ?? [];
+    return recordedSpans(options.admin?.observability?.tracer);
   });
   server.get("/api/admin/traces/:traceId/spans", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2979,7 +2985,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
     }
 
     const { traceId } = request.params as { readonly traceId: string };
-    return (options.admin?.observability?.tracer?.recordedSpans() ?? [])
+    return recordedSpans(options.admin?.observability?.tracer)
       .filter((span) =>
         isRecord(span) &&
         (span.id === traceId || (isRecord(span.attributes) && span.attributes.runId === traceId))
@@ -3100,7 +3106,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
 
     const limit = Math.max(1, readQueryInteger(request, "limit", 1000));
     const offset = Math.max(0, readQueryInteger(request, "offset", 0));
-    const rows = adminAuditRows(request, limit);
+    const rows = await adminAuditRows(request, options, limit);
     const pageLimit = clampLimit(readQueryInteger(request, "pageLimit", 50));
     return {
       items: rows.slice(offset, offset + pageLimit),
@@ -3115,7 +3121,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    const rows = adminAuditRows(request, readQueryInteger(request, "limit", 5000));
+    const rows = await adminAuditRows(request, options, readQueryInteger(request, "limit", 5000));
     const stamp = new Date().toISOString().slice(0, 16).replace(/\D/gu, "");
     reply.header("content-disposition", `attachment; filename="audit-export-${stamp}.csv"`);
     reply.header("content-type", "text/csv; charset=utf-8");
@@ -3140,10 +3146,16 @@ function registerAdminAnalyticsCompatibilityRoutes(
     }
 
     const limit = Math.max(1, readQueryInteger(request, "limit", 50));
-    return (await listAllRuns(options))
+    const failedRuns = (await listAllRuns(options))
       .filter((run) => run.status === "failed")
-      .slice(0, limit)
-      .map(debugReplayResponse);
+      .slice(0, limit);
+    const captures = await Promise.all(failedRuns.map((run) => saveDebugReplayCapture(options, debugReplayResponse(run))));
+    const stored = await listDebugReplayCaptures(options, Math.max(0, limit - captures.length));
+    const byId = new Map<string, JsonObject>();
+    for (const capture of [...captures, ...stored]) {
+      byId.set(stringField(capture.id, ""), capture);
+    }
+    return [...byId.values()].slice(0, limit);
   });
 
   server.get("/api/admin/debug/replay/:id", async (request, reply) => {
@@ -3152,9 +3164,14 @@ function registerAdminAnalyticsCompatibilityRoutes(
     }
 
     const { id } = request.params as { readonly id: string };
+    const stored = await getDebugReplayCapture(options, id);
+    if (stored) {
+      return stored;
+    }
+
     const run = await options.historyStore?.findRun(id);
     return run && run.status === "failed"
-      ? debugReplayResponse(run)
+      ? saveDebugReplayCapture(options, debugReplayResponse(run))
       : reply.status(404).send(errorResponse("Replay target not found"));
   });
 
@@ -3164,7 +3181,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
     }
 
     const limit = Math.max(1, readQueryInteger(request, "limit", 100));
-    return [...state.agentEvalResults.values()].slice(0, limit);
+    return listAgentEvalResults(options, { limit });
   });
 
   server.get("/api/admin/evals/pass-rate", async (request, reply) => {
@@ -3172,7 +3189,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    return passRateByDay([...state.agentEvalResults.values()]);
+    return passRateByDay(await listAgentEvalResults(options, { limit: 5_000 }));
   });
 
   server.get("/api/admin/followup-suggestions/stats", async (request, reply) => {
@@ -3360,7 +3377,7 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply.status(400).send(errorResponse(`invalid role: ${rawRole}`));
     }
 
-    if (!options.authService?.updateUserRole(id, role)) {
+    if (!(await options.authService?.updateUserRole(id, role))) {
       return reply.status(404).send(errorResponse(`User not found: ${id}`));
     }
 
@@ -3417,11 +3434,7 @@ function registerAgentEvalCompatibilityRoutes(
     const enabledOnly = readQueryBoolean(request, "enabledOnly", true);
     const tags = readQueryStringSet(request, "tags");
     const limit = Math.max(0, readQueryInteger(request, "limit", 100));
-    return [...state.agentEvalCases.values()]
-      .filter((item) => !enabledOnly || item.enabled !== false)
-      .filter((item) => tags.size === 0 || readStringSet(item.tags).some((tag) => tags.has(tag)))
-      .slice(0, limit)
-      .map(toEvalCaseResponse);
+    return (await listAgentEvalCases(options, { enabledOnly, limit, tags: [...tags] })).map(toEvalCaseResponse);
   });
 
   server.get("/api/admin/agent-eval/run-logs", async (request, reply) => {
@@ -3433,7 +3446,7 @@ function registerAgentEvalCompatibilityRoutes(
     const runs = await listAllRuns(options, { limit });
     const logsByRunId = new Map<string, JsonObject>();
 
-    for (const log of state.agentEvalRunLogs.values()) {
+    for (const log of await listAgentEvalRunLogs(options, limit)) {
       const response = toEvalRunLogResponse(log);
       logsByRunId.set(String(response.runId), response);
     }
@@ -3478,7 +3491,7 @@ function registerAgentEvalCompatibilityRoutes(
     const toolCalls = await (options.historyStore?.listToolCalls(runId) ?? []);
     const toolNames = [...new Set(toolCalls.map((toolCall) => toolCall.name))];
     const id = readBodyString(body, "id") ?? createRunId("eval_case");
-    const record = createRecord(state.agentEvalCases, {
+    const record = await saveAgentEvalCase(options, {
       agentType: run.mode,
       assertionCount: countEvalAssertions({ ...body, agentType: run.mode, model: run.model }),
       enabled: readBoolean(body.enabled, true),
@@ -3497,8 +3510,8 @@ function registerAgentEvalCompatibilityRoutes(
       tags: readStringSet(body.tags),
       toolExposureNames: toolNames,
       userInput: run.input
-    }, "eval_case");
-    state.agentEvalRunLogs.set(run.id, await runLogRecord(run, options));
+    });
+    await runLogRecord(run, options);
     return toEvalCaseResponse(record);
   });
 
@@ -3508,7 +3521,7 @@ function registerAgentEvalCompatibilityRoutes(
     }
 
     const { id } = request.params as { readonly id: string };
-    const existing = findCompatRecord(state.agentEvalCases, id);
+    const existing = await getAgentEvalCase(options, id);
 
     if (!existing) {
       return reply.status(404).send(errorResponse(`eval case를 찾을 수 없습니다: ${id}`));
@@ -3554,7 +3567,7 @@ function registerAgentEvalCompatibilityRoutes(
     }
 
     const { caseId, runId } = request.params as { readonly caseId: string; readonly runId: string };
-    const existing = findCompatRecord(state.agentEvalCases, caseId);
+    const existing = await getAgentEvalCase(options, caseId);
 
     if (!existing) {
       return reply.status(404).send(errorResponse(`eval case를 찾을 수 없습니다: ${caseId}`));
@@ -3583,10 +3596,7 @@ function registerAgentEvalCompatibilityRoutes(
     const caseId = readQueryString(request, "caseId");
     const tier = readQueryString(request, "tier");
     const limit = Math.max(0, readQueryInteger(request, "limit", 100));
-    return [...state.agentEvalResults.values()]
-      .filter((result) => !caseId || result.caseId === caseId)
-      .filter((result) => !tier || result.tier === tier)
-      .slice(0, limit);
+    return listAgentEvalResults(options, { caseId, limit, tier });
   });
 
   server.get("/api/admin/tools/stats", async (request, reply) => {
@@ -3837,7 +3847,7 @@ async function runLogRecord(
 ): Promise<CompatRecord> {
   const toolCalls = toolCallsOverride ?? await (options.historyStore?.listToolCalls(run.id) ?? []);
   const toolExposureNames = [...new Set(toolCalls.map((toolCall) => toolCall.name))];
-  return createRecord(state.agentEvalRunLogs, {
+  return saveAgentEvalRunLog(options, {
     agentType: run.mode,
     costUsd: run.costUsd,
     endedAt: run.completedAt?.toISOString() ?? run.updatedAt.toISOString(),
@@ -3859,7 +3869,132 @@ async function runLogRecord(
       names: toolExposureNames
     },
     userInput: run.input
-  }, "agent_eval_run_log");
+  });
+}
+
+async function saveAgentEvalCase(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.agentEvalStore) {
+    const saved = await options.agentEvalStore.saveCase(prepareEvalRecord(record, "eval_case"));
+    return evalStoreRecordToCompat(saved, "eval_case");
+  }
+
+  return createRecord(state.agentEvalCases, record, "eval_case");
+}
+
+async function listAgentEvalCases(
+  options: ReactorCompatibilityRouteOptions,
+  filters: { readonly enabledOnly?: boolean; readonly limit?: number; readonly tags?: readonly string[] } = {}
+): Promise<readonly CompatRecord[]> {
+  if (options.agentEvalStore) {
+    const rows = await options.agentEvalStore.listCases(filters);
+    return rows.map((row) => evalStoreRecordToCompat(row, "eval_case"));
+  }
+
+  return [...state.agentEvalCases.values()]
+    .filter((item) => !filters.enabledOnly || item.enabled !== false)
+    .filter((item) => !filters.tags || filters.tags.length === 0 || readStringSet(item.tags).some((tag) => filters.tags?.includes(tag)))
+    .slice(0, filters.limit ?? 100);
+}
+
+async function getAgentEvalCase(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+  if (options.agentEvalStore) {
+    const row = await options.agentEvalStore.getCase(id);
+    return row ? evalStoreRecordToCompat(row, "eval_case") : undefined;
+  }
+
+  return findCompatRecord(state.agentEvalCases, id);
+}
+
+async function saveAgentEvalRunLog(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.agentEvalStore) {
+    const saved = await options.agentEvalStore.saveRunLog(prepareEvalRecord(record, "agent_eval_run_log"));
+    return evalStoreRecordToCompat(saved, "agent_eval_run_log");
+  }
+
+  return createRecord(state.agentEvalRunLogs, record, "agent_eval_run_log");
+}
+
+async function listAgentEvalRunLogs(options: ReactorCompatibilityRouteOptions, limit: number): Promise<readonly CompatRecord[]> {
+  if (options.agentEvalStore) {
+    const rows = await options.agentEvalStore.listRunLogs(limit);
+    return rows.map((row) => evalStoreRecordToCompat(row, "agent_eval_run_log"));
+  }
+
+  return [...state.agentEvalRunLogs.values()].slice(0, limit);
+}
+
+async function saveAgentEvalResult(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.agentEvalStore) {
+    const saved = await options.agentEvalStore.saveResult(prepareEvalRecord(record, "agent_eval_result"));
+    return evalStoreRecordToCompat(saved, "agent_eval_result");
+  }
+
+  return createRecord(state.agentEvalResults, record, "agent_eval_result");
+}
+
+async function listAgentEvalResults(
+  options: ReactorCompatibilityRouteOptions,
+  filters: { readonly caseId?: string; readonly limit?: number; readonly tier?: string } = {}
+): Promise<readonly CompatRecord[]> {
+  if (options.agentEvalStore) {
+    const rows = await options.agentEvalStore.listResults(filters);
+    return rows.map((row) => evalStoreRecordToCompat(row, "agent_eval_result"));
+  }
+
+  return [...state.agentEvalResults.values()]
+    .filter((result) => !filters.caseId || result.caseId === filters.caseId)
+    .filter((result) => !filters.tier || result.tier === filters.tier)
+    .slice(0, filters.limit ?? 100);
+}
+
+async function saveDebugReplayCapture(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.agentEvalStore) {
+    const saved = await options.agentEvalStore.saveDebugReplayCapture(prepareEvalRecord(record, "debug_replay"));
+    return evalStoreRecordToCompat(saved, "debug_replay");
+  }
+
+  return evalStoreRecordToCompat(record, "debug_replay");
+}
+
+async function listDebugReplayCaptures(options: ReactorCompatibilityRouteOptions, limit: number): Promise<readonly CompatRecord[]> {
+  if (options.agentEvalStore) {
+    const rows = await options.agentEvalStore.listDebugReplayCaptures(limit);
+    return rows.map((row) => evalStoreRecordToCompat(row, "debug_replay"));
+  }
+
+  return [];
+}
+
+async function getDebugReplayCapture(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+  if (options.agentEvalStore) {
+    const row = await options.agentEvalStore.getDebugReplayCapture(id);
+    return row ? evalStoreRecordToCompat(row, "debug_replay") : undefined;
+  }
+
+  return undefined;
+}
+
+function prepareEvalRecord(record: JsonObject, prefix: string): JsonObject {
+  const createdAt = nullableStringResponse(record.createdAt) ?? nowIso();
+  return {
+    ...record,
+    createdAt,
+    id: stringField(record.id, "") || stringField(record.runId, "") || createRunId(prefix),
+    updatedAt: nullableStringResponse(record.updatedAt) ?? nowIso()
+  };
+}
+
+function evalStoreRecordToCompat(record: JsonObject, prefix: string): CompatRecord {
+  const createdAt = nullableStringResponse(record.createdAt)
+    ?? nullableStringResponse(record.evaluatedAt)
+    ?? nullableStringResponse(record.startedAt)
+    ?? nowIso();
+  return {
+    ...record,
+    createdAt,
+    id: stringField(record.id, "") || stringField(record.runId, "") || createRunId(prefix),
+    updatedAt: nullableStringResponse(record.updatedAt) ?? createdAt
+  };
 }
 
 async function runLogResponse(run: AgentRunRecord, options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
@@ -4129,7 +4264,7 @@ async function storeEvalResult(
   evalCase: JsonObject,
   run: AgentRunRecord
 ): Promise<readonly JsonObject[]> {
-  const deterministic = createRecord(state.agentEvalResults, {
+  const deterministic = await saveAgentEvalResult(options, {
     caseId: typeof result.caseId === "string" ? result.caseId : "",
     evaluatedAt: nowIso(),
     passed: result.passed === true,
@@ -4137,17 +4272,13 @@ async function storeEvalResult(
     runId: typeof result.runId === "string" ? result.runId : null,
     score: readNumber(result.score, 0),
     tier: "deterministic"
-  }, "agent_eval_result");
+  });
 
   if (!includeLlmJudge) {
     return [deterministic];
   }
 
-  const llmJudge = createRecord(
-    state.agentEvalResults,
-    await judgeEvalWithModel(evalCase, run, options),
-    "agent_eval_result"
-  );
+  const llmJudge = await saveAgentEvalResult(options, await judgeEvalWithModel(evalCase, run, options));
   return [deterministic, llmJudge];
 }
 
@@ -4411,13 +4542,17 @@ function latencyDistribution(runs: readonly AgentRunRecord[]) {
   return buckets;
 }
 
-function adminAuditRows(request: FastifyRequest, maxRows = 1000): readonly JsonObject[] {
+async function adminAuditRows(
+  request: FastifyRequest,
+  options: ReactorCompatibilityRouteOptions,
+  maxRows = 1000
+): Promise<readonly JsonObject[]> {
   const category = readQueryString(request, "category")?.toLowerCase();
   const action = readQueryString(request, "action")?.toUpperCase();
 
   return [
-    ...[...state.adminAudits.values()].map(toAdminAuditResponse),
-    ...[...state.metricEvents.values()].map(toMetricEventAdminAuditResponse)
+    ...(await listAdminAuditRecords(options, maxRows)).map(toAdminAuditResponse),
+    ...(await listMetricEventRecords(options, maxRows)).map(toMetricEventAdminAuditResponse)
   ]
     .filter((row) => !category || stringField(row.category, "").toLowerCase() === category)
     .filter((row) => !action || stringField(row.action, "").toUpperCase() === action)
@@ -4439,15 +4574,154 @@ function toMetricEventAdminAuditResponse(record: JsonObject): JsonObject {
   };
 }
 
-function recordAdminAudit(request: FastifyRequest, input: JsonObject): CompatRecord {
-  return createRecord(state.adminAudits, {
+async function recordMetricEvent(
+  options: ReactorCompatibilityRouteOptions,
+  input: { readonly kind: string; readonly payload: JsonObject }
+): Promise<CompatRecord> {
+  const tenantId = stringField(input.payload.tenantId, "default");
+
+  if (options.admin?.metricEventStore) {
+    const saved = await options.admin.metricEventStore.record({
+      kind: input.kind,
+      payload: input.payload,
+      tenantId
+    });
+    return metricEventStoreRecordToCompat(saved);
+  }
+
+  return createRecord(state.metricEvents, input, "metric_event");
+}
+
+async function listMetricEventRecords(
+  options: ReactorCompatibilityRouteOptions,
+  limit = 1000
+): Promise<readonly JsonObject[]> {
+  if (options.admin?.metricEventStore) {
+    const rows = await options.admin.metricEventStore.listRecent(limit);
+    return rows.map(metricEventStoreRecordToCompat);
+  }
+
+  return [...state.metricEvents.values()].sort(compareCreatedAtDesc).slice(0, Math.max(1, limit));
+}
+
+async function listPlatformPricing(options: ReactorCompatibilityRouteOptions): Promise<readonly JsonObject[]> {
+  if (options.admin?.pricingStore) {
+    return (await options.admin.pricingStore.list()).map(platformPricingToJson);
+  }
+
+  return [...state.platformPricing.values()].sort((left, right) =>
+    String(right.effectiveFrom ?? right.createdAt).localeCompare(String(left.effectiveFrom ?? left.createdAt))
+  );
+}
+
+async function savePlatformPricing(
+  options: ReactorCompatibilityRouteOptions,
+  input: JsonObject
+): Promise<JsonObject> {
+  if (options.admin?.pricingStore) {
+    return platformPricingToJson(await options.admin.pricingStore.save(input as unknown as PlatformModelPricing));
+  }
+
+  return createRecord(state.platformPricing, input, "model_pricing");
+}
+
+async function listPlatformAlertRules(options: ReactorCompatibilityRouteOptions): Promise<readonly JsonObject[]> {
+  if (options.admin?.alertRuleStore) {
+    return (await options.admin.alertRuleStore.list()).map(platformAlertRuleToJson);
+  }
+
+  return [...state.platformAlertRules.values()];
+}
+
+async function savePlatformAlertRule(
+  options: ReactorCompatibilityRouteOptions,
+  input: JsonObject
+): Promise<JsonObject> {
+  if (options.admin?.alertRuleStore) {
+    return platformAlertRuleToJson(await options.admin.alertRuleStore.save(input as unknown as PlatformAlertRule));
+  }
+
+  return createRecord(state.platformAlertRules, input, "alert_rule");
+}
+
+async function deletePlatformAlertRule(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.admin?.alertRuleStore) {
+    return options.admin.alertRuleStore.delete(id);
+  }
+
+  return state.platformAlertRules.delete(id);
+}
+
+function platformPricingToJson(pricing: PlatformModelPricing): JsonObject {
+  return {
+    batchCompletionPricePer1k: pricing.batchCompletionPricePer1k,
+    batchPromptPricePer1k: pricing.batchPromptPricePer1k,
+    cachedInputPricePer1k: pricing.cachedInputPricePer1k,
+    completionPricePer1k: pricing.completionPricePer1k,
+    createdAt: pricing.createdAt ?? pricing.effectiveFrom,
+    effectiveFrom: pricing.effectiveFrom,
+    effectiveTo: pricing.effectiveTo ?? null,
+    id: pricing.id,
+    model: pricing.model,
+    promptPricePer1k: pricing.promptPricePer1k,
+    provider: pricing.provider,
+    reasoningPricePer1k: pricing.reasoningPricePer1k,
+    updatedAt: pricing.updatedAt ?? pricing.effectiveFrom
+  };
+}
+
+function platformAlertRuleToJson(rule: PlatformAlertRule): JsonObject {
+  return {
+    createdAt: rule.createdAt,
+    description: rule.description,
+    enabled: rule.enabled,
+    id: rule.id,
+    metric: rule.metric,
+    name: rule.name,
+    platformOnly: rule.platformOnly,
+    severity: rule.severity,
+    tenantId: rule.tenantId ?? null,
+    threshold: rule.threshold,
+    type: rule.type,
+    windowMinutes: rule.windowMinutes
+  };
+}
+
+function metricEventStoreRecordToCompat(record: {
+  readonly createdAt: Date;
+  readonly id: string;
+  readonly kind: string;
+  readonly payload: JsonObject;
+}): CompatRecord {
+  return {
+    createdAt: record.createdAt.toISOString(),
+    id: record.id,
+    kind: record.kind,
+    payload: record.payload,
+    updatedAt: record.createdAt.toISOString()
+  };
+}
+
+async function recordAdminAudit(
+  request: FastifyRequest,
+  options: ReactorCompatibilityRouteOptions,
+  input: JsonObject
+): Promise<CompatRecord> {
+  const audit = {
     action: stringField(input.action, "UPDATE").toUpperCase(),
     actor: readAuthUserId(request) ?? "anonymous",
     category: stringField(input.category, "admin"),
     detail: nullableStringResponse(input.detail),
     resourceId: nullableStringResponse(input.resourceId),
     resourceType: nullableStringResponse(input.resourceType)
-  }, "admin_audit");
+  };
+
+  if (options.admin?.auditStore) {
+    const saved = await options.admin.auditStore.record(audit);
+    return adminAuditStoreRecordToCompat(saved);
+  }
+
+  return createRecord(state.adminAudits, audit, "admin_audit");
 }
 
 function toAdminAuditResponse(record: JsonObject): JsonObject {
@@ -4460,6 +4734,41 @@ function toAdminAuditResponse(record: JsonObject): JsonObject {
     id: stringField(record.id, ""),
     resourceId: nullableStringResponse(record.resourceId),
     resourceType: nullableStringResponse(record.resourceType)
+  };
+}
+
+async function listAdminAuditRecords(
+  options: ReactorCompatibilityRouteOptions,
+  limit = 1000
+): Promise<readonly JsonObject[]> {
+  if (options.admin?.auditStore) {
+    const rows = await options.admin.auditStore.listRecent(limit);
+    return rows.map(adminAuditStoreRecordToCompat);
+  }
+
+  return [...state.adminAudits.values()].sort(compareCreatedAtDesc).slice(0, Math.max(1, limit));
+}
+
+function adminAuditStoreRecordToCompat(record: {
+  readonly action: string;
+  readonly actor: string;
+  readonly category: string;
+  readonly createdAt: Date;
+  readonly detail?: string | null;
+  readonly id: string;
+  readonly resourceId?: string | null;
+  readonly resourceType?: string | null;
+}): CompatRecord {
+  return {
+    action: record.action,
+    actor: record.actor,
+    category: record.category,
+    createdAt: record.createdAt.toISOString(),
+    detail: record.detail ?? null,
+    id: record.id,
+    resourceId: record.resourceId ?? null,
+    resourceType: record.resourceType ?? null,
+    updatedAt: record.createdAt.toISOString()
   };
 }
 
@@ -4757,10 +5066,10 @@ function registerMetricIngestionRoutes(
         return reply;
       }
 
-      createRecord(state.metricEvents, {
+      await recordMetricEvent(options, {
         kind: route,
         payload: toJsonObject(request.body)
-      }, "metric_event");
+      });
       return reply.status(202).send({ status: "accepted" });
     });
   }
@@ -4782,14 +5091,14 @@ function registerMetricIngestionRoutes(
     }
 
     for (const result of results) {
-      createRecord(state.metricEvents, {
+      await recordMetricEvent(options, {
         kind: "eval-results",
         payload: {
           ...result,
           evalRunId: stringField(body.evalRunId, ""),
           tenantId: stringField(body.tenantId, "")
         }
-      }, "metric_event");
+      });
     }
 
     return {
@@ -4811,10 +5120,10 @@ function registerMetricIngestionRoutes(
     }
 
     for (const item of requests) {
-      createRecord(state.metricEvents, {
+      await recordMetricEvent(options, {
         kind: "batch",
         payload: item
-      }, "metric_event");
+      });
     }
 
     return {
@@ -4824,7 +5133,7 @@ function registerMetricIngestionRoutes(
   });
 }
 
-function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): AuthService | undefined {
+function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): MuseAuthService | undefined {
   if (!options.authService) {
     reply.status(404).send({
       code: "AUTH_UNAVAILABLE",
@@ -5044,6 +5353,83 @@ function createRecord(collection: CompatCollection, input: JsonObject, prefix: s
   return record;
 }
 
+async function createSessionTag(
+  options: ReactorCompatibilityRouteOptions,
+  request: FastifyRequest,
+  sessionId: string,
+  label: string,
+  comment: string | null
+): Promise<CompatRecord> {
+  if (options.sessionTagStore) {
+    const tag = await options.sessionTagStore.create({
+      comment,
+      createdBy: readAuthUserId(request) ?? "admin",
+      label,
+      sessionId
+    });
+
+    return toSessionTagCompatRecord(tag);
+  }
+
+  const tag = createRecord(new Map(), {
+    comment,
+    label,
+    sessionId
+  }, "session_tag");
+  const tags = state.sessionTags.get(sessionId) ?? [];
+  state.sessionTags.set(sessionId, [...tags, tag]);
+  return tag;
+}
+
+async function listSessionTags(
+  options: ReactorCompatibilityRouteOptions,
+  sessionId: string
+): Promise<readonly CompatRecord[]> {
+  if (options.sessionTagStore) {
+    const tags = await options.sessionTagStore.listBySession(sessionId);
+    return tags.map(toSessionTagCompatRecord);
+  }
+
+  return state.sessionTags.get(sessionId) ?? [];
+}
+
+async function deleteSessionTag(
+  options: ReactorCompatibilityRouteOptions,
+  sessionId: string,
+  tagId: string
+): Promise<boolean> {
+  if (options.sessionTagStore) {
+    return options.sessionTagStore.delete(sessionId, tagId);
+  }
+
+  const tags = state.sessionTags.get(sessionId) ?? [];
+  const remaining = tags.filter((tag) => tag.id !== tagId);
+  state.sessionTags.set(sessionId, remaining);
+  return remaining.length !== tags.length;
+}
+
+async function deleteSessionTags(options: ReactorCompatibilityRouteOptions, sessionId: string): Promise<void> {
+  if (options.sessionTagStore) {
+    await options.sessionTagStore.deleteBySession(sessionId);
+    return;
+  }
+
+  state.sessionTags.delete(sessionId);
+}
+
+function toSessionTagCompatRecord(tag: SessionTag): CompatRecord {
+  const createdAt = new Date(tag.createdAt).toISOString();
+
+  return {
+    comment: tag.comment ?? null,
+    createdAt,
+    id: tag.id,
+    label: tag.label,
+    sessionId: tag.sessionId,
+    updatedAt: createdAt
+  };
+}
+
 function findCompatRecord(collection: CompatCollection, id: string): CompatRecord | undefined {
   return collection.get(id) ?? [...collection.values()].find((record) => record.name === id || record.channelId === id);
 }
@@ -5059,15 +5445,22 @@ function findRecordByParam(
   return record ?? notFound(reply, "COMPAT_RECORD_NOT_FOUND");
 }
 
-function respondPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
+async function respondPromptExperiment(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions
+) {
   const id = (request.params as { readonly id: string }).id;
-  const record = findCompatRecord(state.promptExperiments, id);
+  const record = await getPromptExperiment(options, id);
   return record ? toPromptExperimentResponse(record) : reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
 }
 
-function createInputGuardRule(bodyValue: unknown): CompatRecord {
+async function createInputGuardRule(
+  options: ReactorCompatibilityRouteOptions,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.inputGuardRules, {
+  return saveInputGuardRule(options, {
     action: inputGuardAction(body.action),
     category: readBodyString(body, "category") ?? "custom",
     description: readNullableStringField(body, "description"),
@@ -5076,12 +5469,16 @@ function createInputGuardRule(bodyValue: unknown): CompatRecord {
     pattern: readBodyString(body, "pattern") ?? "",
     patternType: inputGuardPatternType(body.patternType),
     priority: readNumber(body.priority, 100)
-  }, "input_guard_rule");
+  });
 }
 
-function updateInputGuardRule(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+async function updateInputGuardRule(
+  options: ReactorCompatibilityRouteOptions,
+  existing: CompatRecord,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.inputGuardRules, {
+  return saveInputGuardRule(options, {
     ...existing,
     action: inputGuardAction(body.action),
     category: readBodyString(body, "category") ?? "custom",
@@ -5091,7 +5488,42 @@ function updateInputGuardRule(existing: CompatRecord, bodyValue: unknown): Compa
     pattern: readBodyString(body, "pattern") ?? "",
     patternType: inputGuardPatternType(body.patternType),
     priority: readNumber(body.priority, 100)
-  }, "input_guard_rule");
+  });
+}
+
+async function saveInputGuardRule(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.guardRuleStore) {
+    const saved = await options.guardRuleStore.saveInputRule(prepareGuardRecord(record, "input_guard_rule"));
+    return guardStoreRecordToCompat(saved, "input_guard_rule");
+  }
+
+  return createRecord(state.inputGuardRules, record, "input_guard_rule");
+}
+
+async function listInputGuardRules(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+  if (options.guardRuleStore) {
+    const rows = await options.guardRuleStore.listInputRules();
+    return rows.map((row) => guardStoreRecordToCompat(row, "input_guard_rule"));
+  }
+
+  return [...state.inputGuardRules.values()];
+}
+
+async function getInputGuardRule(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+  if (options.guardRuleStore) {
+    const row = await options.guardRuleStore.getInputRule(id);
+    return row ? guardStoreRecordToCompat(row, "input_guard_rule") : undefined;
+  }
+
+  return findCompatRecord(state.inputGuardRules, id);
+}
+
+async function deleteInputGuardRule(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.guardRuleStore) {
+    return options.guardRuleStore.deleteInputRule(id);
+  }
+
+  return state.inputGuardRules.delete(id);
 }
 
 function toInputGuardRuleResponse(record: JsonObject) {
@@ -5153,22 +5585,29 @@ function inputGuardAction(value: unknown): string {
   return normalized === "warn" || normalized === "flag" ? normalized : "block";
 }
 
-function createOutputGuardRule(bodyValue: unknown): CompatRecord {
+async function createOutputGuardRule(
+  options: ReactorCompatibilityRouteOptions,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.outputGuardRules, {
+  return saveOutputGuardRule(options, {
     action: outputGuardAction(body.action),
     enabled: readBoolean(body.enabled, true),
     name: (readBodyString(body, "name") ?? "").trim(),
     pattern: (readBodyString(body, "pattern") ?? "").trim(),
     priority: readNumber(body.priority, 100),
     replacement: stringField(body.replacement, "[REDACTED]")
-  }, "output_guard_rule");
+  });
 }
 
-function updateOutputGuardRule(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+async function updateOutputGuardRule(
+  options: ReactorCompatibilityRouteOptions,
+  existing: CompatRecord,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
   const pattern = typeof body.pattern === "string" ? body.pattern.trim() : stringField(existing.pattern, "");
-  return createRecord(state.outputGuardRules, {
+  return saveOutputGuardRule(options, {
     ...existing,
     action: typeof body.action === "string" ? outputGuardAction(body.action) : outputGuardAction(existing.action),
     enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
@@ -5176,7 +5615,42 @@ function updateOutputGuardRule(existing: CompatRecord, bodyValue: unknown): Comp
     pattern,
     priority: readNumber(body.priority, readNumber(existing.priority, 100)),
     replacement: typeof body.replacement === "string" ? body.replacement : stringField(existing.replacement, "[REDACTED]")
-  }, "output_guard_rule");
+  });
+}
+
+async function saveOutputGuardRule(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.guardRuleStore) {
+    const saved = await options.guardRuleStore.saveOutputRule(prepareGuardRecord(record, "output_guard_rule"));
+    return guardStoreRecordToCompat(saved, "output_guard_rule");
+  }
+
+  return createRecord(state.outputGuardRules, record, "output_guard_rule");
+}
+
+async function listOutputGuardRules(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+  if (options.guardRuleStore) {
+    const rows = await options.guardRuleStore.listOutputRules();
+    return rows.map((row) => guardStoreRecordToCompat(row, "output_guard_rule"));
+  }
+
+  return [...state.outputGuardRules.values()];
+}
+
+async function getOutputGuardRule(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+  if (options.guardRuleStore) {
+    const row = await options.guardRuleStore.getOutputRule(id);
+    return row ? guardStoreRecordToCompat(row, "output_guard_rule") : undefined;
+  }
+
+  return findCompatRecord(state.outputGuardRules, id);
+}
+
+async function deleteOutputGuardRule(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.guardRuleStore) {
+    return options.guardRuleStore.deleteOutputRule(id);
+  }
+
+  return state.outputGuardRules.delete(id);
 }
 
 function toOutputGuardRuleResponse(record: JsonObject) {
@@ -5259,7 +5733,7 @@ function outputGuardAction(value: unknown): string {
   return typeof value === "string" && value.trim().toUpperCase() === "REJECT" ? "REJECT" : "MASK";
 }
 
-function simulateOutputGuardRules(bodyValue: unknown) {
+async function simulateOutputGuardRules(options: ReactorCompatibilityRouteOptions, bodyValue: unknown) {
   const body = toBody(bodyValue);
   const originalContent = readBodyString(body, "content") ?? readBodyString(body, "text") ?? "";
   const includeDisabled = readBoolean(body.includeDisabled, false);
@@ -5269,7 +5743,7 @@ function simulateOutputGuardRules(bodyValue: unknown) {
   let blockedByRuleName: string | null = null;
   let resultContent = originalContent;
 
-  const rules = [...state.outputGuardRules.values()]
+  const rules = (await listOutputGuardRules(options))
     .filter((rule) => includeDisabled || readBoolean(rule.enabled, true))
     .sort((left, right) => readNumber(left.priority, 100) - readNumber(right.priority, 100));
 
@@ -5317,13 +5791,58 @@ function simulateOutputGuardRules(bodyValue: unknown) {
   };
 }
 
-function recordOutputGuardAudit(action: string, request: FastifyRequest, ruleId?: string, detail?: string): CompatRecord {
-  return createRecord(state.outputGuardRuleAudits, {
+async function recordOutputGuardAudit(
+  options: ReactorCompatibilityRouteOptions,
+  action: string,
+  request: FastifyRequest,
+  ruleId?: string,
+  detail?: string
+): Promise<CompatRecord> {
+  const record = {
     action,
     actor: readAuthUserId(request) ?? "anonymous",
     detail: detail ?? null,
     ruleId: ruleId ?? null
-  }, "output_guard_audit");
+  };
+
+  if (options.guardRuleStore) {
+    const saved = await options.guardRuleStore.saveOutputAudit(prepareGuardRecord(record, "output_guard_audit"));
+    return guardStoreRecordToCompat(saved, "output_guard_audit");
+  }
+
+  return createRecord(state.outputGuardRuleAudits, record, "output_guard_audit");
+}
+
+async function listOutputGuardAudits(
+  options: ReactorCompatibilityRouteOptions,
+  limit: number
+): Promise<readonly CompatRecord[]> {
+  if (options.guardRuleStore) {
+    const rows = await options.guardRuleStore.listOutputAudits(limit);
+    return rows.map((row) => guardStoreRecordToCompat(row, "output_guard_audit"));
+  }
+
+  return [...state.outputGuardRuleAudits.values()].slice(-Math.min(Math.max(limit, 1), 1000));
+}
+
+function prepareGuardRecord(record: JsonObject, prefix: string): JsonObject {
+  const createdAt = nullableStringResponse(record.createdAt) ?? nowIso();
+  return {
+    ...record,
+    createdAt,
+    id: stringField(record.id, "") || createRunId(prefix),
+    updatedAt: nullableStringResponse(record.updatedAt) ?? nowIso()
+  };
+}
+
+function guardStoreRecordToCompat(record: JsonObject, prefix: string): CompatRecord {
+  const createdAt = nullableStringResponse(record.createdAt) ?? nowIso();
+  return {
+    ...record,
+    createdAt,
+    id: stringField(record.id, "") || createRunId(prefix),
+    updatedAt: nullableStringResponse(record.updatedAt) ?? createdAt
+  };
 }
 
 function toOutputGuardAuditResponse(record: JsonObject) {
@@ -5348,6 +5867,52 @@ function validateRegexPattern(pattern: string): string | undefined {
   } catch {
     return "Invalid regex pattern";
   }
+}
+
+async function readStoredToolPolicy(options: ReactorCompatibilityRouteOptions): Promise<JsonObject | undefined> {
+  const stored = await options.toolPolicyStore?.getStored();
+
+  if (stored) {
+    return toolPolicyToJson(stored);
+  }
+
+  return state.toolPolicyStored ? state.toolPolicy : undefined;
+}
+
+async function saveToolPolicy(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<JsonObject> {
+  const body = toBody(bodyValue);
+
+  if (options.toolPolicyStore) {
+    const saved = await options.toolPolicyStore.save(toToolPolicyInput(body));
+    const json = toolPolicyToJson(saved);
+    state.toolPolicy = json;
+    state.toolPolicyStored = true;
+    return json;
+  }
+
+  state.toolPolicy = updateToolPolicy(body);
+  state.toolPolicyStored = true;
+  return state.toolPolicy;
+}
+
+async function clearToolPolicy(options: ReactorCompatibilityRouteOptions): Promise<void> {
+  await options.toolPolicyStore?.clear();
+  state.toolPolicy = defaultToolPolicy();
+  state.toolPolicyStored = false;
+}
+
+function toToolPolicyInput(body: CompatBody): ToolPolicyInput {
+  return {
+    allowWriteToolNamesByChannel: toolPolicyChannelMap(body.allowWriteToolNamesByChannel),
+    allowWriteToolNamesInDenyChannels: toolPolicyStringSet(body.allowWriteToolNamesInDenyChannels),
+    denyWriteChannels: toolPolicyStringSet(body.denyWriteChannels, true),
+    denyWriteMessage: stringField(
+      body.denyWriteMessage,
+      "Error: This tool is not allowed in this channel"
+    ).trim(),
+    enabled: readBoolean(body.enabled, false),
+    writeToolNames: toolPolicyStringSet(body.writeToolNames)
+  };
 }
 
 function updateToolPolicy(bodyValue: unknown): JsonObject {
@@ -5451,9 +6016,9 @@ function stringArrayMapField(value: unknown, fallback: Record<string, string[]>)
   );
 }
 
-function createFeedback(request: FastifyRequest): CompatRecord {
+async function createFeedback(request: FastifyRequest, options: ReactorCompatibilityRouteOptions): Promise<CompatRecord> {
   const body = toBody(request.body);
-  return createRecord(state.feedback, {
+  return saveFeedback(options, {
     comment: readNullableStringField(body, "comment"),
     domain: readNullableStringField(body, "domain"),
     durationMs: readNullableNumber(body.durationMs) ?? null,
@@ -5477,7 +6042,7 @@ function createFeedback(request: FastifyRequest): CompatRecord {
     updatedAt: nowIso(),
     userId: readAuthUserId(request) ?? null,
     version: 1
-  }, "feedback");
+  });
 }
 
 function validateFeedbackSubmitBody(body: CompatBody): JsonObject | undefined {
@@ -5551,10 +6116,15 @@ function toFeedbackResponse(record: JsonObject) {
   };
 }
 
-function updateFeedbackReview(existing: CompatRecord, body: CompatBody, actor: string): CompatRecord {
+async function updateFeedbackReview(
+  existing: CompatRecord,
+  body: CompatBody,
+  actor: string,
+  options: ReactorCompatibilityRouteOptions
+): Promise<CompatRecord> {
   const status = typeof body.status === "string" ? feedbackReviewStatus(body.status) : feedbackReviewStatus(existing.reviewStatus);
   const tags = updateTags(stringArrayField(existing.reviewTags, []), stringArrayField(body.tags, []), stringField(body.tagMode, "set"));
-  return createRecord(state.feedback, {
+  return saveFeedback(options, {
     ...existing,
     reviewNote: typeof body.note === "string" ? body.note : existing.reviewNote ?? null,
     reviewStatus: status,
@@ -5562,7 +6132,7 @@ function updateFeedbackReview(existing: CompatRecord, body: CompatBody, actor: s
     reviewedAt: nowIso(),
     reviewedBy: actor,
     version: readNumber(existing.version, 1) + 1
-  }, "feedback");
+  });
 }
 
 function updateTags(existing: string[], incoming: string[], mode: string): string[] {
@@ -5581,7 +6151,64 @@ function updateTags(existing: string[], incoming: string[], mode: string): strin
   return incoming;
 }
 
-function filterFeedback(request: FastifyRequest): CompatRecord[] {
+async function saveFeedback(options: ReactorCompatibilityRouteOptions, input: JsonObject): Promise<CompatRecord> {
+  const record = stringField(input.id, "").length > 0
+    ? {
+      ...input,
+      updatedAt: nowIso()
+    }
+    : createRecord(new Map(), input, "feedback");
+
+  if (options.feedbackStore) {
+    const saved = await options.feedbackStore.save(record);
+    return feedbackStoreRecordToCompat(saved);
+  }
+
+  return createRecord(state.feedback, record, "feedback");
+}
+
+async function listFeedback(options: ReactorCompatibilityRouteOptions): Promise<CompatRecord[]> {
+  if (options.feedbackStore) {
+    const rows = await options.feedbackStore.list();
+    return rows.map(feedbackStoreRecordToCompat);
+  }
+
+  return [...state.feedback.values()];
+}
+
+async function getFeedback(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+  if (options.feedbackStore) {
+    const record = await options.feedbackStore.get(id);
+    return record ? feedbackStoreRecordToCompat(record) : undefined;
+  }
+
+  return findCompatRecord(state.feedback, id);
+}
+
+async function deleteFeedback(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.feedbackStore) {
+    return options.feedbackStore.delete(id);
+  }
+
+  const existing = findCompatRecord(state.feedback, id);
+
+  if (existing) {
+    return state.feedback.delete(existing.id);
+  }
+
+  return false;
+}
+
+function feedbackStoreRecordToCompat(record: JsonObject): CompatRecord {
+  return {
+    ...record,
+    createdAt: stringField(record.createdAt, stringField(record.timestamp, nowIso())),
+    id: stringField(record.id, ""),
+    updatedAt: stringField(record.updatedAt, stringField(record.timestamp, nowIso()))
+  };
+}
+
+async function filterFeedback(request: FastifyRequest, options: ReactorCompatibilityRouteOptions): Promise<CompatRecord[]> {
   const rating = readQueryString(request, "rating");
   const status = readQueryString(request, "status");
   const tag = readQueryString(request, "tag");
@@ -5592,7 +6219,7 @@ function filterFeedback(request: FastifyRequest): CompatRecord[] {
   const intent = readQueryString(request, "intent");
   const from = readQueryInstantMillis(request, "from");
   const to = readQueryInstantMillis(request, "to");
-  return [...state.feedback.values()].filter((feedback) => {
+  return (await listFeedback(options)).filter((feedback) => {
     if (rating && feedbackRating(feedback.rating) !== feedbackRating(rating)) {
       return false;
     }
@@ -5698,9 +6325,9 @@ function readIfMatchVersion(request: FastifyRequest): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function createPersona(bodyValue: unknown): CompatRecord {
+async function createPersona(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.personas, {
+  return savePersona(options, {
     description: readNullableStringField(body, "description"),
     icon: readNullableStringField(body, "icon"),
     isActive: readBoolean(body.isActive, true),
@@ -5710,7 +6337,43 @@ function createPersona(bodyValue: unknown): CompatRecord {
     responseGuideline: readNullableStringField(body, "responseGuideline"),
     systemPrompt: readBodyString(body, "systemPrompt") ?? "",
     welcomeMessage: readNullableStringField(body, "welcomeMessage")
-  }, "persona");
+  });
+}
+
+async function savePersona(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.promptLabCatalogStore) {
+    const saved = await options.promptLabCatalogStore.savePersona(prepareCatalogRecord(record, "persona"));
+    return promptLabRecordToCompat(saved, "persona");
+  }
+
+  return createRecord(state.personas, record, "persona");
+}
+
+async function listPersonas(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+  if (options.promptLabCatalogStore) {
+    const rows = await options.promptLabCatalogStore.listPersonas();
+    return rows.map((row) => promptLabRecordToCompat(row, "persona"));
+  }
+
+  return [...state.personas.values()];
+}
+
+async function getPersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+  if (options.promptLabCatalogStore) {
+    const row = await options.promptLabCatalogStore.getPersona(id);
+    return row ? promptLabRecordToCompat(row, "persona") : undefined;
+  }
+
+  return findCompatRecord(state.personas, id);
+}
+
+async function deletePersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.promptLabCatalogStore) {
+    return options.promptLabCatalogStore.deletePersona(id);
+  }
+
+  const existing = findCompatRecord(state.personas, id);
+  return existing ? state.personas.delete(existing.id) : false;
 }
 
 function validatePersonaBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
@@ -5743,9 +6406,13 @@ function validatePersonaBody(body: CompatBody, mode: "create" | "update"): JsonO
   return undefined;
 }
 
-function updatePersona(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+async function updatePersona(
+  options: ReactorCompatibilityRouteOptions,
+  existing: CompatRecord,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.personas, {
+  return savePersona(options, {
     ...existing,
     description: readOptionalStringField(body, "description", existing.description),
     icon: readOptionalStringField(body, "icon", existing.icon),
@@ -5756,7 +6423,7 @@ function updatePersona(existing: CompatRecord, bodyValue: unknown): CompatRecord
     responseGuideline: readOptionalStringField(body, "responseGuideline", existing.responseGuideline),
     systemPrompt: readBodyString(body, "systemPrompt") ?? stringField(existing.systemPrompt, ""),
     welcomeMessage: readOptionalStringField(body, "welcomeMessage", existing.welcomeMessage)
-  }, "persona");
+  });
 }
 
 function toPersonaResponse(record: JsonObject) {
@@ -5776,13 +6443,51 @@ function toPersonaResponse(record: JsonObject) {
   };
 }
 
-function createPromptTemplate(bodyValue: unknown): CompatRecord {
+async function createPromptTemplate(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.promptTemplates, {
+  return savePromptTemplate(options, {
     description: readBodyString(body, "description") ?? "",
     name: readBodyString(body, "name") ?? "",
     versions: []
-  }, "prompt_template");
+  });
+}
+
+async function savePromptTemplate(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.promptLabCatalogStore) {
+    const saved = await options.promptLabCatalogStore.saveTemplate(prepareCatalogRecord(record, "prompt_template"));
+    return promptLabRecordToCompat(saved, "prompt_template");
+  }
+
+  return createRecord(state.promptTemplates, record, "prompt_template");
+}
+
+async function listPromptTemplates(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+  if (options.promptLabCatalogStore) {
+    const rows = await options.promptLabCatalogStore.listTemplates();
+    return rows.map((row) => promptLabRecordToCompat(row, "prompt_template"));
+  }
+
+  return [...state.promptTemplates.values()];
+}
+
+async function getPromptTemplate(
+  options: ReactorCompatibilityRouteOptions,
+  id: string
+): Promise<CompatRecord | undefined> {
+  if (options.promptLabCatalogStore) {
+    const row = await options.promptLabCatalogStore.getTemplate(id);
+    return row ? promptLabRecordToCompat(row, "prompt_template") : undefined;
+  }
+
+  return findCompatRecord(state.promptTemplates, id);
+}
+
+async function deletePromptTemplate(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.promptLabCatalogStore) {
+    return options.promptLabCatalogStore.deleteTemplate(id);
+  }
+
+  return state.promptTemplates.delete(id);
 }
 
 function validatePromptTemplateBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
@@ -5843,8 +6548,12 @@ function toTemplateDetailResponse(record: JsonObject) {
   };
 }
 
-function appendPromptVersion(templateId: string, bodyValue: unknown): JsonObject | { error: string } {
-  const template = findCompatRecord(state.promptTemplates, templateId);
+async function appendPromptVersion(
+  options: ReactorCompatibilityRouteOptions,
+  templateId: string,
+  bodyValue: unknown
+): Promise<JsonObject | { error: string }> {
+  const template = await getPromptTemplate(options, templateId);
 
   if (!template) {
     return { error: "not_found" };
@@ -5862,16 +6571,20 @@ function appendPromptVersion(templateId: string, bodyValue: unknown): JsonObject
     version: existing.length + 1
   };
 
-  createRecord(state.promptTemplates, {
+  await savePromptTemplate(options, {
     ...template,
     versions: [...existing, version]
-  }, "prompt_template");
+  });
   return toVersionResponse(version);
 }
 
-function setPromptVersionStatus(request: FastifyRequest, status: "ACTIVE" | "ARCHIVED"): JsonObject | { error: string } {
+async function setPromptVersionStatus(
+  options: ReactorCompatibilityRouteOptions,
+  request: FastifyRequest,
+  status: "ACTIVE" | "ARCHIVED"
+): Promise<JsonObject | { error: string }> {
   const { templateId, versionId } = request.params as { readonly templateId: string; readonly versionId: string };
-  const template = findCompatRecord(state.promptTemplates, templateId);
+  const template = await getPromptTemplate(options, templateId);
 
   if (!template) {
     return { error: "not_found" };
@@ -5893,10 +6606,10 @@ function setPromptVersionStatus(request: FastifyRequest, status: "ACTIVE" | "ARC
     return { error: "not_found" };
   }
 
-  createRecord(state.promptTemplates, {
+  await savePromptTemplate(options, {
     ...template,
     versions
-  }, "prompt_template");
+  });
   return toVersionResponse(selected);
 }
 
@@ -5918,10 +6631,10 @@ function toVersionResponse(record: JsonObject) {
   };
 }
 
-function createIntent(bodyValue: unknown): CompatRecord {
+async function createIntent(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
   const body = toBody(bodyValue);
   const name = readBodyString(body, "name") ?? "";
-  return createRecord(state.intents, {
+  return saveIntent(options, {
     description: readBodyString(body, "description") ?? "",
     enabled: readBoolean(body.enabled, true),
     examples: stringArrayField(body.examples, []),
@@ -5929,7 +6642,43 @@ function createIntent(bodyValue: unknown): CompatRecord {
     keywords: stringArrayField(body.keywords, []),
     name,
     profile: jsonObjectField(body.profile)
-  }, "intent");
+  });
+}
+
+async function saveIntent(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+  if (options.promptLabCatalogStore) {
+    const saved = await options.promptLabCatalogStore.saveIntent(prepareCatalogRecord(record, "intent"));
+    return promptLabRecordToCompat(saved, "intent");
+  }
+
+  return createRecord(state.intents, record, "intent");
+}
+
+async function listIntents(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+  if (options.promptLabCatalogStore) {
+    const rows = await options.promptLabCatalogStore.listIntents();
+    return rows.map((row) => promptLabRecordToCompat(row, "intent"));
+  }
+
+  return [...state.intents.values()];
+}
+
+async function getIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<CompatRecord | undefined> {
+  if (options.promptLabCatalogStore) {
+    const row = await options.promptLabCatalogStore.getIntent(name);
+    return row ? promptLabRecordToCompat(row, "intent") : undefined;
+  }
+
+  return findCompatRecord(state.intents, name);
+}
+
+async function deleteIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<boolean> {
+  if (options.promptLabCatalogStore) {
+    return options.promptLabCatalogStore.deleteIntent(name);
+  }
+
+  const existing = findCompatRecord(state.intents, name);
+  return existing ? state.intents.delete(existing.id) : false;
 }
 
 function validateIntentBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
@@ -5944,16 +6693,20 @@ function validateIntentBody(body: CompatBody, mode: "create" | "update"): JsonOb
   return undefined;
 }
 
-function updateIntent(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+async function updateIntent(
+  options: ReactorCompatibilityRouteOptions,
+  existing: CompatRecord,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.intents, {
+  return saveIntent(options, {
     ...existing,
     description: readBodyString(body, "description") ?? stringField(existing.description, ""),
     enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
     examples: stringArrayField(body.examples, stringArrayField(existing.examples, [])),
     keywords: stringArrayField(body.keywords, stringArrayField(existing.keywords, [])),
     profile: isRecord(body.profile) ? toJsonObject(body.profile) : jsonObjectField(existing.profile)
-  }, "intent");
+  });
 }
 
 function toIntentResponse(record: JsonObject) {
@@ -6063,16 +6816,26 @@ function computeContentHash(content: string): string {
 
 const DOCUMENT_CONTENT_HASH_KEY = "content_hash";
 
-function createSlackBot(bodyValue: unknown): CompatRecord {
+async function createSlackBot(
+  options: ReactorCompatibilityRouteOptions,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.slackBots, {
+  const record = {
     appToken: readBodyString(body, "appToken") ?? "",
     botToken: readBodyString(body, "botToken") ?? "",
     defaultChannel: readNullableStringField(body, "defaultChannel"),
     enabled: readBoolean(body.enabled, true),
+    id: typeof body.id === "string" && body.id.length > 0 ? body.id : createRunId("slack_bot"),
     name: readBodyString(body, "name") ?? "",
     personaId: readBodyString(body, "personaId") ?? ""
-  }, "slack_bot");
+  };
+
+  if (options.slackPersistence?.botStore) {
+    return slackBotToCompat(await options.slackPersistence.botStore.save(compatToSlackBot(record)));
+  }
+
+  return createRecord(state.slackBots, record, "slack_bot");
 }
 
 function validateSlackBotCreate(body: CompatBody): JsonObject | undefined {
@@ -6099,9 +6862,67 @@ function validateSlackBotCreate(body: CompatBody): JsonObject | undefined {
   return undefined;
 }
 
-function updateSlackBot(existing: CompatRecord, bodyValue: unknown): CompatRecord {
+async function listSlackBots(options: ReactorCompatibilityRouteOptions): Promise<readonly JsonObject[]> {
+  if (options.slackPersistence?.botStore) {
+    const bots = await options.slackPersistence.botStore.list();
+    return bots.map(slackBotToCompat);
+  }
+
+  return [...state.slackBots.values()];
+}
+
+async function getSlackBot(options: ReactorCompatibilityRouteOptions, id: string): Promise<JsonObject | undefined> {
+  if (options.slackPersistence?.botStore) {
+    const bot = await options.slackPersistence.botStore.get(id);
+    return bot ? slackBotToCompat(bot) : undefined;
+  }
+
+  return findCompatRecord(state.slackBots, id);
+}
+
+async function deleteSlackBot(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.slackPersistence?.botStore) {
+    return options.slackPersistence.botStore.delete(id);
+  }
+
+  return state.slackBots.delete(id);
+}
+
+function compatToSlackBot(record: JsonObject): SlackBotInstance {
+  return {
+    appToken: stringField(record.appToken, ""),
+    botToken: stringField(record.botToken, ""),
+    createdAt: dateOrUndefined(record.createdAt),
+    defaultChannel: nullableStringResponse(record.defaultChannel),
+    enabled: readBoolean(record.enabled, true),
+    id: stringField(record.id, createRunId("slack_bot")),
+    name: stringField(record.name, ""),
+    personaId: stringField(record.personaId, ""),
+    updatedAt: dateOrUndefined(record.updatedAt)
+  };
+}
+
+function slackBotToCompat(bot: SlackBotInstance): CompatRecord {
+  return {
+    appToken: bot.appToken,
+    botToken: bot.botToken,
+    createdAt: (bot.createdAt ?? new Date()).toISOString(),
+    defaultChannel: bot.defaultChannel ?? null,
+    enabled: bot.enabled ?? true,
+    id: bot.id,
+    name: bot.name,
+    personaId: bot.personaId,
+    updatedAt: (bot.updatedAt ?? bot.createdAt ?? new Date()).toISOString()
+  };
+}
+
+async function updateSlackBot(
+  options: ReactorCompatibilityRouteOptions,
+  existing: JsonObject,
+  bodyValue: unknown
+): Promise<CompatRecord> {
   const body = toBody(bodyValue);
-  return createRecord(state.slackBots, {
+  const record = {
     ...existing,
     appToken: readBodyString(body, "appToken") ?? stringField(existing.appToken, ""),
     botToken: readBodyString(body, "botToken") ?? stringField(existing.botToken, ""),
@@ -6109,7 +6930,13 @@ function updateSlackBot(existing: CompatRecord, bodyValue: unknown): CompatRecor
     enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
     name: readBodyString(body, "name") ?? stringField(existing.name, ""),
     personaId: readBodyString(body, "personaId") ?? stringField(existing.personaId, "")
-  }, "slack_bot");
+  };
+
+  if (options.slackPersistence?.botStore) {
+    return slackBotToCompat(await options.slackPersistence.botStore.save(compatToSlackBot(record)));
+  }
+
+  return createRecord(state.slackBots, record, "slack_bot");
 }
 
 function toSlackBotResponse(record: JsonObject) {
@@ -6205,17 +7032,19 @@ function parsePromptExperimentRequest(request: FastifyRequest): ParseResult<Prom
   };
 }
 
-function createPromptExperiment(
+async function createPromptExperiment(
   request: FastifyRequest,
   options: ReactorCompatibilityRouteOptions,
   input: PromptExperimentInput
-): CompatRecord {
-  return createRecord(state.promptExperiments, {
+): Promise<CompatRecord> {
+  const identity = await currentAuthIdentity(request, options);
+
+  return savePromptExperiment(options, {
     autoGenerated: input.autoGenerated,
     baselineVersionId: input.baselineVersionId,
     candidateVersionIds: [...input.candidateVersionIds],
     completedAt: null,
-    createdBy: currentAuthIdentity(request, options)?.userId ?? "admin",
+    createdBy: identity?.userId ?? "admin",
     description: input.description,
     errorMessage: null,
     evaluationConfig: input.evaluationConfig,
@@ -6228,11 +7057,143 @@ function createPromptExperiment(
     templateId: input.templateId,
     temperature: input.temperature,
     testQueries: [...input.testQueries]
-  }, "prompt_experiment");
+  });
 }
 
-function promptFeedbackAnalysis(templateId: string, maxSamples: number): JsonObject {
-  const related = [...state.feedback.values()].filter((feedback) => nullableStringResponse(feedback.templateId) === templateId);
+async function savePromptExperiment(
+  options: ReactorCompatibilityRouteOptions,
+  record: JsonObject
+): Promise<CompatRecord> {
+  const existing = stringField(record.id, "") ? await getPromptExperiment(options, stringField(record.id, "")) : undefined;
+  const prepared = {
+    ...existing,
+    ...record,
+    createdAt: nullableStringResponse(record.createdAt) ?? nullableStringResponse(existing?.createdAt) ?? nowIso(),
+    id: stringField(record.id, "") || stringField(existing?.id, "") || createRunId("prompt_experiment"),
+    updatedAt: nowIso()
+  };
+
+  if (options.promptLabExperimentStore) {
+    const saved = await options.promptLabExperimentStore.saveExperiment(prepared);
+    return promptLabRecordToCompat(saved, "prompt_experiment");
+  }
+
+  return createRecord(state.promptExperiments, prepared, "prompt_experiment");
+}
+
+async function listPromptExperiments(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+  if (options.promptLabExperimentStore) {
+    const rows = await options.promptLabExperimentStore.listExperiments();
+    return rows.map((row) => promptLabRecordToCompat(row, "prompt_experiment"));
+  }
+
+  return [...state.promptExperiments.values()];
+}
+
+async function getPromptExperiment(
+  options: ReactorCompatibilityRouteOptions,
+  id: string
+): Promise<CompatRecord | undefined> {
+  if (options.promptLabExperimentStore) {
+    const record = await options.promptLabExperimentStore.getExperiment(id);
+    return record ? promptLabRecordToCompat(record, "prompt_experiment") : undefined;
+  }
+
+  return findCompatRecord(state.promptExperiments, id);
+}
+
+async function deletePromptExperiment(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+  if (options.promptLabExperimentStore) {
+    return options.promptLabExperimentStore.deleteExperiment(id);
+  }
+
+  const deleted = state.promptExperiments.delete(id);
+  state.promptExperimentReports.delete(id);
+  state.promptExperimentTrials.delete(id);
+  return deleted;
+}
+
+async function savePromptExperimentTrials(
+  options: ReactorCompatibilityRouteOptions,
+  experimentId: string,
+  trials: readonly JsonObject[]
+): Promise<void> {
+  if (options.promptLabExperimentStore) {
+    await options.promptLabExperimentStore.saveTrials(experimentId, trials);
+    return;
+  }
+
+  state.promptExperimentTrials.set(experimentId, [...trials]);
+}
+
+async function listPromptExperimentTrials(
+  options: ReactorCompatibilityRouteOptions,
+  experimentId: string
+): Promise<readonly CompatRecord[]> {
+  if (options.promptLabExperimentStore) {
+    const trials = await options.promptLabExperimentStore.listTrials(experimentId);
+    return trials.map((trial) => promptLabRecordToCompat(trial, "prompt_trial"));
+  }
+
+  return (state.promptExperimentTrials.get(experimentId) ?? []).map((trial) => promptLabRecordToCompat(trial, "prompt_trial"));
+}
+
+async function savePromptExperimentReport(
+  options: ReactorCompatibilityRouteOptions,
+  experimentId: string,
+  report: JsonObject
+): Promise<CompatRecord> {
+  if (options.promptLabExperimentStore) {
+    const saved = await options.promptLabExperimentStore.saveReport(experimentId, report);
+    return promptLabRecordToCompat(saved, "prompt_experiment_report");
+  }
+
+  return createRecord(state.promptExperimentReports, report, "prompt_experiment_report");
+}
+
+async function getPromptExperimentReport(
+  options: ReactorCompatibilityRouteOptions,
+  experimentId: string
+): Promise<CompatRecord | undefined> {
+  if (options.promptLabExperimentStore) {
+    const report = await options.promptLabExperimentStore.getReport(experimentId);
+    return report ? promptLabRecordToCompat(report, "prompt_experiment_report") : undefined;
+  }
+
+  return findCompatRecord(state.promptExperimentReports, experimentId);
+}
+
+function promptLabRecordToCompat(record: JsonObject, prefix: string): CompatRecord {
+  const id = stringField(record.id, "") || stringField(record.experimentId, "") || createRunId(prefix);
+  const createdAt = nullableStringResponse(record.createdAt)
+    ?? nullableStringResponse(record.generatedAt)
+    ?? nullableStringResponse(record.executedAt)
+    ?? nowIso();
+
+  return {
+    ...record,
+    createdAt,
+    id,
+    updatedAt: nullableStringResponse(record.updatedAt) ?? createdAt
+  };
+}
+
+function prepareCatalogRecord(record: JsonObject, prefix: string): JsonObject {
+  const createdAt = nullableStringResponse(record.createdAt) ?? nowIso();
+  return {
+    ...record,
+    createdAt,
+    id: stringField(record.id, "") || (prefix === "intent" ? stringField(record.name, "") : createRunId(prefix)),
+    updatedAt: nowIso()
+  };
+}
+
+async function promptFeedbackAnalysis(
+  templateId: string,
+  maxSamples: number,
+  options: ReactorCompatibilityRouteOptions
+): Promise<JsonObject> {
+  const related = (await listFeedback(options)).filter((feedback) => nullableStringResponse(feedback.templateId) === templateId);
   const negative = related
     .filter((feedback) => feedbackRating(feedback.rating) === "thumbs_down")
     .slice(0, Math.max(0, Math.trunc(maxSamples)));
@@ -6261,13 +7222,13 @@ async function runPromptAutoOptimize(
   options: ReactorCompatibilityRouteOptions,
   body: CompatBody
 ): Promise<CompatRecord | undefined> {
-  const negativeFeedback = promptNegativeFeedback(templateId, 50);
+  const negativeFeedback = await promptNegativeFeedback(templateId, 50, options);
 
   if (negativeFeedback.length < 5) {
     return undefined;
   }
 
-  const template = findCompatRecord(state.promptTemplates, templateId);
+  const template = await getPromptTemplate(options, templateId);
   const baseline = template
     ? promptVersions(template).find((version) => version.status === "ACTIVE") ?? promptVersions(template)[0]
     : undefined;
@@ -6277,17 +7238,17 @@ async function runPromptAutoOptimize(
   }
 
   const candidateCount = Math.max(1, Math.trunc(readNumber(body.candidateCount, 3)));
-  const analysis = promptFeedbackAnalysis(templateId, negativeFeedback.length);
+  const analysis = await promptFeedbackAnalysis(templateId, negativeFeedback.length, options);
   const weaknesses = Array.isArray(analysis.weaknesses)
     ? analysis.weaknesses.filter(isRecord).map(toJsonObject)
     : [];
-  const candidateIds = createPromptAutoCandidates(templateId, baseline, weaknesses, candidateCount);
+  const candidateIds = await createPromptAutoCandidates(options, templateId, baseline, weaknesses, candidateCount);
 
   if (candidateIds.length === 0) {
     return undefined;
   }
 
-  const experiment = createRecord(state.promptExperiments, {
+  const experiment = await savePromptExperiment(options, {
     autoGenerated: true,
     baselineVersionId: stringField(baseline.id, ""),
     candidateVersionIds: candidateIds,
@@ -6311,31 +7272,36 @@ async function runPromptAutoOptimize(
       query: stringField(feedback.query, ""),
       tags: stringArrayField(feedback.tags, [])
     }))
-  }, "prompt_experiment");
+  });
 
   await completePromptExperimentRun(experiment, options);
   return experiment;
 }
 
-function promptNegativeFeedback(templateId: string, maxSamples: number): CompatRecord[] {
-  return [...state.feedback.values()]
+async function promptNegativeFeedback(
+  templateId: string,
+  maxSamples: number,
+  options: ReactorCompatibilityRouteOptions
+): Promise<CompatRecord[]> {
+  return (await listFeedback(options))
     .filter((feedback) => nullableStringResponse(feedback.templateId) === templateId)
     .filter((feedback) => feedbackRating(feedback.rating) === "thumbs_down")
     .slice(0, Math.max(0, Math.trunc(maxSamples)));
 }
 
-function createPromptAutoCandidates(
+async function createPromptAutoCandidates(
+  options: ReactorCompatibilityRouteOptions,
   templateId: string,
   baseline: JsonObject,
   weaknesses: readonly JsonObject[],
   candidateCount: number
-): string[] {
+): Promise<string[]> {
   const ids: string[] = [];
 
   for (let index = 0; index < candidateCount; index += 1) {
     const weakness = weaknesses[index % Math.max(weaknesses.length, 1)];
     const description = weakness ? stringField(weakness.description, "Improve response quality.") : "Improve response quality.";
-    const version = appendPromptVersion(templateId, {
+    const version = await appendPromptVersion(options, templateId, {
       changeLog: "Auto-generated from feedback analysis",
       content: `${stringField(baseline.content, "")}\n\nImprove: ${description}`
     });
@@ -6547,7 +7513,7 @@ async function runPromptExperiment(
   options: ReactorCompatibilityRouteOptions
 ) {
   const { id } = request.params as { readonly id: string };
-  const existing = findCompatRecord(state.promptExperiments, id);
+  const existing = await getPromptExperiment(options, id);
 
   if (!existing) {
     return reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
@@ -6567,22 +7533,22 @@ async function completePromptExperimentRun(
   options: ReactorCompatibilityRouteOptions
 ): Promise<CompatRecord> {
   const now = nowIso();
-  const running = createRecord(state.promptExperiments, {
+  const running = await savePromptExperiment(options, {
     ...experiment,
     completedAt: experiment.completedAt ?? null,
     startedAt: now,
     status: "RUNNING",
     updatedAt: now
-  }, "prompt_experiment");
+  });
 
   const trials = await buildPromptExperimentTrials(running, options);
-  state.promptExperimentTrials.set(running.id, trials);
-  createPromptExperimentReport(running, trials);
-  createRecord(state.promptExperiments, {
+  await savePromptExperimentTrials(options, running.id, trials);
+  await createPromptExperimentReport(running, trials, options);
+  await savePromptExperiment(options, {
     ...running,
     completedAt: nowIso(),
     status: "COMPLETED"
-  }, "prompt_experiment");
+  });
   return running;
 }
 
@@ -6601,7 +7567,7 @@ async function buildPromptExperimentTrials(
   const trials: JsonObject[] = [];
 
   for (const [versionIndex, versionId] of versionIds.entries()) {
-    const version = findPromptVersionById(versionId);
+    const version = await findPromptVersionById(options, versionId);
     const versionNumber = version ? readNumber(version.version, versionIndex + 1) : versionIndex + 1;
     const systemPrompt = version ? stringField(version.content, "") : "";
 
@@ -6723,8 +7689,11 @@ function promptTrialEvaluation(passed: boolean, reason: string): JsonObject {
   };
 }
 
-function findPromptVersionById(versionId: string): JsonObject | undefined {
-  for (const template of state.promptTemplates.values()) {
+async function findPromptVersionById(
+  options: ReactorCompatibilityRouteOptions,
+  versionId: string
+): Promise<JsonObject | undefined> {
+  for (const template of await listPromptTemplates(options)) {
     const version = promptVersions(template).find((item) => item.id === versionId);
 
     if (version) {
@@ -6735,9 +7704,13 @@ function findPromptVersionById(versionId: string): JsonObject | undefined {
   return undefined;
 }
 
-function createPromptExperimentReport(experiment: JsonObject, trials: readonly JsonObject[]): CompatRecord {
+async function createPromptExperimentReport(
+  experiment: JsonObject,
+  trials: readonly JsonObject[],
+  options: ReactorCompatibilityRouteOptions
+): Promise<CompatRecord> {
   const versionSummaries = promptVersionSummaries(experiment, trials);
-  return createRecord(state.promptExperimentReports, {
+  return savePromptExperimentReport(options, stringField(experiment.id, ""), {
     experimentId: stringField(experiment.id, ""),
     experimentName: stringField(experiment.name, ""),
     generatedAt: nowIso(),
@@ -6745,7 +7718,7 @@ function createPromptExperimentReport(experiment: JsonObject, trials: readonly J
     recommendation: promptRecommendation(versionSummaries),
     totalTrials: trials.length,
     versionSummaries
-  }, "prompt_experiment_report");
+  });
 }
 
 function promptVersionSummaries(experiment: JsonObject, trials: readonly JsonObject[]): JsonObject[] {
@@ -6906,9 +7879,13 @@ function average(values: readonly number[]): number {
   return finite.length > 0 ? finite.reduce((total, value) => total + value, 0) / finite.length : 0;
 }
 
-function cancelPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
+async function cancelPromptExperiment(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions
+) {
   const { id } = request.params as { readonly id: string };
-  const existing = findCompatRecord(state.promptExperiments, id);
+  const existing = await getPromptExperiment(options, id);
 
   if (!existing) {
     return reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
@@ -6918,23 +7895,27 @@ function cancelPromptExperiment(request: FastifyRequest, reply: FastifyReply) {
     return reply.status(400).send(errorResponse("Only RUNNING experiments can be cancelled"));
   }
 
-  const updated = createRecord(state.promptExperiments, {
+  const updated = await savePromptExperiment(options, {
     ...existing,
     completedAt: nowIso(),
     status: "CANCELLED"
-  }, "prompt_experiment");
+  });
   return toPromptExperimentResponse(updated);
 }
 
-function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) {
+async function activatePromptExperiment(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions
+) {
   const { id } = request.params as { readonly id: string };
-  const existing = findCompatRecord(state.promptExperiments, id);
+  const existing = await getPromptExperiment(options, id);
 
   if (!existing) {
     return reply.status(404).send(errorResponse(`Experiment not found: ${id}`));
   }
 
-  const report = findCompatRecord(state.promptExperimentReports, id);
+  const report = await getPromptExperimentReport(options, id);
 
   if (!report) {
     return reply.status(400).send(errorResponse("No report available for this experiment"));
@@ -6942,7 +7923,7 @@ function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) 
 
   const recommendation = jsonObjectField(report.recommendation);
   const versionId = stringField(recommendation.bestVersionId, "");
-  const activated = activatePromptVersionById(stringField(existing.templateId, ""), versionId);
+  const activated = await activatePromptVersionById(options, stringField(existing.templateId, ""), versionId);
 
   if (!activated) {
     return reply.status(400).send(errorResponse(`Failed to activate version: ${versionId}`));
@@ -6956,8 +7937,12 @@ function activatePromptExperiment(request: FastifyRequest, reply: FastifyReply) 
   };
 }
 
-function activatePromptVersionById(templateId: string, versionId: string): JsonObject | undefined {
-  const template = findCompatRecord(state.promptTemplates, templateId);
+async function activatePromptVersionById(
+  options: ReactorCompatibilityRouteOptions,
+  templateId: string,
+  versionId: string
+): Promise<JsonObject | undefined> {
+  const template = await getPromptTemplate(options, templateId);
 
   if (!template) {
     return undefined;
@@ -6977,10 +7962,10 @@ function activatePromptVersionById(templateId: string, versionId: string): JsonO
     return undefined;
   }
 
-  createRecord(state.promptTemplates, {
+  await savePromptTemplate(options, {
     ...template,
     versions
-  }, "prompt_template");
+  });
   return toVersionResponse(selected);
 }
 
@@ -6999,6 +7984,128 @@ function slackFaqNotFound(reply: FastifyReply, channelId: string) {
 function slackFaqAutoReplyMode(value: string | undefined): string {
   const normalized = value?.trim().toUpperCase();
   return normalized === "ALWAYS" || normalized === "OFF" ? normalized : "MENTION";
+}
+
+async function saveSlackFaqRegistration(
+  options: ReactorCompatibilityRouteOptions,
+  record: JsonObject
+): Promise<JsonObject> {
+  if (options.slackPersistence?.faqStore) {
+    const saved = await options.slackPersistence.faqStore.save(compatToSlackFaqRegistration(record));
+    return slackFaqRegistrationToCompat(saved);
+  }
+
+  return createRecord(state.slackFaq, record, "slack_faq");
+}
+
+async function listSlackFaqRegistrations(options: ReactorCompatibilityRouteOptions): Promise<readonly JsonObject[]> {
+  if (options.slackPersistence?.faqStore) {
+    const registrations = await options.slackPersistence.faqStore.list();
+    return registrations.map(slackFaqRegistrationToCompat);
+  }
+
+  return [...state.slackFaq.values()];
+}
+
+async function getSlackFaqRegistration(
+  options: ReactorCompatibilityRouteOptions,
+  channelId: string
+): Promise<JsonObject | undefined> {
+  if (options.slackPersistence?.faqStore) {
+    const registration = await options.slackPersistence.faqStore.get(channelId);
+    return registration ? slackFaqRegistrationToCompat(registration) : undefined;
+  }
+
+  return findCompatRecord(state.slackFaq, channelId);
+}
+
+async function deleteSlackFaqRegistration(options: ReactorCompatibilityRouteOptions, channelId: string): Promise<boolean> {
+  if (options.slackPersistence?.faqStore) {
+    return options.slackPersistence.faqStore.delete(channelId);
+  }
+
+  return state.slackFaq.delete(channelId);
+}
+
+async function updateSlackFaqIngestResult(
+  options: ReactorCompatibilityRouteOptions,
+  channelId: string,
+  status: "OK" | "FAILED" | "RUNNING",
+  messageCount: number | null,
+  chunkCount: number | null,
+  error: string | null
+): Promise<JsonObject | undefined> {
+  if (options.slackPersistence?.faqStore) {
+    const updated = await options.slackPersistence.faqStore.updateIngestResult({
+      channelId,
+      chunkCount,
+      error,
+      messageCount,
+      status
+    });
+    return updated ? slackFaqRegistrationToCompat(updated) : undefined;
+  }
+
+  const existing = findCompatRecord(state.slackFaq, channelId);
+
+  if (!existing) {
+    return undefined;
+  }
+
+  return createRecord(state.slackFaq, {
+    ...existing,
+    lastChunkCount: chunkCount,
+    lastError: error,
+    lastIngestedAt: nowIso(),
+    lastMessageCount: messageCount,
+    lastStatus: status
+  }, "slack_faq");
+}
+
+function compatToSlackFaqRegistration(record: JsonObject): ChannelFaqRegistration {
+  return {
+    autoReplyMode: slackFaqAutoReplyMode(stringField(record.autoReplyMode, "MENTION")) as "MENTION" | "ALWAYS" | "OFF",
+    channelId: stringField(record.channelId, stringField(record.id, "")),
+    channelName: nullableStringResponse(record.channelName),
+    confidenceThreshold: readNumber(record.confidenceThreshold, 0.8),
+    daysBack: readNumber(record.daysBack, 30),
+    enabled: readBoolean(record.enabled, true),
+    lastChunkCount: nullableNumberResponse(record.lastChunkCount),
+    lastError: nullableStringResponse(record.lastError),
+    lastIngestedAt: dateOrNull(record.lastIngestedAt),
+    lastMessageCount: nullableNumberResponse(record.lastMessageCount),
+    lastStatus: slackFaqIngestStatusValue(record.lastStatus),
+    reIngestIntervalHours: readNumber(record.reIngestIntervalHours, 24),
+    registeredAt: dateOrUndefined(record.registeredAt),
+    registeredBy: nullableStringResponse(record.registeredBy),
+    updatedAt: dateOrUndefined(record.updatedAt)
+  };
+}
+
+function slackFaqRegistrationToCompat(registration: ChannelFaqRegistration): JsonObject {
+  return {
+    autoReplyMode: registration.autoReplyMode ?? "MENTION",
+    channelId: registration.channelId,
+    channelName: registration.channelName ?? null,
+    confidenceThreshold: registration.confidenceThreshold ?? 0.8,
+    daysBack: registration.daysBack ?? 30,
+    enabled: registration.enabled ?? true,
+    id: registration.channelId,
+    lastChunkCount: registration.lastChunkCount ?? null,
+    lastError: registration.lastError ?? null,
+    lastIngestedAt: registration.lastIngestedAt?.toISOString() ?? null,
+    lastMessageCount: registration.lastMessageCount ?? null,
+    lastStatus: registration.lastStatus ?? null,
+    reIngestIntervalHours: registration.reIngestIntervalHours ?? 24,
+    registeredAt: (registration.registeredAt ?? new Date()).toISOString(),
+    registeredBy: registration.registeredBy ?? null,
+    updatedAt: (registration.updatedAt ?? registration.registeredAt ?? new Date()).toISOString()
+  };
+}
+
+function slackFaqIngestStatusValue(value: unknown): "OK" | "FAILED" | "RUNNING" | null {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return normalized === "OK" || normalized === "FAILED" || normalized === "RUNNING" ? normalized : null;
 }
 
 function toSlackFaqRegistration(record: JsonObject): JsonObject {
@@ -7020,14 +8127,18 @@ function toSlackFaqRegistration(record: JsonObject): JsonObject {
   };
 }
 
-function slackFaqIngest(request: FastifyRequest, reply: FastifyReply) {
+async function slackFaqIngest(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions
+) {
   const { channelId } = request.params as { readonly channelId: string };
   const validation = validateSlackFaqChannelId(channelId, reply);
   if (validation) {
     return validation;
   }
 
-  const existing = findCompatRecord(state.slackFaq, channelId);
+  const existing = await getSlackFaqRegistration(options, channelId);
   if (!existing) {
     return slackFaqNotFound(reply, channelId);
   }
@@ -7040,14 +8151,7 @@ function slackFaqIngest(request: FastifyRequest, reply: FastifyReply) {
     documentCount,
     messagesScanned: documentCount
   };
-  createRecord(state.slackFaq, {
-    ...existing,
-    lastChunkCount: result.chunkCount,
-    lastError: null,
-    lastIngestedAt: nowIso(),
-    lastMessageCount: result.messagesScanned,
-    lastStatus: "OK"
-  }, "slack_faq");
+  await updateSlackFaqIngestResult(options, channelId, "OK", result.messagesScanned, result.chunkCount, null);
   return result;
 }
 
@@ -7791,8 +8895,7 @@ function simulateGuard(value: unknown) {
   };
 }
 
-function feedbackStats() {
-  const items = [...state.feedback.values()];
+function feedbackStats(items: readonly CompatRecord[]) {
   const positive = items.filter((item) => feedbackRating(item.rating) === "thumbs_up").length;
   const negative = items.length - positive;
   const done = items.filter((item) => feedbackReviewStatus(item.reviewStatus) === "done").length;
@@ -7816,7 +8919,12 @@ function feedbackStats() {
   };
 }
 
-function updateUserMemory(request: FastifyRequest, reply: FastifyReply, key: "facts" | "preferences") {
+async function updateUserMemory(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  key: "facts" | "preferences",
+  options?: ReactorCompatibilityRouteOptions
+) {
   const { userId } = request.params as { readonly userId: string };
   const body = toBody(request.body);
   const itemKey = readBodyString(body, "key")?.trim();
@@ -7824,6 +8932,13 @@ function updateUserMemory(request: FastifyRequest, reply: FastifyReply, key: "fa
 
   if (!itemKey || !itemValue) {
     return reply.status(400).send(errorResponse("Body must include non-empty key and value"));
+  }
+
+  if (options?.userMemoryStore) {
+    await (key === "facts"
+      ? options.userMemoryStore.upsertFact(userId, itemKey, itemValue)
+      : options.userMemoryStore.upsertPreference(userId, itemKey, itemValue));
+    return { updated: true };
   }
 
   const existing = state.userMemory.get(userId) ?? {
@@ -7842,38 +8957,55 @@ function updateUserMemory(request: FastifyRequest, reply: FastifyReply, key: "fa
   return { updated: true };
 }
 
-function canAccessUserMemory(
+async function readUserMemory(
+  options: ReactorCompatibilityRouteOptions,
+  userId: string
+): Promise<UserMemory | {
+  readonly facts: Record<string, string>;
+  readonly preferences: Record<string, string>;
+  readonly recentTopics: string[];
+  readonly updatedAt: string;
+} | undefined> {
+  return await options.userMemoryStore?.findByUserId(userId) ?? state.userMemory.get(userId);
+}
+
+async function deleteUserMemory(options: ReactorCompatibilityRouteOptions, userId: string): Promise<void> {
+  await options.userMemoryStore?.deleteByUserId(userId);
+  state.userMemory.delete(userId);
+}
+
+async function canAccessUserMemory(
   request: FastifyRequest,
   options: ReactorCompatibilityRouteOptions,
   userId: string
-): boolean {
+): Promise<boolean> {
   if (userId.trim().length === 0 || userId.toLowerCase() === "anonymous") {
     return false;
   }
 
-  const identity = currentAuthIdentity(request, options);
+  const identity = await currentAuthIdentity(request, options);
   return Boolean(identity?.userId && identity.userId === userId && identity.userId.toLowerCase() !== "anonymous");
 }
 
-function currentAuthIdentity(
+async function currentAuthIdentity(
   request: FastifyRequest,
   options: ReactorCompatibilityRouteOptions
-): AuthIdentity | undefined {
+): Promise<AuthIdentity | undefined> {
   return (request as { auth?: AuthIdentity }).auth
-    ?? options.authService?.authenticateBearer(extractBearerToken(request.headers.authorization));
+    ?? await options.authService?.authenticateBearer(extractBearerToken(request.headers.authorization));
 }
 
 function toUserMemoryResponse(memory: {
   readonly facts: Record<string, string>;
   readonly preferences: Record<string, string>;
   readonly recentTopics: readonly string[];
-  readonly updatedAt: string;
+  readonly updatedAt: string | Date;
 }) {
   return {
     facts: memory.facts,
     preferences: memory.preferences,
     recentTopics: [...memory.recentTopics],
-    updatedAt: memory.updatedAt
+    updatedAt: memory.updatedAt instanceof Date ? memory.updatedAt.toISOString() : memory.updatedAt
   };
 }
 
@@ -8087,6 +9219,153 @@ function parseRagIngestionPolicy(value: unknown): ParseResult<JsonObject> {
   return { ok: true, value: parsed };
 }
 
+async function readStoredRagIngestionPolicy(options: ReactorCompatibilityRouteOptions): Promise<JsonObject | undefined> {
+  const stored = await options.ragIngestion?.policyStore.getOrNull();
+
+  if (stored) {
+    return ragPolicyToCompat(stored);
+  }
+
+  return state.ragIngestionPolicyStored ? state.ragIngestionPolicy : undefined;
+}
+
+async function saveRagIngestionPolicy(
+  options: ReactorCompatibilityRouteOptions,
+  policy: JsonObject
+): Promise<JsonObject> {
+  if (options.ragIngestion?.policyStore) {
+    const saved = await options.ragIngestion.policyStore.save(compatToRagPolicy(policy));
+    const compat = ragPolicyToCompat(saved);
+    state.ragIngestionPolicy = compat;
+    state.ragIngestionPolicyStored = true;
+    return compat;
+  }
+
+  const timestamp = nowIso();
+  state.ragIngestionPolicy = {
+    ...policy,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  state.ragIngestionPolicyStored = true;
+  return state.ragIngestionPolicy;
+}
+
+async function clearRagIngestionPolicy(options: ReactorCompatibilityRouteOptions): Promise<void> {
+  await options.ragIngestion?.policyStore.delete();
+  state.ragIngestionPolicy = defaultRagIngestionPolicy();
+  state.ragIngestionPolicyStored = false;
+}
+
+async function listRagCandidates(
+  options: ReactorCompatibilityRouteOptions,
+  query: { readonly channel?: string; readonly limit: number; readonly status?: string }
+): Promise<readonly JsonObject[]> {
+  if (options.ragIngestion?.candidateStore) {
+    const status = ragCandidateStatusValue(query.status);
+    const candidates = await options.ragIngestion.candidateStore.list({
+      channel: query.channel,
+      limit: query.limit,
+      ...(status ? { status } : {})
+    });
+    return candidates.map(ragCandidateToCompat);
+  }
+
+  return [...state.ragCandidates.values()]
+    .filter((candidate) => !query.status || candidateStatus(candidate.status) === query.status)
+    .filter((candidate) => !query.channel || nullableStringResponse(candidate.channel) === query.channel)
+    .slice(0, query.limit);
+}
+
+async function findRagCandidate(
+  options: ReactorCompatibilityRouteOptions,
+  id: string
+): Promise<JsonObject | undefined> {
+  if (options.ragIngestion?.candidateStore) {
+    const candidate = await options.ragIngestion.candidateStore.findById(id);
+    return candidate ? ragCandidateToCompat(candidate) : undefined;
+  }
+
+  return findCompatRecord(state.ragCandidates, id);
+}
+
+async function updateRagCandidateReview(
+  options: ReactorCompatibilityRouteOptions,
+  input: {
+    readonly id: string;
+    readonly status: Exclude<RagIngestionCandidateStatus, "PENDING">;
+    readonly reviewedBy: string;
+    readonly reviewComment?: string | null;
+    readonly ingestedDocumentId?: string | null;
+  }
+): Promise<JsonObject | undefined> {
+  if (options.ragIngestion?.candidateStore) {
+    const candidate = await options.ragIngestion.candidateStore.updateReview(input);
+    return candidate ? ragCandidateToCompat(candidate) : undefined;
+  }
+
+  const candidate = findCompatRecord(state.ragCandidates, input.id);
+
+  if (!candidate) {
+    return undefined;
+  }
+
+  return createRecord(state.ragCandidates, {
+    ...candidate,
+    ingestedDocumentId: input.ingestedDocumentId ?? null,
+    reviewComment: input.reviewComment ?? null,
+    reviewedAt: nowIso(),
+    reviewedBy: input.reviewedBy,
+    status: input.status
+  }, "rag_candidate");
+}
+
+function compatToRagPolicy(policy: JsonObject): RagIngestionPolicy {
+  return {
+    allowedChannels: readStringSet(policy.allowedChannels),
+    blockedPatterns: readStringSet(policy.blockedPatterns),
+    enabled: readBoolean(policy.enabled, false),
+    minQueryChars: readNumber(policy.minQueryChars, 10),
+    minResponseChars: readNumber(policy.minResponseChars, 20),
+    requireReview: readBoolean(policy.requireReview, true)
+  };
+}
+
+function ragPolicyToCompat(policy: RagIngestionPolicy): JsonObject {
+  return {
+    allowedChannels: [...policy.allowedChannels],
+    blockedPatterns: [...policy.blockedPatterns],
+    createdAt: policy.createdAt?.toISOString() ?? nowIso(),
+    enabled: policy.enabled,
+    minQueryChars: policy.minQueryChars,
+    minResponseChars: policy.minResponseChars,
+    requireReview: policy.requireReview,
+    updatedAt: policy.updatedAt?.toISOString() ?? nowIso()
+  };
+}
+
+function ragCandidateToCompat(candidate: StoredRagIngestionCandidate): JsonObject {
+  return {
+    capturedAt: candidate.capturedAt.toISOString(),
+    channel: candidate.channel,
+    id: candidate.id,
+    ingestedDocumentId: candidate.ingestedDocumentId,
+    query: candidate.query,
+    response: candidate.response,
+    reviewComment: candidate.reviewComment,
+    reviewedAt: candidate.reviewedAt?.toISOString() ?? null,
+    reviewedBy: candidate.reviewedBy,
+    runId: candidate.runId,
+    sessionId: candidate.sessionId,
+    status: candidate.status,
+    userId: candidate.userId
+  };
+}
+
+function ragCandidateStatusValue(value: string | undefined): RagIngestionCandidateStatus | undefined {
+  return value === "PENDING" || value === "REJECTED" || value === "INGESTED" ? value : undefined;
+}
+
 function defaultRagIngestionPolicy(): JsonObject {
   const timestamp = nowIso();
   return {
@@ -8114,13 +9393,14 @@ function toRagIngestionPolicyResponse(policy: JsonObject): JsonObject {
   };
 }
 
-function reviewRagCandidate(
+async function reviewRagCandidate(
   request: FastifyRequest,
   reply: FastifyReply,
+  options: ReactorCompatibilityRouteOptions,
   targetStatus: "INGESTED" | "REJECTED"
-) {
+): Promise<JsonObject | FastifyReply> {
   const { id } = request.params as { readonly id: string };
-  const candidate = findCompatRecord(state.ragCandidates, id);
+  const candidate = await findRagCandidate(options, id);
 
   if (!candidate) {
     return reply.status(404).send(errorResponse(`Candidate not found: ${id}`));
@@ -8154,14 +9434,18 @@ function reviewRagCandidate(
     }, "document");
   }
 
-  const reviewed = createRecord(state.ragCandidates, {
-    ...candidate,
+  const reviewed = await updateRagCandidateReview(options, {
+    id,
     ingestedDocumentId: documentId,
     reviewComment: typeof comment === "string" ? comment.trim() : null,
-    reviewedAt: nowIso(),
     reviewedBy: readAuthUserId(request) ?? "admin",
     status: targetStatus
-  }, "rag_candidate");
+  });
+
+  if (!reviewed) {
+    return reply.status(404).send(errorResponse(`Candidate not found: ${id}`));
+  }
+
   return toRagCandidateResponse(reviewed);
 }
 
@@ -8885,6 +10169,15 @@ function epochMillisOrNull(value: unknown): number | null {
   }
 
   return null;
+}
+
+function dateOrUndefined(value: unknown): Date | undefined {
+  const millis = epochMillisOrNull(value);
+  return millis === null ? undefined : new Date(millis);
+}
+
+function dateOrNull(value: unknown): Date | null {
+  return dateOrUndefined(value) ?? null;
 }
 
 function reactorEnumString(value: unknown, fallback: string): string {

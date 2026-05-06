@@ -14,22 +14,32 @@ import {
 } from "@muse/agent-specs";
 import {
   AuthRateLimiter,
-  AuthService,
   extractBearerToken,
   isAnyAdmin,
   isDeveloperAdmin,
   type AuthIdentity,
-  type LoginResult
+  type LoginResult,
+  type MuseAuthService
 } from "@muse/auth";
-import type { TaskMemoryMaintenance } from "@muse/memory";
+import type {
+  ChannelFaqRegistrationStore,
+  SlackBotInstanceStore,
+  SlackFeedbackEventStore,
+  SlackResponseTrackerStore
+} from "@muse/integrations";
+import type { AgentEvalStore } from "@muse/eval";
+import type { TaskMemoryMaintenance, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import type { FollowupSuggestionStore } from "@muse/observability";
+import type { GuardRuleStore, ToolPolicyStore } from "@muse/policy";
+import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } from "@muse/promptlab";
+import type { RagIngestionCandidateStore, RagIngestionPolicyStore } from "@muse/rag";
 import {
   InMemoryRuntimeSettingsStore,
   RuntimeSettingsService,
   type RuntimeSettingType
 } from "@muse/runtime-settings";
-import type { AgentRunHistoryStore, PendingApprovalStore } from "@muse/runtime-state";
+import type { AgentRunHistoryStore, PendingApprovalStore, SessionTagStore } from "@muse/runtime-state";
 import type { JsonObject, JsonValue } from "@muse/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAdminRoutes, type AdminRouteState } from "./admin-routes.js";
@@ -42,21 +52,39 @@ import { registerSlackRoutes, type SlackRouteOptions } from "./slack-routes.js";
 export interface ServerOptions {
   readonly logger?: boolean;
   readonly agentRuntime?: AgentRuntime;
+  readonly agentEvalStore?: AgentEvalStore;
   readonly admin?: AdminRouteState;
   readonly agentSpecRegistry?: AgentSpecRegistry;
-  readonly authService?: AuthService;
+  readonly authService?: MuseAuthService;
   readonly authRateLimiter?: AuthRateLimiter;
   readonly followupSuggestionStore?: FollowupSuggestionStore;
+  readonly feedbackStore?: FeedbackStore;
+  readonly promptLabCatalogStore?: PromptLabCatalogStore;
+  readonly promptLabExperimentStore?: PromptLabExperimentStore;
   readonly historyStore?: AgentRunHistoryStore;
   readonly pendingApprovalStore?: PendingApprovalStore;
   readonly mcp?: McpRouteMcp;
   readonly modelProvider?: ModelProvider;
   readonly defaultModel?: string;
   readonly requireAuth?: boolean;
+  readonly ragIngestion?: {
+    readonly candidateStore: RagIngestionCandidateStore;
+    readonly policyStore: RagIngestionPolicyStore;
+  };
   readonly runtimeSettings?: RuntimeSettingsService;
   readonly scheduler?: SchedulerRouteScheduler;
+  readonly slackPersistence?: {
+    readonly botStore: SlackBotInstanceStore;
+    readonly faqStore: ChannelFaqRegistrationStore;
+    readonly feedbackStore?: SlackFeedbackEventStore;
+    readonly responseTrackerStore?: SlackResponseTrackerStore;
+  };
+  readonly sessionTagStore?: SessionTagStore;
   readonly slack?: SlackRouteOptions;
   readonly taskMemoryMaintenance?: TaskMemoryMaintenance;
+  readonly guardRuleStore?: GuardRuleStore;
+  readonly toolPolicyStore?: ToolPolicyStore;
+  readonly userMemoryStore?: UserMemoryStore;
 }
 
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
@@ -92,11 +120,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       }
 
       if (!options.requireAuth) {
-        attachAuthIdentity(request, authService.authenticateBearer(extractBearerToken(request.headers.authorization)));
+        attachAuthIdentity(request, await authService.authenticateBearer(extractBearerToken(request.headers.authorization)));
         return;
       }
 
-      const identity = authService.authenticateBearer(extractBearerToken(request.headers.authorization));
+      const identity = await authService.authenticateBearer(extractBearerToken(request.headers.authorization));
 
       if (!identity) {
         return reply.status(401).send({
@@ -215,6 +243,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
   registerReactorCompatibilityRoutes(server, {
     admin: options.admin,
+    agentEvalStore: options.agentEvalStore,
     agentRuntime: options.agentRuntime,
     agentSpecRegistry,
     authRateLimiter,
@@ -223,14 +252,23 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     authorizeAnyAdmin: (request, reply) => authorizeAnyAdmin(request, reply, Boolean(authService)),
     apiPathRegistry: () => [...apiPaths].sort(),
     defaultModel: options.defaultModel,
+    feedbackStore: options.feedbackStore,
+    promptLabCatalogStore: options.promptLabCatalogStore,
+    promptLabExperimentStore: options.promptLabExperimentStore,
     followupSuggestionStore: options.followupSuggestionStore,
     historyStore: options.historyStore,
     mcp: options.mcp,
     modelProvider: options.modelProvider,
     pendingApprovalStore: options.pendingApprovalStore,
+    ragIngestion: options.ragIngestion,
     runtimeSettings,
     scheduler: options.scheduler,
-    taskMemoryMaintenance: options.taskMemoryMaintenance
+    slackPersistence: options.slackPersistence,
+    sessionTagStore: options.sessionTagStore,
+    taskMemoryMaintenance: options.taskMemoryMaintenance,
+    guardRuleStore: options.guardRuleStore,
+    toolPolicyStore: options.toolPolicyStore,
+    userMemoryStore: options.userMemoryStore
   });
 
   if (authService) {
@@ -242,7 +280,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       }
 
       try {
-        return reply.status(201).send(toLoginResponse(authService.register(parsed.value)));
+        return reply.status(201).send(toLoginResponse(await authService.register(parsed.value)));
       } catch (error) {
         return reply.status(400).send({
           code: error instanceof Error && "code" in error ? String(error.code) : "REGISTRATION_FAILED",
@@ -268,7 +306,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         return reply.status(400).send(parsed.error);
       }
 
-      const login = authService.login(parsed.value.email, parsed.value.password);
+      const login = await authService.login(parsed.value.email, parsed.value.password);
 
       if (!login) {
         authRateLimiter.recordFailure(key);
@@ -296,7 +334,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
 
     server.post("/auth/logout", async (request) => ({
-      revoked: authService.logout(extractBearerToken(request.headers.authorization))
+      revoked: await authService.logout(extractBearerToken(request.headers.authorization))
     }));
   }
 

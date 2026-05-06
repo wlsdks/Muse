@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  createTraceEventInsert,
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
   InMemoryMuseTracer,
+  PersistedMuseTracer,
   createNoOpAgentMetrics,
   createNoOpMuseTracer
 } from "../src/index.js";
@@ -36,6 +38,54 @@ describe("Muse tracer", () => {
       name: "muse.agent.run"
     });
     expect(tracer.recordedSpans()[0]?.endedAt).toBeInstanceOf(Date);
+  });
+
+  it("persists completed spans through a trace event sink", async () => {
+    const events: unknown[] = [];
+    const tracer = new PersistedMuseTracer({
+      async record(event) {
+        events.push(event);
+      }
+    });
+    const span = tracer.startSpan("muse.agent.run", {
+      runId: "run-1",
+      stage: "agent"
+    });
+
+    span.setAttribute("model", "test-model");
+    span.end();
+    await tracer.flush();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      attributes: { model: "test-model", runId: "run-1", stage: "agent" },
+      name: "muse.agent.run",
+      runId: "run-1",
+      stage: "agent"
+    });
+  });
+
+  it("builds trace event inserts for the persisted database table", () => {
+    const now = new Date("2026-05-06T00:00:00.000Z");
+
+    expect(createTraceEventInsert({
+      attributes: { model: "test" },
+      endedAt: now,
+      name: "muse.agent.run",
+      runId: "run-1",
+      spanId: "span-1",
+      stage: "agent",
+      startedAt: now
+    })).toEqual({
+      attributes: { model: "test" },
+      ended_at: now,
+      name: "muse.agent.run",
+      parent_span_id: null,
+      run_id: "run-1",
+      span_id: "span-1",
+      stage: "agent",
+      started_at: now
+    });
   });
 });
 

@@ -1,20 +1,43 @@
 import { describe, expect, it } from "vitest";
 import type { MuseDatabase } from "@muse/db";
 import { KyselyAgentSpecRegistry } from "@muse/agent-specs";
-import { InMemoryTaskMemoryStore } from "@muse/memory";
+import { AsyncAuthService } from "@muse/auth";
+import { KyselyAgentEvalStore } from "@muse/eval";
+import {
+  InMemoryTaskMemoryStore,
+  KyselyConversationSummaryStore,
+  KyselyTaskMemoryStore,
+  KyselyUserMemoryStore
+} from "@muse/memory";
 import { KyselyMcpSecurityPolicyStore, KyselyMcpServerStore } from "@muse/mcp";
+import { PersistedMuseTracer } from "@muse/observability";
+import { KyselyGuardRuleStore, KyselyToolPolicyStore } from "@muse/policy";
+import { KyselyRagIngestionCandidateStore, KyselyRagIngestionPolicyStore } from "@muse/rag";
+import { KyselyFeedbackStore, KyselyPromptLabCatalogStore, KyselyPromptLabExperimentStore } from "@muse/promptlab";
 import { KyselyRuntimeSettingsStore } from "@muse/runtime-settings";
 import {
   KyselyAdminOperationsStore,
+  KyselyAdminAuditStore,
   KyselyAgentRunHistoryStore,
   KyselyHookTraceStore,
-  KyselyPendingApprovalStore
+  KyselyMetricAuditEventStore,
+  KyselyPendingApprovalStore,
+  KyselyPlatformAlertRuleStore,
+  KyselyPlatformPricingStore,
+  KyselySessionTagStore
 } from "@muse/runtime-state";
 import {
   KyselyDistributedSchedulerLock,
   KyselyScheduledJobExecutionStore,
   KyselyScheduledJobStore
 } from "@muse/scheduler";
+import {
+  KyselyChannelFaqRegistrationStore,
+  KyselySlackBotInstanceStore,
+  KyselySlackFeedbackEventStore,
+  KyselySlackResponseTrackerStore,
+  SlackBotResponseTracker
+} from "@muse/integrations";
 import {
   DummyDriver,
   Kysely,
@@ -78,12 +101,27 @@ describe("autoconfigure", () => {
   });
 
   it("uses Kysely-backed stores when a database handle is provided", () => {
-    const assembly = createMuseRuntimeAssembly({ db: createPostgresBuilder(), env: {} });
+    const assembly = createMuseRuntimeAssembly({
+      db: createPostgresBuilder(),
+      env: {
+        MUSE_AUTH_JWT_SECRET: "0123456789abcdef0123456789abcdef"
+      }
+    });
 
     expect(assembly.agentSpecRegistry).toBeInstanceOf(KyselyAgentSpecRegistry);
+    expect(assembly.authService).toBeInstanceOf(AsyncAuthService);
     expect(assembly.historyStore).toBeInstanceOf(KyselyAgentRunHistoryStore);
     expect(assembly.hookTraceStore).toBeInstanceOf(KyselyHookTraceStore);
     expect(assembly.adminOperationsStore).toBeInstanceOf(KyselyAdminOperationsStore);
+    expect(assembly.adminAuditStore).toBeInstanceOf(KyselyAdminAuditStore);
+    expect(assembly.agentEvalStore).toBeInstanceOf(KyselyAgentEvalStore);
+    expect(assembly.feedbackStore).toBeInstanceOf(KyselyFeedbackStore);
+    expect(assembly.promptLabCatalogStore).toBeInstanceOf(KyselyPromptLabCatalogStore);
+    expect(assembly.promptLabExperimentStore).toBeInstanceOf(KyselyPromptLabExperimentStore);
+    expect(assembly.metricAuditEventStore).toBeInstanceOf(KyselyMetricAuditEventStore);
+    expect(assembly.platformAlertRuleStore).toBeInstanceOf(KyselyPlatformAlertRuleStore);
+    expect(assembly.platformPricingStore).toBeInstanceOf(KyselyPlatformPricingStore);
+    expect(assembly.observability.tracer).toBeInstanceOf(PersistedMuseTracer);
     expect(assembly.approvalStore).toBeInstanceOf(KyselyPendingApprovalStore);
     expect(assembly.mcp.serverStore).toBeInstanceOf(KyselyMcpServerStore);
     expect(assembly.mcp.securityPolicyStore).toBeInstanceOf(KyselyMcpSecurityPolicyStore);
@@ -93,6 +131,18 @@ describe("autoconfigure", () => {
     expect(assembly.scheduler.executionStore).toBeInstanceOf(KyselyScheduledJobExecutionStore);
     expect((assembly.scheduler.service as unknown as { readonly distributedLock: unknown }).distributedLock)
       .toBeInstanceOf(KyselyDistributedSchedulerLock);
+    expect(assembly.conversationSummaryStore).toBeInstanceOf(KyselyConversationSummaryStore);
+    expect(assembly.taskMemoryStore).toBeInstanceOf(KyselyTaskMemoryStore);
+    expect(assembly.userMemoryStore).toBeInstanceOf(KyselyUserMemoryStore);
+    expect(assembly.sessionTagStore).toBeInstanceOf(KyselySessionTagStore);
+    expect(assembly.guardRuleStore).toBeInstanceOf(KyselyGuardRuleStore);
+    expect(assembly.toolPolicyStore).toBeInstanceOf(KyselyToolPolicyStore);
+    expect(assembly.ragIngestion.policyStore).toBeInstanceOf(KyselyRagIngestionPolicyStore);
+    expect(assembly.ragIngestion.candidateStore).toBeInstanceOf(KyselyRagIngestionCandidateStore);
+    expect(assembly.slackPersistence.botStore).toBeInstanceOf(KyselySlackBotInstanceStore);
+    expect(assembly.slackPersistence.faqStore).toBeInstanceOf(KyselyChannelFaqRegistrationStore);
+    expect(assembly.slackPersistence.feedbackStore).toBeInstanceOf(KyselySlackFeedbackEventStore);
+    expect(assembly.slackPersistence.responseTrackerStore).toBeInstanceOf(KyselySlackResponseTrackerStore);
   });
 
   it("assembles AgentRuntime when an OpenAI-compatible model endpoint is configured", () => {
@@ -108,6 +158,42 @@ describe("autoconfigure", () => {
     expect(assembly.modelProvider?.id).toBe("openai-compatible");
   });
 
+  it("adds the Rust runner tool only when explicitly enabled", () => {
+    const disabled = createMuseRuntimeAssembly({ env: {} });
+    const enabled = createMuseRuntimeAssembly({
+      env: {
+        MUSE_RUNNER_ENABLED: "true"
+      }
+    });
+
+    expect(disabled.toolRegistry.get("run_command")).toBeUndefined();
+    expect(enabled.toolRegistry.get("run_command")?.definition.risk).toBe("execute");
+  });
+
+  it("assembles named model providers without forcing an OpenAI-compatible base URL", () => {
+    const anthropic = createMuseRuntimeAssembly({
+      env: {
+        ANTHROPIC_API_KEY: "key",
+        MUSE_MODEL: "anthropic/claude-test"
+      }
+    });
+    const gemini = createMuseRuntimeAssembly({
+      env: {
+        GEMINI_API_KEY: "key",
+        MUSE_MODEL: "gemini/gemini-test"
+      }
+    });
+    const ollama = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "ollama/llama3.2"
+      }
+    });
+
+    expect(anthropic.modelProvider?.id).toBe("anthropic");
+    expect(gemini.modelProvider?.id).toBe("gemini");
+    expect(ollama.modelProvider?.id).toBe("ollama");
+  });
+
   it("maps Slack API options from environment", () => {
     const options = createApiServerOptions({
       env: {
@@ -117,11 +203,13 @@ describe("autoconfigure", () => {
       }
     });
 
-    expect(options.slack).toEqual({
+    expect(options.slack).toMatchObject({
       botToken: "xoxb-token",
       enabled: true,
       signingSecret: "signing-secret"
     });
+    expect(options.slack.responseTracker).toBeInstanceOf(SlackBotResponseTracker);
+    expect(options.slack.feedbackStore).toBeTruthy();
   });
 
   it("parses primitive env values conservatively", () => {

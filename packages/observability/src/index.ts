@@ -1,5 +1,7 @@
+import type { MuseDatabase, TraceEventTable } from "@muse/db";
 import type { ModelUsage } from "@muse/model";
 import type { JsonObject } from "@muse/shared";
+import type { Insertable, Kysely } from "kysely";
 
 export type SpanAttributes = Readonly<Record<string, string | number | boolean>>;
 export type OutputGuardMetricAction = "allowed" | "modified" | "rejected";
@@ -26,6 +28,21 @@ export interface AgentMetrics {
     metadata?: JsonObject
   ): void;
   recordTokenUsage(usage: ModelUsage, metadata?: JsonObject): void;
+}
+
+export interface TraceEventInput {
+  readonly runId: string;
+  readonly spanId: string;
+  readonly parentSpanId?: string;
+  readonly name: string;
+  readonly stage: string;
+  readonly attributes: JsonObject;
+  readonly startedAt: Date;
+  readonly endedAt?: Date;
+}
+
+export interface TraceEventSink {
+  record(event: TraceEventInput): Promise<void>;
 }
 
 export interface FollowupSuggestionEvent {
@@ -80,6 +97,8 @@ export interface RecordedSpan {
   readonly error?: string;
 }
 
+type TraceEventInsert = Insertable<TraceEventTable>;
+
 export interface RecordedMetricEvent {
   readonly type: "agent_run" | "guard_rejection" | "output_guard_action" | "token_usage";
   readonly payload: JsonObject;
@@ -123,6 +142,35 @@ export class InMemoryMuseTracer implements MuseTracer {
       name: span.name,
       startedAt: span.startedAt
     }));
+  }
+}
+
+export class KyselyTraceEventSink implements TraceEventSink {
+  constructor(private readonly db: Kysely<MuseDatabase>) {}
+
+  async record(event: TraceEventInput): Promise<void> {
+    await this.db.insertInto("trace_events").values(createTraceEventInsert(event)).execute();
+  }
+}
+
+export class PersistedMuseTracer implements MuseTracer {
+  private readonly pending: Promise<void>[] = [];
+
+  constructor(private readonly sink: TraceEventSink) {}
+
+  startSpan(name: string, attributes: SpanAttributes = {}): SpanHandle {
+    const span: MutableRecordedSpan = {
+      attributes: { ...attributes },
+      id: readStringAttribute(attributes, "spanId") ?? `span-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name,
+      startedAt: new Date()
+    };
+
+    return new PersistedSpanHandle(span, this.sink, (promise) => this.pending.push(promise));
+  }
+
+  async flush(): Promise<void> {
+    await Promise.allSettled(this.pending.splice(0));
   }
 }
 
@@ -285,6 +333,39 @@ class InMemorySpanHandle implements SpanHandle {
   }
 }
 
+class PersistedSpanHandle implements SpanHandle {
+  private closed = false;
+
+  constructor(
+    private readonly span: MutableRecordedSpan,
+    private readonly sink: TraceEventSink,
+    private readonly track: (promise: Promise<void>) => void
+  ) {}
+
+  setAttribute(key: string, value: string | number | boolean): void {
+    if (!this.closed) {
+      this.span.attributes = { ...this.span.attributes, [key]: value };
+    }
+  }
+
+  setError(error: unknown): void {
+    if (!this.closed) {
+      this.span.error = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  end(): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+    this.span.endedAt = new Date();
+    const event = spanToTraceEvent(this.span);
+    this.track(this.sink.record(event));
+  }
+}
+
 const noOpSpanHandle: SpanHandle = {
   end: () => {},
   setAttribute: () => {},
@@ -309,4 +390,40 @@ function toJsonObject(value: object): JsonObject {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).filter(([, entry]) => entry !== undefined)
   ) as JsonObject;
+}
+
+export function createTraceEventInsert(event: TraceEventInput): TraceEventInsert {
+  return {
+    attributes: event.attributes,
+    ended_at: event.endedAt ?? null,
+    name: event.name,
+    parent_span_id: event.parentSpanId ?? null,
+    run_id: event.runId,
+    span_id: event.spanId,
+    stage: event.stage,
+    started_at: event.startedAt
+  };
+}
+
+function spanToTraceEvent(span: MutableRecordedSpan): TraceEventInput {
+  const attributes = {
+    ...span.attributes,
+    ...(span.error ? { error: span.error } : {})
+  };
+
+  return {
+    attributes: attributes as JsonObject,
+    endedAt: span.endedAt,
+    name: span.name,
+    parentSpanId: readStringAttribute(span.attributes, "parentSpanId"),
+    runId: readStringAttribute(span.attributes, "runId") ?? "unknown",
+    spanId: span.id,
+    stage: readStringAttribute(span.attributes, "stage") ?? span.name,
+    startedAt: span.startedAt
+  };
+}
+
+function readStringAttribute(attributes: SpanAttributes, key: string): string | undefined {
+  const value = attributes[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }

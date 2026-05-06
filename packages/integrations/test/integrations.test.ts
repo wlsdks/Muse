@@ -1,8 +1,30 @@
 import { describe, expect, it } from "vitest";
+import type { MuseDatabase } from "@muse/db";
 import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler
+} from "kysely";
+import {
+  buildChannelFaqRegistrationUpsertQuery,
+  buildSlackBotInstanceUpsertQuery,
+  createSlackFeedbackEventInsert,
+  createChannelFaqRegistrationInsert,
+  createSlackBotInstanceInsert,
+  createSlackResponseTrackingInsert,
   CommandRouter,
   FetchSlackResponseUrlTransport,
   FetchSlackWebApiMessageTransport,
+  InMemoryChannelFaqRegistrationStore,
+  InMemorySlackFeedbackEventStore,
+  InMemorySlackBotInstanceStore,
+  InMemorySlackResponseTrackerStore,
+  mapChannelFaqRegistrationRow,
+  mapSlackFeedbackEventRow,
+  mapSlackBotInstanceRow,
+  mapSlackResponseTrackingRow,
   SlackBotResponseTracker,
   SlackFeedbackButtonHandler,
   SlackInteractionDispatcher,
@@ -233,9 +255,14 @@ describe("SlackInteractionDispatcher", () => {
   it("stores tracked feedback button clicks and posts an ack in thread", async () => {
     const feedback: unknown[] = [];
     const messages: unknown[] = [];
+    const feedbackStore = new InMemorySlackFeedbackEventStore({
+      idFactory: () => "feedback-1",
+      now: () => new Date("2026-05-06T00:00:00.000Z")
+    });
     const tracker = new SlackBotResponseTracker({ now: () => 1_770_000_000_000 });
-    tracker.track("channel-1", "1770000000.000100", "session-1", "original question");
+    tracker.track("channel-1", "1770000000.000100", "session-1", "original question", "original answer");
     const handler = new SlackFeedbackButtonHandler({
+      feedbackStore,
       messageTransport: {
         postMessage: (input) => {
           messages.push(input);
@@ -259,9 +286,16 @@ describe("SlackInteractionDispatcher", () => {
     ).resolves.toBe(true);
     expect(feedback).toEqual([
       {
+        channelId: "channel-1",
+        messageTs: "1770000000.000100",
+        metadata: {
+          actionId: "feedback.down",
+          responseUrl: null,
+          type: "block_actions"
+        },
         query: "original question",
         rating: "thumbs_down",
-        response: "",
+        response: "original answer",
         sessionId: "session-1",
         userId: "user-1"
       }
@@ -273,6 +307,37 @@ describe("SlackInteractionDispatcher", () => {
         threadTs: "1770000000.000100"
       }
     ]);
+    expect(feedbackStore.listBySession("session-1")).toEqual([
+      expect.objectContaining({
+        channelId: "channel-1",
+        id: "feedback-1",
+        messageTs: "1770000000.000100",
+        query: "original question",
+        rating: "thumbs_down",
+        response: "original answer",
+        sessionId: "session-1",
+        userId: "user-1"
+      })
+    ]);
+  });
+
+  it("backs response tracking with an injectable store and purges expired rows", async () => {
+    const store = new InMemorySlackResponseTrackerStore();
+    const tracker = new SlackBotResponseTracker({
+      now: () => 1_770_000_000_000,
+      store,
+      ttlMs: 10
+    });
+
+    await tracker.track("channel-1", "1770000000.000100", "session-1", "question", "answer");
+    expect(await tracker.lookup("channel-1", "1770000000.000100")).toEqual({
+      expiresAt: 1_770_000_000_010,
+      response: "answer",
+      sessionId: "session-1",
+      userPrompt: "question"
+    });
+    expect(store.purgeExpired(1_770_000_000_011)).toBe(1);
+    expect(await tracker.lookup("channel-1", "1770000000.000100")).toBeUndefined();
   });
 
   it("acks expired feedback button clicks via response_url", async () => {
@@ -311,6 +376,114 @@ describe("SlackInteractionDispatcher", () => {
     ]);
   });
 });
+
+describe("Slack persistence stores", () => {
+  it("stores Slack bot instances and channel FAQ registrations in memory", async () => {
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const botStore = new InMemorySlackBotInstanceStore({ now: () => now });
+    const faqStore = new InMemoryChannelFaqRegistrationStore({ now: () => now });
+
+    await botStore.save({
+      appToken: "xapp-token",
+      botToken: "xoxb-token",
+      id: "bot-1",
+      name: "Support Bot",
+      personaId: "persona-1"
+    });
+    await faqStore.save({
+      autoReplyMode: "ALWAYS",
+      channelId: "channel-1",
+      channelName: "support",
+      registeredBy: "admin"
+    });
+    const updatedFaq = await faqStore.updateIngestResult({
+      channelId: "channel-1",
+      chunkCount: 3,
+      messageCount: 2,
+      status: "OK"
+    });
+
+    expect(await botStore.listEnabled()).toMatchObject([{ id: "bot-1", enabled: true }]);
+    expect(updatedFaq).toMatchObject({
+      channelId: "channel-1",
+      lastChunkCount: 3,
+      lastStatus: "OK"
+    });
+    expect(await faqStore.delete("channel-1")).toBe(true);
+  });
+
+  it("builds PostgreSQL upsert SQL and maps Slack persistence rows", () => {
+    const db = createPostgresBuilder();
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const bot = createSlackBotInstanceInsert({
+      appToken: "xapp-token",
+      botToken: "xoxb-token",
+      id: "bot-1",
+      name: "Support Bot",
+      personaId: "persona-1"
+    }, { now: () => now });
+    const faq = createChannelFaqRegistrationInsert({
+      autoReplyMode: "ALWAYS",
+      channelId: "channel-1",
+      channelName: "support",
+      registeredBy: "admin"
+    }, { now: () => now });
+    const responseTracking = createSlackResponseTrackingInsert({
+      channelId: "channel-1",
+      expiresAt: 1_770_086_400_000,
+      messageTs: "1770000000.000100",
+      response: "answer",
+      sessionId: "session-1",
+      userPrompt: "question"
+    }, { now: () => now });
+    const feedback = createSlackFeedbackEventInsert({
+      channelId: "channel-1",
+      createdAt: now,
+      id: "feedback-1",
+      messageTs: "1770000000.000100",
+      query: "question",
+      rating: "thumbs_up",
+      response: "answer",
+      sessionId: "session-1",
+      userId: "user-1"
+    });
+    const botUpsert = buildSlackBotInstanceUpsertQuery(db, mapSlackBotInstanceRow(bot), { now: () => now }).compile();
+    const faqUpsert = buildChannelFaqRegistrationUpsertQuery(db, mapChannelFaqRegistrationRow(faq), { now: () => now }).compile();
+
+    expect(botUpsert.sql).toContain('insert into "slack_bot_instances"');
+    expect(botUpsert.sql).toContain('on conflict ("id") do update');
+    expect(faqUpsert.sql).toContain('insert into "channel_faq_registrations"');
+    expect(faqUpsert.sql).toContain('on conflict ("channel_id") do update');
+    expect(mapSlackBotInstanceRow(bot)).toMatchObject({ id: "bot-1", name: "Support Bot" });
+    expect(mapChannelFaqRegistrationRow(faq)).toMatchObject({
+      autoReplyMode: "ALWAYS",
+      channelId: "channel-1"
+    });
+    expect(mapSlackResponseTrackingRow(responseTracking)).toMatchObject({
+      expiresAt: 1_770_086_400_000,
+      response: "answer",
+      sessionId: "session-1",
+      userPrompt: "question"
+    });
+    expect(mapSlackFeedbackEventRow(feedback)).toMatchObject({
+      channelId: "channel-1",
+      id: "feedback-1",
+      messageTs: "1770000000.000100",
+      rating: "thumbs_up"
+    });
+  });
+});
+
+function createPostgresBuilder(): Kysely<MuseDatabase> {
+  return new Kysely<MuseDatabase>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => new DummyDriver(),
+      createIntrospector: (db) => new PostgresIntrospector(db),
+      createQueryCompiler: () => new PostgresQueryCompiler()
+    }
+  });
+}
 
 describe("WebhookDispatcher", () => {
   it("dispatches matching lifecycle events with signatures", async () => {

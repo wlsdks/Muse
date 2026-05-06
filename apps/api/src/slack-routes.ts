@@ -10,6 +10,7 @@ import {
   type CommandEnvelope,
   type CommandHandler,
   type CommandResponse,
+  type SlackFeedbackEventStore,
   type SlackInteractionHandler,
   type SlackBotResponseTracker,
   type SlackMessageTransport,
@@ -26,6 +27,7 @@ export interface SlackRouteOptions {
   readonly botToken?: string;
   readonly interactionHandlers?: readonly SlackInteractionHandler[];
   readonly responseTracker?: SlackBotResponseTracker;
+  readonly feedbackStore?: SlackFeedbackEventStore;
   readonly messageTransport?: SlackMessageTransport;
   readonly responseTransport?: SlackResponseUrlTransport;
   readonly now?: () => Date;
@@ -181,11 +183,12 @@ async function dispatchSlashCommandResponse(
   });
 
   if (answer.ok && answer.ts) {
-    options.slack?.responseTracker?.track(
+    await options.slack?.responseTracker?.track(
       slashCommandTargetChannelId(envelope),
       answer.ts,
       `slack-${envelope.channelId ?? "unknown"}-${question.ts}`,
-      envelope.text
+      envelope.text,
+      response.text
     );
   }
 }
@@ -331,7 +334,13 @@ async function dispatchSlackEventResponse(
   });
 
   if (sent.ok && sent.ts) {
-    options.slack?.responseTracker?.track(channelId, sent.ts, `slack-${channelId}-${threadTs}`, envelope.text);
+    await options.slack?.responseTracker?.track(
+      channelId,
+      sent.ts,
+      `slack-${channelId}-${threadTs}`,
+      envelope.text,
+      response.text
+    );
   }
 }
 

@@ -92,6 +92,44 @@ export interface OpenAICompatibleProviderOptions {
   readonly models?: readonly string[];
 }
 
+export interface OpenAIProviderOptions extends Omit<OpenAICompatibleProviderOptions, "baseUrl" | "id"> {
+  readonly baseUrl?: string;
+  readonly id?: string;
+}
+
+export interface OpenRouterProviderOptions extends Omit<OpenAICompatibleProviderOptions, "baseUrl" | "id"> {
+  readonly appName?: string;
+  readonly baseUrl?: string;
+  readonly id?: string;
+  readonly siteUrl?: string;
+}
+
+export interface OllamaProviderOptions extends Omit<OpenAICompatibleProviderOptions, "apiKey" | "baseUrl" | "id"> {
+  readonly baseUrl?: string;
+  readonly id?: string;
+}
+
+export interface AnthropicProviderOptions {
+  readonly apiKey?: string;
+  readonly baseUrl?: string;
+  readonly defaultModel?: string;
+  readonly fetch?: typeof globalThis.fetch;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly id?: string;
+  readonly models?: readonly string[];
+  readonly version?: string;
+}
+
+export interface GeminiProviderOptions {
+  readonly apiKey?: string;
+  readonly baseUrl?: string;
+  readonly defaultModel?: string;
+  readonly fetch?: typeof globalThis.fetch;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly id?: string;
+  readonly models?: readonly string[];
+}
+
 export class ModelProviderError extends Error {
   readonly providerId: string;
   readonly retryable: boolean;
@@ -189,6 +227,196 @@ export class OpenAICompatibleProvider implements ModelProvider {
       ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
       ...this.headers
     };
+  }
+}
+
+export class OpenAIProvider extends OpenAICompatibleProvider {
+  constructor(options: OpenAIProviderOptions = {}) {
+    super({
+      ...options,
+      baseUrl: options.baseUrl ?? "https://api.openai.com/v1",
+      id: options.id ?? "openai"
+    });
+  }
+}
+
+export class OpenRouterProvider extends OpenAICompatibleProvider {
+  constructor(options: OpenRouterProviderOptions = {}) {
+    super({
+      ...options,
+      baseUrl: options.baseUrl ?? "https://openrouter.ai/api/v1",
+      headers: {
+        ...(options.siteUrl ? { "HTTP-Referer": options.siteUrl } : {}),
+        ...(options.appName ? { "X-Title": options.appName } : {}),
+        ...(options.headers ?? {})
+      },
+      id: options.id ?? "openrouter"
+    });
+  }
+}
+
+export class OllamaProvider extends OpenAICompatibleProvider {
+  constructor(options: OllamaProviderOptions = {}) {
+    super({
+      ...options,
+      baseUrl: options.baseUrl ?? "http://127.0.0.1:11434/v1",
+      id: options.id ?? "ollama"
+    });
+  }
+
+  override async listModels(): Promise<readonly ModelInfo[]> {
+    const models = await super.listModels();
+    return models.map((model) => ({
+      ...model,
+      capabilities: localModelCapabilities()
+    }));
+  }
+}
+
+export class AnthropicProvider implements ModelProvider {
+  readonly id: string;
+
+  private readonly apiKey?: string;
+  private readonly baseUrl: string;
+  private readonly defaultModel?: string;
+  private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly headers: Readonly<Record<string, string>>;
+  private readonly models: readonly string[];
+  private readonly version: string;
+
+  constructor(options: AnthropicProviderOptions = {}) {
+    this.id = options.id ?? "anthropic";
+    this.apiKey = options.apiKey;
+    this.baseUrl = (options.baseUrl ?? "https://api.anthropic.com/v1").replace(/\/+$/u, "");
+    this.defaultModel = options.defaultModel;
+    this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.headers = options.headers ?? {};
+    this.models = options.models ?? (options.defaultModel ? [options.defaultModel] : []);
+    this.version = options.version ?? "2023-06-01";
+  }
+
+  async listModels(): Promise<readonly ModelInfo[]> {
+    return this.models.map((modelId) => ({
+      capabilities: anthropicModelCapabilities(modelId),
+      displayName: modelId,
+      modelId,
+      providerId: this.id
+    }));
+  }
+
+  async generate(request: ModelRequest): Promise<ModelResponse> {
+    const response = await this.fetchImpl(`${this.baseUrl}/messages`, {
+      body: JSON.stringify(toAnthropicRequest(request, this.defaultModel)),
+      headers: this.requestHeaders(),
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new ModelProviderError(
+        this.id,
+        `Anthropic request failed with ${response.status}: ${body || response.statusText}`,
+        response.status >= 500
+      );
+    }
+
+    return fromAnthropicResponse(this.id, request.model, await response.json());
+  }
+
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const response = await this.generate(request);
+
+    if (response.output.length > 0) {
+      yield { text: response.output, type: "text-delta" };
+    }
+
+    for (const toolCall of response.toolCalls ?? []) {
+      yield { toolCall, type: "tool-call" };
+    }
+
+    yield { response, type: "done" };
+  }
+
+  private requestHeaders(): Record<string, string> {
+    return {
+      "anthropic-version": this.version,
+      "content-type": "application/json",
+      ...(this.apiKey ? { "x-api-key": this.apiKey } : {}),
+      ...this.headers
+    };
+  }
+}
+
+export class GeminiProvider implements ModelProvider {
+  readonly id: string;
+
+  private readonly apiKey?: string;
+  private readonly baseUrl: string;
+  private readonly defaultModel?: string;
+  private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly headers: Readonly<Record<string, string>>;
+  private readonly models: readonly string[];
+
+  constructor(options: GeminiProviderOptions = {}) {
+    this.id = options.id ?? "gemini";
+    this.apiKey = options.apiKey;
+    this.baseUrl = (options.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/u, "");
+    this.defaultModel = options.defaultModel;
+    this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.headers = options.headers ?? {};
+    this.models = options.models ?? (options.defaultModel ? [options.defaultModel] : []);
+  }
+
+  async listModels(): Promise<readonly ModelInfo[]> {
+    return this.models.map((modelId) => ({
+      capabilities: geminiModelCapabilities(modelId),
+      displayName: modelId,
+      modelId,
+      providerId: this.id
+    }));
+  }
+
+  async generate(request: ModelRequest): Promise<ModelResponse> {
+    const model = parseModelName(request.model || this.defaultModel || "").modelId;
+    const url = new URL(`${this.baseUrl}/models/${encodeURIComponent(model)}:generateContent`);
+
+    if (this.apiKey) {
+      url.searchParams.set("key", this.apiKey);
+    }
+
+    const response = await this.fetchImpl(url.toString(), {
+      body: JSON.stringify(toGeminiRequest(request)),
+      headers: {
+        "content-type": "application/json",
+        ...this.headers
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new ModelProviderError(
+        this.id,
+        `Gemini request failed with ${response.status}: ${body || response.statusText}`,
+        response.status >= 500
+      );
+    }
+
+    return fromGeminiResponse(this.id, model, await response.json());
+  }
+
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const response = await this.generate(request);
+
+    if (response.output.length > 0) {
+      yield { text: response.output, type: "text-delta" };
+    }
+
+    for (const toolCall of response.toolCalls ?? []) {
+      yield { toolCall, type: "tool-call" };
+    }
+
+    yield { response, type: "done" };
   }
 }
 
@@ -373,6 +601,199 @@ function toOpenAIChatRequest(request: ModelRequest, defaultModel: string | undef
       },
       type: "function"
     }))
+  };
+}
+
+function toAnthropicRequest(request: ModelRequest, defaultModel: string | undefined) {
+  const system = request.messages
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n\n");
+
+  return {
+    max_tokens: request.maxOutputTokens ?? 4096,
+    messages: request.messages
+      .filter((message) => message.role !== "system")
+      .map(toAnthropicMessage),
+    model: parseModelName(request.model || defaultModel || "").modelId,
+    ...(system.length > 0 ? { system } : {}),
+    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+    ...(request.tools && request.tools.length > 0 ? { tools: request.tools.map(toAnthropicTool) } : {})
+  };
+}
+
+function toAnthropicMessage(message: ModelMessage) {
+  if (message.role === "tool") {
+    return {
+      content: [{
+        content: message.content,
+        tool_use_id: message.toolCallId,
+        type: "tool_result"
+      }],
+      role: "user"
+    };
+  }
+
+  if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
+    return {
+      content: [
+        ...(message.content ? [{ text: message.content, type: "text" }] : []),
+        ...message.toolCalls.map((toolCall) => ({
+          id: toolCall.id,
+          input: toolCall.arguments,
+          name: toolCall.name,
+          type: "tool_use"
+        }))
+      ],
+      role: "assistant"
+    };
+  }
+
+  return {
+    content: message.content,
+    role: message.role === "assistant" ? "assistant" : "user"
+  };
+}
+
+function toAnthropicTool(tool: ModelTool) {
+  return {
+    description: tool.description,
+    input_schema: tool.inputSchema,
+    name: tool.name
+  };
+}
+
+function fromAnthropicResponse(providerId: string, requestedModel: string, payload: unknown): ModelResponse {
+  if (!isRecord(payload)) {
+    throw new ModelProviderError(providerId, "Anthropic response was not an object");
+  }
+
+  const content = Array.isArray(payload.content) ? payload.content : [];
+  const output = content
+    .map((part) => isRecord(part) && part.type === "text" && typeof part.text === "string" ? part.text : "")
+    .join("");
+  const toolCalls = content.flatMap((part, index): ModelToolCall[] => {
+    if (!isRecord(part) || part.type !== "tool_use" || typeof part.name !== "string") {
+      return [];
+    }
+
+    return [{
+      arguments: isJsonObject(part.input) ? part.input : {},
+      id: typeof part.id === "string" ? part.id : `tool_call_${index}`,
+      name: part.name
+    }];
+  });
+
+  return {
+    id: typeof payload.id === "string" ? payload.id : `${providerId}-response`,
+    model: typeof payload.model === "string" ? payload.model : requestedModel,
+    output,
+    raw: payload,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    usage: parseAnthropicUsage(payload.usage)
+  };
+}
+
+function toGeminiRequest(request: ModelRequest) {
+  return {
+    contents: request.messages
+      .filter((message) => message.role !== "system")
+      .map(toGeminiContent),
+    ...(request.maxOutputTokens || request.temperature !== undefined
+      ? {
+        generationConfig: {
+          maxOutputTokens: request.maxOutputTokens,
+          temperature: request.temperature
+        }
+      }
+      : {}),
+    ...(request.tools && request.tools.length > 0
+      ? {
+        tools: [{
+          functionDeclarations: request.tools.map((tool) => ({
+            description: tool.description,
+            name: tool.name,
+            parameters: tool.inputSchema
+          }))
+        }]
+      }
+      : {}),
+    ...(request.messages.some((message) => message.role === "system")
+      ? {
+        systemInstruction: {
+          parts: request.messages
+            .filter((message) => message.role === "system")
+            .map((message) => ({ text: message.content }))
+        }
+      }
+      : {})
+  };
+}
+
+function toGeminiContent(message: ModelMessage) {
+  if (message.role === "tool") {
+    return {
+      parts: [{
+        functionResponse: {
+          name: message.name ?? message.toolCallId ?? "tool",
+          response: { output: message.content }
+        }
+      }],
+      role: "function"
+    };
+  }
+
+  if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
+    return {
+      parts: [
+        ...(message.content ? [{ text: message.content }] : []),
+        ...message.toolCalls.map((toolCall) => ({
+          functionCall: {
+            args: toolCall.arguments,
+            name: toolCall.name
+          }
+        }))
+      ],
+      role: "model"
+    };
+  }
+
+  return {
+    parts: [{ text: message.content }],
+    role: message.role === "assistant" ? "model" : "user"
+  };
+}
+
+function fromGeminiResponse(providerId: string, model: string, payload: unknown): ModelResponse {
+  if (!isRecord(payload)) {
+    throw new ModelProviderError(providerId, "Gemini response was not an object");
+  }
+
+  const candidate = Array.isArray(payload.candidates) && isRecord(payload.candidates[0]) ? payload.candidates[0] : undefined;
+  const content = isRecord(candidate?.content) ? candidate.content : {};
+  const parts = Array.isArray(content.parts) ? content.parts : [];
+  const output = parts
+    .map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "")
+    .join("");
+  const toolCalls = parts.flatMap((part, index): ModelToolCall[] => {
+    if (!isRecord(part) || !isRecord(part.functionCall) || typeof part.functionCall.name !== "string") {
+      return [];
+    }
+
+    return [{
+      arguments: isJsonObject(part.functionCall.args) ? part.functionCall.args : {},
+      id: `gemini_tool_call_${index}`,
+      name: part.functionCall.name
+    }];
+  });
+
+  return {
+    id: typeof payload.responseId === "string" ? payload.responseId : `${providerId}-response`,
+    model,
+    output,
+    raw: payload,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    usage: parseGeminiUsage(payload.usageMetadata)
   };
 }
 
@@ -646,6 +1067,29 @@ function parseOpenAIUsage(value: unknown): ModelUsage | undefined {
   };
 }
 
+function parseAnthropicUsage(value: unknown): ModelUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    cachedInputTokens: readFiniteNumber(value, "cache_read_input_tokens"),
+    inputTokens: readFiniteNumber(value, "input_tokens"),
+    outputTokens: readFiniteNumber(value, "output_tokens")
+  };
+}
+
+function parseGeminiUsage(value: unknown): ModelUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    inputTokens: readFiniteNumber(value, "promptTokenCount"),
+    outputTokens: readFiniteNumber(value, "candidatesTokenCount")
+  };
+}
+
 function readFiniteNumber(value: unknown, key: string): number | undefined {
   return isRecord(value) && typeof value[key] === "number" && Number.isFinite(value[key])
     ? value[key]
@@ -665,6 +1109,43 @@ function defaultRemoteModelCapabilities(): ModelCapabilities {
     structuredOutput: true,
     toolCalling: true,
     vision: true
+  };
+}
+
+function localModelCapabilities(): ModelCapabilities {
+  return {
+    ...defaultRemoteModelCapabilities(),
+    cost: "free",
+    latencyProfile: "interactive",
+    local: true,
+    maxInputTokens: 32_768,
+    maxOutputTokens: 8_192,
+    promptCaching: false,
+    reasoning: false,
+    vision: false
+  };
+}
+
+function anthropicModelCapabilities(modelId: string): ModelCapabilities {
+  return {
+    ...defaultRemoteModelCapabilities(),
+    cost: "medium",
+    latencyProfile: "balanced",
+    maxInputTokens: 200_000,
+    promptCaching: true,
+    reasoning: modelId.includes("opus") || modelId.includes("sonnet"),
+    structuredOutput: false
+  };
+}
+
+function geminiModelCapabilities(modelId: string): ModelCapabilities {
+  return {
+    ...defaultRemoteModelCapabilities(),
+    cost: modelId.includes("flash") ? "low" : "medium",
+    latencyProfile: modelId.includes("flash") ? "interactive" : "balanced",
+    maxInputTokens: modelId.includes("1.5") || modelId.includes("2.") ? 1_000_000 : 128_000,
+    promptCaching: true,
+    reasoning: modelId.includes("pro")
   };
 }
 

@@ -1,15 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createAdminAlertInsert,
+  createAdminAuditInsert,
+  createAlertRuleInsert,
   createAdminCostUsageInsert,
+  createModelPricingInsert,
+  createMetricAuditTrailInsert,
   createAdminSloInsert,
   createAdminTenantInsert,
+  InMemoryAdminAuditStore,
   InMemoryAdminOperationsStore,
+  InMemoryMetricAuditEventStore,
   InMemoryCheckpointStore,
   InMemoryHookTraceStore,
   InMemoryPendingApprovalStore,
   mapAdminAlertRow,
+  mapAdminAuditRow,
+  mapAlertRuleRow,
   mapAdminCostUsageRow,
+  mapModelPricingRow,
+  mapMetricAuditTrailRow,
   mapAdminSloRow,
   mapAdminTenantRow
 } from "../src/index.js";
@@ -243,6 +253,47 @@ describe("InMemoryAdminOperationsStore", () => {
   });
 });
 
+describe("admin audit and metric event stores", () => {
+  it("stores bounded admin audits and metric events in memory", () => {
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const auditStore = new InMemoryAdminAuditStore({
+      idFactory: sequentialIds("audit"),
+      maxAudits: 1,
+      now: () => now
+    });
+    const metricStore = new InMemoryMetricAuditEventStore({
+      idFactory: sequentialIds("metric"),
+      now: () => now
+    });
+
+    auditStore.record({
+      action: "update",
+      actor: "admin-1",
+      category: "input_guard"
+    });
+    auditStore.record({
+      action: "simulate",
+      actor: "admin-1",
+      category: "input_guard"
+    });
+    metricStore.record({
+      kind: "eval-result",
+      payload: { pass: true },
+      tenantId: "tenant-1"
+    });
+
+    expect(auditStore.listRecent()).toMatchObject([{ action: "SIMULATE", id: "audit-2" }]);
+    expect(metricStore.listRecent()).toMatchObject([
+      {
+        id: "metric-1",
+        kind: "eval-result",
+        payload: { pass: true },
+        tenantId: "tenant-1"
+      }
+    ]);
+  });
+});
+
 describe("Kysely admin operation mapping", () => {
   it("creates and maps admin operation rows without private data", () => {
     const now = new Date("2026-01-01T00:00:00.000Z");
@@ -272,6 +323,50 @@ describe("Kysely admin operation mapping", () => {
       model: "provider/model",
       tenantId: "tenant-1"
     }, options);
+    const audit = createAdminAuditInsert({
+      action: "update",
+      actor: "admin-1",
+      category: "input_guard",
+      resourceId: "stage-1",
+      resourceType: "guard_stage"
+    }, {
+      idFactory: () => "admin-audit-1",
+      now: () => now
+    });
+    const metric = createMetricAuditTrailInsert({
+      createdAt: now,
+      id: "metric-event-1",
+      kind: "eval-result",
+      payload: { pass: true },
+      tenantId: "tenant-1"
+    });
+    const pricing = createModelPricingInsert({
+      batchCompletionPricePer1k: 0,
+      batchPromptPricePer1k: 0,
+      cachedInputPricePer1k: 0,
+      completionPricePer1k: 0.2,
+      effectiveFrom: now.toISOString(),
+      effectiveTo: null,
+      id: "provider:model-a",
+      model: "model-a",
+      promptPricePer1k: 0.1,
+      provider: "provider",
+      reasoningPricePer1k: 0
+    });
+    const rule = createAlertRuleInsert({
+      createdAt: now.toISOString(),
+      description: "Latency above target",
+      enabled: true,
+      id: "rule-1",
+      metric: "latency_p95_ms",
+      name: "Latency",
+      platformOnly: true,
+      severity: "WARNING",
+      tenantId: null,
+      threshold: 1000,
+      type: "STATIC_THRESHOLD",
+      windowMinutes: 15
+    });
 
     expect(mapAdminTenantRow(tenant)).toMatchObject({ id: "tenant-1", monthlyBudgetUsd: "100.00000000" });
     expect(mapAdminAlertRow(alert)).toMatchObject({ id: "alert-1", status: "open", target: "tenant-1" });
@@ -280,6 +375,29 @@ describe("Kysely admin operation mapping", () => {
       costUsd: "1.25000000",
       model: "provider/model",
       tenantId: "tenant-1"
+    });
+    expect(mapAdminAuditRow(audit)).toMatchObject({
+      action: "UPDATE",
+      actor: "admin-1",
+      id: "admin-audit-1",
+      resourceId: "stage-1"
+    });
+    expect(mapMetricAuditTrailRow(metric)).toMatchObject({
+      id: "metric-event-1",
+      kind: "eval-result",
+      payload: { pass: true },
+      tenantId: "tenant-1"
+    });
+    expect(mapModelPricingRow(pricing)).toMatchObject({
+      id: "provider:model-a",
+      model: "model-a",
+      provider: "provider",
+      promptPricePer1k: 0.1
+    });
+    expect(mapAlertRuleRow(rule)).toMatchObject({
+      id: "rule-1",
+      metric: "latency_p95_ms",
+      platformOnly: true
     });
   });
 });

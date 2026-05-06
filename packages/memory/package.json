@@ -17,6 +17,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@muse/model": "workspace:*"
+    "@muse/db": "workspace:*",
+    "@muse/model": "workspace:*",
+    "kysely": "^0.28.17"
   }
 }

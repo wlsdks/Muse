@@ -26,17 +26,42 @@ import {
   type AgentSpecRegistry
 } from "@muse/agent-specs";
 import {
+  AsyncAuthService,
   AuthService,
   DefaultAuthProvider,
   InMemoryTokenRevocationStore,
   InMemoryUserStore,
-  JwtTokenProvider
+  KyselyAuthProvider,
+  KyselyTokenRevocationStore,
+  KyselyUserStore,
+  JwtTokenProvider,
+  type MuseAuthService
 } from "@muse/auth";
 import {
   InMemoryCacheMetricsRecorder,
   InMemoryCacheStatsStore,
   InMemoryResponseCache
 } from "@muse/cache";
+import {
+  InMemoryAgentEvalStore,
+  KyselyAgentEvalStore,
+  type AgentEvalStore
+} from "@muse/eval";
+import {
+  InMemoryChannelFaqRegistrationStore,
+  InMemorySlackFeedbackEventStore,
+  InMemorySlackBotInstanceStore,
+  InMemorySlackResponseTrackerStore,
+  KyselyChannelFaqRegistrationStore,
+  KyselySlackFeedbackEventStore,
+  KyselySlackBotInstanceStore,
+  KyselySlackResponseTrackerStore,
+  SlackBotResponseTracker,
+  type ChannelFaqRegistrationStore,
+  type SlackFeedbackEventStore,
+  type SlackBotInstanceStore,
+  type SlackResponseTrackerStore
+} from "@muse/integrations";
 import {
   DefaultMcpTransportConnector,
   InMemoryMcpSecurityPolicyStore,
@@ -49,10 +74,64 @@ import {
   type McpSecurityPolicyStore,
   type McpServerStore
 } from "@muse/mcp";
-import { InMemoryTaskMemoryStore } from "@muse/memory";
-import { OpenAICompatibleProvider, type ModelProvider } from "@muse/model";
-import { InMemoryAgentMetrics, InMemoryFollowupSuggestionStore, InMemoryMuseTracer } from "@muse/observability";
+import {
+  InMemoryTaskMemoryStore,
+  InMemoryConversationSummaryStore,
+  InMemoryUserMemoryStore,
+  KyselyConversationSummaryStore,
+  KyselyTaskMemoryStore,
+  KyselyUserMemoryStore,
+  type ConversationSummaryStore,
+  type TaskMemoryMaintenance,
+  type TaskMemoryStore,
+  type UserMemoryStore
+} from "@muse/memory";
+import {
+  AnthropicProvider,
+  GeminiProvider,
+  OllamaProvider,
+  OpenAICompatibleProvider,
+  OpenAIProvider,
+  OpenRouterProvider,
+  parseModelName,
+  type ModelProvider
+} from "@muse/model";
+import {
+  InMemoryRagIngestionCandidateStore,
+  InMemoryRagIngestionPolicyStore,
+  KyselyRagIngestionCandidateStore,
+  KyselyRagIngestionPolicyStore,
+  type RagIngestionCandidateStore,
+  type RagIngestionPolicyStore
+} from "@muse/rag";
+import {
+  InMemoryAgentMetrics,
+  InMemoryFollowupSuggestionStore,
+  InMemoryMuseTracer,
+  KyselyTraceEventSink,
+  PersistedMuseTracer,
+  type MuseTracer
+} from "@muse/observability";
 import { CircuitBreakerRegistry } from "@muse/resilience";
+import {
+  InMemoryGuardRuleStore,
+  InMemoryToolPolicyStore,
+  KyselyGuardRuleStore,
+  KyselyToolPolicyStore,
+  type GuardRuleStore,
+  type ToolPolicyStore
+} from "@muse/policy";
+import {
+  InMemoryFeedbackStore,
+  InMemoryPromptLabCatalogStore,
+  InMemoryPromptLabExperimentStore,
+  KyselyFeedbackStore,
+  KyselyPromptLabCatalogStore,
+  KyselyPromptLabExperimentStore,
+  type FeedbackStore,
+  type PromptLabCatalogStore,
+  type PromptLabExperimentStore
+} from "@muse/promptlab";
 import {
   InMemoryRuntimeSettingsStore,
   KyselyRuntimeSettingsStore,
@@ -60,18 +139,33 @@ import {
   type RuntimeSettingsStore
 } from "@muse/runtime-settings";
 import {
+  InMemoryAdminAuditStore,
   InMemoryAdminOperationsStore,
   InMemoryAgentRunHistoryStore,
   InMemoryHookTraceStore,
+  InMemoryMetricAuditEventStore,
   InMemoryPendingApprovalStore,
+  InMemoryPlatformAlertRuleStore,
+  InMemoryPlatformPricingStore,
+  InMemorySessionTagStore,
+  KyselyAdminAuditStore,
   KyselyAdminOperationsStore,
   KyselyAgentRunHistoryStore,
   KyselyHookTraceStore,
+  KyselyMetricAuditEventStore,
   KyselyPendingApprovalStore,
+  KyselyPlatformAlertRuleStore,
+  KyselyPlatformPricingStore,
+  KyselySessionTagStore,
+  type AdminAuditStore,
   type AdminOperationsStore,
   type AgentRunHistoryStore,
   type HookTraceStore,
-  type PendingApprovalStore
+  type MetricAuditEventStore,
+  type PendingApprovalStore,
+  type PlatformAlertRuleStore,
+  type PlatformPricingStore,
+  type SessionTagStore
 } from "@muse/runtime-state";
 import {
   DynamicSchedulerService,
@@ -89,7 +183,7 @@ import {
   type ScheduledJobExecutionStore,
   type ScheduledJobStore
 } from "@muse/scheduler";
-import { ToolRegistry, type MuseTool } from "@muse/tools";
+import { createRustRunnerTool, ToolRegistry, type MuseTool } from "@muse/tools";
 import type { MuseDatabase } from "@muse/db";
 import type { Kysely } from "kysely";
 
@@ -100,7 +194,7 @@ export interface MuseEnvironment {
 export interface MuseRuntimeAssembly {
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
-  readonly authService?: AuthService;
+  readonly authService?: MuseAuthService;
   readonly cache: {
     readonly metrics: InMemoryCacheMetricsRecorder;
     readonly responseCache: InMemoryResponseCache;
@@ -109,6 +203,7 @@ export interface MuseRuntimeAssembly {
   readonly defaultModel?: string;
   readonly historyStore: AgentRunHistoryStore;
   readonly hookTraceStore: HookTraceStore;
+  readonly adminAuditStore: AdminAuditStore;
   readonly adminOperationsStore: AdminOperationsStore;
   readonly approvalStore: PendingApprovalStore;
   readonly mcp: {
@@ -118,11 +213,27 @@ export interface MuseRuntimeAssembly {
     readonly serverStore: McpServerStore;
   };
   readonly modelProvider?: ModelProvider;
-  readonly taskMemoryStore: InMemoryTaskMemoryStore;
+  readonly metricAuditEventStore: MetricAuditEventStore;
+  readonly agentEvalStore: AgentEvalStore;
+  readonly feedbackStore: FeedbackStore;
+  readonly promptLabCatalogStore: PromptLabCatalogStore;
+  readonly promptLabExperimentStore: PromptLabExperimentStore;
+  readonly platformAlertRuleStore: PlatformAlertRuleStore;
+  readonly platformPricingStore: PlatformPricingStore;
+  readonly conversationSummaryStore: ConversationSummaryStore;
+  readonly sessionTagStore: SessionTagStore;
+  readonly taskMemoryStore: TaskMemoryStore & TaskMemoryMaintenance;
+  readonly userMemoryStore: UserMemoryStore;
+  readonly guardRuleStore: GuardRuleStore;
+  readonly toolPolicyStore: ToolPolicyStore;
   readonly observability: {
     readonly followupSuggestionStore: InMemoryFollowupSuggestionStore;
     readonly metrics: InMemoryAgentMetrics;
-    readonly tracer: InMemoryMuseTracer;
+    readonly tracer: MuseTracer;
+  };
+  readonly ragIngestion: {
+    readonly candidateStore: RagIngestionCandidateStore;
+    readonly policyStore: RagIngestionPolicyStore;
   };
   readonly requireAuth: boolean;
   readonly resilience: {
@@ -133,6 +244,12 @@ export interface MuseRuntimeAssembly {
     readonly executionStore: ScheduledJobExecutionStore;
     readonly service: DynamicSchedulerService;
     readonly store: ScheduledJobStore;
+  };
+  readonly slackPersistence: {
+    readonly botStore: SlackBotInstanceStore;
+    readonly faqStore: ChannelFaqRegistrationStore;
+    readonly feedbackStore: SlackFeedbackEventStore;
+    readonly responseTrackerStore: SlackResponseTrackerStore;
   };
   readonly toolRegistry: ToolRegistry;
 }
@@ -152,13 +269,20 @@ export class ConfigurationError extends Error {
 export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}): MuseRuntimeAssembly {
   const env = options.env ?? process.env;
   const db = options.db;
-  const userStore = new InMemoryUserStore(parseInteger(env.MUSE_AUTH_MAX_USERS, 10_000));
-  const authService = createAuthService(env, userStore);
+  const authService = createAuthService(env, db);
   const agentSpecRegistry = db ? new KyselyAgentSpecRegistry(db) : new InMemoryAgentSpecRegistry();
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
   const historyStore = createHistoryStore(db);
   const hookTraceStore = createHookTraceStore(db, env);
+  const adminAuditStore = createAdminAuditStore(db);
   const adminOperationsStore = createAdminOperationsStore(db);
+  const metricAuditEventStore = createMetricAuditEventStore(db);
+  const agentEvalStore = createAgentEvalStore(db);
+  const feedbackStore = createFeedbackStore(db);
+  const promptLabCatalogStore = createPromptLabCatalogStore(db);
+  const promptLabExperimentStore = createPromptLabExperimentStore(db);
+  const platformAlertRuleStore = createPlatformAlertRuleStore(db);
+  const platformPricingStore = createPlatformPricingStore(db);
   const approvalStore = createApprovalStore(db, env);
   const cacheStatsStore = new InMemoryCacheStatsStore();
   const cacheMetrics = new InMemoryCacheMetricsRecorder(cacheStatsStore);
@@ -171,16 +295,24 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     maxEvents: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_MAX_EVENTS, 50_000),
     retentionMs: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_RETENTION_MS, 72 * 60 * 60 * 1000)
   });
-  const tracer = new InMemoryMuseTracer();
+  const tracer = createTracer(db);
   const circuitBreakerRegistry = new CircuitBreakerRegistry({
     failureThreshold: parseInteger(env.MUSE_CIRCUIT_BREAKER_FAILURE_THRESHOLD, 5),
     resetTimeoutMs: parseInteger(env.MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS, 30_000)
   });
   const modelProvider = createModelProvider(env);
-  const taskMemoryStore = new InMemoryTaskMemoryStore({
-    maxTasks: parseInteger(env.MUSE_TASK_MEMORY_MAX_TASKS, 10_000),
-    retentionMs: parseInteger(env.MUSE_TASK_MEMORY_RETENTION_MS, 30 * 24 * 60 * 60 * 1_000)
-  });
+  const conversationSummaryStore = createConversationSummaryStore(db);
+  const taskMemoryStore = createTaskMemoryStore(db, env);
+  const userMemoryStore = createUserMemoryStore(db);
+  const sessionTagStore = createSessionTagStore(db);
+  const guardRuleStore = createGuardRuleStore(db);
+  const toolPolicyStore = createToolPolicyStore(db);
+  const ragIngestionPolicyStore = createRagIngestionPolicyStore(db);
+  const ragIngestionCandidateStore = createRagIngestionCandidateStore(db);
+  const slackBotStore = createSlackBotInstanceStore(db);
+  const channelFaqRegistrationStore = createChannelFaqRegistrationStore(db);
+  const slackFeedbackStore = createSlackFeedbackEventStore(db);
+  const slackResponseTrackerStore = createSlackResponseTrackerStore(db);
   const defaultModel = parseOptionalString(env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL);
   const mcpServerStore = createMcpServerStore(db, env);
   const initialMcpPolicy = {
@@ -207,7 +339,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     },
     securityPolicyProvider: mcpSecurityPolicyProvider
   });
-  const toolRegistry = new DynamicToolRegistry([() => mcpManager.toMuseTools()]);
+  const runnerTools = createRunnerTools(env);
+  const toolRegistry = new DynamicToolRegistry([() => runnerTools, () => mcpManager.toMuseTools()]);
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
@@ -262,6 +395,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     defaultModel,
     historyStore,
     hookTraceStore,
+    adminAuditStore,
     adminOperationsStore,
     approvalStore,
     mcp: {
@@ -271,11 +405,27 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       serverStore: mcpServerStore
     },
     modelProvider,
+    metricAuditEventStore,
+    agentEvalStore,
+    feedbackStore,
+    promptLabCatalogStore,
+    promptLabExperimentStore,
+    platformAlertRuleStore,
+    platformPricingStore,
+    conversationSummaryStore,
+    sessionTagStore,
     taskMemoryStore,
+    userMemoryStore,
+    guardRuleStore,
+    toolPolicyStore,
     observability: {
       followupSuggestionStore,
       metrics: agentMetrics,
       tracer
+    },
+    ragIngestion: {
+      candidateStore: ragIngestionCandidateStore,
+      policyStore: ragIngestionPolicyStore
     },
     requireAuth: parseBoolean(env.MUSE_REQUIRE_AUTH, Boolean(authService)),
     resilience: {
@@ -287,12 +437,22 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       executionStore: schedulerExecutionStore,
       service: schedulerService,
       store: schedulerStore
+    },
+    slackPersistence: {
+      botStore: slackBotStore,
+      faqStore: channelFaqRegistrationStore,
+      feedbackStore: slackFeedbackStore,
+      responseTrackerStore: slackResponseTrackerStore
     }
   };
 }
 
 function createHistoryStore(db: Kysely<MuseDatabase> | undefined): AgentRunHistoryStore {
   return db ? new KyselyAgentRunHistoryStore(db) : new InMemoryAgentRunHistoryStore();
+}
+
+function createTracer(db: Kysely<MuseDatabase> | undefined): MuseTracer {
+  return db ? new PersistedMuseTracer(new KyselyTraceEventSink(db)) : new InMemoryMuseTracer();
 }
 
 function createApprovalStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): PendingApprovalStore {
@@ -312,8 +472,62 @@ function createAdminOperationsStore(db: Kysely<MuseDatabase> | undefined): Admin
   return db ? new KyselyAdminOperationsStore(db) : new InMemoryAdminOperationsStore();
 }
 
+function createAdminAuditStore(db: Kysely<MuseDatabase> | undefined): AdminAuditStore {
+  return db ? new KyselyAdminAuditStore(db) : new InMemoryAdminAuditStore();
+}
+
+function createMetricAuditEventStore(db: Kysely<MuseDatabase> | undefined): MetricAuditEventStore {
+  return db ? new KyselyMetricAuditEventStore(db) : new InMemoryMetricAuditEventStore();
+}
+
+function createAgentEvalStore(db: Kysely<MuseDatabase> | undefined): AgentEvalStore {
+  return db ? new KyselyAgentEvalStore(db) : new InMemoryAgentEvalStore();
+}
+
+function createFeedbackStore(db: Kysely<MuseDatabase> | undefined): FeedbackStore {
+  return db ? new KyselyFeedbackStore(db) : new InMemoryFeedbackStore();
+}
+
+function createPromptLabExperimentStore(db: Kysely<MuseDatabase> | undefined): PromptLabExperimentStore {
+  return db ? new KyselyPromptLabExperimentStore(db) : new InMemoryPromptLabExperimentStore();
+}
+
+function createPromptLabCatalogStore(db: Kysely<MuseDatabase> | undefined): PromptLabCatalogStore {
+  return db ? new KyselyPromptLabCatalogStore(db) : new InMemoryPromptLabCatalogStore();
+}
+
+function createPlatformPricingStore(db: Kysely<MuseDatabase> | undefined): PlatformPricingStore {
+  return db ? new KyselyPlatformPricingStore(db) : new InMemoryPlatformPricingStore();
+}
+
+function createPlatformAlertRuleStore(db: Kysely<MuseDatabase> | undefined): PlatformAlertRuleStore {
+  return db ? new KyselyPlatformAlertRuleStore(db) : new InMemoryPlatformAlertRuleStore();
+}
+
 function createRuntimeSettingsStore(db: Kysely<MuseDatabase> | undefined): RuntimeSettingsStore {
   return db ? new KyselyRuntimeSettingsStore(db) : new InMemoryRuntimeSettingsStore();
+}
+
+function createTaskMemoryStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): InMemoryTaskMemoryStore | KyselyTaskMemoryStore {
+  const retentionMs = parseInteger(env.MUSE_TASK_MEMORY_RETENTION_MS, 30 * 24 * 60 * 60 * 1_000);
+  return db
+    ? new KyselyTaskMemoryStore(db, { retentionMs })
+    : new InMemoryTaskMemoryStore({
+      maxTasks: parseInteger(env.MUSE_TASK_MEMORY_MAX_TASKS, 10_000),
+      retentionMs
+    });
+}
+
+function createConversationSummaryStore(db: Kysely<MuseDatabase> | undefined): ConversationSummaryStore {
+  return db ? new KyselyConversationSummaryStore(db) : new InMemoryConversationSummaryStore();
+}
+
+function createUserMemoryStore(db: Kysely<MuseDatabase> | undefined): UserMemoryStore {
+  return db ? new KyselyUserMemoryStore(db) : new InMemoryUserMemoryStore();
+}
+
+function createSessionTagStore(db: Kysely<MuseDatabase> | undefined): SessionTagStore {
+  return db ? new KyselySessionTagStore(db) : new InMemorySessionTagStore();
 }
 
 function createMcpServerStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): McpServerStore {
@@ -364,14 +578,22 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
         responseCache: assembly.cache.responseCache
       },
       observability: assembly.observability,
+      auditStore: assembly.adminAuditStore,
+      alertRuleStore: assembly.platformAlertRuleStore,
+      metricEventStore: assembly.metricAuditEventStore,
       operations: assembly.adminOperationsStore,
+      pricingStore: assembly.platformPricingStore,
       resilience: assembly.resilience
     },
     agentRuntime: assembly.agentRuntime,
     agentSpecRegistry: assembly.agentSpecRegistry,
+    agentEvalStore: assembly.agentEvalStore,
     authService: assembly.authService,
     pendingApprovalStore: assembly.approvalStore,
     defaultModel: assembly.defaultModel,
+    feedbackStore: assembly.feedbackStore,
+    promptLabCatalogStore: assembly.promptLabCatalogStore,
+    promptLabExperimentStore: assembly.promptLabExperimentStore,
     followupSuggestionStore: assembly.observability.followupSuggestionStore,
     historyStore: assembly.historyStore,
     mcp: {
@@ -381,15 +603,57 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     },
     modelProvider: assembly.modelProvider,
     requireAuth: assembly.requireAuth,
+    ragIngestion: assembly.ragIngestion,
     runtimeSettings: assembly.runtimeSettings,
     scheduler: assembly.scheduler,
+    slackPersistence: assembly.slackPersistence,
+    sessionTagStore: assembly.sessionTagStore,
     taskMemoryMaintenance: assembly.taskMemoryStore,
+    guardRuleStore: assembly.guardRuleStore,
+    toolPolicyStore: assembly.toolPolicyStore,
+    userMemoryStore: assembly.userMemoryStore,
     slack: {
       botToken: parseOptionalString(env.MUSE_SLACK_BOT_TOKEN),
       enabled: parseBoolean(env.MUSE_SLACK_ENABLED, false),
+      feedbackStore: assembly.slackPersistence.feedbackStore,
+      responseTracker: new SlackBotResponseTracker({ store: assembly.slackPersistence.responseTrackerStore }),
       signingSecret: parseOptionalString(env.MUSE_SLACK_SIGNING_SECRET)
     }
   };
+}
+
+function createToolPolicyStore(db: Kysely<MuseDatabase> | undefined): ToolPolicyStore {
+  return db ? new KyselyToolPolicyStore(db) : new InMemoryToolPolicyStore();
+}
+
+function createGuardRuleStore(db: Kysely<MuseDatabase> | undefined): GuardRuleStore {
+  return db ? new KyselyGuardRuleStore(db) : new InMemoryGuardRuleStore();
+}
+
+function createRagIngestionPolicyStore(db: Kysely<MuseDatabase> | undefined): RagIngestionPolicyStore {
+  return db ? new KyselyRagIngestionPolicyStore(db) : new InMemoryRagIngestionPolicyStore();
+}
+
+function createRagIngestionCandidateStore(db: Kysely<MuseDatabase> | undefined): RagIngestionCandidateStore {
+  return db ? new KyselyRagIngestionCandidateStore(db) : new InMemoryRagIngestionCandidateStore();
+}
+
+function createSlackBotInstanceStore(db: Kysely<MuseDatabase> | undefined): SlackBotInstanceStore {
+  return db ? new KyselySlackBotInstanceStore(db) : new InMemorySlackBotInstanceStore();
+}
+
+function createChannelFaqRegistrationStore(db: Kysely<MuseDatabase> | undefined): ChannelFaqRegistrationStore {
+  return db ? new KyselyChannelFaqRegistrationStore(db) : new InMemoryChannelFaqRegistrationStore();
+}
+
+function createSlackFeedbackEventStore(db: Kysely<MuseDatabase> | undefined): SlackFeedbackEventStore {
+  return db ? new KyselySlackFeedbackEventStore(db) : new InMemorySlackFeedbackEventStore();
+}
+
+function createSlackResponseTrackerStore(
+  db: Kysely<MuseDatabase> | undefined
+): SlackResponseTrackerStore {
+  return db ? new KyselySlackResponseTrackerStore(db) : new InMemorySlackResponseTrackerStore();
 }
 
 export function requireEnv(env: MuseEnvironment, key: string): string {
@@ -423,17 +687,66 @@ function createModelProvider(env: MuseEnvironment): ModelProvider | undefined {
   const defaultModel = parseOptionalString(env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL);
   const baseUrl = parseOptionalString(env.MUSE_MODEL_BASE_URL);
 
-  if (!defaultModel || !baseUrl) {
+  if (!defaultModel) {
     return undefined;
   }
 
-  return new OpenAICompatibleProvider({
-    apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.OPENAI_API_KEY),
-    baseUrl,
-    defaultModel,
-    id: parseOptionalString(env.MUSE_MODEL_PROVIDER_ID) ?? "openai-compatible",
-    models: parseCsv(env.MUSE_MODEL_LIST) ?? [defaultModel]
-  });
+  const explicitProviderId = parseOptionalString(env.MUSE_MODEL_PROVIDER_ID);
+  const providerId = explicitProviderId
+    ?? (baseUrl ? "openai-compatible" : parseModelName(defaultModel).providerId)
+    ?? "openai-compatible";
+  const models = parseCsv(env.MUSE_MODEL_LIST) ?? [parseModelName(defaultModel).modelId];
+
+  switch (providerId) {
+    case "anthropic":
+      return new AnthropicProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.ANTHROPIC_API_KEY),
+        baseUrl,
+        defaultModel,
+        models
+      });
+    case "gemini":
+      return new GeminiProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY),
+        baseUrl,
+        defaultModel,
+        models
+      });
+    case "ollama":
+      return new OllamaProvider({
+        baseUrl,
+        defaultModel,
+        models
+      });
+    case "openai":
+      return new OpenAIProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.OPENAI_API_KEY),
+        baseUrl,
+        defaultModel,
+        models
+      });
+    case "openrouter":
+      return new OpenRouterProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.OPENROUTER_API_KEY),
+        appName: parseOptionalString(env.MUSE_APP_NAME) ?? "Muse",
+        baseUrl,
+        defaultModel,
+        models,
+        siteUrl: parseOptionalString(env.MUSE_SITE_URL)
+      });
+    default:
+      if (!baseUrl) {
+        return undefined;
+      }
+
+      return new OpenAICompatibleProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.OPENAI_API_KEY),
+        baseUrl,
+        defaultModel,
+        id: providerId,
+        models
+      });
+  }
 }
 
 function createScheduledAgentExecutor(
@@ -537,6 +850,18 @@ function createToolApprovalPolicy(env: MuseEnvironment) {
   };
 }
 
+function createRunnerTools(env: MuseEnvironment): readonly MuseTool[] {
+  if (!parseBoolean(env.MUSE_RUNNER_ENABLED, false)) {
+    return [];
+  }
+
+  return [
+    createRustRunnerTool({
+      runnerPath: parseOptionalString(env.MUSE_RUNNER_PATH) ?? "muse-runner"
+    })
+  ];
+}
+
 function parseCsv(value: string | undefined): readonly string[] | undefined {
   const entries = value
     ?.split(",")
@@ -551,21 +876,35 @@ function parseOptionalString(value: string | undefined): string | undefined {
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
-function createAuthService(env: MuseEnvironment, userStore: InMemoryUserStore): AuthService | undefined {
+function createAuthService(env: MuseEnvironment, db: Kysely<MuseDatabase> | undefined): MuseAuthService | undefined {
   const jwtSecret = env.MUSE_AUTH_JWT_SECRET?.trim();
 
   if (!jwtSecret) {
     return undefined;
   }
 
+  const jwt = new JwtTokenProvider({
+    defaultTenantId: env.MUSE_DEFAULT_TENANT_ID ?? "default",
+    jwtExpirationMs: parseInteger(env.MUSE_AUTH_JWT_EXPIRATION_MS, 86_400_000),
+    jwtSecret
+  });
+
+  if (db) {
+    const userStore = new KyselyUserStore(db);
+    const provider = new KyselyAuthProvider(userStore);
+    return new AsyncAuthService({
+      authProvider: provider,
+      jwt,
+      revocationStore: new KyselyTokenRevocationStore(db),
+      userStore
+    });
+  }
+
+  const userStore = new InMemoryUserStore(parseInteger(env.MUSE_AUTH_MAX_USERS, 10_000));
   const provider = new DefaultAuthProvider(userStore);
   return new AuthService({
     authProvider: provider,
-    jwt: new JwtTokenProvider({
-      defaultTenantId: env.MUSE_DEFAULT_TENANT_ID ?? "default",
-      jwtExpirationMs: parseInteger(env.MUSE_AUTH_JWT_EXPIRATION_MS, 86_400_000),
-      jwtSecret
-    }),
+    jwt,
     revocationStore: new InMemoryTokenRevocationStore(),
     userStore
   });

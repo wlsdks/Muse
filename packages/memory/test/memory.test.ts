@@ -1,11 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
+import type { MuseDatabase } from "@muse/db";
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler
+} from "kysely";
 import {
   COMPACTION_SUMMARY_PREFIX,
   COMPACTION_PINNED_ENTITIES_PREFIX,
+  buildActiveTaskMemoryQuery,
+  buildConversationSummaryUpsertQuery,
+  buildTaskMemoryUpsertQuery,
   computeApproximateTokens,
+  createConversationSummaryInsert,
+  createUserMemoryInsert,
+  createTaskMemoryInsert,
   createApproximateTokenEstimator,
   estimateConversationTokens,
+  InMemoryConversationSummaryStore,
   InMemoryTaskMemoryStore,
+  InMemoryUserMemoryStore,
+  mapConversationSummaryRow,
+  mapTaskMemoryRow,
+  mapUserMemoryRow,
   trimConversationMessages,
   type ConversationMessage,
   type TokenEstimator
@@ -116,6 +135,42 @@ describe("conversation trimming", () => {
     );
 
     expect(result.messages).toEqual([user("latest")]);
+  });
+
+  it("preserves multiple assistant tool responses as one intact exchange", () => {
+    const messages = [
+      user("keep"),
+      assistantMultiTool(["search", "lookup"]),
+      toolFor("call-search", "search result"),
+      toolFor("call-lookup", "lookup result")
+    ];
+    const result = trimConversationMessages(messages, {
+      estimator: lengthEstimator,
+      maxContextWindowTokens: 200,
+      outputReserveTokens: 0
+    });
+
+    expect(result.messages).toEqual(messages);
+  });
+
+  it("removes multi-tool assistant exchanges deterministically as a full group", () => {
+    const messages = [
+      assistantMultiTool(["search", "lookup"]),
+      toolFor("call-search", "old search result ".repeat(5)),
+      toolFor("call-lookup", "old lookup result ".repeat(5)),
+      user("latest")
+    ];
+    const options = {
+      estimator: lengthEstimator,
+      insertSummary: false,
+      maxContextWindowTokens: 30,
+      outputReserveTokens: 0
+    };
+    const first = trimConversationMessages(messages, options);
+    const second = trimConversationMessages(messages, options);
+
+    expect(first.messages).toEqual([user("latest")]);
+    expect(second).toEqual(first);
   });
 
   it("removes orphan tool responses after all trim phases", () => {
@@ -293,6 +348,172 @@ describe("task memory store", () => {
     expect(await store.purgeExpired(new Date("2026-01-01T00:00:01.001Z"))).toBe(1);
     expect(await store.findById("expired-task")).toBeUndefined();
   });
+
+  it("builds PostgreSQL upsert SQL for Kysely task memory", () => {
+    const db = createPostgresBuilder();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const query = buildTaskMemoryUpsertQuery(
+      db,
+      {
+        decisions: [{ decidedAt: now, summary: "Use Kysely" }],
+        goal: "Persist task memory",
+        metadata: { source: "test" },
+        plan: [{ status: "in_progress", step: "write store" }],
+        sessionId: "session-1",
+        taskId: "task-1",
+        updatedAt: now,
+        userId: "user-1"
+      },
+      { now: () => now, retentionMs: 1_000 }
+    ).compile();
+
+    expect(query.sql).toContain('insert into "task_memories"');
+    expect(query.sql).toContain('on conflict ("task_id") do update');
+    expect(query.sql).toContain("returning *");
+    expect(query.parameters).toContain("task-1");
+    expect(query.parameters).toContain("session-1");
+  });
+
+  it("builds active task memory lookup SQL and maps rows", () => {
+    const db = createPostgresBuilder();
+    const compiled = buildActiveTaskMemoryQuery(db, "session-1", "user-1").compile();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const insert = createTaskMemoryInsert(
+      {
+        blockers: [{ description: "blocked" }],
+        goal: "Persist task memory",
+        sessionId: "session-1",
+        status: "blocked",
+        taskId: "task-1",
+        updatedAt: now,
+        userId: "user-1"
+      },
+      { now: () => now, retentionMs: 1_000 }
+    );
+
+    expect(compiled.sql).toContain('from "task_memories"');
+    expect(compiled.sql).toContain('"session_id" = $1');
+    expect(compiled.sql).toContain('"user_id" = $4');
+    expect(compiled.parameters).toEqual(["session-1", "active", "blocked", "user-1", 1]);
+    expect(mapTaskMemoryRow(insert)).toMatchObject({
+      blockers: [{ description: "blocked" }],
+      goal: "Persist task memory",
+      sessionId: "session-1",
+      status: "blocked",
+      taskId: "task-1",
+      userId: "user-1"
+    });
+  });
+});
+
+describe("user memory store", () => {
+  it("updates facts and preferences in memory", async () => {
+    const store = new InMemoryUserMemoryStore();
+
+    await store.upsertFact("user-1", "team", "platform");
+    const memory = await store.upsertPreference("user-1", "tone", "direct");
+
+    expect(memory).toMatchObject({
+      facts: { team: "platform" },
+      preferences: { tone: "direct" },
+      userId: "user-1"
+    });
+    expect(await store.deleteByUserId("user-1")).toBe(true);
+    expect(await store.findByUserId("user-1")).toBeUndefined();
+  });
+
+  it("builds user memory rows and maps persisted values", () => {
+    const db = createPostgresBuilder();
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const row = createUserMemoryInsert({
+      facts: { team: "platform" },
+      preferences: { tone: "direct" },
+      recentTopics: ["migration"],
+      updatedAt: now,
+      userId: "user-1"
+    });
+    const compiled = db
+      .insertInto("user_memories")
+      .values(row)
+      .onConflict((oc) => oc.column("user_id").doUpdateSet({ facts: row.facts }))
+      .returningAll()
+      .compile();
+
+    expect(compiled.sql).toContain('insert into "user_memories"');
+    expect(compiled.sql).toContain('on conflict ("user_id") do update');
+    expect(mapUserMemoryRow(row)).toMatchObject({
+      facts: { team: "platform" },
+      preferences: { tone: "direct" },
+      recentTopics: ["migration"],
+      userId: "user-1"
+    });
+  });
+});
+
+describe("conversation summary store", () => {
+  it("upserts, reads, and deletes conversation summaries in memory", async () => {
+    const store = new InMemoryConversationSummaryStore({
+      now: () => new Date("2026-05-06T00:00:00.000Z")
+    });
+
+    await store.save({
+      facts: [{
+        category: "DECISION",
+        extractedAt: new Date("2026-05-05T00:00:00.000Z"),
+        key: "runtime",
+        value: "provider-neutral"
+      }],
+      narrative: "Keep the shared agent runtime provider-neutral.",
+      sessionId: "session-1",
+      summarizedUpToIndex: 12
+    });
+    await store.save({
+      narrative: "Preserve message pair integrity during trimming.",
+      sessionId: "session-1",
+      summarizedUpToIndex: 18
+    });
+
+    expect(await store.get("session-1")).toMatchObject({
+      narrative: "Preserve message pair integrity during trimming.",
+      sessionId: "session-1",
+      summarizedUpToIndex: 18
+    });
+    expect(await store.delete("session-1")).toBe(true);
+    expect(await store.get("session-1")).toBeUndefined();
+  });
+
+  it("builds PostgreSQL upsert SQL and maps persisted conversation summaries", () => {
+    const db = createPostgresBuilder();
+    const now = new Date("2026-05-06T00:00:00.000Z");
+    const summary = {
+      facts: [{
+        category: "ENTITY" as const,
+        extractedAt: now,
+        key: "project",
+        value: "Muse"
+      }],
+      narrative: "Migration work is continuing.",
+      sessionId: "session-1",
+      summarizedUpToIndex: 7
+    };
+    const row = createConversationSummaryInsert(summary, { now: () => now });
+    const compiled = buildConversationSummaryUpsertQuery(db, summary, { now: () => now }).compile();
+
+    expect(compiled.sql).toContain('insert into "conversation_summaries"');
+    expect(compiled.sql).toContain('on conflict ("session_id") do update');
+    expect(compiled.sql).toContain("returning *");
+    expect(row).toMatchObject({
+      narrative: "Migration work is continuing.",
+      session_id: "session-1",
+      summarized_up_to: 7
+    });
+    expect(mapConversationSummaryRow(row)).toMatchObject({
+      facts: [{ category: "ENTITY", key: "project", value: "Muse" }],
+      narrative: "Migration work is continuing.",
+      sessionId: "session-1",
+      summarizedUpToIndex: 7
+    });
+  });
 });
 
 function system(content: string): ConversationMessage {
@@ -317,4 +538,27 @@ function assistantTool(name: string, args: Record<string, string>): Conversation
 
 function tool(content: string): ConversationMessage {
   return { content, role: "tool", toolCallId: "call-search" };
+}
+
+function assistantMultiTool(names: readonly string[]): ConversationMessage {
+  return {
+    content: "",
+    role: "assistant",
+    toolCalls: names.map((name) => ({ arguments: {}, id: `call-${name}`, name }))
+  };
+}
+
+function toolFor(toolCallId: string, content: string): ConversationMessage {
+  return { content, role: "tool", toolCallId };
+}
+
+function createPostgresBuilder(): Kysely<MuseDatabase> {
+  return new Kysely<MuseDatabase>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => new DummyDriver(),
+      createIntrospector: (db) => new PostgresIntrospector(db),
+      createQueryCompiler: () => new PostgresQueryCompiler()
+    }
+  });
 }

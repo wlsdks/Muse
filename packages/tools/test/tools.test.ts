@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createToolNameApprovalPolicy } from "@muse/policy";
 import {
+  createRustRunnerTool,
   isWorkspaceMutationPrompt,
+  parseRunnerCommandRequest,
   shortenToolDescription,
   ToolExecutor,
   ToolRegistry,
@@ -157,5 +159,47 @@ describe("tool utilities", () => {
   it("detects workspace mutation prompts", () => {
     expect(isWorkspaceMutationPrompt("Please assign this task to example-user.")).toBe(true);
     expect(isWorkspaceMutationPrompt("Summarize the latest note.")).toBe(false);
+  });
+});
+
+describe("Rust runner tool", () => {
+  it("normalizes runner requests and executes through the injected runner bridge", async () => {
+    let captured;
+    const tool = createRustRunnerTool({
+      invokeRunner: async (request) => {
+        captured = request;
+        return {
+          error: null,
+          ok: true,
+          status: 0,
+          stderr: "",
+          stdout: "done",
+          timedOut: false,
+          truncated: false
+        };
+      }
+    });
+
+    const result = await tool.execute({
+      args: ["hello"],
+      command: "echo",
+      env: { MUSE_TEST: "1", ignored: 2 },
+      timeoutMs: 1000
+    }, { runId: "run-1" });
+
+    expect(tool.definition.risk).toBe("execute");
+    expect(captured).toEqual({
+      args: ["hello"],
+      command: "echo",
+      cwd: undefined,
+      env: { MUSE_TEST: "1" },
+      maxOutputBytes: undefined,
+      timeoutMs: 1000
+    });
+    expect(result).toMatchObject({ ok: true, stdout: "done" });
+  });
+
+  it("rejects blank runner commands before spawning the child process", () => {
+    expect(() => parseRunnerCommandRequest({ command: " " })).toThrow("run_command requires");
   });
 });

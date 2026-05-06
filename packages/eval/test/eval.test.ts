@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
+import type { MuseDatabase } from "@muse/db";
 import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler
+} from "kysely";
 import {
   EvalRunner,
   ExactMatchJudge,
+  InMemoryAgentEvalStore,
   KeywordJudge,
   WeightedRubricJudge,
+  createAgentEvalCaseInsert,
+  createAgentEvalResultInsert,
+  createAgentRunLogInsert,
+  createDebugReplayCaptureInsert,
   createEvalCase,
+  mapAgentEvalCaseRow,
+  mapAgentEvalResultRow,
+  mapAgentRunLogRow,
+  mapDebugReplayCaptureRow,
   summarizeEvalResults
 } from "../src/index.js";
 
@@ -64,6 +81,67 @@ describe("EvalRunner", () => {
   });
 });
 
+describe("AgentEvalStore", () => {
+  it("stores eval cases, run logs, results, and debug replay captures in memory and maps DB rows", async () => {
+    const store = new InMemoryAgentEvalStore();
+    const evalCase = await store.saveCase({
+      createdAt: "2026-05-06T00:00:00.000Z",
+      expectedAnswerContains: ["approved"],
+      expectedToolNames: ["read_policy"],
+      id: "case-1",
+      name: "Policy answer",
+      sourceRunId: "run-1",
+      tags: ["policy"],
+      userInput: "Use synthetic policy context."
+    });
+    const runLog = await store.saveRunLog({
+      agentType: "react",
+      endedAt: "2026-05-06T00:01:00.000Z",
+      finalAnswer: "approved",
+      model: "model-1",
+      runId: "run-1",
+      startedAt: "2026-05-06T00:00:00.000Z",
+      toolCalls: [{ success: true, toolName: "read_policy" }],
+      toolExposure: { count: 1, names: ["read_policy"] },
+      userInput: "Use synthetic policy context."
+    });
+    const result = await store.saveResult({
+      caseId: "case-1",
+      evaluatedAt: "2026-05-06T00:02:00.000Z",
+      id: "result-1",
+      passed: true,
+      reasons: ["all assertions passed"],
+      runId: "run-1",
+      score: 1,
+      tier: "deterministic"
+    });
+    const capture = await store.saveDebugReplayCapture({
+      capturedAt: "2026-05-06T00:03:00.000Z",
+      errorCode: "RUN_FAILED",
+      expiresAt: "2026-06-05T00:03:00.000Z",
+      id: "capture-1",
+      tenantId: "example-tenant",
+      userPrompt: "Synthetic replay prompt."
+    });
+    const sql = createPostgresBuilder()
+      .insertInto("agent_eval_results")
+      .values(createAgentEvalResultInsert(result))
+      .returningAll()
+      .compile();
+
+    expect(sql.sql).toContain('insert into "agent_eval_results"');
+    expect(await store.getCase("case-1")).toMatchObject({ name: "Policy answer" });
+    expect(await store.listCases({ tags: ["policy"] })).toHaveLength(1);
+    expect(await store.listRunLogs(10)).toHaveLength(1);
+    expect(await store.listResults({ caseId: "case-1" })).toHaveLength(1);
+    expect(await store.getDebugReplayCapture("capture-1")).toMatchObject({ tenantId: "example-tenant" });
+    expect(mapAgentEvalCaseRow(createAgentEvalCaseInsert(evalCase))).toMatchObject({ id: "case-1" });
+    expect(mapAgentRunLogRow(createAgentRunLogInsert(runLog))).toMatchObject({ runId: "run-1" });
+    expect(mapAgentEvalResultRow(createAgentEvalResultInsert(result))).toMatchObject({ id: "result-1" });
+    expect(mapDebugReplayCaptureRow(createDebugReplayCaptureInsert(capture))).toMatchObject({ id: "capture-1" });
+  });
+});
+
 function provider(generate: (request: ModelRequest) => Promise<ModelResponse>): ModelProvider {
   return {
     generate,
@@ -71,4 +149,15 @@ function provider(generate: (request: ModelRequest) => Promise<ModelResponse>): 
     listModels: async () => [],
     stream: async function* () {}
   };
+}
+
+function createPostgresBuilder(): Kysely<MuseDatabase> {
+  return new Kysely<MuseDatabase>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => new DummyDriver(),
+      createIntrospector: (db) => new PostgresIntrospector(db),
+      createQueryCompiler: () => new PostgresQueryCompiler()
+    }
+  });
 }

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import type { ConversationSummaryTable, MuseDatabase } from "@muse/db";
 import type { ModelMessage, ModelToolCall } from "@muse/model";
+import type { Insertable, Kysely, Selectable } from "kysely";
 
 export interface TokenEstimator {
   estimate(text: string): number;
@@ -83,6 +85,30 @@ export interface TaskMemoryMaintenance {
   purgeTerminalOlderThan(cutoff: Date): Awaitable<number>;
 }
 
+export type FactCategory = "ENTITY" | "DECISION" | "CONDITION" | "STATE" | "NUMERIC" | "GENERAL";
+
+export interface StructuredFact {
+  readonly key: string;
+  readonly value: string;
+  readonly category?: FactCategory;
+  readonly extractedAt?: Date;
+}
+
+export interface ConversationSummary {
+  readonly sessionId: string;
+  readonly narrative: string;
+  readonly facts?: readonly StructuredFact[];
+  readonly summarizedUpToIndex: number;
+  readonly createdAt?: Date;
+  readonly updatedAt?: Date;
+}
+
+export interface ConversationSummaryStore {
+  get(sessionId: string): Awaitable<ConversationSummary | undefined>;
+  save(summary: ConversationSummary): Awaitable<ConversationSummary>;
+  delete(sessionId: string): Awaitable<boolean>;
+}
+
 export const DEFAULT_CACHE_KEY_MAX_CHARS = 2_000;
 export const DEFAULT_TOKEN_CACHE_MAX_ENTRIES = 50_000;
 export const DEFAULT_TOKEN_CACHE_TTL_MS = 5 * 60 * 1_000;
@@ -91,6 +117,125 @@ export const DEFAULT_COMPACTION_THRESHOLD = 3;
 export const COMPACTION_SUMMARY_PREFIX = "[Conversation summary";
 export const COMPACTION_PINNED_ENTITIES_PREFIX = "Pinned entities for pronoun resolution";
 export const DEFAULT_TASK_MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+
+type ConversationSummaryRow = Selectable<ConversationSummaryTable>;
+type ConversationSummaryInsert = Insertable<ConversationSummaryTable>;
+
+export class InMemoryConversationSummaryStore implements ConversationSummaryStore {
+  private readonly summaries = new Map<string, RequiredConversationSummary>();
+  private readonly now: () => Date;
+
+  constructor(options: { readonly now?: () => Date } = {}) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  get(sessionId: string): ConversationSummary | undefined {
+    return this.summaries.get(sessionId);
+  }
+
+  save(summary: ConversationSummary): ConversationSummary {
+    const existing = this.summaries.get(summary.sessionId);
+    const now = this.now();
+    const normalized = normalizeConversationSummary(summary, {
+      createdAt: existing?.createdAt ?? summary.createdAt ?? now,
+      updatedAt: summary.updatedAt ?? now
+    });
+
+    this.summaries.set(normalized.sessionId, normalized);
+    return normalized;
+  }
+
+  delete(sessionId: string): boolean {
+    return this.summaries.delete(sessionId);
+  }
+}
+
+export class KyselyConversationSummaryStore implements ConversationSummaryStore {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: { readonly now?: () => Date } = {}
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async get(sessionId: string): Promise<ConversationSummary | undefined> {
+    const row = await this.db
+      .selectFrom("conversation_summaries")
+      .selectAll()
+      .where("session_id", "=", sessionId)
+      .executeTakeFirst();
+
+    return row ? mapConversationSummaryRow(row) : undefined;
+  }
+
+  async save(summary: ConversationSummary): Promise<ConversationSummary> {
+    const row = await buildConversationSummaryUpsertQuery(this.db, summary, { now: this.now })
+      .executeTakeFirstOrThrow();
+
+    return mapConversationSummaryRow(row);
+  }
+
+  async delete(sessionId: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("conversation_summaries")
+      .where("session_id", "=", sessionId)
+      .executeTakeFirst();
+
+    return Number(result.numDeletedRows ?? 0) > 0;
+  }
+}
+
+export function buildConversationSummaryUpsertQuery(
+  db: Kysely<MuseDatabase>,
+  summary: ConversationSummary,
+  options: { readonly now: () => Date }
+) {
+  const row = createConversationSummaryInsert(summary, options);
+
+  return db
+    .insertInto("conversation_summaries")
+    .values(row)
+    .onConflict((oc) => oc.column("session_id").doUpdateSet({
+      facts_json: row.facts_json,
+      narrative: row.narrative,
+      summarized_up_to: row.summarized_up_to,
+      updated_at: row.updated_at
+    }))
+    .returningAll();
+}
+
+export function createConversationSummaryInsert(
+  summary: ConversationSummary,
+  options: { readonly now: () => Date }
+): ConversationSummaryInsert {
+  const now = options.now();
+  const normalized = normalizeConversationSummary(summary, {
+    createdAt: summary.createdAt ?? now,
+    updatedAt: summary.updatedAt ?? now
+  });
+
+  return {
+    created_at: normalized.createdAt,
+    facts_json: normalized.facts.map(serializeStructuredFact),
+    narrative: normalized.narrative,
+    session_id: normalized.sessionId,
+    summarized_up_to: normalized.summarizedUpToIndex,
+    updated_at: normalized.updatedAt
+  };
+}
+
+export function mapConversationSummaryRow(row: ConversationSummaryRow): ConversationSummary {
+  return {
+    createdAt: dateValue(row.created_at),
+    facts: jsonArray<SerializedStructuredFact>(row.facts_json).map(deserializeStructuredFact),
+    narrative: row.narrative,
+    sessionId: row.session_id,
+    summarizedUpToIndex: row.summarized_up_to,
+    updatedAt: dateValue(row.updated_at)
+  };
+}
 
 export class InMemoryTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaintenance {
   private readonly tasks = new Map<string, RequiredTaskState>();
@@ -205,6 +350,312 @@ export class InMemoryTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaint
       }
     }
   }
+}
+
+export interface KyselyTaskMemoryStoreOptions {
+  readonly now?: () => Date;
+  readonly retentionMs?: number;
+}
+
+export interface UserMemory {
+  readonly userId: string;
+  readonly facts: Readonly<Record<string, string>>;
+  readonly preferences: Readonly<Record<string, string>>;
+  readonly recentTopics: readonly string[];
+  readonly updatedAt: Date;
+}
+
+export interface UserMemoryStore {
+  findByUserId(userId: string): Awaitable<UserMemory | undefined>;
+  upsertFact(userId: string, key: string, value: string): Awaitable<UserMemory>;
+  upsertPreference(userId: string, key: string, value: string): Awaitable<UserMemory>;
+  deleteByUserId(userId: string): Awaitable<boolean>;
+}
+
+type UserMemoryRow = Record<string, unknown>;
+type UserMemoryInsert = Insertable<MuseDatabase["user_memories"]>;
+
+export class InMemoryUserMemoryStore implements UserMemoryStore {
+  private readonly memories = new Map<string, UserMemory>();
+
+  findByUserId(userId: string): UserMemory | undefined {
+    return cloneUserMemory(this.memories.get(userId));
+  }
+
+  upsertFact(userId: string, key: string, value: string): UserMemory {
+    return this.upsert(userId, { facts: { [key]: value } });
+  }
+
+  upsertPreference(userId: string, key: string, value: string): UserMemory {
+    return this.upsert(userId, { preferences: { [key]: value } });
+  }
+
+  deleteByUserId(userId: string): boolean {
+    return this.memories.delete(userId);
+  }
+
+  private upsert(
+    userId: string,
+    patch: { readonly facts?: Readonly<Record<string, string>>; readonly preferences?: Readonly<Record<string, string>> }
+  ): UserMemory {
+    const existing = this.memories.get(userId);
+    const updated: UserMemory = {
+      facts: { ...(existing?.facts ?? {}), ...(patch.facts ?? {}) },
+      preferences: { ...(existing?.preferences ?? {}), ...(patch.preferences ?? {}) },
+      recentTopics: existing?.recentTopics ?? [],
+      updatedAt: new Date(),
+      userId
+    };
+
+    this.memories.set(userId, updated);
+    return cloneUserMemory(updated) ?? updated;
+  }
+}
+
+export class KyselyUserMemoryStore implements UserMemoryStore {
+  constructor(private readonly db: Kysely<MuseDatabase>) {}
+
+  async findByUserId(userId: string): Promise<UserMemory | undefined> {
+    const row = await this.db.selectFrom("user_memories").selectAll().where("user_id", "=", userId).executeTakeFirst();
+    return row ? mapUserMemoryRow(row as UserMemoryRow) : undefined;
+  }
+
+  async upsertFact(userId: string, key: string, value: string): Promise<UserMemory> {
+    const existing = await this.findByUserId(userId);
+    return this.save({
+      facts: { ...(existing?.facts ?? {}), [key]: value },
+      preferences: existing?.preferences ?? {},
+      recentTopics: existing?.recentTopics ?? [],
+      updatedAt: new Date(),
+      userId
+    });
+  }
+
+  async upsertPreference(userId: string, key: string, value: string): Promise<UserMemory> {
+    const existing = await this.findByUserId(userId);
+    return this.save({
+      facts: existing?.facts ?? {},
+      preferences: { ...(existing?.preferences ?? {}), [key]: value },
+      recentTopics: existing?.recentTopics ?? [],
+      updatedAt: new Date(),
+      userId
+    });
+  }
+
+  async deleteByUserId(userId: string): Promise<boolean> {
+    const result = await this.db.deleteFrom("user_memories").where("user_id", "=", userId).executeTakeFirst();
+    return Number(result.numDeletedRows ?? 0) > 0;
+  }
+
+  private async save(memory: UserMemory): Promise<UserMemory> {
+    const insert = createUserMemoryInsert(memory);
+    const row = await this.db
+      .insertInto("user_memories")
+      .values(insert)
+      .onConflict((oc) => oc.column("user_id").doUpdateSet({
+        facts: insert.facts,
+        preferences: insert.preferences,
+        recent_topics: insert.recent_topics,
+        updated_at: insert.updated_at
+      }))
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return mapUserMemoryRow(row as UserMemoryRow);
+  }
+}
+
+export function createUserMemoryInsert(memory: UserMemory): UserMemoryInsert {
+  return {
+    facts: { ...memory.facts },
+    preferences: { ...memory.preferences },
+    recent_topics: memory.recentTopics.join("\n"),
+    updated_at: memory.updatedAt,
+    user_id: memory.userId
+  };
+}
+
+export function mapUserMemoryRow(row: UserMemoryRow): UserMemory {
+  return {
+    facts: jsonStringRecord(row.facts),
+    preferences: jsonStringRecord(row.preferences),
+    recentTopics: typeof row.recent_topics === "string"
+      ? row.recent_topics.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean)
+      : [],
+    updatedAt: dateValue(row.updated_at),
+    userId: stringValue(row.user_id)
+  };
+}
+
+function cloneUserMemory(memory: UserMemory | undefined): UserMemory | undefined {
+  return memory
+    ? {
+      facts: { ...memory.facts },
+      preferences: { ...memory.preferences },
+      recentTopics: [...memory.recentTopics],
+      updatedAt: memory.updatedAt,
+      userId: memory.userId
+    }
+    : undefined;
+}
+
+type TaskMemoryRow = Record<string, unknown>;
+type TaskMemoryInsert = Insertable<MuseDatabase["task_memories"]>;
+
+export class KyselyTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaintenance {
+  private readonly now: () => Date;
+  private readonly retentionMs: number;
+
+  constructor(
+    private readonly db: Kysely<MuseDatabase>,
+    options: KyselyTaskMemoryStoreOptions = {}
+  ) {
+    this.now = options.now ?? (() => new Date());
+    this.retentionMs = Math.max(1, options.retentionMs ?? DEFAULT_TASK_MEMORY_RETENTION_MS);
+  }
+
+  async save(state: TaskState): Promise<void> {
+    await buildTaskMemoryUpsertQuery(this.db, state, {
+      now: this.now,
+      retentionMs: this.retentionMs
+    }).executeTakeFirstOrThrow();
+  }
+
+  async findById(taskId: string): Promise<TaskState | undefined> {
+    const row = await this.db
+      .selectFrom("task_memories")
+      .selectAll()
+      .where("task_id", "=", taskId)
+      .where((eb) => eb.or([
+        eb("expires_at", "is", null),
+        eb("expires_at", ">", this.now())
+      ]))
+      .executeTakeFirst();
+
+    return row ? mapTaskMemoryRow(row as TaskMemoryRow) : undefined;
+  }
+
+  async findActiveBySession(sessionId: string, userId?: string): Promise<TaskState | undefined> {
+    const userScoped = userId
+      ? await buildActiveTaskMemoryQuery(this.db, sessionId, userId).executeTakeFirst()
+      : undefined;
+
+    if (userScoped) {
+      return mapTaskMemoryRow(userScoped as TaskMemoryRow);
+    }
+
+    const sessionScoped = await buildActiveTaskMemoryQuery(this.db, sessionId).executeTakeFirst();
+    return sessionScoped ? mapTaskMemoryRow(sessionScoped as TaskMemoryRow) : undefined;
+  }
+
+  async clear(taskId: string): Promise<void> {
+    await this.db.deleteFrom("task_memories").where("task_id", "=", taskId).execute();
+  }
+
+  async purgeExpired(now = this.now()): Promise<number> {
+    const result = await this.db
+      .deleteFrom("task_memories")
+      .where("expires_at", "is not", null)
+      .where("expires_at", "<=", now)
+      .executeTakeFirst();
+
+    return Number(result.numDeletedRows ?? 0);
+  }
+
+  async purgeTerminalOlderThan(cutoff: Date): Promise<number> {
+    const result = await this.db
+      .deleteFrom("task_memories")
+      .where("status", "not in", ["active", "blocked"])
+      .where("updated_at", "<", cutoff)
+      .executeTakeFirst();
+
+    return Number(result.numDeletedRows ?? 0);
+  }
+}
+
+export function buildTaskMemoryUpsertQuery(
+  db: Kysely<MuseDatabase>,
+  state: TaskState,
+  options: {
+    readonly now: () => Date;
+    readonly retentionMs: number;
+  }
+) {
+  const insert = createTaskMemoryInsert(state, options);
+
+  return db
+    .insertInto("task_memories")
+    .values(insert)
+    .onConflict((oc) => oc.column("task_id").doUpdateSet({
+      blockers_json: insert.blockers_json,
+      decisions_json: insert.decisions_json,
+      expires_at: insert.expires_at,
+      goal: insert.goal,
+      metadata_json: insert.metadata_json,
+      plan_json: insert.plan_json,
+      session_id: insert.session_id,
+      status: insert.status,
+      updated_at: insert.updated_at,
+      user_id: insert.user_id
+    }))
+    .returningAll();
+}
+
+export function buildActiveTaskMemoryQuery(db: Kysely<MuseDatabase>, sessionId: string, userId?: string) {
+  let query = db
+    .selectFrom("task_memories")
+    .selectAll()
+    .where("session_id", "=", sessionId)
+    .where("status", "in", ["active", "blocked"])
+    .orderBy("updated_at", "desc")
+    .limit(1);
+
+  query = userId ? query.where("user_id", "=", userId) : query.where("user_id", "is", null);
+  return query;
+}
+
+export function createTaskMemoryInsert(
+  state: TaskState,
+  options: {
+    readonly now: () => Date;
+    readonly retentionMs: number;
+  }
+): TaskMemoryInsert {
+  const normalized = normalizeTaskState(state);
+  const expiresAt = new Date(normalized.updatedAt.getTime() + options.retentionMs);
+
+  return {
+    blockers_json: [...normalized.blockers],
+    created_at: normalized.createdAt,
+    decisions_json: [...normalized.decisions],
+    expires_at: expiresAt,
+    goal: normalized.goal,
+    metadata_json: { ...normalized.metadata },
+    plan_json: [...normalized.plan],
+    session_id: normalized.sessionId,
+    status: normalized.status,
+    task_id: normalized.taskId,
+    updated_at: normalized.updatedAt,
+    user_id: normalized.userId ?? null
+  };
+}
+
+export function mapTaskMemoryRow(row: TaskMemoryRow): TaskState {
+  const userId = nullableString(row.user_id);
+
+  return {
+    blockers: jsonArray<TaskBlocker>(row.blockers_json),
+    createdAt: dateValue(row.created_at),
+    decisions: jsonArray<TaskDecision>(row.decisions_json),
+    goal: stringValue(row.goal),
+    metadata: jsonRecord(row.metadata_json),
+    plan: jsonArray<TaskPlanItem>(row.plan_json),
+    sessionId: stringValue(row.session_id),
+    status: taskStatusValue(row.status),
+    taskId: stringValue(row.task_id),
+    updatedAt: dateValue(row.updated_at),
+    ...(userId ? { userId } : {})
+  };
 }
 
 type RequiredTaskState = Omit<
@@ -475,7 +926,7 @@ function calculateRemoveGroupSize(messages: readonly ConversationMessage[]): num
   }
 
   if (first.role === "assistant" && hasToolCalls(first)) {
-    return messages[1]?.role === "tool" ? 2 : 1;
+    return 1 + countFollowingToolResponses(first, messages.slice(1));
   }
 
   return 1;
@@ -494,18 +945,24 @@ function ensureBoundaryIntegrity(messages: ConversationMessage[], tokens: number
 function removeOrphanToolResponses(messages: ConversationMessage[], tokens: number[]): number {
   let removedTokens = 0;
   let index = 0;
+  let pendingToolCallIds: string[] = [];
 
   while (index < messages.length) {
     const message = messages[index];
 
-    if (message?.role !== "tool") {
+    if (message?.role === "assistant") {
+      pendingToolCallIds = (message.toolCalls ?? []).map((toolCall) => toolCall.id);
       index++;
       continue;
     }
 
-    const previous = messages[index - 1];
+    if (message?.role !== "tool") {
+      pendingToolCallIds = [];
+      index++;
+      continue;
+    }
 
-    if (previous?.role === "assistant" && hasToolCalls(previous)) {
+    if (consumeToolResponse(message, pendingToolCallIds)) {
       index++;
       continue;
     }
@@ -514,6 +971,44 @@ function removeOrphanToolResponses(messages: ConversationMessage[], tokens: numb
   }
 
   return removedTokens;
+}
+
+function countFollowingToolResponses(
+  assistantMessage: ConversationMessage,
+  followingMessages: readonly ConversationMessage[]
+): number {
+  const pendingToolCallIds = (assistantMessage.toolCalls ?? []).map((toolCall) => toolCall.id);
+  let count = 0;
+
+  for (const message of followingMessages) {
+    if (message.role !== "tool" || !consumeToolResponse(message, pendingToolCallIds)) {
+      break;
+    }
+
+    count++;
+  }
+
+  return count;
+}
+
+function consumeToolResponse(message: ConversationMessage, pendingToolCallIds: string[]): boolean {
+  if (pendingToolCallIds.length === 0) {
+    return false;
+  }
+
+  if (!message.toolCallId) {
+    pendingToolCallIds.shift();
+    return true;
+  }
+
+  const matchIndex = pendingToolCallIds.indexOf(message.toolCallId);
+
+  if (matchIndex < 0) {
+    return false;
+  }
+
+  pendingToolCallIds.splice(matchIndex, 1);
+  return true;
 }
 
 function insertCompactionSummary(
@@ -696,6 +1191,120 @@ function addPinnedEntity(collected: Set<string>, value: string): void {
   }
 }
 
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function nullableString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function dateValue(value: unknown): Date {
+  return value instanceof Date ? value : new Date(typeof value === "string" ? value : 0);
+}
+
+function taskStatusValue(value: unknown): TaskStatus {
+  return value === "blocked" || value === "completed" || value === "cancelled" ? value : "active";
+}
+
+function jsonArray<T>(value: unknown): readonly T[] {
+  if (Array.isArray(value)) {
+    return value as readonly T[];
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed as readonly T[] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function jsonRecord(value: unknown): Readonly<Record<string, string>> {
+  if (isStringRecord(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return isStringRecord(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+}
+
+function jsonStringRecord(value: unknown): Readonly<Record<string, string>> {
+  return jsonRecord(value);
+}
+
+function isStringRecord(value: unknown): value is Readonly<Record<string, string>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function normalizeConversationSummary(
+  summary: ConversationSummary,
+  options: { readonly createdAt: Date; readonly updatedAt: Date }
+): RequiredConversationSummary {
+  return {
+    createdAt: options.createdAt,
+    facts: (summary.facts ?? []).map(normalizeStructuredFact),
+    narrative: summary.narrative.trim(),
+    sessionId: summary.sessionId,
+    summarizedUpToIndex: Math.max(0, Math.trunc(summary.summarizedUpToIndex)),
+    updatedAt: options.updatedAt
+  };
+}
+
+function normalizeStructuredFact(fact: StructuredFact): RequiredStructuredFact {
+  return {
+    category: fact.category ?? "GENERAL",
+    extractedAt: fact.extractedAt ?? new Date(),
+    key: fact.key.trim(),
+    value: fact.value.trim()
+  };
+}
+
+function serializeStructuredFact(fact: RequiredStructuredFact): SerializedStructuredFact {
+  return {
+    category: fact.category,
+    extractedAt: fact.extractedAt.toISOString(),
+    key: fact.key,
+    value: fact.value
+  };
+}
+
+function deserializeStructuredFact(fact: SerializedStructuredFact): RequiredStructuredFact {
+  return {
+    category: factCategoryValue(fact.category),
+    extractedAt: dateValue(fact.extractedAt),
+    key: stringValue(fact.key),
+    value: stringValue(fact.value)
+  };
+}
+
+function factCategoryValue(value: unknown): FactCategory {
+  return value === "ENTITY" ||
+    value === "DECISION" ||
+    value === "CONDITION" ||
+    value === "STATE" ||
+    value === "NUMERIC" ||
+    value === "GENERAL"
+    ? value
+    : "GENERAL";
+}
+
 function trimOldestCacheEntries(cache: Map<string, CacheEntry>, maxEntries: number): void {
   while (cache.size > maxEntries) {
     const oldestKey = cache.keys().next().value as string | undefined;
@@ -733,3 +1342,21 @@ interface CacheEntry {
   readonly expiresAt: number;
   readonly tokens: number;
 }
+
+interface RequiredStructuredFact {
+  readonly key: string;
+  readonly value: string;
+  readonly category: FactCategory;
+  readonly extractedAt: Date;
+}
+
+interface RequiredConversationSummary {
+  readonly sessionId: string;
+  readonly narrative: string;
+  readonly facts: readonly RequiredStructuredFact[];
+  readonly summarizedUpToIndex: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+type SerializedStructuredFact = Readonly<Record<string, string>>;
