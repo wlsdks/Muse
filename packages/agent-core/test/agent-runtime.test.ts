@@ -5,7 +5,7 @@ import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type Mode
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
 import { DefaultRagPipeline, InMemoryRagCorpus, SimpleReranker } from "@muse/rag";
 import { InMemoryAgentRunHistoryStore, InMemoryCheckpointStore, InMemoryHookTraceStore } from "@muse/runtime-state";
-import { GuardBlockRateMonitor } from "@muse/policy";
+import { GuardBlockRateMonitor, InMemoryGuardRuleStore } from "@muse/policy";
 import { ToolRegistry } from "@muse/tools";
 import {
   createAgentRuntime,
@@ -19,6 +19,7 @@ import {
   createMaxLengthResponseFilter,
   createPiiInputGuard,
   createPiiMaskingOutputGuard,
+  createDynamicOutputGuardRuleStage,
   createPolicyStrongPriorWarningFilter,
   createReleaseRiskDataGapResponseFilter,
   createResponseCountConsistencyFilter,
@@ -678,6 +679,56 @@ describe("AgentRuntime", () => {
       expect.anything(),
       expect.objectContaining({ output: "Contact ***@***.***" })
     );
+  });
+
+  it("applies dynamic output guard rules in the runtime output guard chain", async () => {
+    const store = new InMemoryGuardRuleStore();
+    await store.saveOutputRule({
+      action: "MASK",
+      enabled: true,
+      id: "mask-secret",
+      name: "Mask secret",
+      pattern: "secret-[0-9]+",
+      priority: 10,
+      replacement: "[SECRET]"
+    });
+    const runtime = createAgentRuntime({
+      modelProvider: createProvider({ output: "Result contains secret-123" }),
+      outputGuards: [createDynamicOutputGuardRuleStage(store)]
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "Summarize", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toBe("Result contains [SECRET]");
+  });
+
+  it("rejects dynamic output guard rule blocks before returning a response", async () => {
+    const store = new InMemoryGuardRuleStore();
+    await store.saveOutputRule({
+      action: "REJECT",
+      enabled: true,
+      id: "reject-secret",
+      name: "Reject secret",
+      pattern: "secret-[0-9]+",
+      priority: 10
+    });
+    const runtime = createAgentRuntime({
+      modelProvider: createProvider({ output: "Result contains secret-123" }),
+      outputGuards: [createDynamicOutputGuardRuleStage(store)]
+    });
+
+    await expect(
+      runtime.run({
+        messages: [{ content: "Summarize", role: "user" }],
+        model: "provider/model"
+      })
+    ).rejects.toMatchObject({
+      code: "OUTPUT_GUARD_RULE_REJECTED",
+      stageId: "dynamic-output-guard-rule-stage"
+    });
   });
 
   it("fails closed when an output guard throws", async () => {
