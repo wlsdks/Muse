@@ -347,9 +347,30 @@ export class McpManager {
   }
 
   async register(input: McpServerInput): Promise<McpServer | undefined> {
-    if (!(await this.securityPolicyProvider.isServerAllowed(input.name))) {
+    const policy = await this.securityPolicyProvider.currentPolicy();
+
+    if (!(policy.allowedServerNames.length === 0 || policy.allowedServerNames.includes(input.name))) {
       this.statuses.set(input.name, "disabled");
       this.health.set(input.name, this.createHealthSnapshot(input.name, "unhealthy", "Server denied by policy"));
+      return undefined;
+    }
+
+    const validation = validateMcpServer(
+      normalizeMcpServerInput(input, {
+        id: input.id ?? "mcp_server_validation",
+        now: this.now
+      }),
+      policy,
+      this.validation
+    );
+
+    if (!validation.valid) {
+      this.statuses.set(input.name, "disabled");
+      this.health.set(input.name, this.createHealthSnapshot(
+        input.name,
+        "unhealthy",
+        validation.reason ?? "MCP server validation failed"
+      ));
       return undefined;
     }
 

@@ -9,6 +9,7 @@ import {
   type McpServerInput,
   type McpTransportType
 } from "@muse/mcp";
+import { ToolOutputSanitizer } from "@muse/policy";
 import type { FastifyInstance } from "fastify";
 
 export interface McpRouteMcp {
@@ -438,12 +439,18 @@ async function callMcpTool(
     });
   }
 
+  const policy = await resolveMcpSecurityPolicyProvider(options.mcp)?.currentPolicy();
+  const sanitizer = new ToolOutputSanitizer({ maxOutputLength: policy?.maxToolOutputLength });
+  const rawOutput = await tool.execute(parsed.value, {
+    runId: `mcp_api_${Date.now()}`,
+    userId: "admin",
+    workspaceId: "admin"
+  });
+  const sanitized = sanitizer.sanitize(tool.definition.name, stringifyToolOutput(rawOutput));
+
   return {
-    output: await tool.execute(parsed.value, {
-      runId: `mcp_api_${Date.now()}`,
-      userId: "admin",
-      workspaceId: "admin"
-    })
+    output: sanitized.content,
+    sanitized
   };
 }
 
@@ -706,6 +713,14 @@ function sanitizeConfigValue(value: JsonObject[string]): JsonObject[string] {
   }
 
   return value;
+}
+
+function stringifyToolOutput(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return JSON.stringify(value);
 }
 
 function isSensitiveConfigKey(key: string): boolean {

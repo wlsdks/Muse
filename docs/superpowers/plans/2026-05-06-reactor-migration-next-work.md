@@ -563,11 +563,11 @@ Expected: contract tests pass without live credentials; live tests skip clearly 
 - Modify: `apps/api/test/server.test.ts`
 - Possibly create: `scripts/smoke-mcp-local.mjs`
 
-- [ ] **Step 1: Add a local MCP fixture server**
+- [x] **Step 1: Add a local MCP fixture server**
 
 Use a minimal stdio MCP fixture that exposes one read-only tool returning synthetic data.
 
-- [ ] **Step 2: Add API smoke**
+- [x] **Step 2: Add API smoke**
 
 Assert:
 
@@ -579,7 +579,7 @@ POST /api/mcp/servers/:name/tools/:toolName/call returns sanitized output
 policy denies disallowed server names and private remote addresses by default
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
