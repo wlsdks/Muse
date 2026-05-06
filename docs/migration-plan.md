@@ -4,9 +4,11 @@ Source baseline: Reactor has 31 Gradle modules under `/modules` plus the root `a
 
 Current Muse baseline:
 - Packages: 23
-- Apps: 2
+- Apps: 3
+- Rust crates: 1
 - Verified gate: `pnpm check`
 - Branch state: verify with `git status -sb` before pushing or merging
+- Route parity is currently tracked separately from DB/state parity.
 
 ## Current Count
 
@@ -16,8 +18,9 @@ Current Muse baseline:
 | Reactor included projects with Muse landing zones | 32 | `app` plus all 31 source modules are mapped |
 | Cross-cutting compatibility areas | 4 | Context, response filtering, hooks, and multi-agent behavior are tracked as capabilities, not Reactor source modules |
 | HTTP route parity | 255 / 255 | Every Reactor controller route under `app` and `modules` is registered in Muse |
+| DB table parity | 52 / 52 | Every Reactor persistent table name has a Muse migration target; store wiring is still being migrated |
 | Functionally exercised source modules | 31 | Core behavior exists and is covered by package/API tests |
-| Deep-hardening areas still open | 3 | Remaining work is capability-level parity, not missing module landing zones |
+| Deep-hardening areas still open | 4 | Response filters, Slack behavior, hook/context behavior, and DB-backed state parity remain open |
 | Remaining unmapped modules | 0 | No source module is without a target |
 
 ## Completed Migration Areas
@@ -29,7 +32,7 @@ Current Muse baseline:
 | `api` | `apps/api` | Chat, SSE chat, auth, settings, agent specs, history, MCP, scheduler, quality routes |
 | `admin` | `apps/api`, `packages/runtime-state`, `packages/db` | Metrics, cache, alert, cost, SLO, tenant ops |
 | `approval` | `packages/policy`, `packages/runtime-state` | Approval policies and pending approval stores exist |
-| `auth` | `packages/auth`, `apps/api` | JWT auth, password hashing, user store, revocation, guard, rate limiting |
+| `auth` | `packages/auth`, `apps/api`, `packages/db` | JWT auth, password hashing, DB/in-memory user store, DB/in-memory revocation, guard, rate limiting |
 | `autoconfigure` | `packages/autoconfigure` | Environment-driven runtime assembly and DB-backed store selection exist |
 | `cache` | `packages/cache` | Response cache, scope fingerprint, TTL invalidation, prompt-cache metadata, stats |
 | `common` | `packages/shared` | Shared IDs, JSON, and common value types exist |
@@ -41,8 +44,8 @@ Current Muse baseline:
 | `intent` | `packages/agent-specs` | Agent specs, resolver, registry, and Kysely mapping exist |
 | `memory` | `packages/memory`, `packages/runtime-state` | Context trimming, compaction summaries, checkpoints, run history, and stores exist |
 | `mcp` | `packages/mcp`, `apps/api` | SDK transports, health checks, reconnect, and management APIs exist |
-| `model-routing` | `packages/model` | Provider registry, prefix routing, and OpenAI-compatible provider exist |
-| `observability` | `packages/observability`, `packages/runtime-state` | Tracing, metrics, and history stores exist |
+| `model-routing` | `packages/model` | Provider registry, prefix routing, OpenAI-compatible, OpenAI, OpenRouter, Ollama, Anthropic, and Gemini adapters exist |
+| `observability` | `packages/observability`, `packages/runtime-state`, `packages/db` | Tracing, persisted trace events, metrics, and history stores exist |
 | `persistence-schema` | `packages/db` | Kysely schema covers runtime, scheduler, MCP, and admin state |
 | `promptlab` | `packages/promptlab`, `apps/api` | Prompt variants, experiments, runner, ranking, and admin API exist |
 | `prompts` | `packages/prompts` | Prompt assembly, response format instructions, and cache boundary helpers exist |
@@ -50,9 +53,9 @@ Current Muse baseline:
 | `resilience` | `packages/resilience` | Circuit breaker registry, retry, timeout, and model fallback primitives exist |
 | `runtime-settings` | `packages/runtime-settings`, `apps/api` | Runtime settings service/store and API surface exist |
 | `scheduler` | `packages/scheduler`, `apps/api` | CRUD, execution records, cron, and scheduler locks exist |
-| `slack` | `packages/integrations`, `apps/api` | Signed Events API dispatch plus thread replies, slash-command channel/thread posting, interaction dispatch, feedback button handling, response_url fallback, and Slack mrkdwn response formatting exist |
+| `slack` | `packages/integrations`, `apps/api` | Signed Events API dispatch plus thread replies, slash-command channel/thread posting, interaction dispatch, persisted response tracking and feedback metadata, response_url fallback, and Slack mrkdwn response formatting exist |
 | `tool` | `packages/tools` | Tool registry, executor, sanitizer, and approval path exist |
-| `web` | `apps/api` | HTTP/SSE run endpoints and typed error surfaces exist |
+| `web` | `apps/api`, `apps/web` | HTTP/SSE run endpoints, typed error surfaces, and initial Vite/React operator UI exist |
 
 ## Cross-Cutting Compatibility Areas
 
@@ -74,11 +77,16 @@ fully done:
 
 1. Response filters: compare Reactor's verified-source extractor edge cases against Muse extraction
    (nested URL fields, synthesized source directories, and source relevance filtering still need broader parity tests).
-2. Slack behavior: verify Socket Mode and application-specific feedback store wiring beyond the reusable feedback button handler.
+2. Slack behavior: verify Socket Mode behavior beyond the HTTP webhook, threaded response tracking, and feedback-store wiring now covered in Muse packages.
 3. Hook/context behavior: verify message-pair integrity under broader runtime smoke tests.
+4. DB-backed state parity: move remaining Reactor-compatible state out of process-local compatibility Maps and into Kysely-backed stores.
 
 Latest route parity check: `REACTOR_SOURCE_DIR=<local-reactor-path> pnpm verify:reactor-routes` reports 255 Reactor
-routes, 365 Muse routes, and 0 missing Reactor routes.
+routes, 369 Muse routes, and 0 missing Reactor routes.
+
+Latest DB parity check: `REACTOR_SOURCE_DIR=<local-reactor-path> pnpm verify:reactor-db` reports 52 Reactor tables,
+64 Muse tables, and 0 missing Reactor tables. This is table-name parity only; remaining work is moving compatibility
+route state and runtime services onto Kysely-backed stores.
 
 ## Recent Completion Notes
 
@@ -88,6 +96,9 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
 - Scheduler has management routes plus a Node cron runtime.
 - OpenAI-compatible streaming preserves streamed tool-call deltas, while `/api/chat/stream` emits Reactor-style
   `tool_start`, `tool_end`, and empty `done` SSE events.
+- CLI remote chat can now use `/api/chat/stream` with `--stream`, while still recording `.muse/runs/*.jsonl` state.
+- CLI auth now stores API bearer tokens in an encrypted credential file and reuses them for remote API calls when no
+  explicit token is provided.
 - `AgentRuntime.stream()` now executes streamed tool calls through the ReAct loop.
 - API chat parsing now preserves assistant `toolCalls`, keeping message pairs intact.
 - Response filtering strips copied trailing source blocks and buffers text when filters or output guards are active.
@@ -104,6 +115,14 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
 - `/api/chat/multipart` accepts Reactor-compatible multipart uploads and forwards file metadata to AgentRuntime.
 - Reactor-compatible password change, session deletion, admin session tags, trace/tool-call analytics,
   user/model usage, token-cost summaries, and metric ingestion now use Muse runtime state instead of stubs.
+- Reactor-compatible admin session tags now use a shared `SessionTagStore` with in-memory and Kysely-backed
+  implementations instead of route-local state when the runtime assembly provides a database handle.
+- Reactor-compatible conversation summaries now use a shared memory-layer `ConversationSummaryStore` with
+  in-memory and Kysely-backed UPSERT semantics matching Reactor's `conversation_summaries` table.
+- Reactor-compatible RAG ingestion policy and candidate review routes now use shared `RagIngestionPolicyStore`
+  and `RagIngestionCandidateStore` implementations with in-memory and Kysely-backed persistence.
+- Reactor-compatible Slack bot instances and channel FAQ registrations now use shared integrations stores with
+  in-memory and Kysely-backed persistence.
 - Reactor-compatible agent eval promotion/replay/results, platform alert rules, model pricing,
   vector-store stats, and admin tool stats now use Muse runtime state.
 - Reactor-compatible admin analytics/export/debug routes now cover eval dashboards, latency, RAG,
@@ -171,6 +190,51 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
   exchange semantics, and keep self-registration users at `USER` scope.
 - `/api/sessions` compatibility now ignores spoofed `userId` query parameters and enforces Reactor-style
   authenticated-owner checks before deleting sessions.
+- Auth runtime assembly now switches to async Kysely-backed users and token revocations when a database handle is
+  provided, while preserving the existing in-memory sync auth service for local tests and no-DB mode.
+- `crates/runner` now exists as the initial Rust child-process runner scaffold with a JSON stdin/stdout contract,
+  timeout handling, output truncation, controlled env/cwd support, and path-command rejection. It still needs local
+  `cargo test` verification in an environment with Cargo installed.
+- `apps/web` now exists as a Vite/React/TanStack Query operator surface for API health, chat, pending approvals, and
+  recent run summaries, with `pnpm --filter @muse/web build` and package test coverage passing.
+- The CLI remote `chat` command now writes workspace run state to `.muse/runs/*.jsonl` by default, preserving the API
+  response and source metadata for later inspection.
+- The CLI `chat --local` path now runs through the shared `packages/autoconfigure` / `packages/agent-core` runtime
+  instead of forking agent behavior, and writes the same `.muse/runs/*.jsonl` state with `source: "cli.local"`.
+- The model layer now includes Muse-owned adapters for OpenAI, Anthropic, Gemini, OpenRouter, Ollama, and
+  OpenAI-compatible endpoints; autoconfigure can select named providers without making `agent-core` depend on vendor SDKs.
+- `packages/tools` now exposes a `run_command` tool that bridges risky execution through the Rust runner child process
+  when `MUSE_RUNNER_ENABLED=true`, leaving approval gating to the existing tool approval policy.
+- Observability now has a persisted trace-event sink and tracer wired through DB-backed autoconfigure, so completed
+  spans can be written into the queryable `trace_events` table instead of staying local-only.
+- Tool Policy compatibility now uses a package-level `ToolPolicyStore` with Kysely and in-memory implementations;
+  DB-backed runtime assembly persists `/api/tool-policy` state into the `tool_policy` table instead of relying only
+  on the process-local compatibility map.
+- User Memory compatibility now uses a package-level `UserMemoryStore` with Kysely and in-memory implementations;
+  DB-backed runtime assembly persists `/api/user-memory/:userId` facts/preferences into the `user_memories` table.
+- Admin audit and metric ingestion compatibility now use runtime-state stores with Kysely-backed persistence for
+  `admin_audits` and `metric_audit_trail` when the API is assembled with a database handle.
+- Platform pricing and alert-rule compatibility now use runtime-state stores with Kysely-backed persistence for
+  `model_pricing` and `alert_rules` instead of route-local Maps when a database handle is configured.
+- Feedback compatibility now uses a package-level `FeedbackStore` in `packages/promptlab`; DB-backed API assembly
+  persists submit/list/review/delete flows into the `feedback` table while preserving the Reactor response envelope
+  and optimistic version checks.
+- Prompt Lab experiment compatibility now uses a package-level `PromptLabExperimentStore` in `packages/promptlab`;
+  DB-backed API assembly persists experiment lifecycle, generated trials, and reports into `experiments`, `trials`,
+  and `experiment_reports` while retaining the Reactor response envelopes.
+- Persona, prompt-template/version, and intent compatibility now use a package-level `PromptLabCatalogStore`;
+  DB-backed API assembly persists those admin catalogs into `personas`, `prompt_templates`, `prompt_versions`, and
+  `intent_definitions` instead of process-local Maps.
+- Guard rule compatibility now uses a package-level `GuardRuleStore` in `packages/policy`; DB-backed API assembly
+  persists input guard rules, output guard rules, and output guard audits into their Reactor-compatible tables while
+  retaining existing fail-close/fail-open runtime behavior.
+- Context trimming now treats assistant messages with multiple tool calls and their tool responses as one integrity
+  group, with deterministic regression coverage in `packages/memory`.
+- RAG/document tests were rechecked against migration redaction rules; current document bodies remain synthetic
+  fixtures rather than private workspace content.
+- Agent eval and debug replay compatibility now use a package-level `AgentEvalStore`; DB-backed API assembly
+  persists promoted eval cases, run logs, deterministic and LLM-judge results, and debug replay captures while keeping
+  judge calls behind Muse `ModelProvider`.
 - `/api/chat` and `/api/chat/multipart` now return Reactor `ChatResponse` contracts, while `/chat` keeps the
   extended Muse run metadata envelope.
 - Reactor-compatible auth/admin/session/scheduler/feedback failures now use the standard `{ error, timestamp }`
@@ -206,14 +270,16 @@ routes, 365 Muse routes, and 0 missing Reactor routes.
   Slack bot token or injected message transport is configured, and falls back to `response_url` if posting is unavailable.
 - Slack interaction compatibility now includes Reactor-style `block_actions`/`view_submission` parsing and action-id
   prefix dispatch, with signed HTTP interaction callbacks wired into the Slack route layer.
-- Slack feedback button compatibility now includes a bounded bot-response tracker plus `feedback.up/down` handler that
-  restores the original session prompt, calls a feedback sink, and posts thread/ephemeral acknowledgements.
+- Slack feedback button compatibility now includes a bounded/injectable bot-response tracker plus `feedback.up/down`
+  handler that restores the original session prompt, persists feedback metadata when a store is configured, calls a
+  feedback sink, and posts thread/ephemeral acknowledgements.
 
 ## Execution Plan
 
 1. Keep `pnpm check` green as the migration acceptance gate.
 2. Run `REACTOR_SOURCE_DIR=<local-reactor-path> pnpm verify:reactor-routes` after any API compatibility change.
-3. Add new work as product hardening tickets rather than migration backlog.
+3. Run `REACTOR_SOURCE_DIR=<local-reactor-path> pnpm verify:reactor-db` after any DB/store compatibility change.
+4. Work through `docs/superpowers/plans/2026-05-06-reactor-migration-completion.md` in priority order.
 
 ## Migration Rules
 
