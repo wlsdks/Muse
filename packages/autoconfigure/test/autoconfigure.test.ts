@@ -69,6 +69,12 @@ describe("autoconfigure", () => {
     expect(await assembly.adminOperationsStore.listTenants()).toEqual([]);
     expect(assembly.scheduler.store.list()).toEqual([]);
     expect(assembly.scheduler.service).toBeTruthy();
+    expect(assembly.toolRegistry.list().map((tool) => tool.definition.name)).toEqual(expect.arrayContaining([
+      "scheduler_list_jobs",
+      "scheduler_create_job",
+      "scheduler_trigger_job",
+      "scheduler_dry_run_job"
+    ]));
     expect(assembly.taskMemoryStore).toBeInstanceOf(InMemoryTaskMemoryStore);
 
     await assembly.taskMemoryStore.save({

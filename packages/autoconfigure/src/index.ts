@@ -168,6 +168,7 @@ import {
   type SessionTagStore
 } from "@muse/runtime-state";
 import {
+  createSchedulerTools,
   DynamicSchedulerService,
   InMemoryDistributedSchedulerLock,
   InMemoryScheduledJobExecutionStore,
@@ -340,7 +341,12 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     securityPolicyProvider: mcpSecurityPolicyProvider
   });
   const runnerTools = createRunnerTools(env);
-  const toolRegistry = new DynamicToolRegistry([() => runnerTools, () => mcpManager.toMuseTools()]);
+  let schedulerService: DynamicSchedulerService | undefined;
+  const toolRegistry = new DynamicToolRegistry([
+    () => runnerTools,
+    () => mcpManager.toMuseTools(),
+    () => schedulerService ? createSchedulerTools(schedulerService) : []
+  ]);
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
@@ -371,7 +377,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const schedulerStore = createSchedulerStore(db, env);
   const schedulerExecutionStore = createSchedulerExecutionStore(db, env);
   const schedulerLock = createSchedulerLock(db, env);
-  const schedulerService = new DynamicSchedulerService({
+  schedulerService = new DynamicSchedulerService({
     dispatcher: new ScheduledJobDispatcher({
       agentExecutor: createScheduledAgentExecutor(() => agentRuntime, defaultModel),
       mcpInvoker: new ScheduledMcpToolInvoker(mcpManager)

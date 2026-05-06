@@ -17,6 +17,7 @@ import {
   SchedulerMessagingService,
   SchedulerValidationError,
   computeNextRunAt,
+  createSchedulerTools,
   createScheduledJobLockInsert,
   createScheduledJobExecutionInsert,
   createScheduledJobInsert,
@@ -362,6 +363,49 @@ describe("DynamicSchedulerService", () => {
 
     expect(store.findById(saved.id)?.lastStatus).toBeUndefined();
     expect(executions.findByJobId(saved.id)[0]?.dryRun).toBe(true);
+  });
+});
+
+describe("scheduler tools", () => {
+  it("exposes scheduler create, list, trigger, and dry-run actions as Muse tools", async () => {
+    const store = new InMemoryScheduledJobStore({ idFactory: () => "job-1" });
+    const executions = new InMemoryScheduledJobExecutionStore({ idFactory: () => "exec-1" });
+    const service = new DynamicSchedulerService({
+      dispatcher: new ScheduledJobDispatcher({
+        agentExecutor: { execute: async (job) => `ran:${job.name}` },
+        mcpInvoker: createUnusedMcpInvoker()
+      }),
+      executionStore: executions,
+      store
+    });
+    const tools = createSchedulerTools(service);
+    const byName = new Map(tools.map((tool) => [tool.definition.name, tool]));
+
+    expect([...byName.keys()]).toEqual([
+      "scheduler_list_jobs",
+      "scheduler_create_job",
+      "scheduler_trigger_job",
+      "scheduler_dry_run_job"
+    ]);
+    expect(byName.get("scheduler_create_job")?.definition.risk).toBe("write");
+
+    const created = await byName.get("scheduler_create_job")?.execute({
+      agentPrompt: "Summarize workspace status",
+      cronExpression: "0 * * * * *",
+      jobType: "agent",
+      name: "Workspace summary",
+      tags: ["ops"]
+    }, { runId: "run-1" });
+    const listed = await byName.get("scheduler_list_jobs")?.execute({}, { runId: "run-1" });
+    const triggered = await byName.get("scheduler_trigger_job")?.execute({ jobId: "job-1" }, { runId: "run-1" });
+    const dryRun = await byName.get("scheduler_dry_run_job")?.execute({ jobId: "job-1" }, { runId: "run-1" });
+
+    expect(created).toMatchObject({ id: "job-1", name: "Workspace summary" });
+    expect(listed).toMatchObject({ jobs: [{ id: "job-1", name: "Workspace summary" }], total: 1 });
+    expect(triggered).toEqual({ jobId: "job-1", result: "ran:Workspace summary" });
+    expect(dryRun).toEqual({ dryRun: true, jobId: "job-1", result: "ran:Workspace summary" });
+    expect(store.findById("job-1")?.lastStatus).toBe("success");
+    expect(executions.findByJobId("job-1")).toHaveLength(2);
   });
 });
 
