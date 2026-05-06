@@ -47,6 +47,35 @@ describe("tool approval policies", () => {
     });
   });
 
+  it("infers redacted workspace approval context for Atlassian-compatible read tools", () => {
+    expect(inferApprovalContext("jira_get_issue", {
+      issueKey: "MUSE-42",
+      requesterEmail: "example-user@example.com",
+      token: "ATATT3xFfGF0secret"
+    })).toEqual({
+      action: "jira_get_issue(MUSE-42)",
+      impactScope: "MUSE-42",
+      reason: "Jira read operation: jira_get_issue",
+      reversibility: "reversible"
+    });
+
+    expect(inferApprovalContext("bitbucket_list_prs", {
+      repoSlug: "platform-api"
+    })).toMatchObject({
+      action: "bitbucket_list_prs(platform-api)",
+      impactScope: "platform-api",
+      reason: "Bitbucket read operation: bitbucket_list_prs",
+      reversibility: "reversible"
+    });
+
+    expect(inferApprovalContext("jira_search_by_text", {
+      requesterEmail: "example-user@example.com"
+    })).toMatchObject({
+      action: "jira_search_by_text(***)",
+      impactScope: "***"
+    });
+  });
+
   it("renders approval requests with redacted arguments", () => {
     const rendered = renderApprovalRequest({
       arguments: {
