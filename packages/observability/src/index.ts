@@ -85,6 +85,16 @@ export interface StartupCheckResult {
   readonly ok: boolean;
 }
 
+export interface CacheHealthProbe {
+  get(key: string): Promise<unknown> | unknown;
+  put?(key: string, value: unknown): Promise<unknown> | unknown;
+}
+
+export interface McpHealthProbe {
+  listServers(): Promise<readonly { readonly name: string; readonly healthy?: boolean; readonly status?: string }[]> |
+    readonly { readonly name: string; readonly healthy?: boolean; readonly status?: string }[];
+}
+
 export interface StartupDoctorCheckReport {
   readonly details?: JsonObject;
   readonly id: string;
@@ -365,6 +375,55 @@ export class StartupDoctor {
       ok: reports.every((report) => report.ok || !report.required)
     };
   }
+}
+
+export function createCacheStartupCheck(
+  cache: CacheHealthProbe | undefined,
+  options: { readonly id?: string; readonly required?: boolean; readonly probeKey?: string } = {}
+): StartupCheck {
+  const id = options.id ?? "cache";
+
+  return {
+    id,
+    required: options.required ?? false,
+    async run(): Promise<StartupCheckResult> {
+      if (!cache) {
+        return { details: { configured: false }, ok: false };
+      }
+
+      const probeKey = options.probeKey ?? "__muse_startup_probe__";
+      await cache.put?.(probeKey, { ok: true });
+      await cache.get(probeKey);
+      return { details: { configured: true, probeKey }, ok: true };
+    }
+  };
+}
+
+export function createMcpStartupCheck(
+  probe: McpHealthProbe | undefined,
+  options: { readonly id?: string; readonly required?: boolean } = {}
+): StartupCheck {
+  const id = options.id ?? "mcp";
+
+  return {
+    id,
+    required: options.required ?? false,
+    async run(): Promise<StartupCheckResult> {
+      if (!probe) {
+        return { details: { configured: false }, ok: false };
+      }
+
+      const servers = await probe.listServers();
+      const unhealthy = servers.filter((server) => server.healthy === false || server.status === "unhealthy");
+      return {
+        details: {
+          serverCount: servers.length,
+          unhealthy: unhealthy.map((server) => server.name)
+        },
+        ok: unhealthy.length === 0
+      };
+    }
+  };
 }
 
 export class PinoTraceEventLogger implements TraceEventSink {

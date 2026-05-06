@@ -13,6 +13,8 @@ import {
   buildRagIngestionPolicyUpsertQuery,
   createRagIngestionCandidateInsert,
   createRagIngestionPolicyInsert,
+  DecomposingQueryTransformer,
+  ExtractiveContextCompressor,
   InMemoryRagIngestionCandidateStore,
   InMemoryRagIngestionPolicyStore,
   InMemoryRagCorpus,
@@ -249,5 +251,35 @@ describe("HypotheticalDocumentQueryTransformer", () => {
       "release checklist",
       "Hypothetical answer for release checklist"
     ]);
+  });
+});
+
+describe("decomposition and compression", () => {
+  it("decomposes comparison queries into bounded subqueries", () => {
+    const transformer = new DecomposingQueryTransformer({ maxQueries: 3 });
+
+    expect(transformer.transform("compare cache and rag then decide")).toEqual([
+      "compare cache and rag then decide",
+      "compare cache",
+      "rag"
+    ]);
+  });
+
+  it("extracts query-relevant sentences from retrieved documents", () => {
+    const compressor = new ExtractiveContextCompressor({ maxSentencesPerDocument: 1, minScore: 0.1 });
+    const [document] = compressor.compress("rag scheduler", [
+      {
+        content: "Billing notes are unrelated. RAG scheduler keeps documents fresh. Slack alerts are separate.",
+        estimatedTokens: 12,
+        id: "doc-1",
+        metadata: {},
+        score: 1
+      }
+    ]);
+
+    expect(document).toMatchObject({
+      content: "RAG scheduler keeps documents fresh.",
+      metadata: { compressed: true, originalEstimatedTokens: 12 }
+    });
   });
 });

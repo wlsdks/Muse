@@ -24,6 +24,11 @@ export type InputGuardRuleDecision =
   | { readonly allowed: true; readonly ruleId?: string }
   | { readonly allowed: false; readonly reason: string; readonly ruleId: string };
 
+export type OutputGuardRuleDecision =
+  | { readonly action: "allow"; readonly content: string; readonly ruleId?: string }
+  | { readonly action: "modify"; readonly content: string; readonly reason: string; readonly ruleId: string }
+  | { readonly action: "reject"; readonly content: string; readonly reason: string; readonly ruleId: string };
+
 type InputGuardRuleRow = Selectable<InputGuardRuleTable>;
 type InputGuardRuleInsert = Insertable<InputGuardRuleTable>;
 type OutputGuardRuleRow = Selectable<OutputGuardRuleTable>;
@@ -268,6 +273,61 @@ export async function evaluateInputGuardRules(
   return { allowed: true };
 }
 
+export async function evaluateOutputGuardRules(
+  store: Pick<GuardRuleStore, "listOutputRules">,
+  output: string
+): Promise<OutputGuardRuleDecision> {
+  const rules = await store.listOutputRules();
+  let content = output;
+  let modifiedBy: string | undefined;
+  let modifiedRuleId: string | undefined;
+
+  for (const rule of rules) {
+    if (!booleanValue(rule.enabled, true)) {
+      continue;
+    }
+
+    const pattern = outputGuardPattern(rule);
+
+    if (!pattern || !pattern.test(content)) {
+      continue;
+    }
+    pattern.lastIndex = 0;
+
+    const action = stringValue(rule.action).toLowerCase();
+    const ruleId = stringValue(rule.id);
+    const name = stringValue(rule.name) || ruleId;
+
+    if (action === "allow") {
+      return { action: "allow", content, ruleId };
+    }
+
+    if (action === "reject" || action === "block") {
+      return {
+        action: "reject",
+        content,
+        reason: `Rejected by output guard rule: ${name}`,
+        ruleId
+      };
+    }
+
+    content = content.replace(pattern, stringValue(rule.replacement) || "[REDACTED]");
+    modifiedBy ??= name;
+    modifiedRuleId ??= ruleId;
+  }
+
+  if (modifiedBy && modifiedRuleId) {
+    return {
+      action: "modify",
+      content,
+      reason: `Modified by output guard rule: ${modifiedBy}`,
+      ruleId: modifiedRuleId
+    };
+  }
+
+  return { action: "allow", content };
+}
+
 export function createOutputGuardRuleInsert(record: JsonObject): OutputGuardRuleInsert {
   const prepared = withIdentity(record, "output_guard_rule");
   return {
@@ -351,6 +411,20 @@ function matchesInputGuardRule(rule: JsonObject, input: string): boolean {
     return new RegExp(pattern, "iu").test(input);
   } catch {
     return false;
+  }
+}
+
+function outputGuardPattern(rule: JsonObject): RegExp | undefined {
+  const pattern = stringValue(rule.pattern);
+
+  if (pattern.length === 0) {
+    return undefined;
+  }
+
+  try {
+    return new RegExp(pattern, "giu");
+  } catch {
+    return undefined;
   }
 }
 

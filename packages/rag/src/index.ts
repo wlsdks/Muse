@@ -51,6 +51,16 @@ export interface HypotheticalDocumentQueryTransformerOptions {
   readonly includeOriginal?: boolean;
 }
 
+export interface DecomposingQueryTransformerOptions {
+  readonly includeOriginal?: boolean;
+  readonly maxQueries?: number;
+}
+
+export interface ExtractiveContextCompressorOptions {
+  readonly maxSentencesPerDocument?: number;
+  readonly minScore?: number;
+}
+
 export interface ContextCompressor {
   compress(query: string, documents: readonly RetrievedDocument[]): Awaitable<readonly RetrievedDocument[]>;
 }
@@ -983,6 +993,83 @@ export class HypotheticalDocumentQueryTransformer implements QueryTransformer {
   }
 }
 
+export class DecomposingQueryTransformer implements QueryTransformer {
+  private readonly includeOriginal: boolean;
+  private readonly maxQueries: number;
+
+  constructor(options: DecomposingQueryTransformerOptions = {}) {
+    this.includeOriginal = options.includeOriginal ?? true;
+    this.maxQueries = Math.max(1, options.maxQueries ?? 5);
+  }
+
+  transform(query: string): readonly string[] {
+    const trimmed = query.trim();
+
+    if (trimmed.length === 0) {
+      return [];
+    }
+
+    const parts = trimmed
+      .split(/\s+(?:and|or|then|vs\.?|versus)\s+|[?;]\s*|(?:그리고|또는|다음으로|대비|비교)\s*/iu)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    const queries = this.includeOriginal ? [trimmed] : [];
+
+    for (const part of parts) {
+      if (!queries.includes(part)) {
+        queries.push(part);
+      }
+      if (queries.length >= this.maxQueries) {
+        break;
+      }
+    }
+
+    return queries;
+  }
+}
+
+export class ExtractiveContextCompressor implements ContextCompressor {
+  private readonly maxSentencesPerDocument: number;
+  private readonly minScore: number;
+
+  constructor(options: ExtractiveContextCompressorOptions = {}) {
+    this.maxSentencesPerDocument = Math.max(1, options.maxSentencesPerDocument ?? 3);
+    this.minScore = Math.max(0, options.minScore ?? 0);
+  }
+
+  compress(query: string, documents: readonly RetrievedDocument[]): readonly RetrievedDocument[] {
+    const queryTokens = new Set(tokenize(query));
+
+    return documents.flatMap((document) => {
+      const selected = splitSentences(document.content)
+        .map((sentence) => ({
+          score: overlapScore(queryTokens, new Set(tokenize(sentence))),
+          sentence
+        }))
+        .filter((candidate) => candidate.score >= this.minScore)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, this.maxSentencesPerDocument)
+        .map((candidate) => candidate.sentence);
+
+      if (selected.length === 0) {
+        return [];
+      }
+
+      const content = selected.join(" ");
+      return [{
+        ...document,
+        content,
+        estimatedTokens: Math.max(1, Math.ceil(document.estimatedTokens * (content.length / Math.max(1, document.content.length)))),
+        metadata: {
+          ...document.metadata,
+          compressed: true,
+          originalEstimatedTokens: document.estimatedTokens
+        }
+      }];
+    });
+  }
+}
+
 export class DefaultRagPipeline implements RagPipeline {
   private readonly queryTransformer?: QueryTransformer;
   private readonly retriever: DocumentRetriever;
@@ -1101,6 +1188,13 @@ function overlapScore(left: ReadonlySet<string>, right: ReadonlySet<string>): nu
   }
 
   return matches / left.size;
+}
+
+function splitSentences(text: string): readonly string[] {
+  return text
+    .split(/(?<=[.!?。！？])\s+|\n+/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
 }
 
 function sum(values: readonly number[]): number {

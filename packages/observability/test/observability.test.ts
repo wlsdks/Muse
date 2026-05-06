@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  createCacheStartupCheck,
+  createMcpStartupCheck,
   createTraceEventInsert,
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
@@ -195,6 +197,28 @@ describe("startup doctor and log export", () => {
           required: false
         }
       ],
+      ok: false
+    });
+  });
+
+  it("creates cache and MCP startup checks from live probes", async () => {
+    const cacheCheck = createCacheStartupCheck({
+      get: (key) => key,
+      put: () => undefined
+    });
+    const mcpCheck = createMcpStartupCheck({
+      listServers: () => [
+        { healthy: true, name: "docs" },
+        { healthy: false, name: "local" }
+      ]
+    });
+
+    await expect(cacheCheck.run()).resolves.toEqual({
+      details: { configured: true, probeKey: "__muse_startup_probe__" },
+      ok: true
+    });
+    await expect(mcpCheck.run()).resolves.toEqual({
+      details: { serverCount: 2, unhealthy: ["local"] },
       ok: false
     });
   });

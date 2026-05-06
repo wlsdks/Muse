@@ -3,12 +3,14 @@ import { createToolNameApprovalPolicy } from "@muse/policy";
 import {
   createRustRunnerTool,
   isWorkspaceMutationPrompt,
+  planToolExecutionOrder,
   parseRunnerCommandRequest,
   shortenToolDescription,
   ToolExecutor,
   ToolRegistry,
   ToolRegistryError,
   toModelTool,
+  validateToolDefinitions,
   type MuseTool
 } from "../src/index.js";
 
@@ -198,6 +200,49 @@ describe("tool utilities", () => {
     expect(isWorkspaceMutationPrompt("Show unassigned Jira issues.")).toBe(false);
     expect(isWorkspaceMutationPrompt("Write this Confluence page as a Slack message.")).toBe(false);
     expect(isWorkspaceMutationPrompt("비트버킷 PR에 코멘트해줘")).toBe(true);
+  });
+
+  it("validates tool descriptions and dependencies before model exposure", () => {
+    const invalidTool: MuseTool = {
+      definition: {
+        dependsOn: ["missing"],
+        description: "",
+        inputSchema: { type: "string" },
+        name: "bad_tool",
+        risk: "read"
+      },
+      execute: () => "unused"
+    };
+
+    expect(validateToolDefinitions([invalidTool]).map((issue) => issue.code)).toEqual([
+      "missing_description",
+      "missing_input_schema",
+      "unknown_dependency"
+    ]);
+  });
+
+  it("plans tool execution with declared dependencies first", () => {
+    const authenticate: MuseTool = {
+      definition: {
+        description: "Authenticate before using downstream APIs.",
+        inputSchema: { type: "object" },
+        name: "authenticate",
+        risk: "read"
+      },
+      execute: () => "ok"
+    };
+    const fetchIssue: MuseTool = {
+      definition: {
+        dependsOn: ["authenticate"],
+        description: "Fetch a synthetic issue after auth is ready.",
+        inputSchema: { type: "object" },
+        name: "fetch_issue",
+        risk: "read"
+      },
+      execute: () => "issue"
+    };
+
+    expect(planToolExecutionOrder([fetchIssue, authenticate])).toEqual(["authenticate", "fetch_issue"]);
   });
 });
 

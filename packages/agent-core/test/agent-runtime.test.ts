@@ -4,10 +4,11 @@ import { InMemoryResponseCache } from "@muse/cache";
 import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
 import { DefaultRagPipeline, InMemoryRagCorpus, SimpleReranker } from "@muse/rag";
-import { InMemoryAgentRunHistoryStore, InMemoryHookTraceStore } from "@muse/runtime-state";
+import { InMemoryAgentRunHistoryStore, InMemoryCheckpointStore, InMemoryHookTraceStore } from "@muse/runtime-state";
 import { ToolRegistry } from "@muse/tools";
 import {
   createAgentRuntime,
+  createAgentCheckpointState,
   createCasualLureStripResponseFilter,
   createFabricationRequestRefusalFilter,
   createGreetingStripResponseFilter,
@@ -29,6 +30,8 @@ import {
   createToolResultQualityAuditFilter,
   createVerifiedSourcesResponseFilter,
   createZeroResultOverclaimResponseFilter,
+  decodeCheckpointMessages,
+  encodeCheckpointMessages,
   GuardBlockedError,
   HookRegistry,
   ModelRoutingError,
@@ -139,6 +142,46 @@ function createStreamingSequenceProvider(
 }
 
 describe("AgentRuntime", () => {
+  it("encodes checkpoint messages with replay-safe versioned payloads", () => {
+    const messages = [
+      {
+        content: "Need invoice total",
+        role: "assistant" as const,
+        toolCalls: [{ arguments: { id: "invoice-1" }, id: "tool-1", name: "read_invoice" }]
+      },
+      { content: "42", role: "tool" as const, toolCallId: "tool-1", name: "read_invoice" }
+    ];
+    const state = createAgentCheckpointState({
+      messages,
+      model: "test-model",
+      phase: "tool_loop"
+    });
+
+    expect(state.encodedMessages[0]).toMatch(/^v1\|assistant\|/u);
+    expect(decodeCheckpointMessages(state.encodedMessages)).toEqual(messages);
+    expect(() => decodeCheckpointMessages(["ROLE:content"])).toThrow(ModelRoutingError);
+  });
+
+  it("records start and completion checkpoints without blocking the run", async () => {
+    const checkpointStore = new InMemoryCheckpointStore({ idFactory: () => "checkpoint-1" });
+    const runtime = createAgentRuntime({
+      checkpointStore,
+      modelProvider: createProvider()
+    });
+
+    await runtime.run({
+      messages: [{ content: "Help me choose", role: "user" }],
+      model: "provider/model",
+      runId: "run-checkpoint"
+    });
+
+    const checkpoints = await checkpointStore.findByRunId("run-checkpoint");
+
+    expect(checkpoints.map((checkpoint) => checkpoint.step)).toEqual([0, 100]);
+    expect(checkpoints[0]?.state).toMatchObject({ phase: "start" });
+    expect(checkpoints[1]?.state).toMatchObject({ output: "Muse response", phase: "complete" });
+  });
+
   it("calls the provider through the model-agnostic interface", async () => {
     const runtime = createAgentRuntime({ modelProvider: createProvider() });
 

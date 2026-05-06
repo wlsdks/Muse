@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import type { AgentSpecResolution } from "@muse/agent-specs";
 import {
   buildCacheKey,
@@ -36,6 +37,7 @@ import {
 import type {
   AgentRunHistoryStore,
   AgentRunMode,
+  CheckpointStore,
   HookLifecycle,
   HookTraceStore,
   PendingApprovalStore
@@ -138,6 +140,7 @@ export interface AgentRuntimeOptions {
   readonly modelRegistry?: ModelProviderRegistry;
   readonly agentSpecResolver?: AgentSpecResolver;
   readonly historyStore?: AgentRunHistoryStore;
+  readonly checkpointStore?: CheckpointStore;
   readonly hookRegistry?: HookRegistry;
   readonly hookTraceStore?: HookTraceStore;
   readonly responseCache?: ResponseCache;
@@ -193,6 +196,14 @@ export interface AgentContextWindowReport {
   readonly estimatedTokens: number;
   readonly removedCount: number;
   readonly summaryInserted: boolean;
+}
+
+export interface AgentCheckpointState extends JsonObject {
+  readonly phase: string;
+  readonly model: string;
+  readonly encodedMessages: string[];
+  readonly metadata: JsonObject | null;
+  readonly output: string | null;
 }
 
 export class GuardBlockedError extends Error {
@@ -253,6 +264,7 @@ export class AgentRuntime {
   private readonly modelRegistry?: ModelProviderRegistry;
   private readonly agentSpecResolver?: AgentSpecResolver;
   private readonly historyStore?: AgentRunHistoryStore;
+  private readonly checkpointStore?: CheckpointStore;
   private readonly hookRegistry?: HookRegistry;
   private readonly hookTraceStore?: HookTraceStore;
   private readonly responseCache?: ResponseCache;
@@ -279,6 +291,7 @@ export class AgentRuntime {
     this.modelRegistry = options.modelRegistry;
     this.agentSpecResolver = options.agentSpecResolver;
     this.historyStore = options.historyStore;
+    this.checkpointStore = options.checkpointStore;
     this.hookRegistry = options.hookRegistry;
     this.hookTraceStore = options.hookTraceStore;
     this.responseCache = options.responseCache;
@@ -327,6 +340,7 @@ export class AgentRuntime {
     });
 
     try {
+      await this.recordCheckpoint(context, 0, "start", context.input.messages);
       await this.evaluateGuards(context);
       await this.invokeHooks("beforeStart", context);
 
@@ -360,6 +374,7 @@ export class AgentRuntime {
           toolResults: [],
           toolsUsed: cached.toolsUsed
         });
+        await this.recordCheckpoint(context, 100, "complete", context.input.messages, guardedCachedResponse.output);
         await this.invokeHooks("afterComplete", context, guardedCachedResponse);
         this.recordAgentRun(context, guardedCachedResponse.model, "completed", startedAtMs);
         return createRunResult(
@@ -385,6 +400,7 @@ export class AgentRuntime {
       const guardedResponse = await this.applyOutputGuards(context, filteredResponse);
 
       await this.recordRunComplete(context, { ...execution, finalResponse: guardedResponse });
+      await this.recordCheckpoint(context, 100, "complete", context.input.messages, guardedResponse.output);
       await this.writeCache(cacheKey, guardedResponse, execution.toolsUsed);
       await this.invokeHooks("afterComplete", context, guardedResponse);
       this.recordAgentRun(context, guardedResponse.model, "completed", startedAtMs);
@@ -397,6 +413,7 @@ export class AgentRuntime {
       );
     } catch (error) {
       runSpan.setError(error);
+      await this.recordCheckpoint(context, 900, "failed", context.input.messages, error instanceof Error ? error.message : String(error));
       await this.recordRunFailure(context, error);
       this.recordAgentRun(context, context.input.model, "failed", startedAtMs);
       await this.invokeHooks("onError", context, error);
@@ -421,6 +438,7 @@ export class AgentRuntime {
     });
 
     try {
+      await this.recordCheckpoint(context, 0, "start", context.input.messages);
       await this.evaluateGuards(context);
       await this.invokeHooks("beforeStart", context);
 
@@ -454,6 +472,7 @@ export class AgentRuntime {
           toolResults: [],
           toolsUsed: cached.toolsUsed
         });
+        await this.recordCheckpoint(context, 100, "complete", context.input.messages, guardedCachedResponse.output);
         await this.invokeHooks("afterComplete", context, guardedCachedResponse);
         this.recordAgentRun(context, guardedCachedResponse.model, "completed", startedAtMs);
         yield { runId: context.runId, text: guardedCachedResponse.output, type: "text-delta" };
@@ -487,6 +506,7 @@ export class AgentRuntime {
         ...execution,
         finalResponse: response
       });
+      await this.recordCheckpoint(context, 100, "complete", context.input.messages, response.output);
       await this.writeCache(cacheKey, response, execution.toolsUsed);
       await this.invokeHooks("afterComplete", context, response);
       this.recordAgentRun(context, response.model, "completed", startedAtMs);
@@ -496,6 +516,7 @@ export class AgentRuntime {
       yield { response, runId: context.runId, type: "done" };
     } catch (error) {
       runSpan.setError(error);
+      await this.recordCheckpoint(context, 900, "failed", context.input.messages, error instanceof Error ? error.message : String(error));
       await this.recordRunFailure(context, error);
       this.recordAgentRun(context, context.input.model, "failed", startedAtMs);
       await this.invokeHooks("onError", context, error);
@@ -1313,6 +1334,34 @@ export class AgentRuntime {
     }
   }
 
+  private async recordCheckpoint(
+    context: AgentRunContext,
+    step: number,
+    phase: string,
+    messages: readonly ModelMessage[],
+    output?: string
+  ): Promise<void> {
+    if (!this.checkpointStore) {
+      return;
+    }
+
+    try {
+      await this.checkpointStore.save({
+        runId: context.runId,
+        state: createAgentCheckpointState({
+          metadata: context.input.metadata,
+          model: context.input.model,
+          output,
+          phase,
+          messages
+        }),
+        step
+      });
+    } catch {
+      // Checkpoints support replay/debugging and must not block the agent loop.
+    }
+  }
+
   private resolveToolRisk(name: string): "read" | "write" | "execute" {
     return this.toolRegistry?.get(name)?.definition.risk ?? "read";
   }
@@ -1337,6 +1386,47 @@ export class AgentRuntime {
 
 export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
   return new AgentRuntime(options);
+}
+
+export function createAgentCheckpointState(input: {
+  readonly phase: string;
+  readonly model: string;
+  readonly messages: readonly ModelMessage[];
+  readonly metadata?: JsonObject;
+  readonly output?: string;
+}): AgentCheckpointState {
+  return {
+    encodedMessages: [...encodeCheckpointMessages(input.messages)],
+    metadata: input.metadata ?? null,
+    model: input.model,
+    output: input.output ?? null,
+    phase: input.phase
+  };
+}
+
+export function encodeCheckpointMessages(messages: readonly ModelMessage[]): readonly string[] {
+  return messages.map((message) => {
+    const payload = Buffer.from(JSON.stringify(message), "utf8").toString("base64");
+    return `v1|${message.role}|${payload}`;
+  });
+}
+
+export function decodeCheckpointMessages(encoded: readonly string[]): readonly ModelMessage[] {
+  return encoded.map((entry) => {
+    const [version, role, payload] = entry.split("|");
+
+    if (version !== "v1" || !role || !payload) {
+      throw new ModelRoutingError("Unsupported checkpoint message encoding");
+    }
+
+    const parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as unknown;
+
+    if (!isModelMessage(parsed) || parsed.role !== role) {
+      throw new ModelRoutingError("Invalid checkpoint message payload");
+    }
+
+    return parsed;
+  });
 }
 
 interface ModelLoopExecution {
@@ -2779,6 +2869,14 @@ function readStructuredOutputFormat(value: unknown): StructuredOutputFormat | un
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isModelMessage(value: unknown): value is ModelMessage {
+  if (!isRecord(value) || typeof value.content !== "string") {
+    return false;
+  }
+
+  return value.role === "system" || value.role === "user" || value.role === "assistant" || value.role === "tool";
 }
 
 function ragFilters(metadata: JsonObject | undefined): JsonObject | undefined {

@@ -16,6 +16,7 @@ export interface MuseToolDefinition {
   readonly description: string;
   readonly inputSchema: JsonObject;
   readonly risk: ToolRisk;
+  readonly dependsOn?: readonly string[];
 }
 
 export interface MuseToolContext {
@@ -89,6 +90,12 @@ export interface ToolExecutionResult {
 export interface ToolIdempotencyStore {
   get(key: string): ToolExecutionResult | undefined;
   set(key: string, result: ToolExecutionResult): unknown;
+}
+
+export interface ToolDescriptionIssue {
+  readonly code: "missing_description" | "missing_input_schema" | "ambiguous_risk" | "duplicate_name" | "unknown_dependency";
+  readonly message: string;
+  readonly toolName: string;
 }
 
 export class ToolRegistry {
@@ -242,6 +249,74 @@ export function toModelTool(tool: MuseTool): ModelTool {
   };
 }
 
+export function validateToolDefinitions(tools: readonly MuseTool[]): readonly ToolDescriptionIssue[] {
+  const issues: ToolDescriptionIssue[] = [];
+  const seen = new Set<string>();
+  const names = new Set(tools.map((tool) => tool.definition.name));
+
+  for (const tool of tools) {
+    const { definition } = tool;
+
+    if (seen.has(definition.name)) {
+      issues.push({
+        code: "duplicate_name",
+        message: `Duplicate tool name: ${definition.name}`,
+        toolName: definition.name
+      });
+    }
+    seen.add(definition.name);
+
+    if (definition.description.trim().length < 12) {
+      issues.push({
+        code: "missing_description",
+        message: `Tool '${definition.name}' needs a concrete user-facing description`,
+        toolName: definition.name
+      });
+    }
+
+    if (!isRecord(definition.inputSchema) || definition.inputSchema.type !== "object") {
+      issues.push({
+        code: "missing_input_schema",
+        message: `Tool '${definition.name}' must expose an object input schema`,
+        toolName: definition.name
+      });
+    }
+
+    if (!["read", "write", "execute"].includes(definition.risk)) {
+      issues.push({
+        code: "ambiguous_risk",
+        message: `Tool '${definition.name}' has an unsupported risk level`,
+        toolName: definition.name
+      });
+    }
+
+    for (const dependency of definition.dependsOn ?? []) {
+      if (!names.has(dependency)) {
+        issues.push({
+          code: "unknown_dependency",
+          message: `Tool '${definition.name}' depends on unknown tool '${dependency}'`,
+          toolName: definition.name
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+export function planToolExecutionOrder(tools: readonly MuseTool[]): readonly string[] {
+  const byName = new Map(tools.map((tool) => [tool.definition.name, tool]));
+  const temporary = new Set<string>();
+  const permanent = new Set<string>();
+  const ordered: string[] = [];
+
+  for (const tool of tools) {
+    visitTool(tool.definition.name, byName, temporary, permanent, ordered);
+  }
+
+  return ordered;
+}
+
 export function shortenToolDescription(text: string, maxChars = 200): string {
   if (text.trim().length === 0) {
     return text;
@@ -254,6 +329,38 @@ export function shortenToolDescription(text: string, maxChars = 200): string {
   }
 
   return `${firstParagraph.slice(0, Math.max(0, maxChars - 1))}...`;
+}
+
+function visitTool(
+  name: string,
+  byName: ReadonlyMap<string, MuseTool>,
+  temporary: Set<string>,
+  permanent: Set<string>,
+  ordered: string[]
+): void {
+  if (permanent.has(name)) {
+    return;
+  }
+
+  if (temporary.has(name)) {
+    throw new ToolRegistryError(`Tool dependency cycle detected at: ${name}`);
+  }
+
+  const tool = byName.get(name);
+
+  if (!tool) {
+    return;
+  }
+
+  temporary.add(name);
+
+  for (const dependency of tool.definition.dependsOn ?? []) {
+    visitTool(dependency, byName, temporary, permanent, ordered);
+  }
+
+  temporary.delete(name);
+  permanent.add(name);
+  ordered.push(name);
 }
 
 export function isWorkspaceMutationPrompt(prompt: string | undefined | null): boolean {

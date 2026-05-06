@@ -13,6 +13,7 @@ import {
   createOutputGuardRuleAuditInsert,
   createOutputGuardRuleInsert,
   evaluateInputGuardRules,
+  evaluateOutputGuardRules,
   mapInputGuardRuleRow,
   mapOutputGuardRuleAuditRow,
   mapOutputGuardRuleRow
@@ -95,6 +96,40 @@ describe("guard rule store mapping", () => {
     await expect(evaluateInputGuardRules(store, "release plan")).resolves.toEqual({
       allowed: true,
       ruleId: "allow-rule"
+    });
+  });
+
+  it("evaluates dynamic output guard rules with masking and rejection", async () => {
+    const store = new InMemoryGuardRuleStore();
+    await store.saveOutputRule({
+      action: "MASK",
+      enabled: true,
+      id: "mask-secret",
+      name: "Mask secret",
+      pattern: "secret-[0-9]+",
+      priority: 10,
+      replacement: "[SECRET]"
+    });
+    await store.saveOutputRule({
+      action: "reject",
+      enabled: true,
+      id: "reject-token",
+      name: "Reject token",
+      pattern: "token",
+      priority: 20
+    });
+
+    await expect(evaluateOutputGuardRules(store, "value secret-123")).resolves.toEqual({
+      action: "modify",
+      content: "value [SECRET]",
+      reason: "Modified by output guard rule: Mask secret",
+      ruleId: "mask-secret"
+    });
+    await expect(evaluateOutputGuardRules(store, "contains token")).resolves.toEqual({
+      action: "reject",
+      content: "contains token",
+      reason: "Rejected by output guard rule: Reject token",
+      ruleId: "reject-token"
     });
   });
 });
