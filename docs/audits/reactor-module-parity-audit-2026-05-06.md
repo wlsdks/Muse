@@ -8,9 +8,11 @@ but those checks do not prove behavior parity. This document tracks feature-leve
 
 - `REACTOR_SOURCE_DIR=/Users/stark/ai/reactor pnpm verify:reactor-routes`: pass
   - Reactor routes: 255
-  - Muse routes: 369
+  - Muse routes: 371
   - Missing Reactor routes: 0
 - `REACTOR_SOURCE_DIR=/Users/stark/ai/reactor pnpm verify:reactor-db`: pass
+  - Reactor DB migration files: 76
+  - Muse DB migration files: 1
   - Reactor tables: 52
   - Muse tables: 64
   - Missing Reactor tables: 0
@@ -53,7 +55,7 @@ but those checks do not prove behavior parity. This document tracks feature-leve
 | `persistence-schema` | `packages/db` | Needs runtime verification | Kysely schema and consolidated SQL migration include all Reactor table names; parity script passes. | Muse uses one consolidated migration. There is no PostgreSQL/Testcontainers upgrade-path verification equivalent to Flyway history. |
 | `promptlab` | `packages/promptlab`, `apps/api` | Partial | Feedback, prompt lab experiments/trials/reports, personas/templates/intents, auto-optimize and report persistence. | Live experiment scheduler/store behavior, metrics winner/confidence semantics, and deeper experiment orchestration parity are not fully proven. |
 | `prompts` | `packages/prompts`, `packages/promptlab`, `packages/agent-core` | Partial | System prompt builder, response format instructions, context/tool result blocks, cache boundary helpers. | Persona/template prompt layering, exemplar ingestion/retrieval, provider-specific prompt contributions, and prompt layer registry are incomplete. |
-| `rag` | `packages/rag`, `apps/api` | Partial | Chunking, BM25, RRF, HyDE-style hypothetical document query transform, decomposition query transform, extractive context compression, simple retrieval pipeline, ingestion policy/candidate stores, document compatibility routes. | Vector store, hybrid retrieval, adaptive router, conversation-aware transforms, parent document retriever, and retrieval eval suite are missing. |
+| `rag` | `packages/rag`, `apps/api` | Partial | Chunking, BM25, RRF, in-memory vector store, hybrid lexical/vector retrieval, adaptive lexical-vs-hybrid routing, parent document expansion, HyDE-style hypothetical document query transform, decomposition query transform, extractive context compression, simple retrieval pipeline, ingestion policy/candidate stores, document compatibility routes. | Conversation-aware transforms, retrieval eval suite, live vector DB adapter, and end-to-end RAG runtime smoke are still missing. |
 | `resilience` | `packages/resilience`, `packages/agent-core` | Complete | Circuit breaker, registry, retry, timeout, no-op/model fallback, tests, agent-core wiring. | No major gap found for the Reactor module's core scope. |
 | `runtime-settings` | `packages/runtime-settings`, `apps/api` | Complete | Typed settings, cache refresh/invalidation, in-memory/Kysely stores, admin compatibility routes and tests. | No major gap found for core scope. |
 | `scheduler` | `packages/scheduler`, `apps/api` | Partial | Job/execution stores, cron runtime, trigger/dry-run, agent/MCP jobs, retry/timeout, distributed lock, management routes. | Reactor scheduler tools as first-class tools, richer notification/Teams formatting, dry-run details, and policy-pipeline breadth are partial. |
@@ -69,4 +71,4 @@ but those checks do not prove behavior parity. This document tracks feature-leve
 4. Audit `reactor-compat-routes.ts` fallback `Map` state route family by route family and eliminate remaining DB-backed gaps.
 5. Implement richer diagnostics and production exporter wiring.
 6. Keep write-tool blocking in guards/policy rather than fail-open hooks.
-7. Continue closing large behavior gaps in `rag`, `tool`, `guard`, `agent`, and `slack` Socket Mode.
+7. Continue closing large behavior gaps in `tool`, `guard`, `agent`, and `slack` Socket Mode; RAG now has local vector/hybrid/adaptive/parent retrieval but still needs conversation-aware retrieval, evals, and live vector DB verification.

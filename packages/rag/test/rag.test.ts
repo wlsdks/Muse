@@ -9,18 +9,22 @@ import {
 } from "kysely";
 import {
   Bm25Scorer,
+  AdaptiveRagRetriever,
   DefaultRagPipeline,
   buildRagIngestionPolicyUpsertQuery,
   createRagIngestionCandidateInsert,
   createRagIngestionPolicyInsert,
   DecomposingQueryTransformer,
   ExtractiveContextCompressor,
+  HybridDocumentRetriever,
+  InMemoryVectorStore,
   InMemoryRagIngestionCandidateStore,
   InMemoryRagIngestionPolicyStore,
   InMemoryRagCorpus,
   mapRagIngestionCandidateRow,
   mapRagIngestionPolicyRow,
   PassthroughQueryTransformer,
+  ParentDocumentRetriever,
   HypotheticalDocumentQueryTransformer,
   SimpleContextBuilder,
   SimpleReranker,
@@ -190,6 +194,110 @@ describe("RRF and reranking", () => {
   });
 });
 
+describe("advanced RAG retrieval", () => {
+  it("combines lexical and vector rankings in a hybrid retriever", async () => {
+    const corpus = new InMemoryRagCorpus();
+    const vectorStore = new InMemoryVectorStore();
+    const embeddingModel = {
+      embed: async (text: string) => vectorFor(text)
+    };
+    const lexicalDocument = {
+      content: "Cache invalidation uses deterministic keys.",
+      id: "lexical",
+      metadata: { workspaceId: "workspace-1" },
+      source: "cache"
+    };
+    const semanticDocument = {
+      content: "Muse remembers durable user preferences for future decisions.",
+      id: "semantic",
+      metadata: { workspaceId: "workspace-1" },
+      source: "memory"
+    };
+
+    corpus.add(lexicalDocument);
+    corpus.add(semanticDocument);
+    await vectorStore.upsert(lexicalDocument, [0, 1]);
+    await vectorStore.upsert(semanticDocument, [1, 0]);
+
+    const retriever = new HybridDocumentRetriever({
+      embeddingModel,
+      lexical: corpus,
+      vectorStore
+    });
+    const results = await retriever.retrieve(["remember user choices"], 2, { workspaceId: "workspace-1" });
+
+    expect(results.map((document) => document.id)).toContain("semantic");
+    expect(results[0]?.score).toBeGreaterThan(0);
+    expect(results[0]?.metadata).toMatchObject({ workspaceId: "workspace-1" });
+  });
+
+  it("routes short exact queries to lexical retrieval and semantic comparison queries to hybrid retrieval", async () => {
+    const calls: string[] = [];
+    const lexical = {
+      retrieve: async () => {
+        calls.push("lexical");
+        return [];
+      }
+    };
+    const hybrid = {
+      retrieve: async () => {
+        calls.push("hybrid");
+        return [];
+      }
+    };
+    const retriever = new AdaptiveRagRetriever({ hybrid, lexical });
+
+    await retriever.retrieve(["cache"], 5);
+    await retriever.retrieve(["compare memory and rag tradeoffs for future context"], 5);
+
+    expect(calls).toEqual(["lexical", "hybrid"]);
+  });
+
+  it("expands retrieved child chunks back to parent documents", async () => {
+    const parent = {
+      content: "Full parent document with all migration context.",
+      id: "parent-1",
+      metadata: { workspaceId: "workspace-1" },
+      source: "architecture"
+    };
+    const parentStore = new InMemoryRagCorpus();
+    parentStore.add(parent);
+    const retriever = new ParentDocumentRetriever({
+      childRetriever: {
+        retrieve: async () => [
+          {
+            content: "migration context",
+            estimatedTokens: 2,
+            id: "parent-1::chunk-0",
+            metadata: {
+              chunk_index: 0,
+              parent_document_id: "parent-1",
+              workspaceId: "workspace-1"
+            },
+            score: 0.9,
+            source: "architecture"
+          }
+        ]
+      },
+      parentLookup: parentStore
+    });
+
+    const results = await retriever.retrieve(["migration"], 5, { workspaceId: "workspace-1" });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      content: "Full parent document with all migration context.",
+      id: "parent-1",
+      metadata: {
+        matched_child_id: "parent-1::chunk-0",
+        workspaceId: "workspace-1"
+      },
+      score: 0.9,
+      source: "architecture"
+    });
+  });
+});
+
 describe("context builders", () => {
   it("builds simple and structured context within a token budget", () => {
     const documents = [
@@ -201,6 +309,12 @@ describe("context builders", () => {
     expect(JSON.parse(new StructuredContextBuilder().build(documents, 1)).documents).toHaveLength(1);
   });
 });
+
+function vectorFor(text: string): readonly number[] {
+  return text.includes("remember") || text.includes("preferences") || text.includes("choices")
+    ? [1, 0]
+    : [0, 1];
+}
 
 describe("DefaultRagPipeline", () => {
   it("retrieves, reranks, and builds context from an in-memory corpus", async () => {

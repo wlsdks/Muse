@@ -38,6 +38,24 @@ export interface DocumentRetriever {
   retrieve(queries: readonly string[], topK: number, filters?: JsonObject): Awaitable<readonly RetrievedDocument[]>;
 }
 
+export interface DocumentLookup {
+  get(id: string): Awaitable<RagDocument | undefined>;
+}
+
+export interface EmbeddingModel {
+  embed(text: string): Awaitable<readonly number[]>;
+}
+
+export interface VectorSearchResult {
+  readonly id: string;
+  readonly score: number;
+}
+
+export interface VectorStore extends DocumentLookup {
+  upsert(document: RagDocument, embedding: readonly number[]): Awaitable<void>;
+  search(embedding: readonly number[], topK: number, filters?: JsonObject): Awaitable<readonly VectorSearchResult[]>;
+}
+
 export interface DocumentReranker {
   rerank(query: string, documents: readonly RetrievedDocument[], topK: number): Awaitable<readonly RetrievedDocument[]>;
 }
@@ -160,6 +178,27 @@ export interface DefaultRagPipelineOptions {
 
 export interface InMemoryRagCorpusOptions {
   readonly chunker?: DocumentChunker;
+  readonly tokenEstimator?: TokenEstimator;
+}
+
+export interface HybridDocumentRetrieverOptions {
+  readonly lexical: DocumentRetriever;
+  readonly vectorStore: VectorStore;
+  readonly embeddingModel: EmbeddingModel;
+  readonly bm25Weight?: number;
+  readonly vectorWeight?: number;
+  readonly tokenEstimator?: TokenEstimator;
+}
+
+export interface AdaptiveRagRetrieverOptions {
+  readonly lexical: DocumentRetriever;
+  readonly hybrid: DocumentRetriever;
+  readonly route?: (queries: readonly string[]) => "lexical" | "hybrid";
+}
+
+export interface ParentDocumentRetrieverOptions {
+  readonly childRetriever: DocumentRetriever;
+  readonly parentLookup: DocumentLookup | ((id: string) => Awaitable<RagDocument | undefined>);
   readonly tokenEstimator?: TokenEstimator;
 }
 
@@ -898,6 +937,205 @@ export class InMemoryRagCorpus implements DocumentRetriever {
   }
 }
 
+export class InMemoryVectorStore implements VectorStore {
+  private readonly documents = new Map<string, RagDocument>();
+  private readonly embeddings = new Map<string, readonly number[]>();
+
+  upsert(document: RagDocument, embedding: readonly number[]): void {
+    if (embedding.length === 0) {
+      throw new Error("Vector embedding must not be empty.");
+    }
+
+    this.documents.set(document.id, document);
+    this.embeddings.set(document.id, [...embedding]);
+  }
+
+  get(id: string): RagDocument | undefined {
+    return this.documents.get(id);
+  }
+
+  search(embedding: readonly number[], topK: number, filters: JsonObject = {}): readonly VectorSearchResult[] {
+    if (embedding.length === 0 || topK <= 0) {
+      return [];
+    }
+
+    const results: VectorSearchResult[] = [];
+
+    for (const [id, candidateEmbedding] of this.embeddings) {
+      const document = this.documents.get(id);
+
+      if (!document || !matchesMetadataFilters(document.metadata, filters)) {
+        continue;
+      }
+
+      const score = cosineSimilarity(embedding, candidateEmbedding);
+
+      if (score > 0) {
+        results.push({ id, score });
+      }
+    }
+
+    return results.sort((left, right) => right.score - left.score).slice(0, Math.max(0, topK));
+  }
+
+  clear(): void {
+    this.documents.clear();
+    this.embeddings.clear();
+  }
+
+  size(): number {
+    return this.documents.size;
+  }
+}
+
+export class HybridDocumentRetriever implements DocumentRetriever {
+  private readonly lexical: DocumentRetriever;
+  private readonly vectorStore: VectorStore;
+  private readonly embeddingModel: EmbeddingModel;
+  private readonly bm25Weight: number;
+  private readonly vectorWeight: number;
+  private readonly tokenEstimator: TokenEstimator;
+
+  constructor(options: HybridDocumentRetrieverOptions) {
+    this.lexical = options.lexical;
+    this.vectorStore = options.vectorStore;
+    this.embeddingModel = options.embeddingModel;
+    this.bm25Weight = options.bm25Weight ?? 0.5;
+    this.vectorWeight = options.vectorWeight ?? 0.5;
+    this.tokenEstimator = options.tokenEstimator ?? createApproximateTokenEstimator();
+  }
+
+  async retrieve(queries: readonly string[], topK: number, filters: JsonObject = {}): Promise<readonly RetrievedDocument[]> {
+    const limit = Math.max(0, topK);
+    const byId = new Map<string, RagDocument>();
+    const lexicalRanks: (readonly [string, number])[] = [];
+    const vectorRanks: (readonly [string, number])[] = [];
+
+    if (limit === 0) {
+      return [];
+    }
+
+    for (const query of queries) {
+      const lexicalDocuments = await this.lexical.retrieve([query], limit, filters);
+
+      for (const document of lexicalDocuments) {
+        byId.set(document.id, document);
+        lexicalRanks.push([document.id, document.score]);
+      }
+
+      const embedding = await this.embeddingModel.embed(query);
+      const vectorDocuments = await this.vectorStore.search(embedding, limit, filters);
+
+      for (const result of vectorDocuments) {
+        const document = await this.vectorStore.get(result.id);
+
+        if (document) {
+          byId.set(document.id, document);
+          vectorRanks.push([result.id, result.score]);
+        }
+      }
+    }
+
+    return rrfFuse(vectorRanks, lexicalRanks, {
+      bm25Weight: this.bm25Weight,
+      vectorWeight: this.vectorWeight
+    })
+      .slice(0, limit)
+      .flatMap(([id, score]) => {
+        const document = byId.get(id);
+
+        if (!document) {
+          return [];
+        }
+
+        return [{
+          ...document,
+          estimatedTokens: this.tokenEstimator.estimate(document.content),
+          score
+        }];
+      });
+  }
+}
+
+export class AdaptiveRagRetriever implements DocumentRetriever {
+  private readonly lexical: DocumentRetriever;
+  private readonly hybrid: DocumentRetriever;
+  private readonly route: (queries: readonly string[]) => "lexical" | "hybrid";
+
+  constructor(options: AdaptiveRagRetrieverOptions) {
+    this.lexical = options.lexical;
+    this.hybrid = options.hybrid;
+    this.route = options.route ?? defaultRagRetrievalRoute;
+  }
+
+  retrieve(queries: readonly string[], topK: number, filters: JsonObject = {}): Awaitable<readonly RetrievedDocument[]> {
+    return this.route(queries) === "hybrid"
+      ? this.hybrid.retrieve(queries, topK, filters)
+      : this.lexical.retrieve(queries, topK, filters);
+  }
+}
+
+export class ParentDocumentRetriever implements DocumentRetriever {
+  private readonly childRetriever: DocumentRetriever;
+  private readonly parentLookup: (id: string) => Awaitable<RagDocument | undefined>;
+  private readonly tokenEstimator: TokenEstimator;
+
+  constructor(options: ParentDocumentRetrieverOptions) {
+    this.childRetriever = options.childRetriever;
+    const parentLookup = options.parentLookup;
+    this.parentLookup = typeof parentLookup === "function"
+      ? parentLookup
+      : (id) => parentLookup.get(id);
+    this.tokenEstimator = options.tokenEstimator ?? createApproximateTokenEstimator();
+  }
+
+  async retrieve(queries: readonly string[], topK: number, filters: JsonObject = {}): Promise<readonly RetrievedDocument[]> {
+    const children = await this.childRetriever.retrieve(queries, topK, filters);
+    const expanded = new Map<string, RetrievedDocument>();
+
+    for (const child of children) {
+      const parentId = typeof child.metadata.parent_document_id === "string"
+        ? child.metadata.parent_document_id
+        : undefined;
+
+      if (!parentId) {
+        this.addBest(expanded, child.id, child);
+        continue;
+      }
+
+      const parent = await this.parentLookup(parentId);
+
+      if (!parent) {
+        this.addBest(expanded, child.id, child);
+        continue;
+      }
+
+      this.addBest(expanded, parent.id, {
+        ...parent,
+        estimatedTokens: this.tokenEstimator.estimate(parent.content),
+        metadata: {
+          ...parent.metadata,
+          matched_child_id: child.id,
+          matched_child_score: child.score
+        },
+        score: child.score
+      });
+    }
+
+    return [...expanded.values()]
+      .sort((left, right) => right.score - left.score)
+      .slice(0, Math.max(0, topK));
+  }
+
+  private addBest(documents: Map<string, RetrievedDocument>, id: string, document: RetrievedDocument): void {
+    const existing = documents.get(id);
+
+    if (!existing || document.score > existing.score) {
+      documents.set(id, document);
+    }
+  }
+}
+
 export class SimpleReranker implements DocumentReranker {
   rerank(query: string, documents: readonly RetrievedDocument[], topK: number): readonly RetrievedDocument[] {
     const queryTokens = new Set(tokenize(query));
@@ -1210,6 +1448,50 @@ function accumulateRrf(
   results.forEach(([documentId], rank) => {
     scores.set(documentId, (scores.get(documentId) ?? 0) + weight / (k + rank + 1));
   });
+}
+
+function cosineSimilarity(left: readonly number[], right: readonly number[]): number {
+  const length = Math.min(left.length, right.length);
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+
+  for (let index = 0; index < length; index += 1) {
+    dot += (left[index] ?? 0) * (right[index] ?? 0);
+  }
+
+  for (const value of left) {
+    leftNorm += value * value;
+  }
+
+  for (const value of right) {
+    rightNorm += value * value;
+  }
+
+  const denominator = Math.sqrt(leftNorm) * Math.sqrt(rightNorm);
+  return denominator === 0 ? 0 : dot / denominator;
+}
+
+function matchesMetadataFilters(metadata: JsonObject, filters: JsonObject): boolean {
+  if (Object.keys(filters).length === 0) {
+    return true;
+  }
+
+  return Object.entries(filters).every(([key, expected]) => String(metadata[key]) === String(expected));
+}
+
+function defaultRagRetrievalRoute(queries: readonly string[]): "lexical" | "hybrid" {
+  const text = queries.join(" ").toLowerCase();
+
+  if (/\b(compare|versus|vs\.?|tradeoff|similar|semantic|related|decide)\b/u.test(text)) {
+    return "hybrid";
+  }
+
+  if (/(비교|대비|유사|의미|관련|결정|선택)/u.test(text)) {
+    return "hybrid";
+  }
+
+  return tokenize(text).length > 8 ? "hybrid" : "lexical";
 }
 
 function normalizeRagIngestionPolicy(
