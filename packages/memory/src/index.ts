@@ -73,6 +73,33 @@ export interface TaskState {
   readonly updatedAt?: Date;
 }
 
+export type TaskMemoryQualityIssueCode =
+  | "missing_task_id"
+  | "missing_session_id"
+  | "missing_goal"
+  | "empty_plan_step"
+  | "empty_decision_summary"
+  | "empty_blocker_description"
+  | "blocked_without_blocker"
+  | "completed_without_evidence";
+
+export type TaskMemoryQualitySeverity = "error" | "warning";
+
+export interface TaskMemoryQualityIssue {
+  readonly code: TaskMemoryQualityIssueCode;
+  readonly message: string;
+  readonly severity: TaskMemoryQualitySeverity;
+}
+
+export interface TaskMemoryQualityReport {
+  readonly issues: readonly TaskMemoryQualityIssue[];
+  readonly ok: boolean;
+  readonly summary: {
+    readonly errorCount: number;
+    readonly warningCount: number;
+  };
+}
+
 export interface TaskMemoryStore {
   save(state: TaskState): Awaitable<void>;
   findById(taskId: string): Awaitable<TaskState | undefined>;
@@ -249,6 +276,7 @@ export class InMemoryTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaint
   }
 
   save(state: TaskState): void {
+    assertTaskMemoryQuality(state);
     const normalized = normalizeTaskState(state);
     this.tasks.set(normalized.taskId, normalized);
 
@@ -349,6 +377,19 @@ export class InMemoryTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaint
         this.activeTaskBySession.delete(key);
       }
     }
+  }
+}
+
+export class TaskMemoryQualityError extends Error {
+  readonly report: TaskMemoryQualityReport;
+
+  constructor(report: TaskMemoryQualityReport) {
+    super(`Task memory quality gate failed: ${report.issues
+      .filter((issue) => issue.severity === "error")
+      .map((issue) => issue.message)
+      .join("; ")}`);
+    this.name = "TaskMemoryQualityError";
+    this.report = report;
   }
 }
 
@@ -621,6 +662,7 @@ export function createTaskMemoryInsert(
     readonly retentionMs: number;
   }
 ): TaskMemoryInsert {
+  assertTaskMemoryQuality(state);
   const normalized = normalizeTaskState(state);
   const expiresAt = new Date(normalized.updatedAt.getTime() + options.retentionMs);
 
@@ -638,6 +680,91 @@ export function createTaskMemoryInsert(
     updated_at: normalized.updatedAt,
     user_id: normalized.userId ?? null
   };
+}
+
+export function evaluateTaskMemoryQuality(state: TaskState): TaskMemoryQualityReport {
+  const issues: TaskMemoryQualityIssue[] = [];
+
+  if (!state.taskId.trim()) {
+    issues.push(taskMemoryQualityIssue("missing_task_id", "Task memory requires a non-empty taskId", "error"));
+  }
+
+  if (!state.sessionId.trim()) {
+    issues.push(taskMemoryQualityIssue("missing_session_id", "Task memory requires a non-empty sessionId", "error"));
+  }
+
+  if (!state.goal.trim()) {
+    issues.push(taskMemoryQualityIssue("missing_goal", "Task memory requires a non-empty goal", "error"));
+  }
+
+  for (const item of state.plan ?? []) {
+    if (!item.step.trim()) {
+      issues.push(taskMemoryQualityIssue("empty_plan_step", "Task memory plan items require non-empty steps", "error"));
+    }
+  }
+
+  for (const decision of state.decisions ?? []) {
+    if (!decision.summary.trim()) {
+      issues.push(taskMemoryQualityIssue(
+        "empty_decision_summary",
+        "Task memory decisions require non-empty summaries",
+        "error"
+      ));
+    }
+  }
+
+  for (const blocker of state.blockers ?? []) {
+    if (!blocker.description.trim()) {
+      issues.push(taskMemoryQualityIssue(
+        "empty_blocker_description",
+        "Task memory blockers require non-empty descriptions",
+        "error"
+      ));
+    }
+  }
+
+  if ((state.status ?? "active") === "blocked" && (state.blockers ?? []).length === 0) {
+    issues.push(taskMemoryQualityIssue(
+      "blocked_without_blocker",
+      "Blocked task memory should include at least one blocker",
+      "warning"
+    ));
+  }
+
+  if (state.status === "completed" && (state.decisions ?? []).length === 0 && (state.plan ?? []).length === 0) {
+    issues.push(taskMemoryQualityIssue(
+      "completed_without_evidence",
+      "Completed task memory should include decisions or plan evidence",
+      "warning"
+    ));
+  }
+
+  const summary = {
+    errorCount: issues.filter((issue) => issue.severity === "error").length,
+    warningCount: issues.filter((issue) => issue.severity === "warning").length
+  };
+
+  return {
+    issues,
+    ok: summary.errorCount === 0,
+    summary
+  };
+}
+
+export function assertTaskMemoryQuality(state: TaskState): void {
+  const report = evaluateTaskMemoryQuality(state);
+
+  if (!report.ok) {
+    throw new TaskMemoryQualityError(report);
+  }
+}
+
+function taskMemoryQualityIssue(
+  code: TaskMemoryQualityIssueCode,
+  message: string,
+  severity: TaskMemoryQualitySeverity
+): TaskMemoryQualityIssue {
+  return { code, message, severity };
 }
 
 export function mapTaskMemoryRow(row: TaskMemoryRow): TaskState {

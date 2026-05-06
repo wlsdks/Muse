@@ -18,6 +18,7 @@ import {
   createUserMemoryInsert,
   createTaskMemoryInsert,
   createApproximateTokenEstimator,
+  evaluateTaskMemoryQuality,
   estimateConversationTokens,
   InMemoryConversationSummaryStore,
   InMemoryTaskMemoryStore,
@@ -25,6 +26,7 @@ import {
   mapConversationSummaryRow,
   mapTaskMemoryRow,
   mapUserMemoryRow,
+  TaskMemoryQualityError,
   trimConversationMessages,
   type ConversationMessage,
   type TokenEstimator
@@ -287,6 +289,33 @@ describe("conversation trimming", () => {
 });
 
 describe("task memory store", () => {
+  it("rejects structurally invalid task memory while reporting quality warnings", () => {
+    const store = new InMemoryTaskMemoryStore();
+    const report = evaluateTaskMemoryQuality({
+      blockers: [],
+      goal: "Investigate migration parity",
+      sessionId: "session-1",
+      status: "blocked",
+      taskId: "task-1"
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      summary: { errorCount: 0, warningCount: 1 }
+    });
+    expect(report.issues).toContainEqual(expect.objectContaining({
+      code: "blocked_without_blocker",
+      severity: "warning"
+    }));
+    expect(() =>
+      store.save({
+        goal: "   ",
+        sessionId: "session-1",
+        taskId: "task-invalid"
+      })
+    ).toThrow(TaskMemoryQualityError);
+  });
+
   it("finds active task memory by session and user fallback rules", async () => {
     const store = new InMemoryTaskMemoryStore();
 
