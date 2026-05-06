@@ -52,6 +52,7 @@ import { registerSlackRoutes, type SlackRouteOptions } from "./slack-routes.js";
 
 export interface ServerOptions {
   readonly logger?: boolean;
+  readonly cors?: CorsOptions;
   readonly agentRuntime?: AgentRuntime;
   readonly agentEvalStore?: AgentEvalStore;
   readonly admin?: AdminRouteState;
@@ -88,6 +89,14 @@ export interface ServerOptions {
   readonly userMemoryStore?: UserMemoryStore;
 }
 
+export interface CorsOptions {
+  readonly allowCredentials?: boolean;
+  readonly allowedHeaders?: readonly string[];
+  readonly allowedMethods?: readonly string[];
+  readonly allowedOrigins?: readonly string[];
+  readonly maxAgeSeconds?: number;
+}
+
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const agentSpecRegistry = options.agentSpecRegistry ?? new InMemoryAgentSpecRegistry();
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
@@ -100,6 +109,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
   server.addHook("onRequest", async (request, reply) => {
     applyReactorWebContractHeaders(request.url, request.headers["x-request-id"], reply);
+    applyCorsHeaders(options.cors, request.headers.origin, reply);
+
+    if (request.method === "OPTIONS") {
+      return reply.status(204).send();
+    }
 
     const requestedVersion = headerValue(request.headers["x-reactor-api-version"])?.trim();
     if (requestedVersion && !supportedReactorApiVersions().includes(requestedVersion)) {
@@ -110,11 +124,20 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     }
   });
   const apiPaths = new Set<string>();
+  const apiRouteMethods = new Map<string, Set<string>>();
   server.addHook("onRoute", (routeOptions) => {
     const path = routeOptions.url;
 
     if (typeof path === "string" && path.startsWith("/api/")) {
-      apiPaths.add(toSpringPathTemplate(path));
+      const template = toSpringPathTemplate(path);
+      apiPaths.add(template);
+      const methods = apiRouteMethods.get(template) ?? new Set<string>();
+
+      for (const method of routeMethods(routeOptions.method)) {
+        methods.add(method.toLowerCase());
+      }
+
+      apiRouteMethods.set(template, methods);
     }
   });
   server.addContentTypeParser(/^multipart\/form-data/u, { parseAs: "buffer" }, (request, body, done) => {
@@ -160,6 +183,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     runner: "rust",
     server: "fastify"
   }));
+  server.get("/v3/api-docs", async () => createOpenApiDocument(apiRouteMethods));
+  server.get("/api/openapi.json", async () => createOpenApiDocument(apiRouteMethods));
 
   server.post("/chat", async (request, reply) => runChat(request.body, reply, options, "extended"));
   server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options, "reactor"));
@@ -476,6 +501,58 @@ function applyReactorWebContractHeaders(
   }
 }
 
+function applyCorsHeaders(
+  options: CorsOptions | undefined,
+  originHeader: string | string[] | undefined,
+  reply: {
+    header(name: string, value: string): unknown;
+  }
+): void {
+  if (!options) {
+    return;
+  }
+
+  const origin = headerValue(originHeader)?.trim();
+  const allowedOrigin = allowedCorsOrigin(origin, options.allowedOrigins ?? defaultCorsOrigins());
+
+  if (!allowedOrigin) {
+    return;
+  }
+
+  reply.header("Access-Control-Allow-Origin", allowedOrigin);
+  reply.header("Vary", "Origin");
+  reply.header("Access-Control-Allow-Methods", (options.allowedMethods ?? defaultCorsMethods()).join(","));
+  reply.header("Access-Control-Allow-Headers", (options.allowedHeaders ?? defaultCorsHeaders()).join(","));
+
+  if (options.allowCredentials) {
+    reply.header("Access-Control-Allow-Credentials", "true");
+  }
+
+  if (options.maxAgeSeconds !== undefined) {
+    reply.header("Access-Control-Max-Age", String(Math.max(0, Math.trunc(options.maxAgeSeconds))));
+  }
+}
+
+function allowedCorsOrigin(origin: string | undefined, allowedOrigins: readonly string[]): string | undefined {
+  if (!origin) {
+    return undefined;
+  }
+
+  return allowedOrigins.includes("*") || allowedOrigins.includes(origin) ? origin : undefined;
+}
+
+function defaultCorsOrigins(): readonly string[] {
+  return ["http://127.0.0.1:5173", "http://localhost:5173"];
+}
+
+function defaultCorsMethods(): readonly string[] {
+  return ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+}
+
+function defaultCorsHeaders(): readonly string[] {
+  return ["authorization", "content-type", "x-request-id", "x-reactor-api-version"];
+}
+
 function currentReactorApiVersion(): string {
   return "1";
 }
@@ -497,6 +574,43 @@ function isSwaggerPath(path: string): boolean {
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function routeMethods(method: string | readonly string[]): readonly string[] {
+  return typeof method === "string" ? [method] : method;
+}
+
+function createOpenApiDocument(apiRouteMethods: ReadonlyMap<string, ReadonlySet<string>>): JsonObject {
+  return {
+    info: {
+      title: "Muse API",
+      version: "0.0.0"
+    },
+    openapi: "3.1.0",
+    paths: Object.fromEntries(
+      [...apiRouteMethods.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([path, methods]) => [
+          path,
+          Object.fromEntries(
+            [...methods]
+              .filter((method) => method !== "head" && method !== "options")
+              .sort()
+              .map((method) => [
+                method,
+                {
+                  responses: {
+                    "200": {
+                      description: "OK"
+                    }
+                  },
+                  summary: `${method.toUpperCase()} ${path}`
+                }
+              ])
+          )
+        ])
+    )
+  };
 }
 
 type ParseResult<T> = { readonly ok: true; readonly value: T } | { readonly error: ApiError; readonly ok: false };
@@ -1151,6 +1265,8 @@ function isPublicRequest(method: string, url: string): boolean {
   return (
     path === "/health" ||
     path === "/spec" ||
+    path === "/v3/api-docs" ||
+    path === "/api/openapi.json" ||
     path === "/.well-known/agent-card.json" ||
     (method === "POST" && (
       path === "/auth/login" ||

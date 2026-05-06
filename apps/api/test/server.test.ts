@@ -104,6 +104,60 @@ describe("api server", () => {
     });
   });
 
+  it("applies configured CORS headers and answers preflight requests", async () => {
+    const server = buildServer({
+      cors: {
+        allowCredentials: true,
+        allowedOrigins: ["http://127.0.0.1:5173"]
+      },
+      logger: false
+    });
+
+    const response = await server.inject({
+      headers: {
+        "access-control-request-headers": "authorization,content-type",
+        "access-control-request-method": "POST",
+        origin: "http://127.0.0.1:5173"
+      },
+      method: "OPTIONS",
+      url: "/api/chat"
+    });
+    const blocked = await server.inject({
+      headers: { origin: "https://blocked.example" },
+      method: "GET",
+      url: "/health"
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
+    expect(response.headers["access-control-allow-credentials"]).toBe("true");
+    expect(response.headers["access-control-allow-methods"]).toContain("POST");
+    expect(response.headers["access-control-allow-headers"]).toContain("authorization");
+    expect(blocked.headers).not.toHaveProperty("access-control-allow-origin");
+  });
+
+  it("generates an OpenAPI document from registered API routes", async () => {
+    const server = buildServer({ logger: false });
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/v3/api-docs"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.json()).toMatchObject({
+      info: {
+        title: "Muse API",
+        version: "0.0.0"
+      },
+      openapi: "3.1.0",
+      paths: {
+        "/api/chat": expect.any(Object)
+      }
+    });
+  });
+
   it("manages agent specs and resolves matching requests", async () => {
     const server = buildServer({ logger: false });
 
