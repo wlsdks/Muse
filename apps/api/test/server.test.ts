@@ -2889,7 +2889,7 @@ describe("api server", () => {
         action: "block",
         category: "security",
         name: "Prompt injection",
-        pattern: "ignore previous",
+        pattern: "custom-block",
         patternType: "keyword",
         priority: 10
       },
@@ -2970,6 +2970,12 @@ describe("api server", () => {
       payload: { content: "" },
       url: "/api/output-guard/rules/simulate"
     });
+    const inputSimulation = await server.inject({
+      headers,
+      method: "POST",
+      payload: { text: "please custom-block this request" },
+      url: "/api/admin/input-guard/simulate"
+    });
     const audits = await server.inject({
       headers,
       method: "GET",
@@ -3030,6 +3036,14 @@ describe("api server", () => {
       blocked: true,
       blockedByRuleId: outputRuleId,
       matchedRules: [{ action: "REJECT", ruleId: outputRuleId }]
+    });
+    expect(inputSimulation.json()).toMatchObject({
+      blockingStage: "DynamicInputRules",
+      finalAction: "block",
+      passed: false,
+      stageResults: expect.arrayContaining([
+        expect.objectContaining({ stage: "DynamicInputRules", ruleId: inputRule.json().id })
+      ])
     });
     expect(invalidOutputSimulation.statusCode).toBe(400);
     expect(invalidOutputSimulation.json()).toMatchObject({

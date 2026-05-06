@@ -23,7 +23,7 @@ import type { TaskMemoryMaintenance, UserMemory, UserMemoryStore } from "@muse/m
 import type { ModelProvider } from "@muse/model";
 import type { FollowupSuggestionStore } from "@muse/observability";
 import type { GuardRuleStore, ToolPolicyInput, ToolPolicyStore } from "@muse/policy";
-import { toolPolicyToJson } from "@muse/policy";
+import { inputGuardSimulationToJson, simulateInputGuardPipeline, toolPolicyToJson } from "@muse/policy";
 import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } from "@muse/promptlab";
 import type {
   RagIngestionCandidateStatus,
@@ -1029,7 +1029,7 @@ function registerGuardCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    const result = simulateGuard(request.body);
+    const result = await simulateGuard(request.body, options);
     const input = readBodyString(request.body, "input")
       ?? readBodyString(request.body, "text")
       ?? readBodyString(request.body, "message")
@@ -8864,35 +8864,17 @@ function doctorStatusShortCode(status: string): string {
   return status === "SKIPPED" ? "SKIP" : status;
 }
 
-function simulateGuard(value: unknown) {
+async function simulateGuard(value: unknown, options: ReactorCompatibilityRouteOptions) {
   const input = readBodyString(value, "input")
     ?? readBodyString(value, "text")
     ?? readBodyString(value, "message")
     ?? "";
-  const stageResults = [
-    guardSimulationStage("InputValidation", 0, input.trim().length > 0, null),
-    guardSimulationStage(
-      "InjectionDetection",
-      1,
-      !/ignore|disregard|system prompt|developer mode/i.test(input),
-      "prompt_injection"
-    ),
-    guardSimulationStage(
-      "InputCredentialMasking",
-      2,
-      !/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(input),
-      "pii"
-    )
-  ];
-  const blocking = stageResults.find((stage) => stage.passed === false);
-
-  return {
-    blockingStage: blocking?.stage ?? null,
-    finalAction: blocking ? "block" : "allow",
-    passed: !blocking,
-    stageResults,
-    totalDurationMs: stageResults.reduce((sum, stage) => sum + Number(stage.durationMs), 0)
-  };
+  return inputGuardSimulationToJson(await simulateInputGuardPipeline({
+    input,
+    ruleStore: {
+      listInputRules: () => listInputGuardRules(options)
+    }
+  }));
 }
 
 function feedbackStats(items: readonly CompatRecord[]) {
@@ -9705,18 +9687,6 @@ async function runtimeSettingStringOrNull(
 ): Promise<string | null> {
   const setting = await options.runtimeSettings.find(key);
   return setting?.value && setting.value.trim().length > 0 ? setting.value : null;
-}
-
-function guardSimulationStage(stage: string, order: number, passed: boolean, category: string | null): JsonObject {
-  return {
-    action: passed ? "allow" : "block",
-    category,
-    durationMs: 0,
-    order,
-    passed,
-    reason: passed ? null : `Detected ${category ?? "input violation"}`,
-    stage
-  };
 }
 
 function stringMapField(value: unknown): Record<string, string> {
