@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AnthropicProvider,
   canUseNativeTools,
+  DiagnosticModelProvider,
   GeminiProvider,
   knownModelPrefixes,
   ModelProviderError,
@@ -42,6 +43,34 @@ describe("canUseNativeTools", () => {
         capabilities: { ...baseModel.capabilities, structuredOutput: false }
       })
     ).toBe(false);
+  });
+});
+
+describe("DiagnosticModelProvider", () => {
+  it("returns deterministic local responses for runtime smoke tests", async () => {
+    const provider = new DiagnosticModelProvider({ defaultModel: "diagnostic/smoke" });
+
+    await expect(provider.listModels()).resolves.toMatchObject([
+      {
+        capabilities: {
+          cost: "free",
+          local: true,
+          streaming: true,
+          structuredOutput: true,
+          toolCalling: false
+        },
+        modelId: "smoke",
+        providerId: "diagnostic"
+      }
+    ]);
+
+    await expect(provider.generate({
+      messages: [{ content: "Compare launch options", role: "user" }],
+      model: "diagnostic/smoke"
+    })).resolves.toMatchObject({
+      model: "diagnostic/smoke",
+      output: "Diagnostic response: Compare launch options"
+    });
   });
 });
 

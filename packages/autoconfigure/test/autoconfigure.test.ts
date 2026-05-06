@@ -164,6 +164,27 @@ describe("autoconfigure", () => {
     expect(assembly.modelProvider?.id).toBe("openai-compatible");
   });
 
+  it("assembles AgentRuntime with an explicit diagnostic provider for local smoke tests", async () => {
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic"
+      }
+    });
+
+    expect(assembly.agentRuntime).toBeTruthy();
+    expect(assembly.defaultModel).toBe("diagnostic/smoke");
+    expect(assembly.modelProvider?.id).toBe("diagnostic");
+    await expect(assembly.agentRuntime?.run({
+      messages: [{ content: "hello", role: "user" }],
+      model: "diagnostic/smoke"
+    })).resolves.toMatchObject({
+      response: {
+        output: "Diagnostic response: hello"
+      }
+    });
+  });
+
   it("adds the Rust runner tool only when explicitly enabled", () => {
     const disabled = createMuseRuntimeAssembly({ env: {} });
     const enabled = createMuseRuntimeAssembly({

@@ -88,6 +88,7 @@ import {
 } from "@muse/memory";
 import {
   AnthropicProvider,
+  DiagnosticModelProvider,
   GeminiProvider,
   OllamaProvider,
   OpenAICompatibleProvider,
@@ -705,6 +706,11 @@ function createModelProvider(env: MuseEnvironment): ModelProvider | undefined {
   const models = parseCsv(env.MUSE_MODEL_LIST) ?? [parseModelName(defaultModel).modelId];
 
   switch (providerId) {
+    case "diagnostic":
+      return new DiagnosticModelProvider({
+        defaultModel,
+        models
+      });
     case "anthropic":
       return new AnthropicProvider({
         apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.ANTHROPIC_API_KEY),

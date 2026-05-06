@@ -130,6 +130,12 @@ export interface GeminiProviderOptions {
   readonly models?: readonly string[];
 }
 
+export interface DiagnosticModelProviderOptions {
+  readonly defaultModel?: string;
+  readonly id?: string;
+  readonly models?: readonly string[];
+}
+
 export class ModelProviderError extends Error {
   readonly providerId: string;
   readonly retryable: boolean;
@@ -227,6 +233,52 @@ export class OpenAICompatibleProvider implements ModelProvider {
       ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
       ...this.headers
     };
+  }
+}
+
+export class DiagnosticModelProvider implements ModelProvider {
+  readonly id: string;
+  private readonly defaultModel?: string;
+  private readonly models: readonly string[];
+
+  constructor(options: DiagnosticModelProviderOptions = {}) {
+    this.id = options.id ?? "diagnostic";
+    this.defaultModel = options.defaultModel;
+    this.models = options.models ?? [parseModelName(options.defaultModel ?? "diagnostic/smoke").modelId ?? "smoke"];
+  }
+
+  async listModels(): Promise<readonly ModelInfo[]> {
+    return this.models.map((modelId) => ({
+      capabilities: diagnosticModelCapabilities(),
+      displayName: `Diagnostic ${modelId}`,
+      modelId,
+      providerId: this.id
+    }));
+  }
+
+  async generate(request: ModelRequest): Promise<ModelResponse> {
+    const latestUserMessage = [...request.messages].reverse().find((message) => message.role === "user");
+    const output = `Diagnostic response: ${latestUserMessage?.content ?? ""}`.trimEnd();
+
+    return {
+      id: "diagnostic-response",
+      model: request.model || this.defaultModel || `${this.id}/${this.models[0] ?? "smoke"}`,
+      output,
+      usage: {
+        inputTokens: estimateDiagnosticTokens(request.messages.map((message) => message.content).join(" ")),
+        outputTokens: estimateDiagnosticTokens(output)
+      }
+    };
+  }
+
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const response = await this.generate(request);
+
+    if (response.output.length > 0) {
+      yield { text: response.output, type: "text-delta" };
+    }
+
+    yield { response, type: "done" };
   }
 }
 
@@ -1177,6 +1229,20 @@ function localModelCapabilities(): ModelCapabilities {
     reasoning: false,
     vision: false
   };
+}
+
+function diagnosticModelCapabilities(): ModelCapabilities {
+  return {
+    ...localModelCapabilities(),
+    maxInputTokens: 32_000,
+    maxOutputTokens: 4_096,
+    structuredOutput: true,
+    toolCalling: false
+  };
+}
+
+function estimateDiagnosticTokens(content: string): number {
+  return Math.max(1, Math.ceil(content.length / 4));
 }
 
 function anthropicModelCapabilities(modelId: string): ModelCapabilities {
