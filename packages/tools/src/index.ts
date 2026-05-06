@@ -238,11 +238,12 @@ export function shortenToolDescription(text: string, maxChars = 200): string {
 }
 
 export function isWorkspaceMutationPrompt(prompt: string | undefined | null): boolean {
-  if (!prompt) {
+  if (!prompt || prompt.trim().length === 0) {
     return false;
   }
 
-  return workspaceMutationPatterns.some((pattern) => pattern.test(prompt));
+  const normalized = prompt.toLowerCase();
+  return hasWorkspaceHint(normalized) && hasMutationHint(normalized) && hasMutationTargetHint(normalized);
 }
 
 export function createRustRunnerTool(options: RustRunnerToolOptions = {}): MuseTool {
@@ -380,10 +381,143 @@ function readPositiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
-const workspaceMutationPatterns = [
-  /\b(create|update|delete|remove|assign|reassign|close|merge|deploy|send|publish)\b/i,
-  /(생성|수정|삭제|제거|할당|재할당|닫아|종료|병합|배포|전송|게시|등록)/
+function hasWorkspaceHint(normalized: string): boolean {
+  return workspaceHints.some((hint) => normalized.includes(hint));
+}
+
+function hasMutationHint(normalized: string): boolean {
+  if (readOnlyLookupExceptions.some((hint) => normalized.includes(hint))) {
+    return false;
+  }
+
+  if (formattingContextKeywords.some((hint) => normalized.includes(hint))) {
+    return false;
+  }
+
+  return mutationPatterns.some((pattern) => pattern.test(normalized))
+    || koreanMutationHints.some((hint) => normalized.includes(hint));
+}
+
+function hasMutationTargetHint(normalized: string): boolean {
+  return mutationTargetHints.some((hint) => normalized.includes(hint))
+    || mutationTargetPatterns.some((pattern) => pattern.test(normalized));
+}
+
+const workspaceHints = [
+  "jira",
+  "confluence",
+  "bitbucket",
+  "이슈",
+  "티켓",
+  "프로젝트",
+  "페이지",
+  "문서",
+  "저장소",
+  "repository",
+  "repo",
+  "pull request",
+  "pr",
+  "액션 아이템",
+  "action item",
+  "swagger",
+  "openapi",
+  "spec",
+  "스펙",
+  "catalog",
+  "카탈로그",
+  "endpoint",
+  "schema",
+  "엔드포인트",
+  "스키마"
 ] as const;
+
+const mutationPatterns = [
+  /\bcreate\b/u,
+  /\bupdate\b/u,
+  /\bedit\b/u,
+  /\bmodify\b/u,
+  /\bchange\b/u,
+  /\breassign\b/u,
+  /\bassign\b/u,
+  /\btransition\b/u,
+  /\bapprove\b/u,
+  /\bcomment\b/u,
+  /\bdelete\b/u,
+  /\bremove\b/u,
+  /\bconvert\b/u,
+  /\bwrite\b/u
+] as const;
+
+const koreanMutationHints = [
+  "작성해",
+  "만들어",
+  "수정해",
+  "업데이트해",
+  "변경해",
+  "재할당",
+  "할당해",
+  "전이해",
+  "바꿔",
+  "승인해",
+  "코멘트해",
+  "댓글 달",
+  "추가해",
+  "삭제해",
+  "제거해",
+  "변환해"
+] as const;
+
+const readOnlyLookupExceptions = ["unassigned", "미할당"] as const;
+
+const formattingContextKeywords = [
+  "형태로",
+  "포맷으로",
+  "슬랙 메시지",
+  "마크다운으로",
+  "이메일로",
+  "json으로",
+  "테이블로",
+  "양식으로",
+  "서식으로",
+  "as a slack message"
+] as const;
+
+const mutationTargetHints = [
+  "issue",
+  "ticket",
+  "comment",
+  "page",
+  "document",
+  "attachment",
+  "action item",
+  "pull request",
+  "branch",
+  "review",
+  "status report",
+  "weekly status report",
+  "이슈",
+  "티켓",
+  "코멘트",
+  "댓글",
+  "페이지",
+  "문서",
+  "첨부",
+  "액션 아이템",
+  "브랜치",
+  "리뷰",
+  "spec",
+  "swagger",
+  "openapi",
+  "catalog",
+  "endpoint",
+  "schema",
+  "스펙",
+  "카탈로그",
+  "엔드포인트",
+  "스키마"
+] as const;
+
+const mutationTargetPatterns = [/\bpr\b/u] as const;
 
 function stringifyToolOutput(value: ToolExecutionValue): string {
   if (typeof value === "string") {

@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import {
   GuardBlockedError,
   OutputGuardBlockedError,
@@ -96,6 +97,17 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const authRateLimiter = options.authRateLimiter ?? new AuthRateLimiter();
   const server = Fastify({
     logger: options.logger ?? true
+  });
+  server.addHook("onRequest", async (request, reply) => {
+    applyReactorWebContractHeaders(request.url, request.headers["x-request-id"], reply);
+
+    const requestedVersion = headerValue(request.headers["x-reactor-api-version"])?.trim();
+    if (requestedVersion && !supportedReactorApiVersions().includes(requestedVersion)) {
+      return reply.status(400).send({
+        error: `Unsupported API version '${requestedVersion}'. Supported versions: ${supportedReactorApiVersions().join(", ")}`,
+        timestamp: new Date().toISOString()
+      });
+    }
   });
   const apiPaths = new Set<string>();
   server.addHook("onRoute", (routeOptions) => {
@@ -437,6 +449,54 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
 function toSpringPathTemplate(path: string): string {
   return path.replace(/:([A-Za-z0-9_]+)/gu, "{$1}");
+}
+
+function applyReactorWebContractHeaders(
+  path: string,
+  requestIdHeader: string | string[] | undefined,
+  reply: {
+    header(name: string, value: string): unknown;
+  }
+): void {
+  reply.header("X-Request-ID", headerValue(requestIdHeader)?.trim() || randomUUID());
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("X-Frame-Options", "DENY");
+  reply.header("Content-Security-Policy", isSwaggerPath(path)
+    ? "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+    : "default-src 'self'");
+  reply.header("X-XSS-Protection", "0");
+  reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  reply.header("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()");
+  reply.header("X-Reactor-Api-Version", currentReactorApiVersion());
+  reply.header("X-Reactor-Api-Supported-Versions", supportedReactorApiVersions().join(","));
+
+  if (isSensitivePath(path)) {
+    reply.header("Cache-Control", "no-store");
+  }
+}
+
+function currentReactorApiVersion(): string {
+  return "1";
+}
+
+function supportedReactorApiVersions(): readonly string[] {
+  return [currentReactorApiVersion()];
+}
+
+function isSensitivePath(path: string): boolean {
+  return path === "/api/chat"
+    || path.startsWith("/api/chat/")
+    || path === "/api/auth"
+    || path.startsWith("/api/auth/");
+}
+
+function isSwaggerPath(path: string): boolean {
+  return path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs") || path.startsWith("/webjars");
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 type ParseResult<T> = { readonly ok: true; readonly value: T } | { readonly error: ApiError; readonly ok: false };

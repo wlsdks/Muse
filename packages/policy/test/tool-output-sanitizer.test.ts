@@ -28,4 +28,12 @@ describe("ToolOutputSanitizer", () => {
     expect(result.content).not.toContain("89");
     expect(result.warnings).toContain("Output truncated from 10 to 8 chars");
   });
+
+  it("does not truncate in the middle of a JSON escape sequence", () => {
+    const result = new ToolOutputSanitizer({ maxOutputLength: 7 }).sanitize("json", "abc\\u1234tail");
+
+    expect(result.content).toContain("abc");
+    expect(result.content).not.toContain("\\u1");
+    expect(result.content).not.toContain("\\u");
+  });
 });

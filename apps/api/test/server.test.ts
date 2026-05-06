@@ -60,6 +60,50 @@ describe("api server", () => {
     });
   });
 
+  it("applies Reactor-compatible web contract headers", async () => {
+    const server = buildServer({ logger: false });
+
+    const response = await server.inject({
+      headers: { "x-request-id": "request-1" },
+      method: "GET",
+      url: "/health"
+    });
+    const sensitive = await server.inject({
+      method: "POST",
+      payload: { message: "Hello" },
+      url: "/api/chat"
+    });
+
+    expect(response.headers["x-request-id"]).toBe("request-1");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["x-frame-options"]).toBe("DENY");
+    expect(response.headers["content-security-policy"]).toBe("default-src 'self'");
+    expect(response.headers["x-xss-protection"]).toBe("0");
+    expect(response.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+    expect(response.headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains; preload");
+    expect(response.headers["permissions-policy"]).toBe("geolocation=(), camera=(), microphone=(), payment=()");
+    expect(response.headers["x-reactor-api-version"]).toBe("1");
+    expect(response.headers["x-reactor-api-supported-versions"]).toBe("1");
+    expect(sensitive.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("rejects unsupported Reactor API versions before route handling", async () => {
+    const server = buildServer({ logger: false });
+
+    const response = await server.inject({
+      headers: { "x-reactor-api-version": "999" },
+      method: "GET",
+      url: "/health"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.headers["x-reactor-api-version"]).toBe("1");
+    expect(response.headers["x-reactor-api-supported-versions"]).toBe("1");
+    expect(response.json()).toMatchObject({
+      error: "Unsupported API version '999'. Supported versions: 1"
+    });
+  });
+
   it("manages agent specs and resolves matching requests", async () => {
     const server = buildServer({ logger: false });
 

@@ -157,8 +157,12 @@ describe("tool utilities", () => {
   });
 
   it("detects workspace mutation prompts", () => {
-    expect(isWorkspaceMutationPrompt("Please assign this task to example-user.")).toBe(true);
+    expect(isWorkspaceMutationPrompt("Please assign Jira issue MUSE-1 to example-user.")).toBe(true);
     expect(isWorkspaceMutationPrompt("Summarize the latest note.")).toBe(false);
+    expect(isWorkspaceMutationPrompt("Please assign this task to example-user.")).toBe(false);
+    expect(isWorkspaceMutationPrompt("Show unassigned Jira issues.")).toBe(false);
+    expect(isWorkspaceMutationPrompt("Write this Confluence page as a Slack message.")).toBe(false);
+    expect(isWorkspaceMutationPrompt("비트버킷 PR에 코멘트해줘")).toBe(true);
   });
 });
 

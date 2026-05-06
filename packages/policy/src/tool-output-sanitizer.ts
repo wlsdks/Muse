@@ -26,7 +26,7 @@ export class ToolOutputSanitizer {
 
     if (sanitized.length > this.maxOutputLength) {
       warnings.push(`Output truncated from ${sanitized.length} to ${this.maxOutputLength} chars`);
-      sanitized = sanitized.slice(0, this.maxOutputLength);
+      sanitized = stripDanglingJsonEscape(sanitized.slice(0, this.maxOutputLength));
     }
 
     const normalized = normalizeForInjectionDetection(sanitized);
@@ -76,4 +76,14 @@ function wrapToolData(toolName: string, content: string): string {
 function toGlobal(regex: RegExp): RegExp {
   const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
   return new RegExp(regex.source, flags);
+}
+
+function stripDanglingJsonEscape(value: string): string {
+  const partialUnicode = /\\u[0-9a-fA-F]{0,3}$/u.exec(value);
+  if (partialUnicode) {
+    return value.slice(0, partialUnicode.index);
+  }
+
+  const trailingBackslashes = value.match(/\\+$/u)?.[0].length ?? 0;
+  return trailingBackslashes % 2 === 1 ? value.slice(0, -1) : value;
 }
