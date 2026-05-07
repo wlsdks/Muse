@@ -44,7 +44,7 @@ export interface MuseDatabase {
   readonly metric_quota_events: CompatibilityTable;
   readonly metric_sessions: CompatibilityTable;
   readonly metric_spans: CompatibilityTable;
-  readonly metric_token_usage: CompatibilityTable;
+  readonly metric_token_usage: MetricTokenUsageTable;
   readonly metric_tool_calls: CompatibilityTable;
   readonly model_pricing: ModelPricingTable;
   readonly output_guard_rule_audits: OutputGuardRuleAuditTable;
@@ -717,4 +717,19 @@ export interface ScheduledJobLockTable {
   readonly locked_until: Timestamp;
   readonly created_at: Timestamp;
   readonly updated_at: Timestamp;
+}
+
+export interface MetricTokenUsageTable {
+  readonly time: Timestamp;
+  readonly tenant_id: string;
+  readonly run_id: string;
+  readonly model: string;
+  readonly provider: string;
+  readonly step_type: string;
+  readonly prompt_tokens: number;
+  readonly prompt_cached_tokens: number;
+  readonly completion_tokens: number;
+  readonly reasoning_tokens: number;
+  readonly total_tokens: number;
+  readonly estimated_cost_usd: NumericString;
 }

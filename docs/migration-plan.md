@@ -296,6 +296,12 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- Token cost analytics compatibility now uses a real `TokenCostQuery` service. `KyselyTokenCostQuery`
+  reads `metric_token_usage` (now a typed table in `@muse/db`) for per-session, daily, and top-expensive
+  aggregations, while `InMemoryTokenCostQuery` performs the same grouping over an `InMemoryTokenUsageSink`.
+  AgentRuntime emits one `TokenUsageRecord` per model call to the configured `TokenUsageSink`, so
+  `/api/admin/token-cost/{by-session,daily,top-expensive}` now serve real cost data instead of in-memory run
+  snapshots when autoconfigure wires the query in.
 - Slack followup suggestions compatibility now exists in `@muse/integrations`. `parseFollowupSuggestions`
   extracts well-formed entries from the `<!--FOLLOWUPS:[...]-->` HTML-comment marker (caps at 5),
   `stripFollowupMarker` removes the marker before display, `truncateFollowupLabel` enforces Slack's 75-char

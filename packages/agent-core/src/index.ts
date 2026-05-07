@@ -23,7 +23,8 @@ import {
   createNoOpMuseTracer,
   type AgentMetrics,
   type MuseTracer,
-  type SpanHandle
+  type SpanHandle,
+  type TokenUsageSink
 } from "@muse/observability";
 import {
   buildLayeredSystemPrompt,
@@ -343,6 +344,7 @@ export interface AgentRuntimeOptions {
   readonly contextWindow?: ConversationTrimOptions;
   readonly metrics?: AgentMetrics;
   readonly tracer?: MuseTracer;
+  readonly tokenUsageSink?: TokenUsageSink;
   readonly guards?: readonly GuardStage[];
   readonly hooks?: readonly HookStage[];
   readonly outputGuards?: readonly OutputGuardStage[];
@@ -612,6 +614,7 @@ export class AgentRuntime {
   private readonly contextWindow?: ConversationTrimOptions;
   private readonly metrics: AgentMetrics;
   private readonly tracer: MuseTracer;
+  private readonly tokenUsageSink?: TokenUsageSink;
   private readonly guards: readonly GuardStage[];
   private readonly hooks: readonly HookStage[];
   private readonly outputGuards: readonly OutputGuardStage[];
@@ -652,6 +655,7 @@ export class AgentRuntime {
     this.contextWindow = options.contextWindow;
     this.metrics = options.metrics ?? createNoOpAgentMetrics();
     this.tracer = options.tracer ?? createNoOpMuseTracer();
+    this.tokenUsageSink = options.tokenUsageSink;
     this.guards = options.guards ?? [];
     this.hooks = options.hooks ?? [];
     this.outputGuards = options.outputGuards ?? [];
@@ -1363,6 +1367,7 @@ export class AgentRuntime {
 
         if (response.usage) {
           this.metrics.recordTokenUsage(response.usage, context.input.metadata);
+          await this.recordTokenUsageEvent(context, provider, response, "act");
         }
       }
 
@@ -1683,6 +1688,7 @@ export class AgentRuntime {
 
       if (response.usage) {
         this.metrics.recordTokenUsage(response.usage, context.input.metadata);
+        await this.recordTokenUsageEvent(context, provider, response, "act");
       }
 
       return response;
@@ -1691,6 +1697,47 @@ export class AgentRuntime {
       throw error;
     } finally {
       span.end();
+    }
+  }
+
+  private async recordTokenUsageEvent(
+    context: AgentRunContext,
+    provider: ModelProvider,
+    response: ModelResponse,
+    stepType: string
+  ): Promise<void> {
+    if (!this.tokenUsageSink) {
+      return;
+    }
+    const usage = response.usage;
+    if (!usage) {
+      return;
+    }
+    const promptTokens = usage.inputTokens ?? 0;
+    const completionTokens = usage.outputTokens ?? 0;
+    const reasoningTokens = usage.reasoningTokens ?? 0;
+    try {
+      await this.tokenUsageSink.record({
+        completionTokens,
+        model: response.model,
+        promptTokens,
+        provider: provider.id,
+        reasoningTokens,
+        recordedAt: new Date(),
+        runId: context.runId,
+        stepType,
+        ...(metadataString(context.input.metadata, "tenantId")
+          ? { tenantId: metadataString(context.input.metadata, "tenantId") as string }
+          : {}),
+        totalTokens: promptTokens + completionTokens + reasoningTokens
+      });
+    } catch (error) {
+      this.tracer
+        .startSpan("muse.token_usage.record_failed", {
+          error: error instanceof Error ? error.message : String(error),
+          "run.id": context.runId
+        })
+        .end();
     }
   }
 

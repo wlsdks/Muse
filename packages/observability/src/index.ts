@@ -492,6 +492,306 @@ function percentileMs(values: readonly number[], percentile: number): number {
   return Math.round(lowerValue + (upperValue - lowerValue) * weight);
 }
 
+export interface TokenUsageRecord {
+  readonly runId: string;
+  readonly model: string;
+  readonly provider: string;
+  readonly tenantId?: string;
+  readonly stepType?: string;
+  readonly promptTokens: number;
+  readonly promptCachedTokens?: number;
+  readonly completionTokens: number;
+  readonly reasoningTokens?: number;
+  readonly totalTokens: number;
+  readonly estimatedCostUsd?: number;
+  readonly recordedAt?: Date;
+}
+
+export interface TokenUsageSink {
+  record(event: TokenUsageRecord): Promise<void>;
+}
+
+export interface QueryableTokenUsageSink extends TokenUsageSink {
+  list(): readonly TokenUsageRecord[];
+}
+
+export class InMemoryTokenUsageSink implements QueryableTokenUsageSink {
+  readonly #events: TokenUsageRecord[] = [];
+
+  async record(event: TokenUsageRecord): Promise<void> {
+    this.#events.push(cloneTokenUsageRecord(event));
+  }
+
+  list(): readonly TokenUsageRecord[] {
+    return this.#events.map(cloneTokenUsageRecord);
+  }
+}
+
+export class KyselyTokenUsageSink implements TokenUsageSink {
+  constructor(private readonly db: Kysely<MuseDatabase>) {}
+
+  async record(event: TokenUsageRecord): Promise<void> {
+    await this.db
+      .insertInto("metric_token_usage")
+      .values({
+        completion_tokens: event.completionTokens,
+        estimated_cost_usd: event.estimatedCostUsd === undefined ? "0" : String(event.estimatedCostUsd),
+        model: event.model,
+        prompt_cached_tokens: event.promptCachedTokens ?? 0,
+        prompt_tokens: event.promptTokens,
+        provider: event.provider,
+        reasoning_tokens: event.reasoningTokens ?? 0,
+        run_id: event.runId,
+        step_type: event.stepType ?? "act",
+        tenant_id: event.tenantId ?? "default",
+        time: event.recordedAt ?? new Date(),
+        total_tokens: event.totalTokens
+      })
+      .execute();
+  }
+}
+
+export interface TokenCostBySessionEntry {
+  readonly runId: string;
+  readonly model: string;
+  readonly provider: string;
+  readonly stepType: string;
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly totalTokens: number;
+  readonly estimatedCostUsd: number;
+  readonly time: Date;
+}
+
+export interface TokenCostDailyEntry {
+  readonly day: string;
+  readonly model: string;
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly totalTokens: number;
+  readonly totalCostUsd: number;
+}
+
+export interface TokenCostTopExpensiveEntry {
+  readonly runId: string;
+  readonly model: string;
+  readonly totalTokens: number;
+  readonly totalCostUsd: number;
+  readonly time: Date;
+}
+
+export interface TokenCostQueryWindow {
+  readonly from: Date;
+  readonly to: Date;
+}
+
+export interface TokenCostQuery {
+  bySession(runId: string): Promise<readonly TokenCostBySessionEntry[]>;
+  daily(window: TokenCostQueryWindow): Promise<readonly TokenCostDailyEntry[]>;
+  topExpensive(window: TokenCostQueryWindow & { readonly limit: number }): Promise<readonly TokenCostTopExpensiveEntry[]>;
+}
+
+export class InMemoryTokenCostQuery implements TokenCostQuery {
+  constructor(private readonly sink: QueryableTokenUsageSink) {}
+
+  async bySession(runId: string): Promise<readonly TokenCostBySessionEntry[]> {
+    return this.sink
+      .list()
+      .filter((event) => event.runId.startsWith(runId))
+      .map((event) => ({
+        completionTokens: event.completionTokens,
+        estimatedCostUsd: event.estimatedCostUsd ?? 0,
+        model: event.model,
+        promptTokens: event.promptTokens,
+        provider: event.provider,
+        runId: event.runId,
+        stepType: event.stepType ?? "act",
+        time: event.recordedAt ?? new Date(0),
+        totalTokens: event.totalTokens
+      }))
+      .sort((a, b) => a.time.getTime() - b.time.getTime());
+  }
+
+  async daily(window: TokenCostQueryWindow): Promise<readonly TokenCostDailyEntry[]> {
+    const groups = new Map<string, { day: string; model: string; promptTokens: number; completionTokens: number; totalTokens: number; totalCostUsd: number }>();
+    for (const event of this.sink.list()) {
+      const at = event.recordedAt;
+      if (!at || at < window.from || at >= window.to) {
+        continue;
+      }
+      const day = at.toISOString().slice(0, 10);
+      const key = `${day}|${event.model}`;
+      const existing = groups.get(key) ?? {
+        completionTokens: 0,
+        day,
+        model: event.model,
+        promptTokens: 0,
+        totalCostUsd: 0,
+        totalTokens: 0
+      };
+      groups.set(key, {
+        completionTokens: existing.completionTokens + event.completionTokens,
+        day,
+        model: event.model,
+        promptTokens: existing.promptTokens + event.promptTokens,
+        totalCostUsd: existing.totalCostUsd + (event.estimatedCostUsd ?? 0),
+        totalTokens: existing.totalTokens + event.totalTokens
+      });
+    }
+    return [...groups.values()].sort((a, b) => {
+      if (a.day === b.day) {
+        return b.totalCostUsd - a.totalCostUsd;
+      }
+      return a.day < b.day ? 1 : -1;
+    });
+  }
+
+  async topExpensive(input: TokenCostQueryWindow & { readonly limit: number }): Promise<readonly TokenCostTopExpensiveEntry[]> {
+    const groups = new Map<string, { runId: string; model: string; totalTokens: number; totalCostUsd: number; time: Date }>();
+    for (const event of this.sink.list()) {
+      const at = event.recordedAt;
+      if (!at || at < input.from || at >= input.to) {
+        continue;
+      }
+      const existing = groups.get(event.runId);
+      if (existing) {
+        groups.set(event.runId, {
+          model: event.model,
+          runId: event.runId,
+          time: at > existing.time ? at : existing.time,
+          totalCostUsd: existing.totalCostUsd + (event.estimatedCostUsd ?? 0),
+          totalTokens: existing.totalTokens + event.totalTokens
+        });
+      } else {
+        groups.set(event.runId, {
+          model: event.model,
+          runId: event.runId,
+          time: at,
+          totalCostUsd: event.estimatedCostUsd ?? 0,
+          totalTokens: event.totalTokens
+        });
+      }
+    }
+    return [...groups.values()]
+      .sort((a, b) => b.totalCostUsd - a.totalCostUsd)
+      .slice(0, Math.max(0, input.limit));
+  }
+}
+
+export class KyselyTokenCostQuery implements TokenCostQuery {
+  constructor(private readonly db: Kysely<MuseDatabase>) {}
+
+  async bySession(runId: string): Promise<readonly TokenCostBySessionEntry[]> {
+    const rows = await this.db
+      .selectFrom("metric_token_usage")
+      .select([
+        "run_id",
+        "model",
+        "provider",
+        "step_type",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost_usd",
+        "time"
+      ])
+      .where("run_id", "like", `${runId}%`)
+      .orderBy("time", "asc")
+      .execute();
+    return rows.map((row) => ({
+      completionTokens: Number(row.completion_tokens),
+      estimatedCostUsd: Number(row.estimated_cost_usd ?? 0),
+      model: row.model,
+      promptTokens: Number(row.prompt_tokens),
+      provider: row.provider,
+      runId: row.run_id,
+      stepType: row.step_type,
+      time: row.time instanceof Date ? row.time : new Date(row.time as unknown as string),
+      totalTokens: Number(row.total_tokens)
+    }));
+  }
+
+  async daily(window: TokenCostQueryWindow): Promise<readonly TokenCostDailyEntry[]> {
+    const rows = await sql<{
+      day: Date | string;
+      model: string;
+      prompt_tokens: string | number | null;
+      completion_tokens: string | number | null;
+      total_tokens: string | number | null;
+      total_cost_usd: string | number | null;
+    }>`
+      SELECT
+        DATE(time) AS day,
+        model,
+        SUM(prompt_tokens)::BIGINT AS prompt_tokens,
+        SUM(completion_tokens)::BIGINT AS completion_tokens,
+        SUM(total_tokens)::BIGINT AS total_tokens,
+        SUM(estimated_cost_usd)::FLOAT8 AS total_cost_usd
+      FROM metric_token_usage
+      WHERE time >= ${window.from} AND time < ${window.to}
+      GROUP BY DATE(time), model
+      ORDER BY day DESC, total_cost_usd DESC
+    `.execute(this.db);
+
+    return rows.rows.map((row) => ({
+      completionTokens: Number(row.completion_tokens ?? 0),
+      day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day).slice(0, 10),
+      model: row.model,
+      promptTokens: Number(row.prompt_tokens ?? 0),
+      totalCostUsd: Number(row.total_cost_usd ?? 0),
+      totalTokens: Number(row.total_tokens ?? 0)
+    }));
+  }
+
+  async topExpensive(input: TokenCostQueryWindow & { readonly limit: number }): Promise<readonly TokenCostTopExpensiveEntry[]> {
+    const limit = Math.max(0, input.limit);
+    const rows = await sql<{
+      run_id: string;
+      total_tokens: string | number | null;
+      total_cost_usd: string | number | null;
+      model: string;
+      time: Date | string;
+    }>`
+      SELECT
+        run_id,
+        SUM(total_tokens)::BIGINT AS total_tokens,
+        SUM(estimated_cost_usd)::FLOAT8 AS total_cost_usd,
+        MAX(model) AS model,
+        MAX(time) AS time
+      FROM metric_token_usage
+      WHERE time >= ${input.from} AND time < ${input.to}
+      GROUP BY run_id
+      ORDER BY total_cost_usd DESC
+      LIMIT ${limit}
+    `.execute(this.db);
+
+    return rows.rows.map((row) => ({
+      model: row.model,
+      runId: row.run_id,
+      time: row.time instanceof Date ? row.time : new Date(row.time as unknown as string),
+      totalCostUsd: Number(row.total_cost_usd ?? 0),
+      totalTokens: Number(row.total_tokens ?? 0)
+    }));
+  }
+}
+
+function cloneTokenUsageRecord(event: TokenUsageRecord): TokenUsageRecord {
+  return {
+    completionTokens: event.completionTokens,
+    estimatedCostUsd: event.estimatedCostUsd,
+    model: event.model,
+    promptCachedTokens: event.promptCachedTokens,
+    promptTokens: event.promptTokens,
+    provider: event.provider,
+    reasoningTokens: event.reasoningTokens,
+    recordedAt: event.recordedAt ? new Date(event.recordedAt.getTime()) : undefined,
+    runId: event.runId,
+    stepType: event.stepType,
+    tenantId: event.tenantId,
+    totalTokens: event.totalTokens
+  };
+}
+
 function toNumberOrZero(value: string | number | null | undefined): number {
   if (value === null || value === undefined) {
     return 0;

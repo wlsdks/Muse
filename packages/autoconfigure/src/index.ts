@@ -113,13 +113,19 @@ import {
   InMemoryFollowupSuggestionStore,
   InMemoryLatencyQuery,
   InMemoryMuseTracer,
+  InMemoryTokenCostQuery,
+  InMemoryTokenUsageSink,
   InMemoryTraceEventSink,
   KyselyLatencyQuery,
+  KyselyTokenCostQuery,
+  KyselyTokenUsageSink,
   KyselyTraceEventSink,
   PersistedMuseTracer,
   type LatencyQuery,
   type MuseTracer,
-  type QueryableTraceEventSink
+  type QueryableTraceEventSink,
+  type TokenCostQuery,
+  type TokenUsageSink
 } from "@muse/observability";
 import { CircuitBreakerRegistry } from "@muse/resilience";
 import {
@@ -240,6 +246,8 @@ export interface MuseRuntimeAssembly {
     readonly followupSuggestionStore: InMemoryFollowupSuggestionStore;
     readonly latencyQuery: LatencyQuery;
     readonly metrics: InMemoryAgentMetrics;
+    readonly tokenCostQuery: TokenCostQuery;
+    readonly tokenUsageSink: TokenUsageSink;
     readonly tracer: MuseTracer;
   };
   readonly ragIngestion: {
@@ -307,7 +315,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     maxEvents: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_MAX_EVENTS, 50_000),
     retentionMs: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_RETENTION_MS, 72 * 60 * 60 * 1000)
   });
-  const { tracer, latencyQuery } = createTracingPipeline(db);
+  const { tracer, latencyQuery, tokenUsageSink, tokenCostQuery } = createTracingPipeline(db);
   const circuitBreakerRegistry = new CircuitBreakerRegistry({
     failureThreshold: parseInteger(env.MUSE_CIRCUIT_BREAKER_FAILURE_THRESHOLD, 5),
     resetTimeoutMs: parseInteger(env.MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS, 30_000)
@@ -441,6 +449,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       followupSuggestionStore,
       latencyQuery,
       metrics: agentMetrics,
+      tokenCostQuery,
+      tokenUsageSink,
       tracer
     },
     ragIngestion: {
@@ -479,18 +489,26 @@ function createTracer(db: Kysely<MuseDatabase> | undefined): MuseTracer {
 function createTracingPipeline(db: Kysely<MuseDatabase> | undefined): {
   readonly tracer: MuseTracer;
   readonly latencyQuery: LatencyQuery;
+  readonly tokenUsageSink: TokenUsageSink;
+  readonly tokenCostQuery: TokenCostQuery;
 } {
   if (db) {
+    const tokenUsageSink = new KyselyTokenUsageSink(db);
     return {
       latencyQuery: new KyselyLatencyQuery(db),
+      tokenCostQuery: new KyselyTokenCostQuery(db),
+      tokenUsageSink,
       tracer: new PersistedMuseTracer(new KyselyTraceEventSink(db))
     };
   }
 
-  const sink: QueryableTraceEventSink = new InMemoryTraceEventSink();
+  const traceSink: QueryableTraceEventSink = new InMemoryTraceEventSink();
+  const tokenSink = new InMemoryTokenUsageSink();
   return {
-    latencyQuery: new InMemoryLatencyQuery(sink),
-    tracer: new PersistedMuseTracer(sink)
+    latencyQuery: new InMemoryLatencyQuery(traceSink),
+    tokenCostQuery: new InMemoryTokenCostQuery(tokenSink),
+    tokenUsageSink: tokenSink,
+    tracer: new PersistedMuseTracer(traceSink)
   };
 }
 
@@ -638,6 +656,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     promptLabExperimentStore: assembly.promptLabExperimentStore,
     followupSuggestionStore: assembly.observability.followupSuggestionStore,
     latencyQuery: assembly.observability.latencyQuery,
+    tokenCostQuery: assembly.observability.tokenCostQuery,
     historyStore: assembly.historyStore,
     mcp: {
       manager: assembly.mcp.manager,

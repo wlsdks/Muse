@@ -22,7 +22,13 @@ import type {
 import type { AgentEvalStore } from "@muse/eval";
 import type { TaskMemoryMaintenance, UserMemory, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
-import type { FollowupSuggestionStore, LatencyQuery, LatencyPoint, LatencySummary } from "@muse/observability";
+import type {
+  FollowupSuggestionStore,
+  LatencyQuery,
+  LatencyPoint,
+  LatencySummary,
+  TokenCostQuery
+} from "@muse/observability";
 import type { GuardRuleStore, ToolPolicyInput, ToolPolicyStore } from "@muse/policy";
 import { inputGuardSimulationToJson, simulateInputGuardPipeline, toolPolicyToJson } from "@muse/policy";
 import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } from "@muse/promptlab";
@@ -72,6 +78,7 @@ export interface ReactorCompatibilityRouteOptions {
   readonly promptLabExperimentStore?: PromptLabExperimentStore;
   readonly followupSuggestionStore?: FollowupSuggestionStore;
   readonly latencyQuery?: LatencyQuery;
+  readonly tokenCostQuery?: TokenCostQuery;
   readonly historyStore?: AgentRunHistoryStore;
   readonly mcp?: McpRouteMcp;
   readonly modelProvider?: ModelProvider;
@@ -3099,6 +3106,25 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
+    if (options.tokenCostQuery) {
+      const sessionId = readQueryString(request, "sessionId") ?? readQueryString(request, "runId");
+      if (!sessionId) {
+        return [];
+      }
+      const rows = await options.tokenCostQuery.bySession(sessionId);
+      return rows.map((row) => ({
+        completionTokens: row.completionTokens,
+        estimatedCostUsd: row.estimatedCostUsd,
+        model: row.model,
+        promptTokens: row.promptTokens,
+        provider: row.provider,
+        runId: row.runId,
+        stepType: row.stepType,
+        time: row.time.toISOString(),
+        totalTokens: row.totalTokens
+      }));
+    }
+
     return (await listAllRuns(options)).map((run) => ({
       costUsd: run.costUsd,
       model: run.model,
@@ -3112,11 +3138,42 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
+    if (options.tokenCostQuery) {
+      const days = readQueryInteger(request, "days", 7);
+      const window = { from: latencyWindowStart(days), to: new Date() };
+      const rows = await options.tokenCostQuery.daily(window);
+      return rows.map((row) => ({
+        completionTokens: row.completionTokens,
+        day: row.day,
+        model: row.model,
+        promptTokens: row.promptTokens,
+        totalCostUsd: row.totalCostUsd,
+        totalTokens: row.totalTokens
+      }));
+    }
+
     return dailyUsage(await listAllRuns(options));
   });
   server.get("/api/admin/token-cost/top-expensive", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
+    }
+
+    if (options.tokenCostQuery) {
+      const days = readQueryInteger(request, "days", 7);
+      const limit = Math.min(100, Math.max(1, readQueryInteger(request, "limit", 20)));
+      const rows = await options.tokenCostQuery.topExpensive({
+        from: latencyWindowStart(days),
+        limit,
+        to: new Date()
+      });
+      return rows.map((row) => ({
+        model: row.model,
+        runId: row.runId,
+        time: row.time.toISOString(),
+        totalCostUsd: row.totalCostUsd,
+        totalTokens: row.totalTokens
+      }));
     }
 
     const runs = await listAllRuns(options);

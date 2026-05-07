@@ -8,6 +8,8 @@ import {
   InMemoryFollowupSuggestionStore,
   InMemoryLatencyQuery,
   InMemoryMuseTracer,
+  InMemoryTokenCostQuery,
+  InMemoryTokenUsageSink,
   InMemoryTraceEventSink,
   LATENCY_DEFAULT_SPAN_NAME_PREFIX,
   OpenTelemetryTraceEventSink,
@@ -576,5 +578,130 @@ describe("InMemoryLatencyQuery", () => {
 
   it("exposes a stable default span name prefix constant", () => {
     expect(LATENCY_DEFAULT_SPAN_NAME_PREFIX).toBe("muse.agent.");
+  });
+});
+
+describe("InMemoryTokenCostQuery", () => {
+  async function record(
+    sink: InMemoryTokenUsageSink,
+    overrides: {
+      runId?: string;
+      model?: string;
+      provider?: string;
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+      estimatedCostUsd?: number;
+      recordedAt: string;
+    }
+  ): Promise<void> {
+    const promptTokens = overrides.promptTokens ?? 100;
+    const completionTokens = overrides.completionTokens ?? 50;
+    await sink.record({
+      completionTokens,
+      estimatedCostUsd: overrides.estimatedCostUsd ?? 0.01,
+      model: overrides.model ?? "test-model",
+      promptTokens,
+      provider: overrides.provider ?? "test",
+      recordedAt: new Date(overrides.recordedAt),
+      runId: overrides.runId ?? "run-1",
+      stepType: "act",
+      totalTokens: overrides.totalTokens ?? promptTokens + completionTokens
+    });
+  }
+
+  it("returns per-step usage for a given run id sorted by time", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    await record(sink, { recordedAt: "2026-05-07T10:00:00.000Z", runId: "session-1" });
+    await record(sink, {
+      completionTokens: 70,
+      promptTokens: 200,
+      recordedAt: "2026-05-07T10:00:30.000Z",
+      runId: "session-1",
+      totalTokens: 270
+    });
+    await record(sink, { recordedAt: "2026-05-07T11:00:00.000Z", runId: "other-run" });
+
+    const query = new InMemoryTokenCostQuery(sink);
+    const rows = await query.bySession("session-1");
+
+    expect(rows).toEqual([
+      expect.objectContaining({ runId: "session-1", totalTokens: 150 }),
+      expect.objectContaining({ runId: "session-1", totalTokens: 270 })
+    ]);
+  });
+
+  it("groups daily usage by date and model with cost descending within a day", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    await record(sink, {
+      estimatedCostUsd: 0.05,
+      model: "model-a",
+      recordedAt: "2026-05-07T10:00:00.000Z"
+    });
+    await record(sink, {
+      estimatedCostUsd: 0.20,
+      model: "model-b",
+      recordedAt: "2026-05-07T11:00:00.000Z"
+    });
+    await record(sink, {
+      estimatedCostUsd: 0.10,
+      model: "model-a",
+      recordedAt: "2026-05-08T10:00:00.000Z"
+    });
+
+    const query = new InMemoryTokenCostQuery(sink);
+    const rows = await query.daily({
+      from: new Date("2026-05-07T00:00:00.000Z"),
+      to: new Date("2026-05-09T00:00:00.000Z")
+    });
+
+    expect(rows.map((row) => `${row.day}|${row.model}|${row.totalCostUsd}`)).toEqual([
+      "2026-05-08|model-a|0.1",
+      "2026-05-07|model-b|0.2",
+      "2026-05-07|model-a|0.05"
+    ]);
+  });
+
+  it("returns the top-N most expensive runs in the window descending by cost", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    await record(sink, { estimatedCostUsd: 0.10, recordedAt: "2026-05-07T10:00:00.000Z", runId: "cheap" });
+    await record(sink, { estimatedCostUsd: 1.50, recordedAt: "2026-05-07T11:00:00.000Z", runId: "expensive" });
+    await record(sink, { estimatedCostUsd: 0.50, recordedAt: "2026-05-07T12:00:00.000Z", runId: "medium" });
+
+    const query = new InMemoryTokenCostQuery(sink);
+    const rows = await query.topExpensive({
+      from: new Date("2026-05-07T00:00:00.000Z"),
+      limit: 2,
+      to: new Date("2026-05-08T00:00:00.000Z")
+    });
+
+    expect(rows.map((row) => row.runId)).toEqual(["expensive", "medium"]);
+  });
+
+  it("excludes events outside the requested window", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    await record(sink, { estimatedCostUsd: 1.0, recordedAt: "2026-05-06T23:00:00.000Z" });
+    await record(sink, { estimatedCostUsd: 2.0, recordedAt: "2026-05-07T01:00:00.000Z" });
+
+    const query = new InMemoryTokenCostQuery(sink);
+    const rows = await query.daily({
+      from: new Date("2026-05-07T00:00:00.000Z"),
+      to: new Date("2026-05-08T00:00:00.000Z")
+    });
+    expect(rows).toEqual([expect.objectContaining({ totalCostUsd: 2.0 })]);
+  });
+
+  it("aggregates multiple events for a single run into one topExpensive entry", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    await record(sink, { estimatedCostUsd: 0.40, recordedAt: "2026-05-07T10:00:00.000Z", runId: "run-x" });
+    await record(sink, { estimatedCostUsd: 0.60, recordedAt: "2026-05-07T10:01:00.000Z", runId: "run-x" });
+
+    const query = new InMemoryTokenCostQuery(sink);
+    const rows = await query.topExpensive({
+      from: new Date("2026-05-07T00:00:00.000Z"),
+      limit: 5,
+      to: new Date("2026-05-08T00:00:00.000Z")
+    });
+    expect(rows[0]).toMatchObject({ runId: "run-x", totalCostUsd: expect.closeTo(1.0, 5) });
   });
 });
