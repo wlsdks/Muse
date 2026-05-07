@@ -47,32 +47,25 @@ describe("tool approval policies", () => {
     });
   });
 
-  it("infers redacted workspace approval context for Atlassian-compatible read tools", () => {
+  it("infers a generic approval context for any tool name (no special-casing by prefix)", () => {
+    // The previous Atlassian-shape inference (jira_*/confluence_*/bitbucket_*
+    // prefix → custom display name + scope keys) was removed in iteration #62.
+    // Every tool now gets the same generic approval context derived from
+    // common arg keys (path, file, url, resource, command, workspaceId).
     expect(inferApprovalContext("jira_get_issue", {
       issueKey: "MUSE-42",
       requesterEmail: "example-user@example.com",
       token: "ATATT3xFfGF0secret"
-    })).toEqual({
-      action: "jira_get_issue(MUSE-42)",
-      impactScope: "MUSE-42",
-      reason: "Jira read operation: jira_get_issue",
-      reversibility: "reversible"
+    })).toMatchObject({
+      action: "jira_get_issue",
+      impactScope: "workspace"
     });
 
-    expect(inferApprovalContext("bitbucket_list_prs", {
-      repoSlug: "platform-api"
+    expect(inferApprovalContext("custom_db_query", {
+      url: "https://db.example.test/query"
     })).toMatchObject({
-      action: "bitbucket_list_prs(platform-api)",
-      impactScope: "platform-api",
-      reason: "Bitbucket read operation: bitbucket_list_prs",
-      reversibility: "reversible"
-    });
-
-    expect(inferApprovalContext("jira_search_by_text", {
-      requesterEmail: "example-user@example.com"
-    })).toMatchObject({
-      action: "jira_search_by_text(***)",
-      impactScope: "***"
+      action: "custom_db_query",
+      impactScope: "https://db.example.test/query"
     });
   });
 

@@ -296,6 +296,33 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- runtime stops special-casing tool names (iteration 62, JARVIS pluggability).
+  Two surfaces in the runtime were giving Atlassian tools (`jira_*`,
+  `confluence_*`, `bitbucket_*`) special treatment that broke the
+  "any tool, any MCP" promise:
+  * `inferWorkspaceApprovalContext` in `packages/policy/src/approval-policy.ts`
+    DELETED. It used to detect the prefix, look up product-specific arg
+    keys (`issueKey` / `pageId` / `repoSlug`), and emit
+    "Jira read operation: …" / "Confluence read operation: …" /
+    "Bitbucket read operation: …" approval reasons. Now every tool —
+    regardless of name — gets the same generic approval context derived
+    from common arg keys (`path`, `file`, `url`, `resource`, `command`,
+    `workspaceId`). The supporting tables (`workspaceDisplayName`,
+    `workspaceFallbackScope`, `workspaceScopeKeys`,
+    `workspacePrimaryKeys`, `WorkspaceToolCategory` type) all dropped.
+  * `workspaceHints` in `packages/tools/src/index.ts` no longer hardcodes
+    `jira` / `confluence` / `bitbucket` as substring matches for
+    `isWorkspaceMutationPrompt`. Generic terms (`issue` / `이슈` /
+    `ticket` / `티켓` / `project` / `프로젝트` / `page` / `document` /
+    `repository` / `pr` / etc.) cover the same intent without
+    privileging Atlassian-shaped tool names. Added English equivalents
+    (`issue`, `ticket`, `project`, `page`, `document`) so English
+    operators get the same detection Korean ones already had.
+  Tests updated: `inferApprovalContext` test now asserts generic
+  shape for any tool name, `isWorkspaceMutationPrompt` test exercises
+  the generic English+Korean path. policy tests stay 53/53; tools
+  tests stay 29/29; pnpm check green; broad smoke 49/49; live smoke
+  8/8; route parity 0 missing.
 - multi-provider live-smoke harness (iteration 61, weakness #3 from final
   audit). The existing `smoke:live` picks the first available provider key
   and runs the full 8-check suite. The new `pnpm smoke:live:all` does the

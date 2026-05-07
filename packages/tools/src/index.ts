@@ -830,13 +830,15 @@ function relevanceScore(tool: MuseTool, prompt: string): number {
 }
 
 const workspaceHints = [
-  "jira",
-  "confluence",
-  "bitbucket",
+  "issue",
   "이슈",
+  "ticket",
   "티켓",
+  "project",
   "프로젝트",
+  "page",
   "페이지",
+  "document",
   "문서",
   "저장소",
   "repository",

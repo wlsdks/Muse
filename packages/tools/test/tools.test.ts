@@ -275,13 +275,16 @@ describe("tool utilities", () => {
     expect(shortenToolDescription(readTool.definition.description)).toBe("Read a synthetic note.");
   });
 
-  it("detects workspace mutation prompts", () => {
-    expect(isWorkspaceMutationPrompt("Please assign Jira issue MUSE-1 to example-user.")).toBe(true);
+  it("detects workspace mutation prompts using generic workspace + mutation hints", () => {
+    // Atlassian product names (jira, confluence, bitbucket) are no longer
+    // baked into workspaceHints — operators register their own tool names.
+    // Generic terms (issue/이슈, repo, PR, project, document) still match.
+    expect(isWorkspaceMutationPrompt("Please assign issue MUSE-1 to example-user.")).toBe(true);
     expect(isWorkspaceMutationPrompt("Summarize the latest note.")).toBe(false);
     expect(isWorkspaceMutationPrompt("Please assign this task to example-user.")).toBe(false);
-    expect(isWorkspaceMutationPrompt("Show unassigned Jira issues.")).toBe(false);
-    expect(isWorkspaceMutationPrompt("Write this Confluence page as a Slack message.")).toBe(false);
-    expect(isWorkspaceMutationPrompt("비트버킷 PR에 코멘트해줘")).toBe(true);
+    expect(isWorkspaceMutationPrompt("Show unassigned issues.")).toBe(false);
+    expect(isWorkspaceMutationPrompt("Write this page as a Slack message.")).toBe(false);
+    expect(isWorkspaceMutationPrompt("PR에 코멘트해줘")).toBe(true);
   });
 
   it("validates tool descriptions and dependencies before model exposure", () => {
@@ -360,7 +363,7 @@ describe("tool utilities", () => {
     };
 
     const plan = createWorkspaceToolRoutingPlan([updateIssue, postSlack, authenticate], {
-      prompt: "Please update Jira issue MUSE-1"
+      prompt: "Please update issue MUSE-1"
     });
 
     expect(plan.mutationIntent).toBe(true);
@@ -431,7 +434,7 @@ describe("tool utilities", () => {
     };
 
     const selected = policy.select([updateIssue, postSlack], {
-      prompt: "Please update Jira issue MUSE-1",
+      prompt: "Please update issue MUSE-1",
       recentToolNames: ["post_slack_message", "post_slack_message"]
     });
 
