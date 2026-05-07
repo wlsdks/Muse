@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { AgentRunContext, HookStage } from "@muse/agent-core";
 import type { ModelMessage } from "@muse/model";
-import type { FollowupSuggestionStore } from "@muse/observability";
+import type { FollowupSuggestionStore, SloAlertEvaluator, SloViolation } from "@muse/observability";
 import type {
   ChannelFaqRegistrationTable,
   MuseDatabase,
@@ -1693,6 +1693,64 @@ export const SLACK_PROGRESS_DEFAULT_FRIENDLY_NAMES: Readonly<Record<string, stri
 
 export const SLACK_PROGRESS_DEFAULT_MIN_UPDATE_MS = 1500;
 export const SLACK_PROGRESS_MAX_STATUS_LENGTH = 100;
+
+export interface SloAlertHookOptions {
+  readonly evaluator: SloAlertEvaluator;
+  readonly id?: string;
+  readonly notify?: (violations: readonly SloViolation[]) => Awaitable<void>;
+  readonly now?: () => number;
+  readonly logger?: (message: string, error?: unknown) => void;
+}
+
+/**
+ * Hook that records latency + result outcomes into a `SloAlertEvaluator` and
+ * fires the optional `notify` callback whenever a violation surfaces.
+ *
+ * Mirrors Reactor's `SloAlertHook` semantics:
+ * - Records the wall-clock latency of each agent run on `afterComplete` and
+ *   marks the result as successful.
+ * - On `onError`, records elapsed latency and a failed result.
+ * - Calls `notify` with any violations the evaluator returns; failures inside
+ *   `notify` are swallowed via the optional `logger` so the run never breaks.
+ *
+ * The evaluator's cooldown logic still gates duplicate notifications.
+ */
+export function createSloAlertHook(options: SloAlertHookOptions): HookStage {
+  const now = options.now ?? (() => Date.now());
+  const startedAtByRun = new Map<string, number>();
+
+  async function dispatch(violations: readonly SloViolation[]): Promise<void> {
+    if (violations.length === 0 || !options.notify) {
+      return;
+    }
+    try {
+      await options.notify(violations);
+    } catch (error) {
+      options.logger?.("SloAlertHook notify failed", error);
+    }
+  }
+
+  return {
+    afterComplete: async (context) => {
+      const startedAt = startedAtByRun.get(context.runId) ?? context.startedAt.getTime();
+      startedAtByRun.delete(context.runId);
+      options.evaluator.recordLatency(now() - startedAt);
+      options.evaluator.recordResult(true);
+      await dispatch(options.evaluator.evaluate());
+    },
+    beforeStart: async (context) => {
+      startedAtByRun.set(context.runId, now());
+    },
+    id: options.id ?? "slo-alert",
+    onError: async (context) => {
+      const startedAt = startedAtByRun.get(context.runId) ?? context.startedAt.getTime();
+      startedAtByRun.delete(context.runId);
+      options.evaluator.recordLatency(now() - startedAt);
+      options.evaluator.recordResult(false);
+      await dispatch(options.evaluator.evaluate());
+    }
+  };
+}
 
 export function createSlackProgressHook(options: SlackProgressHookOptions): HookStage {
   const minUpdateIntervalMs = options.minUpdateIntervalMs ?? SLACK_PROGRESS_DEFAULT_MIN_UPDATE_MS;

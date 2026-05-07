@@ -7,6 +7,7 @@ import {
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
   InMemoryLatencyQuery,
+  SloAlertEvaluator,
   InMemoryMuseTracer,
   InMemoryTokenCostQuery,
   InMemoryTokenUsageSink,
@@ -703,5 +704,101 @@ describe("InMemoryTokenCostQuery", () => {
       to: new Date("2026-05-08T00:00:00.000Z")
     });
     expect(rows[0]).toMatchObject({ runId: "run-x", totalCostUsd: expect.closeTo(1.0, 5) });
+  });
+});
+
+describe("SloAlertEvaluator", () => {
+  function evaluator(overrides: Partial<{
+    latencyThresholdMs: number;
+    errorRateThreshold: number;
+    windowSeconds: number;
+    cooldownSeconds: number;
+    minSamples: number;
+    now: () => number;
+  }> = {}): { now: () => number; setNow: (n: number) => void; evaluator: SloAlertEvaluator } {
+    let current = overrides.now ? overrides.now() : 1_000_000;
+    const setNow = (next: number) => {
+      current = next;
+    };
+    const evaluatorInstance = new SloAlertEvaluator({
+      cooldownSeconds: overrides.cooldownSeconds ?? 60,
+      errorRateThreshold: overrides.errorRateThreshold ?? 0.5,
+      latencyThresholdMs: overrides.latencyThresholdMs ?? 1000,
+      minSamples: overrides.minSamples ?? 5,
+      now: () => current,
+      windowSeconds: overrides.windowSeconds ?? 30
+    });
+    return { evaluator: evaluatorInstance, now: () => current, setNow };
+  }
+
+  it("returns no violations until min samples are recorded", () => {
+    const { evaluator: ev } = evaluator({ minSamples: 5 });
+    for (let i = 0; i < 4; i += 1) {
+      ev.recordLatency(2_000);
+    }
+    expect(ev.evaluate()).toEqual([]);
+  });
+
+  it("flags a P95 latency violation once threshold is breached on enough samples", () => {
+    const { evaluator: ev } = evaluator({ latencyThresholdMs: 1_000, minSamples: 5 });
+    for (let i = 0; i < 5; i += 1) {
+      ev.recordLatency(3_000);
+    }
+    const violations = ev.evaluate();
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({ type: "latency", currentValue: 3_000, threshold: 1_000 });
+  });
+
+  it("flags an error rate violation when failures exceed the threshold", () => {
+    const { evaluator: ev } = evaluator({ errorRateThreshold: 0.4, minSamples: 5 });
+    [false, false, false, true, true].forEach((s) => ev.recordResult(s));
+    const violations = ev.evaluate();
+    const errorRateViolation = violations.find((v) => v.type === "error_rate");
+    expect(errorRateViolation).toMatchObject({ threshold: 0.4 });
+    expect(errorRateViolation?.currentValue).toBeCloseTo(0.6, 5);
+  });
+
+  it("respects per-type cooldown so the same violation does not repeat back-to-back", () => {
+    const { evaluator: ev, setNow } = evaluator({
+      cooldownSeconds: 60,
+      latencyThresholdMs: 1_000,
+      minSamples: 5,
+      windowSeconds: 600
+    });
+    for (let i = 0; i < 5; i += 1) {
+      ev.recordLatency(3_000);
+    }
+    expect(ev.evaluate()).toHaveLength(1);
+
+    // Within cooldown window: no repeat alert.
+    setNow(1_010_000);
+    expect(ev.evaluate()).toEqual([]);
+
+    // Past cooldown and still inside the rolling window: alert again.
+    setNow(1_120_000);
+    expect(ev.evaluate()).toHaveLength(1);
+  });
+
+  it("evicts samples that fall outside the rolling window", () => {
+    const { evaluator: ev, setNow } = evaluator({ minSamples: 3, windowSeconds: 10 });
+    for (let i = 0; i < 5; i += 1) {
+      ev.recordLatency(3_000);
+    }
+    setNow(1_011_000); // 11 seconds later — older samples expired.
+    const snapshot = ev.snapshot();
+    expect(snapshot.latencySamples).toBe(0);
+    expect(snapshot.latencyP95Ms).toBeNull();
+  });
+
+  it("rejects invalid configuration in the constructor", () => {
+    expect(() =>
+      new SloAlertEvaluator({ cooldownSeconds: 0, errorRateThreshold: 1.5, latencyThresholdMs: 1_000, windowSeconds: 30 })
+    ).toThrow(/errorRateThreshold/u);
+    expect(() =>
+      new SloAlertEvaluator({ cooldownSeconds: 0, errorRateThreshold: 0.1, latencyThresholdMs: -1, windowSeconds: 30 })
+    ).toThrow(/latencyThresholdMs/u);
+    expect(() =>
+      new SloAlertEvaluator({ cooldownSeconds: 0, errorRateThreshold: 0.1, latencyThresholdMs: 1_000, windowSeconds: 0 })
+    ).toThrow(/windowSeconds/u);
   });
 });

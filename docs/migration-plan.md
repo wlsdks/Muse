@@ -296,6 +296,12 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- SLO alert evaluator now exists in `@muse/observability` as `SloAlertEvaluator`. Tracks latency samples
+  and result outcomes over a configurable rolling window, raises `SloViolation` (type: `latency` |
+  `error_rate`) when P95 latency or error rate exceeds threshold, and gates duplicate alerts per type via
+  cooldown. `@muse/integrations` adds `createSloAlertHook` that records latency on `afterComplete` /
+  `onError` from the agent lifecycle and forwards violations to an optional `notify` callback (errors
+  swallowed via `logger`). Closes the Reactor `SloAlertEvaluator` + `SloAlertHook` parity gap.
 - LLM-backed contextual compressor (RECOMP-style) now exists in `@muse/rag` as
   `createLlmContextualCompressor({ provider, model, ... })`. Skips documents shorter than
   `minContentLength` (default 200 chars) without a model call, bounds parallelism via

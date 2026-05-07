@@ -261,6 +261,42 @@ try {
     assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
+  await record("SLO alert hook records latency and surfaces threshold violations", async () => {
+    const { SloAlertEvaluator } = await import(`${rootDir}/packages/observability/dist/index.js`);
+    const { createSloAlertHook } = await import(`${rootDir}/packages/integrations/dist/index.js`);
+    let now = 1_000_000;
+    const evaluator = new SloAlertEvaluator({
+      cooldownSeconds: 30,
+      errorRateThreshold: 0.5,
+      latencyThresholdMs: 1_000,
+      minSamples: 3,
+      now: () => now,
+      windowSeconds: 600
+    });
+    const notified = [];
+    const hook = createSloAlertHook({
+      evaluator,
+      notify: async (violations) => {
+        notified.push(...violations);
+      },
+      now: () => now
+    });
+
+    for (let runIndex = 0; runIndex < 3; runIndex += 1) {
+      const ctx = {
+        input: { messages: [], model: "smoke" },
+        runId: `slo-run-${runIndex}`,
+        startedAt: new Date(now)
+      };
+      await hook.beforeStart(ctx);
+      now += 5_000;
+      await hook.afterComplete(ctx, { id: "r", model: "smoke", output: "" });
+    }
+
+    assert(notified.length >= 1, `expected at least one violation, got ${notified.length}`);
+    assert(notified[0].type === "latency", `expected latency violation type, got ${notified[0]?.type}`);
+  });
+
   await record("LLM contextual compressor extracts relevant content and drops IRRELEVANT docs", async () => {
     const { createLlmContextualCompressor } = await import(`${rootDir}/packages/rag/dist/index.js`);
     const provider = {

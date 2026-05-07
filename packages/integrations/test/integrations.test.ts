@@ -20,6 +20,7 @@ import {
   createFollowupSuggestionInteractionHandler,
   createSlackProgressHook,
   createSlackReminderPoller,
+  createSloAlertHook,
   handleSlackReminderCommand,
   InMemoryReminderStore,
   parseReminderTime,
@@ -1658,5 +1659,138 @@ describe("Slack reminders", () => {
       const store = new InMemoryReminderStore({ now: () => new Date(), timezone: "UTC" });
       expect(handleSlackReminderCommand(store, "U1", "explode").text).toContain("지원하는 명령");
     });
+  });
+});
+
+describe("createSloAlertHook", () => {
+  function makeEvaluator(): {
+    samples: { latencies: number[]; results: boolean[]; alerts: number };
+    evaluator: {
+      recordLatency: (ms: number) => void;
+      recordResult: (success: boolean) => void;
+      evaluate: () => Array<{ type: string; currentValue: number; threshold: number; message: string; at: Date }>;
+    };
+  } {
+    const latencies: number[] = [];
+    const results: boolean[] = [];
+    let alertsRequested = 0;
+    return {
+      evaluator: {
+        evaluate: () => {
+          alertsRequested += 1;
+          return alertsRequested === 2
+            ? [{ at: new Date(), currentValue: 5_000, message: "P95 too high", threshold: 1_000, type: "latency" }]
+            : [];
+        },
+        recordLatency: (ms) => {
+          latencies.push(ms);
+        },
+        recordResult: (success) => {
+          results.push(success);
+        }
+      },
+      samples: {
+        get alerts() {
+          return alertsRequested;
+        },
+        latencies,
+        results
+      }
+    };
+  }
+
+  function makeContext(runId: string, startedAtMs: number): AgentRunContext {
+    return {
+      input: { messages: [], model: "test-model" },
+      runId,
+      startedAt: new Date(startedAtMs)
+    };
+  }
+
+  it("records a successful latency and result on afterComplete", async () => {
+    const { evaluator, samples } = makeEvaluator();
+    let now = 1_000_000;
+    const hook = createSloAlertHook({ evaluator: evaluator as never, now: () => now });
+    const context = makeContext("run-ok", now);
+
+    await hook.beforeStart?.(context);
+    now += 750;
+    await hook.afterComplete?.(context, { id: "r", model: "m", output: "" });
+
+    expect(samples.latencies).toEqual([750]);
+    expect(samples.results).toEqual([true]);
+  });
+
+  it("records a failed latency and result on onError", async () => {
+    const { evaluator, samples } = makeEvaluator();
+    let now = 1_000_000;
+    const hook = createSloAlertHook({ evaluator: evaluator as never, now: () => now });
+    const context = makeContext("run-fail", now);
+
+    await hook.beforeStart?.(context);
+    now += 1_500;
+    await hook.onError?.(context, new Error("boom"));
+
+    expect(samples.latencies).toEqual([1_500]);
+    expect(samples.results).toEqual([false]);
+  });
+
+  it("invokes the notify callback when the evaluator surfaces violations", async () => {
+    const { evaluator } = makeEvaluator();
+    const notified: unknown[] = [];
+    let now = 1_000_000;
+    const hook = createSloAlertHook({
+      evaluator: evaluator as never,
+      notify: async (violations) => {
+        notified.push(violations);
+      },
+      now: () => now
+    });
+
+    const ctx1 = makeContext("r1", now);
+    await hook.beforeStart?.(ctx1);
+    now += 500;
+    await hook.afterComplete?.(ctx1, { id: "r", model: "m", output: "" });
+
+    now += 100;
+    const ctx2 = makeContext("r2", now);
+    await hook.beforeStart?.(ctx2);
+    now += 6_000;
+    await hook.afterComplete?.(ctx2, { id: "r", model: "m", output: "" });
+
+    expect(notified).toHaveLength(1);
+    expect((notified[0] as Array<{ type: string }>)[0]).toMatchObject({ type: "latency" });
+  });
+
+  it("swallows notify errors and reports through the optional logger", async () => {
+    const { evaluator } = makeEvaluator();
+    const errors: unknown[] = [];
+    let now = 1_000_000;
+    const hook = createSloAlertHook({
+      evaluator: evaluator as never,
+      logger: (_message, error) => errors.push(error),
+      notify: async () => {
+        throw new Error("notify down");
+      },
+      now: () => now
+    });
+
+    const ctx1 = makeContext("r1", now);
+    await hook.beforeStart?.(ctx1);
+    now += 100;
+    await hook.afterComplete?.(ctx1, { id: "r", model: "m", output: "" });
+
+    now += 100;
+    const ctx2 = makeContext("r2", now);
+    await hook.beforeStart?.(ctx2);
+    now += 100;
+    await expect(hook.afterComplete?.(ctx2, { id: "r", model: "m", output: "" })).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
+  });
+
+  it("uses the configurable hook id", () => {
+    const { evaluator } = makeEvaluator();
+    const hook = createSloAlertHook({ evaluator: evaluator as never, id: "custom-slo" });
+    expect(hook.id).toBe("custom-slo");
   });
 });
