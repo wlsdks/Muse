@@ -296,6 +296,22 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- live-LLM smoke harness institutionalised (iteration 46). New
+  `pnpm smoke:live` (script: `scripts/smoke-live-llm.mjs`) brings up
+  apps/api against the first available real provider in priority order
+  (`GEMINI_API_KEY` → gemini/gemini-2.0-flash, `ANTHROPIC_API_KEY` →
+  claude-3-5-haiku, `OPENAI_API_KEY` → gpt-4o-mini), then runs five
+  live HTTP checks: POST /api/chat direct answer (token usage > 0),
+  POST /api/chat/stream SSE event frames + content, POST /api/chat
+  with tool-using prompt (toolsUsed=time_now or weekday content fall-
+  back), POST /api/chat with metadata.agentMode=plan_execute (200 +
+  content or 422 + structured PLAN_* code), and POST
+  /api/multi-agent/orchestrate sequential with two seeded specs
+  (asserts both completed and 2 non-empty conversation entries). Skips
+  with exit 0 when no provider key is present so CI without keys
+  doesn't fail. Verified live with GEMINI_API_KEY: 5/5 passed.
+  Counterpart to `smoke:broad` (diagnostic provider, 49/49) — together
+  they prove both the runtime contract AND a real-LLM round-trip.
 - live-LLM end-to-end is now provably working (iteration 45). Three
   real bugs uncovered while answering "does the agent actually run?"
   with a real Gemini API key:
