@@ -115,6 +115,19 @@ describe("cache metrics", () => {
     expect(resolveProvider("claude-3-haiku")).toBe("anthropic");
     expect(resolveProvider("unknown-model")).toBe("unknown");
   });
+
+  it("trusts the explicit '<provider>/<model>' prefix for cache attribution", () => {
+    // These were all attributed to 'unknown' before the parseModelName-aware
+    // fix because the modelPrefixToProvider table only knows the *model*
+    // prefix forms (gpt-, claude-, etc), not Muse's structural provider/model
+    // wrapper. Without this fix, /admin/cache.hitsByProvider returned
+    // { unknown: N } even when callers specified the provider explicitly.
+    expect(resolveProvider("diagnostic/smoke")).toBe("diagnostic");
+    expect(resolveProvider("ollama/llama3.2")).toBe("ollama");
+    expect(resolveProvider("anthropic/claude-3-haiku")).toBe("anthropic");
+    expect(resolveProvider("openrouter/anthropic/claude-3-haiku")).toBe("openrouter");
+    expect(resolveProvider("OpenAI/gpt-4o")).toBe("openai");
+  });
 });
 
 describe("prompt caching", () => {

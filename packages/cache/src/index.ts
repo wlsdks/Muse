@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { knownModelPrefixes, type ModelRequest, type ModelResponse } from "@muse/model";
+import { knownModelPrefixes, parseModelName, type ModelRequest, type ModelResponse } from "@muse/model";
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 export type Awaitable<T> = T | Promise<T>;
@@ -417,11 +417,21 @@ export function estimateCostUsd(model: string, inputTokens: number, outputTokens
 }
 
 export function resolveProvider(model: string): string {
-  if (model.trim().length === 0 || model.toLowerCase() === cacheUnknownModel) {
+  const trimmed = model.trim();
+  if (trimmed.length === 0 || trimmed.toLowerCase() === cacheUnknownModel) {
     return cacheUnknownModel;
   }
 
-  const normalized = model.toLowerCase();
+  // Muse model strings carry the provider explicitly as "<providerId>/<modelId>"
+  // (e.g. "diagnostic/smoke", "openai/gpt-4o", "ollama/llama3.2"). Trust that
+  // structural cue first so newly-added providers attribute correctly without
+  // editing the modelPrefixToProvider table.
+  const parsed = parseModelName(trimmed);
+  if (parsed.providerId && parsed.providerId.trim().length > 0) {
+    return parsed.providerId.toLowerCase();
+  }
+
+  const normalized = trimmed.toLowerCase();
   const match = Object.entries(knownModelPrefixes()).find(([prefix]) => normalized.startsWith(prefix));
   return match?.[1] ?? cacheUnknownModel;
 }
