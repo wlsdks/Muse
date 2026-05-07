@@ -296,6 +296,14 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- agent-core monolith split continued (iteration 17). Guard factories extracted to
+  `packages/agent-core/src/guards.ts` (`createInjectionInputGuard`, `createPiiInputGuard`,
+  `createTopicDriftInputGuard`, `createLlmClassificationInputGuard`, `createPiiMaskingOutputGuard`,
+  `createDynamicOutputGuardRuleStage`, `createSystemPromptLeakageOutputGuard`); shared runtime types
+  extracted to `types.ts` (`AgentRunInput`, `AgentRunContext`, `GuardStage`, `GuardDecision`,
+  `HookStage`, `OutputGuardStage`, `OutputGuardDecision`, etc.); private message/JSON helpers
+  extracted to `internals.ts` (`joinMessages`, `joinUserMessages`, `parseLlmClassificationDecision`,
+  `parseJsonObjectFromText`, `stringField`). Public API unchanged. Index file: 3,663 → 3,393 lines.
 - agent-core monolith split continued. Checkpoint state types + codec extracted to
   `packages/agent-core/src/checkpoint.ts` (`AgentCheckpointState`, `createAgentCheckpointState`,
   `encodeCheckpointMessages`, `decodeCheckpointMessages`); error classes extracted to
