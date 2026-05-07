@@ -296,6 +296,12 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- A2A agent card now uses real tool input schemas. `@muse/agent-specs` adds `buildAgentCard`,
+  `AgentCapability` (`kind: "tool" | "persona"`), and identity defaults. Autoconfigure passes a
+  `agentCardToolProvider` callback that maps `assembly.toolRegistry.list()` to capabilities so
+  `/.well-known/agent-card.json` advertises every Jarvis / runner / MCP-loopback / scheduler tool with
+  its real `inputSchema`. `MUSE_AGENT_CARD_NAME|VERSION|DESCRIPTION` env vars override identity. Closes
+  the Reactor `AgentCardProvider` parity gap without persona-store coupling.
 - Loopback MCP servers now exist in `@muse/mcp` (`createTimeMcpServer`, `createTextUtilsMcpServer`,
   `createMathMcpServer`, `createDefaultLoopbackMcpServers`). Each ships a curated set of read-risk tools
   with no credentials, exposed through the same `McpConnection` shape as external MCP servers.

@@ -239,3 +239,91 @@ function uniqueStrings(values: readonly string[]): readonly string[] {
 
 export { KyselyAgentSpecRegistry } from "./kysely-store.js";
 export type { KyselyAgentSpecRegistryOptions } from "./kysely-store.js";
+
+export type AgentCapabilityKind = "tool" | "persona";
+
+export interface AgentCapability {
+  readonly name: string;
+  readonly description: string;
+  readonly kind: AgentCapabilityKind;
+  readonly inputSchema?: Record<string, unknown> | null;
+}
+
+export interface AgentCard {
+  readonly name: string;
+  readonly version: string;
+  readonly description: string;
+  readonly capabilities: readonly AgentCapability[];
+  readonly supportedInputFormats: readonly string[];
+  readonly supportedOutputFormats: readonly string[];
+}
+
+export interface AgentCardToolInput {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema?: Record<string, unknown> | null;
+}
+
+export interface BuildAgentCardOptions {
+  readonly name?: string;
+  readonly version?: string;
+  readonly description?: string;
+  readonly specs?: readonly AgentSpec[];
+  readonly tools?: readonly AgentCardToolInput[];
+  readonly supportedInputFormats?: readonly string[];
+  readonly supportedOutputFormats?: readonly string[];
+}
+
+export const AGENT_CARD_DEFAULT_NAME = "muse";
+export const AGENT_CARD_DEFAULT_VERSION = "1.0.0";
+export const AGENT_CARD_DEFAULT_DESCRIPTION = "Muse provider-neutral AI conductor";
+export const AGENT_CARD_DEFAULT_INPUT_FORMATS: readonly string[] = Object.freeze(["text", "json"]);
+export const AGENT_CARD_DEFAULT_OUTPUT_FORMATS: readonly string[] = Object.freeze(["text", "json", "yaml"]);
+
+/**
+ * Build an A2A `AgentCard` from the active toolset and agent specs.
+ *
+ * Tool capabilities (kind: "tool") come from the `tools` argument with their
+ * real `inputSchema` so external agents can call them with confidence. Persona
+ * capabilities (kind: "persona") come from enabled agent specs and surface
+ * their description as the discovery text. Duplicate tool names are
+ * deduplicated; the first occurrence wins so the order of `tools` is the
+ * priority list.
+ *
+ * Mirrors Reactor's `AgentCardProvider` semantics while staying provider-
+ * neutral: no Spring AI / Atlassian coupling.
+ */
+export function buildAgentCard(options: BuildAgentCardOptions = {}): AgentCard {
+  const seenTools = new Map<string, AgentCapability>();
+  for (const tool of options.tools ?? []) {
+    if (seenTools.has(tool.name)) {
+      continue;
+    }
+    seenTools.set(tool.name, {
+      description: tool.description,
+      inputSchema: tool.inputSchema ?? null,
+      kind: "tool",
+      name: tool.name
+    });
+  }
+  const personas: AgentCapability[] = [];
+  for (const spec of options.specs ?? []) {
+    if (!spec) {
+      continue;
+    }
+    personas.push({
+      description: spec.description?.length ? spec.description : spec.name,
+      inputSchema: null,
+      kind: "persona",
+      name: `persona:${spec.name}`
+    });
+  }
+  return {
+    capabilities: [...seenTools.values(), ...personas],
+    description: options.description ?? AGENT_CARD_DEFAULT_DESCRIPTION,
+    name: options.name ?? AGENT_CARD_DEFAULT_NAME,
+    supportedInputFormats: options.supportedInputFormats ?? AGENT_CARD_DEFAULT_INPUT_FORMATS,
+    supportedOutputFormats: options.supportedOutputFormats ?? AGENT_CARD_DEFAULT_OUTPUT_FORMATS,
+    version: options.version ?? AGENT_CARD_DEFAULT_VERSION
+  };
+}

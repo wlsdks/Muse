@@ -1,4 +1,5 @@
-import type { AgentSpec, AgentSpecInput, AgentSpecRegistry } from "@muse/agent-specs";
+import type { AgentCardToolInput, AgentSpec, AgentSpecInput, AgentSpecRegistry } from "@muse/agent-specs";
+import { buildAgentCard } from "@muse/agent-specs";
 import type { AgentRunResult, AgentRuntime } from "@muse/agent-core";
 import {
   AuthRateLimiter,
@@ -101,7 +102,15 @@ export interface ReactorCompatibilityRouteOptions {
   readonly guardRuleStore?: GuardRuleStore;
   readonly toolPolicyStore?: ToolPolicyStore;
   readonly userMemoryStore?: UserMemoryStore;
+  readonly agentCardIdentity?: {
+    readonly name?: string;
+    readonly version?: string;
+    readonly description?: string;
+  };
+  readonly agentCardToolProvider?: () => Awaitable<readonly AgentCardToolInput[]>;
 }
+
+type Awaitable<T> = T | Promise<T>;
 
 type CompatRecord = JsonObject & {
   readonly id: string;
@@ -5549,20 +5558,21 @@ function toAgentSpecResponse(spec: AgentSpec): JsonObject {
 
 async function agentCardResponse(options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
   const specs = await options.agentSpecRegistry.listEnabled();
-
-  return {
-    capabilities: agentCardCapabilities(specs),
-    description: "Muse AI Agent",
-    name: "Muse",
-    supportedInputFormats: ["text", "json"],
-    supportedOutputFormats: ["text", "json", "yaml"],
-    version: "1.0.0"
-  };
+  const tools = options.agentCardToolProvider
+    ? await options.agentCardToolProvider()
+    : agentCardCapabilitiesFromSpecs(specs);
+  const card = buildAgentCard({
+    description: options.agentCardIdentity?.description ?? "Muse AI Agent",
+    name: options.agentCardIdentity?.name ?? "Muse",
+    specs,
+    tools,
+    version: options.agentCardIdentity?.version ?? "1.0.0"
+  });
+  return card as unknown as JsonObject;
 }
 
-function agentCardCapabilities(specs: readonly AgentSpec[]): JsonObject[] {
-  const tools = new Map<string, JsonObject>();
-
+function agentCardCapabilitiesFromSpecs(specs: readonly AgentSpec[]): readonly AgentCardToolInput[] {
+  const tools = new Map<string, AgentCardToolInput>();
   for (const spec of specs) {
     for (const toolName of spec.toolNames) {
       if (!tools.has(toolName)) {
@@ -5574,14 +5584,7 @@ function agentCardCapabilities(specs: readonly AgentSpec[]): JsonObject[] {
       }
     }
   }
-
-  const personas = specs.map((spec) => ({
-    description: spec.description || spec.name,
-    inputSchema: null,
-    name: `persona:${spec.name}`
-  }));
-
-  return [...tools.values(), ...personas];
+  return [...tools.values()];
 }
 
 function createRecord(collection: CompatCollection, input: JsonObject, prefix: string): CompatRecord {

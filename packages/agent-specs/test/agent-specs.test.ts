@@ -9,6 +9,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_CARD_DEFAULT_INPUT_FORMATS,
+  AGENT_CARD_DEFAULT_NAME,
+  AGENT_CARD_DEFAULT_OUTPUT_FORMATS,
+  AGENT_CARD_DEFAULT_VERSION,
+  buildAgentCard,
   InMemoryAgentSpecRegistry,
   RuleBasedAgentSpecResolver,
   scoreAgentSpec
@@ -219,3 +224,105 @@ function createPostgresBuilder(): Kysely<MuseDatabase> {
     }
   });
 }
+
+describe("buildAgentCard (A2A)", () => {
+  it("emits the default identity when no overrides are passed", () => {
+    const card = buildAgentCard({});
+    expect(card.name).toBe(AGENT_CARD_DEFAULT_NAME);
+    expect(card.version).toBe(AGENT_CARD_DEFAULT_VERSION);
+    expect(card.supportedInputFormats).toEqual(AGENT_CARD_DEFAULT_INPUT_FORMATS);
+    expect(card.supportedOutputFormats).toEqual(AGENT_CARD_DEFAULT_OUTPUT_FORMATS);
+    expect(card.capabilities).toEqual([]);
+  });
+
+  it("includes tool capabilities with their real input schema", () => {
+    const card = buildAgentCard({
+      tools: [
+        {
+          description: "List items",
+          inputSchema: { properties: { tag: { type: "string" } }, type: "object" },
+          name: "list_items"
+        }
+      ]
+    });
+    expect(card.capabilities).toEqual([
+      {
+        description: "List items",
+        inputSchema: { properties: { tag: { type: "string" } }, type: "object" },
+        kind: "tool",
+        name: "list_items"
+      }
+    ]);
+  });
+
+  it("dedupes tools by name keeping the first occurrence (priority order)", () => {
+    const card = buildAgentCard({
+      tools: [
+        { description: "primary impl", name: "shared" },
+        { description: "secondary impl", name: "shared" }
+      ]
+    });
+    expect(card.capabilities).toHaveLength(1);
+    expect(card.capabilities[0]?.description).toBe("primary impl");
+  });
+
+  it("appends agent specs as persona capabilities after the tools", () => {
+    const card = buildAgentCard({
+      specs: [
+        {
+          createdAt: new Date(0),
+          description: "Plans complex changes",
+          enabled: true,
+          id: "planner",
+          keywords: [],
+          mode: "plan_execute",
+          name: "planner",
+          priority: 0,
+          toolNames: [],
+          updatedAt: new Date(0)
+        }
+      ],
+      tools: [{ description: "Echo", name: "echo" }]
+    });
+    expect(card.capabilities.map((capability) => capability.name)).toEqual(["echo", "persona:planner"]);
+    expect(card.capabilities[1]?.kind).toBe("persona");
+    expect(card.capabilities[1]?.description).toBe("Plans complex changes");
+  });
+
+  it("falls back to the spec name when description is empty", () => {
+    const card = buildAgentCard({
+      specs: [
+        {
+          createdAt: new Date(0),
+          description: "",
+          enabled: true,
+          id: "p",
+          keywords: [],
+          mode: "react",
+          name: "p",
+          priority: 0,
+          toolNames: [],
+          updatedAt: new Date(0)
+        }
+      ]
+    });
+    expect(card.capabilities[0]?.description).toBe("p");
+  });
+
+  it("respects custom name / version / description / input-output formats", () => {
+    const card = buildAgentCard({
+      description: "Custom desc",
+      name: "muse-pro",
+      supportedInputFormats: ["text"],
+      supportedOutputFormats: ["yaml"],
+      version: "2.0.0"
+    });
+    expect(card).toMatchObject({
+      description: "Custom desc",
+      name: "muse-pro",
+      supportedInputFormats: ["text"],
+      supportedOutputFormats: ["yaml"],
+      version: "2.0.0"
+    });
+  });
+});

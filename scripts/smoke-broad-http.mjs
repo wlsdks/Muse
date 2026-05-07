@@ -261,6 +261,21 @@ try {
     assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
+  await record("GET /.well-known/agent-card.json returns A2A card with tool input schemas", async () => {
+    const response = await fetch(`${baseUrl}/.well-known/agent-card.json`);
+    assert(response.ok, `expected 200, got ${response.status}`);
+    const card = await response.json();
+    assert(typeof card.name === "string" && card.name.length > 0, "expected name");
+    assert(typeof card.version === "string", "expected version");
+    assert(Array.isArray(card.capabilities), "expected capabilities array");
+    assert(Array.isArray(card.supportedInputFormats), "expected supportedInputFormats array");
+    assert(Array.isArray(card.supportedOutputFormats), "expected supportedOutputFormats array");
+    const timeNow = card.capabilities.find((c) => c.name === "time_now");
+    assert(timeNow !== undefined, "expected time_now jarvis tool to surface in agent card");
+    assert(timeNow.kind === "tool", `expected kind=tool, got ${timeNow.kind}`);
+    assert(timeNow.inputSchema && typeof timeNow.inputSchema === "object", "expected real inputSchema for time_now");
+  });
+
   await record("Three loopback MCP servers (time/text/math) expose tools end-to-end", async () => {
     const {
       createDefaultLoopbackMcpServers,

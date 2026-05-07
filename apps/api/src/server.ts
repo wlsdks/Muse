@@ -94,6 +94,12 @@ export interface ServerOptions {
   readonly guardRuleStore?: GuardRuleStore;
   readonly toolPolicyStore?: ToolPolicyStore;
   readonly userMemoryStore?: UserMemoryStore;
+  readonly agentCardIdentity?: {
+    readonly name?: string;
+    readonly version?: string;
+    readonly description?: string;
+  };
+  readonly agentCardToolProvider?: () => Promise<readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[]> | readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[];
 }
 
 export interface CorsOptions {
@@ -305,6 +311,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     followupSuggestionStore: options.followupSuggestionStore,
     latencyQuery: options.latencyQuery,
     tokenCostQuery: options.tokenCostQuery,
+    agentCardIdentity: options.agentCardIdentity,
+    agentCardToolProvider: options.agentCardToolProvider,
     historyStore: options.historyStore,
     mcp: options.mcp,
     modelProvider: options.modelProvider,

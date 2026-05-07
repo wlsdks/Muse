@@ -246,11 +246,13 @@ describe("api server", () => {
       {
         description: "Available tool: web_search",
         inputSchema: null,
+        kind: "tool",
         name: "web_search"
       },
       {
         description: "Research with verifiable sources.",
         inputSchema: null,
+        kind: "persona",
         name: "persona:researcher"
       }
     ]));

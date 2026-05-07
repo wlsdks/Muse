@@ -662,6 +662,17 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     followupSuggestionStore: assembly.observability.followupSuggestionStore,
     latencyQuery: assembly.observability.latencyQuery,
     tokenCostQuery: assembly.observability.tokenCostQuery,
+    agentCardIdentity: {
+      description: parseOptionalString(env.MUSE_AGENT_CARD_DESCRIPTION) ?? "Muse provider-neutral AI conductor",
+      name: parseOptionalString(env.MUSE_AGENT_CARD_NAME) ?? "muse",
+      version: parseOptionalString(env.MUSE_AGENT_CARD_VERSION) ?? "1.0.0"
+    },
+    agentCardToolProvider: () =>
+      assembly.toolRegistry.list().map((tool) => ({
+        description: tool.definition.description,
+        inputSchema: tool.definition.inputSchema as Record<string, unknown> | null,
+        name: tool.definition.name
+      })),
     historyStore: assembly.historyStore,
     mcp: {
       manager: assembly.mcp.manager,
