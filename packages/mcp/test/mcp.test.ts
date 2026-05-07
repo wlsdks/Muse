@@ -15,6 +15,7 @@ import {
   createCryptoMcpServer,
   createDiffMcpServer,
   createFetchMcpServer,
+  createFilesystemMcpServer,
   createJsonMcpServer,
   createMathMcpServer,
   createRegexMcpServer,
@@ -931,5 +932,189 @@ describe("muse.fetch loopback server", () => {
     const connection = createLoopbackMcpConnection(server);
     const result = await connection.callTool!("get", { url: "https://api.example.test/" });
     expect(result).toEqual({ error: "fetch failed: network down" });
+  });
+});
+
+describe("muse.fs loopback server", () => {
+  function fakeFs(layout: Record<string, string | "dir">) {
+    const entries = new Map(Object.entries(layout));
+    const now = new Date("2026-05-07T00:00:00.000Z");
+    return {
+      readFile: async (path: string) => {
+        const value = entries.get(path);
+        if (value === undefined || value === "dir") {
+          throw Object.assign(new Error(`ENOENT: no such file '${path}'`), { code: "ENOENT" });
+        }
+        return Buffer.from(value, "utf8");
+      },
+      readdir: async (path: string, _opts: { withFileTypes: true }) => {
+        if (entries.get(path) !== "dir") {
+          throw Object.assign(new Error(`ENOTDIR: not a directory '${path}'`), { code: "ENOTDIR" });
+        }
+        const prefix = path.endsWith("/") ? path : `${path}/`;
+        return [...entries.entries()]
+          .filter(([key]) => key.startsWith(prefix) && !key.slice(prefix.length).includes("/"))
+          .map(([key, value]) => {
+            const name = key.slice(prefix.length);
+            return {
+              isDirectory: () => value === "dir",
+              isFile: () => value !== "dir",
+              isSymbolicLink: () => false,
+              name
+            };
+          });
+      },
+      stat: async (path: string) => {
+        const value = entries.get(path);
+        if (value === undefined) {
+          throw Object.assign(new Error(`ENOENT: no such file '${path}'`), { code: "ENOENT" });
+        }
+        return {
+          isDirectory: () => value === "dir",
+          isFile: () => value !== "dir",
+          isSymbolicLink: () => false,
+          mtime: now,
+          size: value === "dir" ? 0 : Buffer.byteLength(value, "utf8")
+        };
+      }
+    };
+  }
+
+  const posixPath = {
+    resolve: (...segments: string[]) => {
+      if (segments.length === 0) {
+        return "/";
+      }
+      const last = segments[segments.length - 1] ?? "/";
+      if (last.startsWith("/")) {
+        return last.replace(/\/{2,}/gu, "/").replace(/\/$/u, "") || "/";
+      }
+      return `/${segments.join("/").replace(/\/{2,}/gu, "/").replace(/\/$/u, "")}`;
+    },
+    sep: "/"
+  };
+
+  it("rejects read paths that escape the allowlist", async () => {
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({ "/workspace": "dir", "/workspace/note.md": "hello" }),
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    expect(await connection.callTool!("read", { path: "/etc/passwd" })).toEqual({
+      error: "path '/etc/passwd' is not under any configured allowlist root"
+    });
+  });
+
+  it("rejects allowlist-prefix collisions ('/etc' must not match '/etc-passwd')", async () => {
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/etc"],
+      fs: fakeFs({ "/etc": "dir", "/etc-passwd": "secrets", "/etc/hosts": "127.0.0.1" }),
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const sibling = await connection.callTool!("read", { path: "/etc-passwd" });
+    expect(sibling).toEqual({
+      error: "path '/etc-passwd' is not under any configured allowlist root"
+    });
+    const inside = await connection.callTool!("read", { path: "/etc/hosts" });
+    expect(inside).toMatchObject({ content: "127.0.0.1", truncated: false });
+  });
+
+  it("reads UTF-8 file content with bytes/truncated metadata", async () => {
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({ "/workspace": "dir", "/workspace/note.md": "hello world" }),
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("read", { path: "/workspace/note.md" });
+    expect(result).toMatchObject({ bytes: 11, content: "hello world", truncated: false });
+  });
+
+  it("truncates content at maxBodyBytes and surfaces truncated=true", async () => {
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({ "/workspace": "dir", "/workspace/note.md": "x".repeat(200) }),
+      maxBodyBytes: 50,
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("read", { path: "/workspace/note.md" });
+    expect(result.bytes).toBe(200);
+    expect(typeof result.content).toBe("string");
+    expect((result.content as string).length).toBe(50);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("lists directory entries with kind classification and respects maxListEntries", async () => {
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({
+        "/workspace": "dir",
+        "/workspace/sub": "dir",
+        "/workspace/a.md": "a",
+        "/workspace/b.md": "b",
+        "/workspace/c.md": "c"
+      }),
+      maxListEntries: 2,
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("list", { path: "/workspace" });
+    expect(result).toMatchObject({ total: 4, truncated: true });
+    expect(Array.isArray(result.entries)).toBe(true);
+    expect((result.entries as readonly { kind: string }[]).length).toBe(2);
+  });
+
+  it("returns kind/size/mtime metadata from stat", async () => {
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({ "/workspace": "dir", "/workspace/note.md": "hello" }),
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const fileStat = await connection.callTool!("stat", { path: "/workspace/note.md" });
+    expect(fileStat).toMatchObject({ kind: "file", size: 5, mtime: "2026-05-07T00:00:00.000Z" });
+    const dirStat = await connection.callTool!("stat", { path: "/workspace" });
+    expect(dirStat).toMatchObject({ kind: "directory", size: 0 });
+  });
+
+  it("returns a structured error when fs operations throw", async () => {
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({ "/workspace": "dir" }),
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const missing = await connection.callTool!("read", { path: "/workspace/missing.md" });
+    expect(missing).toEqual({ error: expect.stringContaining("read failed: ENOENT") });
+  });
+
+  it("requires an explicit path argument", async () => {
+    const server = createFilesystemMcpServer({ allowedRoots: ["/workspace"], fs: fakeFs({ "/workspace": "dir" }), path: posixPath });
+    const connection = createLoopbackMcpConnection(server);
+    expect(await connection.callTool!("stat", {})).toEqual({ error: "path is required" });
+  });
+
+  it("works against the real node:fs in a tmp directory (defaults wired correctly)", async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const root = mkdtempSync(`${tmpdir}/muse-fs-loopback-`);
+    mkdirSync(`${root}/sub`, { recursive: true });
+    writeFileSync(`${root}/note.md`, "real content");
+    writeFileSync(`${root}/sub/nested.txt`, "nested");
+
+    const server = createFilesystemMcpServer({ allowedRoots: [root] });
+    const connection = createLoopbackMcpConnection(server);
+
+    const read = await connection.callTool!("read", { path: `${root}/note.md` });
+    expect(read).toMatchObject({ content: "real content", truncated: false });
+
+    const list = await connection.callTool!("list", { path: root });
+    expect((list.entries as readonly { name: string; kind: string }[]).map((entry) => entry.name).sort()).toEqual(["note.md", "sub"]);
+
+    const escapeAttempt = await connection.callTool!("read", { path: `${root}/../etc/passwd` });
+    expect(escapeAttempt).toMatchObject({ error: expect.stringContaining("not under any configured allowlist root") });
   });
 });

@@ -90,6 +90,7 @@ route state and runtime services onto Kysely-backed stores.
 
 ## Recent Completion Notes
 
+- `createFilesystemMcpServer` adds an opt-in, allowlist-rooted, read-only filesystem loopback MCP server (read/list/stat) for JARVIS-style workspace inspection without giving the agent free disk access. Path resolution rejects sibling-prefix collisions (`/etc` ≠ `/etc-passwd`) and `..` traversal.
 - Plan-execute now streams `plan-generated`, `plan-step-executing`, `plan-step-result`, and `synthesis-started` events so SSE consumers can render reasoning progress; `executePlanExecuteLoop` drains a single `streamPlanExecute` generator (one source of truth for streaming and non-streaming paths).
 - `GET /api/jarvis/runtime` exposes a public manifest (capabilities, locales, tool risk counts, agent-spec/setting totals) so any chat surface or automation can introspect the conductor without admin auth or secrets.
 - MCP now uses real SDK transports for stdio, SSE, and streamable HTTP.
