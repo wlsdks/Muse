@@ -320,7 +320,20 @@ export function createMaxLengthResponseFilter(options: { readonly maxLength?: nu
   };
 }
 
-export function createSanitizedTextResponseFilter(): ResponseFilterStage {
+export interface SanitizedTextResponseFilterOptions {
+  /**
+   * Inline replacement for `[SANITIZED]` markers that survived guard
+   * stages. Defaults to "(보안 처리됨)" so existing Korean operator UX
+   * is unchanged. English deployments typically pass "(redacted)".
+   */
+  readonly inlineReplacement?: string;
+}
+
+export function createSanitizedTextResponseFilter(
+  options: SanitizedTextResponseFilterOptions = {}
+): ResponseFilterStage {
+  const inlineReplacement = options.inlineReplacement ?? "(보안 처리됨)";
+
   return {
     apply: (response: ModelResponse) => {
       if (!response.output.includes("[SANITIZED]")) {
@@ -329,7 +342,7 @@ export function createSanitizedTextResponseFilter(): ResponseFilterStage {
 
       const output = response.output
         .replace(/^\s*\[SANITIZED\]\s*$\n?/gm, "")
-        .replaceAll("[SANITIZED]", "(보안 처리됨)")
+        .replaceAll("[SANITIZED]", inlineReplacement)
         .replace(/\n{3,}/gu, "\n\n")
         .trim();
 
@@ -370,51 +383,6 @@ export function createSlackUserIdMaskResponseFilter(): ResponseFilterStage {
       };
     },
     id: "slack-user-id-mask-response-filter"
-  };
-}
-
-export function createInternalBrandMaskResponseFilter(): ResponseFilterStage {
-  const patterns: readonly (readonly [RegExp, string])[] = [
-    [/\*\*?Reactor\s*\(\s*Reactor\s*\)\*\*?/gu, "*Reactor*"],
-    [/Reactor\s*\(\s*Reactor\s*\)/gu, "Reactor"],
-    [/^\s*[*\-•]\s*\*{0,2}(?:언어|프레임워크|Language|Framework)[\s:]*\*{0,2}[^\n]*Kotlin[^\n]*$/gmu, ""],
-    [/^\s*[*\-•]\s*\*{0,2}(?:언어|프레임워크|Language|Framework)[\s:]*\*{0,2}[^\n]*(?:Spring)[^\n]*$/gmu, ""],
-    [/\*{0,2}(?:Kotlin\s*\/\s*Spring\s*Boot|Kotlin과\s*Spring\s*Boot)(?:\s*기반(?:의|으로)?)?\*{0,2}/gu, ""],
-    [/\*{0,2}(?:Spring\s*AI|Spring\s*Boot)(?:\s*기반(?:의|으로)?)?\*{0,2}\s*/gu, ""],
-    [/,\s*,/gu, ","],
-    [/\s+\./gu, "."]
-  ];
-
-  return {
-    apply: (response: ModelResponse) => {
-      if (response.output.trim().length === 0) {
-        return response;
-      }
-
-      let output = response.output;
-
-      for (const [pattern, replacement] of patterns) {
-        output = output.replace(pattern, replacement);
-      }
-
-      output = output.replace(/ {2,}/gu, " ").replace(/\n{3,}/gu, "\n\n").trimEnd();
-
-      if (output === response.output) {
-        return response;
-      }
-
-      return {
-        ...response,
-        output,
-        raw: {
-          ...(isRecord(response.raw) ? response.raw : {}),
-          museResponseFilter: {
-            id: "internal-brand-mask-response-filter"
-          }
-        }
-      };
-    },
-    id: "internal-brand-mask-response-filter"
   };
 }
 

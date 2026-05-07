@@ -6,7 +6,6 @@ import {
   createFabricationRequestRefusalFilter,
   createGreetingStripResponseFilter,
   createInjectionInputGuard,
-  createInternalBrandMaskResponseFilter,
   createMarkdownStripResponseFilter,
   createMaxLengthResponseFilter,
   createPiiInputGuard,
@@ -981,16 +980,18 @@ function createResponseFilters(env: MuseEnvironment) {
   return [
     ...(maxLength > 0 ? [createMaxLengthResponseFilter({ maxLength })] : []),
     ...(parseBoolean(env.MUSE_RESPONSE_SANITIZED_TEXT_FILTER_ENABLED, true)
-      ? [createSanitizedTextResponseFilter()]
+      ? [createSanitizedTextResponseFilter({
+          inlineReplacement: parseOptionalString(env.MUSE_RESPONSE_SANITIZED_TEXT_REPLACEMENT)
+            ?? (responseLocales(env).has("en") && !responseLocales(env).has("ko")
+              ? "(redacted)"
+              : "(보안 처리됨)")
+        })]
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_MARKDOWN_STRIP_FILTER_ENABLED, true)
       ? [createMarkdownStripResponseFilter()]
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_SLACK_USER_ID_MASK_ENABLED, true)
       ? [createSlackUserIdMaskResponseFilter()]
-      : []),
-    ...(parseBoolean(env.MUSE_RESPONSE_INTERNAL_BRAND_MASK_ENABLED, true)
-      ? [createInternalBrandMaskResponseFilter()]
       : []),
     ...buildCasualLureFilters(env),
     ...buildGreetingStripFilters(env),

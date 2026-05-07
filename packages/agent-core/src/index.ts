@@ -1911,7 +1911,6 @@ export {
   createEnglishGreetingStripResponseFilter,
   createFabricationRequestRefusalFilter,
   createGreetingStripResponseFilter,
-  createInternalBrandMaskResponseFilter,
   createMarkdownStripResponseFilter,
   createMaxLengthResponseFilter,
   createResponseCountConsistencyFilter,

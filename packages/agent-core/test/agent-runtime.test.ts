@@ -14,7 +14,6 @@ import {
   createCasualLureStripResponseFilter,
   createFabricationRequestRefusalFilter,
   createGreetingStripResponseFilter,
-  createInternalBrandMaskResponseFilter,
   createInjectionInputGuard,
   createLlmClassificationInputGuard,
   createMarkdownStripResponseFilter,
@@ -1357,29 +1356,6 @@ describe("AgentRuntime", () => {
     expect(result.response.output).toBe("담당자는 <@U0891A8UWAV>이고 이미 멘션된 <@U012345678> 값은 유지합니다.");
   });
 
-  it("masks internal implementation brands in model responses", async () => {
-    const runtime = createAgentRuntime({
-      modelProvider: createProvider({
-        output: [
-          "저는 **Reactor(Reactor)** 프레임워크입니다.",
-          "- 언어: Kotlin",
-          "- 프레임워크: Spring Boot",
-          "Spring AI 기반으로 동작합니다."
-        ].join("\n")
-      }),
-      responseFilters: [createInternalBrandMaskResponseFilter()]
-    });
-
-    const result = await runtime.run({
-      messages: [{ content: "기술 스택 알려줘", role: "user" }],
-      model: "provider/model"
-    });
-
-    expect(result.response.output).toBe("저는 *Reactor* 프레임워크입니다.\n\n동작합니다.");
-    expect(result.response.output).not.toContain("Kotlin");
-    expect(result.response.output).not.toContain("Spring");
-  });
-
   it("truncates long model responses when a max length is configured", async () => {
     const runtime = createAgentRuntime({
       modelProvider: createProvider({
@@ -1424,6 +1400,24 @@ describe("AgentRuntime", () => {
     expect(result.response.output).toContain("**not converted**");
     expect(result.response.output).not.toContain("[SANITIZED]");
     expect(result.response.output).not.toContain("| --- |");
+  });
+
+  it("emits the configured English replacement when inlineReplacement='(redacted)'", async () => {
+    const runtime = createAgentRuntime({
+      modelProvider: createProvider({
+        output: "Server [SANITIZED] is reachable."
+      }),
+      responseFilters: [createSanitizedTextResponseFilter({ inlineReplacement: "(redacted)" })]
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "ping the server", role: "user" }],
+      model: "provider/model"
+    });
+
+    expect(result.response.output).toBe("Server (redacted) is reachable.");
+    expect(result.response.output).not.toContain("[SANITIZED]");
+    expect(result.response.output).not.toContain("보안");
   });
 
   it("strips repeated leading greetings from model responses", async () => {

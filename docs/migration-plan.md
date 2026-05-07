@@ -296,6 +296,25 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- internal-brand-mask filter removed + sanitized-text i18n (iteration 59).
+  Two more carryover surfaces cleaned:
+  * `createInternalBrandMaskResponseFilter` REMOVED. The filter stripped
+    "Reactor", "Kotlin", "Spring Boot", "Spring AI" from model responses
+    so the closed-source Reactor product wouldn't leak its own
+    implementation details. For an open-source TypeScript-first Muse,
+    this filter is actively HARMFUL — it masks legitimate technical
+    discussion of those frameworks. autoconfigure no longer wires it;
+    the `MUSE_RESPONSE_INTERNAL_BRAND_MASK_ENABLED` env flag is gone.
+  * `createSanitizedTextResponseFilter` accepts a new
+    `{ inlineReplacement }` option. Default stays `"(보안 처리됨)"` to
+    preserve existing Korean operator UX. autoconfigure now picks the
+    replacement based on `MUSE_RESPONSE_LOCALES` — Korean-only or
+    mixed deployments use the Korean phrase; English-only deployments
+    (`MUSE_RESPONSE_LOCALES=en`) use `"(redacted)"`. Operators can also
+    override directly via `MUSE_RESPONSE_SANITIZED_TEXT_REPLACEMENT`.
+  agent-core tests 216 → 216 (-1 deleted internal-brand-mask test, +1
+  new English-replacement test). pnpm check green; broad smoke 49/49;
+  live smoke 8/8; route parity 0 missing.
 - product-specific Korean enterprise filters removed (iteration 58). Three
   surfaces in response-filters.ts had hardcoded Atlassian/Korean enterprise
   carryover that delivered no value to an open-source operator base:
