@@ -296,6 +296,14 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- Admin analytics compatibility now classifies failures and tool outcomes deterministically.
+  `/api/admin/conversation-analytics/failure-patterns` aggregates failed runs by error class
+  (timeout / guard_rejection / plan_validation_failed / plan_all_steps_failed / plan_generation_failed
+  / response_synthesis_failed / rate_limit / auth / not_found / other / unknown) with sample run ids and
+  total failure counts, mirroring Reactor's bucketing instead of returning per-run rows.
+  `/api/admin/tools/accuracy` now derives `notFoundRate`, `timeoutRate`, `errorRate`, and `invalidCallRate`
+  from real outcome counts (with `not_found` recognized when the tool error contains "not found"/"404"),
+  no longer hard-coding the rates to zero.
 - Admin audit compatibility now performs server-side filtering. `AdminAuditStore.query({ category?, action?, limit?, offset? })`
   is available on both `InMemoryAdminAuditStore` and `KyselyAdminAuditStore`, returning `{ items, total }`.
   `/api/admin/audits` consumes the new query when an audit store is configured, so category/action filters

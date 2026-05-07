@@ -3193,9 +3193,8 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
       return reply;
     }
 
-    return (await listAllRuns(options))
-      .filter((run) => run.status === "failed")
-      .map((run) => ({ error: run.error ?? "unknown", runId: run.id }));
+    const failed = (await listAllRuns(options)).filter((run) => run.status === "failed");
+    return aggregateFailurePatterns(failed);
   });
   server.get("/api/admin/conversation-analytics/latency-distribution", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -3768,12 +3767,20 @@ function registerAgentEvalCompatibilityRoutes(
 
     const stats = toolOutcomeStats(await listAllToolCalls(options));
     const total = Number(stats.total);
+    const byOutcome = toJsonObject(stats.byOutcome);
+    const ok = Number(byOutcome.ok ?? 0);
+    const invalidArg = Number(byOutcome.invalid_arg ?? 0);
+    const timeout = Number(byOutcome.timeout ?? 0);
+    const errors = Number(byOutcome.error ?? 0);
+    const notFound = Number(byOutcome.not_found ?? 0);
+    const denominator = total > 0 ? total : 1;
     return {
       accuracy: stats.accuracy,
-      invalidCallRate: 0,
-      ok: Number(toJsonObject(stats.byOutcome).ok ?? 0),
-      notFoundRate: 0,
-      timeoutRate: 0,
+      errorRate: errors / denominator,
+      invalidCallRate: invalidArg / denominator,
+      ok,
+      notFoundRate: notFound / denominator,
+      timeoutRate: timeout / denominator,
       total
     };
   });
@@ -4594,6 +4601,60 @@ function toolOutcomeStats(toolCalls: readonly ToolCallRecord[], server?: string)
   };
 }
 
+function aggregateFailurePatterns(runs: readonly AgentRunRecord[]): JsonObject {
+  const totalFailures = runs.length;
+  const byClass = new Map<string, { errorClass: string; count: number; sampleRunIds: string[] }>();
+  for (const run of runs) {
+    const errorClass = classifyRunError(run.error);
+    const entry = byClass.get(errorClass) ?? { count: 0, errorClass, sampleRunIds: [] };
+    entry.count += 1;
+    if (entry.sampleRunIds.length < 5) {
+      entry.sampleRunIds.push(run.id);
+    }
+    byClass.set(errorClass, entry);
+  }
+  const ranked = [...byClass.values()].sort((left, right) => right.count - left.count);
+  return {
+    byClass: ranked,
+    totalFailures
+  };
+}
+
+function classifyRunError(error: string | null | undefined): string {
+  if (!error || error.trim().length === 0) {
+    return "unknown";
+  }
+  const normalized = error.toLowerCase();
+  if (normalized.includes("timeout")) {
+    return "timeout";
+  }
+  if (normalized.includes("guard")) {
+    return "guard_rejection";
+  }
+  if (normalized.includes("plan_validation_failed")) {
+    return "plan_validation_failed";
+  }
+  if (normalized.includes("plan_all_steps_failed")) {
+    return "plan_all_steps_failed";
+  }
+  if (normalized.includes("response_synthesis_failed")) {
+    return "response_synthesis_failed";
+  }
+  if (normalized.includes("plan_generation_failed")) {
+    return "plan_generation_failed";
+  }
+  if (normalized.includes("rate") && normalized.includes("limit")) {
+    return "rate_limit";
+  }
+  if (normalized.includes("auth") || normalized.includes("unauthorized")) {
+    return "auth";
+  }
+  if (normalized.includes("not found") || normalized.includes("not_found")) {
+    return "not_found";
+  }
+  return "other";
+}
+
 function toolOutcome(toolCall: ToolCallRecord): string {
   if (toolCall.status === "completed") {
     return "ok";
@@ -4603,7 +4664,14 @@ function toolOutcome(toolCall: ToolCallRecord): string {
     return "invalid_arg";
   }
 
-  return toolCall.error?.toLowerCase().includes("timeout") ? "timeout" : "error";
+  const error = toolCall.error?.toLowerCase() ?? "";
+  if (error.includes("timeout")) {
+    return "timeout";
+  }
+  if (error.includes("not found") || error.includes("not_found") || error.includes("404")) {
+    return "not_found";
+  }
+  return "error";
 }
 
 function usageByUser(runs: readonly AgentRunRecord[]) {
