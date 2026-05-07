@@ -427,6 +427,9 @@ importers:
       '@muse/memory':
         specifier: workspace:*
         version: link:../memory
+      '@muse/model':
+        specifier: workspace:*
+        version: link:../model
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared

@@ -240,6 +240,52 @@ try {
     assert(stored?.preferences.tone === "concise", "expected stored preference to persist across calls");
   });
 
+  await record("LLM HyDE transformer expands the query with a hypothetical answer document", async () => {
+    const { createLlmHypotheticalDocumentTransformer } = await import(`${rootDir}/packages/rag/dist/index.js`);
+    const provider = {
+      id: "fake-hyde",
+      generate: async (request) => ({
+        id: "r",
+        model: request.model,
+        output: "Refunds are processed within 30 days of purchase per the Muse policy."
+      }),
+      listModels: async () => [],
+      stream: async function* () {
+        yield { response: { id: "r", model: "fake-hyde", output: "" }, type: "done" };
+      }
+    };
+    const transformer = createLlmHypotheticalDocumentTransformer({ model: "fake/hyde", provider });
+    const queries = await transformer.transform("what is the refund policy?");
+    assert(queries.length === 2, `expected two queries, got ${queries.length}`);
+    assert(queries[0] === "what is the refund policy?", "first query should be the original");
+    assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
+  });
+
+  await record("LLM Decomposition transformer parses sub-questions and respects the cap", async () => {
+    const { createLlmDecomposingQueryTransformer } = await import(`${rootDir}/packages/rag/dist/index.js`);
+    const provider = {
+      id: "fake-decomp",
+      generate: async (request) => ({
+        id: "r",
+        model: request.model,
+        output: "Sub one\nSub two\nSub three"
+      }),
+      listModels: async () => [],
+      stream: async function* () {
+        yield { response: { id: "r", model: "fake-decomp", output: "" }, type: "done" };
+      }
+    };
+    const transformer = createLlmDecomposingQueryTransformer({
+      maxQueries: 3,
+      model: "fake/decomp",
+      provider
+    });
+    const queries = await transformer.transform("Big question?");
+    assert(queries.length === 3, `expected three queries (orig + 2 subs), got ${queries.length}`);
+    assert(queries[0] === "Big question?", "expected original first");
+    assert(queries[1] === "Sub one", "expected first sub-question");
+  });
+
   await record("MUSE_USER_MEMORY_INJECTION=false suppresses memory injection at runtime", async () => {
     const { createMuseRuntimeAssembly } = await import(`${rootDir}/packages/autoconfigure/dist/index.js`);
     const assembly = createMuseRuntimeAssembly({

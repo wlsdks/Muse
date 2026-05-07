@@ -31,6 +31,11 @@ import {
   PassthroughQueryTransformer,
   ParentDocumentRetriever,
   HypotheticalDocumentQueryTransformer,
+  createLlmHypotheticalDocumentTransformer,
+  createLlmDecomposingQueryTransformer,
+  parseDecompositionLines,
+  HYDE_DEFAULT_SYSTEM_PROMPT,
+  DECOMPOSE_DEFAULT_SYSTEM_PROMPT,
   RetrievalEvalRunner,
   SimpleContextBuilder,
   SimpleReranker,
@@ -603,6 +608,155 @@ describe("decomposition and compression", () => {
     expect(document).toMatchObject({
       content: "RAG scheduler keeps documents fresh.",
       metadata: { compressed: true, originalEstimatedTokens: 12 }
+    });
+  });
+});
+
+describe("LLM-driven query transformers", () => {
+  function makeProvider(responses: readonly string[], requestSink?: { request?: { messages: ReadonlyArray<{ role: string; content: string }> } }) {
+    let index = 0;
+    return {
+      id: "fake",
+      generate: async (request: { messages: ReadonlyArray<{ role: string; content: string }>; model: string }) => {
+        if (requestSink) {
+          requestSink.request = { messages: request.messages };
+        }
+        const output = responses[Math.min(index, responses.length - 1)] ?? "";
+        index += 1;
+        return { id: "r", model: request.model, output };
+      },
+      listModels: async () => [],
+      stream: async function* () {
+        yield { response: { id: "r", model: "fake", output: "" }, type: "done" } as const;
+      }
+    };
+  }
+
+  describe("createLlmHypotheticalDocumentTransformer", () => {
+    it("returns the original query plus the generated hypothetical document", async () => {
+      const transformer = createLlmHypotheticalDocumentTransformer({
+        model: "fake/test",
+        provider: makeProvider(["The Muse refund policy lasts 30 days."])
+      });
+      const result = await transformer.transform("what is the refund policy?");
+      expect(result).toEqual([
+        "what is the refund policy?",
+        "The Muse refund policy lasts 30 days."
+      ]);
+    });
+
+    it("falls back to the original query when the provider throws", async () => {
+      const transformer = createLlmHypotheticalDocumentTransformer({
+        model: "fake/test",
+        provider: {
+          id: "fake",
+          generate: async () => {
+            throw new Error("rate limited");
+          },
+          listModels: async () => [],
+          stream: async function* () {
+            yield { response: { id: "r", model: "fake", output: "" }, type: "done" } as const;
+          }
+        }
+      });
+      expect(await transformer.transform("Hello?")).toEqual(["Hello?"]);
+    });
+
+    it("dedupes when the provider echoes the original query verbatim", async () => {
+      const transformer = createLlmHypotheticalDocumentTransformer({
+        model: "fake/test",
+        provider: makeProvider(["plain"])
+      });
+      expect(await transformer.transform("plain")).toEqual(["plain"]);
+    });
+
+    it("respects includeOriginal=false to return only the hypothetical document", async () => {
+      const transformer = createLlmHypotheticalDocumentTransformer({
+        includeOriginal: false,
+        model: "fake/test",
+        provider: makeProvider(["hypothetical body"])
+      });
+      expect(await transformer.transform("orig")).toEqual(["hypothetical body"]);
+    });
+
+    it("uses the default HyDE system prompt by default", async () => {
+      const sink: { request?: { messages: ReadonlyArray<{ role: string; content: string }> } } = {};
+      const transformer = createLlmHypotheticalDocumentTransformer({
+        model: "fake/test",
+        provider: makeProvider(["doc"], sink)
+      });
+      await transformer.transform("query");
+      expect(sink.request?.messages[0]?.role).toBe("system");
+      expect(sink.request?.messages[0]?.content).toBe(HYDE_DEFAULT_SYSTEM_PROMPT);
+    });
+  });
+
+  describe("createLlmDecomposingQueryTransformer", () => {
+    it("returns the original query plus each parsed sub-question line", async () => {
+      const transformer = createLlmDecomposingQueryTransformer({
+        model: "fake/test",
+        provider: makeProvider([
+          "What is the policy?\nHow does it differ from competitors?\nWhat is the impact on retention?"
+        ])
+      });
+      expect(await transformer.transform("complex policy comparison?")).toEqual([
+        "complex policy comparison?",
+        "What is the policy?",
+        "How does it differ from competitors?",
+        "What is the impact on retention?"
+      ]);
+    });
+
+    it("strips numbering / bullets when the LLM ignores formatting instructions", async () => {
+      expect(parseDecompositionLines("1. First question\n- Second question\n  3) Third question")).toEqual([
+        "First question",
+        "Second question",
+        "Third question"
+      ]);
+    });
+
+    it("respects maxQueries cap", async () => {
+      const transformer = createLlmDecomposingQueryTransformer({
+        maxQueries: 2,
+        model: "fake/test",
+        provider: makeProvider(["a\nb\nc\nd"])
+      });
+      expect(await transformer.transform("orig")).toEqual(["orig", "a"]);
+    });
+
+    it("falls back to the original query when the model returns no sub-queries", async () => {
+      const transformer = createLlmDecomposingQueryTransformer({
+        model: "fake/test",
+        provider: makeProvider(["   "])
+      });
+      expect(await transformer.transform("orig")).toEqual(["orig"]);
+    });
+
+    it("uses the default decomposition system prompt by default", async () => {
+      const sink: { request?: { messages: ReadonlyArray<{ role: string; content: string }> } } = {};
+      const transformer = createLlmDecomposingQueryTransformer({
+        model: "fake/test",
+        provider: makeProvider(["sub one\nsub two"], sink)
+      });
+      await transformer.transform("query");
+      expect(sink.request?.messages[0]?.content).toBe(DECOMPOSE_DEFAULT_SYSTEM_PROMPT);
+    });
+
+    it("falls back gracefully when the provider throws", async () => {
+      const transformer = createLlmDecomposingQueryTransformer({
+        model: "fake/test",
+        provider: {
+          id: "fake",
+          generate: async () => {
+            throw new Error("decomp down");
+          },
+          listModels: async () => [],
+          stream: async function* () {
+            yield { response: { id: "r", model: "fake", output: "" }, type: "done" } as const;
+          }
+        }
+      });
+      expect(await transformer.transform("complex?")).toEqual(["complex?"]);
     });
   });
 });

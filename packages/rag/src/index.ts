@@ -1,5 +1,6 @@
 import { createApproximateTokenEstimator, type TokenEstimator } from "@muse/memory";
 import type { MuseDatabase, RagDocumentTable, RagIngestionCandidateTable, RagIngestionPolicyTable } from "@muse/db";
+import type { ModelMessage, ModelProvider, ModelRequest } from "@muse/model";
 import { createRunId, type JsonObject, type JsonValue } from "@muse/shared";
 import { sql, type Insertable, type Kysely, type Selectable } from "kysely";
 import { createHash } from "node:crypto";
@@ -1619,6 +1620,149 @@ export class DecomposingQueryTransformer implements QueryTransformer {
 
     return queries;
   }
+}
+
+export const HYDE_DEFAULT_SYSTEM_PROMPT =
+  "Write a short passage (2-3 sentences) that would directly answer the following question. " +
+  "Write as if you are quoting from an authoritative document. " +
+  "Do not include any preamble like 'Here is...' — just write the passage itself.";
+
+export const DECOMPOSE_DEFAULT_SYSTEM_PROMPT =
+  "Break down this complex question into 2-4 simpler sub-questions that can be independently searched. " +
+  "If the question is already simple, return it as-is.\n\n" +
+  "Respond with one sub-question per line, no numbering or bullets.";
+
+export interface LlmHypotheticalDocumentTransformerOptions {
+  readonly provider: ModelProvider;
+  readonly model: string;
+  readonly systemPrompt?: string;
+  readonly maxOutputTokens?: number;
+  readonly temperature?: number;
+  readonly includeOriginal?: boolean;
+  readonly metadata?: JsonObject;
+  readonly logger?: (message: string, error?: unknown) => void;
+}
+
+/**
+ * LLM-backed HyDE (Hypothetical Document Embeddings) query transformer.
+ *
+ * Generates a short hypothetical answer document for the input query and
+ * returns both the original query and the generated document so that vector
+ * search can match against either form. Falls back to the original query on
+ * provider error or empty output (fail-open) so retrieval is never blocked.
+ *
+ * Mirrors Reactor's `HyDEQueryTransformer` (Spring AI ChatClient) without the
+ * vendor coupling — any `@muse/model` provider works.
+ */
+export function createLlmHypotheticalDocumentTransformer(
+  options: LlmHypotheticalDocumentTransformerOptions
+): QueryTransformer {
+  const includeOriginal = options.includeOriginal ?? true;
+  return {
+    transform: async (query: string): Promise<readonly string[]> => {
+      const trimmed = query.trim();
+      if (trimmed.length === 0) {
+        return [];
+      }
+      let hypothetical = "";
+      try {
+        const messages: ModelMessage[] = [
+          { content: options.systemPrompt ?? HYDE_DEFAULT_SYSTEM_PROMPT, role: "system" },
+          { content: trimmed, role: "user" }
+        ];
+        const request: ModelRequest = {
+          messages,
+          model: options.model,
+          ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
+          ...(options.metadata ? { metadata: options.metadata } : {}),
+          ...(options.temperature !== undefined ? { temperature: options.temperature } : {})
+        };
+        const response = await options.provider.generate(request);
+        hypothetical = (response.output ?? "").trim();
+      } catch (error) {
+        options.logger?.("HyDE transformer fell back to original query", error);
+      }
+      const queries = includeOriginal ? [trimmed] : [];
+      if (hypothetical.length > 0 && hypothetical !== trimmed) {
+        queries.push(hypothetical);
+      }
+      return queries.length > 0 ? queries : [trimmed];
+    }
+  };
+}
+
+export interface LlmDecomposingQueryTransformerOptions {
+  readonly provider: ModelProvider;
+  readonly model: string;
+  readonly systemPrompt?: string;
+  readonly maxQueries?: number;
+  readonly maxOutputTokens?: number;
+  readonly temperature?: number;
+  readonly includeOriginal?: boolean;
+  readonly metadata?: JsonObject;
+  readonly logger?: (message: string, error?: unknown) => void;
+}
+
+/**
+ * LLM-backed decomposition query transformer.
+ *
+ * Breaks a complex question into independent sub-questions and returns each
+ * one alongside the original query. Each sub-question is a trimmed, non-empty
+ * line from the model's response. Failing model calls fall back to the
+ * original query — retrieval never blocks.
+ *
+ * Mirrors Reactor's `DecompositionQueryTransformer` without vendor coupling.
+ */
+export function createLlmDecomposingQueryTransformer(
+  options: LlmDecomposingQueryTransformerOptions
+): QueryTransformer {
+  const includeOriginal = options.includeOriginal ?? true;
+  const maxQueries = Math.max(1, options.maxQueries ?? 5);
+  return {
+    transform: async (query: string): Promise<readonly string[]> => {
+      const trimmed = query.trim();
+      if (trimmed.length === 0) {
+        return [];
+      }
+      let raw = "";
+      try {
+        const messages: ModelMessage[] = [
+          { content: options.systemPrompt ?? DECOMPOSE_DEFAULT_SYSTEM_PROMPT, role: "system" },
+          { content: trimmed, role: "user" }
+        ];
+        const request: ModelRequest = {
+          messages,
+          model: options.model,
+          ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
+          ...(options.metadata ? { metadata: options.metadata } : {}),
+          ...(options.temperature !== undefined ? { temperature: options.temperature } : {})
+        };
+        const response = await options.provider.generate(request);
+        raw = response.output ?? "";
+      } catch (error) {
+        options.logger?.("decomposition transformer fell back to original query", error);
+      }
+      const subQueries = parseDecompositionLines(raw);
+      const queries: string[] = includeOriginal ? [trimmed] : [];
+      for (const candidate of subQueries) {
+        if (queries.length >= maxQueries) {
+          break;
+        }
+        if (!queries.includes(candidate)) {
+          queries.push(candidate);
+        }
+      }
+      return queries.length > 0 ? queries : [trimmed];
+    }
+  };
+}
+
+/** Visible for testing — splits an LLM response into trimmed, non-empty lines. */
+export function parseDecompositionLines(raw: string): readonly string[] {
+  return raw
+    .split(/\r?\n/u)
+    .map((line) => line.replace(/^[-*0-9.)\s]+/u, "").trim())
+    .filter((line) => line.length > 0);
 }
 
 export class ExtractiveContextCompressor implements ContextCompressor {

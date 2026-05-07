@@ -296,6 +296,13 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- LLM-driven RAG query transformers now exist in `@muse/rag`. `createLlmHypotheticalDocumentTransformer`
+  generates a HyDE-style hypothetical answer document and returns it alongside the original query;
+  `createLlmDecomposingQueryTransformer` splits a complex question into sub-queries via an LLM, enforces a
+  max-queries cap, strips numbering/bullets, dedupes, and falls back to the original query when the model
+  errors. Both factories use any `@muse/model` `ModelProvider`, exposing `HYDE_DEFAULT_SYSTEM_PROMPT` and
+  `DECOMPOSE_DEFAULT_SYSTEM_PROMPT` constants for override. Closes the Reactor `HyDEQueryTransformer` and
+  `DecompositionQueryTransformer` parity gaps without Spring AI coupling.
 - AgentRuntime now has a native `UserMemoryProvider` injection path. When `metadata.userId` is present
   and a provider is configured (default: the autoconfigure-wired `userMemoryStore`), the run prepends a
   `[User Memory]` system section listing facts, preferences, and recent topics ahead of any RAG context
