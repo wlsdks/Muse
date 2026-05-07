@@ -296,6 +296,17 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- live-LLM tool-call loop tightened (iteration 47). The previous smoke
+  accepted a "weekday-name in content" fall-back so a model that
+  answered from internal knowledge instead of calling the tool would
+  still pass. Replaced with two strict assertions: (a) POST /api/chat
+  must report `toolsUsed: ["time_now"]` AND a weekday in content (the
+  weekday alone proves the tool *result* was fed back into the model),
+  (b) POST /api/chat/stream must emit `event: tool_start\ndata: time_now`
+  AND `event: tool_end\ndata: time_now` AND `event: message` AND
+  `event: done` SSE frames in order. Verified live with
+  GEMINI_API_KEY: 6/6 passed (was 5/5). Both real-LLM round-trip AND
+  the streaming tool-call SSE contract are now pinned by the harness.
 - live-LLM smoke harness institutionalised (iteration 46). New
   `pnpm smoke:live` (script: `scripts/smoke-live-llm.mjs`) brings up
   apps/api against the first available real provider in priority order

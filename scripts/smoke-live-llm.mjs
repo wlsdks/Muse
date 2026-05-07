@@ -102,11 +102,12 @@ try {
     assert(body.includes("99"), `expected content '99' in stream, got: ${body.slice(0, 200)}`);
   });
 
-  await record("POST /api/chat — tool usage (time_now)", async () => {
+  await record("POST /api/chat — strict tool-call loop (model→tool→model)", async () => {
     const response = await fetch(`${baseUrl}/api/chat`, {
       body: JSON.stringify({
-        message: "Use the time_now tool and reply with the dayOfWeek field only.",
-        runId: "live-tool"
+        message:
+          "You MUST call the time_now tool with timezone=Asia/Seoul. Then reply with only the value of the dayOfWeek field. No other words.",
+        runId: "live-tool-strict"
       }),
       headers: { "content-type": "application/json" },
       method: "POST"
@@ -114,11 +115,30 @@ try {
     const body = await response.json();
     assert(response.status === 200, `expected 200, got ${response.status}: ${JSON.stringify(body)}`);
     assert(body.success === true, `expected success, got ${JSON.stringify(body)}`);
-    // Tool usage is opportunistic — we accept either toolsUsed=["time_now"] or a content with a weekday name.
-    const usedTool = Array.isArray(body.toolsUsed) && body.toolsUsed.includes("time_now");
-    const mentionedWeekday = /Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/iu.test(body.content ?? "");
-    assert(usedTool || mentionedWeekday,
-      `expected tool usage or weekday mention, got toolsUsed=${JSON.stringify(body.toolsUsed)} content="${body.content}"`);
+    assert(Array.isArray(body.toolsUsed) && body.toolsUsed.includes("time_now"),
+      `expected toolsUsed to include 'time_now', got ${JSON.stringify(body.toolsUsed)} content="${body.content}"`);
+    assert(/Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/iu.test(body.content ?? ""),
+      `expected weekday in content (proves the tool result was fed back), got "${body.content}"`);
+  });
+
+  await record("POST /api/chat/stream — tool_start + tool_end SSE events fire on a tool-using prompt", async () => {
+    const response = await fetch(`${baseUrl}/api/chat/stream`, {
+      body: JSON.stringify({
+        message:
+          "You MUST call the time_now tool with timezone=Asia/Seoul. Then reply with only the value of the dayOfWeek field.",
+        runId: "live-stream-tool"
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST"
+    });
+    assert(response.status === 200, `expected 200, got ${response.status}`);
+    const body = await response.text();
+    assert(/event: tool_start\ndata: time_now/u.test(body),
+      `expected tool_start frame for time_now, got: ${body.slice(0, 400)}`);
+    assert(/event: tool_end\ndata: time_now/u.test(body),
+      `expected tool_end frame for time_now, got: ${body.slice(0, 400)}`);
+    assert(body.includes("event: message"), "expected event: message frame");
+    assert(body.includes("event: done"), "expected event: done frame");
   });
 
   await record("POST /api/chat with metadata.agentMode=plan_execute (live)", async () => {
