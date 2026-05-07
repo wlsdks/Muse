@@ -754,3 +754,108 @@ function stringArray(value: unknown): readonly string[] {
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
+
+export interface CompletenessScore {
+  readonly overall: number;
+  readonly sampledAt: Date;
+}
+
+export interface ResponseCompletenessEvaluatorOptions {
+  readonly provider: ModelProvider;
+  readonly model: string;
+  readonly sampleRate?: number;
+  readonly maxPromptChars?: number;
+  readonly maxContentChars?: number;
+  readonly maxOutputTokens?: number;
+  readonly temperature?: number;
+  readonly judgePromptBuilder?: (input: { prompt: string; content: string }) => string;
+  readonly randomSource?: () => number;
+  readonly now?: () => Date;
+  readonly logger?: (message: string, error?: unknown) => void;
+}
+
+export interface ResponseCompletenessEvaluator {
+  scoreIfSampled(prompt: string, content: string): Promise<CompletenessScore | undefined>;
+  scoreNow(prompt: string, content: string): Promise<CompletenessScore | undefined>;
+}
+
+const DEFAULT_COMPLETENESS_SAMPLE_RATE = 0.1;
+const DEFAULT_COMPLETENESS_MAX_PROMPT_CHARS = 300;
+const DEFAULT_COMPLETENESS_MAX_CONTENT_CHARS = 1500;
+const COMPLETENESS_SCORE_PATTERN = /\d{1,3}/u;
+
+/**
+ * LLM-as-judge response completeness evaluator.
+ *
+ * Scores how well a response addresses the original user prompt on a 0–100
+ * integer scale (higher = more complete). Mirrors Reactor's
+ * `ResponseCompletenessEvaluator` semantics: probabilistic sampling
+ * (default 10%), short judge prompt with temperature=0, fail-soft on provider
+ * errors so the evaluator never blocks a real response.
+ */
+export function createResponseCompletenessEvaluator(
+  options: ResponseCompletenessEvaluatorOptions
+): ResponseCompletenessEvaluator {
+  const sampleRate = clamp(options.sampleRate ?? DEFAULT_COMPLETENESS_SAMPLE_RATE, 0, 1);
+  const maxPromptChars = Math.max(1, options.maxPromptChars ?? DEFAULT_COMPLETENESS_MAX_PROMPT_CHARS);
+  const maxContentChars = Math.max(1, options.maxContentChars ?? DEFAULT_COMPLETENESS_MAX_CONTENT_CHARS);
+  const randomSource = options.randomSource ?? Math.random;
+  const now = options.now ?? (() => new Date());
+  const judgePromptBuilder = options.judgePromptBuilder ?? defaultCompletenessJudgePrompt;
+
+  async function scoreNow(prompt: string, content: string): Promise<CompletenessScore | undefined> {
+    if (prompt.trim().length === 0 || content.trim().length === 0) {
+      return undefined;
+    }
+    const judgePrompt = judgePromptBuilder({
+      content: content.slice(0, maxContentChars),
+      prompt: prompt.slice(0, maxPromptChars)
+    });
+    try {
+      const response: ModelResponse = await options.provider.generate({
+        messages: [{ content: judgePrompt, role: "user" } satisfies ModelMessage],
+        model: options.model,
+        ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
+        ...(options.temperature !== undefined ? { temperature: options.temperature } : { temperature: 0 })
+      });
+      const raw = (response.output ?? "").trim();
+      const match = COMPLETENESS_SCORE_PATTERN.exec(raw);
+      if (!match) {
+        return undefined;
+      }
+      const parsed = Number.parseInt(match[0], 10);
+      if (!Number.isFinite(parsed)) {
+        return undefined;
+      }
+      return { overall: clamp(parsed, 0, 100), sampledAt: now() };
+    } catch (error) {
+      options.logger?.("ResponseCompletenessEvaluator failed (suppressed)", error);
+      return undefined;
+    }
+  }
+
+  async function scoreIfSampled(prompt: string, content: string): Promise<CompletenessScore | undefined> {
+    if (sampleRate <= 0 || randomSource() > sampleRate) {
+      return undefined;
+    }
+    return scoreNow(prompt, content);
+  }
+
+  return { scoreIfSampled, scoreNow };
+}
+
+function defaultCompletenessJudgePrompt(input: { prompt: string; content: string }): string {
+  return [
+    "Rate how complete and useful the response below is for the given user question, on a 0-100 integer scale.",
+    "Criteria: (1) addresses the question intent (40 pts), (2) data/evidence sufficiency (30 pts), (3) clarity (30 pts).",
+    "Respond with the integer score only on a single line. No other text.",
+    "",
+    "[Question]",
+    input.prompt,
+    "",
+    "[Response]",
+    input.content,
+    "",
+    "Score:"
+  ].join("\n");
+}

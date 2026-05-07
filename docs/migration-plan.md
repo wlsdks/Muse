@@ -296,6 +296,12 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- Response completeness evaluator now exists in `@muse/eval` as
+  `createResponseCompletenessEvaluator`. LLM-as-judge that scores how well a response addresses the
+  original prompt on a 0–100 integer scale, with probabilistic sampling (default 10%), short judge
+  prompt (Korean criteria-equivalent English), `temperature=0` by default, fail-soft on provider
+  errors. Returns `{ overall, sampledAt }` or `undefined` when skipped/blank/unparsable. Closes the
+  Reactor `ResponseCompletenessEvaluator` parity gap without Spring AI coupling.
 - A2A agent card now uses real tool input schemas. `@muse/agent-specs` adds `buildAgentCard`,
   `AgentCapability` (`kind: "tool" | "persona"`), and identity defaults. Autoconfigure passes a
   `agentCardToolProvider` callback that maps `assembly.toolRegistry.list()` to capabilities so

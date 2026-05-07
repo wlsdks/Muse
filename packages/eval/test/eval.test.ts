@@ -9,6 +9,7 @@ import {
   PostgresQueryCompiler
 } from "kysely";
 import {
+  createResponseCompletenessEvaluator,
   EvalRunner,
   ExactMatchJudge,
   InMemoryAgentEvalStore,
@@ -217,3 +218,137 @@ function createPostgresBuilder(): Kysely<MuseDatabase> {
     }
   });
 }
+
+describe("createResponseCompletenessEvaluator", () => {
+  function fakeProvider(output: string, onCall?: (request: ModelRequest) => void): ModelProvider {
+    return {
+      generate: async (request: ModelRequest): Promise<ModelResponse> => {
+        onCall?.(request);
+        return { id: "r", model: request.model, output };
+      },
+      id: "completeness-fake",
+      listModels: async () => [],
+      stream: async function* () {
+        yield { response: { id: "r", model: "completeness-fake", output: "" }, type: "done" } as const;
+      }
+    };
+  }
+
+  it("scores within 0..100 when sampled and the model returns a parseable integer", async () => {
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      now: () => new Date("2026-05-15T00:00:00.000Z"),
+      provider: fakeProvider("87"),
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    const result = await evaluator.scoreIfSampled("How do I install muse?", "Run pnpm install.");
+    expect(result?.overall).toBe(87);
+    expect(result?.sampledAt.toISOString()).toBe("2026-05-15T00:00:00.000Z");
+  });
+
+  it("clamps the parsed score into the 0..100 range", async () => {
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider: fakeProvider("250"),
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    expect((await evaluator.scoreIfSampled("q", "a"))?.overall).toBe(100);
+  });
+
+  it("returns undefined when randomSource exceeds sampleRate", async () => {
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider: fakeProvider("80"),
+      randomSource: () => 0.9,
+      sampleRate: 0.1
+    });
+    expect(await evaluator.scoreIfSampled("q", "a")).toBeUndefined();
+  });
+
+  it("returns undefined for blank prompt or content", async () => {
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider: fakeProvider("80"),
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    expect(await evaluator.scoreIfSampled("", "a")).toBeUndefined();
+    expect(await evaluator.scoreIfSampled("q", "   ")).toBeUndefined();
+  });
+
+  it("returns undefined when the model emits no parseable digits", async () => {
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider: fakeProvider("not a score"),
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    expect(await evaluator.scoreIfSampled("q", "a")).toBeUndefined();
+  });
+
+  it("falls back to undefined and reports through logger when the provider throws", async () => {
+    const errors: unknown[] = [];
+    const evaluator = createResponseCompletenessEvaluator({
+      logger: (_message, error) => errors.push(error),
+      model: "fake/judge",
+      provider: {
+        generate: async () => {
+          throw new Error("judge unreachable");
+        },
+        id: "fake",
+        listModels: async () => [],
+        stream: async function* () {
+          yield { response: { id: "r", model: "fake", output: "" }, type: "done" } as const;
+        }
+      },
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    expect(await evaluator.scoreIfSampled("q", "a")).toBeUndefined();
+    expect(errors).toHaveLength(1);
+  });
+
+  it("scoreNow bypasses sampling and always evaluates", async () => {
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider: fakeProvider("42"),
+      randomSource: () => 1,
+      sampleRate: 0
+    });
+    const result = await evaluator.scoreNow("q", "a");
+    expect(result?.overall).toBe(42);
+  });
+
+  it("truncates prompt and content to the configured caps before sending to the judge", async () => {
+    let captured = "";
+    const evaluator = createResponseCompletenessEvaluator({
+      maxContentChars: 5,
+      maxPromptChars: 5,
+      model: "fake/judge",
+      provider: fakeProvider("70", (request) => {
+        captured = request.messages.find((message) => message.role === "user")?.content ?? "";
+      }),
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    await evaluator.scoreIfSampled("LONG PROMPT TEXT", "LONG CONTENT TEXT");
+    expect(captured).toContain("LONG ");
+    expect(captured).not.toContain("LONG PROMPT TEXT");
+  });
+
+  it("uses temperature=0 by default to keep judge output stable", async () => {
+    let observedTemperature: number | undefined;
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider: fakeProvider("60", (request) => {
+        observedTemperature = request.temperature;
+      }),
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    await evaluator.scoreIfSampled("q", "a");
+    expect(observedTemperature).toBe(0);
+  });
+});

@@ -261,6 +261,36 @@ try {
     assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
+  await record("Response completeness evaluator scores sampled responses 0..100", async () => {
+    const { createResponseCompletenessEvaluator } = await import(`${rootDir}/packages/eval/dist/index.js`);
+    const provider = {
+      id: "judge",
+      generate: async (request) => ({ id: "r", model: request.model, output: "92" }),
+      listModels: async () => [],
+      stream: async function* () {
+        yield { response: { id: "r", model: "judge", output: "" }, type: "done" };
+      }
+    };
+    const evaluator = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider,
+      randomSource: () => 0,
+      sampleRate: 1
+    });
+    const score = await evaluator.scoreIfSampled("How do I install muse?", "Run pnpm install.");
+    assert(score !== undefined, "expected sampled score");
+    assert(score.overall === 92, `expected 92, got ${score.overall}`);
+    assert(score.sampledAt instanceof Date, "expected sampledAt Date");
+
+    const skip = createResponseCompletenessEvaluator({
+      model: "fake/judge",
+      provider,
+      randomSource: () => 0.9,
+      sampleRate: 0.1
+    });
+    assert((await skip.scoreIfSampled("q", "a")) === undefined, "expected sampling skip");
+  });
+
   await record("GET /.well-known/agent-card.json returns A2A card with tool input schemas", async () => {
     const response = await fetch(`${baseUrl}/.well-known/agent-card.json`);
     assert(response.ok, `expected 200, got ${response.status}`);
