@@ -2425,6 +2425,137 @@ describe("AgentRuntime", () => {
   });
 });
 
+describe("AgentRuntime user memory injection", () => {
+  function captureProvider(generated: ModelRequest[]): ModelProvider {
+    return createSequenceProvider(
+      [{ id: "r", model: "test-model", output: "ok" }],
+      (request) => generated.push(request)
+    );
+  }
+
+  it("prepends a [User Memory] system section when metadata.userId resolves to a snapshot", async () => {
+    const generated: ModelRequest[] = [];
+    const runtime = createAgentRuntime({
+      modelProvider: captureProvider(generated),
+      userMemoryProvider: {
+        findByUserId: async (userId) =>
+          userId === "user-jarvis"
+            ? {
+                facts: { project: "muse", role: "operator" },
+                preferences: { tone: "concise" },
+                recentTopics: ["plan_execute", "rag"],
+                userId
+              }
+            : undefined
+      }
+    });
+
+    await runtime.run({
+      messages: [{ content: "What's my project again?", role: "user" }],
+      metadata: { userId: "user-jarvis" },
+      model: "provider/model",
+      runId: "run-mem"
+    });
+
+    const systemMessage = generated[0]?.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("[User Memory]");
+    expect(systemMessage?.content).toContain("project: muse");
+    expect(systemMessage?.content).toContain("tone: concise");
+    expect(systemMessage?.content).toContain("plan_execute");
+  });
+
+  it("is a no-op when metadata has no userId", async () => {
+    const generated: ModelRequest[] = [];
+    const runtime = createAgentRuntime({
+      modelProvider: captureProvider(generated),
+      userMemoryProvider: {
+        findByUserId: async () => ({
+          facts: { project: "muse" },
+          preferences: {},
+          userId: "anyone"
+        })
+      }
+    });
+
+    await runtime.run({
+      messages: [{ content: "Hi", role: "user" }],
+      model: "provider/model",
+      runId: "run-no-user"
+    });
+
+    const systemMessage = generated[0]?.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content ?? "").not.toContain("[User Memory]");
+  });
+
+  it("is a no-op when the provider returns undefined or an empty snapshot", async () => {
+    const generated: ModelRequest[] = [];
+    const runtime = createAgentRuntime({
+      modelProvider: captureProvider(generated),
+      userMemoryProvider: {
+        findByUserId: async () => undefined
+      }
+    });
+
+    await runtime.run({
+      messages: [{ content: "Hi", role: "user" }],
+      metadata: { userId: "missing" },
+      model: "provider/model",
+      runId: "run-empty-mem"
+    });
+
+    const systemMessage = generated[0]?.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content ?? "").not.toContain("[User Memory]");
+  });
+
+  it("swallows provider errors so memory failures never break the run", async () => {
+    const generated: ModelRequest[] = [];
+    const runtime = createAgentRuntime({
+      modelProvider: captureProvider(generated),
+      userMemoryProvider: {
+        findByUserId: async () => {
+          throw new Error("memory backend down");
+        }
+      }
+    });
+
+    await expect(
+      runtime.run({
+        messages: [{ content: "Hi", role: "user" }],
+        metadata: { userId: "any" },
+        model: "provider/model",
+        runId: "run-mem-fail"
+      })
+    ).resolves.toMatchObject({ response: { output: "ok" } });
+  });
+
+  it("respects the userMemoryInjection.maxEntries limit", async () => {
+    const generated: ModelRequest[] = [];
+    const runtime = createAgentRuntime({
+      modelProvider: captureProvider(generated),
+      userMemoryInjection: { maxEntries: 1 },
+      userMemoryProvider: {
+        findByUserId: async (userId) => ({
+          facts: { alpha: "1", beta: "2", gamma: "3" },
+          preferences: {},
+          userId
+        })
+      }
+    });
+
+    await runtime.run({
+      messages: [{ content: "Hi", role: "user" }],
+      metadata: { userId: "user-1" },
+      model: "provider/model",
+      runId: "run-mem-cap"
+    });
+
+    const systemMessage = generated[0]?.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content ?? "").toContain("alpha: 1");
+    expect(systemMessage?.content ?? "").not.toContain("beta: 2");
+    expect(systemMessage?.content ?? "").not.toContain("gamma: 3");
+  });
+});
+
 describe("AgentRuntime PlanExecute mode", () => {
   function planResponse(plan: unknown): ModelResponse {
     return { id: "plan", model: "test-model", output: JSON.stringify(plan) };

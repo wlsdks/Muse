@@ -296,6 +296,14 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- AgentRuntime now has a native `UserMemoryProvider` injection path. When `metadata.userId` is present
+  and a provider is configured (default: the autoconfigure-wired `userMemoryStore`), the run prepends a
+  `[User Memory]` system section listing facts, preferences, and recent topics ahead of any RAG context
+  or tool results. Bounded by `userMemoryInjection.maxEntries` (default 12). Errors from the provider are
+  swallowed so memory backend flakes never break a run. Disable with `MUSE_USER_MEMORY_INJECTION=false`.
+  This closes the JARVIS "remembers you across sessions" stop criterion: facts written via
+  `UserMemoryStore.upsertFact` automatically influence subsequent runs without any per-session prompt
+  surgery from the caller. Smoke broad now exercises both the on and off paths.
 - JARVIS-style ambient tools now ship with every Muse runtime via `createJarvisTools()` in `@muse/tools`
   (`time_now`, `time_diff`, `time_add`, `text_stats`, `math_eval`, `json_query`). All tools are zero-IO,
   read-risk, deterministic given identical inputs (or injected clock for time tools), and registered into

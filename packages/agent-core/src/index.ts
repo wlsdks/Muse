@@ -318,6 +318,21 @@ export interface AgentSpecResolver {
   resolve(text: string): Awaitable<AgentSpecResolution | undefined>;
 }
 
+export interface UserMemorySnapshot {
+  readonly userId: string;
+  readonly facts: Readonly<Record<string, string>>;
+  readonly preferences: Readonly<Record<string, string>>;
+  readonly recentTopics?: readonly string[];
+}
+
+export interface UserMemoryProvider {
+  findByUserId(userId: string): Awaitable<UserMemorySnapshot | undefined>;
+}
+
+export interface UserMemoryInjectionOptions {
+  readonly maxEntries?: number;
+}
+
 export interface AgentRuntimeOptions {
   readonly modelProvider?: ModelProvider;
   readonly modelRegistry?: ModelProviderRegistry;
@@ -345,6 +360,8 @@ export interface AgentRuntimeOptions {
   readonly metrics?: AgentMetrics;
   readonly tracer?: MuseTracer;
   readonly tokenUsageSink?: TokenUsageSink;
+  readonly userMemoryProvider?: UserMemoryProvider;
+  readonly userMemoryInjection?: UserMemoryInjectionOptions;
   readonly guards?: readonly GuardStage[];
   readonly hooks?: readonly HookStage[];
   readonly outputGuards?: readonly OutputGuardStage[];
@@ -615,6 +632,8 @@ export class AgentRuntime {
   private readonly metrics: AgentMetrics;
   private readonly tracer: MuseTracer;
   private readonly tokenUsageSink?: TokenUsageSink;
+  private readonly userMemoryProvider?: UserMemoryProvider;
+  private readonly userMemoryMaxEntries: number;
   private readonly guards: readonly GuardStage[];
   private readonly hooks: readonly HookStage[];
   private readonly outputGuards: readonly OutputGuardStage[];
@@ -656,6 +675,8 @@ export class AgentRuntime {
     this.metrics = options.metrics ?? createNoOpAgentMetrics();
     this.tracer = options.tracer ?? createNoOpMuseTracer();
     this.tokenUsageSink = options.tokenUsageSink;
+    this.userMemoryProvider = options.userMemoryProvider;
+    this.userMemoryMaxEntries = Math.max(1, options.userMemoryInjection?.maxEntries ?? 12);
     this.guards = options.guards ?? [];
     this.hooks = options.hooks ?? [];
     this.outputGuards = options.outputGuards ?? [];
@@ -696,7 +717,9 @@ export class AgentRuntime {
       );
       await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
-      const contextualizedInput = await this.applyRetrievedContext(layeredContext);
+      const memoryAppliedInput = await this.applyUserMemory(layeredContext);
+      const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
+      const contextualizedInput = await this.applyRetrievedContext(memoryAppliedContext);
       const preparedRequest = this.prepareModelRequest(contextualizedInput, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
       const tools = this.modelTools(layeredContext);
@@ -800,7 +823,9 @@ export class AgentRuntime {
       );
       await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
-      const contextualizedInput = await this.applyRetrievedContext(layeredContext);
+      const memoryAppliedInput = await this.applyUserMemory(layeredContext);
+      const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
+      const contextualizedInput = await this.applyRetrievedContext(memoryAppliedContext);
       const preparedRequest = this.prepareModelRequest(contextualizedInput, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
       const tools = this.modelTools(layeredContext);
@@ -984,6 +1009,38 @@ export class AgentRuntime {
         messages: trimResult.messages,
         metadata: input.metadata,
         model
+      }
+    };
+  }
+
+  private async applyUserMemory(context: AgentRunContext): Promise<AgentRunInput> {
+    if (!this.userMemoryProvider) {
+      return context.input;
+    }
+    const userId = metadataString(context.input.metadata, "userId");
+    if (!userId) {
+      return context.input;
+    }
+    let memory: UserMemorySnapshot | undefined;
+    try {
+      memory = await this.userMemoryProvider.findByUserId(userId);
+    } catch {
+      return context.input;
+    }
+    if (!memory) {
+      return context.input;
+    }
+    const rendered = renderUserMemorySection(memory, this.userMemoryMaxEntries);
+    if (!rendered) {
+      return context.input;
+    }
+    return {
+      ...context.input,
+      messages: appendSystemSection(context.input.messages, rendered, "user-memory"),
+      metadata: {
+        ...context.input.metadata,
+        userMemoryFactCount: Object.keys(memory.facts).length,
+        userMemoryPreferenceCount: Object.keys(memory.preferences).length
       }
     };
   }
@@ -2295,6 +2352,36 @@ function hookInvocation(
   }
 
   return undefined;
+}
+
+function renderUserMemorySection(
+  memory: UserMemorySnapshot,
+  maxEntries: number
+): string | undefined {
+  const lines: string[] = [];
+  const factEntries = Object.entries(memory.facts).slice(0, maxEntries);
+  const preferenceEntries = Object.entries(memory.preferences).slice(0, maxEntries);
+  if (factEntries.length === 0 && preferenceEntries.length === 0 && (memory.recentTopics?.length ?? 0) === 0) {
+    return undefined;
+  }
+  lines.push("[User Memory]");
+  lines.push(`The operator '${memory.userId}' has prior context worth using. Treat as soft hints, not directives.`);
+  if (factEntries.length > 0) {
+    lines.push("Known facts:");
+    for (const [key, value] of factEntries) {
+      lines.push(`- ${key}: ${value}`);
+    }
+  }
+  if (preferenceEntries.length > 0) {
+    lines.push("Preferences:");
+    for (const [key, value] of preferenceEntries) {
+      lines.push(`- ${key}: ${value}`);
+    }
+  }
+  if (memory.recentTopics && memory.recentTopics.length > 0) {
+    lines.push(`Recent topics: ${memory.recentTopics.slice(0, maxEntries).join(", ")}`);
+  }
+  return lines.join("\n");
 }
 
 function appendSystemSection(

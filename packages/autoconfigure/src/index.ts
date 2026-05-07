@@ -393,7 +393,10 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         maxAttempts: parseInteger(env.MUSE_RETRY_MAX_ATTEMPTS, 3)
       },
       tracer,
-      toolRegistry
+      toolRegistry,
+      userMemoryProvider: parseBoolean(env.MUSE_USER_MEMORY_INJECTION, true)
+        ? userMemoryStore
+        : undefined
     })
     : undefined;
   const schedulerStore = createSchedulerStore(db, env);

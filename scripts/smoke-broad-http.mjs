@@ -213,6 +213,54 @@ try {
     assert(!names.includes("time_now"), `expected time_now to be absent when disabled, got ${names.join(", ")}`);
   });
 
+  await record("Cross-session user memory: stored facts surface in agent system prompt", async () => {
+    const { createMuseRuntimeAssembly } = await import(`${rootDir}/packages/autoconfigure/dist/index.js`);
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic",
+        MUSE_USER_MEMORY_INJECTION: "true"
+      }
+    });
+    assert(assembly.agentRuntime, "expected agent runtime to be configured");
+    const userId = "smoke-jarvis-user";
+    await assembly.userMemoryStore.upsertFact(userId, "favorite_project", "muse");
+    await assembly.userMemoryStore.upsertPreference(userId, "tone", "concise");
+
+    const result = await assembly.agentRuntime.run({
+      messages: [{ content: "What's my project?", role: "user" }],
+      metadata: { userId },
+      model: "diagnostic/smoke",
+      runId: "smoke-mem-cross"
+    });
+    assert(result.response.output.includes("Diagnostic response"), "expected diagnostic response");
+
+    const stored = await assembly.userMemoryStore.findByUserId(userId);
+    assert(stored?.facts.favorite_project === "muse", "expected stored fact to persist across calls");
+    assert(stored?.preferences.tone === "concise", "expected stored preference to persist across calls");
+  });
+
+  await record("MUSE_USER_MEMORY_INJECTION=false suppresses memory injection at runtime", async () => {
+    const { createMuseRuntimeAssembly } = await import(`${rootDir}/packages/autoconfigure/dist/index.js`);
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic",
+        MUSE_USER_MEMORY_INJECTION: "false"
+      }
+    });
+    const userId = "smoke-no-mem-user";
+    await assembly.userMemoryStore.upsertFact(userId, "secret_fact", "must_not_appear");
+    const result = await assembly.agentRuntime.run({
+      messages: [{ content: "Inspect anything", role: "user" }],
+      metadata: { userId },
+      model: "diagnostic/smoke",
+      runId: "smoke-mem-disabled"
+    });
+    assert(!String(result.response.output ?? "").includes("must_not_appear"),
+      "expected disabled memory injection to leave secret out of response");
+  });
+
   await record("POST /api/chat with metadata.agentMode=plan_execute", async () => {
     const response = await fetch(`${baseUrl}/api/chat`, {
       body: JSON.stringify({
