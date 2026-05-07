@@ -470,6 +470,62 @@ describe("cli program", () => {
       .toContain("\"source\":\"cli.remote\"");
   });
 
+  it("specs list / get / resolve hit the public agent-spec endpoints", async () => {
+    const { io, output } = captureOutput();
+    const requests: Array<{ readonly body?: string; readonly method?: string; readonly url: string }> = [];
+    const program = createProgram({
+      ...io,
+      fetch: async (url, init) => {
+        requests.push({
+          body: init?.body !== undefined && init?.body !== null ? String(init.body) : undefined,
+          method: init?.method,
+          url: String(url)
+        });
+        if (String(url).endsWith("/agent-specs")) {
+          return new Response(JSON.stringify([{ enabled: true, id: "agent_spec_1", name: "demo" }]));
+        }
+        if (String(url).endsWith("/agent-specs/demo")) {
+          return new Response(JSON.stringify({ enabled: true, id: "agent_spec_1", name: "demo" }));
+        }
+        if (String(url).endsWith("/agent-specs/resolve")) {
+          return new Response(JSON.stringify({ resolution: { matchedKeywords: ["demo"], name: "demo" } }));
+        }
+        return new Response("[]");
+      }
+    });
+
+    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "specs", "list"], { from: "node" });
+    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "specs", "get", "demo"], { from: "node" });
+    await program.parseAsync([
+      "node",
+      "muse",
+      "--api-url",
+      "http://api.test",
+      "specs",
+      "resolve",
+      "demo",
+      "this"
+    ], { from: "node" });
+
+    expect(requests[0]).toMatchObject({ url: "http://api.test/agent-specs", method: "GET" });
+    expect(requests[1]).toMatchObject({ url: "http://api.test/agent-specs/demo", method: "GET" });
+    expect(requests[2]).toMatchObject({ url: "http://api.test/agent-specs/resolve", method: "POST" });
+    expect(JSON.parse(requests[2]?.body ?? "{}")).toEqual({ text: "demo this" });
+    expect(output.join("")).toContain("matchedKeywords");
+  });
+
+  it("specs resolve rejects an empty prompt", async () => {
+    const { io } = captureOutput();
+    const program = createProgram({
+      ...io,
+      fetch: async () => new Response("{}")
+    });
+    await expect(program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "specs", "resolve", "  "],
+      { from: "node" }
+    )).rejects.toThrow(/specs resolve requires a non-empty prompt/u);
+  });
+
   it("threads --mode plan_execute into the /api/chat request body as metadata.agentMode", async () => {
     const { io } = captureOutput();
     const requests: Array<{ readonly body?: string; readonly url: string }> = [];
