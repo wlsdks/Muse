@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  InMemoryAgentMessageBus,
   InMemoryOrchestrationHistoryStore,
   MultiAgentOrchestrator,
   NoAgentWorkerError,
@@ -60,6 +61,15 @@ describe("InMemoryOrchestrationHistoryStore", () => {
     store.record(makeEntry("only", 1));
     store.clear();
     expect(store.list()).toEqual([]);
+  });
+
+  it("getByRunId returns the matching entry or undefined", () => {
+    const store = new InMemoryOrchestrationHistoryStore();
+    store.record(makeEntry("alpha", 1));
+    store.record(makeEntry("beta", 2));
+    expect(store.getByRunId("beta")?.runId).toBe("beta");
+    expect(store.getByRunId("alpha")?.runId).toBe("alpha");
+    expect(store.getByRunId("missing")).toBeUndefined();
   });
 });
 
@@ -148,5 +158,28 @@ describe("MultiAgentOrchestrator history recording", () => {
     await orchestrator.run({ messages: [{ content: "task", role: "user" }], model: "model-1" });
     // Nothing to assert — the absence of a thrown error proves the orchestrator
     // tolerates a missing store path.
+  });
+
+  it("snapshots the bus conversation onto the recorded entry", async () => {
+    const store = new InMemoryOrchestrationHistoryStore();
+    const messageBus = new InMemoryAgentMessageBus();
+    const orchestrator = new MultiAgentOrchestrator({
+      historyStore: store,
+      messageBus,
+      workers: [
+        new RuleBasedAgentWorker("alpha", "Alpha", ["task"], (input) => createWorkerResult("alpha", "ok-a", input)),
+        new RuleBasedAgentWorker("beta", "Beta", ["task"], (input) => createWorkerResult("beta", "ok-b", input))
+      ]
+    });
+
+    const result = await orchestrator.run({
+      messages: [{ content: "task", role: "user" }],
+      model: "model-1"
+    });
+
+    const entry = store.getByRunId(result.runId);
+    expect(entry?.conversation).toBeDefined();
+    expect(entry?.conversation).toHaveLength(2);
+    expect(entry?.conversation?.map((message) => message.sourceAgentId)).toEqual(["alpha", "beta"]);
   });
 });

@@ -1,3 +1,4 @@
+import type { AgentMessage } from "./agent-message-bus.js";
 import type { OrchestrationMode } from "./index.js";
 
 /**
@@ -22,11 +23,13 @@ export interface OrchestrationHistoryEntry {
   readonly durationMs: number;
   readonly status: "completed" | "failed";
   readonly error?: string;
+  readonly conversation?: readonly AgentMessage[];
 }
 
 export interface OrchestrationHistoryStore {
   record(entry: OrchestrationHistoryEntry): void;
   list(limit?: number): readonly OrchestrationHistoryEntry[];
+  getByRunId(runId: string): OrchestrationHistoryEntry | undefined;
   clear(): void;
 }
 
@@ -73,6 +76,10 @@ export class InMemoryOrchestrationHistoryStore implements OrchestrationHistorySt
     }
 
     return this.entries.slice(0, limit);
+  }
+
+  getByRunId(runId: string): OrchestrationHistoryEntry | undefined {
+    return this.entries.find((entry) => entry.runId === runId);
   }
 
   clear(): void {

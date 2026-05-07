@@ -67,9 +67,50 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
         startedAt: entry.startedAt.toISOString(),
         status: entry.status,
         workerCount: entry.workerCount,
+        ...(entry.conversation ? { conversationLength: entry.conversation.length } : { conversationLength: 0 }),
         ...(entry.error ? { error: entry.error } : {})
       })),
       total: entries.length
+    };
+  });
+
+  server.get("/api/multi-agent/orchestrations/:runId", async (request, reply) => {
+    const { runId } = request.params as { readonly runId: string };
+
+    if (!runId || runId.length === 0) {
+      return reply.status(400).send({
+        code: "INVALID_RUN_ID",
+        message: "runId path parameter is required"
+      } satisfies ApiError);
+    }
+
+    const entry = historyStore.getByRunId(runId);
+
+    if (!entry) {
+      return reply.status(404).send({
+        code: "ORCHESTRATION_NOT_FOUND",
+        message: `Orchestration not found for runId: ${runId}`
+      } satisfies ApiError);
+    }
+
+    return {
+      completedCount: entry.completedCount,
+      conversation: (entry.conversation ?? []).map((message) => ({
+        content: message.content,
+        sourceAgentId: message.sourceAgentId,
+        timestamp: message.timestamp.toISOString(),
+        ...(message.metadata ? { metadata: message.metadata } : {}),
+        ...(message.targetAgentId ? { targetAgentId: message.targetAgentId } : {})
+      })),
+      durationMs: entry.durationMs,
+      failedCount: entry.failedCount,
+      finishedAt: entry.finishedAt.toISOString(),
+      mode: entry.mode,
+      runId: entry.runId,
+      startedAt: entry.startedAt.toISOString(),
+      status: entry.status,
+      workerCount: entry.workerCount,
+      ...(entry.error ? { error: entry.error } : {})
     };
   });
 

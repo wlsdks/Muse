@@ -296,6 +296,18 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- multi-agent orchestration detail endpoint (iteration 34). The history
+  buffer now snapshots the full bus conversation (when a messageBus is
+  wired) onto each terminal entry. New
+  `GET /api/multi-agent/orchestrations/:runId` returns the entry plus
+  every `AgentMessage` (sourceAgentId, content, ISO timestamp, optional
+  metadata + targetAgentId) — 404 ORCHESTRATION_NOT_FOUND on miss,
+  400 INVALID_RUN_ID on empty path. The list response now also surfaces
+  `conversationLength` so the operator UI can decide which entries are
+  worth drilling into. New `OrchestrationHistoryStore.getByRunId(runId)`
+  primitive + 2 unit tests cover the lookup contract and the conversation
+  snapshot path. Multi-agent suite 25 → 27, smoke 44 → 45, Muse routes
+  376 → 377, route parity 0 missing.
 - multi-agent orchestrations now have a queryable history (iteration 33).
   New `OrchestrationHistoryStore` interface + `InMemoryOrchestrationHistoryStore`
   ring buffer (default 100 entries, FIFO eviction, newest-first) record

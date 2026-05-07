@@ -794,6 +794,30 @@ try {
     assert(bad.status === 400, `expected 400 on bad limit, got ${bad.status}`);
   });
 
+  await record("GET /api/multi-agent/orchestrations/:runId returns the entry plus full conversation", async () => {
+    const all = await fetch(`${baseUrl}/api/multi-agent/orchestrations`).then((response) => response.json());
+    const completed = all.entries.find((entry) => entry.status === "completed" && entry.conversationLength > 0);
+    assert(completed, "expected at least one completed entry with conversation in history");
+
+    const detail = await fetch(`${baseUrl}/api/multi-agent/orchestrations/${completed.runId}`).then((response) => response.json());
+    assert(detail.runId === completed.runId, "expected matching runId");
+    assert(Array.isArray(detail.conversation), "expected conversation array");
+    assert(detail.conversation.length === completed.conversationLength,
+      `expected ${completed.conversationLength} conversation entries, got ${detail.conversation.length}`);
+    for (const message of detail.conversation) {
+      assert(typeof message.content === "string", "expected content string");
+      assert(typeof message.sourceAgentId === "string", "expected sourceAgentId string");
+      assert(typeof message.timestamp === "string" && message.timestamp.endsWith("Z"),
+        `expected ISO timestamp, got ${message.timestamp}`);
+    }
+
+    const missing = await fetch(`${baseUrl}/api/multi-agent/orchestrations/run-not-real`);
+    assert(missing.status === 404, `expected 404 for missing runId, got ${missing.status}`);
+    const missingBody = await missing.json();
+    assert(missingBody.code === "ORCHESTRATION_NOT_FOUND",
+      `expected ORCHESTRATION_NOT_FOUND, got ${missingBody.code}`);
+  });
+
   await record("POST /api/chat with metadata.agentMode=plan_execute", async () => {
     const response = await fetch(`${baseUrl}/api/chat`, {
       body: JSON.stringify({

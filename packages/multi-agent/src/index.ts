@@ -316,13 +316,15 @@ export class MultiAgentOrchestrator {
     };
   }
 
-  private recordHistory(entry: Omit<OrchestrationHistoryEntry, "durationMs">): void {
+  private recordHistory(entry: Omit<OrchestrationHistoryEntry, "durationMs" | "conversation">): void {
     if (!this.historyStore) {
       return;
     }
+    const conversation = this.messageBus?.getConversation() ?? [];
     this.historyStore.record({
       ...entry,
-      durationMs: entry.finishedAt.getTime() - entry.startedAt.getTime()
+      durationMs: entry.finishedAt.getTime() - entry.startedAt.getTime(),
+      ...(conversation.length > 0 ? { conversation: [...conversation] } : {})
     });
   }
 
