@@ -76,6 +76,12 @@ import { createRunId, type JsonObject } from "@muse/shared";
 import { ToolCallDeduplicator } from "./tool-call-deduplicator.js";
 import { isRecord, joinUserMessages, withResponseFilterRaw } from "./internals.js";
 import {
+  recordCheckpoint,
+  recordRunComplete,
+  recordRunFailure,
+  recordRunStart
+} from "./lifecycle.js";
+import {
   appendSystemSection,
   applyAgentSpecSystemPrompt,
   failMissingProvider,
@@ -1843,100 +1849,21 @@ export class AgentRuntime {
     provider: string,
     model: string
   ): Promise<void> {
-    if (!this.historyStore) {
-      return;
-    }
-
-    try {
-      await this.historyStore.createRun({
-        id: context.runId,
-        input: joinUserMessages(context.input.messages),
-        mode: toAgentRunMode(context.agentSpec?.spec.mode),
-        model,
-        provider,
-        startedAt: context.startedAt,
-        status: "running",
-        userId: metadataString(context.input.metadata, "userId"),
-        workspaceId: metadataString(context.input.metadata, "workspaceId")
-      });
-
-      for (const message of context.input.messages) {
-        await this.historyStore.appendMessage({
-          content: message.content,
-          metadata: message.toolCalls ? toolCallsMetadata(message.toolCalls) : {},
-          name: message.name,
-          role: message.role,
-          runId: context.runId,
-          toolCallId: message.toolCallId
-        });
-      }
-    } catch {
-      // History is observability state and must not block agent execution.
-    }
+    return recordRunStart({
+      context,
+      historyStore: this.historyStore,
+      model,
+      provider
+    });
   }
 
   private async recordRunComplete(context: AgentRunContext, execution: ModelLoopExecution): Promise<void> {
-    if (!this.historyStore) {
-      return;
-    }
-
-    try {
-      for (const message of execution.intermediateMessages) {
-        await this.historyStore.appendMessage({
-          content: message.content,
-          metadata: message.toolCalls ? toolCallsMetadata(message.toolCalls) : {},
-          name: message.name,
-          role: message.role,
-          runId: context.runId,
-          toolCallId: message.toolCallId
-        });
-      }
-
-      await this.historyStore.appendMessage({
-        content: execution.finalResponse.output,
-        metadata: execution.finalResponse.toolCalls ? toolCallsMetadata(execution.finalResponse.toolCalls) : {},
-        role: "assistant",
-        runId: context.runId
-      });
-
-      for (const executed of execution.toolResults) {
-        await this.historyStore.recordToolCall({
-          arguments: executed.toolCall.arguments,
-          id: executed.toolCall.id,
-          name: executed.toolCall.name,
-          risk: this.resolveToolRisk(executed.toolCall.name),
-          runId: context.runId,
-          status: executed.result.status
-        });
-      }
-
-      const recordedToolCallIds = new Set(execution.toolResults.map((executed) => executed.toolCall.id));
-
-      for (const toolCall of execution.finalResponse.toolCalls ?? []) {
-        if (recordedToolCallIds.has(toolCall.id)) {
-          continue;
-        }
-
-        await this.historyStore.recordToolCall({
-          arguments: toolCall.arguments,
-          id: toolCall.id,
-          name: toolCall.name,
-          risk: this.resolveToolRisk(toolCall.name),
-          runId: context.runId,
-          status: "queued"
-        });
-      }
-
-      await this.historyStore.updateRun({
-        completedAt: new Date(),
-        output: execution.finalResponse.output,
-        runId: context.runId,
-        status: "completed",
-        tokenUsage: execution.finalResponse.usage ? { ...execution.finalResponse.usage } : undefined
-      });
-    } catch {
-      // History is observability state and must not block agent execution.
-    }
+    return recordRunComplete({
+      context,
+      execution,
+      historyStore: this.historyStore,
+      resolveToolRisk: (name) => this.resolveToolRisk(name)
+    });
   }
 
   private async recordCheckpoint(
@@ -1946,25 +1873,14 @@ export class AgentRuntime {
     messages: readonly ModelMessage[],
     output?: string
   ): Promise<void> {
-    if (!this.checkpointStore) {
-      return;
-    }
-
-    try {
-      await this.checkpointStore.save({
-        runId: context.runId,
-        state: createAgentCheckpointState({
-          metadata: context.input.metadata,
-          model: context.input.model,
-          output,
-          phase,
-          messages
-        }),
-        step
-      });
-    } catch {
-      // Checkpoints support replay/debugging and must not block the agent loop.
-    }
+    return recordCheckpoint({
+      checkpointStore: this.checkpointStore,
+      context,
+      messages,
+      ...(output !== undefined ? { output } : {}),
+      phase,
+      step
+    });
   }
 
   private resolveToolRisk(name: string): "read" | "write" | "execute" {
@@ -1972,20 +1888,11 @@ export class AgentRuntime {
   }
 
   private async recordRunFailure(context: AgentRunContext, error: unknown): Promise<void> {
-    if (!this.historyStore) {
-      return;
-    }
-
-    try {
-      await this.historyStore.updateRun({
-        completedAt: new Date(),
-        error: error instanceof Error ? error.message : "unknown error",
-        runId: context.runId,
-        status: "failed"
-      });
-    } catch {
-      // History is observability state and must not block agent execution.
-    }
+    return recordRunFailure({
+      context,
+      error,
+      historyStore: this.historyStore
+    });
   }
 }
 
