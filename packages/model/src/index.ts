@@ -258,7 +258,7 @@ export class DiagnosticModelProvider implements ModelProvider {
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
     const latestUserMessage = [...request.messages].reverse().find((message) => message.role === "user");
-    const output = `Diagnostic response: ${latestUserMessage?.content ?? ""}`.trimEnd();
+    const output = renderDiagnosticOutput(request.messages, latestUserMessage?.content ?? "");
 
     return {
       id: "diagnostic-response",
@@ -1297,6 +1297,32 @@ function diagnosticModelCapabilities(): ModelCapabilities {
 
 function estimateDiagnosticTokens(content: string): number {
   return Math.max(1, Math.ceil(content.length / 4));
+}
+
+/**
+ * Shapes the diagnostic provider's deterministic output. The default behavior
+ * is "Diagnostic response: <user prompt>", but two structural mode hints in
+ * the system messages let smoke tests exercise plan-execute without a real
+ * LLM:
+ *   - planning prompts (built by `buildPlanningSystemPrompt`) → emit `[]`
+ *     so the runtime falls back to the direct-answer synthesis path.
+ *   - synthesis prompts (the `수집된 정보` / `Collected information` shape
+ *     produced by AgentRuntime.synthesizePlanResults) → echo the user prompt
+ *     unchanged so the synthesis stream stays non-empty.
+ * Anything else falls through to the legacy "Diagnostic response: …" shape.
+ */
+function renderDiagnosticOutput(messages: readonly { readonly role: string; readonly content: string }[], userPrompt: string): string {
+  const systemPrompt = messages.find((message) => message.role === "system")?.content ?? "";
+  if (isDiagnosticPlanningPrompt(systemPrompt)) {
+    return "[]";
+  }
+  return `Diagnostic response: ${userPrompt}`.trimEnd();
+}
+
+function isDiagnosticPlanningPrompt(systemPrompt: string): boolean {
+  return systemPrompt.includes("[Role]")
+    && systemPrompt.includes("[Output Format]")
+    && systemPrompt.includes("[Available Tools]");
 }
 
 function anthropicModelCapabilities(modelId: string): ModelCapabilities {

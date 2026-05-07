@@ -74,6 +74,45 @@ describe("DiagnosticModelProvider", () => {
       output: "Diagnostic response: Compare launch options"
     });
   });
+
+  it("emits an empty JSON plan when the system prompt is a planning prompt", async () => {
+    const provider = new DiagnosticModelProvider({ defaultModel: "diagnostic/smoke" });
+    const planningSystemPrompt = [
+      "[Role]",
+      "You are a planner.",
+      "",
+      "[Available Tools]",
+      "- search_docs: search the workspace docs",
+      "",
+      "[Output Format]",
+      "Return a JSON array of plan steps."
+    ].join("\n");
+
+    await expect(provider.generate({
+      messages: [
+        { content: planningSystemPrompt, role: "system" },
+        { content: "Plan a quick onboarding overview", role: "user" }
+      ],
+      model: "diagnostic/smoke"
+    })).resolves.toMatchObject({
+      model: "diagnostic/smoke",
+      output: "[]"
+    });
+  });
+
+  it("falls through to the legacy diagnostic shape when only one of the planning markers is present", async () => {
+    const provider = new DiagnosticModelProvider({ defaultModel: "diagnostic/smoke" });
+
+    await expect(provider.generate({
+      messages: [
+        { content: "Some other system prompt mentioning [Role] alone", role: "system" },
+        { content: "Hello", role: "user" }
+      ],
+      model: "diagnostic/smoke"
+    })).resolves.toMatchObject({
+      output: "Diagnostic response: Hello"
+    });
+  });
 });
 
 function createProvider(id: string, models: readonly ModelInfo[]): ModelProvider {

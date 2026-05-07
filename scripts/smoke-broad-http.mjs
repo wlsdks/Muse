@@ -956,6 +956,25 @@ try {
       assert(typeof body.content === "string", "expected content string");
     }
   });
+
+  await record("POST /chat/stream emits plan-generated + synthesis-started for plan_execute", async () => {
+    const response = await fetch(`${baseUrl}/chat/stream`, {
+      body: JSON.stringify({
+        message: "smoke plan execute streaming",
+        metadata: { agentMode: "plan_execute" },
+        runId: "smoke-broad-plan-execute-stream"
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST"
+    });
+    assert(response.status === 200, `expected 200, got ${response.status}`);
+    const sse = await response.text();
+    assert(sse.includes("event: plan_generated"), `expected plan_generated event, got: ${sse.slice(0, 200)}`);
+    assert(sse.includes("event: synthesis_started"), `expected synthesis_started event, got: ${sse.slice(0, 200)}`);
+    assert(sse.includes("event: done"), `expected done event, got: ${sse.slice(0, 200)}`);
+    // Empty plan (diagnostic provider returns "[]") → no per-step events
+    assert(!sse.includes("event: plan_step_executing"), `expected no plan_step_executing for empty plan`);
+  });
 } catch (error) {
   failures += 1;
   checks.push({ error: error instanceof Error ? error.message : String(error), name: "bootstrap", status: "fail" });
