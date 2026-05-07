@@ -90,6 +90,7 @@ route state and runtime services onto Kysely-backed stores.
 
 ## Recent Completion Notes
 
+- `GET /api/jarvis/runtime` exposes a public manifest (capabilities, locales, tool risk counts, agent-spec/setting totals) so any chat surface or automation can introspect the conductor without admin auth or secrets.
 - MCP now uses real SDK transports for stdio, SSE, and streamable HTTP.
 - Slack signed slash commands and URL verification are wired through API routes.
 - Admin APIs cover metrics, cache invalidation, and circuit breaker reset operations.

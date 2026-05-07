@@ -552,6 +552,40 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     };
   });
 
+  server.get("/api/jarvis/runtime", async () => {
+    const tools = options.toolCatalogProvider ? await options.toolCatalogProvider() : [];
+    const toolsByRisk = tools.reduce<Record<"read" | "write" | "execute", number>>(
+      (acc, tool) => {
+        acc[tool.risk] = (acc[tool.risk] ?? 0) + 1;
+        return acc;
+      },
+      { execute: 0, read: 0, write: 0 }
+    );
+    const [agentSpecs, settings] = await Promise.all([
+      agentSpecRegistry.list(),
+      runtimeSettings.list()
+    ]);
+
+    return {
+      agentCore: { modelAgnostic: true, runner: "rust" },
+      agentSpecs: { total: agentSpecs.length },
+      capabilities: {
+        authEnabled: Boolean(authService),
+        historyEnabled: Boolean(options.historyStore),
+        mcpEnabled: Boolean(options.mcp),
+        modelProviderConfigured: Boolean(options.modelProvider),
+        ragEnabled: Boolean(options.ragIngestion),
+        schedulerEnabled: Boolean(options.scheduler),
+        slackEnabled: Boolean(options.slack)
+      },
+      defaultModel: options.defaultModel ?? null,
+      locales: { response: parseResponseLocales(process.env.MUSE_RESPONSE_LOCALES) },
+      service: "muse-api",
+      settings: { total: settings.length },
+      tools: { byRisk: toolsByRisk, total: tools.length }
+    };
+  });
+
   server.get("/settings", async () => runtimeSettings.list());
 
   server.get("/settings/:key", async (request, reply) => {
@@ -1433,6 +1467,18 @@ function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined
     : undefined;
 }
 
+function parseResponseLocales(raw: string | undefined): readonly string[] {
+  const fallback = ["ko", "en"];
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return fallback;
+  }
+  const parsed = raw
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry === "ko" || entry === "en");
+  return parsed.length > 0 ? Array.from(new Set(parsed)) : fallback;
+}
+
 function isPublicRequest(method: string, url: string): boolean {
   const path = url.split("?")[0] ?? url;
   return (
@@ -1441,6 +1487,7 @@ function isPublicRequest(method: string, url: string): boolean {
     path === "/v3/api-docs" ||
     path === "/api/openapi.json" ||
     path === "/.well-known/agent-card.json" ||
+    path === "/api/jarvis/runtime" ||
     (method === "POST" && (
       path === "/auth/login" ||
       path === "/auth/register" ||

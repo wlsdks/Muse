@@ -6451,6 +6451,82 @@ describe("api server", () => {
       userPrompt: "muse compare rollout options"
     });
   });
+
+  it("exposes a JARVIS runtime manifest at /api/jarvis/runtime", async () => {
+    const previousLocales = process.env.MUSE_RESPONSE_LOCALES;
+    process.env.MUSE_RESPONSE_LOCALES = "ko,en";
+    try {
+      const server = buildServer({
+        defaultModel: "provider/model",
+        logger: false,
+        toolCatalogProvider: () => [
+          { description: "read fs", name: "read_file", risk: "read" },
+          { description: "write fs", name: "write_file", risk: "write" },
+          { description: "spawn shell", name: "run_command", risk: "execute" },
+          { description: "search docs", name: "search_docs", risk: "read" }
+        ]
+      });
+
+      const response = await server.inject({ method: "GET", url: "/api/jarvis/runtime" });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body).toMatchObject({
+        agentCore: { modelAgnostic: true, runner: "rust" },
+        agentSpecs: { total: 0 },
+        defaultModel: "provider/model",
+        locales: { response: ["ko", "en"] },
+        service: "muse-api",
+        tools: { byRisk: { execute: 1, read: 2, write: 1 }, total: 4 }
+      });
+      expect(body.capabilities).toMatchObject({
+        authEnabled: false,
+        historyEnabled: false,
+        mcpEnabled: false,
+        modelProviderConfigured: false,
+        ragEnabled: false,
+        schedulerEnabled: false,
+        slackEnabled: false
+      });
+    } finally {
+      if (previousLocales === undefined) {
+        delete process.env.MUSE_RESPONSE_LOCALES;
+      } else {
+        process.env.MUSE_RESPONSE_LOCALES = previousLocales;
+      }
+    }
+  });
+
+  it("falls back to ko,en when MUSE_RESPONSE_LOCALES is unset", async () => {
+    const previousLocales = process.env.MUSE_RESPONSE_LOCALES;
+    delete process.env.MUSE_RESPONSE_LOCALES;
+    try {
+      const server = buildServer({ logger: false });
+      const response = await server.inject({ method: "GET", url: "/api/jarvis/runtime" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().locales.response).toEqual(["ko", "en"]);
+    } finally {
+      if (previousLocales !== undefined) {
+        process.env.MUSE_RESPONSE_LOCALES = previousLocales;
+      }
+    }
+  });
+
+  it("ignores unknown locale codes in MUSE_RESPONSE_LOCALES", async () => {
+    const previousLocales = process.env.MUSE_RESPONSE_LOCALES;
+    process.env.MUSE_RESPONSE_LOCALES = "ko,fr,de,en,en";
+    try {
+      const server = buildServer({ logger: false });
+      const response = await server.inject({ method: "GET", url: "/api/jarvis/runtime" });
+      expect(response.json().locales.response).toEqual(["ko", "en"]);
+    } finally {
+      if (previousLocales === undefined) {
+        delete process.env.MUSE_RESPONSE_LOCALES;
+      } else {
+        process.env.MUSE_RESPONSE_LOCALES = previousLocales;
+      }
+    }
+  });
 });
 
 interface FakeMcpAdminServer {
