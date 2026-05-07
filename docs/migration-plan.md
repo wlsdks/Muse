@@ -296,6 +296,19 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- multi-agent orchestrations now have a queryable history (iteration 33).
+  New `OrchestrationHistoryStore` interface + `InMemoryOrchestrationHistoryStore`
+  ring buffer (default 100 entries, FIFO eviction, newest-first) record
+  every `MultiAgentOrchestrator.run()` outcome with mode, worker counts,
+  completed/failed split, ISO timestamps, durationMs, status, and an
+  optional error message. The orchestrator records on success, on
+  worker-selection failure, on parallel/sequential exception, and on
+  no-completed-worker rejection. New `GET /api/multi-agent/orchestrations`
+  endpoint returns the snapshot with optional `?limit=N` (1..1000) and
+  rejects bad limits with 400 INVALID_LIMIT. Multi-agent suite 16 → 25
+  (+9 unit tests covering buffer eviction, list-limit, rejection bounds,
+  completed/failed entry recording, missing-store tolerance). Smoke
+  43 → 44; Muse routes 375 → 376; route parity 0 missing.
 - agent-core monolith split continued (iteration 32). Four
   Plan-Execute-scoped helpers (`isPlanExecuteMode`,
   `systemMessageContent`, `renderToolDescriptionsForPlanning`,

@@ -2,9 +2,16 @@ import type { AgentRunInput, AgentRunResult, AgentRuntime } from "@muse/agent-co
 import type { ModelMessage } from "@muse/model";
 import { createRunId, type JsonObject } from "@muse/shared";
 import type { AgentMessage, AgentMessageBus } from "./agent-message-bus.js";
+import type { OrchestrationHistoryEntry, OrchestrationHistoryStore } from "./orchestration-history.js";
 
 export type { AgentMessage, AgentMessageBus, AgentMessageHandler, InMemoryAgentMessageBusOptions } from "./agent-message-bus.js";
 export { InMemoryAgentMessageBus } from "./agent-message-bus.js";
+export type {
+  InMemoryOrchestrationHistoryStoreOptions,
+  OrchestrationHistoryEntry,
+  OrchestrationHistoryStore
+} from "./orchestration-history.js";
+export { InMemoryOrchestrationHistoryStore } from "./orchestration-history.js";
 
 export interface AgentWorker {
   readonly id: string;
@@ -209,11 +216,15 @@ export class MultiAgentOrchestrator {
   private readonly workers: readonly AgentWorker[];
   private readonly idFactory: () => string;
   private readonly messageBus?: AgentMessageBus;
+  private readonly historyStore?: OrchestrationHistoryStore;
+  private readonly clock: () => Date;
 
   constructor(options: {
     readonly workers: readonly AgentWorker[];
     readonly idFactory?: () => string;
     readonly messageBus?: AgentMessageBus;
+    readonly historyStore?: OrchestrationHistoryStore;
+    readonly clock?: () => Date;
   }) {
     if (options.workers.length === 0) {
       throw new NoAgentWorkerError("MultiAgentOrchestrator requires at least one worker");
@@ -222,19 +233,80 @@ export class MultiAgentOrchestrator {
     this.workers = options.workers;
     this.idFactory = options.idFactory ?? (() => createRunId("multi_agent_orchestration"));
     this.messageBus = options.messageBus;
+    this.historyStore = options.historyStore;
+    this.clock = options.clock ?? (() => new Date());
   }
 
   async run(input: AgentRunInput, options: OrchestrationRunOptions = {}): Promise<MultiAgentOrchestrationResult> {
     const mode = options.mode ?? "sequential";
     const runId = input.runId ?? this.idFactory();
-    const selectedWorkers = this.selectWorkers(options.workerIds, options.maxWorkers);
-    const results = mode === "parallel"
-      ? await this.runParallel({ ...input, runId }, selectedWorkers)
-      : await this.runSequential({ ...input, runId }, selectedWorkers);
+    const startedAt = this.clock();
+    let selectedWorkers: readonly AgentWorker[];
+
+    try {
+      selectedWorkers = this.selectWorkers(options.workerIds, options.maxWorkers);
+    } catch (error) {
+      this.recordHistory({
+        completedCount: 0,
+        failedCount: 0,
+        finishedAt: this.clock(),
+        mode,
+        runId,
+        startedAt,
+        status: "failed",
+        workerCount: 0,
+        ...(error instanceof Error ? { error: error.message } : {})
+      });
+      throw error;
+    }
+
+    let results: readonly OrchestrationStepResult[];
+    try {
+      results = mode === "parallel"
+        ? await this.runParallel({ ...input, runId }, selectedWorkers)
+        : await this.runSequential({ ...input, runId }, selectedWorkers);
+    } catch (error) {
+      this.recordHistory({
+        completedCount: 0,
+        failedCount: selectedWorkers.length,
+        finishedAt: this.clock(),
+        mode,
+        runId,
+        startedAt,
+        status: "failed",
+        workerCount: selectedWorkers.length,
+        ...(error instanceof Error ? { error: error.message } : {})
+      });
+      throw error;
+    }
 
     if (!results.some((result) => result.status === "completed")) {
-      throw new NoAgentWorkerError("No worker completed the orchestration");
+      const error = new NoAgentWorkerError("No worker completed the orchestration");
+      this.recordHistory({
+        completedCount: 0,
+        failedCount: results.length,
+        finishedAt: this.clock(),
+        mode,
+        runId,
+        startedAt,
+        status: "failed",
+        workerCount: selectedWorkers.length,
+        error: error.message
+      });
+      throw error;
     }
+
+    const completedCount = results.filter((step) => step.status === "completed").length;
+    this.recordHistory({
+      completedCount,
+      failedCount: results.length - completedCount,
+      finishedAt: this.clock(),
+      mode,
+      runId,
+      startedAt,
+      status: "completed",
+      workerCount: selectedWorkers.length
+    });
 
     return {
       mode,
@@ -242,6 +314,16 @@ export class MultiAgentOrchestrator {
       results,
       runId
     };
+  }
+
+  private recordHistory(entry: Omit<OrchestrationHistoryEntry, "durationMs">): void {
+    if (!this.historyStore) {
+      return;
+    }
+    this.historyStore.record({
+      ...entry,
+      durationMs: entry.finishedAt.getTime() - entry.startedAt.getTime()
+    });
   }
 
   private selectWorkers(workerIds: readonly string[] | undefined, maxWorkers: number | undefined): readonly AgentWorker[] {

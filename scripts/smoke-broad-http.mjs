@@ -768,6 +768,32 @@ try {
       "expected both worker ids in stream payload");
   });
 
+  await record("GET /api/multi-agent/orchestrations records prior runs in newest-first order", async () => {
+    const all = await fetch(`${baseUrl}/api/multi-agent/orchestrations`).then((response) => response.json());
+    assert(Array.isArray(all.entries), "expected entries array");
+    assert(typeof all.total === "number", "expected total number");
+    assert(all.total >= 3, `expected at least 3 prior runs (sequential, parallel, stream), got ${all.total}`);
+
+    const modes = all.entries.map((entry) => entry.mode);
+    assert(modes.includes("sequential") && modes.includes("parallel"),
+      `expected sequential + parallel modes, got ${modes.join(",")}`);
+    for (const entry of all.entries.slice(0, 3)) {
+      assert(typeof entry.runId === "string" && entry.runId.length > 0, "expected runId string");
+      assert(entry.status === "completed" || entry.status === "failed",
+        `expected status, got ${entry.status}`);
+      assert(typeof entry.startedAt === "string" && entry.startedAt.endsWith("Z"),
+        `expected ISO startedAt, got ${entry.startedAt}`);
+      assert(typeof entry.workerCount === "number", "expected workerCount number");
+      assert(typeof entry.durationMs === "number" && entry.durationMs >= 0,
+        "expected non-negative durationMs");
+    }
+    const limited = await fetch(`${baseUrl}/api/multi-agent/orchestrations?limit=2`).then((response) => response.json());
+    assert(limited.entries.length <= 2, `expected at most 2 entries, got ${limited.entries.length}`);
+
+    const bad = await fetch(`${baseUrl}/api/multi-agent/orchestrations?limit=abc`);
+    assert(bad.status === 400, `expected 400 on bad limit, got ${bad.status}`);
+  });
+
   await record("POST /api/chat with metadata.agentMode=plan_execute", async () => {
     const response = await fetch(`${baseUrl}/api/chat`, {
       body: JSON.stringify({

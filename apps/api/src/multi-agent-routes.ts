@@ -3,10 +3,12 @@ import type { AgentRunInput, AgentRuntime } from "@muse/agent-core";
 import type { AgentSpec, AgentSpecRegistry } from "@muse/agent-specs";
 import {
   InMemoryAgentMessageBus,
+  InMemoryOrchestrationHistoryStore,
   MultiAgentOrchestrator,
   type AgentMessage,
   type AgentWorker,
   type MultiAgentOrchestrationResult,
+  type OrchestrationHistoryStore,
   type OrchestrationMode
 } from "@muse/multi-agent";
 import type { ModelMessage } from "@muse/model";
@@ -17,6 +19,7 @@ export interface MultiAgentRouteOptions {
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
   readonly defaultModel?: string;
+  readonly historyStore?: OrchestrationHistoryStore;
 }
 
 interface ApiError {
@@ -35,6 +38,41 @@ interface OrchestrateBody {
 type ParseResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: ApiError };
 
 export function registerMultiAgentRoutes(server: FastifyInstance, options: MultiAgentRouteOptions): void {
+  const historyStore = options.historyStore ?? new InMemoryOrchestrationHistoryStore();
+
+  server.get("/api/multi-agent/orchestrations", async (request, reply) => {
+    const limitRaw = (request.query as { readonly limit?: string } | undefined)?.limit;
+    let limit: number | undefined;
+
+    if (limitRaw !== undefined) {
+      const parsed = Number.parseInt(limitRaw, 10);
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 1_000) {
+        return reply.status(400).send({
+          code: "INVALID_LIMIT",
+          message: "limit must be an integer between 0 and 1000"
+        } satisfies ApiError);
+      }
+      limit = parsed;
+    }
+
+    const entries = limit === undefined ? historyStore.list() : historyStore.list(limit);
+    return {
+      entries: entries.map((entry) => ({
+        completedCount: entry.completedCount,
+        durationMs: entry.durationMs,
+        failedCount: entry.failedCount,
+        finishedAt: entry.finishedAt.toISOString(),
+        mode: entry.mode,
+        runId: entry.runId,
+        startedAt: entry.startedAt.toISOString(),
+        status: entry.status,
+        workerCount: entry.workerCount,
+        ...(entry.error ? { error: entry.error } : {})
+      })),
+      total: entries.length
+    };
+  });
+
   server.post("/api/multi-agent/orchestrate", async (request, reply) => {
     if (!options.agentRuntime) {
       return reply.status(503).send({
@@ -66,7 +104,7 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
 
     const messageBus = new InMemoryAgentMessageBus();
     const workers: AgentWorker[] = selected.map((spec) => createSpecWorker(spec, options.agentRuntime!));
-    const orchestrator = new MultiAgentOrchestrator({ messageBus, workers });
+    const orchestrator = new MultiAgentOrchestrator({ historyStore, messageBus, workers });
     const input: AgentRunInput = {
       messages: [{ content: parsed.value.message, role: "user" }],
       model: parsed.value.model ?? options.defaultModel ?? "default"
@@ -133,7 +171,7 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
 
     const messageBus = new InMemoryAgentMessageBus();
     const workers: AgentWorker[] = selected.map((spec) => createSpecWorker(spec, options.agentRuntime!));
-    const orchestrator = new MultiAgentOrchestrator({ messageBus, workers });
+    const orchestrator = new MultiAgentOrchestrator({ historyStore, messageBus, workers });
     const input: AgentRunInput = {
       messages: [{ content: parsed.value.message, role: "user" }],
       model: parsed.value.model ?? options.defaultModel ?? "default"
