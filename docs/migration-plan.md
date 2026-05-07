@@ -296,6 +296,19 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- agent-core monolith split continued (iteration 31). Twelve runtime-
+  scoped helper functions (`applyAgentSpecSystemPrompt`,
+  `toAgentSpecRunReport`, `metadataString`, `latestUserPrompt`,
+  `stringListMetadata`, `numberMetadata`, `isModelMessage`, `ragFilters`,
+  `toolCallsMetadata`, `toAgentRunMode`, `failMissingProvider`) extracted
+  to a new `runtime-helpers.ts` module (118 lines). `AgentSpecRunReport`
+  interface promoted from `index.ts` to `types.ts` for cross-module use,
+  re-exported through the package surface so the public API is unchanged.
+  Local duplicate of `joinUserMessages` removed in favour of the
+  `internals.ts` version. agent-core/src/index.ts: 2,280 → 2,180 (-100).
+  Cumulative 3,983 → 2,180 lines (-1,803, **-45.3%**) across 12
+  submodules. 109/109 tests pass; broad smoke 43/43; route parity 0
+  missing.
 - sixth loopback MCP server `muse.crypto` ships by default (iteration
   30). Four new tools: `hash` (md5/sha1/sha256/sha512 with hex or base64
   encoding, default sha256/hex), `base64` (encode/decode UTF-8 ↔ base64),

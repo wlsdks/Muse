@@ -88,3 +88,10 @@ export interface ResponseFilterStage {
   readonly id: string;
   apply(response: ModelResponse, context: ResponseFilterContext): Awaitable<ModelResponse>;
 }
+
+export interface AgentSpecRunReport {
+  readonly name: string;
+  readonly confidence: number;
+  readonly matchedKeywords: readonly string[];
+  readonly toolNames: readonly string[];
+}

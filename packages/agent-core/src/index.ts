@@ -68,7 +68,20 @@ import {
 } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
 import { ToolCallDeduplicator } from "./tool-call-deduplicator.js";
-import { isRecord, normalizeSourceUrl, withResponseFilterRaw } from "./internals.js";
+import { isRecord, joinUserMessages, normalizeSourceUrl, withResponseFilterRaw } from "./internals.js";
+import {
+  applyAgentSpecSystemPrompt,
+  failMissingProvider,
+  isModelMessage,
+  latestUserPrompt,
+  metadataString,
+  numberMetadata,
+  ragFilters,
+  stringListMetadata,
+  toAgentRunMode,
+  toAgentSpecRunReport,
+  toolCallsMetadata
+} from "./runtime-helpers.js";
 import { extractToolInsights, extractVerifiedSources } from "./tool-output-evidence.js";
 import {
   PlanExecutionError,
@@ -100,6 +113,7 @@ import {
 import type {
   AgentRunContext,
   AgentRunInput,
+  AgentSpecRunReport,
   Awaitable,
   GuardDecision,
   GuardStage,
@@ -116,6 +130,7 @@ import type {
 export type {
   AgentRunContext,
   AgentRunInput,
+  AgentSpecRunReport,
   Awaitable,
   GuardDecision,
   GuardStage,
@@ -226,13 +241,6 @@ export type AgentRuntimeStreamEvent =
   | { readonly runId: string; readonly toolCall: ModelToolCall; readonly type: "tool-result" }
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "done" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "error" }>);
-
-export interface AgentSpecRunReport {
-  readonly name: string;
-  readonly confidence: number;
-  readonly matchedKeywords: readonly string[];
-  readonly toolNames: readonly string[];
-}
 
 export interface AgentContextWindowReport {
   readonly budgetTokens: number;
@@ -2170,112 +2178,3 @@ function responseFilterEvidenceFromExecution(execution: ModelLoopExecution): Res
   };
 }
 
-
-
-function joinUserMessages(messages: readonly ModelMessage[]): string {
-  return messages
-    .filter((message) => message.role === "user")
-    .map((message) => message.content)
-    .join("\n");
-}
-
-function applyAgentSpecSystemPrompt(
-  messages: readonly ModelMessage[],
-  resolution: AgentSpecResolution
-): readonly ModelMessage[] {
-  const systemPrompt = resolution.spec.systemPrompt;
-
-  if (!systemPrompt) {
-    return messages;
-  }
-
-  const [first, ...rest] = messages;
-
-  if (first?.role === "system") {
-    return [
-      {
-        ...first,
-        content: `${systemPrompt}\n\n${first.content}`
-      },
-      ...rest
-    ];
-  }
-
-  return [{ content: systemPrompt, role: "system" }, ...messages];
-}
-
-function toAgentSpecRunReport(resolution: AgentSpecResolution): AgentSpecRunReport {
-  return {
-    confidence: resolution.confidence,
-    matchedKeywords: [...resolution.matchedKeywords],
-    name: resolution.spec.name,
-    toolNames: [...resolution.spec.toolNames]
-  };
-}
-
-function metadataString(metadata: JsonObject | undefined, key: string): string | undefined {
-  const value = metadata?.[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function latestUserPrompt(messages: readonly ModelMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-
-    if (message?.role === "user") {
-      return message.content;
-    }
-  }
-
-  return "";
-}
-
-function stringListMetadata(value: unknown): readonly string[] | undefined {
-  if (Array.isArray(value)) {
-    return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
-  }
-
-  return undefined;
-}
-
-function numberMetadata(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function isModelMessage(value: unknown): value is ModelMessage {
-  if (!isRecord(value) || typeof value.content !== "string") {
-    return false;
-  }
-
-  return value.role === "system" || value.role === "user" || value.role === "assistant" || value.role === "tool";
-}
-
-function ragFilters(metadata: JsonObject | undefined): JsonObject | undefined {
-  const filters: Record<string, string> = {};
-
-  for (const key of ["tenantId", "workspaceId"] as const) {
-    const value = metadata?.[key];
-
-    if (typeof value === "string" && value.trim().length > 0) {
-      filters[key] = value;
-    }
-  }
-
-  return Object.keys(filters).length > 0 ? filters : undefined;
-}
-
-function toolCallsMetadata(toolCalls: readonly ModelToolCall[]): JsonObject {
-  return {
-    toolCallCount: toolCalls.length,
-    toolCallIds: toolCalls.map((toolCall) => toolCall.id),
-    toolCallNames: toolCalls.map((toolCall) => toolCall.name)
-  };
-}
-
-function toAgentRunMode(mode: AgentRunMode | undefined): AgentRunMode {
-  return mode ?? "react";
-}
-
-function failMissingProvider(): never {
-  throw new ModelRoutingError("AgentRuntime model provider is unavailable");
-}
