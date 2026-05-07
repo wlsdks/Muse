@@ -261,6 +261,32 @@ try {
     assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
+  await record("Three loopback MCP servers (time/text/math) expose tools end-to-end", async () => {
+    const {
+      createDefaultLoopbackMcpServers,
+      createLoopbackMcpConnection
+    } = await import(`${rootDir}/packages/mcp/dist/index.js`);
+    const servers = createDefaultLoopbackMcpServers();
+    assert(servers.length === 3, `expected 3 default loopback servers, got ${servers.length}`);
+    const names = servers.map((s) => s.name).sort();
+    assert(JSON.stringify(names) === JSON.stringify(["muse.math", "muse.text", "muse.time"]),
+      `expected default names, got ${JSON.stringify(names)}`);
+
+    const time = createLoopbackMcpConnection(servers.find((s) => s.name === "muse.time"));
+    const timeTools = await time.listTools();
+    assert(timeTools.length >= 2, `expected time tools, got ${timeTools.length}`);
+    const nowResult = await time.callTool("now", {});
+    assert(typeof nowResult.iso === "string" && nowResult.iso.endsWith("Z"), "expected ISO timestamp");
+
+    const text = createLoopbackMcpConnection(servers.find((s) => s.name === "muse.text"));
+    const stats = await text.callTool("stats", { text: "hello world" });
+    assert(stats.words === 2, `expected 2 words, got ${stats.words}`);
+
+    const math = createLoopbackMcpConnection(servers.find((s) => s.name === "muse.math"));
+    const calc = await math.callTool("evaluate", { expression: "(2 + 3) * 4" });
+    assert(calc.result === 20, `expected 20, got ${calc.result}`);
+  });
+
   await record("Chunk-merging retriever joins chunks of the same parent and dedupes by id", async () => {
     const { createChunkMergingRetriever } = await import(`${rootDir}/packages/rag/dist/index.js`);
     const delegate = {

@@ -1313,3 +1313,15 @@ function positiveInteger(value: number | undefined, fallback: number): number {
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+export {
+  createDefaultLoopbackMcpServers,
+  createLoopbackMcpConnection,
+  createLoopbackMcpMuseTools,
+  createMathMcpServer,
+  createTextUtilsMcpServer,
+  createTimeMcpServer,
+  type BuiltinLoopbackOptions,
+  type LoopbackMcpServer,
+  type LoopbackMcpToolDefinition
+} from "./loopback.js";

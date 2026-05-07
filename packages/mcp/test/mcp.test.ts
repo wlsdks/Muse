@@ -9,9 +9,15 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createDefaultLoopbackMcpServers,
+  createLoopbackMcpConnection,
+  createLoopbackMcpMuseTools,
+  createMathMcpServer,
   createMcpSecurityPolicyInsert,
   createMcpServerInsert,
   createMcpServerUpdate,
+  createTextUtilsMcpServer,
+  createTimeMcpServer,
   DefaultMcpTransportConnector,
   InMemoryMcpSecurityPolicyStore,
   InMemoryMcpServerStore,
@@ -453,3 +459,98 @@ function createPostgresBuilder(): Kysely<MuseDatabase> {
     }
   });
 }
+
+describe("loopback MCP servers", () => {
+  it("createDefaultLoopbackMcpServers ships time, text, and math servers by default", () => {
+    const servers = createDefaultLoopbackMcpServers({ now: () => new Date("2026-05-15T00:00:00.000Z") });
+    expect(servers.map((server) => server.name).sort()).toEqual(["muse.math", "muse.text", "muse.time"]);
+    for (const server of servers) {
+      expect(server.tools.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("createLoopbackMcpConnection returns the registered tools through listTools()", async () => {
+    const server = createTimeMcpServer({ now: () => new Date("2026-05-15T00:00:00.000Z") });
+    const connection = createLoopbackMcpConnection(server);
+    const tools = await connection.listTools();
+    expect(tools.map((tool) => tool.name).sort()).toEqual(["diff_ms", "now"]);
+  });
+
+  it("muse.time#now returns ISO + epoch + day-of-week using the injected clock", async () => {
+    const server = createTimeMcpServer({ now: () => new Date("2026-05-07T01:23:45.000Z") });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("now", {});
+    expect(result).toMatchObject({ dayOfWeek: "Thursday", iso: "2026-05-07T01:23:45.000Z" });
+  });
+
+  it("muse.time#diff_ms computes the signed millisecond difference", async () => {
+    const server = createTimeMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    expect(
+      await connection.callTool!("diff_ms", {
+        from: "2026-05-07T00:00:00.000Z",
+        to: "2026-05-07T00:01:30.000Z"
+      })
+    ).toEqual({ milliseconds: 90_000 });
+  });
+
+  it("muse.text#stats counts words/characters/lines and treats whitespace as zero", async () => {
+    const server = createTextUtilsMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    expect(await connection.callTool!("stats", { text: "hello\nworld\nfrom muse" })).toEqual({
+      characters: 21,
+      lines: 3,
+      words: 4
+    });
+    expect(await connection.callTool!("stats", { text: "   " })).toEqual({ characters: 0, lines: 0, words: 0 });
+  });
+
+  it("muse.text#reverse reverses the input safely", async () => {
+    const server = createTextUtilsMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    expect(await connection.callTool!("reverse", { text: "muse" })).toEqual({ reversed: "esum" });
+  });
+
+  it("muse.math#evaluate accepts safe arithmetic and rejects unsafe characters", async () => {
+    const server = createMathMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    expect(await connection.callTool!("evaluate", { expression: "2 + 3 * 4" })).toEqual({
+      expression: "2 + 3 * 4",
+      result: 14
+    });
+    expect(await connection.callTool!("evaluate", { expression: "1 + globalThis" })).toEqual({
+      error: expect.stringContaining("digits, parentheses")
+    });
+    expect(await connection.callTool!("evaluate", { expression: "1 / 0" })).toEqual({
+      error: expect.stringContaining("division by zero")
+    });
+  });
+
+  it("returns a structured error when an unknown tool is called", async () => {
+    const server = createMathMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    expect(await connection.callTool!("nonexistent", {})).toMatch(/not registered on 'muse\.math'/u);
+  });
+
+  it("createLoopbackMcpMuseTools wraps each tool with the <server>.<tool> namespace", async () => {
+    const server = createMathMcpServer();
+    const tools = createLoopbackMcpMuseTools(server);
+    expect(tools.map((tool) => tool.definition.name)).toEqual(["muse.math.evaluate"]);
+    const evaluator = tools[0]!;
+    const result = await evaluator.execute({ expression: "10 / 2" }, { runId: "run-1" });
+    expect(result).toEqual({ expression: "10 / 2", result: 5 });
+  });
+
+  it("close() resolves without error for loopback connections", async () => {
+    const connection = createLoopbackMcpConnection(createTimeMcpServer());
+    await expect(connection.close!()).resolves.toBeUndefined();
+  });
+
+  it("muse.time#now returns an error payload when the timezone is unsupported", async () => {
+    const server = createTimeMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    expect(await connection.callTool!("now", { timezone: "Mars/Olympus" })).toEqual({
+      error: expect.stringContaining("unsupported timezone")
+    });
+  });
+});

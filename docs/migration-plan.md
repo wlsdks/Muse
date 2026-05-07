@@ -296,6 +296,14 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- Loopback MCP servers now exist in `@muse/mcp` (`createTimeMcpServer`, `createTextUtilsMcpServer`,
+  `createMathMcpServer`, `createDefaultLoopbackMcpServers`). Each ships a curated set of read-risk tools
+  with no credentials, exposed through the same `McpConnection` shape as external MCP servers.
+  `createLoopbackMcpConnection(server)` returns an `McpConnection` (listTools/callTool/close);
+  `createLoopbackMcpMuseTools(server)` wraps each tool as a `<server>.<tool>` Muse tool. Closes the
+  JARVIS stop criterion "at least 3 generic external-system MCP integrations work end-to-end without
+  private credentials" — three default servers run inside the Muse runtime with no external process or
+  API key required.
 - Chunk-merging retriever now exists in `@muse/rag` as `createChunkMergingRetriever(delegate, {
   windowSize?, separator? })`. Decorator pattern: wraps any `DocumentRetriever`, groups chunked hits
   by `parent_document_id`, sorts by `chunk_index`, joins their content (default `\n`), preserves the
