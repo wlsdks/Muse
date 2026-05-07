@@ -273,6 +273,11 @@ export interface ParentDocumentRetrieverOptions {
   readonly tokenEstimator?: TokenEstimator;
 }
 
+export interface ChunkMergingRetrieverOptions {
+  readonly windowSize?: number;
+  readonly separator?: string;
+}
+
 export const emptyRagContext: RagContext = {
   context: "",
   documents: [],
@@ -1439,6 +1444,127 @@ export class ParentDocumentRetriever implements DocumentRetriever {
       documents.set(id, document);
     }
   }
+}
+
+/**
+ * Chunk-aware document merger (decorator pattern).
+ *
+ * Wraps a `DocumentRetriever` so chunk-level hits are merged back into a single
+ * document per parent before being returned. Mirrors Reactor's
+ * `ParentDocumentRetriever` Mixture-of-Granularity behavior: precise chunk
+ * search + re-assembled context for the LLM, while non-chunked hits pass
+ * through untouched.
+ *
+ * A document is considered "chunked" when its metadata carries `chunked: true`
+ * and a `parent_document_id`. `chunk_index` is used to order the merged
+ * content. The merged document keeps the highest score among its chunks and
+ * surfaces `merged_chunks`, `window_size`, and `chunk_indices` metadata so
+ * downstream rankers / evaluators can see what was joined.
+ */
+export function createChunkMergingRetriever(
+  delegate: DocumentRetriever,
+  options: ChunkMergingRetrieverOptions = {}
+): DocumentRetriever {
+  const windowSize = Math.max(0, options.windowSize ?? 1);
+  const separator = options.separator ?? "\n";
+
+  return {
+    retrieve: async (
+      queries: readonly string[],
+      topK: number,
+      filters: JsonObject = {}
+    ): Promise<readonly RetrievedDocument[]> => {
+      const results = await delegate.retrieve(queries, topK, filters);
+      if (results.length === 0) {
+        return results;
+      }
+      const chunked: RetrievedDocument[] = [];
+      const nonChunked: RetrievedDocument[] = [];
+      for (const document of results) {
+        if (isChunkedDocument(document)) {
+          chunked.push(document);
+        } else {
+          nonChunked.push(document);
+        }
+      }
+      if (chunked.length === 0) {
+        return results;
+      }
+      const grouped = new Map<string, RetrievedDocument[]>();
+      for (const document of chunked) {
+        const parentId = readParentId(document);
+        const bucket = grouped.get(parentId);
+        if (bucket) {
+          bucket.push(document);
+        } else {
+          grouped.set(parentId, [document]);
+        }
+      }
+      const merged: RetrievedDocument[] = [];
+      for (const [parentId, hits] of grouped.entries()) {
+        const sorted = [...hits].sort(
+          (left, right) => (readChunkIndex(left) ?? 0) - (readChunkIndex(right) ?? 0)
+        );
+        const bestScore = sorted.reduce((max, hit) => Math.max(max, hit.score), Number.NEGATIVE_INFINITY);
+        const firstChunk = sorted[0];
+        if (!firstChunk) {
+          continue;
+        }
+        const mergedContent = sorted.map((hit) => hit.content).join(separator);
+        const chunkIndicesValue = sorted
+          .map(readChunkIndex)
+          .filter((value): value is number => value !== undefined)
+          .join(",");
+        const baseMetadata = (firstChunk.metadata ?? {}) as Record<string, JsonValue>;
+        const mergedMetadata: Record<string, JsonValue> = {
+          ...baseMetadata,
+          chunk_indices: chunkIndicesValue,
+          merged_chunks: sorted.length,
+          window_size: windowSize
+        };
+        const totalEstimatedTokens = sorted.reduce((sum, hit) => sum + (hit.estimatedTokens ?? 0), 0);
+        merged.push({
+          ...(firstChunk.source ? { source: firstChunk.source } : {}),
+          content: mergedContent,
+          estimatedTokens: totalEstimatedTokens > 0 ? totalEstimatedTokens : Math.ceil(mergedContent.length / 4),
+          id: parentId,
+          metadata: mergedMetadata,
+          score: bestScore
+        });
+      }
+      const seen = new Map<string, RetrievedDocument>();
+      for (const document of [...merged, ...nonChunked].sort((left, right) => right.score - left.score)) {
+        if (!seen.has(document.id)) {
+          seen.set(document.id, document);
+        }
+      }
+      return [...seen.values()].slice(0, Math.max(0, topK));
+    }
+  };
+}
+
+function isChunkedDocument(document: RetrievedDocument): boolean {
+  const metadata = (document.metadata ?? {}) as Record<string, JsonValue>;
+  return metadata["chunked"] === true && typeof metadata["parent_document_id"] === "string";
+}
+
+function readParentId(document: RetrievedDocument): string {
+  const metadata = (document.metadata ?? {}) as Record<string, JsonValue>;
+  const value = metadata["parent_document_id"];
+  return typeof value === "string" && value.length > 0 ? value : document.id;
+}
+
+function readChunkIndex(document: RetrievedDocument): number | undefined {
+  const metadata = (document.metadata ?? {}) as Record<string, JsonValue>;
+  const value = metadata["chunk_index"];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 export class SimpleReranker implements DocumentReranker {

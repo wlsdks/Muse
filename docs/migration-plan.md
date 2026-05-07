@@ -296,6 +296,13 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- Chunk-merging retriever now exists in `@muse/rag` as `createChunkMergingRetriever(delegate, {
+  windowSize?, separator? })`. Decorator pattern: wraps any `DocumentRetriever`, groups chunked hits
+  by `parent_document_id`, sorts by `chunk_index`, joins their content (default `\n`), preserves the
+  highest score, surfaces `merged_chunks` / `window_size` / `chunk_indices` metadata, and passes
+  non-chunked documents through unchanged. Score-descending sort + dedup-by-id + topK enforced.
+  Closes the Reactor `ParentDocumentRetriever` Mixture-of-Granularity parity gap; the existing
+  `ParentDocumentRetriever` (parent lookup) remains for the alternative pattern.
 - Adaptive query router now exists in `@muse/rag`. `createLlmAdaptiveQueryRouter({ provider, model,
   timeoutMs })` classifies a user query as `no_retrieval` | `simple` | `complex` via an LLM and lets
   callers pick a downstream pipeline strategy. Falls back to `simple` on provider errors AND timeouts

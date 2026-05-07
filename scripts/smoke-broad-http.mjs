@@ -261,6 +261,41 @@ try {
     assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
+  await record("Chunk-merging retriever joins chunks of the same parent and dedupes by id", async () => {
+    const { createChunkMergingRetriever } = await import(`${rootDir}/packages/rag/dist/index.js`);
+    const delegate = {
+      retrieve: async () => [
+        {
+          content: "Beta",
+          estimatedTokens: 1,
+          id: "doc-a#1",
+          metadata: { chunk_index: 1, chunked: true, parent_document_id: "doc-a" },
+          score: 0.6
+        },
+        {
+          content: "Alpha",
+          estimatedTokens: 1,
+          id: "doc-a#0",
+          metadata: { chunk_index: 0, chunked: true, parent_document_id: "doc-a" },
+          score: 0.9
+        },
+        {
+          content: "Standalone",
+          estimatedTokens: 2,
+          id: "doc-b",
+          metadata: {},
+          score: 0.5
+        }
+      ]
+    };
+    const retriever = createChunkMergingRetriever(delegate);
+    const result = await retriever.retrieve(["q"], 5);
+    assert(result.length === 2, `expected 2 results, got ${result.length}`);
+    assert(result[0].id === "doc-a", `expected doc-a first, got ${result[0].id}`);
+    assert(result[0].content === "Alpha\nBeta", `expected ordered merge, got ${result[0].content}`);
+    assert(result[0].metadata.merged_chunks === 2, "expected merged_chunks metadata");
+  });
+
   await record("Adaptive query router classifies queries and falls back to SIMPLE on errors", async () => {
     const { createLlmAdaptiveQueryRouter } = await import(`${rootDir}/packages/rag/dist/index.js`);
     const okRouter = createLlmAdaptiveQueryRouter({

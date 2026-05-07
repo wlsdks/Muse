@@ -31,6 +31,7 @@ import {
   PassthroughQueryTransformer,
   ParentDocumentRetriever,
   HypotheticalDocumentQueryTransformer,
+  createChunkMergingRetriever,
   createLlmHypotheticalDocumentTransformer,
   createLlmDecomposingQueryTransformer,
   createLlmContextualCompressor,
@@ -914,6 +915,104 @@ describe("LLM-driven query transformers", () => {
       await compressor.compress("q", [makeDocument("a", "payload")]);
       expect(captured).toBe(LLM_CONTEXTUAL_COMPRESSOR_DEFAULT_SYSTEM_PROMPT);
     });
+  });
+});
+
+describe("createChunkMergingRetriever", () => {
+  function makeChunk(
+    parentId: string,
+    chunkIndex: number,
+    content: string,
+    score = 1
+  ): RetrievedDocument {
+    return {
+      content,
+      estimatedTokens: Math.ceil(content.length / 4),
+      id: `${parentId}#${chunkIndex}`,
+      metadata: { chunk_index: chunkIndex, chunked: true, parent_document_id: parentId },
+      score
+    } satisfies RetrievedDocument;
+  }
+
+  function makeStandalone(id: string, content: string, score = 1): RetrievedDocument {
+    return {
+      content,
+      estimatedTokens: Math.ceil(content.length / 4),
+      id,
+      metadata: {},
+      score
+    } satisfies RetrievedDocument;
+  }
+
+  function makeDelegate(documents: RetrievedDocument[]): DocumentRetriever {
+    return {
+      retrieve: async () => documents
+    };
+  }
+
+  it("merges chunks that share a parent_document_id ordered by chunk_index", async () => {
+    const retriever = createChunkMergingRetriever(
+      makeDelegate([
+        makeChunk("doc-a", 1, "Beta", 0.6),
+        makeChunk("doc-a", 0, "Alpha", 0.9),
+        makeChunk("doc-a", 2, "Gamma", 0.4)
+      ])
+    );
+    const result = await retriever.retrieve(["q"], 5);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("doc-a");
+    expect(result[0]?.content).toBe("Alpha\nBeta\nGamma");
+    expect(result[0]?.score).toBe(0.9);
+    expect(result[0]?.metadata.merged_chunks).toBe(3);
+    expect(result[0]?.metadata.chunk_indices).toBe("0,1,2");
+  });
+
+  it("passes non-chunked documents through untouched", async () => {
+    const retriever = createChunkMergingRetriever(
+      makeDelegate([
+        makeStandalone("doc-x", "standalone", 0.7),
+        makeChunk("doc-y", 0, "first", 0.9),
+        makeChunk("doc-y", 1, "second", 0.6)
+      ])
+    );
+    const result = await retriever.retrieve(["q"], 5);
+    expect(result.map((r) => r.id)).toEqual(["doc-y", "doc-x"]);
+    expect(result[1]?.content).toBe("standalone");
+  });
+
+  it("dedupes by id and respects topK after merging", async () => {
+    const retriever = createChunkMergingRetriever(
+      makeDelegate([
+        makeChunk("doc-a", 0, "first", 0.9),
+        makeChunk("doc-a", 1, "second", 0.5),
+        makeStandalone("doc-b", "alt", 0.8),
+        makeStandalone("doc-c", "another", 0.3)
+      ])
+    );
+    const result = await retriever.retrieve(["q"], 2);
+    expect(result.map((r) => r.id)).toEqual(["doc-a", "doc-b"]);
+  });
+
+  it("returns delegate output unchanged when no documents are returned", async () => {
+    const retriever = createChunkMergingRetriever(makeDelegate([]));
+    expect(await retriever.retrieve(["q"], 3)).toEqual([]);
+  });
+
+  it("uses a custom separator when provided", async () => {
+    const retriever = createChunkMergingRetriever(
+      makeDelegate([makeChunk("doc-a", 0, "x"), makeChunk("doc-a", 1, "y")]),
+      { separator: " ⏐ " }
+    );
+    const result = await retriever.retrieve(["q"], 5);
+    expect(result[0]?.content).toBe("x ⏐ y");
+  });
+
+  it("aggregates estimatedTokens across merged chunks for downstream budgeting", async () => {
+    const retriever = createChunkMergingRetriever(
+      makeDelegate([makeChunk("doc-a", 0, "alpha"), makeChunk("doc-a", 1, "beta")])
+    );
+    const result = await retriever.retrieve(["q"], 5);
+    expect(result[0]?.estimatedTokens).toBeGreaterThanOrEqual(2);
   });
 });
 
