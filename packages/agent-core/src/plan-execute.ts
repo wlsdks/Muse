@@ -1,3 +1,4 @@
+import type { ModelMessage, ModelTool } from "@muse/model";
 import type { JsonObject } from "@muse/shared";
 
 /**
@@ -162,4 +163,64 @@ export function validatePlan(input: PlanValidationInput): PlanValidationResult {
     steps: input.steps,
     valid: errors.length === 0
   };
+}
+
+/**
+ * Returns true when the supplied run metadata explicitly requests the
+ * Plan-Execute strategy. Case-insensitive on the value, defensive on the
+ * shape of the metadata object.
+ */
+export function isPlanExecuteMode(metadata: JsonObject | undefined): boolean {
+  if (!metadata) {
+    return false;
+  }
+  const value = metadata["agentMode"];
+  return typeof value === "string" && value.toLowerCase() === "plan_execute";
+}
+
+/**
+ * Returns the system message content of the first system message in
+ * `messages`, or `undefined` if no system message is present. Used by the
+ * Plan-Execute synthesis pass to carry caller-supplied system prompts into
+ * the synthesis-time prompt.
+ */
+export function systemMessageContent(messages: readonly ModelMessage[]): string | undefined {
+  for (const message of messages) {
+    if (message.role === "system") {
+      return message.content;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Renders the available tools as a bullet list for the planning prompt.
+ * Each line is `- <name>: <description>`; the order is the tools' input
+ * order so deterministic prompts produce deterministic plans.
+ */
+export function renderToolDescriptionsForPlanning(tools: readonly ModelTool[]): string {
+  return tools.map((tool) => `- ${tool.name}: ${tool.description}`).join("\n");
+}
+
+/**
+ * Renders executed plan steps into the synthesis-time prompt body. Each
+ * step becomes `[<tool>] <description>` followed by either the tool output,
+ * a Korean "[데이터 없음]" marker (output empty), or a Korean "[실패]" marker
+ * with an explicit instruction not to use the failed step as evidence.
+ */
+export function renderPlanResultSummary(results: readonly StepExecutionResult[]): string {
+  return results
+    .map((result) => {
+      const header = `[${result.tool}] ${result.description}`;
+      let body: string;
+      if (!result.success) {
+        body = "[실패] 이 단계는 실행에 실패했습니다. 답변 근거로 사용하지 마세요.";
+      } else if (!result.output || result.output.trim().length === 0) {
+        body = "[데이터 없음] 이 단계는 결과를 반환하지 않았습니다.";
+      } else {
+        body = result.output;
+      }
+      return `${header}\n${body}`;
+    })
+    .join("\n\n");
 }

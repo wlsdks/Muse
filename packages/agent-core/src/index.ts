@@ -86,7 +86,11 @@ import { extractToolInsights, extractVerifiedSources } from "./tool-output-evide
 import {
   PlanExecutionError,
   PlanValidationFailedError,
+  isPlanExecuteMode,
   parsePlan,
+  renderPlanResultSummary,
+  renderToolDescriptionsForPlanning,
+  systemMessageContent,
   validatePlan,
   type PlanStep,
   type StepExecutionResult
@@ -1135,7 +1139,7 @@ export class AgentRuntime {
     provider: ModelProvider,
     request: ModelRequest
   ): Promise<ModelLoopExecution> {
-    const userPrompt = lastUserMessageContent(request.messages);
+    const userPrompt = latestUserPrompt(request.messages);
     const tools = request.tools ?? [];
     const toolDescriptions = renderToolDescriptionsForPlanning(tools);
 
@@ -1895,54 +1899,6 @@ interface PlanExecuteStepRecord {
   readonly step: PlanStep;
   readonly executed: ExecutedToolResult;
   readonly stepResult: StepExecutionResult;
-}
-
-function isPlanExecuteMode(metadata: JsonObject | undefined): boolean {
-  if (!metadata) {
-    return false;
-  }
-  const value = metadata["agentMode"];
-  return typeof value === "string" && value.toLowerCase() === "plan_execute";
-}
-
-function lastUserMessageContent(messages: readonly ModelMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === "user") {
-      return message.content;
-    }
-  }
-  return "";
-}
-
-function systemMessageContent(messages: readonly ModelMessage[]): string | undefined {
-  for (const message of messages) {
-    if (message.role === "system") {
-      return message.content;
-    }
-  }
-  return undefined;
-}
-
-function renderToolDescriptionsForPlanning(tools: readonly ModelTool[]): string {
-  return tools.map((tool) => `- ${tool.name}: ${tool.description}`).join("\n");
-}
-
-function renderPlanResultSummary(results: readonly StepExecutionResult[]): string {
-  return results
-    .map((result) => {
-      const header = `[${result.tool}] ${result.description}`;
-      let body: string;
-      if (!result.success) {
-        body = "[실패] 이 단계는 실행에 실패했습니다. 답변 근거로 사용하지 마세요.";
-      } else if (!result.output || result.output.trim().length === 0) {
-        body = "[데이터 없음] 이 단계는 결과를 반환하지 않았습니다.";
-      } else {
-        body = result.output;
-      }
-      return `${header}\n${body}`;
-    })
-    .join("\n\n");
 }
 
 function planExecuteIntermediateMessages(

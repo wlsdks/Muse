@@ -296,6 +296,19 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- agent-core monolith split continued (iteration 32). Four
+  Plan-Execute-scoped helpers (`isPlanExecuteMode`,
+  `systemMessageContent`, `renderToolDescriptionsForPlanning`,
+  `renderPlanResultSummary`) moved into `plan-execute.ts`, the natural
+  home for plan-execute primitives. The duplicate
+  `lastUserMessageContent` was deleted in favour of the existing
+  `latestUserPrompt` helper. Added 10 dedicated unit tests covering
+  case-insensitive plan-execute detection, system message lookup,
+  bullet-list tool rendering, and the success / 데이터 없음 / 실패
+  branches of plan-result rendering. agent-core/src/index.ts: 2,180 →
+  2,136 (-44). Cumulative 3,983 → 2,136 lines (-1,847, **-46.4%**)
+  across 12 submodules. agent-core tests 109 → 119; broad smoke 43/43;
+  route parity 0 missing.
 - agent-core monolith split continued (iteration 31). Twelve runtime-
   scoped helper functions (`applyAgentSpecSystemPrompt`,
   `toAgentSpecRunReport`, `metadataString`, `latestUserPrompt`,
