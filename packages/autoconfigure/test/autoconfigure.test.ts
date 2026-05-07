@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MuseDatabase } from "@muse/db";
 import { KyselyAgentSpecRegistry } from "@muse/agent-specs";
-import { AsyncAuthService } from "@muse/auth";
+import { AsyncAuth } from "@muse/auth";
 import { KyselyAgentEvalStore } from "@muse/eval";
 import {
   InMemoryTaskMemoryStore,
@@ -116,7 +116,7 @@ describe("autoconfigure", () => {
     });
 
     expect(assembly.agentSpecRegistry).toBeInstanceOf(KyselyAgentSpecRegistry);
-    expect(assembly.authService).toBeInstanceOf(AsyncAuthService);
+    expect(assembly.authService).toBeInstanceOf(AsyncAuth);
     expect(assembly.historyStore).toBeInstanceOf(KyselyAgentRunHistoryStore);
     expect(assembly.hookTraceStore).toBeInstanceOf(KyselyHookTraceStore);
     expect(assembly.adminOperationsStore).toBeInstanceOf(KyselyAdminOperationsStore);

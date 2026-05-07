@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createAgentRuntime } from "@muse/agent-core";
 import {
-  AuthService,
+  Auth,
   DefaultAuthProvider,
-  IamTokenExchangeService,
+  IamTokenExchange,
   InMemoryTokenRevocationStore,
   InMemoryUserStore,
   JwtTokenProvider
@@ -43,7 +43,7 @@ import {
   InMemorySessionTagStore
 } from "@muse/runtime-state";
 import {
-  DynamicSchedulerService,
+  DynamicScheduler,
   InMemoryScheduledJobExecutionStore,
   InMemoryScheduledJobStore,
   ScheduledJobDispatcher,
@@ -426,13 +426,13 @@ describe("api server", () => {
 
   it("exchanges verified IAM tokens through the Reactor auth alias when configured", async () => {
     const userStore = new InMemoryUserStore();
-    const authService = new AuthService({
+    const authService = new Auth({
       authProvider: new DefaultAuthProvider(userStore),
       jwt: new JwtTokenProvider({ jwtSecret: "0123456789abcdef0123456789abcdef" }),
       revocationStore: new InMemoryTokenRevocationStore(),
       userStore
     });
-    const iamTokenExchangeService = new IamTokenExchangeService({
+    const iamTokenExchangeService = new IamTokenExchange({
       idFactory: () => "iam-user-1",
       jwt: new JwtTokenProvider({ jwtSecret: "0123456789abcdef0123456789abcdef" }),
       userStore,
@@ -1725,7 +1725,7 @@ describe("api server", () => {
     const schedulerExecutionStore = new InMemoryScheduledJobExecutionStore({
       idFactory: () => `exec-${++executionIndex}`
     });
-    const schedulerService = new DynamicSchedulerService({
+    const schedulerService = new DynamicScheduler({
       dispatcher: new ScheduledJobDispatcher({
         agentExecutor: { execute: async (job) => `executed:${job.agentPrompt}` },
         mcpInvoker: createUnusedMcpInvoker()
@@ -1879,12 +1879,12 @@ describe("api server", () => {
     expect(executions.json()).toEqual([]);
     expect(create.statusCode).toBe(503);
     expect(create.json()).toMatchObject({
-      error: "DynamicSchedulerService not configured",
+      error: "DynamicScheduler not configured",
       timestamp: expect.any(String)
     });
     expect(trigger.statusCode).toBe(503);
     expect(trigger.json()).toMatchObject({
-      error: "DynamicSchedulerService not configured",
+      error: "DynamicScheduler not configured",
       timestamp: expect.any(String)
     });
   });
@@ -6622,10 +6622,10 @@ function createMcpFixtureServerCode(): string {
   ].join("\n");
 }
 
-function createAuthService(): AuthService {
+function createAuthService(): Auth {
   const userStore = new InMemoryUserStore();
   const provider = new DefaultAuthProvider(userStore);
-  return new AuthService({
+  return new Auth({
     authProvider: provider,
     jwt: new JwtTokenProvider({ jwtSecret: "0123456789abcdef0123456789abcdef" }),
     revocationStore: new InMemoryTokenRevocationStore(),

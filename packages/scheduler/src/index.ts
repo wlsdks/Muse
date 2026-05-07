@@ -175,13 +175,13 @@ export interface NodeCronSchedulerOptions {
   readonly now?: () => Date;
 }
 
-export interface DynamicSchedulerServiceOptions {
+export interface DynamicSchedulerOptions {
   readonly store: ScheduledJobStore;
   readonly dispatcher: ScheduledJobDispatcher;
   readonly validator?: ScheduledJobValidator;
   readonly executionStore?: ScheduledJobExecutionStore;
   readonly executionRecorder?: ScheduledJobExecutionRecorder;
-  readonly messagingService?: SchedulerMessagingService;
+  readonly messagingService?: SchedulerMessaging;
   readonly distributedLock?: DistributedSchedulerLock;
   readonly cronScheduler?: CronScheduler;
   readonly now?: () => Date;
@@ -623,7 +623,7 @@ export class ScheduledJobDispatcher {
   }
 }
 
-export class SchedulerMessagingService {
+export class SchedulerMessaging {
   constructor(private readonly sender?: MessageSender) {}
 
   async sendResult(job: ScheduledJob, result: string): Promise<void> {
@@ -819,27 +819,27 @@ export class NodeCronScheduler implements CronScheduler {
   }
 }
 
-export class DynamicSchedulerService {
+export class DynamicScheduler {
   private readonly store: ScheduledJobStore;
   private readonly dispatcher: ScheduledJobDispatcher;
   private readonly validator: ScheduledJobValidator;
   private readonly executionStore?: ScheduledJobExecutionStore;
   private readonly executionRecorder: ScheduledJobExecutionRecorder;
-  private readonly messagingService: SchedulerMessagingService;
+  private readonly messagingService: SchedulerMessaging;
   private readonly distributedLock: DistributedSchedulerLock;
   private readonly cronScheduler?: CronScheduler;
   private readonly now: () => Date;
   private readonly lockTtlBufferMs: number;
   private readonly handles = new Map<string, ScheduledTaskHandle>();
 
-  constructor(options: DynamicSchedulerServiceOptions) {
+  constructor(options: DynamicSchedulerOptions) {
     this.store = options.store;
     this.dispatcher = options.dispatcher;
     this.validator = options.validator ?? new ScheduledJobValidator();
     this.executionStore = options.executionStore;
     this.executionRecorder =
       options.executionRecorder ?? new ScheduledJobExecutionRecorder(options.executionStore, 50, options.now);
-    this.messagingService = options.messagingService ?? new SchedulerMessagingService();
+    this.messagingService = options.messagingService ?? new SchedulerMessaging();
     this.distributedLock = options.distributedLock ?? new NoOpDistributedSchedulerLock();
     this.cronScheduler = options.cronScheduler;
     this.now = options.now ?? (() => new Date());
@@ -1017,7 +1017,7 @@ export class DynamicSchedulerService {
   }
 }
 
-export function createSchedulerTools(service: DynamicSchedulerService): readonly MuseTool[] {
+export function createSchedulerTools(service: DynamicScheduler): readonly MuseTool[] {
   return [
     {
       definition: {

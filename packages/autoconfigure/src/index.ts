@@ -32,8 +32,8 @@ import {
   type AgentSpecRegistry
 } from "@muse/agent-specs";
 import {
-  AsyncAuthService,
-  AuthService,
+  AsyncAuth,
+  Auth,
   DefaultAuthProvider,
   InMemoryTokenRevocationStore,
   InMemoryUserStore,
@@ -41,7 +41,7 @@ import {
   KyselyTokenRevocationStore,
   KyselyUserStore,
   JwtTokenProvider,
-  type MuseAuthService
+  type MuseAuth
 } from "@muse/auth";
 import {
   InMemoryCacheMetricsRecorder,
@@ -158,7 +158,7 @@ import {
 import {
   InMemoryRuntimeSettingsStore,
   KyselyRuntimeSettingsStore,
-  RuntimeSettingsService,
+  RuntimeSettings,
   type RuntimeSettingsStore
 } from "@muse/runtime-settings";
 import {
@@ -192,7 +192,7 @@ import {
 } from "@muse/runtime-state";
 import {
   createSchedulerTools,
-  DynamicSchedulerService,
+  DynamicScheduler,
   InMemoryDistributedSchedulerLock,
   InMemoryScheduledJobExecutionStore,
   InMemoryScheduledJobStore,
@@ -218,7 +218,7 @@ export interface MuseEnvironment {
 export interface MuseRuntimeAssembly {
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
-  readonly authService?: MuseAuthService;
+  readonly authService?: MuseAuth;
   readonly cache: {
     readonly metrics: InMemoryCacheMetricsRecorder;
     readonly responseCache: InMemoryResponseCache;
@@ -267,10 +267,10 @@ export interface MuseRuntimeAssembly {
   readonly resilience: {
     readonly circuitBreakerRegistry: CircuitBreakerRegistry;
   };
-  readonly runtimeSettings: RuntimeSettingsService;
+  readonly runtimeSettings: RuntimeSettings;
   readonly scheduler: {
     readonly executionStore: ScheduledJobExecutionStore;
-    readonly service: DynamicSchedulerService;
+    readonly service: DynamicScheduler;
     readonly store: ScheduledJobStore;
   };
   readonly slackPersistence: {
@@ -370,7 +370,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   });
   const runnerTools = createRunnerTools(env);
   const jarvisTools = parseBoolean(env.MUSE_JARVIS_TOOLS_ENABLED, true) ? createJarvisTools() : [];
-  let schedulerService: DynamicSchedulerService | undefined;
+  let schedulerService: DynamicScheduler | undefined;
   const toolRegistry = new DynamicToolRegistry([
     () => jarvisTools,
     () => runnerTools,
@@ -412,7 +412,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const schedulerStore = createSchedulerStore(db, env);
   const schedulerExecutionStore = createSchedulerExecutionStore(db, env);
   const schedulerLock = createSchedulerLock(db, env);
-  schedulerService = new DynamicSchedulerService({
+  schedulerService = new DynamicScheduler({
     dispatcher: new ScheduledJobDispatcher({
       agentExecutor: createScheduledAgentExecutor(() => agentRuntime, defaultModel),
       mcpInvoker: new ScheduledMcpToolInvoker(mcpManager)
@@ -477,7 +477,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     resilience: {
       circuitBreakerRegistry
     },
-    runtimeSettings: new RuntimeSettingsService(createRuntimeSettingsStore(db)),
+    runtimeSettings: new RuntimeSettings(createRuntimeSettingsStore(db)),
     toolRegistry,
     scheduler: {
       executionStore: schedulerExecutionStore,
@@ -1032,7 +1032,7 @@ function parseOptionalString(value: string | undefined): string | undefined {
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
-function createAuthService(env: MuseEnvironment, db: Kysely<MuseDatabase> | undefined): MuseAuthService | undefined {
+function createAuthService(env: MuseEnvironment, db: Kysely<MuseDatabase> | undefined): MuseAuth | undefined {
   const jwtSecret = env.MUSE_AUTH_JWT_SECRET?.trim();
 
   if (!jwtSecret) {
@@ -1048,7 +1048,7 @@ function createAuthService(env: MuseEnvironment, db: Kysely<MuseDatabase> | unde
   if (db) {
     const userStore = new KyselyUserStore(db);
     const provider = new KyselyAuthProvider(userStore);
-    return new AsyncAuthService({
+    return new AsyncAuth({
       authProvider: provider,
       jwt,
       revocationStore: new KyselyTokenRevocationStore(db),
@@ -1058,7 +1058,7 @@ function createAuthService(env: MuseEnvironment, db: Kysely<MuseDatabase> | unde
 
   const userStore = new InMemoryUserStore(parseInteger(env.MUSE_AUTH_MAX_USERS, 10_000));
   const provider = new DefaultAuthProvider(userStore);
-  return new AuthService({
+  return new Auth({
     authProvider: provider,
     jwt,
     revocationStore: new InMemoryTokenRevocationStore(),

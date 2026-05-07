@@ -107,9 +107,10 @@ export interface ContextCompressor {
   compress(query: string, documents: readonly RetrievedDocument[]): Awaitable<readonly RetrievedDocument[]>;
 }
 
-export interface ContextBuilder {
-  build(documents: readonly RetrievedDocument[], maxTokens: number): string;
-}
+export type ContextBuilder = (
+  documents: readonly RetrievedDocument[],
+  maxTokens: number
+) => string;
 
 export interface RagPipeline {
   retrieve(query: RagQuery): Promise<RagContext>;
@@ -1582,10 +1583,13 @@ export class SimpleReranker implements DocumentReranker {
   }
 }
 
-export class SimpleContextBuilder implements ContextBuilder {
-  constructor(private readonly separator = "\n\n---\n\n") {}
-
-  build(documents: readonly RetrievedDocument[], maxTokens: number): string {
+/**
+ * Factory for a `ContextBuilder` that joins documents with a configurable
+ * separator and prefixes each one with `[<index>] Source: <source>`. Stops
+ * once the cumulative `estimatedTokens` would exceed the requested budget.
+ */
+export function simpleContextBuilder(separator = "\n\n---\n\n"): ContextBuilder {
+  return (documents, maxTokens) => {
     const sections: string[] = [];
     let currentTokens = 0;
     let index = 1;
@@ -1601,12 +1605,17 @@ export class SimpleContextBuilder implements ContextBuilder {
       index += 1;
     }
 
-    return sections.join(this.separator);
-  }
+    return sections.join(separator);
+  };
 }
 
-export class StructuredContextBuilder implements ContextBuilder {
-  build(documents: readonly RetrievedDocument[], maxTokens: number): string {
+/**
+ * Factory for a `ContextBuilder` that emits a JSON envelope
+ * `{ documents: [{ id, source, content, score, metadata }] }`. Stops once
+ * the cumulative `estimatedTokens` would exceed the requested budget.
+ */
+export function structuredContextBuilder(): ContextBuilder {
+  return (documents, maxTokens) => {
     const selected: JsonObject[] = [];
     let currentTokens = 0;
 
@@ -1626,7 +1635,7 @@ export class StructuredContextBuilder implements ContextBuilder {
     }
 
     return JSON.stringify({ documents: selected }, null, 2);
-  }
+  };
 }
 
 export class PassthroughQueryTransformer implements QueryTransformer {
@@ -2142,7 +2151,7 @@ export class DefaultRagPipeline implements RagPipeline {
     this.retriever = options.retriever;
     this.reranker = options.reranker;
     this.contextCompressor = options.contextCompressor;
-    this.contextBuilder = options.contextBuilder ?? new StructuredContextBuilder();
+    this.contextBuilder = options.contextBuilder ?? structuredContextBuilder();
     this.maxContextTokens = options.maxContextTokens ?? defaultMaxContextTokens;
     this.tokenEstimator = options.tokenEstimator ?? createApproximateTokenEstimator();
   }
@@ -2169,7 +2178,7 @@ export class DefaultRagPipeline implements RagPipeline {
       return emptyRagContext;
     }
 
-    const context = this.contextBuilder.build(compressed, this.maxContextTokens);
+    const context = this.contextBuilder(compressed, this.maxContextTokens);
 
     return {
       context,

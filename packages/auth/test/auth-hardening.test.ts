@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AuthError,
   AuthRateLimiter,
-  AuthService,
+  Auth,
   DefaultAuthProvider,
   InMemoryTokenRevocationStore,
   InMemoryUserStore,
@@ -27,7 +27,7 @@ function makeService() {
   const revocationStore = new InMemoryTokenRevocationStore();
   const authProvider = new DefaultAuthProvider(userStore);
   const jwt = new JwtTokenProvider({ jwtSecret: strongSecret });
-  const service = new AuthService({ authProvider, jwt, revocationStore, userStore });
+  const service = new Auth({ authProvider, jwt, revocationStore, userStore });
   return { authProvider, jwt, revocationStore, service, userStore };
 }
 
@@ -97,7 +97,7 @@ describe("JwtTokenProvider edge cases", () => {
   });
 });
 
-describe("AuthService.changePassword", () => {
+describe("Auth.changePassword", () => {
   it("returns 'changed' on the happy path and the new password authenticates", () => {
     const { service, userStore, authProvider } = makeService();
     const registration = service.register({ email: "a@example.com", name: "A", password: "old-pass" });
@@ -129,7 +129,7 @@ describe("AuthService.changePassword", () => {
   });
 });
 
-describe("AuthService logout / authenticateBearer", () => {
+describe("Auth logout / authenticateBearer", () => {
   it("authenticateBearer returns the identity for a fresh token", () => {
     const { service } = makeService();
     const login = service.register({ email: "c@example.com", name: "C", password: "pw" });
@@ -158,7 +158,7 @@ describe("AuthService logout / authenticateBearer", () => {
   });
 });
 
-describe("AuthService.updateUserRole", () => {
+describe("Auth.updateUserRole", () => {
   it("promotes a user to admin and returns the public projection", () => {
     const { service } = makeService();
     const registration = service.register({ email: "e@example.com", name: "E", password: "pw" });

@@ -77,7 +77,7 @@ export interface PromptCachingOptions {
   readonly cacheTools?: boolean;
 }
 
-export interface PromptCachingService {
+export interface PromptCache {
   applyCaching<T extends JsonObject>(options: T, provider: string, estimatedSystemPromptTokens: number): T;
   extractCacheMetrics(nativeUsage: unknown): PromptCacheMetrics | undefined;
 }
@@ -274,7 +274,7 @@ export class InMemoryCacheMetricsRecorder implements CacheMetricsRecorder {
   }
 }
 
-export class AnthropicPromptCachingService implements PromptCachingService {
+export class AnthropicPromptCache implements PromptCache {
   private readonly options: Required<PromptCachingOptions>;
 
   constructor(options: PromptCachingOptions = {}) {
@@ -331,7 +331,7 @@ export class AnthropicPromptCachingService implements PromptCachingService {
   }
 }
 
-export class NoOpPromptCachingService implements PromptCachingService {
+export class NoOpPromptCache implements PromptCache {
   applyCaching<T extends JsonObject>(options: T): T {
     return options;
   }

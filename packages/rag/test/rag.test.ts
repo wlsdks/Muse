@@ -43,9 +43,9 @@ import {
   DECOMPOSE_DEFAULT_SYSTEM_PROMPT,
   LLM_CONTEXTUAL_COMPRESSOR_DEFAULT_SYSTEM_PROMPT,
   RetrievalEvalRunner,
-  SimpleContextBuilder,
   SimpleReranker,
-  StructuredContextBuilder,
+  simpleContextBuilder,
+  structuredContextBuilder,
   TokenBasedDocumentChunker,
   chunkId,
   emptyRagContext,
@@ -370,8 +370,8 @@ describe("context builders", () => {
       { content: "beta", estimatedTokens: 10, id: "doc-2", metadata: {}, score: 1 }
     ];
 
-    expect(new SimpleContextBuilder().build(documents, 1)).toContain("Source: one");
-    expect(JSON.parse(new StructuredContextBuilder().build(documents, 1)).documents).toHaveLength(1);
+    expect(simpleContextBuilder()(documents, 1)).toContain("Source: one");
+    expect(JSON.parse(structuredContextBuilder()(documents, 1)).documents).toHaveLength(1);
   });
 });
 
@@ -396,7 +396,7 @@ describe("DefaultRagPipeline", () => {
       metadata: { workspaceId: "workspace-2" }
     });
     const pipeline = new DefaultRagPipeline({
-      contextBuilder: new SimpleContextBuilder(),
+      contextBuilder: simpleContextBuilder(),
       queryTransformer: new PassthroughQueryTransformer(),
       reranker: new SimpleReranker(),
       retriever: corpus
@@ -428,7 +428,7 @@ describe("DefaultRagPipeline", () => {
       source: "release-options"
     });
     const pipeline = new DefaultRagPipeline({
-      contextBuilder: new SimpleContextBuilder(),
+      contextBuilder: simpleContextBuilder(),
       queryTransformer: new PassthroughQueryTransformer(),
       reranker: new SimpleReranker(),
       retriever: corpus
@@ -530,7 +530,7 @@ describe("RetrievalEvalRunner", () => {
     });
     const runner = new RetrievalEvalRunner({
       pipeline: new DefaultRagPipeline({
-        contextBuilder: new SimpleContextBuilder(),
+        contextBuilder: simpleContextBuilder(),
         retriever: corpus
       })
     });

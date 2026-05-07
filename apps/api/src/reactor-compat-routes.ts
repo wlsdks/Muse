@@ -6,9 +6,9 @@ import {
   adminScope,
   extractBearerToken,
   type AuthIdentity,
-  type IamTokenExchangeService,
+  type IamTokenExchange,
   type LoginResult,
-  type MuseAuthService,
+  type MuseAuth,
   type UserRole
 } from "@muse/auth";
 import type { McpServer } from "@muse/mcp";
@@ -43,7 +43,7 @@ import type {
   StoredRagDocument,
   StoredRagIngestionCandidate
 } from "@muse/rag";
-import type { RuntimeSetting, RuntimeSettingsService, RuntimeSettingType } from "@muse/runtime-settings";
+import type { RuntimeSetting, RuntimeSettings, RuntimeSettingType } from "@muse/runtime-settings";
 import type {
   AgentRunHistoryStore,
   AgentRunRecord,
@@ -69,8 +69,8 @@ export interface ReactorCompatibilityRouteOptions {
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
   readonly authRateLimiter: AuthRateLimiter;
-  readonly authService?: MuseAuthService;
-  readonly iamTokenExchangeService?: IamTokenExchangeService;
+  readonly authService?: MuseAuth;
+  readonly iamTokenExchangeService?: IamTokenExchange;
   readonly authorizeAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
   readonly authorizeAnyAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
   readonly apiPathRegistry?: () => readonly string[];
@@ -90,7 +90,7 @@ export interface ReactorCompatibilityRouteOptions {
     readonly documentStore?: RagDocumentStore;
     readonly policyStore: RagIngestionPolicyStore;
   };
-  readonly runtimeSettings: RuntimeSettingsService;
+  readonly runtimeSettings: RuntimeSettings;
   readonly scheduler?: SchedulerRouteScheduler;
   readonly slackPersistence?: {
     readonly botStore: SlackBotInstanceStore;
@@ -5403,7 +5403,7 @@ function registerMetricIngestionRoutes(
   });
 }
 
-function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): MuseAuthService | undefined {
+function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): MuseAuth | undefined {
   if (!options.authService) {
     reply.status(404).send({
       code: "AUTH_UNAVAILABLE",

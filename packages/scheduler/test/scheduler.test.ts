@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryMcpServerStore, McpManager, type McpConnection } from "@muse/mcp";
 import {
-  DynamicSchedulerService,
+  DynamicScheduler,
   InMemoryDistributedSchedulerLock,
   InMemoryScheduledJobExecutionStore,
   InMemoryScheduledJobStore,
@@ -14,7 +14,7 @@ import {
   ScheduledJobExecutionRecorder,
   ScheduledJobValidator,
   ScheduledMcpToolInvoker,
-  SchedulerMessagingService,
+  SchedulerMessaging,
   SchedulerValidationError,
   computeNextRunAt,
   createSchedulerTools,
@@ -272,7 +272,7 @@ describe("ScheduledMcpToolInvoker", () => {
   });
 });
 
-describe("DynamicSchedulerService", () => {
+describe("DynamicScheduler", () => {
   it("creates, registers, triggers, records, and notifies successful jobs", async () => {
     const store = new InMemoryScheduledJobStore({ idFactory: () => "job-1" });
     const executions = new InMemoryScheduledJobExecutionStore({ idFactory: () => "exec-1" });
@@ -284,14 +284,14 @@ describe("DynamicSchedulerService", () => {
         return { cancel: () => scheduled.push(`cancel:${job.id}`) };
       }
     };
-    const service = new DynamicSchedulerService({
+    const service = new DynamicScheduler({
       cronScheduler,
       dispatcher: new ScheduledJobDispatcher({
         agentExecutor: { execute: async () => "done" },
         mcpInvoker: createUnusedMcpInvoker()
       }),
       executionStore: executions,
-      messagingService: new SchedulerMessagingService({
+      messagingService: new SchedulerMessaging({
         sendMessage: async (target, text) => {
           messages.push(`${target}:${text}`);
         }
@@ -322,7 +322,7 @@ describe("DynamicSchedulerService", () => {
       },
       tryAcquire: async () => false
     };
-    const service = new DynamicSchedulerService({
+    const service = new DynamicScheduler({
       dispatcher: new ScheduledJobDispatcher({
         agentExecutor: { execute: async () => "done" },
         mcpInvoker: createUnusedMcpInvoker()
@@ -344,7 +344,7 @@ describe("DynamicSchedulerService", () => {
   it("dry run records history but does not mutate last status", async () => {
     const store = new InMemoryScheduledJobStore({ idFactory: () => "job-1" });
     const executions = new InMemoryScheduledJobExecutionStore({ idFactory: () => "exec-1" });
-    const service = new DynamicSchedulerService({
+    const service = new DynamicScheduler({
       dispatcher: new ScheduledJobDispatcher({
         agentExecutor: { execute: async () => "dry" },
         mcpInvoker: createUnusedMcpInvoker()
@@ -370,7 +370,7 @@ describe("scheduler tools", () => {
   it("exposes scheduler create, list, trigger, and dry-run actions as Muse tools", async () => {
     const store = new InMemoryScheduledJobStore({ idFactory: () => "job-1" });
     const executions = new InMemoryScheduledJobExecutionStore({ idFactory: () => "exec-1" });
-    const service = new DynamicSchedulerService({
+    const service = new DynamicScheduler({
       dispatcher: new ScheduledJobDispatcher({
         agentExecutor: { execute: async (job) => `ran:${job.name}` },
         mcpInvoker: createUnusedMcpInvoker()

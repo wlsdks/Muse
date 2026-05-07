@@ -1,6 +1,6 @@
 import {
   SchedulerValidationError,
-  type DynamicSchedulerService,
+  type DynamicScheduler,
   type ScheduledJob,
   type ScheduledJobExecution,
   type ScheduledJobExecutionStore,
@@ -12,7 +12,7 @@ import type { FastifyInstance } from "fastify";
 
 export interface SchedulerRouteScheduler {
   readonly executionStore?: ScheduledJobExecutionStore;
-  readonly service?: DynamicSchedulerService;
+  readonly service?: DynamicScheduler;
   readonly store: ScheduledJobStore;
 }
 
@@ -243,7 +243,7 @@ function sendSchedulerUnavailable(reply: { status(statusCode: number): { send(pa
 }
 
 function sendSchedulerServiceUnavailable(reply: { status(statusCode: number): { send(payload: ApiError): void } }) {
-  return reply.status(503).send(errorResponse("DynamicSchedulerService not configured"));
+  return reply.status(503).send(errorResponse("DynamicScheduler not configured"));
 }
 
 function sendSchedulerJobNotFound(

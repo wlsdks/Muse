@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  AnthropicPromptCachingService,
+  AnthropicPromptCache,
   InMemoryCacheMetricsRecorder,
   InMemoryCacheStatsStore,
   InMemoryResponseCache,
-  NoOpPromptCachingService,
+  NoOpPromptCache,
   NoOpResponseCache,
   anonymousUserId,
   buildCacheKey,
@@ -119,7 +119,7 @@ describe("cache metrics", () => {
 
 describe("prompt caching", () => {
   it("applies Anthropic ephemeral prompt cache options over the token threshold", () => {
-    const service = new AnthropicPromptCachingService({ minCacheableTokens: 100 });
+    const service = new AnthropicPromptCache({ minCacheableTokens: 100 });
 
     expect(service.applyCaching({ temperature: 0 }, "anthropic", 100)).toMatchObject({
       promptCache: {
@@ -132,7 +132,7 @@ describe("prompt caching", () => {
   });
 
   it("extracts cache metrics from native usage objects", () => {
-    const service = new AnthropicPromptCachingService();
+    const service = new AnthropicPromptCache();
 
     expect(
       service.extractCacheMetrics({
@@ -145,7 +145,7 @@ describe("prompt caching", () => {
       cacheReadInputTokens: 20,
       regularInputTokens: 30
     });
-    expect(new NoOpPromptCachingService().extractCacheMetrics({ input_tokens: 1 })).toBeUndefined();
+    expect(new NoOpPromptCache().extractCacheMetrics({ input_tokens: 1 })).toBeUndefined();
   });
 });
 

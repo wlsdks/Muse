@@ -296,6 +296,31 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- TypeScript-idiomatic name cleanup (iteration 53). The audit flagged 8
+  `*Service`-suffixed classes and 2 `*Builder` classes as Java-flavoured
+  carryovers. All renamed via word-bounded perl-pi across every .ts/.tsx/
+  .mjs/.js source + test file:
+  * `AuthService` → `Auth`, `AuthServiceOptions` → `AuthOptions`,
+    `AsyncAuthService` → `AsyncAuth`, `AsyncAuthServiceOptions` →
+    `AsyncAuthOptions`, `MuseAuthService` (interface) → `MuseAuth`,
+    `IamTokenExchangeService` → `IamTokenExchange`,
+    `IamTokenExchangeServiceOptions` → `IamTokenExchangeOptions`.
+  * `PromptCachingService` (interface) → `PromptCache`,
+    `AnthropicPromptCachingService` → `AnthropicPromptCache`,
+    `NoOpPromptCachingService` → `NoOpPromptCache`.
+  * `SchedulerMessagingService` → `SchedulerMessaging`,
+    `DynamicSchedulerService` → `DynamicScheduler`,
+    `DynamicSchedulerServiceOptions` → `DynamicSchedulerOptions`,
+    `RuntimeSettingsService` → `RuntimeSettings`,
+    `RuntimeSettingsServiceOptions` → `RuntimeSettingsOptions`.
+  * `interface ContextBuilder { build(...) }` collapsed to a function
+    type `type ContextBuilder = (documents, maxTokens) => string`. The
+    two impls converted to factory functions: `simpleContextBuilder()`
+    and `structuredContextBuilder()`. Call sites became direct invocations
+    (`this.contextBuilder(compressed, max)` instead of
+    `this.contextBuilder.build(compressed, max)`). 15 files touched, all
+    test counts unchanged. pnpm check green; broad smoke 49/49; live
+    smoke 8/8; CLI smoke 9/9; route parity 0 missing.
 - CLI live smoke harness institutionalised (iteration 52, weakness #5
   from final audit). The CLI's program.test.ts has 13 tests but every
   IO point (fetch, file system, prompts, SSE parser) is mocked — a

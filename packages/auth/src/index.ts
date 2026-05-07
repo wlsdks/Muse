@@ -116,7 +116,7 @@ export interface IamTokenVerifier {
   verify(token: string): Awaitable<IamTokenClaims | undefined>;
 }
 
-export interface IamTokenExchangeServiceOptions {
+export interface IamTokenExchangeOptions {
   readonly autoCreateUser?: boolean;
   readonly defaultRole?: UserRole;
   readonly idFactory?: () => string;
@@ -131,21 +131,21 @@ export type PasswordChangeResult =
   | "unsupported"
   | "user_not_found";
 
-export interface AuthServiceOptions {
+export interface AuthOptions {
   readonly authProvider: AuthProvider;
   readonly jwt: JwtTokenProvider;
   readonly revocationStore?: TokenRevocationStore;
   readonly userStore?: UserStore;
 }
 
-export interface AsyncAuthServiceOptions {
+export interface AsyncAuthOptions {
   readonly authProvider: AsyncAuthProvider;
   readonly jwt: JwtTokenProvider;
   readonly revocationStore?: AsyncTokenRevocationStore;
   readonly userStore?: AsyncUserStore;
 }
 
-export interface MuseAuthService {
+export interface MuseAuth {
   login(email: string, password: string): Awaitable<LoginResult | undefined>;
   register(input: { readonly email: string; readonly name: string; readonly password: string }): Awaitable<LoginResult>;
   changePassword(input: {
@@ -551,11 +551,11 @@ export class KyselyTokenRevocationStore implements AsyncTokenRevocationStore {
   }
 }
 
-export class AuthService implements MuseAuthService {
+export class Auth implements MuseAuth {
   private readonly revocationStore?: TokenRevocationStore;
   private readonly userStore?: UserStore;
 
-  constructor(private readonly options: AuthServiceOptions) {
+  constructor(private readonly options: AuthOptions) {
     this.revocationStore = options.revocationStore;
     this.userStore = options.userStore;
   }
@@ -679,12 +679,12 @@ export class AuthService implements MuseAuthService {
   }
 }
 
-export class IamTokenExchangeService {
+export class IamTokenExchange {
   private readonly autoCreateUser: boolean;
   private readonly defaultRole: UserRole;
   private readonly idFactory: () => string;
 
-  constructor(private readonly options: IamTokenExchangeServiceOptions) {
+  constructor(private readonly options: IamTokenExchangeOptions) {
     this.autoCreateUser = options.autoCreateUser ?? true;
     this.defaultRole = options.defaultRole ?? "user";
     this.idFactory = options.idFactory ?? (() => createRunId("user"));
@@ -735,11 +735,11 @@ export class IamTokenExchangeService {
   }
 }
 
-export class AsyncAuthService implements MuseAuthService {
+export class AsyncAuth implements MuseAuth {
   private readonly revocationStore?: AsyncTokenRevocationStore;
   private readonly userStore?: AsyncUserStore;
 
-  constructor(private readonly options: AsyncAuthServiceOptions) {
+  constructor(private readonly options: AsyncAuthOptions) {
     this.revocationStore = options.revocationStore;
     this.userStore = options.userStore;
   }

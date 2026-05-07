@@ -9,11 +9,11 @@ import {
 } from "kysely";
 import {
   AuthRateLimiter,
-  AuthService,
+  Auth,
   DefaultAuthProvider,
   InMemoryTokenRevocationStore,
   InMemoryUserStore,
-  IamTokenExchangeService,
+  IamTokenExchange,
   JwtTokenProvider,
   createAuthTokenRevocationInsert,
   createUserInsert,
@@ -104,7 +104,7 @@ describe("jwt tokens and revocation", () => {
     const now = new Date();
     const token = jwt.createToken(user, now);
     const revocations = new InMemoryTokenRevocationStore(() => new Date(now.getTime() + 1_000));
-    const service = new AuthService({
+    const service = new Auth({
       authProvider: { authenticate: () => user, getUserById: () => user },
       jwt,
       revocationStore: revocations
@@ -123,11 +123,11 @@ describe("jwt tokens and revocation", () => {
   });
 });
 
-describe("AuthService registration and login", () => {
+describe("Auth registration and login", () => {
   it("registers first user as admin and returns login tokens", () => {
     const store = new InMemoryUserStore();
     const provider = new DefaultAuthProvider(store);
-    const service = new AuthService({
+    const service = new Auth({
       authProvider: provider,
       jwt: new JwtTokenProvider({ jwtSecret }),
       userStore: store
@@ -158,11 +158,11 @@ describe("AuthService registration and login", () => {
   });
 });
 
-describe("IamTokenExchangeService", () => {
+describe("IamTokenExchange", () => {
   it("exchanges verified IAM claims into Muse JWTs and auto-creates users", async () => {
     const store = new InMemoryUserStore();
     const jwt = new JwtTokenProvider({ jwtSecret });
-    const service = new IamTokenExchangeService({
+    const service = new IamTokenExchange({
       idFactory: () => "iam-user-1",
       jwt,
       userStore: store,
@@ -190,7 +190,7 @@ describe("IamTokenExchangeService", () => {
 
   it("rejects invalid IAM tokens and respects disabled auto-create", async () => {
     const store = new InMemoryUserStore();
-    const service = new IamTokenExchangeService({
+    const service = new IamTokenExchange({
       autoCreateUser: false,
       jwt: new JwtTokenProvider({ jwtSecret }),
       userStore: store,

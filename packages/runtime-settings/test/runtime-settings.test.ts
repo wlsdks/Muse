@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   InMemoryRuntimeSettingsStore,
-  RuntimeSettingsService,
+  RuntimeSettings,
   type RuntimeSetting
 } from "../src/index.js";
 import {
@@ -19,10 +19,10 @@ import {
   mapRuntimeSettingRow
 } from "../src/kysely-store.js";
 
-describe("RuntimeSettingsService", () => {
+describe("RuntimeSettings", () => {
   it("returns typed values and falls back when settings are missing or invalid", async () => {
     const store = new InMemoryRuntimeSettingsStore();
-    const service = new RuntimeSettingsService(store);
+    const service = new RuntimeSettings(store);
 
     await service.set({ key: "feature.enabled", type: "boolean", value: "true" });
     await service.set({ key: "limits.maxTools", type: "number", value: "12" });
@@ -41,7 +41,7 @@ describe("RuntimeSettingsService", () => {
 
   it("caches negative lookups until refresh or set invalidates the key", async () => {
     const store = new InMemoryRuntimeSettingsStore();
-    const service = new RuntimeSettingsService(store, { cacheTtlMs: 60_000 });
+    const service = new RuntimeSettings(store, { cacheTtlMs: 60_000 });
 
     await expect(service.getString("feature.flag", "off")).resolves.toBe("off");
     store.upsert({ key: "feature.flag", value: "on" });

@@ -31,7 +31,7 @@ export interface RuntimeSettingsStore {
   delete(key: string): Awaitable<void>;
 }
 
-export interface RuntimeSettingsServiceOptions {
+export interface RuntimeSettingsOptions {
   readonly cacheTtlMs?: number;
   readonly now?: () => Date;
 }
@@ -82,14 +82,14 @@ export class InMemoryRuntimeSettingsStore implements RuntimeSettingsStore {
   }
 }
 
-export class RuntimeSettingsService {
+export class RuntimeSettings {
   private readonly cache = new Map<string, CachedSetting>();
   private readonly cacheTtlMs: number;
   private readonly now: () => Date;
 
   constructor(
     private readonly store: RuntimeSettingsStore,
-    options: RuntimeSettingsServiceOptions = {}
+    options: RuntimeSettingsOptions = {}
   ) {
     this.cacheTtlMs = options.cacheTtlMs ?? 30_000;
     this.now = options.now ?? (() => new Date());

@@ -18,12 +18,12 @@ import {
 import {
   AuthRateLimiter,
   extractBearerToken,
-  type IamTokenExchangeService,
+  type IamTokenExchange,
   isAnyAdmin,
   isDeveloperAdmin,
   type AuthIdentity,
   type LoginResult,
-  type MuseAuthService
+  type MuseAuth
 } from "@muse/auth";
 import type {
   ChannelFaqRegistrationStore,
@@ -40,7 +40,7 @@ import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } f
 import type { RagDocumentStore, RagIngestionCandidateStore, RagIngestionPolicyStore } from "@muse/rag";
 import {
   InMemoryRuntimeSettingsStore,
-  RuntimeSettingsService,
+  RuntimeSettings,
   type RuntimeSettingType
 } from "@muse/runtime-settings";
 import type { AgentRunHistoryStore, AgentRunRecord, PendingApprovalStore, SessionTagStore } from "@muse/runtime-state";
@@ -61,8 +61,8 @@ export interface ServerOptions {
   readonly agentEvalStore?: AgentEvalStore;
   readonly admin?: AdminRouteState;
   readonly agentSpecRegistry?: AgentSpecRegistry;
-  readonly authService?: MuseAuthService;
-  readonly iamTokenExchangeService?: IamTokenExchangeService;
+  readonly authService?: MuseAuth;
+  readonly iamTokenExchangeService?: IamTokenExchange;
   readonly authRateLimiter?: AuthRateLimiter;
   readonly followupSuggestionStore?: FollowupSuggestionStore;
   readonly latencyQuery?: LatencyQuery;
@@ -81,7 +81,7 @@ export interface ServerOptions {
     readonly documentStore?: RagDocumentStore;
     readonly policyStore: RagIngestionPolicyStore;
   };
-  readonly runtimeSettings?: RuntimeSettingsService;
+  readonly runtimeSettings?: RuntimeSettings;
   readonly scheduler?: SchedulerRouteScheduler;
   readonly slackPersistence?: {
     readonly botStore: SlackBotInstanceStore;
@@ -127,7 +127,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const agentSpecRegistry = options.agentSpecRegistry ?? new InMemoryAgentSpecRegistry();
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
   const runtimeSettings =
-    options.runtimeSettings ?? new RuntimeSettingsService(new InMemoryRuntimeSettingsStore());
+    options.runtimeSettings ?? new RuntimeSettings(new InMemoryRuntimeSettingsStore());
   const authService = options.authService;
   const authRateLimiter = options.authRateLimiter ?? new AuthRateLimiter();
   const server = Fastify({
