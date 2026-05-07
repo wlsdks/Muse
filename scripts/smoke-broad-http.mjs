@@ -261,6 +261,17 @@ try {
     assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
+  await record("GET /api/admin/jarvis/snapshot returns aggregated observability dashboard", async () => {
+    const response = await fetch(`${baseUrl}/api/admin/jarvis/snapshot`);
+    assert(response.ok, `expected 200, got ${response.status}`);
+    const snapshot = await response.json();
+    assert(typeof snapshot.generatedAt === "string", "expected generatedAt timestamp");
+    assert(typeof snapshot.windowStart === "string", "expected windowStart timestamp");
+    assert(typeof snapshot.windowEnd === "string", "expected windowEnd timestamp");
+    assert(snapshot.latency && typeof snapshot.latency.count === "number", "expected latency block");
+    assert(snapshot.tokenCost && Array.isArray(snapshot.tokenCost.daily), "expected tokenCost block");
+  });
+
   await record("Response completeness evaluator scores sampled responses 0..100", async () => {
     const { createResponseCompletenessEvaluator } = await import(`${rootDir}/packages/eval/dist/index.js`);
     const provider = {

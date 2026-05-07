@@ -25,6 +25,7 @@ import type { TaskMemoryMaintenance, UserMemory, UserMemoryStore } from "@muse/m
 import type { ModelProvider } from "@muse/model";
 import type {
   FollowupSuggestionStore,
+  JarvisObservabilitySnapshot,
   LatencyQuery,
   LatencyPoint,
   LatencySummary,
@@ -108,6 +109,7 @@ export interface ReactorCompatibilityRouteOptions {
     readonly description?: string;
   };
   readonly agentCardToolProvider?: () => Awaitable<readonly AgentCardToolInput[]>;
+  readonly jarvisObservabilitySnapshot?: () => Promise<JarvisObservabilitySnapshot>;
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -3360,6 +3362,20 @@ function registerAdminAnalyticsCompatibilityRoutes(
 
     const hours = Math.min(168, Math.max(1, readQueryInteger(request, "hours", 24)));
     return inputGuardStatsResponse(options, hours);
+  });
+
+  server.get("/api/admin/jarvis/snapshot", async (request, reply) => {
+    if (!options.authorizeAdmin(request, reply)) {
+      return reply;
+    }
+    if (!options.jarvisObservabilitySnapshot) {
+      return reply.status(503).send({
+        code: "JARVIS_SNAPSHOT_UNAVAILABLE",
+        message: "JARVIS observability snapshot provider is not configured"
+      });
+    }
+    const snapshot = await options.jarvisObservabilitySnapshot();
+    return snapshot as unknown as JsonObject;
   });
 
   server.get("/api/admin/metrics/latency/summary", async (request, reply) => {

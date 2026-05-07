@@ -6,6 +6,7 @@ import {
   createTraceEventInsert,
   InMemoryAgentMetrics,
   CostAnomalyDetector,
+  createJarvisObservabilitySnapshotProvider,
   InMemoryFollowupSuggestionStore,
   InMemoryLatencyQuery,
   MonthlyBudgetTracker,
@@ -972,5 +973,157 @@ describe("MonthlyBudgetTracker", () => {
     expect(() => new MonthlyBudgetTracker({ warningPercent: 0 })).toThrow(/warningPercent/u);
     expect(() => new MonthlyBudgetTracker({ warningPercent: 110 })).toThrow(/warningPercent/u);
     expect(() => new MonthlyBudgetTracker({ maxTenants: 0 })).toThrow(/maxTenants/u);
+  });
+});
+
+describe("createJarvisObservabilitySnapshotProvider", () => {
+  it("returns an empty snapshot when no observability components are wired", async () => {
+    const provider = createJarvisObservabilitySnapshotProvider({
+      now: () => new Date("2026-05-15T00:00:00.000Z"),
+      windowDays: 1
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.generatedAt.toISOString()).toBe("2026-05-15T00:00:00.000Z");
+    expect(snapshot.windowStart.toISOString()).toBe("2026-05-14T00:00:00.000Z");
+    expect(snapshot.latency).toBeUndefined();
+    expect(snapshot.tokenCost).toBeUndefined();
+    expect(snapshot.slo).toBeUndefined();
+    expect(snapshot.drift).toBeUndefined();
+    expect(snapshot.cost).toBeUndefined();
+    expect(snapshot.budgets).toBeUndefined();
+    expect(snapshot.followups).toBeUndefined();
+  });
+
+  it("includes latency summary when latencyQuery is configured", async () => {
+    const sink = new InMemoryTraceEventSink();
+    await sink.record({
+      attributes: {},
+      endedAt: new Date("2026-05-15T00:00:01.000Z"),
+      name: "muse.agent.run",
+      runId: "run-1",
+      spanId: "span-1",
+      stage: "agent",
+      startedAt: new Date("2026-05-15T00:00:00.000Z")
+    });
+    const latencyQuery = new InMemoryLatencyQuery(sink);
+    const provider = createJarvisObservabilitySnapshotProvider({
+      latencyQuery,
+      now: () => new Date("2026-05-16T00:00:00.000Z")
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.latency?.count).toBe(1);
+    expect(snapshot.latency?.avgMs).toBe(1_000);
+  });
+
+  it("aggregates token cost daily and topExpensive into one snapshot", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    await sink.record({
+      completionTokens: 100,
+      estimatedCostUsd: 0.5,
+      model: "test-model",
+      promptTokens: 200,
+      provider: "test",
+      recordedAt: new Date("2026-05-15T00:00:00.000Z"),
+      runId: "run-1",
+      stepType: "act",
+      totalTokens: 300
+    });
+    const tokenCostQuery = new InMemoryTokenCostQuery(sink);
+    const provider = createJarvisObservabilitySnapshotProvider({
+      now: () => new Date("2026-05-16T00:00:00.000Z"),
+      tokenCostQuery,
+      windowDays: 7
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.tokenCost?.daily).toHaveLength(1);
+    expect(snapshot.tokenCost?.topExpensive[0]?.runId).toBe("run-1");
+  });
+
+  it("includes SLO snapshot and current violations", async () => {
+    const sloEvaluator = new SloAlertEvaluator({
+      cooldownSeconds: 60,
+      errorRateThreshold: 0.5,
+      latencyThresholdMs: 1_000,
+      minSamples: 3,
+      now: () => 1_000_000,
+      windowSeconds: 600
+    });
+    sloEvaluator.recordLatency(5_000);
+    sloEvaluator.recordLatency(5_000);
+    sloEvaluator.recordLatency(5_000);
+    const provider = createJarvisObservabilitySnapshotProvider({
+      now: () => new Date("2026-05-15T00:00:00.000Z"),
+      sloEvaluator
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.slo?.latencyP95Ms).toBe(5_000);
+    expect(snapshot.slo?.violations).toHaveLength(1);
+  });
+
+  it("includes drift stats and cost baseline when detectors are configured", async () => {
+    const driftDetector = new PromptDriftDetector({ minSamples: 4, windowSize: 50 });
+    [10, 20, 30, 40].forEach((value) => driftDetector.recordInput(value));
+    const costAnomalyDetector = new CostAnomalyDetector({ minSamples: 3 });
+    [0.01, 0.02, 0.03].forEach((cost) => costAnomalyDetector.recordCost(cost));
+    const provider = createJarvisObservabilitySnapshotProvider({
+      costAnomalyDetector,
+      driftDetector,
+      now: () => new Date("2026-05-15T00:00:00.000Z")
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.drift?.inputMean).toBe(25);
+    expect(snapshot.cost?.baselineUsd).toBeCloseTo(0.02, 5);
+  });
+
+  it("emits per-tenant budget snapshots when budgetTenantIds is provided", async () => {
+    const budgetTracker = new MonthlyBudgetTracker({
+      monthlyLimitUsd: 10,
+      now: () => new Date("2026-05-15T00:00:00.000Z"),
+      warningPercent: 50
+    });
+    budgetTracker.recordCost("alpha", 6);
+    budgetTracker.recordCost("beta", 1);
+    const provider = createJarvisObservabilitySnapshotProvider({
+      budgetTenantIds: () => ["alpha", "beta"],
+      budgetTracker,
+      now: () => new Date("2026-05-15T00:00:00.000Z")
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.budgets).toHaveLength(2);
+    expect(snapshot.budgets?.[0]).toMatchObject({ status: "warning", tenantId: "alpha" });
+    expect(snapshot.budgets?.[1]).toMatchObject({ status: "ok", tenantId: "beta" });
+  });
+
+  it("forwards followup suggestion stats when the store is configured", async () => {
+    const store = new InMemoryFollowupSuggestionStore();
+    store.recordImpression({
+      category: "jira",
+      channelId: "C1",
+      suggestionId: "jira_123",
+      userId: "U1"
+    });
+    const provider = createJarvisObservabilitySnapshotProvider({
+      followupSuggestionStore: store,
+      now: () => new Date()
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.followups?.totalImpressions).toBe(1);
+  });
+
+  it("isolates failures so one broken component does not break the whole snapshot", async () => {
+    const errors: unknown[] = [];
+    const provider = createJarvisObservabilitySnapshotProvider({
+      latencyQuery: {
+        summary: async () => {
+          throw new Error("latency backend down");
+        },
+        timeSeries: async () => []
+      },
+      logger: (_message, error) => errors.push(error),
+      now: () => new Date()
+    });
+    const snapshot = await provider.snapshot();
+    expect(snapshot.latency).toBeUndefined();
+    expect(errors).toHaveLength(1);
   });
 });

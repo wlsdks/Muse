@@ -34,7 +34,7 @@ import type {
 import type { AgentEvalStore } from "@muse/eval";
 import type { TaskMemoryMaintenance, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
-import type { FollowupSuggestionStore, LatencyQuery, TokenCostQuery } from "@muse/observability";
+import type { FollowupSuggestionStore, JarvisObservabilitySnapshot, LatencyQuery, TokenCostQuery } from "@muse/observability";
 import type { GuardRuleStore, ToolPolicyStore } from "@muse/policy";
 import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } from "@muse/promptlab";
 import type { RagDocumentStore, RagIngestionCandidateStore, RagIngestionPolicyStore } from "@muse/rag";
@@ -100,6 +100,7 @@ export interface ServerOptions {
     readonly description?: string;
   };
   readonly agentCardToolProvider?: () => Promise<readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[]> | readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[];
+  readonly jarvisObservabilitySnapshot?: () => Promise<JarvisObservabilitySnapshot>;
 }
 
 export interface CorsOptions {
@@ -313,6 +314,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     tokenCostQuery: options.tokenCostQuery,
     agentCardIdentity: options.agentCardIdentity,
     agentCardToolProvider: options.agentCardToolProvider,
+    jarvisObservabilitySnapshot: options.jarvisObservabilitySnapshot,
     historyStore: options.historyStore,
     mcp: options.mcp,
     modelProvider: options.modelProvider,

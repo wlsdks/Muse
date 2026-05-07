@@ -121,6 +121,8 @@ import {
   KyselyTokenUsageSink,
   KyselyTraceEventSink,
   PersistedMuseTracer,
+  createJarvisObservabilitySnapshotProvider,
+  type JarvisObservabilitySnapshot,
   type LatencyQuery,
   type MuseTracer,
   type QueryableTraceEventSink,
@@ -673,6 +675,12 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
         inputSchema: tool.definition.inputSchema as Record<string, unknown> | null,
         name: tool.definition.name
       })),
+    jarvisObservabilitySnapshot: () =>
+      createJarvisObservabilitySnapshotProvider({
+        followupSuggestionStore: assembly.observability.followupSuggestionStore,
+        latencyQuery: assembly.observability.latencyQuery,
+        tokenCostQuery: assembly.observability.tokenCostQuery
+      }).snapshot(),
     historyStore: assembly.historyStore,
     mcp: {
       manager: assembly.mcp.manager,

@@ -296,6 +296,14 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- JARVIS observability snapshot endpoint now exists. `@muse/observability` adds
+  `createJarvisObservabilitySnapshotProvider` that aggregates latency summary, token-cost daily +
+  topExpensive, SLO snapshot + violations, drift stats, cost-anomaly baseline, monthly budget
+  snapshots, and follow-up suggestion stats into a single `JarvisObservabilitySnapshot`. Each
+  component is optional and individually fail-soft (one broken query never breaks the snapshot).
+  Wired through autoconfigure → `/api/admin/jarvis/snapshot` returns the live aggregate; returns 503
+  when no provider is configured. Closes the JARVIS stop criterion "observability dashboards documented
+  and exercised" without requiring an external Grafana surface.
 - agent-core monolith split continued (iteration 17). Guard factories extracted to
   `packages/agent-core/src/guards.ts` (`createInjectionInputGuard`, `createPiiInputGuard`,
   `createTopicDriftInputGuard`, `createLlmClassificationInputGuard`, `createPiiMaskingOutputGuard`,
