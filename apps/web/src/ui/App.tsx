@@ -43,6 +43,36 @@ interface AdminSummary {
   readonly recentRuns?: readonly SessionSummary[];
 }
 
+interface ToolCatalogEntry {
+  readonly name: string;
+  readonly description: string;
+  readonly risk: "read" | "write" | "execute";
+  readonly keywords?: readonly string[];
+  readonly scopes?: readonly string[];
+}
+
+interface ToolCatalogResponse {
+  readonly tools: readonly ToolCatalogEntry[];
+  readonly total: number;
+}
+
+interface OrchestrationEntry {
+  readonly runId: string;
+  readonly mode: "sequential" | "parallel";
+  readonly status: "completed" | "failed";
+  readonly workerCount: number;
+  readonly completedCount: number;
+  readonly failedCount: number;
+  readonly durationMs: number;
+  readonly startedAt: string;
+  readonly conversationLength?: number;
+}
+
+interface OrchestrationListResponse {
+  readonly entries: readonly OrchestrationEntry[];
+  readonly total: number;
+}
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -67,6 +97,14 @@ export function MuseConsole() {
     queryFn: () => client.get<readonly ApprovalSummary[]>("/api/approvals/pending"),
     queryKey: ["approvals", apiUrl, token]
   });
+  const tools = useQuery({
+    queryFn: () => client.get<ToolCatalogResponse>("/api/tools"),
+    queryKey: ["tools", apiUrl, token]
+  });
+  const orchestrations = useQuery({
+    queryFn: () => client.get<OrchestrationListResponse>("/api/multi-agent/orchestrations?limit=10"),
+    queryKey: ["orchestrations", apiUrl, token]
+  });
 
   return (
     <main className="app-shell">
@@ -82,6 +120,8 @@ export function MuseConsole() {
         <StatusMetric label="API" value={health.data?.status ?? statusLabel(health.status)} />
         <StatusMetric label="Service" value={health.data?.service ?? "muse-api"} />
         <StatusMetric label="Approvals" value={String(admin.data?.pendingApprovals ?? approvals.data?.length ?? 0)} />
+        <StatusMetric label="Tools" value={String(tools.data?.total ?? 0)} />
+        <StatusMetric label="Orchestrations" value={String(orchestrations.data?.total ?? 0)} />
       </section>
 
       <section className="workspace">
@@ -89,6 +129,11 @@ export function MuseConsole() {
         <aside className="side-panel">
           <ApprovalsPanel approvals={approvals.data ?? []} loading={approvals.isLoading} />
           <RunsPanel runs={admin.data?.recentRuns ?? []} loading={admin.isLoading} />
+          <ToolCatalogPanel tools={tools.data?.tools ?? []} loading={tools.isLoading} />
+          <OrchestrationsPanel
+            entries={orchestrations.data?.entries ?? []}
+            loading={orchestrations.isLoading}
+          />
         </aside>
       </section>
     </main>
@@ -208,6 +253,70 @@ function RunsPanel(props: { readonly runs: readonly SessionSummary[]; readonly l
         ))}
       </ul>
     </section>
+  );
+}
+
+function ToolCatalogPanel(props: { readonly tools: readonly ToolCatalogEntry[]; readonly loading: boolean }) {
+  const grouped = useMemo(() => {
+    const buckets: Record<"read" | "write" | "execute", number> = { execute: 0, read: 0, write: 0 };
+    for (const tool of props.tools) {
+      buckets[tool.risk] += 1;
+    }
+    return buckets;
+  }, [props.tools]);
+
+  return (
+    <section className="tool-surface compact" aria-label="Tool catalog">
+      <div className="surface-heading">
+        <h2>Tools</h2>
+        <span>{props.loading ? "Loading" : props.tools.length}</span>
+      </div>
+      <div className="metric-row">
+        <RiskPill label="read" value={grouped.read} />
+        <RiskPill label="write" value={grouped.write} />
+        <RiskPill label="execute" value={grouped.execute} />
+      </div>
+      <ul className="record-list">
+        {props.tools.slice(0, 8).map((tool) => (
+          <li key={tool.name}>
+            <strong>{tool.name}</strong>
+            <span className={`risk-${tool.risk}`}>{tool.risk}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function OrchestrationsPanel(props: { readonly entries: readonly OrchestrationEntry[]; readonly loading: boolean }) {
+  return (
+    <section className="tool-surface compact" aria-label="Orchestration history">
+      <div className="surface-heading">
+        <h2>Orchestrations</h2>
+        <span>{props.loading ? "Loading" : props.entries.length}</span>
+      </div>
+      <ul className="record-list">
+        {props.entries.map((entry) => (
+          <li key={entry.runId}>
+            <strong>
+              {entry.mode} · {entry.completedCount}/{entry.workerCount}
+            </strong>
+            <span className={`status-${entry.status}`}>
+              {entry.status} · {Math.round(entry.durationMs)}ms
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function RiskPill({ label, value }: { readonly label: string; readonly value: number }) {
+  return (
+    <span className={`risk-pill risk-${label}`}>
+      <em>{label}</em>
+      <strong>{value}</strong>
+    </span>
   );
 }
 

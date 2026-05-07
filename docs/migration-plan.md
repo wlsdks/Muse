@@ -296,6 +296,21 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- web UI gains tool catalog + orchestration history panels (iteration 55,
+  weakness #4 from final audit). `apps/web` was previously a 264-line
+  shell with chat + approvals + recent runs only. Two new
+  React-Query-driven panels surface backend endpoints we shipped in
+  earlier iterations:
+  * `ToolCatalogPanel` — `GET /api/tools`. Renders read/write/execute
+    risk tally pills, then the first 8 tools with their name + risk
+    badge. Drives a "Tools" status-strip metric showing the total.
+  * `OrchestrationsPanel` — `GET /api/multi-agent/orchestrations?limit=10`.
+    Renders mode (sequential/parallel), completed/total worker count,
+    duration ms, and status badge. Drives an "Orchestrations" status-
+    strip metric.
+  Tests: 1 → 3 (renders shell, renders the new panels, status-strip
+  metric labels present). Vite build clean (0 warnings). pnpm check
+  green; broad smoke 49/49; route parity 0 missing.
 - new opt-in `muse.fetch` loopback MCP server (iteration 54). The other
   eight loopback servers are pure-compute (time/text/math/json/url/
   crypto/diff/regex) so default-on is safe. `muse.fetch` adds bounded
