@@ -50,6 +50,9 @@ importers:
       '@muse/model':
         specifier: workspace:*
         version: link:../../packages/model
+      '@muse/multi-agent':
+        specifier: workspace:*
+        version: link:../../packages/multi-agent
       '@muse/observability':
         specifier: workspace:*
         version: link:../../packages/observability
