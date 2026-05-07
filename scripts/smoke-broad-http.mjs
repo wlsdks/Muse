@@ -771,6 +771,24 @@ try {
     assert(Array.isArray(body.conversation) && body.conversation.length === 2, "expected 2 conversation entries");
   });
 
+  await record("POST /api/multi-agent/orchestrate race mode returns one winning result", async () => {
+    const response = await fetch(`${baseUrl}/api/multi-agent/orchestrate`, {
+      body: JSON.stringify({
+        message: "smoke broad race orchestrate",
+        mode: "race",
+        workerIds: ["smoke-research", "smoke-coder"]
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST"
+    });
+    assert(response.status === 200, `expected 200, got ${response.status}`);
+    const body = await response.json();
+    assert(body.mode === "race", `expected race mode, got ${body.mode}`);
+    assert(Array.isArray(body.results) && body.results.length === 1, `expected 1 result, got ${body.results?.length}`);
+    assert(body.results[0].status === "completed", "expected the winner to be completed");
+    assert(["smoke-research", "smoke-coder"].includes(body.results[0].workerId), "expected winner to be one of the configured workers");
+  });
+
   await record("POST /api/multi-agent/orchestrate/stream emits SSE agent_message + done events", async () => {
     const response = await fetch(`${baseUrl}/api/multi-agent/orchestrate/stream`, {
       body: JSON.stringify({
@@ -854,9 +872,10 @@ try {
     assert(typeof stats.failedRuns === "number" && stats.failedRuns >= 0, "expected non-negative failedRuns");
     assert(stats.completedRuns + stats.failedRuns === stats.totalRuns, "expected completed + failed to equal totalRuns");
     assert(stats.byMode && typeof stats.byMode.sequential.runs === "number"
-      && typeof stats.byMode.parallel.runs === "number",
-      `expected byMode { sequential, parallel }, got ${JSON.stringify(stats.byMode)}`);
-    assert(stats.byMode.sequential.runs + stats.byMode.parallel.runs === stats.totalRuns,
+      && typeof stats.byMode.parallel.runs === "number"
+      && typeof stats.byMode.race.runs === "number",
+      `expected byMode { sequential, parallel, race }, got ${JSON.stringify(stats.byMode)}`);
+    assert(stats.byMode.sequential.runs + stats.byMode.parallel.runs + stats.byMode.race.runs === stats.totalRuns,
       "expected mode runs to add up to totalRuns");
     assert(typeof stats.avgDurationMs === "number" && stats.avgDurationMs >= 0, "expected non-negative avgDurationMs");
     assert(typeof stats.p95DurationMs === "number" && stats.p95DurationMs >= 0, "expected non-negative p95DurationMs");

@@ -90,6 +90,7 @@ route state and runtime services onto Kysely-backed stores.
 
 ## Recent Completion Notes
 
+- Multi-agent orchestrator gained a `race` mode that resolves with the first successfully-completing worker (other workers continue in the background but their outcomes are dropped). The HTTP route, history stats `byMode`, and `pnpm smoke:broad` all extend cleanly; `NoAgentWorkerError` still fires when every worker fails.
 - DiagnosticModelProvider now also emits a single-step plan calling `time_now` when that tool appears in `[Available Tools]`, so `pnpm smoke:broad` exercises the full plan-execute streaming sequence end-to-end (`plan_generated` → `plan_step_executing` → `plan_step_result` → `synthesis_started` → `done`) without a real LLM.
 - DiagnosticModelProvider now recognizes the planning prompt shape and returns `[]`, which makes plan-execute fall back to the direct-answer synthesis path. `pnpm smoke:broad` gained a /chat/stream check that asserts `plan_generated` + `synthesis_started` SSE events fire end-to-end without needing a real LLM, closing the verification gap from iteration #64.
 - `createLoopbackMcpToolsFromEnv` lets operators plug the JARVIS ambient toolset purely via env: `MUSE_LOOPBACK_MCP_ENABLED=true` registers the eight default loopback servers as namespaced Muse tools (`muse.time.now`, `muse.fs.read`, …); `MUSE_LOOPBACK_FETCH_HOSTS` and `MUSE_LOOPBACK_FS_ROOTS` add the opt-in fetch and fs servers when their allowlists are supplied. HTTP-verified: tool count jumps from 10 → 32 with the env flags set.

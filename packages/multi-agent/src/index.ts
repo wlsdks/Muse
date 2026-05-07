@@ -33,7 +33,7 @@ export interface MultiAgentRunResult extends AgentRunResult {
   readonly handoffs: readonly HandoffDecision[];
 }
 
-export type OrchestrationMode = "sequential" | "parallel";
+export type OrchestrationMode = "sequential" | "parallel" | "race";
 
 export interface OrchestrationStepResult {
   readonly workerId: string;
@@ -263,9 +263,13 @@ export class MultiAgentOrchestrator {
 
     let results: readonly OrchestrationStepResult[];
     try {
-      results = mode === "parallel"
-        ? await this.runParallel({ ...input, runId }, selectedWorkers)
-        : await this.runSequential({ ...input, runId }, selectedWorkers);
+      if (mode === "parallel") {
+        results = await this.runParallel({ ...input, runId }, selectedWorkers);
+      } else if (mode === "race") {
+        results = await this.runRace({ ...input, runId }, selectedWorkers);
+      } else {
+        results = await this.runSequential({ ...input, runId }, selectedWorkers);
+      }
     } catch (error) {
       this.recordHistory({
         completedCount: 0,
@@ -368,6 +372,47 @@ export class MultiAgentOrchestrator {
         return { error: errorMessage(error), status: "failed", workerId: worker.id };
       }
     }));
+  }
+
+  /**
+   * Race mode: kick every selected worker off concurrently and resolve as
+   * soon as one of them completes successfully. The remaining workers keep
+   * running in the background but their outcomes do not appear in the
+   * orchestration response — the goal is "first useful answer wins". If
+   * every worker fails, the collected failures are returned so the upstream
+   * `run()` path can surface them through the existing
+   * `NoAgentWorkerError` flow.
+   */
+  private async runRace(input: AgentRunInput, workers: readonly AgentWorker[]): Promise<readonly OrchestrationStepResult[]> {
+    return new Promise<readonly OrchestrationStepResult[]>((resolve) => {
+      let resolved = false;
+      let pending = workers.length;
+      const failures: OrchestrationStepResult[] = [];
+
+      for (const worker of workers) {
+        void worker.run(withSelectedWorker(input, worker.id))
+          .then(async (result) => {
+            if (resolved) {
+              return;
+            }
+            resolved = true;
+            await this.publishWorkerResult(worker.id, result);
+            resolve([{ result, status: "completed", workerId: worker.id }]);
+          })
+          .catch(async (error) => {
+            if (resolved) {
+              return;
+            }
+            await this.publishWorkerFailure(worker.id, error);
+            failures.push({ error: errorMessage(error), status: "failed", workerId: worker.id });
+            pending -= 1;
+            if (pending === 0 && !resolved) {
+              resolved = true;
+              resolve(failures);
+            }
+          });
+      }
+    });
   }
 
   private async publishWorkerResult(workerId: string, result: AgentRunResult): Promise<void> {

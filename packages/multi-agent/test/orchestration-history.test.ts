@@ -78,6 +78,7 @@ describe("InMemoryOrchestrationHistoryStore", () => {
       avgDurationMs: 0,
       byMode: {
         parallel: { avgDurationMs: 0, runs: 0 },
+        race: { avgDurationMs: 0, runs: 0 },
         sequential: { avgDurationMs: 0, runs: 0 }
       },
       completedRuns: 0,

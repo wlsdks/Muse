@@ -377,10 +377,10 @@ function parseOrchestrateBody(value: unknown): ParseResult<OrchestrateBody> {
 
   let mode: OrchestrationMode | undefined;
 
-  if (body.mode === "sequential" || body.mode === "parallel") {
+  if (body.mode === "sequential" || body.mode === "parallel" || body.mode === "race") {
     mode = body.mode;
   } else if (body.mode !== undefined) {
-    return invalid("INVALID_ORCHESTRATE_REQUEST", "mode must be 'sequential' or 'parallel'");
+    return invalid("INVALID_ORCHESTRATE_REQUEST", "mode must be 'sequential', 'parallel', or 'race'");
   }
 
   let workerIds: readonly string[] | undefined;

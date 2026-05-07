@@ -38,6 +38,7 @@ export interface OrchestrationHistorySummary {
   readonly byMode: {
     readonly sequential: { readonly runs: number; readonly avgDurationMs: number };
     readonly parallel: { readonly runs: number; readonly avgDurationMs: number };
+    readonly race: { readonly runs: number; readonly avgDurationMs: number };
   };
 }
 
@@ -104,6 +105,7 @@ export class InMemoryOrchestrationHistoryStore implements OrchestrationHistorySt
         avgDurationMs: 0,
         byMode: {
           parallel: { avgDurationMs: 0, runs: 0 },
+          race: { avgDurationMs: 0, runs: 0 },
           sequential: { avgDurationMs: 0, runs: 0 }
         },
         completedRuns: 0,
@@ -119,6 +121,7 @@ export class InMemoryOrchestrationHistoryStore implements OrchestrationHistorySt
     const completed = this.entries.filter((entry) => entry.status === "completed").length;
     const sequential = this.entries.filter((entry) => entry.mode === "sequential");
     const parallel = this.entries.filter((entry) => entry.mode === "parallel");
+    const race = this.entries.filter((entry) => entry.mode === "race");
     const sortedDurations = [...this.entries.map((entry) => entry.durationMs)].sort((a, b) => a - b);
     const p95Index = Math.min(sortedDurations.length - 1, Math.ceil(0.95 * sortedDurations.length) - 1);
     const totalDuration = sortedDurations.reduce((sum, value) => sum + value, 0);
@@ -135,6 +138,13 @@ export class InMemoryOrchestrationHistoryStore implements OrchestrationHistorySt
               ? 0
               : Math.round(parallel.reduce((sum, entry) => sum + entry.durationMs, 0) / parallel.length),
           runs: parallel.length
+        },
+        race: {
+          avgDurationMs:
+            race.length === 0
+              ? 0
+              : Math.round(race.reduce((sum, entry) => sum + entry.durationMs, 0) / race.length),
+          runs: race.length
         },
         sequential: {
           avgDurationMs:
