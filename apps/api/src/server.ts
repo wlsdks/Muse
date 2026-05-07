@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   GuardBlockedError,
   OutputGuardBlockedError,
+  PlanExecutionError,
+  PlanValidationFailedError,
   type AgentRunInput,
   type AgentRuntime,
   type AgentRunResult
@@ -995,6 +997,24 @@ function sendAgentError(
       blockReason: error.message,
       code: error.code ?? "OUTPUT_GUARD_BLOCKED",
       errorCode: error.code ?? "OUTPUT_GUARD_BLOCKED",
+      errorMessage: error.message,
+      message: error.message
+    }, responseMode) as ApiError);
+  }
+
+  if (error instanceof PlanExecutionError) {
+    return reply.status(422).send(chatErrorResponse({
+      code: error.code,
+      errorCode: error.code,
+      errorMessage: error.message,
+      message: error.message
+    }, responseMode) as ApiError);
+  }
+
+  if (error instanceof PlanValidationFailedError) {
+    return reply.status(422).send(chatErrorResponse({
+      code: "PLAN_VALIDATION_FAILED",
+      errorCode: "PLAN_VALIDATION_FAILED",
       errorMessage: error.message,
       message: error.message
     }, responseMode) as ApiError);

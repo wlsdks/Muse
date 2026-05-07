@@ -296,6 +296,17 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- HTTP smoke harness now exists as `pnpm smoke:broad` (`scripts/smoke-broad-http.mjs`). It boots `apps/api`
+  on a free port and exercises 20 representative endpoints with shape-level assertions: chat, streaming
+  chat, plan_execute mode, OpenAPI, runtime settings, agent specs, audits with `{items,total}`, latency
+  summary/timeseries, token-cost daily/top-expensive, conversation failure-pattern bucketing, tool accuracy
+  rates, approvals, scheduler, MCP, cache invalidate, RAG analytics status, follow-up suggestion stats.
+  Passes 20/20 against the diagnostic provider. Exits non-zero on any regression so future iterations get
+  a real signal that the public API contract still holds.
+- AgentRuntime errors now propagate as structured 422 responses through the API. `PlanExecutionError`
+  surfaces as `errorCode: PLAN_GENERATION_FAILED|PLAN_ALL_STEPS_FAILED|RESPONSE_SYNTHESIS_FAILED`,
+  `PlanValidationFailedError` as `errorCode: PLAN_VALIDATION_FAILED`. Generic 500 `AGENT_RUN_FAILED` is
+  reserved for unexpected runtime errors.
 - Admin analytics compatibility now classifies failures and tool outcomes deterministically.
   `/api/admin/conversation-analytics/failure-patterns` aggregates failed runs by error class
   (timeout / guard_rejection / plan_validation_failed / plan_all_steps_failed / plan_generation_failed
