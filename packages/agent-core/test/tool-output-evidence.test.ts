@@ -46,30 +46,15 @@ describe("extractVerifiedSources", () => {
     expect(sources).toContainEqual({ title: "PROJ-1", toolName: "jira_search", url: "https://example.com/c" });
   });
 
-  it("synthesizes a Jira project directory entry when count > 0", () => {
+  it("returns no sources when a tool reports a positive count without any URL fields", () => {
+    // Previously `jira_list_projects` / `confluence_list_spaces` synthesized
+    // hardcoded Atlassian URLs here. That product-specific carryover was
+    // removed in iteration #57; tools now have to expose real URLs to be
+    // counted as a verified source.
     const payload = JSON.stringify({ count: 5, projects: [] });
-    const sources = extractVerifiedSources("jira_list_projects", wrapToolEnvelope("jira_list_projects", payload));
-
-    expect(sources).toEqual([
-      {
-        title: "Jira project directory",
-        toolName: "jira_list_projects",
-        url: "https://example.atlassian.net/projects"
-      }
-    ]);
-  });
-
-  it("synthesizes a Confluence space directory entry when total > 0", () => {
-    const payload = JSON.stringify({ total: 12 });
-    const sources = extractVerifiedSources("confluence_list_spaces", wrapToolEnvelope("confluence_list_spaces", payload));
-
-    expect(sources).toEqual([
-      {
-        title: "Confluence space directory",
-        toolName: "confluence_list_spaces",
-        url: "https://example.atlassian.net/wiki/spaces"
-      }
-    ]);
+    expect(
+      extractVerifiedSources("anything_list", wrapToolEnvelope("anything_list", payload))
+    ).toEqual([]);
   });
 
   it("returns no sources when neither URLs nor counts are present", () => {
@@ -114,5 +99,25 @@ describe("extractToolInsights", () => {
     const inner = JSON.stringify({ insights: ["nested"] });
     const outer = JSON.stringify({ result: inner });
     expect(extractToolInsights(wrapToolEnvelope("any", outer))).toEqual(["nested"]);
+  });
+
+  it("emits English count summaries when locale='en' is supplied", () => {
+    expect(
+      extractToolInsights(wrapToolEnvelope("any", JSON.stringify({ count: 0 })), "en")
+    ).toEqual(["Search returned 0 results."]);
+    expect(
+      extractToolInsights(wrapToolEnvelope("any", JSON.stringify({ totalCount: 412 })), "en")
+    ).toEqual(["Found 412 matches (large set)."]);
+    expect(
+      extractToolInsights(wrapToolEnvelope("any", JSON.stringify({ size: 5 })), "en")
+    ).toEqual(["Found 5 matches."]);
+  });
+
+  it("defaults to Korean locale to preserve existing operator UX", () => {
+    // No locale arg → Korean (preserves the original Reactor operator base
+    // behavior when the runtime hasn't been updated to thread a locale).
+    expect(
+      extractToolInsights(wrapToolEnvelope("any", JSON.stringify({ count: 5 })))
+    ).toEqual(["총 5건 발견."]);
   });
 });

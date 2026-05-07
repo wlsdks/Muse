@@ -4,20 +4,22 @@ import type { VerifiedSource } from "./types.js";
 /**
  * Tool-output evidence extraction.
  *
- * Pure helpers that scan a tool's textual output (often Reactor's
- * `--- BEGIN TOOL DATA ---` envelope wrapping a JSON payload) for two kinds of
- * evidence:
+ * Pure helpers that scan a tool's textual output (often a tool envelope
+ * wrapping a JSON payload) for two kinds of evidence:
  *
  * 1. Verified sources — URLs the model can cite, derived from JSON fields like
  *    `url`/`webUrl`/`href`/`self` or from raw URLs in free text.
- * 2. Tool insights — short summary strings (`insights[]`) plus synthesized
- *    Korean total-count summaries when the JSON only carries a numeric count.
+ * 2. Tool insights — short summary strings (`insights[]`) plus a synthesized
+ *    total-count summary in the requested locale when the JSON only carries
+ *    a numeric count.
  *
  * Kept in their own module so response filters and the runtime can share the
  * extraction without dragging in `ModelLoopExecution`. The `responseFilterEvidenceFromExecution`
  * adapter that converts a `ModelLoopExecution` into a `ResponseFilterEvidence`
  * stays in `index.ts` because it depends on the runtime's internal types.
  */
+
+export type ToolEvidenceLocale = "ko" | "en";
 
 export function extractVerifiedSources(toolName: string, output: string): readonly VerifiedSource[] {
   const parsed = parseToolOutputJson(output);
@@ -33,18 +35,13 @@ export function extractVerifiedSources(toolName: string, output: string): readon
   const sources: VerifiedSource[] = [];
   collectVerifiedSources(parsed, toolName, sources);
 
-  if (sources.length === 0) {
-    const synthesized = synthesizeLinklessSource(toolName, parsed);
-
-    if (synthesized) {
-      sources.push(synthesized);
-    }
-  }
-
   return sources;
 }
 
-export function extractToolInsights(output: string): readonly string[] {
+export function extractToolInsights(
+  output: string,
+  locale: ToolEvidenceLocale = "ko"
+): readonly string[] {
   const parsed = parseToolOutputJson(output);
 
   if (!parsed || !isRecord(parsed)) {
@@ -62,16 +59,30 @@ export function extractToolInsights(output: string): readonly string[] {
     ?? readNumeric(parsed.size);
 
   if (count !== undefined && normalized.length === 0) {
-    if (count === 0) {
-      normalized.push("검색 결과 0건입니다.");
-    } else if (count >= 200) {
-      normalized.push(`총 ${count}건 (대량) 발견.`);
-    } else {
-      normalized.push(`총 ${count}건 발견.`);
-    }
+    normalized.push(formatCountSummary(count, locale));
   }
 
   return [...new Set(normalized)].slice(0, 10);
+}
+
+function formatCountSummary(count: number, locale: ToolEvidenceLocale): string {
+  if (locale === "en") {
+    if (count === 0) {
+      return "Search returned 0 results.";
+    }
+    if (count >= 200) {
+      return `Found ${count} matches (large set).`;
+    }
+    return `Found ${count} matches.`;
+  }
+
+  if (count === 0) {
+    return "검색 결과 0건입니다.";
+  }
+  if (count >= 200) {
+    return `총 ${count}건 (대량) 발견.`;
+  }
+  return `총 ${count}건 발견.`;
 }
 
 function collectVerifiedSources(value: unknown, toolName: string, sources: VerifiedSource[]): void {
@@ -104,30 +115,6 @@ function collectVerifiedSources(value: unknown, toolName: string, sources: Verif
 
     collectVerifiedSources(item, toolName, sources);
   }
-}
-
-function synthesizeLinklessSource(toolName: string, value: unknown): VerifiedSource | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  if (toolName === "jira_list_projects" && Number(readNumeric(value.count)) > 0) {
-    return {
-      title: "Jira project directory",
-      toolName,
-      url: "https://example.atlassian.net/projects"
-    };
-  }
-
-  if (toolName === "confluence_list_spaces" && Number(readNumeric(value.total)) > 0) {
-    return {
-      title: "Confluence space directory",
-      toolName,
-      url: "https://example.atlassian.net/wiki/spaces"
-    };
-  }
-
-  return undefined;
 }
 
 function parseToolOutputJson(output: string): unknown | undefined {

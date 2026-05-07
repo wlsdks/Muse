@@ -296,6 +296,26 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- tool-output evidence i18n + Atlassian carryover removed (iteration 57).
+  Two product-specific carryovers cleaned up:
+  * `synthesizeLinklessSource` previously emitted hardcoded
+    `Jira project directory` / `Confluence space directory` entries with
+    `https://example.atlassian.net/...` URLs whenever a tool named
+    `jira_list_projects` or `confluence_list_spaces` returned a positive
+    count without any URL fields. That made sense for the original
+    closed-source Atlassian-coupled product; meaningless for an
+    open-source Muse. Removed entirely. Tools must now expose real URLs
+    to be counted as a verified source.
+  * `extractToolInsights` previously emitted hardcoded Korean count
+    summaries ("검색 결과 0건입니다.", "총 N건 발견.", "총 N건 (대량) 발견."). Now
+    accepts an optional `locale: "ko" | "en"` parameter (default `"ko"` —
+    preserves existing operator UX). English locale emits "Search
+    returned 0 results.", "Found N matches.", "Found N matches (large
+    set).". 3 unit tests cover the new locale + the Korean default.
+    Replaces the deleted Atlassian-synthesis tests with a single
+    "no synthesized source for any count-only tool" assertion.
+  agent-core tests 218 → 219; pnpm check green; broad smoke 49/49;
+  live smoke 8/8; route parity 0 missing.
 - response filters become locale-aware (iteration 56). The Korean
   `casual-lure-strip` and `greeting-strip` filters were the most operator-
   facing leak from the original closed-source product into Muse open-source —
