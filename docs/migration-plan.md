@@ -296,6 +296,35 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- live-LLM end-to-end is now provably working (iteration 45). Three
+  real bugs uncovered while answering "does the agent actually run?"
+  with a real Gemini API key:
+  1. **Cause-chain masking**: `sendAgentError` was returning only the
+     `RetryExhaustedError` wrapper message, hiding the underlying
+     Gemini 4xx body. New `unwrapErrorMessage` walks `error.cause`
+     (with cycle guard) so the operator sees the full chain joined
+     with " — ". 4 unit tests pin the unwrap contract.
+  2. **Indiscriminate retry**: `generateWithResilience` was retrying
+     every error 3× including non-retryable 4xx (model-not-found,
+     bad-API-key). New `isRetryableProviderError` predicate respects
+     `ModelProviderError.retryable` so 4xx fail fast and 5xx still
+     get retries. 2 unit tests pin the predicate.
+  3. **Gemini schema rejection**: tool inputSchemas with
+     `additionalProperties: false` (and `$schema`, `$ref`,
+     `definitions`, `patternProperties`, `unevaluatedProperties`,
+     `exclusiveMinimum`, `exclusiveMaximum`) caused Gemini's
+     tool-calling endpoint to 400. New `sanitizeGeminiSchema`
+     recursively strips the rejected keywords (preserving
+     `properties`, `items`, `oneOf`/`anyOf`/`allOf`,
+     `enum`/`description`/`format`/`required`). 6 unit tests pin
+     the sanitizer.
+  Verified live with `MUSE_MODEL=gemini/gemini-2.0-flash`:
+  `/api/chat` returns content with usage/contextWindow,
+  `/api/chat/stream` emits `event: message` + `event: done`,
+  tool-using prompts succeed without the schema 400. agent-core
+  tests 195 → 195 (unchanged) + api tests 62 → 66 (+4) + model
+  tests 23 → 29 (+6) + auth tests 39 → 39. pnpm check stays green;
+  broad smoke 49/49; route parity 0 missing.
 - agent-core helper / internals direct test coverage (iteration 44).
   Two new dedicated test files give the previously implicit-only
   helpers explicit verification:

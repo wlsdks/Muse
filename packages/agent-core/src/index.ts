@@ -74,6 +74,7 @@ import {
   applyAgentSpecSystemPrompt,
   failMissingProvider,
   isModelMessage,
+  isRetryableProviderError,
   latestUserPrompt,
   metadataString,
   numberMetadata,
@@ -1522,7 +1523,10 @@ export class AgentRuntime {
       return operation();
     }
 
-    return retry(operation, this.retry);
+    return retry(operation, {
+      ...this.retry,
+      retryable: isRetryableProviderError
+    });
   }
 
   private async applyResponseFilters(

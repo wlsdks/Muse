@@ -1,5 +1,5 @@
 import type { AgentSpecResolution } from "@muse/agent-specs";
-import type { ModelMessage, ModelResponse, ModelToolCall } from "@muse/model";
+import { ModelProviderError, type ModelMessage, type ModelResponse, type ModelToolCall } from "@muse/model";
 import type { SpanHandle } from "@muse/observability";
 import type { AgentRunMode } from "@muse/runtime-state";
 import type { JsonObject } from "@muse/shared";
@@ -124,6 +124,23 @@ export function toAgentRunMode(mode: AgentRunMode | undefined): AgentRunMode {
 
 export function failMissingProvider(): never {
   throw new ModelRoutingError("AgentRuntime model provider is unavailable");
+}
+
+/**
+ * Returns true when the runtime should retry a model provider call.
+ *
+ * Treats unknown errors as retryable (network blips, transient transport
+ * failures, etc.) but trusts `ModelProviderError.retryable` to short-circuit
+ * on terminal upstream errors like 401/403/404/422 that the runtime cannot
+ * fix by retrying. Without this predicate the default `retry()` policy
+ * exhausts every attempt on a bad model name, masking the real 4xx error
+ * from the operator.
+ */
+export function isRetryableProviderError(error: unknown): boolean {
+  if (error instanceof ModelProviderError) {
+    return error.retryable;
+  }
+  return true;
 }
 
 /**

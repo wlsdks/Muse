@@ -818,7 +818,7 @@ function toGeminiRequest(request: ModelRequest) {
           functionDeclarations: request.tools.map((tool) => ({
             description: tool.description,
             name: tool.name,
-            parameters: tool.inputSchema
+            parameters: sanitizeGeminiSchema(tool.inputSchema)
           }))
         }]
       }
@@ -833,6 +833,60 @@ function toGeminiRequest(request: ModelRequest) {
       }
       : {})
   };
+}
+
+/**
+ * Strips JSON Schema keywords Gemini's tool-calling API rejects.
+ *
+ * Gemini accepts a narrow OpenAPI 3.0 subset and 400's on `additionalProperties`,
+ * `$schema`, `$id`, `$ref`, `definitions`, `default` (sometimes), and the
+ * combinator forms `oneOf`/`anyOf`/`allOf` at the parameters root. The stripped
+ * schema is recursive — `properties.{key}` and `items` are sanitised in turn.
+ */
+export function sanitizeGeminiSchema(schema: unknown): unknown {
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map((entry) => sanitizeGeminiSchema(entry));
+  }
+
+  const stripped = new Set([
+    "$schema",
+    "$id",
+    "$ref",
+    "additionalProperties",
+    "definitions",
+    "patternProperties",
+    "unevaluatedProperties",
+    "exclusiveMinimum",
+    "exclusiveMaximum"
+  ]);
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (stripped.has(key)) {
+      continue;
+    }
+    if (key === "properties" && value && typeof value === "object") {
+      const nested: Record<string, unknown> = {};
+      for (const [propertyKey, propertyValue] of Object.entries(value as Record<string, unknown>)) {
+        nested[propertyKey] = sanitizeGeminiSchema(propertyValue);
+      }
+      result[key] = nested;
+      continue;
+    }
+    if (key === "items" || key === "oneOf" || key === "anyOf" || key === "allOf") {
+      result[key] = Array.isArray(value)
+        ? value.map((entry) => sanitizeGeminiSchema(entry))
+        : sanitizeGeminiSchema(value);
+      continue;
+    }
+    result[key] = value;
+  }
+
+  return result;
 }
 
 function toGeminiContent(message: ModelMessage) {

@@ -12,6 +12,7 @@ import {
   OpenAIProvider,
   OpenRouterProvider,
   parseModelName,
+  sanitizeGeminiSchema,
   type ModelInfo,
   type ModelRequest,
   type ModelProvider
@@ -868,3 +869,79 @@ function fakeGeminiFetch(options: { readonly forceError?: boolean } = {}): typeo
     }));
   };
 }
+
+describe("sanitizeGeminiSchema", () => {
+  it("strips additionalProperties at the root", () => {
+    expect(
+      sanitizeGeminiSchema({
+        additionalProperties: false,
+        type: "object",
+        properties: { x: { type: "string" } }
+      })
+    ).toEqual({ type: "object", properties: { x: { type: "string" } } });
+  });
+
+  it("recursively strips additionalProperties from nested properties", () => {
+    expect(
+      sanitizeGeminiSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          nested: {
+            type: "object",
+            additionalProperties: false,
+            properties: { y: { type: "number" } }
+          }
+        }
+      })
+    ).toEqual({
+      type: "object",
+      properties: {
+        nested: { type: "object", properties: { y: { type: "number" } } }
+      }
+    });
+  });
+
+  it("recursively strips inside items arrays", () => {
+    expect(
+      sanitizeGeminiSchema({
+        type: "array",
+        items: { type: "object", additionalProperties: false, properties: { z: { type: "string" } } }
+      })
+    ).toEqual({
+      type: "array",
+      items: { type: "object", properties: { z: { type: "string" } } }
+    });
+  });
+
+  it("strips $schema, $id, $ref, definitions, patternProperties", () => {
+    expect(
+      sanitizeGeminiSchema({
+        $schema: "http://json-schema.org/draft-07/schema#",
+        $id: "x",
+        $ref: "#/definitions/foo",
+        definitions: { foo: { type: "object" } },
+        patternProperties: { "^x_": { type: "string" } },
+        type: "object"
+      })
+    ).toEqual({ type: "object" });
+  });
+
+  it("preserves enum, description, required, format", () => {
+    expect(
+      sanitizeGeminiSchema({
+        type: "string",
+        description: "the answer",
+        enum: ["yes", "no"],
+        format: "uri"
+      })
+    ).toEqual({ type: "string", description: "the answer", enum: ["yes", "no"], format: "uri" });
+  });
+
+  it("returns primitives unchanged", () => {
+    expect(sanitizeGeminiSchema(undefined)).toBeUndefined();
+    expect(sanitizeGeminiSchema(null)).toBeNull();
+    expect(sanitizeGeminiSchema("string")).toBe("string");
+    expect(sanitizeGeminiSchema(42)).toBe(42);
+  });
+});

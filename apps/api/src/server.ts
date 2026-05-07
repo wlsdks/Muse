@@ -1125,13 +1125,36 @@ function sendAgentError(
     }, responseMode) as ApiError);
   }
 
-  const message = error instanceof Error ? error.message : "Agent run failed";
+  const message = unwrapErrorMessage(error);
   return reply.status(500).send(chatErrorResponse({
     code: "AGENT_RUN_FAILED",
     errorCode: "AGENT_RUN_FAILED",
     errorMessage: message,
     message
   }, responseMode) as ApiError);
+}
+
+/**
+ * Unwrap nested error causes (RetryExhaustedError → ModelProviderError →
+ * underlying fetch error) so an operator sees the actual upstream error
+ * message instead of the generic retry-exhausted wrapper.
+ */
+export function unwrapErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Agent run failed";
+  }
+
+  const seen = new Set<unknown>();
+  const segments: string[] = [];
+  let current: unknown = error;
+
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    segments.push(current.message);
+    current = (current as Error & { readonly cause?: unknown }).cause;
+  }
+
+  return segments.join(" — ");
 }
 
 function chatErrorResponse(

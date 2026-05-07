@@ -4,6 +4,7 @@ import {
   applyAgentSpecSystemPrompt,
   failMissingProvider,
   isModelMessage,
+  isRetryableProviderError,
   latestUserPrompt,
   metadataString,
   numberMetadata,
@@ -15,6 +16,7 @@ import {
 } from "../src/runtime-helpers.js";
 import { ModelRoutingError } from "../src/errors.js";
 import type { AgentSpec, AgentSpecResolution } from "@muse/agent-specs";
+import { ModelProviderError } from "@muse/model";
 
 const sampleSpec: AgentSpec = {
   createdAt: new Date(),
@@ -219,5 +221,18 @@ describe("failMissingProvider", () => {
   it("throws ModelRoutingError with a stable message", () => {
     expect(() => failMissingProvider()).toThrow(ModelRoutingError);
     expect(() => failMissingProvider()).toThrow(/model provider is unavailable/u);
+  });
+});
+
+describe("isRetryableProviderError", () => {
+  it("respects the ModelProviderError.retryable flag", () => {
+    expect(isRetryableProviderError(new ModelProviderError("p", "transient", true))).toBe(true);
+    expect(isRetryableProviderError(new ModelProviderError("p", "model not found", false))).toBe(false);
+  });
+
+  it("treats unknown errors as retryable so transient transport hiccups still get retries", () => {
+    expect(isRetryableProviderError(new Error("connect ETIMEDOUT"))).toBe(true);
+    expect(isRetryableProviderError("string error")).toBe(true);
+    expect(isRetryableProviderError(undefined)).toBe(true);
   });
 });
