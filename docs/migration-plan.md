@@ -296,6 +296,34 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- agent-core helper / internals direct test coverage (iteration 44).
+  Two new dedicated test files give the previously implicit-only
+  helpers explicit verification:
+  * `runtime-helpers.test.ts` (22 tests) covers `toAgentSpecRunReport`
+    snapshot + defensive-copy invariants, `applyAgentSpecSystemPrompt`
+    for missing/no/existing system message branches, `metadataString`
+    string vs non-string handling, `latestUserPrompt` last-user search
+    + empty-string fallback, `stringListMetadata` filtering of blanks
+    and non-strings, `numberMetadata` finite-only contract,
+    `isModelMessage` four canonical roles + rejection paths, `ragFilters`
+    tenant/workspace projection with empty-result undefined,
+    `toolCallsMetadata` count + ids + names round-trip, `toAgentRunMode`
+    react fallback, `failMissingProvider` ModelRoutingError throw.
+  * `internals.test.ts` (37 tests) covers `isRecord`, `stringField`,
+    `joinMessages` / `joinUserMessages`, `parseLlmClassificationDecision`
+    allow / block / synonyms / unknown-action throw,
+    `parseJsonObjectFromText` bare object / fenced / prose-wrapped /
+    array-rejection branches, `withResponseFilterRaw` raw merging +
+    non-record fallback, `splitOnCodeFences` segment partitioning,
+    `transformMarkdownText` bold / heading / link / hr conversions,
+    `splitPreservingSentencePunctuation` multi-sentence splitting +
+    no-letters filter, `extractApologyLead` pattern match + 300-char
+    cap, `resolveActualResponseCount` sources / bullets / urls / not-
+    found / -1 fallback branches, `isSignificantCountMismatch` zero-
+    asserted / 2-gap / one-off branches, and `normalizeSourceUrl`
+    fragment + trailing-slash stripping. agent-core tests 134 → 193
+    (+59, +44%). pnpm check stays green; broad smoke 49/49; route
+    parity 0 missing. No source changes — pure verification.
 - targeted test hardening across auth + multi-agent (iteration 43). The
   `@muse/auth` test suite gains a new `auth-hardening.test.ts` (28 new
   unit tests) covering: PasswordHasher round-trip / malformed-hash
