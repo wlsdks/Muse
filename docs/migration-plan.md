@@ -296,6 +296,27 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- targeted test hardening across auth + multi-agent (iteration 43). The
+  `@muse/auth` test suite gains a new `auth-hardening.test.ts` (28 new
+  unit tests) covering: PasswordHasher round-trip / malformed-hash
+  rejection / unique-salt invariant, JwtTokenProvider expired/malformed/
+  wrong-secret/short-secret rejection paths, AuthService.changePassword
+  all four branches (changed, invalid_current_password, user_not_found,
+  unsupported), authenticateBearer + logout revoke flow,
+  updateUserRole (success + missing user), AuthRateLimiter window expiry
+  + recordCompletedAttempt 2xx/3xx/4xx/undefined branches, full role
+  matrix for isAnyAdmin/isDeveloperAdmin/adminScope, currentActor +
+  maskedAdminAccountRef anonymous + empty + deterministic-mask checks,
+  extractBearerToken case-insensitive scheme + missing-token rejection,
+  and normalizeEmail trim+lowercase+empty paths. Auth tests 11 → 39
+  (+254% coverage). The `@muse/multi-agent` suite gains
+  `parallel-failure.test.ts` (5 new tests) covering parallel mode
+  publishes one bus message per worker even with mid-failure, slow
+  worker does not abort, history store preserves partial-success
+  snapshot, bus targeted vs broadcast subscriber isolation, and
+  all-failed parallel rejects but still records. Multi-agent tests
+  29 → 34. Total agent-core/auth/multi-agent unit tests jumped 165 → 207
+  with this iteration. Smoke 49/49, route parity 0 missing.
 - tool catalog discovery surfaced over HTTP (iteration 42). New
   `GET /api/tools` returns `{ tools: [{ name, description, risk,
   inputSchema?, keywords?, scopes?, dependsOn? }], total }` for every
