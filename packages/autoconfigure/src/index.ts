@@ -3,9 +3,12 @@ import {
   createCasualLureStripResponseFilter,
   createFabricationRequestRefusalFilter,
   createGreetingStripResponseFilter,
+  createInjectionInputGuard,
   createInternalBrandMaskResponseFilter,
   createMarkdownStripResponseFilter,
   createMaxLengthResponseFilter,
+  createPiiInputGuard,
+  createPiiMaskingOutputGuard,
   createPolicyStrongPriorWarningFilter,
   createReleaseRiskDataGapResponseFilter,
   createResponseCountConsistencyFilter,
@@ -14,10 +17,13 @@ import {
   createSourceBlockResponseFilter,
   createSlackUserIdMaskResponseFilter,
   createStructuredOutputResponseFilter,
+  createSystemPromptLeakageOutputGuard,
   createToolResultQualityAuditFilter,
   createVerifiedSourcesResponseFilter,
   createZeroResultOverclaimResponseFilter,
-  type AgentRuntime
+  type AgentRuntime,
+  type GuardStage,
+  type OutputGuardStage
 } from "@muse/agent-core";
 import {
   InMemoryAgentSpecRegistry,
@@ -384,6 +390,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       hookTraceStore,
       metrics: agentMetrics,
       modelProvider,
+      guards: createInputGuards(env),
+      outputGuards: createOutputGuards(env),
       requestTimeoutMs: parseInteger(env.MUSE_MODEL_REQUEST_TIMEOUT_MS, 45_000),
       toolApprovalPolicy: createToolApprovalPolicy(env),
       toolApprovalStore: approvalStore,
@@ -887,6 +895,43 @@ function createScheduledAgentExecutor(
       return result.response.output;
     }
   };
+}
+
+function createInputGuards(env: MuseEnvironment): readonly GuardStage[] {
+  if (!parseBoolean(env.MUSE_INPUT_GUARDS_ENABLED, true)) {
+    return [];
+  }
+
+  const guards: GuardStage[] = [];
+
+  if (parseBoolean(env.MUSE_INPUT_GUARD_INJECTION_ENABLED, true)) {
+    guards.push(createInjectionInputGuard());
+  }
+
+  if (parseBoolean(env.MUSE_INPUT_GUARD_PII_ENABLED, true)) {
+    guards.push(createPiiInputGuard());
+  }
+
+  return guards;
+}
+
+function createOutputGuards(env: MuseEnvironment): readonly OutputGuardStage[] {
+  if (!parseBoolean(env.MUSE_OUTPUT_GUARDS_ENABLED, true)) {
+    return [];
+  }
+
+  const guards: OutputGuardStage[] = [];
+
+  if (parseBoolean(env.MUSE_OUTPUT_GUARD_PII_MASK_ENABLED, true)) {
+    guards.push(createPiiMaskingOutputGuard());
+  }
+
+  const canaryTokens = parseCsv(env.MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_CANARY_TOKENS);
+  if (parseBoolean(env.MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_LEAK_ENABLED, false) && canaryTokens && canaryTokens.length > 0) {
+    guards.push(createSystemPromptLeakageOutputGuard({ canaryTokens }));
+  }
+
+  return guards;
 }
 
 function createResponseFilters(env: MuseEnvironment) {
