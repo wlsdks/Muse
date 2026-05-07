@@ -296,6 +296,20 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- README.md / README.ko.md restructured as Muse-first product surfaces
+  (out-of-loop refactor). The English README and a new Korean README
+  describe Muse as a provider-neutral JARVIS-style AI conductor —
+  architecture, quick start, four verification gates, provider
+  configuration, contributing layout — without leading with
+  "the migration target". The legacy bilingual stub is replaced.
+  Source-code branding leak fixed: `IamTokenExchangeService.exchange()`
+  used a `reactorToken` variable name; renamed to `museJwt`. Kept
+  intentionally: `verify:reactor-routes` / `verify:reactor-db` parity
+  scripts, `apps/api/src/reactor-compat-routes.ts` (legacy API
+  compatibility surface), `docs/audits/reactor-module-parity-audit-*.md`
+  (migration history), and "Reactor parity reference" comments in
+  source code that document where a design pattern came from. All
+  gates green: pnpm check, smoke 49/49, route parity 0 missing.
 - provider tool-schema contracts pinned by direct adapter tests
   (iteration 48). Iteration #45 fixed the Gemini schema-rejection bug
   with `sanitizeGeminiSchema`, but the Gemini adapter test only used

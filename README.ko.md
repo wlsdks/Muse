@@ -1,0 +1,127 @@
+# Muse
+
+벤더 중립의 JARVIS형 AI 컨덕터. 어떤 LLM이든, 어떤 도구든, 어떤
+MCP 서버든 하나의 일관된 추론 루프로 오케스트레이션한다.
+
+[English README →](README.md)
+
+## Muse가 무엇인가
+
+Muse는 LLM 기반 에이전트를 단일 벤더에 묶이지 않고 운용한다.
+동일한 `agent-core` 런타임이 API 서버, CLI, 그리고 (개발 중인)
+웹 UI를 모두 구동하며 — 모델 공급자는 빌드 시점이 아닌 런타임에
+선택한다.
+
+- **벤더 중립 코어.** OpenAI, Anthropic, Google Gemini, OpenRouter,
+  Ollama, LM Studio, 그리고 OpenAI-compatible 엔드포인트가 모두
+  하나의 `ModelProvider` 어댑터 뒤에 위치한다. 런타임은 추상화만
+  호출하고, 벤더 SDK를 직접 부르지 않는다.
+- **Tool & MCP 우선.** 도구는 1급 시민이며 read / write / execute
+  세 가지 위험 등급을 갖는다. 승인 게이트와 결정론적 루프 제한이
+  내장되어 있다. MCP 레이어는 외부 서버용 stdio / SSE /
+  streamable-HTTP 트랜스포트와 더불어 8개의 빌트인 loopback 서버
+  (`muse.time`, `muse.text`, `muse.math`, `muse.json`, `muse.url`,
+  `muse.crypto`, `muse.diff`, `muse.regex`)를 함께 출시한다.
+- **멀티 에이전트 오케스트레이션.** Sequential / parallel worker
+  fan-out, 인메모리 cross-agent 메시지 버스, 전체 conversation
+  스냅샷이 포함된 per-run 히스토리, 집계 통계 — 모두 HTTP와
+  SSE로 노출된다.
+- **결정론적 안전성.** Guard는 fail-close, hook은 fail-open이며
+  보안 로직은 코드에만 존재한다 (프롬프트 지시가 아니다). 도구
+  출력은 sanitise 전까지 신뢰하지 않는다. 위험한 로컬 실행은 별도
+  Rust 러너 프로세스 (`crates/runner`)를 통해서만 수행한다.
+
+## 아키텍처 개요
+
+```
+apps/
+  api/        Fastify API 서버 (chat, agent specs, multi-agent, MCP, scheduler, RAG, …)
+  cli/        터미널 에이전트 (commander + Ink TUI)
+  web/        React UI (초기 골격)
+
+packages/
+  agent-core/         ReAct + Plan-Execute 루프, guard 파이프라인, hook 레지스트리
+  model/              ModelProvider 인터페이스와 공급자 어댑터
+  tools/              tool 레지스트리, executor, sanitiser, 승인 경로
+  multi-agent/        SupervisorAgent, MultiAgentOrchestrator, 메시지 버스, 히스토리
+  mcp/                MCP 트랜스포트와 loopback 서버들
+  policy/             input / output guard, 승인 정책, adversarial red-team
+  memory/             컨텍스트 트리밍, 대화 요약, user-memory 저장소
+  rag/                chunking, BM25/RRF, 리랭킹, HyDE, decomposition
+  observability/      tracing, latency / token-cost 쿼리, JARVIS 스냅샷
+  runtime-state/      run history, hook trace, approval 저장소
+  db/                 Kysely 스키마 + SQL 마이그레이션
+  scheduler/          cron 잡 + 분산 락
+  ...
+
+crates/
+  runner/             Rust 샌드박스: shell / process / file 실행
+```
+
+## 빠른 시작
+
+```bash
+# 요구사항: Node.js 24 LTS + pnpm 10
+pnpm install
+pnpm build
+pnpm test
+
+# 실제 공급자로 API 띄우기:
+GEMINI_API_KEY=… MUSE_MODEL=gemini/gemini-2.0-flash MUSE_MODEL_PROVIDER_ID=gemini \
+  pnpm --filter @muse/api dev
+
+# 호출:
+curl -X POST http://127.0.0.1:3000/api/chat \
+  -H 'content-type: application/json' \
+  -d '{"message":"몇 시야? 도구 써."}'
+
+# CLI로 호출:
+node apps/cli/dist/index.js \
+  --api-url http://127.0.0.1:3000 \
+  chat "몇 시야? 도구 써."
+```
+
+## 검증
+
+테스트만이 검증의 유일한 방식이다. 저장소는 네 개의 게이트를 제공한다:
+
+```bash
+pnpm check                                      # 모든 workspace의 build + test
+pnpm smoke:broad                                # 49개 HTTP 엔드포인트, diagnostic provider
+pnpm smoke:live                                 # 6개 HTTP 엔드포인트, 실 LLM (키 없으면 자동 skip)
+pnpm verify:reactor-routes                      # 레거시 소스 대비 라우트 parity 체크
+```
+
+`smoke:live`는 사용 가능한 첫 번째 `*_API_KEY` (`GEMINI_API_KEY`,
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)로 실행되며, 스트리밍 SSE
+tool-call 프레임을 포함해 model→tool→model 루프를 end-to-end로
+검증한다.
+
+## 공급자 설정
+
+런타임에 환경변수로 모델을 고른다:
+
+| 환경변수 | 예시 | 비고 |
+| --- | --- | --- |
+| `MUSE_MODEL` | `gemini/gemini-2.0-flash` | `<providerId>/<modelId>` 형식 |
+| `MUSE_MODEL_PROVIDER_ID` | `gemini` | 옵션; prefix에서 추론됨 |
+| `MUSE_MODEL_API_KEY` | `…` | 공급자별 환경변수 (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`)도 동작 |
+| `MUSE_MODEL_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible 엔드포인트 오버라이드 (Ollama, LM Studio, custom) |
+
+## 기여
+
+이 저장소는 Claude Code 협업을 위해 lean-contract 스타일을 따른다:
+
+- [`CLAUDE.md`](CLAUDE.md) — 모든 Claude Code 에이전트가 가장 먼저 읽는 계약 파일.
+- [`AGENTS.md`](AGENTS.md) — cross-agent 제품 브리프.
+- [`.claude/rules/`](.claude/rules/) — 도메인별 규칙 (architecture, testing, commits, …).
+- [`.claude/commands/`](.claude/commands/) — 재사용 가능한 슬래시 명령.
+- [`.claude/agents/`](.claude/agents/) — 서브에이전트 정의.
+- [`docs/migration-plan.md`](docs/migration-plan.md) — 진행 중인 iteration 로그.
+
+Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`,
+`chore:`)을 사용하며, 모든 커밋과 PR 설명은 영어로 작성한다.
+
+## 라이선스
+
+미정. 런타임, 어댑터, 툴링 모두 오픈소스를 지향한다.

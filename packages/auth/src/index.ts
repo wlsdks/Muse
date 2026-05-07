@@ -711,11 +711,11 @@ export class IamTokenExchangeService {
       return undefined;
     }
 
-    const reactorToken = this.options.jwt.createToken(user);
-    const expiresAt = this.options.jwt.extractExpiration(reactorToken) ?? new Date(Date.now() + defaultJwtExpirationMs);
+    const museJwt = this.options.jwt.createToken(user);
+    const expiresAt = this.options.jwt.extractExpiration(museJwt) ?? new Date(Date.now() + defaultJwtExpirationMs);
     return {
       expiresAt,
-      token: reactorToken,
+      token: museJwt,
       user: publicUser(user)
     };
   }
