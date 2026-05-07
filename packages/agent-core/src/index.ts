@@ -2124,31 +2124,6 @@ export {
   createTopicDriftInputGuard
 } from "./guards.js";
 
-export function createSourceBlockResponseFilter(): ResponseFilterStage {
-  return {
-    apply: (response) => {
-      const result = sanitizeSourceBlocks(response.output);
-
-      if (!result.removed) {
-        return response;
-      }
-
-      return {
-        ...response,
-        output: result.content,
-        raw: {
-          ...(isRecord(response.raw) ? response.raw : {}),
-          museResponseFilter: {
-            id: "source-block-response-filter",
-            reason: result.reason
-          }
-        }
-      };
-    },
-    id: "source-block-response-filter"
-  };
-}
-
 export function createVerifiedSourcesResponseFilter(): ResponseFilterStage {
   return {
     apply: (response, context) => {
@@ -2191,68 +2166,14 @@ export function createVerifiedSourcesResponseFilter(): ResponseFilterStage {
 
 export {
   createFabricationRequestRefusalFilter,
+  createGreetingStripResponseFilter,
   createInternalBrandMaskResponseFilter,
+  createMarkdownStripResponseFilter,
   createMaxLengthResponseFilter,
   createSanitizedTextResponseFilter,
-  createSlackUserIdMaskResponseFilter
+  createSlackUserIdMaskResponseFilter,
+  createSourceBlockResponseFilter
 } from "./response-filters.js";
-
-export function createMarkdownStripResponseFilter(): ResponseFilterStage {
-  return {
-    apply: (response) => {
-      if (response.output.trim().length === 0) {
-        return response;
-      }
-
-      const output = splitOnCodeFences(response.output)
-        .map((segment) => (segment.isCode ? segment.text : transformMarkdownText(segment.text)))
-        .join("");
-
-      if (output === response.output) {
-        return response;
-      }
-
-      return {
-        ...response,
-        output,
-        raw: withResponseFilterRaw(response, "markdown-strip-response-filter")
-      };
-    },
-    id: "markdown-strip-response-filter"
-  };
-}
-
-
-export function createGreetingStripResponseFilter(): ResponseFilterStage {
-  const leadingGreetingPattern =
-    /^(안녕하세요|안녕|반가워요|반갑습니다|반갑네요|하이)(?:[,，]?\s*[^\n!?.]{0,25}[님씨])?[!?.]\s*/;
-  const followupGreetingPattern =
-    /^(반갑습니다|반가워요|반갑네요|만나서\s*반가워요|만나서\s*반갑습니다|만나서\s*정말\s*반가워요|만나서\s*정말\s*기쁩니다|좋은\s*아침이에요|좋은\s*저녁이에요)[!?.]\s*/;
-
-  return {
-    apply: (response) => {
-      if (response.output.trim().length === 0) {
-        return response;
-      }
-
-      const output = response.output
-        .replace(leadingGreetingPattern, "")
-        .replace(followupGreetingPattern, "")
-        .trimStart();
-
-      if (output === response.output) {
-        return response;
-      }
-
-      return {
-        ...response,
-        output,
-        raw: withResponseFilterRaw(response, "greeting-strip-response-filter")
-      };
-    },
-    id: "greeting-strip-response-filter"
-  };
-}
 
 export function createCasualLureStripResponseFilter(): ResponseFilterStage {
   const casualMaxChars = 500;
@@ -2646,91 +2567,6 @@ export function createStructuredOutputResponseFilter(options: {
     },
     id: "structured-output-response-filter"
   };
-}
-
-function splitOnCodeFences(text: string): readonly { readonly isCode: boolean; readonly text: string }[] {
-  const segments: { isCode: boolean; text: string }[] = [];
-  let cursor = 0;
-  let inCode = false;
-  let buffer = "";
-
-  while (cursor < text.length) {
-    if (text.startsWith("```", cursor)) {
-      if (buffer.length > 0) {
-        segments.push({ isCode: inCode, text: buffer });
-        buffer = "";
-      }
-      buffer += "```";
-      cursor += 3;
-      inCode = !inCode;
-      continue;
-    }
-
-    buffer += text[cursor];
-    cursor++;
-  }
-
-  if (buffer.length > 0) {
-    segments.push({ isCode: inCode, text: buffer });
-  }
-
-  return segments;
-}
-
-function transformMarkdownText(text: string): string {
-  let result = text
-    .replace(/\*\*([^*\n]*[a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ][^*\n]*)\*\*/g, "*$1*")
-    .replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/gm, (_, heading: string) => `*${heading.replaceAll("*", "").trim()}*`)
-    .replace(/\[([^\]\n]+)]\((https?:\/\/[^\s)]+)\)/g, "<$2|$1>")
-    .replace(/^\s*([-*_])\1{2,}\s*$/gm, "");
-
-  result = markdownTablesToBullets(result);
-  return result;
-}
-
-function markdownTablesToBullets(text: string): string {
-  const lines = text.split("\n");
-  const output: string[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index] ?? "";
-    const separator = lines[index + 1] ?? "";
-
-    if (!isMarkdownTableRow(line) || !isMarkdownTableSeparator(separator)) {
-      output.push(line);
-      index++;
-      continue;
-    }
-
-    const headers = parseMarkdownTableRow(line);
-    index += 2;
-
-    while (index < lines.length && isMarkdownTableRow(lines[index] ?? "")) {
-      const cells = parseMarkdownTableRow(lines[index] ?? "");
-      const parts = headers.map((header, cellIndex) => {
-        const cell = cells[cellIndex] ?? "";
-        return header.length > 0 ? `*${header}*: ${cell}` : cell;
-      });
-      output.push(`• ${parts.join(", ")}`);
-      index++;
-    }
-  }
-
-  return output.join("\n");
-}
-
-function isMarkdownTableRow(line: string): boolean {
-  const trimmed = line.trimStart();
-  return trimmed.startsWith("|") && trimmed.indexOf("|", 1) > 0;
-}
-
-function isMarkdownTableSeparator(line: string): boolean {
-  return line.trimStart().startsWith("|") && /:?-{3,}:?/.test(line);
-}
-
-function parseMarkdownTableRow(line: string): readonly string[] {
-  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
 }
 
 function removeOverconfidentReleaseFragments(line: string, pattern: RegExp): string {

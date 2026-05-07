@@ -1,5 +1,12 @@
 import type { ModelResponse } from "@muse/model";
-import { isRecord, joinUserMessages, withResponseFilterRaw } from "./internals.js";
+import { sanitizeSourceBlocks } from "@muse/policy";
+import {
+  isRecord,
+  joinUserMessages,
+  splitOnCodeFences,
+  transformMarkdownText,
+  withResponseFilterRaw
+} from "./internals.js";
 import type { ResponseFilterStage } from "./types.js";
 
 /**
@@ -11,6 +18,87 @@ import type { ResponseFilterStage } from "./types.js";
  * extraction, tool-result quality audit, etc.) still live in `index.ts`
  * pending further extraction.
  */
+
+export function createSourceBlockResponseFilter(): ResponseFilterStage {
+  return {
+    apply: (response: ModelResponse) => {
+      const result = sanitizeSourceBlocks(response.output);
+
+      if (!result.removed) {
+        return response;
+      }
+
+      return {
+        ...response,
+        output: result.content,
+        raw: {
+          ...(isRecord(response.raw) ? response.raw : {}),
+          museResponseFilter: {
+            id: "source-block-response-filter",
+            reason: result.reason
+          }
+        }
+      };
+    },
+    id: "source-block-response-filter"
+  };
+}
+
+export function createMarkdownStripResponseFilter(): ResponseFilterStage {
+  return {
+    apply: (response: ModelResponse) => {
+      if (response.output.trim().length === 0) {
+        return response;
+      }
+
+      const output = splitOnCodeFences(response.output)
+        .map((segment) => (segment.isCode ? segment.text : transformMarkdownText(segment.text)))
+        .join("");
+
+      if (output === response.output) {
+        return response;
+      }
+
+      return {
+        ...response,
+        output,
+        raw: withResponseFilterRaw(response, "markdown-strip-response-filter")
+      };
+    },
+    id: "markdown-strip-response-filter"
+  };
+}
+
+export function createGreetingStripResponseFilter(): ResponseFilterStage {
+  const leadingGreetingPattern =
+    /^(안녕하세요|안녕|반가워요|반갑습니다|반갑네요|하이)(?:[,，]?\s*[^\n!?.]{0,25}[님씨])?[!?.]\s*/u;
+  const followupGreetingPattern =
+    /^(반갑습니다|반가워요|반갑네요|만나서\s*반가워요|만나서\s*반갑습니다|만나서\s*정말\s*반가워요|만나서\s*정말\s*기쁩니다|좋은\s*아침이에요|좋은\s*저녁이에요)[!?.]\s*/u;
+
+  return {
+    apply: (response: ModelResponse) => {
+      if (response.output.trim().length === 0) {
+        return response;
+      }
+
+      const output = response.output
+        .replace(leadingGreetingPattern, "")
+        .replace(followupGreetingPattern, "")
+        .trimStart();
+
+      if (output === response.output) {
+        return response;
+      }
+
+      return {
+        ...response,
+        output,
+        raw: withResponseFilterRaw(response, "greeting-strip-response-filter")
+      };
+    },
+    id: "greeting-strip-response-filter"
+  };
+}
 
 export function createMaxLengthResponseFilter(options: { readonly maxLength?: number } = {}): ResponseFilterStage {
   const maxLength = Math.max(0, Math.floor(options.maxLength ?? 0));

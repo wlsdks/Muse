@@ -104,3 +104,93 @@ export function withResponseFilterRaw(response: ModelResponse, id: string): Json
     museResponseFilter: { id }
   };
 }
+
+export interface MarkdownSegment {
+  readonly isCode: boolean;
+  readonly text: string;
+}
+
+export function splitOnCodeFences(text: string): readonly MarkdownSegment[] {
+  const segments: { isCode: boolean; text: string }[] = [];
+  let cursor = 0;
+  let inCode = false;
+  let buffer = "";
+
+  while (cursor < text.length) {
+    if (text.startsWith("```", cursor)) {
+      if (buffer.length > 0) {
+        segments.push({ isCode: inCode, text: buffer });
+        buffer = "";
+      }
+      buffer += "```";
+      cursor += 3;
+      inCode = !inCode;
+      continue;
+    }
+
+    buffer += text[cursor];
+    cursor += 1;
+  }
+
+  if (buffer.length > 0) {
+    segments.push({ isCode: inCode, text: buffer });
+  }
+
+  return segments;
+}
+
+export function transformMarkdownText(text: string): string {
+  let result = text
+    .replace(/\*\*([^*\n]*[a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ][^*\n]*)\*\*/g, "*$1*")
+    .replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/gm, (_, heading: string) => `*${heading.replaceAll("*", "").trim()}*`)
+    .replace(/\[([^\]\n]+)]\((https?:\/\/[^\s)]+)\)/g, "<$2|$1>")
+    .replace(/^\s*([-*_])\1{2,}\s*$/gm, "");
+
+  result = markdownTablesToBullets(result);
+  return result;
+}
+
+function markdownTablesToBullets(text: string): string {
+  const lines = text.split("\n");
+  const output: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+    const separator = lines[index + 1] ?? "";
+
+    if (!isMarkdownTableRow(line) || !isMarkdownTableSeparator(separator)) {
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    const headers = parseMarkdownTableRow(line);
+    index += 2;
+
+    while (index < lines.length && isMarkdownTableRow(lines[index] ?? "")) {
+      const cells = parseMarkdownTableRow(lines[index] ?? "");
+      const parts = headers.map((header, cellIndex) => {
+        const cell = cells[cellIndex] ?? "";
+        return header.length > 0 ? `*${header}*: ${cell}` : cell;
+      });
+      output.push(`• ${parts.join(", ")}`);
+      index += 1;
+    }
+  }
+
+  return output.join("\n");
+}
+
+function isMarkdownTableRow(line: string): boolean {
+  const trimmed = line.trimStart();
+  return trimmed.startsWith("|") && trimmed.indexOf("|", 1) > 0;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  return line.trimStart().startsWith("|") && /:?-{3,}:?/.test(line);
+}
+
+function parseMarkdownTableRow(line: string): readonly string[] {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
