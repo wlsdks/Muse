@@ -1,6 +1,10 @@
 import type { AgentRunInput, AgentRunResult, AgentRuntime } from "@muse/agent-core";
 import type { ModelMessage } from "@muse/model";
 import { createRunId, type JsonObject } from "@muse/shared";
+import type { AgentMessage, AgentMessageBus } from "./agent-message-bus.js";
+
+export type { AgentMessage, AgentMessageBus, AgentMessageHandler, InMemoryAgentMessageBusOptions } from "./agent-message-bus.js";
+export { InMemoryAgentMessageBus } from "./agent-message-bus.js";
 
 export interface AgentWorker {
   readonly id: string;
@@ -204,14 +208,20 @@ export class SupervisorAgent {
 export class MultiAgentOrchestrator {
   private readonly workers: readonly AgentWorker[];
   private readonly idFactory: () => string;
+  private readonly messageBus?: AgentMessageBus;
 
-  constructor(options: { readonly workers: readonly AgentWorker[]; readonly idFactory?: () => string }) {
+  constructor(options: {
+    readonly workers: readonly AgentWorker[];
+    readonly idFactory?: () => string;
+    readonly messageBus?: AgentMessageBus;
+  }) {
     if (options.workers.length === 0) {
       throw new NoAgentWorkerError("MultiAgentOrchestrator requires at least one worker");
     }
 
     this.workers = options.workers;
     this.idFactory = options.idFactory ?? (() => createRunId("multi_agent_orchestration"));
+    this.messageBus = options.messageBus;
   }
 
   async run(input: AgentRunInput, options: OrchestrationRunOptions = {}): Promise<MultiAgentOrchestrationResult> {
@@ -250,9 +260,11 @@ export class MultiAgentOrchestrator {
       try {
         const result = await worker.run(withSelectedWorker(currentInput, worker.id));
         results.push({ result, status: "completed", workerId: worker.id });
+        await this.publishWorkerResult(worker.id, result);
         currentInput = addWorkerResultMessage(currentInput, worker.id, result.response.output);
       } catch (error) {
         results.push({ error: errorMessage(error), status: "failed", workerId: worker.id });
+        await this.publishWorkerFailure(worker.id, error);
         currentInput = addHandoffMessage(currentInput, worker.id, error);
       }
     }
@@ -264,11 +276,46 @@ export class MultiAgentOrchestrator {
     return Promise.all(workers.map(async (worker): Promise<OrchestrationStepResult> => {
       try {
         const result = await worker.run(withSelectedWorker(input, worker.id));
+        await this.publishWorkerResult(worker.id, result);
         return { result, status: "completed", workerId: worker.id };
       } catch (error) {
+        await this.publishWorkerFailure(worker.id, error);
         return { error: errorMessage(error), status: "failed", workerId: worker.id };
       }
     }));
+  }
+
+  private async publishWorkerResult(workerId: string, result: AgentRunResult): Promise<void> {
+    if (!this.messageBus) {
+      return;
+    }
+
+    const metadata: JsonObject = {
+      ...(result.toolsUsed && result.toolsUsed.length > 0 ? { toolsUsed: [...result.toolsUsed] } : {}),
+      ...(result.fromCache ? { fromCache: true } : {})
+    };
+
+    const message: AgentMessage = {
+      content: result.response.output,
+      sourceAgentId: workerId,
+      timestamp: new Date(),
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {})
+    };
+
+    await this.messageBus.publish(message);
+  }
+
+  private async publishWorkerFailure(workerId: string, error: unknown): Promise<void> {
+    if (!this.messageBus) {
+      return;
+    }
+
+    await this.messageBus.publish({
+      content: errorMessage(error),
+      metadata: { status: "failed" },
+      sourceAgentId: workerId,
+      timestamp: new Date()
+    });
   }
 
   private requireWorker(id: string): AgentWorker {

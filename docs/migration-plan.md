@@ -296,6 +296,18 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- multi-agent gains an `AgentMessageBus` primitive (iteration 26). New
+  `packages/multi-agent/src/agent-message-bus.ts` exports `AgentMessage`,
+  `AgentMessageBus`, `AgentMessageHandler`, `InMemoryAgentMessageBus`. The
+  in-memory implementation supports targeted + broadcast publish/subscribe,
+  conversation log, and FIFO eviction of the oldest subscriber bucket once
+  `maxSubscribers` (default 1000, matches Reactor's Caffeine bound) is
+  reached. `MultiAgentOrchestrator` accepts an optional `messageBus` and
+  publishes a per-worker message on completion (with `toolsUsed` /
+  `fromCache` metadata) or failure (with `status: "failed"`). 10 new unit
+  tests cover targeted vs broadcast delivery, getMessages filter,
+  conversation order, clear, eviction, and orchestrator wiring. pnpm check
+  green; broad smoke 38/38; route parity 0 missing.
 - agent-core monolith split continued (iteration 25). Tool-output evidence
   extraction (`extractVerifiedSources`, `extractToolInsights` + 9 file-private
   helpers covering JSON unwrapping, nested URL collection, link-less synthesis,

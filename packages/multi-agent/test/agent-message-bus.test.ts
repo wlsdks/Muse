@@ -1,0 +1,190 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  InMemoryAgentMessageBus,
+  MultiAgentOrchestrator,
+  RuleBasedAgentWorker,
+  createWorkerResult,
+  type AgentMessage
+} from "../src/index.js";
+
+describe("InMemoryAgentMessageBus", () => {
+  it("delivers a targeted message only to subscribers of that agent id", async () => {
+    const bus = new InMemoryAgentMessageBus();
+    const targetReceived: AgentMessage[] = [];
+    const otherReceived: AgentMessage[] = [];
+
+    bus.subscribe("target", (message) => {
+      targetReceived.push(message);
+    });
+    bus.subscribe("other", (message) => {
+      otherReceived.push(message);
+    });
+
+    await bus.publish({
+      content: "hello",
+      sourceAgentId: "research",
+      targetAgentId: "target",
+      timestamp: new Date()
+    });
+
+    expect(targetReceived).toHaveLength(1);
+    expect(targetReceived[0]?.content).toBe("hello");
+    expect(otherReceived).toHaveLength(0);
+  });
+
+  it("broadcast messages reach every subscriber", async () => {
+    const bus = new InMemoryAgentMessageBus();
+    let aSeen = 0;
+    let bSeen = 0;
+
+    bus.subscribe("a", () => {
+      aSeen += 1;
+    });
+    bus.subscribe("b", () => {
+      bSeen += 1;
+    });
+
+    await bus.publish({
+      content: "broadcast",
+      sourceAgentId: "supervisor",
+      timestamp: new Date()
+    });
+
+    expect(aSeen).toBe(1);
+    expect(bSeen).toBe(1);
+  });
+
+  it("getMessages filters by target id and includes broadcasts", async () => {
+    const bus = new InMemoryAgentMessageBus();
+
+    await bus.publish({ content: "for-a", sourceAgentId: "x", targetAgentId: "a", timestamp: new Date() });
+    await bus.publish({ content: "for-b", sourceAgentId: "x", targetAgentId: "b", timestamp: new Date() });
+    await bus.publish({ content: "all", sourceAgentId: "x", timestamp: new Date() });
+
+    const aMessages = bus.getMessages("a").map((message) => message.content);
+    expect(aMessages).toEqual(["for-a", "all"]);
+
+    const bMessages = bus.getMessages("b").map((message) => message.content);
+    expect(bMessages).toEqual(["for-b", "all"]);
+  });
+
+  it("getConversation returns every message in publish order", async () => {
+    const bus = new InMemoryAgentMessageBus();
+
+    await bus.publish({ content: "1", sourceAgentId: "x", timestamp: new Date() });
+    await bus.publish({ content: "2", sourceAgentId: "y", targetAgentId: "z", timestamp: new Date() });
+    await bus.publish({ content: "3", sourceAgentId: "z", timestamp: new Date() });
+
+    expect(bus.getConversation().map((message) => message.content)).toEqual(["1", "2", "3"]);
+  });
+
+  it("clear() empties messages and subscribers", async () => {
+    const bus = new InMemoryAgentMessageBus();
+    let calls = 0;
+
+    bus.subscribe("a", () => {
+      calls += 1;
+    });
+    await bus.publish({ content: "before", sourceAgentId: "x", targetAgentId: "a", timestamp: new Date() });
+
+    bus.clear();
+    await bus.publish({ content: "after", sourceAgentId: "x", targetAgentId: "a", timestamp: new Date() });
+
+    expect(bus.getConversation()).toEqual([
+      { content: "after", sourceAgentId: "x", targetAgentId: "a", timestamp: expect.any(Date) }
+    ]);
+    expect(calls).toBe(1);
+  });
+
+  it("evicts the oldest subscriber bucket when maxSubscribers is exceeded", async () => {
+    const bus = new InMemoryAgentMessageBus({ maxSubscribers: 2 });
+    const seen: string[] = [];
+
+    bus.subscribe("first", () => {
+      seen.push("first");
+    });
+    bus.subscribe("second", () => {
+      seen.push("second");
+    });
+    bus.subscribe("third", () => {
+      seen.push("third");
+    });
+
+    await bus.publish({ content: "go", sourceAgentId: "x", timestamp: new Date() });
+
+    expect(seen).toEqual(["second", "third"]);
+  });
+
+  it("rejects non-positive maxSubscribers", () => {
+    expect(() => new InMemoryAgentMessageBus({ maxSubscribers: 0 })).toThrow(RangeError);
+    expect(() => new InMemoryAgentMessageBus({ maxSubscribers: -5 })).toThrow(RangeError);
+  });
+});
+
+describe("MultiAgentOrchestrator with messageBus", () => {
+  it("publishes a message per completed worker in sequential mode", async () => {
+    const bus = new InMemoryAgentMessageBus();
+    const research = new RuleBasedAgentWorker("research", "Research", ["task"], (input) =>
+      createWorkerResult("research", "researched", input)
+    );
+    const code = new RuleBasedAgentWorker("code", "Code", ["task"], (input) =>
+      createWorkerResult("code", "coded", input)
+    );
+    const orchestrator = new MultiAgentOrchestrator({
+      messageBus: bus,
+      workers: [research, code]
+    });
+
+    await orchestrator.run({
+      messages: [{ content: "task", role: "user" }],
+      model: "model-1"
+    });
+
+    const conversation = bus.getConversation();
+    expect(conversation.map((message) => ({ source: message.sourceAgentId, content: message.content }))).toEqual([
+      { source: "research", content: "researched" },
+      { source: "code", content: "coded" }
+    ]);
+  });
+
+  it("publishes a failure message when a worker throws", async () => {
+    const bus = new InMemoryAgentMessageBus();
+    const failing = new RuleBasedAgentWorker("primary", "Primary", ["task"], () => {
+      throw new Error("boom");
+    });
+    const fallback = new RuleBasedAgentWorker("fallback", "Fallback", ["task"], (input) =>
+      createWorkerResult("fallback", "ok", input)
+    );
+    const orchestrator = new MultiAgentOrchestrator({
+      messageBus: bus,
+      workers: [failing, fallback]
+    });
+
+    await orchestrator.run({
+      messages: [{ content: "task", role: "user" }],
+      model: "model-1"
+    });
+
+    const messages = bus.getConversation();
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.metadata).toMatchObject({ status: "failed" });
+    expect(messages[0]?.content).toBe("boom");
+    expect(messages[1]?.sourceAgentId).toBe("fallback");
+  });
+
+  it("does not publish when no message bus is provided", async () => {
+    const orchestrator = new MultiAgentOrchestrator({
+      workers: [
+        new RuleBasedAgentWorker("alpha", "Alpha", ["task"], (input) => createWorkerResult("alpha", "a", input))
+      ]
+    });
+
+    const result = await orchestrator.run({
+      messages: [{ content: "task", role: "user" }],
+      model: "model-1"
+    });
+
+    expect(result.results).toHaveLength(1);
+  });
+});
