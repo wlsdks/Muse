@@ -296,6 +296,11 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- Admin audit compatibility now performs server-side filtering. `AdminAuditStore.query({ category?, action?, limit?, offset? })`
+  is available on both `InMemoryAdminAuditStore` and `KyselyAdminAuditStore`, returning `{ items, total }`.
+  `/api/admin/audits` consumes the new query when an audit store is configured, so category/action filters
+  and pagination round-trip to the database instead of post-fetch JS filtering. Legacy in-memory state path
+  remains as the no-store fallback.
 - Slack reminder compatibility now exists in `@muse/integrations`. `parseReminderTime` recognizes the
   Reactor English (`at HH:mm`) and Korean (`N시 M분에`) suffixes, rolling past times to the next day in the
   configured timezone (default `Asia/Seoul`). `InMemoryReminderStore` provides per-user FIFO storage with

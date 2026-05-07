@@ -3219,10 +3219,30 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    const limit = Math.max(1, readQueryInteger(request, "limit", 1000));
     const offset = Math.max(0, readQueryInteger(request, "offset", 0));
-    const rows = await adminAuditRows(request, options, limit);
     const pageLimit = clampLimit(readQueryInteger(request, "pageLimit", 50));
+    const category = readQueryString(request, "category") ?? undefined;
+    const action = readQueryString(request, "action") ?? undefined;
+
+    if (options.admin?.auditStore) {
+      const auditPage = await options.admin.auditStore.query({
+        ...(action ? { action } : {}),
+        ...(category ? { category } : {}),
+        limit: pageLimit,
+        offset
+      });
+      const items = auditPage.items
+        .map((record) => toAdminAuditResponse(adminAuditStoreRecordToCompat(record)));
+      return {
+        items,
+        limit: pageLimit,
+        offset,
+        total: auditPage.total
+      };
+    }
+
+    const limit = Math.max(1, readQueryInteger(request, "limit", 1000));
+    const rows = await adminAuditRows(request, options, limit);
     return {
       items: rows.slice(offset, offset + pageLimit),
       limit: pageLimit,

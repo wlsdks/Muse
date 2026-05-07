@@ -94,9 +94,22 @@ export interface AdminAuditInput {
   readonly detail?: string | null;
 }
 
+export interface AdminAuditQueryFilter {
+  readonly category?: string;
+  readonly action?: string;
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
+export interface AdminAuditQueryPage {
+  readonly items: readonly AdminAuditRecord[];
+  readonly total: number;
+}
+
 export interface AdminAuditStore {
   record(input: AdminAuditInput): Awaitable<AdminAuditRecord>;
   listRecent(limit?: number): Awaitable<readonly AdminAuditRecord[]>;
+  query(filter?: AdminAuditQueryFilter): Awaitable<AdminAuditQueryPage>;
 }
 
 export interface MetricAuditEvent {
@@ -366,6 +379,21 @@ export class InMemoryAdminAuditStore implements AdminAuditStore {
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       .slice(0, Math.max(1, limit));
   }
+
+  query(filter: AdminAuditQueryFilter = {}): AdminAuditQueryPage {
+    const limit = Math.max(1, filter.limit ?? 50);
+    const offset = Math.max(0, filter.offset ?? 0);
+    const category = filter.category?.toLowerCase();
+    const action = filter.action?.toUpperCase();
+    const filtered = [...this.audits.values()]
+      .filter((record) => !category || record.category.toLowerCase() === category)
+      .filter((record) => !action || record.action.toUpperCase() === action)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    return {
+      items: filtered.slice(offset, offset + limit),
+      total: filtered.length
+    };
+  }
 }
 
 export class KyselyAdminAuditStore implements AdminAuditStore {
@@ -397,6 +425,28 @@ export class KyselyAdminAuditStore implements AdminAuditStore {
       .limit(Math.max(1, limit))
       .execute();
     return rows.map(mapAdminAuditRow);
+  }
+
+  async query(filter: AdminAuditQueryFilter = {}): Promise<AdminAuditQueryPage> {
+    const limit = Math.max(1, filter.limit ?? 50);
+    const offset = Math.max(0, filter.offset ?? 0);
+    let listing = this.db.selectFrom("admin_audits").selectAll();
+    let counter = this.db.selectFrom("admin_audits").select((eb) => eb.fn.countAll().as("total"));
+    if (filter.category) {
+      listing = listing.where("category", "=", filter.category.toLowerCase());
+      counter = counter.where("category", "=", filter.category.toLowerCase());
+    }
+    if (filter.action) {
+      listing = listing.where("action", "=", filter.action.toUpperCase());
+      counter = counter.where("action", "=", filter.action.toUpperCase());
+    }
+    const rows = await listing.orderBy("created_at", "desc").limit(limit).offset(offset).execute();
+    const totalRow = await counter.executeTakeFirst();
+    const total = totalRow ? Number(totalRow.total ?? 0) : 0;
+    return {
+      items: rows.map(mapAdminAuditRow),
+      total: Number.isFinite(total) ? total : 0
+    };
   }
 }
 

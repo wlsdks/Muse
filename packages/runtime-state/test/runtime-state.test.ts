@@ -283,6 +283,20 @@ describe("admin audit and metric event stores", () => {
     });
 
     expect(auditStore.listRecent()).toMatchObject([{ action: "SIMULATE", id: "audit-2" }]);
+
+    const queryAll = auditStore.query({ limit: 10 });
+    expect(queryAll.total).toBe(1);
+    expect(queryAll.items.map((entry) => entry.action)).toEqual(["SIMULATE"]);
+
+    const filteredByCategory = auditStore.query({ category: "input_guard", limit: 10 });
+    expect(filteredByCategory.total).toBe(1);
+
+    const filteredByAction = auditStore.query({ action: "simulate", limit: 10 });
+    expect(filteredByAction.items.map((entry) => entry.action)).toEqual(["SIMULATE"]);
+
+    const noMatch = auditStore.query({ category: "missing", limit: 10 });
+    expect(noMatch.total).toBe(0);
+    expect(noMatch.items).toEqual([]);
     expect(metricStore.listRecent()).toMatchObject([
       {
         id: "metric-1",
