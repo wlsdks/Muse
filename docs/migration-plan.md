@@ -296,6 +296,25 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- provider tool-schema contracts pinned by direct adapter tests
+  (iteration 48). Iteration #45 fixed the Gemini schema-rejection bug
+  with `sanitizeGeminiSchema`, but the Gemini adapter test only used
+  an empty `{ type: "object" }` schema so the sanitizer was never
+  exercised end-to-end through the adapter. Four new tests close that
+  gap: (1) Gemini strips `additionalProperties` from every nested
+  level when the inputSchema has filters.tenantId / filters.tags /
+  query/required structure, then asserts the marshaled fetch body
+  contains zero `additionalProperties` strings; (2) Gemini also
+  strips `$schema`/`$id`/`$ref`/`definitions`/`patternProperties`
+  end-to-end; (3) Anthropic passes the realistic JSON Schema through
+  unchanged (its tool API accepts `additionalProperties`); (4)
+  OpenAI-compatible passes JSON Schema unchanged (strict mode
+  requires `additionalProperties: false`). Verified live with
+  GEMINI_API_KEY: 6/6 still passing. CLI runs end-to-end against
+  live Gemini via API (`muse chat` returns Gemini content,
+  `muse chat --stream` prints token-by-token). Model tests 29 →
+  33 passing (5 still skipped). pnpm check green; broad smoke 49/49;
+  route parity 0 missing.
 - CLAUDE.md / AGENTS.md restructured to Boris Cherny's lean-contract style
   (out-of-loop refactor). `CLAUDE.md` shrinks 133 → 58 lines, `AGENTS.md`
   shrinks 203 → 78. Domain rules now live in `.claude/rules/`

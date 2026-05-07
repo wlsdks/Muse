@@ -945,3 +945,158 @@ describe("sanitizeGeminiSchema", () => {
     expect(sanitizeGeminiSchema(42)).toBe(42);
   });
 });
+
+describe("provider tool-schema contracts (regression for live-LLM bugs)", () => {
+  const realisticTool = {
+    description: "Search the corpus for documents matching the given query.",
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      additionalProperties: false,
+      properties: {
+        filters: {
+          additionalProperties: false,
+          properties: {
+            tenantId: { type: "string" },
+            tags: { type: "array", items: { type: "string" } }
+          },
+          type: "object"
+        },
+        limit: { type: "integer", minimum: 1, maximum: 50 },
+        query: { description: "free-text query", type: "string" }
+      },
+      required: ["query"],
+      type: "object"
+    },
+    name: "search",
+    risk: "read" as const
+  };
+
+  it("Gemini strips `additionalProperties` from every nested level of the tool schema", async () => {
+    let requestBody: unknown;
+    const provider = new GeminiProvider({
+      apiKey: "gemini-key",
+      defaultModel: "gemini-test",
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "ok" }] } }],
+          responseId: "g-1",
+          usageMetadata: { candidatesTokenCount: 1, promptTokenCount: 1 }
+        }));
+      }
+    });
+
+    await provider.generate({
+      messages: [{ content: "search docs", role: "user" }],
+      model: "gemini-test",
+      tools: [realisticTool]
+    });
+
+    const stringified = JSON.stringify(requestBody);
+    expect(stringified).not.toContain("additionalProperties");
+    expect(stringified).not.toContain("$schema");
+    // The allowed shape is preserved.
+    expect(stringified).toContain('"required":["query"]');
+    expect(stringified).toContain('"description":"free-text query"');
+    // Verify nested filters.properties survived.
+    expect(stringified).toContain('"tenantId"');
+    expect(stringified).toContain('"tags"');
+  });
+
+  it("Gemini sanitizer also strips `$schema`, `$id`, `$ref`, `definitions`", async () => {
+    let requestBody: unknown;
+    const provider = new GeminiProvider({
+      apiKey: "k",
+      defaultModel: "gemini-test",
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "ok" }] } }],
+          responseId: "g-2",
+          usageMetadata: { candidatesTokenCount: 1, promptTokenCount: 1 }
+        }));
+      }
+    });
+    await provider.generate({
+      messages: [{ content: "x", role: "user" }],
+      model: "gemini-test",
+      tools: [{
+        ...realisticTool,
+        inputSchema: {
+          $id: "tool",
+          $ref: "#/definitions/search",
+          $schema: "http://json-schema.org/draft-07/schema#",
+          definitions: { search: { type: "object" } },
+          patternProperties: { "^x_": { type: "string" } },
+          properties: { query: { type: "string" } },
+          type: "object"
+        }
+      }]
+    });
+    const stringified = JSON.stringify(requestBody);
+    expect(stringified).not.toContain("$schema");
+    expect(stringified).not.toContain("$id");
+    expect(stringified).not.toContain("$ref");
+    expect(stringified).not.toContain("definitions");
+    expect(stringified).not.toContain("patternProperties");
+  });
+
+  it("Anthropic passes the tool schema through unchanged (it accepts additionalProperties)", async () => {
+    let requestBody: unknown;
+    const provider = new AnthropicProvider({
+      apiKey: "anthropic-key",
+      defaultModel: "claude-test",
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          content: [{ text: "ok", type: "text" }],
+          id: "msg-1",
+          model: "claude-test",
+          usage: { input_tokens: 1, output_tokens: 1 }
+        }));
+      }
+    });
+
+    await provider.generate({
+      messages: [{ content: "search docs", role: "user" }],
+      model: "claude-test",
+      tools: [realisticTool]
+    });
+
+    const stringified = JSON.stringify(requestBody);
+    // Anthropic's tool API accepts JSON Schema verbatim, so additionalProperties
+    // should still be present in the input_schema field.
+    expect(stringified).toContain('"input_schema":');
+    expect(stringified).toContain("additionalProperties");
+    expect(stringified).toContain('"required":["query"]');
+  });
+
+  it("OpenAI-compatible adapter passes the tool schema through unchanged (strict mode requires additionalProperties)", async () => {
+    let requestBody: unknown;
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "openai-key",
+      baseUrl: "https://api.example.test/v1",
+      defaultModel: "gpt-test",
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "ok" } }],
+          id: "chatcmpl-1",
+          model: "gpt-test",
+          usage: { completion_tokens: 1, prompt_tokens: 1 }
+        }));
+      }
+    });
+
+    await provider.generate({
+      messages: [{ content: "search docs", role: "user" }],
+      model: "gpt-test",
+      tools: [realisticTool]
+    });
+
+    const stringified = JSON.stringify(requestBody);
+    // OpenAI/Chat Completions accepts JSON Schema directly under tool.function.parameters.
+    expect(stringified).toContain('"parameters":');
+    expect(stringified).toContain("additionalProperties");
+  });
+});
