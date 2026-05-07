@@ -1638,6 +1638,31 @@ export function createNoOpAgentMetrics(): AgentMetrics {
   return new NoOpAgentMetrics();
 }
 
+/**
+ * Wraps an existing AgentMetrics so that every `recordAgentRun` event also
+ * feeds an `SloAlertEvaluator` (latency sample + success/failure result).
+ * Other metric methods are forwarded unchanged so the wrapper is a drop-in
+ * replacement for the inner metrics in the runtime.
+ */
+export function createSloFeedingAgentMetrics(slo: SloAlertEvaluator, inner: AgentMetrics): AgentMetrics {
+  return {
+    recordAgentRun(event) {
+      slo.recordLatency(event.durationMs);
+      slo.recordResult(event.status === "completed");
+      inner.recordAgentRun(event);
+    },
+    recordGuardRejection(stage, reason, metadata) {
+      inner.recordGuardRejection(stage, reason, metadata);
+    },
+    recordOutputGuardAction(stage, action, reason, metadata) {
+      inner.recordOutputGuardAction(stage, action, reason, metadata);
+    },
+    recordTokenUsage(usage, metadata) {
+      inner.recordTokenUsage(usage, metadata);
+    }
+  };
+}
+
 class InMemorySpanHandle implements SpanHandle {
   private closed = false;
 

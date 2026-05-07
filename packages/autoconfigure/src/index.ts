@@ -131,7 +131,10 @@ import {
   KyselyTokenUsageSink,
   KyselyTraceEventSink,
   PersistedMuseTracer,
+  SloAlertEvaluator,
   createJarvisObservabilitySnapshotProvider,
+  createSloFeedingAgentMetrics,
+  type AgentMetrics,
   type JarvisObservabilitySnapshot,
   type LatencyQuery,
   type MuseTracer,
@@ -258,6 +261,7 @@ export interface MuseRuntimeAssembly {
     readonly followupSuggestionStore: InMemoryFollowupSuggestionStore;
     readonly latencyQuery: LatencyQuery;
     readonly metrics: InMemoryAgentMetrics;
+    readonly sloEvaluator: SloAlertEvaluator;
     readonly tokenCostQuery: TokenCostQuery;
     readonly tokenUsageSink: TokenUsageSink;
     readonly traceSink?: QueryableTraceEventSink;
@@ -324,6 +328,14 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     ttlMs: parseInteger(env.MUSE_CACHE_TTL_MS, 3_600_000)
   });
   const agentMetrics = new InMemoryAgentMetrics();
+  const sloEvaluator = new SloAlertEvaluator({
+    cooldownSeconds: parseInteger(env.MUSE_SLO_COOLDOWN_SECONDS, 300),
+    errorRateThreshold: parseSloErrorRate(env.MUSE_SLO_ERROR_RATE_THRESHOLD, 0.1),
+    latencyThresholdMs: parseInteger(env.MUSE_SLO_LATENCY_THRESHOLD_MS, 30_000),
+    minSamples: parseInteger(env.MUSE_SLO_MIN_SAMPLES, 5),
+    windowSeconds: parseInteger(env.MUSE_SLO_WINDOW_SECONDS, 300)
+  });
+  const runtimeAgentMetrics: AgentMetrics = createSloFeedingAgentMetrics(sloEvaluator, agentMetrics);
   const followupSuggestionStore = new InMemoryFollowupSuggestionStore({
     maxEvents: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_MAX_EVENTS, 50_000),
     retentionMs: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_RETENTION_MS, 72 * 60 * 60 * 1000)
@@ -395,7 +407,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       },
       historyStore,
       hookTraceStore,
-      metrics: agentMetrics,
+      metrics: runtimeAgentMetrics,
       modelProvider,
       guards: createInputGuards(env),
       outputGuards: createOutputGuards(env),
@@ -472,6 +484,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       followupSuggestionStore,
       latencyQuery,
       metrics: agentMetrics,
+      sloEvaluator,
       tokenCostQuery,
       tokenUsageSink,
       ...(traceSink ? { traceSink } : {}),
@@ -714,6 +727,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
       createJarvisObservabilitySnapshotProvider({
         followupSuggestionStore: assembly.observability.followupSuggestionStore,
         latencyQuery: assembly.observability.latencyQuery,
+        sloEvaluator: assembly.observability.sloEvaluator,
         tokenCostQuery: assembly.observability.tokenCostQuery
       }).snapshot(),
     historyStore: assembly.historyStore,
@@ -1096,6 +1110,14 @@ export function createLoopbackMcpToolsFromEnv(env: MuseEnvironment): readonly Mu
   }
 
   return servers.flatMap((server) => createLoopbackMcpMuseTools(server));
+}
+
+function parseSloErrorRate(value: string | undefined, fallback: number): number {
+  const parsed = value === undefined ? Number.NaN : Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    return fallback;
+  }
+  return parsed;
 }
 
 function parseCsv(value: string | undefined): readonly string[] | undefined {

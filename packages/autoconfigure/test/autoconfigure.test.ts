@@ -188,6 +188,34 @@ describe("autoconfigure", () => {
     });
   });
 
+  it("feeds the SloAlertEvaluator from each agent run so /api/admin/jarvis/snapshot.slo is populated", async () => {
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic",
+        MUSE_SLO_MIN_SAMPLES: "1"
+      }
+    });
+
+    expect(assembly.observability.sloEvaluator).toBeTruthy();
+    await assembly.agentRuntime?.run({
+      messages: [{ content: "first", role: "user" }],
+      model: "diagnostic/smoke",
+      runId: "slo-run-1"
+    });
+    await assembly.agentRuntime?.run({
+      messages: [{ content: "second", role: "user" }],
+      model: "diagnostic/smoke",
+      runId: "slo-run-2"
+    });
+
+    const snapshot = assembly.observability.sloEvaluator.snapshot();
+    expect(snapshot.latencySamples).toBe(2);
+    expect(snapshot.resultSamples).toBe(2);
+    expect(snapshot.errorRate).toBe(0);
+    expect(snapshot.latencyP95Ms).toBeGreaterThanOrEqual(0);
+  });
+
   it("exposes a queryable in-memory traceSink that captures spans from agent runs", async () => {
     const assembly = createMuseRuntimeAssembly({
       env: {

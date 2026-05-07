@@ -309,6 +309,13 @@ try {
     assert(typeof snapshot.windowEnd === "string", "expected windowEnd timestamp");
     assert(snapshot.latency && typeof snapshot.latency.count === "number", "expected latency block");
     assert(snapshot.tokenCost && Array.isArray(snapshot.tokenCost.daily), "expected tokenCost block");
+    assert(snapshot.slo && typeof snapshot.slo.latencySamples === "number" && typeof snapshot.slo.resultSamples === "number",
+      `expected slo block with sample counts, got ${JSON.stringify(snapshot.slo)}`);
+    assert(
+      snapshot.slo.latencySamples > 0 && snapshot.slo.resultSamples > 0,
+      "expected slo to have at least one latency + result sample after the earlier /api/chat call (proves SLO evaluator is fed by recordAgentRun)"
+    );
+    assert(Array.isArray(snapshot.slo.violations), "expected slo.violations array");
   });
 
   await record("Response completeness evaluator scores sampled responses 0..100", async () => {
