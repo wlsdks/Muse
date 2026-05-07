@@ -16,6 +16,7 @@ import {
   createDiffMcpServer,
   createJsonMcpServer,
   createMathMcpServer,
+  createRegexMcpServer,
   createUrlMcpServer,
   createMcpSecurityPolicyInsert,
   createMcpServerInsert,
@@ -465,13 +466,14 @@ function createPostgresBuilder(): Kysely<MuseDatabase> {
 }
 
 describe("loopback MCP servers", () => {
-  it("createDefaultLoopbackMcpServers ships seven reference servers (time/text/math/json/url/crypto/diff) by default", () => {
+  it("createDefaultLoopbackMcpServers ships eight reference servers (time/text/math/json/url/crypto/diff/regex) by default", () => {
     const servers = createDefaultLoopbackMcpServers({ now: () => new Date("2026-05-15T00:00:00.000Z") });
     expect(servers.map((server) => server.name).sort()).toEqual([
       "muse.crypto",
       "muse.diff",
       "muse.json",
       "muse.math",
+      "muse.regex",
       "muse.text",
       "muse.time",
       "muse.url"
@@ -742,5 +744,67 @@ describe("loopback MCP servers", () => {
     const diffResult = await connection.callTool!("equal", { left: "muse", right: "Muse" });
     expect(diffResult.equal).toBe(false);
     expect(diffResult.leftDigest).not.toBe(diffResult.rightDigest);
+  });
+
+  it("muse.regex#test returns boolean match status", async () => {
+    const connection = createLoopbackMcpConnection(createRegexMcpServer());
+    expect(await connection.callTool!("test", { text: "hello jarvis", pattern: "j[ae]rvis" })).toEqual({
+      matched: true
+    });
+    expect(await connection.callTool!("test", { text: "hello", pattern: "muse" })).toEqual({ matched: false });
+    expect(await connection.callTool!("test", { text: "x", pattern: "(unbalanced" })).toEqual({
+      error: expect.stringContaining("invalid pattern")
+    });
+  });
+
+  it("muse.regex#match enumerates matches with index and capture groups, honouring maxMatches", async () => {
+    const connection = createLoopbackMcpConnection(createRegexMcpServer());
+    const result = await connection.callTool!("match", {
+      text: "alpha-1 beta-2 gamma-3",
+      pattern: "([a-z]+)-(\\d+)"
+    });
+    expect(result.matches).toHaveLength(3);
+    expect(result.matches[0]).toEqual({ index: 0, value: "alpha-1", groups: ["alpha", "1"] });
+    expect(result.matches[1]?.groups).toEqual(["beta", "2"]);
+    expect(result.truncated).toBe(false);
+
+    const limited = await connection.callTool!("match", {
+      text: "abcdefgh",
+      pattern: ".",
+      maxMatches: 3
+    });
+    expect(limited.matches).toHaveLength(3);
+    expect(limited.truncated).toBe(true);
+  });
+
+  it("muse.regex#replace replaces every occurrence (forces global)", async () => {
+    const connection = createLoopbackMcpConnection(createRegexMcpServer());
+    expect(
+      await connection.callTool!("replace", {
+        text: "foo and foo and foo",
+        pattern: "foo",
+        replacement: "bar"
+      })
+    ).toEqual({ result: "bar and bar and bar" });
+    expect(
+      await connection.callTool!("replace", {
+        text: "FOO foo Foo",
+        pattern: "foo",
+        replacement: "X",
+        flags: "i"
+      })
+    ).toEqual({ result: "X X X" });
+  });
+
+  it("muse.regex rejects oversized text and pattern lengths", async () => {
+    const connection = createLoopbackMcpConnection(createRegexMcpServer());
+    const oversized = "a".repeat(50_001);
+    expect(await connection.callTool!("test", { text: oversized, pattern: "a" })).toEqual({
+      error: expect.stringContaining("text must be at most")
+    });
+    const longPattern = "a".repeat(257);
+    expect(await connection.callTool!("test", { text: "a", pattern: longPattern })).toEqual({
+      error: expect.stringContaining("pattern must be at most")
+    });
   });
 });

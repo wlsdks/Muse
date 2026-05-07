@@ -317,16 +317,16 @@ try {
     assert(timeNow.inputSchema && typeof timeNow.inputSchema === "object", "expected real inputSchema for time_now");
   });
 
-  await record("Seven loopback MCP servers (time/text/math/json/url/crypto/diff) expose tools end-to-end", async () => {
+  await record("Eight loopback MCP servers (time/text/math/json/url/crypto/diff/regex) expose tools end-to-end", async () => {
     const {
       createDefaultLoopbackMcpServers,
       createLoopbackMcpConnection
     } = await import(`${rootDir}/packages/mcp/dist/index.js`);
     const servers = createDefaultLoopbackMcpServers();
-    assert(servers.length === 7, `expected 7 default loopback servers, got ${servers.length}`);
+    assert(servers.length === 8, `expected 8 default loopback servers, got ${servers.length}`);
     const names = servers.map((s) => s.name).sort();
     assert(
-      JSON.stringify(names) === JSON.stringify(["muse.crypto", "muse.diff", "muse.json", "muse.math", "muse.text", "muse.time", "muse.url"]),
+      JSON.stringify(names) === JSON.stringify(["muse.crypto", "muse.diff", "muse.json", "muse.math", "muse.regex", "muse.text", "muse.time", "muse.url"]),
       `expected default names, got ${JSON.stringify(names)}`
     );
 
@@ -386,6 +386,23 @@ try {
     const equalCheck = await diff.callTool("equal", { left: "muse", right: "muse" });
     assert(equalCheck.equal === true && equalCheck.leftDigest === equalCheck.rightDigest,
       `expected equal+matching digests, got ${JSON.stringify(equalCheck)}`);
+
+    const regex = createLoopbackMcpConnection(servers.find((s) => s.name === "muse.regex"));
+    const matches = await regex.callTool("match", {
+      text: "alpha-1 beta-2 gamma-3",
+      pattern: "([a-z]+)-(\\d+)"
+    });
+    assert(matches.matches.length === 3 && matches.matches[1].groups[0] === "beta",
+      `expected 3 grouped matches, got ${JSON.stringify(matches)}`);
+    const replaced = await regex.callTool("replace", {
+      text: "FOO foo Foo",
+      pattern: "foo",
+      replacement: "X",
+      flags: "i"
+    });
+    assert(replaced.result === "X X X", `expected case-insensitive replace, got ${replaced.result}`);
+    const tested = await regex.callTool("test", { text: "muse jarvis", pattern: "j[ae]rvis" });
+    assert(tested.matched === true, `expected match, got ${JSON.stringify(tested)}`);
   });
 
   await record("Chunk-merging retriever joins chunks of the same parent and dedupes by id", async () => {

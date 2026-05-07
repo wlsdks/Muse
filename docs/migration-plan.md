@@ -296,6 +296,16 @@ route state and runtime services onto Kysely-backed stores.
   `parsePlan`, `validatePlan` helpers) and `@muse/prompts` (`buildPlanningSystemPrompt`). These mirror Reactor's
   `agent.plan.PlanStep` / `agent.plan.PlanValidator` / `agent.impl.prompt.PlanningPromptBuilder` and are the
   primitives the upcoming PlanExecute loop will compose.
+- eighth loopback MCP server `muse.regex` ships by default (iteration 39).
+  Three new tools — `test` (boolean match), `match` (enumerate matches with
+  index + capture groups, force global, default 1000-cap with explicit
+  `truncated` flag, advance on zero-width to terminate), and `replace`
+  (force global, supports caller-supplied flags). Bounded for
+  safety: text capped at 50k chars, patterns at 256 chars, matches at
+  10× default. Compile errors return structured payloads instead of
+  throwing. Default loopback roster: 7 → 8. mcp tests 38 → 42, broad
+  smoke 46/46 (loopback check now exercises all eight servers and the
+  three regex tools end-to-end), route parity 0 missing.
 - agent-core monolith split continued (iteration 38). Five runtime-
   internal types (`ModelLoopExecution`, `ExecutedToolResult`,
   `StreamedModelTurn`, `StreamExecutionOptions`, `PlanExecuteStepRecord`)

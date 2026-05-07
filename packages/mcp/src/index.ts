@@ -1322,6 +1322,7 @@ export {
   createLoopbackMcpConnection,
   createLoopbackMcpMuseTools,
   createMathMcpServer,
+  createRegexMcpServer,
   createTextUtilsMcpServer,
   createTimeMcpServer,
   createUrlMcpServer,
