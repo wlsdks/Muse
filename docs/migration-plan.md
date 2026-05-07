@@ -286,6 +286,11 @@ route state and runtime services onto Kysely-backed stores.
   `assistant.threads.setStatus` from `beforeTool`/`afterTool` lifecycle events with throttled, friendly-named
   Korean status updates. Activates only when `slackChannelId` + `slackThreadTs` metadata are present, swallows
   transport errors, and resets the 2-minute Slack thinking-indicator TTL on each tool boundary.
+- Admin latency analytics compatibility now uses a real `LatencyQuery` service. `KyselyLatencyQuery` aggregates
+  `trace_events` rows with `DATE_TRUNC`-style bucketing plus `PERCENTILE_CONT(0.95)` for p95, while
+  `InMemoryLatencyQuery` performs the same bucketing/percentile math against an `InMemoryTraceEventSink` for the
+  no-DB scaffold. `/api/admin/metrics/latency/{summary,timeseries}` now consume the query when autoconfigure wires it
+  in, falling back to the previous in-memory run-history aggregation only when no query is configured.
 
 ## Execution Plan
 

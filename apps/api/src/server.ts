@@ -32,7 +32,7 @@ import type {
 import type { AgentEvalStore } from "@muse/eval";
 import type { TaskMemoryMaintenance, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
-import type { FollowupSuggestionStore } from "@muse/observability";
+import type { FollowupSuggestionStore, LatencyQuery } from "@muse/observability";
 import type { GuardRuleStore, ToolPolicyStore } from "@muse/policy";
 import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } from "@muse/promptlab";
 import type { RagDocumentStore, RagIngestionCandidateStore, RagIngestionPolicyStore } from "@muse/rag";
@@ -62,6 +62,7 @@ export interface ServerOptions {
   readonly iamTokenExchangeService?: IamTokenExchangeService;
   readonly authRateLimiter?: AuthRateLimiter;
   readonly followupSuggestionStore?: FollowupSuggestionStore;
+  readonly latencyQuery?: LatencyQuery;
   readonly feedbackStore?: FeedbackStore;
   readonly promptLabCatalogStore?: PromptLabCatalogStore;
   readonly promptLabExperimentStore?: PromptLabExperimentStore;
@@ -299,6 +300,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     promptLabCatalogStore: options.promptLabCatalogStore,
     promptLabExperimentStore: options.promptLabExperimentStore,
     followupSuggestionStore: options.followupSuggestionStore,
+    latencyQuery: options.latencyQuery,
     historyStore: options.historyStore,
     mcp: options.mcp,
     modelProvider: options.modelProvider,

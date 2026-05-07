@@ -111,10 +111,15 @@ import {
 import {
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
+  InMemoryLatencyQuery,
   InMemoryMuseTracer,
+  InMemoryTraceEventSink,
+  KyselyLatencyQuery,
   KyselyTraceEventSink,
   PersistedMuseTracer,
-  type MuseTracer
+  type LatencyQuery,
+  type MuseTracer,
+  type QueryableTraceEventSink
 } from "@muse/observability";
 import { CircuitBreakerRegistry } from "@muse/resilience";
 import {
@@ -233,6 +238,7 @@ export interface MuseRuntimeAssembly {
   readonly toolPolicyStore: ToolPolicyStore;
   readonly observability: {
     readonly followupSuggestionStore: InMemoryFollowupSuggestionStore;
+    readonly latencyQuery: LatencyQuery;
     readonly metrics: InMemoryAgentMetrics;
     readonly tracer: MuseTracer;
   };
@@ -301,7 +307,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     maxEvents: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_MAX_EVENTS, 50_000),
     retentionMs: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_RETENTION_MS, 72 * 60 * 60 * 1000)
   });
-  const tracer = createTracer(db);
+  const { tracer, latencyQuery } = createTracingPipeline(db);
   const circuitBreakerRegistry = new CircuitBreakerRegistry({
     failureThreshold: parseInteger(env.MUSE_CIRCUIT_BREAKER_FAILURE_THRESHOLD, 5),
     resetTimeoutMs: parseInteger(env.MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS, 30_000)
@@ -433,6 +439,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     toolPolicyStore,
     observability: {
       followupSuggestionStore,
+      latencyQuery,
       metrics: agentMetrics,
       tracer
     },
@@ -467,6 +474,24 @@ function createHistoryStore(db: Kysely<MuseDatabase> | undefined): AgentRunHisto
 
 function createTracer(db: Kysely<MuseDatabase> | undefined): MuseTracer {
   return db ? new PersistedMuseTracer(new KyselyTraceEventSink(db)) : new InMemoryMuseTracer();
+}
+
+function createTracingPipeline(db: Kysely<MuseDatabase> | undefined): {
+  readonly tracer: MuseTracer;
+  readonly latencyQuery: LatencyQuery;
+} {
+  if (db) {
+    return {
+      latencyQuery: new KyselyLatencyQuery(db),
+      tracer: new PersistedMuseTracer(new KyselyTraceEventSink(db))
+    };
+  }
+
+  const sink: QueryableTraceEventSink = new InMemoryTraceEventSink();
+  return {
+    latencyQuery: new InMemoryLatencyQuery(sink),
+    tracer: new PersistedMuseTracer(sink)
+  };
 }
 
 function createApprovalStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): PendingApprovalStore {
@@ -612,6 +637,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     promptLabCatalogStore: assembly.promptLabCatalogStore,
     promptLabExperimentStore: assembly.promptLabExperimentStore,
     followupSuggestionStore: assembly.observability.followupSuggestionStore,
+    latencyQuery: assembly.observability.latencyQuery,
     historyStore: assembly.historyStore,
     mcp: {
       manager: assembly.mcp.manager,

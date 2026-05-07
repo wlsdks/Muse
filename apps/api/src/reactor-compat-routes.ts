@@ -22,7 +22,7 @@ import type {
 import type { AgentEvalStore } from "@muse/eval";
 import type { TaskMemoryMaintenance, UserMemory, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
-import type { FollowupSuggestionStore } from "@muse/observability";
+import type { FollowupSuggestionStore, LatencyQuery, LatencyPoint, LatencySummary } from "@muse/observability";
 import type { GuardRuleStore, ToolPolicyInput, ToolPolicyStore } from "@muse/policy";
 import { inputGuardSimulationToJson, simulateInputGuardPipeline, toolPolicyToJson } from "@muse/policy";
 import type { FeedbackStore, PromptLabCatalogStore, PromptLabExperimentStore } from "@muse/promptlab";
@@ -71,6 +71,7 @@ export interface ReactorCompatibilityRouteOptions {
   readonly promptLabCatalogStore?: PromptLabCatalogStore;
   readonly promptLabExperimentStore?: PromptLabExperimentStore;
   readonly followupSuggestionStore?: FollowupSuggestionStore;
+  readonly latencyQuery?: LatencyQuery;
   readonly historyStore?: AgentRunHistoryStore;
   readonly mcp?: McpRouteMcp;
   readonly modelProvider?: ModelProvider;
@@ -3281,7 +3282,16 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    return latencySummary(await listAllRuns(options), readQueryInteger(request, "days", 7));
+    const days = readQueryInteger(request, "days", 7);
+    if (options.latencyQuery) {
+      const summary = await options.latencyQuery.summary({
+        from: latencyWindowStart(days),
+        to: new Date()
+      });
+      return latencySummaryFromQuery(summary);
+    }
+
+    return latencySummary(await listAllRuns(options), days);
   });
 
   server.get("/api/admin/metrics/latency/timeseries", async (request, reply) => {
@@ -3289,7 +3299,17 @@ function registerAdminAnalyticsCompatibilityRoutes(
       return reply;
     }
 
-    return latencyTimeseries(await listAllRuns(options), readQueryInteger(request, "days", 7));
+    const days = readQueryInteger(request, "days", 7);
+    if (options.latencyQuery) {
+      const points = await options.latencyQuery.timeSeries({
+        bucketSizeMs: 24 * 60 * 60 * 1000,
+        from: latencyWindowStart(days),
+        to: new Date()
+      });
+      return latencyTimeseriesFromQuery(points);
+    }
+
+    return latencyTimeseries(await listAllRuns(options), days);
   });
 
   server.get("/api/admin/rag-analytics/status", async (request, reply) => {
@@ -4896,6 +4916,29 @@ function inputGuardStatsResponse(options: ReactorCompatibilityRouteOptions, peri
 
 function compareCreatedAtDesc(left: JsonObject, right: JsonObject): number {
   return (epochMillisOrNull(right.createdAt) ?? 0) - (epochMillisOrNull(left.createdAt) ?? 0);
+}
+
+function latencyWindowStart(days: number): Date {
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() - days);
+  return start;
+}
+
+function latencySummaryFromQuery(summary: LatencySummary): JsonObject {
+  return {
+    count: summary.count,
+    p50Ms: summary.p50Ms,
+    p95Ms: summary.p95Ms,
+    p99Ms: summary.p99Ms
+  };
+}
+
+function latencyTimeseriesFromQuery(points: readonly LatencyPoint[]): readonly JsonObject[] {
+  return points.map((point) => ({
+    avgLatencyMs: point.avgMs,
+    count: point.count,
+    date: point.bucketStart.toISOString().slice(0, 10)
+  }));
 }
 
 function latencySummary(runs: readonly AgentRunRecord[], days: number): JsonObject {

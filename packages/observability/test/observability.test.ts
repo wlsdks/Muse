@@ -6,8 +6,10 @@ import {
   createTraceEventInsert,
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
+  InMemoryLatencyQuery,
   InMemoryMuseTracer,
   InMemoryTraceEventSink,
+  LATENCY_DEFAULT_SPAN_NAME_PREFIX,
   OpenTelemetryTraceEventSink,
   PersistedMuseTracer,
   PinoTraceEventLogger,
@@ -379,5 +381,200 @@ describe("startup doctor and log export", () => {
         }
       })
     ]);
+  });
+});
+
+describe("InMemoryLatencyQuery", () => {
+  async function recordSpan(
+    sink: InMemoryTraceEventSink,
+    options: {
+      runId?: string;
+      name?: string;
+      stage?: string;
+      startedAt: string;
+      endedAt?: string;
+    }
+  ): Promise<void> {
+    await sink.record({
+      attributes: {},
+      endedAt: options.endedAt ? new Date(options.endedAt) : undefined,
+      name: options.name ?? "muse.agent.run",
+      runId: options.runId ?? "run-1",
+      spanId: `span-${options.startedAt}`,
+      stage: options.stage ?? "agent",
+      startedAt: new Date(options.startedAt)
+    });
+  }
+
+  it("aggregates muse.agent.* spans into hourly buckets with avg, p95, count", async () => {
+    const sink = new InMemoryTraceEventSink();
+    await recordSpan(sink, { startedAt: "2026-05-07T10:00:00.000Z", endedAt: "2026-05-07T10:00:01.000Z" });
+    await recordSpan(sink, { startedAt: "2026-05-07T10:30:00.000Z", endedAt: "2026-05-07T10:30:02.000Z" });
+    await recordSpan(sink, { startedAt: "2026-05-07T10:45:00.000Z", endedAt: "2026-05-07T10:45:03.000Z" });
+    await recordSpan(sink, { startedAt: "2026-05-07T11:00:00.000Z", endedAt: "2026-05-07T11:00:05.000Z" });
+    await recordSpan(sink, { startedAt: "2026-05-07T11:15:00.000Z", endedAt: "2026-05-07T11:15:10.000Z" });
+
+    const query = new InMemoryLatencyQuery(sink);
+    const points = await query.timeSeries({
+      from: new Date("2026-05-07T10:00:00.000Z"),
+      to: new Date("2026-05-07T12:00:00.000Z")
+    });
+
+    expect(points).toEqual([
+      {
+        avgMs: 2000,
+        bucketStart: new Date("2026-05-07T10:00:00.000Z"),
+        count: 3,
+        p95Ms: 2900
+      },
+      {
+        avgMs: 7500,
+        bucketStart: new Date("2026-05-07T11:00:00.000Z"),
+        count: 2,
+        p95Ms: 9750
+      }
+    ]);
+  });
+
+  it("filters out spans whose name does not match the default muse.agent. prefix", async () => {
+    const sink = new InMemoryTraceEventSink();
+    await recordSpan(sink, {
+      endedAt: "2026-05-07T10:00:00.500Z",
+      name: "muse.model.generate",
+      startedAt: "2026-05-07T10:00:00.000Z"
+    });
+    await recordSpan(sink, {
+      endedAt: "2026-05-07T10:00:02.000Z",
+      name: "muse.agent.run",
+      startedAt: "2026-05-07T10:00:00.000Z"
+    });
+
+    const query = new InMemoryLatencyQuery(sink);
+    const summary = await query.summary({
+      from: new Date("2026-05-07T09:00:00.000Z"),
+      to: new Date("2026-05-07T11:00:00.000Z")
+    });
+
+    expect(summary.count).toBe(1);
+    expect(summary.avgMs).toBe(2000);
+  });
+
+  it("supports overriding the bucket size and the span name filter", async () => {
+    const sink = new InMemoryTraceEventSink();
+    await recordSpan(sink, {
+      endedAt: "2026-05-07T10:00:01.000Z",
+      name: "muse.model.generate",
+      startedAt: "2026-05-07T10:00:00.000Z"
+    });
+    await recordSpan(sink, {
+      endedAt: "2026-05-07T10:14:01.000Z",
+      name: "muse.model.generate",
+      startedAt: "2026-05-07T10:14:00.000Z"
+    });
+
+    const query = new InMemoryLatencyQuery(sink);
+    const points = await query.timeSeries({
+      bucketSizeMs: 5 * 60 * 1000,
+      from: new Date("2026-05-07T10:00:00.000Z"),
+      spanName: "muse.model.generate",
+      to: new Date("2026-05-07T11:00:00.000Z")
+    });
+
+    expect(points).toEqual([
+      {
+        avgMs: 1000,
+        bucketStart: new Date("2026-05-07T10:00:00.000Z"),
+        count: 1,
+        p95Ms: 1000
+      },
+      {
+        avgMs: 1000,
+        bucketStart: new Date("2026-05-07T10:10:00.000Z"),
+        count: 1,
+        p95Ms: 1000
+      }
+    ]);
+  });
+
+  it("ignores spans without an endedAt timestamp", async () => {
+    const sink = new InMemoryTraceEventSink();
+    await recordSpan(sink, { startedAt: "2026-05-07T10:00:00.000Z" });
+    await recordSpan(sink, {
+      endedAt: "2026-05-07T10:00:02.000Z",
+      startedAt: "2026-05-07T10:00:00.000Z"
+    });
+
+    const query = new InMemoryLatencyQuery(sink);
+    const summary = await query.summary({
+      from: new Date("2026-05-07T09:00:00.000Z"),
+      to: new Date("2026-05-07T11:00:00.000Z")
+    });
+
+    expect(summary.count).toBe(1);
+    expect(summary.avgMs).toBe(2000);
+  });
+
+  it("returns zeroed summary when no spans match the window", async () => {
+    const sink = new InMemoryTraceEventSink();
+    const query = new InMemoryLatencyQuery(sink);
+
+    expect(
+      await query.summary({
+        from: new Date("2026-05-07T00:00:00.000Z"),
+        to: new Date("2026-05-08T00:00:00.000Z")
+      })
+    ).toEqual({ avgMs: 0, count: 0, p50Ms: 0, p95Ms: 0, p99Ms: 0 });
+
+    expect(
+      await query.timeSeries({
+        from: new Date("2026-05-07T00:00:00.000Z"),
+        to: new Date("2026-05-08T00:00:00.000Z")
+      })
+    ).toEqual([]);
+  });
+
+  it("excludes spans outside the requested window boundaries", async () => {
+    const sink = new InMemoryTraceEventSink();
+    await recordSpan(sink, {
+      endedAt: "2026-05-07T09:00:01.000Z",
+      startedAt: "2026-05-07T09:00:00.000Z"
+    });
+    await recordSpan(sink, {
+      endedAt: "2026-05-07T10:00:01.000Z",
+      startedAt: "2026-05-07T10:00:00.000Z"
+    });
+
+    const query = new InMemoryLatencyQuery(sink);
+    const summary = await query.summary({
+      from: new Date("2026-05-07T09:30:00.000Z"),
+      to: new Date("2026-05-07T11:00:00.000Z")
+    });
+
+    expect(summary.count).toBe(1);
+  });
+
+  it("computes p50/p95/p99 from a small sorted distribution", async () => {
+    const sink = new InMemoryTraceEventSink();
+    for (let index = 0; index < 100; index += 1) {
+      const start = `2026-05-07T10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`;
+      const end = new Date(new Date(start).getTime() + (index + 1) * 100).toISOString();
+      await recordSpan(sink, { endedAt: end, startedAt: start });
+    }
+
+    const query = new InMemoryLatencyQuery(sink);
+    const summary = await query.summary({
+      from: new Date("2026-05-07T10:00:00.000Z"),
+      to: new Date("2026-05-07T13:00:00.000Z")
+    });
+
+    expect(summary.count).toBe(100);
+    expect(summary.avgMs).toBe(5050);
+    expect(summary.p50Ms).toBe(5050);
+    expect(summary.p95Ms).toBeGreaterThanOrEqual(9500);
+    expect(summary.p99Ms).toBeGreaterThanOrEqual(9900);
+  });
+
+  it("exposes a stable default span name prefix constant", () => {
+    expect(LATENCY_DEFAULT_SPAN_NAME_PREFIX).toBe("muse.agent.");
   });
 });
