@@ -499,66 +499,6 @@ export function containsIgnoreCase(value: string, needle: string): boolean {
 
 // registerMetricIngestionRoutes lives in apps/api/src/metric-ingestion-compat-routes.ts.
 
-export function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): MuseAuth | undefined {
-  if (!options.authService) {
-    reply.status(404).send({
-      code: "AUTH_UNAVAILABLE",
-      message: "Auth service is not configured"
-    });
-    return undefined;
-  }
-
-  return options.authService;
-}
-
-export function requirePendingApprovalStore(
-  options: ReactorCompatibilityRouteOptions,
-  reply: FastifyReply
-): PendingApprovalStore | undefined {
-  if (!options.pendingApprovalStore) {
-    reply.status(404).send({
-      code: "APPROVAL_STORE_UNAVAILABLE",
-      message: "Pending approval store is not configured"
-    });
-    return undefined;
-  }
-
-  return options.pendingApprovalStore;
-}
-
-export function parseAuthCredentials(
-  value: unknown,
-  mode: "login" | "register"
-): ParseResult<{ readonly email: string; readonly name: string; readonly password: string }> {
-  if (!isRecord(value) || typeof value.email !== "string" || typeof value.password !== "string") {
-    return invalid("INVALID_AUTH_REQUEST", "Body must include email and password strings");
-  }
-
-  if (value.email.trim().length === 0 || value.password.length === 0) {
-    return invalid("INVALID_AUTH_REQUEST", "Email and password must not be blank");
-  }
-
-  if (mode === "register" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.email.trim())) {
-    return invalid("INVALID_AUTH_REQUEST", "Invalid email format");
-  }
-
-  if (mode === "register" && value.password.length < 8) {
-    return invalid("INVALID_AUTH_REQUEST", "Password must be at least 8 characters");
-  }
-
-  if (mode === "register" && (typeof value.name !== "string" || value.name.trim().length === 0)) {
-    return invalid("INVALID_AUTH_REQUEST", "Registration requires a non-empty name");
-  }
-
-  return {
-    ok: true,
-    value: {
-      email: value.email,
-      name: typeof value.name === "string" ? value.name : value.email,
-      password: value.password
-    }
-  };
-}
 
 // Agent-spec helpers live in apps/api/src/compat-agent-spec.ts.
 export {
@@ -930,6 +870,33 @@ export {
   validateSlackFaqChannelId
 } from "./compat-slack-faq-store.js";
 
+// Auth helpers live in apps/api/src/compat-auth.ts.
+export {
+  authRateLimitKey,
+  errorMessage,
+  parseAuthCredentials,
+  requireAuthService,
+  requirePendingApprovalStore,
+  toReactorAuthResponse,
+  toReactorUserResponse
+} from "./compat-auth.js";
+
+// Model registry helpers live in apps/api/src/compat-models.ts.
+export {
+  agentModeResponse,
+  listAdminModelRegistry,
+  listSessionModels,
+  parseAgentMode
+} from "./compat-models.js";
+
+// Tenant ops + reactor prompt-section keys live in apps/api/src/compat-tenant-ops.ts.
+export {
+  reactorPromptSectionKeys,
+  tenantSummary,
+  toPlatformAlertRuleResponse,
+  updateTenantStatus
+} from "./compat-tenant-ops.js";
+
 // Prompt-experiment lifecycle helpers live in apps/api/src/compat-prompt-experiment.ts.
 export {
   activatePromptExperiment,
@@ -972,89 +939,6 @@ export {
   toGuardStageResponse
 } from "./compat-guard-pipeline.js";
 
-export function reactorPromptSectionKeys(): string[] {
-  return [
-    "accuracy",
-    "cross-tool",
-    "critical",
-    "domain:aggregate",
-    "domain:marketing",
-    "domain:onboarding",
-    "domain:policy",
-    "domain:summon",
-    "domain:workspace",
-    "format-slack",
-    "identity",
-    "proactive",
-    "rules",
-    "safety",
-    "tools",
-    "workflow:ask",
-    "workflow:search"
-  ];
-}
-
-export async function updateTenantStatus(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions,
-  status: "active" | "suspended"
-) {
-  if (!options.authorizeAdmin(request, reply)) {
-    return reply;
-  }
-
-  const { id } = request.params as { readonly id: string };
-  const tenants = await (options.admin?.operations?.listTenants() ?? []);
-  const tenant = tenants.find((item) => item.id === id);
-
-  if (!tenant) {
-    return reply.status(404).send(errorResponse(`Tenant not found: ${id}`));
-  }
-
-  return options.admin?.operations?.upsertTenant({
-    id,
-    monthlyBudgetUsd: tenant.monthlyBudgetUsd,
-    name: tenant.name,
-    status
-  });
-}
-
-export async function tenantSummary(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
-) {
-  if (!options.authorizeAnyAdmin(request, reply)) {
-    return reply;
-  }
-
-  const [tenants, alerts, slos, cost] = await Promise.all([
-    options.admin?.operations?.listTenants() ?? [],
-    options.admin?.operations?.listAlerts() ?? [],
-    options.admin?.operations?.listSlos() ?? [],
-    options.admin?.operations?.costSummary() ?? { byModel: {}, byTenant: {}, totalCostUsd: "0.00000000" }
-  ]);
-
-  return { alerts, cost, slos, tenants };
-}
-
-export function toPlatformAlertRuleResponse(record: JsonObject): JsonObject {
-  return {
-    createdAt: stringField(record.createdAt, nowIso()),
-    description: stringField(record.description, ""),
-    enabled: readBoolean(record.enabled, true),
-    id: stringField(record.id, ""),
-    metric: stringField(record.metric, ""),
-    name: stringField(record.name, ""),
-    platformOnly: readBoolean(record.platformOnly, false),
-    severity: stringField(record.severity, "WARNING"),
-    tenantId: nullableStringResponse(record.tenantId),
-    threshold: readNumber(record.threshold, 0),
-    type: stringField(record.type, "STATIC_THRESHOLD"),
-    windowMinutes: readNumber(record.windowMinutes, 15)
-  };
-}
 
 // Dashboard + platform-health helpers live in apps/api/src/compat-dashboard.ts.
 export {
@@ -1079,41 +963,6 @@ export {
   userMemoryNotFound
 } from "./compat-user-memory-store.js";
 
-export async function listSessionModels(options: ReactorCompatibilityRouteOptions) {
-  const models = await options.modelProvider?.listModels();
-  const names = models && models.length > 0
-    ? models.map((model) => `${model.providerId}/${model.modelId}`)
-    : options.defaultModel ? [options.defaultModel] : [];
-  const defaultModel = options.defaultModel ?? names[0] ?? "";
-
-  return {
-    defaultModel,
-    models: names.map((name) => ({ isDefault: name === defaultModel, name }))
-  };
-}
-
-export function listAdminModelRegistry(options: ReactorCompatibilityRouteOptions) {
-  const defaultModel = options.defaultModel ?? "";
-  const pricing = [
-    { input: 0.15, name: "gemini-3-flash-preview", output: 0.6 },
-    { input: 0.15, name: "gemini-3-flash", output: 0.6 },
-    { input: 1.25, name: "gemini-3-pro-preview", output: 10 },
-    { input: 1.25, name: "gemini-3-pro", output: 10 },
-    { input: 0.15, name: "gemini-2.5-flash", output: 0.6 },
-    { input: 1.25, name: "gemini-2.5-pro", output: 10 },
-    { input: 2.5, name: "gpt-4o", output: 10 },
-    { input: 0.15, name: "gpt-4o-mini", output: 0.6 },
-    { input: 3, name: "claude-sonnet-4-20250514", output: 15 },
-    { input: 15, name: "claude-opus-4-20250514", output: 75 }
-  ];
-
-  return pricing.map((model) => ({
-    inputPricePerMillionTokens: model.input,
-    isDefault: model.name === defaultModel,
-    name: model.name,
-    outputPricePerMillionTokens: model.output
-  }));
-}
 
 function notFound(reply: FastifyReply, code: string) {
   return reply.status(404).send({
@@ -1396,29 +1245,6 @@ export function opsMetricSnapshots(options: ReactorCompatibilityRouteOptions): r
   });
 }
 
-export function toReactorAuthResponse(login: LoginResult): JsonObject {
-  return {
-    error: null,
-    token: login.token,
-    user: toReactorUserResponse(login.user)
-  };
-}
-
-export function toReactorUserResponse(user: LoginResult["user"]): JsonObject {
-  const scope = adminScope(user.role);
-
-  return {
-    adminScope: scope ? scope.toUpperCase() : null,
-    email: user.email,
-    id: user.id,
-    name: user.name,
-    role: user.role.toUpperCase()
-  };
-}
-
-export function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
 
 export function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : undefined;
@@ -1427,18 +1253,6 @@ export function parseRuntimeSettingType(value: unknown): RuntimeSettingType | un
     : undefined;
 }
 
-export function parseAgentMode(value: unknown): AgentSpecInput["mode"] | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  return normalized === "standard" || normalized === "plan_execute" || normalized === "react" ? normalized : undefined;
-}
-
-export function agentModeResponse(value: AgentSpecInput["mode"]): string {
-  return value === "plan_execute" ? "PLAN_EXECUTE" : (value ?? "react").toUpperCase();
-}
 
 export function readStringArray(value: unknown): readonly string[] | undefined {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
@@ -1571,15 +1385,6 @@ function isJsonValue(value: unknown): boolean {
   return isRecord(value) && Object.values(value).every(isJsonValue);
 }
 
-export function authRateLimitKey(
-  forwardedFor: string | string[] | undefined,
-  fallbackIp: string,
-  path: string
-): string {
-  const forwarded = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  const ip = forwarded?.split(",")[0]?.trim() || fallbackIp || "unknown";
-  return `${ip}:${path}`;
-}
 
 export function nowIso(): string {
   return new Date().toISOString();
