@@ -60,6 +60,7 @@ import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
 import { registerAdminPlatformCompatRoutes } from "./admin-platform-compat-routes.js";
+import { registerAdminSessionCompatRoutes } from "./admin-session-compat-routes.js";
 import { registerAdminTenantAlertCompatRoutes } from "./admin-tenant-alert-compat-routes.js";
 import { registerAgentCompatibilityRoutes } from "./agent-compat-routes.js";
 import { registerApprovalCompatibilityRoutes } from "./approval-compat-routes.js";
@@ -387,141 +388,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
 
   registerAdminTenantAlertCompatRoutes(server, options);
 
-  server.get("/api/admin/tenant/overview", async (request, reply) => tenantSummary(request, reply, options));
-  server.get("/api/admin/tenant/usage", async (request, reply) => tenantSummary(request, reply, options));
-  server.get("/api/admin/tenant/cost", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return options.admin?.operations?.costSummary() ?? { byModel: {}, byTenant: {}, totalCostUsd: "0.00000000" };
-  });
-  server.get("/api/admin/tenant/alerts", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return options.admin?.operations?.listAlerts() ?? [];
-  });
-  server.get("/api/admin/tenant/slo", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return options.admin?.operations?.listSlos() ?? [];
-  });
-
-  server.get("/api/admin/sessions/overview", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    const runs = await listAllRuns(options);
-    const completed = runs.filter((run) => run.status === "completed").length;
-    const failed = runs.filter((run) => run.status === "failed").length;
-    return {
-      completed,
-      failed,
-      running: runs.filter((run) => run.status === "running").length,
-      total: runs.length
-    };
-  });
-  server.get("/api/admin/sessions", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    const offset = readQueryInteger(request, "offset", 0);
-    const limit = readQueryInteger(request, "limit", 30);
-    const runs = await listAllRuns(options, { limit, offset });
-    return {
-      items: runs,
-      limit: Math.max(0, limit),
-      offset: Math.max(0, offset),
-      total: (await listAllRuns(options)).length
-    };
-  });
-  server.get("/api/admin/sessions/:sessionId/export", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return exportSession(request, reply, options);
-  });
-  server.post("/api/admin/sessions/:sessionId/tags", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { sessionId } = request.params as { readonly sessionId: string };
-    const label = readBodyString(request.body, "label");
-
-    if (!label) {
-      return reply.status(400).send(errorResponse("label is required"));
-    }
-
-    return createSessionTag(options, request, sessionId, label, readBodyNullableString(request.body, "comment") ?? null);
-  });
-  server.delete("/api/admin/sessions/:sessionId/tags/:tagId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { sessionId, tagId } = request.params as { readonly sessionId: string; readonly tagId: string };
-    const deleted = await deleteSessionTag(options, sessionId, tagId);
-
-    if (!deleted) {
-      return reply.status(404).send(errorResponse("Tag not found"));
-    }
-
-    return reply.status(204).send();
-  });
-  server.get("/api/admin/sessions/:sessionId", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    const detail = await sessionDetail(request, reply, options);
-    const { sessionId } = request.params as { readonly sessionId: string };
-    const tags = await listSessionTags(options, sessionId);
-    return isRecord(detail) && "run" in detail ? { ...detail, tags } : detail;
-  });
-  server.delete("/api/admin/sessions/:sessionId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { sessionId } = request.params as { readonly sessionId: string };
-
-    if (!options.historyStore) {
-      return reply.status(404).send({
-        code: "RUN_HISTORY_UNAVAILABLE",
-        message: "Run history store is not configured"
-      });
-    }
-
-    const deleted = await options.historyStore.deleteRun(sessionId);
-    await deleteSessionTags(options, sessionId);
-    return deleted
-      ? reply.status(204).send()
-      : reply.status(404).send({ code: "SESSION_NOT_FOUND", message: `Session not found: ${sessionId}` });
-  });
-  server.get("/api/admin/users", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return summarizeUsers(await listAllRuns(options));
-  });
-  server.get("/api/admin/users/:userId/sessions", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { userId } = request.params as { readonly userId: string };
-    return options.historyStore?.listRunsByUser(userId) ?? [];
-  });
-  server.get("/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
+  registerAdminSessionCompatRoutes(server, options);
   server.get("/api/admin/traces", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -1293,7 +1160,7 @@ function registerAgentEvalCompatibilityRoutes(
   });
 }
 
-async function sessionDetail(
+export async function sessionDetail(
   request: FastifyRequest,
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions
@@ -1468,7 +1335,7 @@ export async function exportSession(
   };
 }
 
-async function listAllRuns(
+export async function listAllRuns(
   options: ReactorCompatibilityRouteOptions,
   listOptions: { readonly limit?: number; readonly offset?: number } = {}
 ): Promise<readonly AgentRunRecord[]> {
@@ -1478,7 +1345,7 @@ async function listAllRuns(
   }) ?? [];
 }
 
-function summarizeUsers(runs: readonly AgentRunRecord[]) {
+export function summarizeUsers(runs: readonly AgentRunRecord[]) {
   const byUser = new Map<string, { lastActiveAt: string; runCount: number; userId: string }>();
 
   for (const run of runs) {
@@ -3109,7 +2976,7 @@ export function compatRecord(input: JsonObject, prefix: string, existing?: JsonO
   };
 }
 
-async function createSessionTag(
+export async function createSessionTag(
   options: ReactorCompatibilityRouteOptions,
   request: FastifyRequest,
   sessionId: string,
@@ -3137,7 +3004,7 @@ async function createSessionTag(
   return tag;
 }
 
-async function listSessionTags(
+export async function listSessionTags(
   options: ReactorCompatibilityRouteOptions,
   sessionId: string
 ): Promise<readonly CompatRecord[]> {
@@ -3149,7 +3016,7 @@ async function listSessionTags(
   return state.sessionTags.get(sessionId) ?? [];
 }
 
-async function deleteSessionTag(
+export async function deleteSessionTag(
   options: ReactorCompatibilityRouteOptions,
   sessionId: string,
   tagId: string
@@ -3164,7 +3031,7 @@ async function deleteSessionTag(
   return remaining.length !== tags.length;
 }
 
-async function deleteSessionTags(options: ReactorCompatibilityRouteOptions, sessionId: string): Promise<void> {
+export async function deleteSessionTags(options: ReactorCompatibilityRouteOptions, sessionId: string): Promise<void> {
   if (options.sessionTagStore) {
     await options.sessionTagStore.deleteBySession(sessionId);
     return;
@@ -6316,7 +6183,7 @@ export async function updateTenantStatus(
   });
 }
 
-async function tenantSummary(
+export async function tenantSummary(
   request: FastifyRequest,
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions
