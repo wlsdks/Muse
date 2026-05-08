@@ -519,7 +519,7 @@ describe("createJarvisTools", () => {
     return tool;
   }
 
-  it("registers eight zero-IO ambient utility tools", () => {
+  it("registers nine zero-IO ambient utility tools", () => {
     const tools = createJarvisTools();
     expect(tools.map((tool) => tool.definition.name).sort()).toEqual([
       "json_query",
@@ -529,11 +529,35 @@ describe("createJarvisTools", () => {
       "time_add",
       "time_diff",
       "time_now",
-      "time_relative"
+      "time_relative",
+      "url_parts"
     ]);
     for (const tool of tools) {
       expect(tool.definition.risk).toBe("read");
     }
+  });
+
+  it("url_parts decomposes an absolute URL into protocol/host/port/path/query/hash/origin", async () => {
+    const tool = getTool("url_parts");
+    const out = (await tool.execute(
+      { url: "https://example.com:8443/api/v1/items?id=42&label=hello+world#section" },
+      { runId: "r" }
+    )) as Record<string, unknown>;
+    expect(out).toMatchObject({
+      hash: "section",
+      host: "example.com:8443",
+      origin: "https://example.com:8443",
+      path: "/api/v1/items",
+      port: 8443,
+      protocol: "https",
+      query: { id: "42", label: "hello world" }
+    });
+
+    const noPort = (await tool.execute({ url: "https://example.com/" }, { runId: "r" })) as Record<string, unknown>;
+    expect(noPort).toMatchObject({ port: null, host: "example.com", path: "/" });
+
+    expect(await tool.execute({ url: "" }, { runId: "r" })).toEqual({ error: "url is required" });
+    expect(await tool.execute({ url: "not-a-url" }, { runId: "r" })).toEqual({ error: "url must be an absolute URL" });
   });
 
   it("time_relative humanizes past, future, and near-zero deltas", async () => {

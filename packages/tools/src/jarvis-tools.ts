@@ -29,7 +29,8 @@ export function createJarvisTools(options: JarvisToolFactoryOptions = {}): reado
     createTextStatsTool(),
     createMathEvalTool(),
     createJsonQueryTool(),
-    createSlugifyTool()
+    createSlugifyTool(),
+    createUrlPartsTool()
   ];
 }
 
@@ -342,6 +343,54 @@ function createSlugifyTool(): MuseTool {
       const cap = readOptionalNumber(args, "maxLength");
       const maxLength = Number.isInteger(cap) && cap > 0 ? cap : undefined;
       return { slug: slugify(text, maxLength) } satisfies JsonObject;
+    }
+  };
+}
+
+function createUrlPartsTool(): MuseTool {
+  return {
+    definition: {
+      description:
+        "Parses a URL into its components: `protocol` (without trailing colon), `host`, `port` (number when explicit, null otherwise), `path`, `query` (object of decoded key/values, last write wins), `hash` (without leading #), and `origin`. Invalid input returns `{ error: ... }`. " +
+        "Useful when the agent needs to compose new URLs, classify links by host, or pull a single query parameter without piping through a string library.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          url: { description: "Absolute URL string.", type: "string" }
+        },
+        required: ["url"],
+        type: "object"
+      },
+      keywords: ["url", "parse", "link", "host"],
+      name: "url_parts",
+      risk: "read"
+    },
+    execute: (args): JsonObject => {
+      const raw = typeof args["url"] === "string" ? (args["url"] as string).trim() : "";
+      if (raw.length === 0) {
+        return { error: "url is required" };
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(raw);
+      } catch {
+        return { error: "url must be an absolute URL" };
+      }
+      const query: Record<string, string> = {};
+      for (const [key, value] of parsed.searchParams.entries()) {
+        query[key] = value;
+      }
+      const protocol = parsed.protocol.replace(/:$/u, "");
+      const port = parsed.port.length > 0 ? Number.parseInt(parsed.port, 10) : null;
+      return {
+        hash: parsed.hash.replace(/^#/u, ""),
+        host: parsed.host,
+        origin: parsed.origin,
+        path: parsed.pathname,
+        port,
+        protocol,
+        query
+      } satisfies JsonObject;
     }
   };
 }
