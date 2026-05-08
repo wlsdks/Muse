@@ -60,6 +60,7 @@ import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
 import { registerAgentCompatibilityRoutes } from "./agent-compat-routes.js";
+import { registerApprovalCompatibilityRoutes } from "./approval-compat-routes.js";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
 import { registerDocumentRoutes } from "./document-compat-routes.js";
 import { registerFeedbackCompatRoutes } from "./feedback-compat-routes.js";
@@ -349,106 +350,7 @@ function createCompatState(): CompatState {
 
 // registerAgentCompatibilityRoutes lives in apps/api/src/agent-compat-routes.ts.
 
-function registerApprovalCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/approvals", async (request, reply) => {
-    const store = requirePendingApprovalStore(options, reply);
-
-    if (!store) {
-      return reply;
-    }
-
-    const offset = readQueryInteger(request, "offset", 0);
-    const limit = readQueryInteger(request, "limit", 50);
-    const items = await listVisiblePendingApprovals(store, request, reply);
-
-    if (!items) {
-      return reply;
-    }
-
-    const safeOffset = Math.max(0, offset);
-    const safeLimit = clampLimit(limit);
-    const paged = items.slice(safeOffset, safeOffset + safeLimit);
-
-    return {
-      items: paged,
-      limit: safeLimit,
-      offset: safeOffset,
-      total: items.length
-    };
-  });
-
-  server.get("/api/approvals/pending", async (request, reply) => {
-    const store = requirePendingApprovalStore(options, reply);
-
-    if (!store) {
-      return reply;
-    }
-
-    const items = await listVisiblePendingApprovals(store, request, reply);
-    return items ?? reply;
-  });
-
-  server.post("/api/approvals/:id/approve", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const store = requirePendingApprovalStore(options, reply);
-
-    if (!store) {
-      return reply;
-    }
-
-    const { id } = request.params as { readonly id: string };
-    const modifiedArguments = toBody(request.body).modifiedArguments;
-    const success = await store.approve(id, isRecord(modifiedArguments) ? toJsonObject(modifiedArguments) : undefined);
-    return {
-      message: success ? "Approved" : "Approval not found or already resolved",
-      success
-    };
-  });
-
-  server.post("/api/approvals/:id/reject", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const store = requirePendingApprovalStore(options, reply);
-
-    if (!store) {
-      return reply;
-    }
-
-    const { id } = request.params as { readonly id: string };
-    const reason = readBodyNullableString(request.body, "reason") ?? undefined;
-
-    if (reason && reason.length > 500) {
-      return reply.status(400).send(validationErrorResponse({ reason: "reason 은 500자 이하여야 합니다" }));
-    }
-
-    const success = await store.reject(id, reason);
-    return {
-      message: success ? "Rejected" : "Approval not found or already resolved",
-      success
-    };
-  });
-}
-
-async function listVisiblePendingApprovals(
-  store: PendingApprovalStore,
-  request: FastifyRequest,
-  reply: FastifyReply
-) {
-  const userId = readAuthUserId(request);
-  const isAdmin = isAdminLikeRequest(request);
-
-  if (!isAdmin && !userId) {
-    reply.status(403).send(errorResponse("관리자 권한이 필요합니다"));
-    return undefined;
-  }
-
-  return isAdmin ? store.listPending() : store.listPendingByUser(userId ?? "");
-}
+// registerApprovalCompatibilityRoutes lives in apps/api/src/approval-compat-routes.ts.
 
 function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/tool-policy", async (request, reply) => {
@@ -4469,7 +4371,7 @@ export function requireAuthService(options: ReactorCompatibilityRouteOptions, re
   return options.authService;
 }
 
-function requirePendingApprovalStore(
+export function requirePendingApprovalStore(
   options: ReactorCompatibilityRouteOptions,
   reply: FastifyReply
 ): PendingApprovalStore | undefined {
@@ -9561,7 +9463,7 @@ export function readBodyString(value: unknown, key: string): string | undefined 
   return typeof item === "string" && item.trim().length > 0 ? item : undefined;
 }
 
-function readBodyNullableString(value: unknown, key: string): string | null | undefined {
+export function readBodyNullableString(value: unknown, key: string): string | null | undefined {
   const item = toBody(value)[key];
   return item === null || typeof item === "string" ? item : undefined;
 }
@@ -9597,7 +9499,7 @@ export function jsonObjectField(value: unknown): JsonObject {
   return isRecord(value) ? toJsonObject(value) : {};
 }
 
-function toJsonObject(value: unknown): JsonObject {
+export function toJsonObject(value: unknown): JsonObject {
   if (!isRecord(value)) {
     return {};
   }
