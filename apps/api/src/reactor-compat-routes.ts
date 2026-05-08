@@ -404,220 +404,16 @@ function createCompatState(): CompatState {
 
 // registerAgentEvalCompatibilityRoutes lives in apps/api/src/agent-eval-compat-routes.ts.
 
-export async function sessionDetail(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
-) {
-  const { sessionId } = request.params as { readonly sessionId: string };
-
-  if (!options.historyStore) {
-    return reply.status(404).send({
-      code: "RUN_HISTORY_UNAVAILABLE",
-      message: "Run history store is not configured"
-    });
-  }
-
-  const run = await options.historyStore.findRun(sessionId);
-
-  if (!run) {
-    return reply.status(404).send({
-      code: "SESSION_NOT_FOUND",
-      message: `Session not found: ${sessionId}`
-    });
-  }
-
-  const [messages, toolCalls] = await Promise.all([
-    options.historyStore.listMessages(sessionId),
-    options.historyStore.listToolCalls(sessionId)
-  ]);
-  return { messages, run, session: run, toolCalls };
-}
-
-export async function reactorSessionDetail(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
-) {
-  const { sessionId } = request.params as { readonly sessionId: string };
-  const userId = readAuthUserId(request);
-
-  if (!userId) {
-    return reply.status(401).send(errorResponse("인증이 필요합니다"));
-  }
-
-  if (!options.historyStore) {
-    return reply.status(404).send(errorResponse("Run history store is not configured"));
-  }
-
-  const run = await options.historyStore.findRun(sessionId);
-
-  if (!run) {
-    return reply.status(404).send(errorResponse(`Session not found: ${sessionId}`));
-  }
-
-  if ((!run.userId || run.userId !== userId) && !isAdminLikeRequest(request)) {
-    return reply.status(403).send(errorResponse("세션 접근이 거부되었습니다"));
-  }
-
-  const messages = await options.historyStore.listMessages(sessionId);
-  return {
-    messages: toSessionMessages(messages, run),
-    sessionId: run.id
-  };
-}
-
-export async function toSessionResponse(
-  run: AgentRunRecord,
-  options: ReactorCompatibilityRouteOptions
-): Promise<JsonObject> {
-  const messages = options.historyStore ? await options.historyStore.listMessages(run.id) : [];
-  const synthesizedMessages = toSessionMessages(messages, run);
-
-  return {
-    lastActivity: run.updatedAt.getTime(),
-    messageCount: synthesizedMessages.length,
-    preview: run.input.slice(0, 120),
-    sessionId: run.id
-  };
-}
-
-function toSessionMessages(
-  messages: readonly unknown[],
-  run?: AgentRunRecord
-): readonly JsonObject[] {
-  if (messages.length > 0) {
-    return messages
-      .filter((message): message is ConversationMessageRecord => isRecord(message))
-      .map((message) => ({
-        content: message.content,
-        role: message.role,
-        timestamp: message.createdAt.getTime()
-      }));
-  }
-
-  if (!run) {
-    return [];
-  }
-
-  return [
-    {
-      content: run.input,
-      role: "user",
-      timestamp: run.createdAt.getTime()
-    },
-    ...(run.output
-      ? [{
-          content: run.output,
-          role: "assistant",
-          timestamp: (run.completedAt ?? run.updatedAt).getTime()
-        }]
-      : [])
-  ];
-}
-
-export async function exportSession(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions,
-  mode: "admin" | "reactor" = "admin"
-) {
-  const detail = mode === "reactor"
-    ? await reactorSessionDetail(request, reply, options)
-    : await sessionDetail(request, reply, options);
-
-  if (!isRecord(detail) || !("messages" in detail)) {
-    return detail;
-  }
-
-  const format = readQueryString(request, "format")?.toLowerCase();
-
-  if (format === "markdown" || format === "md") {
-    const sessionId = (request.params as { readonly sessionId: string }).sessionId;
-    const messages = Array.isArray(detail.messages) ? detail.messages : [];
-    reply.header("content-disposition", `attachment; filename="${sanitizeFilename(sessionId)}.md"`);
-    reply.header("content-type", "text/markdown; charset=utf-8");
-
-    if (mode === "reactor") {
-      return [
-        `# Conversation: ${sessionId}`,
-        "",
-        ...messages.flatMap((message) => {
-          if (!isRecord(message)) {
-            return [];
-          }
-
-          return [`## ${String(message.role ?? "message")}`, "", String(message.content ?? ""), ""];
-        })
-      ].join("\n");
-    }
-
-    return [
-      `# Session: ${sessionId}`,
-      "",
-      `Exported at: ${nowIso()}`,
-      "",
-      ...messages.flatMap((message) => {
-        if (!isRecord(message)) {
-          return [];
-        }
-
-        return [`## ${String(message.role ?? "message")}`, "", String(message.content ?? ""), ""];
-      })
-    ].join("\n");
-  }
-
-  reply.header(
-    "content-disposition",
-    `attachment; filename="${sanitizeFilename((request.params as { readonly sessionId: string }).sessionId)}.json"`
-  );
-
-  return {
-    exportedAt: mode === "reactor" ? Date.now() : nowIso(),
-    ...detail,
-    sessionId: (request.params as { readonly sessionId: string }).sessionId
-  };
-}
-
-export async function listAllRuns(
-  options: ReactorCompatibilityRouteOptions,
-  listOptions: { readonly limit?: number; readonly offset?: number } = {}
-): Promise<readonly AgentRunRecord[]> {
-  return options.historyStore?.listRuns({
-    limit: listOptions.limit === undefined ? undefined : Math.max(0, listOptions.limit),
-    offset: listOptions.offset === undefined ? undefined : Math.max(0, listOptions.offset)
-  }) ?? [];
-}
-
-export function summarizeUsers(runs: readonly AgentRunRecord[]) {
-  const byUser = new Map<string, { lastActiveAt: string; runCount: number; userId: string }>();
-
-  for (const run of runs) {
-    const userId = run.userId ?? "anonymous";
-    const existing = byUser.get(userId);
-    const updatedAt = run.updatedAt.toISOString();
-
-    byUser.set(userId, {
-      lastActiveAt: existing && existing.lastActiveAt > updatedAt ? existing.lastActiveAt : updatedAt,
-      runCount: (existing?.runCount ?? 0) + 1,
-      userId
-    });
-  }
-
-  return [...byUser.values()].sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt));
-}
-
-export async function listAllToolCalls(options: ReactorCompatibilityRouteOptions): Promise<readonly ToolCallRecord[]> {
-  const runs = await listAllRuns(options);
-  const toolCalls: ToolCallRecord[] = [];
-
-  for (const run of runs) {
-    const calls = await (options.historyStore?.listToolCalls(run.id) ?? []);
-    toolCalls.push(...calls.map((call) => ({ ...call, runId: run.id })));
-  }
-
-  return toolCalls;
-}
+// Session/run helpers live in apps/api/src/compat-session-store.ts.
+export {
+  exportSession,
+  listAllRuns,
+  listAllToolCalls,
+  reactorSessionDetail,
+  sessionDetail,
+  summarizeUsers,
+  toSessionResponse
+} from "./compat-session-store.js";
 
 // Eval orchestrators live in apps/api/src/compat-agent-eval-orchestrator.ts.
 
@@ -6033,7 +5829,7 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-function sanitizeFilename(value: string): string {
+export function sanitizeFilename(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
 }
 
