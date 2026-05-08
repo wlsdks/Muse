@@ -185,7 +185,7 @@ export function dailyUsage(runs: readonly AgentRunRecord[]) {
   return [...byDay.values()].sort((left, right) => left.date.localeCompare(right.date));
 }
 
-export function groupRunsByMetadata(runs: readonly AgentRunRecord[], _key: string) {
+export function groupRunsByChannel(runs: readonly AgentRunRecord[]) {
   const byChannel = new Map<string, { channel: string; failed: number; total: number }>();
 
   for (const run of runs) {

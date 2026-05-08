@@ -15,7 +15,7 @@ import { recordedSpans, recordedTraceEvents } from "./admin-routes.js";
 import {
   aggregateFailurePatterns,
   dailyUsage,
-  groupRunsByMetadata,
+  groupRunsByChannel,
   isRecord,
   latencyDistribution,
   latencyWindowStart,
@@ -208,7 +208,7 @@ function registerConversationAnalyticsRoutes(server: FastifyInstance, options: R
       return reply;
     }
 
-    return groupRunsByMetadata(await listAllRuns(options), "channel");
+    return groupRunsByChannel(await listAllRuns(options));
   });
   server.get("/api/admin/conversation-analytics/failure-patterns", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {

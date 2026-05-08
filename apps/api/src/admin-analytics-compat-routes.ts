@@ -31,7 +31,7 @@ import {
   getDebugReplayCapture,
   getStateRagCandidates,
   groupRecordsByField,
-  groupRunsByMetadata,
+  groupRunsByChannel,
   inputGuardStatsResponse,
   latencyDistribution,
   latencySummary,
@@ -298,7 +298,7 @@ function registerRagAndSlackRoutes(server: FastifyInstance, options: ReactorComp
       return reply;
     }
 
-    return groupRunsByMetadata(await listAllRuns(options), "channel");
+    return groupRunsByChannel(await listAllRuns(options));
   });
 
   server.get("/api/admin/slack-activity/daily", async (request, reply) => {

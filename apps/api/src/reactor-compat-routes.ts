@@ -354,7 +354,7 @@ export { countBehaviorAssertions, countEvalAssertions } from "./compat-agent-eva
 export {
   aggregateFailurePatterns,
   dailyUsage,
-  groupRunsByMetadata,
+  groupRunsByChannel,
   latencyDistribution,
   latencySummary,
   latencySummaryFromQuery,
