@@ -519,9 +519,10 @@ describe("createJarvisTools", () => {
     return tool;
   }
 
-  it("registers twelve zero-IO ambient utility tools", () => {
+  it("registers thirteen zero-IO ambient utility tools", () => {
     const tools = createJarvisTools();
     expect(tools.map((tool) => tool.definition.name).sort()).toEqual([
+      "hash_text",
       "json_query",
       "kv_summarize",
       "markdown_table",
@@ -538,6 +539,34 @@ describe("createJarvisTools", () => {
     for (const tool of tools) {
       expect(tool.definition.risk).toBe("read");
     }
+  });
+
+  it("hash_text returns hex digests, supports sha1/md5, and rejects unknown algorithms", async () => {
+    const tool = getTool("hash_text");
+
+    const sha = (await tool.execute({ text: "hello" }, { runId: "r" })) as { algorithm: string; digest: string };
+    expect(sha.algorithm).toBe("sha256");
+    expect(sha.digest).toBe("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+
+    const sha1 = (await tool.execute({ algorithm: "sha1", text: "hello" }, { runId: "r" })) as {
+      algorithm: string;
+      digest: string;
+    };
+    expect(sha1.algorithm).toBe("sha1");
+    expect(sha1.digest).toBe("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+
+    const md5 = (await tool.execute({ algorithm: "MD5", text: "hello" }, { runId: "r" })) as {
+      algorithm: string;
+      digest: string;
+    };
+    expect(md5.algorithm).toBe("md5");
+    expect(md5.digest).toBe("5d41402abc4b2a76b9719d911017c592");
+
+    const empty = (await tool.execute({ text: "" }, { runId: "r" })) as { digest: string };
+    expect(empty.digest).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+    const bad = await tool.execute({ algorithm: "sha512", text: "hi" }, { runId: "r" });
+    expect(bad).toMatchObject({ error: expect.stringContaining("sha512") });
   });
 
   it("markdown_table renders rows with derived columns, escaping, and truncation", async () => {

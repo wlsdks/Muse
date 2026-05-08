@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "./index.js";
 
@@ -33,7 +34,8 @@ export function createJarvisTools(options: JarvisToolFactoryOptions = {}): reado
     createUrlPartsTool(),
     createRegexExtractTool(),
     createKvSummarizeTool(),
-    createMarkdownTableTool()
+    createMarkdownTableTool(),
+    createHashTextTool()
   ];
 }
 
@@ -628,6 +630,46 @@ function formatMarkdownTableCell(value: unknown): string {
     return "";
   }
   return String(value).replace(/\|/gu, "\\|").replace(/\r?\n/gu, "<br/>");
+}
+
+const HASH_TEXT_ALGORITHMS = new Set(["sha256", "sha1", "md5"]);
+
+function createHashTextTool(): MuseTool {
+  return {
+    definition: {
+      description:
+        "Computes a hex digest of `text` using `algorithm` (sha256 default; also accepts sha1, md5). " +
+        "Useful for deduplicating notes, generating deterministic IDs from user content, fingerprinting attached payloads, or comparing two strings without leaking the original. " +
+        "Hashes the UTF-8 bytes of the input.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          algorithm: {
+            description: "Hash algorithm (sha256, sha1, md5). Defaults to sha256.",
+            type: "string"
+          },
+          text: { description: "Source text.", type: "string" }
+        },
+        required: ["text"],
+        type: "object"
+      },
+      keywords: ["hash", "fingerprint", "dedupe", "sha256"],
+      name: "hash_text",
+      risk: "read"
+    },
+    execute: (args): JsonObject => {
+      const text = typeof args["text"] === "string" ? (args["text"] as string) : "";
+      const algorithmInput = typeof args["algorithm"] === "string"
+        ? (args["algorithm"] as string).trim().toLowerCase()
+        : "sha256";
+      const algorithm = algorithmInput.length === 0 ? "sha256" : algorithmInput;
+      if (!HASH_TEXT_ALGORITHMS.has(algorithm)) {
+        return { error: `algorithm must be one of: sha256, sha1, md5 (got '${algorithm}')` };
+      }
+      const digest = createHash(algorithm).update(text, "utf8").digest("hex");
+      return { algorithm, digest } satisfies JsonObject;
+    }
+  };
 }
 
 function readOptionalString(args: JsonObject, key: string): string | undefined {
