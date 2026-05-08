@@ -60,6 +60,7 @@ import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
+import { registerIntentRoutes } from "./intent-compat-routes.js";
 import { registerPersonaRoutes } from "./persona-compat-routes.js";
 import { registerSessionCompatibilityRoutes } from "./session-compat-routes.js";
 import { recordedSpans, recordedTraceEvents, type AdminRouteState } from "./admin-routes.js";
@@ -1308,73 +1309,7 @@ function promptTemplateVersionNotFound(reply: FastifyReply, request: FastifyRequ
   return reply.status(404).send(errorResponse(`Template or version not found: ${templateId}/${versionId}`));
 }
 
-function registerIntentRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/intents", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return (await listIntents(options)).map(toIntentResponse);
-  });
-  server.get("/api/intents/:intentName", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { intentName } = request.params as { readonly intentName: string };
-    const intent = await getIntent(options, intentName);
-    return intent ? toIntentResponse(intent) : reply.status(404).send(errorResponse(`Intent not found: ${intentName}`));
-  });
-  server.post("/api/intents", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const validationError = validateIntentBody(toBody(request.body), "create");
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    const name = readBodyString(request.body, "name") ?? "";
-
-    if (await getIntent(options, name)) {
-      return reply.status(409).send(errorResponse(`Intent '${name}' already exists`));
-    }
-
-    return reply.status(201).send(toIntentResponse(await createIntent(options, request.body)));
-  });
-  server.put("/api/intents/:intentName", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { intentName } = request.params as { readonly intentName: string };
-    const existing = await getIntent(options, intentName);
-
-    if (!existing) {
-      return reply.status(404).send(errorResponse(`Intent not found: ${intentName}`));
-    }
-
-    const validationError = validateIntentBody(toBody(request.body), "update");
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    return toIntentResponse(await updateIntent(options, existing, request.body));
-  });
-  server.delete("/api/intents/:intentName", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { intentName } = request.params as { readonly intentName: string };
-    await deleteIntent(options, intentName);
-
-    return reply.status(204).send();
-  });
-}
+// registerIntentRoutes lives in apps/api/src/intent-compat-routes.ts.
 
 function registerDocumentRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/documents", async (request, reply) => {
@@ -6568,7 +6503,7 @@ function toVersionResponse(record: JsonObject) {
   };
 }
 
-async function createIntent(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
+export async function createIntent(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
   const body = toBody(bodyValue);
   const name = readBodyString(body, "name") ?? "";
   return saveIntent(options, {
@@ -6591,7 +6526,7 @@ async function saveIntent(options: ReactorCompatibilityRouteOptions, record: Jso
   return createRecord(state.intents, record, "intent");
 }
 
-async function listIntents(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+export async function listIntents(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
   if (options.promptLabCatalogStore) {
     const rows = await options.promptLabCatalogStore.listIntents();
     return rows.map((row) => promptLabRecordToCompat(row, "intent"));
@@ -6600,7 +6535,7 @@ async function listIntents(options: ReactorCompatibilityRouteOptions): Promise<r
   return [...state.intents.values()];
 }
 
-async function getIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<CompatRecord | undefined> {
+export async function getIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<CompatRecord | undefined> {
   if (options.promptLabCatalogStore) {
     const row = await options.promptLabCatalogStore.getIntent(name);
     return row ? promptLabRecordToCompat(row, "intent") : undefined;
@@ -6609,7 +6544,7 @@ async function getIntent(options: ReactorCompatibilityRouteOptions, name: string
   return findCompatRecord(state.intents, name);
 }
 
-async function deleteIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<boolean> {
+export async function deleteIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<boolean> {
   if (options.promptLabCatalogStore) {
     return options.promptLabCatalogStore.deleteIntent(name);
   }
@@ -6618,7 +6553,7 @@ async function deleteIntent(options: ReactorCompatibilityRouteOptions, name: str
   return existing ? state.intents.delete(existing.id) : false;
 }
 
-function validateIntentBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
+export function validateIntentBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
   if (mode === "create" && !readBodyString(body, "name")) {
     return { name: "name must not be blank" };
   }
@@ -6630,7 +6565,7 @@ function validateIntentBody(body: CompatBody, mode: "create" | "update"): JsonOb
   return undefined;
 }
 
-async function updateIntent(
+export async function updateIntent(
   options: ReactorCompatibilityRouteOptions,
   existing: CompatRecord,
   bodyValue: unknown
@@ -6646,7 +6581,7 @@ async function updateIntent(
   });
 }
 
-function toIntentResponse(record: JsonObject) {
+export function toIntentResponse(record: JsonObject) {
   return {
     createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
     description: stringField(record.description, ""),
