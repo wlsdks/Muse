@@ -31,7 +31,8 @@ export function createJarvisTools(options: JarvisToolFactoryOptions = {}): reado
     createJsonQueryTool(),
     createSlugifyTool(),
     createUrlPartsTool(),
-    createRegexExtractTool()
+    createRegexExtractTool(),
+    createKvSummarizeTool()
   ];
 }
 
@@ -462,6 +463,80 @@ function createRegexExtractTool(): MuseTool {
       return { matches } satisfies JsonObject;
     }
   };
+}
+
+const KV_SUMMARIZE_MAX_LINES = 200;
+
+function createKvSummarizeTool(): MuseTool {
+  return {
+    definition: {
+      description:
+        "Flattens a JSON object into a `key: value` newline-joined summary. Nested keys are joined with `.`, array indices appear as `.0`, `.1`. Strings, numbers, booleans, and null render directly; nested arrays/objects recurse. Capped at 200 lines (the rest are dropped with a trailing `…(N more)` line). " +
+        "Useful when piping a structured tool result into a prose answer without imposing JSON syntax on the model.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          data: { description: "JSON object or array to flatten.", type: "object" }
+        },
+        required: ["data"],
+        type: "object"
+      },
+      keywords: ["summarize", "flatten", "kv", "format"],
+      name: "kv_summarize",
+      risk: "read"
+    },
+    execute: (args): JsonObject => {
+      const data = args["data"];
+      if (data === undefined || data === null) {
+        return { summary: "" };
+      }
+      const lines: string[] = [];
+      let truncated = 0;
+      flattenIntoKv(data as JsonValue, "", (line) => {
+        if (lines.length >= KV_SUMMARIZE_MAX_LINES) {
+          truncated += 1;
+          return;
+        }
+        lines.push(line);
+      });
+      if (truncated > 0) {
+        lines.push(`…(${truncated} more)`);
+      }
+      return { summary: lines.join("\n") } satisfies JsonObject;
+    }
+  };
+}
+
+function flattenIntoKv(value: JsonValue, prefix: string, emit: (line: string) => void): void {
+  if (value === null || value === undefined) {
+    emit(`${prefix || "value"}: null`);
+    return;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    emit(`${prefix || "value"}: ${value}`);
+    return;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      emit(`${prefix || "value"}: []`);
+      return;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+      const child = value[index] ?? null;
+      const nextPrefix = prefix.length > 0 ? `${prefix}.${index}` : String(index);
+      flattenIntoKv(child as JsonValue, nextPrefix, emit);
+    }
+    return;
+  }
+  const entries = Object.entries(value as Record<string, JsonValue | null>);
+  if (entries.length === 0) {
+    emit(`${prefix || "value"}: {}`);
+    return;
+  }
+  for (const [key, child] of entries) {
+    const nextPrefix = prefix.length > 0 ? `${prefix}.${key}` : key;
+    flattenIntoKv((child ?? null) as JsonValue, nextPrefix, emit);
+  }
 }
 
 function readOptionalString(args: JsonObject, key: string): string | undefined {

@@ -519,10 +519,11 @@ describe("createJarvisTools", () => {
     return tool;
   }
 
-  it("registers ten zero-IO ambient utility tools", () => {
+  it("registers eleven zero-IO ambient utility tools", () => {
     const tools = createJarvisTools();
     expect(tools.map((tool) => tool.definition.name).sort()).toEqual([
       "json_query",
+      "kv_summarize",
       "math_eval",
       "regex_extract",
       "slugify",
@@ -536,6 +537,37 @@ describe("createJarvisTools", () => {
     for (const tool of tools) {
       expect(tool.definition.risk).toBe("read");
     }
+  });
+
+  it("kv_summarize flattens nested objects + arrays into dot-path key:value lines", async () => {
+    const tool = getTool("kv_summarize");
+    const flat = (await tool.execute(
+      { data: { name: "Alice", age: 30, active: true, score: null } },
+      { runId: "r" }
+    )) as { summary: string };
+    expect(flat.summary.split("\n").sort()).toEqual([
+      "active: true",
+      "age: 30",
+      "name: Alice",
+      "score: null"
+    ]);
+
+    const nested = (await tool.execute(
+      { data: { user: { name: "Bob", roles: ["admin", "owner"] }, count: 2 } },
+      { runId: "r" }
+    )) as { summary: string };
+    expect(nested.summary.split("\n").sort()).toEqual([
+      "count: 2",
+      "user.name: Bob",
+      "user.roles.0: admin",
+      "user.roles.1: owner"
+    ]);
+
+    const empty = (await tool.execute({ data: {} }, { runId: "r" })) as { summary: string };
+    expect(empty.summary).toBe("value: {}");
+
+    const emptyArray = (await tool.execute({ data: { items: [] } }, { runId: "r" })) as { summary: string };
+    expect(emptyArray.summary).toBe("items: []");
   });
 
   it("regex_extract returns matches, captured-group preference, and validates flags + sizes", async () => {
