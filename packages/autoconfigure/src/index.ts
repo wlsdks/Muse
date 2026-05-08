@@ -22,6 +22,7 @@ import {
   createZeroResultOverclaimResponseFilter,
   type AgentRuntime,
   type GuardStage,
+  type HookStage,
   type OutputGuardStage
 } from "@muse/agent-core";
 import {
@@ -53,6 +54,7 @@ import {
   type AgentEvalStore
 } from "@muse/eval";
 import {
+  FetchSlackWebApiMessageTransport,
   InMemoryChannelFaqRegistrationStore,
   InMemorySlackFeedbackEventStore,
   InMemorySlackBotInstanceStore,
@@ -62,6 +64,7 @@ import {
   KyselySlackBotInstanceStore,
   KyselySlackResponseTrackerStore,
   SlackBotResponseTracker,
+  createSlackProgressHook,
   type ChannelFaqRegistrationStore,
   type SlackFeedbackEventStore,
   type SlackBotInstanceStore,
@@ -428,6 +431,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => mcpManager.toMuseTools(),
     () => schedulerService ? createSchedulerTools(schedulerService) : []
   ]);
+  const runtimeHooks = createDefaultRuntimeHooks(env);
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
@@ -438,6 +442,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         outputReserveTokens: parseInteger(env.MUSE_LLM_MAX_OUTPUT_TOKENS, 4_096)
       },
       historyStore,
+      hooks: runtimeHooks,
       hookTraceStore,
       metrics: runtimeAgentMetrics,
       modelProvider,
@@ -963,6 +968,30 @@ function createScheduledAgentExecutor(
       return result.response.output;
     }
   };
+}
+
+/**
+ * Builds the env-driven runtime hook list:
+ *
+ *   - Slack progress hook fires `assistant.threads.setStatus` (throttled at
+ *     `MUSE_SLACK_PROGRESS_INTERVAL_MS`, default 1500ms) before/after every
+ *     tool call when the agent run carries `metadata.slackChannelId` +
+ *     `metadata.slackThreadTs`. Wired only when both `MUSE_SLACK_BOT_TOKEN`
+ *     is set and `MUSE_SLACK_PROGRESS_ENABLED` is true (default true). Hook
+ *     errors are demoted to a tracer span via the runtime's hook contract.
+ */
+function createDefaultRuntimeHooks(env: MuseEnvironment): readonly HookStage[] {
+  const hooks: HookStage[] = [];
+  const slackBotToken = parseOptionalString(env.MUSE_SLACK_BOT_TOKEN);
+  if (slackBotToken && parseBoolean(env.MUSE_SLACK_PROGRESS_ENABLED, true)) {
+    hooks.push(
+      createSlackProgressHook({
+        minUpdateIntervalMs: parseInteger(env.MUSE_SLACK_PROGRESS_INTERVAL_MS, 1_500),
+        transport: new FetchSlackWebApiMessageTransport(slackBotToken)
+      })
+    );
+  }
+  return hooks;
 }
 
 function createInputGuards(env: MuseEnvironment): readonly GuardStage[] {

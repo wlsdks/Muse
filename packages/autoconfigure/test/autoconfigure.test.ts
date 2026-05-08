@@ -188,6 +188,42 @@ describe("autoconfigure", () => {
     });
   });
 
+  it("does not register the Slack progress hook when MUSE_SLACK_BOT_TOKEN is unset", async () => {
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic"
+      }
+    });
+    const runtime = assembly.agentRuntime as unknown as { readonly hooks?: readonly { readonly id?: string }[] };
+    expect((runtime.hooks ?? []).some((hook) => hook.id === "slack-progress")).toBe(false);
+  });
+
+  it("registers the Slack progress hook when MUSE_SLACK_BOT_TOKEN is set", async () => {
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic",
+        MUSE_SLACK_BOT_TOKEN: "xoxb-test-token"
+      }
+    });
+    const runtime = assembly.agentRuntime as unknown as { readonly hooks?: readonly { readonly id?: string }[] };
+    expect((runtime.hooks ?? []).some((hook) => hook.id === "slack-progress")).toBe(true);
+  });
+
+  it("opts out of the Slack progress hook via MUSE_SLACK_PROGRESS_ENABLED=false even with a token", async () => {
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic",
+        MUSE_SLACK_BOT_TOKEN: "xoxb-test-token",
+        MUSE_SLACK_PROGRESS_ENABLED: "false"
+      }
+    });
+    const runtime = assembly.agentRuntime as unknown as { readonly hooks?: readonly { readonly id?: string }[] };
+    expect((runtime.hooks ?? []).some((hook) => hook.id === "slack-progress")).toBe(false);
+  });
+
   it("feeds the MonthlyBudgetTracker per tenant from each agent run", async () => {
     const assembly = createMuseRuntimeAssembly({
       env: {
