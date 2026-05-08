@@ -302,11 +302,18 @@ export function registerReactorCompatibilityRoutes(
   registerApprovalCompatibilityRoutes(server, options);
   registerPolicyCompatibilityRoutes(server, options);
   registerGuardCompatibilityRoutes(server, options);
-  registerMemoryAndFeedbackRoutes(server, options);
+  registerUserMemoryCompatRoutes(server, options);
+  registerFeedbackCompatRoutes(server, options);
   registerPromptAndRagRoutes(server, options);
   registerMcpCompatibilityRoutes(server, options);
   registerSlackCompatibilityRoutes(server, options);
-  registerAdminCompatibilityRoutes(server, options);
+  registerAdminPlatformCompatRoutes(server, options);
+  registerAdminTenantAlertCompatRoutes(server, options);
+  registerAdminSessionCompatRoutes(server, options);
+  registerAdminObservabilityCompatRoutes(server, options);
+  registerAdminAnalyticsCompatRoutes(server, options);
+  registerAgentEvalCompatRoutes(server, options);
+  registerMetricIngestionCompatRoutes(server, options);
 }
 
 function createCompatState(): CompatState {
@@ -364,15 +371,6 @@ function createCompatState(): CompatState {
 
 // registerGuardCompatibilityRoutes lives in apps/api/src/guard-compat-routes.ts.
 
-function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  registerUserMemoryCompatRoutes(server, options);
-  registerFeedbackRoutes(server, options);
-}
-
-function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  registerFeedbackCompatRoutes(server, options);
-}
-
 // registerPersonaRoutes lives in apps/api/src/persona-compat-routes.ts.
 
 // registerPromptTemplateRoutes lives in apps/api/src/prompt-template-compat-routes.ts.
@@ -386,19 +384,6 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
 // registerMcpCompatibilityRoutes lives in apps/api/src/mcp-compat-routes.ts.
 
 // registerSlackCompatibilityRoutes lives in apps/api/src/slack-compat-routes.ts.
-
-function registerAdminCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  registerAdminPlatformCompatRoutes(server, options);
-
-  registerAdminTenantAlertCompatRoutes(server, options);
-
-  registerAdminSessionCompatRoutes(server, options);
-  registerAdminObservabilityCompatRoutes(server, options);
-  registerAdminAnalyticsCompatRoutes(server, options);
-  registerAgentEvalCompatRoutes(server, options);
-  registerMetricIngestionCompatRoutes(server, options);
-
-}
 
 // registerAdminAnalyticsCompatibilityRoutes lives in apps/api/src/admin-analytics-compat-routes.ts.
 
@@ -1831,50 +1816,7 @@ export function debugReplayResponse(run: AgentRunRecord): JsonObject {
   };
 }
 
-export function runsCsv(runs: readonly AgentRunRecord[]): string {
-  return csvRows(
-    ["id", "created_at", "user_id", "model", "status", "cost_usd", "input", "output"],
-    runs.map((run) => [
-      run.id,
-      run.createdAt.toISOString(),
-      run.userId ?? "anonymous",
-      run.model,
-      run.status,
-      run.costUsd,
-      run.input,
-      run.output ?? ""
-    ])
-  );
-}
-
-export function toolCallsCsv(toolCalls: readonly ToolCallRecord[]): string {
-  return csvRows(
-    ["id", "run_id", "created_at", "name", "risk", "status", "result", "error"],
-    toolCalls.map((call) => [
-      call.id,
-      call.runId,
-      call.createdAt.toISOString(),
-      call.name,
-      call.risk,
-      call.status,
-      call.result ?? "",
-      call.error ?? ""
-    ])
-  );
-}
-
-export function csvRows(headers: readonly string[], rows: readonly (readonly unknown[])[]): string {
-  return [
-    headers.map(csvEscape).join(","),
-    ...rows.map((row) => row.map((item) => csvEscape(String(item ?? ""))).join(","))
-  ].join("\n");
-}
-
-function csvEscape(value: string): string {
-  return value.includes(",") || value.includes("\"") || value.includes("\n")
-    ? `"${value.replace(/"/g, "\"\"")}"`
-    : value;
-}
+export { csvRows, runsCsv, toolCallsCsv } from "./compat-csv.js";
 
 export function numberField(value: JsonObject, key: string): number {
   const item = value[key];
