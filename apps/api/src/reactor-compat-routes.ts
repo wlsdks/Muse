@@ -62,6 +62,7 @@ import { createHash } from "node:crypto";
 import { registerAgentCompatibilityRoutes } from "./agent-compat-routes.js";
 import { registerApprovalCompatibilityRoutes } from "./approval-compat-routes.js";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
+import { registerPolicyCompatibilityRoutes } from "./policy-compat-routes.js";
 import { registerDocumentRoutes } from "./document-compat-routes.js";
 import { registerFeedbackCompatRoutes } from "./feedback-compat-routes.js";
 import { registerIntentRoutes } from "./intent-compat-routes.js";
@@ -352,97 +353,7 @@ function createCompatState(): CompatState {
 
 // registerApprovalCompatibilityRoutes lives in apps/api/src/approval-compat-routes.ts.
 
-function registerPolicyCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/tool-policy", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const stored = await readStoredToolPolicy(options);
-
-    return {
-      configEnabled: true,
-      dynamicEnabled: true,
-      effective: toToolPolicyResponse(stored ?? state.toolPolicy),
-      stored: stored ? toToolPolicyResponse(stored) : null
-    };
-  });
-  server.put("/api/tool-policy", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const validationError = validateToolPolicyBody(toBody(request.body));
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    const policy = await saveToolPolicy(options, request.body);
-    return toToolPolicyResponse(policy);
-  });
-  server.delete("/api/tool-policy", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    await clearToolPolicy(options);
-    return reply.status(204).send();
-  });
-
-  server.get("/api/admin/rbac/roles", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return roleDefinitions();
-  });
-
-  server.put("/api/admin/rbac/users/:userId/role", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { userId } = request.params as { readonly userId: string };
-    const role = parseUserRole(readBodyString(request.body, "role"));
-
-    if (!role) {
-      return reply.status(400).send(errorResponse(`유효하지 않은 역할: ${readBodyString(request.body, "role") ?? ""}`));
-    }
-
-    if (!(await options.authService?.updateUserRole(userId, role))) {
-      return reply.status(404).send(errorResponse(`사용자를 찾을 수 없습니다: ${userId}`));
-    }
-
-    return {
-      role: userRoleResponse(role),
-      userId
-    };
-  });
-
-  server.get("/api/admin/retention", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return state.retentionPolicy;
-  });
-
-  server.put("/api/admin/retention", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const parsed = parseRetentionPolicy(request.body);
-
-    if (!parsed.ok) {
-      return reply.status(400).send(parsed.error);
-    }
-
-    state.retentionPolicy = { ...state.retentionPolicy, ...parsed.value };
-    return state.retentionPolicy;
-  });
-}
+// registerPolicyCompatibilityRoutes lives in apps/api/src/policy-compat-routes.ts.
 
 function registerGuardCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   registerInputGuardRuleRoutes(server, options);
@@ -5099,7 +5010,20 @@ function validateRegexPattern(pattern: string): string | undefined {
   }
 }
 
-async function readStoredToolPolicy(options: ReactorCompatibilityRouteOptions): Promise<JsonObject | undefined> {
+export function getStateToolPolicy(): JsonObject {
+  return state.toolPolicy;
+}
+
+export function getStateRetentionPolicy(): JsonObject {
+  return state.retentionPolicy;
+}
+
+export function updateStateRetentionPolicy(patch: JsonObject): JsonObject {
+  state.retentionPolicy = { ...state.retentionPolicy, ...patch };
+  return state.retentionPolicy;
+}
+
+export async function readStoredToolPolicy(options: ReactorCompatibilityRouteOptions): Promise<JsonObject | undefined> {
   const stored = await options.toolPolicyStore?.getStored();
 
   if (stored) {
@@ -5109,7 +5033,7 @@ async function readStoredToolPolicy(options: ReactorCompatibilityRouteOptions): 
   return state.toolPolicyStored ? state.toolPolicy : undefined;
 }
 
-async function saveToolPolicy(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<JsonObject> {
+export async function saveToolPolicy(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<JsonObject> {
   const body = toBody(bodyValue);
 
   if (options.toolPolicyStore) {
@@ -5125,7 +5049,7 @@ async function saveToolPolicy(options: ReactorCompatibilityRouteOptions, bodyVal
   return state.toolPolicy;
 }
 
-async function clearToolPolicy(options: ReactorCompatibilityRouteOptions): Promise<void> {
+export async function clearToolPolicy(options: ReactorCompatibilityRouteOptions): Promise<void> {
   await options.toolPolicyStore?.clear();
   state.toolPolicy = defaultToolPolicy();
   state.toolPolicyStored = false;
@@ -5163,7 +5087,7 @@ function updateToolPolicy(bodyValue: unknown): JsonObject {
   };
 }
 
-function validateToolPolicyBody(body: CompatBody): JsonObject | undefined {
+export function validateToolPolicyBody(body: CompatBody): JsonObject | undefined {
   const errors: Record<string, string> = {};
 
   if (toolPolicyStringSet(body.writeToolNames).length > 500) {
@@ -5221,7 +5145,7 @@ function defaultToolPolicy(): JsonObject {
   };
 }
 
-function toToolPolicyResponse(record: JsonObject) {
+export function toToolPolicyResponse(record: JsonObject) {
   return {
     allowWriteToolNamesByChannel: stringArrayMapField(record.allowWriteToolNamesByChannel, {}),
     allowWriteToolNamesInDenyChannels: stringArrayField(record.allowWriteToolNamesInDenyChannels, []),
@@ -8484,7 +8408,7 @@ export function clampLimit(limit: number): number {
   return Math.min(200, Math.max(1, limit));
 }
 
-function userRoleResponse(role: UserRole): string {
+export function userRoleResponse(role: UserRole): string {
   return role.toUpperCase();
 }
 
@@ -8504,7 +8428,7 @@ function userRoleScope(role: UserRole): string | null {
   return null;
 }
 
-function parseUserRole(value: unknown): UserRole | undefined {
+export function parseUserRole(value: unknown): UserRole | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -8518,7 +8442,7 @@ function parseUserRole(value: unknown): UserRole | undefined {
     : undefined;
 }
 
-function roleDefinitions(): readonly JsonObject[] {
+export function roleDefinitions(): readonly JsonObject[] {
   const roles: readonly UserRole[] = ["user", "admin", "admin_manager", "admin_developer"];
   return roles.map((role) => ({
     permissions: [...permissionsForRole(role)],
@@ -8565,7 +8489,7 @@ function permissionsForRole(role: UserRole): readonly string[] {
   return ["chat:use", "persona:select"];
 }
 
-function parseRetentionPolicy(value: unknown): ParseResult<JsonObject> {
+export function parseRetentionPolicy(value: unknown): ParseResult<JsonObject> {
   const body = toBody(value);
   const parsed: Record<string, number> = {};
 
