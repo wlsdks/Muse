@@ -69,6 +69,7 @@ import { registerApprovalCompatibilityRoutes } from "./approval-compat-routes.js
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
 import { registerGuardCompatibilityRoutes } from "./guard-compat-routes.js";
 import { registerMcpCompatibilityRoutes } from "./mcp-compat-routes.js";
+import { registerMetricIngestionCompatRoutes } from "./metric-ingestion-compat-routes.js";
 import { registerPolicyCompatibilityRoutes } from "./policy-compat-routes.js";
 import { registerFeedbackCompatRoutes } from "./feedback-compat-routes.js";
 import { registerPromptAndRagRoutes } from "./prompt-rag-compat-routes.js";
@@ -394,7 +395,7 @@ function registerAdminCompatibilityRoutes(server: FastifyInstance, options: Reac
   registerAdminObservabilityCompatRoutes(server, options);
   registerAdminAnalyticsCompatRoutes(server, options);
   registerAgentEvalCompatibilityRoutes(server, options);
-  registerMetricIngestionRoutes(server, options);
+  registerMetricIngestionCompatRoutes(server, options);
 
 }
 
@@ -1621,7 +1622,7 @@ function toMetricEventAdminAuditResponse(record: JsonObject): JsonObject {
   };
 }
 
-async function recordMetricEvent(
+export async function recordMetricEvent(
   options: ReactorCompatibilityRouteOptions,
   input: { readonly kind: string; readonly payload: JsonObject }
 ): Promise<CompatRecord> {
@@ -2126,82 +2127,7 @@ function containsIgnoreCase(value: string, needle: string): boolean {
   return value.toLowerCase().includes(needle.toLowerCase());
 }
 
-function registerMetricIngestionRoutes(
-  server: FastifyInstance,
-  options: ReactorCompatibilityRouteOptions
-): void {
-  for (const route of ["mcp-health", "tool-call", "eval-result"]) {
-    server.post(`/api/admin/metrics/ingest/${route}`, async (request, reply) => {
-      if (!options.authorizeAdmin(request, reply)) {
-        return reply;
-      }
-
-      await recordMetricEvent(options, {
-        kind: route,
-        payload: toJsonObject(request.body)
-      });
-      return reply.status(202).send({ status: "accepted" });
-    });
-  }
-
-  server.post("/api/admin/metrics/ingest/eval-results", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const body = toJsonObject(request.body);
-    const results = Array.isArray(body.results) ? body.results.filter(isRecord).map(toJsonObject) : [];
-
-    if (results.length > 1000) {
-      return reply.status(400).send(errorResponse("Batch size exceeds limit of 1000"));
-    }
-
-    if (results.length === 0) {
-      return reply.status(400).send(errorResponse("Results list must not be empty"));
-    }
-
-    for (const result of results) {
-      await recordMetricEvent(options, {
-        kind: "eval-results",
-        payload: {
-          ...result,
-          evalRunId: stringField(body.evalRunId, ""),
-          tenantId: stringField(body.tenantId, "")
-        }
-      });
-    }
-
-    return {
-      accepted: results.length,
-      dropped: 0,
-      evalRunId: stringField(body.evalRunId, "")
-    };
-  });
-
-  server.post("/api/admin/metrics/ingest/batch", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const requests = Array.isArray(request.body) ? request.body.filter(isRecord).map(toJsonObject) : [];
-
-    if (requests.length > 1000) {
-      return reply.status(400).send(errorResponse("Batch size exceeds limit of 1000"));
-    }
-
-    for (const item of requests) {
-      await recordMetricEvent(options, {
-        kind: "batch",
-        payload: item
-      });
-    }
-
-    return {
-      accepted: requests.length,
-      dropped: 0
-    };
-  });
-}
+// registerMetricIngestionRoutes lives in apps/api/src/metric-ingestion-compat-routes.ts.
 
 export function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): MuseAuth | undefined {
   if (!options.authService) {
