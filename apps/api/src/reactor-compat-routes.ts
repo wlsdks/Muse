@@ -63,6 +63,7 @@ import { registerAgentCompatibilityRoutes } from "./agent-compat-routes.js";
 import { registerApprovalCompatibilityRoutes } from "./approval-compat-routes.js";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
 import { registerGuardCompatibilityRoutes } from "./guard-compat-routes.js";
+import { registerMcpCompatibilityRoutes } from "./mcp-compat-routes.js";
 import { registerPolicyCompatibilityRoutes } from "./policy-compat-routes.js";
 import { registerDocumentRoutes } from "./document-compat-routes.js";
 import { registerFeedbackCompatRoutes } from "./feedback-compat-routes.js";
@@ -606,138 +607,7 @@ function registerPromptAndRagRoutes(server: FastifyInstance, options: ReactorCom
   });
 }
 
-function registerMcpCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/mcp/servers/:name/preflight", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
-
-    if (!serverConfig) {
-      return mcpProxyUnavailable(request, reply, options);
-    }
-
-    const adminUrl = readAdminUrl(serverConfig.config);
-
-    if (!adminUrl) {
-      return options.mcp?.manager.preflight(serverConfig.name) ?? reply.status(400).send({
-        error: `MCP server '${serverConfig.name}' has invalid admin URL`,
-        timestamp: nowIso()
-      });
-    }
-
-    if (!readBodyString(serverConfig.config, "adminToken")) {
-      return reply.header("X-Preflight-Skipped", "no-admin-token").status(204).send();
-    }
-
-    return proxyMcpAdminRequest(reply, serverConfig, "GET", "/admin/preflight");
-  });
-  server.get("/api/mcp/servers/:name/access-policy", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
-
-    if (!serverConfig) {
-      return mcpProxyUnavailable(request, reply, options);
-    }
-
-    return proxyMcpAdminRequest(reply, serverConfig, "GET", "/admin/access-policy");
-  });
-  server.put("/api/mcp/servers/:name/access-policy", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
-
-    if (!serverConfig) {
-      return mcpProxyUnavailable(request, reply, options);
-    }
-
-    const parsed = parseMcpAccessPolicy(request.body);
-
-    if (!parsed.ok) {
-      return reply.status(400).send(parsed.error);
-    }
-
-    return proxyMcpAdminRequest(reply, serverConfig, "PUT", "/admin/access-policy", parsed.value);
-  });
-  server.delete("/api/mcp/servers/:name/access-policy", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
-
-    if (!serverConfig) {
-      return mcpProxyUnavailable(request, reply, options);
-    }
-
-    return proxyMcpAdminRequest(reply, serverConfig, "DELETE", "/admin/access-policy");
-  });
-  server.post("/api/mcp/servers/:name/access-policy/emergency-deny-all", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const serverConfig = await findMcpCompatServer(options, (request.params as { readonly name: string }).name);
-
-    if (!serverConfig) {
-      return mcpProxyUnavailable(request, reply, options);
-    }
-
-    return proxyMcpAdminRequest(reply, serverConfig, "POST", "/admin/access-policy/emergency-deny-all");
-  });
-  server.get("/api/mcp/servers/:name/swagger/sources", async (request, reply) =>
-    proxySwaggerSourceRequest(request, reply, options, "GET", "/admin/swagger/spec-sources")
-  );
-  server.get("/api/mcp/servers/:name/swagger/sources/:sourceName", async (request, reply) =>
-    proxySwaggerSourceRequest(request, reply, options, "GET", swaggerSourcePath(request))
-  );
-  server.post("/api/mcp/servers/:name/swagger/sources", async (request, reply) => {
-    const body = toBody(request.body);
-
-    if (!readBodyString(body, "name") || !readBodyString(body, "url")) {
-      return reply.status(400).send(errorResponse("Body must include name and url"));
-    }
-
-    return proxySwaggerSourceRequest(request, reply, options, "POST", "/admin/swagger/spec-sources", toJsonObject(body));
-  });
-  server.put("/api/mcp/servers/:name/swagger/sources/:sourceName", async (request, reply) =>
-    proxySwaggerSourceRequest(request, reply, options, "PUT", swaggerSourcePath(request), toJsonObject(request.body))
-  );
-  server.post("/api/mcp/servers/:name/swagger/sources/:sourceName/sync", async (request, reply) =>
-    proxySwaggerSourceRequest(request, reply, options, "POST", `${swaggerSourcePath(request)}/sync`, {})
-  );
-  server.post("/api/mcp/servers/:name/swagger/sources/:sourceName/publish", async (request, reply) => {
-    const body = toBody(request.body);
-
-    if (!readBodyString(body, "revisionId")) {
-      return reply.status(400).send(errorResponse("Body must include revisionId"));
-    }
-
-    return proxySwaggerSourceRequest(request, reply, options, "POST", `${swaggerSourcePath(request)}/publish`, toJsonObject(body));
-  });
-  server.get("/api/mcp/servers/:name/swagger/sources/:sourceName/revisions", async (request, reply) => {
-    const limit = readQueryString(request, "limit");
-    const suffix = limit ? `?limit=${encodeURIComponent(limit)}` : "";
-    return proxySwaggerSourceRequest(request, reply, options, "GET", `${swaggerSourcePath(request)}/revisions${suffix}`);
-  });
-  server.get("/api/mcp/servers/:name/swagger/sources/:sourceName/diff", async (request, reply) => {
-    const params = new URLSearchParams();
-    const from = readQueryString(request, "from");
-    const to = readQueryString(request, "to");
-
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-
-    const suffix = params.size > 0 ? `?${params.toString()}` : "";
-    return proxySwaggerSourceRequest(request, reply, options, "GET", `${swaggerSourcePath(request)}/diff${suffix}`);
-  });
-}
+// registerMcpCompatibilityRoutes lives in apps/api/src/mcp-compat-routes.ts.
 
 function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/admin/slack-bots", async (request, reply) => {
@@ -8467,14 +8337,14 @@ function isValidRegex(pattern: string): boolean {
   }
 }
 
-async function findMcpCompatServer(
+export async function findMcpCompatServer(
   options: ReactorCompatibilityRouteOptions,
   name: string
 ): Promise<McpServer | undefined> {
   return (await options.mcp?.manager.listServers())?.find((server) => server.name === name);
 }
 
-function mcpProxyUnavailable(
+export function mcpProxyUnavailable(
   request: FastifyRequest,
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions
@@ -8494,7 +8364,7 @@ function mcpProxyUnavailable(
   });
 }
 
-async function proxySwaggerSourceRequest(
+export async function proxySwaggerSourceRequest(
   request: FastifyRequest,
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions,
@@ -8522,12 +8392,12 @@ async function proxySwaggerSourceRequest(
   return proxyMcpAdminRequest(reply, serverConfig, method, path, body);
 }
 
-function swaggerSourcePath(request: FastifyRequest): string {
+export function swaggerSourcePath(request: FastifyRequest): string {
   const { sourceName } = request.params as { readonly sourceName: string };
   return `/admin/swagger/spec-sources/${encodeURIComponent(sourceName)}`;
 }
 
-function readAdminUrl(config: JsonObject): string | null {
+export function readAdminUrl(config: JsonObject): string | null {
   const adminUrl = readBodyString(config, "adminUrl");
 
   if (adminUrl && isHttpUrl(adminUrl)) {
@@ -8552,7 +8422,7 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-async function proxyMcpAdminRequest(
+export async function proxyMcpAdminRequest(
   reply: FastifyReply,
   serverConfig: McpServer,
   method: "DELETE" | "GET" | "POST" | "PUT",
@@ -8620,7 +8490,7 @@ function parseJsonOrText(text: string): unknown {
   }
 }
 
-function parseMcpAccessPolicy(value: unknown): ParseResult<JsonObject> {
+export function parseMcpAccessPolicy(value: unknown): ParseResult<JsonObject> {
   const body = toBody(value);
   const parsed: JsonObject = {
     allowedBitbucketRepositories: readStringSet(body.allowedBitbucketRepositories),
