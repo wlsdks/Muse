@@ -61,6 +61,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
 import { registerDocumentRoutes } from "./document-compat-routes.js";
+import { registerFeedbackCompatRoutes } from "./feedback-compat-routes.js";
 import { registerIntentRoutes } from "./intent-compat-routes.js";
 import { registerPersonaRoutes } from "./persona-compat-routes.js";
 import { registerPromptTemplateRoutes } from "./prompt-template-compat-routes.js";
@@ -989,187 +990,7 @@ function registerMemoryAndFeedbackRoutes(server: FastifyInstance, options: React
 }
 
 function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.post("/api/feedback", async (request, reply) => {
-    const body = toBody(request.body);
-    const rating = parseFeedbackRating(body.rating);
-
-    if (!rating) {
-      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
-    }
-
-    const validationError = validateFeedbackSubmitBody(body);
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    return reply.status(201).send(toFeedbackResponse(await createFeedback(request, options)));
-  });
-  server.get("/api/feedback", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const q = readQueryString(request, "q");
-    const rating = readQueryString(request, "rating");
-    const status = readQueryString(request, "status");
-
-    if (q && q.trim().length > 0 && q.trim().length < 2) {
-      return reply.status(400).send(errorResponse("q는 최소 2자 이상이어야 합니다"));
-    }
-
-    if (rating && !parseFeedbackRating(rating)) {
-      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
-    }
-
-    if (status && !parseFeedbackReviewStatus(status)) {
-      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
-    }
-
-    for (const key of ["from", "to"]) {
-      const raw = readQueryString(request, key);
-
-      if (raw && readQueryInstantMillis(request, key) === undefined) {
-        return reply.status(400).send(errorResponse("잘못된 요청입니다"));
-      }
-    }
-
-    const items = (await filterFeedback(request, options)).map(toFeedbackResponse);
-    const limit = readQueryInteger(request, "limit", 50);
-    return {
-      approximateTotal: items.length,
-      items: items.slice(0, Math.max(1, Math.min(limit, 100))),
-      nextCursor: null,
-      prevCursor: null
-    };
-  });
-  server.get("/api/feedback/stats", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return feedbackStats(await listFeedback(options));
-  });
-  server.get("/api/feedback/unreviewed-count", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return { count: (await listFeedback(options)).filter(isUnreviewedNegativeFeedback).length };
-  });
-  server.get("/api/feedback/export", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return {
-      exportedAt: nowIso(),
-      items: (await listFeedback(options)).map(toFeedbackExportItem),
-      source: "reactor",
-      version: 1
-    };
-  });
-  server.post("/api/feedback/bulk-update", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const body = toBody(request.body);
-    const ids = stringArrayField(body.ids, []);
-    const updated: string[] = [];
-    const failed: JsonObject[] = [];
-
-    if (ids.length === 0) {
-      return reply.status(400).send(errorResponse("요청 형식이 올바르지 않습니다"));
-    }
-
-    if (ids.length > 100) {
-      return reply.status(422).send({ error: "too_many_ids", max: 100 });
-    }
-
-    if (typeof body.status === "string" && !parseFeedbackReviewStatus(body.status)) {
-      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
-    }
-
-    const validationError = validateFeedbackReviewBody(body);
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    for (const id of ids) {
-      const existing = await getFeedback(options, id);
-
-      if (!existing) {
-        failed.push({ id, reason: "not_found" });
-        continue;
-      }
-
-      await updateFeedbackReview(existing, body, readAuthUserId(request) ?? "admin", options);
-      updated.push(existing.id);
-    }
-
-    return { failed, updated };
-  });
-  server.get("/api/feedback/:feedbackId", async (request, reply) => {
-    const { feedbackId } = request.params as { readonly feedbackId: string };
-    const feedback = await getFeedback(options, feedbackId);
-    return feedback
-      ? toFeedbackResponse(feedback)
-      : reply.status(404).send(errorResponse(`Feedback not found: ${feedbackId}`));
-  });
-  server.patch("/api/feedback/:feedbackId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { feedbackId } = request.params as { readonly feedbackId: string };
-    const feedback = await getFeedback(options, feedbackId);
-
-    if (!feedback) {
-      return reply.status(404).send(errorResponse(`Feedback not found: ${feedbackId}`));
-    }
-
-    const expectedVersion = readIfMatchVersion(request);
-
-    if (expectedVersion === undefined) {
-      return reply.status(400).send(errorResponse("If-Match 헤더가 필수입니다 (current version)"));
-    }
-
-    const currentVersion = readNumber(feedback.version, 1);
-
-    if (expectedVersion !== currentVersion) {
-      return reply.status(409).send({
-        current: toFeedbackResponse(feedback),
-        error: "version_conflict",
-        expectedVersion
-      });
-    }
-
-    const body = toBody(request.body);
-
-    if (typeof body.status === "string" && !parseFeedbackReviewStatus(body.status)) {
-      return reply.status(400).send(errorResponse("잘못된 요청입니다"));
-    }
-
-    const validationError = validateFeedbackReviewBody(body);
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    return toFeedbackResponse(await updateFeedbackReview(feedback, body, readAuthUserId(request) ?? "admin", options));
-  });
-  server.delete("/api/feedback/:feedbackId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { feedbackId } = request.params as { readonly feedbackId: string };
-    await deleteFeedback(options, feedbackId);
-
-    return reply.status(204).send();
-  });
+  registerFeedbackCompatRoutes(server, options);
 }
 
 // registerPersonaRoutes lives in apps/api/src/persona-compat-routes.ts.
@@ -5623,7 +5444,7 @@ function stringArrayMapField(value: unknown, fallback: Record<string, string[]>)
   );
 }
 
-async function createFeedback(request: FastifyRequest, options: ReactorCompatibilityRouteOptions): Promise<CompatRecord> {
+export async function createFeedback(request: FastifyRequest, options: ReactorCompatibilityRouteOptions): Promise<CompatRecord> {
   const body = toBody(request.body);
   return saveFeedback(options, {
     comment: readNullableStringField(body, "comment"),
@@ -5652,7 +5473,7 @@ async function createFeedback(request: FastifyRequest, options: ReactorCompatibi
   });
 }
 
-function validateFeedbackSubmitBody(body: CompatBody): JsonObject | undefined {
+export function validateFeedbackSubmitBody(body: CompatBody): JsonObject | undefined {
   const stringChecks: Array<readonly [keyof CompatBody, number]> = [
     ["query", 10_000],
     ["response", 50_000],
@@ -5684,7 +5505,7 @@ function validateFeedbackSubmitBody(body: CompatBody): JsonObject | undefined {
   return undefined;
 }
 
-function validateFeedbackReviewBody(body: CompatBody): JsonObject | undefined {
+export function validateFeedbackReviewBody(body: CompatBody): JsonObject | undefined {
   if (Array.isArray(body.tags) && body.tags.length > 16) {
     return { tags: "size must be between 0 and 16" };
   }
@@ -5696,7 +5517,7 @@ function validateFeedbackReviewBody(body: CompatBody): JsonObject | undefined {
   return undefined;
 }
 
-function toFeedbackResponse(record: JsonObject) {
+export function toFeedbackResponse(record: JsonObject) {
   return {
     comment: nullableStringResponse(record.comment),
     domain: nullableStringResponse(record.domain),
@@ -5723,7 +5544,7 @@ function toFeedbackResponse(record: JsonObject) {
   };
 }
 
-async function updateFeedbackReview(
+export async function updateFeedbackReview(
   existing: CompatRecord,
   body: CompatBody,
   actor: string,
@@ -5774,7 +5595,7 @@ async function saveFeedback(options: ReactorCompatibilityRouteOptions, input: Js
   return createRecord(state.feedback, record, "feedback");
 }
 
-async function listFeedback(options: ReactorCompatibilityRouteOptions): Promise<CompatRecord[]> {
+export async function listFeedback(options: ReactorCompatibilityRouteOptions): Promise<CompatRecord[]> {
   if (options.feedbackStore) {
     const rows = await options.feedbackStore.list();
     return rows.map(feedbackStoreRecordToCompat);
@@ -5783,7 +5604,7 @@ async function listFeedback(options: ReactorCompatibilityRouteOptions): Promise<
   return [...state.feedback.values()];
 }
 
-async function getFeedback(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+export async function getFeedback(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
   if (options.feedbackStore) {
     const record = await options.feedbackStore.get(id);
     return record ? feedbackStoreRecordToCompat(record) : undefined;
@@ -5792,7 +5613,7 @@ async function getFeedback(options: ReactorCompatibilityRouteOptions, id: string
   return findCompatRecord(state.feedback, id);
 }
 
-async function deleteFeedback(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+export async function deleteFeedback(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
   if (options.feedbackStore) {
     return options.feedbackStore.delete(id);
   }
@@ -5815,7 +5636,7 @@ function feedbackStoreRecordToCompat(record: JsonObject): CompatRecord {
   };
 }
 
-async function filterFeedback(request: FastifyRequest, options: ReactorCompatibilityRouteOptions): Promise<CompatRecord[]> {
+export async function filterFeedback(request: FastifyRequest, options: ReactorCompatibilityRouteOptions): Promise<CompatRecord[]> {
   const rating = readQueryString(request, "rating");
   const status = readQueryString(request, "status");
   const tag = readQueryString(request, "tag");
@@ -5870,7 +5691,7 @@ async function filterFeedback(request: FastifyRequest, options: ReactorCompatibi
   });
 }
 
-function toFeedbackExportItem(record: JsonObject): JsonObject {
+export function toFeedbackExportItem(record: JsonObject): JsonObject {
   return toJsonObject(toFeedbackResponse(record));
 }
 
@@ -5889,7 +5710,7 @@ function feedbackRating(value: unknown): string {
     : "thumbs_down";
 }
 
-function parseFeedbackRating(value: unknown): "thumbs_down" | "thumbs_up" | undefined {
+export function parseFeedbackRating(value: unknown): "thumbs_down" | "thumbs_up" | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -5907,7 +5728,7 @@ function feedbackReviewStatus(value: unknown): string {
   return typeof value === "string" && value.trim().toLowerCase() === "done" ? "done" : "inbox";
 }
 
-function parseFeedbackReviewStatus(value: unknown): "done" | "inbox" | undefined {
+export function parseFeedbackReviewStatus(value: unknown): "done" | "inbox" | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -5921,11 +5742,11 @@ function parseFeedbackReviewStatus(value: unknown): "done" | "inbox" | undefined
   return normalized === "inbox" ? "inbox" : undefined;
 }
 
-function isUnreviewedNegativeFeedback(record: JsonObject): boolean {
+export function isUnreviewedNegativeFeedback(record: JsonObject): boolean {
   return feedbackRating(record.rating) === "thumbs_down" && feedbackReviewStatus(record.reviewStatus) === "inbox";
 }
 
-function readIfMatchVersion(request: FastifyRequest): number | undefined {
+export function readIfMatchVersion(request: FastifyRequest): number | undefined {
   const raw = request.headers["if-match"];
   const value = Array.isArray(raw) ? raw[0] : raw;
   const parsed = value ? Number.parseInt(value.trim().replace(/^"|"$/g, ""), 10) : Number.NaN;
@@ -8675,7 +8496,7 @@ async function simulateGuard(value: unknown, options: ReactorCompatibilityRouteO
   }));
 }
 
-function feedbackStats(items: readonly CompatRecord[]) {
+export function feedbackStats(items: readonly CompatRecord[]) {
   const positive = items.filter((item) => feedbackRating(item.rating) === "thumbs_up").length;
   const negative = items.length - positive;
   const done = items.filter((item) => feedbackReviewStatus(item.reviewStatus) === "done").length;
@@ -9783,7 +9604,7 @@ function readStringSet(value: unknown): string[] {
     : [];
 }
 
-function readQueryString(request: FastifyRequest, key: string): string | undefined {
+export function readQueryString(request: FastifyRequest, key: string): string | undefined {
   const value = (request.query as Record<string, unknown>)[key];
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
@@ -9799,7 +9620,7 @@ export function readQueryInteger(request: FastifyRequest, key: string, fallback:
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function readQueryInstantMillis(request: FastifyRequest, key: string): number | undefined {
+export function readQueryInstantMillis(request: FastifyRequest, key: string): number | undefined {
   const raw = readQueryString(request, key);
 
   if (!raw) {
