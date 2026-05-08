@@ -19,10 +19,8 @@ import type {
   SlackFeedbackEventTable,
   SlackResponseTrackingTable
 } from "@muse/db";
-import { createRunId, type JsonObject, type JsonValue } from "@muse/shared";
+import { type JsonObject, type JsonValue } from "@muse/shared";
 import type { Insertable, Kysely, Selectable } from "kysely";
-import { formatSlackMrkdwn, formatSlackPayload } from "./slack-mrkdwn.js";
-import { createWebhookHeaders } from "./slack-signature.js";
 
 export type Awaitable<T> = T | Promise<T>;
 export type IntegrationEventType = "before_start" | "after_complete" | "on_error" | "before_tool" | "after_tool";
@@ -376,86 +374,15 @@ export interface WebhookDispatcherOptions {
   readonly idFactory?: () => string;
 }
 
-export function parseSlackSlashCommand(
-  payload: SlackSlashCommandPayload,
-  now: () => Date = () => new Date()
-): CommandEnvelope {
-  return {
-    channelId: blankToUndefined(payload.channel_id),
-    command: payload.command?.trim() || "/muse",
-    id: payload.trigger_id?.trim() || createRunId("command"),
-    metadata: Object.fromEntries(
-      Object.entries(payload).filter(([_, value]) => value !== undefined)
-    ) as JsonObject,
-    receivedAt: now(),
-    responseUrl: blankToUndefined(payload.response_url),
-    source: "slack",
-    text: payload.text?.trim() ?? "",
-    userId: blankToUndefined(payload.user_id),
-    workspaceId: blankToUndefined(payload.team_id)
-  };
-}
-
-export function parseSlackUrlEncodedBody(rawBody: string): SlackSlashCommandPayload {
-  const params = new URLSearchParams(rawBody);
-  const payload: Record<string, string> = {};
-
-  for (const [key, value] of params) {
-    payload[key] = value;
-  }
-
-  return payload;
-}
-
-export function toSlackCommandAck(response: CommandResponse): SlackCommandAckResponse {
-  return {
-    response_type: response.visibility === "public" ? "in_channel" : "ephemeral",
-    text: formatSlackMrkdwn(response.text)
-  };
-}
-
-export function commandEnvelopeFromText(
-  text: string,
-  options: {
-    readonly command?: string;
-    readonly source?: string;
-    readonly userId?: string;
-    readonly workspaceId?: string;
-    readonly now?: () => Date;
-  } = {}
-): CommandEnvelope {
-  return {
-    command: options.command ?? "muse",
-    id: createRunId("command"),
-    metadata: {},
-    receivedAt: options.now?.() ?? new Date(),
-    source: options.source ?? "generic",
-    text,
-    userId: options.userId,
-    workspaceId: options.workspaceId
-  };
-}
-
-export class CommandRouter implements CommandHandler {
-  private readonly handlers = new Map<string, CommandHandler>();
-
-  register(command: string, handler: CommandHandler): void {
-    this.handlers.set(command, handler);
-  }
-
-  async handle(envelope: CommandEnvelope): Promise<CommandResponse> {
-    const handler = this.handlers.get(envelope.command) ?? this.handlers.get("*");
-
-    if (!handler) {
-      return {
-        text: `No handler registered for command: ${envelope.command}`,
-        visibility: "ephemeral"
-      };
-    }
-
-    return handler.handle(envelope);
-  }
-}
+// Slack slash-command parsers + CommandRouter live in
+// packages/integrations/src/slack-commands.ts.
+export {
+  CommandRouter,
+  commandEnvelopeFromText,
+  parseSlackSlashCommand,
+  parseSlackUrlEncodedBody,
+  toSlackCommandAck
+} from "./slack-commands.js";
 
 
 // Slack bot-instance + channel-FAQ-registration stores live in
@@ -473,87 +400,14 @@ export {
   mapSlackBotInstanceRow
 } from "./slack-bot-faq-store.js";
 
-export class SlackInteractionDispatcher {
-  constructor(private readonly handlers: readonly SlackInteractionHandler[]) {}
-
-  async dispatch(input: unknown): Promise<SlackInteractionDispatchResult> {
-    const payload = parseSlackInteractionPayload(input);
-
-    if (!payload) {
-      return { dispatched: false, reason: "parse_failed" };
-    }
-
-    const prefix = payload.actionId.includes(".")
-      ? payload.actionId.slice(0, payload.actionId.indexOf("."))
-      : payload.actionId;
-    const matched = this.handlers.filter((handler) =>
-      handler.actionIdPrefix === prefix || payload.actionId.startsWith(`${handler.actionIdPrefix}_`)
-    );
-
-    if (matched.length === 0) {
-      return { dispatched: false, payload, reason: "no_handler" };
-    }
-
-    for (const handler of matched) {
-      try {
-        if (await handler.handle(payload)) {
-          return { dispatched: true, payload };
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    return { dispatched: false, payload, reason: "handler_rejected" };
-  }
-}
-
-export class SlackSocketModeGateway {
-  private readonly envelopeIds = new Set<string>();
-  private readonly maxRememberedEnvelopeIds: number;
-  private readonly now: () => Date;
-
-  constructor(private readonly options: SlackSocketModeGatewayOptions) {
-    this.maxRememberedEnvelopeIds = Math.max(1, options.maxRememberedEnvelopeIds ?? 10_000);
-    this.now = options.now ?? (() => new Date());
-  }
-
-  async handleEnvelope(envelope: SlackSocketModeEnvelope): Promise<void> {
-    if (envelope.envelope_id) {
-      await this.options.transport.send({ envelope_id: envelope.envelope_id });
-
-      if (this.rememberedEnvelope(envelope.envelope_id)) {
-        return;
-      }
-    }
-
-    const command = socketEnvelopeToCommand(envelope.payload, this.now);
-
-    if (command) {
-      await this.options.commandHandler.handle(command);
-    }
-  }
-
-  private rememberedEnvelope(envelopeId: string): boolean {
-    if (this.envelopeIds.has(envelopeId)) {
-      return true;
-    }
-
-    this.envelopeIds.add(envelopeId);
-
-    while (this.envelopeIds.size > this.maxRememberedEnvelopeIds) {
-      const oldest = this.envelopeIds.values().next().value as string | undefined;
-
-      if (!oldest) {
-        break;
-      }
-
-      this.envelopeIds.delete(oldest);
-    }
-
-    return false;
-  }
-}
+// SlackInteractionDispatcher + SlackSocketModeGateway +
+// parseSlackInteractionPayload live in
+// packages/integrations/src/slack-interaction.ts.
+export {
+  parseSlackInteractionPayload,
+  SlackInteractionDispatcher,
+  SlackSocketModeGateway
+} from "./slack-interaction.js";
 
 // Slack response tracker primitives live in
 // packages/integrations/src/slack-response-tracker.ts.
@@ -656,272 +510,12 @@ export {
   verifyWebhookSignature
 } from "./slack-signature.js";
 
-export class FetchSlackResponseUrlTransport implements SlackResponseUrlTransport {
-  constructor(private readonly fetchImpl: typeof fetch = fetch) {}
-
-  async post(url: string, body: JsonObject): Promise<{ readonly statusCode: number }> {
-    const slackBody = formatSlackPayload(body);
-    const response = await this.fetchImpl(url, {
-      body: JSON.stringify(slackBody),
-      headers: {
-        "content-type": "application/json"
-      },
-      method: "POST"
-    });
-
-    return { statusCode: response.status };
-  }
-}
-
-
-export function parseSlackInteractionPayload(input: unknown): SlackInteractionPayload | undefined {
-  const json = parseSlackInteractionJson(input);
-
-  if (!json) {
-    return undefined;
-  }
-
-  const type = readString(json, "type");
-
-  if (type !== "block_actions" && type !== "view_submission") {
-    return undefined;
-  }
-
-  const action = type === "block_actions"
-    ? readRecordArray(json, "actions")[0]
-    : readRecord(json, "view");
-
-  if (!action) {
-    return undefined;
-  }
-
-  const actionId = type === "view_submission"
-    ? readString(action, "callback_id")
-    : readString(action, "action_id");
-
-  if (!actionId) {
-    return undefined;
-  }
-
-  const viewState = type === "view_submission" ? readRecord(readRecord(action, "state") ?? {}, "values") : undefined;
-
-  return {
-    actionId,
-    channelId: readString(readRecord(json, "channel") ?? {}, "id"),
-    messageTs: readString(readRecord(json, "message") ?? {}, "ts"),
-    privateMetadata: type === "view_submission" ? readString(action, "private_metadata") : undefined,
-    responseUrl: readString(json, "response_url"),
-    triggerId: readString(json, "trigger_id"),
-    type,
-    userId: readString(readRecord(json, "user") ?? {}, "id") ?? "",
-    value: readString(action, "value"),
-    viewValues: viewState as JsonObject | undefined
-  };
-}
-
-function socketEnvelopeToCommand(payload: unknown, now: () => Date): CommandEnvelope | undefined {
-  if (!isJsonRecord(payload) || payload.type !== "event_callback" || !isJsonRecord(payload.event)) {
-    return undefined;
-  }
-
-  const event = payload.event;
-  const type = readString(event, "type");
-
-  if (type !== "app_mention" && type !== "message") {
-    return undefined;
-  }
-
-  const text = stripBotMention(readString(event, "text") ?? "");
-  const ts = readString(event, "ts") ?? createRunId("socket_event");
-
-  return {
-    channelId: blankToUndefined(readString(event, "channel")),
-    command: type,
-    id: ts,
-    metadata: {
-      eventTs: ts,
-      socketMode: true,
-      type
-    },
-    receivedAt: now(),
-    source: "slack_socket_mode",
-    text,
-    userId: blankToUndefined(readString(event, "user")),
-    workspaceId: blankToUndefined(readString(event, "team") ?? readString(payload, "team_id"))
-  };
-}
-
-function stripBotMention(value: string): string {
-  return value.replace(/^<@[^>]+>\s*/u, "").trim();
-}
-
-export class FetchSlackWebApiMessageTransport
-  implements SlackMessageTransport, SlackAssistantThreadStatusTransport
-{
-  constructor(
-    private readonly botToken: string,
-    private readonly fetchImpl: typeof fetch = fetch,
-    private readonly apiBaseUrl = "https://slack.com/api"
-  ) {}
-
-  async postMessage(input: SlackMessagePostInput): Promise<{
-    readonly ok: boolean;
-    readonly statusCode: number;
-    readonly error?: string;
-    readonly ts?: string;
-  }> {
-    if (this.botToken.trim().length === 0) {
-      return { error: "slack_bot_token_missing", ok: false, statusCode: 0 };
-    }
-
-    const body = formatSlackPayload({
-      channel: input.channelId,
-      text: input.text,
-      ...(input.threadTs ? { thread_ts: input.threadTs } : {})
-    });
-    const response = await this.fetchImpl(`${this.apiBaseUrl}/chat.postMessage`, {
-      body: JSON.stringify(body),
-      headers: {
-        authorization: `Bearer ${this.botToken}`,
-        "content-type": "application/json; charset=utf-8"
-      },
-      method: "POST"
-    });
-    const parsed = await readSlackApiResponse(response);
-
-    return {
-      error: parsed.error,
-      ok: response.ok && parsed.ok !== false,
-      statusCode: response.status,
-      ts: parsed.ts
-    };
-  }
-
-  async setStatus(input: SlackAssistantThreadStatusInput): Promise<SlackAssistantThreadStatusResult> {
-    if (this.botToken.trim().length === 0) {
-      return { error: "slack_bot_token_missing", ok: false, statusCode: 0 };
-    }
-
-    const response = await this.fetchImpl(`${this.apiBaseUrl}/assistant.threads.setStatus`, {
-      body: JSON.stringify({
-        channel_id: input.channelId,
-        thread_ts: input.threadTs,
-        status: input.status
-      }),
-      headers: {
-        authorization: `Bearer ${this.botToken}`,
-        "content-type": "application/json; charset=utf-8"
-      },
-      method: "POST"
-    });
-    const parsed = await readSlackApiResponse(response);
-
-    return {
-      error: parsed.error,
-      ok: response.ok && parsed.ok !== false,
-      statusCode: response.status
-    };
-  }
-}
-
-// formatSlackMrkdwn + Slack/webhook signing helpers live in
-// packages/integrations/src/slack-mrkdwn.ts and slack-signature.ts.
+// formatSlackMrkdwn + formatSlackPayload live in packages/integrations/src/slack-mrkdwn.ts.
 export { formatSlackMrkdwn, formatSlackPayload } from "./slack-mrkdwn.js";
 
-
-function blankToUndefined(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : undefined;
-}
-
-function isJsonRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseSlackInteractionJson(input: unknown): Record<string, unknown> | undefined {
-  if (typeof input === "string") {
-    return parseJsonObject(input);
-  }
-
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return undefined;
-  }
-
-  const record = input as Record<string, unknown>;
-  const payload = record.payload;
-
-  if (typeof payload === "string") {
-    return parseJsonObject(payload);
-  }
-
-  return record;
-}
-
-function parseJsonObject(value: string): Record<string, unknown> | undefined {
-  const parsed = safeJsonParse(value);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? parsed as Record<string, unknown>
-    : undefined;
-}
-
-function safeJsonParse(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function readRecord(value: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
-  const candidate = value[key];
-  return candidate && typeof candidate === "object" && !Array.isArray(candidate)
-    ? candidate as Record<string, unknown>
-    : undefined;
-}
-
-function readRecordArray(value: Record<string, unknown>, key: string): Array<Record<string, unknown>> {
-  const candidate = value[key];
-
-  if (!Array.isArray(candidate)) {
-    return [];
-  }
-
-  return candidate.filter((item): item is Record<string, unknown> =>
-    Boolean(item) && typeof item === "object" && !Array.isArray(item)
-  );
-}
-
-function readString(value: Record<string, unknown>, key: string): string | undefined {
-  const candidate = value[key];
-  return typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : undefined;
-}
-
-// formatSlackPayload lives in packages/integrations/src/slack-mrkdwn.ts.
-
-async function readSlackApiResponse(response: Response): Promise<{
-  readonly ok?: boolean;
-  readonly error?: string;
-  readonly ts?: string;
-}> {
-  const contentType = response.headers.get("content-type") ?? "";
-
-  if (!contentType.includes("application/json")) {
-    return {};
-  }
-
-  const value = await response.json().catch(() => undefined);
-
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  const record = value as Record<string, unknown>;
-
-  return {
-    error: typeof record.error === "string" ? record.error : undefined,
-    ok: typeof record.ok === "boolean" ? record.ok : undefined,
-    ts: typeof record.ts === "string" ? record.ts : undefined
-  };
-}
-
-
+// FetchSlackResponseUrlTransport + FetchSlackWebApiMessageTransport live in
+// packages/integrations/src/slack-transports.ts.
+export {
+  FetchSlackResponseUrlTransport,
+  FetchSlackWebApiMessageTransport
+} from "./slack-transports.js";
