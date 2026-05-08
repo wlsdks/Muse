@@ -77,6 +77,14 @@ import {
 import { judgeEvalWithModel } from "./compat-eval-judge.js";
 import { feedbackRating, listFeedback } from "./compat-feedback-store.js";
 import { listInputGuardRules } from "./compat-guard-rule-store.js";
+import {
+  appendPromptVersion,
+  getPromptTemplate,
+  listPromptTemplates,
+  promptVersions,
+  savePromptTemplate,
+  toVersionResponse
+} from "./compat-promptlab-catalog-store.js";
 import { defaultToolPolicy } from "./compat-tool-policy-store.js";
 import { registerAdminObservabilityCompatRoutes } from "./admin-observability-compat-routes.js";
 import { registerAdminPlatformCompatRoutes } from "./admin-platform-compat-routes.js";
@@ -839,6 +847,18 @@ export function getStateFeedback(): CompatCollection {
   return state.feedback;
 }
 
+export function getStatePersonas(): CompatCollection {
+  return state.personas;
+}
+
+export function getStatePromptTemplates(): CompatCollection {
+  return state.promptTemplates;
+}
+
+export function getStateIntents(): CompatCollection {
+  return state.intents;
+}
+
 // Tool-policy store helpers live in apps/api/src/compat-tool-policy-store.ts.
 export {
   clearToolPolicy,
@@ -874,402 +894,34 @@ export function readIfMatchVersion(request: FastifyRequest): number | undefined 
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export async function createPersona(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
-  const body = toBody(bodyValue);
-  return savePersona(options, {
-    description: readNullableStringField(body, "description"),
-    icon: readNullableStringField(body, "icon"),
-    isActive: readBoolean(body.isActive, true),
-    isDefault: readBoolean(body.isDefault, false),
-    name: readBodyString(body, "name") ?? "",
-    promptTemplateId: readNullableStringField(body, "promptTemplateId"),
-    responseGuideline: readNullableStringField(body, "responseGuideline"),
-    systemPrompt: readBodyString(body, "systemPrompt") ?? "",
-    welcomeMessage: readNullableStringField(body, "welcomeMessage")
-  });
-}
-
-async function savePersona(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
-  if (options.promptLabCatalogStore) {
-    const saved = await options.promptLabCatalogStore.savePersona(prepareCatalogRecord(record, "persona"));
-    return promptLabRecordToCompat(saved, "persona");
-  }
-
-  return createRecord(state.personas, record, "persona");
-}
-
-export async function listPersonas(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
-  if (options.promptLabCatalogStore) {
-    const rows = await options.promptLabCatalogStore.listPersonas();
-    return rows.map((row) => promptLabRecordToCompat(row, "persona"));
-  }
-
-  return [...state.personas.values()];
-}
-
-export async function getPersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
-  if (options.promptLabCatalogStore) {
-    const row = await options.promptLabCatalogStore.getPersona(id);
-    return row ? promptLabRecordToCompat(row, "persona") : undefined;
-  }
-
-  return findCompatRecord(state.personas, id);
-}
-
-export async function deletePersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
-  if (options.promptLabCatalogStore) {
-    return options.promptLabCatalogStore.deletePersona(id);
-  }
-
-  const existing = findCompatRecord(state.personas, id);
-  return existing ? state.personas.delete(existing.id) : false;
-}
-
-export function validatePersonaBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
-  const checks: Array<readonly [keyof CompatBody, number, string]> = [
-    ["name", 200, "name must not exceed 200 characters"],
-    ["systemPrompt", 50_000, "systemPrompt must not exceed 50000 characters"],
-    ["description", 2_000, "description must not exceed 2000 characters"],
-    ["responseGuideline", 10_000, "responseGuideline must not exceed 10000 characters"],
-    ["welcomeMessage", 2_000, "welcomeMessage must not exceed 2000 characters"],
-    ["promptTemplateId", 200, "promptTemplateId must not exceed 200 characters"],
-    ["icon", 20, "icon must be 20 characters or fewer"]
-  ];
-
-  if (mode === "create" && !readBodyString(body, "name")) {
-    return { name: "name must not be blank" };
-  }
-
-  if (mode === "create" && !readBodyString(body, "systemPrompt")) {
-    return { systemPrompt: "systemPrompt must not be blank" };
-  }
-
-  for (const [key, max, message] of checks) {
-    const value = body[key];
-
-    if (typeof value === "string" && value.length > max) {
-      return { [key]: message };
-    }
-  }
-
-  return undefined;
-}
-
-export async function updatePersona(
-  options: ReactorCompatibilityRouteOptions,
-  existing: CompatRecord,
-  bodyValue: unknown
-): Promise<CompatRecord> {
-  const body = toBody(bodyValue);
-  return savePersona(options, {
-    ...existing,
-    description: readOptionalStringField(body, "description", existing.description),
-    icon: readOptionalStringField(body, "icon", existing.icon),
-    isActive: readBoolean(body.isActive, readBoolean(existing.isActive, true)),
-    isDefault: readBoolean(body.isDefault, readBoolean(existing.isDefault, false)),
-    name: readBodyString(body, "name") ?? stringField(existing.name, ""),
-    promptTemplateId: readOptionalStringField(body, "promptTemplateId", existing.promptTemplateId),
-    responseGuideline: readOptionalStringField(body, "responseGuideline", existing.responseGuideline),
-    systemPrompt: readBodyString(body, "systemPrompt") ?? stringField(existing.systemPrompt, ""),
-    welcomeMessage: readOptionalStringField(body, "welcomeMessage", existing.welcomeMessage)
-  });
-}
-
-export function toPersonaResponse(record: JsonObject) {
-  return {
-    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
-    description: nullableStringResponse(record.description),
-    icon: nullableStringResponse(record.icon),
-    id: stringField(record.id, ""),
-    isActive: readBoolean(record.isActive, true),
-    isDefault: readBoolean(record.isDefault, false),
-    name: stringField(record.name, ""),
-    promptTemplateId: nullableStringResponse(record.promptTemplateId),
-    responseGuideline: nullableStringResponse(record.responseGuideline),
-    systemPrompt: stringField(record.systemPrompt, ""),
-    updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now(),
-    welcomeMessage: nullableStringResponse(record.welcomeMessage)
-  };
-}
-
-export async function createPromptTemplate(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
-  const body = toBody(bodyValue);
-  return savePromptTemplate(options, {
-    description: readBodyString(body, "description") ?? "",
-    name: readBodyString(body, "name") ?? "",
-    versions: []
-  });
-}
-
-export async function savePromptTemplate(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
-  if (options.promptLabCatalogStore) {
-    const saved = await options.promptLabCatalogStore.saveTemplate(prepareCatalogRecord(record, "prompt_template"));
-    return promptLabRecordToCompat(saved, "prompt_template");
-  }
-
-  return createRecord(state.promptTemplates, record, "prompt_template");
-}
-
-export async function listPromptTemplates(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
-  if (options.promptLabCatalogStore) {
-    const rows = await options.promptLabCatalogStore.listTemplates();
-    return rows.map((row) => promptLabRecordToCompat(row, "prompt_template"));
-  }
-
-  return [...state.promptTemplates.values()];
-}
-
-export async function getPromptTemplate(
-  options: ReactorCompatibilityRouteOptions,
-  id: string
-): Promise<CompatRecord | undefined> {
-  if (options.promptLabCatalogStore) {
-    const row = await options.promptLabCatalogStore.getTemplate(id);
-    return row ? promptLabRecordToCompat(row, "prompt_template") : undefined;
-  }
-
-  return findCompatRecord(state.promptTemplates, id);
-}
-
-export async function deletePromptTemplate(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
-  if (options.promptLabCatalogStore) {
-    return options.promptLabCatalogStore.deleteTemplate(id);
-  }
-
-  return state.promptTemplates.delete(id);
-}
-
-export function validatePromptTemplateBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
-  const name = body.name;
-  const description = body.description;
-
-  if (mode === "create" && !readBodyString(body, "name")) {
-    return { name: "name must not be blank" };
-  }
-
-  if (typeof name === "string" && name.length > 200) {
-    return { name: "name must not exceed 200 characters" };
-  }
-
-  if (typeof description === "string" && description.length > 2000) {
-    return { description: "description must not exceed 2000 characters" };
-  }
-
-  return undefined;
-}
-
-export function validatePromptVersionBody(body: CompatBody): JsonObject | undefined {
-  const content = body.content;
-  const changeLog = body.changeLog;
-
-  if (!readBodyString(body, "content")) {
-    return { content: "content must not be blank" };
-  }
-
-  if (typeof content === "string" && content.length > 100_000) {
-    return { content: "content must not exceed 100000 characters" };
-  }
-
-  if (typeof changeLog === "string" && changeLog.length > 2000) {
-    return { changeLog: "changeLog must not exceed 2000 characters" };
-  }
-
-  return undefined;
-}
-
-export function toTemplateResponse(record: JsonObject) {
-  return {
-    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
-    description: typeof record.description === "string" ? record.description : "",
-    id: typeof record.id === "string" ? record.id : "",
-    name: typeof record.name === "string" ? record.name : "",
-    updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now()
-  };
-}
-
-export function toTemplateDetailResponse(record: JsonObject) {
-  const versions = promptVersions(record);
-  const activeVersion = versions.find((version) => version.status === "ACTIVE") ?? null;
-  return {
-    ...toTemplateResponse(record),
-    activeVersion,
-    versions
-  };
-}
-
-export async function appendPromptVersion(
-  options: ReactorCompatibilityRouteOptions,
-  templateId: string,
-  bodyValue: unknown
-): Promise<JsonObject | { error: string }> {
-  const template = await getPromptTemplate(options, templateId);
-
-  if (!template) {
-    return { error: "not_found" };
-  }
-
-  const body = toBody(bodyValue);
-  const existing = promptVersions(template);
-  const version = {
-    changeLog: readBodyString(body, "changeLog") ?? "",
-    content: readBodyString(body, "content") ?? "",
-    createdAt: nowIso(),
-    id: createRunId("prompt_version"),
-    status: "DRAFT",
-    templateId,
-    version: existing.length + 1
-  };
-
-  await savePromptTemplate(options, {
-    ...template,
-    versions: [...existing, version]
-  });
-  return toVersionResponse(version);
-}
-
-export async function setPromptVersionStatus(
-  options: ReactorCompatibilityRouteOptions,
-  request: FastifyRequest,
-  status: "ACTIVE" | "ARCHIVED"
-): Promise<JsonObject | { error: string }> {
-  const { templateId, versionId } = request.params as { readonly templateId: string; readonly versionId: string };
-  const template = await getPromptTemplate(options, templateId);
-
-  if (!template) {
-    return { error: "not_found" };
-  }
-
-  let selected: JsonObject | undefined;
-  const versions = promptVersions(template).map((version) => {
-    if (version.id === versionId) {
-      selected = { ...version, status };
-      return selected;
-    }
-
-    return status === "ACTIVE" && version.status === "ACTIVE"
-      ? { ...version, status: "ARCHIVED" }
-      : version;
-  });
-
-  if (!selected) {
-    return { error: "not_found" };
-  }
-
-  await savePromptTemplate(options, {
-    ...template,
-    versions
-  });
-  return toVersionResponse(selected);
-}
-
-function promptVersions(record: JsonObject): JsonObject[] {
-  return Array.isArray(record.versions)
-    ? record.versions.filter(isRecord).map(toJsonObject)
-    : [];
-}
-
-function toVersionResponse(record: JsonObject) {
-  return {
-    changeLog: typeof record.changeLog === "string" ? record.changeLog : "",
-    content: typeof record.content === "string" ? record.content : "",
-    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
-    id: typeof record.id === "string" ? record.id : "",
-    status: reactorEnumString(record.status, "DRAFT"),
-    templateId: typeof record.templateId === "string" ? record.templateId : "",
-    version: typeof record.version === "number" ? record.version : readNumber(record.version, 1)
-  };
-}
-
-export async function createIntent(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
-  const body = toBody(bodyValue);
-  const name = readBodyString(body, "name") ?? "";
-  return saveIntent(options, {
-    description: readBodyString(body, "description") ?? "",
-    enabled: readBoolean(body.enabled, true),
-    examples: stringArrayField(body.examples, []),
-    id: name,
-    keywords: stringArrayField(body.keywords, []),
-    name,
-    profile: jsonObjectField(body.profile)
-  });
-}
-
-async function saveIntent(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
-  if (options.promptLabCatalogStore) {
-    const saved = await options.promptLabCatalogStore.saveIntent(prepareCatalogRecord(record, "intent"));
-    return promptLabRecordToCompat(saved, "intent");
-  }
-
-  return createRecord(state.intents, record, "intent");
-}
-
-export async function listIntents(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
-  if (options.promptLabCatalogStore) {
-    const rows = await options.promptLabCatalogStore.listIntents();
-    return rows.map((row) => promptLabRecordToCompat(row, "intent"));
-  }
-
-  return [...state.intents.values()];
-}
-
-export async function getIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<CompatRecord | undefined> {
-  if (options.promptLabCatalogStore) {
-    const row = await options.promptLabCatalogStore.getIntent(name);
-    return row ? promptLabRecordToCompat(row, "intent") : undefined;
-  }
-
-  return findCompatRecord(state.intents, name);
-}
-
-export async function deleteIntent(options: ReactorCompatibilityRouteOptions, name: string): Promise<boolean> {
-  if (options.promptLabCatalogStore) {
-    return options.promptLabCatalogStore.deleteIntent(name);
-  }
-
-  const existing = findCompatRecord(state.intents, name);
-  return existing ? state.intents.delete(existing.id) : false;
-}
-
-export function validateIntentBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
-  if (mode === "create" && !readBodyString(body, "name")) {
-    return { name: "name must not be blank" };
-  }
-
-  if (mode === "create" && !readBodyString(body, "description")) {
-    return { description: "description must not be blank" };
-  }
-
-  return undefined;
-}
-
-export async function updateIntent(
-  options: ReactorCompatibilityRouteOptions,
-  existing: CompatRecord,
-  bodyValue: unknown
-): Promise<CompatRecord> {
-  const body = toBody(bodyValue);
-  return saveIntent(options, {
-    ...existing,
-    description: readBodyString(body, "description") ?? stringField(existing.description, ""),
-    enabled: readBoolean(body.enabled, readBoolean(existing.enabled, true)),
-    examples: stringArrayField(body.examples, stringArrayField(existing.examples, [])),
-    keywords: stringArrayField(body.keywords, stringArrayField(existing.keywords, [])),
-    profile: isRecord(body.profile) ? toJsonObject(body.profile) : jsonObjectField(existing.profile)
-  });
-}
-
-export function toIntentResponse(record: JsonObject) {
-  return {
-    createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
-    description: stringField(record.description, ""),
-    enabled: readBoolean(record.enabled, true),
-    examples: stringArrayField(record.examples, []),
-    keywords: stringArrayField(record.keywords, []),
-    name: stringField(record.name, stringField(record.id, "")),
-    profile: jsonObjectField(record.profile),
-    updatedAt: epochMillisOrNull(record.updatedAt) ?? Date.now()
-  };
-}
+// PromptLab catalog store helpers (persona+template+intent) live in apps/api/src/compat-promptlab-catalog-store.ts.
+export {
+  appendPromptVersion,
+  createIntent,
+  createPersona,
+  createPromptTemplate,
+  deleteIntent,
+  deletePersona,
+  deletePromptTemplate,
+  getIntent,
+  getPersona,
+  getPromptTemplate,
+  listIntents,
+  listPersonas,
+  listPromptTemplates,
+  savePromptTemplate,
+  setPromptVersionStatus,
+  toIntentResponse,
+  toPersonaResponse,
+  toTemplateDetailResponse,
+  toTemplateResponse,
+  updateIntent,
+  updatePersona,
+  validateIntentBody,
+  validatePersonaBody,
+  validatePromptTemplateBody,
+  validatePromptVersionBody
+} from "./compat-promptlab-catalog-store.js";
 
 export async function createDocument(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
   const body = toBody(bodyValue);
@@ -1853,7 +1505,7 @@ export async function getPromptExperimentReport(
   return findCompatRecord(state.promptExperimentReports, experimentId);
 }
 
-function promptLabRecordToCompat(record: JsonObject, prefix: string): CompatRecord {
+export function promptLabRecordToCompat(record: JsonObject, prefix: string): CompatRecord {
   const id = stringField(record.id, "") || stringField(record.experimentId, "") || createRunId(prefix);
   const createdAt = nullableStringResponse(record.createdAt)
     ?? nullableStringResponse(record.generatedAt)
@@ -1868,7 +1520,7 @@ function promptLabRecordToCompat(record: JsonObject, prefix: string): CompatReco
   };
 }
 
-function prepareCatalogRecord(record: JsonObject, prefix: string): JsonObject {
+export function prepareCatalogRecord(record: JsonObject, prefix: string): JsonObject {
   const createdAt = nullableStringResponse(record.createdAt) ?? nowIso();
   return {
     ...record,
@@ -4769,7 +4421,7 @@ export function readNullableStringField(value: CompatBody, key: string): string 
   return typeof item === "string" ? item : null;
 }
 
-function readOptionalStringField(value: CompatBody, key: string, fallback: unknown): string | null {
+export function readOptionalStringField(value: CompatBody, key: string, fallback: unknown): string | null {
   const item = value[key];
   return typeof item === "string" ? item : nullableStringResponse(fallback);
 }
