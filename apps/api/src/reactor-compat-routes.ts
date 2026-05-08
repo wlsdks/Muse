@@ -74,6 +74,11 @@ import {
   saveAgentEvalRunLog,
   saveAgentEvalResult
 } from "./compat-agent-eval-store.js";
+import {
+  countDocuments,
+  listDocuments,
+  saveDocumentRecord
+} from "./compat-document-store.js";
 import { judgeEvalWithModel } from "./compat-eval-judge.js";
 import { feedbackRating, listFeedback } from "./compat-feedback-store.js";
 import { listInputGuardRules } from "./compat-guard-rule-store.js";
@@ -500,7 +505,7 @@ export {
   toInputGuardAuditResponse
 } from "./compat-audit-store.js";
 
-export function ragStatusSummary(documents: readonly CompatRecord[] = [...state.documents.values()]): JsonObject {
+export function ragStatusSummary(documents: readonly CompatRecord[] = [...getStateDocuments().values()]): JsonObject {
   const records = [...state.ragCandidates.values(), ...documents];
   const byStatus: Record<string, number> = {};
 
@@ -859,6 +864,10 @@ export function getStateIntents(): CompatCollection {
   return state.intents;
 }
 
+export function getStateDocuments(): CompatCollection {
+  return state.documents;
+}
+
 // Tool-policy store helpers live in apps/api/src/compat-tool-policy-store.ts.
 export {
   clearToolPolicy,
@@ -923,175 +932,22 @@ export {
   validatePromptVersionBody
 } from "./compat-promptlab-catalog-store.js";
 
-export async function createDocument(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
-  const body = toBody(bodyValue);
-  const content = readBodyString(body, "content") ?? "";
-  const metadata = documentMetadata(body);
-  return saveDocumentRecord(options, {
-    chunkCount: 1,
-    chunkIds: [],
-    content,
-    indexed: true,
-    metadata: {
-      ...metadata,
-      [DOCUMENT_CONTENT_HASH_KEY]: computeContentHash(content)
-    }
-  });
-}
-
-export function toDocumentResponse(record: JsonObject) {
-  return {
-    chunkCount: readNumber(record.chunkCount, 1),
-    chunkIds: stringArrayField(record.chunkIds, []),
-    content: stringField(record.content, ""),
-    id: stringField(record.id, ""),
-    metadata: jsonObjectField(record.metadata)
-  };
-}
-
-export function toSearchResultResponse(record: JsonObject) {
-  return {
-    content: stringField(record.content, ""),
-    id: stringField(record.id, ""),
-    metadata: jsonObjectField(record.metadata),
-    score: null
-  };
-}
-
-export async function saveDocumentRecord(
-  options: ReactorCompatibilityRouteOptions,
-  record: JsonObject
-): Promise<CompatRecord> {
-  const content = stringField(record.content, "");
-  const metadata = jsonObjectField(record.metadata);
-  const contentHash = stringField(metadata[DOCUMENT_CONTENT_HASH_KEY], computeContentHash(content));
-  const id = typeof record.id === "string" && record.id.length > 0 ? record.id : undefined;
-
-  if (options.ragIngestion?.documentStore) {
-    const recordMetadata = documentRecordMetadata(record, metadata);
-    return storedRagDocumentToCompat(await options.ragIngestion.documentStore.save({
-      chunkCount: readNumber(record.chunkCount, 1),
-      chunkIds: stringArrayField(record.chunkIds, []),
-      content,
-      contentHash,
-      id,
-      indexed: readBoolean(record.indexed, true),
-      metadata: {
-        ...recordMetadata,
-        [DOCUMENT_CONTENT_HASH_KEY]: contentHash
-      },
-      source: readBodyNullableString(record, "source")
-    }));
-  }
-
-  return createRecord(state.documents, {
-    ...record,
-    metadata: {
-      ...metadata,
-      [DOCUMENT_CONTENT_HASH_KEY]: contentHash
-    }
-  }, "document");
-}
-
-function documentRecordMetadata(record: JsonObject, metadata: JsonObject): JsonObject {
-  const ignored = new Set(["chunkCount", "chunkIds", "content", "createdAt", "id", "indexed", "metadata", "updatedAt"]);
-  const extra = Object.fromEntries(Object.entries(record).filter(([key]) => !ignored.has(key)));
-  return {
-    ...extra,
-    ...metadata
-  };
-}
-
-export async function listDocuments(
-  options: ReactorCompatibilityRouteOptions,
-  listOptions: { readonly limit?: number } = {}
-): Promise<readonly CompatRecord[]> {
-  const stored = await options.ragIngestion?.documentStore?.list(listOptions);
-  return stored ? stored.map(storedRagDocumentToCompat) : [...state.documents.values()].slice(0, listOptions.limit ?? 100);
-}
-
-export async function searchDocuments(
-  options: ReactorCompatibilityRouteOptions,
-  query: string,
-  searchOptions: { readonly limit?: number } = {}
-): Promise<readonly CompatRecord[]> {
-  const stored = await options.ragIngestion?.documentStore?.search(query, searchOptions);
-
-  if (stored) {
-    return stored.map(storedRagDocumentToCompat);
-  }
-
-  return [...state.documents.values()]
-    .filter((document) => JSON.stringify(document).toLowerCase().includes(query))
-    .slice(0, searchOptions.limit ?? 5);
-}
-
-export async function deleteDocument(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
-  if (options.ragIngestion?.documentStore) {
-    return options.ragIngestion.documentStore.delete(id);
-  }
-
-  return state.documents.delete(id);
-}
-
-export async function deleteDocuments(options: ReactorCompatibilityRouteOptions, ids: readonly string[]): Promise<number> {
-  if (options.ragIngestion?.documentStore) {
-    return options.ragIngestion.documentStore.deleteMany(ids);
-  }
-
-  let deleted = 0;
-
-  for (const id of ids) {
-    deleted += state.documents.delete(id) ? 1 : 0;
-  }
-
-  return deleted;
-}
-
-export async function countDocuments(options: ReactorCompatibilityRouteOptions): Promise<number> {
-  return options.ragIngestion?.documentStore
-    ? options.ragIngestion.documentStore.count()
-    : state.documents.size;
-}
-
-function storedRagDocumentToCompat(document: StoredRagDocument): CompatRecord {
-  return {
-    chunkCount: document.chunkCount,
-    chunkIds: [...document.chunkIds],
-    content: document.content,
-    createdAt: document.createdAt.toISOString(),
-    id: document.id,
-    indexed: document.indexed,
-    metadata: document.metadata,
-    source: document.source ?? null,
-    updatedAt: document.updatedAt.toISOString()
-  };
-}
-
-function documentMetadata(body: CompatBody): JsonObject {
-  const metadata = jsonObjectField(body.metadata);
-  return typeof body.title === "string" && body.title.trim().length > 0
-    ? { ...metadata, title: body.title }
-    : metadata;
-}
-
-export function validateAddDocumentBody(body: CompatBody): JsonObject | undefined {
-  const content = readBodyString(body, "content");
-
-  if (!content) {
-    return { content: "Document content is required" };
-  }
-
-  if (content.length > 100_000) {
-    return { content: "Document content must not exceed 100000 characters" };
-  }
-
-  if (Object.keys(jsonObjectField(body.metadata)).length > 50) {
-    return { metadata: "Metadata must not exceed 50 entries" };
-  }
-
-  return undefined;
-}
+// Document/RAG store helpers live in apps/api/src/compat-document-store.ts.
+export {
+  computeContentHash,
+  countDocuments,
+  createDocument,
+  deleteDocument,
+  deleteDocuments,
+  duplicateDocumentConflict,
+  findDocumentByContentHash,
+  listDocuments,
+  saveDocumentRecord,
+  searchDocuments,
+  toDocumentResponse,
+  toSearchResultResponse,
+  validateAddDocumentBody
+} from "./compat-document-store.js";
 
 export function validationErrorResponse(details: JsonObject): JsonObject {
   return {
@@ -1107,34 +963,6 @@ export function prefixValidationDetails(prefix: string, details: JsonObject): Js
   );
 }
 
-export async function findDocumentByContentHash(
-  options: ReactorCompatibilityRouteOptions,
-  contentHash: string
-): Promise<CompatRecord | undefined> {
-  const stored = await options.ragIngestion?.documentStore?.findByContentHash(contentHash);
-
-  if (stored) {
-    return storedRagDocumentToCompat(stored);
-  }
-
-  return [...state.documents.values()].find((document) => {
-    const metadata = jsonObjectField(document.metadata);
-    return metadata[DOCUMENT_CONTENT_HASH_KEY] === contentHash;
-  });
-}
-
-export function duplicateDocumentConflict(reply: FastifyReply, existingId: string) {
-  return reply.status(409).send({
-    error: "Document with identical content already exists",
-    existingId
-  });
-}
-
-export function computeContentHash(content: string): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
-const DOCUMENT_CONTENT_HASH_KEY = "content_hash";
 const PROACTIVE_CHANNELS_SETTING_KEY = "compat.slack.proactiveChannels";
 
 export async function listProactiveChannels(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
