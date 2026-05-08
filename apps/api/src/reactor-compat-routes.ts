@@ -62,6 +62,7 @@ import { createHash } from "node:crypto";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
 import { registerIntentRoutes } from "./intent-compat-routes.js";
 import { registerPersonaRoutes } from "./persona-compat-routes.js";
+import { registerPromptTemplateRoutes } from "./prompt-template-compat-routes.js";
 import { registerSessionCompatibilityRoutes } from "./session-compat-routes.js";
 import { recordedSpans, recordedTraceEvents, type AdminRouteState } from "./admin-routes.js";
 import type { McpRouteMcp } from "./mcp-routes.js";
@@ -1205,109 +1206,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
 
 // registerPersonaRoutes lives in apps/api/src/persona-compat-routes.ts.
 
-function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/prompt-templates", async () => (await listPromptTemplates(options)).map(toTemplateResponse));
-  server.get("/api/prompt-templates/:templateId", async (request, reply) => {
-    const { templateId } = request.params as { readonly templateId: string };
-    const template = await getPromptTemplate(options, templateId);
-    return template
-      ? toTemplateDetailResponse(template)
-      : reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`));
-  });
-  server.post("/api/prompt-templates", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const validationError = validatePromptTemplateBody(toBody(request.body), "create");
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    return reply.status(201).send(toTemplateResponse(await createPromptTemplate(options, request.body)));
-  });
-  server.put("/api/prompt-templates/:templateId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { templateId } = request.params as { readonly templateId: string };
-    const existing = await getPromptTemplate(options, templateId);
-
-    if (!existing) {
-      return reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`));
-    }
-
-    const body = toBody(request.body);
-    const validationError = validatePromptTemplateBody(body, "update");
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    const description = readBodyString(body, "description")
-      ?? (typeof existing.description === "string" ? existing.description : "");
-    const name = readBodyString(body, "name") ?? (typeof existing.name === "string" ? existing.name : "");
-    const updated = await savePromptTemplate(options, {
-      ...existing,
-      description,
-      name
-    });
-    return toTemplateResponse(updated);
-  });
-  server.delete("/api/prompt-templates/:templateId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { templateId } = request.params as { readonly templateId: string };
-    await deletePromptTemplate(options, templateId);
-    return reply.status(204).send();
-  });
-  server.post("/api/prompt-templates/:templateId/versions", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { templateId } = request.params as { readonly templateId: string };
-    const validationError = validatePromptVersionBody(toBody(request.body));
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    const version = await appendPromptVersion(options, templateId, request.body);
-    return "error" in version
-      ? reply.status(404).send(errorResponse(`Prompt template not found: ${templateId}`))
-      : reply.status(201).send(version);
-  });
-  server.put("/api/prompt-templates/:templateId/versions/:versionId/activate", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const version = await setPromptVersionStatus(options, request, "ACTIVE");
-    return "error" in version
-      ? promptTemplateVersionNotFound(reply, request)
-      : version;
-  });
-  server.put("/api/prompt-templates/:templateId/versions/:versionId/archive", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const version = await setPromptVersionStatus(options, request, "ARCHIVED");
-    return "error" in version
-      ? promptTemplateVersionNotFound(reply, request)
-      : version;
-  });
-}
-
-function promptTemplateVersionNotFound(reply: FastifyReply, request: FastifyRequest) {
-  const { templateId, versionId } = request.params as { readonly templateId: string; readonly versionId: string };
-  return reply.status(404).send(errorResponse(`Template or version not found: ${templateId}/${versionId}`));
-}
+// registerPromptTemplateRoutes lives in apps/api/src/prompt-template-compat-routes.ts.
 
 // registerIntentRoutes lives in apps/api/src/intent-compat-routes.ts.
 
@@ -6315,7 +6214,7 @@ export function toPersonaResponse(record: JsonObject) {
   };
 }
 
-async function createPromptTemplate(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
+export async function createPromptTemplate(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
   const body = toBody(bodyValue);
   return savePromptTemplate(options, {
     description: readBodyString(body, "description") ?? "",
@@ -6324,7 +6223,7 @@ async function createPromptTemplate(options: ReactorCompatibilityRouteOptions, b
   });
 }
 
-async function savePromptTemplate(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
+export async function savePromptTemplate(options: ReactorCompatibilityRouteOptions, record: JsonObject): Promise<CompatRecord> {
   if (options.promptLabCatalogStore) {
     const saved = await options.promptLabCatalogStore.saveTemplate(prepareCatalogRecord(record, "prompt_template"));
     return promptLabRecordToCompat(saved, "prompt_template");
@@ -6333,7 +6232,7 @@ async function savePromptTemplate(options: ReactorCompatibilityRouteOptions, rec
   return createRecord(state.promptTemplates, record, "prompt_template");
 }
 
-async function listPromptTemplates(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+export async function listPromptTemplates(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
   if (options.promptLabCatalogStore) {
     const rows = await options.promptLabCatalogStore.listTemplates();
     return rows.map((row) => promptLabRecordToCompat(row, "prompt_template"));
@@ -6342,7 +6241,7 @@ async function listPromptTemplates(options: ReactorCompatibilityRouteOptions): P
   return [...state.promptTemplates.values()];
 }
 
-async function getPromptTemplate(
+export async function getPromptTemplate(
   options: ReactorCompatibilityRouteOptions,
   id: string
 ): Promise<CompatRecord | undefined> {
@@ -6354,7 +6253,7 @@ async function getPromptTemplate(
   return findCompatRecord(state.promptTemplates, id);
 }
 
-async function deletePromptTemplate(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+export async function deletePromptTemplate(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
   if (options.promptLabCatalogStore) {
     return options.promptLabCatalogStore.deleteTemplate(id);
   }
@@ -6362,7 +6261,7 @@ async function deletePromptTemplate(options: ReactorCompatibilityRouteOptions, i
   return state.promptTemplates.delete(id);
 }
 
-function validatePromptTemplateBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
+export function validatePromptTemplateBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
   const name = body.name;
   const description = body.description;
 
@@ -6381,7 +6280,7 @@ function validatePromptTemplateBody(body: CompatBody, mode: "create" | "update")
   return undefined;
 }
 
-function validatePromptVersionBody(body: CompatBody): JsonObject | undefined {
+export function validatePromptVersionBody(body: CompatBody): JsonObject | undefined {
   const content = body.content;
   const changeLog = body.changeLog;
 
@@ -6400,7 +6299,7 @@ function validatePromptVersionBody(body: CompatBody): JsonObject | undefined {
   return undefined;
 }
 
-function toTemplateResponse(record: JsonObject) {
+export function toTemplateResponse(record: JsonObject) {
   return {
     createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
     description: typeof record.description === "string" ? record.description : "",
@@ -6410,7 +6309,7 @@ function toTemplateResponse(record: JsonObject) {
   };
 }
 
-function toTemplateDetailResponse(record: JsonObject) {
+export function toTemplateDetailResponse(record: JsonObject) {
   const versions = promptVersions(record);
   const activeVersion = versions.find((version) => version.status === "ACTIVE") ?? null;
   return {
@@ -6420,7 +6319,7 @@ function toTemplateDetailResponse(record: JsonObject) {
   };
 }
 
-async function appendPromptVersion(
+export async function appendPromptVersion(
   options: ReactorCompatibilityRouteOptions,
   templateId: string,
   bodyValue: unknown
@@ -6450,7 +6349,7 @@ async function appendPromptVersion(
   return toVersionResponse(version);
 }
 
-async function setPromptVersionStatus(
+export async function setPromptVersionStatus(
   options: ReactorCompatibilityRouteOptions,
   request: FastifyRequest,
   status: "ACTIVE" | "ARCHIVED"
