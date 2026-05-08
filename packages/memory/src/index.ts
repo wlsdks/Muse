@@ -145,124 +145,16 @@ export const COMPACTION_SUMMARY_PREFIX = "[Conversation summary";
 export const COMPACTION_PINNED_ENTITIES_PREFIX = "Pinned entities for pronoun resolution";
 export const DEFAULT_TASK_MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 
-type ConversationSummaryRow = Selectable<ConversationSummaryTable>;
-type ConversationSummaryInsert = Insertable<ConversationSummaryTable>;
-
-export class InMemoryConversationSummaryStore implements ConversationSummaryStore {
-  private readonly summaries = new Map<string, RequiredConversationSummary>();
-  private readonly now: () => Date;
-
-  constructor(options: { readonly now?: () => Date } = {}) {
-    this.now = options.now ?? (() => new Date());
-  }
-
-  get(sessionId: string): ConversationSummary | undefined {
-    return this.summaries.get(sessionId);
-  }
-
-  save(summary: ConversationSummary): ConversationSummary {
-    const existing = this.summaries.get(summary.sessionId);
-    const now = this.now();
-    const normalized = normalizeConversationSummary(summary, {
-      createdAt: existing?.createdAt ?? summary.createdAt ?? now,
-      updatedAt: summary.updatedAt ?? now
-    });
-
-    this.summaries.set(normalized.sessionId, normalized);
-    return normalized;
-  }
-
-  delete(sessionId: string): boolean {
-    return this.summaries.delete(sessionId);
-  }
-}
-
-export class KyselyConversationSummaryStore implements ConversationSummaryStore {
-  private readonly now: () => Date;
-
-  constructor(
-    private readonly db: Kysely<MuseDatabase>,
-    options: { readonly now?: () => Date } = {}
-  ) {
-    this.now = options.now ?? (() => new Date());
-  }
-
-  async get(sessionId: string): Promise<ConversationSummary | undefined> {
-    const row = await this.db
-      .selectFrom("conversation_summaries")
-      .selectAll()
-      .where("session_id", "=", sessionId)
-      .executeTakeFirst();
-
-    return row ? mapConversationSummaryRow(row) : undefined;
-  }
-
-  async save(summary: ConversationSummary): Promise<ConversationSummary> {
-    const row = await buildConversationSummaryUpsertQuery(this.db, summary, { now: this.now })
-      .executeTakeFirstOrThrow();
-
-    return mapConversationSummaryRow(row);
-  }
-
-  async delete(sessionId: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("conversation_summaries")
-      .where("session_id", "=", sessionId)
-      .executeTakeFirst();
-
-    return Number(result.numDeletedRows ?? 0) > 0;
-  }
-}
-
-export function buildConversationSummaryUpsertQuery(
-  db: Kysely<MuseDatabase>,
-  summary: ConversationSummary,
-  options: { readonly now: () => Date }
-) {
-  const row = createConversationSummaryInsert(summary, options);
-
-  return db
-    .insertInto("conversation_summaries")
-    .values(row)
-    .onConflict((oc) => oc.column("session_id").doUpdateSet({
-      facts_json: row.facts_json,
-      narrative: row.narrative,
-      summarized_up_to: row.summarized_up_to,
-      updated_at: row.updated_at
-    }))
-    .returningAll();
-}
-
-export function createConversationSummaryInsert(
-  summary: ConversationSummary,
-  options: { readonly now: () => Date }
-): ConversationSummaryInsert {
-  const now = options.now();
-  const normalized = normalizeConversationSummary(summary, {
-    createdAt: summary.createdAt ?? now,
-    updatedAt: summary.updatedAt ?? now
-  });
-
-  return {
-    created_at: normalized.createdAt,
-    facts_json: normalized.facts.map(serializeStructuredFact),
-    narrative: normalized.narrative,
-    session_id: normalized.sessionId,
-    summarized_up_to: normalized.summarizedUpToIndex,
-    updated_at: normalized.updatedAt
-  };
-}
-
-export function mapConversationSummaryRow(row: ConversationSummaryRow): ConversationSummary {
-  return {
-    createdAt: dateValue(row.created_at),
-    facts: jsonArray<SerializedStructuredFact>(row.facts_json).map(deserializeStructuredFact),
-    narrative: row.narrative,
-    sessionId: row.session_id,
-    summarizedUpToIndex: row.summarized_up_to,
-    updatedAt: dateValue(row.updated_at)
-  };
-}
+// Conversation-summary persistence (in-memory + Kysely stores, upsert
+// query builder, row builder + mapper, structured-fact serializer
+// pair) lives in packages/memory/src/memory-conversation-summary-store.ts.
+export {
+  buildConversationSummaryUpsertQuery,
+  createConversationSummaryInsert,
+  InMemoryConversationSummaryStore,
+  KyselyConversationSummaryStore,
+  mapConversationSummaryRow
+} from "./memory-conversation-summary-store.js";
 
 export class InMemoryTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaintenance {
   private readonly tasks = new Map<string, RequiredTaskState>();
@@ -1263,57 +1155,6 @@ function isStringRecord(value: unknown): value is Readonly<Record<string, string
   return Object.values(value).every((entry) => typeof entry === "string");
 }
 
-function normalizeConversationSummary(
-  summary: ConversationSummary,
-  options: { readonly createdAt: Date; readonly updatedAt: Date }
-): RequiredConversationSummary {
-  return {
-    createdAt: options.createdAt,
-    facts: (summary.facts ?? []).map(normalizeStructuredFact),
-    narrative: summary.narrative.trim(),
-    sessionId: summary.sessionId,
-    summarizedUpToIndex: Math.max(0, Math.trunc(summary.summarizedUpToIndex)),
-    updatedAt: options.updatedAt
-  };
-}
-
-function normalizeStructuredFact(fact: StructuredFact): RequiredStructuredFact {
-  return {
-    category: fact.category ?? "GENERAL",
-    extractedAt: fact.extractedAt ?? new Date(),
-    key: fact.key.trim(),
-    value: fact.value.trim()
-  };
-}
-
-function serializeStructuredFact(fact: RequiredStructuredFact): SerializedStructuredFact {
-  return {
-    category: fact.category,
-    extractedAt: fact.extractedAt.toISOString(),
-    key: fact.key,
-    value: fact.value
-  };
-}
-
-function deserializeStructuredFact(fact: SerializedStructuredFact): RequiredStructuredFact {
-  return {
-    category: factCategoryValue(fact.category),
-    extractedAt: dateValue(fact.extractedAt),
-    key: stringValue(fact.key),
-    value: stringValue(fact.value)
-  };
-}
-
-function factCategoryValue(value: unknown): FactCategory {
-  return value === "ENTITY" ||
-    value === "DECISION" ||
-    value === "CONDITION" ||
-    value === "STATE" ||
-    value === "NUMERIC" ||
-    value === "GENERAL"
-    ? value
-    : "GENERAL";
-}
 
 function trimOldestCacheEntries(cache: Map<string, CacheEntry>, maxEntries: number): void {
   while (cache.size > maxEntries) {
@@ -1353,20 +1194,3 @@ interface CacheEntry {
   readonly tokens: number;
 }
 
-interface RequiredStructuredFact {
-  readonly key: string;
-  readonly value: string;
-  readonly category: FactCategory;
-  readonly extractedAt: Date;
-}
-
-interface RequiredConversationSummary {
-  readonly sessionId: string;
-  readonly narrative: string;
-  readonly facts: readonly RequiredStructuredFact[];
-  readonly summarizedUpToIndex: number;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
-}
-
-type SerializedStructuredFact = Readonly<Record<string, string>>;
