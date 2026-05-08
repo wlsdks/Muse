@@ -41,7 +41,6 @@ import type {
   AgentRunHistoryStore,
   AgentRunMode,
   CheckpointStore,
-  HookLifecycle,
   HookTraceStore,
   PendingApprovalStore
 } from "@muse/runtime-state";
@@ -75,6 +74,7 @@ import {
   recordRunFailure,
   recordRunStart
 } from "./lifecycle.js";
+import { invokeHooks } from "./hook-orchestration.js";
 import { invokeModel, recordTokenUsageEvent } from "./model-invocation.js";
 import {
   appendSystemSection,
@@ -1674,68 +1674,11 @@ export class AgentRuntime {
   ): Promise<void>;
   private async invokeHooks(name: "onError", context: AgentRunContext, error: unknown): Promise<void>;
   private async invokeHooks(name: keyof HookStage, context: AgentRunContext, value?: unknown): Promise<void> {
-    for (const hook of this.hooksForInvocation()) {
-      const invoke = hookInvocation(hook, name, context, value);
-
-      if (!invoke) {
-        continue;
-      }
-
-      const startedAt = new Date();
-      const startedAtMs = Date.now();
-
-      try {
-        await invoke();
-        await this.recordHookTrace(context, hook.id, name as HookLifecycle, "completed", startedAt, startedAtMs);
-      } catch (error) {
-        await this.recordHookTrace(context, hook.id, name as HookLifecycle, "failed", startedAt, startedAtMs, error);
-        // Hooks are extension points and must fail open.
-      }
-    }
-  }
-
-  private hooksForInvocation(): readonly HookStage[] {
-    const hooksById = new Map<string, HookStage>();
-
-    for (const hook of this.hooks) {
-      hooksById.set(hook.id, hook);
-    }
-
-    for (const hook of this.hookRegistry?.list() ?? []) {
-      hooksById.set(hook.id, hook);
-    }
-
-    return [...hooksById.values()];
-  }
-
-  private async recordHookTrace(
-    context: AgentRunContext,
-    hookId: string,
-    lifecycle: HookLifecycle,
-    status: "completed" | "failed",
-    startedAt: Date,
-    startedAtMs: number,
-    error?: unknown
-  ): Promise<void> {
-    if (!this.hookTraceStore) {
-      return;
-    }
-
-    try {
-      await this.hookTraceStore.record({
-        completedAt: new Date(),
-        durationMs: Math.max(0, Date.now() - startedAtMs),
-        ...(error ? { error: error instanceof Error ? error.message : "unknown hook failure" } : {}),
-        hookId,
-        lifecycle,
-        ...(context.input.metadata ? { metadata: context.input.metadata } : {}),
-        runId: context.runId,
-        startedAt,
-        status
-      });
-    } catch {
-      // Hook trace recording must not block agent execution.
-    }
+    return invokeHooks(name, context, {
+      hooks: this.hooks,
+      ...(this.hookRegistry ? { hookRegistry: this.hookRegistry } : {}),
+      ...(this.hookTraceStore ? { hookTraceStore: this.hookTraceStore } : {})
+    }, value as never);
   }
 
   private recordAgentRun(
@@ -1810,41 +1753,6 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
 }
 
 
-function hookInvocation(
-  hook: HookStage,
-  name: keyof HookStage,
-  context: AgentRunContext,
-  value: unknown
-): (() => Awaitable<void>) | undefined {
-  const beforeStart = hook.beforeStart;
-  const beforeTool = hook.beforeTool;
-  const afterTool = hook.afterTool;
-  const afterComplete = hook.afterComplete;
-  const onError = hook.onError;
-
-  if (name === "beforeStart" && beforeStart) {
-    return () => beforeStart(context);
-  }
-
-  if (name === "beforeTool" && beforeTool) {
-    return () => beforeTool(context, value as ModelToolCall);
-  }
-
-  if (name === "afterTool" && afterTool) {
-    const toolValue = value as { readonly result: ToolExecutionResult; readonly toolCall: ModelToolCall };
-    return () => afterTool(context, toolValue.toolCall, toolValue.result);
-  }
-
-  if (name === "afterComplete" && afterComplete) {
-    return () => afterComplete(context, value as ModelResponse);
-  }
-
-  if (name === "onError" && onError) {
-    return () => onError(context, value);
-  }
-
-  return undefined;
-}
 
 
 
