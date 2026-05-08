@@ -929,8 +929,8 @@ describe("CostAnomalyDetector", () => {
 describe("MonthlyBudgetTracker", () => {
   it("returns 'ok' when no monthly limit is configured", () => {
     const tracker = new MonthlyBudgetTracker({ now: () => new Date("2026-05-15T00:00:00Z") });
-    expect(tracker.recordCost("tenant-1", 5)).toBe("ok");
-    expect(tracker.snapshot("tenant-1").totalCostUsd).toBe(5);
+    expect(tracker.recordCost(5)).toBe("ok");
+    expect(tracker.snapshot().totalCostUsd).toBe(5);
   });
 
   it("transitions ok → warning → exceeded as cumulative cost crosses thresholds", () => {
@@ -939,40 +939,26 @@ describe("MonthlyBudgetTracker", () => {
       now: () => new Date("2026-05-15T00:00:00Z"),
       warningPercent: 80
     });
-    expect(tracker.recordCost("t", 5)).toBe("ok");
-    expect(tracker.recordCost("t", 3.1)).toBe("warning");
-    expect(tracker.recordCost("t", 2.5)).toBe("exceeded");
+    expect(tracker.recordCost(5)).toBe("ok");
+    expect(tracker.recordCost(3.1)).toBe("warning");
+    expect(tracker.recordCost(2.5)).toBe("exceeded");
   });
 
-  it("resets the per-tenant counter on month rollover", () => {
+  it("resets the running total on month rollover", () => {
     let nowDate = new Date("2026-05-31T23:00:00Z");
     const tracker = new MonthlyBudgetTracker({ monthlyLimitUsd: 10, now: () => nowDate, warningPercent: 50 });
-    tracker.recordCost("t", 6);
-    expect(tracker.snapshot("t").totalCostUsd).toBe(6);
+    tracker.recordCost(6);
+    expect(tracker.snapshot().totalCostUsd).toBe(6);
     nowDate = new Date("2026-06-01T00:30:00Z");
-    expect(tracker.recordCost("t", 1)).toBe("ok");
-    expect(tracker.snapshot("t").totalCostUsd).toBe(1);
-    expect(tracker.snapshot("t").month).toBe("2026-06");
-  });
-
-  it("evicts oldest tenants when the cap is reached", () => {
-    const tracker = new MonthlyBudgetTracker({
-      maxTenants: 2,
-      now: () => new Date("2026-05-15T00:00:00Z")
-    });
-    tracker.recordCost("a", 1);
-    tracker.recordCost("b", 1);
-    tracker.recordCost("c", 1);
-    expect(tracker.currentCost("a")).toBe(0);
-    expect(tracker.currentCost("b")).toBe(1);
-    expect(tracker.currentCost("c")).toBe(1);
+    expect(tracker.recordCost(1)).toBe("ok");
+    expect(tracker.snapshot().totalCostUsd).toBe(1);
+    expect(tracker.snapshot().month).toBe("2026-06");
   });
 
   it("rejects invalid configuration", () => {
     expect(() => new MonthlyBudgetTracker({ monthlyLimitUsd: -1 })).toThrow(/monthlyLimitUsd/u);
     expect(() => new MonthlyBudgetTracker({ warningPercent: 0 })).toThrow(/warningPercent/u);
     expect(() => new MonthlyBudgetTracker({ warningPercent: 110 })).toThrow(/warningPercent/u);
-    expect(() => new MonthlyBudgetTracker({ maxTenants: 0 })).toThrow(/maxTenants/u);
   });
 });
 
@@ -990,7 +976,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
     expect(snapshot.slo).toBeUndefined();
     expect(snapshot.drift).toBeUndefined();
     expect(snapshot.cost).toBeUndefined();
-    expect(snapshot.budgets).toBeUndefined();
+    expect(snapshot.budget).toBeUndefined();
     expect(snapshot.followups).toBeUndefined();
   });
 
@@ -1075,23 +1061,19 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
     expect(snapshot.cost?.baselineUsd).toBeCloseTo(0.02, 5);
   });
 
-  it("emits per-tenant budget snapshots when budgetTenantIds is provided", async () => {
+  it("emits the budget snapshot when budgetTracker is provided", async () => {
     const budgetTracker = new MonthlyBudgetTracker({
       monthlyLimitUsd: 10,
       now: () => new Date("2026-05-15T00:00:00.000Z"),
       warningPercent: 50
     });
-    budgetTracker.recordCost("alpha", 6);
-    budgetTracker.recordCost("beta", 1);
+    budgetTracker.recordCost(6);
     const provider = createJarvisObservabilitySnapshotProvider({
-      budgetTenantIds: () => ["alpha", "beta"],
       budgetTracker,
       now: () => new Date("2026-05-15T00:00:00.000Z")
     });
     const snapshot = await provider.snapshot();
-    expect(snapshot.budgets).toHaveLength(2);
-    expect(snapshot.budgets?.[0]).toMatchObject({ status: "warning", tenantId: "alpha" });
-    expect(snapshot.budgets?.[1]).toMatchObject({ status: "ok", tenantId: "beta" });
+    expect(snapshot.budget).toMatchObject({ status: "warning", totalCostUsd: 6, limitUsd: 10, month: "2026-05" });
   });
 
   it("forwards followup suggestion stats when the store is configured", async () => {

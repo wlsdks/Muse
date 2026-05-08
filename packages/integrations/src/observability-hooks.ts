@@ -6,7 +6,7 @@
  * `@muse/observability` detectors / evaluators:
  *
  *   - `createCostAnomalyHook`: records per-request cost into a
- *     `CostAnomalyDetector` (+ optional per-tenant budget tracker)
+ *     `CostAnomalyDetector` (+ optional monthly budget tracker)
  *     and forwards anomalies / budget transitions.
  *   - `createPromptDriftHook`: records input length on `beforeStart`
  *     + output length on `afterComplete`, forwards drift anomalies.
@@ -37,9 +37,8 @@ export interface CostAnomalyHookOptions {
   readonly detector: CostAnomalyDetector;
   readonly id?: string;
   readonly budgetTracker?: MonthlyBudgetTracker;
-  readonly tenantIdFromContext?: (context: AgentRunContext) => string | undefined;
   readonly costFromResponse: (context: AgentRunContext, response: ModelResponse) => number | undefined;
-  readonly notify?: (event: { readonly anomaly?: CostAnomaly; readonly budgetStatus?: MonthlyBudgetStatus; readonly tenantId?: string }) => Awaitable<void>;
+  readonly notify?: (event: { readonly anomaly?: CostAnomaly; readonly budgetStatus?: MonthlyBudgetStatus }) => Awaitable<void>;
   readonly logger?: (message: string, error?: unknown) => void;
 }
 
@@ -52,11 +51,7 @@ export function createCostAnomalyHook(options: CostAnomalyHookOptions): HookStag
       }
       options.detector.recordCost(cost);
       const anomaly = options.detector.evaluate();
-      const tenantId = options.tenantIdFromContext?.(context);
-      let budgetStatus: MonthlyBudgetStatus | undefined;
-      if (tenantId && options.budgetTracker) {
-        budgetStatus = options.budgetTracker.recordCost(tenantId, cost);
-      }
+      const budgetStatus = options.budgetTracker?.recordCost(cost);
       if (!options.notify) {
         return;
       }
@@ -66,8 +61,7 @@ export function createCostAnomalyHook(options: CostAnomalyHookOptions): HookStag
       try {
         await options.notify({
           ...(anomaly ? { anomaly } : {}),
-          ...(budgetStatus ? { budgetStatus } : {}),
-          ...(tenantId ? { tenantId } : {})
+          ...(budgetStatus ? { budgetStatus } : {})
         });
       } catch (error) {
         options.logger?.("CostAnomalyHook notify failed", error);

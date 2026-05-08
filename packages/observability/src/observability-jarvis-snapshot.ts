@@ -56,7 +56,7 @@ export interface JarvisObservabilitySnapshot {
   readonly cost?: {
     readonly baselineUsd: number;
   };
-  readonly budgets?: readonly MonthlyBudgetSnapshot[];
+  readonly budget?: MonthlyBudgetSnapshot;
   readonly followups?: FollowupStats;
 }
 
@@ -67,7 +67,6 @@ export interface JarvisObservabilitySnapshotProviderOptions {
   readonly driftDetector?: PromptDriftDetector;
   readonly costAnomalyDetector?: CostAnomalyDetector;
   readonly budgetTracker?: MonthlyBudgetTracker;
-  readonly budgetTenantIds?: () => readonly string[];
   readonly followupSuggestionStore?: FollowupSuggestionStore;
   readonly windowDays?: number;
   readonly topExpensiveLimit?: number;
@@ -97,7 +96,7 @@ export function createJarvisObservabilitySnapshotProvider(
         slo?: JarvisObservabilitySnapshot["slo"];
         drift?: DriftStats;
         cost?: { baselineUsd: number };
-        budgets?: readonly MonthlyBudgetSnapshot[];
+        budget?: MonthlyBudgetSnapshot;
         followups?: FollowupStats;
       } = { generatedAt, windowEnd, windowStart };
 
@@ -152,9 +151,9 @@ export function createJarvisObservabilitySnapshotProvider(
         }
       }
 
-      if (options.budgetTracker && options.budgetTenantIds) {
+      if (options.budgetTracker) {
         try {
-          result.budgets = options.budgetTenantIds().map((tenantId) => options.budgetTracker!.snapshot(tenantId));
+          result.budget = options.budgetTracker.snapshot();
         } catch (error) {
           options.logger?.("JarvisObservability: budgetTracker failed", error);
         }

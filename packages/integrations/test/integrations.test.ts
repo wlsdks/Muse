@@ -1974,11 +1974,10 @@ describe("createCostAnomalyHook", () => {
       detector: detector as never,
       notify: async (event) => {
         notified.push(event);
-      },
-      tenantIdFromContext: () => "tenant-x"
+      }
     });
-    await hook.afterComplete?.(makeContext({ tenantId: "tenant-x" }), { id: "r", model: "m", output: "" });
-    expect(notified).toEqual([{ budgetStatus: "warning", tenantId: "tenant-x" }]);
+    await hook.afterComplete?.(makeContext(), { id: "r", model: "m", output: "" });
+    expect(notified).toEqual([{ budgetStatus: "warning" }]);
   });
 
   it("skips recording and notify when costFromResponse returns undefined", async () => {

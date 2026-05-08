@@ -348,7 +348,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     windowSize: parseInteger(env.MUSE_COST_ANOMALY_WINDOW_SIZE, 100)
   });
   const budgetTracker = new MonthlyBudgetTracker({
-    maxTenants: parseInteger(env.MUSE_BUDGET_MAX_TENANTS, 10_000),
     monthlyLimitUsd: parseNonNegativeFloat(env.MUSE_BUDGET_MONTHLY_LIMIT_USD, 0),
     warningPercent: parseInteger(env.MUSE_BUDGET_WARNING_PERCENT, 80)
   });
@@ -754,7 +753,6 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
       })),
     jarvisObservabilitySnapshot: () =>
       createJarvisObservabilitySnapshotProvider({
-        budgetTenantIds: () => assembly.observability.budgetTracker.tenantIds(),
         budgetTracker: assembly.observability.budgetTracker,
         costAnomalyDetector: assembly.observability.costAnomalyDetector,
         driftDetector: assembly.observability.driftDetector,

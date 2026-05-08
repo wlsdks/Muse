@@ -304,16 +304,15 @@ export function createCostAnomalyFeedingTokenUsageSink(
 
 /**
  * Wraps a TokenUsageSink so each recorded usage event also feeds a
- * `MonthlyBudgetTracker` (per-tenant monthly accumulation). Tenant IDs default
- * to "default" when the record carries none; budget snapshots surface
- * automatically via `/api/admin/jarvis/snapshot.budgets`.
+ * `MonthlyBudgetTracker` (single-bucket monthly accumulation). The current
+ * snapshot surfaces via `/api/admin/jarvis/snapshot.budget`.
  */
 export function createBudgetTrackingTokenUsageSink(
   tracker: MonthlyBudgetTracker,
   inner: TokenUsageSink
 ): TokenUsageSink {
   return wrapTokenUsageSink(inner, async (event) => {
-    tracker.recordCost(event.tenantId ?? "default", event.estimatedCostUsd ?? 0);
+    tracker.recordCost(event.estimatedCostUsd ?? 0);
   });
 }
 

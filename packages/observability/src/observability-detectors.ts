@@ -8,8 +8,8 @@
  *
  *   - `CostAnomalyDetector`: rolling-window cost monitor that fires
  *     when latest cost exceeds `baseline × thresholdMultiplier`.
- *   - `MonthlyBudgetTracker`: per-tenant monthly USD aggregator with
- *     month-rollover reset + bounded `maxTenants` eviction.
+ *   - `MonthlyBudgetTracker`: monthly USD aggregator with
+ *     month-rollover reset.
  *   - `PromptDriftDetector`: rolling-window first-half / second-half
  *     mean-shift detector for input + output lengths, with a 1%
  *     baseline-mean stddev floor when the baseline is uniform.
@@ -107,7 +107,6 @@ export class CostAnomalyDetector {
 export type MonthlyBudgetStatus = "ok" | "warning" | "exceeded";
 
 export interface MonthlyBudgetSnapshot {
-  readonly tenantId: string;
   readonly month: string;
   readonly totalCostUsd: number;
   readonly limitUsd: number;
@@ -117,87 +116,56 @@ export interface MonthlyBudgetSnapshot {
 export interface MonthlyBudgetTrackerOptions {
   readonly monthlyLimitUsd?: number;
   readonly warningPercent?: number;
-  readonly maxTenants?: number;
   readonly now?: () => Date;
 }
 
 export class MonthlyBudgetTracker {
   readonly #monthlyLimitUsd: number;
   readonly #warningPercent: number;
-  readonly #maxTenants: number;
   readonly #now: () => Date;
-  readonly #costs = new Map<string, number>();
+  #total = 0;
   #currentMonth: string;
 
   constructor(options: MonthlyBudgetTrackerOptions = {}) {
     const monthlyLimitUsd = options.monthlyLimitUsd ?? 0;
     const warningPercent = options.warningPercent ?? 80;
-    const maxTenants = options.maxTenants ?? 10_000;
     if (!Number.isFinite(monthlyLimitUsd) || monthlyLimitUsd < 0) {
       throw new Error("MonthlyBudgetTracker monthlyLimitUsd must be non-negative");
     }
     if (!Number.isFinite(warningPercent) || warningPercent <= 0 || warningPercent > 100) {
       throw new Error("MonthlyBudgetTracker warningPercent must be between 1 and 100");
     }
-    if (!Number.isFinite(maxTenants) || maxTenants <= 0) {
-      throw new Error("MonthlyBudgetTracker maxTenants must be positive");
-    }
     this.#monthlyLimitUsd = monthlyLimitUsd;
     this.#warningPercent = warningPercent;
-    this.#maxTenants = maxTenants;
     this.#now = options.now ?? (() => new Date());
     this.#currentMonth = formatYearMonth(this.#now());
   }
 
-  recordCost(tenantId: string, costUsd: number): MonthlyBudgetStatus {
-    if (typeof tenantId !== "string" || tenantId.length === 0) {
-      return "ok";
-    }
+  recordCost(costUsd: number): MonthlyBudgetStatus {
     if (!Number.isFinite(costUsd) || costUsd < 0) {
-      return this.statusFor(tenantId, this.#costs.get(tenantId) ?? 0);
+      return this.statusFor(this.#total);
     }
     this.#resetIfNewMonth();
-    const previous = this.#costs.get(tenantId) ?? 0;
-    const next = previous + costUsd;
-    this.#costs.delete(tenantId);
-    this.#costs.set(tenantId, next);
-    while (this.#costs.size > this.#maxTenants) {
-      const oldest = this.#costs.keys().next().value;
-      if (typeof oldest === "string") {
-        this.#costs.delete(oldest);
-      } else {
-        break;
-      }
-    }
-    return this.statusFor(tenantId, next);
+    this.#total += costUsd;
+    return this.statusFor(this.#total);
   }
 
-  currentCost(tenantId: string): number {
+  currentCost(): number {
     this.#resetIfNewMonth();
-    return this.#costs.get(tenantId) ?? 0;
+    return this.#total;
   }
 
-  /**
-   * Returns the tenant IDs the tracker has seen at least once during the
-   * current month. Useful for `JarvisObservabilitySnapshotProviderOptions.budgetTenantIds`.
-   */
-  tenantIds(): readonly string[] {
-    this.#resetIfNewMonth();
-    return [...this.#costs.keys()];
-  }
-
-  snapshot(tenantId: string): MonthlyBudgetSnapshot {
-    const total = this.currentCost(tenantId);
+  snapshot(): MonthlyBudgetSnapshot {
+    const total = this.currentCost();
     return {
       limitUsd: this.#monthlyLimitUsd,
       month: this.#currentMonth,
-      status: this.statusFor(tenantId, total),
-      tenantId,
+      status: this.statusFor(total),
       totalCostUsd: total
     };
   }
 
-  statusFor(_tenantId: string, total: number): MonthlyBudgetStatus {
+  statusFor(total: number): MonthlyBudgetStatus {
     if (this.#monthlyLimitUsd <= 0) {
       return "ok";
     }
@@ -215,7 +183,7 @@ export class MonthlyBudgetTracker {
     const month = formatYearMonth(this.#now());
     if (month !== this.#currentMonth) {
       this.#currentMonth = month;
-      this.#costs.clear();
+      this.#total = 0;
     }
   }
 }

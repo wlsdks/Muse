@@ -220,7 +220,7 @@ describe("autoconfigure", () => {
     expect((runtime.hooks ?? []).some((hook) => hook.id === "slack-progress")).toBe(false);
   });
 
-  it("feeds the MonthlyBudgetTracker per tenant from each agent run", async () => {
+  it("feeds the MonthlyBudgetTracker from each agent run", async () => {
     const assembly = createMuseRuntimeAssembly({
       env: {
         MUSE_BUDGET_MONTHLY_LIMIT_USD: "100",
@@ -232,23 +232,19 @@ describe("autoconfigure", () => {
     expect(assembly.observability.budgetTracker).toBeTruthy();
 
     await assembly.agentRuntime?.run({
-      messages: [{ content: "tenant-a first call", role: "user" }],
-      metadata: { tenantId: "tenant-a" },
+      messages: [{ content: "first call", role: "user" }],
       model: "diagnostic/smoke",
       runId: "budget-run-1"
     });
     await assembly.agentRuntime?.run({
-      messages: [{ content: "tenant-b first call", role: "user" }],
-      metadata: { tenantId: "tenant-b" },
+      messages: [{ content: "second call", role: "user" }],
       model: "diagnostic/smoke",
       runId: "budget-run-2"
     });
 
-    const ids = [...assembly.observability.budgetTracker.tenantIds()].sort();
-    expect(ids).toEqual(["tenant-a", "tenant-b"]);
-    const aSnap = assembly.observability.budgetTracker.snapshot("tenant-a");
-    expect(aSnap).toMatchObject({ limitUsd: 100, status: "ok", tenantId: "tenant-a" });
-    expect(typeof aSnap.totalCostUsd).toBe("number");
+    const snap = assembly.observability.budgetTracker.snapshot();
+    expect(snap).toMatchObject({ limitUsd: 100, status: "ok" });
+    expect(typeof snap.totalCostUsd).toBe("number");
   });
 
   it("feeds the PromptDriftDetector and CostAnomalyDetector from each agent run", async () => {
