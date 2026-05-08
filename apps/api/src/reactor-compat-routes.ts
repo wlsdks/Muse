@@ -420,7 +420,6 @@ export function debugReplayResponse(run: AgentRunRecord): JsonObject {
     expiresAt: new Date(run.createdAt.getTime() + 30 * 86_400_000).toISOString(),
     id: run.id,
     modelId: run.model,
-    tenantId: run.workspaceId ?? "default",
     toolsAttempted: [],
     userHash: run.userId ?? "anonymous",
     userPrompt: run.input

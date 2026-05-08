@@ -614,7 +614,7 @@ export function createDebugReplayCaptureInsert(record: JsonObject): DebugReplayC
     id: stringValue(record.id) || undefined,
     metadata_json: jsonObject(record.metadata),
     model_id: nullableString(record.modelId),
-    tenant_id: stringValue(record.tenantId) || "default",
+    tenant_id: "default",
     tools_attempted: jsonArray(record.toolsAttempted),
     user_hash: nullableString(record.userHash),
     user_prompt: stringValue(record.userPrompt)
@@ -630,7 +630,6 @@ export function mapDebugReplayCaptureRow(row: DebugReplayCaptureRow | DebugRepla
     id: stringValue(row.id),
     metadata: jsonObject(row.metadata_json),
     modelId: row.model_id ?? null,
-    tenantId: row.tenant_id,
     toolsAttempted: jsonArray(row.tools_attempted),
     userHash: row.user_hash ?? null,
     userPrompt: row.user_prompt
