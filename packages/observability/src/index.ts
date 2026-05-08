@@ -1,8 +1,5 @@
-import type { MuseDatabase, TraceEventTable } from "@muse/db";
 import type { ModelUsage } from "@muse/model";
 import type { JsonObject } from "@muse/shared";
-import type { Insertable, Kysely } from "kysely";
-import { sql } from "kysely";
 import {
   CostAnomalyDetector,
   MonthlyBudgetTracker,
@@ -179,19 +176,29 @@ export interface RecordedSpan {
   readonly error?: string;
 }
 
-type TraceEventInsert = Insertable<TraceEventTable>;
-
 export interface RecordedMetricEvent {
   readonly type: "agent_run" | "guard_rejection" | "output_guard_action" | "token_usage";
   readonly payload: JsonObject;
 }
 
-export class NoOpAgentMetrics implements AgentMetrics {
-  recordAgentRun(): void {}
-  recordGuardRejection(): void {}
-  recordOutputGuardAction(): void {}
-  recordTokenUsage(): void {}
-}
+// AgentMetrics implementations + the SLO/drift fan-out decorators
+// live in packages/observability/src/observability-agent-metrics.ts.
+export {
+  createDerivedAgentMetrics,
+  createNoOpAgentMetrics,
+  createSloFeedingAgentMetrics,
+  InMemoryAgentMetrics,
+  NoOpAgentMetrics,
+  type DerivedAgentMetricsOptions
+} from "./observability-agent-metrics.js";
+
+// JARVIS observability snapshot provider lives in
+// packages/observability/src/observability-jarvis-snapshot.ts.
+export {
+  createJarvisObservabilitySnapshotProvider,
+  type JarvisObservabilitySnapshot,
+  type JarvisObservabilitySnapshotProviderOptions
+} from "./observability-jarvis-snapshot.js";
 
 // Tracing kernel (NoOp / InMemory / Persisted MuseTracer + the five
 // TraceEventSink adapters + createTenantSpanProcessor +
@@ -215,12 +222,6 @@ type StoredFollowupSuggestionEvent = Omit<FollowupSuggestionEvent, "occurredAt">
   readonly kind: FollowupSuggestionEventKind;
   readonly occurredAt: Date;
 };
-
-function toJsonObject(value: object): JsonObject {
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(([, entry]) => entry !== undefined)
-  ) as JsonObject;
-}
 
 // Latency-query primitives (in-memory + Kysely, types, defaults) live in
 // packages/observability/src/observability-latency.ts.
@@ -260,13 +261,6 @@ export interface QueryableTokenUsageSink extends TokenUsageSink {
 }
 
 
-function toNumberOrZero(value: string | number | null | undefined): number {
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
 
 
 // Sliding-window detectors / trackers / evaluators live in
@@ -290,49 +284,6 @@ export {
   type SloViolationType
 } from "./observability-detectors.js";
 
-export class InMemoryAgentMetrics implements AgentMetrics {
-  private readonly events: RecordedMetricEvent[] = [];
-
-  recordAgentRun(event: AgentRunMetric): void {
-    this.events.push({
-      payload: toJsonObject(event),
-      type: "agent_run"
-    });
-  }
-
-  recordGuardRejection(stage: string, reason: string, metadata: JsonObject = {}): void {
-    this.events.push({
-      payload: { metadata, reason, stage },
-      type: "guard_rejection"
-    });
-  }
-
-  recordOutputGuardAction(
-    stage: string,
-    action: OutputGuardMetricAction,
-    reason: string,
-    metadata: JsonObject = {}
-  ): void {
-    this.events.push({
-      payload: { action, metadata, reason, stage },
-      type: "output_guard_action"
-    });
-  }
-
-  recordTokenUsage(usage: ModelUsage, metadata: JsonObject = {}): void {
-    this.events.push({
-      payload: { metadata, ...toJsonObject(usage) },
-      type: "token_usage"
-    });
-  }
-
-  recordedEvents(): readonly RecordedMetricEvent[] {
-    return this.events.map((event) => ({
-      payload: { ...event.payload },
-      type: event.type
-    }));
-  }
-}
 
 export class InMemoryFollowupSuggestionStore implements FollowupSuggestionStore {
   static readonly defaultMaxEvents = 50_000;
@@ -496,61 +447,6 @@ export function createMcpStartupCheck(
 }
 
 
-export function createNoOpAgentMetrics(): AgentMetrics {
-  return new NoOpAgentMetrics();
-}
-
-/**
- * Wraps an existing AgentMetrics so that every `recordAgentRun` event also
- * feeds an `SloAlertEvaluator` (latency sample + success/failure result).
- * Other metric methods are forwarded unchanged so the wrapper is a drop-in
- * replacement for the inner metrics in the runtime.
- */
-export function createSloFeedingAgentMetrics(slo: SloAlertEvaluator, inner: AgentMetrics): AgentMetrics {
-  return createDerivedAgentMetrics({ inner, slo });
-}
-
-export interface DerivedAgentMetricsOptions {
-  readonly inner: AgentMetrics;
-  readonly slo?: SloAlertEvaluator;
-  readonly drift?: PromptDriftDetector;
-}
-
-/**
- * Generalised fan-out: every method on the inner AgentMetrics still gets
- * called, AND each optional derived sink receives the slice of data it cares
- * about. `slo` consumes `recordAgentRun` (latency + result), `drift` consumes
- * `recordTokenUsage` (input + output token lengths). Cost-anomaly is fed via
- * `createCostAnomalyFeedingTokenUsageSink` because cost lives on
- * `TokenUsageRecord`, not on `AgentMetrics`.
- */
-export function createDerivedAgentMetrics(options: DerivedAgentMetricsOptions): AgentMetrics {
-  const { inner, slo, drift } = options;
-  return {
-    recordAgentRun(event) {
-      slo?.recordLatency(event.durationMs);
-      slo?.recordResult(event.status === "completed");
-      inner.recordAgentRun(event);
-    },
-    recordGuardRejection(stage, reason, metadata) {
-      inner.recordGuardRejection(stage, reason, metadata);
-    },
-    recordOutputGuardAction(stage, action, reason, metadata) {
-      inner.recordOutputGuardAction(stage, action, reason, metadata);
-    },
-    recordTokenUsage(usage, metadata) {
-      if (drift) {
-        if (typeof usage.inputTokens === "number") {
-          drift.recordInput(usage.inputTokens);
-        }
-        if (typeof usage.outputTokens === "number") {
-          drift.recordOutput(usage.outputTokens);
-        }
-      }
-      inner.recordTokenUsage(usage, metadata);
-    }
-  };
-}
 
 // Token-usage sinks + token-cost queries + cost-anomaly /
 // budget-tracking decorators live in
@@ -570,150 +466,3 @@ export {
 } from "./observability-token-cost.js";
 
 
-export interface JarvisObservabilitySnapshot {
-  readonly generatedAt: Date;
-  readonly windowStart: Date;
-  readonly windowEnd: Date;
-  readonly latency?: LatencySummary;
-  readonly tokenCost?: {
-    readonly daily: readonly TokenCostDailyEntry[];
-    readonly topExpensive: readonly TokenCostTopExpensiveEntry[];
-  };
-  readonly slo?: {
-    readonly latencyP95Ms: number | null;
-    readonly errorRate: number | null;
-    readonly latencySamples: number;
-    readonly resultSamples: number;
-    readonly violations: readonly SloViolation[];
-  };
-  readonly drift?: DriftStats;
-  readonly cost?: {
-    readonly baselineUsd: number;
-  };
-  readonly budgets?: readonly MonthlyBudgetSnapshot[];
-  readonly followups?: FollowupStats;
-}
-
-export interface JarvisObservabilitySnapshotProviderOptions {
-  readonly latencyQuery?: LatencyQuery;
-  readonly tokenCostQuery?: TokenCostQuery;
-  readonly sloEvaluator?: SloAlertEvaluator;
-  readonly driftDetector?: PromptDriftDetector;
-  readonly costAnomalyDetector?: CostAnomalyDetector;
-  readonly budgetTracker?: MonthlyBudgetTracker;
-  readonly budgetTenantIds?: () => readonly string[];
-  readonly followupSuggestionStore?: FollowupSuggestionStore;
-  readonly windowDays?: number;
-  readonly topExpensiveLimit?: number;
-  readonly now?: () => Date;
-  readonly logger?: (message: string, error?: unknown) => void;
-}
-
-/**
- * Aggregates the every-iteration JARVIS observability primitives Muse ships
- * (latency, token cost, SLO, drift, cost-anomaly, monthly budget, follow-up
- * suggestions) into a single snapshot. Each component is optional — when a
- * dependency is absent the corresponding section is simply omitted, so the
- * provider is safe to use during partial-runtime tests and for the
- * `/api/admin/jarvis/snapshot` HTTP surface.
- *
- * Each component error is swallowed via the optional `logger`: a single
- * failed query never blocks the rest of the snapshot.
- */
-export function createJarvisObservabilitySnapshotProvider(
-  options: JarvisObservabilitySnapshotProviderOptions = {}
-): { snapshot(): Promise<JarvisObservabilitySnapshot> } {
-  const now = options.now ?? (() => new Date());
-  const windowDays = Math.max(1, options.windowDays ?? 7);
-  const topExpensiveLimit = Math.max(1, options.topExpensiveLimit ?? 10);
-
-  return {
-    snapshot: async (): Promise<JarvisObservabilitySnapshot> => {
-      const generatedAt = now();
-      const windowEnd = generatedAt;
-      const windowStart = new Date(windowEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
-
-      const result: {
-        generatedAt: Date;
-        windowStart: Date;
-        windowEnd: Date;
-        latency?: LatencySummary;
-        tokenCost?: { daily: readonly TokenCostDailyEntry[]; topExpensive: readonly TokenCostTopExpensiveEntry[] };
-        slo?: JarvisObservabilitySnapshot["slo"];
-        drift?: DriftStats;
-        cost?: { baselineUsd: number };
-        budgets?: readonly MonthlyBudgetSnapshot[];
-        followups?: FollowupStats;
-      } = { generatedAt, windowEnd, windowStart };
-
-      if (options.latencyQuery) {
-        try {
-          result.latency = await options.latencyQuery.summary({ from: windowStart, to: windowEnd });
-        } catch (error) {
-          options.logger?.("JarvisObservability: latencyQuery.summary failed", error);
-        }
-      }
-
-      if (options.tokenCostQuery) {
-        try {
-          const [daily, topExpensive] = await Promise.all([
-            options.tokenCostQuery.daily({ from: windowStart, to: windowEnd }),
-            options.tokenCostQuery.topExpensive({ from: windowStart, limit: topExpensiveLimit, to: windowEnd })
-          ]);
-          result.tokenCost = { daily, topExpensive };
-        } catch (error) {
-          options.logger?.("JarvisObservability: tokenCostQuery failed", error);
-        }
-      }
-
-      if (options.sloEvaluator) {
-        try {
-          const sloSnapshot = options.sloEvaluator.snapshot();
-          result.slo = {
-            errorRate: sloSnapshot.errorRate,
-            latencyP95Ms: sloSnapshot.latencyP95Ms,
-            latencySamples: sloSnapshot.latencySamples,
-            resultSamples: sloSnapshot.resultSamples,
-            violations: options.sloEvaluator.evaluate()
-          };
-        } catch (error) {
-          options.logger?.("JarvisObservability: sloEvaluator failed", error);
-        }
-      }
-
-      if (options.driftDetector) {
-        try {
-          result.drift = options.driftDetector.stats();
-        } catch (error) {
-          options.logger?.("JarvisObservability: driftDetector failed", error);
-        }
-      }
-
-      if (options.costAnomalyDetector) {
-        try {
-          result.cost = { baselineUsd: options.costAnomalyDetector.baseline() };
-        } catch (error) {
-          options.logger?.("JarvisObservability: costAnomalyDetector failed", error);
-        }
-      }
-
-      if (options.budgetTracker && options.budgetTenantIds) {
-        try {
-          result.budgets = options.budgetTenantIds().map((tenantId) => options.budgetTracker!.snapshot(tenantId));
-        } catch (error) {
-          options.logger?.("JarvisObservability: budgetTracker failed", error);
-        }
-      }
-
-      if (options.followupSuggestionStore) {
-        try {
-          result.followups = options.followupSuggestionStore.aggregateStats();
-        } catch (error) {
-          options.logger?.("JarvisObservability: followupSuggestionStore failed", error);
-        }
-      }
-
-      return result;
-    }
-  };
-}
