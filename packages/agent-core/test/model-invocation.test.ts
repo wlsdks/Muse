@@ -47,9 +47,9 @@ describe("invokeModel", () => {
       promptTokens: 4,
       provider: "test-provider",
       runId: "run-mi-1",
-      tenantId: "t-1",
       totalTokens: 10
     });
+    expect(events[0]).not.toHaveProperty("tenantId");
   });
 
   it("falls back when the primary provider throws and a fallback strategy is configured", async () => {
@@ -200,17 +200,4 @@ describe("recordTokenUsageEvent", () => {
     expect(event?.estimatedCostUsd).toBeUndefined();
   });
 
-  it("omits tenantId when missing from metadata", async () => {
-    const sink = new InMemoryTokenUsageSink();
-    await recordTokenUsageEvent({
-      provider: provider(async () => ({ id: "x", model: "m", output: "" })),
-      response: { id: "x", model: "m", output: "", usage: { inputTokens: 1, outputTokens: 2 } },
-      runId: "rt-no-tenant",
-      stepType: "act",
-      tokenUsageSink: sink,
-      tracer: new InMemoryMuseTracer()
-    });
-    expect(sink.list()).toHaveLength(1);
-    expect(sink.list()[0]?.tenantId).toBeUndefined();
-  });
 });

@@ -55,7 +55,7 @@ export class KyselyTokenUsageSink implements TokenUsageSink {
         reasoning_tokens: event.reasoningTokens ?? 0,
         run_id: event.runId,
         step_type: event.stepType ?? "act",
-        tenant_id: event.tenantId ?? "default",
+        tenant_id: "default",
         time: event.recordedAt ?? new Date(),
         total_tokens: event.totalTokens
       })
@@ -347,7 +347,6 @@ function cloneTokenUsageRecord(event: TokenUsageRecord): TokenUsageRecord {
     recordedAt: event.recordedAt ? new Date(event.recordedAt.getTime()) : undefined,
     runId: event.runId,
     stepType: event.stepType,
-    tenantId: event.tenantId,
     totalTokens: event.totalTokens
   };
 }

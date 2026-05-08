@@ -23,7 +23,6 @@ import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import type { JsonObject } from "@muse/shared";
 import { isRetryableProviderError, recordUsageSpanAttributes } from "./runtime-helpers.js";
-import { metadataString } from "./runtime-helpers.js";
 
 export interface InvokeModelArgs {
   readonly provider: ModelProvider;
@@ -59,7 +58,6 @@ export async function invokeModel(args: InvokeModelArgs): Promise<ModelResponse>
     if (response.usage) {
       args.metrics.recordTokenUsage(response.usage, args.metadata);
       await recordTokenUsageEvent({
-        metadata: args.metadata,
         provider: args.provider,
         response,
         runId: args.runId,
@@ -119,7 +117,6 @@ export interface RecordTokenUsageEventArgs {
   readonly provider: ModelProvider;
   readonly response: ModelResponse;
   readonly runId: string;
-  readonly metadata?: JsonObject;
   readonly stepType: string;
 }
 
@@ -140,7 +137,6 @@ export async function recordTokenUsageEvent(args: RecordTokenUsageEventArgs): Pr
   const completionTokens = usage.outputTokens ?? 0;
   const reasoningTokens = usage.reasoningTokens ?? 0;
   try {
-    const tenantId = metadataString(args.metadata, "tenantId");
     const estimatedCostUsd = estimateCostUsd(args.response.model, promptTokens, completionTokens + reasoningTokens);
     await args.tokenUsageSink.record({
       completionTokens,
@@ -152,7 +148,6 @@ export async function recordTokenUsageEvent(args: RecordTokenUsageEventArgs): Pr
       recordedAt: new Date(),
       runId: args.runId,
       stepType: args.stepType,
-      ...(tenantId ? { tenantId } : {}),
       totalTokens: promptTokens + completionTokens + reasoningTokens
     });
   } catch (error) {

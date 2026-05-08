@@ -1223,7 +1223,6 @@ export class AgentRuntime {
         if (response.usage) {
           this.metrics.recordTokenUsage(response.usage, context.input.metadata);
           await recordTokenUsageEvent({
-            metadata: context.input.metadata,
             provider,
             response,
             runId: context.runId,

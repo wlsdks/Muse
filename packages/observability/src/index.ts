@@ -241,7 +241,6 @@ export interface TokenUsageRecord {
   readonly runId: string;
   readonly model: string;
   readonly provider: string;
-  readonly tenantId?: string;
   readonly stepType?: string;
   readonly promptTokens: number;
   readonly promptCachedTokens?: number;
