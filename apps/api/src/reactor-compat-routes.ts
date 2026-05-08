@@ -60,6 +60,7 @@ import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
+import { registerPersonaRoutes } from "./persona-compat-routes.js";
 import { registerSessionCompatibilityRoutes } from "./session-compat-routes.js";
 import { recordedSpans, recordedTraceEvents, type AdminRouteState } from "./admin-routes.js";
 import type { McpRouteMcp } from "./mcp-routes.js";
@@ -116,13 +117,13 @@ export interface ReactorCompatibilityRouteOptions {
 
 type Awaitable<T> = T | Promise<T>;
 
-type CompatRecord = JsonObject & {
+export type CompatRecord = JsonObject & {
   readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
 
-type CompatBody = Record<string, unknown>;
+export type CompatBody = Record<string, unknown>;
 type CompatCollection = Map<string, CompatRecord>;
 
 interface CompatState {
@@ -1201,65 +1202,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
   });
 }
 
-function registerPersonaRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/personas", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const activeOnly = readQueryBoolean(request, "activeOnly", false);
-    const personas = (await listPersonas(options)).map(toPersonaResponse);
-    return activeOnly ? personas.filter((persona) => persona.isActive) : personas;
-  });
-  server.get("/api/personas/:personaId", async (request, reply) => {
-    const { personaId } = request.params as { readonly personaId: string };
-    const persona = await getPersona(options, personaId);
-    return persona ? toPersonaResponse(persona) : reply.status(404).send(errorResponse(`Persona not found: ${personaId}`));
-  });
-  server.post("/api/personas", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const validationError = validatePersonaBody(toBody(request.body), "create");
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    return reply.status(201).send(toPersonaResponse(await createPersona(options, request.body)));
-  });
-  server.put("/api/personas/:personaId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { personaId } = request.params as { readonly personaId: string };
-    const existing = await getPersona(options, personaId);
-
-    if (!existing) {
-      return reply.status(404).send(errorResponse(`Persona not found: ${personaId}`));
-    }
-
-    const validationError = validatePersonaBody(toBody(request.body), "update");
-
-    if (validationError) {
-      return reply.status(400).send(validationErrorResponse(validationError));
-    }
-
-    return toPersonaResponse(await updatePersona(options, existing, request.body));
-  });
-  server.delete("/api/personas/:personaId", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { personaId } = request.params as { readonly personaId: string };
-    await deletePersona(options, personaId);
-
-    return reply.status(204).send();
-  });
-}
+// registerPersonaRoutes lives in apps/api/src/persona-compat-routes.ts.
 
 function registerPromptTemplateRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/prompt-templates", async () => (await listPromptTemplates(options)).map(toTemplateResponse));
@@ -6319,7 +6262,7 @@ function readIfMatchVersion(request: FastifyRequest): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-async function createPersona(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
+export async function createPersona(options: ReactorCompatibilityRouteOptions, bodyValue: unknown): Promise<CompatRecord> {
   const body = toBody(bodyValue);
   return savePersona(options, {
     description: readNullableStringField(body, "description"),
@@ -6343,7 +6286,7 @@ async function savePersona(options: ReactorCompatibilityRouteOptions, record: Js
   return createRecord(state.personas, record, "persona");
 }
 
-async function listPersonas(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
+export async function listPersonas(options: ReactorCompatibilityRouteOptions): Promise<readonly CompatRecord[]> {
   if (options.promptLabCatalogStore) {
     const rows = await options.promptLabCatalogStore.listPersonas();
     return rows.map((row) => promptLabRecordToCompat(row, "persona"));
@@ -6352,7 +6295,7 @@ async function listPersonas(options: ReactorCompatibilityRouteOptions): Promise<
   return [...state.personas.values()];
 }
 
-async function getPersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
+export async function getPersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<CompatRecord | undefined> {
   if (options.promptLabCatalogStore) {
     const row = await options.promptLabCatalogStore.getPersona(id);
     return row ? promptLabRecordToCompat(row, "persona") : undefined;
@@ -6361,7 +6304,7 @@ async function getPersona(options: ReactorCompatibilityRouteOptions, id: string)
   return findCompatRecord(state.personas, id);
 }
 
-async function deletePersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
+export async function deletePersona(options: ReactorCompatibilityRouteOptions, id: string): Promise<boolean> {
   if (options.promptLabCatalogStore) {
     return options.promptLabCatalogStore.deletePersona(id);
   }
@@ -6370,7 +6313,7 @@ async function deletePersona(options: ReactorCompatibilityRouteOptions, id: stri
   return existing ? state.personas.delete(existing.id) : false;
 }
 
-function validatePersonaBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
+export function validatePersonaBody(body: CompatBody, mode: "create" | "update"): JsonObject | undefined {
   const checks: Array<readonly [keyof CompatBody, number, string]> = [
     ["name", 200, "name must not exceed 200 characters"],
     ["systemPrompt", 50_000, "systemPrompt must not exceed 50000 characters"],
@@ -6400,7 +6343,7 @@ function validatePersonaBody(body: CompatBody, mode: "create" | "update"): JsonO
   return undefined;
 }
 
-async function updatePersona(
+export async function updatePersona(
   options: ReactorCompatibilityRouteOptions,
   existing: CompatRecord,
   bodyValue: unknown
@@ -6420,7 +6363,7 @@ async function updatePersona(
   });
 }
 
-function toPersonaResponse(record: JsonObject) {
+export function toPersonaResponse(record: JsonObject) {
   return {
     createdAt: epochMillisOrNull(record.createdAt) ?? Date.now(),
     description: nullableStringResponse(record.description),
@@ -6886,7 +6829,7 @@ function validateAddDocumentBody(body: CompatBody): JsonObject | undefined {
   return undefined;
 }
 
-function validationErrorResponse(details: JsonObject): JsonObject {
+export function validationErrorResponse(details: JsonObject): JsonObject {
   return {
     details,
     error: "요청 형식이 올바르지 않습니다",
@@ -10197,7 +10140,7 @@ function readQueryInstantMillis(request: FastifyRequest, key: string): number | 
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function readQueryBoolean(request: FastifyRequest, key: string, fallback: boolean): boolean {
+export function readQueryBoolean(request: FastifyRequest, key: string, fallback: boolean): boolean {
   const raw = readQueryString(request, key);
 
   if (raw === undefined) {
@@ -10271,7 +10214,7 @@ function toJsonObject(value: unknown): JsonObject {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => isJsonValue(item))) as JsonObject;
 }
 
-function toBody(value: unknown): CompatBody {
+export function toBody(value: unknown): CompatBody {
   return isRecord(value) ? value : {};
 }
 
