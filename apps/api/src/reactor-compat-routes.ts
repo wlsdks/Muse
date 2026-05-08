@@ -59,6 +59,7 @@ import type { ScheduledJobExecution } from "@muse/scheduler";
 import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
+import { registerAdminPlatformCompatRoutes } from "./admin-platform-compat-routes.js";
 import { registerAgentCompatibilityRoutes } from "./agent-compat-routes.js";
 import { registerApprovalCompatibilityRoutes } from "./approval-compat-routes.js";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
@@ -381,230 +382,7 @@ function registerFeedbackRoutes(server: FastifyInstance, options: ReactorCompati
 // registerSlackCompatibilityRoutes lives in apps/api/src/slack-compat-routes.ts.
 
 function registerAdminCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/admin/settings", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return (await options.runtimeSettings.list()).map(toReactorRuntimeSetting);
-  });
-  server.get("/api/admin/settings/:key", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { key } = request.params as { readonly key: string };
-    const setting = await options.runtimeSettings.find(key);
-    return setting ? toReactorRuntimeSetting(setting) : reply.status(404).send(errorResponse(`설정을 찾을 수 없습니다: ${key}`));
-  });
-  server.put("/api/admin/settings/:key", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { key } = request.params as { readonly key: string };
-    const body = toBody(request.body);
-    const value = readBodyString(body, "value");
-
-    if (value === undefined) {
-      return reply.status(400).send(errorResponse("요청 형식이 올바르지 않습니다"));
-    }
-
-    await options.runtimeSettings.set({
-      category: readBodyString(body, "category"),
-      description: readBodyNullableString(body, "description"),
-      key,
-      type: parseRuntimeSettingType(body.type),
-      updatedBy: readAuthUserId(request) ?? null,
-      value
-    });
-
-    return {
-      key,
-      status: "updated",
-      value
-    };
-  });
-  server.delete("/api/admin/settings/:key", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { key } = request.params as { readonly key: string };
-    await options.runtimeSettings.delete(key);
-    return reply.status(204).send();
-  });
-  server.post("/api/admin/settings/refresh", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    options.runtimeSettings.refreshCache();
-    return { status: "cache_refreshed" };
-  });
-
-  server.get("/api/ops/dashboard", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return dashboardSummary(options);
-  });
-  server.get("/api/ops/metrics/names", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return ["agent_run", "tool_call", "cache", "scheduler"];
-  });
-  server.get("/api/admin/capabilities", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return adminCapabilitiesResponse(options);
-  });
-
-  server.get("/api/admin/platform/health", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return platformHealthDashboard(options);
-  });
-  server.get("/api/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
-  server.get("/api/admin/doctor/summary", async (request, reply) => adminDiagnostic(request, reply, options, "summary"));
-  server.get("/api/admin/platform/cache/stats", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    const snapshot = toJsonObject(options.admin?.cache?.metrics?.snapshot());
-    const exact = readNumber(snapshot.exactHits, 0);
-    const semantic = readNumber(snapshot.semanticHits, 0);
-    const misses = readNumber(snapshot.misses, 0);
-    const total = exact + semantic + misses;
-
-    return {
-      config: {
-        cacheableTemperature: 1,
-        maxCandidates: 50,
-        maxSize: 1000,
-        similarityThreshold: 0.92,
-        ttlMinutes: 60
-      },
-      enabled: Boolean(options.admin?.cache?.responseCache),
-      hitRate: total > 0 ? (exact + semantic) / total : 0,
-      semanticEnabled: false,
-      totalExactHits: exact,
-      totalMisses: misses,
-      totalSemanticHits: semantic
-    };
-  });
-  server.get("/api/admin/platform/pricing", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return listPlatformPricing(options);
-  });
-  server.post("/api/admin/platform/pricing", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const body = toJsonObject(request.body);
-    const provider = readBodyString(body, "provider");
-    const model = readBodyString(body, "model");
-
-    if (!provider || !model) {
-      return reply.status(400).send({
-        code: "INVALID_MODEL_PRICING",
-        message: "Body must include provider and model"
-      });
-    }
-
-    const id = readBodyString(body, "id") ?? `${provider}:${model}`;
-    return savePlatformPricing(options, {
-      batchCompletionPricePer1k: numberOrString(body.batchCompletionPricePer1k, 0),
-      batchPromptPricePer1k: numberOrString(body.batchPromptPricePer1k, 0),
-      cachedInputPricePer1k: numberOrString(body.cachedInputPricePer1k, 0),
-      completionPricePer1k: numberOrString(body.completionPricePer1k, 0),
-      effectiveFrom: readBodyString(body, "effectiveFrom") ?? nowIso(),
-      effectiveTo: readBodyNullableString(body, "effectiveTo") ?? null,
-      id,
-      model,
-      promptPricePer1k: numberOrString(body.promptPricePer1k, 0),
-      provider,
-      reasoningPricePer1k: numberOrString(body.reasoningPricePer1k, 0)
-    });
-  });
-  server.get("/api/admin/platform/vectorstore/stats", async (request, reply) => {
-    if (!options.authorizeAnyAdmin(request, reply)) {
-      return reply;
-    }
-
-    return {
-      available: true,
-      documentCount: await countDocuments(options)
-    };
-  });
-  server.post("/api/admin/platform/cache/invalidate", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const cache = options.admin?.cache?.responseCache;
-
-    if (!cache) {
-      return {
-        cacheEnabled: false,
-        invalidated: false,
-        message: "Response cache is disabled"
-      };
-    }
-
-    cache.invalidateAll();
-    return {
-      cacheEnabled: true,
-      invalidated: true,
-      message: "Response cache invalidated"
-    };
-  });
-  server.post("/api/admin/platform/cache/invalidate-key", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const key = readBodyString(request.body, "key") ?? "";
-
-    if (key.trim().length === 0) {
-      return reply.status(400).send(errorResponse("key is required"));
-    }
-
-    const cache = options.admin?.cache?.responseCache;
-    return {
-      cacheEnabled: Boolean(cache),
-      invalidated: cache?.invalidate?.(key) ?? false
-    };
-  });
-  server.post("/api/admin/platform/cache/invalidate-by-pattern", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const pattern = readBodyString(request.body, "pattern") ?? "";
-
-    if (pattern.trim().length === 0) {
-      return reply.status(400).send(errorResponse("pattern is required"));
-    }
-
-    const cache = options.admin?.cache?.responseCache;
-    return {
-      cacheEnabled: Boolean(cache),
-      invalidatedCount: cache?.invalidateByPattern?.(pattern) ?? 0
-    };
-  });
+  registerAdminPlatformCompatRoutes(server, options);
 
   server.get("/api/admin/platform/tenants", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -2693,7 +2471,7 @@ async function listMetricEventRecords(
   return [...state.metricEvents.values()].sort(compareCreatedAtDesc).slice(0, Math.max(1, limit));
 }
 
-async function listPlatformPricing(options: ReactorCompatibilityRouteOptions): Promise<readonly JsonObject[]> {
+export async function listPlatformPricing(options: ReactorCompatibilityRouteOptions): Promise<readonly JsonObject[]> {
   if (options.admin?.pricingStore) {
     return (await options.admin.pricingStore.list()).map(platformPricingToJson);
   }
@@ -2703,7 +2481,7 @@ async function listPlatformPricing(options: ReactorCompatibilityRouteOptions): P
   );
 }
 
-async function savePlatformPricing(
+export async function savePlatformPricing(
   options: ReactorCompatibilityRouteOptions,
   input: JsonObject
 ): Promise<JsonObject> {
@@ -3148,7 +2926,7 @@ export function readNullableNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function numberOrString(value: unknown, fallback: number): number | string {
+export function numberOrString(value: unknown, fallback: number): number | string {
   return typeof value === "string" && value.trim().length > 0 ? value : readNumber(value, fallback);
 }
 
@@ -4993,7 +4771,7 @@ export async function deleteDocuments(options: ReactorCompatibilityRouteOptions,
   return deleted;
 }
 
-async function countDocuments(options: ReactorCompatibilityRouteOptions): Promise<number> {
+export async function countDocuments(options: ReactorCompatibilityRouteOptions): Promise<number> {
   return options.ragIngestion?.documentStore
     ? options.ragIngestion.documentStore.count()
     : state.documents.size;
@@ -6712,7 +6490,7 @@ function toPlatformAlertRuleResponse(record: JsonObject): JsonObject {
   };
 }
 
-async function dashboardSummary(options: ReactorCompatibilityRouteOptions) {
+export async function dashboardSummary(options: ReactorCompatibilityRouteOptions) {
   const [scheduledJobs, pendingApprovals, mcpServers, recentExecutions] = await Promise.all([
     options.scheduler?.store.list() ?? [],
     options.pendingApprovalStore?.countPending() ?? 0,
@@ -6748,7 +6526,7 @@ async function dashboardSummary(options: ReactorCompatibilityRouteOptions) {
   };
 }
 
-async function platformHealthDashboard(options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
+export async function platformHealthDashboard(options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
   const alerts = await (options.admin?.operations?.listAlerts() ?? []);
   return {
     activeAlerts: alerts.filter((alert) => toJsonObject(alert).status === "open").length,
@@ -6956,7 +6734,7 @@ function schedulerResultPreview(result: string | undefined, maxLength = 140): st
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
-async function adminDiagnostic(
+export async function adminDiagnostic(
   request: FastifyRequest,
   reply: FastifyReply,
   options: ReactorCompatibilityRouteOptions,
@@ -8038,7 +7816,7 @@ export function stringMapField(value: unknown): Record<string, string> {
   );
 }
 
-function toReactorRuntimeSetting(setting: RuntimeSetting): JsonObject {
+export function toReactorRuntimeSetting(setting: RuntimeSetting): JsonObject {
   return {
     category: setting.category,
     description: setting.description ?? null,
@@ -8054,7 +7832,7 @@ function runtimeSettingTypeResponse(type: string): string {
   return type.toUpperCase();
 }
 
-function adminCapabilitiesResponse(options: ReactorCompatibilityRouteOptions): JsonObject {
+export function adminCapabilitiesResponse(options: ReactorCompatibilityRouteOptions): JsonObject {
   return {
     generatedAt: Date.now(),
     paths: [...(options.apiPathRegistry?.() ?? compatibilityApiPaths())],
@@ -8288,7 +8066,7 @@ export function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
+export function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : undefined;
   return normalized === "string" || normalized === "number" || normalized === "boolean" || normalized === "json"
     ? normalized
