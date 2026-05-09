@@ -304,7 +304,7 @@ export function createCostAnomalyFeedingTokenUsageSink(
 /**
  * Wraps a TokenUsageSink so each recorded usage event also feeds a
  * `MonthlyBudgetTracker` (single-bucket monthly accumulation). The current
- * snapshot surfaces via `/api/admin/jarvis/snapshot.budget`.
+ * snapshot surfaces via `/api/admin/muse/snapshot.budget`.
  */
 export function createBudgetTrackingTokenUsageSink(
   tracker: MonthlyBudgetTracker,

@@ -9,7 +9,7 @@
  * GROUP` for true p95 / p99 instead of the in-memory sort + linear
  * interpolation. Span filtering supports either an exact `spanName`
  * or a `spanNamePrefix` (default `muse.agent.`) so the same query
- * surface drives the JARVIS observability snapshot, the admin
+ * surface drives the Muse observability snapshot, the admin
  * `/api/admin/metrics/latency/{summary,timeseries}` endpoints, and
  * any operator dashboard built on top.
  *

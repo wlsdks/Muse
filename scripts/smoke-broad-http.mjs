@@ -207,25 +207,25 @@ try {
     assert(response.status === 200, `expected 200, got ${response.status}`);
   });
 
-  await record("GET /api/admin/agent-specs reveals registered Jarvis tools via OpenAPI surface", async () => {
+  await record("GET /api/admin/agent-specs reveals registered Muse ambient tools via OpenAPI surface", async () => {
     const response = await fetch(`${baseUrl}/api/openapi.json`);
     const body = await response.json();
     assert(response.ok, `expected 200, got ${response.status}`);
     assert(body.paths && typeof body.paths === "object", "expected OpenAPI paths object");
   });
 
-  await record("Jarvis tools register with the runtime tool registry", async () => {
+  await record("Muse ambient tools register with the runtime tool registry", async () => {
     const { createMuseRuntimeAssembly } = await import(`${rootDir}/packages/autoconfigure/dist/index.js`);
-    const assembly = createMuseRuntimeAssembly({ env: { MUSE_JARVIS_TOOLS_ENABLED: "true" } });
+    const assembly = createMuseRuntimeAssembly({ env: { MUSE_TOOLS_ENABLED: "true" } });
     const names = assembly.toolRegistry.list().map((tool) => tool.definition.name);
     for (const required of ["time_now", "time_diff", "time_add", "time_relative", "next_weekday", "text_stats", "math_eval", "json_query", "slugify", "url_parts", "regex_extract", "kv_summarize", "markdown_table", "hash_text", "csv_parse", "base64", "cron_for_datetime"]) {
       assert(names.includes(required), `expected tool registry to include ${required}, got ${names.join(", ")}`);
     }
   });
 
-  await record("Jarvis tools can be disabled via MUSE_JARVIS_TOOLS_ENABLED=false", async () => {
+  await record("Muse ambient tools can be disabled via MUSE_TOOLS_ENABLED=false", async () => {
     const { createMuseRuntimeAssembly } = await import(`${rootDir}/packages/autoconfigure/dist/index.js`);
-    const assembly = createMuseRuntimeAssembly({ env: { MUSE_JARVIS_TOOLS_ENABLED: "false" } });
+    const assembly = createMuseRuntimeAssembly({ env: { MUSE_TOOLS_ENABLED: "false" } });
     const names = assembly.toolRegistry.list().map((tool) => tool.definition.name);
     assert(!names.includes("time_now"), `expected time_now to be absent when disabled, got ${names.join(", ")}`);
   });
@@ -278,8 +278,8 @@ try {
     assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
-  await record("GET /api/admin/jarvis/snapshot returns aggregated observability dashboard", async () => {
-    const response = await fetch(`${baseUrl}/api/admin/jarvis/snapshot`);
+  await record("GET /api/admin/muse/snapshot returns aggregated observability dashboard", async () => {
+    const response = await fetch(`${baseUrl}/api/admin/muse/snapshot`);
     assert(response.ok, `expected 200, got ${response.status}`);
     const snapshot = await response.json();
     assert(typeof snapshot.generatedAt === "string", "expected generatedAt timestamp");
@@ -316,7 +316,7 @@ try {
     assert(Array.isArray(card.supportedInputFormats), "expected supportedInputFormats array");
     assert(Array.isArray(card.supportedOutputFormats), "expected supportedOutputFormats array");
     const timeNow = card.capabilities.find((c) => c.name === "time_now");
-    assert(timeNow !== undefined, "expected time_now jarvis tool to surface in agent card");
+    assert(timeNow !== undefined, "expected time_now ambient tool to surface in agent card");
     assert(timeNow.kind === "tool", `expected kind=tool, got ${timeNow.kind}`);
     assert(timeNow.inputSchema && typeof timeNow.inputSchema === "object", "expected real inputSchema for time_now");
   });
@@ -891,7 +891,7 @@ try {
     assert(response.status === 200, `expected 200, got ${response.status}`);
     const sse = await response.text();
     // The diagnostic provider emits a one-step plan calling time_now (a
-    // default JARVIS ambient tool registered by autoconfigure), so all four
+    // default Muse ambient tool registered by autoconfigure), so all four
     // plan-execute streaming events from iteration #64 must fire end-to-end.
     for (const eventName of ["plan_generated", "plan_step_executing", "plan_step_result", "synthesis_started", "done"]) {
       assert(sse.includes(`event: ${eventName}`), `expected event: ${eventName}, got: ${sse.slice(0, 400)}`);

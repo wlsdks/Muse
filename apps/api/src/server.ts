@@ -25,7 +25,7 @@ import {
 import { describeBuiltinLoopbackMcpServers } from "@muse/mcp";
 import type { ConversationSummaryStore, TaskMemoryMaintenance, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
-import type { JarvisObservabilitySnapshot, LatencyQuery, TokenCostQuery } from "@muse/observability";
+import type { MuseObservabilitySnapshot, LatencyQuery, TokenCostQuery } from "@muse/observability";
 import type { RagDocumentStore, RagIngestionCandidateStore, RagIngestionPolicyStore } from "@muse/rag";
 import {
   InMemoryRuntimeSettingsStore,
@@ -79,7 +79,7 @@ export interface ServerOptions {
   };
   readonly agentCardToolProvider?: () => Promise<readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[]> | readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[];
   readonly toolCatalogProvider?: () => Promise<readonly ToolCatalogEntry[]> | readonly ToolCatalogEntry[];
-  readonly jarvisObservabilitySnapshot?: () => Promise<JarvisObservabilitySnapshot>;
+  readonly museObservabilitySnapshot?: () => Promise<MuseObservabilitySnapshot>;
 }
 
 export interface ToolCatalogEntry {
@@ -330,7 +330,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     tokenCostQuery: options.tokenCostQuery,
     agentCardIdentity: options.agentCardIdentity,
     agentCardToolProvider: options.agentCardToolProvider,
-    jarvisObservabilitySnapshot: options.jarvisObservabilitySnapshot,
+    museObservabilitySnapshot: options.museObservabilitySnapshot,
     historyStore: options.historyStore,
     mcp: options.mcp,
     modelProvider: options.modelProvider,
@@ -495,7 +495,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     };
   });
 
-  server.get("/api/jarvis/loopback", async () => {
+  server.get("/api/muse/loopback", async () => {
     const catalog = describeBuiltinLoopbackMcpServers();
     return {
       servers: catalog.map((entry) => ({
@@ -514,7 +514,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     };
   });
 
-  server.get("/api/jarvis/runtime", async () => {
+  server.get("/api/muse/runtime", async () => {
     const tools = options.toolCatalogProvider ? await options.toolCatalogProvider() : [];
     const toolsByRisk = tools.reduce<Record<"read" | "write" | "execute", number>>(
       (acc, tool) => {
@@ -1546,8 +1546,8 @@ function isPublicRequest(method: string, url: string): boolean {
     path === "/v3/api-docs" ||
     path === "/api/openapi.json" ||
     path === "/.well-known/agent-card.json" ||
-    path === "/api/jarvis/runtime" ||
-    path === "/api/jarvis/loopback" ||
+    path === "/api/muse/runtime" ||
+    path === "/api/muse/loopback" ||
     (method === "POST" && (
       path === "/auth/login" ||
       path === "/auth/register" ||

@@ -192,13 +192,13 @@ export {
   type DerivedAgentMetricsOptions
 } from "./observability-agent-metrics.js";
 
-// JARVIS observability snapshot provider lives in
-// packages/observability/src/observability-jarvis-snapshot.ts.
+// Muse observability snapshot provider lives in
+// packages/observability/src/observability-muse-snapshot.ts.
 export {
-  createJarvisObservabilitySnapshotProvider,
-  type JarvisObservabilitySnapshot,
-  type JarvisObservabilitySnapshotProviderOptions
-} from "./observability-jarvis-snapshot.js";
+  createMuseObservabilitySnapshotProvider,
+  type MuseObservabilitySnapshot,
+  type MuseObservabilitySnapshotProviderOptions
+} from "./observability-muse-snapshot.js";
 
 // Tracing kernel (NoOp / InMemory / Persisted MuseTracer + the five
 // TraceEventSink adapters + createNoOpMuseTracer +

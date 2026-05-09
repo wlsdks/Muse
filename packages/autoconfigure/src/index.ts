@@ -117,9 +117,9 @@ import {
   createBudgetTrackingTokenUsageSink,
   createCostAnomalyFeedingTokenUsageSink,
   createDerivedAgentMetrics,
-  createJarvisObservabilitySnapshotProvider,
+  createMuseObservabilitySnapshotProvider,
   type AgentMetrics,
-  type JarvisObservabilitySnapshot,
+  type MuseObservabilitySnapshot,
   type LatencyQuery,
   type MuseTracer,
   type QueryableTraceEventSink,
@@ -171,7 +171,7 @@ import {
   type ScheduledJobExecutionStore,
   type ScheduledJobStore
 } from "@muse/scheduler";
-import { createJarvisTools, createRustRunnerTool, ToolRegistry, type MuseTool } from "@muse/tools";
+import { createMuseTools, createRustRunnerTool, ToolRegistry, type MuseTool } from "@muse/tools";
 import type { MuseDatabase } from "@muse/db";
 import type { Kysely } from "kysely";
 
@@ -341,11 +341,11 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     securityPolicyProvider: mcpSecurityPolicyProvider
   });
   const runnerTools = createRunnerTools(env);
-  const jarvisTools = parseBoolean(env.MUSE_JARVIS_TOOLS_ENABLED, true) ? createJarvisTools() : [];
+  const museTools = parseBoolean(env.MUSE_TOOLS_ENABLED, true) ? createMuseTools() : [];
   const loopbackMcpTools = createLoopbackMcpToolsFromEnv(env);
   let schedulerService: DynamicScheduler | undefined;
   const toolRegistry = new DynamicToolRegistry([
-    () => jarvisTools,
+    () => museTools,
     () => loopbackMcpTools,
     () => runnerTools,
     () => mcpManager.toMuseTools(),
@@ -636,8 +636,8 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
           ? { dependsOn: [...tool.definition.dependsOn] }
           : {})
       })),
-    jarvisObservabilitySnapshot: () =>
-      createJarvisObservabilitySnapshotProvider({
+    museObservabilitySnapshot: () =>
+      createMuseObservabilitySnapshotProvider({
         budgetTracker: assembly.observability.budgetTracker,
         costAnomalyDetector: assembly.observability.costAnomalyDetector,
         driftDetector: assembly.observability.driftDetector,
@@ -804,7 +804,7 @@ function createScheduledAgentExecutor(
 }
 
 /**
- * Personal-Muse: no env-driven default runtime hooks. JARVIS-style
+ * Personal-Muse: no env-driven default runtime hooks. Muse
  * deployments wire hooks directly when assembling the runtime.
  */
 function createDefaultRuntimeHooks(_env: MuseEnvironment): readonly HookStage[] {
@@ -962,7 +962,7 @@ function createRunnerTools(env: MuseEnvironment): readonly MuseTool[] {
  *     server bound to those roots (read-only).
  *
  * All three are independent: operators can enable any subset. The catalog at
- * `GET /api/jarvis/loopback` lists what is available regardless of which are
+ * `GET /api/muse/loopback` lists what is available regardless of which are
  * actually wired here.
  */
 export {

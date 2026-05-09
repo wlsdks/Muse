@@ -12,7 +12,7 @@ import type { McpServer } from "@muse/mcp";
 import type { TaskMemoryMaintenance, UserMemory, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import type {
-  JarvisObservabilitySnapshot,
+  MuseObservabilitySnapshot,
   LatencyQuery,
   LatencyPoint,
   LatencySummary,
@@ -91,7 +91,7 @@ export interface ReactorCompatibilityRouteOptions {
     readonly description?: string;
   };
   readonly agentCardToolProvider?: () => Awaitable<readonly AgentCardToolInput[]>;
-  readonly jarvisObservabilitySnapshot?: () => Promise<JarvisObservabilitySnapshot>;
+  readonly museObservabilitySnapshot?: () => Promise<MuseObservabilitySnapshot>;
 }
 
 type Awaitable<T> = T | Promise<T>;

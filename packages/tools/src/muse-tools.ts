@@ -4,24 +4,24 @@ import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "./index.js";
 
 /**
- * Curated zero-IO JARVIS utility tools that ship with every Muse runtime.
+ * Curated zero-IO Muse ambient utility tools that ship with every Muse runtime.
  *
  * Properties:
  * - Pure functions over their inputs (no network, no filesystem, no clock outside `time_*`).
  * - Deterministic given identical inputs (or identical `now()` for time tools).
  * - Safe risk: every tool is a read-only computation.
- * - No vendor coupling — these are the ambient capabilities a JARVIS-style agent should always
+ * - No vendor coupling — these are the ambient capabilities every Muse agent should always
  *   have, independent of which model provider, MCP server, or external system is configured.
  *
  * Anything that requires IO belongs in a dedicated tool (e.g. Rust runner, MCP-bridged tool).
  */
 
-export interface JarvisToolFactoryOptions {
+export interface MuseToolFactoryOptions {
   /** Override the wall clock for `time_*` tools. Defaults to `() => new Date()`. */
   readonly now?: () => Date;
 }
 
-export function createJarvisTools(options: JarvisToolFactoryOptions = {}): readonly MuseTool[] {
+export function createMuseTools(options: MuseToolFactoryOptions = {}): readonly MuseTool[] {
   const now = options.now ?? (() => new Date());
   return [
     createTimeNowTool(now),

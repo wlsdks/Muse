@@ -4,7 +4,7 @@
  *
  * Wires:
  *   - GET /api/admin/debug/replay (+ /:id)
- *   - GET /api/admin/jarvis/snapshot
+ *   - GET /api/admin/muse/snapshot
  *   - GET /api/admin/metrics/latency/{summary,timeseries}
  *   - GET /api/admin/rag-analytics/{status,by-channel}
  *   - GET /api/admin/tenant/export/{executions,tools}
@@ -90,17 +90,17 @@ function registerDebugReplayRoutes(server: FastifyInstance, options: ReactorComp
 }
 
 function registerStatsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/admin/jarvis/snapshot", async (request, reply) => {
+  server.get("/api/admin/muse/snapshot", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
-    if (!options.jarvisObservabilitySnapshot) {
+    if (!options.museObservabilitySnapshot) {
       return reply.status(503).send({
-        code: "JARVIS_SNAPSHOT_UNAVAILABLE",
-        message: "JARVIS observability snapshot provider is not configured"
+        code: "MUSE_SNAPSHOT_UNAVAILABLE",
+        message: "Muse observability snapshot provider is not configured"
       });
     }
-    const snapshot = await options.jarvisObservabilitySnapshot();
+    const snapshot = await options.museObservabilitySnapshot();
     return snapshot as unknown as JsonObject;
   });
 }

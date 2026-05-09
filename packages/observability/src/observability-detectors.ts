@@ -2,7 +2,7 @@
  * Sliding-window detectors / trackers / evaluators extracted from
  * packages/observability/src/index.ts.
  *
- * Owns four observability primitives that every JARVIS-style alarm
+ * Owns four observability primitives that every Muse alarm
  * surface (cost-anomaly notifier, monthly-budget alerter, prompt-
  * drift detector, SLO alerter) builds on:
  *

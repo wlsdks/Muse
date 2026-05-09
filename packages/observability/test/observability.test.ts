@@ -5,7 +5,7 @@ import {
   createTraceEventInsert,
   InMemoryAgentMetrics,
   CostAnomalyDetector,
-  createJarvisObservabilitySnapshotProvider,
+  createMuseObservabilitySnapshotProvider,
   InMemoryFollowupSuggestionStore,
   InMemoryLatencyQuery,
   MonthlyBudgetTracker,
@@ -935,9 +935,9 @@ describe("MonthlyBudgetTracker", () => {
   });
 });
 
-describe("createJarvisObservabilitySnapshotProvider", () => {
+describe("createMuseObservabilitySnapshotProvider", () => {
   it("returns an empty snapshot when no observability components are wired", async () => {
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       now: () => new Date("2026-05-15T00:00:00.000Z"),
       windowDays: 1
     });
@@ -965,7 +965,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
       startedAt: new Date("2026-05-15T00:00:00.000Z")
     });
     const latencyQuery = new InMemoryLatencyQuery(sink);
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       latencyQuery,
       now: () => new Date("2026-05-16T00:00:00.000Z")
     });
@@ -988,7 +988,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
       totalTokens: 300
     });
     const tokenCostQuery = new InMemoryTokenCostQuery(sink);
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       now: () => new Date("2026-05-16T00:00:00.000Z"),
       tokenCostQuery,
       windowDays: 7
@@ -1010,7 +1010,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
     sloEvaluator.recordLatency(5_000);
     sloEvaluator.recordLatency(5_000);
     sloEvaluator.recordLatency(5_000);
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       now: () => new Date("2026-05-15T00:00:00.000Z"),
       sloEvaluator
     });
@@ -1024,7 +1024,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
     [10, 20, 30, 40].forEach((value) => driftDetector.recordInput(value));
     const costAnomalyDetector = new CostAnomalyDetector({ minSamples: 3 });
     [0.01, 0.02, 0.03].forEach((cost) => costAnomalyDetector.recordCost(cost));
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       costAnomalyDetector,
       driftDetector,
       now: () => new Date("2026-05-15T00:00:00.000Z")
@@ -1041,7 +1041,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
       warningPercent: 50
     });
     budgetTracker.recordCost(6);
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       budgetTracker,
       now: () => new Date("2026-05-15T00:00:00.000Z")
     });
@@ -1057,7 +1057,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
       suggestionId: "jira_123",
       userId: "U1"
     });
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       followupSuggestionStore: store,
       now: () => new Date()
     });
@@ -1067,7 +1067,7 @@ describe("createJarvisObservabilitySnapshotProvider", () => {
 
   it("isolates failures so one broken component does not break the whole snapshot", async () => {
     const errors: unknown[] = [];
-    const provider = createJarvisObservabilitySnapshotProvider({
+    const provider = createMuseObservabilitySnapshotProvider({
       latencyQuery: {
         summary: async () => {
           throw new Error("latency backend down");

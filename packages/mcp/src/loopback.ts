@@ -10,7 +10,7 @@ import { createMcpMuseTool, type McpConnection, type McpRemoteTool } from "./ind
  *
  * The MCP layer in Muse normally connects to external MCP servers over stdio /
  * SSE / streamable HTTP. To prove the MCP path works without external
- * processes (and to ship a JARVIS-style baseline), this module supplies an
+ * processes (and to ship a Muse ambient baseline), this module supplies an
  * in-process `McpConnection` adapter plus three reference servers (time,
  * text-utils, math) that operators can register alongside any external MCP
  * server.
@@ -858,7 +858,7 @@ export interface FetchMcpServerOptions {
 
 /**
  * Reference loopback server: bounded HTTP GET / HEAD fetcher. Opt-in,
- * allowlist-required, body-capped. Lets JARVIS pull a public document or
+ * allowlist-required, body-capped. Lets Muse pull a public document or
  * health-check a known URL without giving it free network access.
  *
  * NOT included in `createDefaultLoopbackMcpServers` — operators who want
@@ -1021,7 +1021,7 @@ export interface FilesystemMcpServerOptions {
 
 /**
  * Reference loopback server: bounded filesystem reader. Opt-in,
- * allowlist-rooted, body-capped, read-only. Lets JARVIS inspect files inside
+ * allowlist-rooted, body-capped, read-only. Lets Muse inspect files inside
  * an operator-defined workspace without giving it free disk access.
  *
  * NOT included in `createDefaultLoopbackMcpServers` — operators who want

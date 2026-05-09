@@ -1,14 +1,14 @@
 /**
- * JARVIS observability snapshot provider extracted from
+ * Muse observability snapshot provider extracted from
  * packages/observability/src/index.ts.
  *
- * Aggregates the full set of every-iteration JARVIS observability
+ * Aggregates the full set of every-iteration Muse observability
  * primitives (latency, token cost, SLO, drift, cost-anomaly,
  * monthly budget, follow-up suggestions) into a single snapshot.
  * Each component is optional — when a dependency is absent the
  * corresponding section is simply omitted, so the provider is safe
  * during partial-runtime tests and for the
- * `/api/admin/jarvis/snapshot` HTTP surface.
+ * `/api/admin/muse/snapshot` HTTP surface.
  *
  * Each component's failure is swallowed via the optional `logger`
  * so a single failed query never blocks the rest of the snapshot.
@@ -36,7 +36,7 @@ import type {
 } from "./observability-token-cost.js";
 import type { FollowupStats, FollowupSuggestionStore } from "./index.js";
 
-export interface JarvisObservabilitySnapshot {
+export interface MuseObservabilitySnapshot {
   readonly generatedAt: Date;
   readonly windowStart: Date;
   readonly windowEnd: Date;
@@ -60,7 +60,7 @@ export interface JarvisObservabilitySnapshot {
   readonly followups?: FollowupStats;
 }
 
-export interface JarvisObservabilitySnapshotProviderOptions {
+export interface MuseObservabilitySnapshotProviderOptions {
   readonly latencyQuery?: LatencyQuery;
   readonly tokenCostQuery?: TokenCostQuery;
   readonly sloEvaluator?: SloAlertEvaluator;
@@ -74,15 +74,15 @@ export interface JarvisObservabilitySnapshotProviderOptions {
   readonly logger?: (message: string, error?: unknown) => void;
 }
 
-export function createJarvisObservabilitySnapshotProvider(
-  options: JarvisObservabilitySnapshotProviderOptions = {}
-): { snapshot(): Promise<JarvisObservabilitySnapshot> } {
+export function createMuseObservabilitySnapshotProvider(
+  options: MuseObservabilitySnapshotProviderOptions = {}
+): { snapshot(): Promise<MuseObservabilitySnapshot> } {
   const now = options.now ?? (() => new Date());
   const windowDays = Math.max(1, options.windowDays ?? 7);
   const topExpensiveLimit = Math.max(1, options.topExpensiveLimit ?? 10);
 
   return {
-    snapshot: async (): Promise<JarvisObservabilitySnapshot> => {
+    snapshot: async (): Promise<MuseObservabilitySnapshot> => {
       const generatedAt = now();
       const windowEnd = generatedAt;
       const windowStart = new Date(windowEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
@@ -93,7 +93,7 @@ export function createJarvisObservabilitySnapshotProvider(
         windowEnd: Date;
         latency?: LatencySummary;
         tokenCost?: { daily: readonly TokenCostDailyEntry[]; topExpensive: readonly TokenCostTopExpensiveEntry[] };
-        slo?: JarvisObservabilitySnapshot["slo"];
+        slo?: MuseObservabilitySnapshot["slo"];
         drift?: DriftStats;
         cost?: { baselineUsd: number };
         budget?: MonthlyBudgetSnapshot;
@@ -104,7 +104,7 @@ export function createJarvisObservabilitySnapshotProvider(
         try {
           result.latency = await options.latencyQuery.summary({ from: windowStart, to: windowEnd });
         } catch (error) {
-          options.logger?.("JarvisObservability: latencyQuery.summary failed", error);
+          options.logger?.("MuseObservability: latencyQuery.summary failed", error);
         }
       }
 
@@ -116,7 +116,7 @@ export function createJarvisObservabilitySnapshotProvider(
           ]);
           result.tokenCost = { daily, topExpensive };
         } catch (error) {
-          options.logger?.("JarvisObservability: tokenCostQuery failed", error);
+          options.logger?.("MuseObservability: tokenCostQuery failed", error);
         }
       }
 
@@ -131,7 +131,7 @@ export function createJarvisObservabilitySnapshotProvider(
             violations: options.sloEvaluator.evaluate()
           };
         } catch (error) {
-          options.logger?.("JarvisObservability: sloEvaluator failed", error);
+          options.logger?.("MuseObservability: sloEvaluator failed", error);
         }
       }
 
@@ -139,7 +139,7 @@ export function createJarvisObservabilitySnapshotProvider(
         try {
           result.drift = options.driftDetector.stats();
         } catch (error) {
-          options.logger?.("JarvisObservability: driftDetector failed", error);
+          options.logger?.("MuseObservability: driftDetector failed", error);
         }
       }
 
@@ -147,7 +147,7 @@ export function createJarvisObservabilitySnapshotProvider(
         try {
           result.cost = { baselineUsd: options.costAnomalyDetector.baseline() };
         } catch (error) {
-          options.logger?.("JarvisObservability: costAnomalyDetector failed", error);
+          options.logger?.("MuseObservability: costAnomalyDetector failed", error);
         }
       }
 
@@ -155,7 +155,7 @@ export function createJarvisObservabilitySnapshotProvider(
         try {
           result.budget = options.budgetTracker.snapshot();
         } catch (error) {
-          options.logger?.("JarvisObservability: budgetTracker failed", error);
+          options.logger?.("MuseObservability: budgetTracker failed", error);
         }
       }
 
@@ -163,7 +163,7 @@ export function createJarvisObservabilitySnapshotProvider(
         try {
           result.followups = options.followupSuggestionStore.aggregateStats();
         } catch (error) {
-          options.logger?.("JarvisObservability: followupSuggestionStore failed", error);
+          options.logger?.("MuseObservability: followupSuggestionStore failed", error);
         }
       }
 

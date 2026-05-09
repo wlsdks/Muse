@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  createJarvisTools,
+  createMuseTools,
   createRustRunnerTool,
   createDefaultToolExposurePolicy,
   createWorkspaceToolRoutingPlan,
@@ -380,10 +380,10 @@ describe("Rust runner tool", () => {
   );
 });
 
-describe("createJarvisTools", () => {
+describe("createMuseTools", () => {
   function getTool(name: string) {
     const fixed = new Date("2026-05-07T01:23:45.000Z");
-    const tool = createJarvisTools({ now: () => fixed }).find((entry) => entry.definition.name === name);
+    const tool = createMuseTools({ now: () => fixed }).find((entry) => entry.definition.name === name);
     if (!tool) {
       throw new Error(`tool ${name} not registered`);
     }
@@ -391,7 +391,7 @@ describe("createJarvisTools", () => {
   }
 
   it("registers seventeen zero-IO ambient utility tools", () => {
-    const tools = createJarvisTools();
+    const tools = createMuseTools();
     expect(tools.map((tool) => tool.definition.name).sort()).toEqual([
       "base64",
       "cron_for_datetime",

@@ -560,24 +560,24 @@ describe("cli program", () => {
     expect(requests[2]?.url).toBe("http://api.test/api/multi-agent/orchestrations/stats");
   });
 
-  it("jarvis runtime / loopback / snapshot hit the JARVIS endpoints and print JSON", async () => {
+  it("runtime / loopback / snapshot hit the Muse endpoints and print JSON", async () => {
     const { io, output } = captureOutput();
     const requests: Array<{ readonly method?: string; readonly url: string }> = [];
     const program = createProgram({
       ...io,
       fetch: async (url, init) => {
         requests.push({ method: init?.method, url: String(url) });
-        if (String(url).endsWith("/api/jarvis/runtime")) {
+        if (String(url).endsWith("/api/muse/runtime")) {
           return new Response(JSON.stringify({
             agentCore: { modelAgnostic: true, runner: "rust" },
             service: "muse-api",
             tools: { byRisk: { execute: 0, read: 6, write: 0 }, total: 6 }
           }));
         }
-        if (String(url).endsWith("/api/jarvis/loopback")) {
+        if (String(url).endsWith("/api/muse/loopback")) {
           return new Response(JSON.stringify({ servers: [{ name: "muse.time", optIn: false, toolCount: 2 }], total: 1 }));
         }
-        if (String(url).endsWith("/api/admin/jarvis/snapshot")) {
+        if (String(url).endsWith("/api/admin/muse/snapshot")) {
           return new Response(JSON.stringify({
             generatedAt: "2026-05-07T00:00:00.000Z",
             latency: { count: 1, avgMs: 5, p95Ms: 5 },
@@ -588,13 +588,13 @@ describe("cli program", () => {
       }
     });
 
-    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "jarvis", "runtime"], { from: "node" });
-    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "jarvis", "loopback"], { from: "node" });
-    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "jarvis", "snapshot"], { from: "node" });
+    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "runtime"], { from: "node" });
+    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "loopback"], { from: "node" });
+    await program.parseAsync(["node", "muse", "--api-url", "http://api.test", "snapshot"], { from: "node" });
 
-    expect(requests[0]).toMatchObject({ url: "http://api.test/api/jarvis/runtime", method: "GET" });
-    expect(requests[1]).toMatchObject({ url: "http://api.test/api/jarvis/loopback", method: "GET" });
-    expect(requests[2]).toMatchObject({ url: "http://api.test/api/admin/jarvis/snapshot", method: "GET" });
+    expect(requests[0]).toMatchObject({ url: "http://api.test/api/muse/runtime", method: "GET" });
+    expect(requests[1]).toMatchObject({ url: "http://api.test/api/muse/loopback", method: "GET" });
+    expect(requests[2]).toMatchObject({ url: "http://api.test/api/admin/muse/snapshot", method: "GET" });
     const combined = output.join("");
     expect(combined).toContain("muse-api");
     expect(combined).toContain("muse.time");

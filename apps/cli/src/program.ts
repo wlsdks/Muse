@@ -408,27 +408,25 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       writeOutput(io, await apiRequest(io, command, "/api/multi-agent/orchestrations/stats"));
     });
 
-  const jarvis = program.command("jarvis").description("Introspect the JARVIS runtime manifest, loopback catalog, and observability snapshot");
-
-  jarvis
+  program
     .command("runtime")
-    .description("GET /api/jarvis/runtime — capabilities, locales, tool risk counts, default model")
+    .description("GET /api/muse/runtime — capabilities, locales, tool risk counts, default model")
     .action(async (_options, command) => {
-      writeOutput(io, await apiRequest(io, command, "/api/jarvis/runtime"));
+      writeOutput(io, await apiRequest(io, command, "/api/muse/runtime"));
     });
 
-  jarvis
+  program
     .command("loopback")
-    .description("GET /api/jarvis/loopback — catalog of all loopback MCP servers Muse can plug in")
+    .description("GET /api/muse/loopback — catalog of all loopback MCP servers Muse can plug in")
     .action(async (_options, command) => {
-      writeOutput(io, await apiRequest(io, command, "/api/jarvis/loopback"));
+      writeOutput(io, await apiRequest(io, command, "/api/muse/loopback"));
     });
 
-  jarvis
+  program
     .command("snapshot")
-    .description("GET /api/admin/jarvis/snapshot — latency, token cost, SLO, drift, cost, budgets, follow-ups (admin)")
+    .description("GET /api/admin/muse/snapshot — latency, token cost, SLO, drift, cost, budgets, follow-ups (admin)")
     .action(async (_options, command) => {
-      writeOutput(io, await apiRequest(io, command, "/api/admin/jarvis/snapshot"));
+      writeOutput(io, await apiRequest(io, command, "/api/admin/muse/snapshot"));
     });
 
   const scheduler = program.command("scheduler").description("Manage scheduled jobs");

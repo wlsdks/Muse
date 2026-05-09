@@ -223,7 +223,7 @@ describe("autoconfigure", () => {
     expect(typeof assembly.observability.costAnomalyDetector.baseline()).toBe("number");
   });
 
-  it("feeds the SloAlertEvaluator from each agent run so /api/admin/jarvis/snapshot.slo is populated", async () => {
+  it("feeds the SloAlertEvaluator from each agent run so /api/admin/muse/snapshot.slo is populated", async () => {
     const assembly = createMuseRuntimeAssembly({
       env: {
         MUSE_MODEL: "diagnostic/smoke",

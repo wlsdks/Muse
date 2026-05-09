@@ -243,7 +243,7 @@ describe("api server: web contract + manifest", () => {
     expect(invalidSetting.json()).toMatchObject({ code: "INVALID_RUNTIME_SETTING" });
   });
 
-  it("exposes a JARVIS runtime manifest at /api/jarvis/runtime", async () => {
+  it("exposes a Muse runtime manifest at /api/muse/runtime", async () => {
     const previousLocales = process.env.MUSE_RESPONSE_LOCALES;
     process.env.MUSE_RESPONSE_LOCALES = "ko,en";
     try {
@@ -258,7 +258,7 @@ describe("api server: web contract + manifest", () => {
         ]
       });
 
-      const response = await server.inject({ method: "GET", url: "/api/jarvis/runtime" });
+      const response = await server.inject({ method: "GET", url: "/api/muse/runtime" });
 
       expect(response.statusCode).toBe(200);
       const body = response.json();
@@ -292,7 +292,7 @@ describe("api server: web contract + manifest", () => {
     delete process.env.MUSE_RESPONSE_LOCALES;
     try {
       const server = buildServer({ logger: false });
-      const response = await server.inject({ method: "GET", url: "/api/jarvis/runtime" });
+      const response = await server.inject({ method: "GET", url: "/api/muse/runtime" });
       expect(response.statusCode).toBe(200);
       expect(response.json().locales.response).toEqual(["ko", "en"]);
     } finally {
@@ -302,9 +302,9 @@ describe("api server: web contract + manifest", () => {
     }
   });
 
-  it("exposes the loopback MCP catalog at /api/jarvis/loopback", async () => {
+  it("exposes the loopback MCP catalog at /api/muse/loopback", async () => {
     const server = buildServer({ logger: false });
-    const response = await server.inject({ method: "GET", url: "/api/jarvis/loopback" });
+    const response = await server.inject({ method: "GET", url: "/api/muse/loopback" });
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       readonly total: number;
@@ -323,7 +323,7 @@ describe("api server: web contract + manifest", () => {
     expect(time.requires).toBeUndefined();
   });
 
-  it("/api/jarvis/loopback is reachable without auth even when requireAuth is on", async () => {
+  it("/api/muse/loopback is reachable without auth even when requireAuth is on", async () => {
     const userStore = new InMemoryUserStore();
     const authService = new Auth({
       authProvider: new DefaultAuthProvider(userStore),
@@ -331,7 +331,7 @@ describe("api server: web contract + manifest", () => {
       userStore
     });
     const server = buildServer({ authService, logger: false, requireAuth: true });
-    const response = await server.inject({ method: "GET", url: "/api/jarvis/loopback" });
+    const response = await server.inject({ method: "GET", url: "/api/muse/loopback" });
     expect(response.statusCode).toBe(200);
   });
 
@@ -340,7 +340,7 @@ describe("api server: web contract + manifest", () => {
     process.env.MUSE_RESPONSE_LOCALES = "ko,fr,de,en,en";
     try {
       const server = buildServer({ logger: false });
-      const response = await server.inject({ method: "GET", url: "/api/jarvis/runtime" });
+      const response = await server.inject({ method: "GET", url: "/api/muse/runtime" });
       expect(response.json().locales.response).toEqual(["ko", "en"]);
     } finally {
       if (previousLocales === undefined) {
