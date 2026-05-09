@@ -74,6 +74,18 @@ describe("autoconfigure", () => {
     });
   });
 
+  it("leaves voice registry undefined when no OpenAI key is configured", () => {
+    const assembly = createMuseRuntimeAssembly({ env: {} });
+    expect(assembly.voice).toBeUndefined();
+  });
+
+  it("registers OpenAI Whisper STT and TTS when MUSE_OPENAI_API_KEY is set", () => {
+    const assembly = createMuseRuntimeAssembly({ env: { MUSE_OPENAI_API_KEY: "sk-test" } });
+    expect(assembly.voice).toBeTruthy();
+    expect(assembly.voice?.primaryStt()?.id).toBe("openai-whisper");
+    expect(assembly.voice?.primaryTts()?.id).toBe("openai-tts");
+  });
+
   it("assembles auth and API options when JWT secret is configured", () => {
     const options = createApiServerOptions({
       env: {

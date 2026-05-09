@@ -244,6 +244,9 @@ importers:
       '@muse/tools':
         specifier: workspace:*
         version: link:../tools
+      '@muse/voice':
+        specifier: workspace:*
+        version: link:../voice
       kysely:
         specifier: ^0.28.17
         version: 0.28.17

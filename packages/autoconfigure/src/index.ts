@@ -179,6 +179,11 @@ import {
   type MuseTool,
   type ToolExposurePolicy
 } from "@muse/tools";
+import {
+  OpenAITtsProvider,
+  OpenAIWhisperSttProvider,
+  VoiceProviderRegistry
+} from "@muse/voice";
 import type { MuseDatabase } from "@muse/db";
 import type { Kysely } from "kysely";
 
@@ -236,6 +241,7 @@ export interface MuseRuntimeAssembly {
   };
   readonly toolRegistry: ToolRegistry;
   readonly calendar: CalendarProviderRegistry;
+  readonly voice?: VoiceProviderRegistry;
 }
 
 export interface ApiServerAssemblyOptions {
@@ -475,7 +481,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       executionStore: schedulerExecutionStore,
       service: schedulerService,
       store: schedulerStore
-    }
+    },
+    voice: buildVoiceRegistry(env)
   };
 }
 
@@ -669,7 +676,8 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     conversationSummaryStore: assembly.conversationSummaryStore,
     calendar: assembly.calendar,
     calendarCredentialStore: new FileCalendarCredentialStore(resolveCredentialsFile(env)),
-    tasksFile: resolveTasksFile(env)
+    tasksFile: resolveTasksFile(env),
+    voice: assembly.voice
   };
 }
 
@@ -781,6 +789,46 @@ function tryBuildCalendarProvider(
   }
 
   return undefined;
+}
+
+/**
+ * Build a `VoiceProviderRegistry` from env when voice credentials are
+ * available. Returns `undefined` when nothing was registered so the
+ * `/api/voice/*` routes stay absent (404) by default.
+ *
+ * Today only OpenAI (Whisper STT + TTS-1) is recognized — the package
+ * `@muse/voice` ships those adapters as Phase B. Future iterations
+ * (Phase F) can add Whisper.cpp / Piper / ElevenLabs / Gemini Live
+ * here without changing the route surface.
+ *
+ * Env:
+ *   - `MUSE_OPENAI_API_KEY` — required for OpenAI voice. When unset,
+ *     the registry is empty and routes are not registered.
+ *   - `MUSE_VOICE_TTS_VOICE` — default voice (alloy / echo / fable /
+ *     onyx / nova / shimmer). Defaults to `alloy`.
+ *   - `MUSE_VOICE_TTS_MODEL` / `MUSE_VOICE_STT_MODEL` — model overrides.
+ */
+function buildVoiceRegistry(env: MuseEnvironment): VoiceProviderRegistry | undefined {
+  const openAiKey = env.MUSE_OPENAI_API_KEY?.trim();
+  if (!openAiKey) {
+    return undefined;
+  }
+
+  const registry = new VoiceProviderRegistry();
+  registry.registerStt(
+    new OpenAIWhisperSttProvider({
+      apiKey: openAiKey,
+      ...(env.MUSE_VOICE_STT_MODEL?.trim() ? { model: env.MUSE_VOICE_STT_MODEL.trim() } : {})
+    })
+  );
+  registry.registerTts(
+    new OpenAITtsProvider({
+      apiKey: openAiKey,
+      ...(env.MUSE_VOICE_TTS_MODEL?.trim() ? { model: env.MUSE_VOICE_TTS_MODEL.trim() } : {}),
+      ...(env.MUSE_VOICE_TTS_VOICE?.trim() ? { defaultVoice: env.MUSE_VOICE_TTS_VOICE.trim() } : {})
+    })
+  );
+  return registry;
 }
 
 function createPersonalToolExposurePolicy(env: MuseEnvironment): ToolExposurePolicy {
