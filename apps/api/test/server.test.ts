@@ -4063,13 +4063,6 @@ describe("api server", () => {
       payload: { role: "ADMIN" },
       url: "/api/admin/rbac/users/missing-user/role"
     });
-    const retention = await server.inject({ headers, method: "GET", url: "/api/admin/retention" });
-    const retentionUpdate = await server.inject({
-      headers,
-      method: "PUT",
-      payload: { sessionRetentionDays: 30 },
-      url: "/api/admin/retention"
-    });
     const pipeline = await server.inject({ headers, method: "GET", url: "/api/admin/input-guard/pipeline" });
     const settingsUpdate = await server.inject({
       headers,
@@ -4185,13 +4178,6 @@ describe("api server", () => {
       timestamp: expect.any(String)
     });
     expect(missingRoleUser.json()).not.toHaveProperty("code");
-    expect(retention.json()).toEqual({
-      auditRetentionDays: 730,
-      conversationRetentionDays: 365,
-      metricRetentionDays: 180,
-      sessionRetentionDays: 90
-    });
-    expect(retentionUpdate.json()).toMatchObject({ sessionRetentionDays: 30 });
     expect(pipeline.json()).toEqual(expect.arrayContaining([
       expect.objectContaining({ className: "RateLimitStage", name: "RateLimit", order: 0 })
     ]));

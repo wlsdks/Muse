@@ -205,7 +205,6 @@ interface CompatState {
     recentTopics: string[];
     updatedAt: string;
   }>;
-  retentionPolicy: JsonObject;
   toolPolicyStored: boolean;
   toolPolicy: JsonObject;
 }
@@ -266,12 +265,6 @@ function createCompatState(): CompatState {
     slackFaqFeedback: new Map(),
     swaggerSources: new Map(),
     userMemory: new Map(),
-    retentionPolicy: {
-      auditRetentionDays: 730,
-      conversationRetentionDays: 365,
-      metricRetentionDays: 180,
-      sessionRetentionDays: 90
-    },
     toolPolicy: defaultToolPolicy(),
     toolPolicyStored: false
   };
@@ -520,15 +513,6 @@ export {
 
 export function getStateToolPolicy(): JsonObject {
   return state.toolPolicy;
-}
-
-export function getStateRetentionPolicy(): JsonObject {
-  return state.retentionPolicy;
-}
-
-export function updateStateRetentionPolicy(patch: JsonObject): JsonObject {
-  state.retentionPolicy = { ...state.retentionPolicy, ...patch };
-  return state.retentionPolicy;
 }
 
 export function getStateSlackFaqEvents(channelId: string): readonly CompatRecord[] {
@@ -871,13 +855,12 @@ export {
 
 // errorResponse + badRequest + clampLimit live in apps/api/src/compat-responses.ts.
 
-// RBAC role + retention policy helpers live in apps/api/src/compat-rbac-retention.ts.
+// RBAC role helpers live in apps/api/src/compat-rbac-roles.ts.
 export {
-  parseRetentionPolicy,
   parseUserRole,
   roleDefinitions,
   userRoleResponse
-} from "./compat-rbac-retention.js";
+} from "./compat-rbac-roles.js";
 
 // RAG ingestion policy + candidate review helpers live in apps/api/src/compat-rag-ingestion.ts.
 export {
@@ -970,7 +953,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/admin/rag/seed-policy",
     "/api/admin/rbac/roles",
     "/api/admin/rbac/users/{userId}/role",
-    "/api/admin/retention",
     "/api/admin/sessions",
     "/api/admin/sessions/{sessionId}",
     "/api/admin/sessions/{sessionId}/export",

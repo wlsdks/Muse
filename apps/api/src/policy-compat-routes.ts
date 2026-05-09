@@ -1,22 +1,18 @@
 /**
- * Reactor-compat policy + RBAC + retention routes extracted from
+ * Reactor-compat policy + RBAC routes extracted from
  * reactor-compat-routes.ts.
  *
  * Wires:
  *   - GET/PUT/DELETE /api/tool-policy   (effective + stored shape)
  *   - GET   /api/admin/rbac/roles
  *   - PUT   /api/admin/rbac/users/:userId/role
- *   - GET   /api/admin/retention
- *   - PUT   /api/admin/retention
  */
 
 import type { FastifyInstance } from "fastify";
 import {
   clearToolPolicy,
   errorResponse,
-  getStateRetentionPolicy,
   getStateToolPolicy,
-  parseRetentionPolicy,
   parseUserRole,
   readBodyString,
   readStoredToolPolicy,
@@ -24,7 +20,6 @@ import {
   saveToolPolicy,
   toBody,
   toToolPolicyResponse,
-  updateStateRetentionPolicy,
   userRoleResponse,
   validateToolPolicyBody,
   validationErrorResponse,
@@ -99,25 +94,4 @@ export function registerPolicyCompatibilityRoutes(server: FastifyInstance, optio
     };
   });
 
-  server.get("/api/admin/retention", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return getStateRetentionPolicy();
-  });
-
-  server.put("/api/admin/retention", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const parsed = parseRetentionPolicy(request.body);
-
-    if (!parsed.ok) {
-      return reply.status(400).send(parsed.error);
-    }
-
-    return updateStateRetentionPolicy(parsed.value);
-  });
 }

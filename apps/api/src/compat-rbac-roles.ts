@@ -1,22 +1,13 @@
 /**
- * Reactor-compat RBAC role + retention policy helpers extracted from
+ * Reactor-compat RBAC role helpers extracted from
  * reactor-compat-routes.ts.
  *
- * - role helpers normalize the two-role taxonomy (user / admin) into
- *   the response shape used by /api/admin/rbac/roles +
- *   /api/admin/platform/users/:id/role.
- * - parseRetentionPolicy validates the four day-count knobs the
- *   /api/admin/retention surface accepts.
+ * Two-role taxonomy (user / admin) mapped into the response shape used
+ * by /api/admin/rbac/roles + /api/admin/platform/users/:id/role.
  */
 
 import type { UserRole } from "@muse/auth";
 import type { JsonObject } from "@muse/shared";
-import {
-  invalid,
-  readNumber,
-  toBody,
-  type ParseResult
-} from "./reactor-compat-routes.js";
 
 export function userRoleResponse(role: UserRole): string {
   return role.toUpperCase();
@@ -58,30 +49,4 @@ function permissionsForRole(role: UserRole): readonly string[] {
   }
 
   return ["chat:use", "persona:select"];
-}
-
-export function parseRetentionPolicy(value: unknown): ParseResult<JsonObject> {
-  const body = toBody(value);
-  const parsed: Record<string, number> = {};
-
-  for (const key of [
-    "sessionRetentionDays",
-    "conversationRetentionDays",
-    "auditRetentionDays",
-    "metricRetentionDays"
-  ]) {
-    if (body[key] === undefined || body[key] === null) {
-      continue;
-    }
-
-    const parsedValue = readNumber(body[key], Number.NaN);
-
-    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
-      return invalid("INVALID_RETENTION_POLICY", `${key} must be >= 1`);
-    }
-
-    parsed[key] = parsedValue;
-  }
-
-  return { ok: true, value: parsed };
 }
