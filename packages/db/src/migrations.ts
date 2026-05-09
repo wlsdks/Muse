@@ -108,6 +108,17 @@ export const migrations: readonly SqlMigration[] = [
 
       ALTER TABLE users DROP COLUMN IF EXISTS role;
       DROP TABLE IF EXISTS user_identities;
+      DROP TABLE IF EXISTS alert_instances;
+      DROP TABLE IF EXISTS slo_config;
+      DROP TABLE IF EXISTS metric_agent_executions;
+      DROP TABLE IF EXISTS metric_tool_calls;
+      DROP TABLE IF EXISTS metric_sessions;
+      DROP TABLE IF EXISTS metric_guard_events;
+      DROP TABLE IF EXISTS metric_mcp_health;
+      DROP TABLE IF EXISTS metric_eval_results;
+      DROP TABLE IF EXISTS metric_spans;
+      DROP TABLE IF EXISTS metric_quota_events;
+      DROP TABLE IF EXISTS metric_hitl_events;
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
         ON users(email);
@@ -123,32 +134,6 @@ export const migrations: readonly SqlMigration[] = [
         window_minutes INTEGER NOT NULL DEFAULT 15,
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS alert_instances (
-        id VARCHAR(128) PRIMARY KEY,
-        rule_id VARCHAR(128) NOT NULL,
-        severity VARCHAR(40) NOT NULL,
-        status VARCHAR(40) NOT NULL DEFAULT 'active',
-        message TEXT NOT NULL,
-        metric_value DOUBLE PRECISION NOT NULL DEFAULT 0,
-        threshold DOUBLE PRECISION NOT NULL DEFAULT 0,
-        fired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        resolved_at TIMESTAMPTZ,
-        acknowledged_by VARCHAR(160)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_alert_instances_rule ON alert_instances(rule_id);
-
-      CREATE TABLE IF NOT EXISTS slo_config (
-        id VARCHAR(128) PRIMARY KEY,
-        availability_target DOUBLE PRECISION NOT NULL DEFAULT 0.995,
-        latency_p99_target_ms BIGINT NOT NULL DEFAULT 10000,
-        apdex_satisfied_ms BIGINT NOT NULL DEFAULT 5000,
-        apdex_tolerating_ms BIGINT NOT NULL DEFAULT 20000,
-        error_budget_window_days INTEGER NOT NULL DEFAULT 30,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
       CREATE TABLE IF NOT EXISTS conversation_summaries (
@@ -221,45 +206,6 @@ export const migrations: readonly SqlMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_debug_replay_captures_expires
         ON debug_replay_captures(expires_at);
 
-      CREATE TABLE IF NOT EXISTS metric_agent_executions (
-        time TIMESTAMPTZ NOT NULL,
-        run_id VARCHAR(128) NOT NULL,
-        user_id VARCHAR(128),
-        session_id VARCHAR(128),
-        channel VARCHAR(80),
-        success BOOLEAN NOT NULL,
-        error_code VARCHAR(80),
-        error_class VARCHAR(80),
-        duration_ms BIGINT NOT NULL DEFAULT 0,
-        llm_duration_ms BIGINT NOT NULL DEFAULT 0,
-        tool_duration_ms BIGINT NOT NULL DEFAULT 0,
-        guard_duration_ms BIGINT NOT NULL DEFAULT 0,
-        queue_wait_ms BIGINT NOT NULL DEFAULT 0,
-        is_streaming BOOLEAN NOT NULL DEFAULT FALSE,
-        tool_count INTEGER NOT NULL DEFAULT 0,
-        persona_id VARCHAR(128),
-        prompt_template_id VARCHAR(128),
-        intent_category VARCHAR(80),
-        guard_rejected BOOLEAN NOT NULL DEFAULT FALSE,
-        guard_stage VARCHAR(80),
-        guard_category VARCHAR(80),
-        retry_count INTEGER NOT NULL DEFAULT 0,
-        fallback_used BOOLEAN NOT NULL DEFAULT FALSE
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_tool_calls (
-        time TIMESTAMPTZ NOT NULL,
-        run_id VARCHAR(128) NOT NULL,
-        tool_name VARCHAR(255) NOT NULL,
-        tool_source VARCHAR(40) NOT NULL DEFAULT 'local',
-        mcp_server_name VARCHAR(120),
-        call_index INTEGER NOT NULL DEFAULT 0,
-        success BOOLEAN NOT NULL,
-        duration_ms BIGINT NOT NULL DEFAULT 0,
-        error_class VARCHAR(80),
-        error_message VARCHAR(500)
-      );
-
       CREATE TABLE IF NOT EXISTS metric_token_usage (
         time TIMESTAMPTZ NOT NULL,
         run_id VARCHAR(128) NOT NULL,
@@ -272,90 +218,6 @@ export const migrations: readonly SqlMigration[] = [
         reasoning_tokens INTEGER NOT NULL DEFAULT 0,
         total_tokens INTEGER NOT NULL DEFAULT 0,
         estimated_cost_usd NUMERIC(18, 8) NOT NULL DEFAULT 0
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_sessions (
-        time TIMESTAMPTZ NOT NULL,
-        session_id VARCHAR(128) NOT NULL,
-        user_id VARCHAR(128),
-        channel VARCHAR(80),
-        turn_count INTEGER NOT NULL DEFAULT 0,
-        total_duration_ms BIGINT NOT NULL DEFAULT 0,
-        total_tokens BIGINT NOT NULL DEFAULT 0,
-        total_cost_usd NUMERIC(18, 8) NOT NULL DEFAULT 0,
-        first_response_latency_ms BIGINT NOT NULL DEFAULT 0,
-        outcome VARCHAR(40) NOT NULL DEFAULT 'resolved',
-        started_at TIMESTAMPTZ NOT NULL,
-        ended_at TIMESTAMPTZ NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_guard_events (
-        time TIMESTAMPTZ NOT NULL,
-        user_id VARCHAR(128),
-        channel VARCHAR(80),
-        stage VARCHAR(80) NOT NULL,
-        category VARCHAR(80) NOT NULL,
-        reason_class VARCHAR(80),
-        reason_detail VARCHAR(500),
-        is_output_guard BOOLEAN NOT NULL DEFAULT FALSE,
-        action VARCHAR(40) NOT NULL DEFAULT 'rejected'
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_mcp_health (
-        time TIMESTAMPTZ NOT NULL,
-        server_name VARCHAR(120) NOT NULL,
-        status VARCHAR(40) NOT NULL DEFAULT 'connected',
-        response_time_ms BIGINT NOT NULL DEFAULT 0,
-        error_class VARCHAR(80),
-        error_message VARCHAR(500),
-        tool_count INTEGER NOT NULL DEFAULT 0
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_eval_results (
-        time TIMESTAMPTZ NOT NULL,
-        eval_run_id VARCHAR(128) NOT NULL,
-        test_case_id VARCHAR(128) NOT NULL,
-        pass BOOLEAN NOT NULL,
-        score DOUBLE PRECISION NOT NULL DEFAULT 0,
-        latency_ms BIGINT NOT NULL DEFAULT 0,
-        token_usage INTEGER NOT NULL DEFAULT 0,
-        cost NUMERIC(18, 8) NOT NULL DEFAULT 0,
-        assertion_type VARCHAR(80),
-        failure_class VARCHAR(80),
-        failure_detail VARCHAR(500),
-        tags TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_spans (
-        time TIMESTAMPTZ NOT NULL,
-        trace_id VARCHAR(64) NOT NULL,
-        span_id VARCHAR(64) NOT NULL,
-        parent_span_id VARCHAR(64),
-        run_id VARCHAR(128),
-        operation_name VARCHAR(255) NOT NULL,
-        service_name VARCHAR(120) NOT NULL,
-        duration_ms BIGINT NOT NULL,
-        success BOOLEAN NOT NULL,
-        error_class VARCHAR(80),
-        attributes JSONB NOT NULL DEFAULT '{}'::jsonb
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_quota_events (
-        time TIMESTAMPTZ NOT NULL,
-        action VARCHAR(80) NOT NULL,
-        current_usage BIGINT NOT NULL DEFAULT 0,
-        quota_limit BIGINT NOT NULL DEFAULT 0,
-        usage_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
-        reason VARCHAR(500)
-      );
-
-      CREATE TABLE IF NOT EXISTS metric_hitl_events (
-        time TIMESTAMPTZ NOT NULL,
-        run_id VARCHAR(128) NOT NULL,
-        tool_name VARCHAR(255) NOT NULL,
-        approved BOOLEAN NOT NULL,
-        wait_ms BIGINT NOT NULL DEFAULT 0,
-        rejection_reason VARCHAR(500)
       );
 
       CREATE TABLE IF NOT EXISTS conversation_messages (

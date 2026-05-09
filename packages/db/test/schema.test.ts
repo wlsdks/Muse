@@ -4,18 +4,16 @@ import type { MuseDatabase } from "../src/index.js";
 describe("MuseDatabase", () => {
   it("exposes compile-time table contracts", () => {
     const tableNames = [
-      "admin_tenants",
       "admin_alerts",
       "admin_slos",
       "admin_cost_usage",
       "agent_runs",
+      "agent_specs",
+      "alert_rules",
       "users",
-      "auth_token_revocations",
-      "channel_faq_registrations",
       "conversation_summaries",
       "conversation_messages",
       "tool_calls",
-      "pending_approvals",
       "checkpoints",
       "trace_events",
       "hook_traces",
@@ -24,7 +22,12 @@ describe("MuseDatabase", () => {
       "scheduled_jobs",
       "scheduled_job_executions",
       "scheduled_job_locks",
-      "slack_bot_instances"
+      "session_tags",
+      "task_memories",
+      "metric_token_usage",
+      "debug_replay_captures",
+      "user_memories",
+      "runtime_settings"
     ] satisfies readonly (keyof MuseDatabase)[];
 
     expect(tableNames).toContain("agent_runs");

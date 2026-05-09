@@ -44,22 +44,11 @@ describe("db migrations", () => {
     const sql = migrations.map((migration) => migration.up).join("\n");
 
     for (const table of [
-      "alert_instances",
       "alert_rules",
       "conversation_summaries",
       "debug_replay_captures",
-      "metric_agent_executions",
-      "metric_eval_results",
-      "metric_guard_events",
-      "metric_hitl_events",
-      "metric_mcp_health",
-      "metric_quota_events",
-      "metric_sessions",
-      "metric_spans",
       "metric_token_usage",
-      "metric_tool_calls",
       "session_tags",
-      "slo_config",
       "task_memories",
       "user_memories"
     ]) {
