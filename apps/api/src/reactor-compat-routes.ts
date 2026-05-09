@@ -50,7 +50,6 @@ import { defaultRagIngestionPolicy } from "./compat-rag-ingestion.js";
 import { registerAdminObservabilityCompatRoutes } from "./admin-observability-compat-routes.js";
 import { registerAdminPlatformCompatRoutes } from "./admin-platform-compat-routes.js";
 import { registerAdminSessionCompatRoutes } from "./admin-session-compat-routes.js";
-import { registerAdminPlatformAlertCompatRoutes } from "./admin-platform-alert-compat-routes.js";
 import { registerAgentCompatibilityRoutes } from "./agent-compat-routes.js";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
 import { registerMcpCompatibilityRoutes } from "./mcp-compat-routes.js";
@@ -136,7 +135,6 @@ export function registerReactorCompatibilityRoutes(
   registerPromptAndRagRoutes(server, options);
   registerMcpCompatibilityRoutes(server, options);
   registerAdminPlatformCompatRoutes(server, options);
-  registerAdminPlatformAlertCompatRoutes(server, options);
   registerAdminSessionCompatRoutes(server, options);
   registerAdminObservabilityCompatRoutes(server, options);
   registerAdminAnalyticsCompatRoutes(server, options);
@@ -522,9 +520,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/admin/metrics/latency/summary",
     "/api/admin/metrics/latency/timeseries",
     "/api/admin/models",
-    "/api/admin/platform/alerts",
-    "/api/admin/platform/alerts/{id}/resolve",
-    "/api/admin/platform/alerts/evaluate",
     "/api/admin/platform/cache/invalidate",
     "/api/admin/platform/cache/stats",
     "/api/admin/platform/health",
