@@ -75,8 +75,7 @@ import {
   createRunResult,
   responseFilterEvidenceFromExecution,
   type ExecutedToolResult,
-  type ModelLoopExecution,
-  type ResponseFilterEvidence
+  type ModelLoopExecution
 } from "./runtime-internals.js";
 import {
   isPlanExecuteMode,
@@ -102,15 +101,16 @@ import {
   type ModelLoopRunner
 } from "./model-loop.js";
 import {
+  applyOutputGuards as applyOutputGuardsFn,
+  applyResponseFilters as applyResponseFiltersFn,
+  evaluateGuards as evaluateGuardsFn
+} from "./guard-pipeline.js";
+import {
   createAgentCheckpointState,
   encodeCheckpointMessages,
   type AgentCheckpointState
 } from "./checkpoint.js";
-import {
-  GuardBlockedError,
-  ModelRoutingError,
-  OutputGuardBlockedError
-} from "./errors.js";
+import { ModelRoutingError } from "./errors.js";
 import {
   ToolExecutor,
   ToolRegistry,
@@ -127,12 +127,10 @@ import type {
   AgentSpecResolver,
   AgentSpecRunReport,
   Awaitable,
-  GuardDecision,
   GuardStage,
   HookStage,
   LlmClassificationInputGuardOptions,
   OutputGuardContext,
-  OutputGuardDecision,
   OutputGuardStage,
   ResponseFilterContext,
   ResponseFilterStage,
@@ -378,7 +376,7 @@ export class AgentRuntime {
 
     try {
       await this.recordCheckpoint(context, 0, "start", context.input.messages);
-      await this.evaluateGuards(context);
+      await evaluateGuardsFn(context, this.guards, this.tracer, this.metrics, this.guardBlockRateMonitor);
       await this.invokeHooks("beforeStart", context);
 
       const selected = this.resolveProvider(context.input.model);
@@ -406,12 +404,12 @@ export class AgentRuntime {
           model: cached.model ?? selected.model,
           output: cached.content
         };
-        const filteredCachedResponse = await this.applyResponseFilters(layeredContext, cachedResponse, {
+        const filteredCachedResponse = await applyResponseFiltersFn(layeredContext, cachedResponse, this.responseFilters, this.tracer, {
           toolInsights: [],
           toolsUsed: cached.toolsUsed,
           verifiedSources: []
         });
-        const guardedCachedResponse = await this.applyOutputGuards(layeredContext, filteredCachedResponse);
+        const guardedCachedResponse = await applyOutputGuardsFn(layeredContext, filteredCachedResponse, this.outputGuards, this.tracer, this.metrics);
 
         await this.recordRunComplete(layeredContext, {
           finalResponse: guardedCachedResponse,
@@ -440,12 +438,14 @@ export class AgentRuntime {
       const execution = isPlanExecuteMode(layeredContext.input.metadata)
         ? await executePlanExecuteLoopFn(this.modelLoopRunner(), layeredContext, selected.provider, loopRequest)
         : await executeModelLoopFn(this.modelLoopRunner(), layeredContext, selected.provider, loopRequest);
-      const filteredResponse = await this.applyResponseFilters(
+      const filteredResponse = await applyResponseFiltersFn(
         layeredContext,
         execution.finalResponse,
+        this.responseFilters,
+        this.tracer,
         responseFilterEvidenceFromExecution(execution)
       );
-      const guardedResponse = await this.applyOutputGuards(layeredContext, filteredResponse);
+      const guardedResponse = await applyOutputGuardsFn(layeredContext, filteredResponse, this.outputGuards, this.tracer, this.metrics);
 
       await this.recordRunComplete(layeredContext, { ...execution, finalResponse: guardedResponse });
       await this.recordCheckpoint(layeredContext, 100, "complete", layeredContext.input.messages, guardedResponse.output);
@@ -495,7 +495,7 @@ export class AgentRuntime {
 
     try {
       await this.recordCheckpoint(context, 0, "start", context.input.messages);
-      await this.evaluateGuards(context);
+      await evaluateGuardsFn(context, this.guards, this.tracer, this.metrics, this.guardBlockRateMonitor);
       await this.invokeHooks("beforeStart", context);
 
       const selected = this.resolveProvider(context.input.model);
@@ -523,12 +523,12 @@ export class AgentRuntime {
           model: cached.model ?? selected.model,
           output: cached.content
         };
-        const filteredCachedResponse = await this.applyResponseFilters(layeredContext, cachedResponse, {
+        const filteredCachedResponse = await applyResponseFiltersFn(layeredContext, cachedResponse, this.responseFilters, this.tracer, {
           toolInsights: [],
           toolsUsed: cached.toolsUsed,
           verifiedSources: []
         });
-        const guardedCachedResponse = await this.applyOutputGuards(layeredContext, filteredCachedResponse);
+        const guardedCachedResponse = await applyOutputGuardsFn(layeredContext, filteredCachedResponse, this.outputGuards, this.tracer, this.metrics);
 
         await this.recordRunComplete(layeredContext, {
           finalResponse: guardedCachedResponse,
@@ -576,12 +576,14 @@ export class AgentRuntime {
         }
         execution = next.value;
       }
-      const filteredResponse = await this.applyResponseFilters(
+      const filteredResponse = await applyResponseFiltersFn(
         layeredContext,
         execution.finalResponse,
+        this.responseFilters,
+        this.tracer,
         responseFilterEvidenceFromExecution(execution)
       );
-      const response = await this.applyOutputGuards(layeredContext, filteredResponse);
+      const response = await applyOutputGuardsFn(layeredContext, filteredResponse, this.outputGuards, this.tracer, this.metrics);
       await this.recordRunComplete(layeredContext, {
         ...execution,
         finalResponse: response
@@ -760,57 +762,6 @@ export class AgentRuntime {
     return { result, toolCall };
   }
 
-  private async evaluateGuards(context: AgentRunContext): Promise<void> {
-    for (const guard of this.guards) {
-      let decision: GuardDecision;
-      const span = this.tracer.startSpan("muse.guard.evaluate", {
-        "guard.id": guard.id,
-        "run.id": context.runId
-      });
-
-      try {
-        decision = await guard.evaluate(context);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Guard failed closed";
-        span.setError(error);
-        span.setAttribute("guard.allowed", false);
-        span.setAttribute("guard.reason", message);
-        span.end();
-        this.guardBlockRateMonitor?.record({
-          allowed: false,
-          guardId: guard.id,
-          reason: message,
-          runId: context.runId
-        });
-        this.metrics.recordGuardRejection(guard.id, message, context.input.metadata);
-        throw new GuardBlockedError(guard.id, message, "GUARD_ERROR");
-      }
-
-      if (!decision.allowed) {
-        span.setAttribute("guard.allowed", false);
-        span.setAttribute("guard.reason", decision.reason);
-        span.end();
-        this.guardBlockRateMonitor?.record({
-          allowed: false,
-          guardId: guard.id,
-          reason: decision.reason,
-          runId: context.runId
-        });
-        this.metrics.recordGuardRejection(guard.id, decision.reason, context.input.metadata);
-        throw new GuardBlockedError(guard.id, decision.reason, decision.code);
-      }
-
-      span.setAttribute("guard.allowed", true);
-      span.end();
-      this.guardBlockRateMonitor?.record({
-        allowed: true,
-        guardId: guard.id,
-        reason: null,
-        runId: context.runId
-      });
-    }
-  }
-
   private async generateWithTracing(
     context: AgentRunContext,
     provider: ModelProvider,
@@ -830,91 +781,6 @@ export class AgentRuntime {
       ...(this.tokenUsageSink ? { tokenUsageSink: this.tokenUsageSink } : {}),
       tracer: this.tracer
     });
-  }
-
-  private async applyResponseFilters(
-    context: AgentRunContext,
-    response: ModelResponse,
-    evidence: ResponseFilterEvidence = { toolInsights: [], toolsUsed: [], verifiedSources: [] }
-  ): Promise<ModelResponse> {
-    let filtered = response;
-
-    for (const stage of this.responseFilters) {
-      const span = this.tracer.startSpan("muse.response_filter.apply", {
-        "response_filter.id": stage.id,
-        "run.id": context.runId
-      });
-
-      try {
-        filtered = await stage.apply(filtered, {
-          input: context.input,
-          response: filtered,
-          runId: context.runId,
-          toolInsights: evidence.toolInsights,
-          toolsUsed: evidence.toolsUsed,
-          verifiedSources: evidence.verifiedSources
-        });
-        span.setAttribute("response_filter.applied", true);
-      } catch (error) {
-        span.setError(error);
-        span.setAttribute("response_filter.applied", false);
-      } finally {
-        span.end();
-      }
-    }
-
-    return filtered;
-  }
-
-  private async applyOutputGuards(context: AgentRunContext, response: ModelResponse): Promise<ModelResponse> {
-    let guarded = response;
-
-    for (const stage of this.outputGuards) {
-      let decision: OutputGuardDecision;
-      const span = this.tracer.startSpan("muse.output_guard.check", {
-        "output_guard.id": stage.id,
-        "run.id": context.runId
-      });
-
-      try {
-        decision = await stage.check(guarded.output, {
-          input: context.input,
-          response: guarded,
-          runId: context.runId
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Output guard failed closed";
-        span.setError(error);
-        span.setAttribute("output_guard.action", "rejected");
-        span.setAttribute("output_guard.reason", message);
-        span.end();
-        this.metrics.recordOutputGuardAction(stage.id, "rejected", message, context.input.metadata);
-        throw new OutputGuardBlockedError(stage.id, message, "OUTPUT_GUARD_ERROR");
-      }
-
-      if (decision.action === "reject") {
-        span.setAttribute("output_guard.action", "rejected");
-        span.setAttribute("output_guard.reason", decision.reason);
-        span.end();
-        this.metrics.recordOutputGuardAction(stage.id, "rejected", decision.reason, context.input.metadata);
-        throw new OutputGuardBlockedError(stage.id, decision.reason, decision.code);
-      }
-
-      if (decision.action === "modify") {
-        span.setAttribute("output_guard.action", "modified");
-        span.setAttribute("output_guard.reason", decision.reason);
-        span.end();
-        this.metrics.recordOutputGuardAction(stage.id, "modified", decision.reason, context.input.metadata);
-        guarded = { ...guarded, output: decision.content };
-        continue;
-      }
-
-      span.setAttribute("output_guard.action", "allowed");
-      span.end();
-      this.metrics.recordOutputGuardAction(stage.id, "allowed", "", context.input.metadata);
-    }
-
-    return guarded;
   }
 
   private canForwardRawStreamText(): boolean {
