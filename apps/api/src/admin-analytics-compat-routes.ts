@@ -13,7 +13,7 @@
  *   - GET /api/admin/metrics/latency/{summary,timeseries}
  *   - GET /api/admin/rag-analytics/{status,by-channel}
  *   - GET /api/admin/slack-activity/{channels,daily}
- *   - GET /api/admin/tenant/{quality,tools,quota,export/executions,export/tools}
+ *   - GET /api/admin/tenant/export/{executions,tools}
  *   - POST /api/admin/task-memory/maintenance/{purge-expired,purge-terminal}
  */
 
@@ -31,7 +31,6 @@ import {
   groupRecordsByField,
   groupRunsByChannel,
   inputGuardStatsResponse,
-  latencyDistribution,
   latencySummary,
   latencySummaryFromQuery,
   latencyTimeseries,
@@ -42,7 +41,6 @@ import {
   listAllToolCalls,
   listDebugReplayCaptures,
   listDocuments,
-  numberField,
   passRateByDay,
   ragStatusSummary,
   readAuthUserId,
@@ -54,7 +52,6 @@ import {
   stringField,
   toAdminAuditResponse,
   toJsonObject,
-  toolCallRanking,
   toolCallsCsv,
   type ReactorCompatibilityRouteOptions
 } from "./reactor-compat-routes.js";
@@ -67,7 +64,7 @@ export function registerAdminAnalyticsCompatRoutes(server: FastifyInstance, opti
   registerStatsRoutes(server, options);
   registerLatencyRoutes(server, options);
   registerRagAndSlackRoutes(server, options);
-  registerTenantQualityRoutes(server, options);
+  registerTenantExportRoutes(server, options);
   registerTaskMemoryMaintenanceRoutes(server, options);
 }
 
@@ -304,47 +301,7 @@ function registerRagAndSlackRoutes(server: FastifyInstance, options: ReactorComp
   });
 }
 
-function registerTenantQualityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/admin/tenant/quality", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const runs = await listAllRuns(options);
-    return {
-      errors: runs.filter((run) => run.status === "failed").length,
-      latencyDistribution: latencyDistribution(runs),
-      total: runs.length
-    };
-  });
-
-  server.get("/api/admin/tenant/tools", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const toolCalls = await listAllToolCalls(options);
-    return {
-      ranking: toolCallRanking(toolCalls),
-      total: toolCalls.length
-    };
-  });
-
-  server.get("/api/admin/tenant/quota", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const runs = await listAllRuns(options);
-    return {
-      usage: {
-        requests: runs.length,
-        tokens: runs.reduce((total, run) => total + numberField(run.tokenUsage, "inputTokens") +
-          numberField(run.tokenUsage, "outputTokens"), 0)
-      }
-    };
-  });
-
+function registerTenantExportRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
   server.get("/api/admin/tenant/export/executions", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;

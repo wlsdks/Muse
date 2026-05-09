@@ -4700,21 +4700,6 @@ describe("api server", () => {
       method: "GET",
       url: "/api/admin/slack-activity/daily"
     });
-    const tenantQuality = await server.inject({
-      headers,
-      method: "GET",
-      url: "/api/admin/tenant/quality"
-    });
-    const tenantTools = await server.inject({
-      headers,
-      method: "GET",
-      url: "/api/admin/tenant/tools"
-    });
-    const tenantQuota = await server.inject({
-      headers,
-      method: "GET",
-      url: "/api/admin/tenant/quota"
-    });
     const tenantExecutionsExport = await server.inject({
       headers,
       method: "GET",
@@ -5150,12 +5135,6 @@ describe("api server", () => {
     expect(ragByChannel.json()).toMatchObject([{ count: 2, key: "api" }]);
     expect(slackActivityChannels.json()).toMatchObject([{ channel: "api", total: 1 }]);
     expect(slackActivityDaily.json()).toMatchObject([{ costUsd: 0.125, runs: 1 }]);
-    expect(tenantQuality.json()).toMatchObject({ errors: 0, total: 1 });
-    expect(tenantTools.json()).toMatchObject({ ranking: [{ name: "read_file", total: 1 }], total: 1 });
-    expect(tenantQuota.json()).toMatchObject({ usage: { requests: 1, tokens: 15 } });
-    expect(tenantQuota.json()).not.toHaveProperty("quota");
-    expect(tenantQuota.json()).not.toHaveProperty("requestUsagePercent");
-    expect(tenantQuota.json()).not.toHaveProperty("tokenUsagePercent");
     expect(tenantExecutionsExport.body).toContain("run-compat");
     expect(tenantToolsExport.body).toContain("read_file");
     expect(taskPurgeExpired.json()).toMatchObject({ deleted: 0 });
