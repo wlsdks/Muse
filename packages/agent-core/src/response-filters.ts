@@ -32,6 +32,10 @@ export {
   createEnglishCasualLureStripResponseFilter
 } from "./response-filters-casual-lure-strip.js";
 
+export {
+  createEnglishGreetingStripResponseFilter,
+  createGreetingStripResponseFilter
+} from "./response-filters-greeting-strip.js";
 
 export function createMarkdownStripResponseFilter(): ResponseFilterStage {
   return {
@@ -55,75 +59,6 @@ export function createMarkdownStripResponseFilter(): ResponseFilterStage {
       };
     },
     id: "markdown-strip-response-filter"
-  };
-}
-
-export function createGreetingStripResponseFilter(): ResponseFilterStage {
-  const leadingGreetingPattern =
-    /^(안녕하세요|안녕|반가워요|반갑습니다|반갑네요|하이)(?:[,，]?\s*[^\n!?.]{0,25}[님씨])?[!?.]\s*/u;
-  const followupGreetingPattern =
-    /^(반갑습니다|반가워요|반갑네요|만나서\s*반가워요|만나서\s*반갑습니다|만나서\s*정말\s*반가워요|만나서\s*정말\s*기쁩니다|좋은\s*아침이에요|좋은\s*저녁이에요)[!?.]\s*/u;
-
-  return {
-    apply: (response: ModelResponse) => {
-      if (response.output.trim().length === 0) {
-        return response;
-      }
-
-      const output = response.output
-        .replace(leadingGreetingPattern, "")
-        .replace(followupGreetingPattern, "")
-        .trimStart();
-
-      if (output === response.output) {
-        return response;
-      }
-
-      return {
-        ...response,
-        output,
-        raw: withResponseFilterRaw(response, "greeting-strip-response-filter")
-      };
-    },
-    id: "greeting-strip-response-filter"
-  };
-}
-
-/**
- * English counterpart to `createGreetingStripResponseFilter` (which is
- * Korean-pattern-only). Strips a single leading greeting like "Hi there!",
- * "Hello!", "Good morning!", "Greetings,". Both filters can run in the same
- * chain — they target disjoint patterns, so neither cancels the other.
- */
-export function createEnglishGreetingStripResponseFilter(): ResponseFilterStage {
-  const leadingGreetingPattern =
-    /^\s*(?:Hi|Hello|Hey|Howdy|Greetings|Hiya)(?:\s+(?:there|all|everyone|team|folks|y'all))?(?:,\s*\w{1,20})?[!?.]\s+/iu;
-  const goodTimeOfDayPattern = /^\s*Good\s+(?:morning|afternoon|evening|day|night)(?:\s+\w{1,20})?[!?.]\s+/iu;
-  const niceToMeetPattern = /^\s*(?:Nice|Pleased|Good|Glad)\s+to\s+(?:meet|see)\s+you[!?.]\s+/iu;
-
-  return {
-    apply: (response: ModelResponse) => {
-      if (response.output.trim().length === 0) {
-        return response;
-      }
-
-      const output = response.output
-        .replace(leadingGreetingPattern, "")
-        .replace(goodTimeOfDayPattern, "")
-        .replace(niceToMeetPattern, "")
-        .trimStart();
-
-      if (output === response.output) {
-        return response;
-      }
-
-      return {
-        ...response,
-        output,
-        raw: withResponseFilterRaw(response, "english-greeting-strip-response-filter")
-      };
-    },
-    id: "english-greeting-strip-response-filter"
   };
 }
 
