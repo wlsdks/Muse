@@ -213,11 +213,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   server.get("/v3/api-docs", async () => createOpenApiDocument(apiRouteMethods));
   server.get("/api/openapi.json", async () => createOpenApiDocument(apiRouteMethods));
 
-  server.post("/chat", async (request, reply) => runChat(request.body, reply, options, "extended"));
-  server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options, "reactor"));
-  server.post("/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "extended"));
-  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "reactor"));
-  server.post("/api/chat/multipart", async (request, reply) => runMultipartChat(request.body, reply, options));
+  server.post("/chat", async (request, reply) => runChat(request.body, reply, options, "extended", getAuthIdentity(request)?.userId));
+  server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options, "reactor", getAuthIdentity(request)?.userId));
+  server.post("/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "extended", getAuthIdentity(request)?.userId));
+  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "reactor", getAuthIdentity(request)?.userId));
+  server.post("/api/chat/multipart", async (request, reply) => runMultipartChat(request.body, reply, options, getAuthIdentity(request)?.userId));
 
   server.get("/admin/summary", async (request, reply) => {
     if (!authorizeAdmin(request, reply, Boolean(authService))) {
@@ -865,7 +865,8 @@ async function runChat(
   body: unknown,
   reply: { status(statusCode: number): { send(payload: unknown): void } },
   options: ServerOptions,
-  responseMode: "extended" | "reactor"
+  responseMode: "extended" | "reactor",
+  authUserId?: string
 ) {
   if (!options.agentRuntime) {
     return reply.status(503).send({
@@ -874,7 +875,7 @@ async function runChat(
     });
   }
 
-  const parsed = parseAgentRunInput(body, options.defaultModel ?? "default");
+  const parsed = parseAgentRunInput(body, options.defaultModel ?? "default", authUserId);
 
   if (!parsed.ok) {
     return reply.status(400).send(parsed.error);
@@ -896,7 +897,8 @@ async function runChatStream(
     send(payload: unknown): unknown;
   },
   options: ServerOptions,
-  responseMode: "extended" | "reactor"
+  responseMode: "extended" | "reactor",
+  authUserId?: string
 ) {
   if (!options.agentRuntime) {
     return reply.status(503).send({
@@ -905,7 +907,7 @@ async function runChatStream(
     });
   }
 
-  const parsed = parseAgentRunInput(body, options.defaultModel ?? "default");
+  const parsed = parseAgentRunInput(body, options.defaultModel ?? "default", authUserId);
 
   if (!parsed.ok) {
     return reply.status(400).send(parsed.error);
@@ -919,7 +921,8 @@ async function runChatStream(
 async function runMultipartChat(
   body: unknown,
   reply: { status(statusCode: number): { send(payload: unknown): void } },
-  options: ServerOptions
+  options: ServerOptions,
+  authUserId?: string
 ) {
   const parsed = parseMultipartChatBody(body);
 
@@ -927,7 +930,7 @@ async function runMultipartChat(
     return reply.status(400).send(parsed.error);
   }
 
-  return runChat(parsed.value, reply, options, "reactor");
+  return runChat(parsed.value, reply, options, "reactor", authUserId);
 }
 
 function parseMultipartChatBody(value: unknown): ParseResult<JsonObject> {
@@ -961,7 +964,7 @@ function parseMultipartChatBody(value: unknown): ParseResult<JsonObject> {
   };
 }
 
-function parseAgentRunInput(value: unknown, defaultModel: string): ParseResult<AgentRunInput> {
+function parseAgentRunInput(value: unknown, defaultModel: string, authUserId?: string): ParseResult<AgentRunInput> {
   if (!isRecord(value)) {
     return invalid("INVALID_CHAT_REQUEST", "Body must be an object");
   }
@@ -972,7 +975,7 @@ function parseAgentRunInput(value: unknown, defaultModel: string): ParseResult<A
     return invalid("INVALID_CHAT_REQUEST", "Body must include message or messages");
   }
 
-  const metadata = reactorChatMetadata(value);
+  const metadata = reactorChatMetadata(value, authUserId);
 
   return {
     ok: true,
@@ -1038,9 +1041,9 @@ function prependSystemPrompt(
     : [{ content: systemPrompt, role: "system" }, ...messages];
 }
 
-function reactorChatMetadata(value: Record<string, unknown>): JsonObject {
+function reactorChatMetadata(value: Record<string, unknown>, authUserId?: string): JsonObject {
   const entries: Record<string, JsonValue> = isJsonObject(value.metadata) ? { ...value.metadata } : {};
-  const userId = optionalString(value.userId);
+  const userId = optionalString(value.userId) ?? optionalString(entries.userId) ?? authUserId;
   const personaId = optionalString(value.personaId);
   const promptTemplateId = optionalString(value.promptTemplateId);
   const responseFormat = optionalString(value.responseFormat);

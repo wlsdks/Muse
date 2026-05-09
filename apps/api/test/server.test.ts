@@ -1479,6 +1479,11 @@ describe("api server", () => {
       status: "completed",
       userId: "user-1"
     });
+    expect(historyStore.findRun("run-chat-extended")).toMatchObject({
+      input: "Hello",
+      status: "completed",
+      userId: registered.user.id
+    });
     expect(stream.statusCode).toBe(200);
     expect(stream.headers["content-type"]).toContain("text/event-stream");
     expect(stream.body).toContain("event: message");
