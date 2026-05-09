@@ -4893,11 +4893,6 @@ describe("api server", () => {
       method: "GET",
       url: "/api/admin/slack/channels/faq/scheduler/health"
     });
-    const slackPromptReload = await server.inject({
-      headers,
-      method: "POST",
-      url: "/api/admin/slack/prompts/reload"
-    });
     const slackFaqStats = await server.inject({
       headers,
       method: "GET",
@@ -5332,7 +5327,6 @@ describe("api server", () => {
       messagesScanned: 1
     });
     expect(slackFaqSchedulerHealth.json()).toEqual({ enabled: false });
-    expect(slackPromptReload.json()).toMatchObject({ reloaded: true, sectionCount: 17 });
     expect(slackFaqStats.json()).toMatchObject({ hits: 0, total: 0 });
     expect(slackFaqEvents.json()).toEqual({ events: [] });
     expect(slackFaqFeedback.json()).toEqual({ feedback: {} });

@@ -5,7 +5,6 @@
  *   - /api/admin/slack-bots CRUD
  *   - /api/proactive-channels list/post/delete
  *   - /api/admin/slack/channels/faq full registration + ingest/probe/dry-run + stats + events + feedback
- *   - /api/admin/slack/prompts/reload
  *
  * Slack workspace credentials are NEVER baked in here — these are admin routes
  * that delegate to the underlying registries. Live workspace integration stays
@@ -35,7 +34,6 @@ import {
   readBodyString,
   readNullableStringField,
   readNumber,
-  reactorPromptSectionKeys,
   saveProactiveChannels,
   saveSlackFaqRegistration,
   slackBotNotFound,
@@ -63,19 +61,6 @@ export function registerSlackCompatibilityRoutes(server: FastifyInstance, option
   registerSlackBotRoutes(server, options);
   registerProactiveChannelRoutes(server, options);
   registerSlackFaqRoutes(server, options);
-
-  server.post("/api/admin/slack/prompts/reload", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const sections = reactorPromptSectionKeys();
-    return {
-      reloaded: true,
-      sectionCount: sections.length,
-      sections
-    };
-  });
 }
 
 function registerSlackBotRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {

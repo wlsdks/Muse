@@ -802,11 +802,6 @@ export {
   parseAgentMode
 } from "./compat-models.js";
 
-// Reactor prompt-section keys live in apps/api/src/compat-prompt-sections.ts.
-export {
-  reactorPromptSectionKeys
-} from "./compat-prompt-sections.js";
-
 // Prompt-experiment lifecycle helpers live in apps/api/src/compat-prompt-experiment.ts.
 export {
   activatePromptExperiment,
@@ -999,7 +994,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/admin/slack/channels/faq/{channelId}/stats",
     "/api/admin/slack/channels/faq/scheduler/health",
     "/api/admin/slack/channels/faq/stats",
-    "/api/admin/slack/prompts/reload",
     "/api/admin/task-memory/maintenance/purge-expired",
     "/api/admin/task-memory/maintenance/purge-terminal",
     "/api/admin/tenant/alerts",
