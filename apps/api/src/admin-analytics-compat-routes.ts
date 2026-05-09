@@ -1,6 +1,6 @@
 /**
  * Personal-Muse admin analytics routes extracted from
- * reactor-compat-routes.ts.
+ * compat-routes.ts.
  *
  * Wires:
  *   - GET /api/admin/debug/replay (+ /:id)
@@ -33,11 +33,11 @@ import {
   toJsonObject,
   toolCallsCsv,
   toolOutcomeStats,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 import type { JsonObject } from "@muse/shared";
 
-export function registerAdminAnalyticsCompatRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerAdminAnalyticsCompatRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   registerDebugReplayRoutes(server, options);
   registerStatsRoutes(server, options);
   registerLatencyRoutes(server, options);
@@ -46,7 +46,7 @@ export function registerAdminAnalyticsCompatRoutes(server: FastifyInstance, opti
   registerTaskMemoryMaintenanceRoutes(server, options);
 }
 
-function registerDebugReplayRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerDebugReplayRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/debug/replay", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -83,7 +83,7 @@ function registerDebugReplayRoutes(server: FastifyInstance, options: ReactorComp
   });
 }
 
-function registerStatsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerStatsRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/muse/snapshot", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -99,7 +99,7 @@ function registerStatsRoutes(server: FastifyInstance, options: ReactorCompatibil
   });
 }
 
-function registerLatencyRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerLatencyRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/metrics/latency/summary", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -136,7 +136,7 @@ function registerLatencyRoutes(server: FastifyInstance, options: ReactorCompatib
   });
 }
 
-function registerTenantExportRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerTenantExportRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/tenant/export/executions", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -156,7 +156,7 @@ function registerTenantExportRoutes(server: FastifyInstance, options: ReactorCom
   });
 }
 
-function registerToolStatsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerToolStatsRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/tools/stats", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -191,7 +191,7 @@ function registerToolStatsRoutes(server: FastifyInstance, options: ReactorCompat
   });
 }
 
-function registerTaskMemoryMaintenanceRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerTaskMemoryMaintenanceRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.post("/api/admin/task-memory/maintenance/purge-expired", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;

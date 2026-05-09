@@ -1,6 +1,6 @@
 /**
- * Reactor-compat admin platform-infrastructure routes extracted from
- * reactor-compat-routes.ts. Covers the slice of /api/admin that deals with
+ * Muse compat admin platform-infrastructure routes extracted from
+ * compat-routes.ts. Covers the slice of /api/admin that deals with
  * runtime-settings, ops dashboard, capabilities, platform health/doctor,
  * cache, and vector-store stats.
  *
@@ -30,24 +30,24 @@ import {
   readNumber,
   toBody,
   toJsonObject,
-  toReactorRuntimeSetting,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  toCompatRuntimeSetting,
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerAdminPlatformCompatRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerAdminPlatformCompatRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   registerRuntimeSettingsRoutes(server, options);
   registerOpsAndCapabilitiesRoutes(server, options);
   registerPlatformHealthRoutes(server, options);
   registerPlatformCacheInvalidationRoutes(server, options);
 }
 
-function registerRuntimeSettingsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerRuntimeSettingsRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/settings", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
     }
 
-    return (await options.runtimeSettings.list()).map(toReactorRuntimeSetting);
+    return (await options.runtimeSettings.list()).map(toCompatRuntimeSetting);
   });
   server.get("/api/admin/settings/:key", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -56,7 +56,7 @@ function registerRuntimeSettingsRoutes(server: FastifyInstance, options: Reactor
 
     const { key } = request.params as { readonly key: string };
     const setting = await options.runtimeSettings.find(key);
-    return setting ? toReactorRuntimeSetting(setting) : reply.status(404).send(errorResponse(`설정을 찾을 수 없습니다: ${key}`));
+    return setting ? toCompatRuntimeSetting(setting) : reply.status(404).send(errorResponse(`설정을 찾을 수 없습니다: ${key}`));
   });
   server.put("/api/admin/settings/:key", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
@@ -105,7 +105,7 @@ function registerRuntimeSettingsRoutes(server: FastifyInstance, options: Reactor
   });
 }
 
-function registerOpsAndCapabilitiesRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerOpsAndCapabilitiesRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/ops/dashboard", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -129,7 +129,7 @@ function registerOpsAndCapabilitiesRoutes(server: FastifyInstance, options: Reac
   });
 }
 
-function registerPlatformHealthRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerPlatformHealthRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/platform/health", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -168,7 +168,7 @@ function registerPlatformHealthRoutes(server: FastifyInstance, options: ReactorC
   });
 }
 
-function registerPlatformCacheInvalidationRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerPlatformCacheInvalidationRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.post("/api/admin/platform/cache/invalidate", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;

@@ -1,6 +1,6 @@
 /**
- * Reactor-compat agent-spec + agent-card + admin-models routes
- * extracted from reactor-compat-routes.ts.
+ * Muse compat agent-spec + agent-card + admin-models routes
+ * extracted from compat-routes.ts.
  *
  * Wires:
  *   - GET /.well-known/agent-card.json (the A2A discovery surface)
@@ -22,10 +22,10 @@ import {
   readQueryBoolean,
   toAgentSpecResponse,
   toAgentSpecUpdateInput,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerAgentCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerAgentCompatibilityRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/.well-known/agent-card.json", async () => agentCardResponse(options));
 
   server.get("/api/admin/agent-specs", async (request, reply) => {

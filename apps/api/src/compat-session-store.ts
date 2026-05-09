@@ -1,12 +1,12 @@
 /**
- * Reactor-compat session/run helpers extracted from
- * reactor-compat-routes.ts.
+ * Muse compat session/run helpers extracted from
+ * compat-routes.ts.
  *
  * Wraps options.historyStore — the AgentRunHistoryStore — into the response
- * shapes the admin and Reactor-compat session routes expect:
- *   - sessionDetail / reactorSessionDetail (per-session detail with auth gating)
+ * shapes the admin and Muse compat session routes expect:
+ *   - sessionDetail / compatSessionDetail (per-session detail with auth gating)
  *   - toSessionResponse (paginated list item)
- *   - exportSession (admin or Reactor JSON / Markdown export)
+ *   - exportSession (admin or compat JSON / Markdown export)
  *   - listAllRuns / listAllToolCalls (admin observability primitives)
  *   - summarizeUsers (recent-activity user list)
  */
@@ -22,13 +22,13 @@ import {
   readAuthUserId,
   readQueryString,
   sanitizeFilename,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
 export async function sessionDetail(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
+  options: CompatibilityRouteOptions
 ) {
   const { sessionId } = request.params as { readonly sessionId: string };
 
@@ -55,10 +55,10 @@ export async function sessionDetail(
   return { messages, run, session: run, toolCalls };
 }
 
-export async function reactorSessionDetail(
+export async function compatSessionDetail(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
+  options: CompatibilityRouteOptions
 ) {
   const { sessionId } = request.params as { readonly sessionId: string };
   const userId = readAuthUserId(request);
@@ -90,7 +90,7 @@ export async function reactorSessionDetail(
 
 export async function toSessionResponse(
   run: AgentRunRecord,
-  options: ReactorCompatibilityRouteOptions
+  options: CompatibilityRouteOptions
 ): Promise<JsonObject> {
   const messages = options.historyStore ? await options.historyStore.listMessages(run.id) : [];
   const synthesizedMessages = toSessionMessages(messages, run);
@@ -140,11 +140,11 @@ function toSessionMessages(
 export async function exportSession(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions,
-  mode: "admin" | "reactor" = "admin"
+  options: CompatibilityRouteOptions,
+  mode: "admin" | "compat" = "admin"
 ) {
-  const detail = mode === "reactor"
-    ? await reactorSessionDetail(request, reply, options)
+  const detail = mode === "compat"
+    ? await compatSessionDetail(request, reply, options)
     : await sessionDetail(request, reply, options);
 
   if (!isRecord(detail) || !("messages" in detail)) {
@@ -159,7 +159,7 @@ export async function exportSession(
     reply.header("content-disposition", `attachment; filename="${sanitizeFilename(sessionId)}.md"`);
     reply.header("content-type", "text/markdown; charset=utf-8");
 
-    if (mode === "reactor") {
+    if (mode === "compat") {
       return [
         `# Conversation: ${sessionId}`,
         "",
@@ -194,14 +194,14 @@ export async function exportSession(
   );
 
   return {
-    exportedAt: mode === "reactor" ? Date.now() : nowIso(),
+    exportedAt: mode === "compat" ? Date.now() : nowIso(),
     ...detail,
     sessionId: (request.params as { readonly sessionId: string }).sessionId
   };
 }
 
 export async function listAllRuns(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   listOptions: { readonly limit?: number; readonly offset?: number } = {}
 ): Promise<readonly AgentRunRecord[]> {
   return options.historyStore?.listRuns({
@@ -210,7 +210,7 @@ export async function listAllRuns(
   }) ?? [];
 }
 
-export async function listAllToolCalls(options: ReactorCompatibilityRouteOptions): Promise<readonly ToolCallRecord[]> {
+export async function listAllToolCalls(options: CompatibilityRouteOptions): Promise<readonly ToolCallRecord[]> {
   const runs = await listAllRuns(options);
   const toolCalls: ToolCallRecord[] = [];
 

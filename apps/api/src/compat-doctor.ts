@@ -1,11 +1,11 @@
 /**
- * Reactor-compat admin doctor diagnostic helpers extracted from
- * reactor-compat-routes.ts.
+ * Muse compat admin doctor diagnostic helpers extracted from
+ * compat-routes.ts.
  *
  * Generates the runtime-component health report exposed at
  * /api/admin/doctor (full report, JSON/text/markdown) and
  * /api/admin/doctor/summary (one-line status). Each `doctorSection`
- * inspects whether the corresponding ReactorCompatibilityRouteOptions
+ * inspects whether the corresponding CompatibilityRouteOptions
  * service is configured and reports OK/SKIPPED/WARN/ERROR.
  */
 
@@ -16,13 +16,13 @@ import {
   nowIso,
   stringField,
   toJsonObject,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
 export async function adminDiagnostic(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   mode: "report" | "summary"
 ) {
   if (!options.authorizeAdmin(request, reply)) {
@@ -66,7 +66,7 @@ export async function adminDiagnostic(
   return report;
 }
 
-function doctorReport(options: ReactorCompatibilityRouteOptions): JsonObject {
+function doctorReport(options: CompatibilityRouteOptions): JsonObject {
   const traceSinkConfigured = Boolean(options.admin?.observability?.traceSink ?? options.admin?.observability?.tracer);
 
   return {
@@ -213,7 +213,7 @@ function resolveDoctorFormat(request: FastifyRequest): "json" | "markdown" | "te
 
 function doctorHumanReadable(report: JsonObject): string {
   const lines = [
-    "=== Reactor Doctor Report ===",
+    "=== Muse Doctor Report ===",
     `생성 시각: ${stringField(report.generatedAt, nowIso())}`,
     `요약: ${doctorSummary(report)}`,
     `전체 상태: ${doctorStatusLabel(report)}`,
@@ -236,7 +236,7 @@ function doctorHumanReadable(report: JsonObject): string {
 }
 
 function doctorMarkdown(report: JsonObject): string {
-  const lines = ["*Reactor Doctor Report*", `> ${doctorSummary(report)}`, ""];
+  const lines = ["*Muse Doctor Report*", `> ${doctorSummary(report)}`, ""];
   for (const section of doctorSections(report)) {
     lines.push(
       "`[" +

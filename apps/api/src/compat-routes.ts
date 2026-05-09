@@ -48,7 +48,7 @@ import { recordedSpans, recordedTraceEvents, type AdminRouteState } from "./admi
 import type { McpRouteMcp } from "./mcp-routes.js";
 import type { SchedulerRouteScheduler } from "./scheduler-routes.js";
 
-export interface ReactorCompatibilityRouteOptions {
+export interface CompatibilityRouteOptions {
   readonly admin?: AdminRouteState;
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
@@ -99,9 +99,9 @@ interface CompatState {
 
 let state: CompatState = createCompatState();
 
-export function registerReactorCompatibilityRoutes(
+export function registerCompatibilityRoutes(
   server: FastifyInstance,
-  options: ReactorCompatibilityRouteOptions
+  options: CompatibilityRouteOptions
 ): void {
   state = createCompatState();
   registerAuthCompatibilityRoutes(server, options);
@@ -123,7 +123,7 @@ function createCompatState(): CompatState {
 }
 
 // registerAuthCompatibilityRoutes lives in apps/api/src/auth-compat-routes.ts.
-// Re-imported into the registerReactorCompatibilityRoutes call site below.
+// Re-imported into the registerCompatibilityRoutes call site below.
 
 // registerSessionCompatibilityRoutes lives in apps/api/src/session-compat-routes.ts.
 
@@ -138,7 +138,7 @@ export {
   exportSession,
   listAllRuns,
   listAllToolCalls,
-  reactorSessionDetail,
+  compatSessionDetail,
   sessionDetail,
   toSessionResponse
 } from "./compat-session-store.js";
@@ -166,7 +166,7 @@ export {
  * pulling the deleted `@muse/eval` package back in.
  */
 export async function saveDebugReplayCapture(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   record: JsonObject
 ): Promise<JsonObject> {
   if (options.debugReplayCaptureStore) {
@@ -176,7 +176,7 @@ export async function saveDebugReplayCapture(
 }
 
 export async function listDebugReplayCaptures(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   limit: number
 ): Promise<readonly JsonObject[]> {
   if (options.debugReplayCaptureStore) {
@@ -186,7 +186,7 @@ export async function listDebugReplayCaptures(
 }
 
 export async function getDebugReplayCapture(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   id: string
 ): Promise<JsonObject | undefined> {
   return options.debugReplayCaptureStore?.getDebugReplayCapture(id);
@@ -301,8 +301,8 @@ export {
   errorMessage,
   parseAuthCredentials,
   requireAuthService,
-  toReactorAuthResponse,
-  toReactorUserResponse
+  toCompatAuthResponse,
+  toCompatUserResponse
 } from "./compat-auth.js";
 
 // Model registry helpers live in apps/api/src/compat-models.ts.
@@ -351,7 +351,7 @@ export {
 
 // stringMapField lives in apps/api/src/compat-parsers.ts.
 
-export function toReactorRuntimeSetting(setting: RuntimeSetting): JsonObject {
+export function toCompatRuntimeSetting(setting: RuntimeSetting): JsonObject {
   return {
     category: setting.category,
     description: setting.description ?? null,
@@ -367,7 +367,7 @@ function runtimeSettingTypeResponse(type: string): string {
   return type.toUpperCase();
 }
 
-export function adminCapabilitiesResponse(options: ReactorCompatibilityRouteOptions): JsonObject {
+export function adminCapabilitiesResponse(options: CompatibilityRouteOptions): JsonObject {
   return {
     generatedAt: Date.now(),
     paths: [...(options.apiPathRegistry?.() ?? compatibilityApiPaths())],
@@ -445,7 +445,7 @@ function compatibilityApiPaths(): readonly string[] {
   ].sort();
 }
 
-export function opsMetricSnapshots(options: ReactorCompatibilityRouteOptions): readonly JsonObject[] {
+export function opsMetricSnapshots(options: CompatibilityRouteOptions): readonly JsonObject[] {
   const events = options.admin?.observability?.metrics?.recordedEvents() ?? [];
 
   return events.map((event) => {
@@ -484,7 +484,7 @@ export {
   nullableStringResponse,
   numberField,
   numberOrString,
-  reactorEnumString,
+  compatEnumString,
   readAuthUserId,
   readBodyNullableString,
   readBodyString,

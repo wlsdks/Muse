@@ -1,6 +1,6 @@
 /**
- * Reactor-compat session-tag store helpers extracted from
- * reactor-compat-routes.ts.
+ * Muse compat session-tag store helpers extracted from
+ * compat-routes.ts.
  *
  * Each helper dispatches to options.sessionTagStore (the configured
  * SessionTagStore) when present, otherwise falls back to the file-private
@@ -15,11 +15,11 @@ import {
   getStateSessionTags,
   readAuthUserId,
   type CompatRecord,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
 export async function createSessionTag(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   request: FastifyRequest,
   sessionId: string,
   label: string,
@@ -47,7 +47,7 @@ export async function createSessionTag(
 }
 
 export async function listSessionTags(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   sessionId: string
 ): Promise<readonly CompatRecord[]> {
   if (options.sessionTagStore) {
@@ -59,7 +59,7 @@ export async function listSessionTags(
 }
 
 export async function deleteSessionTag(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   sessionId: string,
   tagId: string
 ): Promise<boolean> {
@@ -73,7 +73,7 @@ export async function deleteSessionTag(
   return remaining.length !== tags.length;
 }
 
-export async function deleteSessionTags(options: ReactorCompatibilityRouteOptions, sessionId: string): Promise<void> {
+export async function deleteSessionTags(options: CompatibilityRouteOptions, sessionId: string): Promise<void> {
   if (options.sessionTagStore) {
     await options.sessionTagStore.deleteBySession(sessionId);
     return;

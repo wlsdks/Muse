@@ -149,7 +149,7 @@ describe("api server: chat / SSE / multipart", () => {
     expect(stream.body).not.toContain("response");
   });
 
-  it("emits Reactor-compatible SSE tool lifecycle events", async () => {
+  it("emits Muse compatible SSE tool lifecycle events", async () => {
     const toolCall = {
       arguments: { path: "docs/input.md" },
       id: "tool-1",
@@ -235,7 +235,7 @@ describe("api server: chat / SSE / multipart", () => {
     expect(stream.body).not.toContain("run-stream-tools");
   });
 
-  it("accepts Reactor-compatible multipart chat uploads", async () => {
+  it("accepts Muse compatible multipart chat uploads", async () => {
     let capturedMetadata: unknown;
     const agentRuntime = createAgentRuntime({
       modelProvider: createProviderFrom(async (request) => {

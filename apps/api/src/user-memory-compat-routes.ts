@@ -1,5 +1,5 @@
 /**
- * Reactor-compat user-memory routes extracted from reactor-compat-routes.ts.
+ * Muse compat user-memory routes extracted from compat-routes.ts.
  *
  * Wires `/api/user-memory/:userId` GET/PUT(facts/preferences)/DELETE plus
  * the `/api/error-report` 204 acknowledger. The feedback routes that
@@ -16,10 +16,10 @@ import {
   updateUserMemory,
   userForbidden,
   userMemoryNotFound,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerUserMemoryCompatRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerUserMemoryCompatRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/user-memory/:userId", async (request, reply) => {
     const { userId } = request.params as { readonly userId: string };
     if (!(await canAccessUserMemory(request, options, userId))) {

@@ -1,6 +1,6 @@
 /**
- * Reactor-compat shared parser + JSON normalizer helpers extracted from
- * reactor-compat-routes.ts. Pure utilities with no Fastify reply
+ * Muse compat shared parser + JSON normalizer helpers extracted from
+ * compat-routes.ts. Pure utilities with no Fastify reply
  * dependency — only FastifyRequest for query helpers.
  *
  * These helpers are imported by virtually every sibling compat module.
@@ -234,7 +234,7 @@ export function dateOrNull(value: unknown): Date | null {
   return dateOrUndefined(value) ?? null;
 }
 
-export function reactorEnumString(value: unknown, fallback: string): string {
+export function compatEnumString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim().toUpperCase()
     : fallback;

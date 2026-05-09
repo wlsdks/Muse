@@ -36,7 +36,7 @@ function main() {
     printReport(report, resolvedReactorRoot, resolvedMuseRoot);
   }
 
-  if (report.missingReactorTables.length > 0) {
+  if (report.missingCompatTables.length > 0) {
     process.exit(1);
   }
 }
@@ -44,10 +44,10 @@ function main() {
 export function buildDbParityReport(reactorRoot, museRoot) {
   const reactorFiles = reactorMigrationFiles(reactorRoot);
   const museFiles = [path.join(museRoot, "packages/db/src/migrations.ts")];
-  const reactorSchema = extractSqlSchema(reactorFiles);
+  const compatSchema = extractSqlSchema(reactorFiles);
   const museSchema = extractSqlSchema(museFiles);
   const museTables = new Set(museSchema.tables.map((table) => table.name));
-  const missingReactorTables = reactorSchema.tables
+  const missingCompatTables = compatSchema.tables
     .filter((table) => !museTables.has(table.name))
     .map((table) => ({
       ...table,
@@ -55,8 +55,8 @@ export function buildDbParityReport(reactorRoot, museRoot) {
     }));
 
   return {
-    missingByFamily: countBy(missingReactorTables, "family"),
-    missingReactorTables,
+    missingByFamily: countBy(missingCompatTables, "family"),
+    missingCompatTables,
     muse: {
       migrationFiles: museFiles.length,
       tableCount: museSchema.tables.length,
@@ -64,8 +64,8 @@ export function buildDbParityReport(reactorRoot, museRoot) {
     },
     reactor: {
       migrationFiles: reactorFiles.length,
-      tableCount: reactorSchema.tables.length,
-      tables: reactorSchema.tables.map((table) => table.name)
+      tableCount: compatSchema.tables.length,
+      tables: compatSchema.tables.map((table) => table.name)
     }
   };
 }
@@ -114,9 +114,9 @@ function printReport(report, reactorRoot, museRoot) {
   console.log(`Muse DB migration files: ${report.muse.migrationFiles}`);
   console.log(`Reactor tables: ${report.reactor.tableCount}`);
   console.log(`Muse tables: ${report.muse.tableCount}`);
-  console.log(`Missing Reactor tables in Muse: ${report.missingReactorTables.length}`);
+  console.log(`Missing Reactor tables in Muse: ${report.missingCompatTables.length}`);
 
-  if (report.missingReactorTables.length === 0) {
+  if (report.missingCompatTables.length === 0) {
     return;
   }
 
@@ -130,7 +130,7 @@ function printReport(report, reactorRoot, museRoot) {
 
   console.log("\nMissing tables:");
 
-  for (const table of report.missingReactorTables) {
+  for (const table of report.missingCompatTables) {
     console.log(`${table.name} [${table.family}] :: ${path.relative(reactorRoot, table.file)}:${table.line}`);
   }
 }

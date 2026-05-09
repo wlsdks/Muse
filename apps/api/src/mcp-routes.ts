@@ -171,7 +171,7 @@ export function registerMcpRoutes(server: FastifyInstance, options: McpRouteOpti
       }
 
       await mcp.manager.disconnect(name);
-      return { status: toReactorEnum(mcp.manager.getStatus(name) ?? "disconnected") };
+      return { status: toCompatEnum(mcp.manager.getStatus(name) ?? "disconnected") };
     });
 
     server.get(`${prefix}/servers/:name/health`, async (request, reply) => {
@@ -353,7 +353,7 @@ async function connectMcpServer(
   }
 
   return {
-    status: toReactorEnum(status),
+    status: toCompatEnum(status),
     tools: mcp.manager.getToolCatalog(name).map((tool) => tool.name)
   };
 }
@@ -406,7 +406,7 @@ async function reconnectMcpServer(
 
   return {
     health: mcp.manager.getHealth(name),
-    status: toReactorEnum(mcp.manager.getStatus(name) ?? "failed"),
+    status: toCompatEnum(mcp.manager.getStatus(name) ?? "failed"),
     tools: mcp.manager.getToolCatalog(name)
   };
 }
@@ -517,9 +517,9 @@ function toServerSummary(server: McpServer, manager: McpManager) {
     description: server.description ?? null,
     id: server.id,
     name: server.name,
-    status: toReactorEnum(manager.getStatus(server.name) ?? "pending"),
+    status: toCompatEnum(manager.getStatus(server.name) ?? "pending"),
     toolCount: manager.getToolCatalog(server.name).length,
-    transportType: toReactorEnum(server.transportType),
+    transportType: toCompatEnum(server.transportType),
     updatedAt: server.updatedAt.getTime()
   };
 }
@@ -532,9 +532,9 @@ function toServerDetail(server: McpServer, manager: McpManager) {
     description: server.description ?? null,
     id: server.id,
     name: server.name,
-    status: toReactorEnum(manager.getStatus(server.name) ?? "pending"),
+    status: toCompatEnum(manager.getStatus(server.name) ?? "pending"),
     tools: manager.getToolCatalog(server.name).map((tool) => tool.name),
-    transportType: toReactorEnum(server.transportType),
+    transportType: toCompatEnum(server.transportType),
     updatedAt: server.updatedAt.getTime(),
     version: server.version ?? null
   };
@@ -680,7 +680,7 @@ function parseTransportType(value: unknown): McpTransportType | undefined {
     : undefined;
 }
 
-function toReactorEnum(value: string): string {
+function toCompatEnum(value: string): string {
   return value.toUpperCase();
 }
 

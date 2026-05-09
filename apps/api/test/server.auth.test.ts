@@ -46,7 +46,7 @@ describe("api server: auth + session ownership", () => {
     expect(logout.json()).toEqual({ revoked: true });
   });
 
-  it("serves Reactor-compatible auth DTOs on api auth aliases", async () => {
+  it("serves Muse compatible auth DTOs on api auth aliases", async () => {
     const authService = createAuthService();
     const server = buildServer({ authService, logger: false, requireAuth: true });
     const email = ["compat", "example.invalid"].join("@");

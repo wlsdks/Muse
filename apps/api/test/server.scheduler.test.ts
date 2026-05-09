@@ -80,12 +80,12 @@ describe("api server: scheduler", () => {
       method: "GET",
       url: "/admin/scheduler/jobs/job-1/executions?limit=10"
     });
-    const reactorClampedJobs = await server.inject({
+    const compatClampedJobs = await server.inject({
       headers,
       method: "GET",
       url: "/api/scheduler/jobs?limit=150"
     });
-    const reactorClampedExecutions = await server.inject({
+    const compatClampedExecutions = await server.inject({
       headers,
       method: "GET",
       url: "/api/scheduler/jobs/job-1/executions?limit=10&pageLimit=150"
@@ -133,8 +133,8 @@ describe("api server: scheduler", () => {
       ],
       total: 2
     });
-    expect(reactorClampedJobs.json()).toMatchObject({ limit: 150, total: 1 });
-    expect(reactorClampedExecutions.json()).toMatchObject({ limit: 150, total: 2 });
+    expect(compatClampedJobs.json()).toMatchObject({ limit: 150, total: 1 });
+    expect(compatClampedExecutions.json()).toMatchObject({ limit: 150, total: 2 });
     expect(updated.json()).toMatchObject({ enabled: false, name: "Renamed agent job" });
     expect(listed.json()).toMatchObject({ items: [{ id: "job-1" }], total: 1 });
     expect(deleted.statusCode).toBe(204);
@@ -146,7 +146,7 @@ describe("api server: scheduler", () => {
     expect(afterDelete.json()).not.toHaveProperty("code");
   });
 
-  it("matches Reactor scheduler stub responses when no scheduler is configured", async () => {
+  it("matches scheduler stub responses when no scheduler is configured", async () => {
     const server = buildServer({ logger: false });
 
     const jobs = await server.inject({ method: "GET", url: "/api/scheduler/jobs" });

@@ -1,6 +1,6 @@
 /**
- * Reactor-compat admin sessions + users routes extracted from
- * reactor-compat-routes.ts.
+ * Muse compat admin sessions + users routes extracted from
+ * compat-routes.ts.
  *
  * Wires:
  *   - GET /api/admin/sessions/overview
@@ -28,16 +28,16 @@ import {
   readBodyString,
   readQueryInteger,
   sessionDetail,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerAdminSessionCompatRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerAdminSessionCompatRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   registerSessionRoutes(server, options);
 
   server.get("/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
 }
 
-function registerSessionRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerSessionRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/sessions/overview", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;

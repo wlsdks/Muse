@@ -14,7 +14,7 @@ import { buildServer } from "../src/server.js";
 import { createAuthService } from "./helpers/test-auth.js";
 
 describe("api server: admin / ops / settings / memory", () => {
-  it("persists Reactor-compatible session tags through the configured store", async () => {
+  it("persists Muse compatible session tags through the configured store", async () => {
     const historyStore = new InMemoryAgentRunHistoryStore();
     const sessionTagStore = new InMemorySessionTagStore({
       idFactory: () => "session-tag-1",
@@ -137,7 +137,7 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(executions.json()).toMatchObject({ items: [{ jobId: "job-1" }], total: 1 });
   });
 
-  it("matches Reactor ops dashboard authorization and stateful summary behavior", async () => {
+  it("matches ops dashboard authorization and stateful summary behavior", async () => {
     const authService = createAuthService();
     const admin = authService.register({
       email: "ops_admin",
@@ -388,7 +388,7 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(summary.json()).toEqual(cost.json());
   });
 
-  it("matches Reactor admin policy, settings, and dashboard contracts", async () => {
+  it("matches admin policy, settings, and dashboard contracts", async () => {
     const authService = createAuthService();
     const admin = authService.register({
       email: "first_account",
@@ -478,7 +478,7 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(runtimeDelete.statusCode).toBe(204);
   });
 
-  it("enforces Reactor-compatible user memory ownership and proactive channel DTOs", async () => {
+  it("enforces Muse compatible user memory ownership and proactive channel DTOs", async () => {
     const authService = createAuthService();
     const owner = authService.register({
       email: "owner_account",
@@ -523,7 +523,7 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(forbidden.statusCode).toBe(403);
   });
 
-  it("matches Reactor task memory maintenance availability and purge semantics", async () => {
+  it("matches task memory maintenance availability and purge semantics", async () => {
     const authService = createAuthService();
     const registered = authService.register({
       email: "task_memory_admin",

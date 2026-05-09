@@ -1,9 +1,9 @@
 /**
- * Pure CSV helpers used across the Reactor-compat admin export endpoints
+ * Pure CSV helpers used across the Muse compat admin export endpoints
  * (`/api/admin/audits/export`, `/api/admin/tenant/export/{executions,tools}`).
  *
  * Kept in their own module so they don't depend on the
- * ReactorCompatibilityRouteOptions surface.
+ * CompatibilityRouteOptions surface.
  */
 
 import type { AgentRunRecord, ToolCallRecord } from "@muse/runtime-state";

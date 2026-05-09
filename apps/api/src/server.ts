@@ -42,7 +42,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { registerAdminRoutes, type AdminRouteState } from "./admin-routes.js";
 import { registerMcpRoutes, type McpRouteMcp } from "./mcp-routes.js";
 import { registerMultiAgentRoutes } from "./multi-agent-routes.js";
-import { registerReactorCompatibilityRoutes } from "./reactor-compat-routes.js";
+import { registerCompatibilityRoutes } from "./compat-routes.js";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
 
 export interface ServerOptions {
@@ -104,17 +104,17 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     logger: options.logger ?? true
   });
   server.addHook("onRequest", async (request, reply) => {
-    applyReactorWebContractHeaders(request.url, request.headers["x-request-id"], reply);
+    applyCompatWebContractHeaders(request.url, request.headers["x-request-id"], reply);
     applyCorsHeaders(options.cors, request.headers.origin, reply);
 
     if (request.method === "OPTIONS") {
       return reply.status(204).send();
     }
 
-    const requestedVersion = headerValue(request.headers["x-reactor-api-version"])?.trim();
-    if (requestedVersion && !supportedReactorApiVersions().includes(requestedVersion)) {
+    const requestedVersion = headerValue(request.headers["x-muse-api-version"])?.trim();
+    if (requestedVersion && !supportedCompatApiVersions().includes(requestedVersion)) {
       return reply.status(400).send({
-        error: `Unsupported API version '${requestedVersion}'. Supported versions: ${supportedReactorApiVersions().join(", ")}`,
+        error: `Unsupported API version '${requestedVersion}'. Supported versions: ${supportedCompatApiVersions().join(", ")}`,
         timestamp: new Date().toISOString()
       });
     }
@@ -183,9 +183,9 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   server.get("/api/openapi.json", async () => createOpenApiDocument(apiRouteMethods));
 
   server.post("/chat", async (request, reply) => runChat(request.body, reply, options, "extended", getAuthIdentity(request)?.userId));
-  server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options, "reactor", getAuthIdentity(request)?.userId));
+  server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options, "compat", getAuthIdentity(request)?.userId));
   server.post("/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "extended", getAuthIdentity(request)?.userId));
-  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "reactor", getAuthIdentity(request)?.userId));
+  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "compat", getAuthIdentity(request)?.userId));
   server.post("/api/chat/multipart", async (request, reply) => runMultipartChat(request.body, reply, options, getAuthIdentity(request)?.userId));
 
   server.get("/admin/summary", async (request, reply) => {
@@ -311,7 +311,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     agentSpecRegistry,
     defaultModel: options.defaultModel
   });
-  registerReactorCompatibilityRoutes(server, {
+  registerCompatibilityRoutes(server, {
     admin: options.admin,
     agentRuntime: options.agentRuntime,
     agentSpecRegistry,
@@ -651,7 +651,7 @@ function toSpringPathTemplate(path: string): string {
   return path.replace(/:([A-Za-z0-9_]+)/gu, "{$1}");
 }
 
-function applyReactorWebContractHeaders(
+function applyCompatWebContractHeaders(
   path: string,
   requestIdHeader: string | string[] | undefined,
   reply: {
@@ -668,8 +668,8 @@ function applyReactorWebContractHeaders(
   reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
   reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   reply.header("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()");
-  reply.header("X-Reactor-Api-Version", currentReactorApiVersion());
-  reply.header("X-Reactor-Api-Supported-Versions", supportedReactorApiVersions().join(","));
+  reply.header("X-Muse-Api-Version", currentCompatApiVersion());
+  reply.header("X-Muse-Api-Supported-Versions", supportedCompatApiVersions().join(","));
 
   if (isSensitivePath(path)) {
     reply.header("Cache-Control", "no-store");
@@ -725,15 +725,15 @@ function defaultCorsMethods(): readonly string[] {
 }
 
 function defaultCorsHeaders(): readonly string[] {
-  return ["authorization", "content-type", "x-request-id", "x-reactor-api-version"];
+  return ["authorization", "content-type", "x-request-id", "x-muse-api-version"];
 }
 
-function currentReactorApiVersion(): string {
+function currentCompatApiVersion(): string {
   return "1";
 }
 
-function supportedReactorApiVersions(): readonly string[] {
-  return [currentReactorApiVersion()];
+function supportedCompatApiVersions(): readonly string[] {
+  return [currentCompatApiVersion()];
 }
 
 function isSensitivePath(path: string): boolean {
@@ -799,7 +799,7 @@ async function runChat(
   body: unknown,
   reply: { status(statusCode: number): { send(payload: unknown): void } },
   options: ServerOptions,
-  responseMode: "extended" | "reactor",
+  responseMode: "extended" | "compat",
   authUserId?: string
 ) {
   if (!options.agentRuntime) {
@@ -817,7 +817,7 @@ async function runChat(
 
   try {
     const result = await options.agentRuntime.run(parsed.value);
-    return responseMode === "reactor" ? toReactorChatResponse(result) : toExtendedChatResponse(result);
+    return responseMode === "compat" ? toCompatChatResponse(result) : toExtendedChatResponse(result);
   } catch (error) {
     return sendAgentError(reply, error, responseMode);
   }
@@ -831,7 +831,7 @@ async function runChatStream(
     send(payload: unknown): unknown;
   },
   options: ServerOptions,
-  responseMode: "extended" | "reactor",
+  responseMode: "extended" | "compat",
   authUserId?: string
 ) {
   if (!options.agentRuntime) {
@@ -864,7 +864,7 @@ async function runMultipartChat(
     return reply.status(400).send(parsed.error);
   }
 
-  return runChat(parsed.value, reply, options, "reactor", authUserId);
+  return runChat(parsed.value, reply, options, "compat", authUserId);
 }
 
 function parseMultipartChatBody(value: unknown): ParseResult<JsonObject> {
@@ -909,7 +909,7 @@ function parseAgentRunInput(value: unknown, defaultModel: string, authUserId?: s
     return invalid("INVALID_CHAT_REQUEST", "Body must include message or messages");
   }
 
-  const metadata = reactorChatMetadata(value, authUserId);
+  const metadata = compatChatMetadata(value, authUserId);
 
   return {
     ok: true,
@@ -975,7 +975,7 @@ function prependSystemPrompt(
     : [{ content: systemPrompt, role: "system" }, ...messages];
 }
 
-function reactorChatMetadata(value: Record<string, unknown>, authUserId?: string): JsonObject {
+function compatChatMetadata(value: Record<string, unknown>, authUserId?: string): JsonObject {
   const entries: Record<string, JsonValue> = isJsonObject(value.metadata) ? { ...value.metadata } : {};
   const userId = optionalString(value.userId) ?? optionalString(entries.userId) ?? authUserId;
   const personaId = optionalString(value.personaId);
@@ -1051,9 +1051,9 @@ function parseToolCalls(value: unknown): AgentRunInput["messages"][number]["tool
   return parsed.length === value.length ? parsed : undefined;
 }
 
-function toReactorChatResponse(result: AgentRunResult) {
-  const tokenUsage = reactorTokenUsage(result.response.usage);
-  const metadata = reactorResponseMetadata(result);
+function toCompatChatResponse(result: AgentRunResult) {
+  const tokenUsage = compatTokenUsage(result.response.usage);
+  const metadata = compatResponseMetadata(result);
 
   return {
     blockReason: typeof metadata.blockReason === "string" ? metadata.blockReason : null,
@@ -1088,7 +1088,7 @@ function previewText(value: string, maxLength: number): string {
 
 function toExtendedChatResponse(result: AgentRunResult) {
   return {
-    ...toReactorChatResponse(result),
+    ...toCompatChatResponse(result),
     agentSpec: result.agentSpec,
     contextWindow: result.contextWindow,
     fromCache: result.fromCache ?? false,
@@ -1098,7 +1098,7 @@ function toExtendedChatResponse(result: AgentRunResult) {
   };
 }
 
-function reactorTokenUsage(usage: AgentRunResult["response"]["usage"]) {
+function compatTokenUsage(usage: AgentRunResult["response"]["usage"]) {
   if (!usage) {
     return null;
   }
@@ -1116,7 +1116,7 @@ function reactorTokenUsage(usage: AgentRunResult["response"]["usage"]) {
   };
 }
 
-function reactorResponseMetadata(result: AgentRunResult): JsonObject {
+function compatResponseMetadata(result: AgentRunResult): JsonObject {
   return {
     ...(result.agentSpec
       ? {
@@ -1146,7 +1146,7 @@ function reactorResponseMetadata(result: AgentRunResult): JsonObject {
 function sendAgentError(
   reply: { status(statusCode: number): { send(payload: ApiError): void } },
   error: unknown,
-  responseMode: "extended" | "reactor"
+  responseMode: "extended" | "compat"
 ) {
   if (error instanceof GuardBlockedError) {
     return reply.status(403).send(chatErrorResponse({
@@ -1226,7 +1226,7 @@ function chatErrorResponse(
     readonly errorMessage: string;
     readonly message: string;
   },
-  responseMode: "extended" | "reactor"
+  responseMode: "extended" | "compat"
 ) {
   const response = {
     blockReason: error.blockReason ?? null,
@@ -1243,7 +1243,7 @@ function chatErrorResponse(
     verifiedSourceCount: null
   };
 
-  return responseMode === "reactor"
+  return responseMode === "compat"
     ? response
     : {
       ...response,
@@ -1423,7 +1423,7 @@ function sseData(value: string): string {
 
 async function* toSseStream(
   events: ReturnType<AgentRuntime["stream"]>,
-  responseMode: "extended" | "reactor"
+  responseMode: "extended" | "compat"
 ): AsyncIterable<string> {
   for await (const event of events) {
     if (event.type === "text-delta") {
@@ -1432,7 +1432,7 @@ async function* toSseStream(
     }
 
     if (event.type === "tool-call") {
-      if (responseMode === "reactor") {
+      if (responseMode === "compat") {
         yield `event: tool_start\ndata: ${sseData(event.toolCall.name)}\n\n`;
         continue;
       }
@@ -1442,7 +1442,7 @@ async function* toSseStream(
     }
 
     if (event.type === "tool-result") {
-      if (responseMode === "reactor") {
+      if (responseMode === "compat") {
         yield `event: tool_end\ndata: ${sseData(event.toolCall.name)}\n\n`;
       }
 
@@ -1478,7 +1478,7 @@ async function* toSseStream(
       continue;
     }
 
-    if (responseMode === "reactor") {
+    if (responseMode === "compat") {
       yield "event: done\ndata:\n\n";
       continue;
     }

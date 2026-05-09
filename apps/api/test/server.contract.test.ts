@@ -23,7 +23,7 @@ describe("api server: web contract + manifest", () => {
     });
   });
 
-  it("applies Reactor-compatible web contract headers", async () => {
+  it("applies Muse compatible web contract headers", async () => {
     const server = buildServer({ logger: false });
 
     const response = await server.inject({
@@ -45,23 +45,23 @@ describe("api server: web contract + manifest", () => {
     expect(response.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
     expect(response.headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains; preload");
     expect(response.headers["permissions-policy"]).toBe("geolocation=(), camera=(), microphone=(), payment=()");
-    expect(response.headers["x-reactor-api-version"]).toBe("1");
-    expect(response.headers["x-reactor-api-supported-versions"]).toBe("1");
+    expect(response.headers["x-muse-api-version"]).toBe("1");
+    expect(response.headers["x-muse-api-supported-versions"]).toBe("1");
     expect(sensitive.headers["cache-control"]).toBe("no-store");
   });
 
-  it("rejects unsupported Reactor API versions before route handling", async () => {
+  it("rejects unsupported compat API versions before route handling", async () => {
     const server = buildServer({ logger: false });
 
     const response = await server.inject({
-      headers: { "x-reactor-api-version": "999" },
+      headers: { "x-muse-api-version": "999" },
       method: "GET",
       url: "/health"
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.headers["x-reactor-api-version"]).toBe("1");
-    expect(response.headers["x-reactor-api-supported-versions"]).toBe("1");
+    expect(response.headers["x-muse-api-version"]).toBe("1");
+    expect(response.headers["x-muse-api-supported-versions"]).toBe("1");
     expect(response.json()).toMatchObject({
       error: "Unsupported API version '999'. Supported versions: 1"
     });

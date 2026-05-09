@@ -1,5 +1,5 @@
 /**
- * Reactor-compat auth helpers extracted from reactor-compat-routes.ts.
+ * Muse compat auth helpers extracted from compat-routes.ts.
  * Covers required-service guards, credential parsing, response shape,
  * rate-limit key construction, and the generic Error → message helper.
  */
@@ -11,10 +11,10 @@ import {
   invalid,
   isRecord,
   type ParseResult,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function requireAuthService(options: ReactorCompatibilityRouteOptions, reply: FastifyReply): MuseAuth | undefined {
+export function requireAuthService(options: CompatibilityRouteOptions, reply: FastifyReply): MuseAuth | undefined {
   if (!options.authService) {
     reply.status(404).send({
       code: "AUTH_UNAVAILABLE",
@@ -60,15 +60,15 @@ export function parseAuthCredentials(
   };
 }
 
-export function toReactorAuthResponse(login: LoginResult): JsonObject {
+export function toCompatAuthResponse(login: LoginResult): JsonObject {
   return {
     error: null,
     token: login.token,
-    user: toReactorUserResponse(login.user)
+    user: toCompatUserResponse(login.user)
   };
 }
 
-export function toReactorUserResponse(user: LoginResult["user"]): JsonObject {
+export function toCompatUserResponse(user: LoginResult["user"]): JsonObject {
   return {
     email: user.email,
     id: user.id,

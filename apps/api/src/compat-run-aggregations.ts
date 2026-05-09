@@ -1,6 +1,6 @@
 /**
- * Pure aggregation helpers for the Reactor-compat admin observability and
- * analytics routes. None take ReactorCompatibilityRouteOptions, none touch
+ * Pure aggregation helpers for the Muse compat admin observability and
+ * analytics routes. None take CompatibilityRouteOptions, none touch
  * DB stores, none have I/O side effects — they consume readonly arrays of
  * AgentRunRecord/ToolCallRecord and return plain JSON envelopes.
  *
@@ -15,7 +15,7 @@
 import type { AgentRunRecord, ToolCallRecord } from "@muse/runtime-state";
 import type { LatencyPoint, LatencySummary } from "@muse/observability";
 import type { JsonObject } from "@muse/shared";
-import { numberField } from "./reactor-compat-routes.js";
+import { numberField } from "./compat-routes.js";
 
 export function toolCallRanking(toolCalls: readonly ToolCallRecord[]) {
   const byName = new Map<string, { failures: number; name: string; total: number }>();

@@ -1,6 +1,6 @@
 /**
- * Reactor-compat MCP admin proxy helpers extracted from
- * reactor-compat-routes.ts. Wraps fetch() with admin-token auth +
+ * Muse compat MCP admin proxy helpers extracted from
+ * compat-routes.ts. Wraps fetch() with admin-token auth +
  * configurable timeout, and parses MCP access policy bodies.
  */
 
@@ -15,11 +15,11 @@ import {
   readStringSet,
   toBody,
   type ParseResult,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
 export async function findMcpCompatServer(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   name: string
 ): Promise<McpServer | undefined> {
   return (await options.mcp?.manager.listServers())?.find((server) => server.name === name);
@@ -28,7 +28,7 @@ export async function findMcpCompatServer(
 export function mcpProxyUnavailable(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
+  options: CompatibilityRouteOptions
 ) {
   const { name } = request.params as { readonly name: string };
 
@@ -48,7 +48,7 @@ export function mcpProxyUnavailable(
 export async function proxySwaggerSourceRequest(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   method: "GET" | "POST" | "PUT",
   path: string,
   body?: JsonObject

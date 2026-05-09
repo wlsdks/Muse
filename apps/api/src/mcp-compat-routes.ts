@@ -1,6 +1,6 @@
 /**
- * Reactor-compat MCP server admin routes extracted from
- * reactor-compat-routes.ts.
+ * Muse compat MCP server admin routes extracted from
+ * compat-routes.ts.
  *
  * Wires:
  *   - GET    /api/mcp/servers/:name/preflight
@@ -29,10 +29,10 @@ import {
   swaggerSourcePath,
   toBody,
   toJsonObject,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerMcpCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerMcpCompatibilityRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/mcp/servers/:name/preflight", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;

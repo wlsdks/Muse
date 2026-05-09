@@ -1,6 +1,6 @@
 /**
- * Reactor-compat shared response shape helpers extracted from
- * reactor-compat-routes.ts. Owns the error envelope, validation
+ * Muse compat shared response shape helpers extracted from
+ * compat-routes.ts. Owns the error envelope, validation
  * detail prefixing, the not-found / bad-request 404 + 400 helpers,
  * pagination clamp, and the ParseResult / ApiError types.
  */

@@ -19,7 +19,7 @@ describe("verify-reactor-db-parity", () => {
         CREATE TABLE IF NOT EXISTS agent_runs (id text primary key);
         CREATE TABLE IF NOT EXISTS pending_approvals (id text primary key);
       `,
-      reactorSql: `
+      compatSql: `
         CREATE TABLE conversation_messages (id uuid primary key);
         CREATE TABLE IF NOT EXISTS pending_approvals (id text primary key);
         CREATE TABLE public.feedback (id text primary key);
@@ -30,7 +30,7 @@ describe("verify-reactor-db-parity", () => {
 
     expect(report.reactor.tableCount).toBe(3);
     expect(report.muse.tableCount).toBe(2);
-    expect(report.missingReactorTables.map((table) => table.name)).toEqual([
+    expect(report.missingCompatTables.map((table) => table.name)).toEqual([
       "conversation_messages",
       "feedback"
     ]);
@@ -43,7 +43,7 @@ describe("verify-reactor-db-parity", () => {
   it("ignores comments and de-duplicates repeated table definitions", () => {
     const root = createFixture({
       museSql: "CREATE TABLE IF NOT EXISTS users (id text primary key);",
-      reactorSql: `
+      compatSql: `
         -- CREATE TABLE commented_out (id text);
         CREATE TABLE users (id text primary key);
         CREATE TABLE IF NOT EXISTS users (id text primary key);
@@ -54,13 +54,13 @@ describe("verify-reactor-db-parity", () => {
     const report = buildDbParityReport(root.reactor, root.muse);
 
     expect(report.reactor.tables).toEqual(["users"]);
-    expect(report.missingReactorTables).toEqual([]);
+    expect(report.missingCompatTables).toEqual([]);
   });
 });
 
 function createFixture(input: {
   readonly museSql: string;
-  readonly reactorSql: string;
+  readonly compatSql: string;
 }): { readonly muse: string; readonly reactor: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "muse-db-parity-"));
   tempDirs.push(root);
@@ -73,7 +73,7 @@ function createFixture(input: {
   fs.writeFileSync(path.join(reactor, "settings.gradle.kts"), "rootProject.name = \"reactor\"\n");
   fs.writeFileSync(
     path.join(reactor, "modules/persistence-schema/src/main/resources/db/migration/V1__fixture.sql"),
-    input.reactorSql
+    input.compatSql
   );
   fs.writeFileSync(path.join(muse, "packages/db/src/migrations.ts"), input.museSql);
 

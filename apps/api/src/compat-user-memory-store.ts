@@ -1,6 +1,6 @@
 /**
- * Reactor-compat user-memory + auth-identity helpers extracted from
- * reactor-compat-routes.ts.
+ * Muse compat user-memory + auth-identity helpers extracted from
+ * compat-routes.ts.
  *
  * Each store helper dispatches to options.userMemoryStore (the configured
  * @muse/memory UserMemoryStore) when present, otherwise falls back to the
@@ -16,14 +16,14 @@ import {
   nowIso,
   readBodyString,
   toBody,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
 export async function updateUserMemory(
   request: FastifyRequest,
   reply: FastifyReply,
   key: "facts" | "preferences",
-  options?: ReactorCompatibilityRouteOptions
+  options?: CompatibilityRouteOptions
 ) {
   const { userId } = request.params as { readonly userId: string };
   const body = toBody(request.body);
@@ -59,7 +59,7 @@ export async function updateUserMemory(
 }
 
 export async function readUserMemory(
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   userId: string
 ): Promise<UserMemory | {
   readonly facts: Record<string, string>;
@@ -70,14 +70,14 @@ export async function readUserMemory(
   return await options.userMemoryStore?.findByUserId(userId) ?? getStateUserMemory().get(userId);
 }
 
-export async function deleteUserMemory(options: ReactorCompatibilityRouteOptions, userId: string): Promise<void> {
+export async function deleteUserMemory(options: CompatibilityRouteOptions, userId: string): Promise<void> {
   await options.userMemoryStore?.deleteByUserId(userId);
   getStateUserMemory().delete(userId);
 }
 
 export async function canAccessUserMemory(
   request: FastifyRequest,
-  options: ReactorCompatibilityRouteOptions,
+  options: CompatibilityRouteOptions,
   userId: string
 ): Promise<boolean> {
   if (userId.trim().length === 0 || userId.toLowerCase() === "anonymous") {
@@ -90,7 +90,7 @@ export async function canAccessUserMemory(
 
 export async function currentAuthIdentity(
   request: FastifyRequest,
-  options: ReactorCompatibilityRouteOptions
+  options: CompatibilityRouteOptions
 ): Promise<AuthIdentity | undefined> {
   return (request as { auth?: AuthIdentity }).auth
     ?? await options.authService?.authenticateBearer(extractBearerToken(request.headers.authorization));

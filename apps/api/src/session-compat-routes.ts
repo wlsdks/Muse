@@ -1,8 +1,8 @@
 /**
- * Reactor-compat session routes extracted from reactor-compat-routes.ts.
+ * Muse compat session routes extracted from compat-routes.ts.
  *
  * Wires `/api/sessions*` and `/api/models` so call sites in
- * registerReactorCompatibilityRoutes don't change.
+ * registerCompatibilityRoutes don't change.
  */
 
 import type { FastifyInstance } from "fastify";
@@ -13,14 +13,14 @@ import {
   isAdminLikeRequest,
   listSessionModels,
   nowIso,
-  reactorSessionDetail,
+  compatSessionDetail,
   readAuthUserId,
   readQueryInteger,
   toSessionResponse,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerSessionCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerSessionCompatibilityRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/sessions", async (request, reply) => {
     const userId = readAuthUserId(request);
     const offset = Math.max(0, readQueryInteger(request, "offset", 0));
@@ -51,9 +51,9 @@ export function registerSessionCompatibilityRoutes(server: FastifyInstance, opti
     };
   });
 
-  server.get("/api/sessions/:sessionId", async (request, reply) => reactorSessionDetail(request, reply, options));
+  server.get("/api/sessions/:sessionId", async (request, reply) => compatSessionDetail(request, reply, options));
   server.get("/api/sessions/:sessionId/export", async (request, reply) =>
-    exportSession(request, reply, options, "reactor")
+    exportSession(request, reply, options, "compat")
   );
   server.delete("/api/sessions/:sessionId", async (request, reply) => {
     const { sessionId } = request.params as { readonly sessionId: string };

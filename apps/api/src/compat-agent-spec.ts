@@ -1,7 +1,7 @@
 /**
- * Reactor-compat agent-spec helpers extracted from reactor-compat-routes.ts.
+ * Muse compat agent-spec helpers extracted from compat-routes.ts.
  *
- * Bridges the @muse/agent-specs registry into the Reactor compat shape
+ * Bridges the @muse/agent-specs registry into the Muse compat shape
  * (parse + validate input, render the API response, build the agent card)
  * for /.well-known/agent-card.json and /api/admin/agent-specs/* routes.
  */
@@ -21,8 +21,8 @@ import {
   readStringArray,
   type ApiError,
   type ParseResult,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
 export function parseAgentSpecInput(value: unknown, id?: string): ParseResult<AgentSpecInput> {
   if (!isRecord(value)) {
@@ -63,7 +63,7 @@ export async function findAgentSpec(registry: AgentSpecRegistry, id: string) {
 export async function findAgentSpecOrReply(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ReactorCompatibilityRouteOptions
+  options: CompatibilityRouteOptions
 ) {
   if (!options.authorizeAdmin(request, reply)) {
     return undefined;
@@ -132,7 +132,7 @@ export function toAgentSpecResponse(spec: AgentSpec): JsonObject {
   };
 }
 
-export async function agentCardResponse(options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
+export async function agentCardResponse(options: CompatibilityRouteOptions): Promise<JsonObject> {
   const specs = await options.agentSpecRegistry.listEnabled();
   const tools = options.agentCardToolProvider
     ? await options.agentCardToolProvider()

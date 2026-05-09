@@ -1,6 +1,6 @@
 /**
- * Reactor-compat admin observability routes extracted from
- * reactor-compat-routes.ts.
+ * Muse compat admin observability routes extracted from
+ * compat-routes.ts.
  *
  * Wires:
  *   - GET /api/admin/traces (+ /:traceId/spans)
@@ -22,17 +22,17 @@ import {
   readQueryInteger,
   readQueryString,
   toolCallRanking,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerAdminObservabilityCompatRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerAdminObservabilityCompatRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   registerTraceRoutes(server, options);
   registerToolCallRoutes(server, options);
   registerTokenCostRoutes(server, options);
   registerConversationAnalyticsRoutes(server, options);
 }
 
-function registerTraceRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerTraceRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/traces", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -62,7 +62,7 @@ function registerTraceRoutes(server: FastifyInstance, options: ReactorCompatibil
   });
 }
 
-function registerToolCallRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerToolCallRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/tool-calls", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -82,7 +82,7 @@ function registerToolCallRoutes(server: FastifyInstance, options: ReactorCompati
   });
 }
 
-function registerTokenCostRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerTokenCostRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/token-cost/by-session", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
@@ -165,7 +165,7 @@ function registerTokenCostRoutes(server: FastifyInstance, options: ReactorCompat
   });
 }
 
-function registerConversationAnalyticsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+function registerConversationAnalyticsRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.get("/api/admin/conversation-analytics/failure-patterns", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;

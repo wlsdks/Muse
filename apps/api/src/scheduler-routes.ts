@@ -276,12 +276,12 @@ function toScheduledJobResponse(job: ScheduledJob) {
     enabled: job.enabled,
     executionTimeoutMs: job.executionTimeoutMs ?? null,
     id: job.id,
-    jobType: toReactorSchedulerEnum(job.jobType),
+    jobType: toCompatSchedulerEnum(job.jobType),
     lastFailureReason: schedulerFailureReason(job.lastResult) ?? null,
     lastResult: job.lastResult ?? null,
     lastResultPreview: schedulerResultPreview(job.lastResult) ?? null,
     lastRunAt: job.lastRunAt?.getTime() ?? null,
-    lastStatus: job.lastStatus ? toReactorSchedulerEnum(job.lastStatus) : null,
+    lastStatus: job.lastStatus ? toCompatSchedulerEnum(job.lastStatus) : null,
     maxRetryCount: job.maxRetryCount,
     mcpServerName: job.mcpServerName ?? null,
     name: job.name,
@@ -309,11 +309,11 @@ function toScheduledJobExecutionResponse(execution: ScheduledJobExecution) {
     result: execution.result ?? null,
     resultPreview: schedulerResultPreview(execution.result) ?? null,
     startedAt: execution.startedAt.getTime(),
-    status: toReactorSchedulerEnum(execution.status)
+    status: toCompatSchedulerEnum(execution.status)
   };
 }
 
-function toReactorSchedulerEnum(value: string): string {
+function toCompatSchedulerEnum(value: string): string {
   return value.toUpperCase();
 }
 

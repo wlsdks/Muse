@@ -1,14 +1,14 @@
 /**
- * Reactor-compat model registry helpers extracted from
- * reactor-compat-routes.ts. Covers /api/sessions/models (the dropdown
+ * Muse compat model registry helpers extracted from
+ * compat-routes.ts. Covers /api/sessions/models (the dropdown
  * source for the chat surface) and the agent-mode normalizers
  * (parseAgentMode, agentModeResponse).
  */
 
 import type { AgentSpecInput } from "@muse/agent-specs";
-import type { ReactorCompatibilityRouteOptions } from "./reactor-compat-routes.js";
+import type { CompatibilityRouteOptions } from "./compat-routes.js";
 
-export async function listSessionModels(options: ReactorCompatibilityRouteOptions) {
+export async function listSessionModels(options: CompatibilityRouteOptions) {
   const models = await options.modelProvider?.listModels();
   const names = models && models.length > 0
     ? models.map((model) => `${model.providerId}/${model.modelId}`)

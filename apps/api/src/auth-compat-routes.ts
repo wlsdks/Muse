@@ -1,10 +1,10 @@
 /**
- * Reactor-compat auth routes extracted from reactor-compat-routes.ts.
+ * Muse compat auth routes extracted from compat-routes.ts.
  *
  * Wires `/api/auth/*` endpoints (register, login,
  * me, logout, change-password) using the shared
- * `ReactorCompatibilityRouteOptions` so call sites in
- * registerReactorCompatibilityRoutes don't change.
+ * `CompatibilityRouteOptions` so call sites in
+ * registerCompatibilityRoutes don't change.
  */
 
 import { extractBearerToken, type LoginResult } from "@muse/auth";
@@ -16,12 +16,12 @@ import {
   parseAuthCredentials,
   readBodyString,
   requireAuthService,
-  toReactorAuthResponse,
-  toReactorUserResponse,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  toCompatAuthResponse,
+  toCompatUserResponse,
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export function registerAuthCompatibilityRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
+export function registerAuthCompatibilityRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
   server.post("/api/auth/register", async (request, reply) => {
     const authService = requireAuthService(options, reply);
 
@@ -45,7 +45,7 @@ export function registerAuthCompatibilityRoutes(server: FastifyInstance, options
         normalizedLogin = relogin ?? (normalizedUser ? { ...login, user: normalizedUser } : login);
       }
 
-      return reply.status(201).send(toReactorAuthResponse(normalizedLogin));
+      return reply.status(201).send(toCompatAuthResponse(normalizedLogin));
     } catch (error) {
       const code = error instanceof Error && "code" in error ? String(error.code) : "REGISTRATION_FAILED";
       return reply.status(code === "USER_EXISTS" ? 409 : 400).send({
@@ -79,7 +79,7 @@ export function registerAuthCompatibilityRoutes(server: FastifyInstance, options
       });
     }
 
-    return toReactorAuthResponse(login);
+    return toCompatAuthResponse(login);
   });
 
   server.get("/api/auth/me", async (request, reply) => {
@@ -104,7 +104,7 @@ export function registerAuthCompatibilityRoutes(server: FastifyInstance, options
       });
     }
 
-    return toReactorUserResponse(user);
+    return toCompatUserResponse(user);
   });
 
   server.post("/api/auth/logout", async (request, reply) => {

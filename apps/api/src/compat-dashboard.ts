@@ -1,6 +1,6 @@
 /**
- * Reactor-compat ops dashboard + platform health summary helpers extracted
- * from reactor-compat-routes.ts.
+ * Muse compat ops dashboard + platform health summary helpers extracted
+ * from compat-routes.ts.
  *
  * Generates the envelope returned by /api/ops/dashboard
  * (MCP status, scheduler stats, response trust events, ops metric
@@ -16,13 +16,13 @@ import {
   nullableStringResponse,
   opsMetricSnapshots,
   readBoolean,
-  reactorEnumString,
+  compatEnumString,
   stringField,
   toJsonObject,
-  type ReactorCompatibilityRouteOptions
-} from "./reactor-compat-routes.js";
+  type CompatibilityRouteOptions
+} from "./compat-routes.js";
 
-export async function dashboardSummary(options: ReactorCompatibilityRouteOptions) {
+export async function dashboardSummary(options: CompatibilityRouteOptions) {
   const [scheduledJobs, mcpServers, recentExecutions] = await Promise.all([
     options.scheduler?.store.list() ?? [],
     options.mcp?.manager.listServers() ?? [],
@@ -51,22 +51,22 @@ export async function dashboardSummary(options: ReactorCompatibilityRouteOptions
   };
 }
 
-export async function platformHealthDashboard(options: ReactorCompatibilityRouteOptions): Promise<JsonObject> {
+export async function platformHealthDashboard(options: CompatibilityRouteOptions): Promise<JsonObject> {
   const alerts = await (options.admin?.operations?.listAlerts() ?? []);
   return {
     activeAlerts: alerts.filter((alert) => toJsonObject(alert).status === "open").length
   };
 }
 
-function recordedMetricEvents(options: ReactorCompatibilityRouteOptions): readonly JsonObject[] {
+function recordedMetricEvents(options: CompatibilityRouteOptions): readonly JsonObject[] {
   return (options.admin?.observability?.metrics?.recordedEvents() ?? []).map(toJsonObject);
 }
 
-function mcpStatusSummary(options: ReactorCompatibilityRouteOptions, servers: readonly McpServer[]): JsonObject {
+function mcpStatusSummary(options: CompatibilityRouteOptions, servers: readonly McpServer[]): JsonObject {
   const statusCounts: Record<string, number> = {};
 
   for (const server of servers) {
-    const status = reactorEnumString(options.mcp?.manager.getStatus(server.name), "PENDING");
+    const status = compatEnumString(options.mcp?.manager.getStatus(server.name), "PENDING");
     statusCounts[status] = (statusCounts[status] ?? 0) + 1;
   }
 
@@ -87,7 +87,7 @@ function toOpsSchedulerExecutionSummary(execution: ScheduledJobExecution): JsonO
     jobName: execution.jobName,
     resultPreview: schedulerResultPreview(execution.result) ?? null,
     startedAt: execution.startedAt.getTime(),
-    status: reactorEnumString(execution.status, "UNKNOWN")
+    status: compatEnumString(execution.status, "UNKNOWN")
   };
 }
 
