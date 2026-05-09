@@ -7,6 +7,7 @@ import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { isCancel, password, text } from "@clack/prompts";
 import { Command } from "commander";
 import { renderMuseStatusTui, type MuseStatusTuiModel } from "./tui.js";
+import { registerAuthCommands } from "./commands-auth.js";
 import { registerConfigCommands } from "./commands-config.js";
 import { registerMcpCommands } from "./commands-mcp.js";
 import { registerOrchestrateCommands } from "./commands-orchestrate.js";
@@ -177,47 +178,15 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       }
     });
 
-  const auth = program.command("auth").description("Manage CLI credentials");
-
-  auth
-    .command("login")
-    .description("Store a bearer token in the encrypted CLI credential store")
-    .argument("[token]", "Bearer token to store")
-    .action(async (token: string | undefined, _options, command) => {
-      const { baseUrl } = await readApiOptions(io, command, { includeStoredToken: false });
-      await writeStoredToken(io, baseUrl, await resolveAuthToken(io, token));
-      io.stdout(`Stored Muse API token for ${baseUrl}\n`);
-    });
-
-  auth
-    .command("status")
-    .description("Check whether a token is stored for the active API URL")
-    .option("--json", "Print machine-readable JSON")
-    .action(async (options: { readonly json?: boolean }, command) => {
-      const { baseUrl } = await readApiOptions(io, command, { includeStoredToken: false });
-      const token = await readStoredToken(io, baseUrl);
-      const status = {
-        apiUrl: baseUrl,
-        credentialPath: credentialPath(io),
-        hasToken: Boolean(token)
-      };
-
-      if (options.json) {
-        writeOutput(io, status);
-        return;
-      }
-
-      io.stdout(token ? `Stored Muse API token for ${baseUrl}\n` : `No stored Muse API token for ${baseUrl}\n`);
-    });
-
-  auth
-    .command("logout")
-    .description("Remove the stored bearer token for the active API URL")
-    .action(async (_options, command) => {
-      const { baseUrl } = await readApiOptions(io, command, { includeStoredToken: false });
-      await deleteStoredToken(io, baseUrl);
-      io.stdout(`Removed Muse API token for ${baseUrl}\n`);
-    });
+  registerAuthCommands(program, io, {
+    credentialPath,
+    deleteStoredToken,
+    readApiOptions,
+    readStoredToken,
+    resolveAuthToken,
+    writeOutput,
+    writeStoredToken
+  });
 
   registerMcpCommands(program, io, { apiRequest, writeOutput });
 
