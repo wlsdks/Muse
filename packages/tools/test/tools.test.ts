@@ -519,9 +519,10 @@ describe("createJarvisTools", () => {
     return tool;
   }
 
-  it("registers fifteen zero-IO ambient utility tools", () => {
+  it("registers sixteen zero-IO ambient utility tools", () => {
     const tools = createJarvisTools();
     expect(tools.map((tool) => tool.definition.name).sort()).toEqual([
+      "base64",
       "csv_parse",
       "hash_text",
       "json_query",
@@ -641,6 +642,54 @@ describe("createJarvisTools", () => {
 
     const bad = await tool.execute({ algorithm: "sha512", text: "hi" }, { runId: "r" });
     expect(bad).toMatchObject({ error: expect.stringContaining("sha512") });
+  });
+
+  it("base64 encodes/decodes utf8, supports url-safe, and rejects invalid input", async () => {
+    const tool = getTool("base64");
+
+    const encoded = (await tool.execute(
+      { mode: "encode", text: "hello, world!" },
+      { runId: "r" }
+    )) as { encoded: string };
+    expect(encoded.encoded).toBe("aGVsbG8sIHdvcmxkIQ==");
+
+    const decoded = (await tool.execute(
+      { mode: "decode", text: "aGVsbG8sIHdvcmxkIQ==" },
+      { runId: "r" }
+    )) as { decoded: string };
+    expect(decoded.decoded).toBe("hello, world!");
+
+    const urlSafeEncoded = (await tool.execute(
+      { mode: "encode", text: "??>>", urlSafe: true },
+      { runId: "r" }
+    )) as { encoded: string };
+    expect(urlSafeEncoded.encoded).toBe("Pz8-Pg");
+
+    const urlSafeDecoded = (await tool.execute(
+      { mode: "decode", text: "Pz8-Pg", urlSafe: true },
+      { runId: "r" }
+    )) as { decoded: string };
+    expect(urlSafeDecoded.decoded).toBe("??>>");
+
+    const utf8 = (await tool.execute(
+      { mode: "encode", text: "안녕" },
+      { runId: "r" }
+    )) as { encoded: string };
+    expect(utf8.encoded).toBe("7JWI64WV");
+
+    const utf8Decoded = (await tool.execute(
+      { mode: "decode", text: "7JWI64WV" },
+      { runId: "r" }
+    )) as { decoded: string };
+    expect(utf8Decoded.decoded).toBe("안녕");
+
+    expect(await tool.execute({ mode: "x", text: "" }, { runId: "r" })).toEqual({
+      error: "mode must be 'encode' or 'decode'"
+    });
+
+    expect(
+      await tool.execute({ mode: "decode", text: "!!!not-base64!!!" }, { runId: "r" })
+    ).toEqual({ error: "input is not valid base64" });
   });
 
   it("markdown_table renders rows with derived columns, escaping, and truncation", async () => {

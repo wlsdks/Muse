@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "./index.js";
@@ -37,7 +38,8 @@ export function createJarvisTools(options: JarvisToolFactoryOptions = {}): reado
     createKvSummarizeTool(),
     createMarkdownTableTool(),
     createHashTextTool(),
-    createCsvParseTool()
+    createCsvParseTool(),
+    createBase64Tool()
   ];
 }
 
@@ -727,6 +729,73 @@ function createCsvParseTool(): MuseTool {
       return { rows: records.slice(0, CSV_PARSE_MAX_ROWS) } satisfies JsonObject;
     }
   };
+}
+
+const BASE64_MAX_TEXT_LENGTH = 500_000;
+
+function createBase64Tool(): MuseTool {
+  return {
+    definition: {
+      description:
+        "Encodes UTF-8 `text` to base64 (`mode: 'encode'`) or decodes base64 `text` back to UTF-8 (`mode: 'decode'`). " +
+        "With `urlSafe: true`, encodes to URL-safe base64 (replaces '+' / '/' with '-' / '_' and drops '=' padding) and accepts URL-safe input on decode. " +
+        "Useful for inspecting JWT segments, building basic-auth headers, decoding opaque tokens, and round-tripping notes through ASCII-only transports. Bounded inputs: text ≤ 500k characters.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          mode: { description: "'encode' or 'decode'.", type: "string" },
+          text: { description: "UTF-8 source for encode; base64 source for decode.", type: "string" },
+          urlSafe: { description: "Use URL-safe alphabet ('-' and '_', no padding). Defaults to false.", type: "boolean" }
+        },
+        required: ["mode", "text"],
+        type: "object"
+      },
+      keywords: ["base64", "encode", "decode", "jwt", "transport"],
+      name: "base64",
+      risk: "read"
+    },
+    execute: (args): JsonObject => {
+      const mode = typeof args["mode"] === "string" ? (args["mode"] as string).trim().toLowerCase() : "";
+      const text = typeof args["text"] === "string" ? (args["text"] as string) : "";
+      const urlSafe = args["urlSafe"] === true;
+
+      if (mode !== "encode" && mode !== "decode") {
+        return { error: "mode must be 'encode' or 'decode'" };
+      }
+
+      if (text.length > BASE64_MAX_TEXT_LENGTH) {
+        return { error: `text must be ≤ ${BASE64_MAX_TEXT_LENGTH} characters` };
+      }
+
+      if (mode === "encode") {
+        const standard = Buffer.from(text, "utf8").toString("base64");
+        const encoded = urlSafe
+          ? standard.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+          : standard;
+        return { encoded } satisfies JsonObject;
+      }
+
+      const trimmed = text.trim();
+      const expectedAlphabet = urlSafe ? /^[A-Za-z0-9_-]*={0,2}$/ : /^[A-Za-z0-9+/]*={0,2}$/;
+      if (!expectedAlphabet.test(trimmed)) {
+        return { error: urlSafe ? "input is not valid url-safe base64" : "input is not valid base64" };
+      }
+      const standardised = urlSafe
+        ? padBase64(trimmed.replace(/-/g, "+").replace(/_/g, "/"))
+        : trimmed;
+      const buffer = Buffer.from(standardised, "base64");
+      const reEncoded = buffer.toString("base64").replace(/=+$/, "");
+      if (reEncoded !== standardised.replace(/=+$/, "")) {
+        return { error: "input is not valid base64" };
+      }
+      return { decoded: buffer.toString("utf8") } satisfies JsonObject;
+    }
+  };
+}
+
+function padBase64(input: string): string {
+  const remainder = input.length % 4;
+  return remainder === 0 ? input : input + "=".repeat(4 - remainder);
 }
 
 function parseCsvRecords(text: string): string[][] {
