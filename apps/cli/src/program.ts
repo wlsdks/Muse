@@ -7,6 +7,7 @@ import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { isCancel, password, text } from "@clack/prompts";
 import { Command } from "commander";
 import { renderMuseStatusTui, type MuseStatusTuiModel } from "./tui.js";
+import { runCalendarSetup } from "./setup-calendar.js";
 
 export interface CliPromptAdapter {
   text(options: { readonly message: string; readonly placeholder?: string }): Promise<string>;
@@ -477,6 +478,15 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
         io,
         await apiRequest(io, command, `/api/scheduler/jobs/${encodeURIComponent(jobId)}/dry-run`, undefined, "POST")
       );
+    });
+
+  const setup = program.command("setup").description("Run interactive setup wizards");
+
+  setup
+    .command("calendar")
+    .description("Configure calendar providers (local / google / caldav / macos) and store credentials")
+    .action(async () => {
+      await runCalendarSetup({ stderr: io.stderr, stdout: io.stdout });
     });
 
   return program;
