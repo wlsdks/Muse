@@ -906,7 +906,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/admin/audits",
     "/api/admin/audits/export",
     "/api/admin/capabilities",
-    "/api/admin/conversation-analytics/by-channel",
     "/api/admin/conversation-analytics/failure-patterns",
     "/api/admin/conversation-analytics/latency-distribution",
     "/api/admin/debug/replay",

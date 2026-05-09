@@ -7,7 +7,7 @@
  *   - GET /api/admin/tool-calls (+ /ranking)
  *   - GET /api/admin/users/usage/{cost,daily,by-model}
  *   - GET /api/admin/token-cost/{by-session,daily,top-expensive}
- *   - GET /api/admin/conversation-analytics/{by-channel,failure-patterns,latency-distribution}
+ *   - GET /api/admin/conversation-analytics/{failure-patterns,latency-distribution}
  */
 
 import type { FastifyInstance } from "fastify";
@@ -15,7 +15,6 @@ import { recordedSpans, recordedTraceEvents } from "./admin-routes.js";
 import {
   aggregateFailurePatterns,
   dailyUsage,
-  groupRunsByChannel,
   isRecord,
   latencyDistribution,
   latencyWindowStart,
@@ -195,13 +194,6 @@ function registerTokenCostRoutes(server: FastifyInstance, options: ReactorCompat
 }
 
 function registerConversationAnalyticsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/admin/conversation-analytics/by-channel", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return groupRunsByChannel(await listAllRuns(options));
-  });
   server.get("/api/admin/conversation-analytics/failure-patterns", async (request, reply) => {
     if (!options.authorizeAdmin(request, reply)) {
       return reply;
