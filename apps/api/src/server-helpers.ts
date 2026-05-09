@@ -27,7 +27,6 @@ import {
   type AgentRunResult
 } from "@muse/agent-core";
 import type { AgentSpecInput } from "@muse/agent-specs";
-import type { AuthIdentity, LoginResult } from "@muse/auth";
 import type { RuntimeSettingType } from "@muse/runtime-settings";
 import type { AgentRunRecord } from "@muse/runtime-state";
 import type { JsonObject, JsonValue } from "@muse/shared";
@@ -975,48 +974,9 @@ export function isPublicRequest(method: string, url: string): boolean {
 // Auth identity
 // ---------------------------------------------------------------------------
 
-export function attachAuthIdentity(request: unknown, identity: AuthIdentity | undefined): void {
-  (request as { auth?: AuthIdentity }).auth = identity;
-}
-
-export function getAuthIdentity(request: unknown): AuthIdentity | undefined {
-  return (request as { auth?: AuthIdentity }).auth;
-}
-
-export function toLoginResponse(login: LoginResult) {
-  return {
-    expiresAt: login.expiresAt.toISOString(),
-    token: login.token,
-    user: login.user
-  };
-}
-
-/**
- * Per-route auth guard. Returns true to continue, or writes a 401 reply
- * and returns false. When `authEnabled` is false (the personal-use
- * default), every request passes — there's no separate role tier in
- * this 1-user codebase. Only the presence of an identity is checked
- * when auth is enabled.
- *
- * Was previously named `authorizeAdmin`; the "Admin" suffix was Reactor
- * multi-tenant residue (no admin role exists here).
- */
-export function requireAuthenticated(
-  request: unknown,
-  reply: { status(statusCode: number): { send(payload: unknown): void } },
-  authEnabled: boolean
-): boolean {
-  if (!authEnabled) {
-    return true;
-  }
-
-  if (getAuthIdentity(request)) {
-    return true;
-  }
-
-  reply.status(401).send({
-    error: "인증이 필요합니다",
-    timestamp: new Date().toISOString()
-  });
-  return false;
-}
+export {
+  attachAuthIdentity,
+  getAuthIdentity,
+  requireAuthenticated,
+  toLoginResponse
+} from "./server-auth-helpers.js";
