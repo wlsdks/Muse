@@ -72,9 +72,6 @@ function doctorReport(options: ReactorCompatibilityRouteOptions): JsonObject {
   return {
     generatedAt: nowIso(),
     sections: [
-      doctorSection("Runtime Settings", "OK", "활성", [
-        doctorCheck("runtimeSettings bean", "OK", "등록됨")
-      ]),
       doctorSection(
         "Dynamic Scheduler",
         options.scheduler?.service ? "OK" : "SKIPPED",
@@ -105,12 +102,6 @@ function doctorReport(options: ReactorCompatibilityRouteOptions): JsonObject {
             options.historyStore ? "configured" : "in-memory"
           )
         ]
-      ),
-      doctorSection(
-        "Runner",
-        "OK",
-        "disabled",
-        [doctorCheck("runner configured or disabled", "OK", "disabled")]
       ),
       doctorSection(
         "MCP Live Health",

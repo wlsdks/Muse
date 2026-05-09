@@ -5130,13 +5130,6 @@ describe("api server", () => {
       sections: expect.arrayContaining([
         expect.objectContaining({
           checks: expect.arrayContaining([
-            expect.objectContaining({ name: "runtimeSettings bean", status: "OK" })
-          ]),
-          name: "Runtime Settings",
-          status: "OK"
-        }),
-        expect.objectContaining({
-          checks: expect.arrayContaining([
             expect.objectContaining({ name: "model provider configured", status: "OK" })
           ]),
           name: "Model Provider"
@@ -5146,12 +5139,6 @@ describe("api server", () => {
             expect.objectContaining({ detail: "configured", name: "database configured or in-memory", status: "OK" })
           ]),
           name: "Database"
-        }),
-        expect.objectContaining({
-          checks: expect.arrayContaining([
-            expect.objectContaining({ detail: "disabled", name: "runner configured or disabled", status: "OK" })
-          ]),
-          name: "Runner"
         }),
         expect.objectContaining({
           checks: expect.arrayContaining([
@@ -5167,6 +5154,9 @@ describe("api server", () => {
         })
       ])
     });
+    const doctorSectionNames = (doctor.json().sections as Array<{ name: string }>).map((section) => section.name);
+    expect(doctorSectionNames).not.toContain("Runtime Settings");
+    expect(doctorSectionNames).not.toContain("Runner");
     expect(doctorSummary.json()).toMatchObject({ allHealthy: true, status: "OK" });
     expect(adminSessions.json()).toMatchObject({ items: [{ id: "run-compat" }], total: 1 });
     expect(adminSessionDetail.json()).toMatchObject({
