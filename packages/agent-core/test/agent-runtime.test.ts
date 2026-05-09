@@ -24,7 +24,6 @@ import {
   createResponseCountInjectionFilter,
   createSanitizedTextResponseFilter,
   createSourceBlockResponseFilter,
-  createSlackUserIdMaskResponseFilter,
   createStructuredOutputResponseFilter,
   createSystemPromptLeakageOutputGuard,
   createToolResultQualityAuditFilter,
@@ -1229,22 +1228,6 @@ describe("AgentRuntime", () => {
     });
 
     expect(result.response.output).toBe("{\n  \"ok\": true\n}");
-  });
-
-  it("masks raw Slack user IDs in model responses", async () => {
-    const runtime = createAgentRuntime({
-      modelProvider: createProvider({
-        output: "담당자는 `U0891A8UWAV`이고 이미 멘션된 <@U012345678> 값은 유지합니다."
-      }),
-      responseFilters: [createSlackUserIdMaskResponseFilter()]
-    });
-
-    const result = await runtime.run({
-      messages: [{ content: "담당자 알려줘", role: "user" }],
-      model: "provider/model"
-    });
-
-    expect(result.response.output).toBe("담당자는 <@U0891A8UWAV>이고 이미 멘션된 <@U012345678> 값은 유지합니다.");
   });
 
   it("truncates long model responses when a max length is configured", async () => {

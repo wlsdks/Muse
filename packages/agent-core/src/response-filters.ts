@@ -356,36 +356,6 @@ export function createSanitizedTextResponseFilter(
   };
 }
 
-export function createSlackUserIdMaskResponseFilter(): ResponseFilterStage {
-  const rawSlackUserIdPattern = /(?<![@\w])`?(U[A-Z0-9]{8,})`?(?![A-Za-z0-9])/gu;
-
-  return {
-    apply: (response: ModelResponse) => {
-      if (response.output.trim().length === 0) {
-        return response;
-      }
-
-      const output = response.output.replace(rawSlackUserIdPattern, "<@$1>");
-
-      if (output === response.output) {
-        return response;
-      }
-
-      return {
-        ...response,
-        output,
-        raw: {
-          ...(isRecord(response.raw) ? response.raw : {}),
-          museResponseFilter: {
-            id: "slack-user-id-mask-response-filter"
-          }
-        }
-      };
-    },
-    id: "slack-user-id-mask-response-filter"
-  };
-}
-
 export interface FabricationRequestRefusalFilterOptions {
   /**
    * Lowercase substring terms that mean the user is asking the model to

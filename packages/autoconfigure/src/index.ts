@@ -26,7 +26,6 @@ import {
   createResponseCountInjectionFilter,
   createSanitizedTextResponseFilter,
   createSourceBlockResponseFilter,
-  createSlackUserIdMaskResponseFilter,
   createStructuredOutputResponseFilter,
   createSystemPromptLeakageOutputGuard,
   createToolResultQualityAuditFilter,
@@ -1036,9 +1035,6 @@ function createResponseFilters(env: MuseEnvironment) {
       : []),
     ...(parseBoolean(env.MUSE_RESPONSE_MARKDOWN_STRIP_FILTER_ENABLED, true)
       ? [createMarkdownStripResponseFilter()]
-      : []),
-    ...(parseBoolean(env.MUSE_RESPONSE_SLACK_USER_ID_MASK_ENABLED, true)
-      ? [createSlackUserIdMaskResponseFilter()]
       : []),
     ...buildCasualLureFilters(env),
     ...buildGreetingStripFilters(env),

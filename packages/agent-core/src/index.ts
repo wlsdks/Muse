@@ -903,7 +903,6 @@ export {
   createResponseCountConsistencyFilter,
   createResponseCountInjectionFilter,
   createSanitizedTextResponseFilter,
-  createSlackUserIdMaskResponseFilter,
   createSourceBlockResponseFilter,
   createStructuredOutputResponseFilter,
   createToolResultQualityAuditFilter,
