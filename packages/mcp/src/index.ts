@@ -1341,9 +1341,15 @@ export {
   type NotesMcpServerOptions
 } from "./loopback.js";
 
-// Notes provider abstraction. LocalDir is a real adapter; AppleNotes
-// Apple Notes is a real osascript adapter (macOS-only); Notion is
-// still a typed scaffold that throws NOT_IMPLEMENTED.
+// Notes provider abstraction. LocalDir, Apple Notes (osascript), and
+// Notion (api.notion.com) are all real adapters. The `muse.notes-multi`
+// MCP server in `loopback-notes-registry.ts` routes between them via
+// providerId.
+export {
+  createNotesRegistryMcpServer,
+  type NotesRegistryMcpServerOptions
+} from "./loopback-notes-registry.js";
+
 export {
   AppleNotesProvider,
   LocalDirNotesProvider,

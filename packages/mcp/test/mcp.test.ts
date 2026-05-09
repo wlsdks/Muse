@@ -19,6 +19,7 @@ import {
   createJsonMcpServer,
   createMathMcpServer,
   createNotesMcpServer,
+  createNotesRegistryMcpServer,
   createTasksMcpServer,
   createRegexMcpServer,
   AppleNotesProvider,
@@ -1488,5 +1489,95 @@ describe("notes provider abstraction", () => {
     await expect(provider.save({ body: "v2", title: "doc.md" })).rejects.toMatchObject({ code: "ALREADY_EXISTS" });
     const replaced = await provider.save({ body: "v2", overwrite: true, title: "doc.md" });
     expect(replaced.body).toBe("v2");
+  });
+});
+
+describe("createNotesRegistryMcpServer", () => {
+  it("exposes the muse.notes-multi tool surface", () => {
+    const registry = new NotesProviderRegistry([new AppleNotesProvider()]);
+    const server = createNotesRegistryMcpServer({ registry });
+    expect(server.name).toBe("muse.notes-multi");
+    const toolNames = server.tools.map((tool) => tool.name);
+    expect(toolNames).toEqual(["providers", "list", "read", "search", "save", "append"]);
+  });
+
+  it("providers tool reports describe() output for every registered provider", async () => {
+    const apple = new AppleNotesProvider();
+    const notion = new NotionNotesProvider({ databaseId: "db1", fetchImpl: async () => new Response("{}"), token: "t" });
+    const registry = new NotesProviderRegistry([apple, notion]);
+    const conn = createLoopbackMcpConnection(createNotesRegistryMcpServer({ registry }));
+    const result = await conn.callTool!("providers", {}) as { providers: Array<{ id: string }> };
+    expect(result.providers.map((p) => p.id).sort()).toEqual(["apple", "notion"]);
+  });
+
+  it("read routes to the named provider and serializes the response", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const root = mkdtempSync(`${tmpdir}/muse-notes-multi-read-`);
+    const local = new LocalDirNotesProvider({ notesDir: root });
+    await local.save({ body: "alpha\nbeta\n", title: "diary.md" });
+    const registry = new NotesProviderRegistry([local]);
+    const conn = createLoopbackMcpConnection(createNotesRegistryMcpServer({ registry }));
+
+    const result = await conn.callTool!("read", { id: "diary.md", providerId: "local" }) as { note?: { body?: string; title?: string } };
+    expect(result.note?.title).toBe("diary.md");
+    expect(result.note?.body).toBe("alpha\nbeta\n");
+  });
+
+  it("search fans out across providers when providerId is omitted", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const root = mkdtempSync(`${tmpdir}/muse-notes-multi-search-`);
+    const local = new LocalDirNotesProvider({ notesDir: root });
+    await local.save({ body: "needle is here", title: "haystack.md" });
+    const registry = new NotesProviderRegistry([local]);
+    const conn = createLoopbackMcpConnection(createNotesRegistryMcpServer({ registry }));
+
+    const result = await conn.callTool!("search", { limit: 5, query: "needle" }) as { hits: Array<{ providerId: string }> };
+    expect(result.hits.length).toBeGreaterThan(0);
+    expect(result.hits[0]!.providerId).toBe("local");
+  });
+
+  it("save / append round-trip via the registry", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const root = mkdtempSync(`${tmpdir}/muse-notes-multi-rw-`);
+    const local = new LocalDirNotesProvider({ notesDir: root });
+    const registry = new NotesProviderRegistry([local]);
+    const conn = createLoopbackMcpConnection(createNotesRegistryMcpServer({ registry }));
+
+    const saved = await conn.callTool!("save", {
+      body: "first\n",
+      providerId: "local",
+      title: "log.md"
+    }) as { note: { id: string; body: string } };
+    expect(saved.note.id).toBe("log.md");
+
+    const appended = await conn.callTool!("append", {
+      body: "second\n",
+      id: "log.md",
+      providerId: "local"
+    }) as { note: { body: string } };
+    expect(appended.note.body).toContain("first");
+    expect(appended.note.body).toContain("second");
+  });
+
+  it("surfaces NotesProviderError with code in the tool response", async () => {
+    const registry = new NotesProviderRegistry([new AppleNotesProvider()]);
+    const conn = createLoopbackMcpConnection(createNotesRegistryMcpServer({ registry }));
+
+    const missingProvider = await conn.callTool!("read", { id: "x", providerId: "ghost" }) as { code?: string; error?: string };
+    expect(missingProvider.code).toBe("PROVIDER_NOT_FOUND");
+    expect(missingProvider.error).toContain("ghost");
+  });
+
+  it("rejects writes with missing required fields without invoking providers", async () => {
+    const registry = new NotesProviderRegistry([new AppleNotesProvider()]);
+    const conn = createLoopbackMcpConnection(createNotesRegistryMcpServer({ registry }));
+
+    expect(await conn.callTool!("save", { body: "x", providerId: "apple" }))
+      .toMatchObject({ error: expect.stringContaining("title") });
+    expect(await conn.callTool!("append", { id: "x", providerId: "apple" }))
+      .toMatchObject({ error: expect.stringContaining("body") });
   });
 });
