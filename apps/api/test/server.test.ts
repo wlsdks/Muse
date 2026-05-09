@@ -1061,16 +1061,8 @@ describe("api server", () => {
 
     expect(forbidden.statusCode).toBe(403);
     expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.json()).not.toHaveProperty("employeeValue");
     expect(dashboard.json()).toMatchObject({
-      employeeValue: {
-        answerModes: { operational: 1 },
-        channels: [{ count: 1, key: "slack" }],
-        groundedRatePercent: 100,
-        groundedResponses: 1,
-        observedResponses: 1,
-        scheduledResponses: 1,
-        toolFamilies: [{ count: 1, key: "mcp" }]
-      },
       recentSchedulerExecutions: [{
         failureReason: "timeout",
         jobId: "ops-job-1",

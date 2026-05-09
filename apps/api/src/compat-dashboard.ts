@@ -2,9 +2,9 @@
  * Reactor-compat ops dashboard + platform health summary helpers extracted
  * from reactor-compat-routes.ts.
  *
- * Generates the rich envelope returned by /api/ops/dashboard
- * (employeeValue, MCP status, scheduler stats, response trust events,
- * ops metric snapshots) and the smaller platform-health
+ * Generates the envelope returned by /api/ops/dashboard
+ * (MCP status, scheduler stats, response trust events, ops metric
+ * snapshots) and the smaller platform-health
  * (/api/admin/platform/health) shape with active alert counts.
  */
 
@@ -41,7 +41,6 @@ export async function dashboardSummary(options: ReactorCompatibilityRouteOptions
     approvals: {
       pendingCount: pendingApprovals
     },
-    employeeValue: employeeValueSummary(metricEvents),
     generatedAt: Date.now(),
     mcp: mcpStatusSummary(options, mcpServers),
     metrics: opsMetricSnapshots(options),
@@ -143,102 +142,6 @@ function recentTrustEvents(events: readonly JsonObject[], limit = 8): readonly J
         violation: nullableStringResponse(metadata.violation)
       };
     });
-}
-
-function employeeValueSummary(events: readonly JsonObject[]): JsonObject {
-  const agentRuns = events
-    .filter((event) => event.type === "agent_run")
-    .map((event) => jsonObjectField(event.payload));
-  const guardRejections = events.filter((event) => event.type === "guard_rejection");
-  const answerModes: Record<string, number> = {};
-  const channels: Record<string, number> = {};
-  const toolFamilies: Record<string, number> = {};
-  const lanes = new Map<string, {
-    blockedResponses: number;
-    groundedResponses: number;
-    observedResponses: number;
-  }>();
-  let groundedResponses = 0;
-  let interactiveResponses = 0;
-  let scheduledResponses = 0;
-
-  for (const run of agentRuns) {
-    const metadata = jsonObjectField(run.metadata);
-    const answerMode = stringField(metadata.answerMode, "unknown");
-    const channel = stringField(metadata.channel, "api");
-    const toolFamily = stringField(metadata.toolFamily, "");
-    const grounded = readBoolean(metadata.grounded, false);
-    const lane = lanes.get(answerMode) ?? { blockedResponses: 0, groundedResponses: 0, observedResponses: 0 };
-
-    incrementRecord(answerModes, answerMode);
-    incrementRecord(channels, channel);
-
-    if (toolFamily) {
-      incrementRecord(toolFamilies, toolFamily);
-    }
-
-    lane.observedResponses += 1;
-
-    if (grounded) {
-      groundedResponses += 1;
-      lane.groundedResponses += 1;
-    }
-
-    if (readBoolean(metadata.interactive, false)) {
-      interactiveResponses += 1;
-    }
-
-    if (readBoolean(metadata.scheduled, false)) {
-      scheduledResponses += 1;
-    }
-
-    lanes.set(answerMode, lane);
-  }
-
-  const observedResponses = agentRuns.length;
-
-  return {
-    answerModes,
-    blockedResponses: guardRejections.length,
-    channels: recordToBuckets(channels),
-    groundedRatePercent: observedResponses > 0 ? Math.floor((groundedResponses * 100) / observedResponses) : 0,
-    groundedResponses,
-    interactiveResponses,
-    lanes: [...lanes.entries()].map(([answerMode, lane]) => ({
-      answerMode,
-      blockedResponses: lane.blockedResponses,
-      groundedRatePercent: lane.observedResponses > 0
-        ? Math.floor((lane.groundedResponses * 100) / lane.observedResponses)
-        : 0,
-      groundedResponses: lane.groundedResponses,
-      observedResponses: lane.observedResponses
-    })),
-    observedResponses,
-    scheduledResponses,
-    toolFamilies: recordToBuckets(toolFamilies),
-    topMissingQueries: guardRejections.slice(-5).reverse().map((event) => {
-      const payload = jsonObjectField(event.payload);
-      const metadata = jsonObjectField(payload.metadata);
-
-      return {
-        blockReason: nullableStringResponse(payload.reason),
-        count: 1,
-        lastOccurredAt: Date.now(),
-        queryCluster: stringField(metadata.queryCluster, "unknown"),
-        queryLabel: stringField(metadata.queryLabel, stringField(payload.reason, "unknown"))
-      };
-    })
-  };
-}
-
-function incrementRecord(record: Record<string, number>, key: string): void {
-  record[key] = (record[key] ?? 0) + 1;
-}
-
-function recordToBuckets(record: Record<string, number>): JsonObject[] {
-  return Object.entries(record)
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .map(([key, count]) => ({ count, key }));
 }
 
 function schedulerFailureReason(result: string | undefined): string | undefined {
