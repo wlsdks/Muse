@@ -7,7 +7,7 @@ import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { isCancel, password, text } from "@clack/prompts";
 import { Command } from "commander";
 import { renderMuseStatusTui, type MuseStatusTuiModel } from "./tui.js";
-import { runCalendarSetup } from "./setup-calendar.js";
+import { registerSchedulerCommands, registerSetupCommands } from "./commands-scheduler-setup.js";
 
 export interface CliPromptAdapter {
   text(options: { readonly message: string; readonly placeholder?: string }): Promise<string>;
@@ -430,64 +430,8 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       writeOutput(io, await apiRequest(io, command, "/api/admin/muse/snapshot"));
     });
 
-  const scheduler = program.command("scheduler").description("Manage scheduled jobs");
-
-  scheduler
-    .command("list")
-    .description("List scheduled jobs")
-    .action(async (_options, command) => {
-      writeOutput(io, await apiRequest(io, command, "/api/scheduler/jobs"));
-    });
-
-  scheduler
-    .command("create-agent")
-    .description("Create an agent scheduled job")
-    .argument("<name>", "Job name")
-    .argument("<cron>", "Cron expression")
-    .argument("<prompt...>", "Agent prompt")
-    .option("--model <model>", "Agent model")
-    .option("--disabled", "Create disabled")
-    .action(async (name: string, cronExpression: string, promptParts: readonly string[], options, command) => {
-      writeOutput(io, await apiRequest(io, command, "/api/scheduler/jobs", {
-        agentModel: options.model,
-        agentPrompt: promptParts.join(" "),
-        cronExpression,
-        enabled: !options.disabled,
-        jobType: "agent",
-        name
-      }));
-    });
-
-  scheduler
-    .command("trigger")
-    .description("Trigger a scheduled job")
-    .argument("<job-id>", "Job ID")
-    .action(async (jobId: string, _options, command) => {
-      writeOutput(
-        io,
-        await apiRequest(io, command, `/api/scheduler/jobs/${encodeURIComponent(jobId)}/trigger`, undefined, "POST")
-      );
-    });
-
-  scheduler
-    .command("dry-run")
-    .description("Dry-run a scheduled job")
-    .argument("<job-id>", "Job ID")
-    .action(async (jobId: string, _options, command) => {
-      writeOutput(
-        io,
-        await apiRequest(io, command, `/api/scheduler/jobs/${encodeURIComponent(jobId)}/dry-run`, undefined, "POST")
-      );
-    });
-
-  const setup = program.command("setup").description("Run interactive setup wizards");
-
-  setup
-    .command("calendar")
-    .description("Configure calendar providers (local / google / caldav / macos) and store credentials")
-    .action(async () => {
-      await runCalendarSetup({ stderr: io.stderr, stdout: io.stdout });
-    });
+  registerSchedulerCommands(program, io, { apiRequest, writeOutput });
+  registerSetupCommands(program, io);
 
   return program;
 }
