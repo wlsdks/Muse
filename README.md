@@ -126,6 +126,19 @@ Or via env vars (`MUSE_CALENDAR_PROVIDERS=local,gcal`,
 `MUSE_CALDAV_URL`/`USERNAME`/`APP_PASSWORD`,
 `MUSE_MACOS_CALENDAR_NAME`).
 
+### Provider live-verification status
+
+| Provider | Status | What's verified |
+| --- | --- | --- |
+| `muse.notes` (LocalDir) | `live` | smoke:live `muse.notes.search` exercises Gemini → fs grep |
+| `muse.tasks` (Local) | `live` | smoke:live `muse.tasks.add` + unit lifecycle (add/list/complete/search) |
+| `muse.calendar` Local | `live` | smoke:live `muse.calendar.add` + 20 unit tests |
+| `muse.calendar` Google | `scaffold` | OAuth refresh-token flow + REST v3; needs user-issued OAuth client to exercise live |
+| `muse.calendar` CalDAV | `scaffold` | REPORT/PUT/DELETE iCalendar; needs iCloud / Fastmail / Proton app-password to exercise live |
+| `muse.calendar` macOS | `scaffold` | osascript wrapper; first call triggers system permission prompt |
+| `NotesProvider` Apple | `stub` | Interface defined; throws NOT_IMPLEMENTED until osascript adapter lands |
+| `NotesProvider` Notion | `stub` | Interface defined; throws NOT_IMPLEMENTED until api.notion.com adapter lands |
+
 ## Verification
 
 Tests are the only form of verification. The repo ships these gates:

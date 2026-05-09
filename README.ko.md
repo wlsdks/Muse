@@ -125,6 +125,19 @@ muse setup calendar   # Local / Google / CalDAV / macOS multi-select
 `MUSE_CALDAV_URL`/`USERNAME`/`APP_PASSWORD`,
 `MUSE_MACOS_CALENDAR_NAME`).
 
+### 공급자 라이브 검증 상태
+
+| Provider | 상태 | 검증 범위 |
+| --- | --- | --- |
+| `muse.notes` (LocalDir) | `live` | smoke:live `muse.notes.search` Gemini → fs grep |
+| `muse.tasks` (Local) | `live` | smoke:live `muse.tasks.add` + unit 라이프사이클 (add/list/complete/search) |
+| `muse.calendar` Local | `live` | smoke:live `muse.calendar.add` + 20개 unit 테스트 |
+| `muse.calendar` Google | `scaffold` | OAuth refresh-token 플로우 + REST v3; 사용자 발급 OAuth client로 라이브 검증 가능 |
+| `muse.calendar` CalDAV | `scaffold` | REPORT/PUT/DELETE iCalendar; iCloud / Fastmail / Proton 앱 비번 필요 |
+| `muse.calendar` macOS | `scaffold` | osascript 래퍼; 첫 호출 시 시스템 권한 prompt |
+| `NotesProvider` Apple | `stub` | 인터페이스만 정의. osascript 어댑터 구현되면 라이브 |
+| `NotesProvider` Notion | `stub` | 인터페이스만 정의. api.notion.com 어댑터 구현되면 라이브 |
+
 ## 검증
 
 테스트만이 검증의 유일한 방식이다. 저장소는 다음 게이트를
