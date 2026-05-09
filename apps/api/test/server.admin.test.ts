@@ -434,40 +434,11 @@ describe("api server: admin / ops / settings / memory", () => {
     const runtimeRefresh = await server.inject({ headers, method: "POST", url: "/api/admin/settings/refresh" });
     const capabilities = await server.inject({ headers, method: "GET", url: "/api/admin/capabilities" });
     const dashboard = await server.inject({ headers, method: "GET", url: "/api/ops/dashboard" });
-    const ragInitial = await server.inject({ headers, method: "GET", url: "/api/rag-ingestion/policy" });
-    const blockedRagCandidates = await server.inject({ method: "GET", url: "/api/rag-ingestion/candidates" });
-    const missingCandidateApprove = await server.inject({
-      headers,
-      method: "POST",
-      payload: { comment: "approve" },
-      url: "/api/rag-ingestion/candidates/missing/approve"
-    });
-    const ragInvalidUpdate = await server.inject({
-      headers,
-      method: "PUT",
-      payload: { allowedChannels: Array.from({ length: 301 }, (_, index) => `channel-${index}`) },
-      url: "/api/rag-ingestion/policy"
-    });
-    const ragUpdate = await server.inject({
-      headers,
-      method: "PUT",
-      payload: { allowedChannels: ["Slack"], blockedPatterns: ["secret"], enabled: true },
-      url: "/api/rag-ingestion/policy"
-    });
-    const ragAfterUpdate = await server.inject({ headers, method: "GET", url: "/api/rag-ingestion/policy" });
-    const ragResetByOmission = await server.inject({
-      headers,
-      method: "PUT",
-      payload: { enabled: true },
-      url: "/api/rag-ingestion/policy"
-    });
     const runtimeDelete = await server.inject({
       headers,
       method: "DELETE",
       url: "/api/admin/settings/model.default"
     });
-    const ragDelete = await server.inject({ headers, method: "DELETE", url: "/api/rag-ingestion/policy" });
-    const ragAfterDelete = await server.inject({ headers, method: "GET", url: "/api/rag-ingestion/policy" });
 
     expect(runtimeSet.json()).toEqual({ key: "model.default", status: "updated", value: "provider/model" });
     expect(runtimeGet.json()).toMatchObject({
@@ -500,7 +471,6 @@ describe("api server: admin / ops / settings / memory", () => {
       "/api/admin/settings",
       "/api/chat",
       "/api/mcp/servers/{name}/tools",
-      "/api/rag-ingestion/policy",
       "/api/scheduler/jobs"
     ]));
     expect(capabilitiesBody.paths).not.toContain("/api/prompt-lab/auto-optimize");
@@ -516,35 +486,7 @@ describe("api server: admin / ops / settings / memory", () => {
       mcp: { total: 0 },
       scheduler: { totalJobs: 0 }
     });
-    expect(ragInitial.json()).toMatchObject({ stored: null });
-    expect(blockedRagCandidates.statusCode).toBe(401);
-    expect(missingCandidateApprove.statusCode).toBe(404);
-    expect(ragInvalidUpdate.statusCode).toBe(400);
-    expect(ragUpdate.json()).toMatchObject({ allowedChannels: ["slack"], blockedPatterns: ["secret"], enabled: true });
-    expect(typeof ragUpdate.json().createdAt).toBe("number");
-    expect(ragAfterUpdate.json()).toMatchObject({ stored: { enabled: true } });
-    expect(ragResetByOmission.json()).toMatchObject({
-      allowedChannels: [],
-      blockedPatterns: [],
-      enabled: true,
-      minQueryChars: 10,
-      minResponseChars: 20,
-      requireReview: true
-    });
     expect(runtimeDelete.statusCode).toBe(204);
-    expect(ragDelete.statusCode).toBe(204);
-    expect(ragAfterDelete.json()).toMatchObject({
-      configEnabled: false,
-      effective: {
-        allowedChannels: [],
-        blockedPatterns: [],
-        enabled: false,
-        minQueryChars: 10,
-        minResponseChars: 20,
-        requireReview: true
-      },
-      stored: null
-    });
   });
 
   it("enforces Reactor-compatible user memory ownership and proactive channel DTOs", async () => {

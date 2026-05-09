@@ -6,7 +6,6 @@
  *   - GET /api/admin/debug/replay (+ /:id)
  *   - GET /api/admin/muse/snapshot
  *   - GET /api/admin/metrics/latency/{summary,timeseries}
- *   - GET /api/admin/rag-analytics/{status,by-channel}
  *   - GET /api/admin/tenant/export/{executions,tools}
  *   - GET /api/admin/tools/{stats,accuracy}
  *   - POST /api/admin/task-memory/maintenance/{purge-expired,purge-terminal}
@@ -25,8 +24,6 @@ import {
   listAllRuns,
   listAllToolCalls,
   listDebugReplayCaptures,
-  listDocuments,
-  ragStatusSummary,
   readAuthUserId,
   readQueryInteger,
   readQueryString,
@@ -44,7 +41,6 @@ export function registerAdminAnalyticsCompatRoutes(server: FastifyInstance, opti
   registerDebugReplayRoutes(server, options);
   registerStatsRoutes(server, options);
   registerLatencyRoutes(server, options);
-  registerRagAnalyticsRoutes(server, options);
   registerTenantExportRoutes(server, options);
   registerToolStatsRoutes(server, options);
   registerTaskMemoryMaintenanceRoutes(server, options);
@@ -138,17 +134,6 @@ function registerLatencyRoutes(server: FastifyInstance, options: ReactorCompatib
 
     return latencyTimeseries(await listAllRuns(options), days);
   });
-}
-
-function registerRagAnalyticsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/admin/rag-analytics/status", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return ragStatusSummary(await listDocuments(options, { limit: 1000 }));
-  });
-
 }
 
 function registerTenantExportRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {

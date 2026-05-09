@@ -30,12 +30,10 @@ import {
   buildLayeredSystemPrompt,
   buildPlanningSystemPrompt,
   renderExemplarContext,
-  renderRetrievedContext,
   renderToolResults,
   type ExemplarRetriever,
   type PromptLayerRegistry
 } from "@muse/prompts";
-import type { RagPipeline } from "@muse/rag";
 import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
 import type {
   AgentRunHistoryStore,
@@ -201,7 +199,6 @@ export interface AgentRuntimeOptions {
   readonly hookTraceStore?: HookTraceStore;
   readonly responseCache?: ResponseCache;
   readonly cacheMetrics?: CacheMetricsRecorder;
-  readonly ragPipeline?: RagPipeline;
   readonly guardBlockRateMonitor?: GuardBlockRateMonitor;
   readonly toolRegistry?: ToolRegistry;
   readonly toolExecutor?: ToolExecutor;
@@ -304,7 +301,6 @@ export class AgentRuntime {
   private readonly hookTraceStore?: HookTraceStore;
   private readonly responseCache?: ResponseCache;
   private readonly cacheMetrics?: CacheMetricsRecorder;
-  private readonly ragPipeline?: RagPipeline;
   private readonly guardBlockRateMonitor?: GuardBlockRateMonitor;
   private readonly toolRegistry?: ToolRegistry;
   private readonly toolExecutor?: ToolExecutor;
@@ -340,7 +336,6 @@ export class AgentRuntime {
     this.hookTraceStore = options.hookTraceStore;
     this.responseCache = options.responseCache;
     this.cacheMetrics = options.cacheMetrics;
-    this.ragPipeline = options.ragPipeline;
     this.guardBlockRateMonitor = options.guardBlockRateMonitor;
     this.toolRegistry = options.toolRegistry;
     this.toolExposurePolicy = options.toolExposurePolicy;
@@ -406,8 +401,7 @@ export class AgentRuntime {
       const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
       const summaryAppliedInput = await this.applyStoredConversationSummary(memoryAppliedContext);
       const summaryAppliedContext: AgentRunContext = { ...memoryAppliedContext, input: summaryAppliedInput };
-      const contextualizedInput = await this.applyRetrievedContext(summaryAppliedContext);
-      const preparedRequest = this.prepareModelRequest(contextualizedInput, selected.model);
+      const preparedRequest = this.prepareModelRequest(summaryAppliedContext.input, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
       const tools = this.modelTools(layeredContext);
       const cacheKey = buildCacheKey(cacheableModelRequest(preparedRequest.request), tools.map((tool) => tool.name));
@@ -467,7 +461,7 @@ export class AgentRuntime {
         await this.persistConversationSummaryFromRequest(
           layeredContext,
           preparedRequest.request,
-          contextualizedInput.messages.length
+          summaryAppliedContext.input.messages.length
         );
       }
       await this.invokeHooks("afterComplete", layeredContext, guardedResponse);
@@ -521,8 +515,7 @@ export class AgentRuntime {
       const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
       const summaryAppliedInput = await this.applyStoredConversationSummary(memoryAppliedContext);
       const summaryAppliedContext: AgentRunContext = { ...memoryAppliedContext, input: summaryAppliedInput };
-      const contextualizedInput = await this.applyRetrievedContext(summaryAppliedContext);
-      const preparedRequest = this.prepareModelRequest(contextualizedInput, selected.model);
+      const preparedRequest = this.prepareModelRequest(summaryAppliedContext.input, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
       const tools = this.modelTools(layeredContext);
       const cacheKey = buildCacheKey(cacheableModelRequest(preparedRequest.request), tools.map((tool) => tool.name));
@@ -602,7 +595,7 @@ export class AgentRuntime {
         await this.persistConversationSummaryFromRequest(
           layeredContext,
           preparedRequest.request,
-          contextualizedInput.messages.length
+          summaryAppliedContext.input.messages.length
         );
       }
       await this.invokeHooks("afterComplete", layeredContext, response);
@@ -828,47 +821,6 @@ export class AgentRuntime {
       });
     } catch {
       // observability writes are fail-open
-    }
-  }
-
-  private async applyRetrievedContext(context: AgentRunContext): Promise<AgentRunInput> {
-    if (!this.ragPipeline) {
-      return context.input;
-    }
-
-    try {
-      const query = joinUserMessages(context.input.messages);
-
-      if (query.trim().length === 0) {
-        return context.input;
-      }
-
-      const ragContext = await this.ragPipeline.retrieve({
-        query
-      });
-      const retrieved = renderRetrievedContext(ragContext.context);
-
-      if (!retrieved) {
-        return context.input;
-      }
-
-      return {
-        ...context.input,
-        messages: appendSystemSection(context.input.messages, retrieved),
-        metadata: {
-          ...context.input.metadata,
-          ragDocumentCount: ragContext.documents.length,
-          ragTotalTokens: ragContext.totalTokens
-        }
-      };
-    } catch {
-      return {
-        ...context.input,
-        metadata: {
-          ...context.input.metadata,
-          ragRetrievalFailed: true
-        }
-      };
     }
   }
 

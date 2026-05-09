@@ -91,17 +91,6 @@ import {
   type ModelProvider
 } from "@muse/model";
 import {
-  InMemoryRagIngestionCandidateStore,
-  InMemoryRagDocumentStore,
-  InMemoryRagIngestionPolicyStore,
-  KyselyRagDocumentStore,
-  KyselyRagIngestionCandidateStore,
-  KyselyRagIngestionPolicyStore,
-  type RagDocumentStore,
-  type RagIngestionCandidateStore,
-  type RagIngestionPolicyStore
-} from "@muse/rag";
-import {
   CostAnomalyDetector,
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
@@ -131,7 +120,6 @@ import {
   type TokenUsageSink
 } from "@muse/observability";
 import { CircuitBreakerRegistry } from "@muse/resilience";
-import { createDefaultRagPipeline } from "./rag-query.js";
 import {
   InMemoryRuntimeSettingsStore,
   KyselyRuntimeSettingsStore,
@@ -222,11 +210,6 @@ export interface MuseRuntimeAssembly {
     readonly traceSink?: QueryableTraceEventSink;
     readonly tracer: MuseTracer;
   };
-  readonly ragIngestion: {
-    readonly candidateStore: RagIngestionCandidateStore;
-    readonly documentStore: RagDocumentStore;
-    readonly policyStore: RagIngestionPolicyStore;
-  };
   readonly requireAuth: boolean;
   readonly resilience: {
     readonly circuitBreakerRegistry: CircuitBreakerRegistry;
@@ -315,9 +298,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const taskMemoryStore = createTaskMemoryStore(db, env);
   const userMemoryStore = createUserMemoryStore(db);
   const sessionTagStore = createSessionTagStore(db);
-  const ragIngestionPolicyStore = createRagIngestionPolicyStore(db);
-  const ragIngestionCandidateStore = createRagIngestionCandidateStore(db);
-  const ragDocumentStore = createRagDocumentStore(db);
   const defaultModel = parseOptionalString(env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL);
   const mcpServerStore = createMcpServerStore(db, env);
   const initialMcpPolicy = {
@@ -362,12 +342,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => schedulerService ? createSchedulerTools(schedulerService) : []
   ]);
   const runtimeHooks = createDefaultRuntimeHooks(env);
-  const ragPipeline = createDefaultRagPipeline({
-    documentStore: ragDocumentStore,
-    env,
-    ...(modelProvider ? { modelProvider } : {}),
-    ...(defaultModel ? { defaultModel } : {})
-  });
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
@@ -380,7 +354,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       historyStore,
       hooks: runtimeHooks,
       hookTraceStore,
-      ...(ragPipeline ? { ragPipeline } : {}),
       metrics: runtimeAgentMetrics,
       modelProvider,
       guards: createInputGuards(env),
@@ -457,11 +430,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       tokenUsageSink,
       ...(traceSink ? { traceSink } : {}),
       tracer
-    },
-    ragIngestion: {
-      candidateStore: ragIngestionCandidateStore,
-      documentStore: ragDocumentStore,
-      policyStore: ragIngestionPolicyStore
     },
     requireAuth: parseBoolean(env.MUSE_REQUIRE_AUTH, Boolean(authService)),
     resilience: {
@@ -664,7 +632,6 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     },
     modelProvider: assembly.modelProvider,
     requireAuth: assembly.requireAuth,
-    ragIngestion: assembly.ragIngestion,
     runtimeSettings: assembly.runtimeSettings,
     scheduler: assembly.scheduler,
     sessionTagStore: assembly.sessionTagStore,
@@ -672,18 +639,6 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     userMemoryStore: assembly.userMemoryStore,
     conversationSummaryStore: assembly.conversationSummaryStore
   };
-}
-
-function createRagIngestionPolicyStore(db: Kysely<MuseDatabase> | undefined): RagIngestionPolicyStore {
-  return db ? new KyselyRagIngestionPolicyStore(db) : new InMemoryRagIngestionPolicyStore();
-}
-
-function createRagIngestionCandidateStore(db: Kysely<MuseDatabase> | undefined): RagIngestionCandidateStore {
-  return db ? new KyselyRagIngestionCandidateStore(db) : new InMemoryRagIngestionCandidateStore();
-}
-
-function createRagDocumentStore(db: Kysely<MuseDatabase> | undefined): RagDocumentStore {
-  return db ? new KyselyRagDocumentStore(db) : new InMemoryRagDocumentStore();
 }
 
 export function requireEnv(env: MuseEnvironment, key: string): string {
@@ -992,17 +947,6 @@ function createRunnerTools(env: MuseEnvironment): readonly MuseTool[] {
  * `GET /api/muse/loopback` lists what is available regardless of which are
  * actually wired here.
  */
-export {
-  composeQueryTransformers,
-  createDefaultRagPipeline,
-  createDefaultRagQueryTransformer,
-  createDocumentStoreRetriever,
-  type CreateDefaultRagPipelineArgs,
-  type CreateDefaultRagQueryTransformerArgs,
-  type RagPipelineEnv,
-  type RagQueryTransformerEnv
-} from "./rag-query.js";
-
 export function createLoopbackMcpToolsFromEnv(env: MuseEnvironment): readonly MuseTool[] {
   const servers: LoopbackMcpServer[] = [];
 

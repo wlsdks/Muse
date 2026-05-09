@@ -275,7 +275,6 @@ describe("api server: web contract + manifest", () => {
         historyEnabled: false,
         mcpEnabled: false,
         modelProviderConfigured: false,
-        ragEnabled: false,
         schedulerEnabled: false
       });
     } finally {

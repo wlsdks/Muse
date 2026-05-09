@@ -53,9 +53,6 @@ importers:
       '@muse/policy':
         specifier: workspace:*
         version: link:../../packages/policy
-      '@muse/rag':
-        specifier: workspace:*
-        version: link:../../packages/rag
       '@muse/runtime-settings':
         specifier: workspace:*
         version: link:../../packages/runtime-settings
@@ -151,9 +148,6 @@ importers:
       '@muse/prompts':
         specifier: workspace:*
         version: link:../prompts
-      '@muse/rag':
-        specifier: workspace:*
-        version: link:../rag
       '@muse/resilience':
         specifier: workspace:*
         version: link:../resilience
@@ -223,9 +217,6 @@ importers:
       '@muse/policy':
         specifier: workspace:*
         version: link:../policy
-      '@muse/rag':
-        specifier: workspace:*
-        version: link:../rag
       '@muse/resilience':
         specifier: workspace:*
         version: link:../resilience
@@ -352,24 +343,6 @@ importers:
         version: 0.28.17
 
   packages/prompts: {}
-
-  packages/rag:
-    dependencies:
-      '@muse/db':
-        specifier: workspace:*
-        version: link:../db
-      '@muse/memory':
-        specifier: workspace:*
-        version: link:../memory
-      '@muse/model':
-        specifier: workspace:*
-        version: link:../model
-      '@muse/shared':
-        specifier: workspace:*
-        version: link:../shared
-      kysely:
-        specifier: ^0.28.17
-        version: 0.28.17
 
   packages/resilience:
     dependencies:

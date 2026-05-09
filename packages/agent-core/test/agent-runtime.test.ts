@@ -4,7 +4,6 @@ import { InMemoryResponseCache } from "@muse/cache";
 import { ModelProviderRegistry, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer } from "@muse/observability";
 import { InMemoryExemplarRetriever, InMemoryPromptLayerRegistry } from "@muse/prompts";
-import { DefaultRagPipeline, InMemoryRagCorpus, SimpleReranker } from "@muse/rag";
 import { COMPACTION_SUMMARY_PREFIX, InMemoryConversationSummaryStore } from "@muse/memory";
 import { InMemoryAgentRunHistoryStore, InMemoryCheckpointStore, InMemoryHookTraceStore } from "@muse/runtime-state";
 import { GuardBlockRateMonitor } from "@muse/policy";
@@ -1826,96 +1825,6 @@ describe("AgentRuntime", () => {
     ]);
   });
 
-  it("runs RAG retrieval, tool execution, history, and cache as one execution graph", async () => {
-    const generated: ModelRequest[] = [];
-    const historyStore = new InMemoryAgentRunHistoryStore();
-    const responseCache = new InMemoryResponseCache();
-    const corpus = new InMemoryRagCorpus();
-
-    corpus.add({
-      content: "The current invoice total is 42 credits.",
-      id: "doc-1",
-      metadata: { tenantId: "tenant-1" }
-    });
-
-    const ragPipeline = new DefaultRagPipeline({
-      retriever: corpus,
-      reranker: new SimpleReranker()
-    });
-    const toolRegistry = new ToolRegistry([
-      {
-        definition: {
-          description: "Reads the current invoice total.",
-          inputSchema: { type: "object" },
-          name: "read_invoice",
-          risk: "read"
-        },
-        execute: () => ({ total: 42 })
-      }
-    ]);
-    const provider = createSequenceProvider(
-      [
-        {
-          id: "response-tool",
-          model: "test-model",
-          output: "I need the invoice tool.",
-          toolCalls: [{ arguments: {}, id: "tool-1", name: "read_invoice" }]
-        },
-        {
-          id: "response-final",
-          model: "test-model",
-          output: "The current invoice total is 42 credits."
-        }
-      ],
-      (request) => generated.push(request)
-    );
-    const runtime = createAgentRuntime({
-      historyStore,
-      maxToolCalls: 1,
-      modelProvider: provider,
-      ragPipeline,
-      responseCache,
-      toolRegistry
-    });
-    const input = {
-      messages: [{ content: "What is the current invoice total?", role: "user" as const }],
-      metadata: { tenantId: "tenant-1", userId: "user-1" },
-      model: "provider/model"
-    };
-
-    const first = await runtime.run({ ...input, runId: "run-integrated-1" });
-    const second = await runtime.run({ ...input, runId: "run-integrated-2" });
-
-    expect(first).toMatchObject({
-      response: { output: "The current invoice total is 42 credits." },
-      toolsUsed: ["read_invoice"]
-    });
-    expect(second).toMatchObject({
-      fromCache: true,
-      response: { output: "The current invoice total is 42 credits." }
-    });
-    expect(generated).toHaveLength(2);
-    expect(generated[0]).toMatchObject({
-      tools: [expect.objectContaining({ name: "read_invoice" })]
-    });
-    expect(generated[0]?.messages.find((message) => message.role === "system")?.content).toContain(
-      "[Retrieved Context]"
-    );
-    expect(generated[1]).toMatchObject({ tools: [] });
-    expect(generated[1]?.messages.map((message) => message.role)).toContain("tool");
-    expect(historyStore.listToolCalls("run-integrated-1")).toEqual([
-      expect.objectContaining({
-        id: "tool-1",
-        name: "read_invoice",
-        status: "completed"
-      })
-    ]);
-    expect(historyStore.findRun("run-integrated-2")).toMatchObject({
-      output: "The current invoice total is 42 credits.",
-      status: "completed"
-    });
-  });
-
   it("deduplicates repeated completed tool calls without re-executing the tool", async () => {
     let executionCount = 0;
     const historyStore = new InMemoryAgentRunHistoryStore();
@@ -1982,47 +1891,6 @@ describe("AgentRuntime", () => {
         status: "completed"
       })
     ]);
-  });
-
-  it("injects retrieved rollback-gate context before model generation", async () => {
-    const generated: ModelRequest[] = [];
-    const corpus = new InMemoryRagCorpus();
-
-    corpus.add({
-      content: "The release can use phased rollout with rollback gates.",
-      id: "document-a",
-      metadata: { workspaceId: "workspace-1" },
-      source: "release-options"
-    });
-    corpus.add({
-      content: "The release can use big-bang migration with longer freeze.",
-      id: "document-b",
-      metadata: { workspaceId: "workspace-1" },
-      source: "release-options"
-    });
-
-    const runtime = createAgentRuntime({
-      modelProvider: createProvider({}, "test", (request) => generated.push(request)),
-      ragPipeline: new DefaultRagPipeline({
-        retriever: corpus,
-        reranker: new SimpleReranker()
-      })
-    });
-
-    await runtime.run({
-      messages: [{ content: "Which release path has rollback gates?", role: "user" }],
-      metadata: { workspaceId: "workspace-1" },
-      model: "provider/model",
-      runId: "run-rag-context"
-    });
-
-    const systemContent = generated[0]?.messages.find((message) => message.role === "system")?.content ?? "";
-
-    expect(systemContent).toContain("[Retrieved Context]");
-    expect(systemContent).toContain("The release can use phased rollout with rollback gates.");
-    expect(systemContent.indexOf("phased rollout with rollback gates")).toBeLessThan(
-      systemContent.indexOf("big-bang migration with longer freeze")
-    );
   });
 
   it("continues streamed tool calls through the ReAct loop", async () => {

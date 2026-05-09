@@ -26,7 +26,6 @@ import { describeBuiltinLoopbackMcpServers } from "@muse/mcp";
 import type { ConversationSummaryStore, TaskMemoryMaintenance, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 import type { MuseObservabilitySnapshot, LatencyQuery, TokenCostQuery } from "@muse/observability";
-import type { RagDocumentStore, RagIngestionCandidateStore, RagIngestionPolicyStore } from "@muse/rag";
 import {
   InMemoryRuntimeSettingsStore,
   RuntimeSettings,
@@ -61,11 +60,6 @@ export interface ServerOptions {
   readonly modelProvider?: ModelProvider;
   readonly defaultModel?: string;
   readonly requireAuth?: boolean;
-  readonly ragIngestion?: {
-    readonly candidateStore: RagIngestionCandidateStore;
-    readonly documentStore?: RagDocumentStore;
-    readonly policyStore: RagIngestionPolicyStore;
-  };
   readonly runtimeSettings?: RuntimeSettings;
   readonly scheduler?: SchedulerRouteScheduler;
   readonly sessionTagStore?: SessionTagStore;
@@ -334,7 +328,6 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     historyStore: options.historyStore,
     mcp: options.mcp,
     modelProvider: options.modelProvider,
-    ragIngestion: options.ragIngestion,
     runtimeSettings,
     scheduler: options.scheduler,
     sessionTagStore: options.sessionTagStore,
@@ -536,7 +529,6 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         historyEnabled: Boolean(options.historyStore),
         mcpEnabled: Boolean(options.mcp),
         modelProviderConfigured: Boolean(options.modelProvider),
-        ragEnabled: Boolean(options.ragIngestion),
         schedulerEnabled: Boolean(options.scheduler)
       },
       defaultModel: options.defaultModel ?? null,

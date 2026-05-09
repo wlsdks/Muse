@@ -162,61 +162,6 @@ export const migrations: readonly SqlMigration[] = [
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
-      CREATE TABLE IF NOT EXISTS rag_ingestion_policy (
-        id VARCHAR(80) PRIMARY KEY,
-        enabled BOOLEAN NOT NULL DEFAULT FALSE,
-        require_review BOOLEAN NOT NULL DEFAULT TRUE,
-        allowed_channels JSONB NOT NULL DEFAULT '[]'::jsonb,
-        min_query_chars INTEGER NOT NULL DEFAULT 10,
-        min_response_chars INTEGER NOT NULL DEFAULT 20,
-        blocked_patterns JSONB NOT NULL DEFAULT '[]'::jsonb,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS rag_ingestion_candidates (
-        id VARCHAR(128) PRIMARY KEY,
-        run_id VARCHAR(128) NOT NULL UNIQUE,
-        user_id VARCHAR(255) NOT NULL,
-        session_id VARCHAR(255),
-        channel VARCHAR(120),
-        query TEXT NOT NULL,
-        response TEXT NOT NULL,
-        status VARCHAR(40) NOT NULL DEFAULT 'pending',
-        captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        reviewed_at TIMESTAMPTZ,
-        reviewed_by VARCHAR(255),
-        review_comment TEXT,
-        ingested_document_id VARCHAR(128)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_rag_ingestion_candidates_status_captured_at
-        ON rag_ingestion_candidates(status, captured_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_rag_ingestion_candidates_channel
-        ON rag_ingestion_candidates(channel);
-
-      CREATE TABLE IF NOT EXISTS rag_documents (
-        id VARCHAR(128) PRIMARY KEY,
-        content TEXT NOT NULL,
-        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-        content_hash VARCHAR(64) NOT NULL,
-        chunk_count INTEGER NOT NULL DEFAULT 1,
-        chunk_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-        indexed BOOLEAN NOT NULL DEFAULT TRUE,
-        source VARCHAR(255),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_rag_documents_created_at
-        ON rag_documents(created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_rag_documents_content_hash
-        ON rag_documents(content_hash);
-      CREATE INDEX IF NOT EXISTS idx_rag_documents_source
-        ON rag_documents(source);
-      CREATE INDEX IF NOT EXISTS idx_rag_documents_metadata
-        ON rag_documents USING GIN (metadata);
-
       CREATE TABLE IF NOT EXISTS conversation_summaries (
         session_id VARCHAR(255) PRIMARY KEY,
         narrative TEXT NOT NULL,

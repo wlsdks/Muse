@@ -34,9 +34,6 @@ export interface MuseDatabase {
   readonly metric_spans: CompatibilityTable;
   readonly metric_token_usage: MetricTokenUsageTable;
   readonly metric_tool_calls: CompatibilityTable;
-  readonly rag_documents: RagDocumentTable;
-  readonly rag_ingestion_candidates: RagIngestionCandidateTable;
-  readonly rag_ingestion_policy: RagIngestionPolicyTable;
   readonly runtime_settings: RuntimeSettingTable;
   readonly scheduled_job_executions: ScheduledJobExecutionTable;
   readonly scheduled_job_locks: ScheduledJobLockTable;
@@ -113,19 +110,6 @@ export interface DebugReplayCaptureTable {
   readonly tools_attempted: JsonColumn;
   readonly metadata_json: JsonColumn;
   readonly expires_at: Timestamp;
-}
-
-export interface RagDocumentTable {
-  readonly id: string;
-  readonly content: string;
-  readonly metadata: JsonColumn;
-  readonly content_hash: string;
-  readonly chunk_count: number;
-  readonly chunk_ids: JsonColumn;
-  readonly indexed: boolean;
-  readonly source: string | null;
-  readonly created_at: Timestamp;
-  readonly updated_at: Timestamp;
 }
 
 export interface UserTable {
@@ -215,34 +199,6 @@ export interface SessionTagTable {
   readonly comment: string | null;
   readonly created_by: string;
   readonly created_at: number;
-}
-
-export interface RagIngestionPolicyTable {
-  readonly id: string;
-  readonly enabled: boolean;
-  readonly require_review: boolean;
-  readonly allowed_channels: JsonColumn;
-  readonly min_query_chars: number;
-  readonly min_response_chars: number;
-  readonly blocked_patterns: JsonColumn;
-  readonly created_at: Timestamp;
-  readonly updated_at: Timestamp;
-}
-
-export interface RagIngestionCandidateTable {
-  readonly id: string;
-  readonly run_id: string;
-  readonly user_id: string;
-  readonly session_id: string | null;
-  readonly channel: string | null;
-  readonly query: string;
-  readonly response: string;
-  readonly status: "PENDING" | "REJECTED" | "INGESTED";
-  readonly captured_at: Timestamp;
-  readonly reviewed_at: NullableTimestamp;
-  readonly reviewed_by: string | null;
-  readonly review_comment: string | null;
-  readonly ingested_document_id: string | null;
 }
 
 export interface CheckpointTable {

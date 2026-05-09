@@ -22,7 +22,6 @@
     "@muse/multi-agent": "workspace:*",
     "@muse/observability": "workspace:*",
     "@muse/policy": "workspace:*",
-    "@muse/rag": "workspace:*",
     "@muse/runtime-settings": "workspace:*",
     "@muse/runtime-state": "workspace:*",
     "@muse/scheduler": "workspace:*",

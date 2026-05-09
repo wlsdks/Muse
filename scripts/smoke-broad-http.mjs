@@ -202,11 +202,6 @@ try {
     assert(response.status === 200 || response.status === 204, `expected 200/204, got ${response.status}`);
   });
 
-  await record("GET /api/admin/rag-analytics/status", async () => {
-    const response = await fetch(`${baseUrl}/api/admin/rag-analytics/status`);
-    assert(response.status === 200, `expected 200, got ${response.status}`);
-  });
-
   await record("GET /api/admin/agent-specs reveals registered Muse ambient tools via OpenAPI surface", async () => {
     const response = await fetch(`${baseUrl}/api/openapi.json`);
     const body = await response.json();
@@ -299,27 +294,6 @@ try {
     const stored = await assembly.userMemoryStore.findByUserId(userId);
     assert(stored?.facts.favorite_project === "muse", "expected stored fact to persist across calls");
     assert(stored?.preferences.tone === "concise", "expected stored preference to persist across calls");
-  });
-
-  await record("LLM HyDE transformer expands the query with a hypothetical answer document", async () => {
-    const { createLlmHypotheticalDocumentTransformer } = await import(`${rootDir}/packages/rag/dist/index.js`);
-    const provider = {
-      id: "fake-hyde",
-      generate: async (request) => ({
-        id: "r",
-        model: request.model,
-        output: "Refunds are processed within 30 days of purchase per the Muse policy."
-      }),
-      listModels: async () => [],
-      stream: async function* () {
-        yield { response: { id: "r", model: "fake-hyde", output: "" }, type: "done" };
-      }
-    };
-    const transformer = createLlmHypotheticalDocumentTransformer({ model: "fake/hyde", provider });
-    const queries = await transformer.transform("what is the refund policy?");
-    assert(queries.length === 2, `expected two queries, got ${queries.length}`);
-    assert(queries[0] === "what is the refund policy?", "first query should be the original");
-    assert(String(queries[1] ?? "").includes("30 days"), "second query should be the hypothetical doc");
   });
 
   await record("GET /api/admin/muse/snapshot returns aggregated observability dashboard", async () => {
@@ -453,75 +427,6 @@ try {
     assert(tested.matched === true, `expected match, got ${JSON.stringify(tested)}`);
   });
 
-  await record("Chunk-merging retriever joins chunks of the same parent and dedupes by id", async () => {
-    const { createChunkMergingRetriever } = await import(`${rootDir}/packages/rag/dist/index.js`);
-    const delegate = {
-      retrieve: async () => [
-        {
-          content: "Beta",
-          estimatedTokens: 1,
-          id: "doc-a#1",
-          metadata: { chunk_index: 1, chunked: true, parent_document_id: "doc-a" },
-          score: 0.6
-        },
-        {
-          content: "Alpha",
-          estimatedTokens: 1,
-          id: "doc-a#0",
-          metadata: { chunk_index: 0, chunked: true, parent_document_id: "doc-a" },
-          score: 0.9
-        },
-        {
-          content: "Standalone",
-          estimatedTokens: 2,
-          id: "doc-b",
-          metadata: {},
-          score: 0.5
-        }
-      ]
-    };
-    const retriever = createChunkMergingRetriever(delegate);
-    const result = await retriever.retrieve(["q"], 5);
-    assert(result.length === 2, `expected 2 results, got ${result.length}`);
-    assert(result[0].id === "doc-a", `expected doc-a first, got ${result[0].id}`);
-    assert(result[0].content === "Alpha\nBeta", `expected ordered merge, got ${result[0].content}`);
-    assert(result[0].metadata.merged_chunks === 2, "expected merged_chunks metadata");
-  });
-
-  await record("Adaptive query router classifies queries and falls back to SIMPLE on errors", async () => {
-    const { createLlmAdaptiveQueryRouter } = await import(`${rootDir}/packages/rag/dist/index.js`);
-    const okRouter = createLlmAdaptiveQueryRouter({
-      model: "fake/route",
-      provider: {
-        generate: async (request) => ({
-          id: "r",
-          model: request.model,
-          output: request.messages.find((m) => m.role === "user")?.content?.includes("compare") ? "COMPLEX" : "SIMPLE"
-        }),
-        listModels: async () => [],
-        stream: async function* () {
-          yield { response: { id: "r", model: "fake/route", output: "" }, type: "done" };
-        }
-      }
-    });
-    assert((await okRouter.route("compare A vs B")) === "complex", "expected complex routing");
-    assert((await okRouter.route("how do I install muse?")) === "simple", "expected simple routing");
-
-    const failingRouter = createLlmAdaptiveQueryRouter({
-      model: "fake/route",
-      provider: {
-        generate: async () => {
-          throw new Error("router boom");
-        },
-        listModels: async () => [],
-        stream: async function* () {
-          yield { response: { id: "r", model: "fake/route", output: "" }, type: "done" };
-        }
-      }
-    });
-    assert((await failingRouter.route("anything")) === "simple", "expected simple fallback");
-  });
-
   await record("Adversarial red team harness blocks pattern-matching attacks via the default guard", async () => {
     const { AdversarialRedTeam, createPatternGuard } = await import(`${rootDir}/packages/policy/dist/index.js`);
     const provider = {
@@ -551,63 +456,6 @@ try {
     assert(report.totalAttacks === 3, `expected 3 attacks, got ${report.totalAttacks}`);
     assert(report.totalBlocked === 2, `expected 2 blocked, got ${report.totalBlocked}`);
     assert(report.totalBypassed === 1, `expected 1 bypass, got ${report.totalBypassed}`);
-  });
-
-  await record("LLM contextual compressor extracts relevant content and drops IRRELEVANT docs", async () => {
-    const { createLlmContextualCompressor } = await import(`${rootDir}/packages/rag/dist/index.js`);
-    const provider = {
-      id: "compress",
-      generate: async (request) => {
-        const userContent = request.messages.find((message) => message.role === "user")?.content ?? "";
-        const includesRefund = userContent.includes("refund payload");
-        return {
-          id: "r",
-          model: request.model,
-          output: includesRefund ? "Refunds processed in 30 days." : "IRRELEVANT"
-        };
-      },
-      listModels: async () => [],
-      stream: async function* () {
-        yield { response: { id: "r", model: "compress", output: "" }, type: "done" };
-      }
-    };
-    const compressor = createLlmContextualCompressor({
-      minContentLength: 0,
-      model: "fake/compress",
-      provider
-    });
-    const result = await compressor.compress("refund policy", [
-      { content: "refund payload long enough to be considered", id: "doc1", metadata: {}, score: 1 },
-      { content: "completely off topic chatter", id: "doc2", metadata: {}, score: 0.5 }
-    ]);
-    assert(result.length === 1, `expected 1 surviving document, got ${result.length}`);
-    assert(result[0].id === "doc1", `expected doc1 to survive, got ${result[0].id}`);
-    assert(String(result[0].content ?? "").includes("30 days"), "expected extracted content");
-  });
-
-  await record("LLM Decomposition transformer parses sub-questions and respects the cap", async () => {
-    const { createLlmDecomposingQueryTransformer } = await import(`${rootDir}/packages/rag/dist/index.js`);
-    const provider = {
-      id: "fake-decomp",
-      generate: async (request) => ({
-        id: "r",
-        model: request.model,
-        output: "Sub one\nSub two\nSub three"
-      }),
-      listModels: async () => [],
-      stream: async function* () {
-        yield { response: { id: "r", model: "fake-decomp", output: "" }, type: "done" };
-      }
-    };
-    const transformer = createLlmDecomposingQueryTransformer({
-      maxQueries: 3,
-      model: "fake/decomp",
-      provider
-    });
-    const queries = await transformer.transform("Big question?");
-    assert(queries.length === 3, `expected three queries (orig + 2 subs), got ${queries.length}`);
-    assert(queries[0] === "Big question?", "expected original first");
-    assert(queries[1] === "Sub one", "expected first sub-question");
   });
 
   await record("MUSE_USER_MEMORY_INJECTION=false suppresses memory injection at runtime", async () => {

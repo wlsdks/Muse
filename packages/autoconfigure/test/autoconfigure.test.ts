@@ -10,7 +10,6 @@ import {
 } from "@muse/memory";
 import { KyselyMcpSecurityPolicyStore, KyselyMcpServerStore } from "@muse/mcp";
 import { PersistedMuseTracer } from "@muse/observability";
-import { KyselyRagDocumentStore, KyselyRagIngestionCandidateStore, KyselyRagIngestionPolicyStore } from "@muse/rag";
 import { KyselyRuntimeSettingsStore } from "@muse/runtime-settings";
 import {
   KyselyAdminOperationsStore,
@@ -123,9 +122,6 @@ describe("autoconfigure", () => {
     expect(assembly.taskMemoryStore).toBeInstanceOf(KyselyTaskMemoryStore);
     expect(assembly.userMemoryStore).toBeInstanceOf(KyselyUserMemoryStore);
     expect(assembly.sessionTagStore).toBeInstanceOf(KyselySessionTagStore);
-    expect(assembly.ragIngestion.policyStore).toBeInstanceOf(KyselyRagIngestionPolicyStore);
-    expect(assembly.ragIngestion.candidateStore).toBeInstanceOf(KyselyRagIngestionCandidateStore);
-    expect(assembly.ragIngestion.documentStore).toBeInstanceOf(KyselyRagDocumentStore);
   });
 
   it("assembles AgentRuntime when an OpenAI-compatible model endpoint is configured", () => {

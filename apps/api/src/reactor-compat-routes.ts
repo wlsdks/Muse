@@ -18,15 +18,6 @@ import type {
   LatencySummary,
   TokenCostQuery
 } from "@muse/observability";
-import type {
-  RagDocumentStore,
-  RagIngestionCandidateStatus,
-  RagIngestionCandidateStore,
-  RagIngestionPolicy,
-  RagIngestionPolicyStore,
-  StoredRagDocument,
-  StoredRagIngestionCandidate
-} from "@muse/rag";
 import type { RuntimeSetting, RuntimeSettings, RuntimeSettingType } from "@muse/runtime-settings";
 import type {
   AgentRunHistoryStore,
@@ -44,9 +35,7 @@ import { createHash } from "node:crypto";
 import { registerAdminAnalyticsCompatRoutes } from "./admin-analytics-compat-routes.js";
 import { isRecord, nowIso } from "./compat-parsers.js";
 import { notFound } from "./compat-responses.js";
-import { listDocuments } from "./compat-document-store.js";
 import { currentAuthIdentity } from "./compat-user-memory-store.js";
-import { defaultRagIngestionPolicy } from "./compat-rag-ingestion.js";
 import { registerAdminObservabilityCompatRoutes } from "./admin-observability-compat-routes.js";
 import { registerAdminPlatformCompatRoutes } from "./admin-platform-compat-routes.js";
 import { registerAdminSessionCompatRoutes } from "./admin-session-compat-routes.js";
@@ -54,7 +43,6 @@ import { registerAgentCompatibilityRoutes } from "./agent-compat-routes.js";
 import { registerAuthCompatibilityRoutes } from "./auth-compat-routes.js";
 import { registerMcpCompatibilityRoutes } from "./mcp-compat-routes.js";
 import { registerMetricIngestionCompatRoutes } from "./metric-ingestion-compat-routes.js";
-import { registerPromptAndRagRoutes } from "./rag-ingestion-compat-routes.js";
 import { registerSessionCompatibilityRoutes } from "./session-compat-routes.js";
 import { registerUserMemoryCompatRoutes } from "./user-memory-compat-routes.js";
 import { recordedSpans, recordedTraceEvents, type AdminRouteState } from "./admin-routes.js";
@@ -75,11 +63,6 @@ export interface ReactorCompatibilityRouteOptions {
   readonly historyStore?: AgentRunHistoryStore;
   readonly mcp?: McpRouteMcp;
   readonly modelProvider?: ModelProvider;
-  readonly ragIngestion?: {
-    readonly candidateStore: RagIngestionCandidateStore;
-    readonly documentStore?: RagDocumentStore;
-    readonly policyStore: RagIngestionPolicyStore;
-  };
   readonly runtimeSettings: RuntimeSettings;
   readonly scheduler?: SchedulerRouteScheduler;
   readonly sessionTagStore?: SessionTagStore;
@@ -106,12 +89,8 @@ export type CompatCollection = Map<string, CompatRecord>;
 export type { CompatBody } from "./compat-parsers.js";
 
 interface CompatState {
-  readonly documents: CompatCollection;
   readonly metricEvents: CompatCollection;
   readonly proactiveChannels: CompatCollection;
-  readonly ragCandidates: CompatCollection;
-  ragIngestionPolicy: JsonObject;
-  ragIngestionPolicyStored: boolean;
   readonly sessionTags: Map<string, CompatRecord[]>;
   readonly userMemory: Map<string, {
     facts: Record<string, string>;
@@ -132,7 +111,6 @@ export function registerReactorCompatibilityRoutes(
   registerSessionCompatibilityRoutes(server, options);
   registerAgentCompatibilityRoutes(server, options);
   registerUserMemoryCompatRoutes(server, options);
-  registerPromptAndRagRoutes(server, options);
   registerMcpCompatibilityRoutes(server, options);
   registerAdminPlatformCompatRoutes(server, options);
   registerAdminSessionCompatRoutes(server, options);
@@ -143,12 +121,8 @@ export function registerReactorCompatibilityRoutes(
 
 function createCompatState(): CompatState {
   return {
-    documents: new Map(),
     metricEvents: new Map(),
     proactiveChannels: new Map(),
-    ragCandidates: new Map(),
-    ragIngestionPolicy: defaultRagIngestionPolicy(),
-    ragIngestionPolicyStored: false,
     sessionTags: new Map(),
     userMemory: new Map()
   };
@@ -160,10 +134,6 @@ function createCompatState(): CompatState {
 // registerSessionCompatibilityRoutes lives in apps/api/src/session-compat-routes.ts.
 
 // registerAgentCompatibilityRoutes lives in apps/api/src/agent-compat-routes.ts.
-
-// registerDocumentRoutes lives in apps/api/src/document-compat-routes.ts.
-
-// registerPromptAndRagRoutes lives in apps/api/src/rag-ingestion-compat-routes.ts.
 
 // registerMcpCompatibilityRoutes lives in apps/api/src/mcp-compat-routes.ts.
 
@@ -229,21 +199,6 @@ export async function getDebugReplayCapture(
   id: string
 ): Promise<JsonObject | undefined> {
   return options.debugReplayCaptureStore?.getDebugReplayCapture(id);
-}
-
-export function ragStatusSummary(documents: readonly CompatRecord[] = [...getStateDocuments().values()]): JsonObject {
-  const records = [...state.ragCandidates.values(), ...documents];
-  const byStatus: Record<string, number> = {};
-
-  for (const record of records) {
-    const status = typeof record.status === "string" ? record.status : "indexed";
-    byStatus[status] = (byStatus[status] ?? 0) + 1;
-  }
-
-  return {
-    byStatus,
-    total: records.length
-  };
 }
 
 // chunkText lives in apps/api/src/compat-parsers.ts.
@@ -329,38 +284,12 @@ function findRecordByParam(
 }
 
 
-export function getStateRagIngestionPolicy(): JsonObject {
-  return state.ragIngestionPolicy;
-}
-
-export function getStateRagCandidates(): readonly CompatRecord[] {
-  return [...state.ragCandidates.values()];
-}
-
 export function getStateMetricEvents(): CompatCollection {
   return state.metricEvents;
 }
 
 export function getStateSessionTags(): Map<string, CompatRecord[]> {
   return state.sessionTags;
-}
-
-export function isStateRagIngestionPolicyStored(): boolean {
-  return state.ragIngestionPolicyStored;
-}
-
-export function setStateRagIngestionPolicy(policy: JsonObject, stored: boolean): JsonObject {
-  state.ragIngestionPolicy = policy;
-  state.ragIngestionPolicyStored = stored;
-  return state.ragIngestionPolicy;
-}
-
-export function getStateRagCandidatesMap(): CompatCollection {
-  return state.ragCandidates;
-}
-
-export function getStateDocuments(): CompatCollection {
-  return state.documents;
 }
 
 export type UserMemoryRecord = {
@@ -380,23 +309,6 @@ export function readIfMatchVersion(request: FastifyRequest): number | undefined 
   const parsed = value ? Number.parseInt(value.trim().replace(/^"|"$/g, ""), 10) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : undefined;
 }
-
-// Document/RAG store helpers live in apps/api/src/compat-document-store.ts.
-export {
-  computeContentHash,
-  countDocuments,
-  createDocument,
-  deleteDocument,
-  deleteDocuments,
-  duplicateDocumentConflict,
-  findDocumentByContentHash,
-  listDocuments,
-  saveDocumentRecord,
-  searchDocuments,
-  toDocumentResponse,
-  toSearchResultResponse,
-  validateAddDocumentBody
-} from "./compat-document-store.js";
 
 // validationErrorResponse + prefixValidationDetails live in apps/api/src/compat-responses.ts.
 
@@ -454,19 +366,6 @@ export {
 
 // errorResponse + badRequest + clampLimit live in apps/api/src/compat-responses.ts.
 
-// RAG ingestion policy + candidate review helpers live in apps/api/src/compat-rag-ingestion.ts.
-export {
-  clearRagIngestionPolicy,
-  defaultRagIngestionPolicy,
-  listRagCandidates,
-  parseRagIngestionPolicy,
-  readStoredRagIngestionPolicy,
-  reviewRagCandidate,
-  saveRagIngestionPolicy,
-  toRagCandidateResponse,
-  toRagIngestionPolicyResponse
-} from "./compat-rag-ingestion.js";
-
 // stringMapField lives in apps/api/src/compat-parsers.ts.
 
 export function toReactorRuntimeSetting(setting: RuntimeSetting): JsonObject {
@@ -511,9 +410,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/admin/platform/cache/invalidate",
     "/api/admin/platform/cache/stats",
     "/api/admin/platform/health",
-    "/api/admin/platform/vectorstore/stats",
-    "/api/admin/rag-analytics/status",
-    "/api/admin/rag/seed-policy",
     "/api/admin/sessions",
     "/api/admin/sessions/{sessionId}",
     "/api/admin/sessions/{sessionId}/export",
@@ -546,10 +442,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/auth/logout",
     "/api/auth/me",
     "/api/auth/register",
-    "/api/documents",
-    "/api/documents/{documentId}",
-    "/api/documents/batch",
-    "/api/documents/search",
     "/api/error-report",
     "/api/mcp/servers",
     "/api/mcp/servers/{name}",
@@ -567,10 +459,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/models",
     "/api/ops/dashboard",
     "/api/ops/metrics/names",
-    "/api/rag-ingestion/candidates",
-    "/api/rag-ingestion/candidates/{id}/approve",
-    "/api/rag-ingestion/candidates/{id}/reject",
-    "/api/rag-ingestion/policy",
     "/api/sessions",
     "/api/sessions/{sessionId}",
     "/api/sessions/{sessionId}/export",

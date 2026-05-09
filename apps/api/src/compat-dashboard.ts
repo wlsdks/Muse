@@ -11,9 +11,7 @@
 import type { McpServer } from "@muse/mcp";
 import type { ScheduledJobExecution } from "@muse/scheduler";
 import type { JsonObject } from "@muse/shared";
-import { countDocuments } from "./compat-document-store.js";
 import {
-  getStateRagCandidates,
   jsonObjectField,
   nullableStringResponse,
   opsMetricSnapshots,
@@ -31,7 +29,6 @@ export async function dashboardSummary(options: ReactorCompatibilityRouteOptions
     options.scheduler?.executionStore?.findRecent(6) ?? []
   ]);
   const metricEvents = recordedMetricEvents(options);
-  const documentCount = await countDocuments(options);
   const enabledJobs = scheduledJobs.filter((job) => job.enabled !== false).length;
   const runningJobs = scheduledJobs.filter((job) => job.lastStatus === "running").length;
   const failedJobs = scheduledJobs.filter((job) => job.enabled !== false && job.lastStatus === "failed").length;
@@ -40,7 +37,6 @@ export async function dashboardSummary(options: ReactorCompatibilityRouteOptions
     generatedAt: Date.now(),
     mcp: mcpStatusSummary(options, mcpServers),
     metrics: opsMetricSnapshots(options),
-    ragEnabled: documentCount > 0 || getStateRagCandidates().length > 0,
     recentSchedulerExecutions: recentExecutions.map(toOpsSchedulerExecutionSummary),
     recentTrustEvents: recentTrustEvents(metricEvents),
     responseTrust: responseTrustSummary(metricEvents),

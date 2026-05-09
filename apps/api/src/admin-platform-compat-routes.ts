@@ -13,7 +13,6 @@
  *   - GET /api/admin/platform/health
  *   - GET /api/admin/doctor (+ /summary)
  *   - GET /api/admin/platform/cache/stats
- *   - GET /api/admin/platform/vectorstore/stats
  *   - POST /api/admin/platform/cache/invalidate
  */
 
@@ -21,7 +20,6 @@ import type { FastifyInstance } from "fastify";
 import {
   adminCapabilitiesResponse,
   adminDiagnostic,
-  countDocuments,
   dashboardSummary,
   errorResponse,
   parseRuntimeSettingType,
@@ -166,16 +164,6 @@ function registerPlatformHealthRoutes(server: FastifyInstance, options: ReactorC
       totalExactHits: exact,
       totalMisses: misses,
       totalSemanticHits: semantic
-    };
-  });
-  server.get("/api/admin/platform/vectorstore/stats", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return {
-      available: true,
-      documentCount: await countDocuments(options)
     };
   });
 }
