@@ -1,13 +1,13 @@
 # Muse
 
-A provider-neutral, JARVIS-style AI conductor. One coherent reasoning
-loop, any LLM, any tool, any MCP server.
+A provider-neutral, JARVIS-style personal AI conductor. One coherent
+reasoning loop, any LLM, any tool, any MCP server.
 
 ## Mission
 
-Muse is the migration target for the Reactor project. Reactor's
-Kotlin/Spring Boot module structure is historical implementation
-detail. The durable asset is Reactor's runtime discipline:
+Muse is a personal-use agent: one user, one local environment, no
+shared workspace. The runtime discipline is what stays durable —
+provider-specific code is kept at the edges.
 
 - Guard is fail-close. Hook is fail-open.
 - Tool output is untrusted.
@@ -24,12 +24,13 @@ detail. The durable asset is Reactor's runtime discipline:
 | Runtime | Node.js 24 LTS |
 | Package manager | pnpm workspace |
 | Server | Fastify |
-| Database | PostgreSQL via Kysely |
+| Database | PostgreSQL via Kysely (optional — runs in-memory by default) |
 | Web UI | React + Vite + TanStack Query |
-| CLI | commander + Ink TUI |
+| CLI | commander + Ink TUI + clack-prompts wizards |
 | Local runner | Rust separate process (`crates/runner`) |
 | Model layer | `packages/model` ModelProvider adapters |
 | Provider adapters | OpenAI, Anthropic, Gemini, OpenRouter, Ollama, OpenAI-compatible |
+| Calendar adapters | Local file, Google Calendar, CalDAV (iCloud / Fastmail / Proton), macOS Calendar.app |
 | Observability | OpenTelemetry + pino + persisted trace events |
 | Tests | Vitest + Playwright + Testcontainers |
 
@@ -37,29 +38,38 @@ detail. The durable asset is Reactor's runtime discipline:
 
 ```
 apps/
-  api/        Fastify API server
-  web/        React UI
-  cli/        terminal agent (auth, config, TUI)
+  api/        Fastify API server (chat, agent specs, multi-agent,
+              MCP, scheduler, calendar, tasks)
+  web/        React UI (chat, tasks, calendar, settings)
+  cli/        terminal agent (auth, config, TUI, setup wizards)
 
 packages/
-  agent-core/         Guard, Hook, ReAct loop, message integrity
-  model/              ModelProvider interface + adapters
+  agent-core/         Guard, Hook, ReAct + Plan-Execute loops,
+                      message integrity, context transforms
+  model/              ModelProvider interface + provider wire adapters
   tools/              tool registry, MCP adapter, built-in tools
   policy/             approval, permissions, guardrails
-  memory/             conversation state, context trimming, checkpoints
-  multi-agent/        SupervisorAgent, MultiAgentOrchestrator, message bus
+  memory/             conversation state, context trimming,
+                      checkpoints, user-memory auto-extraction hook
+  multi-agent/        SupervisorAgent, MultiAgentOrchestrator,
+                      message bus
   mcp/                MCP transport + loopback servers
+                      (notes / tasks / calendar) + NotesProvider abstraction
+  calendar/           CalendarProvider abstraction +
+                      Local / Google / CalDAV / macOS adapters +
+                      chmod-600 credential store
   observability/      spans, metrics, run events
   runtime-state/      run history, hook traces, approval store
   db/                 Kysely queries + SQL migrations
+  scheduler/          cron jobs + distributed locks
   ...
 
 crates/
   runner/             Rust sandbox: shell/process/file execution
 
 docs/
-  migration-plan.md   running notes on Reactor → Muse parity
-  audits/             periodic deep-dive parity audits
+  migration-plan.md   running iteration notes
+  audits/             periodic deep-dive audits
 
 .claude/
   rules/              domain-specific rules auto-loaded with CLAUDE.md
@@ -67,12 +77,30 @@ docs/
   agents/             subagent definitions
 ```
 
+## Personal-domain primitives
+
+The agent ships three personal loopback MCP servers, all
+file-backed by default:
+
+- `muse.notes.*` → `~/.muse/notes/` markdown directory
+  (drop-in compatible with an Obsidian vault).
+- `muse.tasks.*` → `~/.muse/tasks.json` todo list.
+- `muse.calendar.*` → provider-neutral, four backends behind one
+  registry. `muse setup calendar` walks the user through OAuth /
+  app-password setup interactively.
+
+User-memory auto-extraction (`MUSE_USER_MEMORY_AUTO_EXTRACT=true`)
+runs an extra structured-output LLM call after each turn to
+persist newly stated facts / preferences into the
+`UserMemoryStore`. Disabled by default to keep token cost
+predictable.
+
 ## Where to look next
 
 - [`CLAUDE.md`](CLAUDE.md) — the contract every Claude Code agent reads first.
 - [`.claude/rules/`](.claude/rules/) — domain-specific rules.
-- [`docs/migration-plan.md`](docs/migration-plan.md) — running migration notes.
-- [`docs/audits/`](docs/audits/) — periodic parity audits.
+- [`docs/migration-plan.md`](docs/migration-plan.md) — running iteration notes.
+- [`docs/audits/`](docs/audits/) — periodic audits.
 
 This file is the cross-agent product brief. It should not duplicate
 the rules in `CLAUDE.md` or `.claude/rules/`.
