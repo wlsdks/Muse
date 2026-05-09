@@ -79,6 +79,7 @@ import {
   type McpServerStore
 } from "@muse/mcp";
 import {
+  createUserMemoryAutoExtractHook,
   InMemoryTaskMemoryStore,
   InMemoryConversationSummaryStore,
   InMemoryUserMemoryStore,
@@ -365,7 +366,16 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => mcpManager.toMuseTools(),
     () => schedulerService ? createSchedulerTools(schedulerService) : []
   ]);
-  const runtimeHooks = createDefaultRuntimeHooks(env);
+  const runtimeHooks = [
+    ...createDefaultRuntimeHooks(env),
+    ...(parseBoolean(env.MUSE_USER_MEMORY_AUTO_EXTRACT, false) && modelProvider && defaultModel
+      ? [createUserMemoryAutoExtractHook({
+        model: env.MUSE_USER_MEMORY_AUTO_EXTRACT_MODEL ?? defaultModel,
+        modelProvider,
+        store: userMemoryStore
+      }) as HookStage]
+      : [])
+  ];
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,

@@ -308,6 +308,9 @@ importers:
       '@muse/model':
         specifier: workspace:*
         version: link:../model
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
       kysely:
         specifier: ^0.28.17
         version: 0.28.17

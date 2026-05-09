@@ -15,6 +15,7 @@ import {
   buildTaskMemoryUpsertQuery,
   computeApproximateTokens,
   createConversationSummaryInsert,
+  createUserMemoryAutoExtractHook,
   createUserMemoryInsert,
   createTaskMemoryInsert,
   createApproximateTokenEstimator,
@@ -591,3 +592,86 @@ function createPostgresBuilder(): Kysely<MuseDatabase> {
     }
   });
 }
+
+describe("createUserMemoryAutoExtractHook", () => {
+  function makeContext(userId: string | undefined, userText: string) {
+    return {
+      input: {
+        messages: [{ content: userText, role: "user" as const }],
+        ...(userId ? { metadata: { userId } } : {})
+      },
+      runId: "run-1"
+    };
+  }
+
+  function makeProvider(payload: string) {
+    return {
+      id: "stub",
+      generate: vi.fn(async () => ({ id: "r-1", model: "stub", output: payload })),
+      listModels: vi.fn(async () => []),
+      stream: vi.fn(async function* () {})
+    };
+  }
+
+  function makeResponse(text: string) {
+    return { id: "r-stub", model: "stub", output: text };
+  }
+
+  it("persists facts and preferences from a successful extraction", async () => {
+    const store = new InMemoryUserMemoryStore();
+    const provider = makeProvider(JSON.stringify({
+      facts: { spouse_name: "Alex" },
+      preferences: { favorite_drink: "matcha latte" }
+    }));
+    const hook = createUserMemoryAutoExtractHook({ model: "stub", modelProvider: provider as never, store });
+
+    await hook.afterComplete!(
+      makeContext("user-42", "By the way, my wife Alex prefers matcha lattes."),
+      makeResponse("Got it.")
+    );
+
+    const memory = await store.findByUserId("user-42");
+    expect(memory?.facts).toMatchObject({ spouse_name: "Alex" });
+    expect(memory?.preferences).toMatchObject({ favorite_drink: "matcha latte" });
+    expect(provider.generate).toHaveBeenCalledOnce();
+  });
+
+  it("skips when no userId is present", async () => {
+    const store = new InMemoryUserMemoryStore();
+    const provider = makeProvider("{}");
+    const hook = createUserMemoryAutoExtractHook({ model: "stub", modelProvider: provider as never, store });
+
+    await hook.afterComplete!(makeContext(undefined, "anything"), makeResponse("ok"));
+    expect(provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("treats malformed JSON output as fail-open (no throw, no write)", async () => {
+    const store = new InMemoryUserMemoryStore();
+    const provider = makeProvider("```not json```");
+    const hook = createUserMemoryAutoExtractHook({ model: "stub", modelProvider: provider as never, store });
+
+    await hook.afterComplete!(makeContext("user-1", "hi"), makeResponse("hi back"));
+    expect(await store.findByUserId("user-1")).toBeUndefined();
+  });
+
+  it("clamps key length and snake_cases noisy keys", async () => {
+    const store = new InMemoryUserMemoryStore();
+    const provider = makeProvider(JSON.stringify({
+      facts: { "Loud  Noisy Key!! WithLotsOfText": "value-A" },
+      preferences: {}
+    }));
+    const hook = createUserMemoryAutoExtractHook({
+      maxKeyLength: 16,
+      model: "stub",
+      modelProvider: provider as never,
+      store
+    });
+
+    await hook.afterComplete!(makeContext("user-9", "x"), makeResponse("y"));
+    const memory = await store.findByUserId("user-9");
+    const keys = Object.keys(memory?.facts ?? {});
+    expect(keys.length).toBe(1);
+    expect(keys[0]?.length).toBeLessThanOrEqual(16);
+    expect(keys[0]).toMatch(/^[a-z0-9_]+$/);
+  });
+});

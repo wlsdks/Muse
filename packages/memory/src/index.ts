@@ -209,4 +209,9 @@ export {
   trimConversationMessages
 } from "./memory-token-trim.js";
 
+export {
+  createUserMemoryAutoExtractHook,
+  type UserMemoryAutoExtractOptions
+} from "./memory-auto-extract.js";
+
 
