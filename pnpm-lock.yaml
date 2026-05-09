@@ -35,6 +35,9 @@ importers:
       '@muse/autoconfigure':
         specifier: workspace:*
         version: link:../../packages/autoconfigure
+      '@muse/calendar':
+        specifier: workspace:*
+        version: link:../../packages/calendar
       '@muse/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp

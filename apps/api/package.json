@@ -16,6 +16,7 @@
     "@muse/agent-specs": "workspace:*",
     "@muse/auth": "workspace:*",
     "@muse/autoconfigure": "workspace:*",
+    "@muse/calendar": "workspace:*",
     "@muse/memory": "workspace:*",
     "@muse/mcp": "workspace:*",
     "@muse/model": "workspace:*",

@@ -5,6 +5,7 @@ import {
   type AgentSpecRegistry
 } from "@muse/agent-specs";
 import { extractBearerToken, type MuseAuth } from "@muse/auth";
+import type { CalendarCredentialStore, CalendarProviderRegistry } from "@muse/calendar";
 import { describeBuiltinLoopbackMcpServers } from "@muse/mcp";
 import type { ConversationSummaryStore, TaskMemoryMaintenance, UserMemoryStore } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
@@ -39,6 +40,7 @@ import {
   registerAdminRunRoutes,
   registerAgentSpecRoutes,
   registerAuthRoutes,
+  registerCalendarRoutes,
   registerChatRoutes,
   registerCoreRoutes,
   registerRuntimeSettingsRoutes,
@@ -77,6 +79,8 @@ export interface ServerOptions {
   readonly agentCardToolProvider?: () => Promise<readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[]> | readonly { readonly name: string; readonly description: string; readonly inputSchema?: Record<string, unknown> | null }[];
   readonly toolCatalogProvider?: () => Promise<readonly ToolCatalogEntry[]> | readonly ToolCatalogEntry[];
   readonly museObservabilitySnapshot?: () => Promise<MuseObservabilitySnapshot>;
+  readonly calendar?: CalendarProviderRegistry;
+  readonly calendarCredentialStore?: CalendarCredentialStore;
 }
 
 export interface ToolCatalogEntry {
@@ -224,6 +228,13 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   registerToolsRoutes(server, options, agentSpecRegistry, runtimeSettings, authService);
   registerSessionSummaryRoutes(server, options, { authService });
   registerRuntimeSettingsRoutes(server, runtimeSettings);
+  if (options.calendar) {
+    registerCalendarRoutes(server, {
+      authService,
+      credentialStore: options.calendarCredentialStore,
+      registry: options.calendar
+    });
+  }
 
   return server;
 }
