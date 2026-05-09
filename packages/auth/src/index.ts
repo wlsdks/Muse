@@ -134,12 +134,6 @@ export interface MuseAuth {
   logout(token: string | undefined): Awaitable<boolean>;
 }
 
-export interface AuthRateLimiterOptions {
-  readonly maxAttemptsPerMinute?: number;
-  readonly now?: () => number;
-  readonly windowMs?: number;
-}
-
 export const anonymousActor = "anonymous";
 
 const defaultJwtExpirationMs = 86_400_000;
@@ -147,7 +141,6 @@ const minimumJwtSecretBytes = 32;
 const passwordHashVersion = "scrypt-v1";
 const passwordKeyLength = 64;
 const defaultMaxUsers = 10_000;
-const defaultRateWindowMs = 60_000;
 
 export class AuthError extends Error {
   readonly code: string;
@@ -771,65 +764,6 @@ export class AsyncAuth implements MuseAuth {
     const token = this.options.jwt.createToken(user);
     const expiresAt = this.options.jwt.extractExpiration(token) ?? new Date(Date.now() + defaultJwtExpirationMs);
     return { expiresAt, token, user: publicUser(user) };
-  }
-}
-
-export class AuthRateLimiter {
-  private readonly maxAttempts: number;
-  private readonly windowMs: number;
-  private readonly now: () => number;
-  private readonly attempts = new Map<string, { count: number; expiresAt: number }>();
-
-  constructor(options: AuthRateLimiterOptions = {}) {
-    this.maxAttempts = Math.max(1, options.maxAttemptsPerMinute ?? 10);
-    this.windowMs = Math.max(1, options.windowMs ?? defaultRateWindowMs);
-    this.now = options.now ?? Date.now;
-  }
-
-  isBlocked(key: string): boolean {
-    return this.currentCount(key) >= this.maxAttempts;
-  }
-
-  recordFailure(key: string): number {
-    const now = this.now();
-    const entry = this.attempts.get(key);
-    const next = !entry || entry.expiresAt <= now
-      ? { count: 1, expiresAt: now + this.windowMs }
-      : { count: entry.count + 1, expiresAt: entry.expiresAt };
-
-    this.attempts.set(key, next);
-    return next.count;
-  }
-
-  recordSuccess(key: string): void {
-    this.attempts.delete(key);
-  }
-
-  recordCompletedAttempt(key: string, statusCode: number | undefined): void {
-    if (statusCode === undefined) {
-      return;
-    }
-
-    if (statusCode >= 200 && statusCode < 300) {
-      this.recordSuccess(key);
-    } else if (statusCode >= 400) {
-      this.recordFailure(key);
-    }
-  }
-
-  private currentCount(key: string): number {
-    const entry = this.attempts.get(key);
-
-    if (!entry) {
-      return 0;
-    }
-
-    if (entry.expiresAt <= this.now()) {
-      this.attempts.delete(key);
-      return 0;
-    }
-
-    return entry.count;
   }
 }
 

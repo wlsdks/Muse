@@ -624,39 +624,6 @@ describe("api server", () => {
     expect(approvedAgain.statusCode).toBe(409);
   });
 
-  it("rate limits failed auth attempts", async () => {
-    const authService = createAuthService();
-    authService.register({
-      email: "first_account",
-      name: "First",
-      password: "password-1"
-    });
-    const server = buildServer({ authService, logger: false });
-
-    await server.inject({
-      method: "POST",
-      payload: { email: "first_account", password: "wrong" },
-      url: "/auth/login"
-    });
-
-    for (let index = 0; index < 9; index += 1) {
-      await server.inject({
-        method: "POST",
-        payload: { email: "first_account", password: "wrong" },
-        url: "/auth/login"
-      });
-    }
-
-    const blocked = await server.inject({
-      method: "POST",
-      payload: { email: "first_account", password: "wrong" },
-      url: "/auth/login"
-    });
-
-    expect(blocked.statusCode).toBe(429);
-    expect(blocked.json()).toMatchObject({ code: "AUTH_RATE_LIMITED" });
-  });
-
   it("exposes admin summary, run history, and scheduler state behind admin auth", async () => {
     const authService = createAuthService();
     const registered = authService.register({

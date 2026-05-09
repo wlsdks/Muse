@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   AuthError,
-  AuthRateLimiter,
   Auth,
   DefaultAuthProvider,
   InMemoryTokenRevocationStore,
@@ -166,60 +165,6 @@ describe("Auth.updateUserRole", () => {
   it("returns undefined when the user does not exist", () => {
     const { service } = makeService();
     expect(service.updateUserRole("ghost", "admin")).toBeUndefined();
-  });
-});
-
-describe("AuthRateLimiter", () => {
-  it("blocks once maxAttempts is reached and unblocks once the window passes", () => {
-    let now = 0;
-    const limiter = new AuthRateLimiter({
-      maxAttemptsPerMinute: 3,
-      now: () => now,
-      windowMs: 1_000
-    });
-    const key = "user:127.0.0.1";
-    expect(limiter.isBlocked(key)).toBe(false);
-    limiter.recordFailure(key);
-    limiter.recordFailure(key);
-    expect(limiter.isBlocked(key)).toBe(false);
-    limiter.recordFailure(key);
-    expect(limiter.isBlocked(key)).toBe(true);
-
-    // Inside the window, even a success-coded completion clears.
-    limiter.recordSuccess(key);
-    expect(limiter.isBlocked(key)).toBe(false);
-  });
-
-  it("auto-expires entries when isBlocked is queried after the window", () => {
-    let now = 0;
-    const limiter = new AuthRateLimiter({
-      maxAttemptsPerMinute: 1,
-      now: () => now,
-      windowMs: 100
-    });
-    limiter.recordFailure("k");
-    expect(limiter.isBlocked("k")).toBe(true);
-    now += 200;
-    expect(limiter.isBlocked("k")).toBe(false);
-  });
-
-  it("recordCompletedAttempt mirrors success/failure on 2xx vs 4xx and ignores 3xx/undefined", () => {
-    let now = 0;
-    const limiter = new AuthRateLimiter({
-      maxAttemptsPerMinute: 2,
-      now: () => now,
-      windowMs: 1_000
-    });
-    limiter.recordCompletedAttempt("k", 401);
-    expect(limiter.isBlocked("k")).toBe(false);
-    limiter.recordCompletedAttempt("k", 403);
-    expect(limiter.isBlocked("k")).toBe(true);
-    limiter.recordCompletedAttempt("k", 200);
-    expect(limiter.isBlocked("k")).toBe(false);
-    // 3xx and undefined should be no-ops.
-    limiter.recordCompletedAttempt("k", 302);
-    limiter.recordCompletedAttempt("k", undefined);
-    expect(limiter.isBlocked("k")).toBe(false);
   });
 });
 

@@ -8,7 +8,6 @@ import {
   PostgresQueryCompiler
 } from "kysely";
 import {
-  AuthRateLimiter,
   Auth,
   DefaultAuthProvider,
   InMemoryTokenRevocationStore,
@@ -161,36 +160,6 @@ describe("authorization helpers", () => {
   it("extracts bearer tokens conservatively", () => {
     expect(extractBearerToken("Bearer token-1")).toBe("token-1");
     expect(extractBearerToken("Basic token-1")).toBeUndefined();
-  });
-});
-
-describe("AuthRateLimiter", () => {
-  it("blocks after configured failures and does not clear on unknown status", () => {
-    let now = 0;
-    const limiter = new AuthRateLimiter({
-      maxAttemptsPerMinute: 2,
-      now: () => now,
-      windowMs: 1_000
-    });
-
-    limiter.recordFailure("ip:/auth/login");
-    limiter.recordCompletedAttempt("ip:/auth/login", undefined);
-    expect(limiter.isBlocked("ip:/auth/login")).toBe(false);
-
-    limiter.recordFailure("ip:/auth/login");
-    expect(limiter.isBlocked("ip:/auth/login")).toBe(true);
-
-    now += 1_000;
-    expect(limiter.isBlocked("ip:/auth/login")).toBe(false);
-  });
-
-  it("clears failures only on explicit success", () => {
-    const limiter = new AuthRateLimiter({ maxAttemptsPerMinute: 1 });
-
-    limiter.recordFailure("ip:/auth/login");
-    limiter.recordCompletedAttempt("ip:/auth/login", 200);
-
-    expect(limiter.isBlocked("ip:/auth/login")).toBe(false);
   });
 });
 

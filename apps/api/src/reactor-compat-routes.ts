@@ -2,7 +2,6 @@ import type { AgentCardToolInput, AgentSpec, AgentSpecInput, AgentSpecRegistry }
 import { buildAgentCard } from "@muse/agent-specs";
 import type { AgentRunResult, AgentRuntime } from "@muse/agent-core";
 import {
-  AuthRateLimiter,
   extractBearerToken,
   type AuthIdentity,
   type LoginResult,
@@ -71,7 +70,6 @@ export interface ReactorCompatibilityRouteOptions {
   readonly admin?: AdminRouteState;
   readonly agentRuntime?: AgentRuntime;
   readonly agentSpecRegistry: AgentSpecRegistry;
-  readonly authRateLimiter: AuthRateLimiter;
   readonly authService?: MuseAuth;
   readonly authorizeAdmin: (request: FastifyRequest, reply: FastifyReply) => boolean;
   readonly apiPathRegistry?: () => readonly string[];
@@ -469,7 +467,6 @@ export {
 
 // Auth helpers live in apps/api/src/compat-auth.ts.
 export {
-  authRateLimitKey,
   errorMessage,
   parseAuthCredentials,
   requireAuthService,

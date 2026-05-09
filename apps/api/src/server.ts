@@ -16,7 +16,6 @@ import {
   type AgentSpecRegistry
 } from "@muse/agent-specs";
 import {
-  AuthRateLimiter,
   extractBearerToken,
   isAnyAdmin,
   type AuthIdentity,
@@ -55,7 +54,6 @@ export interface ServerOptions {
   readonly admin?: AdminRouteState;
   readonly agentSpecRegistry?: AgentSpecRegistry;
   readonly authService?: MuseAuth;
-  readonly authRateLimiter?: AuthRateLimiter;
   readonly debugReplayCaptureStore?: DebugReplayCaptureStore;
   readonly latencyQuery?: LatencyQuery;
   readonly tokenCostQuery?: TokenCostQuery;
@@ -110,7 +108,6 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const runtimeSettings =
     options.runtimeSettings ?? new RuntimeSettings(new InMemoryRuntimeSettingsStore());
   const authService = options.authService;
-  const authRateLimiter = options.authRateLimiter ?? new AuthRateLimiter();
   const server = Fastify({
     logger: options.logger ?? true
   });
@@ -326,7 +323,6 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     admin: options.admin,
     agentRuntime: options.agentRuntime,
     agentSpecRegistry,
-    authRateLimiter,
     authService,
     authorizeAdmin: (request, reply) => authorizeAdmin(request, reply, Boolean(authService)),
     apiPathRegistry: () => [...apiPaths].sort(),
@@ -368,33 +364,21 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
 
     server.post("/auth/login", async (request, reply) => {
-      const key = authRateLimitKey(request.headers["x-forwarded-for"], request.ip, "/auth/login");
-
-      if (authRateLimiter.isBlocked(key)) {
-        return reply.status(429).send({
-          code: "AUTH_RATE_LIMITED",
-          message: "Too many authentication attempts"
-        });
-      }
-
       const parsed = parseAuthCredentials(request.body, "login");
 
       if (!parsed.ok) {
-        authRateLimiter.recordFailure(key);
         return reply.status(400).send(parsed.error);
       }
 
       const login = await authService.login(parsed.value.email, parsed.value.password);
 
       if (!login) {
-        authRateLimiter.recordFailure(key);
         return reply.status(401).send({
           code: "INVALID_CREDENTIALS",
           message: "Invalid credentials"
         });
       }
 
-      authRateLimiter.recordSuccess(key);
       return toLoginResponse(login);
     });
 
@@ -1583,16 +1567,6 @@ function attachAuthIdentity(request: unknown, identity: AuthIdentity | undefined
 
 function getAuthIdentity(request: unknown): AuthIdentity | undefined {
   return (request as { auth?: AuthIdentity }).auth;
-}
-
-function authRateLimitKey(
-  forwardedFor: string | string[] | undefined,
-  fallbackIp: string,
-  path: string
-): string {
-  const forwarded = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  const ip = forwarded?.split(",")[0]?.trim() || fallbackIp || "unknown";
-  return `${ip}:${path}`;
 }
 
 function toLoginResponse(login: LoginResult) {

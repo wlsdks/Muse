@@ -10,7 +10,6 @@
 import { extractBearerToken, type LoginResult } from "@muse/auth";
 import type { FastifyInstance } from "fastify";
 import {
-  authRateLimitKey,
   errorMessage,
   errorResponse,
   nowIso,
@@ -64,26 +63,15 @@ export function registerAuthCompatibilityRoutes(server: FastifyInstance, options
       return reply;
     }
 
-    const key = authRateLimitKey(request.headers["x-forwarded-for"], request.ip, "/api/auth/login");
-
-    if (options.authRateLimiter.isBlocked(key)) {
-      return reply.status(429).send({
-        code: "AUTH_RATE_LIMITED",
-        message: "Too many authentication attempts"
-      });
-    }
-
     const parsed = parseAuthCredentials(request.body, "login");
 
     if (!parsed.ok) {
-      options.authRateLimiter.recordFailure(key);
       return reply.status(400).send(parsed.error);
     }
 
     const login = await authService.login(parsed.value.email, parsed.value.password);
 
     if (!login) {
-      options.authRateLimiter.recordFailure(key);
       return reply.status(401).send({
         error: "Invalid email or password",
         token: "",
@@ -91,7 +79,6 @@ export function registerAuthCompatibilityRoutes(server: FastifyInstance, options
       });
     }
 
-    options.authRateLimiter.recordSuccess(key);
     return toReactorAuthResponse(login);
   });
 

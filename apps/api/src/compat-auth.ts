@@ -80,13 +80,3 @@ export function toReactorUserResponse(user: LoginResult["user"]): JsonObject {
 export function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
-
-export function authRateLimitKey(
-  forwardedFor: string | string[] | undefined,
-  fallbackIp: string,
-  path: string
-): string {
-  const forwarded = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  const ip = forwarded?.split(",")[0]?.trim() || fallbackIp || "unknown";
-  return `${ip}:${path}`;
-}
