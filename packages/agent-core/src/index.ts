@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-import type { AgentSpecResolution } from "@muse/agent-specs";
 import {
   buildCacheKey,
   cacheableModelRequest,
@@ -27,8 +26,6 @@ import {
   type TokenUsageSink
 } from "@muse/observability";
 import {
-  buildLayeredSystemPrompt,
-  renderExemplarContext,
   renderToolResults,
   type ExemplarRetriever,
   type PromptLayerRegistry
@@ -41,9 +38,7 @@ import type {
   HookTraceStore
 } from "@muse/runtime-state";
 import {
-  COMPACTION_SUMMARY_PREFIX,
   trimConversationMessages,
-  type ConversationSummary,
   type ConversationSummaryStore,
   type ConversationTrimOptions
 } from "@muse/memory";
@@ -60,7 +55,7 @@ import {
 } from "@muse/policy";
 import { createRunId, type JsonObject } from "@muse/shared";
 import { ToolCallDeduplicator } from "./tool-call-deduplicator.js";
-import { isRecord, joinUserMessages, withResponseFilterRaw } from "./internals.js";
+import { isRecord, withResponseFilterRaw } from "./internals.js";
 import {
   recordCheckpoint,
   recordRunComplete,
@@ -71,7 +66,6 @@ import { invokeHooks } from "./hook-orchestration.js";
 import { invokeModel, recordTokenUsageEvent } from "./model-invocation.js";
 import {
   appendSystemSection,
-  applyAgentSpecSystemPrompt,
   failMissingProvider,
   isModelMessage,
   latestUserPrompt,
@@ -79,7 +73,6 @@ import {
   numberMetadata,
   recordContextWindowSpanAttributes,
   recordUsageSpanAttributes,
-  renderUserMemorySection,
   stringListMetadata
 } from "./runtime-helpers.js";
 import {
@@ -103,6 +96,14 @@ import {
   type PlanExecuteRunner
 } from "./plan-execute-loop.js";
 import {
+  applyAgentSpec as applyAgentSpecFn,
+  applyPromptExemplars as applyPromptExemplarsFn,
+  applyPromptLayers as applyPromptLayersFn,
+  applyStoredConversationSummary as applyStoredConversationSummaryFn,
+  applyUserMemory as applyUserMemoryFn,
+  persistConversationSummaryFromRequest as persistConversationSummaryFromRequestFn
+} from "./context-transforms.js";
+import {
   createAgentCheckpointState,
   encodeCheckpointMessages,
   type AgentCheckpointState
@@ -125,6 +126,7 @@ import type {
   AgentRunContext,
   AgentRunInput,
   AgentRunResult,
+  AgentSpecResolver,
   AgentSpecRunReport,
   Awaitable,
   GuardDecision,
@@ -138,7 +140,6 @@ import type {
   ResponseFilterStage,
   UserMemoryInjectionOptions,
   UserMemoryProvider,
-  UserMemorySnapshot,
   VerifiedSource
 } from "./types.js";
 
@@ -147,6 +148,7 @@ export type {
   AgentRunContext,
   AgentRunInput,
   AgentRunResult,
+  AgentSpecResolver,
   AgentSpecRunReport,
   Awaitable,
   GuardDecision,
@@ -179,10 +181,6 @@ export {
   type ToolCallDuplicate,
   type ToolCallNotDuplicate
 } from "./tool-call-deduplicator.js";
-
-export interface AgentSpecResolver {
-  resolve(text: string): Awaitable<AgentSpecResolution | undefined>;
-}
 
 export interface AgentRuntimeOptions {
   readonly modelProvider?: ModelProvider;
@@ -368,7 +366,7 @@ export class AgentRuntime {
 
   async run(input: AgentRunInput): Promise<AgentRunResult> {
     const startedAtMs = Date.now();
-    const specApplied = await this.applyAgentSpec(input);
+    const specApplied = await applyAgentSpecFn(input, this.agentSpecResolver);
     const context: AgentRunContext = {
       agentSpec: specApplied.agentSpec,
       input: specApplied.input,
@@ -387,14 +385,16 @@ export class AgentRuntime {
 
       const selected = this.resolveProvider(context.input.model);
       runSpan.setAttribute("model.selected", selected.model);
-      const layeredContext = await this.applyPromptExemplars(
-        this.applyPromptLayers(context, selected.provider.id, selected.model)
+      const layeredContext = await applyPromptExemplarsFn(
+        applyPromptLayersFn(context, selected.provider.id, selected.model, this.promptLayerRegistry),
+        this.exemplarRetriever,
+        this.exemplarTopK
       );
       await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
-      const memoryAppliedInput = await this.applyUserMemory(layeredContext);
+      const memoryAppliedInput = await applyUserMemoryFn(layeredContext, this.userMemoryProvider, this.userMemoryMaxEntries);
       const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
-      const summaryAppliedInput = await this.applyStoredConversationSummary(memoryAppliedContext);
+      const summaryAppliedInput = await applyStoredConversationSummaryFn(memoryAppliedContext, this.conversationSummaryStore);
       const summaryAppliedContext: AgentRunContext = { ...memoryAppliedContext, input: summaryAppliedInput };
       const preparedRequest = this.prepareModelRequest(summaryAppliedContext.input, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
@@ -453,10 +453,11 @@ export class AgentRuntime {
       await this.recordCheckpoint(layeredContext, 100, "complete", layeredContext.input.messages, guardedResponse.output);
       await this.writeCache(cacheKey, guardedResponse, execution.toolsUsed);
       if (preparedRequest.contextWindow?.summaryInserted) {
-        await this.persistConversationSummaryFromRequest(
+        await persistConversationSummaryFromRequestFn(
           layeredContext,
           preparedRequest.request,
-          summaryAppliedContext.input.messages.length
+          summaryAppliedContext.input.messages.length,
+          this.conversationSummaryStore
         );
       }
       await this.invokeHooks("afterComplete", layeredContext, guardedResponse);
@@ -482,7 +483,7 @@ export class AgentRuntime {
 
   async *stream(input: AgentRunInput): AsyncIterable<AgentRuntimeStreamEvent> {
     const startedAtMs = Date.now();
-    const specApplied = await this.applyAgentSpec(input);
+    const specApplied = await applyAgentSpecFn(input, this.agentSpecResolver);
     const context: AgentRunContext = {
       agentSpec: specApplied.agentSpec,
       input: specApplied.input,
@@ -501,14 +502,16 @@ export class AgentRuntime {
 
       const selected = this.resolveProvider(context.input.model);
       runSpan.setAttribute("model.selected", selected.model);
-      const layeredContext = await this.applyPromptExemplars(
-        this.applyPromptLayers(context, selected.provider.id, selected.model)
+      const layeredContext = await applyPromptExemplarsFn(
+        applyPromptLayersFn(context, selected.provider.id, selected.model, this.promptLayerRegistry),
+        this.exemplarRetriever,
+        this.exemplarTopK
       );
       await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
-      const memoryAppliedInput = await this.applyUserMemory(layeredContext);
+      const memoryAppliedInput = await applyUserMemoryFn(layeredContext, this.userMemoryProvider, this.userMemoryMaxEntries);
       const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
-      const summaryAppliedInput = await this.applyStoredConversationSummary(memoryAppliedContext);
+      const summaryAppliedInput = await applyStoredConversationSummaryFn(memoryAppliedContext, this.conversationSummaryStore);
       const summaryAppliedContext: AgentRunContext = { ...memoryAppliedContext, input: summaryAppliedInput };
       const preparedRequest = this.prepareModelRequest(summaryAppliedContext.input, selected.model);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
@@ -587,10 +590,11 @@ export class AgentRuntime {
       await this.recordCheckpoint(layeredContext, 100, "complete", layeredContext.input.messages, response.output);
       await this.writeCache(cacheKey, response, execution.toolsUsed);
       if (preparedRequest.contextWindow?.summaryInserted) {
-        await this.persistConversationSummaryFromRequest(
+        await persistConversationSummaryFromRequestFn(
           layeredContext,
           preparedRequest.request,
-          summaryAppliedContext.input.messages.length
+          summaryAppliedContext.input.messages.length,
+          this.conversationSummaryStore
         );
       }
       await this.invokeHooks("afterComplete", layeredContext, response);
@@ -608,58 +612,6 @@ export class AgentRuntime {
       throw error;
     } finally {
       runSpan.end();
-    }
-  }
-
-  private async applyAgentSpec(input: AgentRunInput): Promise<{
-    readonly agentSpec?: AgentSpecResolution;
-    readonly input: AgentRunInput;
-  }> {
-    if (!this.agentSpecResolver) {
-      return { input };
-    }
-
-    try {
-      const resolution = await this.agentSpecResolver.resolve(joinUserMessages(input.messages));
-
-      if (!resolution) {
-        return {
-          input: {
-            ...input,
-            metadata: {
-              ...input.metadata,
-              agentSpecResolutionAttempted: true
-            }
-          }
-        };
-      }
-
-      return {
-        agentSpec: resolution,
-        input: {
-          ...input,
-          messages: applyAgentSpecSystemPrompt(input.messages, resolution),
-          metadata: {
-            ...input.metadata,
-            agentSpecConfidence: resolution.confidence,
-            agentSpecMatchedKeywords: [...resolution.matchedKeywords],
-            agentSpecName: resolution.spec.name,
-            agentSpecResolutionAttempted: true,
-            agentSpecToolNames: [...resolution.spec.toolNames]
-          }
-        }
-      };
-    } catch {
-      return {
-        input: {
-          ...input,
-          metadata: {
-            ...input.metadata,
-            agentSpecResolutionAttempted: true,
-            agentSpecResolutionFailed: true
-          }
-        }
-      };
     }
   }
 
@@ -709,190 +661,6 @@ export class AgentRuntime {
         model
       }
     };
-  }
-
-  private async applyUserMemory(context: AgentRunContext): Promise<AgentRunInput> {
-    if (!this.userMemoryProvider) {
-      return context.input;
-    }
-    const userId = metadataString(context.input.metadata, "userId");
-    if (!userId) {
-      return context.input;
-    }
-    let memory: UserMemorySnapshot | undefined;
-    try {
-      memory = await this.userMemoryProvider.findByUserId(userId);
-    } catch {
-      return context.input;
-    }
-    if (!memory) {
-      return context.input;
-    }
-    const rendered = renderUserMemorySection(memory, this.userMemoryMaxEntries);
-    if (!rendered) {
-      return context.input;
-    }
-    return {
-      ...context.input,
-      messages: appendSystemSection(context.input.messages, rendered, "user-memory"),
-      metadata: {
-        ...context.input.metadata,
-        userMemoryFactCount: Object.keys(memory.facts).length,
-        userMemoryPreferenceCount: Object.keys(memory.preferences).length
-      }
-    };
-  }
-
-  /**
-   * If a conversation summary is persisted for the current `metadata.sessionId`,
-   * prepend it as a system message carrying the COMPACTION_SUMMARY_PREFIX so
-   * `trimConversationMessages` recognises it on the next compaction round and
-   * extends rather than duplicates it. Skips silently when no store, no
-   * sessionId, no stored summary, or the inbound messages already carry a
-   * compaction-summary system message at index 0.
-   */
-  private async applyStoredConversationSummary(context: AgentRunContext): Promise<AgentRunInput> {
-    if (!this.conversationSummaryStore) {
-      return context.input;
-    }
-    const sessionId = metadataString(context.input.metadata, "sessionId");
-    if (!sessionId) {
-      return context.input;
-    }
-    const messages = context.input.messages;
-    const firstSystem = messages.find((message) => message.role === "system");
-    if (firstSystem && firstSystem.content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
-      return context.input;
-    }
-    let stored: ConversationSummary | undefined;
-    try {
-      stored = await this.conversationSummaryStore.get(sessionId);
-    } catch {
-      return context.input;
-    }
-    if (!stored || stored.narrative.trim().length === 0) {
-      return context.input;
-    }
-    const summaryMessage: ModelMessage = {
-      content: stored.narrative.startsWith(COMPACTION_SUMMARY_PREFIX)
-        ? stored.narrative
-        : `${COMPACTION_SUMMARY_PREFIX}: ${stored.narrative}]`,
-      role: "system"
-    };
-    return {
-      ...context.input,
-      messages: [summaryMessage, ...messages]
-    };
-  }
-
-  /**
-   * Persists the trimmed compaction summary back to the store keyed by
-   * `metadata.sessionId`. Looks at the system message at index 0 of the
-   * already-trimmed `request.messages`; only writes when it carries the
-   * COMPACTION_SUMMARY_PREFIX. Errors are swallowed so observability writes
-   * never block run completion.
-   */
-  private async persistConversationSummaryFromRequest(
-    context: AgentRunContext,
-    request: { readonly messages: readonly ModelMessage[] },
-    summarizedUpToIndex: number
-  ): Promise<void> {
-    if (!this.conversationSummaryStore) {
-      return;
-    }
-    const sessionId = metadataString(context.input.metadata, "sessionId");
-    if (!sessionId) {
-      return;
-    }
-    const head = request.messages[0];
-    if (!head || head.role !== "system" || !head.content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
-      return;
-    }
-    try {
-      await this.conversationSummaryStore.save({
-        narrative: head.content,
-        sessionId,
-        summarizedUpToIndex
-      });
-    } catch {
-      // observability writes are fail-open
-    }
-  }
-
-  private applyPromptLayers(context: AgentRunContext, providerId: string, model: string): AgentRunContext {
-    if (!this.promptLayerRegistry) {
-      return context;
-    }
-
-    const layers = this.promptLayerRegistry.resolve({
-      model,
-      personaId: metadataString(context.input.metadata, "personaId"),
-      promptTemplateId: metadataString(context.input.metadata, "promptTemplateId"),
-      providerId
-    });
-
-    if (layers.length === 0) {
-      return context;
-    }
-
-    const systemPrompt = buildLayeredSystemPrompt({}, layers);
-
-    return {
-      ...context,
-      input: {
-        ...context.input,
-        messages: appendSystemSection(context.input.messages, systemPrompt, "prompt-layers"),
-        metadata: {
-          ...context.input.metadata,
-          promptLayerIds: layers.map((layer) => layer.id)
-        }
-      }
-    };
-  }
-
-  private async applyPromptExemplars(context: AgentRunContext): Promise<AgentRunContext> {
-    if (!this.exemplarRetriever) {
-      return context;
-    }
-
-    try {
-      const query = joinUserMessages(context.input.messages);
-
-      if (query.trim().length === 0) {
-        return context;
-      }
-
-      const exemplars = renderExemplarContext(
-        await this.exemplarRetriever.retrieveTopK(query, this.exemplarTopK)
-      );
-
-      if (!exemplars) {
-        return context;
-      }
-
-      return {
-        ...context,
-        input: {
-          ...context.input,
-          messages: appendSystemSection(context.input.messages, exemplars, "prompt-exemplars"),
-          metadata: {
-            ...context.input.metadata,
-            promptExemplarApplied: true
-          }
-        }
-      };
-    } catch {
-      return {
-        ...context,
-        input: {
-          ...context.input,
-          metadata: {
-            ...context.input.metadata,
-            promptExemplarRetrievalFailed: true
-          }
-        }
-      };
-    }
   }
 
   private modelTools(context: AgentRunContext): readonly ModelTool[] {

@@ -1,5 +1,9 @@
 import type { AgentSpecResolution } from "@muse/agent-specs";
 import type { ModelMessage, ModelProvider, ModelResponse, ModelToolCall } from "@muse/model";
+
+export interface AgentSpecResolver {
+  resolve(text: string): Awaitable<AgentSpecResolution | undefined>;
+}
 import type { JsonObject } from "@muse/shared";
 import type { ToolExecutionResult } from "@muse/tools";
 
