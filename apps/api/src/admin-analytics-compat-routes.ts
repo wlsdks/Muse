@@ -6,7 +6,6 @@
  *   - GET /api/admin/debug/replay (+ /:id)
  *   - GET /api/admin/muse/snapshot
  *   - GET /api/admin/metrics/latency/{summary,timeseries}
- *   - GET /api/admin/tenant/export/{executions,tools}
  *   - GET /api/admin/tools/{stats,accuracy}
  *   - POST /api/admin/task-memory/maintenance/{purge-expired,purge-terminal}
  */
@@ -27,11 +26,9 @@ import {
   readAuthUserId,
   readQueryInteger,
   readQueryString,
-  runsCsv,
   saveDebugReplayCapture,
   stringField,
   toJsonObject,
-  toolCallsCsv,
   toolOutcomeStats,
   type CompatibilityRouteOptions
 } from "./compat-routes.js";
@@ -41,7 +38,6 @@ export function registerAdminAnalyticsCompatRoutes(server: FastifyInstance, opti
   registerDebugReplayRoutes(server, options);
   registerStatsRoutes(server, options);
   registerLatencyRoutes(server, options);
-  registerTenantExportRoutes(server, options);
   registerToolStatsRoutes(server, options);
   registerTaskMemoryMaintenanceRoutes(server, options);
 }
@@ -133,26 +129,6 @@ function registerLatencyRoutes(server: FastifyInstance, options: CompatibilityRo
     }
 
     return latencyTimeseries(await listAllRuns(options), days);
-  });
-}
-
-function registerTenantExportRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
-  server.get("/api/admin/tenant/export/executions", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    reply.header("content-type", "text/csv; charset=utf-8");
-    return runsCsv(await listAllRuns(options));
-  });
-
-  server.get("/api/admin/tenant/export/tools", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    reply.header("content-type", "text/csv; charset=utf-8");
-    return toolCallsCsv(await listAllToolCalls(options));
   });
 }
 

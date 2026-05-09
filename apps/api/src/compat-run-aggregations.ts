@@ -7,9 +7,7 @@
  * Wires into:
  *   - admin-observability-compat-routes.ts (tool-calls, users/usage,
  *     conversation-analytics)
- *   - admin-analytics-compat-routes.ts (tenant quality/quota, latency
- *     metrics, slack-activity, tools)
- *   - agent-eval-compat-routes.ts (tools/stats, tools/accuracy)
+ *   - admin-analytics-compat-routes.ts (latency metrics, tools)
  */
 
 import type { AgentRunRecord, ToolCallRecord } from "@muse/runtime-state";

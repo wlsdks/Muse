@@ -208,8 +208,6 @@ export function debugReplayResponse(run: AgentRunRecord): JsonObject {
   };
 }
 
-export { csvRows, runsCsv, toolCallsCsv } from "./compat-csv.js";
-
 // Numeric/boolean parsers live in apps/api/src/compat-parsers.ts.
 
 // Agent-spec helpers live in apps/api/src/compat-agent-spec.ts.
@@ -403,8 +401,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/admin/settings/refresh",
     "/api/admin/task-memory/maintenance/purge-expired",
     "/api/admin/task-memory/maintenance/purge-terminal",
-    "/api/admin/tenant/export/executions",
-    "/api/admin/tenant/export/tools",
     "/api/admin/token-cost/by-session",
     "/api/admin/token-cost/daily",
     "/api/admin/token-cost/top-expensive",
