@@ -88,7 +88,6 @@ export type CompatCollection = Map<string, CompatRecord>;
 export type { CompatBody } from "./compat-parsers.js";
 
 interface CompatState {
-  readonly proactiveChannels: CompatCollection;
   readonly sessionTags: Map<string, CompatRecord[]>;
   readonly userMemory: Map<string, {
     facts: Record<string, string>;
@@ -118,7 +117,6 @@ export function registerReactorCompatibilityRoutes(
 
 function createCompatState(): CompatState {
   return {
-    proactiveChannels: new Map(),
     sessionTags: new Map(),
     userMemory: new Map()
   };

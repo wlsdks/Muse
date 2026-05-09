@@ -18,8 +18,6 @@ export interface AdminRouteState {
     readonly metrics?: { snapshot(): unknown };
     readonly responseCache?: {
       invalidateAll(): void;
-      invalidate?(key: string): boolean;
-      invalidateByPattern?(pattern: string): number;
       size?(): number;
     };
   };
@@ -80,36 +78,6 @@ export function registerAdminRoutes(server: FastifyInstance, options: AdminRoute
 
     options.admin?.cache?.responseCache?.invalidateAll();
     return { invalidated: true };
-  });
-
-  server.delete("/admin/cache/:key", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    const { key } = request.params as { readonly key: string };
-    return {
-      invalidated: options.admin?.cache?.responseCache?.invalidate?.(key) ?? false,
-      key
-    };
-  });
-
-  server.post("/admin/cache/invalidate-pattern", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    if (!isRecord(request.body) || typeof request.body.pattern !== "string") {
-      return reply.status(400).send({
-        code: "INVALID_CACHE_PATTERN",
-        message: "Body must include a pattern string"
-      });
-    }
-
-    return {
-      invalidated: options.admin?.cache?.responseCache?.invalidateByPattern?.(request.body.pattern) ?? 0,
-      pattern: request.body.pattern
-    };
   });
 
   server.get("/admin/resilience/circuit-breakers", async (request, reply) => {

@@ -257,11 +257,9 @@ describe("api server: admin / ops / settings / memory", () => {
             snapshot: () => ({ exactHits: 1, misses: 2 })
           },
           responseCache: {
-            invalidate: (key) => key === "cache-key",
             invalidateAll: () => {
               allInvalidated = true;
             },
-            invalidateByPattern: (pattern) => pattern.length,
             size: () => 3
           }
         },
@@ -302,13 +300,6 @@ describe("api server: admin / ops / settings / memory", () => {
 
     const metrics = await server.inject({ headers, method: "GET", url: "/admin/metrics" });
     const cache = await server.inject({ headers, method: "GET", url: "/admin/cache" });
-    const cacheKey = await server.inject({ headers, method: "DELETE", url: "/admin/cache/cache-key" });
-    const cachePattern = await server.inject({
-      headers,
-      method: "POST",
-      payload: { pattern: "prefix*" },
-      url: "/admin/cache/invalidate-pattern"
-    });
     const cacheAll = await server.inject({ headers, method: "DELETE", url: "/admin/cache" });
     const breakers = await server.inject({
       headers,
@@ -327,8 +318,6 @@ describe("api server: admin / ops / settings / memory", () => {
       traceEvents: [{ name: "muse.model.generate", runId: "run-1" }]
     });
     expect(cache.json()).toEqual({ metrics: { exactHits: 1, misses: 2 }, size: 3 });
-    expect(cacheKey.json()).toEqual({ invalidated: true, key: "cache-key" });
-    expect(cachePattern.json()).toEqual({ invalidated: 7, pattern: "prefix*" });
     expect(cacheAll.json()).toEqual({ invalidated: true });
     expect(allInvalidated).toBe(true);
     expect(breakers.json()).toMatchObject([{ name: "model.generate", state: "open" }]);
