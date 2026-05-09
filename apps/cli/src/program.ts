@@ -7,6 +7,7 @@ import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { isCancel, password, text } from "@clack/prompts";
 import { Command } from "commander";
 import { renderMuseStatusTui, type MuseStatusTuiModel } from "./tui.js";
+import { registerConfigCommands } from "./commands-config.js";
 import { registerMcpCommands } from "./commands-mcp.js";
 import { registerOrchestrateCommands } from "./commands-orchestrate.js";
 import { registerSchedulerCommands, registerSetupCommands } from "./commands-scheduler-setup.js";
@@ -70,35 +71,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       io.stdout(`${configPath(io)}\n`);
     });
 
-  const config = program.command("config").description("Manage CLI config");
-
-  config
-    .command("show")
-    .description("Show CLI config")
-    .option("--json", "Print machine-readable JSON")
-    .action(async (options: { readonly json?: boolean }) => {
-      const store = await readConfigStore(io);
-
-      if (options.json) {
-        writeOutput(io, store);
-        return;
-      }
-
-      io.stdout(`apiUrl=${store.apiUrl ?? ""}\n`);
-      io.stdout(`defaultModel=${store.defaultModel ?? ""}\n`);
-    });
-
-  config
-    .command("set")
-    .description("Set a CLI config value")
-    .argument("<key>", "Config key: apiUrl or defaultModel")
-    .argument("<value>", "Config value")
-    .action(async (key: string, value: string) => {
-      const current = await readConfigStore(io);
-      const next = setConfigValue(current, key, value);
-      await writeConfigStore(io, next);
-      io.stdout(`Set ${key}\n`);
-    });
+  registerConfigCommands(program, io, { readConfigStore, setConfigValue, writeConfigStore, writeOutput });
 
   program
     .command("spec")

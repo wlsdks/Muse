@@ -1,0 +1,61 @@
+/**
+ * `muse config` command group, extracted from apps/cli/src/program.ts.
+ *
+ * Self-contained: only consumes the existing `readConfigStore` /
+ * `writeConfigStore` / `setConfigValue` helpers (passed in as
+ * dependencies) and `writeOutput`. Wraps the CLI config show / set
+ * surface in commander argument-parsing. Same DI pattern as the
+ * scheduler / orchestrate / mcp / specs extractions.
+ *
+ * `MuseCliConfig` and the read/write helpers stay defined in
+ * program.ts because they're shared with `tui`, `chat`, and
+ * `readApiOptions`. This module only owns the command surface.
+ */
+
+import type { Command } from "commander";
+
+import type { ProgramIO } from "./program.js";
+
+export interface MuseCliConfigShape {
+  readonly apiUrl?: string;
+  readonly defaultModel?: string;
+}
+
+export interface ConfigCommandHelpers {
+  readonly readConfigStore: (io: ProgramIO) => Promise<MuseCliConfigShape>;
+  readonly writeConfigStore: (io: ProgramIO, config: MuseCliConfigShape) => Promise<void>;
+  readonly setConfigValue: (config: MuseCliConfigShape, key: string, value: string) => MuseCliConfigShape;
+  readonly writeOutput: (io: ProgramIO, value: unknown, textField?: string) => void;
+}
+
+export function registerConfigCommands(program: Command, io: ProgramIO, helpers: ConfigCommandHelpers): void {
+  const config = program.command("config").description("Manage CLI config");
+
+  config
+    .command("show")
+    .description("Show CLI config")
+    .option("--json", "Print machine-readable JSON")
+    .action(async (options: { readonly json?: boolean }) => {
+      const store = await helpers.readConfigStore(io);
+
+      if (options.json) {
+        helpers.writeOutput(io, store);
+        return;
+      }
+
+      io.stdout(`apiUrl=${store.apiUrl ?? ""}\n`);
+      io.stdout(`defaultModel=${store.defaultModel ?? ""}\n`);
+    });
+
+  config
+    .command("set")
+    .description("Set a CLI config value")
+    .argument("<key>", "Config key: apiUrl or defaultModel")
+    .argument("<value>", "Config value")
+    .action(async (key: string, value: string) => {
+      const current = await helpers.readConfigStore(io);
+      const next = helpers.setConfigValue(current, key, value);
+      await helpers.writeConfigStore(io, next);
+      io.stdout(`Set ${key}\n`);
+    });
+}
