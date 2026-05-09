@@ -28,7 +28,6 @@ import {
 } from "@muse/observability";
 import {
   buildLayeredSystemPrompt,
-  buildPlanningSystemPrompt,
   renderExemplarContext,
   renderToolResults,
   type ExemplarRetriever,
@@ -86,27 +85,23 @@ import {
 import {
   blockedToolResult,
   createRunResult,
-  planExecuteIntermediateMessages,
   responseFilterEvidenceFromExecution,
   type ExecutedToolResult,
   type ModelLoopExecution,
-  type PlanExecuteStepRecord,
   type ResponseFilterEvidence,
   type StreamExecutionOptions,
   type StreamedModelTurn
 } from "./runtime-internals.js";
 import {
-  PlanExecutionError,
-  PlanValidationFailedError,
   isPlanExecuteMode,
-  parsePlan,
-  renderPlanResultSummary,
-  renderToolDescriptionsForPlanning,
-  systemMessageContent,
-  validatePlan,
   type PlanStep,
   type StepExecutionResult
 } from "./plan-execute.js";
+import {
+  executePlanExecuteLoop as executePlanExecuteLoopFn,
+  streamPlanExecute as streamPlanExecuteFn,
+  type PlanExecuteRunner
+} from "./plan-execute-loop.js";
 import {
   createAgentCheckpointState,
   encodeCheckpointMessages,
@@ -445,7 +440,7 @@ export class AgentRuntime {
         tools
       };
       const execution = isPlanExecuteMode(layeredContext.input.metadata)
-        ? await this.executePlanExecuteLoop(layeredContext, selected.provider, loopRequest)
+        ? await executePlanExecuteLoopFn(this.planExecuteRunner(), layeredContext, selected.provider, loopRequest)
         : await this.executeModelLoop(layeredContext, selected.provider, loopRequest);
       const filteredResponse = await this.applyResponseFilters(
         layeredContext,
@@ -558,7 +553,7 @@ export class AgentRuntime {
       let execution: ModelLoopExecution;
       const isPlanExecuteRun = isPlanExecuteMode(layeredContext.input.metadata);
       if (isPlanExecuteRun) {
-        const planStream = this.streamPlanExecute(layeredContext, selected.provider, streamLoopRequest);
+        const planStream = streamPlanExecuteFn(this.planExecuteRunner(), layeredContext, selected.provider, streamLoopRequest);
         let next = await planStream.next();
         while (!next.done) {
           yield next.value;
@@ -1188,218 +1183,12 @@ export class AgentRuntime {
     }
   }
 
-  private async executePlanExecuteLoop(
-    context: AgentRunContext,
-    provider: ModelProvider,
-    request: ModelRequest
-  ): Promise<ModelLoopExecution> {
-    const stream = this.streamPlanExecute(context, provider, request);
-    let next = await stream.next();
-    while (!next.done) {
-      next = await stream.next();
-    }
-    return next.value;
-  }
-
-  private async *streamPlanExecute(
-    context: AgentRunContext,
-    provider: ModelProvider,
-    request: ModelRequest
-  ): AsyncGenerator<AgentRuntimeStreamEvent, ModelLoopExecution> {
-    const userPrompt = latestUserPrompt(request.messages);
-    const tools = request.tools ?? [];
-    const toolDescriptions = renderToolDescriptionsForPlanning(tools);
-
-    const plan = await this.generatePlan(context, provider, request, userPrompt, toolDescriptions);
-    if (plan === null) {
-      throw new PlanExecutionError("PLAN_GENERATION_FAILED", "Plan generation parsing failed");
-    }
-
-    yield { plan, runId: context.runId, type: "plan-generated" };
-
-    if (plan.length === 0) {
-      yield { runId: context.runId, type: "synthesis-started" };
-      const directResponse = await this.directAnswerForPlanExecute(context, provider, request);
-      return {
-        finalResponse: directResponse,
-        intermediateMessages: [],
-        toolResults: [],
-        toolsUsed: []
-      };
-    }
-
-    const validation = validatePlan({
-      availableToolNames: new Set(tools.map((tool) => tool.name)),
-      steps: plan
-    });
-    if (!validation.valid) {
-      throw new PlanValidationFailedError(validation.errors, plan);
-    }
-
-    const executed: PlanExecuteStepRecord[] = [];
-    let toolCallCount = 0;
-    for (let index = 0; index < plan.length; index += 1) {
-      const step = plan[index];
-      if (!step) {
-        continue;
-      }
-
-      yield {
-        description: step.description,
-        runId: context.runId,
-        stepIndex: index,
-        tool: step.tool,
-        type: "plan-step-executing"
-      };
-
-      if (toolCallCount >= this.maxToolCalls) {
-        const blocked = blockedToolResult(
-          { arguments: step.args, id: `plan-step-${index}`, name: step.tool },
-          "Error: max tool call limit reached"
-        );
-        executed.push({
-          executed: blocked,
-          step,
-          stepResult: {
-            description: step.description,
-            error: "max tool call limit reached",
-            output: null,
-            success: false,
-            tool: step.tool
-          }
-        });
-        yield { runId: context.runId, stepIndex: index, success: false, type: "plan-step-result" };
-        continue;
-      }
-
-      const synthesizedCall: ModelToolCall = {
-        arguments: step.args,
-        id: `plan-step-${index}`,
-        name: step.tool
-      };
-      const toolResult = await this.executeToolCall(context, synthesizedCall, tools);
-      toolCallCount += 1;
-
-      const success = toolResult.result.status === "completed";
-      executed.push({
-        executed: toolResult,
-        step,
-        stepResult: {
-          description: step.description,
-          error: success ? undefined : toolResult.result.error ?? "TOOL_ERROR",
-          output: success ? toolResult.result.output : null,
-          success,
-          tool: step.tool
-        }
-      });
-      yield { runId: context.runId, stepIndex: index, success, type: "plan-step-result" };
-    }
-
-    if (executed.length > 0 && executed.every((entry) => !entry.stepResult.success)) {
-      throw new PlanExecutionError(
-        "PLAN_ALL_STEPS_FAILED",
-        "Every plan step failed; refusing synthesis to avoid hallucinated answers"
-      );
-    }
-
-    yield { runId: context.runId, type: "synthesis-started" };
-    const finalResponse = await this.synthesizePlanResults(
-      context,
-      provider,
-      request,
-      userPrompt,
-      executed
-    );
-
+  private planExecuteRunner(): PlanExecuteRunner {
     return {
-      finalResponse,
-      intermediateMessages: planExecuteIntermediateMessages(plan, executed),
-      toolResults: executed.map((entry) => entry.executed),
-      toolsUsed: [...new Set(executed.map((entry) => entry.executed.toolCall.name))]
+      executeToolCall: (context, toolCall, activeTools) => this.executeToolCall(context, toolCall, activeTools),
+      generateWithTracing: (context, provider, request) => this.generateWithTracing(context, provider, request),
+      maxToolCalls: this.maxToolCalls
     };
-  }
-
-  private async generatePlan(
-    context: AgentRunContext,
-    provider: ModelProvider,
-    request: ModelRequest,
-    userPrompt: string,
-    toolDescriptions: string
-  ): Promise<readonly PlanStep[] | null> {
-    const planningPrompt = buildPlanningSystemPrompt({
-      toolDescriptions,
-      userPrompt
-    });
-
-    const planRequest: ModelRequest = {
-      ...request,
-      messages: [
-        { content: planningPrompt, role: "system" },
-        { content: userPrompt, role: "user" }
-      ],
-      tools: []
-    };
-
-    const response = await this.generateWithTracing(context, provider, planRequest);
-    return parsePlan(response.output ?? "");
-  }
-
-
-  private async synthesizePlanResults(
-    context: AgentRunContext,
-    provider: ModelProvider,
-    request: ModelRequest,
-    userPrompt: string,
-    executed: readonly PlanExecuteStepRecord[]
-  ): Promise<ModelResponse> {
-    const summary = renderPlanResultSummary(executed.map((entry) => entry.stepResult));
-    const synthesisPrompt = [
-      `사용자 요청: ${userPrompt}`,
-      "",
-      "수집된 정보:",
-      summary,
-      "",
-      "위 정보를 바탕으로 사용자 요청에 답하세요."
-    ].join("\n");
-
-    const baseSystem = systemMessageContent(request.messages);
-    const synthesisRequest: ModelRequest = {
-      ...request,
-      messages: [
-        ...(baseSystem ? [{ content: baseSystem, role: "system" as const }] : []),
-        { content: synthesisPrompt, role: "user" as const }
-      ],
-      tools: []
-    };
-
-    const response = await this.generateWithTracing(context, provider, synthesisRequest);
-    if (!response.output || response.output.trim().length === 0) {
-      throw new PlanExecutionError(
-        "RESPONSE_SYNTHESIS_FAILED",
-        "Plan synthesis LLM returned an empty response"
-      );
-    }
-
-    return response;
-  }
-
-  private async directAnswerForPlanExecute(
-    context: AgentRunContext,
-    provider: ModelProvider,
-    request: ModelRequest
-  ): Promise<ModelResponse> {
-    const directRequest: ModelRequest = {
-      ...request,
-      tools: []
-    };
-    const response = await this.generateWithTracing(context, provider, directRequest);
-    if (!response.output || response.output.trim().length === 0) {
-      throw new PlanExecutionError(
-        "RESPONSE_SYNTHESIS_FAILED",
-        "Plan direct-answer fallback returned an empty response"
-      );
-    }
-    return response;
   }
 
   private async executeToolCall(
