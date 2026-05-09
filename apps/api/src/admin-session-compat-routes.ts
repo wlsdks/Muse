@@ -3,7 +3,6 @@
  * reactor-compat-routes.ts.
  *
  * Wires:
- *   - GET /api/admin/tenant/{cost,alerts,slo}
  *   - GET /api/admin/sessions/overview
  *   - GET /api/admin/sessions (paginated)
  *   - GET /api/admin/sessions/:sessionId/export
@@ -34,35 +33,10 @@ import {
 } from "./reactor-compat-routes.js";
 
 export function registerAdminSessionCompatRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  registerSelfStatsRoutes(server, options);
   registerSessionRoutes(server, options);
   registerUserRoutes(server, options);
 
   server.get("/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
-}
-
-function registerSelfStatsRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
-  server.get("/api/admin/tenant/cost", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return options.admin?.operations?.costSummary() ?? { byModel: {}, totalCostUsd: "0.00000000" };
-  });
-  server.get("/api/admin/tenant/alerts", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return options.admin?.operations?.listAlerts() ?? [];
-  });
-  server.get("/api/admin/tenant/slo", async (request, reply) => {
-    if (!options.authorizeAdmin(request, reply)) {
-      return reply;
-    }
-
-    return options.admin?.operations?.listSlos() ?? [];
-  });
 }
 
 function registerSessionRoutes(server: FastifyInstance, options: ReactorCompatibilityRouteOptions): void {
