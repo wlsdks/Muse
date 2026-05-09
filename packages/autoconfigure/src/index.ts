@@ -801,15 +801,23 @@ function tryBuildCalendarProvider(
  * (Phase F) can add Whisper.cpp / Piper / ElevenLabs / Gemini Live
  * here without changing the route surface.
  *
- * Env:
- *   - `MUSE_OPENAI_API_KEY` — required for OpenAI voice. When unset,
- *     the registry is empty and routes are not registered.
+ * Env (resolution order):
+ *   - `MUSE_VOICE_OPENAI_API_KEY` — Muse-specific override. Set this
+ *     to use a different OpenAI key for voice than for the chat
+ *     model (e.g. separate billing).
+ *   - `OPENAI_API_KEY` — standard OpenAI SDK convention. The chat
+ *     model already uses this as a fallback, so a personal user who
+ *     sets it once gets both chat AND voice for free.
+ *   - When neither is set, the registry is empty and the routes are
+ *     not registered (404). The earlier `MUSE_OPENAI_API_KEY` name
+ *     was a one-iter mismatch with both conventions — dropped.
  *   - `MUSE_VOICE_TTS_VOICE` — default voice (alloy / echo / fable /
  *     onyx / nova / shimmer). Defaults to `alloy`.
  *   - `MUSE_VOICE_TTS_MODEL` / `MUSE_VOICE_STT_MODEL` — model overrides.
  */
 function buildVoiceRegistry(env: MuseEnvironment): VoiceProviderRegistry | undefined {
-  const openAiKey = env.MUSE_OPENAI_API_KEY?.trim();
+  const openAiKey = env.MUSE_VOICE_OPENAI_API_KEY?.trim()
+    || env.OPENAI_API_KEY?.trim();
   if (!openAiKey) {
     return undefined;
   }

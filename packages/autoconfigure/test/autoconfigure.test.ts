@@ -79,11 +79,28 @@ describe("autoconfigure", () => {
     expect(assembly.voice).toBeUndefined();
   });
 
-  it("registers OpenAI Whisper STT and TTS when MUSE_OPENAI_API_KEY is set", () => {
-    const assembly = createMuseRuntimeAssembly({ env: { MUSE_OPENAI_API_KEY: "sk-test" } });
+  it("registers OpenAI voice providers from the standard OPENAI_API_KEY env var", () => {
+    // Most personal users set OPENAI_API_KEY once for the OpenAI SDK
+    // convention. Voice should pick that up automatically without
+    // needing a Muse-specific name.
+    const assembly = createMuseRuntimeAssembly({ env: { OPENAI_API_KEY: "sk-test" } });
     expect(assembly.voice).toBeTruthy();
     expect(assembly.voice?.primaryStt()?.id).toBe("openai-whisper");
     expect(assembly.voice?.primaryTts()?.id).toBe("openai-tts");
+  });
+
+  it("MUSE_VOICE_OPENAI_API_KEY overrides OPENAI_API_KEY for voice-specific keys", () => {
+    // Voice billing separation: a user can set the standard
+    // OPENAI_API_KEY for chat and a different MUSE_VOICE_OPENAI_API_KEY
+    // for voice. The Muse-specific override wins.
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_VOICE_OPENAI_API_KEY: "sk-voice",
+        OPENAI_API_KEY: "sk-chat"
+      }
+    });
+    expect(assembly.voice).toBeTruthy();
+    expect(assembly.voice?.primaryStt()?.id).toBe("openai-whisper");
   });
 
   it("assembles auth and API options when JWT secret is configured", () => {
