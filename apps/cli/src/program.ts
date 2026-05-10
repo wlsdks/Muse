@@ -218,7 +218,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 
   registerSchedulerCommands(program, io, { apiRequest, writeOutput });
   registerSetupCommands(program, io);
-  registerVoiceCommands(program, io, { apiRequest, writeOutput });
+  registerVoiceCommands(program, io, { apiRequest, readApiOptions, writeOutput });
 
   return program;
 }

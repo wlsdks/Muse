@@ -626,6 +626,48 @@ describe("cli program", () => {
     expect(combined).toContain("openai-tts");
   });
 
+  it("voice tts POSTs the text and writes the binary audio response to --out", async () => {
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const tmp = mkdtempSync(join(tmpdir(), "muse-cli-voice-"));
+    const outPath = join(tmp, "speech.mp3");
+
+    const { io, output } = captureOutput();
+    const audioBytes = new Uint8Array([10, 20, 30, 40, 50]);
+    const requests: Array<{ readonly method?: string; readonly url: string; readonly body?: string }> = [];
+    const program = createProgram({
+      ...io,
+      fetch: async (url, init) => {
+        requests.push({ body: typeof init?.body === "string" ? init.body : undefined, method: init?.method, url: String(url) });
+        return new Response(audioBytes, {
+          headers: {
+            "content-type": "audio/mpeg",
+            "x-voice-format": "mp3",
+            "x-voice-provider": "openai-tts"
+          },
+          status: 200
+        });
+      }
+    });
+
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "voice", "tts", "hello", "world", "--out", outPath, "--voice", "nova"],
+      { from: "node" }
+    );
+
+    expect(requests[0]).toMatchObject({ url: "http://api.test/api/voice/tts", method: "POST" });
+    const sent = JSON.parse(requests[0]!.body!);
+    expect(sent).toMatchObject({ text: "hello world", voice: "nova", format: "mp3" });
+
+    const written = readFileSync(outPath);
+    expect(Array.from(written)).toEqual([10, 20, 30, 40, 50]);
+
+    const combined = output.join("");
+    expect(combined).toContain("Wrote 5 bytes");
+    expect(combined).toContain("openai-tts");
+  });
+
   it("specs list / get / resolve hit the public agent-spec endpoints", async () => {
     const { io, output } = captureOutput();
     const requests: Array<{ readonly body?: string; readonly method?: string; readonly url: string }> = [];
