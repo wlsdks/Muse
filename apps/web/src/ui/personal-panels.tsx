@@ -765,13 +765,17 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
   const [source, setSource] = useState<string>("");
   const effective = providerId.length > 0 ? providerId : list[0]?.id ?? "";
 
-  const needsSource = effective === "discord" || effective === "slack";
+  // Slack still requires `source` (snapshot via conversations.history).
+  // Discord's read path now goes through the daemon-fed inbox file
+  // (Phase 2.c.4), so `source` is optional — blank = all channels.
+  const requiresSource = effective === "slack";
+  const supportsSource = effective === "discord" || effective === "slack";
 
   const inbox = useQuery({
-    enabled: effective.length > 0 && (!needsSource || source.length > 0),
+    enabled: effective.length > 0 && (!requiresSource || source.length > 0),
     queryFn: () => {
       const params = new URLSearchParams({ providerId: effective, limit: "20" });
-      if (needsSource && source.length > 0) {
+      if (supportsSource && source.length > 0) {
         params.set("source", source);
       }
       return client.get<MessagingInboxResponse>(`/api/messaging/inbox?${params.toString()}`);
@@ -824,10 +828,10 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
                 <option key={p.id} value={p.id}>{p.displayName}</option>
               ))}
             </select>
-            {needsSource ? (
+            {supportsSource ? (
               <input
                 aria-label="Channel id"
-                placeholder="Channel id"
+                placeholder={requiresSource ? "Channel id" : "Channel id (blank = all)"}
                 value={source}
                 onChange={(event) => setSource(event.target.value)}
                 style={{ flex: 1 }}
