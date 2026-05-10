@@ -1,4 +1,5 @@
 import type { AgentSpecResolution } from "@muse/agent-specs";
+import type { UserModel } from "@muse/memory";
 import type { ModelMessage, ModelProvider, ModelResponse, ModelToolCall } from "@muse/model";
 
 export interface AgentSpecResolver {
@@ -105,6 +106,15 @@ export interface UserMemorySnapshot {
   readonly facts: Readonly<Record<string, string>>;
   readonly preferences: Readonly<Record<string, string>>;
   readonly recentTopics?: readonly string[];
+  /**
+   * Optional typed user-model slots (Context Engineering 1.c).
+   * Parallel structure to the free-text `facts`/`preferences`
+   * Records — when set, downstream renderers (persona snapshot,
+   * `renderUserMemorySection`) emit the typed shape WITH the legacy
+   * Records, not in place of them. Stays optional so no existing
+   * provider needs to change.
+   */
+  readonly userModel?: UserModel;
 }
 
 export interface UserMemoryProvider {

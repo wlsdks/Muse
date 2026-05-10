@@ -1,4 +1,5 @@
 import type { AgentSpecResolution } from "@muse/agent-specs";
+import { composeUserModelSnapshot as composeUserModelSnapshotFn } from "@muse/memory";
 import { ModelProviderError, type ModelMessage, type ModelResponse, type ModelToolCall } from "@muse/model";
 import type { SpanHandle } from "@muse/observability";
 import type { AgentRunMode } from "@muse/runtime-state";
@@ -238,6 +239,17 @@ export function buildPersonaSnapshot(memory: UserMemorySnapshot, maxEntries: num
   }
   if (topics.length > 0) {
     parts.push(`topics=${topics.join(",")}`);
+  }
+  // Round 163: when the snapshot carries typed slots, append the
+  // structured composition so the agent gets the higher-signal
+  // shape (kind prefix + decorators) ALONGSIDE the legacy facts.
+  // composeUserModelSnapshot returns undefined for empty models,
+  // so this is a no-op when no slots are set.
+  if (memory.userModel) {
+    const typed = composeUserModelSnapshotFn(memory.userModel, { maxPerKind: maxEntries });
+    if (typed) {
+      parts.push(typed);
+    }
   }
   if (parts.length === 0) {
     return undefined;

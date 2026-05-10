@@ -127,6 +127,85 @@ describe("buildPersonaSnapshot", () => {
       buildPersonaSnapshot({ facts: {}, preferences: {}, userId: "u" }, 10)
     ).toBeUndefined();
   });
+
+  it("appends the typed-slot composition when userModel is present (round 163)", () => {
+    const snapshot = buildPersonaSnapshot(
+      {
+        facts: { name: "Alice" },
+        preferences: { tone: "concise" },
+        userId: "alice",
+        userModel: {
+          goals: [],
+          preferences: [
+            {
+              category: "format",
+              id: "no-emoji",
+              kind: "preference" as const,
+              updatedAt: new Date("2026-01-01T00:00:00Z"),
+              value: "true"
+            }
+          ],
+          schedule: [],
+          vetoes: [
+            {
+              id: "no-eggs",
+              kind: "veto" as const,
+              scope: "food",
+              updatedAt: new Date("2026-01-01T00:00:00Z"),
+              value: "do not suggest eggs"
+            }
+          ]
+        }
+      },
+      5
+    );
+    // Legacy fact / pref segments still present.
+    expect(snapshot).toContain("fact.name=Alice");
+    expect(snapshot).toContain("pref.tone=concise");
+    // Typed slot segments appended after the legacy segments.
+    expect(snapshot).toContain("pref.format.no-emoji=true");
+    expect(snapshot).toContain("veto.food.no-eggs=do not suggest eggs");
+  });
+
+  it("emits typed slots even when legacy facts/preferences are empty", () => {
+    const snapshot = buildPersonaSnapshot(
+      {
+        facts: {},
+        preferences: {},
+        userId: "u",
+        userModel: {
+          goals: [
+            {
+              id: "muse-v1",
+              kind: "goal" as const,
+              progress: 0.25,
+              updatedAt: new Date("2026-01-01T00:00:00Z"),
+              value: "ship Muse 1.0"
+            }
+          ],
+          preferences: [],
+          schedule: [],
+          vetoes: []
+        }
+      },
+      5
+    );
+    expect(snapshot).toBeDefined();
+    expect(snapshot).toContain("goal.muse-v1=ship Muse 1.0 (25%)");
+  });
+
+  it("returns undefined when both legacy and typed-slot sources are empty", () => {
+    const snapshot = buildPersonaSnapshot(
+      {
+        facts: {},
+        preferences: {},
+        userId: "u",
+        userModel: { goals: [], preferences: [], schedule: [], vetoes: [] }
+      },
+      5
+    );
+    expect(snapshot).toBeUndefined();
+  });
 });
 
 describe("resolvePersonaSnapshot", () => {
