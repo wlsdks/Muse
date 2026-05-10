@@ -121,6 +121,10 @@ export function resolveDiscordInboxFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_DISCORD_INBOX_FILE", "discord-inbox.json");
 }
 
+export function resolveSlackAfterFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_SLACK_AFTER_FILE", "slack-after.json");
+}
+
 export function resolveModelKeysFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_MODEL_KEYS_FILE", "models.json");
 }
@@ -521,7 +525,13 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
   }
   const slackToken = tokenFor("MUSE_SLACK_BOT_TOKEN", "slack");
   if (slackToken) {
-    registry.register(new SlackProvider({ token: slackToken }));
+    // Phase 2.d.1+2: afterFile drives pollUpdates' per-channel ts
+    // cursor. Touched only on demand, missing file is fine — first
+    // poll falls back to Slack's newest-first snapshot.
+    registry.register(new SlackProvider({
+      afterFile: resolveSlackAfterFile(env),
+      token: slackToken
+    }));
   }
   const lineToken = tokenFor("MUSE_LINE_CHANNEL_ACCESS_TOKEN", "line");
   if (lineToken) {

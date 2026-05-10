@@ -48,6 +48,7 @@ import {
   resolveRemindersFile,
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
+  resolveSlackAfterFile,
   resolveTasksFile,
   resolveTelegramInboxFile,
   resolveTelegramOffsetFile
@@ -556,6 +557,7 @@ describe("autoconfigure", () => {
     expect(resolveTelegramInboxFile({ MUSE_TELEGRAM_INBOX_FILE: "/tmp/tin.json" })).toBe("/tmp/tin.json");
     expect(resolveDiscordAfterFile({ MUSE_DISCORD_AFTER_FILE: "/tmp/da.json" })).toBe("/tmp/da.json");
     expect(resolveDiscordInboxFile({ MUSE_DISCORD_INBOX_FILE: "/tmp/din.json" })).toBe("/tmp/din.json");
+    expect(resolveSlackAfterFile({ MUSE_SLACK_AFTER_FILE: "/tmp/sa.json" })).toBe("/tmp/sa.json");
 
     // Empty / whitespace-only override → falls back to default.
     expect(resolveTasksFile({ MUSE_TASKS_FILE: "" }).endsWith("/.muse/tasks.json")).toBe(true);
@@ -573,6 +575,7 @@ describe("autoconfigure", () => {
     expect(resolveTelegramInboxFile({}).endsWith("/.muse/telegram-inbox.json")).toBe(true);
     expect(resolveDiscordAfterFile({}).endsWith("/.muse/discord-after.json")).toBe(true);
     expect(resolveDiscordInboxFile({}).endsWith("/.muse/discord-inbox.json")).toBe(true);
+    expect(resolveSlackAfterFile({}).endsWith("/.muse/slack-after.json")).toBe(true);
   });
 
   it("resolveDefaultModel honors MUSE_MODEL when explicitly set", () => {
@@ -786,6 +789,39 @@ describe("autoconfigure", () => {
       globalThis.fetch = originalFetch;
     }
     expect(seenUrls[0]).toContain("&after=1099999999999999999");
+  });
+
+  it("buildMessagingRegistry wires MUSE_SLACK_AFTER_FILE into the SlackProvider", async () => {
+    const { mkdtempSync, promises: fs } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { SlackProvider } = await import("@muse/messaging");
+    const root = mkdtempSync(join(tmpdir(), "muse-slack-wire-"));
+    const afterFile = join(root, "after.json");
+    await fs.writeFile(afterFile, JSON.stringify({
+      after: { "C-9": "1700000000.123456" },
+      version: 1
+    }), "utf8");
+    const seenBodies: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      seenBodies.push(String(init?.body ?? ""));
+      return new Response(JSON.stringify({ messages: [], ok: true }), {
+        headers: { "content-type": "application/json" }
+      });
+    }) as typeof globalThis.fetch;
+    try {
+      const registry = buildMessagingRegistry({
+        MUSE_SLACK_AFTER_FILE: afterFile,
+        MUSE_SLACK_BOT_TOKEN: "xoxb-test"
+      });
+      const slack = registry.require("slack");
+      expect(slack).toBeInstanceOf(SlackProvider);
+      await (slack as InstanceType<typeof SlackProvider>).pollUpdates({ source: "C-9" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(seenBodies[0]).toContain("oldest=1700000000.123456");
   });
 });
 

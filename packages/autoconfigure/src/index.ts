@@ -154,6 +154,7 @@ export {
   resolveRemindersFile,
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
+  resolveSlackAfterFile,
   resolveTasksFile,
   resolveTelegramInboxFile,
   resolveTelegramOffsetFile
