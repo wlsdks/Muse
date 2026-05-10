@@ -520,6 +520,19 @@ export {
   type TaskStatusFilter
 } from "./personal-tasks-store.js";
 
+// Personal reminders store — passive reminder list shared between
+// the REST routes, the CLI, and `muse today` (both surfaces).
+export {
+  filterReminders,
+  parseReminderDueAt,
+  readReminders,
+  readReminderStatusFilter,
+  serializeReminder,
+  writeReminders,
+  type PersistedReminder,
+  type ReminderStatusFilter
+} from "./personal-reminders-store.js";
+
 // Outbound messaging loopback (Phase 3 of docs/design/messaging.md):
 // the LLM can call `muse.messaging.{providers, send}` once the user
 // has wired any provider via env tokens.

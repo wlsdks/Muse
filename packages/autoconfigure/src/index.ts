@@ -139,6 +139,7 @@ import {
   ensureNotesDir,
   resolveCredentialsFile,
   resolveNotesDir,
+  resolveRemindersFile,
   resolveTasksFile
 } from "./personal-providers.js";
 
@@ -148,6 +149,7 @@ export {
   resolveLocalCalendarFile,
   resolveMessagingCredentialsFile,
   resolveNotesDir,
+  resolveRemindersFile,
   resolveTasksFile
 } from "./personal-providers.js";
 import {
@@ -651,7 +653,8 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     tasksFile: resolveTasksFile(env),
     ...(assembly.tasksProviderRegistry ? { tasksProviderRegistry: assembly.tasksProviderRegistry } : {}),
     voice: assembly.voice,
-    messaging: assembly.messaging
+    messaging: assembly.messaging,
+    remindersFile: resolveRemindersFile(env)
   };
 }
 

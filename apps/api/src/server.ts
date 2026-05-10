@@ -25,6 +25,7 @@ import { registerMultiAgentRoutes } from "./multi-agent-routes.js";
 import { registerCompatibilityRoutes } from "./compat-routes.js";
 import { registerNotesRoutes } from "./notes-routes.js";
 import { registerMessagingRoutes } from "./messaging-routes.js";
+import { registerRemindersRoutes } from "./reminders-routes.js";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
 import { registerTodayRoutes } from "./today-routes.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
@@ -93,6 +94,7 @@ export interface ServerOptions {
   readonly notesProviderRegistry?: NotesProviderRegistry;
   readonly voice?: VoiceProviderRegistry;
   readonly messaging?: MessagingProviderRegistry;
+  readonly remindersFile?: string;
 }
 
 export interface ToolCatalogEntry {
@@ -268,11 +270,15 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   if (options.messaging) {
     registerMessagingRoutes(server, { authService, registry: options.messaging });
   }
+  if (options.remindersFile) {
+    registerRemindersRoutes(server, { authService, remindersFile: options.remindersFile });
+  }
   registerTodayRoutes(server, {
     authService,
     calendar: options.calendar,
     notesDir: options.notesDir,
-    tasksFile: options.tasksFile
+    tasksFile: options.tasksFile,
+    ...(options.remindersFile ? { remindersFile: options.remindersFile } : {})
   });
 
   return server;

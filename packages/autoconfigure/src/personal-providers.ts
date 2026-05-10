@@ -102,6 +102,14 @@ export function resolveMessagingCredentialsFile(env: MuseEnvironment): string {
   return pathJoin(homedir(), ".muse", "messaging.json");
 }
 
+export function resolveRemindersFile(env: MuseEnvironment): string {
+  const override = env.MUSE_REMINDERS_FILE?.trim();
+  if (override && override.length > 0) {
+    return override;
+  }
+  return pathJoin(homedir(), ".muse", "reminders.json");
+}
+
 export function buildCalendarRegistry(env: MuseEnvironment): CalendarProviderRegistry {
   const registry = new CalendarProviderRegistry();
   const requested = (env.MUSE_CALENDAR_PROVIDERS?.trim() || "local")
