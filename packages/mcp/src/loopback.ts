@@ -199,8 +199,14 @@ export function describeBuiltinLoopbackMcpServers(): readonly LoopbackMcpCatalog
   // server backed by an empty registry. The runtime only registers the
   // real one when buildMessagingRegistry(env) returns at least one
   // provider, so a zero-config user sees this entry but won't see the
-  // tools as callable until they set a token.
-  const messagingServer = createMessagingMcpServer({ registry: new MessagingProviderRegistry() });
+  // tools as callable until they set a token. Pass a stub `pollNow` so
+  // the catalog advertises `poll_now` in the same way it advertises
+  // `send`/`inbox` — the LLM can see the full surface from the catalog,
+  // not just whichever subset happens to be wired right now.
+  const messagingServer = createMessagingMcpServer({
+    pollNow: async () => { throw new Error("muse.messaging.poll_now is not wired in this runtime"); },
+    registry: new MessagingProviderRegistry()
+  });
   // Reminders is always-on at the default path — the placeholder file
   // is never read because `describe()` only walks the tools array.
   const remindersServer = createRemindersMcpServer({ file: "/dev/null" });
