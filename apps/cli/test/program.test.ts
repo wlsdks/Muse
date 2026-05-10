@@ -626,6 +626,66 @@ describe("cli program", () => {
     expect(combined).toContain("openai-tts");
   });
 
+  it("tasks list / add / complete / delete hit the /api/tasks routes", async () => {
+    const { io, output } = captureOutput();
+    const requests: Array<{ readonly body?: string; readonly method?: string; readonly url: string }> = [];
+    const program = createProgram({
+      ...io,
+      fetch: async (url, init) => {
+        requests.push({ body: typeof init?.body === "string" ? init.body : undefined, method: init?.method, url: String(url) });
+        const path = String(url);
+        if (path.includes("/api/tasks") && init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        if (path.endsWith("/api/tasks/t-1/complete")) {
+          return new Response(JSON.stringify({ id: "t-1", status: "done" }));
+        }
+        if (path.endsWith("/api/tasks") && init?.method === "POST") {
+          return new Response(JSON.stringify({ id: "t-1", status: "open", title: "buy milk" }), { status: 201 });
+        }
+        if (path.includes("/api/tasks?status=")) {
+          return new Response(JSON.stringify({
+            status: "open",
+            tasks: [{ id: "t-1", status: "open", title: "buy milk" }],
+            total: 1
+          }));
+        }
+        return new Response("{}");
+      }
+    });
+
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "tasks", "list", "--status", "open"],
+      { from: "node" }
+    );
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "tasks", "add", "buy", "milk", "--tags", "shopping,today"],
+      { from: "node" }
+    );
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "tasks", "complete", "t-1"],
+      { from: "node" }
+    );
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "tasks", "delete", "t-1"],
+      { from: "node" }
+    );
+
+    expect(requests[0]?.url).toContain("/api/tasks?status=open");
+    expect(requests[0]?.method).toBe("GET");
+    expect(requests[1]?.method).toBe("POST");
+    expect(requests[1]?.url).toBe("http://api.test/api/tasks");
+    expect(JSON.parse(requests[1]!.body!)).toMatchObject({ title: "buy milk", tags: ["shopping", "today"] });
+    expect(requests[2]?.url).toBe("http://api.test/api/tasks/t-1/complete");
+    expect(requests[2]?.method).toBe("POST");
+    expect(requests[3]?.url).toBe("http://api.test/api/tasks/t-1");
+    expect(requests[3]?.method).toBe("DELETE");
+
+    const combined = output.join("");
+    expect(combined).toContain("buy milk");
+    expect(combined).toContain("Deleted task t-1");
+  });
+
   it("calendar providers / events hit the /api/calendar routes with the right query params", async () => {
     const { io, output } = captureOutput();
     const requests: Array<{ readonly method?: string; readonly url: string }> = [];
