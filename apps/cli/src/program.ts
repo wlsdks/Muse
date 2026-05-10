@@ -1,11 +1,16 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
-import { hostname, homedir, userInfo } from "node:os";
 import path from "node:path";
 import type { AgentRuntime } from "@muse/agent-core";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { isCancel, password, text } from "@clack/prompts";
 import { Command } from "commander";
+import {
+  credentialPath,
+  defaultCredentialPath as defaultCredentialPathFromStore,
+  deleteStoredToken,
+  readStoredToken,
+  writeStoredToken
+} from "./credential-store.js";
 import { renderMuseStatusTui, type MuseStatusTuiModel } from "./tui.js";
 import { registerAuthCommands } from "./commands-auth.js";
 import { registerConfigCommands } from "./commands-config.js";
@@ -53,9 +58,7 @@ export function defaultConfigPath(home = process.env.HOME ?? "~"): string {
   return `${home}/.config/muse/config.json`;
 }
 
-export function defaultCredentialPath(home = process.env.HOME ?? homedir()): string {
-  return `${home}/.config/muse/credentials.json`;
-}
+export const defaultCredentialPath = defaultCredentialPathFromStore;
 
 export function createProgram(io: ProgramIO = defaultIO): Command {
   const program = new Command();
@@ -519,145 +522,15 @@ function setConfigValue(config: MuseCliConfig, key: string, value: string): Muse
   throw new Error(`Unsupported config key: ${key}`);
 }
 
-interface CredentialStore {
-  readonly tokens: Record<string, StoredCredential>;
-}
-
-interface StoredCredential {
-  readonly token: string;
-  readonly updatedAt: string;
-}
-
-interface EncryptedCredentialFile {
-  readonly algorithm: "aes-256-gcm";
-  readonly data: string;
-  readonly iv: string;
-  readonly salt: string;
-  readonly tag: string;
-  readonly version: 1;
-}
-
-async function readStoredToken(io: ProgramIO, baseUrl: string): Promise<string | undefined> {
-  return (await readCredentialStore(io)).tokens[baseUrl]?.token;
-}
-
-async function writeStoredToken(io: ProgramIO, baseUrl: string, token: string): Promise<void> {
-  const store = await readCredentialStore(io);
-  await writeCredentialStore(io, {
-    tokens: {
-      ...store.tokens,
-      [baseUrl]: {
-        token,
-        updatedAt: new Date().toISOString()
-      }
-    }
-  });
-}
-
-async function deleteStoredToken(io: ProgramIO, baseUrl: string): Promise<void> {
-  const store = await readCredentialStore(io);
-  const { [baseUrl]: _removed, ...tokens } = store.tokens;
-  await writeCredentialStore(io, { tokens });
-}
-
-async function readCredentialStore(io: ProgramIO): Promise<CredentialStore> {
-  try {
-    const raw = await readFile(credentialPath(io), "utf8");
-    const file = JSON.parse(raw) as unknown;
-    if (!isEncryptedCredentialFile(file)) {
-      throw new Error("Invalid Muse credential store format");
-    }
-
-    const plaintext = decryptCredentialPayload(io, file);
-    const store = JSON.parse(plaintext) as unknown;
-    if (!isCredentialStore(store)) {
-      throw new Error("Invalid Muse credential payload");
-    }
-
-    return store;
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return { tokens: {} };
-    }
-
-    throw error;
-  }
-}
-
-async function writeCredentialStore(io: ProgramIO, store: CredentialStore): Promise<void> {
-  const filePath = credentialPath(io);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(encryptCredentialPayload(io, JSON.stringify(store)), null, 2)}\n`, {
-    mode: 0o600
-  });
-  await chmod(filePath, 0o600);
-}
-
-function encryptCredentialPayload(io: ProgramIO, plaintext: string): EncryptedCredentialFile {
-  const salt = randomBytes(16);
-  const iv = randomBytes(12);
-  const key = deriveCredentialKey(io, salt);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-
-  return {
-    algorithm: "aes-256-gcm",
-    data: encrypted.toString("base64"),
-    iv: iv.toString("base64"),
-    salt: salt.toString("base64"),
-    tag: tag.toString("base64"),
-    version: 1
-  };
-}
-
-function decryptCredentialPayload(io: ProgramIO, file: EncryptedCredentialFile): string {
-  const salt = Buffer.from(file.salt, "base64");
-  const iv = Buffer.from(file.iv, "base64");
-  const tag = Buffer.from(file.tag, "base64");
-  const key = deriveCredentialKey(io, salt);
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(Buffer.from(file.data, "base64")), decipher.final()]).toString("utf8");
-}
-
-function deriveCredentialKey(io: ProgramIO, salt: Buffer): Buffer {
-  return scryptSync(io.credentialKey ?? process.env.MUSE_CREDENTIAL_KEY ?? localCredentialSecret(), salt, 32);
-}
-
-function localCredentialSecret(): string {
-  return [
-    "muse-cli",
-    userInfo().username,
-    homedir(),
-    hostname()
-  ].join(":");
-}
-
-function credentialPath(io: ProgramIO): string {
-  return io.configDir ? path.join(io.configDir, "credentials.json") : defaultCredentialPath();
-}
+// Encrypted credential storage lives in `./credential-store.ts`.
+// `readStoredToken` / `writeStoredToken` / `deleteStoredToken` /
+// `credentialPath` are imported from there; the AES-256-GCM cipher
+// + scrypt key derivation + on-disk JSON shape are co-located in
+// that module. Re-imported here so `readApiOptions` (and the
+// auth-command DI shape) can keep using the same names.
 
 function configPath(io: ProgramIO): string {
   return io.configDir ? path.join(io.configDir, "config.json") : defaultConfigPath();
-}
-
-function isEncryptedCredentialFile(value: unknown): value is EncryptedCredentialFile {
-  return isRecord(value)
-    && value.version === 1
-    && value.algorithm === "aes-256-gcm"
-    && typeof value.data === "string"
-    && typeof value.iv === "string"
-    && typeof value.salt === "string"
-    && typeof value.tag === "string";
-}
-
-function isCredentialStore(value: unknown): value is CredentialStore {
-  return isRecord(value)
-    && isRecord(value.tokens)
-    && Object.values(value.tokens).every((credential) => isRecord(credential)
-      && typeof credential.token === "string"
-      && typeof credential.updatedAt === "string");
 }
 
 function isNodeError(value: unknown): value is NodeJS.ErrnoException {
