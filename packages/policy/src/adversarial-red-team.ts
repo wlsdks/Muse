@@ -133,7 +133,7 @@ export class AdversarialRedTeam {
       messages,
       model: this.#model,
       ...(this.#maxOutputTokens !== undefined ? { maxOutputTokens: this.#maxOutputTokens } : {}),
-      ...(this.#metadata ? { metadata: this.#metadata as never } : {}),
+      ...(this.#metadata ? { metadata: this.#metadata } : {}),
       ...(this.#temperature !== undefined ? { temperature: this.#temperature } : {})
     };
     try {
