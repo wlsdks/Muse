@@ -39,6 +39,17 @@ interface TasksResponse {
   readonly total: number;
 }
 
+interface TasksProviderInfo {
+  readonly id: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly local: boolean;
+}
+
+interface TasksProvidersResponse {
+  readonly providers: readonly TasksProviderInfo[];
+}
+
 interface CalendarEventRow {
   readonly id: string;
   readonly providerId: string;
@@ -120,6 +131,13 @@ export function TasksPanel({ client }: { readonly client: ApiClient }) {
     queryFn: () => client.get<TasksResponse>("/api/tasks?status=open"),
     queryKey: ["tasks", "open"]
   });
+  const providers = useQuery({
+    queryFn: () => client.get<TasksProvidersResponse>("/api/tasks/providers"),
+    queryKey: ["tasks-providers"],
+    // 404s when tasksFile isn't configured — surface the empty state
+    // rather than retrying.
+    retry: false
+  });
 
   const addTask = useMutation({
     mutationFn: async (title: string) => client.post<TaskRow>("/api/tasks", { title }),
@@ -137,12 +155,19 @@ export function TasksPanel({ client }: { readonly client: ApiClient }) {
     onSuccess: async () => { await tasks.refetch(); }
   });
 
+  const providerCount = providers.data?.providers.length ?? 0;
+
   return (
     <section className="tool-surface compact" aria-label="Tasks">
       <div className="surface-heading">
         <h2>Tasks</h2>
         <span>{tasks.isLoading ? "Loading" : (tasks.data?.total ?? 0)}</span>
       </div>
+      {providerCount > 1 ? (
+        <p className="status-info" style={{ fontSize: "0.85em", margin: "0 0 0.5rem 0" }}>
+          {providerCount} providers configured: {(providers.data?.providers ?? []).map((p) => p.id).join(", ")}
+        </p>
+      ) : null}
       {error ? <p className="status-error">{error}</p> : null}
       <form
         className="connection-form"
