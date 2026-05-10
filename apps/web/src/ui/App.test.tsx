@@ -31,6 +31,12 @@ describe("MuseConsole", () => {
     expect(html).toContain("Orchestrations");
   });
 
+  it("renders the Voice panel with a Record button by default", () => {
+    const html = renderConsole();
+    expect(html).toContain("Voice");
+    expect(html).toContain("Record");
+  });
+
   it("includes status metrics for tools and orchestrations counts", () => {
     const html = renderConsole();
     // Status strip metric labels — capitalised plural forms.
