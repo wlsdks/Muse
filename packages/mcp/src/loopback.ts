@@ -204,6 +204,7 @@ export function describeBuiltinLoopbackMcpServers(): readonly LoopbackMcpCatalog
   // `send`/`inbox` — the LLM can see the full surface from the catalog,
   // not just whichever subset happens to be wired right now.
   const messagingServer = createMessagingMcpServer({
+    pollAll: async () => { throw new Error("muse.messaging.poll_all is not wired in this runtime"); },
     pollNow: async () => { throw new Error("muse.messaging.poll_now is not wired in this runtime"); },
     registry: new MessagingProviderRegistry()
   });

@@ -322,7 +322,7 @@ describe("api server: web contract + manifest", () => {
     expect(fs.tools.map((tool) => tool.name).sort()).toEqual(["list", "read", "stat"]);
     const messaging = body.servers.find((entry) => entry.name === "muse.messaging")!;
     expect(messaging.optIn).toBe(true);
-    expect(messaging.tools.map((tool) => tool.name).sort()).toEqual(["inbox", "poll_now", "providers", "send"]);
+    expect(messaging.tools.map((tool) => tool.name).sort()).toEqual(["inbox", "poll_all", "poll_now", "providers", "send"]);
     const time = body.servers.find((entry) => entry.name === "muse.time")!;
     expect(time.optIn).toBe(false);
     expect(time.requires).toBeUndefined();

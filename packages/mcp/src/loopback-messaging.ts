@@ -52,13 +52,54 @@ export interface PollNowDispatcher {
   (providerId: string, source?: string): Promise<{ ingested: number }>;
 }
 
+/**
+ * Iterates every pollable provider in the registry (Telegram + each
+ * configured channel for Discord / Slack). Skips LINE (webhook-fed).
+ * Returns per-provider ingestion counts plus any per-provider errors
+ * so a single bad channel doesn't black out the rest.
+ */
+export interface PollAllDispatcher {
+  (): Promise<{
+    readonly ingestedByProvider: Readonly<Record<string, number>>;
+    readonly errors: readonly { readonly providerId: string; readonly message: string }[];
+  }>;
+}
+
 export interface MessagingMcpServerOptions {
   readonly registry: MessagingProviderRegistry;
   readonly pollNow?: PollNowDispatcher;
+  readonly pollAll?: PollAllDispatcher;
 }
 
 export function createMessagingMcpServer(options: MessagingMcpServerOptions): LoopbackMcpServer {
-  const { registry, pollNow } = options;
+  const { registry, pollNow, pollAll } = options;
+
+  const pollAllTool: LoopbackMcpToolDefinition[] = pollAll ? [{
+    description:
+      "Pull every wired provider in one call: Telegram (global) + each channel configured in " +
+      "MUSE_DISCORD_POLL_CHANNELS / MUSE_SLACK_POLL_CHANNELS. LINE is webhook-fed and skipped. " +
+      "Returns `{ ingestedByProvider: { telegram: 2, discord: 1, … }, errors: [...] }` — a single " +
+      "bad channel doesn't black out the rest. Use this for 'any new messages anywhere?' " +
+      "without making N separate poll_now calls.",
+    execute: async (): Promise<JsonObject> => {
+      try {
+        const result = await pollAll();
+        return {
+          errors: result.errors as unknown as JsonValue,
+          ingestedByProvider: result.ingestedByProvider as unknown as JsonValue
+        };
+      } catch (error) {
+        return { error: errorMessage(error) };
+      }
+    },
+    inputSchema: {
+      additionalProperties: false,
+      properties: {},
+      type: "object"
+    },
+    name: "poll_all",
+    risk: "write" as const
+  }] : [];
 
   const pollNowTool: LoopbackMcpToolDefinition[] = pollNow ? [{
     description:
@@ -114,6 +155,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
       "Outbound messengers (Telegram / Discord / Slack / LINE). Send plain-text messages through any configured provider.",
     name: "muse.messaging",
     tools: [
+      ...pollAllTool,
       ...pollNowTool,
       {
         description:

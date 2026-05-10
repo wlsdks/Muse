@@ -462,8 +462,62 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     }
     return { ingested: inbound.length };
   };
+  // Agent-triggered poll-all dispatcher: walks every wired provider
+  // in one call. Per-channel providers use the same channel CSVs the
+  // daemon respects (MUSE_DISCORD_POLL_CHANNELS / MUSE_SLACK_POLL_CHANNELS);
+  // LINE is webhook-fed and skipped. One bad channel per provider
+  // emits an error entry but doesn't black out the rest.
+  const discordChannelsForPollAll = parseCsv(env.MUSE_DISCORD_POLL_CHANNELS) ?? [];
+  const slackChannelsForPollAll = parseCsv(env.MUSE_SLACK_POLL_CHANNELS) ?? [];
+  const pollAll = async (): Promise<{
+    ingestedByProvider: Record<string, number>;
+    errors: { providerId: string; message: string }[];
+  }> => {
+    const ingestedByProvider: Record<string, number> = {};
+    const errors: { providerId: string; message: string }[] = [];
+    for (const provider of messagingRegistry.list()) {
+      if (provider instanceof TelegramProvider) {
+        try {
+          const got = await pollNow("telegram");
+          ingestedByProvider["telegram"] = got.ingested;
+        } catch (cause) {
+          errors.push({ message: cause instanceof Error ? cause.message : String(cause), providerId: "telegram" });
+        }
+      } else if (provider instanceof DiscordProvider) {
+        let total = 0;
+        for (const channel of discordChannelsForPollAll) {
+          try {
+            const got = await pollNow("discord", channel);
+            total += got.ingested;
+          } catch (cause) {
+            errors.push({
+              message: `channel ${channel}: ${cause instanceof Error ? cause.message : String(cause)}`,
+              providerId: "discord"
+            });
+          }
+        }
+        ingestedByProvider["discord"] = total;
+      } else if (provider instanceof SlackProvider) {
+        let total = 0;
+        for (const channel of slackChannelsForPollAll) {
+          try {
+            const got = await pollNow("slack", channel);
+            total += got.ingested;
+          } catch (cause) {
+            errors.push({
+              message: `channel ${channel}: ${cause instanceof Error ? cause.message : String(cause)}`,
+              providerId: "slack"
+            });
+          }
+        }
+        ingestedByProvider["slack"] = total;
+      }
+      // LINE intentionally skipped — webhook-fed, nothing to poll.
+    }
+    return { errors, ingestedByProvider };
+  };
   const messagingLoopbackTools = messagingRegistry.list().length > 0
-    ? createLoopbackMcpMuseTools(createMessagingMcpServer({ pollNow, registry: messagingRegistry }))
+    ? createLoopbackMcpMuseTools(createMessagingMcpServer({ pollAll, pollNow, registry: messagingRegistry }))
     : [];
   // Reminders loopback: always registered. The store self-creates on
   // first write, so a fresh install sees the tool but the file is

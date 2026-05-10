@@ -2596,6 +2596,38 @@ describe("muse.messaging loopback server", () => {
     });
   });
 
+  it("muse.messaging.poll_all is hidden when no pollAll dispatcher is supplied", async () => {
+    const { MessagingProviderRegistry } = await import("@muse/messaging");
+    const server = createMessagingMcpServer({ registry: new MessagingProviderRegistry() });
+    const connection = createLoopbackMcpConnection(server);
+    const tools = await connection.listTools();
+    expect(tools.map((t) => t.name)).not.toContain("poll_all");
+  });
+
+  it("muse.messaging.poll_all invokes the supplied dispatcher and returns per-provider counts", async () => {
+    const { MessagingProviderRegistry } = await import("@muse/messaging");
+    let calls = 0;
+    const server = createMessagingMcpServer({
+      pollAll: async () => {
+        calls += 1;
+        return {
+          errors: [{ message: "channel ch-bad: not_found", providerId: "discord" }],
+          ingestedByProvider: { discord: 1, slack: 0, telegram: 3 }
+        };
+      },
+      registry: new MessagingProviderRegistry()
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const tools = await connection.listTools();
+    expect(tools.map((t) => t.name)).toContain("poll_all");
+    const result = await connection.callTool!("poll_all", {});
+    expect(result).toMatchObject({
+      ingestedByProvider: { discord: 1, slack: 0, telegram: 3 },
+      errors: [{ providerId: "discord", message: expect.stringContaining("not_found") }]
+    });
+    expect(calls).toBe(1);
+  });
+
   it("muse.messaging.poll_now rejects calls without providerId before invoking the dispatcher", async () => {
     const { MessagingProviderRegistry } = await import("@muse/messaging");
     let called = 0;
