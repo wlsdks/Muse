@@ -225,6 +225,49 @@ describe("discord-after-store", () => {
   });
 });
 
+describe("DiscordProvider.fetchInbound inbox-file branch", () => {
+  it("when inboxFile is configured, fetchInbound reads from the persisted store and does not hit Discord API", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-disc-inbox-"));
+    const inboxFile = join(dir, "discord-inbox.json");
+    const { promises: fs } = await import("node:fs");
+    await fs.writeFile(inboxFile, JSON.stringify({
+      inbox: [
+        { messageId: "1", providerId: "discord", receivedAtIso: "2026-05-11T00:00:00Z", source: "ch-a", text: "in ch-a" },
+        { messageId: "2", providerId: "discord", receivedAtIso: "2026-05-11T00:01:00Z", source: "ch-b", text: "in ch-b" },
+        { messageId: "3", providerId: "discord", receivedAtIso: "2026-05-11T00:02:00Z", source: "ch-a", text: "in ch-a again" }
+      ],
+      version: 1
+    }), "utf8");
+    let fetchCalls = 0;
+    const provider = new DiscordProvider({
+      fetch: async () => { fetchCalls += 1; return fakeJsonResponse([]); },
+      inboxFile,
+      token: "x"
+    });
+    // No `source` → all channels (newest-first).
+    const all = await provider.fetchInbound({ limit: 10 });
+    expect(all.map((m) => m.messageId)).toEqual(["3", "2", "1"]);
+    // With `source` → filtered to that channel.
+    const onlyA = await provider.fetchInbound({ limit: 10, source: "ch-a" });
+    expect(onlyA.map((m) => m.messageId)).toEqual(["3", "1"]);
+    expect(fetchCalls).toBe(0);
+  });
+
+  it("pollUpdates still hits Discord API even when inboxFile is configured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-disc-poll-with-inbox-"));
+    const inboxFile = join(dir, "discord-inbox.json");
+    let seenUrl = "";
+    const provider = new DiscordProvider({
+      baseUrl: "https://disc.test/api",
+      fetch: async (url) => { seenUrl = String(url); return fakeJsonResponse([]); },
+      inboxFile,
+      token: "x"
+    });
+    await provider.pollUpdates({ source: "ch-1" });
+    expect(seenUrl).toBe("https://disc.test/api/v10/channels/ch-1/messages?limit=20");
+  });
+});
+
 describe("DiscordProvider.pollUpdates", () => {
   it("without afterFile, polls without ?after= (snapshot mode)", async () => {
     let seenUrl = "";

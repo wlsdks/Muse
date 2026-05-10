@@ -508,12 +508,14 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
   }
   const discordToken = tokenFor("MUSE_DISCORD_BOT_TOKEN", "discord");
   if (discordToken) {
-    // `afterFile` is always wired (Phase 2.c.1+2): pollUpdates
-    // touches it only on demand, and an absent file is fine — first
-    // poll then falls back to Discord's newest-first snapshot. The
-    // existing fetchInbound is unchanged (still snapshot mode).
+    // Phase 2.c.1+2: afterFile drives pollUpdates' cursor.
+    // Phase 2.c.4: inboxFile makes fetchInbound serve the
+    // daemon-fed store (channel-filtered when source is given).
+    // Both files are wired unconditionally; the provider only
+    // touches them on demand, so an absent file is fine.
     registry.register(new DiscordProvider({
       afterFile: resolveDiscordAfterFile(env),
+      inboxFile: resolveDiscordInboxFile(env),
       token: discordToken
     }));
   }

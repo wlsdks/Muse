@@ -740,17 +740,30 @@ describe("autoconfigure", () => {
     expect(seenUrls[0]).toContain("&offset=555");
   });
 
-  it("buildMessagingRegistry wires MUSE_DISCORD_AFTER_FILE into the DiscordProvider", async () => {
+  it("buildMessagingRegistry wires after + inbox files into the DiscordProvider", async () => {
     const { mkdtempSync, promises: fs } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { DiscordProvider } = await import("@muse/messaging");
     const root = mkdtempSync(join(tmpdir(), "muse-disc-wire-"));
     const afterFile = join(root, "after.json");
-    // Seed a per-channel cursor so the registry-built provider's
-    // pollUpdates must include it in the request URL.
+    const inboxFile = join(root, "inbox.json");
+    // Seed both: a per-channel cursor for pollUpdates, and one
+    // persisted message for fetchInbound (proves the inbox path is
+    // wired through to the registry-built provider, not just the
+    // resolver).
     await fs.writeFile(afterFile, JSON.stringify({
       after: { "ch-9": "1099999999999999999" },
+      version: 1
+    }), "utf8");
+    await fs.writeFile(inboxFile, JSON.stringify({
+      inbox: [{
+        messageId: "10",
+        providerId: "discord",
+        receivedAtIso: "2026-05-11T00:00:00.000Z",
+        source: "ch-9",
+        text: "from inbox file"
+      }],
       version: 1
     }), "utf8");
     const seenUrls: string[] = [];
@@ -762,8 +775,16 @@ describe("autoconfigure", () => {
     try {
       const registry = buildMessagingRegistry({
         MUSE_DISCORD_AFTER_FILE: afterFile,
-        MUSE_DISCORD_BOT_TOKEN: "BOT"
+        MUSE_DISCORD_BOT_TOKEN: "BOT",
+        MUSE_DISCORD_INBOX_FILE: inboxFile
       });
+      // fetchInbound goes through the inbox file once configured.
+      // Bot API must not be hit here.
+      const inboxRead = await registry.fetchInbound("discord", { source: "ch-9" });
+      expect(inboxRead.map((m) => m.text)).toEqual(["from inbox file"]);
+      expect(seenUrls).toEqual([]);
+      // pollUpdates is the Discord-API-side ingestion path the
+      // daemon uses; must include the stored after cursor.
       const discord = registry.require("discord");
       expect(discord).toBeInstanceOf(DiscordProvider);
       await (discord as InstanceType<typeof DiscordProvider>).pollUpdates({ source: "ch-9" });

@@ -1,5 +1,6 @@
 import { readDiscordAfter, writeDiscordAfter } from "./discord-after-store.js";
 import { MessagingProviderError } from "./errors.js";
+import { readInbox } from "./inbox-store.js";
 import { clampInboundLimit, tryParseJson } from "./provider-helpers.js";
 import type {
   InboundFetchOptions,
@@ -23,12 +24,19 @@ export interface DiscordProviderOptions {
    * When set, `pollUpdates` reads/writes a per-channel "after"
    * cursor through this file (atomic tmp+rename). Without it,
    * each `pollUpdates` call is snapshot-style: returns the most
-   * recent `limit` messages currently visible to the bot. The
-   * existing `fetchInbound` is unaffected — Phase 2.c.1 only
-   * adds the polling foundation; a later slice will switch the
-   * read path to a local inbox.
+   * recent `limit` messages currently visible to the bot.
    */
   readonly afterFile?: string;
+  /**
+   * When set, `fetchInbound` reads from this persisted inbox file
+   * (Phase 2.c.4 — mirrors Telegram/LINE). The Phase 2.c.3 polling
+   * daemon writes here, so the read API and the daemon converge on
+   * the same store. When `source` is supplied alongside, results
+   * are filtered to that channel id; otherwise all entries are
+   * returned. Without `inboxFile`, fetchInbound stays in snapshot
+   * mode and `source` remains required.
+   */
+  readonly inboxFile?: string;
 }
 
 const DEFAULT_BASE_URL = "https://discord.com/api";
@@ -60,6 +68,7 @@ export class DiscordProvider implements MessagingProvider {
   private readonly baseUrl: string;
   private readonly apiVersion: string;
   private readonly afterFile: string | undefined;
+  private readonly inboxFile: string | undefined;
 
   constructor(options: DiscordProviderOptions) {
     this.token = options.token;
@@ -67,6 +76,7 @@ export class DiscordProvider implements MessagingProvider {
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.apiVersion = options.apiVersion ?? DEFAULT_VERSION;
     this.afterFile = options.afterFile;
+    this.inboxFile = options.inboxFile;
   }
 
   describe(): MessagingProviderInfo {
@@ -78,17 +88,24 @@ export class DiscordProvider implements MessagingProvider {
   }
 
   /**
-   * One-shot fetch of recent messages from a single channel via the
-   * `GET /channels/:id/messages?limit=N` REST endpoint. Discord
-   * doesn't have a global "what's incoming?" stream like Telegram's
-   * `getUpdates`, so the caller MUST pass the channel id as
-   * `options.source`.
-   *
-   * Discord caps `limit` at 100; we surface that ceiling rather than
-   * silently truncate. Long-poll / Gateway streaming for push-style
-   * delivery lands in Phase 2.b.
+   * Read-side surface. When `inboxFile` is configured, returns the
+   * persisted entries the polling daemon wrote (Phase 2.c.3+4); a
+   * `source` option filters to that channel id, and unset returns
+   * all. When `inboxFile` isn't configured, falls through to a
+   * live snapshot via `fetchMessages` — preserves the pre-2.c.4
+   * one-shot path that the CLI/REST contract tests rely on, with
+   * `source` still required in that mode.
    */
   async fetchInbound(options?: InboundFetchOptions): Promise<readonly InboundMessage[]> {
+    if (this.inboxFile) {
+      const limit = clampInboundLimit(options?.limit);
+      const all = await readInbox(this.inboxFile, limit);
+      const source = options?.source?.trim();
+      if (!source || source.length === 0) {
+        return all;
+      }
+      return all.filter((message) => message.source === source);
+    }
     return this.fetchMessages(options, false);
   }
 
