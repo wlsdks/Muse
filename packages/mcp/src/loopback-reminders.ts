@@ -24,6 +24,9 @@ import {
  *   - `muse.reminders.due` (read) — list reminders the user should
  *     see right now (status=pending && dueAt ≤ now), so the LLM can
  *     proactively surface them when answering anything time-shaped.
+ *   - `muse.reminders.search` (read) — substring grep across the
+ *     reminder text. Defaults to status="all" so vague callbacks
+ *     ("그 우유 뭐였지?") still find fired/old entries.
  *   - `muse.reminders.clear` (write) — drop a reminder by id.
  *
  * Active firing through messaging is a follow-up iter — this server
@@ -125,6 +128,49 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           type: "object"
         },
         name: "due",
+        risk: "read"
+      },
+      {
+        description:
+          "Substring search across reminder text (case-insensitive). `query` is required; `status` " +
+          "defaults to 'all' (set 'pending' to skip already-fired ones). Returns up to `" +
+          maxListEntries.toString() +
+          "` matches sorted by dueAt. Use this when the user says 'remind me about that milk thing' " +
+          "instead of giving a literal id.",
+        execute: async (args): Promise<JsonObject> => {
+          const query = readString(args, "query")?.trim();
+          if (!query) {
+            return { error: "query is required" };
+          }
+          // Default search to "all" so the LLM can find fired/cleared
+          // entries when the user vaguely refers back to them. Callers
+          // who want a tighter scope pass `status: "pending"` etc.
+          const statusRaw = readString(args, "status");
+          const status = statusRaw ? readReminderStatusFilter(statusRaw) : "all";
+          const needle = query.toLowerCase();
+          const all = await readReminders(file);
+          const scoped = filterReminders(all, status, now);
+          const matches = scoped
+            .filter((reminder) => reminder.text.toLowerCase().includes(needle))
+            .sort((left, right) => left.dueAt.localeCompare(right.dueAt))
+            .slice(0, maxListEntries);
+          return {
+            query,
+            reminders: matches.map(serializeReminder) as JsonValue,
+            status,
+            total: matches.length
+          };
+        },
+        inputSchema: {
+          additionalProperties: false,
+          properties: {
+            query: { description: "Substring to grep for (case-insensitive).", type: "string" },
+            status: { enum: ["pending", "fired", "all", "due"], type: "string" }
+          },
+          required: ["query"],
+          type: "object"
+        },
+        name: "search",
         risk: "read"
       },
       {

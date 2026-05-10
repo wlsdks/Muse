@@ -2614,5 +2614,38 @@ describe("muse.reminders loopback server", () => {
 
     const missing = await connection.callTool!("clear", { id: "rem_does_not_exist" });
     expect(missing).toMatchObject({ error: expect.stringContaining("not found") });
+
+    const noQuery = await connection.callTool!("search", {});
+    expect(noQuery).toMatchObject({ error: expect.stringContaining("query is required") });
+  });
+
+  it("search greps reminder text case-insensitively, defaulting to status=all", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-rem-search-"));
+    let counter = 0;
+    const server = createRemindersMcpServer({
+      file: join(dir, "reminders.json"),
+      idFactory: () => `rem_${++counter}`,
+      now: () => new Date("2026-05-11T08:00:00Z")
+    });
+    const connection = createLoopbackMcpConnection(server);
+
+    await connection.callTool!("add", { dueAt: "2026-05-12T09:00:00Z", text: "Buy milk" });
+    await connection.callTool!("add", { dueAt: "2026-05-13T09:00:00Z", text: "Pick up dry MILK cleaning" });
+    await connection.callTool!("add", { dueAt: "2026-05-14T09:00:00Z", text: "Pay rent" });
+
+    const milk = await connection.callTool!("search", { query: "milk" });
+    expect(milk).toMatchObject({ status: "all", total: 2, query: "milk" });
+    const ids = (milk.reminders as Array<{ id: string }>).map((entry) => entry.id);
+    expect(ids).toEqual(["rem_1", "rem_2"]);
+
+    const none = await connection.callTool!("search", { query: "submarine" });
+    expect(none).toMatchObject({ total: 0 });
+
+    // status filter narrows to pending only when explicitly set
+    const pendingOnly = await connection.callTool!("search", { query: "milk", status: "pending" });
+    expect(pendingOnly).toMatchObject({ status: "pending", total: 2 });
   });
 });
