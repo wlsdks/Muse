@@ -71,6 +71,7 @@ import {
 } from "@muse/mcp";
 import {
   createUserMemoryAutoExtractHook,
+  DEFAULT_WORKING_BUDGET_RATIO,
   type ConversationSummaryStore,
   type TaskMemoryMaintenance,
   type TaskMemoryStore,
@@ -385,10 +386,26 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       agentSpecResolver,
       cacheMetrics,
       circuitBreaker: circuitBreakerRegistry.get("model.generate"),
-      contextWindow: {
-        maxContextWindowTokens: parseInteger(env.MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS, 128_000),
-        outputReserveTokens: parseInteger(env.MUSE_LLM_MAX_OUTPUT_TOKENS, 4_096)
-      },
+      contextWindow: (() => {
+        // Working-budget compaction trigger (round 157 + 158): proactive
+        // compaction at ~40% of nominal so quality stays high before the
+        // hard cap is hit (Anthropic effective-context-engineering /
+        // NoLiMa context-rot research). User can override the soft target
+        // via MUSE_LLM_WORKING_BUDGET_TOKENS; setting it to 0 disables
+        // proactive compaction entirely (legacy hard-cap-only behavior).
+        const maxContextWindowTokens = parseInteger(env.MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS, 128_000);
+        const outputReserveTokens = parseInteger(env.MUSE_LLM_MAX_OUTPUT_TOKENS, 4_096);
+        const explicitWorkingBudget = env.MUSE_LLM_WORKING_BUDGET_TOKENS;
+        const workingBudgetTokens = explicitWorkingBudget !== undefined
+          ? parseInteger(explicitWorkingBudget, 0)
+          : Math.floor(maxContextWindowTokens * DEFAULT_WORKING_BUDGET_RATIO);
+        return {
+          maxContextWindowTokens,
+          outputReserveTokens,
+          // 0 disables; positive values pass through to trimConversationMessages.
+          ...(workingBudgetTokens > 0 ? { workingBudgetTokens } : {})
+        };
+      })(),
       historyStore,
       hooks: runtimeHooks,
       hookTraceStore,

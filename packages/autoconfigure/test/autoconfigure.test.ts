@@ -181,6 +181,71 @@ describe("autoconfigure", () => {
     });
   });
 
+  it("wires working-budget compaction into the AgentRuntime by default (round 158)", async () => {
+    // Round 157 added workingBudgetTokens to ConversationTrimOptions.
+    // Round 158 wires autoconfigure to compute it as 40% of nominal
+    // by default. We verify the soft trigger by setting a tiny
+    // nominal context window (200 tokens) so the working budget
+    // (40% = 80 tokens) is easy to exceed with a few-message
+    // conversation. The hard cap (200) is still well above what
+    // these messages need, so a "hard_limit" trigger would mean we
+    // mis-wired the field.
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "200",
+        MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic"
+      }
+    });
+
+    const longerMessages = [
+      { content: "first user message that is long enough to fill some tokens", role: "user" as const },
+      { content: "first assistant response that also has decent length", role: "assistant" as const },
+      { content: "second user message that adds more conversation history", role: "user" as const },
+      { content: "second assistant response continuing the dialogue", role: "assistant" as const },
+      { content: "third question asking about something else entirely", role: "user" as const }
+    ];
+    const result = await assembly.agentRuntime?.run({
+      messages: longerMessages,
+      model: "diagnostic/smoke"
+    });
+
+    // The runtime should have surfaced a context-window report and
+    // it should have fired on the WORKING budget (proactive), not
+    // the hard limit, because the hard cap is much larger than what
+    // the messages consume.
+    expect(result?.contextWindow).toBeDefined();
+    expect(result?.contextWindow?.triggeredBy).toBe("working_budget");
+    expect(result?.contextWindow?.removedCount).toBeGreaterThan(0);
+  });
+
+  it("respects MUSE_LLM_WORKING_BUDGET_TOKENS=0 to disable proactive compaction", async () => {
+    // Same scenario as above but with the user explicitly opting
+    // out via 0. The trim should NOT fire because the hard cap is
+    // unreached and proactive compaction is disabled.
+    const assembly = createMuseRuntimeAssembly({
+      env: {
+        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "200",
+        MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
+        MUSE_LLM_WORKING_BUDGET_TOKENS: "0",
+        MUSE_MODEL: "diagnostic/smoke",
+        MUSE_MODEL_PROVIDER_ID: "diagnostic"
+      }
+    });
+
+    const result = await assembly.agentRuntime?.run({
+      messages: [
+        { content: "shorter", role: "user" }
+      ],
+      model: "diagnostic/smoke"
+    });
+
+    // Below both budgets → triggeredBy: "none".
+    expect(result?.contextWindow?.triggeredBy).toBe("none");
+    expect(result?.contextWindow?.removedCount).toBe(0);
+  });
+
   it("feeds the MonthlyBudgetTracker from each agent run", async () => {
     const assembly = createMuseRuntimeAssembly({
       env: {

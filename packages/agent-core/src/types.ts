@@ -120,6 +120,15 @@ export interface AgentContextWindowReport {
   readonly estimatedTokens: number;
   readonly removedCount: number;
   readonly summaryInserted: boolean;
+  /**
+   * Which compaction threshold caused the trim, if any. `none` =
+   * no-op (under both budgets); `working_budget` = proactive trim
+   * to the soft target (Anthropic / NoLiMa pattern); `hard_limit` =
+   * the legacy forced-trim path. Surfacing this in the report lets
+   * downstream observability distinguish proactive compaction from
+   * forced compaction in dashboards.
+   */
+  readonly triggeredBy: "none" | "working_budget" | "hard_limit";
 }
 
 export interface AgentRunResult {

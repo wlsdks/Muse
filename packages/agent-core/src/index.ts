@@ -654,7 +654,8 @@ export class AgentRuntime {
         budgetTokens: trimResult.budgetTokens,
         estimatedTokens: trimResult.estimatedTokens,
         removedCount: trimResult.removedCount,
-        summaryInserted: trimResult.summaryInserted
+        summaryInserted: trimResult.summaryInserted,
+        triggeredBy: trimResult.triggeredBy
       },
       request: {
         messages: trimResult.messages,
