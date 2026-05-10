@@ -40,10 +40,9 @@ export function registerCoreRoutes(
   server: FastifyInstance,
   apiRouteMethods: ReadonlyMap<string, ReadonlySet<string>>
 ): void {
-  server.get("/health", async () => ({
-    service: "muse-api",
-    status: "ok"
-  }));
+  const healthPayload = { service: "muse-api", status: "ok" };
+  server.get("/health", async () => healthPayload);
+  server.get("/api/health", async () => healthPayload);
 
   server.get("/spec", async () => ({
     agentCore: "model-agnostic",

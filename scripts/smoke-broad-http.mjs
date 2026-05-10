@@ -59,6 +59,13 @@ try {
     assert(body.status === "ok", `expected status ok, got ${JSON.stringify(body)}`);
   });
 
+  await record("GET /api/health (alias under /api prefix)", async () => {
+    const response = await fetch(`${baseUrl}/api/health`);
+    const body = await response.json();
+    assert(response.ok, `expected 200, got ${response.status}`);
+    assert(body.status === "ok", `expected status ok, got ${JSON.stringify(body)}`);
+  });
+
   await record("POST /api/chat", async () => {
     const response = await fetch(`${baseUrl}/api/chat`, {
       body: JSON.stringify({ message: "smoke broad chat", runId: "smoke-broad-chat" }),
