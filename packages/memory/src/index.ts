@@ -293,6 +293,18 @@ export {
   type ToolOutputTrimResult
 } from "./memory-tool-output-trim.js";
 
+// In-process content-by-reference store (round 167 — Context
+// Engineering step 1.d foundation). Tools that return large
+// content can stash the original here under a short id; the
+// agent fetches expanded content via the `muse.context` MCP
+// server when needed.
+export {
+  InMemoryContextReferenceStore,
+  type ContextReference,
+  type ContextReferenceStore,
+  type InMemoryContextReferenceStoreOptions
+} from "./context-reference-store.js";
+
 // Typed user-model slots (round 162 — Context Engineering step
 // 1.c foundation). Parallel structure to the legacy free-text
 // `Record<string,string>` facts/preferences. Persistence + runtime

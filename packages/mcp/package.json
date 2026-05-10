@@ -20,6 +20,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@muse/calendar": "workspace:*",
     "@muse/db": "workspace:*",
+    "@muse/memory": "workspace:*",
     "@muse/shared": "workspace:*",
     "@muse/tools": "workspace:*",
     "kysely": "^0.28.17"

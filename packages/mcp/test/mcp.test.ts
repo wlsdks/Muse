@@ -33,6 +33,7 @@ import {
   TasksProviderError,
   TasksProviderRegistry,
   TasksValidationError,
+  createContextReferenceMcpServer,
   createTasksRegistryMcpServer,
   createUrlMcpServer,
   createMcpSecurityPolicyInsert,
@@ -1871,5 +1872,72 @@ describe("tasks provider abstraction", () => {
       .toMatchObject({ error: expect.stringContaining("id") });
     expect(await conn.callTool!("search", { providerId: "apple-reminders" }))
       .toMatchObject({ error: expect.stringContaining("query") });
+  });
+});
+
+describe("muse.context loopback server (round 167)", () => {
+  it("fetch returns content for a known ref and { found: false } for unknown / expired", async () => {
+    const { InMemoryContextReferenceStore } = await import("@muse/memory");
+    let now = new Date("2026-05-10T00:00:00.000Z");
+    const store = new InMemoryContextReferenceStore({
+      now: () => now,
+      ttlMs: 30_000
+    });
+    store.put({
+      content: "the full body of a large tool output",
+      contentType: "text/plain",
+      id: "ref-abc",
+      originalLength: 200_000,
+      source: "muse.fs.read"
+    });
+
+    const conn = createLoopbackMcpConnection(createContextReferenceMcpServer({ store }));
+
+    const fetched = await conn.callTool!("fetch", { ref: "ref-abc" }) as {
+      content?: string;
+      contentType?: string;
+      found: boolean;
+      originalLength?: number;
+      ref: string;
+      source?: string;
+    };
+    expect(fetched.found).toBe(true);
+    expect(fetched.content).toBe("the full body of a large tool output");
+    expect(fetched.contentType).toBe("text/plain");
+    expect(fetched.originalLength).toBe(200_000);
+    expect(fetched.source).toBe("muse.fs.read");
+
+    const missing = await conn.callTool!("fetch", { ref: "nope" }) as { found: boolean; ref: string };
+    expect(missing.found).toBe(false);
+    expect(missing.ref).toBe("nope");
+
+    // Empty ref → typed error.
+    const bad = await conn.callTool!("fetch", { ref: "" }) as { error?: string };
+    expect(bad.error).toContain("ref is required");
+
+    // Advance past TTL → fetch returns not-found.
+    now = new Date("2026-05-10T00:00:31.000Z");
+    const expired = await conn.callTool!("fetch", { ref: "ref-abc" }) as { found: boolean };
+    expect(expired.found).toBe(false);
+  });
+
+  it("list returns the cached refs without their bodies", async () => {
+    const { InMemoryContextReferenceStore } = await import("@muse/memory");
+    const store = new InMemoryContextReferenceStore();
+    store.put({ content: "x".repeat(1_000), id: "r1", originalLength: 1_000, source: "tool-a" });
+    store.put({ content: "y".repeat(2_000), id: "r2", originalLength: 2_000, source: "tool-b" });
+
+    const conn = createLoopbackMcpConnection(createContextReferenceMcpServer({ store }));
+    const listed = await conn.callTool!("list", {}) as {
+      refs: { id: string; originalLength?: number; source?: string }[];
+      total: number;
+    };
+    expect(listed.total).toBe(2);
+    const ids = listed.refs.map((entry) => entry.id);
+    expect(ids).toEqual(expect.arrayContaining(["r1", "r2"]));
+    // No `content` field on the list response — only metadata.
+    for (const entry of listed.refs) {
+      expect((entry as { content?: string }).content).toBeUndefined();
+    }
   });
 });

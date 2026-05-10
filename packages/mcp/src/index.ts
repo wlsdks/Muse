@@ -491,6 +491,14 @@ export {
   type TasksRegistryMcpServerOptions
 } from "./loopback-tasks-registry.js";
 
+// Context reference MCP server (round 167 — Context Engineering 1.d
+// foundation). `muse.context.fetch` / `muse.context.list` against an
+// in-process ContextReferenceStore.
+export {
+  createContextReferenceMcpServer,
+  type ContextReferenceMcpServerOptions
+} from "./loopback-context.js";
+
 export {
   AppleNotesProvider,
   LocalDirNotesProvider,

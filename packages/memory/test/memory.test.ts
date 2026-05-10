@@ -13,6 +13,7 @@ import {
   COMPACTION_PINNED_ENTITIES_PREFIX,
   composeUserModelSnapshot,
   EMPTY_USER_MODEL,
+  InMemoryContextReferenceStore,
   trimToolOutput,
   buildActiveTaskMemoryQuery,
   buildConversationSummaryUpsertQuery,
@@ -1241,6 +1242,68 @@ describe("createUserMemoryAutoExtractHook", () => {
     const memory = await store.findByUserId("user-8");
     expect(memory?.userModel?.goals).toHaveLength(2);
     expect(memory?.userModel?.goals.map((slot) => slot.id)).toEqual(["g1", "g2"]);
+  });
+
+  it("InMemoryContextReferenceStore stores, retrieves, lists, deletes, and TTL-evicts entries (round 167)", () => {
+    let now = new Date("2026-05-10T00:00:00.000Z");
+    const store = new InMemoryContextReferenceStore({
+      maxEntries: 3,
+      now: () => now,
+      ttlMs: 60_000
+    });
+
+    const entry = store.put({
+      content: "first content",
+      contentType: "text/plain",
+      id: "ref-1",
+      originalLength: 1_234,
+      source: "muse.fs.read"
+    });
+    expect(entry).toMatchObject({
+      content: "first content",
+      contentType: "text/plain",
+      id: "ref-1",
+      originalLength: 1_234,
+      source: "muse.fs.read"
+    });
+    expect(entry.createdAt.toISOString()).toBe("2026-05-10T00:00:00.000Z");
+
+    expect(store.get("ref-1")?.content).toBe("first content");
+    expect(store.get("missing")).toBeUndefined();
+    expect(store.list()).toHaveLength(1);
+
+    // Advance time past TTL → entry expires.
+    now = new Date("2026-05-10T00:01:01.000Z"); // 61s later
+    expect(store.get("ref-1")).toBeUndefined();
+    expect(store.list()).toHaveLength(0);
+
+    // Cap eviction: put 4 with maxEntries=3 → oldest evicted.
+    now = new Date("2026-05-10T00:02:00.000Z");
+    store.put({ content: "a", id: "a" });
+    now = new Date("2026-05-10T00:02:01.000Z");
+    store.put({ content: "b", id: "b" });
+    now = new Date("2026-05-10T00:02:02.000Z");
+    store.put({ content: "c", id: "c" });
+    now = new Date("2026-05-10T00:02:03.000Z");
+    store.put({ content: "d", id: "d" });
+    expect(store.get("a")).toBeUndefined(); // evicted
+    expect(store.get("d")).toBeDefined();
+    expect(store.list().map((entry) => entry.id)).toEqual(["b", "c", "d"]);
+
+    expect(store.delete("c")).toBe(true);
+    expect(store.delete("c")).toBe(false);
+    expect(store.list()).toHaveLength(2);
+  });
+
+  it("InMemoryContextReferenceStore rejects empty ids and treats ttlMs=0 as never expiring", () => {
+    const store = new InMemoryContextReferenceStore({ ttlMs: 0 });
+    expect(() => store.put({ content: "x", id: "" })).toThrow("non-empty id");
+    expect(() => store.put({ content: "x", id: "   " })).toThrow("non-empty id");
+
+    store.put({ content: "permanent", id: "p1" });
+    // Even after a long pretend wait, ttlMs=0 keeps the entry.
+    expect(store.pruneExpired(new Date(Date.now() + 10 * 60 * 60 * 1_000))).toBe(0);
+    expect(store.get("p1")?.content).toBe("permanent");
   });
 
   it("silently skips slot writes when the store doesn't implement upsertUserModelSlot", async () => {

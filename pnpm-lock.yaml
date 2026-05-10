@@ -296,6 +296,9 @@ importers:
       '@muse/db':
         specifier: workspace:*
         version: link:../db
+      '@muse/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared
