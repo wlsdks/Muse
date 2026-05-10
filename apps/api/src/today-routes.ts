@@ -145,19 +145,22 @@ async function readRecentNotes(notesDir: string | undefined): Promise<readonly s
   } catch {
     return [];
   }
-  const files: { name: string; mtime: number }[] = [];
-  for (const entry of entries) {
-    if (entry.name.startsWith(".") || !entry.isFile()) {
-      continue;
-    }
+  // Stat every visible file in parallel. The previous sequential
+  // `for ... await fs.stat()` made this O(N) round-trips through
+  // libuv's thread pool; with N notes this can compound on every
+  // /api/today request. Promise.all dispatches concurrently and
+  // settles in roughly max(stat) instead of sum(stat).
+  const visible = entries.filter((entry) => !entry.name.startsWith(".") && entry.isFile());
+  const stats = await Promise.all(visible.map(async (entry) => {
     try {
       const stat = await fs.stat(join(root, entry.name));
-      files.push({ mtime: stat.mtime.getTime(), name: entry.name });
+      return { mtime: stat.mtime.getTime(), name: entry.name };
     } catch {
-      // skip unreadable entries
+      return undefined;
     }
-  }
-  return files
+  }));
+  return stats
+    .filter((entry): entry is { name: string; mtime: number } => entry !== undefined)
     .sort((left, right) => right.mtime - left.mtime)
     .slice(0, MAX_RECENT_NOTES)
     .map((entry) => entry.name);
