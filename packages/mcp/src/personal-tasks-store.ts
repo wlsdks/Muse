@@ -1,0 +1,122 @@
+/**
+ * Pure data layer for the personal todo list (`~/.muse/tasks.json`).
+ *
+ * Three callers compose against this module:
+ *   - the MCP loopback server in `loopback-tasks.ts` (the LLM tool surface)
+ *   - the Fastify REST routes in `apps/api/src/tasks-routes.ts`
+ *   - the CLI's `--local` mode in `apps/cli/src/commands-tasks.ts`
+ *
+ * Keeping the on-disk shape, atomic writes, and dueAt parsing here
+ * means CLI-written rows always round-trip cleanly through the API
+ * (and vice versa) without each surface re-implementing parts of the
+ * format.
+ */
+
+import { promises as fs } from "node:fs";
+import { dirname } from "node:path";
+
+import type { JsonObject, JsonValue } from "@muse/shared";
+
+import { resolveRelativeTimePhrase } from "./loopback-relative-time.js";
+
+export interface PersistedTask {
+  readonly id: string;
+  readonly title: string;
+  readonly status: "open" | "done";
+  readonly createdAt: string;
+  readonly completedAt?: string;
+  readonly dueAt?: string;
+  readonly notes?: string;
+  readonly tags?: readonly string[];
+}
+
+export type TaskStatusFilter = "open" | "done" | "all";
+
+export async function readTasks(file: string): Promise<readonly PersistedTask[]> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { tasks?: unknown }).tasks)) {
+    return [];
+  }
+  return (parsed as { tasks: unknown[] }).tasks.flatMap((entry): readonly PersistedTask[] =>
+    isPersistedTask(entry) ? [entry] : []
+  );
+}
+
+export async function writeTasks(file: string, tasks: readonly PersistedTask[]): Promise<void> {
+  const payload = `${JSON.stringify({ tasks }, null, 2)}\n`;
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  await fs.mkdir(dirname(file), { recursive: true });
+  await fs.writeFile(tmp, payload, "utf8");
+  await fs.rename(tmp, file);
+}
+
+export function serializeTask(task: PersistedTask): JsonObject {
+  return {
+    createdAt: task.createdAt,
+    id: task.id,
+    status: task.status,
+    title: task.title,
+    ...(task.completedAt ? { completedAt: task.completedAt } : {}),
+    ...(task.dueAt ? { dueAt: task.dueAt } : {}),
+    ...(task.notes ? { notes: task.notes } : {}),
+    ...(task.tags && task.tags.length > 0 ? { tags: [...task.tags] as JsonValue } : {})
+  };
+}
+
+export function readTaskStatusFilter(value: string | undefined): TaskStatusFilter {
+  return value === "done" || value === "all" ? value : "open";
+}
+
+/**
+ * Resolve a user-supplied dueAt string. Accepts an ISO-8601 timestamp
+ * starting with `YYYY-MM-DD…` or one of the relative phrases the MCP
+ * tool advertises ("tomorrow at 6pm", "in 3 hours", "next Monday").
+ * Returns the resolved ISO timestamp or an Error explaining why the
+ * input was rejected — callers map that to their surface (HTTP 400,
+ * MCP error response, CLI exit message).
+ */
+export function parseTaskDueAt(raw: string, now: () => Date): string | Error {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return new Error("dueAt is empty");
+  }
+  const isoParsed = new Date(trimmed);
+  if (!Number.isNaN(isoParsed.getTime()) && /^\d{4}-\d{2}-\d{2}/u.test(trimmed)) {
+    return isoParsed.toISOString();
+  }
+  const relative = resolveRelativeTimePhrase(trimmed, now);
+  if (!relative) {
+    return new Error(
+      `dueAt must be an ISO-8601 timestamp or a supported relative phrase (got ${JSON.stringify(trimmed)})`
+    );
+  }
+  return relative.toISOString();
+}
+
+function isPersistedTask(value: unknown): value is PersistedTask {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as PersistedTask;
+  if (typeof candidate.id !== "string"
+    || typeof candidate.title !== "string"
+    || typeof candidate.createdAt !== "string"
+    || (candidate.status !== "open" && candidate.status !== "done")) {
+    return false;
+  }
+  if (candidate.dueAt !== undefined && typeof candidate.dueAt !== "string") {
+    return false;
+  }
+  return true;
+}

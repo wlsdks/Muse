@@ -508,6 +508,18 @@ export {
 // rather than duplicate semantics.
 export { resolveRelativeTimePhrase } from "./loopback-relative-time.js";
 
+// Personal task store — pure data layer shared between the MCP tool,
+// the REST routes, and the CLI's --local mode.
+export {
+  parseTaskDueAt,
+  readTasks,
+  readTaskStatusFilter,
+  serializeTask,
+  writeTasks,
+  type PersistedTask,
+  type TaskStatusFilter
+} from "./personal-tasks-store.js";
+
 // Context reference MCP server (round 167 — Context Engineering 1.d
 // foundation). `muse.context.fetch` / `muse.context.list` against an
 // in-process ContextReferenceStore.

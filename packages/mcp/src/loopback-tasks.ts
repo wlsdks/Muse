@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { promises as nodeFs } from "node:fs";
-import { dirname as nodePathDirname } from "node:path";
 
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import type { LoopbackMcpServer } from "./loopback.js";
 import { readString, readStringArray, errorMessage } from "./loopback-helpers.js";
-import { resolveRelativeTimePhrase } from "./loopback-relative-time.js";
+import {
+  parseTaskDueAt,
+  readTasks,
+  readTaskStatusFilter,
+  serializeTask,
+  writeTasks,
+  type PersistedTask
+} from "./personal-tasks-store.js";
 
 /**
  * `muse.tasks` loopback MCP server — personal todo list backed by a
@@ -27,17 +32,6 @@ export interface TasksMcpServerOptions {
   readonly maxListEntries?: number;
   readonly maxQueryLength?: number;
   readonly now?: () => Date;
-}
-
-interface PersistedTask {
-  readonly id: string;
-  readonly title: string;
-  readonly status: "open" | "done";
-  readonly createdAt: string;
-  readonly completedAt?: string;
-  readonly dueAt?: string;
-  readonly notes?: string;
-  readonly tags?: readonly string[];
 }
 
 /**
@@ -83,16 +77,11 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           const dueAtRaw = readString(args, "dueAt")?.trim();
           let dueAt: string | undefined;
           if (dueAtRaw && dueAtRaw.length > 0) {
-            const isoParsed = new Date(dueAtRaw);
-            if (!Number.isNaN(isoParsed.getTime()) && /^\d{4}-\d{2}-\d{2}/u.test(dueAtRaw)) {
-              dueAt = isoParsed.toISOString();
-            } else {
-              const relative = resolveRelativeTimePhrase(dueAtRaw, now);
-              if (!relative) {
-                return { error: `dueAt must be an ISO-8601 timestamp or a supported relative phrase (got ${JSON.stringify(dueAtRaw)})` };
-              }
-              dueAt = relative.toISOString();
+            const parsed = parseTaskDueAt(dueAtRaw, now);
+            if (parsed instanceof Error) {
+              return { error: parsed.message };
             }
+            dueAt = parsed;
           }
           const tasks = await readTasks(file);
           const created: PersistedTask = {
@@ -130,7 +119,7 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           "List tasks newest-first. `status`: \"open\" (default), \"done\", or \"all\". " +
           `Returns up to ${maxListEntries} entries.`,
         execute: async (args): Promise<JsonObject> => {
-          const status = readStatusFilter(readString(args, "status"));
+          const status = readTaskStatusFilter(readString(args, "status"));
           const tasks = await readTasks(file);
           const filtered = tasks
             .filter((task) => status === "all" || task.status === status)
@@ -201,7 +190,7 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           if (query.length > maxQueryLength) {
             return { error: `query too long (max ${maxQueryLength} chars)` };
           }
-          const status = readStatusFilter(readString(args, "status"));
+          const status = readTaskStatusFilter(readString(args, "status"));
           const tasks = await readTasks(file);
           const needle = query.toLowerCase();
           const matches = tasks
@@ -235,75 +224,3 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
   };
 }
 
-async function readTasks(file: string): Promise<readonly PersistedTask[]> {
-  let raw: string;
-  try {
-    raw = await nodeFs.readFile(file, "utf8");
-  } catch (error) {
-    if (isFileNotFound(error)) {
-      return [];
-    }
-    return [];
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch {
-    return [];
-  }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { tasks?: unknown }).tasks)) {
-    return [];
-  }
-  return (parsed as { tasks: unknown[] }).tasks.flatMap((entry): readonly PersistedTask[] =>
-    isPersistedTask(entry) ? [entry] : []
-  );
-}
-
-async function writeTasks(file: string, tasks: readonly PersistedTask[]): Promise<void> {
-  const payload = `${JSON.stringify({ tasks }, null, 2)}\n`;
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  await nodeFs.mkdir(nodePathDirname(file), { recursive: true });
-  await nodeFs.writeFile(tmp, payload, "utf8");
-  await nodeFs.rename(tmp, file);
-}
-
-function serializeTask(task: PersistedTask): JsonObject {
-  return {
-    createdAt: task.createdAt,
-    id: task.id,
-    status: task.status,
-    title: task.title,
-    ...(task.completedAt ? { completedAt: task.completedAt } : {}),
-    ...(task.dueAt ? { dueAt: task.dueAt } : {}),
-    ...(task.notes ? { notes: task.notes } : {}),
-    ...(task.tags && task.tags.length > 0 ? { tags: [...task.tags] as JsonValue } : {})
-  };
-}
-
-function isPersistedTask(value: unknown): value is PersistedTask {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as PersistedTask;
-  if (typeof candidate.id !== "string"
-    || typeof candidate.title !== "string"
-    || typeof candidate.createdAt !== "string"
-    || (candidate.status !== "open" && candidate.status !== "done")) {
-    return false;
-  }
-  if (candidate.dueAt !== undefined && typeof candidate.dueAt !== "string") {
-    return false;
-  }
-  return true;
-}
-
-function readStatusFilter(value: string | undefined): "open" | "done" | "all" {
-  if (value === "done" || value === "all") {
-    return value;
-  }
-  return "open";
-}
-
-function isFileNotFound(error: unknown): boolean {
-  return Boolean(error) && typeof error === "object" && (error as { code?: string }).code === "ENOENT";
-}

@@ -1,8 +1,5 @@
 /**
- * `/api/tasks/*` routes — extracted from `server-routes.ts` so the
- * tasks surface (one of the personal-domain trio: notes / tasks /
- * calendar) lives in its own module alongside its on-disk
- * persistence helpers.
+ * `/api/tasks/*` routes — the personal-domain trio's todo surface.
  *
  * Public registrar `registerTasksRoutes` is re-exported from
  * `server-routes.ts` so `server.ts` (the only consumer) keeps
@@ -10,20 +7,25 @@
  *
  * Endpoints:
  *   - GET    /api/tasks — list newest-first, filterable by status
- *   - POST   /api/tasks — create a new task with title + optional notes/tags
+ *   - POST   /api/tasks — create a new task with title + optional notes/tags/dueAt
  *   - POST   /api/tasks/:id/complete — mark done with completedAt
  *   - DELETE /api/tasks/:id — remove
  *
- * Backed by a single JSON file (default `~/.muse/tasks.json`).
- * Reads are idempotent (missing/unparseable file → empty list).
- * Writes are atomic (`tmp-<pid>-<ts>` → rename).
+ * Persistence and shape live in `@muse/mcp/personal-tasks-store`
+ * (single source of truth shared with the MCP loopback tool and the
+ * CLI's --local mode).
  */
 
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import { dirname } from "node:path";
 
-import { resolveRelativeTimePhrase, type TasksProviderRegistry } from "@muse/mcp";
+import {
+  parseTaskDueAt,
+  readTasks,
+  readTaskStatusFilter,
+  writeTasks,
+  type PersistedTask,
+  type TasksProviderRegistry
+} from "@muse/mcp";
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
@@ -43,17 +45,6 @@ interface TasksRoutesGate {
   readonly tasksProviderRegistry?: TasksProviderRegistry;
 }
 
-interface PersistedTaskRow {
-  readonly id: string;
-  readonly title: string;
-  readonly status: "open" | "done";
-  readonly createdAt: string;
-  readonly completedAt?: string;
-  readonly notes?: string;
-  readonly tags?: readonly string[];
-  readonly dueAt?: string;
-}
-
 export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGate): void {
   const { tasksFile } = gate;
 
@@ -61,8 +52,8 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
     }
-    const status = readStatusQuery((request.query as { readonly status?: string } | undefined)?.status);
-    const tasks = await readTasksFile(tasksFile);
+    const status = readTaskStatusFilter((request.query as { readonly status?: string } | undefined)?.status);
+    const tasks = await readTasks(tasksFile);
     const filtered = tasks
       .filter((task) => status === "all" || task.status === status)
       .sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
@@ -86,22 +77,14 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
     let dueAt: string | undefined;
     const dueAtRaw = typeof body?.dueAt === "string" ? body.dueAt.trim() : "";
     if (dueAtRaw.length > 0) {
-      const isoParsed = new Date(dueAtRaw);
-      if (!Number.isNaN(isoParsed.getTime()) && /^\d{4}-\d{2}-\d{2}/u.test(dueAtRaw)) {
-        dueAt = isoParsed.toISOString();
-      } else {
-        const relative = resolveRelativeTimePhrase(dueAtRaw, () => new Date());
-        if (!relative) {
-          return reply.status(400).send({
-            code: "INVALID_TASK_DUE_AT",
-            message: `dueAt must be an ISO-8601 timestamp or a supported relative phrase (got ${JSON.stringify(dueAtRaw)})`
-          });
-        }
-        dueAt = relative.toISOString();
+      const parsed = parseTaskDueAt(dueAtRaw, () => new Date());
+      if (parsed instanceof Error) {
+        return reply.status(400).send({ code: "INVALID_TASK_DUE_AT", message: parsed.message });
       }
+      dueAt = parsed;
     }
-    const tasks = await readTasksFile(tasksFile);
-    const created: PersistedTaskRow = {
+    const tasks = await readTasks(tasksFile);
+    const created: PersistedTask = {
       createdAt: new Date().toISOString(),
       id: `task_${randomUUID()}`,
       status: "open",
@@ -112,7 +95,7 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
         : {}),
       ...(dueAt ? { dueAt } : {})
     };
-    await writeTasksFile(tasksFile, [...tasks, created]);
+    await writeTasks(tasksFile, [...tasks, created]);
     return reply.status(201).send(created);
   });
 
@@ -121,15 +104,15 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
       return reply;
     }
     const { id } = request.params as { readonly id: string };
-    const tasks = await readTasksFile(tasksFile);
+    const tasks = await readTasks(tasksFile);
     const index = tasks.findIndex((task) => task.id === id);
     if (index < 0) {
       return reply.status(404).send({ code: "TASK_NOT_FOUND", message: `task not found: ${id}` });
     }
-    const completed: PersistedTaskRow = { ...tasks[index]!, completedAt: new Date().toISOString(), status: "done" };
+    const completed: PersistedTask = { ...tasks[index]!, completedAt: new Date().toISOString(), status: "done" };
     const next = [...tasks];
     next[index] = completed;
-    await writeTasksFile(tasksFile, next);
+    await writeTasks(tasksFile, next);
     return completed;
   });
 
@@ -138,12 +121,12 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
       return reply;
     }
     const { id } = request.params as { readonly id: string };
-    const tasks = await readTasksFile(tasksFile);
+    const tasks = await readTasks(tasksFile);
     const next = tasks.filter((task) => task.id !== id);
     if (next.length === tasks.length) {
       return reply.status(404).send({ code: "TASK_NOT_FOUND", message: `task not found: ${id}` });
     }
-    await writeTasksFile(tasksFile, next);
+    await writeTasks(tasksFile, next);
     return reply.status(204).send();
   });
 
@@ -176,39 +159,4 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
       }))
     };
   });
-}
-
-function readStatusQuery(value: string | undefined): "open" | "done" | "all" {
-  return value === "done" || value === "all" ? value : "open";
-}
-
-async function readTasksFile(file: string): Promise<readonly PersistedTaskRow[]> {
-  try {
-    const raw = await fs.readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as { readonly tasks?: unknown };
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.tasks)) {
-      return [];
-    }
-    return (parsed.tasks as unknown[]).flatMap((entry): readonly PersistedTaskRow[] =>
-      isPersistedTaskRow(entry) ? [entry] : []
-    );
-  } catch {
-    return [];
-  }
-}
-
-async function writeTasksFile(file: string, tasks: readonly PersistedTaskRow[]): Promise<void> {
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, `${JSON.stringify({ tasks }, null, 2)}\n`, "utf8");
-  await fs.rename(tmp, file);
-}
-
-function isPersistedTaskRow(value: unknown): value is PersistedTaskRow {
-  return Boolean(value)
-    && typeof value === "object"
-    && typeof (value as PersistedTaskRow).id === "string"
-    && typeof (value as PersistedTaskRow).title === "string"
-    && typeof (value as PersistedTaskRow).createdAt === "string"
-    && ((value as PersistedTaskRow).status === "open" || (value as PersistedTaskRow).status === "done");
 }
