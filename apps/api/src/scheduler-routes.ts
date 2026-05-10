@@ -10,6 +10,8 @@ import {
 } from "@muse/scheduler";
 import type { FastifyInstance } from "fastify";
 
+import { isRecord, isJsonValue } from "./server-input-utils.js";
+
 export interface SchedulerRouteScheduler {
   readonly executionStore?: ScheduledJobExecutionStore;
   readonly service?: DynamicScheduler;
@@ -459,10 +461,6 @@ function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function readString(value: Record<string, unknown>, key: string, fallback?: string): string | undefined {
   if (!hasOwn(value, key)) {
     return fallback;
@@ -549,18 +547,3 @@ function isJsonObject(value: unknown): value is NonNullable<ScheduledJobInput["t
   return Object.values(value).every(isJsonValue);
 }
 
-function isJsonValue(value: unknown): boolean {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return true;
-  }
-
-  if (typeof value === "number") {
-    return Number.isFinite(value);
-  }
-
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-
-  return isRecord(value) && Object.values(value).every(isJsonValue);
-}
