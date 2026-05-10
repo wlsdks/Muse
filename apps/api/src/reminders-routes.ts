@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   filterReminders,
+  fireReminder,
   parseReminderDueAt,
   readReminders,
   readReminderStatusFilter,
@@ -106,6 +107,36 @@ export function registerRemindersRoutes(server: FastifyInstance, gate: Reminders
     next[index] = snoozed;
     await writeReminders(remindersFile, next);
     return reply.status(200).send(serializeReminder(snoozed));
+  });
+
+  server.post("/api/reminders/:id/fire", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
+      return reply;
+    }
+    const { id } = request.params as { readonly id: string };
+    const body = request.body as { readonly firedAt?: unknown } | null;
+    let firedAt: string;
+    const firedAtRaw = typeof body?.firedAt === "string" ? body.firedAt.trim() : "";
+    if (firedAtRaw.length > 0) {
+      const parsed = new Date(firedAtRaw);
+      if (Number.isNaN(parsed.getTime())) {
+        return reply.status(400).send({
+          code: "INVALID_REMINDER_FIRED_AT",
+          message: `firedAt must be a parseable ISO-8601 timestamp (got ${JSON.stringify(firedAtRaw)})`
+        });
+      }
+      firedAt = parsed.toISOString();
+    } else {
+      firedAt = new Date().toISOString();
+    }
+    const reminders = await readReminders(remindersFile);
+    const next = fireReminder(reminders, id, firedAt);
+    if (!next) {
+      return reply.status(404).send({ code: "REMINDER_NOT_FOUND", message: `reminder not found: ${id}` });
+    }
+    await writeReminders(remindersFile, next);
+    const fired = next.find((reminder) => reminder.id === id) as PersistedReminder;
+    return reply.status(200).send(serializeReminder(fired));
   });
 
   server.delete("/api/reminders/:id", async (request, reply) => {

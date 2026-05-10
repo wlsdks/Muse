@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import { resolveRemindersFile } from "@muse/autoconfigure";
 import {
   filterReminders,
+  fireReminder,
   parseReminderDueAt,
   readReminders,
   readReminderStatusFilter,
@@ -197,6 +198,63 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       }
       const dueAt = String(payload.dueAt ?? "");
       io.stdout(`Snoozed [${id.slice(0, 12)}] → ${shortDateTime(dueAt)}\n`);
+    });
+
+  remind
+    .command("fire")
+    .description("Mark a reminder as delivered — flips status pending → fired, stops surfacing in `today`")
+    .argument("<id>", "Reminder id")
+    .option(
+      "--at <iso>",
+      "Optional ISO-8601 firedAt (defaults to now). Useful for backfilling delayed log entries."
+    )
+    .option("--local", "Update the local reminders file instead of the API")
+    .option("--json", "Print the raw response instead of a short confirmation")
+    .action(async (
+      id: string,
+      options: { readonly at?: string } & SharedOptions,
+      command
+    ) => {
+      let payload: Record<string, unknown>;
+      let firedAt: string;
+      if (options.at && options.at.trim().length > 0) {
+        const parsed = new Date(options.at);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new Error(`--at must be a parseable ISO-8601 timestamp (got ${JSON.stringify(options.at)})`);
+        }
+        firedAt = parsed.toISOString();
+      } else {
+        firedAt = new Date().toISOString();
+      }
+      if (options.local) {
+        const file = localRemindersFile();
+        const reminders = await readReminders(file);
+        const next = fireReminder(reminders, id, firedAt);
+        if (!next) {
+          throw new Error(`reminder not found: ${id}`);
+        }
+        await writeReminders(file, next);
+        const fired = next.find((reminder) => reminder.id === id) as PersistedReminder;
+        payload = serializeReminder(fired);
+      } else {
+        const body: Record<string, unknown> = {};
+        if (options.at && options.at.trim().length > 0) {
+          body.firedAt = options.at.trim();
+        }
+        payload = (await helpers.apiRequest(
+          io,
+          command,
+          `/api/reminders/${encodeURIComponent(id)}/fire`,
+          body,
+          "POST"
+        )) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
+        return;
+      }
+      const firedAtOut = String(payload.firedAt ?? firedAt);
+      io.stdout(`Fired [${id.slice(0, 12)}] at ${shortDateTime(firedAtOut)}\n`);
     });
 
   remind
