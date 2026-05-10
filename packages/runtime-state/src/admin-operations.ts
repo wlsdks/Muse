@@ -212,7 +212,6 @@ export function createAdminAlertInsert(
   options: Required<KyselyAdminOperationsStoreOptions>
 ): AdminAlertInsert {
   return {
-    acknowledged_at: null,
     created_at: options.now(),
     id: input.id ?? options.idFactory("alert"),
     message: input.message,

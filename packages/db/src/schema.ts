@@ -39,7 +39,6 @@ export interface AdminAlertTable {
   readonly status: "open" | "acknowledged" | "resolved";
   readonly message: string;
   readonly created_at: Timestamp;
-  readonly acknowledged_at: NullableTimestamp;
 }
 
 export interface AdminCostUsageTable {

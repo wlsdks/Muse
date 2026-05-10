@@ -290,8 +290,7 @@ export const migrations: readonly SqlMigration[] = [
         severity VARCHAR(32) NOT NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'open',
         message TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        acknowledged_at TIMESTAMPTZ
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
       CREATE INDEX IF NOT EXISTS idx_admin_alerts_status_created_at
