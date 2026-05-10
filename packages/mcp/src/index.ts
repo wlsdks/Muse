@@ -9,10 +9,8 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { McpSecurityPolicyTable, McpServerTable, MuseDatabase } from "@muse/db";
 import { createRunId, type JsonObject, type JsonValue } from "@muse/shared";
 import type { MuseTool, ToolRisk } from "@muse/tools";
-import type { Insertable, Kysely, Selectable } from "kysely";
 
 export type Awaitable<T> = T | Promise<T>;
 export type McpTransportType = "stdio" | "sse" | "streamable" | "http";
@@ -168,11 +166,6 @@ export interface KyselyMcpSecurityPolicyStoreOptions {
   readonly now?: () => Date;
 }
 
-type McpServerRow = Selectable<McpServerTable>;
-type McpServerInsert = Insertable<McpServerTable>;
-type McpSecurityPolicyRow = Selectable<McpSecurityPolicyTable>;
-type McpSecurityPolicyInsert = Insertable<McpSecurityPolicyTable>;
-
 const defaultAllowedStdioCommands = ["npx", "node", "python", "python3", "uvx", "uv", "docker", "deno", "bun"] as const;
 const defaultMaxToolOutputLength = 50_000;
 const defaultMcpRequestTimeoutMs = 15_000;
@@ -184,7 +177,6 @@ const defaultMcpReconnectPolicy: McpReconnectPolicy = {
 };
 const minToolOutputLength = 1_024;
 const maxToolOutputLength = 500_000;
-const singletonPolicyId = "default";
 
 export class InMemoryMcpServerStore implements McpServerStore {
   static readonly defaultMaxServers = 1_000;
@@ -805,102 +797,10 @@ class SdkMcpConnection implements McpConnection {
   }
 }
 
-export class KyselyMcpServerStore implements McpServerStore {
-  private readonly idFactory: () => string;
-  private readonly now: () => Date;
+// Kysely-backed persistence lives in `packages/mcp/src/server-stores.ts`
+// (round 139 lift). Re-export so existing call-sites stay byte-identical.
+export { KyselyMcpSecurityPolicyStore, KyselyMcpServerStore } from "./server-stores.js";
 
-  constructor(
-    private readonly db: Kysely<MuseDatabase>,
-    options: KyselyMcpServerStoreOptions = {}
-  ) {
-    this.idFactory = options.idFactory ?? (() => createRunId("mcp_server"));
-    this.now = options.now ?? (() => new Date());
-  }
-
-  async list(): Promise<readonly McpServer[]> {
-    const rows = await this.db.selectFrom("mcp_servers").selectAll().orderBy("created_at", "asc").execute();
-    return rows.map(mapMcpServerRow);
-  }
-
-  async findByName(name: string): Promise<McpServer | undefined> {
-    const row = await this.db.selectFrom("mcp_servers").selectAll().where("name", "=", name).executeTakeFirst();
-    return row ? mapMcpServerRow(row) : undefined;
-  }
-
-  async save(input: McpServerInput): Promise<McpServer> {
-    const row = await this.db
-      .insertInto("mcp_servers")
-      .values(createMcpServerInsert(input, { idFactory: this.idFactory, now: this.now }))
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    return mapMcpServerRow(row);
-  }
-
-  async update(name: string, input: McpServerInput): Promise<McpServer | undefined> {
-    const row = await this.db
-      .updateTable("mcp_servers")
-      .set(createMcpServerUpdate(input, this.now))
-      .where("name", "=", name)
-      .returningAll()
-      .executeTakeFirst();
-
-    return row ? mapMcpServerRow(row) : undefined;
-  }
-
-  async delete(name: string): Promise<void> {
-    await this.db.deleteFrom("mcp_servers").where("name", "=", name).execute();
-  }
-}
-
-export class KyselyMcpSecurityPolicyStore implements McpSecurityPolicyStore {
-  private readonly now: () => Date;
-
-  constructor(
-    private readonly db: Kysely<MuseDatabase>,
-    options: KyselyMcpSecurityPolicyStoreOptions = {}
-  ) {
-    this.now = options.now ?? (() => new Date());
-  }
-
-  async getOrNull(): Promise<McpSecurityPolicy | undefined> {
-    const row = await this.db
-      .selectFrom("mcp_security_policy")
-      .selectAll()
-      .where("id", "=", singletonPolicyId)
-      .executeTakeFirst();
-
-    return row ? mapMcpSecurityPolicyRow(row) : undefined;
-  }
-
-  async save(input: McpSecurityPolicyInput): Promise<McpSecurityPolicy> {
-    const row = createMcpSecurityPolicyInsert(input, this.now);
-    const saved = await this.db
-      .insertInto("mcp_security_policy")
-      .values(row)
-      .onConflict((oc) =>
-        oc.column("id").doUpdateSet({
-          allowed_server_names: row.allowed_server_names,
-          allowed_stdio_commands: row.allowed_stdio_commands,
-          max_tool_output_length: row.max_tool_output_length,
-          updated_at: row.updated_at
-        })
-      )
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    return mapMcpSecurityPolicyRow(saved);
-  }
-
-  async delete(): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("mcp_security_policy")
-      .where("id", "=", singletonPolicyId)
-      .executeTakeFirst();
-
-    return Number(result.numDeletedRows ?? 0n) > 0;
-  }
-}
 
 export class McpRegistryError extends Error {
   constructor(message: string) {
@@ -1078,80 +978,16 @@ export function createMcpMuseTool(serverName: string, tool: McpRemoteTool, conne
   };
 }
 
-export function createMcpServerInsert(
-  input: McpServerInput,
-  options: Required<KyselyMcpServerStoreOptions>
-): McpServerInsert {
-  const server = normalizeMcpServerInput(input, {
-    id: input.id ?? options.idFactory(),
-    now: options.now
-  });
+// Row builders + mappers live in `./server-stores.ts` (round 139 lift).
+// Re-exported so external call-sites stay byte-identical.
+export {
+  createMcpSecurityPolicyInsert,
+  createMcpServerInsert,
+  createMcpServerUpdate,
+  mapMcpSecurityPolicyRow,
+  mapMcpServerRow
+} from "./server-stores.js";
 
-  return {
-    auto_connect: server.autoConnect,
-    config: server.config,
-    created_at: server.createdAt,
-    description: server.description ?? null,
-    id: server.id,
-    name: server.name,
-    transport_type: server.transportType,
-    updated_at: server.updatedAt,
-    version: server.version ?? null
-  };
-}
-
-export function createMcpServerUpdate(input: McpServerInput, now: () => Date) {
-  return {
-    auto_connect: input.autoConnect ?? false,
-    config: input.config ?? {},
-    description: input.description ?? null,
-    transport_type: input.transportType,
-    updated_at: input.updatedAt ?? now(),
-    version: input.version ?? null
-  };
-}
-
-export function createMcpSecurityPolicyInsert(
-  input: McpSecurityPolicyInput,
-  now: () => Date
-): McpSecurityPolicyInsert {
-  const timestamp = now();
-  const policy = normalizeMcpSecurityPolicy(input, timestamp);
-
-  return {
-    allowed_server_names: [...policy.allowedServerNames],
-    allowed_stdio_commands: [...policy.allowedStdioCommands],
-    created_at: policy.createdAt,
-    id: singletonPolicyId,
-    max_tool_output_length: policy.maxToolOutputLength,
-    updated_at: policy.updatedAt
-  };
-}
-
-export function mapMcpServerRow(row: McpServerRow): McpServer {
-  return {
-    autoConnect: row.auto_connect,
-    config: toJsonObject(row.config),
-    createdAt: toDate(row.created_at),
-    description: row.description ?? undefined,
-    id: row.id,
-    name: row.name,
-    transportType: row.transport_type,
-    updatedAt: toDate(row.updated_at),
-    version: row.version ?? undefined
-  };
-}
-
-export function mapMcpSecurityPolicyRow(row: McpSecurityPolicyRow): McpSecurityPolicy {
-  return normalizeMcpSecurityPolicy(
-    {
-      allowedServerNames: toStringArray(row.allowed_server_names),
-      allowedStdioCommands: toStringArray(row.allowed_stdio_commands),
-      maxToolOutputLength: row.max_tool_output_length
-    },
-    toDate(row.updated_at)
-  );
-}
 
 function compareServers(left: McpServer, right: McpServer): number {
   return left.createdAt.getTime() - right.createdAt.getTime() || left.name.localeCompare(right.name);
@@ -1284,10 +1120,6 @@ function normalizeJsonValue(value: unknown): JsonValue {
 
 function toJsonObject(value: unknown): JsonObject {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
-}
-
-function toDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value);
 }
 
 async function closeQuietly(client: Client): Promise<void> {
