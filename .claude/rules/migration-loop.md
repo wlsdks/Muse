@@ -11,11 +11,31 @@ fresh agent with no prior context — read this file plus
    - read the last "Recent Completion Notes" entry in `docs/migration-plan.md`
    - `git status -sb` (clean tree before starting)
 
-2. **Pick exactly one gap.** Priority order:
-   1. Real functional parity gaps in the core runtime
-   2. Code quality / optimization (split monoliths, remove dead code, raise coverage)
-   3. New JARVIS-style capabilities
-   4. Generic external integration via MCP
+2. **Pick exactly one gap.** Priority order (updated round 157 —
+   pivot to **Context Engineering** as the JARVIS-grade differentiator
+   after the audit in `docs/migration-plan.md`'s round 157 note
+   identified concrete gaps vs Anthropic / Letta / OpenJarvis 2025
+   best practices):
+   1. **Context Engineering** (top priority until landed):
+      a. Working-budget compaction trigger (~40% of nominal) +
+         persona/user-model re-injection at the boundary
+      b. Tool-output context-aware trimming (token-measured + ID
+         retention)
+      c. Typed user-memory slots (replace free-text
+         `Record<string,string>` with structured slots)
+      d. Just-in-time retrieval discipline (IDs in context, fetch
+         on demand, not preload)
+      e. Sub-agent fan-out + summary fan-in (multi-agent already
+         exists — wire it for context isolation)
+   2. Risk-graded permission policy + event-driven proactive
+      triggers (the JARVIS-grade gaps that need #1 to land first)
+   3. Real bugs surfaced during the work
+   4. Personal-irrelevant code removal (multi-tenant residue, etc)
+   5. Big-file decomposition (only when it serves #1-#2)
+   6. Generic external integration via MCP
+
+   The 4-area ranking (a-e) above is the work order. Don't jump
+   ahead — each later step assumes the prior one's primitives.
 
 3. **Verify by HTTP, not just unit tests:**
    - `pnpm smoke:broad` for diagnostic-provider end-to-end

@@ -207,6 +207,94 @@ describe("conversation trimming", () => {
     expect(result.estimatedTokens).toBe(exactBudget);
   });
 
+  it("triggers proactive compaction at the working budget while still under the hard cap", () => {
+    // Five user/assistant pairs — each pair ~7 tokens with the lengthEstimator
+    // (string length + DEFAULT_MESSAGE_STRUCTURE_OVERHEAD=20 → counted by
+    // estimateConversationTokens internally). Set the hard cap WAY above
+    // total so the legacy trigger doesn't fire; set workingBudgetTokens
+    // below the total so the proactive trigger DOES fire.
+    const messages = [
+      user("first question"),
+      assistant("first answer"),
+      user("second question"),
+      assistant("second answer"),
+      user("third question"),
+      assistant("third answer"),
+      user("latest question")
+    ];
+    const total = estimateConversationTokens(messages, { estimator: lengthEstimator });
+    const hardCap = total * 4;
+    const workingBudget = Math.floor(total / 2);
+
+    const result = trimConversationMessages(messages, {
+      estimator: lengthEstimator,
+      insertSummary: false,
+      maxContextWindowTokens: hardCap,
+      outputReserveTokens: 0,
+      workingBudgetTokens: workingBudget
+    });
+
+    expect(result.triggeredBy).toBe("working_budget");
+    expect(result.removedCount).toBeGreaterThan(0);
+    expect(result.estimatedTokens).toBeLessThanOrEqual(workingBudget);
+    // The latest user message must still be there.
+    expect(result.messages.at(-1)?.content).toBe("latest question");
+  });
+
+  it("falls through to none when neither budget is exceeded", () => {
+    const messages = [user("alpha"), assistant("beta")];
+    const total = estimateConversationTokens(messages, { estimator: lengthEstimator });
+    const result = trimConversationMessages(messages, {
+      estimator: lengthEstimator,
+      maxContextWindowTokens: total * 10,
+      outputReserveTokens: 0,
+      workingBudgetTokens: total * 5
+    });
+
+    expect(result.triggeredBy).toBe("none");
+    expect(result.removedCount).toBe(0);
+    expect(result.messages).toEqual(messages);
+  });
+
+  it("hard limit takes precedence over working budget when both are exceeded", () => {
+    const messages = [
+      user("a"),
+      assistant("b"),
+      user("c"),
+      assistant("d"),
+      user("e")
+    ];
+    const result = trimConversationMessages(messages, {
+      estimator: lengthEstimator,
+      insertSummary: false,
+      maxContextWindowTokens: 25, // tight hard cap so structural overhead alone forces it
+      outputReserveTokens: 0,
+      workingBudgetTokens: 10 // even tighter — but hard_limit wins reporting
+    });
+
+    expect(result.triggeredBy).toBe("hard_limit");
+    expect(result.removedCount).toBeGreaterThan(0);
+  });
+
+  it("clamps a working budget that exceeds the hard cap (silently falls back)", () => {
+    const messages = [user("alpha"), assistant("beta"), user("gamma")];
+    const total = estimateConversationTokens(messages, { estimator: lengthEstimator });
+    const hardCap = Math.floor(total / 2);
+    const result = trimConversationMessages(messages, {
+      estimator: lengthEstimator,
+      insertSummary: false,
+      maxContextWindowTokens: hardCap,
+      outputReserveTokens: 0,
+      // Caller mistakenly passes a working budget > hard budget. The
+      // implementation must NOT use it as a no-op upper bound — the
+      // hard cap still triggers normally.
+      workingBudgetTokens: total * 100
+    });
+
+    expect(result.triggeredBy).toBe("hard_limit");
+    expect(result.removedCount).toBeGreaterThan(0);
+  });
+
   it("inserts a neutral compaction summary after enough messages are removed", () => {
     const result = trimConversationMessages(
       [

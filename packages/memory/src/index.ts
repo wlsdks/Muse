@@ -23,6 +23,21 @@ export interface ConversationTrimOptions {
   readonly messageStructureOverhead?: number;
   readonly compactionThreshold?: number;
   readonly insertSummary?: boolean;
+  /**
+   * Soft "working budget" in tokens. When set and the conversation
+   * exceeds this threshold (even though it's still within
+   * `maxContextWindowTokens` minus reserves), trim proactively to
+   * the working budget rather than waiting until the hard cap is
+   * hit. This is the "compaction at threshold" pattern from
+   * Anthropic's effective-context-engineering guidance — quality
+   * degrades well before the nominal window is full (NoLiMa), so
+   * a working budget around 40% of the nominal context typically
+   * keeps long sessions coherent.
+   *
+   * When unset, falls back to the legacy hard-cap-only behavior so
+   * existing callers see no change.
+   */
+  readonly workingBudgetTokens?: number;
 }
 
 export interface ConversationTrimResult {
@@ -31,6 +46,12 @@ export interface ConversationTrimResult {
   readonly estimatedTokens: number;
   readonly removedCount: number;
   readonly summaryInserted: boolean;
+  /**
+   * Which threshold caused the trim, if any. Useful for observability
+   * — distinguishes a proactive compaction (`working_budget`) from a
+   * forced one (`hard_limit`) and a no-op (`none`).
+   */
+  readonly triggeredBy: "none" | "working_budget" | "hard_limit";
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -138,6 +159,15 @@ export const DEFAULT_TOKEN_CACHE_MAX_ENTRIES = 50_000;
 export const DEFAULT_TOKEN_CACHE_TTL_MS = 5 * 60 * 1_000;
 export const DEFAULT_MESSAGE_STRUCTURE_OVERHEAD = 20;
 export const DEFAULT_COMPACTION_THRESHOLD = 3;
+/**
+ * Suggested ratio for `workingBudgetTokens` when callers don't set
+ * an explicit value (Anthropic's effective-context-engineering
+ * guidance + NoLiMa context-rot research converge on ~30-50% of the
+ * nominal window for the soft trigger). Exported so consumers can
+ * compute `Math.floor(maxContextWindowTokens * DEFAULT_WORKING_BUDGET_RATIO)`
+ * without re-deriving the constant.
+ */
+export const DEFAULT_WORKING_BUDGET_RATIO = 0.4;
 export const COMPACTION_SUMMARY_PREFIX = "[Conversation summary";
 export const COMPACTION_PINNED_ENTITIES_PREFIX = "Pinned entities for pronoun resolution";
 export const DEFAULT_TASK_MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;

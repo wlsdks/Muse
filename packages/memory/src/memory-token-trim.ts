@@ -119,11 +119,22 @@ export function trimConversationMessages(
   const messageStructureOverhead = options.messageStructureOverhead ?? DEFAULT_MESSAGE_STRUCTURE_OVERHEAD;
   const toolTokenReserve = options.toolTokenReserve ?? 0;
   const systemTokens = estimator.estimate(options.systemPrompt ?? "");
-  const budgetTokens =
+  const hardBudgetTokens =
     options.maxContextWindowTokens - systemTokens - options.outputReserveTokens - toolTokenReserve;
+  // The "working budget" — Anthropic + NoLiMa-style proactive
+  // compaction trigger. When the caller passes `workingBudgetTokens`
+  // and it's lower than the hard cap, that becomes the trim target so
+  // we recompact while quality is still high. Clamped above the hard
+  // budget (a working budget that exceeds the hard cap is meaningless;
+  // we silently fall back to the hard cap). Clamped at zero so an
+  // accidentally-negative value can't be used.
+  const workingTarget =
+    options.workingBudgetTokens !== undefined
+      ? Math.max(0, Math.min(options.workingBudgetTokens, hardBudgetTokens))
+      : undefined;
   const messages = [...inputMessages];
 
-  if (budgetTokens <= 0) {
+  if (hardBudgetTokens <= 0) {
     const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
     const kept =
       lastUserIndex >= 0 && messages.length > 1
@@ -131,11 +142,12 @@ export function trimConversationMessages(
         : messages;
 
     return {
-      budgetTokens,
+      budgetTokens: hardBudgetTokens,
       estimatedTokens: estimateConversationTokens(kept, { estimator, messageStructureOverhead }),
       messages: kept,
       removedCount: inputMessages.length - kept.length,
-      summaryInserted: false
+      summaryInserted: false,
+      triggeredBy: "hard_limit"
     };
   }
 
@@ -144,11 +156,27 @@ export function trimConversationMessages(
   const originalSnapshot = [...messages];
   let totalTokens = sum(tokens);
 
-  totalTokens = trimOldHistory(messages, tokens, totalTokens, budgetTokens);
+  // Decide which budget the trim aims at. The hard cap always wins;
+  // the working budget is a softer trigger that fires when we're
+  // still under the hard cap but want to recompact proactively.
+  // The trim passes themselves are no-ops when total <= target so
+  // calling them unconditionally is safe — that also preserves the
+  // structural cleanups (boundary integrity, orphan tool removal)
+  // which run on every call regardless of trigger.
+  const triggeredByWorking =
+    workingTarget !== undefined && totalTokens > workingTarget && totalTokens <= hardBudgetTokens;
+  const triggeredByHard = totalTokens > hardBudgetTokens;
+  const trimTarget = triggeredByHard
+    ? hardBudgetTokens
+    : triggeredByWorking
+      ? (workingTarget as number)
+      : hardBudgetTokens;
+
+  totalTokens = trimOldHistory(messages, tokens, totalTokens, trimTarget);
   totalTokens -= ensureBoundaryIntegrity(messages, tokens);
-  totalTokens = trimLeadingMemoryMessages(messages, tokens, totalTokens, budgetTokens);
+  totalTokens = trimLeadingMemoryMessages(messages, tokens, totalTokens, trimTarget);
   totalTokens -= ensureBoundaryIntegrity(messages, tokens);
-  totalTokens = trimToolHistory(messages, tokens, totalTokens, budgetTokens);
+  totalTokens = trimToolHistory(messages, tokens, totalTokens, trimTarget);
   totalTokens -= removeOrphanToolResponses(messages, tokens);
 
   const droppedCount = beforeCount - messages.length;
@@ -167,12 +195,19 @@ export function trimConversationMessages(
     );
   }
 
+  const triggeredBy: "none" | "working_budget" | "hard_limit" = triggeredByHard
+    ? "hard_limit"
+    : triggeredByWorking
+      ? "working_budget"
+      : "none";
+
   return {
-    budgetTokens,
+    budgetTokens: hardBudgetTokens,
     estimatedTokens: totalTokens,
     messages,
     removedCount: droppedCount,
-    summaryInserted
+    summaryInserted,
+    triggeredBy
   };
 }
 
