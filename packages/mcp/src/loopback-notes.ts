@@ -11,6 +11,7 @@ import { resolve as nodePathResolve, sep as nodePathSep } from "node:path";
 
 import type { JsonObject, JsonValue } from "@muse/shared";
 
+import { readString } from "./loopback-helpers.js";
 import type { LoopbackMcpServer } from "./loopback.js";
 
 /**
@@ -37,11 +38,6 @@ export interface NotesMcpServerOptions {
 interface NotesPathSafe {
   readonly absolute: string;
   readonly relative: string;
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
 }
 
 export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMcpServer {

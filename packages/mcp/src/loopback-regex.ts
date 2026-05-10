@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import type { LoopbackMcpServer } from "./loopback.js";
+import { readString } from "./loopback-helpers.js";
 
 /**
  * `muse.regex` loopback MCP server — bounded regex utilities.
@@ -181,9 +182,4 @@ export function createRegexMcpServer(): LoopbackMcpServer {
       }
     ]
   };
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
 }

@@ -8,6 +8,7 @@ import type { Buffer } from "node:buffer";
 
 import type { JsonObject, JsonValue } from "@muse/shared";
 
+import { readString } from "./loopback-helpers.js";
 import type { LoopbackMcpServer } from "./loopback.js";
 
 /**
@@ -181,9 +182,4 @@ export function createFilesystemMcpServer(options: FilesystemMcpServerOptions): 
       }
     ]
   };
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
 }

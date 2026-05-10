@@ -6,6 +6,7 @@ import type {
 } from "@muse/calendar";
 import type { JsonObject, JsonValue } from "@muse/shared";
 
+import { readBoolean, readString, readStringArray, errorMessage } from "./loopback-helpers.js";
 import type { LoopbackMcpServer } from "./loopback.js";
 
 /**
@@ -233,29 +234,4 @@ function parseIsoDate(value: string | undefined): Date | undefined {
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function readBoolean(args: JsonObject, key: string): boolean | undefined {
-  const value = args[key];
-  return typeof value === "boolean" ? value : undefined;
-}
-
-function readStringArray(args: JsonObject, key: string): readonly string[] | undefined {
-  const value = args[key];
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }

@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { JsonObject } from "@muse/shared";
 
 import type { BuiltinLoopbackOptions, LoopbackMcpServer } from "./loopback.js";
+import { readString } from "./loopback-helpers.js";
 
 /**
  * `muse.crypto` loopback MCP server — deterministic crypto digests +
@@ -148,9 +149,4 @@ export function createCryptoMcpServer(options: BuiltinLoopbackOptions = {}): Loo
       }
     ]
   };
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
 }

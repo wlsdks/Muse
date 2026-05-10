@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import type { LoopbackMcpServer } from "./loopback.js";
+import { readString, readJsonObject } from "./loopback-helpers.js";
 
 /**
  * `muse.fetch` loopback MCP server — bounded HTTP GET/HEAD fetcher.
@@ -166,17 +167,4 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
       }
     ]
   };
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function readJsonObject(args: JsonObject, key: string): Record<string, unknown> | undefined {
-  const value = args[key];
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  return value as Record<string, unknown>;
 }

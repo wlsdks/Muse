@@ -5,6 +5,7 @@ import { dirname as nodePathDirname } from "node:path";
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import type { LoopbackMcpServer } from "./loopback.js";
+import { readString, readStringArray, errorMessage } from "./loopback-helpers.js";
 
 /**
  * `muse.tasks` loopback MCP server — personal todo list backed by a
@@ -276,24 +277,4 @@ function readStatusFilter(value: string | undefined): "open" | "done" | "all" {
 
 function isFileNotFound(error: unknown): boolean {
   return Boolean(error) && typeof error === "object" && (error as { code?: string }).code === "ENOENT";
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function readStringArray(args: JsonObject, key: string): readonly string[] | undefined {
-  const value = args[key];
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }

@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 
+import { readString } from "./loopback-helpers.js";
 import type { LoopbackMcpServer } from "./loopback.js";
 import {
   NotesProviderError,
@@ -291,11 +292,6 @@ function serializeHit(hit: NotesSearchHit): JsonObject {
     ...(hit.score !== undefined ? { score: hit.score } : {}),
     ...(hit.line !== undefined ? { line: hit.line } : {})
   };
-}
-
-function readString(args: JsonObject, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" ? value : undefined;
 }
 
 function errorBody(error: unknown): JsonObject {
