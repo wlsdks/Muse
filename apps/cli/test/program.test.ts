@@ -994,7 +994,7 @@ describe("cli program", () => {
     expect(requests[2]).toMatchObject({ url: "http://api.test/api/user-memory/me", method: "DELETE" });
     const combined = output.join("");
     expect(combined).toContain("Stark");
-    expect(combined).toContain("Cleared user memory for me");
+    expect(combined).toContain("Cleared user memory");
   });
 
   it("voice tts POSTs the text and writes the binary audio response to --out", async () => {
@@ -1829,6 +1829,121 @@ describe("cli program", () => {
       expect(envelope.content).toBe("first line");
     } finally {
       if (prev === undefined) { delete process.env.MUSE_NOTES_DIR; } else { process.env.MUSE_NOTES_DIR = prev; }
+    }
+  });
+
+  it("calendar events --local reads the local calendar file directly without the API", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-cal-local-"));
+    const calendarFile = path.join(root, "calendar.json");
+    await (await import("node:fs/promises")).writeFile(calendarFile, JSON.stringify({
+      events: [
+        {
+          id: "evt-1",
+          title: "Standup",
+          startsAt: "2026-05-10T09:00:00.000Z",
+          endsAt: "2026-05-10T09:30:00.000Z",
+          allDay: false
+        }
+      ]
+    }), "utf8");
+    const prev = process.env.MUSE_CALENDAR_FILE;
+    process.env.MUSE_CALENDAR_FILE = calendarFile;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("fetch must not be called in --local"); } });
+      await program.parseAsync(
+        ["node", "muse", "calendar", "events", "--local", "--from", "2026-05-09T00:00:00Z", "--to", "2026-05-12T00:00:00Z", "--json"],
+        { from: "node" }
+      );
+      const result = JSON.parse(output.join("")) as { events: Array<{ id: string; title: string; startsAtIso: string }>; total: number };
+      expect(result.total).toBe(1);
+      expect(result.events[0]?.title).toBe("Standup");
+      expect(result.events[0]?.startsAtIso).toBe("2026-05-10T09:00:00.000Z");
+    } finally {
+      if (prev === undefined) { delete process.env.MUSE_CALENDAR_FILE; } else { process.env.MUSE_CALENDAR_FILE = prev; }
+    }
+  });
+
+  it("today --brief sends the structured briefing to /api/chat and prints the prose response", async () => {
+    const seenBodies: string[] = [];
+    const { io, output } = captureOutput();
+    const program = createProgram({
+      ...io,
+      fetch: async (url, init) => {
+        const path = String(url);
+        if (path.endsWith("/api/today")) {
+          return new Response(JSON.stringify({
+            generatedAt: "2026-05-10T08:00:00Z",
+            lookaheadHours: 24,
+            tasks: [{ id: "t-1", title: "Buy milk" }],
+            events: [],
+            notes: []
+          }));
+        }
+        if (path.endsWith("/api/chat")) {
+          if (typeof init?.body === "string") {
+            seenBodies.push(init.body);
+          }
+          return new Response(JSON.stringify({
+            content: "You have 1 open task: Buy milk. No events on the calendar today.",
+            success: true
+          }));
+        }
+        return new Response("{}");
+      }
+    });
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "today", "--brief"],
+      { from: "node" }
+    );
+    expect(seenBodies).toHaveLength(1);
+    const sent = JSON.parse(seenBodies[0]!) as { message: string };
+    expect(sent.message).toContain("morning brief");
+    expect(sent.message).toContain('"Buy milk"');
+    expect(output.join("")).toContain("You have 1 open task: Buy milk.");
+  });
+
+  it("setup (default) prints a status summary covering model, mcp, calendar, notes, tasks, voice", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-setup-status-"));
+    const tasksFile = path.join(root, "tasks.json");
+    const notesDir = path.join(root, "notes");
+    const calendarFile = path.join(root, "calendar.json");
+    const mcpFile = path.join(root, "mcp.json");
+    const fsp = await import("node:fs/promises");
+    await fsp.writeFile(tasksFile, JSON.stringify({ tasks: [{ id: "t1", title: "x", status: "open", createdAt: "2026-01-01T00:00:00Z" }] }), "utf8");
+    await fsp.mkdir(notesDir, { recursive: true });
+    await fsp.writeFile(path.join(notesDir, "hello.md"), "hi", "utf8");
+    const prev = {
+      tasks: process.env.MUSE_TASKS_FILE,
+      notes: process.env.MUSE_NOTES_DIR,
+      cal: process.env.MUSE_CALENDAR_FILE,
+      mcp: process.env.MUSE_MCP_CONFIG,
+      model: process.env.MUSE_MODEL
+    };
+    process.env.MUSE_TASKS_FILE = tasksFile;
+    process.env.MUSE_NOTES_DIR = notesDir;
+    process.env.MUSE_CALENDAR_FILE = calendarFile;
+    process.env.MUSE_MCP_CONFIG = mcpFile;
+    process.env.MUSE_MODEL = "gemini/gemini-2.0-flash";
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("fetch must not be called"); } });
+      await program.parseAsync(["node", "muse", "setup"], { from: "node" });
+      const text = output.join("");
+      expect(text).toContain("Muse setup status:");
+      expect(text).toContain("model — MUSE_MODEL=gemini/gemini-2.0-flash");
+      expect(text).toContain("tasks — 1 entry/entries");
+      expect(text).toContain("notes — 1 file(s)");
+      expect(text).toContain("muse setup calendar");
+    } finally {
+      const restore = (key: keyof typeof prev, envKey: string) => {
+        if (prev[key] === undefined) { delete process.env[envKey]; } else { process.env[envKey] = prev[key]!; }
+      };
+      restore("tasks", "MUSE_TASKS_FILE");
+      restore("notes", "MUSE_NOTES_DIR");
+      restore("cal", "MUSE_CALENDAR_FILE");
+      restore("mcp", "MUSE_MCP_CONFIG");
+      restore("model", "MUSE_MODEL");
     }
   });
 });
