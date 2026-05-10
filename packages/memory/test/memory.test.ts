@@ -1178,4 +1178,99 @@ describe("createUserMemoryAutoExtractHook", () => {
     expect(keys[0]?.length).toBeLessThanOrEqual(16);
     expect(keys[0]).toMatch(/^[a-z0-9_]+$/);
   });
+
+  it("persists typed veto and goal slots from the extraction (round 166)", async () => {
+    const store = new InMemoryUserMemoryStore();
+    const provider = makeProvider(JSON.stringify({
+      facts: {},
+      goals: [
+        { id: "ship_v1", value: "ship Muse 1.0 by Q1" }
+      ],
+      preferences: {},
+      vetoes: [
+        { id: "no_eggs", scope: "food", value: "never suggest eggs" },
+        { id: "no_meetings_mondays", value: "block all meetings on Mondays" }
+      ]
+    }));
+    const hook = createUserMemoryAutoExtractHook({ model: "stub", modelProvider: provider as never, store });
+
+    await hook.afterComplete!(
+      makeContext("user-7", "Never suggest eggs and block all meetings on Mondays. Also I want to ship Muse 1.0 by Q1."),
+      makeResponse("Noted.")
+    );
+
+    const memory = await store.findByUserId("user-7");
+    expect(memory?.userModel?.vetoes).toHaveLength(2);
+    const eggVeto = memory?.userModel?.vetoes.find((slot) => slot.id === "no_eggs");
+    expect(eggVeto?.value).toBe("never suggest eggs");
+    expect(eggVeto?.scope).toBe("food");
+    const mondayVeto = memory?.userModel?.vetoes.find((slot) => slot.id === "no_meetings_mondays");
+    expect(mondayVeto?.scope).toBeUndefined();
+    expect(memory?.userModel?.goals).toHaveLength(1);
+    expect(memory?.userModel?.goals[0]).toMatchObject({
+      id: "ship_v1",
+      kind: "goal",
+      value: "ship Muse 1.0 by Q1"
+    });
+  });
+
+  it("ignores malformed slot entries and respects per-kind caps", async () => {
+    const store = new InMemoryUserMemoryStore();
+    const provider = makeProvider(JSON.stringify({
+      facts: {},
+      goals: [
+        { id: "g1", value: "first goal" },
+        { id: "g2", value: "second goal" },
+        { id: "g3", value: "third goal" }, // exceeds maxGoalsPerExchange=2
+        { id: "", value: "drops because empty id" },
+        "not an object — drops",
+        { id: "g4", value: "" }, // drops because empty value
+        null
+      ],
+      preferences: {},
+      vetoes: []
+    }));
+    const hook = createUserMemoryAutoExtractHook({
+      maxGoalsPerExchange: 2,
+      model: "stub",
+      modelProvider: provider as never,
+      store
+    });
+
+    await hook.afterComplete!(makeContext("user-8", "x"), makeResponse("y"));
+    const memory = await store.findByUserId("user-8");
+    expect(memory?.userModel?.goals).toHaveLength(2);
+    expect(memory?.userModel?.goals.map((slot) => slot.id)).toEqual(["g1", "g2"]);
+  });
+
+  it("silently skips slot writes when the store doesn't implement upsertUserModelSlot", async () => {
+    // Custom UserMemoryStore without the optional method — exercises
+    // the guard so 3rd-party stores keep working.
+    const captured: { fact?: string; preference?: string; slotCalls: number } = { slotCalls: 0 };
+    const store = {
+      async findByUserId() { return undefined; },
+      async upsertFact(_uid: string, key: string, value: string) {
+        captured.fact = `${key}=${value}`;
+        return { facts: { [key]: value }, preferences: {}, recentTopics: [], updatedAt: new Date(), userId: "u" };
+      },
+      async upsertPreference(_uid: string, key: string, _value: string) {
+        captured.preference = key;
+        return { facts: {}, preferences: {}, recentTopics: [], updatedAt: new Date(), userId: "u" };
+      },
+      async deleteByUserId() { return false; }
+      // No upsertUserModelSlot.
+    } as InstanceType<typeof InMemoryUserMemoryStore>;
+
+    const provider = makeProvider(JSON.stringify({
+      facts: { x: "y" },
+      goals: [{ id: "g1", value: "ship" }],
+      preferences: {},
+      vetoes: [{ id: "v1", value: "no" }]
+    }));
+    const hook = createUserMemoryAutoExtractHook({ model: "stub", modelProvider: provider as never, store });
+
+    await hook.afterComplete!(makeContext("u", "x"), makeResponse("y"));
+    expect(captured.fact).toBe("x=y");
+    expect(captured.slotCalls).toBe(0); // never invoked because the store doesn't have the method
+  });
 });

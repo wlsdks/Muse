@@ -15,7 +15,11 @@
 import type { ModelMessage, ModelProvider, ModelResponse } from "@muse/model";
 import type { JsonObject } from "@muse/shared";
 
-import type { UserMemoryStore } from "./index.js";
+import type {
+  UserGoalSlot,
+  UserMemoryStore,
+  UserVetoSlot
+} from "./index.js";
 
 // Structural duck-type of @muse/agent-core's HookStage / AgentRunContext.
 // We avoid importing from agent-core because agent-core depends on
@@ -43,30 +47,46 @@ export interface UserMemoryAutoExtractOptions {
   readonly model: string;
   readonly maxFactsPerExchange?: number;
   readonly maxPreferencesPerExchange?: number;
+  readonly maxVetoesPerExchange?: number;
+  readonly maxGoalsPerExchange?: number;
   readonly maxKeyLength?: number;
   readonly maxValueLength?: number;
+}
+
+interface ExtractedSlot {
+  readonly id: string;
+  readonly value: string;
+  readonly scope?: string;
 }
 
 interface ExtractionPayload {
   readonly facts?: Readonly<Record<string, string>>;
   readonly preferences?: Readonly<Record<string, string>>;
+  readonly vetoes?: readonly ExtractedSlot[];
+  readonly goals?: readonly ExtractedSlot[];
 }
 
-const systemPrompt = `You analyse a single exchange (the latest user turn + assistant reply) and extract any NEW personal facts or preferences the user revealed. Output strict JSON of shape:
+const systemPrompt = `You analyse a single exchange (the latest user turn + assistant reply) and extract any NEW personal facts, preferences, vetoes, or goals the user revealed. Output strict JSON of shape:
 {
   "facts": { "<short_key>": "<value>" },
-  "preferences": { "<short_key>": "<value>" }
+  "preferences": { "<short_key>": "<value>" },
+  "vetoes": [{"id": "<short_id>", "value": "<rule>", "scope": "<optional>"}],
+  "goals": [{"id": "<short_id>", "value": "<objective>"}]
 }
 Rules:
-- Only include facts/preferences the user explicitly stated this turn (not inferred).
-- Keys are snake_case ASCII, max 32 chars (e.g. spouse_name, favorite_drink).
+- Only include items the user explicitly stated this turn (not inferred).
+- Keys/ids are snake_case ASCII, max 32 chars (e.g. spouse_name, no_eggs, ship_v1).
 - Values are concise strings, max 200 chars.
-- If nothing new to record, output {"facts":{},"preferences":{}}.
+- Vetoes are explicit "do not / never / avoid" rules ("never suggest eggs", "no meetings on Mondays"). Optional scope is a short tag like "food", "tooling", "meetings".
+- Goals are multi-session objectives ("I want to ship Muse 1.0 by Q1", "learn Korean by summer"). Skip single-turn intentions.
+- If nothing new to record, output {"facts":{},"preferences":{},"vetoes":[],"goals":[]}.
 - Output only the JSON object. No prose, no code fence.`;
 
 export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOptions): HookStageShape {
   const maxFacts = Math.max(0, Math.trunc(options.maxFactsPerExchange ?? 5));
   const maxPreferences = Math.max(0, Math.trunc(options.maxPreferencesPerExchange ?? 5));
+  const maxVetoes = Math.max(0, Math.trunc(options.maxVetoesPerExchange ?? 3));
+  const maxGoals = Math.max(0, Math.trunc(options.maxGoalsPerExchange ?? 3));
   const maxKey = Math.max(1, Math.trunc(options.maxKeyLength ?? 32));
   const maxValue = Math.max(1, Math.trunc(options.maxValueLength ?? 200));
 
@@ -87,7 +107,14 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
         if (!payload) {
           return;
         }
-        await persist(options.store, userId, payload, { maxFacts, maxKey, maxPreferences, maxValue });
+        await persist(options.store, userId, payload, {
+          maxFacts,
+          maxGoals,
+          maxKey,
+          maxPreferences,
+          maxValue,
+          maxVetoes
+        });
       } catch {
         // fail-open
       }
@@ -151,6 +178,8 @@ async function runExtraction(
 interface PersistLimits {
   readonly maxFacts: number;
   readonly maxPreferences: number;
+  readonly maxVetoes: number;
+  readonly maxGoals: number;
   readonly maxKey: number;
   readonly maxValue: number;
 }
@@ -168,6 +197,8 @@ async function persist(
     limits.maxKey,
     limits.maxValue
   );
+  const vetoSlots = sanitizeSlotArray(payload.vetoes, limits.maxVetoes, limits.maxKey, limits.maxValue);
+  const goalSlots = sanitizeSlotArray(payload.goals, limits.maxGoals, limits.maxKey, limits.maxValue);
 
   for (const [key, value] of factEntries) {
     await store.upsertFact(userId, key, value);
@@ -175,6 +206,66 @@ async function persist(
   for (const [key, value] of preferenceEntries) {
     await store.upsertPreference(userId, key, value);
   }
+  // Typed-slot writes are skipped silently when the store doesn't
+  // support upsertUserModelSlot (the optional method introduced in
+  // round 164). Round 165 made KyselyUserMemoryStore implement it,
+  // and InMemoryUserMemoryStore did so in round 164 — so this
+  // branch only no-ops for third-party UserMemoryStore impls.
+  if (typeof store.upsertUserModelSlot === "function") {
+    const now = new Date();
+    for (const slot of vetoSlots) {
+      const veto: UserVetoSlot = {
+        id: slot.id,
+        kind: "veto",
+        updatedAt: now,
+        value: slot.value,
+        ...(slot.scope ? { scope: slot.scope } : {})
+      };
+      await store.upsertUserModelSlot(userId, veto);
+    }
+    for (const slot of goalSlots) {
+      const goal: UserGoalSlot = {
+        id: slot.id,
+        kind: "goal",
+        updatedAt: now,
+        value: slot.value
+      };
+      await store.upsertUserModelSlot(userId, goal);
+    }
+  }
+}
+
+function sanitizeSlotArray(
+  source: readonly ExtractedSlot[] | undefined,
+  maxCount: number,
+  maxKey: number,
+  maxValue: number
+): readonly ExtractedSlot[] {
+  if (!Array.isArray(source) || maxCount === 0) {
+    return [];
+  }
+  const out: ExtractedSlot[] = [];
+  for (const entry of source) {
+    if (out.length >= maxCount) {
+      break;
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const id = normalizeKey(typeof entry.id === "string" ? entry.id : "", maxKey);
+    if (!id) {
+      continue;
+    }
+    const value = typeof entry.value === "string" ? entry.value.trim().slice(0, maxValue) : "";
+    if (value.length === 0) {
+      continue;
+    }
+    const scope = typeof entry.scope === "string"
+      ? normalizeKey(entry.scope, maxKey)
+      : undefined;
+    out.push(scope ? { id, scope, value } : { id, value });
+  }
+  return out;
 }
 
 function sanitizeEntries(
