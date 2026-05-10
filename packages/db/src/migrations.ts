@@ -285,29 +285,6 @@ export const migrations: readonly SqlMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_hook_traces_hook_status_created_at
         ON hook_traces(hook_id, status, created_at DESC);
 
-      CREATE TABLE IF NOT EXISTS admin_alerts (
-        id VARCHAR(128) PRIMARY KEY,
-        severity VARCHAR(32) NOT NULL,
-        status VARCHAR(32) NOT NULL DEFAULT 'open',
-        message TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_admin_alerts_status_created_at
-        ON admin_alerts(status, created_at DESC);
-
-      CREATE TABLE IF NOT EXISTS admin_cost_usage (
-        id VARCHAR(128) PRIMARY KEY,
-        model VARCHAR(255),
-        cost_usd NUMERIC(18, 8) NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_admin_cost_usage_created_at
-        ON admin_cost_usage(created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_admin_cost_usage_model_created_at
-        ON admin_cost_usage(model, created_at DESC);
-
       CREATE TABLE IF NOT EXISTS runtime_settings (
         key VARCHAR(200) PRIMARY KEY,
         value TEXT NOT NULL,

@@ -1,10 +1,4 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type {
-  AdminAlertInput,
-  AdminAlertSeverity,
-  AdminCostUsage,
-  AdminOperationsStore
-} from "@muse/runtime-state";
 import type { TraceEventInput } from "@muse/observability";
 
 export interface AdminRouteOptions {
@@ -35,7 +29,6 @@ export interface AdminRouteState {
       resetAll(): void;
     };
   };
-  readonly operations?: AdminOperationsStore;
 }
 
 interface CircuitBreakerView {
@@ -128,63 +121,6 @@ export function registerAdminRoutes(server: FastifyInstance, options: AdminRoute
     return { reset: true };
   });
 
-  server.get("/admin/alerts", async (request, reply) => {
-    if (!options.requireAuthenticated(request, reply)) {
-      return reply;
-    }
-
-    const operations = requireOperations(options, reply);
-    return operations ? operations.listAlerts() : reply;
-  });
-
-  server.post("/admin/alerts", async (request, reply) => {
-    if (!options.requireAuthenticated(request, reply)) {
-      return reply;
-    }
-
-    const operations = requireOperations(options, reply);
-
-    if (!operations) {
-      return reply;
-    }
-
-    const parsed = parseAlertInput(request.body);
-
-    if (!parsed.ok) {
-      return reply.status(400).send(parsed.error);
-    }
-
-    return reply.status(201).send(await operations.createAlert(parsed.value));
-  });
-
-  server.get("/admin/costs/summary", async (request, reply) => {
-    if (!options.requireAuthenticated(request, reply)) {
-      return reply;
-    }
-
-    const operations = requireOperations(options, reply);
-    return operations ? operations.costSummary() : reply;
-  });
-
-  server.post("/admin/costs/usage", async (request, reply) => {
-    if (!options.requireAuthenticated(request, reply)) {
-      return reply;
-    }
-
-    const operations = requireOperations(options, reply);
-
-    if (!operations) {
-      return reply;
-    }
-
-    const parsed = parseCostUsage(request.body);
-
-    if (!parsed.ok) {
-      return reply.status(400).send(parsed.error);
-    }
-
-    return operations.recordCost(parsed.value);
-  });
 }
 
 export function recordedSpans(tracer: unknown): readonly unknown[] {
@@ -214,110 +150,3 @@ export function recordedTraceEvents(traceSink: unknown, runId?: string): readonl
     : [];
 }
 
-type ParseResult<T> = { readonly ok: true; readonly value: T } | { readonly error: ApiError; readonly ok: false };
-
-interface ApiError {
-  readonly code: string;
-  readonly message: string;
-}
-
-function requireOperations(options: AdminRouteOptions, reply: FastifyReply): AdminOperationsStore | undefined {
-  const operations = options.admin?.operations;
-
-  if (!operations) {
-    reply.status(404).send({
-      code: "ADMIN_OPERATIONS_UNAVAILABLE",
-      message: "Admin operations store is not configured"
-    });
-    return undefined;
-  }
-
-  return operations;
-}
-
-function parseAlertInput(value: unknown): ParseResult<AdminAlertInput> {
-  if (!isRecord(value) || typeof value.message !== "string" || value.message.trim().length === 0) {
-    return invalid("INVALID_ADMIN_ALERT", "Body must include a non-empty message");
-  }
-
-  const severity = parseAlertSeverity(value.severity);
-
-  if (!severity.ok) {
-    return severity;
-  }
-
-  return {
-    ok: true,
-    value: {
-      message: value.message.trim(),
-      ...(severity.value ? { severity: severity.value } : {})
-    }
-  };
-}
-
-function parseCostUsage(value: unknown): ParseResult<AdminCostUsage> {
-  if (!isRecord(value)) {
-    return invalid("INVALID_ADMIN_COST_USAGE", "Body must be an object");
-  }
-
-  const costUsd = parseRequiredCost(value.costUsd, "INVALID_ADMIN_COST_USAGE");
-
-  if (!costUsd.ok) {
-    return costUsd;
-  }
-
-  const model = optionalString(value.model);
-  return {
-    ok: true,
-    value: {
-      costUsd: costUsd.value,
-      ...(model ? { model } : {})
-    }
-  };
-}
-
-function parseAlertSeverity(value: unknown): ParseResult<AdminAlertSeverity | undefined> {
-  if (value === undefined) {
-    return { ok: true, value: undefined };
-  }
-
-  if (value === "info" || value === "warning" || value === "critical") {
-    return { ok: true, value };
-  }
-
-  return invalid("INVALID_ADMIN_ALERT", "Alert severity must be info, warning, or critical");
-}
-
-function parseRequiredCost(value: unknown, code: string): ParseResult<string> {
-  if (typeof value !== "string" && typeof value !== "number") {
-    return invalid(code, "Cost must be a finite numeric value");
-  }
-
-  return parseCost(value, code);
-}
-
-function parseCost(value: string | number, code: string): ParseResult<string> {
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return invalid(code, "Cost must be a finite non-negative value");
-  }
-
-  return { ok: true, value: parsed.toFixed(8) };
-}
-
-function invalid(code: string, message: string): ParseResult<never> {
-  return {
-    error: { code, message },
-    ok: false
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function optionalString(value: unknown): string | undefined {
-  const trimmed = typeof value === "string" ? value.trim() : undefined;
-  return trimmed && trimmed.length > 0 ? trimmed : undefined;
-}

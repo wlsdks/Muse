@@ -205,7 +205,6 @@ export type {
   KyselyCheckpointStoreOptions,
   KyselyHookTraceStoreOptions
 } from "./kysely-stores.js";
-export * from "./admin-operations.js";
 export * from "./debug-replay.js";
 export * from "./run-history.js";
 export * from "./session-tags.js";

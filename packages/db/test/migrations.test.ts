@@ -17,8 +17,6 @@ describe("db migrations", () => {
       "checkpoints",
       "trace_events",
       "hook_traces",
-      "admin_alerts",
-      "admin_cost_usage",
       "runtime_settings",
       "agent_specs",
       "mcp_servers",

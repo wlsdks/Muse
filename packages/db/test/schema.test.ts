@@ -4,8 +4,6 @@ import type { MuseDatabase } from "../src/index.js";
 describe("MuseDatabase", () => {
   it("exposes compile-time table contracts", () => {
     const tableNames = [
-      "admin_alerts",
-      "admin_cost_usage",
       "agent_runs",
       "agent_specs",
       "users",

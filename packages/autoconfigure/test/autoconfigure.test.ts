@@ -12,7 +12,6 @@ import { KyselyMcpSecurityPolicyStore, KyselyMcpServerStore } from "@muse/mcp";
 import { PersistedMuseTracer } from "@muse/observability";
 import { KyselyRuntimeSettingsStore } from "@muse/runtime-settings";
 import {
-  KyselyAdminOperationsStore,
   KyselyAgentRunHistoryStore,
   KyselyDebugReplayCaptureStore,
   KyselyHookTraceStore,
@@ -52,7 +51,6 @@ describe("autoconfigure", () => {
     expect(assembly.observability.metrics.recordedEvents()).toEqual([]);
     expect(assembly.observability.followupSuggestionStore.aggregateStats().totalImpressions).toBe(0);
     expect(assembly.resilience.circuitBreakerRegistry.names()).toEqual([]);
-    expect(await assembly.adminOperationsStore.listAlerts()).toEqual([]);
     expect(assembly.scheduler.store.list()).toEqual([]);
     expect(assembly.scheduler.service).toBeTruthy();
     expect(assembly.toolRegistry.list().map((tool) => tool.definition.name)).toEqual(expect.arrayContaining([
@@ -113,7 +111,6 @@ describe("autoconfigure", () => {
 
     expect(options.authService).toBeTruthy();
     expect(options.admin.cache.responseCache.size()).toBe(0);
-    expect(options.admin.operations.listAlerts()).toEqual([]);
     expect(options.cors).toEqual({ allowCredentials: true });
     expect(options.requireAuth).toBe(true);
     expect(options.mcp.manager).toBeTruthy();
@@ -134,7 +131,6 @@ describe("autoconfigure", () => {
     expect(assembly.authService).toBeInstanceOf(AsyncAuth);
     expect(assembly.historyStore).toBeInstanceOf(KyselyAgentRunHistoryStore);
     expect(assembly.hookTraceStore).toBeInstanceOf(KyselyHookTraceStore);
-    expect(assembly.adminOperationsStore).toBeInstanceOf(KyselyAdminOperationsStore);
     expect(assembly.debugReplayCaptureStore).toBeInstanceOf(KyselyDebugReplayCaptureStore);
     expect(assembly.observability.tracer).toBeInstanceOf(PersistedMuseTracer);
     expect(assembly.mcp.serverStore).toBeInstanceOf(KyselyMcpServerStore);

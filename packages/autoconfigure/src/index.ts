@@ -138,17 +138,14 @@ import {
   type RuntimeSettingsStore
 } from "@muse/runtime-settings";
 import {
-  InMemoryAdminOperationsStore,
   InMemoryAgentRunHistoryStore,
   InMemoryDebugReplayCaptureStore,
   InMemoryHookTraceStore,
   InMemorySessionTagStore,
-  KyselyAdminOperationsStore,
   KyselyAgentRunHistoryStore,
   KyselyDebugReplayCaptureStore,
   KyselyHookTraceStore,
   KyselySessionTagStore,
-  type AdminOperationsStore,
   type AgentRunHistoryStore,
   type DebugReplayCaptureStore,
   type HookTraceStore,
@@ -203,7 +200,6 @@ export interface MuseRuntimeAssembly {
   readonly defaultModel?: string;
   readonly historyStore: AgentRunHistoryStore;
   readonly hookTraceStore: HookTraceStore;
-  readonly adminOperationsStore: AdminOperationsStore;
   readonly mcp: {
     readonly manager: McpManager;
     readonly securityPolicyProvider: McpSecurityPolicyProvider;
@@ -264,7 +260,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
   const historyStore = createHistoryStore(db);
   const hookTraceStore = createHookTraceStore(db, env);
-  const adminOperationsStore = createAdminOperationsStore(db);
   const debugReplayCaptureStore = createDebugReplayCaptureStore(db);
   const cacheStatsStore = new InMemoryCacheStatsStore();
   const cacheMetrics = new InMemoryCacheMetricsRecorder(cacheStatsStore);
@@ -444,7 +439,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     defaultModel,
     historyStore,
     hookTraceStore,
-    adminOperationsStore,
     mcp: {
       manager: mcpManager,
       securityPolicyProvider: mcpSecurityPolicyProvider,
@@ -528,10 +522,6 @@ function createHookTraceStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnv
     : new InMemoryHookTraceStore({ maxTraces: parseInteger(env.MUSE_HOOK_TRACE_MAX_ENTRIES, 10_000) });
 }
 
-function createAdminOperationsStore(db: Kysely<MuseDatabase> | undefined): AdminOperationsStore {
-  return db ? new KyselyAdminOperationsStore(db) : new InMemoryAdminOperationsStore();
-}
-
 function createDebugReplayCaptureStore(db: Kysely<MuseDatabase> | undefined): DebugReplayCaptureStore {
   return db ? new KyselyDebugReplayCaptureStore(db) : new InMemoryDebugReplayCaptureStore();
 }
@@ -610,7 +600,6 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
         responseCache: assembly.cache.responseCache
       },
       observability: assembly.observability,
-      operations: assembly.adminOperationsStore,
       resilience: assembly.resilience
     },
     agentRuntime: assembly.agentRuntime,

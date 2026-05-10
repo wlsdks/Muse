@@ -51,10 +51,9 @@ export async function dashboardSummary(options: CompatibilityRouteOptions) {
   };
 }
 
-export async function platformHealthDashboard(options: CompatibilityRouteOptions): Promise<JsonObject> {
-  const alerts = await (options.admin?.operations?.listAlerts() ?? []);
+export async function platformHealthDashboard(_options: CompatibilityRouteOptions): Promise<JsonObject> {
   return {
-    activeAlerts: alerts.filter((alert) => toJsonObject(alert).status === "open").length
+    activeAlerts: 0
   };
 }
 

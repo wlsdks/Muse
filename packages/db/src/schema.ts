@@ -9,8 +9,6 @@ type JsonColumn<T extends JsonValue = JsonValue> = ColumnType<T, T | string | un
 type CompatibilityTable = Record<string, ColumnType<unknown, unknown, unknown>>;
 
 export interface MuseDatabase {
-  readonly admin_alerts: AdminAlertTable;
-  readonly admin_cost_usage: AdminCostUsageTable;
   readonly agent_runs: AgentRunTable;
   readonly agent_specs: AgentSpecTable;
   readonly checkpoints: CheckpointTable;
@@ -31,21 +29,6 @@ export interface MuseDatabase {
   readonly trace_events: TraceEventTable;
   readonly user_memories: UserMemoryTable;
   readonly users: UserTable;
-}
-
-export interface AdminAlertTable {
-  readonly id: string;
-  readonly severity: "info" | "warning" | "critical";
-  readonly status: "open" | "acknowledged" | "resolved";
-  readonly message: string;
-  readonly created_at: Timestamp;
-}
-
-export interface AdminCostUsageTable {
-  readonly id: string;
-  readonly model: string | null;
-  readonly cost_usd: NumericString;
-  readonly created_at: Timestamp;
 }
 
 export interface DebugReplayCaptureTable {

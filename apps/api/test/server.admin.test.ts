@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { InMemoryTaskMemoryStore } from "@muse/memory";
 import { InMemoryAgentMetrics } from "@muse/observability";
 import {
-  InMemoryAdminOperationsStore,
   InMemoryAgentRunHistoryStore,
   InMemorySessionTagStore
 } from "@muse/runtime-state";
@@ -316,57 +315,6 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(allInvalidated).toBe(true);
     expect(breakers.json()).toMatchObject([{ name: "model.generate", state: "open" }]);
     expect(reset.json()).toEqual({ name: "model.generate", state: "closed" });
-  });
-
-  it("exposes alert and cost admin operations", async () => {
-    const authService = createAuthService();
-    const registered = authService.register({
-      email: "first_account",
-      name: "First",
-      password: "password-1"
-    });
-    const operations = new InMemoryAdminOperationsStore({
-      idFactory: (kind) => `${kind}-1`,
-      now: () => new Date("2026-01-01T00:00:00.000Z")
-    });
-    const server = buildServer({
-      admin: { operations },
-      authService,
-      logger: false,
-      requireAuth: true
-    });
-    const headers = { authorization: `Bearer ${registered.token}` };
-
-    const alert = await server.inject({
-      headers,
-      method: "POST",
-      payload: {
-        message: "Cost spike detected",
-        severity: "critical"
-      },
-      url: "/admin/alerts"
-    });
-    const cost = await server.inject({
-      headers,
-      method: "POST",
-      payload: {
-        costUsd: "1.25",
-        model: "provider/model"
-      },
-      url: "/admin/costs/usage"
-    });
-    const summary = await server.inject({
-      headers,
-      method: "GET",
-      url: "/admin/costs/summary"
-    });
-
-    expect(alert.statusCode).toBe(201);
-    expect(cost.json()).toEqual({
-      byModel: { "provider/model": "1.25000000" },
-      totalCostUsd: "1.25000000"
-    });
-    expect(summary.json()).toEqual(cost.json());
   });
 
   it("matches admin policy, settings, and dashboard contracts", async () => {
