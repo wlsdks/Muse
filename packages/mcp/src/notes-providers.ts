@@ -423,6 +423,18 @@ export class LocalDirNotesProvider implements NotesProvider {
   }
 }
 
+/**
+ * Per-entry delimiter for the Apple Notes search AppleScript output.
+ *
+ * AppleScript doesn't recognize ` ` as a Unicode escape (a prior
+ * implementation used `"\\u0000"` and silently outputted the literal
+ * 6-character string ` `, which split-on-space then mangled),
+ * so we use a deliberately-unique ASCII marker that's vanishingly
+ * unlikely to appear inside a Notes body. Keep this string in sync
+ * between the AppleScript template and `parseSearchOutput`.
+ */
+const APPLE_NOTES_SEARCH_DELIM = "~~~MUSE_NOTES_SEARCH_END~~~";
+
 export interface AppleNotesProviderOptions {
   /**
    * Notes.app folder name to scope reads / writes against. When omitted,
@@ -541,7 +553,7 @@ export class AppleNotesProvider implements NotesProvider {
           set noteId to (id of n as string)
           set noteName to (name of n as string)
           set noteBody to (body of n as string)
-          set output to output & noteId & tab & noteName & tab & noteBody & "\\u0000"
+          set output to output & noteId & tab & noteName & tab & noteBody & "${APPLE_NOTES_SEARCH_DELIM}"
           set hitCount to hitCount + 1
         end repeat
       end tell
@@ -698,7 +710,7 @@ function parseReadOutput(output: string, id: string, providerId: string): NotesC
 function parseSearchOutput(output: string, query: string, providerId: string): readonly NotesSearchHit[] {
   const needle = query.toLowerCase();
   return output
-    .split(" ")
+    .split(APPLE_NOTES_SEARCH_DELIM)
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .flatMap((entry): readonly NotesSearchHit[] => {
