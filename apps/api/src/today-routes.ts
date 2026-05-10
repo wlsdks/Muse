@@ -135,33 +135,62 @@ async function readRecentNotes(notesDir: string | undefined): Promise<readonly s
     return undefined;
   }
   const root = pathResolve(notesDir);
+  const collected: { name: string; mtime: number }[] = [];
+  await collectNotesRecursive(root, "", collected, 0);
+  return collected
+    .sort((left, right) => right.mtime - left.mtime)
+    .slice(0, MAX_RECENT_NOTES)
+    .map((entry) => entry.name);
+}
+
+const MAX_NOTES_WALK_DEPTH = 8;
+
+async function collectNotesRecursive(
+  absDir: string,
+  relPrefix: string,
+  out: { name: string; mtime: number }[],
+  depth: number
+): Promise<void> {
+  if (depth > MAX_NOTES_WALK_DEPTH) {
+    return;
+  }
   let entries: { readonly name: string; isDirectory(): boolean; isFile(): boolean }[];
   try {
-    entries = (await fs.readdir(root, { withFileTypes: true })) as unknown as {
+    entries = (await fs.readdir(absDir, { withFileTypes: true })) as unknown as {
       readonly name: string;
       isDirectory(): boolean;
       isFile(): boolean;
     }[];
   } catch {
-    return [];
+    return;
   }
-  // Stat every visible file in parallel. The previous sequential
-  // `for ... await fs.stat()` made this O(N) round-trips through
-  // libuv's thread pool; with N notes this can compound on every
-  // /api/today request. Promise.all dispatches concurrently and
-  // settles in roughly max(stat) instead of sum(stat).
-  const visible = entries.filter((entry) => !entry.name.startsWith(".") && entry.isFile());
-  const stats = await Promise.all(visible.map(async (entry) => {
-    try {
-      const stat = await fs.stat(join(root, entry.name));
-      return { mtime: stat.mtime.getTime(), name: entry.name };
-    } catch {
-      return undefined;
+  // Stat all visible files in this directory in parallel, then recurse
+  // into visible subdirectories. Recursion lets `today` surface notes
+  // organized into subfolders (e.g. Obsidian-style daily/weekly vaults).
+  const visible = entries.filter((entry) => !entry.name.startsWith("."));
+  const fileStats = await Promise.all(
+    visible
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => {
+        const rel = relPrefix.length > 0 ? join(relPrefix, entry.name) : entry.name;
+        try {
+          const stat = await fs.stat(join(absDir, entry.name));
+          return { mtime: stat.mtime.getTime(), name: rel };
+        } catch {
+          return undefined;
+        }
+      })
+  );
+  for (const entry of fileStats) {
+    if (entry) {
+      out.push(entry);
     }
-  }));
-  return stats
-    .filter((entry): entry is { name: string; mtime: number } => entry !== undefined)
-    .sort((left, right) => right.mtime - left.mtime)
-    .slice(0, MAX_RECENT_NOTES)
-    .map((entry) => entry.name);
+  }
+  for (const entry of visible) {
+    if (entry.isDirectory()) {
+      const childAbs = join(absDir, entry.name);
+      const childRel = relPrefix.length > 0 ? join(relPrefix, entry.name) : entry.name;
+      await collectNotesRecursive(childAbs, childRel, out, depth + 1);
+    }
+  }
 }

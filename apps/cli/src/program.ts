@@ -302,14 +302,19 @@ async function apiRequest(
   method?: "GET" | "POST" | "PUT" | "DELETE"
 ) {
   const { baseUrl, token } = await readApiOptions(io, command);
-  const response = await (io.fetch ?? globalThis.fetch)(new URL(path, baseUrl).toString(), {
-    body: body ? JSON.stringify(dropUndefined(body)) : undefined,
-    headers: {
-      ...(body ? { "content-type": "application/json" } : {}),
-      ...(token ? { authorization: `Bearer ${token}` } : {})
-    },
-    method: method ?? (body ? "POST" : "GET")
-  });
+  let response: Response;
+  try {
+    response = await (io.fetch ?? globalThis.fetch)(new URL(path, baseUrl).toString(), {
+      body: body ? JSON.stringify(dropUndefined(body)) : undefined,
+      headers: {
+        ...(body ? { "content-type": "application/json" } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {})
+      },
+      method: method ?? (body ? "POST" : "GET")
+    });
+  } catch (error) {
+    throw friendlyFetchError(baseUrl, error);
+  }
   const text = await response.text();
 
   if (!response.ok) {
@@ -317,6 +322,27 @@ async function apiRequest(
   }
 
   return text.length > 0 ? JSON.parse(text) as unknown : undefined;
+}
+
+/**
+ * Translate node-fetch / undici network errors into a single-line message
+ * the user can act on. Without this, `ECONNREFUSED` surfaces as a raw
+ * undici stack trace whenever the API server isn't running — which for a
+ * personal-mode CLI is the most common state.
+ */
+function friendlyFetchError(baseUrl: string, error: unknown): Error {
+  const cause = isRecord(error) && isRecord(error.cause) ? error.cause : undefined;
+  const code = cause && typeof cause.code === "string" ? cause.code : undefined;
+  if (code === "ECONNREFUSED") {
+    return new Error(
+      `Muse API not reachable at ${baseUrl} — start it with \`pnpm --filter @muse/api dev\` or set --api-url.`
+    );
+  }
+  if (code === "ENOTFOUND") {
+    return new Error(`Muse API host unresolved (${baseUrl}). Check --api-url.`);
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`Muse API request failed: ${message}`);
 }
 
 async function streamRemoteChat(

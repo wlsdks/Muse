@@ -503,6 +503,11 @@ export {
   type TasksRegistryMcpServerOptions
 } from "./loopback-tasks-registry.js";
 
+// Relative-time phrase resolver (originally loopback-tasks-only).
+// Re-exported so HTTP routes can mirror the MCP tool's dueAt parsing
+// rather than duplicate semantics.
+export { resolveRelativeTimePhrase } from "./loopback-relative-time.js";
+
 // Context reference MCP server (round 167 — Context Engineering 1.d
 // foundation). `muse.context.fetch` / `muse.context.list` against an
 // in-process ContextReferenceStore.

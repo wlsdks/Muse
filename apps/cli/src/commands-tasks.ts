@@ -53,9 +53,13 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .argument("<title...>", "Task title (one or more words)")
     .option("--notes <text>", "Free-form notes")
     .option("--tags <list>", "Comma-separated tag list (e.g. work,muse)")
+    .option(
+      "--due <when>",
+      "Due date: ISO-8601 (2026-05-15T18:00Z) or relative phrase ('tomorrow at 6pm', 'in 3 hours', 'next Monday')"
+    )
     .action(async (
       titleParts: readonly string[],
-      options: { readonly notes?: string; readonly tags?: string },
+      options: { readonly notes?: string; readonly tags?: string; readonly due?: string },
       command
     ) => {
       const title = titleParts.join(" ").trim();
@@ -71,6 +75,9 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
           .split(",")
           .map((tag) => tag.trim())
           .filter((tag) => tag.length > 0);
+      }
+      if (options.due && options.due.trim().length > 0) {
+        body.dueAt = options.due.trim();
       }
       helpers.writeOutput(io, await helpers.apiRequest(io, command, "/api/tasks", body, "POST"));
     });

@@ -7,6 +7,34 @@ move from `Unreleased` to dated/versioned headings.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Gemini parallel-tool 400** — when the model issued N parallel
+  tool calls (e.g. `muse.tasks.list` + `muse.calendar.list` +
+  `muse.notes.list` for "what's on my plate today?"), the wire
+  request emitted N separate `role:"function"` messages. Gemini
+  requires one `role:"function"` turn with N functionResponse
+  parts and 400'd with "the number of function response parts is
+  equal to the number of function call parts of the function call
+  turn". `toGeminiRequest` now coalesces consecutive tool messages
+  into a single turn. Live dogfood: `muse chat "What's on my plate
+  today? Check tasks, calendar events, and recent notes."` now
+  succeeds where it previously failed 100%.
+- **`today` recent-notes ignored subdirectories** — Obsidian-style
+  vaults (`dogfood/2026-05-10.md`) never surfaced. The walker is
+  now recursive (depth cap 8).
+- **Raw stack traces from CLI when API is down** — `apiRequest` now
+  translates `ECONNREFUSED` / `ENOTFOUND` to a one-line hint and
+  the entrypoint catches uncaught failures so users see
+  `muse: <message>` exit 1 instead of an undici stack.
+
+### Added
+
+- **`muse tasks add --due <when>`** — CLI surface caught up to the
+  MCP tool. Accepts ISO-8601 or relative phrases ("tomorrow at
+  6pm", "in 3 hours", "next Monday"); `POST /api/tasks` parses
+  both via the same resolver re-exported from `@muse/mcp`.
+
 ### Added
 
 - **`muse listen` CLI** — Voice Phase C from `docs/design/voice-mode.md`.

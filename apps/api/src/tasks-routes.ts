@@ -23,7 +23,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-import type { TasksProviderRegistry } from "@muse/mcp";
+import { resolveRelativeTimePhrase, type TasksProviderRegistry } from "@muse/mcp";
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
@@ -51,6 +51,7 @@ interface PersistedTaskRow {
   readonly completedAt?: string;
   readonly notes?: string;
   readonly tags?: readonly string[];
+  readonly dueAt?: string;
 }
 
 export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGate): void {
@@ -72,10 +73,32 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
     }
-    const body = request.body as { readonly title?: unknown; readonly notes?: unknown; readonly tags?: unknown } | null;
+    const body = request.body as {
+      readonly title?: unknown;
+      readonly notes?: unknown;
+      readonly tags?: unknown;
+      readonly dueAt?: unknown;
+    } | null;
     const title = typeof body?.title === "string" ? body.title.trim() : "";
     if (title.length === 0) {
       return reply.status(400).send({ code: "INVALID_TASK", message: "title must be a non-empty string" });
+    }
+    let dueAt: string | undefined;
+    const dueAtRaw = typeof body?.dueAt === "string" ? body.dueAt.trim() : "";
+    if (dueAtRaw.length > 0) {
+      const isoParsed = new Date(dueAtRaw);
+      if (!Number.isNaN(isoParsed.getTime()) && /^\d{4}-\d{2}-\d{2}/u.test(dueAtRaw)) {
+        dueAt = isoParsed.toISOString();
+      } else {
+        const relative = resolveRelativeTimePhrase(dueAtRaw, () => new Date());
+        if (!relative) {
+          return reply.status(400).send({
+            code: "INVALID_TASK_DUE_AT",
+            message: `dueAt must be an ISO-8601 timestamp or a supported relative phrase (got ${JSON.stringify(dueAtRaw)})`
+          });
+        }
+        dueAt = relative.toISOString();
+      }
     }
     const tasks = await readTasksFile(tasksFile);
     const created: PersistedTaskRow = {
@@ -86,7 +109,8 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
       ...(typeof body?.notes === "string" && body.notes.trim().length > 0 ? { notes: body.notes.trim() } : {}),
       ...(Array.isArray(body?.tags)
         ? { tags: (body.tags as unknown[]).filter((entry): entry is string => typeof entry === "string") }
-        : {})
+        : {}),
+      ...(dueAt ? { dueAt } : {})
     };
     await writeTasksFile(tasksFile, [...tasks, created]);
     return reply.status(201).send(created);
