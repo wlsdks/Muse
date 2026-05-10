@@ -24,6 +24,7 @@ import {
   parseReminderDueAt,
   readReminders,
   readReminderStatusFilter,
+  runDueReminders,
   serializeReminder,
   writeReminders,
   type PersistedReminder
@@ -281,25 +282,11 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
         readonly local?: boolean;
       }
     ) => {
-      // The deterministic firing loop. No LLM is dispatched — this is
-      // the "Phase B" engine described in docs/design/reminder-firing.md
-      // run in one-shot mode. A future iter wires it to scheduler so
-      // it ticks every minute automatically.
       const file = localRemindersFile();
-      const all = await readReminders(file);
-      const due = filterReminders(all, "due", () => new Date());
-
-      if (due.length === 0) {
-        const summary = { delivered: 0, due: 0, errors: [] as string[] };
-        if (options.json) {
-          helpers.writeOutput(io, summary);
-        } else {
-          io.stdout("No reminders are due right now.\n");
-        }
-        return;
-      }
 
       if (options.dryRun) {
+        const all = await readReminders(file);
+        const due = filterReminders(all, "due", () => new Date());
         const summary = {
           delivered: 0,
           due: due.length,
@@ -308,11 +295,15 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
         };
         if (options.json) {
           helpers.writeOutput(io, summary);
-        } else {
-          io.stdout(`Would fire ${due.length.toString()} reminder(s):\n`);
-          for (const reminder of due) {
-            io.stdout(`  - [${reminder.id.slice(0, 12)}] ${reminder.text}\n`);
-          }
+          return;
+        }
+        if (due.length === 0) {
+          io.stdout("No reminders are due right now.\n");
+          return;
+        }
+        io.stdout(`Would fire ${due.length.toString()} reminder(s):\n`);
+        for (const reminder of due) {
+          io.stdout(`  - [${reminder.id.slice(0, 12)}] ${reminder.text}\n`);
         }
         return;
       }
@@ -326,33 +317,27 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       const registry: MessagingProviderRegistry = buildMessagingRegistry(
         process.env as Record<string, string | undefined>
       );
+      const summary = await runDueReminders({
+        destination,
+        file,
+        providerId: provider,
+        registry
+      });
 
-      const errors: string[] = [];
-      let delivered = 0;
-      const reminders = [...await readReminders(file)];
-      for (const reminder of due) {
-        try {
-          await registry.send(provider, { destination, text: reminder.text });
-          const next = fireReminder(reminders, reminder.id, new Date().toISOString());
-          if (next) {
-            // Mutate the in-flight array so the next iteration sees the
-            // updated state. Final write happens once after the loop.
-            reminders.splice(0, reminders.length, ...next);
-          }
-          delivered += 1;
-        } catch (cause) {
-          errors.push(`${reminder.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
-        }
-      }
-      await writeReminders(file, reminders);
-
-      const summary = { delivered, due: due.length, errors };
       if (options.json) {
-        helpers.writeOutput(io, summary);
+        helpers.writeOutput(io, {
+          delivered: summary.delivered,
+          due: summary.due,
+          errors: summary.errors
+        });
         return;
       }
-      io.stdout(`Fired ${delivered.toString()} of ${due.length.toString()} reminder(s) via ${provider}\n`);
-      for (const error of errors) {
+      if (summary.due === 0) {
+        io.stdout("No reminders are due right now.\n");
+        return;
+      }
+      io.stdout(`Fired ${summary.delivered.toString()} of ${summary.due.toString()} reminder(s) via ${provider}\n`);
+      for (const error of summary.errors) {
         io.stderr(`  ! ${error}\n`);
       }
     });

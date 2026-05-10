@@ -534,6 +534,14 @@ export {
   type ReminderStatusFilter
 } from "./personal-reminders-store.js";
 
+// Phase B firing engine — see docs/design/reminder-firing.md. The
+// CLI's `muse remind run` and a future scheduler hook share this.
+export {
+  runDueReminders,
+  type RunDueRemindersOptions,
+  type RunDueRemindersSummary
+} from "./reminder-firing-loop.js";
+
 // Outbound messaging loopback (Phase 3 of docs/design/messaging.md):
 // the LLM can call `muse.messaging.{providers, send}` once the user
 // has wired any provider via env tokens.

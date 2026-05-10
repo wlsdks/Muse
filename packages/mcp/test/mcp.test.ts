@@ -2726,3 +2726,116 @@ describe("muse.reminders loopback server", () => {
     expect(bad).toMatchObject({ error: expect.stringContaining("ISO-8601") });
   });
 });
+
+describe("runDueReminders", () => {
+  it("delivers due reminders, fires them, persists once at the end", async () => {
+    const { runDueReminders } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-fire-loop-"));
+    const file = join(dir, "reminders.json");
+    writeFileSync(file, JSON.stringify({
+      reminders: [
+        {
+          createdAt: "2026-01-01T00:00:00Z",
+          dueAt: "1970-01-01T00:00:00Z", // past
+          id: "rem_overdue",
+          status: "pending",
+          text: "Buy milk"
+        },
+        {
+          createdAt: "2026-05-11T00:00:00Z",
+          dueAt: "2030-01-01T00:00:00Z", // future
+          id: "rem_future",
+          status: "pending",
+          text: "Pay rent"
+        }
+      ]
+    }), "utf8");
+
+    const sent: Array<{ providerId: string; destination: string; text: string }> = [];
+    const fakeRegistry = {
+      send: async (providerId: string, message: { destination: string; text: string }) => {
+        sent.push({ destination: message.destination, providerId, text: message.text });
+        return { destination: message.destination, messageId: "stub", providerId };
+      }
+    };
+
+    const summary = await runDueReminders({
+      destination: "@me",
+      file,
+      now: () => new Date("2026-05-11T08:00:00Z"),
+      providerId: "telegram",
+      registry: fakeRegistry as unknown as Parameters<typeof runDueReminders>[0]["registry"]
+    });
+
+    expect(summary).toMatchObject({ delivered: 1, due: 1, errors: [] });
+    expect(sent).toEqual([{ destination: "@me", providerId: "telegram", text: "Buy milk" }]);
+
+    const persisted = JSON.parse(readFileSync(file, "utf8")) as {
+      reminders: Array<{ id: string; status: string; firedAt?: string }>;
+    };
+    expect(persisted.reminders.find((r) => r.id === "rem_overdue")).toMatchObject({ status: "fired" });
+    expect(persisted.reminders.find((r) => r.id === "rem_future")).toMatchObject({ status: "pending" });
+  });
+
+  it("does not write when no reminders are due (idempotent zero-call)", async () => {
+    const { runDueReminders } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync, statSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-fire-empty-"));
+    const file = join(dir, "reminders.json");
+    writeFileSync(file, JSON.stringify({ reminders: [] }), "utf8");
+    const before = statSync(file).mtimeMs;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const summary = await runDueReminders({
+      destination: "@me",
+      file,
+      providerId: "telegram",
+      registry: { send: async () => { throw new Error("must not be called"); } } as unknown as Parameters<typeof runDueReminders>[0]["registry"]
+    });
+    expect(summary).toMatchObject({ delivered: 0, due: 0, errors: [] });
+    // mtime unchanged → no write happened.
+    expect(statSync(file).mtimeMs).toBe(before);
+  });
+
+  it("collects per-reminder errors without aborting the loop", async () => {
+    const { runDueReminders } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-fire-err-"));
+    const file = join(dir, "reminders.json");
+    writeFileSync(file, JSON.stringify({
+      reminders: [
+        { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_a", status: "pending", text: "A" },
+        { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_b", status: "pending", text: "B" }
+      ]
+    }), "utf8");
+
+    let calls = 0;
+    const fakeRegistry = {
+      send: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error("upstream 503");
+        }
+        return { destination: "@me", messageId: "ok", providerId: "telegram" };
+      }
+    };
+    const summary = await runDueReminders({
+      destination: "@me",
+      file,
+      providerId: "telegram",
+      registry: fakeRegistry as unknown as Parameters<typeof runDueReminders>[0]["registry"]
+    });
+    expect(summary.delivered).toBe(1);
+    expect(summary.due).toBe(2);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]).toContain("rem_a");
+    expect(summary.errors[0]).toContain("upstream 503");
+  });
+});
