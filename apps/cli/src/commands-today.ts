@@ -28,6 +28,10 @@ import {
   serializeTask,
   type PersistedTask
 } from "@muse/mcp";
+import {
+  TODAY_BRIEF_SYSTEM_PROMPT as BRIEF_SYSTEM_PROMPT,
+  buildTodayBriefUserMessage
+} from "@muse/prompts";
 import type { TextToSpeechProvider } from "@muse/voice";
 import type { Command } from "commander";
 
@@ -132,13 +136,6 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
     });
 }
 
-const BRIEF_SYSTEM_PROMPT =
-  "You are Muse, the user's personal AI assistant in the JARVIS tradition. " +
-  "Render the morning briefing JSON as a short, conversational summary (2-3 sentences, max 4). " +
-  "Lead with the most time-sensitive thing in this priority: an overdue reminder, then the next event, " +
-  "then an overdue or soon-due task. Mention overall task count, the soonest event with its time, " +
-  "any pending reminders by count (call out overdue ones explicitly), and one recent note if relevant. " +
-  "Be warm but concise — no bullet lists, no headers. Match the user's locale.";
 
 async function renderBrief(
   io: ProgramIO,
@@ -149,11 +146,9 @@ async function renderBrief(
   modelOverride: string | undefined
 ): Promise<string> {
   // /api/chat doesn't take a system message, so the prompt is folded
-  // into the single user message. The local path keeps the system
-  // role separate via agentRuntime.run's messages array.
-  const remoteMessage =
-    `${BRIEF_SYSTEM_PROMPT}\n\nBriefing JSON:\n${JSON.stringify(briefing, null, 2)}\n\n` +
-    "Render this as a short conversational morning brief.";
+  // into the single user message via the shared builder. The local
+  // path keeps the system role separate via agentRuntime.run.
+  const remoteMessage = buildTodayBriefUserMessage(briefing);
 
   if (local) {
     const userBody = `Briefing JSON:\n${JSON.stringify(briefing, null, 2)}\n\nRender this as a short conversational morning brief.`;

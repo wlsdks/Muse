@@ -81,6 +81,31 @@ export const DEFAULT_EXEMPLAR_HEADER = "[Answer Quality Examples]";
 export const DEFAULT_BASE_PROMPT =
   "You are Muse, a model-agnostic agent runtime. Be accurate, concise, and explicit about uncertainty.";
 
+/**
+ * System prompt for `today --brief` (and the web's TodayBriefPanel).
+ * Both the CLI and the web console fold this verbatim into the
+ * user-message body sent to /api/chat (or, for the CLI's `--local`
+ * mode, into the system message of an agentRuntime.run call). Lift
+ * here so the two surfaces don't drift on tone / priority order.
+ */
+export const TODAY_BRIEF_SYSTEM_PROMPT =
+  "You are Muse, the user's personal AI assistant in the JARVIS tradition. " +
+  "Render the morning briefing JSON as a short, conversational summary (2-3 sentences, max 4). " +
+  "Lead with the most time-sensitive thing in this priority: an overdue reminder, then the next event, " +
+  "then an overdue or soon-due task. Mention overall task count, the soonest event with its time, " +
+  "any pending reminders by count (call out overdue ones explicitly), and one recent note if relevant. " +
+  "Be warm but concise — no bullet lists, no headers. Match the user's locale.";
+
+/**
+ * Compose the user-message body that pairs the system prompt above
+ * with a structured TodayBriefing JSON payload. Used by callers that
+ * post to /api/chat (which has no system-message slot) so the
+ * priority/locale guidance ships in-band.
+ */
+export function buildTodayBriefUserMessage(briefing: unknown): string {
+  return `${TODAY_BRIEF_SYSTEM_PROMPT}\n\nBriefing JSON:\n${JSON.stringify(briefing, null, 2)}\n\nRender this as a short conversational morning brief.`;
+}
+
 export class InMemoryPromptLayerRegistry implements PromptLayerRegistry {
   private readonly layers = new Map<string, PromptLayer>();
 

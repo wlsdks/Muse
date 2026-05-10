@@ -110,6 +110,9 @@ importers:
       '@muse/messaging':
         specifier: workspace:*
         version: link:../../packages/messaging
+      '@muse/prompts':
+        specifier: workspace:*
+        version: link:../../packages/prompts
       '@muse/voice':
         specifier: workspace:*
         version: link:../../packages/voice
@@ -129,6 +132,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@muse/prompts':
+        specifier: workspace:*
+        version: link:../../packages/prompts
       '@tanstack/react-query':
         specifier: ^5.90.12
         version: 5.100.9(react@19.2.5)

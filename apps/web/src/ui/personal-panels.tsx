@@ -21,6 +21,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { buildTodayBriefUserMessage } from "@muse/prompts";
+
 import type { ApiClient } from "./App.js";
 
 interface TaskRow {
@@ -664,14 +666,6 @@ interface ChatResponse {
   readonly success?: boolean;
 }
 
-const BRIEF_SYSTEM_PROMPT =
-  "You are Muse, the user's personal AI assistant in the JARVIS tradition. " +
-  "Render the morning briefing JSON as a short, conversational summary (2-3 sentences, max 4). " +
-  "Lead with the most time-sensitive thing in this priority: an overdue reminder, then the next event, " +
-  "then an overdue or soon-due task. Mention overall task count, the soonest event with its time, " +
-  "any pending reminders by count (call out overdue ones explicitly), and one recent note if relevant. " +
-  "Be warm but concise — no bullet lists, no headers. Match the user's locale.";
-
 export function TodayBriefPanel({ client }: { readonly client: ApiClient }) {
   const briefing = useQuery({
     queryFn: () => client.get<TodayBriefingResponse>("/api/today"),
@@ -683,7 +677,7 @@ export function TodayBriefPanel({ client }: { readonly client: ApiClient }) {
 
   const renderBrief = useMutation({
     mutationFn: async (payload: TodayBriefingResponse) => {
-      const message = `${BRIEF_SYSTEM_PROMPT}\n\nBriefing JSON:\n${JSON.stringify(payload, null, 2)}\n\nRender this as a short conversational morning brief.`;
+      const message = buildTodayBriefUserMessage(payload);
       return client.post<ChatResponse>("/api/chat", { message, metadata: { source: "today.brief" } });
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Failed to render brief"),
