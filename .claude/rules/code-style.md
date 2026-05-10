@@ -19,13 +19,18 @@ backlog — don't let it grow unchecked.
 
 - `no-debugger` — no `debugger;` left in committed code
 - `no-eval` / `no-with` — defense against unsafe code paths
+- `@typescript-eslint/no-unused-vars` — unused imports, params, and
+  caught errors. Prefix with `_` to silence intentionally
+  (e.g. `(_event) => ...`). Promoted from `warn` in round 174 after
+  the sweep.
+- `prefer-const` — flag `let` declarations that are never
+  reassigned. Promoted from `warn` in round 174. The autoconfigure
+  scheduler-handle pattern (closure forward-reference into a value
+  assigned later) uses a `const { current }` holder object instead
+  of `let`; reach for the same pattern when this rule complains.
 
 ## Currently enforced as `warn`
 
-- `@typescript-eslint/no-unused-vars` — unused imports, params, and
-  caught errors. Prefix with `_` to silence intentionally
-  (e.g. `(_event) => ...`).
-- `prefer-const` — flag `let` declarations that are never reassigned.
 - `no-empty` — flag empty blocks (`catch {}` is allowed).
 - `no-useless-escape` — over-escaped regex/string characters.
 - `no-async-promise-executor` — `new Promise(async ...)` anti-pattern.

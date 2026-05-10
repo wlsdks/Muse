@@ -2,17 +2,17 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 /**
- * Muse repo lint config (round 172).
+ * Muse repo lint config.
  *
- * Goal: a baseline gate that catches genuine bug patterns without
- * fighting the existing codebase. Stylistic + opinionated rules are
- * deliberately kept off (or as `warn`) so this iter can land green.
- * Future iters tighten rule by rule as the codebase is swept.
+ * Goal: catch genuine bug patterns and prevent regressions in dead-
+ * import / never-reassigned-let hygiene. After the round 173 sweep
+ * the codebase is at 0 warnings, so the dead-import + unused-vars
+ * rules graduate from `warn` to `error` — any new violation now
+ * blocks `pnpm lint` exit-0.
  *
  * The codebase is type-aware where it helps (typescript-eslint
  * recommended) but not project-aware (no `parserOptions.project`) —
- * lighter to run, and we already have `pnpm check` for full type
- * verification.
+ * lighter to run, and `pnpm check` covers full type verification.
  */
 export default tseslint.config(
   {
@@ -33,7 +33,7 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-empty-object-type": "off",
-      "@typescript-eslint/no-unused-vars": ["warn", {
+      "@typescript-eslint/no-unused-vars": ["error", {
         argsIgnorePattern: "^_",
         varsIgnorePattern: "^_",
         caughtErrorsIgnorePattern: "^_"
@@ -51,7 +51,7 @@ export default tseslint.config(
       "no-debugger": "error",
       "no-eval": "error",
       "no-with": "error",
-      "prefer-const": "warn"
+      "prefer-const": "error"
     }
   },
   {

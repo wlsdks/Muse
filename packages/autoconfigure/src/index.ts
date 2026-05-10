@@ -385,7 +385,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const tasksRegistryLoopbackTools = tasksRegistry && tasksRegistry.list().length >= 2
     ? createLoopbackMcpMuseTools(createTasksRegistryMcpServer({ registry: tasksRegistry }))
     : [];
-  let schedulerService: DynamicScheduler | undefined;
+  const schedulerHandle: { current: DynamicScheduler | undefined } = { current: undefined };
   const toolRegistry = new DynamicToolRegistry([
     () => museTools,
     () => loopbackMcpTools,
@@ -397,7 +397,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => tasksRegistryLoopbackTools,
     () => runnerTools,
     () => mcpManager.toMuseTools(),
-    () => schedulerService ? createSchedulerTools(schedulerService) : []
+    () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
   ]);
   const runtimeHooks = [
     ...createDefaultRuntimeHooks(env),
@@ -471,7 +471,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const schedulerStore = createSchedulerStore(db, env);
   const schedulerExecutionStore = createSchedulerExecutionStore(db, env);
   const schedulerLock = createSchedulerLock(db, env);
-  schedulerService = new DynamicScheduler({
+  const schedulerService = new DynamicScheduler({
     dispatcher: new ScheduledJobDispatcher({
       agentExecutor: createScheduledAgentExecutor(() => agentRuntime, defaultModel),
       mcpInvoker: new ScheduledMcpToolInvoker(mcpManager)
@@ -483,6 +483,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     distributedLock: schedulerLock,
     store: schedulerStore
   });
+  schedulerHandle.current = schedulerService;
 
   return {
     agentRuntime,
