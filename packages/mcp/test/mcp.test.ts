@@ -230,6 +230,91 @@ describe("DefaultMcpTransportConnector", () => {
       await connection.close?.();
     }
   });
+
+  it("advertises the roots capability and serves clientRoots over the SDK roots/list request", async () => {
+    const serverCode = [
+      'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";',
+      'import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";',
+      'const server = new McpServer({ name: "roots-fixture", version: "1.0.0" });',
+      'server.registerTool("dump-roots", { description: "Return the client-advertised roots" }, async () => {',
+      '  const result = await server.server.listRoots();',
+      '  return { content: [{ type: "text", text: JSON.stringify(result.roots) }] };',
+      "});",
+      "await server.connect(new StdioServerTransport());"
+    ].join("\n");
+    const policy = normalizeMcpSecurityPolicy({ allowedStdioCommands: ["node"] }, new Date());
+    const connector = new DefaultMcpTransportConnector({
+      clientRoots: ["/tmp/muse-test-root", "/Users/example/notes"],
+      requestTimeoutMs: 5_000,
+      stderr: "pipe"
+    });
+    const connection = await connector.connect(
+      {
+        autoConnect: false,
+        config: {
+          args: ["--input-type=module", "-e", serverCode],
+          command: "node"
+        },
+        createdAt: new Date(),
+        id: "server-roots",
+        name: "roots",
+        transportType: "stdio",
+        updatedAt: new Date()
+      },
+      policy
+    );
+
+    try {
+      const raw = await connection.callTool?.("dump-roots", {});
+      const roots = JSON.parse(raw as string) as Array<{ name?: string; uri: string }>;
+      expect(roots).toHaveLength(2);
+      expect(roots[0]?.uri).toBe("file:///tmp/muse-test-root");
+      expect(roots[0]?.name).toBe("/tmp/muse-test-root");
+      expect(roots[1]?.uri).toBe("file:///Users/example/notes");
+    } finally {
+      await connection.close?.();
+    }
+  });
+
+  it("returns an empty roots list when no clientRoots are configured (capability still advertised)", async () => {
+    const serverCode = [
+      'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";',
+      'import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";',
+      'const server = new McpServer({ name: "roots-empty", version: "1.0.0" });',
+      'server.registerTool("dump-roots", { description: "Return the client-advertised roots" }, async () => {',
+      '  const result = await server.server.listRoots();',
+      '  return { content: [{ type: "text", text: JSON.stringify(result.roots) }] };',
+      "});",
+      "await server.connect(new StdioServerTransport());"
+    ].join("\n");
+    const policy = normalizeMcpSecurityPolicy({ allowedStdioCommands: ["node"] }, new Date());
+    const connector = new DefaultMcpTransportConnector({
+      requestTimeoutMs: 5_000,
+      stderr: "pipe"
+    });
+    const connection = await connector.connect(
+      {
+        autoConnect: false,
+        config: {
+          args: ["--input-type=module", "-e", serverCode],
+          command: "node"
+        },
+        createdAt: new Date(),
+        id: "server-empty",
+        name: "empty",
+        transportType: "stdio",
+        updatedAt: new Date()
+      },
+      policy
+    );
+
+    try {
+      const raw = await connection.callTool?.("dump-roots", {});
+      expect(JSON.parse(raw as string)).toEqual([]);
+    } finally {
+      await connection.close?.();
+    }
+  });
 });
 
 describe("McpManager", () => {

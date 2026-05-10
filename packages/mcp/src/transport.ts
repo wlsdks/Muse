@@ -37,6 +37,9 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+
+import { pathToFileURL } from "node:url";
 
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { ToolRisk } from "@muse/tools";
@@ -66,6 +69,7 @@ export class DefaultMcpTransportConnector implements McpTransportConnector {
   private readonly requestTimeoutMs: number;
   private readonly allowPrivateAddresses: boolean;
   private readonly stderr: StdioServerParameters["stderr"];
+  private readonly clientRoots: readonly string[];
 
   constructor(options: DefaultMcpTransportConnectorOptions = {}) {
     this.allowPrivateAddresses = options.allowPrivateAddresses ?? false;
@@ -73,6 +77,7 @@ export class DefaultMcpTransportConnector implements McpTransportConnector {
     this.clientVersion = options.clientVersion ?? "1.0.0";
     this.requestTimeoutMs = options.requestTimeoutMs ?? defaultMcpRequestTimeoutMs;
     this.stderr = options.stderr ?? "inherit";
+    this.clientRoots = (options.clientRoots ?? []).filter((path) => path.trim().length > 0);
   }
 
   async connect(server: McpServer, policy: McpSecurityPolicy): Promise<McpConnection> {
@@ -84,10 +89,17 @@ export class DefaultMcpTransportConnector implements McpTransportConnector {
       throw new McpConnectionError(validation.reason ?? "MCP server validation failed");
     }
 
-    const client = new Client({
-      name: this.clientName,
-      version: this.clientVersion
-    });
+    const client = new Client(
+      { name: this.clientName, version: this.clientVersion },
+      { capabilities: { roots: { listChanged: false } } }
+    );
+    const exposedRoots = this.clientRoots;
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({
+      roots: exposedRoots.map((path) => ({
+        name: path,
+        uri: pathToFileURL(path).href
+      }))
+    }));
 
     try {
       await this.validateRemoteHost(server);

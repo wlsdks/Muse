@@ -325,6 +325,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const mcpManager = new McpManager(mcpServerStore, {
     connector: new DefaultMcpTransportConnector({
       allowPrivateAddresses: allowPrivateMcpAddresses,
+      clientRoots: parseCsv(env.MUSE_MCP_CLIENT_ROOTS),
       requestTimeoutMs: parseInteger(env.MUSE_MCP_REQUEST_TIMEOUT_MS, 15_000)
     }),
     reconnect: {

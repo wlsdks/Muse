@@ -82,6 +82,22 @@ export interface DefaultMcpTransportConnectorOptions {
   readonly requestTimeoutMs?: number;
   readonly allowPrivateAddresses?: boolean;
   readonly stderr?: StdioServerParameters["stderr"];
+  /**
+   * Filesystem paths exposed to MCP servers via the `roots/list`
+   * request. When provided, the client advertises the `roots`
+   * capability and answers server-issued `roots/list` calls with
+   * these paths as `file://` URIs. When undefined or empty, the
+   * client still advertises the capability (so spec-compliant MCP
+   * servers stop logging `Client does not support MCP Roots`
+   * warnings and fall back to argv-based directories) but returns
+   * an empty roots list.
+   *
+   * Personal-JARVIS default: empty. The user opts in via
+   * `MUSE_MCP_CLIENT_ROOTS` (comma-separated absolute paths) when
+   * a specific external MCP server (filesystem, search, etc.)
+   * needs broader directory access than its launch args allow.
+   */
+  readonly clientRoots?: readonly string[];
 }
 
 export interface McpServerValidationOptions {
