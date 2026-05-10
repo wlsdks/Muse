@@ -29,8 +29,9 @@ import { lineWebhookPlugin } from "./messaging-webhooks-routes.js";
 import { registerRemindersRoutes } from "./reminders-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
 import { parseQuietHours, startReminderTick } from "./reminder-tick.js";
+import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js";
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
-import { DiscordProvider, TelegramProvider } from "@muse/messaging";
+import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
 import { registerTodayRoutes } from "./today-routes.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
@@ -119,6 +120,12 @@ export interface ServerOptions {
    * writes here on each tick.
    */
   readonly discordInboxFile?: string;
+  /**
+   * Path to the persisted Slack inbox (default
+   * ~/.muse/slack-inbox.json). The Phase 2.d.3 polling daemon
+   * writes here on each tick.
+   */
+  readonly slackInboxFile?: string;
 }
 
 export interface ToolCatalogEntry {
@@ -373,6 +380,38 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         ...(pollMsRaw !== undefined ? { intervalMs: pollMsRaw } : {}),
         logger: (message) => server.log.info(message),
         provider: telegram
+      });
+      server.addHook("onClose", async () => {
+        pollHandle.stop();
+      });
+    }
+  }
+
+  // Optional Phase 2.d.3 daemon: poll a user-configured list of
+  // Slack channels (MUSE_SLACK_POLL_CHANNELS=C0123,C0456) every
+  // MUSE_SLACK_POLL_INTERVAL_MS (default 30s) and persist each new
+  // message into slackInboxFile. Off unless MUSE_SLACK_POLL_ENABLED=1.
+  const slackPollEnabled = process.env.MUSE_SLACK_POLL_ENABLED?.trim() === "1";
+  const slackChannels = parseSlackPollChannels(process.env.MUSE_SLACK_POLL_CHANNELS);
+  if (
+    slackPollEnabled
+    && slackChannels
+    && options.slackInboxFile
+    && options.messaging
+    && options.messaging.has("slack")
+  ) {
+    const slack = options.messaging.require("slack");
+    if (slack instanceof SlackProvider) {
+      const pollMsRaw = process.env.MUSE_SLACK_POLL_INTERVAL_MS
+        ? Number(process.env.MUSE_SLACK_POLL_INTERVAL_MS)
+        : undefined;
+      const pollHandle = startSlackPollTick({
+        channels: slackChannels,
+        errorLogger: (message) => server.log.warn(message),
+        inboxFile: options.slackInboxFile,
+        ...(pollMsRaw !== undefined ? { intervalMs: pollMsRaw } : {}),
+        logger: (message) => server.log.info(message),
+        provider: slack
       });
       server.addHook("onClose", async () => {
         pollHandle.stop();

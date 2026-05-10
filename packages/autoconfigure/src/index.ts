@@ -138,6 +138,7 @@ import {
   resolveLineInboxFile,
   resolveNotesDir,
   resolveRemindersFile,
+  resolveSlackInboxFile,
   resolveTasksFile,
   resolveTelegramInboxFile
 } from "./personal-providers.js";
@@ -155,6 +156,7 @@ export {
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
   resolveSlackAfterFile,
+  resolveSlackInboxFile,
   resolveTasksFile,
   resolveTelegramInboxFile,
   resolveTelegramOffsetFile
@@ -662,7 +664,8 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     remindersFile: resolveRemindersFile(env),
     lineInboxFile: resolveLineInboxFile(env),
     telegramInboxFile: resolveTelegramInboxFile(env),
-    discordInboxFile: resolveDiscordInboxFile(env)
+    discordInboxFile: resolveDiscordInboxFile(env),
+    slackInboxFile: resolveSlackInboxFile(env)
   };
 }
 

@@ -49,6 +49,7 @@ import {
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
   resolveSlackAfterFile,
+  resolveSlackInboxFile,
   resolveTasksFile,
   resolveTelegramInboxFile,
   resolveTelegramOffsetFile
@@ -558,6 +559,7 @@ describe("autoconfigure", () => {
     expect(resolveDiscordAfterFile({ MUSE_DISCORD_AFTER_FILE: "/tmp/da.json" })).toBe("/tmp/da.json");
     expect(resolveDiscordInboxFile({ MUSE_DISCORD_INBOX_FILE: "/tmp/din.json" })).toBe("/tmp/din.json");
     expect(resolveSlackAfterFile({ MUSE_SLACK_AFTER_FILE: "/tmp/sa.json" })).toBe("/tmp/sa.json");
+    expect(resolveSlackInboxFile({ MUSE_SLACK_INBOX_FILE: "/tmp/sin.json" })).toBe("/tmp/sin.json");
 
     // Empty / whitespace-only override → falls back to default.
     expect(resolveTasksFile({ MUSE_TASKS_FILE: "" }).endsWith("/.muse/tasks.json")).toBe(true);
@@ -576,6 +578,7 @@ describe("autoconfigure", () => {
     expect(resolveDiscordAfterFile({}).endsWith("/.muse/discord-after.json")).toBe(true);
     expect(resolveDiscordInboxFile({}).endsWith("/.muse/discord-inbox.json")).toBe(true);
     expect(resolveSlackAfterFile({}).endsWith("/.muse/slack-after.json")).toBe(true);
+    expect(resolveSlackInboxFile({}).endsWith("/.muse/slack-inbox.json")).toBe(true);
   });
 
   it("resolveDefaultModel honors MUSE_MODEL when explicitly set", () => {

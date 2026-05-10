@@ -125,6 +125,10 @@ export function resolveSlackAfterFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_SLACK_AFTER_FILE", "slack-after.json");
 }
 
+export function resolveSlackInboxFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_SLACK_INBOX_FILE", "slack-inbox.json");
+}
+
 export function resolveModelKeysFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_MODEL_KEYS_FILE", "models.json");
 }
