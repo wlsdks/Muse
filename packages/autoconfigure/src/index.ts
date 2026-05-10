@@ -66,6 +66,7 @@ import {
   type LoopbackMcpServer,
   type McpSecurityPolicyInput,
   type McpSecurityPolicyStore,
+  type McpServerInput,
   type McpServerStore,
   type NotesProviderRegistry,
   type TasksProviderRegistry
@@ -166,6 +167,18 @@ import {
   createTracingPipeline,
   createUserMemoryStore
 } from "./store-factories.js";
+import {
+  loadExternalMcpConfig,
+  resolveExternalMcpConfigFile,
+  seedExternalMcpServers
+} from "./external-mcp-config.js";
+
+export {
+  loadExternalMcpConfig,
+  parseExternalMcpConfig,
+  resolveExternalMcpConfigFile,
+  seedExternalMcpServers
+} from "./external-mcp-config.js";
 
 export interface MuseEnvironment {
   readonly [key: string]: string | undefined;
@@ -188,6 +201,13 @@ export interface MuseRuntimeAssembly {
     readonly securityPolicyProvider: McpSecurityPolicyProvider;
     readonly securityPolicyStore: McpSecurityPolicyStore;
     readonly serverStore: McpServerStore;
+    /**
+     * External MCP servers parsed from `~/.muse/mcp.json` (or the
+     * path in `MUSE_MCP_CONFIG`). Empty when the file is absent.
+     * Callers must `await seedExternalMcpServers(serverStore, ...)`
+     * BEFORE `manager.start()` so the connector picks them up.
+     */
+    readonly externalServerInputs: readonly McpServerInput[];
   };
   readonly modelProvider?: ModelProvider;
   readonly debugReplayCaptureStore: DebugReplayCaptureStore;
@@ -300,6 +320,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const sessionTagStore = createSessionTagStore(db);
   const defaultModel = parseOptionalString(env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL);
   const mcpServerStore = createMcpServerStore(db, env);
+  const externalServerInputs = loadExternalMcpConfig(env);
   const initialMcpPolicy = {
     allowedServerNames: parseCsv(env.MUSE_MCP_ALLOWED_SERVERS),
     allowedStdioCommands: parseCsv(env.MUSE_MCP_ALLOWED_STDIO_COMMANDS),
@@ -483,6 +504,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     historyStore,
     hookTraceStore,
     mcp: {
+      externalServerInputs,
       manager: mcpManager,
       securityPolicyProvider: mcpSecurityPolicyProvider,
       securityPolicyStore: mcpSecurityPolicyStore,
@@ -591,6 +613,17 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
       manager: assembly.mcp.manager,
       securityPolicyProvider: assembly.mcp.securityPolicyProvider,
       securityPolicyStore: assembly.mcp.securityPolicyStore
+    },
+    /**
+     * Full MCP wiring needed for boot-time external-server seeding.
+     * The narrow `mcp` field above stays focused on what the route
+     * handlers consume; this carries the store + parsed external
+     * entries so callers can `await seedExternalMcpServers(...)`
+     * before listening on the port.
+     */
+    mcpBootstrap: {
+      externalServerInputs: assembly.mcp.externalServerInputs,
+      serverStore: assembly.mcp.serverStore
     },
     modelProvider: assembly.modelProvider,
     requireAuth: assembly.requireAuth,
