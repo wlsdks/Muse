@@ -1,14 +1,4 @@
-import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import {
-  appendFile as nodeAppendFile,
-  mkdir as nodeMkdir,
-  readFile as nodeReadFile,
-  readdir as nodeReaddir,
-  stat as nodeStat,
-  writeFile as nodeWriteFile
-} from "node:fs/promises";
-import { resolve as nodePathResolve, sep as nodePathSep } from "node:path";
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool, ToolRisk } from "@muse/tools";
 import { createMcpMuseTool, type McpConnection, type McpRemoteTool } from "./index.js";

@@ -57,6 +57,7 @@ For depth, read the matching file under `.claude/rules/`:
 - [`cli-product.md`](.claude/rules/cli-product.md) — CLI surface (commander, Ink, config paths, runner boundary).
 - [`testing.md`](.claude/rules/testing.md) — verification gates and the narrowest-useful-test rule.
 - [`commits.md`](.claude/rules/commits.md) — Conventional Commits + push policy + after-correction protocol.
+- [`code-style.md`](.claude/rules/code-style.md) — ESLint gate, naming, comment policy, dead-import rule.
 - [`redaction.md`](.claude/rules/redaction.md) — synthetic identifiers when migrating Reactor content.
 - [`migration-loop.md`](.claude/rules/migration-loop.md) — per-iteration discipline for the recurring migration loop.
 
