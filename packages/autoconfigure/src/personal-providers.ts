@@ -113,6 +113,10 @@ export function resolveTelegramInboxFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_TELEGRAM_INBOX_FILE", "telegram-inbox.json");
 }
 
+export function resolveDiscordAfterFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_DISCORD_AFTER_FILE", "discord-after.json");
+}
+
 export function resolveModelKeysFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_MODEL_KEYS_FILE", "models.json");
 }
@@ -500,7 +504,14 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
   }
   const discordToken = tokenFor("MUSE_DISCORD_BOT_TOKEN", "discord");
   if (discordToken) {
-    registry.register(new DiscordProvider({ token: discordToken }));
+    // `afterFile` is always wired (Phase 2.c.1+2): pollUpdates
+    // touches it only on demand, and an absent file is fine — first
+    // poll then falls back to Discord's newest-first snapshot. The
+    // existing fetchInbound is unchanged (still snapshot mode).
+    registry.register(new DiscordProvider({
+      afterFile: resolveDiscordAfterFile(env),
+      token: discordToken
+    }));
   }
   const slackToken = tokenFor("MUSE_SLACK_BOT_TOKEN", "slack");
   if (slackToken) {

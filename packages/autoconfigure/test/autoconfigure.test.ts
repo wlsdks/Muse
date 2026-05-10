@@ -46,6 +46,7 @@ import {
   resolveModelKeysFile,
   resolveNotesDir,
   resolveRemindersFile,
+  resolveDiscordAfterFile,
   resolveTasksFile,
   resolveTelegramInboxFile,
   resolveTelegramOffsetFile
@@ -558,6 +559,7 @@ describe("autoconfigure", () => {
     expect(resolveLineInboxFile({ MUSE_LINE_INBOX_FILE: "/tmp/l.json" })).toBe("/tmp/l.json");
     expect(resolveTelegramOffsetFile({ MUSE_TELEGRAM_OFFSET_FILE: "/tmp/tg.json" })).toBe("/tmp/tg.json");
     expect(resolveTelegramInboxFile({ MUSE_TELEGRAM_INBOX_FILE: "/tmp/tin.json" })).toBe("/tmp/tin.json");
+    expect(resolveDiscordAfterFile({ MUSE_DISCORD_AFTER_FILE: "/tmp/da.json" })).toBe("/tmp/da.json");
 
     // Empty / whitespace-only override → falls back to default.
     expect(resolveTasksFile({ MUSE_TASKS_FILE: "" }).endsWith("/.muse/tasks.json")).toBe(true);
@@ -573,6 +575,7 @@ describe("autoconfigure", () => {
     expect(resolveLineInboxFile({}).endsWith("/.muse/line-inbox.json")).toBe(true);
     expect(resolveTelegramOffsetFile({}).endsWith("/.muse/telegram-offset.json")).toBe(true);
     expect(resolveTelegramInboxFile({}).endsWith("/.muse/telegram-inbox.json")).toBe(true);
+    expect(resolveDiscordAfterFile({}).endsWith("/.muse/discord-after.json")).toBe(true);
   });
 
   it("resolveDefaultModel honors MUSE_MODEL when explicitly set", () => {
@@ -732,6 +735,39 @@ describe("autoconfigure", () => {
       globalThis.fetch = originalFetch;
     }
     expect(seenUrls[0]).toContain("&offset=555");
+  });
+
+  it("buildMessagingRegistry wires MUSE_DISCORD_AFTER_FILE into the DiscordProvider", async () => {
+    const { mkdtempSync, promises: fs } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { DiscordProvider } = await import("@muse/messaging");
+    const root = mkdtempSync(join(tmpdir(), "muse-disc-wire-"));
+    const afterFile = join(root, "after.json");
+    // Seed a per-channel cursor so the registry-built provider's
+    // pollUpdates must include it in the request URL.
+    await fs.writeFile(afterFile, JSON.stringify({
+      after: { "ch-9": "1099999999999999999" },
+      version: 1
+    }), "utf8");
+    const seenUrls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      seenUrls.push(String(url));
+      return new Response("[]", { headers: { "content-type": "application/json" } });
+    }) as typeof globalThis.fetch;
+    try {
+      const registry = buildMessagingRegistry({
+        MUSE_DISCORD_AFTER_FILE: afterFile,
+        MUSE_DISCORD_BOT_TOKEN: "BOT"
+      });
+      const discord = registry.require("discord");
+      expect(discord).toBeInstanceOf(DiscordProvider);
+      await (discord as InstanceType<typeof DiscordProvider>).pollUpdates({ source: "ch-9" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(seenUrls[0]).toContain("&after=1099999999999999999");
   });
 });
 

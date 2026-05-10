@@ -144,6 +144,7 @@ export {
   resolveModelKeysFile,
   resolveNotesDir,
   resolveRemindersFile,
+  resolveDiscordAfterFile,
   resolveTasksFile,
   resolveTelegramInboxFile,
   resolveTelegramOffsetFile
