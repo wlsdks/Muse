@@ -60,6 +60,7 @@ import {
   createFetchMcpServer,
   createFilesystemMcpServer,
   createLoopbackMcpMuseTools,
+  createMessagingMcpServer,
   createNotesMcpServer,
   createNotesRegistryMcpServer,
   createTasksRegistryMcpServer,
@@ -390,6 +391,14 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const tasksRegistryLoopbackTools = tasksRegistry && tasksRegistry.list().length >= 2
     ? createLoopbackMcpMuseTools(createTasksRegistryMcpServer({ registry: tasksRegistry }))
     : [];
+  // Messaging loopback (Phase 3): only registered when at least one
+  // provider is configured via env tokens, so the LLM doesn't see a
+  // tool that always errors with "no providers configured". Read +
+  // write surface (`providers` / `send`).
+  const messagingRegistry = buildMessagingRegistry(env);
+  const messagingLoopbackTools = messagingRegistry.list().length > 0
+    ? createLoopbackMcpMuseTools(createMessagingMcpServer({ registry: messagingRegistry }))
+    : [];
   const schedulerHandle: { current: DynamicScheduler | undefined } = { current: undefined };
   const toolRegistry = new DynamicToolRegistry([
     () => museTools,
@@ -400,6 +409,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => calendarLoopbackTools,
     () => tasksLoopbackTools,
     () => tasksRegistryLoopbackTools,
+    () => messagingLoopbackTools,
     () => runnerTools,
     () => mcpManager.toMuseTools(),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
@@ -543,7 +553,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     ...(notesRegistry ? { notesProviderRegistry: notesRegistry } : {}),
     ...(tasksRegistry ? { tasksProviderRegistry: tasksRegistry } : {}),
     voice: buildVoiceRegistry(env),
-    messaging: buildMessagingRegistry(env)
+    messaging: messagingRegistry
   };
 }
 

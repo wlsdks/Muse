@@ -27,6 +27,15 @@ move from `Unreleased` to dated/versioned headings.
   plays through afplay/aplay. Falls back to a friendly stderr hint
   when no voice provider is configured. Shared playback helper
   (`voice-playback.ts`) ready for any future "speak this" surface.
+- **`muse.messaging.{providers, send}` MCP loopback tool** — Phase 3
+  of the messenger plan. Once any provider env token is set, the
+  agent runtime auto-registers a loopback MCP server so the LLM can
+  itself send Telegram / Discord / Slack / LINE messages
+  ("remind me on Telegram when the deploy finishes"). Send is
+  marked `risk: "write"` for the policy layer; structured errors
+  (`PROVIDER_NOT_FOUND`, validation, upstream failures) come back
+  as `{ error, providerErrorCode, upstreamStatus? }`. Catalog entry
+  is opt-in (requires one of the four env tokens).
 - **`@muse/messaging` package + `muse messaging {providers, send}` CLI**
   — Phase 1 (outbound) of the Telegram / Discord / Slack / LINE
   integration. Provider-neutral contract mirrors `@muse/calendar`

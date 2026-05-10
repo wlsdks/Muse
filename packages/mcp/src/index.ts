@@ -520,6 +520,14 @@ export {
   type TaskStatusFilter
 } from "./personal-tasks-store.js";
 
+// Outbound messaging loopback (Phase 3 of docs/design/messaging.md):
+// the LLM can call `muse.messaging.{providers, send}` once the user
+// has wired any provider via env tokens.
+export {
+  createMessagingMcpServer,
+  type MessagingMcpServerOptions
+} from "./loopback-messaging.js";
+
 // Context reference MCP server (round 167 — Context Engineering 1.d
 // foundation). `muse.context.fetch` / `muse.context.list` against an
 // in-process ContextReferenceStore.

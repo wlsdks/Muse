@@ -326,6 +326,9 @@ importers:
       '@muse/memory':
         specifier: workspace:*
         version: link:../memory
+      '@muse/messaging':
+        specifier: workspace:*
+        version: link:../messaging
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared

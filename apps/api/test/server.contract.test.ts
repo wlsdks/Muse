@@ -309,14 +309,20 @@ describe("api server: web contract + manifest", () => {
       readonly total: number;
       readonly servers: readonly { readonly name: string; readonly optIn: boolean; readonly tools: readonly { readonly name: string }[]; readonly toolCount: number; readonly requires?: readonly string[] }[];
     };
-    expect(body.total).toBe(10);
+    expect(body.total).toBe(11);
     const names = body.servers.map((entry) => entry.name).sort();
-    expect(names).toEqual(["muse.crypto", "muse.diff", "muse.fetch", "muse.fs", "muse.json", "muse.math", "muse.regex", "muse.text", "muse.time", "muse.url"]);
+    expect(names).toEqual([
+      "muse.crypto", "muse.diff", "muse.fetch", "muse.fs", "muse.json", "muse.math",
+      "muse.messaging", "muse.regex", "muse.text", "muse.time", "muse.url"
+    ]);
     const fs = body.servers.find((entry) => entry.name === "muse.fs")!;
     expect(fs.optIn).toBe(true);
     expect(fs.requires).toEqual(["allowedRoots (FilesystemMcpServerOptions.allowedRoots)"]);
     expect(fs.toolCount).toBe(3);
     expect(fs.tools.map((tool) => tool.name).sort()).toEqual(["list", "read", "stat"]);
+    const messaging = body.servers.find((entry) => entry.name === "muse.messaging")!;
+    expect(messaging.optIn).toBe(true);
+    expect(messaging.tools.map((tool) => tool.name).sort()).toEqual(["providers", "send"]);
     const time = body.servers.find((entry) => entry.name === "muse.time")!;
     expect(time.optIn).toBe(false);
     expect(time.requires).toBeUndefined();

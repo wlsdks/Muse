@@ -18,6 +18,7 @@ import {
   createFilesystemMcpServer,
   createJsonMcpServer,
   createMathMcpServer,
+  createMessagingMcpServer,
   createNotesMcpServer,
   createNotesRegistryMcpServer,
   createTasksMcpServer,
@@ -2422,5 +2423,78 @@ describe("muse.context loopback server (round 167)", () => {
     for (const entry of listed.refs) {
       expect((entry as { content?: string }).content).toBeUndefined();
     }
+  });
+});
+
+describe("muse.messaging loopback server", () => {
+  it("exposes providers + send tools backed by the registry", async () => {
+    const { MessagingProviderRegistry, TelegramProvider } = await import("@muse/messaging");
+    let seenUrl = "";
+    let seenBody = "";
+    const tg = new TelegramProvider({
+      baseUrl: "https://tg.test",
+      fetch: async (url, init) => {
+        seenUrl = String(url);
+        seenBody = String(init?.body);
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 });
+      },
+      token: "FAKE-TOKEN"
+    });
+    const registry = new MessagingProviderRegistry([tg]);
+    const server = createMessagingMcpServer({ registry });
+    const connection = createLoopbackMcpConnection(server);
+
+    const tools = await connection.listTools();
+    expect(tools.map((entry) => entry.name)).toEqual(expect.arrayContaining(["providers", "send"]));
+
+    const list = await connection.callTool!("providers", {});
+    expect(list).toMatchObject({ providers: [{ id: "telegram", displayName: "Telegram" }] });
+
+    const sent = await connection.callTool!("send", {
+      destination: "@me",
+      providerId: "telegram",
+      text: "hi"
+    });
+    expect(sent).toMatchObject({ destination: "@me", messageId: "42", providerId: "telegram" });
+    expect(seenUrl).toBe("https://tg.test/botFAKE-TOKEN/sendMessage");
+    expect(JSON.parse(seenBody)).toMatchObject({ chat_id: "@me", text: "hi" });
+  });
+
+  it("returns a structured error when the provider isn't registered", async () => {
+    const { MessagingProviderRegistry } = await import("@muse/messaging");
+    const server = createMessagingMcpServer({ registry: new MessagingProviderRegistry() });
+    const connection = createLoopbackMcpConnection(server);
+
+    const result = await connection.callTool!("send", {
+      destination: "x",
+      providerId: "telegram",
+      text: "hi"
+    });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("not registered"),
+      providerErrorCode: "PROVIDER_NOT_FOUND"
+    });
+  });
+
+  it("rejects empty input fields without calling the provider", async () => {
+    const { MessagingProviderRegistry, TelegramProvider } = await import("@muse/messaging");
+    let calls = 0;
+    const tg = new TelegramProvider({
+      fetch: async () => {
+        calls += 1;
+        return new Response("{}");
+      },
+      token: "x"
+    });
+    const server = createMessagingMcpServer({ registry: new MessagingProviderRegistry([tg]) });
+    const connection = createLoopbackMcpConnection(server);
+
+    await expect(connection.callTool!("send", { destination: "x", providerId: "telegram", text: "" }))
+      .resolves.toMatchObject({ error: expect.stringContaining("text is required") });
+    await expect(connection.callTool!("send", { destination: "", providerId: "telegram", text: "hi" }))
+      .resolves.toMatchObject({ error: expect.stringContaining("destination is required") });
+    await expect(connection.callTool!("send", { destination: "x", providerId: "", text: "hi" }))
+      .resolves.toMatchObject({ error: expect.stringContaining("providerId is required") });
+    expect(calls).toBe(0);
   });
 });

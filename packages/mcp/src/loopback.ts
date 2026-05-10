@@ -161,6 +161,10 @@ import {
 
 export { createFilesystemMcpServer, type FilesystemMcpServerOptions };
 
+import { MessagingProviderRegistry } from "@muse/messaging";
+
+import { createMessagingMcpServer } from "./loopback-messaging.js";
+
 export interface LoopbackMcpCatalogEntry {
   readonly name: string;
   readonly description: string;
@@ -190,6 +194,12 @@ export function describeBuiltinLoopbackMcpServers(): readonly LoopbackMcpCatalog
 
   const fetchServer = createFetchMcpServer({ allowedHosts: [] });
   const fsServer = createFilesystemMcpServer({ allowedRoots: [] });
+  // The messaging catalog entry is metadata-only — describe a placeholder
+  // server backed by an empty registry. The runtime only registers the
+  // real one when buildMessagingRegistry(env) returns at least one
+  // provider, so a zero-config user sees this entry but won't see the
+  // tools as callable until they set a token.
+  const messagingServer = createMessagingMcpServer({ registry: new MessagingProviderRegistry() });
 
   const optIn: readonly LoopbackMcpCatalogEntry[] = [
     {
@@ -209,6 +219,19 @@ export function describeBuiltinLoopbackMcpServers(): readonly LoopbackMcpCatalog
       optIn: true,
       requires: ["allowedRoots (FilesystemMcpServerOptions.allowedRoots)"],
       tools: fsServer.tools.map((tool) => ({
+        description: tool.description ?? "",
+        name: tool.name,
+        risk: tool.risk
+      }))
+    },
+    {
+      description: messagingServer.description ?? "",
+      name: messagingServer.name,
+      optIn: true,
+      requires: [
+        "MUSE_TELEGRAM_BOT_TOKEN | MUSE_DISCORD_BOT_TOKEN | MUSE_SLACK_BOT_TOKEN | MUSE_LINE_CHANNEL_ACCESS_TOKEN"
+      ],
+      tools: messagingServer.tools.map((tool) => ({
         description: tool.description ?? "",
         name: tool.name,
         risk: tool.risk
