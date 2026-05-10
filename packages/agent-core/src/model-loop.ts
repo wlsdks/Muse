@@ -23,7 +23,9 @@ import type {
   ModelResponse,
   ModelToolCall
 } from "@muse/model";
-import { trimToolOutput } from "@muse/memory";
+import { createHash } from "node:crypto";
+
+import { trimToolOutput, type ContextReferenceStore } from "@muse/memory";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import { renderToolResults } from "@muse/prompts";
 
@@ -53,6 +55,17 @@ export interface ModelLoopRunner {
    * text. 0 or undefined disables the cap.
    */
   readonly maxToolOutputChars?: number;
+  /**
+   * Optional ref store for just-in-time retrieval (round 168,
+   * Context Engineering step 1.d). When set AND `maxToolOutputChars`
+   * triggers a truncation, the full original output is stashed in
+   * the store under a sha256-prefix id and the truncation marker
+   * surfaces `ref=<id>` so the agent can call
+   * `muse.context.fetch({ ref })` to expand the elided bytes on
+   * demand. Same content → same ref (content-addressed) so repeated
+   * truncations of the same payload share storage.
+   */
+  readonly contextReferenceStore?: ContextReferenceStore;
   generateWithTracing(
     context: AgentRunContext,
     provider: ModelProvider,
@@ -129,7 +142,7 @@ export async function executeModelLoop(
       // output doesn't blow the context window. Original
       // executed.result.output is left intact for traces / metrics
       // — only the message-bound copy is truncated.
-      const messageContent = capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars);
+      const messageContent = capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars, runner.contextReferenceStore);
       toolMessages.push({
         content: messageContent,
         name: toolCall.name,
@@ -140,7 +153,7 @@ export async function executeModelLoop(
 
     const toolSummary = renderToolResults(
       toolResults
-        .map((item) => `${item.result.name}: ${capToolOutput(item.result.output, item.result.name, runner.maxToolOutputChars)}`)
+        .map((item) => `${item.result.name}: ${capToolOutput(item.result.output, item.result.name, runner.maxToolOutputChars, runner.contextReferenceStore)}`)
         .join("\n\n")
     );
     const nextMessages = [...messages, ...toolMessages];
@@ -219,7 +232,7 @@ export async function* executeStreamingModelLoop(
       // output doesn't blow the context window. Original
       // executed.result.output is left intact for traces / metrics
       // — only the message-bound copy is truncated.
-      const messageContent = capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars);
+      const messageContent = capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars, runner.contextReferenceStore);
       toolMessages.push({
         content: messageContent,
         name: toolCall.name,
@@ -230,7 +243,7 @@ export async function* executeStreamingModelLoop(
 
     const toolSummary = renderToolResults(
       toolResults
-        .map((item) => `${item.result.name}: ${capToolOutput(item.result.output, item.result.name, runner.maxToolOutputChars)}`)
+        .map((item) => `${item.result.name}: ${capToolOutput(item.result.output, item.result.name, runner.maxToolOutputChars, runner.contextReferenceStore)}`)
         .join("\n\n")
     );
     const nextMessages = [...messages, ...toolMessages];
@@ -330,12 +343,42 @@ async function* streamModelTurn(
  * marker. When `maxChars` is undefined or 0, the original
  * output passes through unchanged.
  */
-function capToolOutput(output: string, toolName: string, maxChars: number | undefined): string {
+export function capToolOutput(
+  output: string,
+  toolName: string,
+  maxChars: number | undefined,
+  refStore?: ContextReferenceStore
+): string {
   if (!maxChars || maxChars <= 0) {
     return output;
   }
-  return trimToolOutput(output, {
-    hint: `tool ${toolName} returned a larger result`,
-    maxChars
-  }).output;
+  // Round 168: when a ref store is configured, stash the full
+  // output BEFORE trimming and surface `ref=<id>` in the marker.
+  // Content-addressed via sha256 prefix so the same payload
+  // returned by repeated tool calls dedupes.
+  const ref = refStore && output.length > maxChars
+    ? putToolOutputRef(refStore, output, toolName)
+    : undefined;
+  const hint = ref
+    ? `tool ${toolName} returned a larger result; ref=${ref}, expand via muse.context.fetch({ ref })`
+    : `tool ${toolName} returned a larger result`;
+  return trimToolOutput(output, { hint, maxChars }).output;
+}
+
+function putToolOutputRef(
+  refStore: ContextReferenceStore,
+  output: string,
+  toolName: string
+): string {
+  // Short content-addressed id: 12 hex chars of sha256. Cheap
+  // collision risk acceptable here (in-process scratchpad, not a
+  // security boundary).
+  const id = createHash("sha256").update(output).digest("hex").slice(0, 12);
+  refStore.put({
+    content: output,
+    id,
+    originalLength: output.length,
+    source: toolName
+  });
+  return id;
 }

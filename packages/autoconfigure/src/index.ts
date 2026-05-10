@@ -54,6 +54,7 @@ import {
   McpManager,
   McpSecurityPolicyProvider,
   createCalendarMcpServer,
+  createContextReferenceMcpServer,
   createTasksMcpServer,
   createDefaultLoopbackMcpServers,
   createFetchMcpServer,
@@ -72,6 +73,7 @@ import {
 import {
   createUserMemoryAutoExtractHook,
   DEFAULT_WORKING_BUDGET_RATIO,
+  InMemoryContextReferenceStore,
   type ConversationSummaryStore,
   type TaskMemoryMaintenance,
   type TaskMemoryStore,
@@ -325,6 +327,17 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const runnerTools = createRunnerTools(env);
   const museTools = parseBoolean(env.MUSE_TOOLS_ENABLED, true) ? createMuseTools() : [];
   const loopbackMcpTools = createLoopbackMcpToolsFromEnv(env);
+  // Round 168: in-process ref store for just-in-time retrieval. Used
+  // by AgentRuntime's tool-output truncation to stash full content
+  // and surface ref=<id> in the marker; the agent fetches via the
+  // muse.context loopback server when the budget is worth it.
+  const contextReferenceStore = new InMemoryContextReferenceStore({
+    maxEntries: parseInteger(env.MUSE_CONTEXT_REF_MAX_ENTRIES, 1_000),
+    ttlMs: parseInteger(env.MUSE_CONTEXT_REF_TTL_MS, 30 * 60 * 1_000)
+  });
+  const contextReferenceLoopbackTools = createLoopbackMcpMuseTools(
+    createContextReferenceMcpServer({ store: contextReferenceStore })
+  );
   const notesDir = resolveNotesDir(env);
   ensureNotesDir(notesDir);
   const notesLoopbackTools = parseBoolean(env.MUSE_NOTES_ENABLED, true)
@@ -362,6 +375,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const toolRegistry = new DynamicToolRegistry([
     () => museTools,
     () => loopbackMcpTools,
+    () => contextReferenceLoopbackTools,
     () => notesLoopbackTools,
     () => notesRegistryLoopbackTools,
     () => calendarLoopbackTools,
@@ -386,6 +400,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       agentSpecResolver,
       cacheMetrics,
       circuitBreaker: circuitBreakerRegistry.get("model.generate"),
+      contextReferenceStore,
       contextWindow: (() => {
         // Working-budget compaction trigger (round 157 + 158): proactive
         // compaction at ~40% of nominal so quality stays high before the

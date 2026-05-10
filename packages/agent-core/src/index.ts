@@ -35,6 +35,7 @@ import type {
 } from "@muse/runtime-state";
 import {
   trimConversationMessages,
+  type ContextReferenceStore,
   type ConversationSummaryStore,
   type ConversationTrimOptions
 } from "@muse/memory";
@@ -204,6 +205,18 @@ export interface AgentRuntimeOptions {
    * cap (legacy behavior).
    */
   readonly maxToolOutputChars?: number;
+  /**
+   * Optional ContextReferenceStore for just-in-time retrieval
+   * (Context Engineering step 1.d, round 168). When provided AND a
+   * tool result triggers truncation, the full original output is
+   * stashed in the store under a sha256-prefix id and the
+   * truncation marker surfaces `ref=<id>` so the agent can call
+   * `muse.context.fetch({ ref })` to expand on demand. Same
+   * content → same ref so repeated truncations dedupe. When
+   * undefined, truncation behaves exactly as it did in round 161
+   * (head+tail+marker, no ref).
+   */
+  readonly contextReferenceStore?: ContextReferenceStore;
   readonly circuitBreaker?: CircuitBreaker;
   readonly fallbackStrategy?: FallbackStrategy;
   readonly retry?: RetryOptions;
@@ -307,6 +320,7 @@ export class AgentRuntime {
   private readonly toolExposurePolicy?: ToolExposurePolicy;
   private readonly maxToolCalls: number;
   private readonly maxToolOutputChars: number;
+  private readonly contextReferenceStore?: ContextReferenceStore;
   private readonly circuitBreaker?: CircuitBreaker;
   private readonly fallbackStrategy?: FallbackStrategy;
   private readonly retry?: RetryOptions;
@@ -348,6 +362,9 @@ export class AgentRuntime {
         : undefined);
     this.maxToolCalls = Math.max(0, options.maxToolCalls ?? 10);
     this.maxToolOutputChars = Math.max(0, options.maxToolOutputChars ?? 0);
+    if (options.contextReferenceStore) {
+      this.contextReferenceStore = options.contextReferenceStore;
+    }
     this.circuitBreaker = options.circuitBreaker;
     this.fallbackStrategy = options.fallbackStrategy;
     this.retry = options.retry;
@@ -763,6 +780,7 @@ export class AgentRuntime {
       generateWithTracing: (context, provider, request) => this.generateWithTracing(context, provider, request),
       maxToolCalls: this.maxToolCalls,
       maxToolOutputChars: this.maxToolOutputChars,
+      ...(this.contextReferenceStore ? { contextReferenceStore: this.contextReferenceStore } : {}),
       metrics: this.metrics,
       tokenUsageSink: this.tokenUsageSink,
       tracer: this.tracer
