@@ -1,0 +1,229 @@
+/**
+ * Human-readable formatters for the personal-domain CLI commands.
+ *
+ * Default rendering when the user hasn't asked for `--json`. Mirrors
+ * the style `muse today` already uses: short header, two-space
+ * indentation, `[id-prefix]` labels, ISO timestamps trimmed to the
+ * useful slice. ASCII only (no emojis — see CLAUDE.md).
+ *
+ * Each helper returns the full string ending in `\n` so the call
+ * site can `io.stdout(formatted)` directly.
+ */
+
+interface HumanTaskRow {
+  readonly id: string;
+  readonly title: string;
+  readonly status?: string;
+  readonly dueAt?: string;
+  readonly completedAt?: string;
+  readonly tags?: readonly string[];
+}
+
+export function formatTaskList(payload: { tasks: readonly HumanTaskRow[]; status?: string; total?: number }): string {
+  const tasks = payload.tasks;
+  const status = payload.status ?? "open";
+  if (tasks.length === 0) {
+    return `Tasks (${status}): (none)\n`;
+  }
+  const header = `Tasks (${tasks.length} ${status}):\n`;
+  const lines = tasks.map((task) => formatTaskRow(task));
+  return `${header}${lines.join("\n")}\n`;
+}
+
+export function formatTaskAdded(task: HumanTaskRow): string {
+  const dueLabel = task.dueAt ? `, due ${shortDateTime(task.dueAt)}` : "";
+  return `Added [${shortId(task.id)}] ${task.title}${dueLabel}\n`;
+}
+
+export function formatTaskCompleted(task: HumanTaskRow): string {
+  return `Completed [${shortId(task.id)}] ${task.title}\n`;
+}
+
+export function formatProvidersList(label: string, providers: ReadonlyArray<{
+  readonly id: string;
+  readonly local?: boolean;
+  readonly displayName?: string;
+  readonly description?: string;
+}>): string {
+  if (providers.length === 0) {
+    return `${label}: (none configured)\n`;
+  }
+  const header = `${label} (${providers.length}):\n`;
+  const lines = providers.map((provider) => {
+    const name = provider.displayName ?? provider.id;
+    const localBadge = provider.local ? " [local]" : "";
+    return `  - ${provider.id}${localBadge} — ${name}`;
+  });
+  return `${header}${lines.join("\n")}\n`;
+}
+
+interface HumanNoteListEntry {
+  readonly name: string;
+  readonly isDirectory: boolean;
+  readonly sizeBytes?: number;
+}
+
+export function formatNotesList(payload: { dir: string; entries: readonly HumanNoteListEntry[]; truncated?: boolean }): string {
+  const dirLabel = payload.dir.length > 0 ? payload.dir : "(notes root)";
+  if (payload.entries.length === 0) {
+    return `${dirLabel}: (empty)\n`;
+  }
+  const header = `${dirLabel}:\n`;
+  const lines = payload.entries.map((entry) => {
+    if (entry.isDirectory) {
+      return `  ${entry.name}/`;
+    }
+    const size = typeof entry.sizeBytes === "number" ? ` (${formatBytes(entry.sizeBytes)})` : "";
+    return `  ${entry.name}${size}`;
+  });
+  const tail = payload.truncated ? "\n  ... (truncated)" : "";
+  return `${header}${lines.join("\n")}${tail}\n`;
+}
+
+export function formatNoteRead(payload: { content: string }): string {
+  return payload.content.endsWith("\n") ? payload.content : `${payload.content}\n`;
+}
+
+export function formatNoteSearch(payload: { matches: readonly { path: string; line: number; snippet: string }[] }): string {
+  if (payload.matches.length === 0) {
+    return "No matches.\n";
+  }
+  const lines = payload.matches.map((match) => `${match.path}:${match.line}: ${match.snippet}`);
+  return `${lines.join("\n")}\n`;
+}
+
+export function formatNoteSaved(payload: { path: string; sizeBytes?: number; created?: boolean }): string {
+  const verb = payload.created ? "Created" : "Updated";
+  const size = typeof payload.sizeBytes === "number" ? ` (${formatBytes(payload.sizeBytes)})` : "";
+  return `${verb} ${payload.path}${size}\n`;
+}
+
+export function formatNoteAppended(payload: { path: string; sizeBytes?: number }): string {
+  const size = typeof payload.sizeBytes === "number" ? ` (now ${formatBytes(payload.sizeBytes)})` : "";
+  return `Appended to ${payload.path}${size}\n`;
+}
+
+interface HumanCalendarEvent {
+  readonly id: string;
+  readonly title: string;
+  readonly startsAtIso: string;
+  readonly endsAtIso?: string;
+  readonly location?: string;
+  readonly providerId?: string;
+}
+
+export function formatCalendarEvents(payload: { events: readonly HumanCalendarEvent[]; total?: number }): string {
+  if (payload.events.length === 0) {
+    return "Calendar: (no events in window)\n";
+  }
+  const groups = new Map<string, HumanCalendarEvent[]>();
+  for (const event of payload.events) {
+    const day = event.startsAtIso.slice(0, 10);
+    const bucket = groups.get(day);
+    if (bucket) {
+      bucket.push(event);
+    } else {
+      groups.set(day, [event]);
+    }
+  }
+  const lines: string[] = [];
+  for (const [day, events] of groups) {
+    lines.push(`${day}`);
+    for (const event of events) {
+      const time = event.startsAtIso.slice(11, 16);
+      const end = event.endsAtIso ? `–${event.endsAtIso.slice(11, 16)}` : "";
+      const where = event.location ? `  @ ${event.location}` : "";
+      const provider = event.providerId ? ` (${event.providerId})` : "";
+      lines.push(`  ${time}${end}  ${event.title}${where}${provider}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+interface HumanMemoryRecord {
+  readonly userId?: string;
+  readonly facts?: Record<string, string> | ReadonlyArray<{ readonly key: string; readonly value: string }>;
+  readonly preferences?: Record<string, string> | ReadonlyArray<{ readonly key: string; readonly value: string }>;
+  readonly recentTopics?: readonly string[];
+}
+
+export function formatMemoryShow(record: HumanMemoryRecord | undefined | null): string {
+  if (!record) {
+    return "User memory: (empty)\n";
+  }
+  const lines: string[] = [`User memory${record.userId ? ` (${record.userId})` : ""}:`];
+  appendKeyValueSection(lines, "Facts", record.facts);
+  appendKeyValueSection(lines, "Preferences", record.preferences);
+  if (record.recentTopics && record.recentTopics.length > 0) {
+    lines.push("  Recent topics:");
+    for (const topic of record.recentTopics) {
+      lines.push(`    - ${topic}`);
+    }
+  }
+  if (lines.length === 1) {
+    lines.push("  (empty)");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function appendKeyValueSection(
+  lines: string[],
+  label: string,
+  source: HumanMemoryRecord["facts"]
+): void {
+  if (!source) {
+    return;
+  }
+  const entries = normalizeKeyValue(source);
+  if (entries.length === 0) {
+    return;
+  }
+  lines.push(`  ${label}:`);
+  for (const entry of entries) {
+    lines.push(`    ${entry.key}: ${entry.value}`);
+  }
+}
+
+function normalizeKeyValue(
+  source: NonNullable<HumanMemoryRecord["facts"]>
+): readonly { key: string; value: string }[] {
+  if (Array.isArray(source)) {
+    return source.map((entry) => ({ key: entry.key, value: entry.value }));
+  }
+  const record = source as Record<string, string>;
+  return Object.entries(record).map(([key, value]) => ({ key, value: String(value) }));
+}
+
+function formatTaskRow(task: HumanTaskRow): string {
+  const idTag = `[${shortId(task.id)}]`;
+  const statusBadge = task.status === "done" ? " (done)" : "";
+  const dueLabel = task.dueAt ? `  due ${shortDateTime(task.dueAt)}` : "";
+  const tagsLabel = task.tags && task.tags.length > 0 ? `  #${task.tags.join(" #")}` : "";
+  return `  - ${idTag} ${task.title}${statusBadge}${dueLabel}${tagsLabel}`;
+}
+
+function shortId(id: string): string {
+  return id.length > 12 ? id.slice(0, 12) : id;
+}
+
+/**
+ * `2026-05-11T09:00:00.000Z` → `2026-05-11 09:00`.
+ * Drops timezone for visual brevity; consumers that need precision
+ * pass `--json`.
+ */
+function shortDateTime(iso: string): string {
+  if (iso.length < 16) {
+    return iso;
+  }
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes}B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)}KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}

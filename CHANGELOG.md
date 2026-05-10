@@ -28,6 +28,17 @@ move from `Unreleased` to dated/versioned headings.
   the entrypoint catches uncaught failures so users see
   `muse: <message>` exit 1 instead of an undici stack.
 
+### Changed
+
+- **CLI personal-domain commands print human-readable output by
+  default**; pass `--json` to opt back into the raw API response
+  for scripting. Affected: `tasks list/add/complete/delete/providers`,
+  `notes list/read/search/save/append/providers`, `calendar
+  events/providers`, `memory show/set`. `today` already worked this
+  way and was the model for the rest. `notes read` now prints the
+  file content directly (no more JSON envelope) so the obvious
+  pipe `muse notes read foo.md | less` works without `jq`.
+
 ### Added
 
 - **`--local` mode for `muse tasks`, `muse notes`, `muse today`** —

@@ -1,21 +1,24 @@
 /**
- * `muse notes` command group — last leg of the personal-domain CLI
- * trio. Wraps `/api/notes/*` for remote mode and the in-process
- * `createNotesMcpServer` (same engine the API uses) for `--local`
- * mode so the CLI works without an API server.
+ * `muse notes` command group. Wraps `/api/notes/*` for remote mode
+ * and the in-process `createNotesMcpServer` (same engine the API
+ * uses) for `--local` mode so the CLI works without an API server.
  *
- * Five subcommands match the underlying tool surface:
- *   - `muse notes list [--subdir <path>]`
- *   - `muse notes read <path>`
- *   - `muse notes search <query...> [--limit <n>]`
- *   - `muse notes save <path> <content...> [--overwrite]`
- *   - `muse notes append <path> <content...>`
+ * Output: human-readable by default; `--json` opts into the raw
+ * envelope for scripting.
  */
 
 import { resolveNotesDir } from "@muse/autoconfigure";
 import { createNotesMcpServer } from "@muse/mcp";
 import type { Command } from "commander";
 
+import {
+  formatNoteAppended,
+  formatNoteRead,
+  formatNoteSaved,
+  formatNoteSearch,
+  formatNotesList,
+  formatProvidersList
+} from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 
 export interface NotesCommandHelpers {
@@ -29,8 +32,9 @@ export interface NotesCommandHelpers {
   readonly writeOutput: (io: ProgramIO, value: unknown, textField?: string) => void;
 }
 
-interface LocalOption {
+interface SharedOptions {
   readonly local?: boolean;
+  readonly json?: boolean;
 }
 
 async function callLocalTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -56,9 +60,16 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
 
   notes
     .command("providers")
-    .description("GET /api/notes/providers — list configured notes backends")
-    .action(async (_options, command) => {
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, "/api/notes/providers"));
+    .description("List configured notes backends")
+    .option("--json", "Print the raw API response instead of the formatted list")
+    .action(async (options: { readonly json?: boolean }, command) => {
+      const result = await helpers.apiRequest(io, command, "/api/notes/providers");
+      if (options.json) {
+        helpers.writeOutput(io, result);
+        return;
+      }
+      const providers = (result as { providers?: Parameters<typeof formatProvidersList>[1] })?.providers ?? [];
+      io.stdout(formatProvidersList("Notes providers", providers));
     });
 
   notes
@@ -66,16 +77,23 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
     .description("List notes directory entries (--local skips the API)")
     .option("--subdir <path>", "Subdirectory relative to the notes root")
     .option("--local", "Read directly from the local notes directory instead of the API")
-    .action(async (options: { readonly subdir?: string } & LocalOption, command) => {
+    .option("--json", "Print the raw API response instead of the formatted list")
+    .action(async (options: { readonly subdir?: string } & SharedOptions, command) => {
+      let payload: Record<string, unknown>;
       if (options.local) {
         const args: Record<string, unknown> = options.subdir ? { subdir: options.subdir } : {};
-        helpers.writeOutput(io, await callLocalTool("list", args));
+        payload = await callLocalTool("list", args);
+      } else {
+        const path = options.subdir
+          ? `/api/notes/list?subdir=${encodeURIComponent(options.subdir)}`
+          : "/api/notes/list";
+        payload = (await helpers.apiRequest(io, command, path)) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
         return;
       }
-      const path = options.subdir
-        ? `/api/notes/list?subdir=${encodeURIComponent(options.subdir)}`
-        : "/api/notes/list";
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, path));
+      io.stdout(formatNotesList(payload as unknown as Parameters<typeof formatNotesList>[0]));
     });
 
   notes
@@ -83,13 +101,20 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
     .description("Read a note as UTF-8 (--local skips the API)")
     .argument("<path>", "Note path relative to the notes root")
     .option("--local", "Read directly from the local notes directory instead of the API")
-    .action(async (notePath: string, options: LocalOption, command) => {
+    .option("--json", "Print the raw API response instead of just the file content")
+    .action(async (notePath: string, options: SharedOptions, command) => {
+      let payload: Record<string, unknown>;
       if (options.local) {
-        helpers.writeOutput(io, await callLocalTool("read", { path: notePath }));
+        payload = await callLocalTool("read", { path: notePath });
+      } else {
+        const url = `/api/notes/read?path=${encodeURIComponent(notePath)}`;
+        payload = (await helpers.apiRequest(io, command, url)) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
         return;
       }
-      const url = `/api/notes/read?path=${encodeURIComponent(notePath)}`;
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, url));
+      io.stdout(formatNoteRead(payload as unknown as Parameters<typeof formatNoteRead>[0]));
     });
 
   notes
@@ -98,15 +123,17 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
     .argument("<query...>", "Substring to grep for (joined by spaces)")
     .option("--limit <n>", "Max matches (default 20)")
     .option("--local", "Search the local notes directory instead of the API")
+    .option("--json", "Print the raw API response instead of grep-style lines")
     .action(async (
       queryParts: readonly string[],
-      options: { readonly limit?: string } & LocalOption,
+      options: { readonly limit?: string } & SharedOptions,
       command
     ) => {
       const query = queryParts.join(" ").trim();
       if (query.length === 0) {
         throw new Error("query is required");
       }
+      let payload: Record<string, unknown>;
       if (options.local) {
         const args: Record<string, unknown> = { query };
         if (options.limit && options.limit.length > 0) {
@@ -115,14 +142,19 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
             args.limit = parsed;
           }
         }
-        helpers.writeOutput(io, await callLocalTool("search", args));
+        payload = await callLocalTool("search", args);
+      } else {
+        const params = new URLSearchParams({ query });
+        if (options.limit && options.limit.length > 0) {
+          params.set("limit", options.limit);
+        }
+        payload = (await helpers.apiRequest(io, command, `/api/notes/search?${params.toString()}`)) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
         return;
       }
-      const params = new URLSearchParams({ query });
-      if (options.limit && options.limit.length > 0) {
-        params.set("limit", options.limit);
-      }
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, `/api/notes/search?${params.toString()}`));
+      io.stdout(formatNoteSearch(payload as unknown as Parameters<typeof formatNoteSearch>[0]));
     });
 
   notes
@@ -132,26 +164,33 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
     .argument("<content...>", "UTF-8 file contents (joined by spaces)")
     .option("--overwrite", "Replace an existing note in place")
     .option("--local", "Write directly to the local notes directory instead of the API")
+    .option("--json", "Print the raw response instead of a short confirmation")
     .action(async (
       notePath: string,
       contentParts: readonly string[],
-      options: { readonly overwrite?: boolean } & LocalOption,
+      options: { readonly overwrite?: boolean } & SharedOptions,
       command
     ) => {
       const content = contentParts.join(" ");
+      let payload: Record<string, unknown>;
       if (options.local) {
         const args: Record<string, unknown> = { content, path: notePath };
         if (options.overwrite === true) {
           args.overwrite = true;
         }
-        helpers.writeOutput(io, await callLocalTool("save", args));
+        payload = await callLocalTool("save", args);
+      } else {
+        const body: Record<string, unknown> = { content, path: notePath };
+        if (options.overwrite === true) {
+          body.overwrite = true;
+        }
+        payload = (await helpers.apiRequest(io, command, "/api/notes/save", body, "POST")) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
         return;
       }
-      const body: Record<string, unknown> = { content, path: notePath };
-      if (options.overwrite === true) {
-        body.overwrite = true;
-      }
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, "/api/notes/save", body, "POST"));
+      io.stdout(formatNoteSaved(payload as unknown as Parameters<typeof formatNoteSaved>[0]));
     });
 
   notes
@@ -160,17 +199,24 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
     .argument("<path>", "Note path relative to the notes root")
     .argument("<content...>", "UTF-8 text to append (joined by spaces)")
     .option("--local", "Append directly in the local notes directory instead of the API")
+    .option("--json", "Print the raw response instead of a short confirmation")
     .action(async (
       notePath: string,
       contentParts: readonly string[],
-      options: LocalOption,
+      options: SharedOptions,
       command
     ) => {
       const content = contentParts.join(" ");
+      let payload: Record<string, unknown>;
       if (options.local) {
-        helpers.writeOutput(io, await callLocalTool("append", { content, path: notePath }));
+        payload = await callLocalTool("append", { content, path: notePath });
+      } else {
+        payload = (await helpers.apiRequest(io, command, "/api/notes/append", { content, path: notePath }, "POST")) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
         return;
       }
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, "/api/notes/append", { content, path: notePath }, "POST"));
+      io.stdout(formatNoteAppended(payload as unknown as Parameters<typeof formatNoteAppended>[0]));
     });
 }

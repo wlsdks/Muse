@@ -1664,7 +1664,7 @@ describe("cli program", () => {
         fetch: async () => { throw new Error("fetch must not be called in --local mode"); }
       });
       await program1.parseAsync(
-        ["node", "muse", "tasks", "add", "Local round-trip", "--due", "2026-12-31T23:59:00Z", "--local"],
+        ["node", "muse", "tasks", "add", "Local round-trip", "--due", "2026-12-31T23:59:00Z", "--local", "--json"],
         { from: "node" }
       );
       const created = JSON.parse(output1.join("")) as { id: string; dueAt: string; title: string };
@@ -1673,7 +1673,7 @@ describe("cli program", () => {
 
       const { io: io2, output: output2 } = captureOutput();
       const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("fetch in --local"); } });
-      await program2.parseAsync(["node", "muse", "tasks", "list", "--local"], { from: "node" });
+      await program2.parseAsync(["node", "muse", "tasks", "list", "--local", "--json"], { from: "node" });
       const listed = JSON.parse(output2.join("")) as { tasks: Array<{ id: string; title: string }>; total: number };
       expect(listed.total).toBe(1);
       expect(listed.tasks[0]?.id).toBe(created.id);
@@ -1688,7 +1688,7 @@ describe("cli program", () => {
 
       const { io: io5, output: output5 } = captureOutput();
       const program5 = createProgram({ ...io5, fetch: async () => { throw new Error("fetch in --local"); } });
-      await program5.parseAsync(["node", "muse", "tasks", "list", "--status", "all", "--local"], { from: "node" });
+      await program5.parseAsync(["node", "muse", "tasks", "list", "--status", "all", "--local", "--json"], { from: "node" });
       const after = JSON.parse(output5.join("")) as { total: number };
       expect(after.total).toBe(0);
     } finally {
@@ -1717,14 +1717,14 @@ describe("cli program", () => {
 
       const { io: io2, output: output2 } = captureOutput();
       const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("fetch in --local"); } });
-      await program2.parseAsync(["node", "muse", "notes", "read", "daily/2026-05-10.md", "--local"], { from: "node" });
+      await program2.parseAsync(["node", "muse", "notes", "read", "daily/2026-05-10.md", "--local", "--json"], { from: "node" });
       const read = JSON.parse(output2.join("")) as { content: string; path: string };
       expect(read.content).toBe("Hello from local mode");
       expect(read.path).toBe("daily/2026-05-10.md");
 
       const { io: io3, output: output3 } = captureOutput();
       const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("fetch in --local"); } });
-      await program3.parseAsync(["node", "muse", "notes", "search", "local", "mode", "--local"], { from: "node" });
+      await program3.parseAsync(["node", "muse", "notes", "search", "local", "mode", "--local", "--json"], { from: "node" });
       const found = JSON.parse(output3.join("")) as { matches: Array<{ path: string; line: number }> };
       expect(found.matches.length).toBeGreaterThan(0);
       expect(found.matches[0]?.path).toBe("daily/2026-05-10.md");
@@ -1765,6 +1765,70 @@ describe("cli program", () => {
     } finally {
       if (prevTasks === undefined) { delete process.env.MUSE_TASKS_FILE; } else { process.env.MUSE_TASKS_FILE = prevTasks; }
       if (prevNotes === undefined) { delete process.env.MUSE_NOTES_DIR; } else { process.env.MUSE_NOTES_DIR = prevNotes; }
+    }
+  });
+
+  it("tasks list defaults to a human-readable list and --json opts back into raw", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-tasks-human-"));
+    const prev = process.env.MUSE_TASKS_FILE;
+    process.env.MUSE_TASKS_FILE = path.join(root, "tasks.json");
+    try {
+      const seedIo = captureOutput();
+      const seed = createProgram({ ...seedIo.io, fetch: async () => { throw new Error("local"); } });
+      await seed.parseAsync(
+        ["node", "muse", "tasks", "add", "Buy milk", "--tags", "shopping,today", "--due", "2026-12-31T23:59:00Z", "--local"],
+        { from: "node" }
+      );
+      const addedText = seedIo.output.join("");
+      expect(addedText).toMatch(/^Added \[task_/u);
+      expect(addedText).toContain("Buy milk");
+      expect(addedText).toContain("due 2026-12-31 23:59");
+
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("local"); } });
+      await program.parseAsync(["node", "muse", "tasks", "list", "--local"], { from: "node" });
+      const listed = output.join("");
+      expect(listed).toMatch(/^Tasks \(1 open\):/u);
+      expect(listed).toContain("Buy milk");
+      expect(listed).toContain("#shopping #today");
+
+      const { io: io2, output: output2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("local"); } });
+      await program2.parseAsync(["node", "muse", "tasks", "list", "--local", "--json"], { from: "node" });
+      const parsed = JSON.parse(output2.join("")) as { tasks: unknown[]; total: number };
+      expect(parsed.total).toBe(1);
+      expect(Array.isArray(parsed.tasks)).toBe(true);
+    } finally {
+      if (prev === undefined) { delete process.env.MUSE_TASKS_FILE; } else { process.env.MUSE_TASKS_FILE = prev; }
+    }
+  });
+
+  it("notes read prints the file content directly by default and --json restores the envelope", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-notes-human-"));
+    const prev = process.env.MUSE_NOTES_DIR;
+    process.env.MUSE_NOTES_DIR = root;
+    try {
+      const { io: ioSave } = captureOutput();
+      const seed = createProgram({ ...ioSave, fetch: async () => { throw new Error("local"); } });
+      await seed.parseAsync(
+        ["node", "muse", "notes", "save", "hello.md", "first line", "--local"],
+        { from: "node" }
+      );
+
+      const { io: ioRead, output: outRead } = captureOutput();
+      const program = createProgram({ ...ioRead, fetch: async () => { throw new Error("local"); } });
+      await program.parseAsync(["node", "muse", "notes", "read", "hello.md", "--local"], { from: "node" });
+      const printed = outRead.join("");
+      expect(printed.trimEnd()).toBe("first line");
+
+      const { io: ioJson, output: outJson } = captureOutput();
+      const program2 = createProgram({ ...ioJson, fetch: async () => { throw new Error("local"); } });
+      await program2.parseAsync(["node", "muse", "notes", "read", "hello.md", "--local", "--json"], { from: "node" });
+      const envelope = JSON.parse(outJson.join("")) as { content: string; path: string };
+      expect(envelope.path).toBe("hello.md");
+      expect(envelope.content).toBe("first line");
+    } finally {
+      if (prev === undefined) { delete process.env.MUSE_NOTES_DIR; } else { process.env.MUSE_NOTES_DIR = prev; }
     }
   });
 });

@@ -1,24 +1,22 @@
 /**
- * `muse memory` command group, extracted-style.
+ * `muse memory` command group.
  *
  * Wraps the personal-user-memory CRUD on `/api/user-memory/:userId`:
  *
- *   - `muse memory show` — GET, prints facts / preferences / recentTopics
+ *   - `muse memory show` — GET, prints facts / preferences / recent topics
  *   - `muse memory set <kind> <key> <value>` — PUT a fact or preference
  *     (kind = "fact" | "preference")
  *   - `muse memory clear` — DELETE the user-memory record
  *
- * In personal-use mode (auth disabled) the server accepts any
- * non-`anonymous` userId, so the CLI defaults to `me` and a
- * `--user <userId>` flag can override when running with auth.
- *
- * Same DI injection pattern as the other CLI command modules:
- * helpers come in via the parent `program.ts` so this module stays
- * stateless.
+ * Output is human-readable by default; `--json` opts into the raw
+ * API response. In personal-use mode (auth disabled) the server
+ * accepts any non-`anonymous` userId, so the CLI defaults to `me`
+ * and a `--user <userId>` flag can override when running with auth.
  */
 
 import type { Command } from "commander";
 
+import { formatMemoryShow } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 
 export interface MemoryCommandHelpers {
@@ -37,35 +35,48 @@ export function registerMemoryCommands(program: Command, io: ProgramIO, helpers:
 
   memory
     .command("show")
-    .description("GET /api/user-memory/<user> — print stored facts, preferences, recent topics")
+    .description("Print stored facts, preferences, and recent topics")
     .option("--user <userId>", "User id to read (default: me)", "me")
-    .action(async (options: { readonly user: string }, command) => {
+    .option("--json", "Print the raw API response instead of the formatted summary")
+    .action(async (options: { readonly user: string; readonly json?: boolean }, command) => {
       const path = `/api/user-memory/${encodeURIComponent(options.user)}`;
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, path));
+      const result = await helpers.apiRequest(io, command, path);
+      if (options.json) {
+        helpers.writeOutput(io, result);
+        return;
+      }
+      const merged = { userId: options.user, ...((result as Record<string, unknown>) ?? {}) };
+      io.stdout(formatMemoryShow(merged as unknown as Parameters<typeof formatMemoryShow>[0]));
     });
 
   memory
     .command("set")
-    .description("PUT /api/user-memory/<user>/{facts|preferences} — store a key/value entry")
+    .description("Store a fact or preference key/value entry")
     .argument("<kind>", "Entry kind: 'fact' or 'preference'")
     .argument("<key>", "Memory key (e.g. timezone)")
     .argument("<value>", "Memory value")
     .option("--user <userId>", "User id to write (default: me)", "me")
+    .option("--json", "Print the raw API response instead of a short confirmation")
     .action(async (
       kind: string,
       key: string,
       value: string,
-      options: { readonly user: string },
+      options: { readonly user: string; readonly json?: boolean },
       command
     ) => {
       const segment = parseKindSegment(kind);
       const path = `/api/user-memory/${encodeURIComponent(options.user)}/${segment}`;
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, path, { key, value }, "PUT"));
+      const result = await helpers.apiRequest(io, command, path, { key, value }, "PUT");
+      if (options.json) {
+        helpers.writeOutput(io, result);
+        return;
+      }
+      io.stdout(`Set ${segment.slice(0, -1)} ${key} = ${value}\n`);
     });
 
   memory
     .command("clear")
-    .description("DELETE /api/user-memory/<user> — wipe stored memory for this user")
+    .description("Wipe stored memory for this user")
     .option("--user <userId>", "User id to clear (default: me)", "me")
     .action(async (options: { readonly user: string }, command) => {
       const path = `/api/user-memory/${encodeURIComponent(options.user)}`;

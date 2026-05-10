@@ -6,6 +6,9 @@
  * CLI works without an API server. Both surfaces speak the same
  * on-disk format, so a `--local` write is visible to the API on the
  * next request and vice versa.
+ *
+ * Output: human-readable by default; `--json` opts back into the raw
+ * API response for scripting.
  */
 
 import { randomUUID } from "node:crypto";
@@ -21,6 +24,12 @@ import {
 } from "@muse/mcp";
 import type { Command } from "commander";
 
+import {
+  formatProvidersList,
+  formatTaskAdded,
+  formatTaskCompleted,
+  formatTaskList
+} from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 
 export interface TasksCommandHelpers {
@@ -34,8 +43,9 @@ export interface TasksCommandHelpers {
   readonly writeOutput: (io: ProgramIO, value: unknown, textField?: string) => void;
 }
 
-interface LocalOption {
+interface SharedOptions {
   readonly local?: boolean;
+  readonly json?: boolean;
 }
 
 function localTasksFile(): string {
@@ -47,9 +57,16 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
 
   tasks
     .command("providers")
-    .description("GET /api/tasks/providers — list configured tasks backends")
-    .action(async (_options, command) => {
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, "/api/tasks/providers"));
+    .description("List configured tasks backends")
+    .option("--json", "Print the raw API response instead of the formatted list")
+    .action(async (options: { readonly json?: boolean }, command) => {
+      const result = await helpers.apiRequest(io, command, "/api/tasks/providers");
+      if (options.json) {
+        helpers.writeOutput(io, result);
+        return;
+      }
+      const providers = (result as { providers?: Parameters<typeof formatProvidersList>[1] })?.providers ?? [];
+      io.stdout(formatProvidersList("Tasks providers", providers));
     });
 
   tasks
@@ -57,7 +74,9 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .description("List tasks newest-first, filter by status (--local skips the API)")
     .option("--status <status>", "Status filter: open (default), done, or all", "open")
     .option("--local", "Read directly from the local tasks file instead of the API")
-    .action(async (options: { readonly status: string } & LocalOption, command) => {
+    .option("--json", "Print the raw API response instead of the formatted list")
+    .action(async (options: { readonly status: string } & SharedOptions, command) => {
+      let payload: { status: string; tasks: readonly Record<string, unknown>[]; total: number };
       if (options.local) {
         const file = localTasksFile();
         const status = readTaskStatusFilter(options.status);
@@ -65,11 +84,20 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         const filtered = all
           .filter((task) => status === "all" || task.status === status)
           .sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
-        helpers.writeOutput(io, { status, tasks: filtered.map(serializeTask), total: filtered.length });
+        payload = { status, tasks: filtered.map(serializeTask), total: filtered.length };
+      } else {
+        const path = `/api/tasks?status=${encodeURIComponent(options.status)}`;
+        payload = (await helpers.apiRequest(io, command, path)) as typeof payload;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
         return;
       }
-      const path = `/api/tasks?status=${encodeURIComponent(options.status)}`;
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, path));
+      io.stdout(formatTaskList({
+        status: payload.status,
+        tasks: payload.tasks as unknown as Parameters<typeof formatTaskList>[0]["tasks"],
+        total: payload.total
+      }));
     });
 
   tasks
@@ -83,9 +111,10 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       "Due date: ISO-8601 (2026-05-15T18:00Z) or relative phrase ('tomorrow at 6pm', 'in 3 hours', 'next Monday')"
     )
     .option("--local", "Write directly to the local tasks file instead of the API")
+    .option("--json", "Print the raw response instead of a short confirmation")
     .action(async (
       titleParts: readonly string[],
-      options: { readonly notes?: string; readonly tags?: string; readonly due?: string } & LocalOption,
+      options: { readonly notes?: string; readonly tags?: string; readonly due?: string } & SharedOptions,
       command
     ) => {
       const title = titleParts.join(" ").trim();
@@ -96,6 +125,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         ? options.tags.split(",").map((tag) => tag.trim()).filter((tag) => tag.length > 0)
         : undefined;
 
+      let created: Record<string, unknown>;
       if (options.local) {
         const file = localTasksFile();
         let dueAt: string | undefined;
@@ -106,7 +136,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
           }
           dueAt = parsed;
         }
-        const created: PersistedTask = {
+        const persisted: PersistedTask = {
           createdAt: new Date().toISOString(),
           id: `task_${randomUUID()}`,
           status: "open",
@@ -116,22 +146,26 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
           ...(dueAt ? { dueAt } : {})
         };
         const existing = await readTasks(file);
-        await writeTasks(file, [...existing, created]);
-        helpers.writeOutput(io, serializeTask(created));
+        await writeTasks(file, [...existing, persisted]);
+        created = serializeTask(persisted);
+      } else {
+        const body: Record<string, unknown> = { title };
+        if (options.notes && options.notes.length > 0) {
+          body.notes = options.notes;
+        }
+        if (tags && tags.length > 0) {
+          body.tags = tags;
+        }
+        if (options.due && options.due.trim().length > 0) {
+          body.dueAt = options.due.trim();
+        }
+        created = (await helpers.apiRequest(io, command, "/api/tasks", body, "POST")) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, created);
         return;
       }
-
-      const body: Record<string, unknown> = { title };
-      if (options.notes && options.notes.length > 0) {
-        body.notes = options.notes;
-      }
-      if (tags && tags.length > 0) {
-        body.tags = tags;
-      }
-      if (options.due && options.due.trim().length > 0) {
-        body.dueAt = options.due.trim();
-      }
-      helpers.writeOutput(io, await helpers.apiRequest(io, command, "/api/tasks", body, "POST"));
+      io.stdout(formatTaskAdded(created as unknown as Parameters<typeof formatTaskAdded>[0]));
     });
 
   tasks
@@ -139,7 +173,9 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .description("Mark a task done (--local skips the API)")
     .argument("<id>", "Task id")
     .option("--local", "Update the local tasks file instead of calling the API")
-    .action(async (id: string, options: LocalOption, command) => {
+    .option("--json", "Print the raw response instead of a short confirmation")
+    .action(async (id: string, options: SharedOptions, command) => {
+      let completed: Record<string, unknown>;
       if (options.local) {
         const file = localTasksFile();
         const all = await readTasks(file);
@@ -147,17 +183,25 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         if (index < 0) {
           throw new Error(`task not found: ${id}`);
         }
-        const completed: PersistedTask = { ...all[index]!, completedAt: new Date().toISOString(), status: "done" };
+        const persisted: PersistedTask = { ...all[index]!, completedAt: new Date().toISOString(), status: "done" };
         const next = [...all];
-        next[index] = completed;
+        next[index] = persisted;
         await writeTasks(file, next);
-        helpers.writeOutput(io, serializeTask(completed));
+        completed = serializeTask(persisted);
+      } else {
+        completed = (await helpers.apiRequest(
+          io,
+          command,
+          `/api/tasks/${encodeURIComponent(id)}/complete`,
+          {},
+          "POST"
+        )) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, completed);
         return;
       }
-      helpers.writeOutput(
-        io,
-        await helpers.apiRequest(io, command, `/api/tasks/${encodeURIComponent(id)}/complete`, {}, "POST")
-      );
+      io.stdout(formatTaskCompleted(completed as unknown as Parameters<typeof formatTaskCompleted>[0]));
     });
 
   tasks
@@ -165,7 +209,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .description("Remove a task (--local skips the API)")
     .argument("<id>", "Task id")
     .option("--local", "Delete from the local tasks file instead of calling the API")
-    .action(async (id: string, options: LocalOption, command) => {
+    .action(async (id: string, options: { readonly local?: boolean }, command) => {
       if (options.local) {
         const file = localTasksFile();
         const all = await readTasks(file);
