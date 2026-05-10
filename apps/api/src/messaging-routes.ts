@@ -29,7 +29,7 @@ export function registerMessagingRoutes(server: FastifyInstance, gate: Messaging
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
     }
-    const query = (request.query as { providerId?: string; limit?: string } | undefined) ?? {};
+    const query = (request.query as { providerId?: string; limit?: string; source?: string } | undefined) ?? {};
     const providerId = typeof query.providerId === "string" ? query.providerId.trim() : "";
     if (providerId.length === 0) {
       return reply.status(400).send({
@@ -38,9 +38,15 @@ export function registerMessagingRoutes(server: FastifyInstance, gate: Messaging
       });
     }
     const limitNum = query.limit ? Number(query.limit) : undefined;
-    const opts = limitNum !== undefined && Number.isFinite(limitNum) ? { limit: limitNum } : undefined;
+    const opts: { limit?: number; source?: string } = {};
+    if (limitNum !== undefined && Number.isFinite(limitNum)) {
+      opts.limit = limitNum;
+    }
+    if (typeof query.source === "string" && query.source.length > 0) {
+      opts.source = query.source;
+    }
     try {
-      const inbound = await gate.registry.fetchInbound(providerId, opts);
+      const inbound = await gate.registry.fetchInbound(providerId, Object.keys(opts).length > 0 ? opts : undefined);
       return reply.status(200).send({ inbound, providerId, total: inbound.length });
     } catch (error) {
       if (error instanceof MessagingProviderError) {

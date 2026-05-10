@@ -90,6 +90,77 @@ describe("DiscordProvider", () => {
   });
 });
 
+describe("DiscordProvider.fetchInbound", () => {
+  it("hits /channels/:id/messages?limit=N with Bot auth and maps responses", async () => {
+    let seenUrl = "";
+    let seenAuth = "";
+    const provider = new DiscordProvider({
+      baseUrl: "https://disc.test/api",
+      fetch: async (url, init) => {
+        seenUrl = String(url);
+        seenAuth = (init?.headers as Record<string, string>).authorization ?? "";
+        return fakeJsonResponse([
+          {
+            author: { global_name: "Stark", username: "stark97" },
+            channel_id: "ch-9",
+            content: "hello",
+            id: "msg-1",
+            timestamp: "2026-05-11T08:00:00.000+00:00"
+          },
+          {
+            author: { username: "bot" },
+            channel_id: "ch-9",
+            content: "",  // empty → skipped
+            id: "msg-2",
+            timestamp: "2026-05-11T08:01:00.000+00:00"
+          }
+        ]);
+      },
+      token: "BOT123"
+    });
+    const inbound = await provider.fetchInbound({ limit: 5, source: "ch-9" });
+    expect(seenUrl).toBe("https://disc.test/api/v10/channels/ch-9/messages?limit=5");
+    expect(seenAuth).toBe("Bot BOT123");
+    expect(inbound).toHaveLength(1);
+    expect(inbound[0]).toMatchObject({
+      messageId: "msg-1",
+      providerId: "discord",
+      receivedAtIso: "2026-05-11T08:00:00.000+00:00",
+      sender: "Stark", // global_name preferred over username
+      source: "ch-9",
+      text: "hello"
+    });
+  });
+
+  it("rejects calls without `source` (channel id) before any HTTP", async () => {
+    let calls = 0;
+    const provider = new DiscordProvider({
+      fetch: async () => {
+        calls += 1;
+        return fakeJsonResponse([]);
+      },
+      token: "x"
+    });
+    await expect(provider.fetchInbound()).rejects.toMatchObject({
+      code: "INVALID_DESTINATION",
+      message: expect.stringContaining("source")
+    });
+    expect(calls).toBe(0);
+  });
+
+  it("propagates 4xx as MessagingProviderError with parsed Discord error message", async () => {
+    const provider = new DiscordProvider({
+      fetch: async () => fakeJsonResponse({ code: 50001, message: "Missing Access" }, { status: 403 }),
+      token: "x"
+    });
+    await expect(provider.fetchInbound({ source: "ch-1" })).rejects.toMatchObject({
+      code: "UPSTREAM_FAILED",
+      message: expect.stringContaining("Missing Access"),
+      status: 403
+    });
+  });
+});
+
 describe("SlackProvider", () => {
   it("requires ok:true and surfaces ts as message id", async () => {
     const provider = new SlackProvider({

@@ -63,26 +63,36 @@ export function registerMessagingCommands(
 
   messaging
     .command("inbox")
-    .description("Fetch recent inbound messages (Phase 2.a — Telegram only; one-shot, no offset state)")
-    .argument("<provider>", "Provider id: telegram (Discord/Slack/LINE inbound coming later)")
+    .description("Fetch recent inbound messages (Phase 2.a — Telegram + Discord; one-shot, no offset state)")
+    .argument("<provider>", "Provider id: telegram | discord (Slack/LINE inbound coming later)")
     .option("--limit <n>", "Max messages (default 20, max 100)")
-    .option("--local", "Build the registry from process.env directly instead of GETing the API (not yet wired)")
+    .option("--source <id>", "Platform-native source (Discord channel id; Telegram ignores it)")
+    .option("--local", "Build the registry from process.env directly instead of GETing the API")
     .option("--json", "Print the raw inbound array instead of the formatted list")
     .action(async (
       provider: string,
-      options: { readonly limit?: string } & SharedOptions,
+      options: { readonly limit?: string; readonly source?: string } & SharedOptions,
       command
     ) => {
       const limitNum = options.limit ? Number(options.limit) : undefined;
       let inbound: ReadonlyArray<Record<string, unknown>>;
       if (options.local) {
         const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
-        const opts = limitNum !== undefined && Number.isFinite(limitNum) ? { limit: limitNum } : undefined;
-        inbound = (await registry.fetchInbound(provider, opts)) as unknown as ReadonlyArray<Record<string, unknown>>;
+        const opts: { limit?: number; source?: string } = {};
+        if (limitNum !== undefined && Number.isFinite(limitNum)) {
+          opts.limit = limitNum;
+        }
+        if (options.source && options.source.length > 0) {
+          opts.source = options.source;
+        }
+        inbound = (await registry.fetchInbound(provider, Object.keys(opts).length > 0 ? opts : undefined)) as unknown as ReadonlyArray<Record<string, unknown>>;
       } else {
         const params = new URLSearchParams({ providerId: provider });
         if (limitNum !== undefined && Number.isFinite(limitNum)) {
           params.set("limit", String(limitNum));
+        }
+        if (options.source && options.source.length > 0) {
+          params.set("source", options.source);
         }
         const response = (await helpers.apiRequest(io, command, `/api/messaging/inbox?${params.toString()}`)) as {
           inbound: ReadonlyArray<Record<string, unknown>>;

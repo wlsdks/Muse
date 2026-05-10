@@ -57,6 +57,15 @@ export interface OutboundReceipt {
 export interface InboundFetchOptions {
   /** Cap on returned messages (provider may further restrict). */
   readonly limit?: number;
+  /**
+   * Platform-native source id to read from. Required by providers
+   * that don't have a global "what came in?" endpoint:
+   *   - Discord: channel id (REST `/channels/:id/messages` is per-channel)
+   *   - Slack: channel id (`conversations.history` is per-channel)
+   * Telegram ignores this — `getUpdates` is global to the bot.
+   * LINE inbound is webhook-only and won't accept on-demand pulls.
+   */
+  readonly source?: string;
 }
 
 export interface InboundMessage {

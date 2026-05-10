@@ -76,8 +76,12 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
           const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw)
             ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
             : undefined;
+          const source = readString(args, "source")?.trim();
+          const opts: { limit?: number; source?: string } = {};
+          if (limit !== undefined) opts.limit = limit;
+          if (source && source.length > 0) opts.source = source;
           try {
-            const inbound = await registry.fetchInbound(providerId, limit !== undefined ? { limit } : undefined);
+            const inbound = await registry.fetchInbound(providerId, Object.keys(opts).length > 0 ? opts : undefined);
             return {
               inbound: inbound as unknown as JsonValue,
               providerId,
@@ -102,7 +106,11 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
               type: "number"
             },
             providerId: {
-              description: "Provider id from `providers` (telegram only at this iter).",
+              description: "Provider id from `providers` (telegram or discord at this iter).",
+              type: "string"
+            },
+            source: {
+              description: "Platform-native source — Discord channel id (required for discord). Telegram ignores this.",
               type: "string"
             }
           },

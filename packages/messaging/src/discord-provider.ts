@@ -1,5 +1,7 @@
 import { MessagingProviderError } from "./errors.js";
 import type {
+  InboundFetchOptions,
+  InboundMessage,
   MessagingProvider,
   MessagingProviderInfo,
   OutboundMessage,
@@ -26,6 +28,21 @@ interface DiscordMessageResponse {
   readonly code?: number;
 }
 
+interface DiscordChannelMessage {
+  readonly id: string;
+  readonly channel_id?: string;
+  readonly content?: string;
+  readonly timestamp?: string;
+  readonly author?: { readonly id?: string; readonly username?: string; readonly global_name?: string };
+}
+
+interface DiscordErrorResponse {
+  readonly message?: string;
+  readonly code?: number;
+}
+
+const MAX_INBOUND_LIMIT = 100;
+
 export class DiscordProvider implements MessagingProvider {
   readonly id = "discord";
   private readonly token: string;
@@ -42,10 +59,75 @@ export class DiscordProvider implements MessagingProvider {
 
   describe(): MessagingProviderInfo {
     return {
-      description: "Discord bot (REST channels API, send only this iter).",
+      description: "Discord bot (REST channels API). Outbound + per-channel inbound fetch.",
       displayName: "Discord",
       id: this.id
     };
+  }
+
+  /**
+   * One-shot fetch of recent messages from a single channel via the
+   * `GET /channels/:id/messages?limit=N` REST endpoint. Discord
+   * doesn't have a global "what's incoming?" stream like Telegram's
+   * `getUpdates`, so the caller MUST pass the channel id as
+   * `options.source`.
+   *
+   * Discord caps `limit` at 100; we surface that ceiling rather than
+   * silently truncate. Long-poll / Gateway streaming for push-style
+   * delivery lands in Phase 2.b.
+   */
+  async fetchInbound(options?: InboundFetchOptions): Promise<readonly InboundMessage[]> {
+    const channelId = options?.source?.trim();
+    if (!channelId || channelId.length === 0) {
+      throw new MessagingProviderError(
+        this.id,
+        "INVALID_DESTINATION",
+        "Discord fetchInbound requires `source` (channel id)"
+      );
+    }
+    const limit = clampInboundLimit(options?.limit);
+    const url = `${this.baseUrl}/${this.apiVersion}/channels/${encodeURIComponent(channelId)}/messages?limit=${limit.toString()}`;
+    const response = await this.fetchImpl(url, {
+      headers: { authorization: `Bot ${this.token}` },
+      method: "GET"
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      let errorPayload: DiscordErrorResponse | undefined;
+      try {
+        errorPayload = text.length > 0 ? (JSON.parse(text) as DiscordErrorResponse) : undefined;
+      } catch {
+        errorPayload = undefined;
+      }
+      throw new MessagingProviderError(
+        this.id,
+        "UPSTREAM_FAILED",
+        `Discord channels.messages failed: ${errorPayload?.message ?? (text || response.statusText)}`,
+        response.status
+      );
+    }
+    let messages: readonly DiscordChannelMessage[] = [];
+    try {
+      const parsed = text.length > 0 ? (JSON.parse(text) as readonly DiscordChannelMessage[]) : [];
+      messages = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      messages = [];
+    }
+    return messages.flatMap((message): readonly InboundMessage[] => {
+      if (typeof message.content !== "string" || message.content.length === 0) {
+        return [];
+      }
+      const senderName = message.author?.global_name ?? message.author?.username;
+      return [{
+        messageId: message.id,
+        providerId: this.id,
+        raw: message,
+        receivedAtIso: message.timestamp ?? new Date().toISOString(),
+        ...(senderName ? { sender: senderName } : {}),
+        source: message.channel_id ?? channelId,
+        text: message.content
+      }];
+    });
   }
 
   async send(message: OutboundMessage): Promise<OutboundReceipt> {
@@ -84,4 +166,11 @@ export class DiscordProvider implements MessagingProvider {
       raw: parsed
     };
   }
+}
+
+function clampInboundLimit(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) {
+    return 20;
+  }
+  return Math.max(1, Math.min(MAX_INBOUND_LIMIT, Math.trunc(raw)));
 }
