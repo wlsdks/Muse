@@ -51,10 +51,6 @@ import {
 } from "@muse/cache";
 import {
   DefaultMcpTransportConnector,
-  InMemoryMcpSecurityPolicyStore,
-  InMemoryMcpServerStore,
-  KyselyMcpSecurityPolicyStore,
-  KyselyMcpServerStore,
   McpManager,
   McpSecurityPolicyProvider,
   createCalendarMcpServer,
@@ -71,12 +67,6 @@ import {
 } from "@muse/mcp";
 import {
   createUserMemoryAutoExtractHook,
-  InMemoryTaskMemoryStore,
-  InMemoryConversationSummaryStore,
-  InMemoryUserMemoryStore,
-  KyselyConversationSummaryStore,
-  KyselyTaskMemoryStore,
-  KyselyUserMemoryStore,
   type ConversationSummaryStore,
   type TaskMemoryMaintenance,
   type TaskMemoryStore,
@@ -97,17 +87,7 @@ import {
   CostAnomalyDetector,
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
-  InMemoryLatencyQuery,
-  InMemoryMuseTracer,
-  InMemoryTokenCostQuery,
-  InMemoryTokenUsageSink,
-  InMemoryTraceEventSink,
-  KyselyLatencyQuery,
-  KyselyTokenCostQuery,
-  KyselyTokenUsageSink,
-  KyselyTraceEventSink,
   MonthlyBudgetTracker,
-  PersistedMuseTracer,
   PromptDriftDetector,
   SloAlertEvaluator,
   createBudgetTrackingTokenUsageSink,
@@ -123,21 +103,8 @@ import {
   type TokenUsageSink
 } from "@muse/observability";
 import { CircuitBreakerRegistry } from "@muse/resilience";
+import { RuntimeSettings, type RuntimeSettingsStore } from "@muse/runtime-settings";
 import {
-  InMemoryRuntimeSettingsStore,
-  KyselyRuntimeSettingsStore,
-  RuntimeSettings,
-  type RuntimeSettingsStore
-} from "@muse/runtime-settings";
-import {
-  InMemoryAgentRunHistoryStore,
-  InMemoryDebugReplayCaptureStore,
-  InMemoryHookTraceStore,
-  InMemorySessionTagStore,
-  KyselyAgentRunHistoryStore,
-  KyselyDebugReplayCaptureStore,
-  KyselyHookTraceStore,
-  KyselySessionTagStore,
   type AgentRunHistoryStore,
   type DebugReplayCaptureStore,
   type HookTraceStore,
@@ -146,12 +113,6 @@ import {
 import {
   createSchedulerTools,
   DynamicScheduler,
-  InMemoryDistributedSchedulerLock,
-  InMemoryScheduledJobExecutionStore,
-  InMemoryScheduledJobStore,
-  KyselyDistributedSchedulerLock,
-  KyselyScheduledJobExecutionStore,
-  KyselyScheduledJobStore,
   NodeCronScheduler,
   ScheduledJobDispatcher,
   ScheduledMcpToolInvoker,
@@ -180,6 +141,22 @@ import {
   resolveNotesDir,
   resolveTasksFile
 } from "./personal-providers.js";
+import {
+  createConversationSummaryStore,
+  createDebugReplayCaptureStore,
+  createHistoryStore,
+  createHookTraceStore,
+  createMcpSecurityPolicyStore,
+  createMcpServerStore,
+  createRuntimeSettingsStore,
+  createSchedulerExecutionStore,
+  createSchedulerLock,
+  createSchedulerStore,
+  createSessionTagStore,
+  createTaskMemoryStore,
+  createTracingPipeline,
+  createUserMemoryStore
+} from "./store-factories.js";
 
 export interface MuseEnvironment {
   readonly [key: string]: string | undefined;
@@ -477,114 +454,6 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   };
 }
 
-function createHistoryStore(db: Kysely<MuseDatabase> | undefined): AgentRunHistoryStore {
-  return db ? new KyselyAgentRunHistoryStore(db) : new InMemoryAgentRunHistoryStore();
-}
-
-function createTracer(db: Kysely<MuseDatabase> | undefined): MuseTracer {
-  return db ? new PersistedMuseTracer(new KyselyTraceEventSink(db)) : new InMemoryMuseTracer();
-}
-
-function createTracingPipeline(db: Kysely<MuseDatabase> | undefined): {
-  readonly tracer: MuseTracer;
-  readonly latencyQuery: LatencyQuery;
-  readonly tokenUsageSink: TokenUsageSink;
-  readonly tokenCostQuery: TokenCostQuery;
-  readonly traceSink?: QueryableTraceEventSink;
-} {
-  if (db) {
-    const tokenUsageSink = new KyselyTokenUsageSink(db);
-    return {
-      latencyQuery: new KyselyLatencyQuery(db),
-      tokenCostQuery: new KyselyTokenCostQuery(db),
-      tokenUsageSink,
-      tracer: new PersistedMuseTracer(new KyselyTraceEventSink(db))
-    };
-  }
-
-  const traceSink: QueryableTraceEventSink = new InMemoryTraceEventSink();
-  const tokenSink = new InMemoryTokenUsageSink();
-  return {
-    latencyQuery: new InMemoryLatencyQuery(traceSink),
-    tokenCostQuery: new InMemoryTokenCostQuery(tokenSink),
-    tokenUsageSink: tokenSink,
-    traceSink,
-    tracer: new PersistedMuseTracer(traceSink)
-  };
-}
-
-function createHookTraceStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): HookTraceStore {
-  return db
-    ? new KyselyHookTraceStore(db)
-    : new InMemoryHookTraceStore({ maxTraces: parseInteger(env.MUSE_HOOK_TRACE_MAX_ENTRIES, 10_000) });
-}
-
-function createDebugReplayCaptureStore(db: Kysely<MuseDatabase> | undefined): DebugReplayCaptureStore {
-  return db ? new KyselyDebugReplayCaptureStore(db) : new InMemoryDebugReplayCaptureStore();
-}
-
-function createRuntimeSettingsStore(db: Kysely<MuseDatabase> | undefined): RuntimeSettingsStore {
-  return db ? new KyselyRuntimeSettingsStore(db) : new InMemoryRuntimeSettingsStore();
-}
-
-function createTaskMemoryStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): InMemoryTaskMemoryStore | KyselyTaskMemoryStore {
-  const retentionMs = parseInteger(env.MUSE_TASK_MEMORY_RETENTION_MS, 30 * 24 * 60 * 60 * 1_000);
-  return db
-    ? new KyselyTaskMemoryStore(db, { retentionMs })
-    : new InMemoryTaskMemoryStore({
-      maxTasks: parseInteger(env.MUSE_TASK_MEMORY_MAX_TASKS, 10_000),
-      retentionMs
-    });
-}
-
-function createConversationSummaryStore(db: Kysely<MuseDatabase> | undefined): ConversationSummaryStore {
-  return db ? new KyselyConversationSummaryStore(db) : new InMemoryConversationSummaryStore();
-}
-
-function createUserMemoryStore(db: Kysely<MuseDatabase> | undefined): UserMemoryStore {
-  return db ? new KyselyUserMemoryStore(db) : new InMemoryUserMemoryStore();
-}
-
-function createSessionTagStore(db: Kysely<MuseDatabase> | undefined): SessionTagStore {
-  return db ? new KyselySessionTagStore(db) : new InMemorySessionTagStore();
-}
-
-function createMcpServerStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): McpServerStore {
-  return db
-    ? new KyselyMcpServerStore(db)
-    : new InMemoryMcpServerStore({ maxServers: parseInteger(env.MUSE_MCP_MAX_SERVERS, 1_000) });
-}
-
-function createMcpSecurityPolicyStore(
-  db: Kysely<MuseDatabase> | undefined,
-  initial: McpSecurityPolicyInput
-): McpSecurityPolicyStore {
-  return db ? new KyselyMcpSecurityPolicyStore(db) : new InMemoryMcpSecurityPolicyStore({ initial });
-}
-
-function createSchedulerStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): ScheduledJobStore {
-  return db
-    ? new KyselyScheduledJobStore(db)
-    : new InMemoryScheduledJobStore({ maxJobs: parseInteger(env.MUSE_SCHEDULER_MAX_JOBS, 1_000) });
-}
-
-function createSchedulerExecutionStore(
-  db: Kysely<MuseDatabase> | undefined,
-  env: MuseEnvironment
-): ScheduledJobExecutionStore {
-  return db
-    ? new KyselyScheduledJobExecutionStore(db)
-    : new InMemoryScheduledJobExecutionStore({
-      maxEntries: parseInteger(env.MUSE_SCHEDULER_MAX_EXECUTIONS, 200)
-    });
-}
-
-function createSchedulerLock(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): DistributedSchedulerLock {
-  const ownerId = env.MUSE_SCHEDULER_OWNER_ID;
-  return db
-    ? new KyselyDistributedSchedulerLock(db, { ownerId })
-    : new InMemoryDistributedSchedulerLock({ ownerId });
-}
 
 export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
   const env = options.env ?? process.env;
