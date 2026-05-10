@@ -46,7 +46,8 @@ import {
   resolveModelKeysFile,
   resolveNotesDir,
   resolveRemindersFile,
-  resolveTasksFile
+  resolveTasksFile,
+  resolveTelegramOffsetFile
 } from "../src/index.js";
 
 describe("autoconfigure", () => {
@@ -554,6 +555,7 @@ describe("autoconfigure", () => {
     expect(resolveMessagingCredentialsFile({ MUSE_MESSAGING_CREDENTIALS_FILE: "/tmp/m.json" })).toBe("/tmp/m.json");
     expect(resolveModelKeysFile({ MUSE_MODEL_KEYS_FILE: "/tmp/k.json" })).toBe("/tmp/k.json");
     expect(resolveLineInboxFile({ MUSE_LINE_INBOX_FILE: "/tmp/l.json" })).toBe("/tmp/l.json");
+    expect(resolveTelegramOffsetFile({ MUSE_TELEGRAM_OFFSET_FILE: "/tmp/tg.json" })).toBe("/tmp/tg.json");
 
     // Empty / whitespace-only override → falls back to default.
     expect(resolveTasksFile({ MUSE_TASKS_FILE: "" }).endsWith("/.muse/tasks.json")).toBe(true);
@@ -567,6 +569,7 @@ describe("autoconfigure", () => {
     expect(resolveMessagingCredentialsFile({}).endsWith("/.muse/messaging.json")).toBe(true);
     expect(resolveModelKeysFile({}).endsWith("/.muse/models.json")).toBe(true);
     expect(resolveLineInboxFile({}).endsWith("/.muse/line-inbox.json")).toBe(true);
+    expect(resolveTelegramOffsetFile({}).endsWith("/.muse/telegram-offset.json")).toBe(true);
   });
 
   it("resolveDefaultModel honors MUSE_MODEL when explicitly set", () => {
@@ -674,6 +677,35 @@ describe("autoconfigure", () => {
       MUSE_DISCORD_BOT_TOKEN: "from-env-discord"
     });
     expect(merged.describe().map((entry) => entry.id).sort()).toEqual(["discord", "line", "slack", "telegram"]);
+  });
+
+  it("buildMessagingRegistry wires MUSE_TELEGRAM_OFFSET_FILE into the TelegramProvider", async () => {
+    const { mkdtempSync, promises: fs } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "muse-tg-wire-"));
+    const offsetFile = join(root, "tg.json");
+    // Seed an offset so the registry-built provider must include it in
+    // the request URL — proves offsetFile was plumbed end-to-end.
+    await fs.writeFile(offsetFile, JSON.stringify({ offset: 555, version: 1 }), "utf8");
+    const seenUrls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      seenUrls.push(String(url));
+      return new Response(JSON.stringify({ ok: true, result: [] }), {
+        headers: { "content-type": "application/json" }
+      });
+    }) as typeof globalThis.fetch;
+    try {
+      const registry = buildMessagingRegistry({
+        MUSE_TELEGRAM_BOT_TOKEN: "TOK",
+        MUSE_TELEGRAM_OFFSET_FILE: offsetFile
+      });
+      await registry.fetchInbound("telegram");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(seenUrls[0]).toContain("&offset=555");
   });
 });
 

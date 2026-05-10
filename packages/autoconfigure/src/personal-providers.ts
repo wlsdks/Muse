@@ -105,6 +105,10 @@ export function resolveLineInboxFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_LINE_INBOX_FILE", "line-inbox.json");
 }
 
+export function resolveTelegramOffsetFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_TELEGRAM_OFFSET_FILE", "telegram-offset.json");
+}
+
 export function resolveModelKeysFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_MODEL_KEYS_FILE", "models.json");
 }
@@ -478,7 +482,13 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
   };
   const telegramToken = tokenFor("MUSE_TELEGRAM_BOT_TOKEN", "telegram");
   if (telegramToken) {
-    registry.register(new TelegramProvider({ token: telegramToken }));
+    // Always wire the offset file. The provider only reads/writes it
+    // when fetchInbound runs, so a missing file is fine (first poll
+    // falls back to Telegram's default — oldest visible update).
+    registry.register(new TelegramProvider({
+      offsetFile: resolveTelegramOffsetFile(env),
+      token: telegramToken
+    }));
   }
   const discordToken = tokenFor("MUSE_DISCORD_BOT_TOKEN", "discord");
   if (discordToken) {

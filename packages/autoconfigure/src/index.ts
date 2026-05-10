@@ -156,7 +156,8 @@ export {
   resolveModelKeysFile,
   resolveNotesDir,
   resolveRemindersFile,
-  resolveTasksFile
+  resolveTasksFile,
+  resolveTelegramOffsetFile
 } from "./personal-providers.js";
 import {
   createConversationSummaryStore,
