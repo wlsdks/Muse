@@ -513,3 +513,107 @@ export function CalendarEventsPanel({ client }: { readonly client: ApiClient }) 
     </section>
   );
 }
+
+interface ReminderRow {
+  readonly id: string;
+  readonly text: string;
+  readonly dueAt: string;
+  readonly status: "pending" | "fired";
+  readonly firedAt?: string;
+  readonly createdAt: string;
+}
+
+interface RemindersResponse {
+  readonly reminders: readonly ReminderRow[];
+  readonly status: "pending" | "fired" | "all" | "due";
+  readonly total: number;
+}
+
+export function RemindersPanel({ client }: { readonly client: ApiClient }) {
+  const [text, setText] = useState("");
+  const [dueAt, setDueAt] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const reminders = useQuery({
+    queryFn: () => client.get<RemindersResponse>("/api/reminders?status=pending"),
+    queryKey: ["reminders", "pending"],
+    retry: false
+  });
+
+  const addReminder = useMutation({
+    mutationFn: async (payload: { text: string; dueAt: string }) =>
+      client.post<ReminderRow>("/api/reminders", payload),
+    onError: (err) => setError(err instanceof Error ? err.message : "Failed to add reminder"),
+    onSuccess: async () => {
+      setText("");
+      setDueAt("");
+      setError(null);
+      await reminders.refetch();
+    }
+  });
+
+  const clearReminder = useMutation({
+    mutationFn: async (id: string) =>
+      client.delete<unknown>(`/api/reminders/${encodeURIComponent(id)}`),
+    onSuccess: async () => { await reminders.refetch(); }
+  });
+
+  return (
+    <section className="tool-surface compact" aria-label="Reminders">
+      <div className="surface-heading">
+        <h2>Reminders</h2>
+        <span>{reminders.isLoading ? "Loading" : (reminders.data?.total ?? 0)}</span>
+      </div>
+      {error ? <p className="status-error">{error}</p> : null}
+      <form
+        className="connection-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const trimmedText = text.trim();
+          const trimmedDue = dueAt.trim();
+          if (trimmedText.length > 0 && trimmedDue.length > 0) {
+            addReminder.mutate({ dueAt: trimmedDue, text: trimmedText });
+          }
+        }}
+        style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.5rem" }}
+      >
+        <input
+          aria-label="Reminder text"
+          placeholder="Reminder text…"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
+        <input
+          aria-label="Due when"
+          placeholder="When (e.g. 'tomorrow at 9am' or ISO-8601)"
+          value={dueAt}
+          onChange={(event) => setDueAt(event.target.value)}
+        />
+        <button
+          type="submit"
+          disabled={addReminder.isPending || text.trim().length === 0 || dueAt.trim().length === 0}
+        >
+          Add reminder
+        </button>
+      </form>
+      <ul className="record-list">
+        {(reminders.data?.reminders ?? []).map((reminder) => (
+          <li key={reminder.id}>
+            <strong>{reminder.text}</strong>
+            <span className="risk-read" style={{ marginLeft: "0.5rem" }}>
+              due {new Date(reminder.dueAt).toLocaleString()}
+            </span>
+            <button
+              type="button"
+              onClick={() => clearReminder.mutate(reminder.id)}
+              disabled={clearReminder.isPending}
+              style={{ marginLeft: "0.5rem" }}
+            >
+              ✕ Clear
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

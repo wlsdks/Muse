@@ -5,6 +5,7 @@ import {
   CalendarEventsPanel,
   MemoryPanel,
   NotesPanel,
+  RemindersPanel,
   SchedulerPanel,
   TasksPanel,
   TokenCostPanel
@@ -148,6 +149,7 @@ export function MuseConsole() {
         <aside className="side-panel">
           <VoicePanel apiUrl={apiUrl} token={token} />
           <TasksPanel client={client} />
+          <RemindersPanel client={client} />
           <NotesPanel client={client} />
           <MemoryPanel client={client} />
           <SchedulerPanel client={client} />

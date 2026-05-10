@@ -72,6 +72,16 @@ describe("MuseConsole", () => {
     expect(html).toMatch(/<h2>LLM cost \(7d\)<\/h2>/u);
   });
 
+  it("renders the Reminders panel with text + when inputs and an Add reminder button", () => {
+    const html = renderConsole();
+    expect(html).toContain('aria-label="Reminders"');
+    expect(html).toMatch(/<h2>Reminders<\/h2>/u);
+    // The add form has two inputs: a text body and a "when" parser input.
+    expect(html).toContain('placeholder="Reminder text…"');
+    expect(html).toMatch(/placeholder="When \(/u);
+    expect(html).toMatch(/>\s*Add reminder\s*<\/button>/u);
+  });
+
   it("includes status metrics for tools and orchestrations counts", () => {
     const html = renderConsole();
     // Status strip metric labels — capitalised plural forms.
