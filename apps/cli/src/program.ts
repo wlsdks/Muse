@@ -6,12 +6,15 @@ import { isCancel, password, text } from "@clack/prompts";
 import { Command } from "commander";
 import {
   credentialPath,
-  defaultCredentialPath as defaultCredentialPathFromStore,
   deleteStoredToken,
   isRecord,
   readStoredToken,
   writeStoredToken
 } from "./credential-store.js";
+
+// Re-exported for the test in `apps/cli/test/program.test.ts:5,26`
+// which imports `defaultCredentialPath` from `program.js`.
+export { defaultCredentialPath } from "./credential-store.js";
 import { renderMuseStatusTui, type MuseStatusTuiModel } from "./tui.js";
 import { registerAuthCommands } from "./commands-auth.js";
 import { registerConfigCommands } from "./commands-config.js";
@@ -58,8 +61,6 @@ const defaultIO: ProgramIO = {
 export function defaultConfigPath(home = process.env.HOME ?? "~"): string {
   return `${home}/.config/muse/config.json`;
 }
-
-export const defaultCredentialPath = defaultCredentialPathFromStore;
 
 export function createProgram(io: ProgramIO = defaultIO): Command {
   const program = new Command();
