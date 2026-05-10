@@ -88,6 +88,9 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
       {
         description:
           "Create a new calendar event. `startsAtIso` is required; `endsAtIso` defaults to startsAt + 60 minutes. " +
+          "For relative times ('tomorrow at 3pm', 'next Friday morning') resolve the ISO first by chaining tools in this exact order: " +
+          "(1) call `time_now` to get the current ISO, (2) call `time_add` with that ISO as `base` plus the offset — OR call `next_weekday` for day names — (3) pass the resulting `iso` as `startsAtIso`. " +
+          "Don't call `time_add` without first getting `time_now`'s output. " +
           "If `providerId` is omitted, the primary (first registered) provider is used.",
         execute: async (args): Promise<JsonObject> => {
           const title = readString(args, "title")?.trim();

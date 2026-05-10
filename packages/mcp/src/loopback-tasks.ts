@@ -69,6 +69,9 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
       {
         description:
           "Append a new task. Required: `title`. Optional: `notes` (free-form text), `tags` (string array), `dueAt` (ISO-8601 timestamp). " +
+          "For relative due dates ('tomorrow', 'in 3 hours', 'next Monday') resolve the ISO first by chaining tools in this exact order: " +
+          "(1) call `time_now` to get the current ISO, (2) call `time_add` with that ISO as `base` plus the offset (e.g. `days: 1`, `hours: 3`) — OR call `next_weekday` for day names — (3) pass the resulting `iso` as `dueAt`. " +
+          "Don't call `time_add` without first getting `time_now`'s output. " +
           "Returns the created task with its generated id.",
         execute: async (args): Promise<JsonObject> => {
           const title = readString(args, "title")?.trim();
