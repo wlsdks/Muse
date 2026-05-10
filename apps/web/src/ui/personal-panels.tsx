@@ -701,6 +701,26 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
     retry: false
   });
 
+  // Outbound send form. Keep destination + text local so a misdirected
+  // message doesn't survive a provider switch.
+  const [destination, setDestination] = useState<string>("");
+  const [draft, setDraft] = useState<string>("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const sendMessage = useMutation({
+    mutationFn: async (payload: { destination: string; text: string }) =>
+      client.post<{ readonly messageId?: string }>("/api/messaging/send", {
+        destination: payload.destination,
+        providerId: effective,
+        text: payload.text
+      }),
+    onError: (err) => setSendError(err instanceof Error ? err.message : "Failed to send"),
+    onSuccess: async () => {
+      setDraft("");
+      setSendError(null);
+      await inbox.refetch();
+    }
+  });
+
   return (
     <section className="tool-surface compact" aria-label="Messaging">
       <div className="surface-heading">
@@ -749,6 +769,52 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
               </li>
             ))}
           </ul>
+          {sendError ? <p className="status-error">{sendError}</p> : null}
+          <form
+            className="connection-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmedDest = destination.trim();
+              const trimmedText = draft.trim();
+              if (effective.length > 0 && trimmedDest.length > 0 && trimmedText.length > 0) {
+                sendMessage.mutate({ destination: trimmedDest, text: trimmedText });
+              }
+            }}
+            style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginTop: "0.5rem" }}
+          >
+            <input
+              aria-label="Send destination"
+              placeholder={
+                effective === "telegram"
+                  ? "chat_id (e.g. @me)"
+                  : effective === "line"
+                  ? "userId / groupId / roomId"
+                  : effective === "slack"
+                  ? "channel id (Cxxx) or user id (Uxxx)"
+                  : "channel id"
+              }
+              value={destination}
+              onChange={(event) => setDestination(event.target.value)}
+            />
+            <textarea
+              aria-label="Send message text"
+              placeholder="Message text…"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={2}
+            />
+            <button
+              type="submit"
+              disabled={
+                sendMessage.isPending
+                || effective.length === 0
+                || destination.trim().length === 0
+                || draft.trim().length === 0
+              }
+            >
+              Send
+            </button>
+          </form>
         </>
       )}
     </section>

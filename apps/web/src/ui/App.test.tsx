@@ -78,6 +78,16 @@ describe("MuseConsole", () => {
     expect(html).toMatch(/<h2>Messaging<\/h2>/u);
   });
 
+  it("messaging panel renders the empty-providers hint when no providers are wired", () => {
+    // The static-render test can't trigger queries (enabled: false), so
+    // providers.data is undefined → list.length === 0 → the hint
+    // branch is rendered. Send form only appears when providers exist,
+    // so it should be absent here.
+    const html = renderConsole();
+    expect(html).toContain("MUSE_TELEGRAM_BOT_TOKEN");
+    expect(html).not.toMatch(/aria-label="Send message text"/u);
+  });
+
   it("renders the Reminders panel with text + when inputs and an Add reminder button", () => {
     const html = renderConsole();
     expect(html).toContain('aria-label="Reminders"');
