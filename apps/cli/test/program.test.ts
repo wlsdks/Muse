@@ -689,6 +689,40 @@ describe("cli program", () => {
     expect(combined).not.toContain("subdir");
   });
 
+  it("today fans out to all three endpoints concurrently", async () => {
+    // Regression for round 121: the original implementation was
+    // three sequential awaits despite the doc comment claiming
+    // parallelism. We assert that all three fetches are dispatched
+    // before any resolves by gating each response on a barrier
+    // that only releases when the third request has been observed.
+    const { io } = captureOutput();
+    let inflight = 0;
+    let maxInflight = 0;
+    let release: (() => void) | undefined;
+    const allDispatched = new Promise<void>((resolve) => { release = resolve; });
+
+    const program = createProgram({
+      ...io,
+      fetch: async () => {
+        inflight += 1;
+        maxInflight = Math.max(maxInflight, inflight);
+        if (inflight >= 3) {
+          release?.();
+        }
+        await allDispatched;
+        inflight -= 1;
+        return new Response(JSON.stringify({ entries: [], events: [], tasks: [] }));
+      }
+    });
+
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "today"],
+      { from: "node" }
+    );
+
+    expect(maxInflight).toBe(3);
+  });
+
   it("today --json emits structured briefing data", async () => {
     const { io, output } = captureOutput();
     const program = createProgram({

@@ -57,11 +57,18 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
       const fromIso = now.toISOString();
       const toIso = horizon.toISOString();
 
-      const tasks = (await helpers.apiRequest(io, command, "/api/tasks?status=open").catch(() => undefined)) as TasksResponse | undefined;
-      const events = (await helpers
-        .apiRequest(io, command, `/api/calendar/events?fromIso=${encodeURIComponent(fromIso)}&toIso=${encodeURIComponent(toIso)}`)
-        .catch(() => undefined)) as EventsResponse | undefined;
-      const notes = (await helpers.apiRequest(io, command, "/api/notes/list").catch(() => undefined)) as NotesListResponse | undefined;
+      // Real fan-out: kick off all three reads concurrently. The
+      // earlier sequential `await` chain triple-counted round-trip
+      // latency every morning. Per-request `.catch(() => undefined)`
+      // keeps a single endpoint failure from collapsing the whole
+      // briefing — Promise.all on a rejected promise would do that.
+      const [tasks, events, notes] = await Promise.all([
+        helpers.apiRequest(io, command, "/api/tasks?status=open").catch(() => undefined) as Promise<TasksResponse | undefined>,
+        helpers
+          .apiRequest(io, command, `/api/calendar/events?fromIso=${encodeURIComponent(fromIso)}&toIso=${encodeURIComponent(toIso)}`)
+          .catch(() => undefined) as Promise<EventsResponse | undefined>,
+        helpers.apiRequest(io, command, "/api/notes/list").catch(() => undefined) as Promise<NotesListResponse | undefined>
+      ]);
 
       const briefing = {
         events: events?.events ?? [],
