@@ -34,3 +34,8 @@ export {
   readInbox,
   type AppendInboundOptions
 } from "./inbox-store.js";
+
+export {
+  readTelegramOffset,
+  writeTelegramOffset
+} from "./telegram-offset-store.js";

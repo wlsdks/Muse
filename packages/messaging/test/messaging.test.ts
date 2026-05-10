@@ -9,7 +9,9 @@ import {
   MessagingValidationError,
   SlackProvider,
   TelegramProvider,
-  validateOutboundMessage
+  readTelegramOffset,
+  validateOutboundMessage,
+  writeTelegramOffset
 } from "../src/index.js";
 import { clampInboundLimit, tryParseJson } from "../src/provider-helpers.js";
 import { appendInbound, readInbox } from "../src/inbox-store.js";
@@ -384,6 +386,95 @@ describe("TelegramProvider.fetchInbound", () => {
       token: "x"
     });
     await expect(provider.fetchInbound()).rejects.toMatchObject({ code: "UPSTREAM_FAILED", status: 401 });
+  });
+});
+
+describe("telegram-offset-store", () => {
+  it("readTelegramOffset returns undefined when the file is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tg-offset-"));
+    expect(await readTelegramOffset(join(dir, "missing.json"))).toBeUndefined();
+  });
+
+  it("readTelegramOffset returns undefined when the JSON is malformed or offset is not a finite number", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tg-offset-"));
+    const garbage = join(dir, "garbage.json");
+    const nan = join(dir, "nan.json");
+    const ok = join(dir, "ok.json");
+    await writeTelegramOffset(ok, 42);
+    // Hand-craft malformed shapes to exercise the guards.
+    const { promises: fs } = await import("node:fs");
+    await fs.writeFile(garbage, "{not json", "utf8");
+    await fs.writeFile(nan, JSON.stringify({ offset: "NaN", version: 1 }), "utf8");
+    expect(await readTelegramOffset(garbage)).toBeUndefined();
+    expect(await readTelegramOffset(nan)).toBeUndefined();
+    expect(await readTelegramOffset(ok)).toBe(42);
+  });
+
+  it("writeTelegramOffset round-trips the latest value atomically (tmp+rename)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tg-offset-"));
+    const file = join(dir, "offset.json");
+    await writeTelegramOffset(file, 10);
+    await writeTelegramOffset(file, 999);
+    expect(await readTelegramOffset(file)).toBe(999);
+    // Atomic write should leave no tmp leftovers.
+    const { promises: fs } = await import("node:fs");
+    const entries = await fs.readdir(dir);
+    expect(entries.filter((e) => e.includes(".tmp-"))).toEqual([]);
+  });
+});
+
+describe("TelegramProvider.fetchInbound offset tracking", () => {
+  it("omits ?offset when no offsetFile is configured (backward-compat snapshot mode)", async () => {
+    let seenUrl = "";
+    const provider = new TelegramProvider({
+      baseUrl: "https://tg.test",
+      fetch: async (url) => { seenUrl = String(url); return fakeJsonResponse({ ok: true, result: [] }); },
+      token: "T"
+    });
+    await provider.fetchInbound();
+    expect(seenUrl).not.toContain("offset=");
+  });
+
+  it("passes ?offset=<stored> and advances the file to max(update_id)+1 after a successful poll", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tg-offset-"));
+    const offsetFile = join(dir, "offset.json");
+    await writeTelegramOffset(offsetFile, 100);
+    const urls: string[] = [];
+    const provider = new TelegramProvider({
+      baseUrl: "https://tg.test",
+      fetch: async (url) => {
+        urls.push(String(url));
+        return fakeJsonResponse({
+          ok: true,
+          result: [
+            { message: { chat: { id: 1 }, date: 1, message_id: 1, text: "a" }, update_id: 100 },
+            { message: { chat: { id: 1 }, date: 2, message_id: 2, text: "b" }, update_id: 105 },
+            { update_id: 104 } // non-message update — still must be ack'd
+          ]
+        });
+      },
+      offsetFile,
+      token: "T"
+    });
+    const inbound = await provider.fetchInbound({ limit: 50 });
+    expect(urls[0]).toContain("&offset=100");
+    expect(inbound).toHaveLength(2);
+    // Highest update_id seen was 105 (the non-message one too) → store 106.
+    expect(await readTelegramOffset(offsetFile)).toBe(106);
+  });
+
+  it("leaves the offset file untouched when the response is empty", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tg-offset-"));
+    const offsetFile = join(dir, "offset.json");
+    await writeTelegramOffset(offsetFile, 7);
+    const provider = new TelegramProvider({
+      baseUrl: "https://tg.test",
+      fetch: async () => fakeJsonResponse({ ok: true, result: [] }),
+      offsetFile,
+      token: "T"
+    });
+    await provider.fetchInbound();
+    expect(await readTelegramOffset(offsetFile)).toBe(7);
   });
 });
 

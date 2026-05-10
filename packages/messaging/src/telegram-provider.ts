@@ -1,5 +1,6 @@
 import { MessagingProviderError, MessagingValidationError } from "./errors.js";
 import { clampInboundLimit, tryParseJson } from "./provider-helpers.js";
+import { readTelegramOffset, writeTelegramOffset } from "./telegram-offset-store.js";
 import type {
   InboundFetchOptions,
   InboundMessage,
@@ -21,6 +22,14 @@ export interface TelegramProviderOptions {
   readonly baseUrl?: string;
   /** Optional Telegram parse_mode (e.g. "MarkdownV2"). Off by default. */
   readonly parseMode?: "MarkdownV2" | "HTML";
+  /**
+   * When set, `fetchInbound` advances through the update queue using
+   * `?offset=<update_id+1>` and persists the high-watermark to this
+   * file (atomic tmp+rename). Without it, every call returns the
+   * most-recent snapshot — fine for one-shot inspection, wrong for a
+   * polling daemon that must not reprocess messages.
+   */
+  readonly offsetFile?: string;
 }
 
 const DEFAULT_BASE_URL = "https://api.telegram.org";
@@ -58,12 +67,14 @@ export class TelegramProvider implements MessagingProvider {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly baseUrl: string;
   private readonly parseMode: TelegramProviderOptions["parseMode"];
+  private readonly offsetFile: string | undefined;
 
   constructor(options: TelegramProviderOptions) {
     this.token = options.token;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.parseMode = options.parseMode;
+    this.offsetFile = options.offsetFile;
   }
 
   describe(): MessagingProviderInfo {
@@ -75,20 +86,24 @@ export class TelegramProvider implements MessagingProvider {
   }
 
   /**
-   * One-shot fetch of recent updates via Bot API `getUpdates`. No
-   * offset state is persisted — every call returns the most recent
-   * `limit` updates currently visible to the bot. A future iter
-   * will add a polling daemon that tracks `update_id` so messages
-   * aren't re-delivered.
+   * Fetch recent updates via Bot API `getUpdates`. When the
+   * constructor was given an `offsetFile`, the call passes
+   * `?offset=<stored+1>` (or the stored value if it's already
+   * `+1`-shaped — we store the high-watermark, see below) and
+   * persists `max(update_id) + 1` back on success. Without
+   * `offsetFile`, behaviour is snapshot-style: every call returns
+   * the most recent `limit` updates currently visible to the bot.
    *
    * Telegram caps `getUpdates` at 100 results per call regardless of
    * `limit`; we surface that ceiling rather than silently truncate.
    */
   async fetchInbound(options?: InboundFetchOptions): Promise<readonly InboundMessage[]> {
     const limit = clampInboundLimit(options?.limit);
+    const offsetParam = this.offsetFile ? await readTelegramOffset(this.offsetFile) : undefined;
     // `timeout=0` keeps the call short — the long-poll modes are for
     // the daemon, not this snapshot fetch.
-    const url = `${this.baseUrl}/bot${this.token}/getUpdates?limit=${limit.toString()}&timeout=0`;
+    const url = `${this.baseUrl}/bot${this.token}/getUpdates?limit=${limit.toString()}&timeout=0`
+      + (offsetParam !== undefined ? `&offset=${offsetParam.toString()}` : "");
     const response = await this.fetchImpl(url, { method: "GET" });
     const text = await response.text();
     const parsed = tryParseJson<TelegramGetUpdatesResponse>(text);
@@ -101,6 +116,13 @@ export class TelegramProvider implements MessagingProvider {
       );
     }
     const updates = parsed.result ?? [];
+    // Advance offset BEFORE filtering. Updates without a `.message`
+    // (e.g. callback_query) still need acknowledgement or Telegram
+    // will redeliver them on every poll until they expire.
+    if (this.offsetFile && updates.length > 0) {
+      const maxId = updates.reduce((acc, u) => (u.update_id > acc ? u.update_id : acc), updates[0]!.update_id);
+      await writeTelegramOffset(this.offsetFile, maxId + 1);
+    }
     return updates.flatMap((update): readonly InboundMessage[] => {
       const message = update.message ?? update.edited_message ?? update.channel_post;
       if (!message || typeof message.text !== "string") {
