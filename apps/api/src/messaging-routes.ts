@@ -22,6 +22,13 @@ import type { ServerOptions } from "./server.js";
 interface MessagingRoutesGate {
   readonly authService: ServerOptions["authService"];
   readonly registry: MessagingProviderRegistry;
+  /**
+   * Shared with `muse.messaging.poll_now` MCP tool. When provided,
+   * `POST /api/messaging/poll` is registered so the web console
+   * can trigger an off-cadence pull on demand. Without it, the
+   * endpoint isn't exposed (404).
+   */
+  readonly pollNow?: (providerId: string, source?: string) => Promise<{ ingested: number }>;
 }
 
 export function registerMessagingRoutes(server: FastifyInstance, gate: MessagingRoutesGate): void {
@@ -122,4 +129,41 @@ export function registerMessagingRoutes(server: FastifyInstance, gate: Messaging
       throw error;
     }
   });
+
+  if (gate.pollNow) {
+    const pollNow = gate.pollNow;
+    server.post("/api/messaging/poll", async (request, reply) => {
+      if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
+        return reply;
+      }
+      const body = request.body as { readonly providerId?: unknown; readonly source?: unknown } | null;
+      if (!body || typeof body.providerId !== "string" || body.providerId.trim().length === 0) {
+        return reply.status(400).send({
+          code: "INVALID_MESSAGING_REQUEST",
+          message: "providerId must be a non-empty string"
+        });
+      }
+      const source = typeof body.source === "string" && body.source.trim().length > 0
+        ? body.source.trim()
+        : undefined;
+      try {
+        const result = await pollNow(body.providerId, source);
+        return reply.status(200).send({ ingested: result.ingested, providerId: body.providerId });
+      } catch (error) {
+        if (error instanceof MessagingProviderError) {
+          return reply.status(502).send({
+            code: "MESSAGING_PROVIDER_FAILED",
+            message: error.message,
+            providerId: error.providerId,
+            ...(error.status !== undefined ? { upstreamStatus: error.status } : {})
+          });
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        // The autoconfigure-built dispatcher raises plain Errors for
+        // "source required" and "LINE not pollable" — surface those
+        // as 400 so the web caller can show the message verbatim.
+        return reply.status(400).send({ code: "INVALID_MESSAGING_REQUEST", message });
+      }
+    });
+  }
 }

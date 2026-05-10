@@ -100,6 +100,13 @@ export interface ServerOptions {
   readonly notesProviderRegistry?: NotesProviderRegistry;
   readonly voice?: VoiceProviderRegistry;
   readonly messaging?: MessagingProviderRegistry;
+  /**
+   * On-demand poll dispatcher shared with `muse.messaging.poll_now`.
+   * When set, the API registers `POST /api/messaging/poll` so the
+   * web console / curl can trigger an off-cadence pull without going
+   * through the LLM.
+   */
+  readonly messagingPollNow?: (providerId: string, source?: string) => Promise<{ ingested: number }>;
   readonly remindersFile?: string;
   /**
    * Path to the persisted LINE inbox (default ~/.muse/line-inbox.json).
@@ -299,7 +306,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     registerVoiceRoutes(server, { authService, registry: options.voice });
   }
   if (options.messaging) {
-    registerMessagingRoutes(server, { authService, registry: options.messaging });
+    registerMessagingRoutes(server, {
+      authService,
+      registry: options.messaging,
+      ...(options.messagingPollNow ? { pollNow: options.messagingPollNow } : {})
+    });
   }
   if (options.remindersFile) {
     registerRemindersRoutes(server, { authService, remindersFile: options.remindersFile });

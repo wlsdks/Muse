@@ -804,6 +804,24 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
     }
   });
 
+  // Agent-triggered off-cadence poll (Loop #46) — same dispatcher
+  // backs muse.messaging.poll_now. LINE is webhook-fed so the button
+  // is hidden for it; everyone else can pull on demand.
+  const [pollStatus, setPollStatus] = useState<string | null>(null);
+  const pollNow = useMutation({
+    mutationFn: async () =>
+      client.post<{ readonly ingested?: number }>("/api/messaging/poll", {
+        providerId: effective,
+        ...(supportsSource && source.length > 0 ? { source } : {})
+      }),
+    onError: (err) => setPollStatus(err instanceof Error ? err.message : "Pull failed"),
+    onSuccess: async (result) => {
+      setPollStatus(`Pulled ${result.ingested ?? 0} message(s)`);
+      await inbox.refetch();
+    }
+  });
+  const supportsPullNow = effective === "telegram" || effective === "discord" || effective === "slack";
+
   return (
     <section className="tool-surface compact" aria-label="Messaging">
       <div className="surface-heading">
@@ -837,7 +855,20 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
                 style={{ flex: 1 }}
               />
             ) : null}
+            {supportsPullNow ? (
+              <button
+                aria-label="Pull now"
+                type="button"
+                disabled={pollNow.isPending || (requiresSource && source.length === 0)}
+                onClick={() => { setPollStatus(null); pollNow.mutate(); }}
+              >
+                {pollNow.isPending ? "Pulling…" : "Pull now"}
+              </button>
+            ) : null}
           </div>
+          {pollStatus ? (
+            <p className="status-info" style={{ fontSize: "0.8em", margin: "0 0 0.5rem 0" }}>{pollStatus}</p>
+          ) : null}
           {inbox.error ? (
             <p className="status-error">{inbox.error instanceof Error ? inbox.error.message : "Failed to load inbox"}</p>
           ) : null}

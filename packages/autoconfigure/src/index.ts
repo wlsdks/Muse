@@ -273,6 +273,13 @@ export interface MuseRuntimeAssembly {
   readonly tasksProviderRegistry?: TasksProviderRegistry;
   readonly voice?: VoiceProviderRegistry;
   readonly messaging?: MessagingProviderRegistry;
+  /**
+   * Shared poll-now dispatcher (same closure that backs the
+   * `muse.messaging.poll_now` MCP tool). Exposed on the assembly so
+   * the API server's REST surface can offer an on-demand pull
+   * endpoint without rebuilding the per-provider plumbing.
+   */
+  readonly messagingPollNow?: (providerId: string, source?: string) => Promise<{ ingested: number }>;
 }
 
 export interface ApiServerAssemblyOptions {
@@ -700,7 +707,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     ...(notesRegistry ? { notesProviderRegistry: notesRegistry } : {}),
     ...(tasksRegistry ? { tasksProviderRegistry: tasksRegistry } : {}),
     voice: buildVoiceRegistry(env),
-    messaging: messagingRegistry
+    messaging: messagingRegistry,
+    ...(messagingRegistry.list().length > 0 ? { messagingPollNow: pollNow } : {})
   };
 }
 
@@ -797,6 +805,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     ...(assembly.tasksProviderRegistry ? { tasksProviderRegistry: assembly.tasksProviderRegistry } : {}),
     voice: assembly.voice,
     messaging: assembly.messaging,
+    ...(assembly.messagingPollNow ? { messagingPollNow: assembly.messagingPollNow } : {}),
     remindersFile: resolveRemindersFile(env),
     lineInboxFile: resolveLineInboxFile(env),
     telegramInboxFile: resolveTelegramInboxFile(env),
