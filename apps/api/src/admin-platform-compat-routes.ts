@@ -1,7 +1,7 @@
 /**
  * Muse compat admin platform-infrastructure routes extracted from
  * compat-routes.ts. Covers the slice of /api/admin that deals with
- * runtime-settings, ops dashboard, capabilities, platform health/doctor,
+ * runtime-settings, ops dashboard, capabilities, platform doctor,
  * cache, and vector-store stats.
  *
  * Wires:
@@ -10,7 +10,6 @@
  *   - GET /api/ops/dashboard
  *   - GET /api/ops/metrics/names
  *   - GET /api/admin/capabilities
- *   - GET /api/admin/platform/health
  *   - GET /api/admin/doctor (+ /summary)
  *   - GET /api/admin/platform/cache/stats
  *   - POST /api/admin/platform/cache/invalidate
@@ -23,7 +22,6 @@ import {
   dashboardSummary,
   errorResponse,
   parseRuntimeSettingType,
-  platformHealthDashboard,
   readAuthUserId,
   readBodyNullableString,
   readBodyString,
@@ -130,13 +128,6 @@ function registerOpsAndCapabilitiesRoutes(server: FastifyInstance, options: Comp
 }
 
 function registerPlatformHealthRoutes(server: FastifyInstance, options: CompatibilityRouteOptions): void {
-  server.get("/api/admin/platform/health", async (request, reply) => {
-    if (!options.requireAuthenticated(request, reply)) {
-      return reply;
-    }
-
-    return platformHealthDashboard(options);
-  });
   server.get("/api/admin/doctor", async (request, reply) => adminDiagnostic(request, reply, options, "report"));
   server.get("/api/admin/doctor/summary", async (request, reply) => adminDiagnostic(request, reply, options, "summary"));
   server.get("/api/admin/platform/cache/stats", async (request, reply) => {

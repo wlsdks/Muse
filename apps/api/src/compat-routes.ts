@@ -320,11 +320,8 @@ export {
   swaggerSourcePath
 } from "./compat-mcp-proxy.js";
 
-// Dashboard + platform-health helpers live in apps/api/src/compat-dashboard.ts.
-export {
-  dashboardSummary,
-  platformHealthDashboard
-} from "./compat-dashboard.js";
+// Dashboard helpers live in apps/api/src/compat-dashboard.ts.
+export { dashboardSummary } from "./compat-dashboard.js";
 
 // Doctor diagnostic helpers live in apps/api/src/compat-doctor.ts.
 export { adminDiagnostic } from "./compat-doctor.js";
@@ -388,7 +385,6 @@ function compatibilityApiPaths(): readonly string[] {
     "/api/admin/metrics/latency/timeseries",
     "/api/admin/platform/cache/invalidate",
     "/api/admin/platform/cache/stats",
-    "/api/admin/platform/health",
     "/api/admin/sessions",
     "/api/admin/sessions/{sessionId}",
     "/api/admin/sessions/{sessionId}/export",

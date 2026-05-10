@@ -385,7 +385,6 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(capabilitiesBody.paths).toEqual(expect.arrayContaining([
       "/api/admin/capabilities",
       "/api/admin/doctor",
-      "/api/admin/platform/health",
       "/api/admin/settings",
       "/api/chat",
       "/api/mcp/servers/{name}/tools",

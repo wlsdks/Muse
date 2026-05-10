@@ -1,11 +1,9 @@
 /**
- * Muse compat ops dashboard + platform health summary helpers extracted
- * from compat-routes.ts.
+ * Muse compat ops dashboard helpers extracted from compat-routes.ts.
  *
- * Generates the envelope returned by /api/ops/dashboard
- * (MCP status, scheduler stats, response trust events, ops metric
- * snapshots) and the smaller platform-health
- * (/api/admin/platform/health) shape with active alert counts.
+ * Generates the envelope returned by /api/ops/dashboard (MCP
+ * status, scheduler stats, response trust events, ops metric
+ * snapshots).
  */
 
 import type { McpServer } from "@muse/mcp";
@@ -48,12 +46,6 @@ export async function dashboardSummary(options: CompatibilityRouteOptions) {
       runningJobs,
       totalJobs: scheduledJobs.length
     }
-  };
-}
-
-export async function platformHealthDashboard(_options: CompatibilityRouteOptions): Promise<JsonObject> {
-  return {
-    activeAlerts: 0
   };
 }
 
