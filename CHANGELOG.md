@@ -7,6 +7,23 @@ move from `Unreleased` to dated/versioned headings.
 
 ## [Unreleased]
 
+### Changed
+
+- **`packages/tools/src/muse-tools.ts` decomposition continues**.
+  606 → 233 LOC. Three-round combined reduction: 1193 → 233
+  (-80%). New `muse-tools-data.ts` (377 LOC) holds the
+  data/encoding builders (`createMathEvalTool`, `createHashTextTool`,
+  `createCsvParseTool`, `createBase64Tool`) plus their private
+  helpers (`evaluateArithmetic`, `parseCsvRecords`, `padBase64`)
+  and constants (`MATH_EXPRESSION`, `HASH_TEXT_ALGORITHMS`,
+  `CSV_PARSE_*`, `BASE64_MAX_TEXT_LENGTH`). `muse-tools.ts` now
+  carries only `createJsonQueryTool` + `createUrlPartsTool` +
+  `createRegexExtractTool` plus the `createMuseTools` factory
+  composition; same 17-tool public surface, byte-identical
+  output ordering. Behavior-preserving — smoke:live's
+  `time_now`-using plan-execute test still passes through real
+  Gemini and the math tool's evaluator round-trips unchanged.
+
 ### Removed
 
 - **All Reactor-migration artifacts**. Muse is now a fresh
