@@ -1864,6 +1864,52 @@ describe("cli program", () => {
     }
   });
 
+  it("today --brief --speak pipes the prose through the injected TTS provider and player", async () => {
+    const ttsCalls: Array<{ text: string; voice?: string; format?: string }> = [];
+    const playedFiles: string[] = [];
+    const { io, output } = captureOutput();
+    const fakeTts = {
+      describe: () => ({ id: "fake", local: false }),
+      synthesize: async (request: { text: string; voice?: string; format?: string }) => {
+        ttsCalls.push({ format: request.format, text: request.text, voice: request.voice });
+        return { audio: new Uint8Array([1, 2, 3]), format: request.format ?? "mp3" };
+      }
+    };
+    const program = createProgram({
+      ...io,
+      fetch: async (url) => {
+        const path = String(url);
+        if (path.endsWith("/api/today")) {
+          return new Response(JSON.stringify({
+            generatedAt: "2026-05-10T08:00:00Z",
+            lookaheadHours: 24,
+            tasks: [{ id: "t-1", title: "Stand-up at 10" }],
+            events: [],
+            notes: []
+          }));
+        }
+        if (path.endsWith("/api/chat")) {
+          return new Response(JSON.stringify({ content: "Stand-up is at 10. Nothing else on the calendar." }));
+        }
+        return new Response("{}");
+      },
+      todayShells: {
+        speaker: { playAudio: async (filePath: string) => { playedFiles.push(filePath); } },
+        tts: fakeTts as unknown as Parameters<NonNullable<typeof program.parseAsync>>[0] extends infer _ ? never : never
+      } as unknown as Record<string, unknown>
+    } as unknown as Parameters<typeof createProgram>[0]);
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "today", "--brief", "--speak", "--audio-voice", "alloy"],
+      { from: "node" }
+    );
+    expect(output.join("")).toContain("Stand-up is at 10");
+    expect(ttsCalls).toHaveLength(1);
+    expect(ttsCalls[0]?.text).toContain("Stand-up is at 10");
+    expect(ttsCalls[0]?.voice).toBe("alloy");
+    expect(playedFiles).toHaveLength(1);
+    expect(playedFiles[0]?.endsWith(".mp3")).toBe(true);
+  });
+
   it("today --brief sends the structured briefing to /api/chat and prints the prose response", async () => {
     const seenBodies: string[] = [];
     const { io, output } = captureOutput();

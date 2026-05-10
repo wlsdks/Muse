@@ -22,6 +22,11 @@ move from `Unreleased` to dated/versioned headings.
 - **`muse setup` (no args)** — configuration health-check across
   model key, MCP entries, calendar credentials, notes/tasks state,
   voice key. Pure read-only inspection, no API needed.
+- **`muse today --brief --speak [--audio-voice <name>] [--audio-format <type>]`** —
+  pipes the JARVIS brief through the configured TTS provider and
+  plays through afplay/aplay. Falls back to a friendly stderr hint
+  when no voice provider is configured. Shared playback helper
+  (`voice-playback.ts`) ready for any future "speak this" surface.
 
 ### Removed
 

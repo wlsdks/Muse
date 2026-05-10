@@ -21,9 +21,22 @@ import {
 } from "@muse/autoconfigure";
 import { LocalCalendarProvider } from "@muse/calendar";
 import { readTasks, serializeTask, type PersistedTask } from "@muse/mcp";
+import type { TextToSpeechProvider } from "@muse/voice";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
+import {
+  loadDefaultTts,
+  parseAudioFormat,
+  synthesizeAndPlay,
+  type AudioFormat,
+  type SpeakerShells
+} from "./voice-playback.js";
+
+export interface TodayCommandShells {
+  readonly tts?: TextToSpeechProvider;
+  readonly speaker?: SpeakerShells;
+}
 
 const MAX_RECENT_NOTES = 5;
 const MAX_NOTES_WALK_DEPTH = 8;
@@ -45,6 +58,12 @@ export interface TodayCommandHelpers {
     method?: "GET" | "POST" | "PUT" | "DELETE"
   ) => Promise<unknown>;
   readonly writeOutput: (io: ProgramIO, value: unknown, textField?: string) => void;
+  /**
+   * Optional injection point for the `--speak` flow. Tests pass a
+   * fake TTS + speaker shells; default lazily loads the configured
+   * voice registry.
+   */
+  readonly shells?: TodayCommandShells;
 }
 
 export function registerTodayCommands(program: Command, io: ProgramIO, helpers: TodayCommandHelpers): void {
@@ -56,6 +75,9 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
     .option("--local", "Compose locally without the API (calendar limited to the local file)")
     .option("--brief", "Render the briefing as a 2-3 sentence natural-language summary via the configured model")
     .option("--model <name>", "Model id to use for --brief (defaults to MUSE_MODEL)")
+    .option("--speak", "After printing the brief, synthesize via TTS and play through the speakers")
+    .option("--audio-voice <name>", "TTS voice id (provider-specific, e.g. 'alloy' for OpenAI)")
+    .option("--audio-format <type>", "TTS output format: mp3 | wav | opus | aac | flac (default mp3)")
     .action(async (
       options: {
         readonly json?: boolean;
@@ -63,9 +85,15 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         readonly local?: boolean;
         readonly brief?: boolean;
         readonly model?: string;
+        readonly speak?: boolean;
+        readonly audioVoice?: string;
+        readonly audioFormat?: string;
       },
       command
     ) => {
+      if (options.speak && !options.brief) {
+        throw new Error("--speak requires --brief (only the brief prose is spoken)");
+      }
       const briefing = options.local
         ? await composeLocalBriefing(parseLookaheadHours(options.lookaheadHours))
         : await fetchRemoteBriefing(io, command, helpers, options.lookaheadHours);
@@ -74,9 +102,12 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         const prose = await renderBrief(io, command, helpers, briefing, options.local === true, options.model);
         if (options.json) {
           helpers.writeOutput(io, { ...briefing, brief: prose });
-          return;
+        } else {
+          io.stdout(`${prose.trim()}\n`);
         }
-        io.stdout(`${prose.trim()}\n`);
+        if (options.speak) {
+          await speakPlain(io, helpers.shells, prose, options.audioVoice, parseAudioFormat(options.audioFormat));
+        }
         return;
       }
 
@@ -136,6 +167,27 @@ async function renderBrief(
     );
   }
   return content;
+}
+
+async function speakPlain(
+  io: ProgramIO,
+  shells: TodayCommandShells | undefined,
+  text: string,
+  voice: string | undefined,
+  format: AudioFormat
+): Promise<void> {
+  const tts = shells?.tts ?? loadDefaultTts();
+  if (!tts) {
+    io.stderr(
+      "today --speak: no TTS provider configured. Set OPENAI_API_KEY (or MUSE_VOICE_OPENAI_API_KEY) to enable.\n"
+    );
+    return;
+  }
+  await synthesizeAndPlay(
+    tts,
+    { text, format, ...(voice ? { voice } : {}) },
+    shells?.speaker
+  );
 }
 
 async function runLocalBrief(io: ProgramIO, userMessage: string, modelOverride: string | undefined): Promise<string> {
