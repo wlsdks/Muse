@@ -626,45 +626,20 @@ describe("cli program", () => {
     expect(combined).toContain("openai-tts");
   });
 
-  it("today fans out to tasks / calendar / notes and prints a unified briefing", async () => {
+  it("today calls /api/today once and renders the briefing", async () => {
     const { io, output } = captureOutput();
     const requests: Array<{ readonly url: string }> = [];
     const program = createProgram({
       ...io,
       fetch: async (url) => {
         requests.push({ url: String(url) });
-        const path = String(url);
-        if (path.includes("/api/tasks?status=open")) {
-          return new Response(JSON.stringify({
-            status: "open",
-            tasks: [{ id: "task_123abc", status: "open", title: "Write iter summary" }],
-            total: 1
-          }));
-        }
-        if (path.includes("/api/calendar/events")) {
-          return new Response(JSON.stringify({
-            events: [{
-              endsAtIso: "2026-05-10T11:00:00Z",
-              id: "evt-1",
-              providerId: "local",
-              startsAtIso: "2026-05-10T10:00:00Z",
-              title: "Standup"
-            }],
-            total: 1
-          }));
-        }
-        if (path.endsWith("/api/notes/list")) {
-          return new Response(JSON.stringify({
-            dir: "",
-            entries: [
-              { isDirectory: false, name: "older.md", sizeBytes: 50 },
-              { isDirectory: false, name: "newer.md", sizeBytes: 80 },
-              { isDirectory: true, name: "subdir" }
-            ],
-            truncated: false
-          }));
-        }
-        return new Response("{}");
+        return new Response(JSON.stringify({
+          events: [{ endsAtIso: "2026-05-10T11:00:00Z", id: "evt-1", startsAtIso: "2026-05-10T10:00:00Z", title: "Standup" }],
+          generatedAt: "2026-05-10T08:00:00Z",
+          lookaheadHours: 12,
+          notes: ["diary.md", "shopping.md"],
+          tasks: [{ id: "task_123abc", title: "Write iter summary" }]
+        }));
       }
     });
 
@@ -673,70 +648,30 @@ describe("cli program", () => {
       { from: "node" }
     );
 
-    const urls = requests.map((entry) => entry.url);
-    expect(urls.some((url) => url.includes("/api/tasks?status=open"))).toBe(true);
-    expect(urls.some((url) => url.includes("/api/calendar/events"))).toBe(true);
-    expect(urls.some((url) => url.endsWith("/api/notes/list"))).toBe(true);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe("http://api.test/api/today?lookaheadHours=12");
 
     const combined = output.join("");
-    expect(combined).toContain("Today (");
+    expect(combined).toContain("Today (2026-05-10");
     expect(combined).toContain("next 12h");
     expect(combined).toContain("Write iter summary");
     expect(combined).toContain("Standup");
-    expect(combined).toContain("newer.md");
-    expect(combined).toContain("older.md");
-    // The directory entry is filtered out (only files are listed).
-    expect(combined).not.toContain("subdir");
+    expect(combined).toContain("diary.md");
+    expect(combined).toContain("shopping.md");
   });
 
-  it("today fans out to all three endpoints concurrently", async () => {
-    // Regression for round 121: the original implementation was
-    // three sequential awaits despite the doc comment claiming
-    // parallelism. We assert that all three fetches are dispatched
-    // before any resolves by gating each response on a barrier
-    // that only releases when the third request has been observed.
-    const { io } = captureOutput();
-    let inflight = 0;
-    let maxInflight = 0;
-    let release: (() => void) | undefined;
-    const allDispatched = new Promise<void>((resolve) => { release = resolve; });
-
-    const program = createProgram({
-      ...io,
-      fetch: async () => {
-        inflight += 1;
-        maxInflight = Math.max(maxInflight, inflight);
-        if (inflight >= 3) {
-          release?.();
-        }
-        await allDispatched;
-        inflight -= 1;
-        return new Response(JSON.stringify({ entries: [], events: [], tasks: [] }));
-      }
-    });
-
-    await program.parseAsync(
-      ["node", "muse", "--api-url", "http://api.test", "today"],
-      { from: "node" }
-    );
-
-    expect(maxInflight).toBe(3);
-  });
-
-  it("today --json emits structured briefing data", async () => {
+  it("today --json passes the server briefing through unmodified", async () => {
     const { io, output } = captureOutput();
+    const briefing = {
+      events: [],
+      generatedAt: "2026-05-10T08:00:00Z",
+      lookaheadHours: 24,
+      notes: [],
+      tasks: []
+    };
     const program = createProgram({
       ...io,
-      fetch: async (url) => {
-        const path = String(url);
-        if (path.includes("/api/tasks")) {
-          return new Response(JSON.stringify({ status: "open", tasks: [], total: 0 }));
-        }
-        if (path.includes("/api/calendar/events")) {
-          return new Response(JSON.stringify({ events: [], total: 0 }));
-        }
-        return new Response(JSON.stringify({ entries: [], truncated: false }));
-      }
+      fetch: async () => new Response(JSON.stringify(briefing))
     });
 
     await program.parseAsync(
@@ -744,14 +679,29 @@ describe("cli program", () => {
       { from: "node" }
     );
 
-    const combined = output.join("");
-    const parsed = JSON.parse(combined.trim());
-    expect(parsed).toMatchObject({
-      events: [],
-      notes: [],
-      tasks: []
+    expect(JSON.parse(output.join("").trim())).toEqual(briefing);
+  });
+
+  it("today renders 'not configured' sections when the server omits them", async () => {
+    const { io, output } = captureOutput();
+    const program = createProgram({
+      ...io,
+      fetch: async () => new Response(JSON.stringify({
+        generatedAt: "2026-05-10T08:00:00Z",
+        lookaheadHours: 24
+        // tasks / events / notes all undefined — server says nothing's configured
+      }))
     });
-    expect(typeof parsed.generatedAt).toBe("string");
+
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "today"],
+      { from: "node" }
+    );
+
+    const combined = output.join("");
+    expect(combined).toContain("Tasks: (not configured)");
+    expect(combined).toContain("Upcoming: (calendar not configured)");
+    expect(combined).toContain("Recent notes: (notes dir not configured)");
   });
 
   it("notes list / read / search / save / append hit the /api/notes routes", async () => {

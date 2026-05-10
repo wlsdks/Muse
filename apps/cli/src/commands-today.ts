@@ -1,17 +1,15 @@
 /**
  * `muse today` — personal-JARVIS morning briefing.
  *
- * Hits three existing read-only endpoints in parallel and prints a
- * compact summary:
+ * Calls a single server-side endpoint:
  *
- *   - GET /api/tasks?status=open        — pending todos
- *   - GET /api/calendar/events?from=...&to=... — next 24h
- *   - GET /api/notes/list               — most-recent 5 by name (sorted descending)
+ *   GET /api/today?lookaheadHours=N
  *
- * No new server route — just an aggregator. The agent / web UI can
- * already build similar views; this exists so a personal user can
- * type one terminal command in the morning and see what's on their
- * plate without going through chat.
+ * Round 119 fanned out client-side to three separate routes; round
+ * 123 added the consolidated server endpoint, and this iter (round
+ * 124) replaces the fan-out with one fetch. Net: one round-trip
+ * instead of three; the server owns sectioning + sorting; the CLI
+ * is purely a renderer.
  *
  * Same DI injection pattern as the other CLI command modules.
  */
@@ -20,16 +18,12 @@ import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
 
-interface TasksResponse {
-  readonly tasks: readonly { readonly id: string; readonly title: string; readonly notes?: string }[];
-}
-
-interface EventsResponse {
-  readonly events: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string; readonly endsAtIso: string; readonly providerId: string }[];
-}
-
-interface NotesListResponse {
-  readonly entries: readonly { readonly name: string; readonly isDirectory: boolean; readonly sizeBytes?: number }[];
+interface TodayBriefing {
+  readonly generatedAt: string;
+  readonly lookaheadHours: number;
+  readonly tasks?: readonly { readonly id: string; readonly title: string }[];
+  readonly events?: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string }[];
+  readonly notes?: readonly string[];
 }
 
 export interface TodayCommandHelpers {
@@ -50,62 +44,31 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
     .option("--json", "Print machine-readable JSON instead of the formatted summary")
     .option("--lookahead-hours <n>", "Hours of calendar look-ahead (default 24)")
     .action(async (options: { readonly json?: boolean; readonly lookaheadHours?: string }, command) => {
-      const now = new Date();
-      const hours = Number.parseInt(options.lookaheadHours ?? "24", 10);
-      const lookahead = Number.isFinite(hours) && hours > 0 ? hours : 24;
-      const horizon = new Date(now.getTime() + lookahead * 3_600_000);
-      const fromIso = now.toISOString();
-      const toIso = horizon.toISOString();
-
-      // Real fan-out: kick off all three reads concurrently. The
-      // earlier sequential `await` chain triple-counted round-trip
-      // latency every morning. Per-request `.catch(() => undefined)`
-      // keeps a single endpoint failure from collapsing the whole
-      // briefing — Promise.all on a rejected promise would do that.
-      const [tasks, events, notes] = await Promise.all([
-        helpers.apiRequest(io, command, "/api/tasks?status=open").catch(() => undefined) as Promise<TasksResponse | undefined>,
-        helpers
-          .apiRequest(io, command, `/api/calendar/events?fromIso=${encodeURIComponent(fromIso)}&toIso=${encodeURIComponent(toIso)}`)
-          .catch(() => undefined) as Promise<EventsResponse | undefined>,
-        helpers.apiRequest(io, command, "/api/notes/list").catch(() => undefined) as Promise<NotesListResponse | undefined>
-      ]);
-
-      const briefing = {
-        events: events?.events ?? [],
-        generatedAt: now.toISOString(),
-        notes: pickRecentNotes(notes?.entries ?? [], 5),
-        tasks: tasks?.tasks ?? []
-      };
+      const lookaheadParam = options.lookaheadHours
+        ? `?lookaheadHours=${encodeURIComponent(options.lookaheadHours)}`
+        : "";
+      const briefing = (await helpers.apiRequest(io, command, `/api/today${lookaheadParam}`)) as TodayBriefing;
 
       if (options.json) {
         helpers.writeOutput(io, briefing);
         return;
       }
 
-      io.stdout(`Today (${shortDateLabel(now)}, next ${lookahead}h)\n`);
+      io.stdout(`Today (${shortDateLabel(briefing.generatedAt)}, next ${briefing.lookaheadHours}h)\n`);
       io.stdout(formatTasks(briefing.tasks));
       io.stdout(formatEvents(briefing.events));
       io.stdout(formatNotes(briefing.notes));
     });
 }
 
-function pickRecentNotes(
-  entries: readonly { readonly name: string; readonly isDirectory: boolean; readonly sizeBytes?: number }[],
-  limit: number
-): readonly string[] {
-  return entries
-    .filter((entry) => !entry.isDirectory)
-    .map((entry) => entry.name)
-    .sort()
-    .reverse()
-    .slice(0, limit);
+function shortDateLabel(generatedAt: string): string {
+  return generatedAt.slice(0, 10);
 }
 
-function shortDateLabel(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function formatTasks(tasks: readonly { readonly id: string; readonly title: string }[]): string {
+function formatTasks(tasks: readonly { readonly id: string; readonly title: string }[] | undefined): string {
+  if (!tasks) {
+    return "\nTasks: (not configured)\n";
+  }
   if (tasks.length === 0) {
     return "\nTasks: (none open)\n";
   }
@@ -113,7 +76,10 @@ function formatTasks(tasks: readonly { readonly id: string; readonly title: stri
   return `\nTasks (${tasks.length} open):\n${lines.join("\n")}\n`;
 }
 
-function formatEvents(events: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string }[]): string {
+function formatEvents(events: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string }[] | undefined): string {
+  if (!events) {
+    return "\nUpcoming: (calendar not configured)\n";
+  }
   if (events.length === 0) {
     return "\nUpcoming: (no calendar events in window)\n";
   }
@@ -121,7 +87,10 @@ function formatEvents(events: readonly { readonly id: string; readonly title: st
   return `\nUpcoming (${events.length}):\n${lines.join("\n")}\n`;
 }
 
-function formatNotes(notes: readonly string[]): string {
+function formatNotes(notes: readonly string[] | undefined): string {
+  if (!notes) {
+    return "\nRecent notes: (notes dir not configured)\n";
+  }
   if (notes.length === 0) {
     return "\nRecent notes: (none)\n";
   }
