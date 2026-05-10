@@ -138,9 +138,7 @@ export function fromAnthropicResponse(providerId: string, requestedModel: string
 
 export function toGeminiRequest(request: ModelRequest) {
   return {
-    contents: request.messages
-      .filter((message) => message.role !== "system")
-      .map(toGeminiContent),
+    contents: buildGeminiContents(request.messages),
     ...(request.maxOutputTokens || request.temperature !== undefined
       ? {
         generationConfig: {
@@ -226,19 +224,40 @@ export function sanitizeGeminiSchema(schema: unknown): unknown {
   return result;
 }
 
-function toGeminiContent(message: ModelMessage) {
-  if (message.role === "tool") {
-    return {
-      parts: [{
+function buildGeminiContents(messages: readonly ModelMessage[]) {
+  const contents: Array<{ role: string; parts: unknown[] }> = [];
+  let pendingToolParts: unknown[] | null = null;
+
+  const flushToolParts = () => {
+    if (pendingToolParts && pendingToolParts.length > 0) {
+      contents.push({ parts: pendingToolParts, role: "function" });
+    }
+    pendingToolParts = null;
+  };
+
+  for (const message of messages) {
+    if (message.role === "system") {
+      continue;
+    }
+    if (message.role === "tool") {
+      pendingToolParts ??= [];
+      pendingToolParts.push({
         functionResponse: {
           name: message.name ?? message.toolCallId ?? "tool",
           response: { output: message.content }
         }
-      }],
-      role: "function"
-    };
+      });
+      continue;
+    }
+    flushToolParts();
+    contents.push(toGeminiContent(message));
   }
+  flushToolParts();
 
+  return contents;
+}
+
+function toGeminiContent(message: ModelMessage): { role: string; parts: unknown[] } {
   if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
     return {
       parts: [

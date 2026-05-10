@@ -558,6 +558,50 @@ describe("provider adapters", () => {
       usage: { inputTokens: 6, outputTokens: 3 }
     });
   });
+
+  it("coalesces parallel tool results into a single role=function turn", async () => {
+    let requestBody: { contents?: Array<{ role: string; parts: Array<{ functionResponse?: { name: string } }> }> } = {};
+    const provider = new GeminiProvider({
+      apiKey: "gemini-key",
+      defaultModel: "gemini-test",
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "ok" }] } }],
+          responseId: "gemini-2"
+        }));
+      }
+    });
+
+    await provider.generate({
+      messages: [
+        { content: "what is on my plate", role: "user" },
+        {
+          content: "",
+          role: "assistant",
+          toolCalls: [
+            { arguments: {}, id: "call_a", name: "muse.tasks.list" },
+            { arguments: {}, id: "call_b", name: "muse.calendar.events" },
+            { arguments: {}, id: "call_c", name: "muse.notes.list" }
+          ]
+        },
+        { content: "[]", name: "muse.tasks.list", role: "tool", toolCallId: "call_a" },
+        { content: "[]", name: "muse.calendar.events", role: "tool", toolCallId: "call_b" },
+        { content: "[]", name: "muse.notes.list", role: "tool", toolCallId: "call_c" }
+      ],
+      model: "gemini/gemini-test"
+    });
+
+    const contents = requestBody.contents ?? [];
+    const functionTurns = contents.filter((c) => c.role === "function");
+    expect(functionTurns).toHaveLength(1);
+    expect(functionTurns[0].parts).toHaveLength(3);
+    expect(functionTurns[0].parts.map((p) => p.functionResponse?.name)).toEqual([
+      "muse.tasks.list",
+      "muse.calendar.events",
+      "muse.notes.list"
+    ]);
+  });
 });
 
 describe("provider adapter contracts", () => {
