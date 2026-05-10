@@ -601,6 +601,31 @@ describe("cli program", () => {
     expect(combined).toContain("latencySamples");
   });
 
+  it("voice providers GETs /api/voice/providers and prints the registered STT/TTS list", async () => {
+    const { io, output } = captureOutput();
+    const requests: Array<{ readonly method?: string; readonly url: string }> = [];
+    const program = createProgram({
+      ...io,
+      fetch: async (url, init) => {
+        requests.push({ method: init?.method, url: String(url) });
+        return new Response(JSON.stringify({
+          stt: [{ description: "Cloud STT", displayName: "OpenAI Whisper", id: "openai-whisper", local: false }],
+          tts: [{ description: "Cloud TTS", displayName: "OpenAI TTS", id: "openai-tts", local: false }]
+        }));
+      }
+    });
+
+    await program.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "voice", "providers"],
+      { from: "node" }
+    );
+
+    expect(requests[0]).toMatchObject({ url: "http://api.test/api/voice/providers", method: "GET" });
+    const combined = output.join("");
+    expect(combined).toContain("openai-whisper");
+    expect(combined).toContain("openai-tts");
+  });
+
   it("specs list / get / resolve hit the public agent-spec endpoints", async () => {
     const { io, output } = captureOutput();
     const requests: Array<{ readonly body?: string; readonly method?: string; readonly url: string }> = [];

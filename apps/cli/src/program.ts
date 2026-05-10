@@ -13,6 +13,7 @@ import { registerMcpCommands } from "./commands-mcp.js";
 import { registerOrchestrateCommands } from "./commands-orchestrate.js";
 import { registerSchedulerCommands, registerSetupCommands } from "./commands-scheduler-setup.js";
 import { registerSpecsCommands } from "./commands-specs.js";
+import { registerVoiceCommands } from "./commands-voice.js";
 
 export interface CliPromptAdapter {
   text(options: { readonly message: string; readonly placeholder?: string }): Promise<string>;
@@ -217,6 +218,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 
   registerSchedulerCommands(program, io, { apiRequest, writeOutput });
   registerSetupCommands(program, io);
+  registerVoiceCommands(program, io, { apiRequest, writeOutput });
 
   return program;
 }
