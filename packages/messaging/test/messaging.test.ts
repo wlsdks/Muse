@@ -9,8 +9,10 @@ import {
   MessagingValidationError,
   SlackProvider,
   TelegramProvider,
+  readDiscordAfter,
   readTelegramOffset,
   validateOutboundMessage,
+  writeDiscordAfter,
   writeTelegramOffset
 } from "../src/index.js";
 import { clampInboundLimit, tryParseJson } from "../src/provider-helpers.js";
@@ -198,6 +200,92 @@ describe("DiscordProvider.fetchInbound", () => {
       message: expect.stringContaining("Missing Access"),
       status: 403
     });
+  });
+});
+
+describe("discord-after-store", () => {
+  it("readDiscordAfter returns undefined when the file is missing or malformed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-disc-after-"));
+    expect(await readDiscordAfter(join(dir, "missing.json"), "ch-1")).toBeUndefined();
+    const garbage = join(dir, "garbage.json");
+    const { promises: fs } = await import("node:fs");
+    await fs.writeFile(garbage, "not json", "utf8");
+    expect(await readDiscordAfter(garbage, "ch-1")).toBeUndefined();
+  });
+
+  it("write+read round-trips per-channel cursors without collision", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-disc-after-"));
+    const file = join(dir, "after.json");
+    await writeDiscordAfter(file, "ch-a", "111");
+    await writeDiscordAfter(file, "ch-b", "222");
+    await writeDiscordAfter(file, "ch-a", "333"); // overwrite ch-a
+    expect(await readDiscordAfter(file, "ch-a")).toBe("333");
+    expect(await readDiscordAfter(file, "ch-b")).toBe("222");
+    expect(await readDiscordAfter(file, "ch-missing")).toBeUndefined();
+  });
+});
+
+describe("DiscordProvider.pollUpdates", () => {
+  it("without afterFile, polls without ?after= (snapshot mode)", async () => {
+    let seenUrl = "";
+    const provider = new DiscordProvider({
+      baseUrl: "https://disc.test/api",
+      fetch: async (url) => { seenUrl = String(url); return fakeJsonResponse([]); },
+      token: "x"
+    });
+    await provider.pollUpdates({ source: "ch-9" });
+    expect(seenUrl).not.toContain("after=");
+  });
+
+  it("with afterFile, passes ?after=<stored> and advances to the newest snowflake by BigInt compare", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-disc-poll-"));
+    const afterFile = join(dir, "after.json");
+    await writeDiscordAfter(afterFile, "ch-9", "1000000000000000000");
+    let seenUrl = "";
+    const provider = new DiscordProvider({
+      afterFile,
+      baseUrl: "https://disc.test/api",
+      fetch: async (url) => {
+        seenUrl = String(url);
+        return fakeJsonResponse([
+          // Newest-first, but mix lengths to exercise BigInt compare.
+          { author: { username: "u" }, channel_id: "ch-9", content: "newest", id: "1099999999999999999", timestamp: "2026-05-11T10:00:00Z" },
+          { author: { username: "u" }, channel_id: "ch-9", content: "older", id: "999999999999999999", timestamp: "2026-05-11T09:00:00Z" }
+        ]);
+      },
+      token: "x"
+    });
+    const inbound = await provider.pollUpdates({ source: "ch-9", limit: 50 });
+    expect(seenUrl).toContain("&after=1000000000000000000");
+    expect(inbound).toHaveLength(2);
+    // BigInt(1099999999999999999) > BigInt(999999999999999999) → newest wins.
+    expect(await readDiscordAfter(afterFile, "ch-9")).toBe("1099999999999999999");
+  });
+
+  it("with afterFile, empty response leaves the cursor untouched", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-disc-empty-"));
+    const afterFile = join(dir, "after.json");
+    await writeDiscordAfter(afterFile, "ch-9", "777");
+    const provider = new DiscordProvider({
+      afterFile,
+      fetch: async () => fakeJsonResponse([]),
+      token: "x"
+    });
+    await provider.pollUpdates({ source: "ch-9" });
+    expect(await readDiscordAfter(afterFile, "ch-9")).toBe("777");
+  });
+
+  it("rejects calls without `source` (channel id) before any HTTP", async () => {
+    let calls = 0;
+    const provider = new DiscordProvider({
+      fetch: async () => { calls += 1; return fakeJsonResponse([]); },
+      token: "x"
+    });
+    await expect(provider.pollUpdates()).rejects.toMatchObject({
+      code: "INVALID_DESTINATION",
+      message: expect.stringContaining("source")
+    });
+    expect(calls).toBe(0);
   });
 });
 

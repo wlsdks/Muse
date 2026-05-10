@@ -39,3 +39,8 @@ export {
   readTelegramOffset,
   writeTelegramOffset
 } from "./telegram-offset-store.js";
+
+export {
+  readDiscordAfter,
+  writeDiscordAfter
+} from "./discord-after-store.js";

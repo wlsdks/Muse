@@ -1,3 +1,4 @@
+import { readDiscordAfter, writeDiscordAfter } from "./discord-after-store.js";
 import { MessagingProviderError } from "./errors.js";
 import { clampInboundLimit, tryParseJson } from "./provider-helpers.js";
 import type {
@@ -18,6 +19,16 @@ export interface DiscordProviderOptions {
   readonly baseUrl?: string;
   /** API version (default v10). */
   readonly apiVersion?: string;
+  /**
+   * When set, `pollUpdates` reads/writes a per-channel "after"
+   * cursor through this file (atomic tmp+rename). Without it,
+   * each `pollUpdates` call is snapshot-style: returns the most
+   * recent `limit` messages currently visible to the bot. The
+   * existing `fetchInbound` is unaffected — Phase 2.c.1 only
+   * adds the polling foundation; a later slice will switch the
+   * read path to a local inbox.
+   */
+  readonly afterFile?: string;
 }
 
 const DEFAULT_BASE_URL = "https://discord.com/api";
@@ -48,12 +59,14 @@ export class DiscordProvider implements MessagingProvider {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly baseUrl: string;
   private readonly apiVersion: string;
+  private readonly afterFile: string | undefined;
 
   constructor(options: DiscordProviderOptions) {
     this.token = options.token;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.apiVersion = options.apiVersion ?? DEFAULT_VERSION;
+    this.afterFile = options.afterFile;
   }
 
   describe(): MessagingProviderInfo {
@@ -76,16 +89,41 @@ export class DiscordProvider implements MessagingProvider {
    * delivery lands in Phase 2.b.
    */
   async fetchInbound(options?: InboundFetchOptions): Promise<readonly InboundMessage[]> {
+    return this.fetchMessages(options, false);
+  }
+
+  /**
+   * Polling-side surface for a daemon: like `fetchInbound` but
+   * advances the per-channel "after" cursor when an `afterFile` is
+   * configured. Each call passes `?after=<stored>` to Discord and
+   * persists the newest message id back on success — so a polling
+   * tick walks the channel rather than re-reading the same window.
+   *
+   * Without `afterFile`, behaves identically to `fetchInbound`
+   * (snapshot of newest `limit`). `source` is required either way.
+   */
+  async pollUpdates(options?: InboundFetchOptions): Promise<readonly InboundMessage[]> {
+    return this.fetchMessages(options, true);
+  }
+
+  private async fetchMessages(
+    options: InboundFetchOptions | undefined,
+    advanceCursor: boolean
+  ): Promise<readonly InboundMessage[]> {
     const channelId = options?.source?.trim();
     if (!channelId || channelId.length === 0) {
       throw new MessagingProviderError(
         this.id,
         "INVALID_DESTINATION",
-        "Discord fetchInbound requires `source` (channel id)"
+        "Discord channel messages require `source` (channel id)"
       );
     }
     const limit = clampInboundLimit(options?.limit);
-    const url = `${this.baseUrl}/${this.apiVersion}/channels/${encodeURIComponent(channelId)}/messages?limit=${limit.toString()}`;
+    const cursor = advanceCursor && this.afterFile
+      ? await readDiscordAfter(this.afterFile, channelId)
+      : undefined;
+    const url = `${this.baseUrl}/${this.apiVersion}/channels/${encodeURIComponent(channelId)}/messages?limit=${limit.toString()}`
+      + (cursor !== undefined ? `&after=${encodeURIComponent(cursor)}` : "");
     const response = await this.fetchImpl(url, {
       headers: { authorization: `Bot ${this.token}` },
       method: "GET"
@@ -102,6 +140,15 @@ export class DiscordProvider implements MessagingProvider {
     }
     const parsed = tryParseJson<readonly DiscordChannelMessage[]>(text);
     const messages: readonly DiscordChannelMessage[] = Array.isArray(parsed) ? parsed : [];
+    // Discord returns newest-first. Advance the cursor on ANY id
+    // seen — even messages we filter out client-side (empty content)
+    // must be ack'd or we'll re-poll them.
+    if (advanceCursor && this.afterFile && messages.length > 0) {
+      const newest = pickNewestId(messages);
+      if (newest !== undefined) {
+        await writeDiscordAfter(this.afterFile, channelId, newest);
+      }
+    }
     return messages.flatMap((message): readonly InboundMessage[] => {
       if (typeof message.content !== "string" || message.content.length === 0) {
         return [];
@@ -150,5 +197,32 @@ export class DiscordProvider implements MessagingProvider {
       raw: parsed
     };
   }
+}
+
+/**
+ * Discord snowflakes are 64-bit timestamp-encoded integers
+ * serialised as decimal strings. Lexicographic compare works only
+ * when lengths match; for safety pick the BigInt-max so a 19-digit
+ * id never loses to a 18-digit one.
+ */
+function pickNewestId(messages: readonly DiscordChannelMessage[]): string | undefined {
+  let best: bigint | undefined;
+  let bestStr: string | undefined;
+  for (const message of messages) {
+    if (typeof message.id !== "string" || message.id.length === 0) {
+      continue;
+    }
+    let asBig: bigint;
+    try {
+      asBig = BigInt(message.id);
+    } catch {
+      continue;
+    }
+    if (best === undefined || asBig > best) {
+      best = asBig;
+      bestStr = message.id;
+    }
+  }
+  return bestStr;
 }
 
