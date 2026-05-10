@@ -408,14 +408,57 @@ describe("MessagingProviderRegistry", () => {
   });
 
   it("fetchInbound surfaces a clear error for providers without inbound support", async () => {
-    // LINE is webhook-only; its provider intentionally lacks
-    // fetchInbound. Slack/Discord/Telegram all implement it now.
-    const line = new LineProvider({ token: "x" });
-    const registry = new MessagingProviderRegistry([line]);
-    await expect(registry.fetchInbound("line")).rejects.toMatchObject({
+    // All four shipped providers implement fetchInbound in some form
+    // now. The "not supported" guard still matters for any future
+    // provider added without inbound; assert it via a stub.
+    const stub = {
+      describe: () => ({ description: "stub", displayName: "Stub", id: "stub" }),
+      id: "stub",
+      send: async () => { throw new Error("send not used in this test"); }
+    } as unknown as Parameters<typeof MessagingProviderRegistry.prototype.register>[0];
+    const registry = new MessagingProviderRegistry([stub]);
+    await expect(registry.fetchInbound("stub")).rejects.toMatchObject({
       code: "UPSTREAM_FAILED",
       message: expect.stringContaining("does not support inbound")
     });
+  });
+
+  it("LineProvider.fetchInbound throws INVALID_DESTINATION when inboxFile isn't configured", async () => {
+    const line = new LineProvider({ token: "x" });
+    await expect(line.fetchInbound()).rejects.toMatchObject({
+      code: "INVALID_DESTINATION",
+      message: expect.stringContaining("inboxFile")
+    });
+  });
+
+  it("LineProvider.fetchInbound reads the persisted webhook inbox newest-first", async () => {
+    const root = mkdtempSync(join(tmpdir(), "muse-line-fetch-"));
+    const inboxFile = join(root, "line-inbox.json");
+    const line = new LineProvider({ inboxFile, token: "x" });
+
+    // Empty file → empty array.
+    expect(await line.fetchInbound({ limit: 10 })).toEqual([]);
+
+    // Append two messages via the same store the webhook would use.
+    const { appendInbound } = await import("../src/index.js");
+    await appendInbound(inboxFile, {
+      messageId: "m1",
+      providerId: "line",
+      receivedAtIso: "2026-05-11T08:00:00.000Z",
+      sender: "U-stark",
+      source: "U-stark",
+      text: "hello"
+    });
+    await appendInbound(inboxFile, {
+      messageId: "m2",
+      providerId: "line",
+      receivedAtIso: "2026-05-11T08:01:00.000Z",
+      sender: "U-stark",
+      source: "U-stark",
+      text: "follow-up"
+    });
+    const inbound = await line.fetchInbound({ limit: 10 });
+    expect(inbound.map((m) => m.messageId)).toEqual(["m2", "m1"]); // newest-first
   });
 
   it("fetchInbound delegates to the provider when supported", async () => {

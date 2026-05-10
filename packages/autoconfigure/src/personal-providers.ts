@@ -110,6 +110,14 @@ export function resolveRemindersFile(env: MuseEnvironment): string {
   return pathJoin(homedir(), ".muse", "reminders.json");
 }
 
+export function resolveLineInboxFile(env: MuseEnvironment): string {
+  const override = env.MUSE_LINE_INBOX_FILE?.trim();
+  if (override && override.length > 0) {
+    return override;
+  }
+  return pathJoin(homedir(), ".muse", "line-inbox.json");
+}
+
 export function resolveModelKeysFile(env: MuseEnvironment): string {
   const override = env.MUSE_MODEL_KEYS_FILE?.trim();
   if (override && override.length > 0) {
@@ -499,7 +507,13 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
   }
   const lineToken = tokenFor("MUSE_LINE_CHANNEL_ACCESS_TOKEN", "line");
   if (lineToken) {
-    registry.register(new LineProvider({ token: lineToken }));
+    // Always pass the inbox file path; LineProvider only reads the
+    // file when fetchInbound is called, so an absent file is fine.
+    // The webhook handler creates it on first delivery.
+    registry.register(new LineProvider({
+      inboxFile: resolveLineInboxFile(env),
+      token: lineToken
+    }));
   }
   return registry;
 }

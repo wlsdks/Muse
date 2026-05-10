@@ -1,6 +1,9 @@
 import { MessagingProviderError } from "./errors.js";
-import { tryParseJson } from "./provider-helpers.js";
+import { readInbox } from "./inbox-store.js";
+import { clampInboundLimit, tryParseJson } from "./provider-helpers.js";
 import type {
+  InboundFetchOptions,
+  InboundMessage,
   MessagingProvider,
   MessagingProviderInfo,
   OutboundMessage,
@@ -15,6 +18,14 @@ export interface LineProviderOptions {
   readonly baseUrl?: string;
   /** Optional clock for synthesising the receipt id (tests inject). */
   readonly now?: () => Date;
+  /**
+   * Persisted inbox path for inbound webhook events (Phase 2.b.3).
+   * When set, `fetchInbound` reads from this file via
+   * `@muse/messaging/readInbox`. When omitted, fetchInbound throws
+   * `INVALID_DESTINATION` so the registry's "not supported" guard
+   * keeps surfacing a clean error.
+   */
+  readonly inboxFile?: string;
 }
 
 const DEFAULT_BASE_URL = "https://api.line.me";
@@ -37,20 +48,45 @@ export class LineProvider implements MessagingProvider {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly baseUrl: string;
   private readonly nowFn: () => Date;
+  private readonly inboxFile: string | undefined;
 
   constructor(options: LineProviderOptions) {
     this.token = options.token;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.nowFn = options.now ?? (() => new Date());
+    this.inboxFile = options.inboxFile;
   }
 
   describe(): MessagingProviderInfo {
     return {
-      description: "LINE Messaging API (push, send only this iter).",
+      description: this.inboxFile
+        ? "LINE Messaging API (push out, persisted webhook inbox in)."
+        : "LINE Messaging API (push out; inbox needs MUSE_LINE_INBOX_FILE + webhook)",
       displayName: "LINE",
       id: this.id
     };
+  }
+
+  /**
+   * Phase 2.b.3 inbound: read text events the webhook handler has
+   * persisted to `inboxFile` via `appendInbound`. The file is
+   * shared with `apps/api/src/messaging-webhooks-routes.ts`, so
+   * what the bot received over webhook is exactly what
+   * `fetchInbound` returns. When `inboxFile` isn't configured the
+   * method throws so the registry's "not supported" guard keeps
+   * surfacing a clean error rather than silently returning [].
+   */
+  async fetchInbound(options?: InboundFetchOptions): Promise<readonly InboundMessage[]> {
+    if (!this.inboxFile) {
+      throw new MessagingProviderError(
+        this.id,
+        "INVALID_DESTINATION",
+        "LINE fetchInbound requires `inboxFile` (set MUSE_LINE_INBOX_FILE and run the webhook)"
+      );
+    }
+    const limit = clampInboundLimit(options?.limit);
+    return readInbox(this.inboxFile, limit);
   }
 
   async send(message: OutboundMessage): Promise<OutboundReceipt> {

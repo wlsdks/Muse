@@ -62,13 +62,13 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
       {
         description:
           "Fetch a one-shot snapshot of recent inbound messages from a provider that supports inbound. " +
-          "`providerId` from `providers` (telegram | discord | slack at this iter — line returns a clean " +
-          "'not supported yet' error). `limit` is capped at 100 (default 20). Each entry is " +
-          "{ messageId, source, sender?, receivedAtIso, text }. " +
-          "`source` is required for per-channel providers (discord channel id, slack channel id like C0123ABCD); " +
-          "telegram ignores it. " +
-          "Use this to answer 'did anyone message me?' without a daemon — every call is a fresh fetch " +
-          "with no offset state, so messages may repeat across calls.",
+          "All four shipped providers (telegram | discord | slack | line) now implement it; LINE reads " +
+          "from a webhook-persisted inbox file (Phase 2.b). `limit` is capped at 100 (default 20). Each " +
+          "entry is { messageId, source, sender?, receivedAtIso, text }. " +
+          "`source` is required for per-channel providers (discord channel id, slack channel id like " +
+          "C0123ABCD); telegram and LINE ignore it. " +
+          "Use this to answer 'did anyone message me?' without a daemon — Telegram/Discord/Slack hit a " +
+          "fresh REST call (so messages may repeat across calls), LINE reads the persisted webhook inbox.",
         execute: async (args): Promise<JsonObject> => {
           const providerId = readString(args, "providerId")?.trim();
           if (!providerId) {

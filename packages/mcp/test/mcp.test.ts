@@ -2535,14 +2535,19 @@ describe("muse.messaging loopback server", () => {
   });
 
   it("inbox surfaces 'not supported' as a structured error when the provider lacks fetchInbound", async () => {
-    // LINE inbound is webhook-only, so its provider intentionally
-    // omits fetchInbound. Telegram/Discord/Slack now all implement it.
-    const { LineProvider, MessagingProviderRegistry } = await import("@muse/messaging");
-    const line = new LineProvider({ token: "x" });
-    const server = createMessagingMcpServer({ registry: new MessagingProviderRegistry([line]) });
+    // All four shipped providers now implement fetchInbound. The
+    // guard still matters for future providers added without
+    // inbound; assert via a minimal stub.
+    const { MessagingProviderRegistry } = await import("@muse/messaging");
+    const stub = {
+      describe: () => ({ description: "stub", displayName: "Stub", id: "stub" }),
+      id: "stub",
+      send: async () => { throw new Error("not used"); }
+    } as unknown as Parameters<typeof MessagingProviderRegistry.prototype.register>[0];
+    const server = createMessagingMcpServer({ registry: new MessagingProviderRegistry([stub]) });
     const connection = createLoopbackMcpConnection(server);
 
-    const result = await connection.callTool!("inbox", { providerId: "line" });
+    const result = await connection.callTool!("inbox", { providerId: "stub" });
     expect(result).toMatchObject({
       error: expect.stringContaining("does not support inbound"),
       providerErrorCode: "UPSTREAM_FAILED"

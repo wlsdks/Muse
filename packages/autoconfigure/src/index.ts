@@ -140,6 +140,7 @@ import {
   ensureNotesDir,
   mergeModelKeysFromFile,
   resolveCredentialsFile,
+  resolveLineInboxFile,
   resolveNotesDir,
   resolveRemindersFile,
   resolveTasksFile
@@ -149,6 +150,7 @@ export {
   buildMessagingRegistry,
   buildVoiceRegistry,
   mergeModelKeysFromFile,
+  resolveLineInboxFile,
   resolveLocalCalendarFile,
   resolveMessagingCredentialsFile,
   resolveModelKeysFile,
@@ -664,7 +666,8 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     ...(assembly.tasksProviderRegistry ? { tasksProviderRegistry: assembly.tasksProviderRegistry } : {}),
     voice: assembly.voice,
     messaging: assembly.messaging,
-    remindersFile: resolveRemindersFile(env)
+    remindersFile: resolveRemindersFile(env),
+    lineInboxFile: resolveLineInboxFile(env)
   };
 }
 
