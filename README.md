@@ -183,20 +183,30 @@ Personal-domain toggles:
 ## Contributing
 
 This repo follows a lean-contract style for Claude Code
-collaboration:
+collaboration. Start here:
 
-- [`CLAUDE.md`](CLAUDE.md) — the contract every Claude Code agent reads first.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — local setup, verification
+  gates, commit / lint / test discipline.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — Contributor
+  Covenant 2.1.
+- [`SECURITY.md`](SECURITY.md) — private-disclosure flow for
+  vulnerabilities.
+- [`CLAUDE.md`](CLAUDE.md) — the contract every Claude Code agent
+  reads first (under 100 lines, points at the rule files below).
 - [`AGENTS.md`](AGENTS.md) — cross-agent product brief.
-- [`.claude/rules/`](.claude/rules/) — domain-specific rules (architecture, testing, commits, …).
+- [`.claude/rules/`](.claude/rules/) — domain-specific rules
+  (architecture, testing, commits, code style, …).
 - [`.claude/commands/`](.claude/commands/) — reusable slash commands.
 - [`.claude/agents/`](.claude/agents/) — subagent definitions.
-- [`docs/migration-plan.md`](docs/migration-plan.md) — running iteration log.
+- [`docs/migration-plan.md`](docs/migration-plan.md) — running
+  iteration log.
 
 Use Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`,
-`docs:`, `chore:`). All commits and PR descriptions are written in
-English.
+`docs:`, `chore:`). Commits and PR descriptions are written in
+English so multi-locale contributors and tooling stay aligned.
 
 ## License
 
-TBD. The runtime, adapters, and tooling are intended to be open
-source.
+[MIT](LICENSE). The runtime, adapters, and tooling are open
+source. Contributions are accepted under the same terms — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the flow.

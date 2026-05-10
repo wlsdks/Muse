@@ -2,6 +2,15 @@
   "name": "muse",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
+  "homepage": "https://github.com/wlsdks/Muse",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wlsdks/Muse.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wlsdks/Muse/issues"
+  },
   "type": "module",
   "packageManager": "pnpm@10.18.0",
   "engines": {
