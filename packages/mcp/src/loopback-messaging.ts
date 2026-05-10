@@ -20,6 +20,11 @@ import type { LoopbackMcpServer } from "./loopback.js";
  *     through one of those providers, e.g. for "remind me on
  *     Telegram when the deploy finishes" or "send this brief to
  *     Slack".
+ *   - `muse.messaging.inbox` (read) — Phase 2.a one-shot snapshot of
+ *     recent inbound messages on a provider that supports it
+ *     (Telegram landed first; Discord/Slack/LINE follow). The agent
+ *     can answer "did Stark message me this morning?" without a
+ *     daemon — every call is a fresh `getUpdates`.
  *
  * The server only registers when the runtime assembly's
  * `MessagingProviderRegistry` already has at least one provider —
@@ -52,6 +57,59 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
           type: "object"
         },
         name: "providers",
+        risk: "read"
+      },
+      {
+        description:
+          "Fetch a one-shot snapshot of recent inbound messages from a provider that supports inbound. " +
+          "`providerId` from `providers` (telegram only at this iter — others return a clean " +
+          "'not supported yet' error). `limit` is capped at 100 (default 20). Each entry is " +
+          "{ messageId, source, sender?, receivedAtIso, text }. " +
+          "Use this to answer 'did anyone message me?' without a daemon — every call is a fresh fetch " +
+          "with no offset state, so messages may repeat across calls.",
+        execute: async (args): Promise<JsonObject> => {
+          const providerId = readString(args, "providerId")?.trim();
+          if (!providerId) {
+            return { error: "providerId is required" };
+          }
+          const limitRaw = args["limit"];
+          const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw)
+            ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
+            : undefined;
+          try {
+            const inbound = await registry.fetchInbound(providerId, limit !== undefined ? { limit } : undefined);
+            return {
+              inbound: inbound as unknown as JsonValue,
+              providerId,
+              total: inbound.length
+            };
+          } catch (error) {
+            if (error instanceof MessagingProviderError) {
+              return {
+                error: error.message,
+                providerErrorCode: error.code,
+                ...(error.status !== undefined ? { upstreamStatus: error.status } : {})
+              };
+            }
+            return { error: errorMessage(error) };
+          }
+        },
+        inputSchema: {
+          additionalProperties: false,
+          properties: {
+            limit: {
+              description: "Max messages to return. Default 20, capped at 100.",
+              type: "number"
+            },
+            providerId: {
+              description: "Provider id from `providers` (telegram only at this iter).",
+              type: "string"
+            }
+          },
+          required: ["providerId"],
+          type: "object"
+        },
+        name: "inbox",
         risk: "read"
       },
       {

@@ -2446,7 +2446,7 @@ describe("muse.messaging loopback server", () => {
     const connection = createLoopbackMcpConnection(server);
 
     const tools = await connection.listTools();
-    expect(tools.map((entry) => entry.name)).toEqual(expect.arrayContaining(["providers", "send"]));
+    expect(tools.map((entry) => entry.name)).toEqual(expect.arrayContaining(["providers", "send", "inbox"]));
 
     const list = await connection.callTool!("providers", {});
     expect(list).toMatchObject({ providers: [{ id: "telegram", displayName: "Telegram" }] });
@@ -2497,6 +2497,54 @@ describe("muse.messaging loopback server", () => {
     await expect(connection.callTool!("send", { destination: "x", providerId: "", text: "hi" }))
       .resolves.toMatchObject({ error: expect.stringContaining("providerId is required") });
     expect(calls).toBe(0);
+  });
+
+  it("inbox routes through registry.fetchInbound and returns the mapped messages", async () => {
+    const { MessagingProviderRegistry, TelegramProvider } = await import("@muse/messaging");
+    let seenLimit = "";
+    const tg = new TelegramProvider({
+      baseUrl: "https://tg.test",
+      fetch: async (url) => {
+        const u = String(url);
+        const match = u.match(/limit=(\d+)/u);
+        seenLimit = match ? match[1]! : "";
+        return new Response(JSON.stringify({
+          ok: true,
+          result: [{
+            message: {
+              chat: { id: 42, username: "stark" },
+              date: 1700000000,
+              from: { username: "stark97" },
+              message_id: 1,
+              text: "ping"
+            },
+            update_id: 1
+          }]
+        }));
+      },
+      token: "TOKEN"
+    });
+    const server = createMessagingMcpServer({ registry: new MessagingProviderRegistry([tg]) });
+    const connection = createLoopbackMcpConnection(server);
+
+    const result = await connection.callTool!("inbox", { limit: 5, providerId: "telegram" });
+    expect(seenLimit).toBe("5");
+    expect(result).toMatchObject({ providerId: "telegram", total: 1 });
+    const inbound = (result.inbound as Array<{ messageId: string; sender?: string; text: string }>);
+    expect(inbound[0]).toMatchObject({ messageId: "1", sender: "stark97", text: "ping" });
+  });
+
+  it("inbox surfaces 'not supported' as a structured error when the provider lacks fetchInbound", async () => {
+    const { MessagingProviderRegistry, SlackProvider } = await import("@muse/messaging");
+    const slack = new SlackProvider({ token: "x" });
+    const server = createMessagingMcpServer({ registry: new MessagingProviderRegistry([slack]) });
+    const connection = createLoopbackMcpConnection(server);
+
+    const result = await connection.callTool!("inbox", { providerId: "slack" });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("does not support inbound"),
+      providerErrorCode: "UPSTREAM_FAILED"
+    });
   });
 });
 
