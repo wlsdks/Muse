@@ -135,8 +135,9 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
 const BRIEF_SYSTEM_PROMPT =
   "You are Muse, the user's personal AI assistant in the JARVIS tradition. " +
   "Render the morning briefing JSON as a short, conversational summary (2-3 sentences, max 4). " +
-  "Lead with the most time-sensitive thing (the next event or an overdue task). " +
-  "Mention overall task count, the soonest event with its time, and one recent note if relevant. " +
+  "Lead with the most time-sensitive thing in this priority: an overdue reminder, then the next event, " +
+  "then an overdue or soon-due task. Mention overall task count, the soonest event with its time, " +
+  "any pending reminders by count (call out overdue ones explicitly), and one recent note if relevant. " +
   "Be warm but concise — no bullet lists, no headers. Match the user's locale.";
 
 async function renderBrief(
