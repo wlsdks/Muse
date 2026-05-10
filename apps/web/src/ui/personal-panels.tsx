@@ -558,6 +558,18 @@ export function RemindersPanel({ client }: { readonly client: ApiClient }) {
     onSuccess: async () => { await reminders.refetch(); }
   });
 
+  const snoozeReminder = useMutation({
+    mutationFn: async (id: string) =>
+      client.post<ReminderRow>(`/api/reminders/${encodeURIComponent(id)}/snooze`, {}),
+    onSuccess: async () => { await reminders.refetch(); }
+  });
+
+  const fireReminder = useMutation({
+    mutationFn: async (id: string) =>
+      client.post<ReminderRow>(`/api/reminders/${encodeURIComponent(id)}/fire`, {}),
+    onSuccess: async () => { await reminders.refetch(); }
+  });
+
   return (
     <section className="tool-surface compact" aria-label="Reminders">
       <div className="surface-heading">
@@ -605,9 +617,28 @@ export function RemindersPanel({ client }: { readonly client: ApiClient }) {
             </span>
             <button
               type="button"
+              onClick={() => fireReminder.mutate(reminder.id)}
+              disabled={fireReminder.isPending}
+              style={{ marginLeft: "0.5rem" }}
+              title="Mark this reminder delivered (status → fired)"
+            >
+              ✓ Fire
+            </button>
+            <button
+              type="button"
+              onClick={() => snoozeReminder.mutate(reminder.id)}
+              disabled={snoozeReminder.isPending}
+              style={{ marginLeft: "0.25rem" }}
+              title="Snooze 10 minutes"
+            >
+              ⟳ Snooze
+            </button>
+            <button
+              type="button"
               onClick={() => clearReminder.mutate(reminder.id)}
               disabled={clearReminder.isPending}
-              style={{ marginLeft: "0.5rem" }}
+              style={{ marginLeft: "0.25rem" }}
+              title="Delete reminder"
             >
               ✕ Clear
             </button>
