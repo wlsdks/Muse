@@ -1,0 +1,82 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  applyAttachmentContext,
+  parseAttachmentsFromMetadata,
+  renderAttachmentSection
+} from "../src/attachment-context.js";
+
+describe("parseAttachmentsFromMetadata (D10)", () => {
+  it("returns [] when metadata is missing or shaped wrong", () => {
+    expect(parseAttachmentsFromMetadata(undefined)).toEqual([]);
+    expect(parseAttachmentsFromMetadata({})).toEqual([]);
+    expect(parseAttachmentsFromMetadata({ attachments: "not an array" })).toEqual([]);
+  });
+
+  it("parses well-formed attachments, drops entries without a name", () => {
+    const parsed = parseAttachmentsFromMetadata({
+      attachments: [
+        { mimeType: "image/png", name: "diagram.png", size: 2048 },
+        { name: "" }, // dropped
+        { description: "spec doc", name: "spec.md", ref: "ref-xyz" }
+      ]
+    });
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({ mimeType: "image/png", name: "diagram.png", size: 2048 });
+    expect(parsed[1]).toMatchObject({ description: "spec doc", name: "spec.md", ref: "ref-xyz" });
+  });
+});
+
+describe("renderAttachmentSection", () => {
+  it("returns undefined for empty list", () => {
+    expect(renderAttachmentSection([])).toBeUndefined();
+  });
+
+  it("renders each attachment with mime + size + ref + description", () => {
+    const out = renderAttachmentSection([
+      { mimeType: "image/png", name: "diagram.png", size: 2_048 },
+      { description: "spec", name: "spec.md", ref: "ref-1" }
+    ]);
+    expect(out).toContain("[Attached Files]");
+    expect(out).toContain("diagram.png");
+    expect(out).toContain("image/png");
+    expect(out).toContain("2.0KB");
+    expect(out).toContain("spec.md");
+    expect(out).toContain("ref=ref-1");
+    expect(out).toContain("spec");
+  });
+});
+
+describe("applyAttachmentContext", () => {
+  it("injects [Attached Files] system block when metadata.attachments is present", () => {
+    const result = applyAttachmentContext({
+      input: {
+        messages: [{ content: "hi", role: "user" }],
+        metadata: {
+          attachments: [{ name: "report.pdf", size: 1024 }]
+        },
+        model: "diagnostic/smoke"
+      },
+      runId: "r-1",
+      startedAt: new Date()
+    });
+    const system = result.messages.find((message) => message.role === "system")?.content ?? "";
+    expect(system).toContain("[Attached Files]");
+    expect(system).toContain("report.pdf");
+    expect((result.metadata as { attachmentContextCount?: number }).attachmentContextCount).toBe(1);
+  });
+
+  it("is a no-op when no attachments are declared", () => {
+    const input = {
+      messages: [{ content: "hi", role: "user" as const }],
+      metadata: { userId: "stark" },
+      model: "diagnostic/smoke"
+    };
+    const result = applyAttachmentContext({
+      input,
+      runId: "r-2",
+      startedAt: new Date()
+    });
+    expect(result).toBe(input);
+  });
+});
