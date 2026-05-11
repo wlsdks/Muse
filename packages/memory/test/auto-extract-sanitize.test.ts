@@ -122,4 +122,48 @@ describe("auto-extract value sanitisation at store boundary (iter 20)", () => {
     expect(stored?.value).toBeDefined();
     expect(stored?.value).not.toContain("\n");
   });
+
+  it("times out a hung extraction call within the configured budget (iter 42)", async () => {
+    // A misbehaving extractor model that never resolves would
+    // otherwise hang the `afterComplete` chain forever, blocking
+    // the next run. The hook should give up after `extractionTimeoutMs`
+    // and fail-open (no facts written, no error propagated).
+    const hangingProvider = {
+      id: "diagnostic",
+      // Never resolves — simulates a network stall / runaway model
+      generate(): Promise<{ id: string; model: string; output: string }> {
+        return new Promise(() => {
+          // intentionally empty
+        });
+      },
+      async listModels() {
+        return [];
+      },
+      async *stream() {
+        // not used
+      }
+    };
+    const store = new InMemoryUserMemoryStore();
+    const hook = createUserMemoryAutoExtractHook({
+      extractionTimeoutMs: 50,
+      model: "diagnostic/smoke",
+      modelProvider: hangingProvider,
+      store
+    });
+    const started = Date.now();
+    await hook.afterComplete!(
+      {
+        input: { messages: [{ content: "hi", role: "user" }], metadata: { userId: "stark" } },
+        runId: "r-1"
+      },
+      { id: "r-1", model: "diagnostic/smoke", output: "noted." }
+    );
+    const elapsed = Date.now() - started;
+    // Returns within roughly the timeout budget (allow generous
+    // headroom for CI scheduling jitter).
+    expect(elapsed).toBeLessThan(2_000);
+    // Nothing landed in the store because extraction never completed.
+    const memory = await store.findByUserId("stark");
+    expect(memory?.facts ?? {}).toEqual({});
+  });
 });

@@ -63,6 +63,15 @@ export interface UserMemoryAutoExtractOptions {
    * Mirrors the user-prompt cap.
    */
   readonly maxAssistantOutputChars?: number;
+  /**
+   * Wall-clock timeout for the extraction `generate()` call in
+   * milliseconds. Default 10_000 (10s). If the extractor model
+   * hangs (network stall, runaway provider, broken adapter), the
+   * hook would otherwise block the `afterComplete` chain forever
+   * and prevent the next run from starting. Times out → fail-open
+   * (same path as a thrown error).
+   */
+  readonly extractionTimeoutMs?: number;
 }
 
 interface ExtractedSlot {
@@ -141,6 +150,7 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
   const maxValue = Math.max(1, Math.trunc(options.maxValueLength ?? 200));
   const maxUserPrompt = Math.max(64, Math.trunc(options.maxUserPromptChars ?? 2_048));
   const maxAssistantOutput = Math.max(64, Math.trunc(options.maxAssistantOutputChars ?? 2_048));
+  const extractionTimeoutMs = Math.max(100, Math.trunc(options.extractionTimeoutMs ?? 10_000));
 
   return {
     afterComplete: async (context, response) => {
@@ -165,7 +175,10 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
         ? `${assistantOutput.slice(0, maxAssistantOutput - 1)}…`
         : assistantOutput;
       try {
-        const payload = await runExtraction(options.modelProvider, options.model, boundedUser, boundedAssistant);
+        const payload = await runWithTimeout(
+          runExtraction(options.modelProvider, options.model, boundedUser, boundedAssistant),
+          extractionTimeoutMs
+        );
         if (!payload) {
           return;
         }
@@ -178,11 +191,36 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
           maxVetoes
         });
       } catch {
-        // fail-open
+        // fail-open — including the timeout path. The next run
+        // is not blocked.
       }
     },
     id: "user-memory-auto-extract"
   };
+}
+
+/**
+ * Race a promise against a wall-clock timer. Resolves with the
+ * promise's value if it lands first, rejects with a timeout error
+ * otherwise. The underlying promise is NOT cancelled — JS has no
+ * native cancellation primitive — but the caller stops awaiting it
+ * so downstream lifecycle (the agent's next run) is unblocked.
+ *
+ * Used by the auto-extract hook to keep a misbehaving extractor
+ * model from hanging `afterComplete` indefinitely.
+ */
+async function runWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timerHandle: ReturnType<typeof setTimeout> | undefined;
+  const timer = new Promise<never>((_, reject) => {
+    timerHandle = setTimeout(() => reject(new Error("auto-extract: extraction timed out")), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timer]);
+  } finally {
+    if (timerHandle !== undefined) {
+      clearTimeout(timerHandle);
+    }
+  }
 }
 
 function readUserId(context: AgentRunContextView): string | undefined {
