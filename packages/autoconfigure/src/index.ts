@@ -4,6 +4,7 @@ import {
 } from "@muse/calendar";
 import {
   createAgentRuntime,
+  type ActiveContextProvider,
   type AgentRuntime,
   type HookStage
 } from "@muse/agent-core";
@@ -284,6 +285,14 @@ export interface MuseRuntimeAssembly {
   readonly notesProviderRegistry?: NotesProviderRegistry;
   readonly tasksProviderRegistry?: TasksProviderRegistry;
   readonly voice?: VoiceProviderRegistry;
+  /**
+   * Context-Engineering Phase 1 provider. Same instance the
+   * `agentRuntime` uses to compose its `[Active Context]` system
+   * section, exposed on the assembly so the REST + CLI surfaces can
+   * read the snapshot directly (e.g. `GET /api/active-context`).
+   * `undefined` when `MUSE_ACTIVE_CONTEXT_ENABLED=false`.
+   */
+  readonly activeContextProvider?: ActiveContextProvider;
   readonly messaging?: MessagingProviderRegistry;
   /**
    * Shared poll-now dispatcher (same closure that backs the
@@ -627,6 +636,15 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       }) as HookStage]
       : [])
   ];
+  // Lifted above `createAgentRuntime` so the same provider instance is
+  // both injected into the runtime (for `[Active Context]` system-section
+  // composition) and exposed on the assembly for the REST surface.
+  const activeContextProvider = buildActiveContextProvider(
+    env,
+    parseBoolean(env.MUSE_USER_MEMORY_INJECTION, true) ? userMemoryStore : undefined,
+    taskMemoryStore,
+    calendarRegistry
+  );
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
@@ -701,12 +719,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       // or opt-in (Phases 2, 4) — see `buildActiveContextProvider`,
       // `buildInboxContextProvider`, `buildToolFilter` for the toggle
       // semantics.
-      activeContextProvider: buildActiveContextProvider(
-        env,
-        parseBoolean(env.MUSE_USER_MEMORY_INJECTION, true) ? userMemoryStore : undefined,
-        taskMemoryStore,
-        calendarRegistry
-      ),
+      activeContextProvider,
       inboxContextProvider: buildInboxContextProvider(env),
       // Phase 3: store-backed episodic recall. Reuses the same
       // ConversationSummaryStore that conversation-summary persistence
@@ -788,6 +801,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     ...(notesRegistry ? { notesProviderRegistry: notesRegistry } : {}),
     ...(tasksRegistry ? { tasksProviderRegistry: tasksRegistry } : {}),
     voice: buildVoiceRegistry(env),
+    ...(activeContextProvider ? { activeContextProvider } : {}),
     messaging: messagingRegistry,
     ...(messagingRegistry.list().length > 0
       ? { messagingPollAll: pollAll, messagingPollNow: pollNow }
@@ -887,6 +901,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     tasksFile: resolveTasksFile(env),
     ...(assembly.tasksProviderRegistry ? { tasksProviderRegistry: assembly.tasksProviderRegistry } : {}),
     voice: assembly.voice,
+    ...(assembly.activeContextProvider ? { activeContextProvider: assembly.activeContextProvider } : {}),
     messaging: assembly.messaging,
     ...(assembly.messagingPollNow ? { messagingPollNow: assembly.messagingPollNow } : {}),
     ...(assembly.messagingPollAll ? { messagingPollAll: assembly.messagingPollAll } : {}),

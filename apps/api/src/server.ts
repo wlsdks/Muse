@@ -1,4 +1,4 @@
-import type { AgentRuntime } from "@muse/agent-core";
+import type { ActiveContextProvider, AgentRuntime } from "@muse/agent-core";
 import {
   InMemoryAgentSpecRegistry,
   RuleBasedAgentSpecResolver,
@@ -33,6 +33,7 @@ import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
 import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
+import { registerActiveContextRoutes } from "./active-context-routes.js";
 import { registerSetupRoutes } from "./setup-routes.js";
 import { registerTodayRoutes } from "./today-routes.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
@@ -100,6 +101,12 @@ export interface ServerOptions {
   readonly notesDir?: string;
   readonly notesProviderRegistry?: NotesProviderRegistry;
   readonly voice?: VoiceProviderRegistry;
+  /**
+   * Context-Engineering Phase 1 provider. When set, the API
+   * registers `GET /api/active-context` so the web console / curl /
+   * scripts can read the same snapshot the agent loop injects.
+   */
+  readonly activeContextProvider?: ActiveContextProvider;
   readonly messaging?: MessagingProviderRegistry;
   /**
    * On-demand poll dispatcher shared with `muse.messaging.poll_now`.
@@ -349,6 +356,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
   }
   registerSetupRoutes(server, { authService });
+  registerActiveContextRoutes(server, {
+    authService,
+    ...(options.activeContextProvider ? { activeContextProvider: options.activeContextProvider } : {})
+  });
   registerTodayRoutes(server, {
     authService,
     calendar: options.calendar,
