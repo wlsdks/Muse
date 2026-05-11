@@ -59,18 +59,6 @@ export interface ConversationSummaryTable {
   readonly summarized_up_to: number;
   readonly created_at: Timestamp;
   readonly updated_at: Timestamp;
-  /**
-   * Context Engineering Phase 3: optional pgvector(1536) column for
-   * embedding-based episodic recall. Stored as a raw string in
-   * Postgres ('[1.0,2.0,...]'); kysely reads it as text by default —
-   * the store maps it to `readonly number[]` on read.
-   */
-  readonly embedding: ColumnType<string | null, string | null | undefined, string | null>;
-  /**
-   * Context Engineering Phase 3: per-user scoping for episodic
-   * recall so user A doesn't surface user B's past sessions.
-   */
-  readonly user_id: ColumnType<string | null, string | null | undefined, string | null>;
 }
 
 export interface AgentRunTable {

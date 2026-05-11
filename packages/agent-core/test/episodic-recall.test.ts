@@ -1,25 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  cosineSimilarity,
   InMemoryEpisodicRecallProvider,
   renderEpisodicSection
 } from "../src/episodic-recall.js";
-
-describe("cosineSimilarity", () => {
-  it("returns 1 for identical unit vectors", () => {
-    expect(cosineSimilarity([1, 0, 0], [1, 0, 0])).toBe(1);
-  });
-
-  it("returns 0 for orthogonal vectors", () => {
-    expect(cosineSimilarity([1, 0], [0, 1])).toBe(0);
-  });
-
-  it("returns 0 for empty / mismatched-length input", () => {
-    expect(cosineSimilarity([], [])).toBe(0);
-    expect(cosineSimilarity([1, 2], [3])).toBe(0);
-  });
-});
 
 describe("InMemoryEpisodicRecallProvider", () => {
   const provider = new InMemoryEpisodicRecallProvider({

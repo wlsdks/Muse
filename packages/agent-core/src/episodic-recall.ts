@@ -1,11 +1,12 @@
 /**
  * Episodic recall surface (Context Engineering Phase 3).
  *
- * Provider returns the top-K most-relevant prior conversation summaries
- * given the current user prompt. The actual embedding + cosine-similarity
- * search lives downstream (e.g., `@muse/memory` summary store using
- * pgvector). This file only carries the renderer + the small interface
- * so `agent-core` stays free of vector-store dependencies.
+ * Provider returns the top-K most-relevant prior conversation
+ * summaries given the current user prompt and injects them as
+ * `[Episodic Memory]`. Implementation here is token-overlap-based
+ * (Jaccard); no embeddings, no pgvector. Good enough for personal
+ * single-user scope where session counts stay small and the search
+ * surface is the agent's last user message.
  */
 
 export interface EpisodicMatch {
@@ -68,10 +69,18 @@ export interface InMemoryEpisodicRecallProviderOptions {
 }
 
 /**
- * Token-overlap-based EpisodicRecallProvider — no embeddings needed.
- * Useful as a baseline before the pgvector + embedding path lands.
- * Tokenises lowercase Latin + CJK runs, Jaccard-like overlap score
- * between the user prompt and each episode narrative.
+ * Token-overlap-based EpisodicRecallProvider. Tokenises lowercase
+ * Latin + CJK runs and computes a Jaccard-like overlap score between
+ * the user prompt and each stored narrative. No external dependencies,
+ * no embedding API call, no pgvector — runs entirely in-process.
+ *
+ * Trade-off: paraphrase / multi-language semantic matches are weaker
+ * than an embedding-backed search. Good enough for personal scope
+ * (<100 sessions, single locale). If the corpus grows or
+ * cross-language recall becomes important, swap in an
+ * embedding-backed provider that satisfies the same
+ * `EpisodicRecallProvider` interface — `applyEpisodicRecall` doesn't
+ * care which implementation is wired.
  */
 export class InMemoryEpisodicRecallProvider implements EpisodicRecallProvider {
   private readonly episodes: StoredEpisode[];
@@ -139,103 +148,4 @@ function jaccardSimilarity(a: ReadonlySet<string>, b: ReadonlySet<string>): numb
   }
   const unionSize = a.size + b.size - intersection;
   return unionSize === 0 ? 0 : intersection / unionSize;
-}
-
-export interface EmbeddingEpisodicRecallStore {
-  findSimilar(
-    embedding: readonly number[],
-    options?: { readonly userId?: string; readonly topK?: number; readonly minScore?: number }
-  ): Promise<readonly { readonly summary: { readonly sessionId: string; readonly narrative: string; readonly createdAt?: Date; readonly userId?: string }; readonly similarity: number }[]> |
-     readonly { readonly summary: { readonly sessionId: string; readonly narrative: string; readonly createdAt?: Date; readonly userId?: string }; readonly similarity: number }[];
-}
-
-export interface EmbeddingClient {
-  embed(input: string): Promise<readonly number[]> | readonly number[];
-}
-
-export interface EmbeddingEpisodicRecallProviderOptions {
-  readonly store: EmbeddingEpisodicRecallStore;
-  readonly client: EmbeddingClient;
-  readonly topK?: number;
-  readonly minScore?: number;
-}
-
-/**
- * Embedding-backed EpisodicRecallProvider — preferred over
- * `InMemoryEpisodicRecallProvider` once a pgvector store + embedder
- * are wired up. Embeds the live user prompt, asks the store for
- * top-K similar narratives by cosine similarity, and wraps the
- * result in the `EpisodicRecallSnapshot` shape.
- */
-export class EmbeddingEpisodicRecallProvider implements EpisodicRecallProvider {
-  private readonly store: EmbeddingEpisodicRecallStore;
-  private readonly client: EmbeddingClient;
-  private readonly topK: number;
-  private readonly minScore: number;
-
-  constructor(options: EmbeddingEpisodicRecallProviderOptions) {
-    this.store = options.store;
-    this.client = options.client;
-    this.topK = Math.max(1, options.topK ?? 3);
-    this.minScore = Math.max(0, options.minScore ?? 0.7);
-  }
-
-  async resolve(query: string, userId?: string): Promise<EpisodicRecallSnapshot | undefined> {
-    if (!query || query.trim().length === 0) {
-      return undefined;
-    }
-    let embedding: readonly number[];
-    try {
-      embedding = await this.client.embed(query);
-    } catch {
-      return undefined;
-    }
-    if (embedding.length === 0) {
-      return undefined;
-    }
-    let results: ReadonlyArray<{ readonly summary: { readonly sessionId: string; readonly narrative: string; readonly createdAt?: Date; readonly userId?: string }; readonly similarity: number }>;
-    try {
-      results = await this.store.findSimilar(embedding, {
-        minScore: this.minScore,
-        topK: this.topK,
-        userId
-      });
-    } catch {
-      return undefined;
-    }
-    if (results.length === 0) {
-      return undefined;
-    }
-    const matches: EpisodicMatch[] = results.map((entry) => ({
-      createdAtIso: entry.summary.createdAt?.toISOString(),
-      narrative: entry.summary.narrative,
-      sessionId: entry.summary.sessionId,
-      similarity: entry.similarity
-    }));
-    return { matches };
-  }
-}
-
-/**
- * Cosine similarity between two equal-length numeric vectors.
- * Returns 0 when either vector is empty / mismatched.
- */
-export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
-  if (a.length === 0 || a.length !== b.length) {
-    return 0;
-  }
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    const av = a[i] ?? 0;
-    const bv = b[i] ?? 0;
-    dot += av * bv;
-    normA += av * av;
-    normB += bv * bv;
-  }
-  if (normA === 0 || normB === 0) {
-    return 0;
-  }
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }

@@ -12,7 +12,7 @@ a tool.
 |---|---|---|---|
 | 1 | Active Context Injection | Shipped | `MUSE_ACTIVE_CONTEXT_ENABLED` (default on) |
 | 2 | Messaging Inbox Auto-Injection | Shipped | `MUSE_INBOX_CONTEXT_ENABLED` (default on when any messaging token is set) |
-| 3 | Episodic Recall | Shipped (interface + token-overlap + embedding scaffold) | `MUSE_EPISODIC_RECALL_ENABLED` (opt-in; needs pgvector + embed key) |
+| 3 | Episodic Recall (token-overlap) | Shipped | `MUSE_EPISODIC_RECALL_ENABLED` (opt-in via DI; runs in-process) |
 | 4 | Context-aware Tool Filter | Shipped | `MUSE_TOOL_FILTER_ENABLED=true` (opt-in) |
 | 5 | Importance-weighted Compaction | Shipped | `MUSE_COMPACTION_STRATEGY=importance` (default `temporal`) |
 
@@ -79,39 +79,38 @@ on every resolve so the same message isn't re-injected.
 **Status.** Live. Daemons in `apps/api` (telegram-poll-tick,
 channel-poll-tick) feed the inbox files; this transform reads them.
 
-## Phase 3 — Episodic Recall
+## Phase 3 — Episodic Recall (token-overlap)
 
-**What.** At each request, embed the latest user prompt, search prior
-conversation summaries by cosine similarity, inject top-K as
-`[Episodic Memory]`.
+**What.** At each request, search prior conversation summaries by
+Jaccard token overlap on the latest user prompt and inject top-K as
+`[Episodic Memory]`. Runs entirely in-process — no embedding API
+call, no pgvector, no external dependency. Sized for personal
+single-user scope where session counts stay small.
 
 **Files.**
 - `packages/agent-core/src/episodic-recall.ts` —
-  `InMemoryEpisodicRecallProvider` (token-overlap baseline),
-  `EmbeddingEpisodicRecallProvider` (pgvector path)
-- `packages/model/src/index.ts` — `ModelProvider.embed?`,
-  `OpenAICompatibleProvider.embed`
-- `packages/db/src/migrations.ts` — `0002_episodic_recall_pgvector`
-- `packages/memory/src/memory-conversation-summary-store.ts` —
-  `findSimilar` + vector literal helpers
+  `InMemoryEpisodicRecallProvider` (Jaccard token overlap),
+  `EpisodicRecallProvider` interface, `renderEpisodicSection`
 
-**Env (planned).**
-- `MUSE_EPISODIC_RECALL_ENABLED` (opt-in; not yet wired in
-  autoconfigure — needs DI for embed client)
-- `MUSE_EPISODIC_RECALL_MODEL` (default `text-embedding-3-small`)
-- `MUSE_EPISODIC_RECALL_TOPK` (default 3)
-- `MUSE_EPISODIC_RECALL_MIN_SCORE` (default 0.7)
+**Wiring.**
+- `applyEpisodicRecall` transform in
+  `packages/agent-core/src/context-transforms.ts` is already wired
+  into `AgentRuntime.run` / `stream`. autoconfigure does not yet
+  build an `InMemoryEpisodicRecallProvider` instance by default —
+  callers wire it explicitly with the list of `StoredEpisode`s they
+  want searchable (e.g. snapshot from `ConversationSummaryStore`).
 
-**Outstanding work.**
-- Wire `EmbeddingEpisodicRecallProvider` in autoconfigure once
-  the embedding-cost decision is signed off (estimated ~$0.02 per
-  1M tokens at `text-embedding-3-small`).
-- Add Anthropic / Gemini embed adapters (Gemini supports it natively,
-  Anthropic recommends Voyage AI).
-- Live-smoke verification on a Postgres + pgvector container.
-
-**Status.** Code lands here; wiring in `apps/api` autoconfigure
-deferred until cost sign-off.
+**Trade-offs (why token-overlap is fine for personal scope).**
+- Pros: zero infra, zero API cost, deterministic, easy to debug.
+- Cons: paraphrase / multi-language recall is weaker than an
+  embedding-backed search. Korean morphology (하다 / 한 / 했던) is
+  partially absorbed via lowercase + CJK runs but not as well as a
+  semantic embedding would.
+- Threshold for swapping in an embedding-backed provider: corpus
+  grows past ~100 active sessions, OR cross-language recall starts
+  feeling necessary, OR a query consistently misses a known prior
+  session. The `EpisodicRecallProvider` interface is the swap
+  point — the runtime doesn't care which impl is wired.
 
 ## Phase 4 — Tool Filter
 
@@ -174,14 +173,11 @@ request path). Phase 4/5 are gated by unit + integration tests.
 
 ## Carrying notes / open decisions
 
-- **Embedding-cost gate**: episodic recall fires on every new user
-  prompt. At `text-embedding-3-small` the marginal cost is small but
-  not zero. Need a budget tier wired into `MonthlyBudgetTracker`
-  before enabling by default.
-- **Anthropic embeddings**: Anthropic doesn't ship a first-party
-  embeddings endpoint. If a future iteration wants vendor-neutral
-  embeddings, the choices are Voyage AI (Anthropic-recommended),
-  Gemini, or local (Ollama bge-small).
+- **Embedding path is intentionally out of scope.** For personal
+  single-user use, the token-overlap baseline carries Phase 3 with
+  zero infra cost. Re-introducing pgvector / `ModelProvider.embed`
+  is a future option once the corpus / language demands it, not a
+  default.
 - **Inbox cursor reset**: the `lastInjectedAt` cursor accumulates per
   source. No eviction today — file stays small but isn't bounded.
   Worth revisiting once we have >50 channels active.
