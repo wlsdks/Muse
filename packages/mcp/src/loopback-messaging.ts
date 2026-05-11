@@ -97,6 +97,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
       properties: {},
       type: "object"
     },
+    domain: "messaging",
     name: "poll_all",
     risk: "write" as const
   }] : [];
@@ -146,6 +147,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
       required: ["providerId"],
       type: "object"
     },
+    domain: "messaging",
     name: "poll_now",
     risk: "write" as const
   }] : [];
@@ -170,6 +172,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
           properties: {},
           type: "object"
         },
+        domain: "messaging",
         name: "providers",
         risk: "read"
       },
@@ -233,6 +236,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
           required: ["providerId"],
           type: "object"
         },
+        domain: "messaging",
         name: "inbox",
         risk: "read"
       },
@@ -295,6 +299,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
           required: ["providerId", "destination", "text"],
           type: "object"
         },
+        domain: "messaging",
         name: "send",
         risk: "write"
       }

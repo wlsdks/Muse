@@ -64,6 +64,14 @@ export interface McpRemoteTool {
   readonly description: string;
   readonly inputSchema?: JsonObject;
   readonly risk?: ToolRisk;
+  /**
+   * Context Engineering Phase 4 hint. When set, `createMcpMuseTool`
+   * forwards this to `MuseToolDefinition.domain` so DefaultToolFilter
+   * skips the name-prefix heuristic. Loopback servers tag their tools
+   * explicitly; external MCP servers usually don't supply this and
+   * fall back to the heuristic as before.
+   */
+  readonly domain?: string;
 }
 
 export interface McpConnection {
@@ -418,6 +426,7 @@ export function createMcpMuseTool(serverName: string, tool: McpRemoteTool, conne
   return {
     definition: {
       description: tool.description,
+      ...(tool.domain ? { domain: tool.domain } : {}),
       inputSchema: tool.inputSchema ?? {},
       name: `${serverName}.${tool.name}`,
       risk: tool.risk ?? "read"

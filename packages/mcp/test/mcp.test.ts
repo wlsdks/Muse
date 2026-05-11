@@ -661,6 +661,18 @@ describe("loopback MCP servers", () => {
     expect(result).toEqual({ expression: "10 / 2", result: 5 });
   });
 
+  it("createLoopbackMcpMuseTools forwards `domain` from the loopback tool definition to MuseToolDefinition (Phase 4 wire)", async () => {
+    const { MessagingProviderRegistry } = await import("@muse/messaging");
+    const messaging = createMessagingMcpServer({ registry: new MessagingProviderRegistry() });
+    const tools = createLoopbackMcpMuseTools(messaging);
+    const providers = tools.find((tool) => tool.definition.name === "muse.messaging.providers");
+    expect(providers).toBeDefined();
+    // Tagged in loopback-messaging.ts at server-definition time so the
+    // tool-filter heuristic doesn't have to fall back to the name-prefix
+    // path — explicit always beats inferred.
+    expect((providers!.definition as { readonly domain?: string }).domain).toBe("messaging");
+  });
+
   it("close() resolves without error for loopback connections", async () => {
     const connection = createLoopbackMcpConnection(createTimeMcpServer());
     await expect(connection.close!()).resolves.toBeUndefined();
