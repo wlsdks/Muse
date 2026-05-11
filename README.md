@@ -49,7 +49,9 @@ packages/
   agent-core/         ReAct + Plan-Execute loops, guard pipeline,
                       hook registry, context transforms, model loop
   model/              ModelProvider interface + provider wire-format
-                      adapters (OpenAI / Anthropic / Gemini / Ollama)
+                      adapters (OpenAI / Anthropic / Gemini / OpenRouter /
+                      Ollama + OpenAI-compat presets for Groq / DeepSeek /
+                      Together / Mistral / Moonshot)
   tools/              tool registry, executor, sanitiser, approval path
   multi-agent/        SupervisorAgent, MultiAgentOrchestrator,
                       message bus, history

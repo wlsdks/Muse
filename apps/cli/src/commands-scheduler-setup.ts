@@ -86,7 +86,7 @@ export function registerSetupCommands(program: Command, io: ProgramIO): void {
 
   setup
     .command("status", { isDefault: true })
-    .description("Print a configuration health-check (model, MCP, calendar, notes, tasks)")
+    .description("Print a configuration health-check (model, MCP, calendar, notes, tasks, voice, messaging, web search)")
     .option("--json", "Emit structured JSON instead of the formatted status report")
     .action(async (options: { readonly json?: boolean }) => {
       if (options.json) {
