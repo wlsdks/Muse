@@ -21,8 +21,20 @@ interface SetupModelIO {
   readonly home?: string;
 }
 
-interface ProviderSpec {
-  readonly id: "openai" | "anthropic" | "gemini" | "openrouter" | "ollama";
+export type SetupModelProviderId =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "openrouter"
+  | "ollama"
+  | "groq"
+  | "deepseek"
+  | "together"
+  | "mistral"
+  | "moonshot";
+
+export interface SetupModelProviderSpec {
+  readonly id: SetupModelProviderId;
   readonly label: string;
   readonly envKey: string;
   readonly docs: string;
@@ -31,7 +43,7 @@ interface ProviderSpec {
   readonly placeholderHint: string;
 }
 
-const PROVIDER_SPECS: readonly ProviderSpec[] = [
+export const SETUP_MODEL_PROVIDER_SPECS: readonly SetupModelProviderSpec[] = [
   {
     docs: "https://ai.google.dev/gemini-api/docs/api-key",
     envKey: "GEMINI_API_KEY",
@@ -76,8 +88,55 @@ const PROVIDER_SPECS: readonly ProviderSpec[] = [
     placeholderHint: "http://localhost:11434",
     secret: false,
     suggestedModel: "ollama/llama3.2"
+  },
+  {
+    docs: "https://console.groq.com/keys",
+    envKey: "GROQ_API_KEY",
+    id: "groq",
+    label: "Groq (fast Llama / Mixtral hosting)",
+    placeholderHint: "gsk_...",
+    secret: true,
+    suggestedModel: "groq/llama-3.3-70b-versatile"
+  },
+  {
+    docs: "https://platform.deepseek.com/api_keys",
+    envKey: "DEEPSEEK_API_KEY",
+    id: "deepseek",
+    label: "DeepSeek (DeepSeek-Chat / Coder)",
+    placeholderHint: "sk-...",
+    secret: true,
+    suggestedModel: "deepseek/deepseek-chat"
+  },
+  {
+    docs: "https://api.together.xyz/settings/api-keys",
+    envKey: "TOGETHER_API_KEY",
+    id: "together",
+    label: "Together AI (open-weight model marketplace)",
+    placeholderHint: "tgp_...",
+    secret: true,
+    suggestedModel: "together/meta-llama/Llama-3.3-70B-Instruct-Turbo"
+  },
+  {
+    docs: "https://console.mistral.ai/api-keys",
+    envKey: "MISTRAL_API_KEY",
+    id: "mistral",
+    label: "Mistral (mistral-large / codestral)",
+    placeholderHint: "...",
+    secret: true,
+    suggestedModel: "mistral/mistral-small-latest"
+  },
+  {
+    docs: "https://platform.moonshot.ai/console/api-keys",
+    envKey: "MOONSHOT_API_KEY",
+    id: "moonshot",
+    label: "Moonshot (Kimi)",
+    placeholderHint: "sk-...",
+    secret: true,
+    suggestedModel: "moonshot/moonshot-v1-8k"
   }
 ];
+
+const PROVIDER_SPECS = SETUP_MODEL_PROVIDER_SPECS;
 
 interface PersistedShape {
   readonly version: 1;
@@ -102,9 +161,9 @@ export async function runModelSetup(io: SetupModelIO): Promise<void> {
     return;
   }
 
-  const requested = selection as readonly ProviderSpec["id"][];
+  const requested = selection as readonly SetupModelProviderSpec["id"][];
   const persisted: PersistedShape = await readPersisted(file);
-  const collected: Array<{ spec: ProviderSpec; token: string }> = [];
+  const collected: Array<{ spec: SetupModelProviderSpec; token: string }> = [];
 
   for (const id of requested) {
     const spec = PROVIDER_SPECS.find((entry) => entry.id === id);
