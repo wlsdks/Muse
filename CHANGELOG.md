@@ -33,12 +33,12 @@ move from `Unreleased` to dated/versioned headings.
   - Web UI: assistant messages render citation chips; setup panel has a
     `webSearch.enabled` toggle.
 
-- **Five new OpenAI-compatible provider presets** — Groq, DeepSeek,
-  Together, Mistral, Moonshot. Just export the matching key
-  (`GROQ_API_KEY`, `DEEPSEEK_API_KEY`, …) and `muse` auto-selects a
-  sensible default model. The interactive `muse setup model` wizard
-  now offers all 10 providers (legacy 5 + new 5) and the JSON / CLI
-  setup status surfaces each preset.
+- **Six new OpenAI-compatible provider presets** — Groq, DeepSeek,
+  Together, Mistral, Moonshot, Cerebras. Just export the matching key
+  (`GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `CEREBRAS_API_KEY`, …) and
+  `muse` auto-selects a sensible default model. The interactive
+  `muse setup model` wizard now offers all 11 providers (legacy 5 +
+  new 6) and the JSON / CLI setup status surfaces each preset.
 - **Bare-prefix model spec inference** — `MUSE_MODEL=mistral-small-latest`
   (no `provider/` prefix) now resolves to the Mistral provider via the
   `knownModelPrefixes()` map instead of falling through to undefined.
