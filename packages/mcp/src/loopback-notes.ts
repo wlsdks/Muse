@@ -148,6 +148,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           },
           type: "object"
         },
+        domain: "notes",
         name: "list",
         risk: "read"
       },
@@ -190,6 +191,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           required: ["path"],
           type: "object"
         },
+        domain: "notes",
         name: "read",
         risk: "read"
       },
@@ -263,6 +265,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           required: ["query"],
           type: "object"
         },
+        domain: "notes",
         name: "search",
         risk: "read"
       },
@@ -321,6 +324,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           required: ["content", "path"],
           type: "object"
         },
+        domain: "notes",
         name: "save",
         risk: "write"
       },
@@ -368,6 +372,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           required: ["content", "path"],
           type: "object"
         },
+        domain: "notes",
         name: "append",
         risk: "write"
       }

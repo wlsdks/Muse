@@ -68,6 +68,7 @@ export function createContextReferenceMcpServer(
           required: ["ref"],
           type: "object"
         },
+        domain: "core",
         name: "fetch",
         risk: "read"
       },
@@ -93,6 +94,7 @@ export function createContextReferenceMcpServer(
           properties: {},
           type: "object"
         },
+        domain: "core",
         name: "list",
         risk: "read"
       }

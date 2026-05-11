@@ -111,6 +111,7 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           required: ["title"],
           type: "object"
         },
+        domain: "tasks",
         name: "add",
         risk: "write"
       },
@@ -138,6 +139,7 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           },
           type: "object"
         },
+        domain: "tasks",
         name: "list",
         risk: "read"
       },
@@ -175,6 +177,7 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           required: ["id"],
           type: "object"
         },
+        domain: "tasks",
         name: "complete",
         risk: "write"
       },
@@ -217,6 +220,7 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           required: ["query"],
           type: "object"
         },
+        domain: "tasks",
         name: "search",
         risk: "read"
       }

@@ -50,6 +50,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           properties: {},
           type: "object"
         },
+        domain: "calendar",
         name: "providers",
         risk: "read"
       },
@@ -83,6 +84,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           },
           type: "object"
         },
+        domain: "calendar",
         name: "list",
         risk: "read"
       },
@@ -140,6 +142,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           required: ["title", "startsAtIso"],
           type: "object"
         },
+        domain: "calendar",
         name: "add",
         risk: "write"
       },
@@ -182,6 +185,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           required: ["providerId", "id"],
           type: "object"
         },
+        domain: "calendar",
         name: "update",
         risk: "write"
       },
@@ -209,6 +213,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           required: ["providerId", "id"],
           type: "object"
         },
+        domain: "calendar",
         name: "delete",
         risk: "write"
       }

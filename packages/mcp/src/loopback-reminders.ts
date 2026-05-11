@@ -95,6 +95,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
       },
       type: "object"
     },
+    domain: "tasks",
     name: "history",
     risk: "read"
   }] : [];
@@ -172,6 +173,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           required: ["text", "dueAt"],
           type: "object"
         },
+        domain: "tasks",
         name: "add",
         risk: "write"
       },
@@ -201,6 +203,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           },
           type: "object"
         },
+        domain: "tasks",
         name: "due",
         risk: "read"
       },
@@ -244,6 +247,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           required: ["query"],
           type: "object"
         },
+        domain: "tasks",
         name: "search",
         risk: "read"
       },
@@ -303,6 +307,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           required: ["id"],
           type: "object"
         },
+        domain: "tasks",
         name: "snooze",
         risk: "write"
       },
@@ -353,6 +358,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           required: ["id"],
           type: "object"
         },
+        domain: "tasks",
         name: "fire",
         risk: "write"
       },
@@ -383,6 +389,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           required: ["id"],
           type: "object"
         },
+        domain: "tasks",
         name: "clear",
         risk: "write"
       }
