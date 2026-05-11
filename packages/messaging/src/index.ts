@@ -49,3 +49,18 @@ export {
   readSlackAfter,
   writeSlackAfter
 } from "./slack-after-store.js";
+
+export {
+  advanceInboxInjectionCursor,
+  readInboxInjectionCursor,
+  writeInboxInjectionCursor
+} from "./inbox-injection-cursor.js";
+
+export {
+  FileBackedInboxContextProvider,
+  filterFresh,
+  type FileBackedInboxContextProviderOptions,
+  type InboxSourceConfig,
+  type InboxSnapshot as MessagingInboxSnapshot,
+  type InboundSummary
+} from "./inbox-surface.js";
