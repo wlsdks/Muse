@@ -213,7 +213,8 @@ export function mergeModelKeysFromFile(env: MuseEnvironment): MuseEnvironment {
     { envKey: "DEEPSEEK_API_KEY", id: "deepseek" },
     { envKey: "TOGETHER_API_KEY", id: "together" },
     { envKey: "MISTRAL_API_KEY", id: "mistral" },
-    { envKey: "MOONSHOT_API_KEY", id: "moonshot" }
+    { envKey: "MOONSHOT_API_KEY", id: "moonshot" },
+    { envKey: "CEREBRAS_API_KEY", id: "cerebras" }
   ];
   let firstSuggestedModel: string | undefined;
   for (const entry of map) {

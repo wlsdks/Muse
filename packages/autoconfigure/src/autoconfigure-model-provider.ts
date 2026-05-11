@@ -66,6 +66,9 @@ function inferDefaultModelFromCredentials(env: MuseEnvironment): string | undefi
   if (parseOptionalString(env.TOGETHER_API_KEY)) {
     return "together/meta-llama/Llama-3.3-70B-Instruct-Turbo";
   }
+  if (parseOptionalString(env.CEREBRAS_API_KEY)) {
+    return "cerebras/llama-3.3-70b";
+  }
   return undefined;
 }
 
@@ -180,6 +183,14 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
         baseUrl: baseUrl ?? "https://api.moonshot.ai/v1",
         defaultModel,
         id: "moonshot",
+        models
+      });
+    case "cerebras":
+      return new OpenAICompatibleProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.CEREBRAS_API_KEY),
+        baseUrl: baseUrl ?? "https://api.cerebras.ai/v1",
+        defaultModel,
+        id: "cerebras",
         models
       });
     default:

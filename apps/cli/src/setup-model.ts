@@ -31,7 +31,8 @@ export type SetupModelProviderId =
   | "deepseek"
   | "together"
   | "mistral"
-  | "moonshot";
+  | "moonshot"
+  | "cerebras";
 
 export interface SetupModelProviderSpec {
   readonly id: SetupModelProviderId;
@@ -133,6 +134,15 @@ export const SETUP_MODEL_PROVIDER_SPECS: readonly SetupModelProviderSpec[] = [
     placeholderHint: "sk-...",
     secret: true,
     suggestedModel: "moonshot/moonshot-v1-8k"
+  },
+  {
+    docs: "https://cloud.cerebras.ai/platform/keys",
+    envKey: "CEREBRAS_API_KEY",
+    id: "cerebras",
+    label: "Cerebras (fastest Llama inference)",
+    placeholderHint: "csk-...",
+    secret: true,
+    suggestedModel: "cerebras/llama-3.3-70b"
   }
 ];
 

@@ -235,6 +235,7 @@ export async function readModelKeyState(file: string, env: MuseEnvironment): Pro
   probe("together", "TOGETHER_API_KEY");
   probe("mistral", "MISTRAL_API_KEY");
   probe("moonshot", "MOONSHOT_API_KEY");
+  probe("cerebras", "CEREBRAS_API_KEY");
   return lines;
 }
 

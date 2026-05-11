@@ -105,6 +105,12 @@ describe("createModelProvider — OpenAI-compatible presets", () => {
     expect(provider?.id).toBe("moonshot");
   });
 
+  it("autoconfigures Cerebras when only CEREBRAS_API_KEY is set", () => {
+    const provider = createModelProvider({ CEREBRAS_API_KEY: "cs" });
+    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(provider?.id).toBe("cerebras");
+  });
+
   it("autoconfigures Ollama when only OLLAMA_BASE_URL is set", () => {
     const provider = createModelProvider({ OLLAMA_BASE_URL: "http://localhost:11434" });
     expect(provider?.id).toBe("ollama");

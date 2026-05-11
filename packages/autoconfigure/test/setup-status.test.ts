@@ -108,7 +108,8 @@ describe("readModelKeyState ↔ resolveDefaultModel parity", () => {
     { envKey: "DEEPSEEK_API_KEY", envValue: "t", id: "deepseek" },
     { envKey: "TOGETHER_API_KEY", envValue: "t", id: "together" },
     { envKey: "MISTRAL_API_KEY", envValue: "t", id: "mistral" },
-    { envKey: "MOONSHOT_API_KEY", envValue: "t", id: "moonshot" }
+    { envKey: "MOONSHOT_API_KEY", envValue: "t", id: "moonshot" },
+    { envKey: "CEREBRAS_API_KEY", envValue: "t", id: "cerebras" }
   ];
 
   for (const { id, envKey, envValue } of probedKeys) {

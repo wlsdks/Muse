@@ -9,6 +9,7 @@ describe("SETUP_MODEL_PROVIDER_SPECS", () => {
     const ids = SETUP_MODEL_PROVIDER_SPECS.map((spec) => spec.id).sort();
     expect(ids).toEqual([
       "anthropic",
+      "cerebras",
       "deepseek",
       "gemini",
       "groq",
@@ -28,6 +29,7 @@ describe("SETUP_MODEL_PROVIDER_SPECS", () => {
     }
     expect(byId).toEqual({
       anthropic: "ANTHROPIC_API_KEY",
+      cerebras: "CEREBRAS_API_KEY",
       deepseek: "DEEPSEEK_API_KEY",
       gemini: "GEMINI_API_KEY",
       groq: "GROQ_API_KEY",
