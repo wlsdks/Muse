@@ -112,6 +112,30 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
         models,
         siteUrl: parseOptionalString(env.MUSE_SITE_URL)
       });
+    case "groq":
+      return new OpenAICompatibleProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.GROQ_API_KEY),
+        baseUrl: baseUrl ?? "https://api.groq.com/openai/v1",
+        defaultModel,
+        id: "groq",
+        models
+      });
+    case "deepseek":
+      return new OpenAICompatibleProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.DEEPSEEK_API_KEY),
+        baseUrl: baseUrl ?? "https://api.deepseek.com/v1",
+        defaultModel,
+        id: "deepseek",
+        models
+      });
+    case "together":
+      return new OpenAICompatibleProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.TOGETHER_API_KEY),
+        baseUrl: baseUrl ?? "https://api.together.xyz/v1",
+        defaultModel,
+        id: "together",
+        models
+      });
     default:
       if (!baseUrl) {
         return undefined;

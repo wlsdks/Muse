@@ -749,7 +749,7 @@ const modelPrefixToProvider: Readonly<Record<string, string>> = {
   "chatglm": "zhipuai",
   "claude-": "anthropic",
   "codestral-": "mistral",
-  "deepseek": "ollama",
+  "deepseek": "deepseek",
   "gemini-": "gemini",
   "gemini/": "gemini",
   "gemma": "ollama",
