@@ -65,12 +65,14 @@ import {
 import {
   DefaultActiveContextProvider,
   DefaultToolFilter,
+  InMemoryTelemetryAggregator,
   StoreBackedEpisodicRecallProvider,
   type ActiveContextProvider,
   type EpisodicRecallProvider,
   type InboxContextProvider,
   type SkillCatalogEntry,
   type SkillCatalogProvider,
+  type TelemetryAggregator,
   type ToolFilter
 } from "@muse/agent-core";
 import type { ConversationSummaryStore, TaskMemoryStore, UserMemoryStore } from "@muse/memory";
@@ -769,6 +771,29 @@ export function buildToolFilter(env: MuseEnvironment): ToolFilter | undefined {
     return undefined;
   }
   return new DefaultToolFilter();
+}
+
+/**
+ * In-process telemetry aggregator (iter 38 — wiring the surface
+ * iters 8 / 17 / 26 / 37 built but never instantiated in
+ * production). Default ON; `MUSE_TELEMETRY_AGGREGATOR_ENABLED=false`
+ * skips construction (returns undefined → AgentRuntime no-ops the
+ * `recordTelemetry` call so per-run telemetry is free of overhead).
+ *
+ * The aggregator is in-process and bounded by `capacity` (default
+ * 10k events ~= a week of moderate use); restart wipes state. A
+ * durable Kysely-backed sink can layer on later — every consumer
+ * accesses the same `TelemetryAggregator` interface.
+ */
+export function buildTelemetryAggregator(env: MuseEnvironment): TelemetryAggregator | undefined {
+  if (env.MUSE_TELEMETRY_AGGREGATOR_ENABLED?.trim().toLowerCase() === "false") {
+    return undefined;
+  }
+  const capacityRaw = env.MUSE_TELEMETRY_AGGREGATOR_CAPACITY?.trim();
+  const capacity = capacityRaw && /^\d+$/u.test(capacityRaw)
+    ? Number.parseInt(capacityRaw, 10)
+    : undefined;
+  return new InMemoryTelemetryAggregator(capacity !== undefined ? { capacity } : {});
 }
 
 /**

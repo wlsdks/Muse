@@ -138,6 +138,7 @@ import {
   buildSkillCatalogProvider,
   buildSkillRegistry,
   buildTasksRegistry,
+  buildTelemetryAggregator,
   buildToolFilter,
   buildVoiceRegistry,
   ensureNotesDir,
@@ -157,6 +158,7 @@ export {
   buildEpisodicRecallProvider,
   buildInboxContextProvider,
   buildMessagingRegistry,
+  buildTelemetryAggregator,
   buildToolFilter,
   buildVoiceRegistry,
   mergeModelKeysFromFile,
@@ -500,6 +502,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       }) as HookStage]
       : [])
   ];
+  const telemetryAggregator = buildTelemetryAggregator(env);
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
@@ -589,7 +592,10 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         ? buildEpisodicRecallProvider(env, conversationSummaryStore)
         : undefined,
       toolFilter: buildToolFilter(env),
-      skillCatalogProvider: buildSkillCatalogProvider(skillRegistryPromise)
+      skillCatalogProvider: buildSkillCatalogProvider(skillRegistryPromise),
+      // iter 38: actually instantiate the aggregator so the
+      // recordTelemetry call site in AgentRuntime stops no-op-ing.
+      ...(telemetryAggregator ? { telemetryAggregator } : {})
     })
     : undefined;
   const schedulerStore = createSchedulerStore(db, env);
@@ -641,6 +647,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       latencyQuery,
       metrics: agentMetrics,
       sloEvaluator,
+      ...(telemetryAggregator ? { telemetryAggregator } : {}),
       tokenCostQuery,
       tokenUsageSink,
       ...(traceSink ? { traceSink } : {}),
