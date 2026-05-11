@@ -1,5 +1,5 @@
-import type { AgentRunInput } from "@muse/agent-core";
 import type { RuntimeSettingType } from "@muse/runtime-settings";
+import type { JsonObject } from "@muse/shared";
 
 /**
  * Generic shape-inspection / simple-value helpers extracted from
@@ -18,7 +18,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export function isJsonObject(value: unknown): value is NonNullable<AgentRunInput["metadata"]> {
+export function isJsonObject(value: unknown): value is JsonObject {
   if (!isRecord(value)) {
     return false;
   }

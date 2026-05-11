@@ -140,33 +140,8 @@ export function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-export function isJsonObject(value: unknown): value is JsonObject {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return Object.values(value).every(isJsonValue);
-}
-
-export function isJsonValue(value: unknown): boolean {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return true;
-  }
-
-  if (typeof value === "number") {
-    return Number.isFinite(value);
-  }
-
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-
-  return isRecord(value) && Object.values(value).every(isJsonValue);
-}
+import { isJsonObject, isJsonValue, isRecord } from "./server-input-utils.js";
+export { isJsonObject, isJsonValue, isRecord };
 
 export function readString(value: Record<string, unknown>, key: string, fallback?: string): string | undefined {
   if (!hasOwn(value, key)) {
