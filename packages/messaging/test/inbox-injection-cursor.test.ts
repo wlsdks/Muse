@@ -48,4 +48,45 @@ describe("inbox-injection-cursor", () => {
       C3: "2026-05-11T06:00:00.000Z"
     });
   });
+
+  it("isolates per-user cursors so user A's seen state doesn't shadow user B's (iter 12)", async () => {
+    await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T08:00:00.000Z" }, "alice");
+    await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T09:00:00.000Z" }, "bob");
+
+    expect(await readInboxInjectionCursor(cursorFile, "alice")).toEqual({
+      C1: "2026-05-11T08:00:00.000Z"
+    });
+    expect(await readInboxInjectionCursor(cursorFile, "bob")).toEqual({
+      C1: "2026-05-11T09:00:00.000Z"
+    });
+    // Single-user (no userId) cursor is independent of both.
+    expect(await readInboxInjectionCursor(cursorFile)).toEqual({});
+  });
+
+  it("migrates a v1 (flat) cursor file into the _global slot transparently (iter 12)", async () => {
+    const { promises: fs } = await import("node:fs");
+    await fs.writeFile(
+      cursorFile,
+      JSON.stringify({ lastInjectedAt: { C1: "2026-05-11T07:00:00.000Z" }, version: 1 }, null, 2),
+      "utf8"
+    );
+    // Single-user read sees the migrated v1 entry.
+    expect(await readInboxInjectionCursor(cursorFile)).toEqual({
+      C1: "2026-05-11T07:00:00.000Z"
+    });
+    // A new user's read does NOT inherit it.
+    expect(await readInboxInjectionCursor(cursorFile, "alice")).toEqual({});
+  });
+
+  it("advance for one user preserves other users' cursors (iter 12)", async () => {
+    await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T08:00:00.000Z" }, "alice");
+    await advanceInboxInjectionCursor(cursorFile, { C1: "2026-05-11T10:00:00.000Z" }, "bob");
+
+    expect(await readInboxInjectionCursor(cursorFile, "alice")).toEqual({
+      C1: "2026-05-11T08:00:00.000Z"
+    });
+    expect(await readInboxInjectionCursor(cursorFile, "bob")).toEqual({
+      C1: "2026-05-11T10:00:00.000Z"
+    });
+  });
 });

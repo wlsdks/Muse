@@ -2,31 +2,41 @@
  * Per-provider "last injected at" cursor for the agent-prompt
  * inbox-injection surface (Context Engineering Phase 2).
  *
- * Same file-shape as `telegram-offset-store` / `discord-after-store`:
- * a single JSON object versioned in case the schema evolves. Storage
- * is per-provider so a Slack daemon advancing its cursor never races
- * with a Discord daemon.
+ * Persists at `~/.muse/{providerId}-inbox-injection.json`. Schema is
+ * versioned in-file so a v1 (single-user) install upgrades to v2
+ * (multi-user) transparently on the first read.
  *
- * `~/.muse/{providerId}-inbox-injection.json`
- *
+ * v1:
  *   { version: 1, lastInjectedAt: { [source]: ISO8601 } }
+ * v2 (current):
+ *   { version: 2, byUser: { [userKey]: { [source]: ISO8601 } } }
+ *
+ * `userKey` is the caller's `userId` or the literal `"_global"` when
+ * `userId` is omitted (single-user install). v1 data is migrated into
+ * the `_global` slot on read, preserving the cursor state without
+ * forcing a manual file fix.
  *
  * "source" mirrors `InboundMessage.source` — chat / channel / user id.
- * Telegram is the lone exception: it has a single global source,
- * which we key as `"_global"`.
+ * Telegram has a single global source which we key as `"_global"`.
  */
 
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-interface PersistedShape {
-  readonly version: 1;
-  readonly lastInjectedAt: Readonly<Record<string, string>>;
+const GLOBAL_USER_KEY = "_global";
+
+interface PersistedShapeV2 {
+  readonly version: 2;
+  readonly byUser: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
-export async function readInboxInjectionCursor(
-  file: string
-): Promise<Readonly<Record<string, string>>> {
+function userKey(userId: string | undefined): string {
+  if (!userId) return GLOBAL_USER_KEY;
+  const trimmed = userId.trim();
+  return trimmed.length === 0 ? GLOBAL_USER_KEY : trimmed;
+}
+
+async function readPersisted(file: string): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
   let raw: string;
   try {
     raw = await fs.readFile(file, "utf8");
@@ -42,48 +52,94 @@ export async function readInboxInjectionCursor(
   if (!parsed || typeof parsed !== "object") {
     return {};
   }
-  const candidate = (parsed as { lastInjectedAt?: unknown }).lastInjectedAt;
-  if (!candidate || typeof candidate !== "object") {
-    return {};
-  }
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(candidate)) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      out[key] = value;
+  const versioned = parsed as { version?: unknown; byUser?: unknown; lastInjectedAt?: unknown };
+  if (versioned.version === 2 && versioned.byUser && typeof versioned.byUser === "object") {
+    const out: Record<string, Record<string, string>> = {};
+    for (const [key, value] of Object.entries(versioned.byUser as Record<string, unknown>)) {
+      if (value && typeof value === "object") {
+        const inner: Record<string, string> = {};
+        for (const [source, iso] of Object.entries(value as Record<string, unknown>)) {
+          if (typeof iso === "string" && iso.trim().length > 0) {
+            inner[source] = iso;
+          }
+        }
+        out[key] = inner;
+      }
     }
+    return out;
   }
-  return out;
+  // v1 migration: fold the flat map into the `_global` user slot.
+  if (versioned.lastInjectedAt && typeof versioned.lastInjectedAt === "object") {
+    const inner: Record<string, string> = {};
+    for (const [source, iso] of Object.entries(versioned.lastInjectedAt as Record<string, unknown>)) {
+      if (typeof iso === "string" && iso.trim().length > 0) {
+        inner[source] = iso;
+      }
+    }
+    return { [GLOBAL_USER_KEY]: inner };
+  }
+  return {};
 }
 
-export async function writeInboxInjectionCursor(
+async function writePersisted(
   file: string,
-  cursor: Readonly<Record<string, string>>
+  byUser: Readonly<Record<string, Readonly<Record<string, string>>>>
 ): Promise<void> {
-  const payload: PersistedShape = { lastInjectedAt: cursor, version: 1 };
+  const payload: PersistedShapeV2 = { byUser, version: 2 };
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
   await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await fs.rename(tmp, file);
 }
 
+export async function readInboxInjectionCursor(
+  file: string,
+  userId?: string
+): Promise<Readonly<Record<string, string>>> {
+  const byUser = await readPersisted(file);
+  return byUser[userKey(userId)] ?? {};
+}
+
+export async function writeInboxInjectionCursor(
+  file: string,
+  cursor: Readonly<Record<string, string>>,
+  userId?: string
+): Promise<void> {
+  const existing = await readPersisted(file);
+  const sanitized: Record<string, string> = {};
+  for (const [source, iso] of Object.entries(cursor)) {
+    if (typeof iso === "string" && iso.trim().length > 0) {
+      sanitized[source] = iso;
+    }
+  }
+  const next = { ...existing, [userKey(userId)]: sanitized };
+  await writePersisted(file, next);
+}
+
 /**
- * Merge an `advance` map into the persisted cursor. Each (source →
- * iso) pair is only written when the new ISO is strictly greater
- * than the existing one (string comparison works for ISO-8601 in UTC).
- * Returns the merged cursor so callers can avoid an extra read.
+ * Merge an `advance` map into the persisted cursor for `userId`.
+ * Each (source → iso) pair is only written when the new ISO is
+ * strictly greater than the existing one (string comparison works
+ * for ISO-8601 in UTC). Other users' cursors are preserved
+ * untouched. Returns the merged cursor for the supplied user so
+ * callers can avoid an extra read.
  */
 export async function advanceInboxInjectionCursor(
   file: string,
-  advance: Readonly<Record<string, string>>
+  advance: Readonly<Record<string, string>>,
+  userId?: string
 ): Promise<Readonly<Record<string, string>>> {
-  const existing = await readInboxInjectionCursor(file);
-  const merged: Record<string, string> = { ...existing };
+  const existing = await readPersisted(file);
+  const key = userKey(userId);
+  const current = existing[key] ?? {};
+  const merged: Record<string, string> = { ...current };
   for (const [source, iso] of Object.entries(advance)) {
-    const current = merged[source];
-    if (!current || iso > current) {
+    const prior = merged[source];
+    if (!prior || iso > prior) {
       merged[source] = iso;
     }
   }
-  await writeInboxInjectionCursor(file, merged);
+  const nextByUser = { ...existing, [key]: merged };
+  await writePersisted(file, nextByUser);
   return merged;
 }

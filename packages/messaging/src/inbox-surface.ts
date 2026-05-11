@@ -58,7 +58,7 @@ export class FileBackedInboxContextProvider {
     this.totalLimit = Math.max(1, options.totalLimit ?? DEFAULT_TOTAL_LIMIT);
   }
 
-  async resolve(): Promise<InboxSnapshot | undefined> {
+  async resolve(userId?: string): Promise<InboxSnapshot | undefined> {
     // Two-phase to avoid silent message loss: first collect fresh
     // messages from every source WITHOUT touching cursors, then apply
     // the total cap, THEN advance cursors only for the surfaced
@@ -73,7 +73,7 @@ export class FileBackedInboxContextProvider {
     const collected: CollectedSource[] = [];
     for (const config of this.sources) {
       try {
-        const cursor = await readInboxInjectionCursor(config.cursorFile);
+        const cursor = await readInboxInjectionCursor(config.cursorFile, userId);
         const inbox = await readInbox(config.inboxFile, this.perProviderLimit * 4);
         const fresh = filterFresh(inbox, cursor, this.perProviderLimit);
         if (fresh.length > 0) {
@@ -132,7 +132,7 @@ export class FileBackedInboxContextProvider {
     }
     for (const bucket of advanceBySource.values()) {
       try {
-        await advanceInboxInjectionCursor(bucket.cursorFile, bucket.advance);
+        await advanceInboxInjectionCursor(bucket.cursorFile, bucket.advance, userId);
       } catch {
         // fail-open: a cursor write failure means the next turn will
         // re-surface, which is much better than silent loss.
