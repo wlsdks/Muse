@@ -10,7 +10,7 @@ import {
 } from "@muse/scheduler";
 import type { FastifyInstance } from "fastify";
 
-import { hasOwn, isRecord, isJsonValue, readBoolean, readNumber, readStringArray } from "./server-input-utils.js";
+import { hasOwn, isRecord, isJsonValue, readBoolean, readNullableString, readNumber, readString, readStringArray } from "./server-input-utils.js";
 
 export interface SchedulerRouteScheduler {
   readonly executionStore?: ScheduledJobExecutionStore;
@@ -455,26 +455,6 @@ function paginate<T>(items: readonly T[], offset: number, limit: number) {
     offset: safeOffset,
     total: items.length
   };
-}
-
-function readString(value: Record<string, unknown>, key: string, fallback?: string): string | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return typeof value[key] === "string" ? value[key] : undefined;
-}
-
-function readNullableString(
-  value: Record<string, unknown>,
-  key: string,
-  fallback?: string
-): string | null | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return value[key] === null || typeof value[key] === "string" ? value[key] : undefined;
 }
 
 function readNullableNumber(

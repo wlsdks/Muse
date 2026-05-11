@@ -7,7 +7,9 @@ import {
   isRecord as isRecordFromInputUtils,
   parseRuntimeSettingType as parseStrict,
   readBoolean as readBooleanFromInputUtils,
+  readNullableString as readNullableStringFromInputUtils,
   readNumber as readNumberFromInputUtils,
+  readString as readStringFromInputUtils,
   readStringArray as readStringArrayFromInputUtils
 } from "../src/server-input-utils.js";
 import {
@@ -16,7 +18,9 @@ import {
   isJsonValue as isJsonValueFromMcp,
   isRecord as isRecordFromMcp,
   readBoolean as readBooleanFromMcp,
+  readNullableString as readNullableStringFromMcp,
   readNumber as readNumberFromMcp,
+  readString as readStringFromMcp,
   readStringArray as readStringArrayFromMcp
 } from "../src/mcp-routes-parsers.js";
 import { parseRuntimeSettingType as parseCompat } from "../src/compat-routes.js";
@@ -30,6 +34,8 @@ describe("api shape-inspection helpers — single shared implementation", () => 
     expect(readBooleanFromInputUtils).toBe(readBooleanFromMcp);
     expect(readNumberFromInputUtils).toBe(readNumberFromMcp);
     expect(readStringArrayFromInputUtils).toBe(readStringArrayFromMcp);
+    expect(readStringFromInputUtils).toBe(readStringFromMcp);
+    expect(readNullableStringFromInputUtils).toBe(readNullableStringFromMcp);
   });
 });
 

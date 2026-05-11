@@ -66,6 +66,26 @@ export function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+export function readString(value: Record<string, unknown>, key: string, fallback?: string): string | undefined {
+  if (!hasOwn(value, key)) {
+    return fallback;
+  }
+
+  return typeof value[key] === "string" ? value[key] : undefined;
+}
+
+export function readNullableString(
+  value: Record<string, unknown>,
+  key: string,
+  fallback?: string
+): string | null | undefined {
+  if (!hasOwn(value, key)) {
+    return fallback;
+  }
+
+  return value[key] === null || typeof value[key] === "string" ? value[key] : undefined;
+}
+
 export function readBoolean(value: Record<string, unknown>, key: string, fallback?: boolean): boolean | undefined {
   if (!hasOwn(value, key)) {
     return fallback;

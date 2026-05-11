@@ -136,28 +136,8 @@ export function invalid(code: string, message: string): ParseResult<never> {
   };
 }
 
-import { hasOwn, isJsonObject, isJsonValue, isRecord, readBoolean, readNumber, readStringArray } from "./server-input-utils.js";
-export { hasOwn, isJsonObject, isJsonValue, isRecord, readBoolean, readNumber, readStringArray };
-
-export function readString(value: Record<string, unknown>, key: string, fallback?: string): string | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return typeof value[key] === "string" ? value[key] : undefined;
-}
-
-export function readNullableString(
-  value: Record<string, unknown>,
-  key: string,
-  fallback?: string
-): string | null | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return value[key] === null || typeof value[key] === "string" ? value[key] : undefined;
-}
+import { hasOwn, isJsonObject, isJsonValue, isRecord, readBoolean, readNullableString, readNumber, readString, readStringArray } from "./server-input-utils.js";
+export { hasOwn, isJsonObject, isJsonValue, isRecord, readBoolean, readNullableString, readNumber, readString, readStringArray };
 
 export function readJsonObject(
   value: Record<string, unknown>,
