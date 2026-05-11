@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveDefaultModel } from "../src/autoconfigure-model-provider.js";
 import { readModelKeyState, readWebSearchEnvSnapshot } from "../src/setup-status.js";
 
 const MISSING_KEYS_FILE = "/dev/null/no-such-keys.json";
@@ -94,4 +95,30 @@ describe("readModelKeyState — provider key probing", () => {
       "ollama (env)"
     ]);
   });
+});
+
+describe("readModelKeyState ↔ resolveDefaultModel parity", () => {
+  const probedKeys: ReadonlyArray<{ id: string; envKey: string; envValue: string }> = [
+    { envKey: "OPENAI_API_KEY", envValue: "t", id: "openai" },
+    { envKey: "ANTHROPIC_API_KEY", envValue: "t", id: "anthropic" },
+    { envKey: "GEMINI_API_KEY", envValue: "t", id: "gemini" },
+    { envKey: "OPENROUTER_API_KEY", envValue: "t", id: "openrouter" },
+    { envKey: "OLLAMA_BASE_URL", envValue: "http://localhost:11434", id: "ollama" },
+    { envKey: "GROQ_API_KEY", envValue: "t", id: "groq" },
+    { envKey: "DEEPSEEK_API_KEY", envValue: "t", id: "deepseek" },
+    { envKey: "TOGETHER_API_KEY", envValue: "t", id: "together" },
+    { envKey: "MISTRAL_API_KEY", envValue: "t", id: "mistral" },
+    { envKey: "MOONSHOT_API_KEY", envValue: "t", id: "moonshot" }
+  ];
+
+  for (const { id, envKey, envValue } of probedKeys) {
+    it(`${id}: probe detects key AND resolveDefaultModel picks a model`, async () => {
+      const env = { [envKey]: envValue };
+      const probed = await readModelKeyState(MISSING_KEYS_FILE, env);
+      expect(probed).toContain(`${id} (env)`);
+      const model = resolveDefaultModel(env);
+      expect(model, `${id} key is probed but resolveDefaultModel returned undefined`).toBeDefined();
+      expect(model).toMatch(/\S/);
+    });
+  }
 });
