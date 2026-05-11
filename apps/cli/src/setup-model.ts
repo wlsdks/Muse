@@ -78,7 +78,7 @@ export const SETUP_MODEL_PROVIDER_SPECS: readonly SetupModelProviderSpec[] = [
     label: "OpenRouter (one key, many models)",
     placeholderHint: "sk-or-v1-...",
     secret: true,
-    suggestedModel: "openrouter/anthropic/claude-3.5-sonnet"
+    suggestedModel: "openrouter/google/gemini-2.0-flash-001"
   },
   {
     docs: "https://ollama.com/download",

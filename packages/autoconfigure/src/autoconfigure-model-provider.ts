@@ -48,6 +48,9 @@ function inferDefaultModelFromCredentials(env: MuseEnvironment): string | undefi
   if (parseOptionalString(env.OPENROUTER_API_KEY)) {
     return "openrouter/google/gemini-2.0-flash-001";
   }
+  if (parseOptionalString(env.OLLAMA_BASE_URL)) {
+    return "ollama/llama3.2";
+  }
   if (parseOptionalString(env.GROQ_API_KEY)) {
     return "groq/llama-3.3-70b-versatile";
   }

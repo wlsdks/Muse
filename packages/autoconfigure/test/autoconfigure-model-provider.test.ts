@@ -104,4 +104,9 @@ describe("createModelProvider — OpenAI-compatible presets", () => {
     expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
     expect(provider?.id).toBe("moonshot");
   });
+
+  it("autoconfigures Ollama when only OLLAMA_BASE_URL is set", () => {
+    const provider = createModelProvider({ OLLAMA_BASE_URL: "http://localhost:11434" });
+    expect(provider?.id).toBe("ollama");
+  });
 });

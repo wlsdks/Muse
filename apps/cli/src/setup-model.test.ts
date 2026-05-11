@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveDefaultModel } from "@muse/autoconfigure";
+
 import { SETUP_MODEL_PROVIDER_SPECS } from "./setup-model.js";
 
 describe("SETUP_MODEL_PROVIDER_SPECS", () => {
@@ -49,5 +51,13 @@ describe("SETUP_MODEL_PROVIDER_SPECS", () => {
   it("ollama is the only non-secret entry (env carries a base URL, not a token)", () => {
     const nonSecret = SETUP_MODEL_PROVIDER_SPECS.filter((spec) => !spec.secret).map((spec) => spec.id);
     expect(nonSecret).toEqual(["ollama"]);
+  });
+
+  it("every spec.suggestedModel matches what resolveDefaultModel picks when only that provider's env key is set", () => {
+    for (const spec of SETUP_MODEL_PROVIDER_SPECS) {
+      const env: Record<string, string> = { [spec.envKey]: "test-token" };
+      const inferred = resolveDefaultModel(env);
+      expect(inferred, `${spec.id} default-model contract drift`).toBe(spec.suggestedModel);
+    }
   });
 });
