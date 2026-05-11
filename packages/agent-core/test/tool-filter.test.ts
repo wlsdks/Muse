@@ -106,6 +106,56 @@ describe("DefaultToolFilter", () => {
   });
 });
 
+describe("inferDomain prefix table — registry-backed siblings (iter 47)", () => {
+  // Iter 39 sibling for tool-filter. `muse.tasks-multi.*` /
+  // `muse.calendar-multi.*` / `muse.notes-multi.*` are the
+  // registry-backed variants the autoconfigure layer wires
+  // alongside the single-provider tools. Pre-iter-47 they didn't
+  // appear in `BUILTIN_PREFIX_DOMAIN`, so `inferDomain` returned
+  // `undefined` and they bypassed the domain filter entirely (kept
+  // for EVERY prompt regardless of relevance). Defeats the whole
+  // catalog-narrowing purpose for those tools.
+  it("recognises muse.tasks-multi.* as tasks", () => {
+    expect(inferDomain({ description: "", inputSchema: {}, name: "muse.tasks-multi.list", risk: "read" })).toBe("tasks");
+    expect(inferDomain({ description: "", inputSchema: {}, name: "muse.tasks-multi.create", risk: "write" })).toBe("tasks");
+  });
+
+  it("recognises muse.calendar-multi.* as calendar", () => {
+    expect(inferDomain({ description: "", inputSchema: {}, name: "muse.calendar-multi.upcoming", risk: "read" })).toBe("calendar");
+  });
+
+  it("recognises muse.notes-multi.* as notes", () => {
+    expect(inferDomain({ description: "", inputSchema: {}, name: "muse.notes-multi.search", risk: "read" })).toBe("notes");
+  });
+
+  it("recognises muse.reminders.* as tasks (reminders are task-adjacent)", () => {
+    expect(inferDomain({ description: "", inputSchema: {}, name: "muse.reminders.list", risk: "read" })).toBe("tasks");
+    expect(inferDomain({ description: "", inputSchema: {}, name: "muse.reminders.set", risk: "write" })).toBe("tasks");
+  });
+
+  it("multi-provider variants match the same domain keyword as single-provider siblings", () => {
+    // Functional check: with the new prefix mapping, a casual
+    // unrelated prompt now correctly DROPS the muse.tasks-multi
+    // tool just as it drops muse.tasks. Without iter 47 the multi
+    // variant would have survived the filter.
+    const filter = new DefaultToolFilter();
+    const singleTasks: MuseTool = tool({
+      description: "List local tasks",
+      inputSchema: {},
+      name: "muse.tasks.list",
+      risk: "read"
+    });
+    const multiTasks: MuseTool = tool({
+      description: "List tasks across providers",
+      inputSchema: {},
+      name: "muse.tasks-multi.list",
+      risk: "read"
+    });
+    const kept = filter.filter([singleTasks, multiTasks], { userMessage: "what's the weather like today?" });
+    expect(kept).toHaveLength(0); // both dropped now
+  });
+});
+
 describe("inferDomain prefix table (iter 5)", () => {
   it("recognises muse.skills.* as core (always-on)", () => {
     expect(inferDomain({ description: "", inputSchema: {}, name: "muse.skills.list", risk: "read" })).toBe("core");

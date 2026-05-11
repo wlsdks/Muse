@@ -160,14 +160,27 @@ export const DEFAULT_DOMAIN_KEYWORDS: Readonly<Record<string, readonly string[]>
  * if-chain so adding a new built-in domain is a one-line change.
  * `core` tools are always-on; non-core domains gate the tool behind
  * the prompt-keyword / scope-hint / recent-tool filter.
+ *
+ * Includes the registry-backed `<domain>-multi` variants
+ * (iter 47, sibling of iter 39 fix in tool-output-importance.ts).
+ * The autoconfigure layer registers `muse.tasks-multi.*`,
+ * `muse.calendar-multi.*`, and `muse.notes-multi.*` alongside the
+ * single-provider tools; without these mappings they bypassed the
+ * domain filter entirely and surfaced on every prompt.
+ *
+ * `muse.reminders.*` lands in tasks (reminders are task-adjacent).
  */
 const BUILTIN_PREFIX_DOMAIN: Readonly<Record<string, string>> = Object.freeze({
   "muse.calendar.": "calendar",
+  "muse.calendar-multi.": "calendar",
   "muse.context.": "core",
   "muse.messaging.": "messaging",
   "muse.notes.": "notes",
+  "muse.notes-multi.": "notes",
+  "muse.reminders.": "tasks",
   "muse.skills.": "core",
   "muse.tasks.": "tasks",
+  "muse.tasks-multi.": "tasks",
   "muse.time.": "core"
 });
 
