@@ -190,18 +190,25 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     lines.push(`working_hours=${snapshot.workingHours.start}-${snapshot.workingHours.end} (in_window=${status})`);
   }
   if (snapshot.activeTask) {
-    const taskParts: string[] = [snapshot.activeTask.title];
+    // External task stores (and the user themselves) supply `title`
+    // / `id` / `dueIso`. A `\n[System Override]\n…` in any of them
+    // would splice a fake section header into `[Active Context]` —
+    // same injection class iter 13/14/15/20 already closed. Inline
+    // sanitise every author-supplied string field. `dueIso` is
+    // safe (Date.toISOString) but defensive for symmetry.
+    const taskParts: string[] = [sanitizeInline(snapshot.activeTask.title)];
     if (snapshot.activeTask.id) {
-      taskParts.push(`id=${snapshot.activeTask.id}`);
+      taskParts.push(`id=${sanitizeInline(snapshot.activeTask.id)}`);
     }
     if (snapshot.activeTask.dueIso) {
-      const relative = humanizeRelativeFromIso(snapshot.nowIso, snapshot.activeTask.dueIso);
-      taskParts.push(relative ? `due=${snapshot.activeTask.dueIso} (${relative})` : `due=${snapshot.activeTask.dueIso}`);
+      const dueIso = sanitizeInline(snapshot.activeTask.dueIso);
+      const relative = humanizeRelativeFromIso(snapshot.nowIso, dueIso);
+      taskParts.push(relative ? `due=${dueIso} (${relative})` : `due=${dueIso}`);
     }
     lines.push(`active_task: ${taskParts.join(" · ")}`);
   }
   if (snapshot.currentFocus) {
-    lines.push(`current_focus: ${snapshot.currentFocus}`);
+    lines.push(`current_focus: ${sanitizeInline(snapshot.currentFocus)}`);
   }
   if (snapshot.todaysEvents && snapshot.todaysEvents.length > 0) {
     lines.push("today_events:");
@@ -219,11 +226,21 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
         ? undefined
         : eventTimeAnnotation(snapshot.nowIso, event);
       const annotationPart = annotation ? ` [${annotation}]` : "";
-      const locationPart = event.location ? ` @ ${event.location}` : "";
-      lines.push(`  · ${timePart}${annotationPart} ${event.title}${locationPart}`);
+      // External calendars (Google Calendar, iCloud, etc.) supply
+      // `title` and `location`. An attacker who can create a
+      // calendar event in the user's account could embed
+      // `\n[System Override]\n…` in either field — the title is
+      // entirely free-form. Inline sanitise both.
+      const eventTitle = sanitizeInline(event.title);
+      const locationPart = event.location ? ` @ ${sanitizeInline(event.location)}` : "";
+      lines.push(`  · ${timePart}${annotationPart} ${eventTitle}${locationPart}`);
     }
   }
   return lines.join("\n");
+}
+
+function sanitizeInline(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
 }
 
 function eventTimeAnnotation(nowIso: string, event: CalendarEventHint): string | undefined {
