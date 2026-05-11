@@ -34,7 +34,14 @@ export function renderEpisodicSection(snapshot: EpisodicRecallSnapshot | undefin
   lines.push("Past conversations that may be relevant. Soft context — verify before acting.");
   let charsUsed = 0;
   for (const match of snapshot.matches) {
-    const header = match.createdAtIso ? `(${match.createdAtIso}, sim=${formatSim(match.similarity)})` : `(sim=${formatSim(match.similarity)})`;
+    // `createdAtIso` is supposed to come from `Date.toISOString()`
+    // (always safe) but the EpisodicRecallSnapshot is fed by
+    // arbitrary `EpisodicRecallProvider` implementations — a
+    // third-party store could put any string in there, including
+    // one carrying `\n[System Override]\n`. Sanitise defensively,
+    // same shape iter 22 uses for `dueIso`.
+    const createdAtIsoSafe = match.createdAtIso ? sanitizeNarrativeInline(match.createdAtIso) : undefined;
+    const header = createdAtIsoSafe ? `(${createdAtIsoSafe}, sim=${formatSim(match.similarity)})` : `(sim=${formatSim(match.similarity)})`;
     // Account for the rendered prefix ("— " + header + " ") so the
     // running `charsUsed` reflects the actual prompt-bytes consumed
     // — the previous impl counted only narrative length and could
