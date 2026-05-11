@@ -26,7 +26,8 @@ import {
   type ModelResponse,
   type ModelTool,
   type ModelToolCall,
-  type ModelUsage
+  type ModelUsage,
+  type WebSearchCitation
 } from "./index.js";
 
 export function toOpenAIChatRequest(request: ModelRequest, defaultModel: string | undefined) {
@@ -46,11 +47,23 @@ export function toOpenAIChatRequest(request: ModelRequest, defaultModel: string 
   };
 }
 
-export function toAnthropicRequest(request: ModelRequest, defaultModel: string | undefined) {
+export function toAnthropicRequest(
+  request: ModelRequest,
+  defaultModel: string | undefined,
+  policy: { enabled: boolean; maxUses: number } = { enabled: false, maxUses: 5 }
+) {
   const system = request.messages
     .filter((message) => message.role === "system")
     .map((message) => message.content)
     .join("\n\n");
+
+  const tools: Array<Record<string, unknown>> = request.tools && request.tools.length > 0
+    ? request.tools.map(toAnthropicTool)
+    : [];
+
+  if (policy.enabled) {
+    tools.push({ type: "web_search_20250305", name: "web_search", max_uses: policy.maxUses });
+  }
 
   return {
     max_tokens: request.maxOutputTokens ?? 4096,
@@ -60,7 +73,7 @@ export function toAnthropicRequest(request: ModelRequest, defaultModel: string |
     model: parseModelName(request.model || defaultModel || "").modelId,
     ...(system.length > 0 ? { system } : {}),
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-    ...(request.tools && request.tools.length > 0 ? { tools: request.tools.map(toAnthropicTool) } : {})
+    ...(tools.length > 0 ? { tools } : {})
   };
 }
 
@@ -126,7 +139,39 @@ export function fromAnthropicResponse(providerId: string, requestedModel: string
     }];
   });
 
+  const seenUrls = new Set<string>();
+  const citations: WebSearchCitation[] = [];
+
+  for (const block of content) {
+    if (!isRecord(block)) continue;
+
+    // web_search_tool_result blocks contain the actual search results
+    if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
+      for (const result of block.content) {
+        if (!isRecord(result) || result.type !== "web_search_result") continue;
+        const url = typeof result.url === "string" ? result.url : undefined;
+        const title = typeof result.title === "string" ? result.title : "";
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+        citations.push({ url, title, providerRaw: stripEncryptedContent(result) });
+      }
+    }
+
+    // text blocks may carry inline citation references
+    if (block.type === "text" && Array.isArray(block.citations)) {
+      for (const cite of block.citations) {
+        if (!isRecord(cite) || cite.type !== "web_search_result_location") continue;
+        const url = typeof cite.url === "string" ? cite.url : undefined;
+        const title = typeof cite.title === "string" ? cite.title : "";
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+        citations.push({ url, title, providerRaw: cite });
+      }
+    }
+  }
+
   return {
+    citations,
     id: typeof payload.id === "string" ? payload.id : `${providerId}-response`,
     model: typeof payload.model === "string" ? payload.model : requestedModel,
     output,
@@ -136,7 +181,40 @@ export function fromAnthropicResponse(providerId: string, requestedModel: string
   };
 }
 
-export function toGeminiRequest(request: ModelRequest) {
+function stripEncryptedContent(r: Record<string, unknown>): Record<string, unknown> {
+  const { encrypted_content: _encrypted, ...rest } = r as { encrypted_content?: unknown };
+  return rest;
+}
+
+export function toGeminiRequest(
+  request: ModelRequest,
+  policy: { enabled: boolean; maxUses: number } = { enabled: false, maxUses: 5 }
+) {
+  // Build the tools array: function declarations first, then search tool when enabled.
+  const tools: unknown[] = request.tools && request.tools.length > 0
+    ? [{
+      functionDeclarations: request.tools.map((tool) => ({
+        description: tool.description,
+        name: tool.name,
+        parameters: sanitizeGeminiSchema(tool.inputSchema)
+      }))
+    }]
+    : [];
+
+  // Gemini API rejects requests that combine built-in grounding tools with
+  // function declarations. When the caller registers function tools, those
+  // win and grounding is skipped — users who want web grounding on Gemini
+  // need to issue the request without function tools.
+  const hasFunctionTools = (request.tools?.length ?? 0) > 0;
+  if (policy.enabled && !hasFunctionTools) {
+    const { modelId } = parseModelName(request.model || "");
+    if (modelId.startsWith("gemini-1.5")) {
+      tools.push({ googleSearchRetrieval: {} });
+    } else {
+      tools.push({ googleSearch: {} });
+    }
+  }
+
   return {
     contents: buildGeminiContents(request.messages),
     ...(request.maxOutputTokens || request.temperature !== undefined
@@ -147,17 +225,7 @@ export function toGeminiRequest(request: ModelRequest) {
         }
       }
       : {}),
-    ...(request.tools && request.tools.length > 0
-      ? {
-        tools: [{
-          functionDeclarations: request.tools.map((tool) => ({
-            description: tool.description,
-            name: tool.name,
-            parameters: sanitizeGeminiSchema(tool.inputSchema)
-          }))
-        }]
-      }
-      : {}),
+    ...(tools.length > 0 ? { tools } : {}),
     ...(request.messages.some((message) => message.role === "system")
       ? {
         systemInstruction: {
@@ -326,7 +394,19 @@ export function fromGeminiResponse(providerId: string, model: string, payload: u
     }];
   });
 
+  // groundingMetadata lives on the candidate, not the top-level payload.
+  const groundingChunks = (
+    candidate as { groundingMetadata?: { groundingChunks?: Array<{ web?: { uri?: string; title?: string } }> } } | undefined
+  )?.groundingMetadata?.groundingChunks ?? [];
+  const citations: WebSearchCitation[] = [];
+  for (const chunk of groundingChunks) {
+    if (chunk?.web?.uri && chunk.web.title) {
+      citations.push({ url: chunk.web.uri, title: chunk.web.title, providerRaw: chunk as Record<string, unknown> });
+    }
+  }
+
   return {
+    citations,
     id: typeof payload.responseId === "string" ? payload.responseId : `${providerId}-response`,
     model,
     output,
@@ -408,6 +488,214 @@ export function fromOpenAIChatResponse(providerId: string, requestedModel: strin
     raw: payload,
     toolCalls: parseOpenAIToolCalls(message?.tool_calls),
     usage: parseOpenAIUsage(payload.usage)
+  };
+}
+
+export function toOpenAIResponsesRequest(
+  request: ModelRequest,
+  defaultModel: string | undefined,
+  policy: { enabled: boolean; maxUses: number }
+) {
+  const tools: Array<Record<string, unknown>> = [];
+
+  for (const tool of request.tools ?? []) {
+    tools.push({
+      type: "function",
+      function: { name: tool.name, description: tool.description ?? "", parameters: tool.inputSchema }
+    });
+  }
+
+  if (policy.enabled) {
+    tools.push({ type: "web_search" });
+  }
+
+  return {
+    input: request.messages.map((m) => ({
+      role: m.role,
+      content: [{
+        type: m.role === "assistant" ? "output_text" : "input_text",
+        text: typeof m.content === "string" ? m.content : ""
+      }]
+    })),
+    max_output_tokens: request.maxOutputTokens,
+    model: parseModelName(request.model || defaultModel || "").modelId,
+    temperature: request.temperature,
+    tools
+  };
+}
+
+export function fromOpenAIResponsesResponse(
+  _providerId: string,
+  requestedModel: string,
+  payload: unknown
+): ModelResponse {
+  const obj = (payload ?? {}) as {
+    id?: string;
+    model?: string;
+    output?: unknown[];
+    usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
+  };
+
+  let text = "";
+  const citations: WebSearchCitation[] = [];
+  const toolCalls: ModelToolCall[] = [];
+
+  for (const item of obj.output ?? []) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const it = item as { type?: string; content?: unknown[]; call_id?: string; name?: string; arguments?: string };
+
+    if (it.type === "function_call") {
+      // Function tool call output item: extract into ModelToolCall
+      if (typeof it.name === "string" && typeof it.call_id === "string") {
+        let args: JsonObject = {};
+        try {
+          args = JSON.parse(typeof it.arguments === "string" ? it.arguments : "{}") as JsonObject;
+        } catch { /* leave as empty object */ }
+        toolCalls.push({ id: it.call_id, name: it.name, arguments: args });
+      }
+      continue;
+    }
+
+    if (it.type !== "message") {
+      continue;
+    }
+
+    for (const c of it.content ?? []) {
+      if (!c || typeof c !== "object") {
+        continue;
+      }
+
+      const block = c as { type?: string; text?: string; annotations?: unknown[] };
+
+      if (block.type !== "output_text") {
+        continue;
+      }
+
+      if (typeof block.text === "string") {
+        text += block.text;
+      }
+
+      for (const a of block.annotations ?? []) {
+        if (!a || typeof a !== "object") {
+          continue;
+        }
+
+        const ann = a as { type?: string; url?: string; title?: string };
+
+        if (ann.type === "url_citation" && typeof ann.url === "string" && typeof ann.title === "string") {
+          citations.push({ url: ann.url, title: ann.title, providerRaw: a });
+        }
+      }
+    }
+  }
+
+  return {
+    citations,
+    id: typeof obj.id === "string" ? obj.id : "",
+    model: typeof obj.model === "string" ? obj.model : requestedModel,
+    output: text,
+    raw: payload,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    usage: obj.usage
+      ? {
+          inputTokens: typeof obj.usage.input_tokens === "number" ? obj.usage.input_tokens : 0,
+          outputTokens: typeof obj.usage.output_tokens === "number" ? obj.usage.output_tokens : 0
+        }
+      : undefined
+  };
+}
+
+export async function* parseOpenAIResponsesStream(
+  _providerId: string,
+  requestedModel: string,
+  body: ReadableStream<Uint8Array>
+): AsyncGenerator<ModelEvent> {
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let toolStarted = false;
+  let textBuf = "";
+  const citations: WebSearchCitation[] = [];
+  const toolCalls: ModelToolCall[] = [];
+  let finalUsage: ModelUsage | undefined;
+  let finalId = "";
+  let finalModel = requestedModel;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, nl);
+      buf = buf.slice(nl + 2);
+      const dataLine = chunk.split("\n").find((l) => l.startsWith("data:"))?.slice(5).trim();
+      if (!dataLine || dataLine === "[DONE]") continue;
+      let evt: {
+        type?: string;
+        item?: { type?: string; call_id?: string; name?: string; arguments?: string };
+        delta?: string;
+        annotation?: { type?: string; url?: string; title?: string };
+        response?: {
+          id?: string;
+          model?: string;
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+      };
+      try { evt = JSON.parse(dataLine); } catch { continue; }
+      if (evt.type === "response.output_item.added" && evt.item?.type === "web_search_call" && !toolStarted) {
+        toolStarted = true;
+        yield { type: "tool-call-started", name: "web_search" };
+      } else if (evt.type === "response.output_item.done" && evt.item?.type === "web_search_call") {
+        yield { type: "tool-call-finished", name: "web_search" };
+      } else if (evt.type === "response.output_item.done" && evt.item?.type === "function_call") {
+        // Completed function tool call — emit the full tool-call event once arguments are finalised
+        const item = evt.item;
+        if (typeof item.name === "string" && typeof item.call_id === "string") {
+          let args: JsonObject = {};
+          try {
+            args = JSON.parse(typeof item.arguments === "string" ? item.arguments : "{}") as JsonObject;
+          } catch { /* leave as empty object */ }
+          const toolCall: ModelToolCall = { id: item.call_id, name: item.name, arguments: args };
+          toolCalls.push(toolCall);
+          yield { type: "tool-call", toolCall };
+        }
+      } else if (evt.type === "response.output_text.delta" && typeof evt.delta === "string") {
+        textBuf += evt.delta;
+        yield { type: "text-delta", text: evt.delta };
+      } else if (evt.type === "response.output_text.annotation.added" && evt.annotation?.type === "url_citation") {
+        const a = evt.annotation;
+        if (typeof a.url === "string" && typeof a.title === "string") {
+          citations.push({ url: a.url, title: a.title, providerRaw: a });
+        }
+      } else if (evt.type === "response.completed" && evt.response) {
+        finalId = evt.response.id ?? "";
+        finalModel = evt.response.model ?? requestedModel;
+        if (evt.response.usage) {
+          finalUsage = {
+            inputTokens: evt.response.usage.input_tokens ?? 0,
+            outputTokens: evt.response.usage.output_tokens ?? 0
+          };
+        }
+      }
+    }
+  }
+
+  if (citations.length > 0) yield { type: "citations", items: citations };
+  yield {
+    type: "done",
+    response: {
+      citations,
+      id: finalId,
+      model: finalModel,
+      output: textBuf,
+      raw: undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      usage: finalUsage
+    }
   };
 }
 

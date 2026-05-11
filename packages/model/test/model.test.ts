@@ -641,13 +641,13 @@ describe("provider adapter contracts", () => {
       errorProvider: () => new OpenAIProvider({
         baseUrl: "https://openai.example.test/v1",
         defaultModel: "model-test",
-        fetch: fakeOpenAIChatFetch({ forceError: true }),
+        fetch: fakeOpenAIResponsesFetch({ forceError: true }),
         models: ["model-test"]
       }),
       provider: () => new OpenAIProvider({
         baseUrl: "https://openai.example.test/v1",
         defaultModel: "model-test",
-        fetch: fakeOpenAIChatFetch(),
+        fetch: fakeOpenAIResponsesFetch(),
         models: ["model-test"]
       })
     },
@@ -954,6 +954,55 @@ function fakeOpenAIChatFetch(options: { readonly forceError?: boolean } = {}): t
         completion_tokens: 5,
         prompt_tokens: 11
       }
+    }));
+  };
+}
+
+function fakeOpenAIResponsesFetch(options: { readonly forceError?: boolean } = {}): typeof globalThis.fetch {
+  return async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { readonly stream?: boolean };
+
+    if (options.forceError) {
+      return new Response("temporary provider failure", { status: 503, statusText: "Unavailable" });
+    }
+
+    if (body.stream) {
+      return new Response(new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          const encode = (obj: unknown) => encoder.encode(`data: ${JSON.stringify(obj)}\n\n`);
+          controller.enqueue(encode({ type: "response.output_text.delta", delta: "contract " }));
+          controller.enqueue(encode({ type: "response.output_text.delta", delta: "response" }));
+          controller.enqueue(encode({
+            type: "response.output_item.done",
+            item: { type: "function_call", call_id: "call-1", name: "search", arguments: "{\"query\":\"muse\"}" }
+          }));
+          controller.enqueue(encode({
+            type: "response.completed",
+            response: { id: "resp-contract", model: "model-test", usage: { input_tokens: 11, output_tokens: 5 } }
+          }));
+          controller.close();
+        }
+      }));
+    }
+
+    return new Response(JSON.stringify({
+      id: "resp-contract",
+      model: "model-test",
+      output: [
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "search",
+          arguments: "{\"query\":\"muse\"}"
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "contract response", annotations: [] }]
+        }
+      ],
+      usage: { input_tokens: 11, output_tokens: 5 }
     }));
   };
 }

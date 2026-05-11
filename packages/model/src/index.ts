@@ -8,13 +8,16 @@ import {
   fromAnthropicResponse,
   fromGeminiResponse,
   fromOpenAIChatResponse,
+  fromOpenAIResponsesResponse,
   geminiModelCapabilities,
   localModelCapabilities,
+  parseOpenAIResponsesStream,
   parseOpenAIStream,
   renderDiagnosticOutput,
   toAnthropicRequest,
   toGeminiRequest,
-  toOpenAIChatRequest
+  toOpenAIChatRequest,
+  toOpenAIResponsesRequest
 } from "./provider-wire.js";
 
 export { sanitizeGeminiSchema } from "./provider-wire.js";
@@ -100,18 +103,29 @@ export interface ModelRequest {
   readonly metadata?: JsonObject;
 }
 
+export interface WebSearchCitation {
+  readonly url: string;
+  readonly title: string;
+  readonly snippet?: string;
+  readonly providerRaw?: unknown;
+}
+
 export interface ModelResponse {
   readonly id: string;
   readonly model: string;
   readonly output: string;
   readonly toolCalls?: readonly ModelToolCall[];
   readonly usage?: ModelUsage;
+  readonly citations?: readonly WebSearchCitation[];
   readonly raw?: unknown;
 }
 
 export type ModelEvent =
   | { readonly type: "text-delta"; readonly text: string }
   | { readonly type: "tool-call"; readonly toolCall: ModelToolCall }
+  | { readonly type: "tool-call-started"; readonly name: string }
+  | { readonly type: "tool-call-finished"; readonly name: string; readonly count?: number }
+  | { readonly type: "citations"; readonly items: readonly WebSearchCitation[] }
   | { readonly type: "done"; readonly response: ModelResponse }
   | { readonly type: "error"; readonly error: ModelProviderError };
 
@@ -323,12 +337,93 @@ export class DiagnosticModelProvider implements ModelProvider {
 }
 
 export class OpenAIProvider extends OpenAICompatibleProvider {
+  private readonly openaiApiKey?: string;
+  private readonly openaiBaseUrl: string;
+  private readonly openaiDefaultModel?: string;
+  private readonly openaiFetchImpl: typeof globalThis.fetch;
+  private readonly openaiHeaders: Readonly<Record<string, string>>;
+
   constructor(options: OpenAIProviderOptions = {}) {
     super({
       ...options,
       baseUrl: options.baseUrl ?? "https://api.openai.com/v1",
       id: options.id ?? "openai"
     });
+    this.openaiApiKey = options.apiKey;
+    this.openaiBaseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/u, "");
+    this.openaiDefaultModel = options.defaultModel;
+    this.openaiFetchImpl = options.fetch ?? globalThis.fetch;
+    this.openaiHeaders = options.headers ?? {};
+  }
+
+  override async generate(request: ModelRequest): Promise<ModelResponse> {
+    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
+      ?? { enabled: false, maxUses: 5 };
+
+    const url = `${this.openaiBaseUrl}/responses`;
+    const body = JSON.stringify(toOpenAIResponsesRequest(request, this.openaiDefaultModel, policy));
+
+    const response = await this.openaiFetchImpl(url, {
+      body,
+      headers: {
+        "content-type": "application/json",
+        ...(this.openaiApiKey ? { authorization: `Bearer ${this.openaiApiKey}` } : {}),
+        ...this.openaiHeaders
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      throw new ModelProviderError(
+        this.id,
+        `OpenAI Responses API error: ${response.status}: ${errBody || response.statusText}`,
+        response.status >= 500
+      );
+    }
+
+    const payload = await response.json();
+    return fromOpenAIResponsesResponse(this.id, request.model, payload);
+  }
+
+  override async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
+      ?? { enabled: false, maxUses: 5 };
+
+    const url = `${this.openaiBaseUrl}/responses`;
+    const body = JSON.stringify({ ...toOpenAIResponsesRequest(request, this.openaiDefaultModel, policy), stream: true });
+
+    const response = await this.openaiFetchImpl(url, {
+      body,
+      headers: {
+        "content-type": "application/json",
+        ...(this.openaiApiKey ? { authorization: `Bearer ${this.openaiApiKey}` } : {}),
+        ...this.openaiHeaders
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      yield {
+        error: new ModelProviderError(
+          this.id,
+          `OpenAI Responses API stream error: ${response.status}: ${errBody || response.statusText}`,
+          response.status >= 500
+        ),
+        type: "error"
+      };
+      return;
+    }
+
+    if (!response.body) {
+      const generated = await this.generate(request);
+      yield { text: generated.output, type: "text-delta" };
+      yield { response: generated, type: "done" };
+      return;
+    }
+
+    yield* parseOpenAIResponsesStream(this.id, request.model, response.body);
   }
 }
 
@@ -397,8 +492,11 @@ export class AnthropicProvider implements ModelProvider {
   }
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
+    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
+      ?? { enabled: false, maxUses: 5 };
+
     const response = await this.fetchImpl(`${this.baseUrl}/messages`, {
-      body: JSON.stringify(toAnthropicRequest(request, this.defaultModel)),
+      body: JSON.stringify(toAnthropicRequest(request, this.defaultModel, policy)),
       headers: this.requestHeaders(),
       method: "POST"
     });
@@ -476,8 +574,11 @@ export class GeminiProvider implements ModelProvider {
       url.searchParams.set("key", this.apiKey);
     }
 
+    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
+      ?? { enabled: false, maxUses: 5 };
+
     const response = await this.fetchImpl(url.toString(), {
-      body: JSON.stringify(toGeminiRequest(request)),
+      body: JSON.stringify(toGeminiRequest(request, policy)),
       headers: {
         "content-type": "application/json",
         ...this.headers
@@ -730,3 +831,10 @@ function compareSelectedModels(criteria: ModelSelectionCriteria): (left: Selecte
 function costRank(cost: ModelCapabilities["cost"]): number {
   return ({ free: 0, low: 1, medium: 2, high: 3, unknown: 4 })[cost];
 }
+
+export {
+  decideWebSearchPolicy,
+  type DecideWebSearchPolicyArgs,
+  type WebSearchPolicy,
+  type WebSearchSettings
+} from "./web-search-policy.js";

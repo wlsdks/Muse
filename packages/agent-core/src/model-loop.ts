@@ -34,7 +34,7 @@ import {
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import { renderToolResults } from "@muse/prompts";
 
-import { recordTokenUsageEvent } from "./model-invocation.js";
+import { applyCitationSanitisation, recordTokenUsageEvent } from "./model-invocation.js";
 import { appendSystemSection, recordUsageSpanAttributes } from "./runtime-helpers.js";
 import {
   blockedToolResult,
@@ -87,6 +87,9 @@ export type ModelLoopStreamEvent =
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "text-delta" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call" }>)
   | { readonly runId: string; readonly toolCall: ModelToolCall; readonly type: "tool-result" }
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call-started" }>)
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call-finished" }>)
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "citations" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "error" }>);
 
 export async function executeModelLoop(
@@ -291,10 +294,19 @@ async function* streamModelTurn(
         continue;
       }
 
+      if (event.type === "tool-call-started" || event.type === "tool-call-finished" || event.type === "citations") {
+        yield { ...event, runId: context.runId };
+        continue;
+      }
+
       if (event.type === "error") {
         span.setError(event.error);
         yield { ...event, runId: context.runId };
         throw event.error;
+      }
+
+      if (event.type !== "done") {
+        continue;
       }
 
       for (const toolCall of event.response.toolCalls ?? []) {
@@ -325,12 +337,12 @@ async function* streamModelTurn(
     }
 
     return {
-      response: response ?? {
+      response: applyCitationSanitisation(response ?? {
         id: `${context.runId}:stream`,
         model: request.model,
         output: streamedOutput,
         toolCalls: toolCalls.size > 0 ? [...toolCalls.values()] : undefined
-      }
+      })
     };
   } catch (error) {
     span.setError(error);

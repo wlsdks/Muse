@@ -207,6 +207,32 @@ async function runProviderSuite(provider) {
       assert(code === "INJECTION_DETECTED",
         `expected INJECTION_DETECTED, got ${code}: ${JSON.stringify(body)}`);
     });
+
+    await record("POST /api/chat — native web_search returns citations", async () => {
+      const response = await fetch(`${baseUrl}/api/chat`, {
+        body: JSON.stringify({
+          message: "What's today's top tech news? Use web search to answer.",
+          runId: `${provider.providerId}-web-search`
+        }),
+        headers: { "content-type": "application/json" },
+        method: "POST"
+      });
+      const body = await response.json();
+      assert(response.status === 200, `expected 200, got ${response.status}: ${JSON.stringify(body)}`);
+      assert(body.success === true, `expected success=true, got ${JSON.stringify(body)}`);
+      const citations = Array.isArray(body.citations) ? body.citations : [];
+      // Gemini's generateContent API rejects mixing google_search with function
+      // tools, so when Muse auto-registers ambient tools the grounding tool is
+      // intentionally skipped (see fix(model) skip-Gemini-googleSearch). Treat
+      // an empty result as soft-pass on Gemini; OpenAI/Anthropic remain strict.
+      if (provider.providerId === "gemini" && citations.length === 0) {
+        return;
+      }
+      assert(
+        citations.length > 0,
+        `expected citations.length > 0 with native web_search (got 0); content="${body.content?.slice(0, 200)}"`
+      );
+    });
   } catch (error) {
     failures += 1;
     checks.push({ error: error instanceof Error ? error.message : String(error), name: "bootstrap", status: "fail" });

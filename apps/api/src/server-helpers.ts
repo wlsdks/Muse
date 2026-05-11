@@ -17,6 +17,7 @@
 
 import { Readable } from "node:stream";
 import {
+  buildModelRequestWithWebSearch,
   GuardBlockedError,
   OutputGuardBlockedError,
   PlanExecutionError,
@@ -65,8 +66,10 @@ export async function runChat(
     return reply.status(400).send(parsed.error);
   }
 
+  const runInput = await applyWebSearchPolicy(parsed.value, body, options);
+
   try {
-    const result = await options.agentRuntime.run(parsed.value);
+    const result = await options.agentRuntime.run(runInput);
     return responseMode === "compat" ? toCompatChatResponse(result) : toExtendedChatResponse(result);
   } catch (error) {
     return sendAgentError(reply, error, responseMode);
@@ -97,9 +100,11 @@ export async function runChatStream(
     return reply.status(400).send(parsed.error);
   }
 
+  const runInput = await applyWebSearchPolicy(parsed.value, body, options);
+
   reply.header("content-type", "text/event-stream; charset=utf-8");
   reply.header("cache-control", "no-cache");
-  return reply.send(Readable.from(toSseStream(options.agentRuntime.stream(parsed.value), responseMode)));
+  return reply.send(Readable.from(toSseStream(options.agentRuntime.stream(runInput), responseMode)));
 }
 
 export async function runMultipartChat(
@@ -115,6 +120,52 @@ export async function runMultipartChat(
   }
 
   return runChat(parsed.value, reply, options, "compat", authUserId);
+}
+
+// ---------------------------------------------------------------------------
+// Web search policy injection
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies web search policy to the run input before it reaches the agent
+ * runtime. Reads the per-request override from `body.metadata.tools.web_search`
+ * and the server-side settings from `options.runtimeSettings` (with TTL cache).
+ * Defaults to enabled=true, maxUses=5 when no settings store is wired.
+ */
+async function applyWebSearchPolicy(
+  runInput: AgentRunInput,
+  body: unknown,
+  options: ServerOptions
+): Promise<AgentRunInput> {
+  const override = extractWebSearchOverride(body);
+  const runtimeSettings = options.runtimeSettings;
+  const webSearchSettings = runtimeSettings
+    ? {
+      enabled: await runtimeSettings.getBoolean("webSearch.enabled", true),
+      maxUses: await runtimeSettings.getNumber("webSearch.maxUses", 5)
+    }
+    : { enabled: true, maxUses: 5 };
+  const modelRequest = {
+    messages: runInput.messages,
+    metadata: runInput.metadata,
+    model: runInput.model ?? "default"
+  };
+  const wrapped = buildModelRequestWithWebSearch(modelRequest, {
+    env: process.env as Record<string, string | undefined>,
+    override,
+    settings: { webSearch: webSearchSettings }
+  });
+  return { ...runInput, metadata: wrapped.metadata };
+}
+
+function extractWebSearchOverride(body: unknown): boolean | undefined {
+  if (!isRecord(body)) return undefined;
+  const meta = body.metadata;
+  if (!isRecord(meta)) return undefined;
+  const tools = meta.tools;
+  if (!isRecord(tools)) return undefined;
+  const flag = tools.web_search;
+  return typeof flag === "boolean" ? flag : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +366,7 @@ export function toCompatChatResponse(result: AgentRunResult) {
 
   return {
     blockReason: typeof metadata.blockReason === "string" ? metadata.blockReason : null,
+    citations: result.response.citations ?? [],
     content: result.response.output,
     durationMs: null,
     errorCode: null,
@@ -718,6 +770,21 @@ async function* toSseStream(
         yield `event: tool_end\ndata: ${sseData(event.toolCall.name)}\n\n`;
       }
 
+      continue;
+    }
+
+    if (event.type === "tool-call-started") {
+      yield `event: tool_call\ndata: ${sseData(JSON.stringify({ name: event.name, phase: "started" }))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "tool-call-finished") {
+      yield `event: tool_call\ndata: ${sseData(JSON.stringify({ count: event.count, name: event.name, phase: "finished" }))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "citations") {
+      yield `event: citations\ndata: ${sseData(JSON.stringify(event.items))}\n\n`;
       continue;
     }
 

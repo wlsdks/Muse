@@ -19,10 +19,52 @@
 import { estimateCostUsd } from "@muse/cache";
 import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
 import { retry, withTimeout } from "@muse/resilience";
-import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
+import { decideWebSearchPolicy, parseModelName, type ModelProvider, type ModelRequest, type ModelResponse, type WebSearchSettings } from "@muse/model";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import type { JsonObject } from "@muse/shared";
 import { isRetryableProviderError, recordUsageSpanAttributes } from "./runtime-helpers.js";
+import { sanitiseCitations } from "./citation-sanitiser.js";
+
+/**
+ * Returns a new ModelRequest with `metadata.webSearchPolicy` populated by
+ * `decideWebSearchPolicy`. Bridges runtime settings + optional per-request
+ * override into the provider-facing request so provider adapters can stay
+ * free of settings-layer awareness.
+ */
+export function buildModelRequestWithWebSearch(
+  request: ModelRequest,
+  ctx: {
+    settings: { webSearch?: WebSearchSettings };
+    override?: boolean;
+    env: Readonly<Record<string, string | undefined>>;
+  }
+): ModelRequest {
+  const parsed = parseModelName(request.model);
+  const policy = decideWebSearchPolicy({
+    model: { provider: parsed.providerId ?? "", modelId: parsed.modelId },
+    settings: ctx.settings,
+    override: ctx.override,
+    env: ctx.env
+  });
+  // Cast is safe: WebSearchPolicy only contains JsonValue-compatible fields
+  // (boolean + number), but lacks the index signature JsonObject requires.
+  const policyAsJson = policy as unknown as JsonObject;
+  return {
+    ...request,
+    metadata: { ...(request.metadata ?? {}), webSearchPolicy: policyAsJson }
+  };
+}
+
+/**
+ * Returns a new ModelResponse with citations filtered through sanitiseCitations.
+ * Drops any citation whose URL is not http(s) (e.g. javascript:, data:).
+ * No-ops when citations is absent or empty so callers don't branch.
+ */
+export function applyCitationSanitisation(response: ModelResponse): ModelResponse {
+  if (!response.citations || response.citations.length === 0) return response;
+  const { kept } = sanitiseCitations(response.citations);
+  return { ...response, citations: kept };
+}
 
 export interface InvokeModelArgs {
   readonly provider: ModelProvider;
@@ -53,7 +95,8 @@ export async function invokeModel(args: InvokeModelArgs): Promise<ModelResponse>
   });
   try {
     const generate = () => invokeWithFallback(args);
-    const response = await (args.circuitBreaker ? args.circuitBreaker.execute(generate) : generate());
+    const raw = await (args.circuitBreaker ? args.circuitBreaker.execute(generate) : generate());
+    const response = applyCitationSanitisation(raw);
     recordUsageSpanAttributes(span, response);
     if (response.usage) {
       args.metrics.recordTokenUsage(response.usage, args.metadata);

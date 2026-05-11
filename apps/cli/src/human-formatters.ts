@@ -218,6 +218,14 @@ function shortDateTime(iso: string): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
 }
 
+export function formatCitations(
+  citations: ReadonlyArray<{ url: string; title: string }> | undefined
+): string {
+  if (!citations || citations.length === 0) return "";
+  const lines = citations.map((c, i) => `  [${i + 1}] ${c.title} — ${c.url}`);
+  return `\n\nSources:\n${lines.join("\n")}`;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes}B`;

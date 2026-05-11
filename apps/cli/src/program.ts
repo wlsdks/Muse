@@ -11,6 +11,7 @@ import {
   readStoredToken,
   writeStoredToken
 } from "./credential-store.js";
+import { formatCitations } from "./human-formatters.js";
 
 // Re-exported for the test in `apps/cli/test/program.test.ts:5,26`
 // which imports `defaultCredentialPath` from `program.js`.
@@ -153,6 +154,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
     .option("--stream", "Stream remote chat over SSE")
     .option("--json", "Print machine-readable JSON")
     .option("--no-log", "Do not write .muse/runs JSONL state")
+    .option("--no-web-search", "disable native web_search for this request")
     .action(async (
       messageParts: readonly string[],
       options: {
@@ -162,6 +164,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
         readonly mode?: string;
         readonly model?: string;
         readonly stream?: boolean;
+        readonly webSearch?: boolean;
       },
       command
     ) => {
@@ -173,15 +176,23 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
         throw new Error("--stream requires remote API chat; omit --local");
       }
 
+      // Compose metadata: merge agentMode and optional web_search override.
+      // --no-web-search sets webSearch=false (commander --no-X convention).
+      const metadataTools = options.webSearch === false ? { web_search: false } : undefined;
+      const metadata =
+        agentMode || metadataTools
+          ? { ...(agentMode ? { agentMode } : {}), ...(metadataTools ? { tools: metadataTools } : {}) }
+          : undefined;
+
       const body = options.local
         ? await runLocalChat(io, message, model, agentMode)
         : options.stream
-          ? await streamRemoteChat(io, command, message, model, options.json === true, agentMode)
-        : await apiRequest(io, command, "/api/chat", {
+          ? await streamRemoteChat(io, command, message, model, options.json === true, agentMode, options.webSearch === false)
+        : await apiRequest(io, command, "/api/chat", dropUndefined({
           message,
           model,
-          ...(agentMode ? { metadata: { agentMode } } : {})
-        });
+          metadata
+        }));
 
       if (options.log !== false) {
         const apiOptions = await readApiOptions(io, command, { includeStoredToken: false });
@@ -196,6 +207,12 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 
       if (!options.stream || options.json) {
         writeOutput(io, body, options.json ? undefined : "response");
+        if (!options.json && isRecord(body) && Array.isArray(body.citations)) {
+          const citationsText = formatCitations(body.citations as Array<{ url: string; title: string }>);
+          if (citationsText) {
+            io.stdout(`${citationsText}\n`);
+          }
+        }
       }
     });
 
@@ -386,14 +403,20 @@ async function streamRemoteChat(
   message: string,
   model: string | undefined,
   jsonMode: boolean,
-  agentMode: AgentMode | undefined
+  agentMode: AgentMode | undefined,
+  disableWebSearch?: boolean
 ) {
   const { baseUrl, token } = await readApiOptions(io, command);
+  const metadataTools = disableWebSearch ? { web_search: false } : undefined;
+  const metadata =
+    agentMode || metadataTools
+      ? { ...(agentMode ? { agentMode } : {}), ...(metadataTools ? { tools: metadataTools } : {}) }
+      : undefined;
   const response = await (io.fetch ?? globalThis.fetch)(new URL("/api/chat/stream", baseUrl).toString(), {
     body: JSON.stringify(dropUndefined({
       message,
       model,
-      ...(agentMode ? { metadata: { agentMode } } : {})
+      metadata
     })),
     headers: {
       "content-type": "application/json",
@@ -408,6 +431,7 @@ async function streamRemoteChat(
   }
 
   let output = "";
+  let streamCitations: Array<{ url: string; title: string }> | undefined;
 
   for await (const event of readSseEvents(response)) {
     if (event.event === "error") {
@@ -422,6 +446,18 @@ async function streamRemoteChat(
       continue;
     }
 
+    if (event.event === "citations") {
+      try {
+        const parsed = JSON.parse(event.data) as unknown;
+        if (Array.isArray(parsed)) {
+          streamCitations = parsed as Array<{ url: string; title: string }>;
+        }
+      } catch {
+        // Malformed citations event — ignore and continue.
+      }
+      continue;
+    }
+
     if (event.event === "done") {
       break;
     }
@@ -431,7 +467,15 @@ async function streamRemoteChat(
     io.stdout("\n");
   }
 
+  if (!jsonMode && streamCitations) {
+    const citationsText = formatCitations(streamCitations);
+    if (citationsText) {
+      io.stdout(`${citationsText}\n`);
+    }
+  }
+
   return {
+    citations: streamCitations,
     response: output,
     streamed: true
   };
