@@ -4,12 +4,14 @@
  *
  * Pure scoring function so `trimConversationMessages` can preserve
  * "important" messages over plain temporal age. Score in [0, 1]:
- *   - tool-call/tool-result pairs: 0.6 baseline (already paired by
- *     the trim machinery; importance just raises priority)
- *   - assistant message that contains structured plans / decisions: +0.2
- *   - user message that names the active task / current focus: +0.5
- *   - very recent messages get a small recency bump
- *   - everything else: low default
+ *   - tool-call assistant / tool reply: +0.4 baseline (paired,
+ *     usually high signal)
+ *   - plain assistant turn: +0.2 (the agent's last answer is what
+ *     a follow-up question references)
+ *   - system / user: +0.2
+ *   - message references the active task / focus: +0.3 to +0.5
+ *   - decision-language hint match: +0.2
+ *   - recency bonus: up to +0.1
  */
 
 import type { ConversationMessage } from "./index.js";
@@ -24,10 +26,21 @@ export interface ImportanceContext {
   readonly totalMessages: number;
 }
 
+// Multi-language decision / commitment vocabulary. Hits boost the
+// score by +0.2 so a message where the user or agent committed to
+// something survives the compaction pass even if no active task is
+// configured.
 const DECISION_HINTS = [
-  "결정", "확정", "이렇게 가자", "하자",
-  "decided", "let's go", "we'll", "we will",
-  "plan:", "step 1", "step 2"
+  // Korean — decisions / agreements / plans
+  "결정", "확정", "이렇게 가자", "하자", "정했어", "정함",
+  "결론", "약속", "합의", "승인", "반대", "거부",
+  "채택", "보류", "포기", "방향", "계획:",
+  // English — decisions / agreements / plans
+  "decided", "let's go", "we'll", "we will", "agreed",
+  "signed off", "concluded", "final", "approved",
+  "rejected", "ship it",
+  "plan:", "step 1", "step 2", "step 3",
+  "tldr:", "summary:"
 ];
 
 export function scoreMessageImportance(
@@ -35,13 +48,16 @@ export function scoreMessageImportance(
   context: ImportanceContext
 ): number {
   let score = 0.1; // base
-  if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
-    score += 0.4;
+  // Role bonus. Previously a plain assistant turn fell through
+  // every branch and received 0 role bonus, which kept every plain
+  // assistant message under the default threshold (0.5) — i.e. they
+  // were ALL trim candidates regardless of relevance. Plain
+  // assistant turns now get the same +0.2 as user/system messages.
+  if (message.role === "assistant") {
+    score += (message.toolCalls && message.toolCalls.length > 0) ? 0.4 : 0.2;
   } else if (message.role === "tool") {
     score += 0.4;
-  } else if (message.role === "system") {
-    score += 0.2;
-  } else if (message.role === "user") {
+  } else if (message.role === "system" || message.role === "user") {
     score += 0.2;
   }
   const content = message.content.toLowerCase();
