@@ -10,7 +10,7 @@ import {
 } from "@muse/scheduler";
 import type { FastifyInstance } from "fastify";
 
-import { hasOwn, isRecord, isJsonValue, readBoolean, readNullableString, readNumber, readString, readStringArray } from "./server-input-utils.js";
+import { hasOwn, isRecord, readBoolean, readJsonObject, readNullableString, readNumber, readString, readStringArray } from "./server-input-utils.js";
 
 export interface SchedulerRouteScheduler {
   readonly executionStore?: ScheduledJobExecutionStore;
@@ -473,23 +473,4 @@ function readNullableNumber(
   return typeof value[key] === "number" && Number.isFinite(value[key]) ? value[key] : undefined;
 }
 
-function readJsonObject(
-  value: Record<string, unknown>,
-  key: string,
-  fallback?: ScheduledJobInput["toolArguments"]
-): ScheduledJobInput["toolArguments"] | false | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return isJsonObject(value[key]) ? value[key] : false;
-}
-
-function isJsonObject(value: unknown): value is NonNullable<ScheduledJobInput["toolArguments"]> {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return Object.values(value).every(isJsonValue);
-}
 

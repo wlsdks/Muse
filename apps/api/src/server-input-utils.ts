@@ -116,6 +116,18 @@ export function readStringArray(
     : false;
 }
 
+export function readJsonObject(
+  value: Record<string, unknown>,
+  key: string,
+  fallback?: JsonObject
+): JsonObject | false | undefined {
+  if (!hasOwn(value, key)) {
+    return fallback;
+  }
+
+  return isJsonObject(value[key]) ? value[key] : false;
+}
+
 export function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : undefined;
   return normalized === "string" || normalized === "number" || normalized === "boolean" || normalized === "json"

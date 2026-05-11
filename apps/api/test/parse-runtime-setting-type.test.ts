@@ -7,6 +7,7 @@ import {
   isRecord as isRecordFromInputUtils,
   parseRuntimeSettingType as parseStrict,
   readBoolean as readBooleanFromInputUtils,
+  readJsonObject as readJsonObjectFromInputUtils,
   readNullableString as readNullableStringFromInputUtils,
   readNumber as readNumberFromInputUtils,
   readString as readStringFromInputUtils,
@@ -18,6 +19,7 @@ import {
   isJsonValue as isJsonValueFromMcp,
   isRecord as isRecordFromMcp,
   readBoolean as readBooleanFromMcp,
+  readJsonObject as readJsonObjectFromMcp,
   readNullableString as readNullableStringFromMcp,
   readNumber as readNumberFromMcp,
   readString as readStringFromMcp,
@@ -36,6 +38,7 @@ describe("api shape-inspection helpers — single shared implementation", () => 
     expect(readStringArrayFromInputUtils).toBe(readStringArrayFromMcp);
     expect(readStringFromInputUtils).toBe(readStringFromMcp);
     expect(readNullableStringFromInputUtils).toBe(readNullableStringFromMcp);
+    expect(readJsonObjectFromInputUtils).toBe(readJsonObjectFromMcp);
   });
 });
 
