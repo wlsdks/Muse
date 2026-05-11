@@ -19,10 +19,45 @@
 import { estimateCostUsd } from "@muse/cache";
 import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
 import { retry, withTimeout } from "@muse/resilience";
-import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
+import { decideWebSearchPolicy, type ModelProvider, type ModelRequest, type ModelResponse, type WebSearchSettings } from "@muse/model";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import type { JsonObject } from "@muse/shared";
 import { isRetryableProviderError, recordUsageSpanAttributes } from "./runtime-helpers.js";
+
+/**
+ * Returns a new ModelRequest with `metadata.webSearchPolicy` populated by
+ * `decideWebSearchPolicy`. Bridges runtime settings + optional per-request
+ * override into the provider-facing request so provider adapters can stay
+ * free of settings-layer awareness.
+ */
+export function buildModelRequestWithWebSearch(
+  request: ModelRequest,
+  ctx: {
+    settings: { webSearch?: WebSearchSettings };
+    override?: boolean;
+    env: Readonly<Record<string, string | undefined>>;
+  }
+): ModelRequest {
+  const policy = decideWebSearchPolicy({
+    model: parseProviderAndModel(request.model),
+    settings: ctx.settings,
+    override: ctx.override,
+    env: ctx.env
+  });
+  // Cast is safe: WebSearchPolicy only contains JsonValue-compatible fields
+  // (boolean + number), but lacks the index signature JsonObject requires.
+  const policyAsJson = policy as unknown as JsonObject;
+  return {
+    ...request,
+    metadata: { ...(request.metadata ?? {}), webSearchPolicy: policyAsJson }
+  };
+}
+
+function parseProviderAndModel(spec: string): { provider: string; modelId: string } {
+  const [provider, ...rest] = spec.split("/");
+  const modelId = rest.join("/") || provider || "";
+  return { provider: provider ?? "", modelId };
+}
 
 export interface InvokeModelArgs {
   readonly provider: ModelProvider;
