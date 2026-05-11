@@ -35,6 +35,14 @@ const MAX_MIME_CHARS = 128;
 const MAX_REF_CHARS = 256;
 const MAX_DESCRIPTION_CHARS = 1024;
 const MAX_ATTACHMENT_ENTRIES = 16;
+// Hard ceiling on PARSE iterations. The render path only ever shows
+// `MAX_ATTACHMENT_ENTRIES` (16); a much larger parse-time ceiling is
+// generous for legitimate use (a power user with many docs pinned)
+// while still bounding the per-request work for an adversarial
+// metadata payload — 1M attachments → 1M sanitize calls used to be
+// a viable DoS surface for any caller that accepts `metadata` from
+// untrusted input (HTTP API multipart uploads).
+const MAX_PARSE_ATTACHMENTS = 64;
 
 export function parseAttachmentsFromMetadata(metadata: unknown): readonly AttachmentHint[] {
   if (!metadata || typeof metadata !== "object") {
@@ -45,7 +53,13 @@ export function parseAttachmentsFromMetadata(metadata: unknown): readonly Attach
     return [];
   }
   const out: AttachmentHint[] = [];
-  for (const entry of raw) {
+  // Hard cap on iteration. The previous loop scanned every entry in
+  // the array regardless of how many would actually surface in the
+  // prompt — an attacker who could write `metadata.attachments` (the
+  // HTTP API path) could send 1M entries and burn one regex pass per
+  // field per entry on every request.
+  for (let index = 0; index < raw.length && out.length < MAX_PARSE_ATTACHMENTS; index++) {
+    const entry = raw[index];
     if (!entry || typeof entry !== "object") {
       continue;
     }
@@ -58,25 +72,13 @@ export function parseAttachmentsFromMetadata(metadata: unknown): readonly Attach
     // `- name · mime · size · ref=…` header line in
     // `[Attached Files]`, so a literal newline anywhere there can
     // splice a fake section into the prompt.
-    const name = boundedString(
-      typeof record.name === "string" ? sanitizeInline(record.name) : undefined,
-      MAX_NAME_CHARS
-    );
+    const name = sanitizeAndBound(record.name, MAX_NAME_CHARS);
     if (!name) {
       continue;
     }
-    const mimeType = boundedString(
-      typeof record.mimeType === "string" ? sanitizeInline(record.mimeType) : undefined,
-      MAX_MIME_CHARS
-    );
-    const ref = boundedString(
-      typeof record.ref === "string" ? sanitizeInline(record.ref) : undefined,
-      MAX_REF_CHARS
-    );
-    const description = boundedString(
-      typeof record.description === "string" ? sanitizeInline(record.description) : undefined,
-      MAX_DESCRIPTION_CHARS
-    );
+    const mimeType = sanitizeAndBound(record.mimeType, MAX_MIME_CHARS);
+    const ref = sanitizeAndBound(record.ref, MAX_REF_CHARS);
+    const description = sanitizeAndBound(record.description, MAX_DESCRIPTION_CHARS);
     out.push({
       ...(description ? { description } : {}),
       ...(mimeType ? { mimeType } : {}),
@@ -88,6 +90,21 @@ export function parseAttachmentsFromMetadata(metadata: unknown): readonly Attach
     });
   }
   return out;
+}
+
+/**
+ * Pre-slice oversized inputs BEFORE the regex pass so a 10MB
+ * malicious field doesn't burn whole-string CPU just to be
+ * truncated to 256 chars afterwards. The 2x slack on the pre-slice
+ * leaves room for `sanitizeInline` to collapse whitespace runs and
+ * still produce a `max`-sized output.
+ */
+function sanitizeAndBound(raw: unknown, max: number): string | undefined {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const limited = raw.length > max * 2 ? raw.slice(0, max * 2) : raw;
+  return boundedString(sanitizeInline(limited), max);
 }
 
 function boundedString(value: unknown, max: number): string | undefined {
