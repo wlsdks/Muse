@@ -2,6 +2,7 @@ import {
   AnthropicProvider,
   DiagnosticModelProvider,
   GeminiProvider,
+  knownModelPrefixes,
   OllamaProvider,
   OpenAICompatibleProvider,
   OpenAIProvider,
@@ -56,6 +57,16 @@ function inferDefaultModelFromCredentials(env: MuseEnvironment): string | undefi
  * when an unknown providerId is paired with `MUSE_MODEL_BASE_URL`
  * (the local Ollama / LM Studio / vLLM path).
  */
+function providerIdFromPrefix(modelSpec: string): string | undefined {
+  const lower = modelSpec.toLowerCase();
+  for (const [prefix, providerId] of Object.entries(knownModelPrefixes())) {
+    if (lower.startsWith(prefix)) {
+      return providerId;
+    }
+  }
+  return undefined;
+}
+
 export function createModelProvider(env: MuseEnvironment): ModelProvider | undefined {
   const defaultModel = resolveDefaultModel(env);
   const baseUrl = parseOptionalString(env.MUSE_MODEL_BASE_URL);
@@ -67,6 +78,7 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
   const explicitProviderId = parseOptionalString(env.MUSE_MODEL_PROVIDER_ID);
   const providerId = explicitProviderId
     ?? (baseUrl ? "openai-compatible" : parseModelName(defaultModel).providerId)
+    ?? (baseUrl ? "openai-compatible" : providerIdFromPrefix(defaultModel))
     ?? "openai-compatible";
   const models = parseCsv(env.MUSE_MODEL_LIST) ?? [parseModelName(defaultModel).modelId];
 
@@ -134,6 +146,22 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
         baseUrl: baseUrl ?? "https://api.together.xyz/v1",
         defaultModel,
         id: "together",
+        models
+      });
+    case "mistral":
+      return new OpenAICompatibleProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.MISTRAL_API_KEY),
+        baseUrl: baseUrl ?? "https://api.mistral.ai/v1",
+        defaultModel,
+        id: "mistral",
+        models
+      });
+    case "moonshot":
+      return new OpenAICompatibleProvider({
+        apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.MOONSHOT_API_KEY),
+        baseUrl: baseUrl ?? "https://api.moonshot.ai/v1",
+        defaultModel,
+        id: "moonshot",
         models
       });
     default:

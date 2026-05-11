@@ -56,4 +56,22 @@ describe("createModelProvider — OpenAI-compatible presets", () => {
     expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
     expect(provider?.id).toBe("groq");
   });
+
+  it("mistral derives provider from prefix and returns a usable provider with only MISTRAL_API_KEY", () => {
+    const provider = createModelProvider({
+      MISTRAL_API_KEY: "ms-test",
+      MUSE_MODEL: "mistral-small-latest"
+    });
+    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(provider?.id).toBe("mistral");
+  });
+
+  it("moonshot derives provider from prefix and returns a usable provider with only MOONSHOT_API_KEY", () => {
+    const provider = createModelProvider({
+      MOONSHOT_API_KEY: "moon-test",
+      MUSE_MODEL: "moonshot-v1-8k"
+    });
+    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(provider?.id).toBe("moonshot");
+  });
 });
