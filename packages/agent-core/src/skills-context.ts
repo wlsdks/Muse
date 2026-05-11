@@ -37,16 +37,27 @@ export function renderSkillsCatalogSection(entries: readonly SkillCatalogEntry[]
   lines.push("External-CLI integrations declared via SKILL.md. Read the full body with");
   lines.push("`muse.skills.read({ name })` before invoking; run it with `muse.skills.run({ name, command })`.");
   for (const entry of entries.slice(0, MAX_SKILLS_PER_PROMPT)) {
-    const emoji = entry.emoji ? `${entry.emoji} ` : "";
+    // SKILL.md frontmatter is author-supplied text — a malformed
+    // or actively hostile file could land `\n[System Override]\n…`
+    // in name / description / emoji. Every field rendered inline
+    // gets the same whitespace-collapse pass attachment-context and
+    // episodic-recall already use.
+    const emoji = entry.emoji ? `${sanitizeInline(entry.emoji)} ` : "";
+    const name = sanitizeInline(entry.name);
+    const description = sanitizeInline(entry.description);
     const bins = entry.requiresBins && entry.requiresBins.length > 0
-      ? ` (bins: ${entry.requiresBins.join(", ")})`
+      ? ` (bins: ${entry.requiresBins.map(sanitizeInline).join(", ")})`
       : "";
-    lines.push(`- ${emoji}${entry.name}${bins}: ${entry.description}`);
+    lines.push(`- ${emoji}${name}${bins}: ${description}`);
   }
   if (entries.length > MAX_SKILLS_PER_PROMPT) {
     lines.push(`…and ${(entries.length - MAX_SKILLS_PER_PROMPT).toString()} more (call \`muse.skills.list\` to enumerate).`);
   }
   return lines.join("\n");
+}
+
+function sanitizeInline(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
 }
 
 export async function applySkillsContext(
