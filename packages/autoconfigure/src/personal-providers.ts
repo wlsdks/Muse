@@ -876,6 +876,12 @@ function toCatalogEntry(skill: Skill): SkillCatalogEntry {
     name: skill.name,
     ...(skill.frontmatter.requires?.bins && skill.frontmatter.requires.bins.length > 0
       ? { requiresBins: [...skill.frontmatter.requires.bins] }
+      : {}),
+    // iter 45: any-of CLI requirement (e.g. "codex OR claude")
+    // forwarded so the agent can see the alternate-CLI dependency
+    // in `[Available Skills]` and route accordingly.
+    ...(skill.frontmatter.requires?.anyBins && skill.frontmatter.requires.anyBins.length > 0
+      ? { requiresAnyBins: [...skill.frontmatter.requires.anyBins] }
       : {})
   };
 }
