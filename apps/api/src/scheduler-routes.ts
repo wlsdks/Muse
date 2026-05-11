@@ -10,7 +10,7 @@ import {
 } from "@muse/scheduler";
 import type { FastifyInstance } from "fastify";
 
-import { isRecord, isJsonValue } from "./server-input-utils.js";
+import { hasOwn, isRecord, isJsonValue, readBoolean, readNumber } from "./server-input-utils.js";
 
 export interface SchedulerRouteScheduler {
   readonly executionStore?: ScheduledJobExecutionStore;
@@ -457,10 +457,6 @@ function paginate<T>(items: readonly T[], offset: number, limit: number) {
   };
 }
 
-function hasOwn(value: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
-
 function readString(value: Record<string, unknown>, key: string, fallback?: string): string | undefined {
   if (!hasOwn(value, key)) {
     return fallback;
@@ -479,22 +475,6 @@ function readNullableString(
   }
 
   return value[key] === null || typeof value[key] === "string" ? value[key] : undefined;
-}
-
-function readBoolean(value: Record<string, unknown>, key: string, fallback?: boolean): boolean | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return typeof value[key] === "boolean" ? value[key] : undefined;
-}
-
-function readNumber(value: Record<string, unknown>, key: string, fallback?: number): number | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return typeof value[key] === "number" && Number.isFinite(value[key]) ? value[key] : undefined;
 }
 
 function readNullableNumber(

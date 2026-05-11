@@ -136,12 +136,8 @@ export function invalid(code: string, message: string): ParseResult<never> {
   };
 }
 
-export function hasOwn(value: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
-
-import { isJsonObject, isJsonValue, isRecord } from "./server-input-utils.js";
-export { isJsonObject, isJsonValue, isRecord };
+import { hasOwn, isJsonObject, isJsonValue, isRecord, readBoolean, readNumber } from "./server-input-utils.js";
+export { hasOwn, isJsonObject, isJsonValue, isRecord, readBoolean, readNumber };
 
 export function readString(value: Record<string, unknown>, key: string, fallback?: string): string | undefined {
   if (!hasOwn(value, key)) {
@@ -161,22 +157,6 @@ export function readNullableString(
   }
 
   return value[key] === null || typeof value[key] === "string" ? value[key] : undefined;
-}
-
-export function readBoolean(value: Record<string, unknown>, key: string, fallback?: boolean): boolean | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return typeof value[key] === "boolean" ? value[key] : undefined;
-}
-
-export function readNumber(value: Record<string, unknown>, key: string): number | undefined {
-  if (!hasOwn(value, key)) {
-    return undefined;
-  }
-
-  return typeof value[key] === "number" && Number.isFinite(value[key]) ? value[key] : undefined;
 }
 
 export function readJsonObject(

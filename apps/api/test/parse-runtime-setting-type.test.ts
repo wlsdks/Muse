@@ -1,23 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  hasOwn as hasOwnFromInputUtils,
   isJsonObject as isJsonObjectFromInputUtils,
   isJsonValue as isJsonValueFromInputUtils,
   isRecord as isRecordFromInputUtils,
-  parseRuntimeSettingType as parseStrict
+  parseRuntimeSettingType as parseStrict,
+  readBoolean as readBooleanFromInputUtils,
+  readNumber as readNumberFromInputUtils
 } from "../src/server-input-utils.js";
 import {
+  hasOwn as hasOwnFromMcp,
   isJsonObject as isJsonObjectFromMcp,
   isJsonValue as isJsonValueFromMcp,
-  isRecord as isRecordFromMcp
+  isRecord as isRecordFromMcp,
+  readBoolean as readBooleanFromMcp,
+  readNumber as readNumberFromMcp
 } from "../src/mcp-routes-parsers.js";
 import { parseRuntimeSettingType as parseCompat } from "../src/compat-routes.js";
 
-describe("JSON guards — single shared implementation across api/src", () => {
-  it("isRecord / isJsonObject / isJsonValue are the same function across re-export sites", () => {
+describe("api shape-inspection helpers — single shared implementation", () => {
+  it("isRecord / isJsonObject / isJsonValue / hasOwn / readBoolean / readNumber match across re-export sites", () => {
     expect(isRecordFromInputUtils).toBe(isRecordFromMcp);
     expect(isJsonObjectFromInputUtils).toBe(isJsonObjectFromMcp);
     expect(isJsonValueFromInputUtils).toBe(isJsonValueFromMcp);
+    expect(hasOwnFromInputUtils).toBe(hasOwnFromMcp);
+    expect(readBooleanFromInputUtils).toBe(readBooleanFromMcp);
+    expect(readNumberFromInputUtils).toBe(readNumberFromMcp);
   });
 });
 

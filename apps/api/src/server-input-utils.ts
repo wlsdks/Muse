@@ -62,6 +62,26 @@ export function optionalStringArray(value: unknown): readonly string[] | undefin
   return value.filter((item): item is string => typeof item === "string");
 }
 
+export function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+export function readBoolean(value: Record<string, unknown>, key: string, fallback?: boolean): boolean | undefined {
+  if (!hasOwn(value, key)) {
+    return fallback;
+  }
+
+  return typeof value[key] === "boolean" ? value[key] : undefined;
+}
+
+export function readNumber(value: Record<string, unknown>, key: string, fallback?: number): number | undefined {
+  if (!hasOwn(value, key)) {
+    return fallback;
+  }
+
+  return typeof value[key] === "number" && Number.isFinite(value[key]) ? value[key] : undefined;
+}
+
 export function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : undefined;
   return normalized === "string" || normalized === "number" || normalized === "boolean" || normalized === "json"
