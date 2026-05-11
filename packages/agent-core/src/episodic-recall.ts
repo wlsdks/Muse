@@ -44,13 +44,25 @@ export function renderEpisodicSection(snapshot: EpisodicRecallSnapshot | undefin
     if (remaining <= 0) {
       break;
     }
-    const narrative = match.narrative.length > remaining
-      ? `${match.narrative.slice(0, Math.max(0, remaining - 1))}…`
-      : match.narrative;
+    // Sanitize: collapse newlines / tabs / multi-space runs to a
+    // single space. A stored narrative could otherwise contain
+    // `…\n\n[System Override]\n…` (either by a prompt-injection
+    // attempt in the source conversation, or by genuine multi-line
+    // text) and splice a fake section header into the
+    // `[Episodic Memory]` block. Same pattern attachment-context
+    // uses for description fields.
+    const sanitized = sanitizeNarrativeInline(match.narrative);
+    const narrative = sanitized.length > remaining
+      ? `${sanitized.slice(0, Math.max(0, remaining - 1))}…`
+      : sanitized;
     lines.push(`${prefix}${narrative}`);
     charsUsed += prefix.length + narrative.length;
   }
   return lines.join("\n");
+}
+
+function sanitizeNarrativeInline(narrative: string): string {
+  return narrative.replace(/\s+/gu, " ").trim();
 }
 
 function formatSim(value: number | undefined): string {
