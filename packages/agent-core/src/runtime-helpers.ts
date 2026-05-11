@@ -19,6 +19,13 @@ export interface SpanAttributableContextWindow {
   readonly estimatedTokens: number;
   readonly removedCount: number;
   readonly summaryInserted: boolean;
+  /**
+   * Which compaction threshold caused the trim, if any. Surfaced
+   * onto the span so dashboards can distinguish proactive
+   * compaction (`working_budget`) from forced compaction
+   * (`hard_limit`) and the no-op case (`none`).
+   */
+  readonly triggeredBy?: "none" | "working_budget" | "hard_limit";
 }
 
 /**
@@ -152,6 +159,46 @@ export function recordContextWindowSpanAttributes(
   span.setAttribute("context.estimated_tokens", contextWindow.estimatedTokens);
   span.setAttribute("context.removed_count", contextWindow.removedCount);
   span.setAttribute("context.summary_inserted", contextWindow.summaryInserted);
+  if (contextWindow.triggeredBy !== undefined) {
+    span.setAttribute("context.triggered_by", contextWindow.triggeredBy);
+  }
+}
+
+/**
+ * Surface the per-request Context Engineering metadata onto the run
+ * span — which transforms fired, how many entries they injected.
+ * Pulls from `metadata` keys that the individual `applyXxxContext`
+ * transforms stamp during the pipeline so dashboards can monitor
+ * "did inbox context fire?" and "how many episodic matches surfaced?"
+ * without inspecting the full system prompt.
+ */
+export function recordContextEngineeringSpanAttributes(span: SpanHandle, metadata: JsonObject | undefined): void {
+  if (!metadata) {
+    return;
+  }
+  const record = metadata as Record<string, unknown>;
+  setBooleanAttr(span, "ctx.active_context_applied", record["activeContextApplied"]);
+  setBooleanAttr(span, "ctx.active_context_in_working_hours", record["activeContextInWorkingHours"]);
+  setBooleanAttr(span, "ctx.inbox_context_applied", record["inboxContextApplied"]);
+  setNumericAttr(span, "ctx.inbox_message_count", record["inboxContextMessageCount"]);
+  setBooleanAttr(span, "ctx.episodic_recall_applied", record["episodicRecallApplied"]);
+  setNumericAttr(span, "ctx.episodic_match_count", record["episodicRecallMatchCount"]);
+  setBooleanAttr(span, "ctx.attachment_context_applied", record["attachmentContextApplied"]);
+  setNumericAttr(span, "ctx.attachment_count", record["attachmentContextCount"]);
+  setBooleanAttr(span, "ctx.skills_catalog_applied", record["skillsCatalogApplied"]);
+  setNumericAttr(span, "ctx.skills_catalog_count", record["skillsCatalogCount"]);
+}
+
+function setBooleanAttr(span: SpanHandle, key: string, value: unknown): void {
+  if (typeof value === "boolean") {
+    span.setAttribute(key, value);
+  }
+}
+
+function setNumericAttr(span: SpanHandle, key: string, value: unknown): void {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    span.setAttribute(key, value);
+  }
 }
 
 /**

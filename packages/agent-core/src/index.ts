@@ -51,6 +51,7 @@ import {
   latestUserPrompt,
   metadataString,
   numberMetadata,
+  recordContextEngineeringSpanAttributes,
   recordContextWindowSpanAttributes,
   resolvePersonaSnapshot as resolvePersonaSnapshotFn,
   stringListMetadata
@@ -520,6 +521,7 @@ export class AgentRuntime {
       );
       const preparedRequest = this.prepareModelRequest(summaryAppliedContext.input, selected.model, personaSnapshot, activeContextSnapshot);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
+      recordContextEngineeringSpanAttributes(runSpan, summaryAppliedContext.input.metadata);
       const tools = this.modelTools(layeredContext);
       const cacheKey = buildCacheKey(cacheableModelRequest(preparedRequest.request), tools.map((tool) => tool.name));
       const cached = await this.readCache(cacheKey, selected.model);
@@ -656,6 +658,7 @@ export class AgentRuntime {
       );
       const preparedRequest = this.prepareModelRequest(summaryAppliedContext.input, selected.model, personaSnapshot, activeContextSnapshot);
       recordContextWindowSpanAttributes(runSpan, preparedRequest.contextWindow);
+      recordContextEngineeringSpanAttributes(runSpan, summaryAppliedContext.input.metadata);
       const tools = this.modelTools(layeredContext);
       const cacheKey = buildCacheKey(cacheableModelRequest(preparedRequest.request), tools.map((tool) => tool.name));
       const cached = await this.readCache(cacheKey, selected.model);
