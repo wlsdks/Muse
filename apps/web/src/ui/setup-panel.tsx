@@ -10,7 +10,8 @@
  * change.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import type { ApiClient } from "./App.js";
 
@@ -35,12 +36,43 @@ function statusGlyph(status: "ok" | "todo" | "info"): string {
   return status === "ok" ? "✓" : status === "todo" ? "✗" : "·";
 }
 
+interface RuntimeSettingResponse {
+  readonly key: string;
+  readonly value: string;
+}
+
 export function SetupPanel({ client }: { readonly client: ApiClient }) {
   const status = useQuery({
     queryFn: () => client.get<SetupStatusResponse>("/api/setup/status"),
     queryKey: ["setup-status"],
     retry: false
   });
+
+  const webSearchSetting = useQuery({
+    queryFn: () =>
+      client.get<RuntimeSettingResponse>("/api/admin/settings/webSearch.enabled").catch(() => ({ key: "webSearch.enabled", value: "true" })),
+    queryKey: ["setting-webSearch.enabled"],
+    retry: false
+  });
+
+  const [webSearchFeedback, setWebSearchFeedback] = useState<string>("");
+
+  const updateWebSearch = useMutation({
+    mutationFn: (enabled: boolean) =>
+      client.put<RuntimeSettingResponse>("/api/admin/settings/webSearch.enabled", {
+        category: "webSearch",
+        type: "boolean",
+        value: enabled ? "true" : "false"
+      }),
+    onError: (error) => {
+      setWebSearchFeedback(error instanceof Error ? error.message : "Failed to save");
+    },
+    onSuccess: async (_data, enabled) => {
+      setWebSearchFeedback(enabled ? "Web search enabled" : "Web search disabled");
+      await webSearchSetting.refetch();
+    }
+  });
+
   const data = status.data;
   // Flatten to a uniform { id, status, detail } shape so the render
   // is a single loop. Order matches the CLI's text renderer.
@@ -57,6 +89,8 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
     ]
     : [];
   const todoCount = sections.filter((entry) => entry.status === "todo").length;
+
+  const webSearchEnabled = webSearchSetting.data?.value !== "false";
 
   return (
     <section className="tool-surface compact" aria-label="Setup">
@@ -86,6 +120,23 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
           </li>
         ))}
       </ul>
+      <div className="setup-toggle-row">
+        <label className="setup-toggle-label">
+          <input
+            type="checkbox"
+            checked={webSearchEnabled}
+            disabled={updateWebSearch.isPending}
+            onChange={(event) => {
+              setWebSearchFeedback("");
+              updateWebSearch.mutate(event.target.checked);
+            }}
+          />
+          <span>Web search</span>
+        </label>
+        {webSearchFeedback ? (
+          <span style={{ fontSize: "0.78em", color: "var(--muted, #888)" }}>{webSearchFeedback}</span>
+        ) : null}
+      </div>
     </section>
   );
 }
