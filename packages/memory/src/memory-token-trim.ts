@@ -238,10 +238,31 @@ function trimByImportance(
     return currentTokens;
   }
   const threshold = options.importanceThreshold ?? IMPORTANCE_DEFAULT_THRESHOLD;
-  const totalMessagesForScoring = messages.length;
+  let totalMessagesForScoring = messages.length;
   let totalTokens = currentTokens;
   const skipCount = firstNonSystemIndex(messages);
-  const protectedIndex = Math.max(0, findLastIndex(messages, (message) => message.role === "user"));
+  // Both `protectedIndex` and `totalMessagesForScoring` MUST decrement
+  // alongside each removal. Pre-iter-27 they were captured once
+  // up-front, which created two coupled bugs:
+  //
+  //   1. `protectedIndex` stale → the for-loop guard
+  //      `index < protectedIndex` kept iterating up to the original
+  //      slot of the last user message, but after N removals that
+  //      slot now CONTAINS the last user message (shifted left N
+  //      positions). The user's current question became a victim
+  //      candidate, defeating the entire purpose of the protected
+  //      boundary.
+  //
+  //   2. `totalMessagesForScoring` stale → the recency bonus
+  //      `messageIndex / (totalMessages - 1)` used the original
+  //      message count, so the (now-shifted-left) user message
+  //      scored as if it were near the start of the conversation —
+  //      depressed by ~0.1, making it MORE attractive as a victim.
+  //
+  // Decrementing both after every successful removal keeps the
+  // protected boundary and the recency math in lockstep with the
+  // mutated array.
+  let protectedIndex = Math.max(0, findLastIndex(messages, (message) => message.role === "user"));
 
   while (totalTokens > budgetTokens) {
     let victimIndex = -1;
@@ -280,6 +301,11 @@ function trimByImportance(
       break;
     }
     totalTokens -= removeAt(messages, tokens, victimIndex, 1);
+    // Victim was always at index < protectedIndex (strict loop bound),
+    // so the user-message slot shifts left by exactly one. Keep both
+    // counters in sync with the mutated array.
+    protectedIndex--;
+    totalMessagesForScoring--;
   }
 
   return totalTokens;
