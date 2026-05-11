@@ -29,16 +29,22 @@ export interface SetupStatusSnapshot {
     readonly muse_model?: string;
     readonly keysFile: string;
     readonly providerKeys: readonly string[];
+    readonly nextStep?: string;
   };
-  readonly mcp: { readonly status: "ok" | "info"; readonly file: string; readonly externalServerCount: number };
+  readonly mcp: {
+    readonly status: "ok" | "info";
+    readonly file: string;
+    readonly externalServerCount: number;
+    readonly nextStep?: string;
+  };
   readonly calendar: {
-    readonly local: { readonly status: "ok" | "info"; readonly file: string; readonly bytes?: number };
-    readonly credentials: { readonly status: "ok" | "info"; readonly file: string };
+    readonly local: { readonly status: "ok" | "info"; readonly file: string; readonly bytes?: number; readonly nextStep?: string };
+    readonly credentials: { readonly status: "ok" | "info"; readonly file: string; readonly nextStep?: string };
   };
-  readonly notes: { readonly status: "ok" | "info"; readonly dir: string; readonly fileCount?: number };
-  readonly tasks: { readonly status: "ok" | "info"; readonly file: string; readonly entryCount?: number };
-  readonly voice: { readonly status: "ok" | "info"; readonly source: "openai_api_key" | "muse_voice_openai_api_key" | "none" };
-  readonly messaging: { readonly status: "ok" | "info"; readonly providers: readonly string[] };
+  readonly notes: { readonly status: "ok" | "info"; readonly dir: string; readonly fileCount?: number; readonly nextStep?: string };
+  readonly tasks: { readonly status: "ok" | "info"; readonly file: string; readonly entryCount?: number; readonly nextStep?: string };
+  readonly voice: { readonly status: "ok" | "info"; readonly source: "openai_api_key" | "muse_voice_openai_api_key" | "none"; readonly nextStep?: string };
+  readonly messaging: { readonly status: "ok" | "info"; readonly providers: readonly string[]; readonly nextStep?: string };
 }
 
 /**
@@ -82,46 +88,73 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
   const messagingFile = resolveMessagingCredentialsFile(env);
   const messagingHits = await readMessagingProviderState(messagingFile, env);
 
+  const modelStatus = museModel.length > 0 || providerKeys.length > 0 ? "ok" : "todo";
+  const calendarLocalStatus = calendarBytes !== undefined ? "ok" : "info";
+  const credentialsStatus = credentialsBytes !== undefined ? "ok" : "info";
   return {
     calendar: {
       credentials: {
         file: credentialsFile,
-        status: credentialsBytes !== undefined ? "ok" : "info"
+        status: credentialsStatus,
+        ...(credentialsStatus === "info"
+          ? { nextStep: "Run `muse setup calendar` for OAuth / CalDAV / macOS credentials" }
+          : {})
       },
       local: {
         file: calendarFile,
-        status: calendarBytes !== undefined ? "ok" : "info",
-        ...(calendarBytes !== undefined ? { bytes: calendarBytes } : {})
+        status: calendarLocalStatus,
+        ...(calendarBytes !== undefined ? { bytes: calendarBytes } : {}),
+        ...(calendarLocalStatus === "info"
+          ? { nextStep: "Local calendar materialises on first `muse cal add` / API call" }
+          : {})
       }
     },
     messaging: {
       providers: messagingHits,
-      status: messagingHits.length > 0 ? "ok" : "info"
+      status: messagingHits.length > 0 ? "ok" : "info",
+      ...(messagingHits.length === 0
+        ? { nextStep: "Run `muse setup messaging` for Telegram / Discord / Slack / LINE tokens" }
+        : {})
     },
     mcp: {
       externalServerCount: mcpCount,
       file: mcpFile,
-      status: mcpCount > 0 ? "ok" : "info"
+      status: mcpCount > 0 ? "ok" : "info",
+      ...(mcpCount === 0
+        ? { nextStep: "Add external servers with `muse mcp config-add` or via /api/admin/mcp/*" }
+        : {})
     },
     model: {
       keysFile: modelKeysFile,
       providerKeys,
-      status: museModel.length > 0 || providerKeys.length > 0 ? "ok" : "todo",
-      ...(museModel.length > 0 ? { muse_model: museModel } : {})
+      status: modelStatus,
+      ...(museModel.length > 0 ? { muse_model: museModel } : {}),
+      ...(modelStatus === "todo"
+        ? { nextStep: "Run `muse setup model` to wire OpenAI / Anthropic / Gemini / OpenRouter / Ollama" }
+        : {})
     },
     notes: {
       dir: notesDir,
       status: notesCount !== undefined ? "ok" : "info",
-      ...(notesCount !== undefined ? { fileCount: notesCount } : {})
+      ...(notesCount !== undefined ? { fileCount: notesCount } : {}),
+      ...(notesCount === undefined
+        ? { nextStep: "Notes directory materialises on first `muse notes save`" }
+        : {})
     },
     tasks: {
       file: tasksFile,
       status: tasksCount !== undefined ? "ok" : "info",
-      ...(tasksCount !== undefined ? { entryCount: tasksCount } : {})
+      ...(tasksCount !== undefined ? { entryCount: tasksCount } : {}),
+      ...(tasksCount === undefined
+        ? { nextStep: "Tasks file materialises on first `muse task add`" }
+        : {})
     },
     voice: {
       source: voiceSource,
-      status: voiceSource === "none" ? "info" : "ok"
+      status: voiceSource === "none" ? "info" : "ok",
+      ...(voiceSource === "none"
+        ? { nextStep: "Run `muse setup model` and pick OpenAI, or export MUSE_VOICE_OPENAI_API_KEY" }
+        : {})
     }
   };
 }

@@ -1021,6 +1021,7 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
 
 interface SetupStatusSection {
   readonly status: "ok" | "todo" | "info";
+  readonly nextStep?: string;
 }
 interface SetupStatusResponse {
   readonly model: SetupStatusSection & { readonly muse_model?: string; readonly providerKeys: readonly string[] };
@@ -1050,14 +1051,14 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
   // is a single loop. Order matches the CLI's text renderer.
   const sections = data
     ? [
-      { detail: data.model.muse_model ?? `${data.model.providerKeys.length.toString()} provider key(s)`, id: "model", status: data.model.status },
-      { detail: `${data.mcp.externalServerCount.toString()} external server(s)`, id: "mcp", status: data.mcp.status },
-      { detail: data.calendar.local.file, id: "calendar (local)", status: data.calendar.local.status },
-      { detail: data.calendar.credentials.status === "ok" ? "credentials present" : "no credentials yet", id: "calendar (oauth/caldav)", status: data.calendar.credentials.status },
-      { detail: data.notes.fileCount !== undefined ? `${data.notes.fileCount.toString()} file(s)` : "not yet created", id: "notes", status: data.notes.status },
-      { detail: data.tasks.entryCount !== undefined ? `${data.tasks.entryCount.toString()} entry/entries` : "not yet created", id: "tasks", status: data.tasks.status },
-      { detail: data.voice.source === "none" ? "no key" : data.voice.source, id: "voice", status: data.voice.status },
-      { detail: data.messaging.providers.length > 0 ? data.messaging.providers.join(", ") : "no providers yet", id: "messaging", status: data.messaging.status }
+      { detail: data.model.muse_model ?? `${data.model.providerKeys.length.toString()} provider key(s)`, id: "model", nextStep: data.model.nextStep, status: data.model.status },
+      { detail: `${data.mcp.externalServerCount.toString()} external server(s)`, id: "mcp", nextStep: data.mcp.nextStep, status: data.mcp.status },
+      { detail: data.calendar.local.file, id: "calendar (local)", nextStep: data.calendar.local.nextStep, status: data.calendar.local.status },
+      { detail: data.calendar.credentials.status === "ok" ? "credentials present" : "no credentials yet", id: "calendar (oauth/caldav)", nextStep: data.calendar.credentials.nextStep, status: data.calendar.credentials.status },
+      { detail: data.notes.fileCount !== undefined ? `${data.notes.fileCount.toString()} file(s)` : "not yet created", id: "notes", nextStep: data.notes.nextStep, status: data.notes.status },
+      { detail: data.tasks.entryCount !== undefined ? `${data.tasks.entryCount.toString()} entry/entries` : "not yet created", id: "tasks", nextStep: data.tasks.nextStep, status: data.tasks.status },
+      { detail: data.voice.source === "none" ? "no key" : data.voice.source, id: "voice", nextStep: data.voice.nextStep, status: data.voice.status },
+      { detail: data.messaging.providers.length > 0 ? data.messaging.providers.join(", ") : "no providers yet", id: "messaging", nextStep: data.messaging.nextStep, status: data.messaging.status }
     ]
     : [];
   const todoCount = sections.filter((entry) => entry.status === "todo").length;
@@ -1082,6 +1083,11 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
             <span style={{ color: "var(--muted, #888)", marginLeft: "0.5rem", fontSize: "0.85em" }}>
               {entry.detail}
             </span>
+            {entry.nextStep ? (
+              <p className="status-info" style={{ fontSize: "0.75em", margin: "0.15rem 0 0 0" }}>
+                → {entry.nextStep}
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>

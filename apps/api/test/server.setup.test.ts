@@ -46,7 +46,7 @@ describe("GET /api/setup/status", () => {
       const server = buildServer({ logger: false });
       const response = await server.inject({ method: "GET", url: "/api/setup/status" });
       expect(response.statusCode).toBe(200);
-      const body = response.json() as Record<string, { status: string }>;
+      const body = response.json() as Record<string, { status: string; nextStep?: string }>;
       expect(body.model).toMatchObject({ status: "todo" });
       expect(body.mcp).toMatchObject({ status: "info" });
       expect(body.notes).toMatchObject({ status: "info" });
@@ -54,6 +54,12 @@ describe("GET /api/setup/status", () => {
       expect(body.voice).toMatchObject({ status: "info" });
       expect(body.messaging).toMatchObject({ status: "info" });
       expect(body.calendar).toBeTruthy();
+      // Loop #67: per-section `nextStep` guidance appears on non-ok
+      // sections. The model section is the most reliable to assert
+      // since "todo" status is deterministic with no provider keys.
+      expect(body.model.nextStep).toMatch(/muse setup model/u);
+      expect(body.messaging.nextStep).toMatch(/muse setup messaging/u);
+      expect(body.voice.nextStep).toMatch(/MUSE_VOICE_OPENAI_API_KEY|muse setup model/u);
     } finally {
       const restore = (key: keyof typeof prev, envKey: string) => {
         if (prev[key] === undefined) { delete process.env[envKey]; } else { process.env[envKey] = prev[key]!; }
