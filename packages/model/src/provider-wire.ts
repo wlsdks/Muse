@@ -26,7 +26,8 @@ import {
   type ModelResponse,
   type ModelTool,
   type ModelToolCall,
-  type ModelUsage
+  type ModelUsage,
+  type WebSearchCitation
 } from "./index.js";
 
 export function toOpenAIChatRequest(request: ModelRequest, defaultModel: string | undefined) {
@@ -408,6 +409,109 @@ export function fromOpenAIChatResponse(providerId: string, requestedModel: strin
     raw: payload,
     toolCalls: parseOpenAIToolCalls(message?.tool_calls),
     usage: parseOpenAIUsage(payload.usage)
+  };
+}
+
+export function toOpenAIResponsesRequest(
+  request: ModelRequest,
+  defaultModel: string | undefined,
+  policy: { enabled: boolean; maxUses: number }
+) {
+  const tools: Array<Record<string, unknown>> = [];
+
+  for (const tool of request.tools ?? []) {
+    tools.push({
+      type: "function",
+      function: { name: tool.name, description: tool.description ?? "", parameters: tool.inputSchema }
+    });
+  }
+
+  if (policy.enabled) {
+    tools.push({ type: "web_search" });
+  }
+
+  return {
+    input: request.messages.map((m) => ({
+      role: m.role,
+      content: [{
+        type: m.role === "assistant" ? "output_text" : "input_text",
+        text: typeof m.content === "string" ? m.content : ""
+      }]
+    })),
+    max_output_tokens: request.maxOutputTokens,
+    model: parseModelName(request.model || defaultModel || "").modelId,
+    temperature: request.temperature,
+    tools
+  };
+}
+
+export function fromOpenAIResponsesResponse(
+  _providerId: string,
+  requestedModel: string,
+  payload: unknown
+): ModelResponse {
+  const obj = (payload ?? {}) as {
+    id?: string;
+    model?: string;
+    output?: unknown[];
+    usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
+  };
+
+  let text = "";
+  const citations: WebSearchCitation[] = [];
+
+  for (const item of obj.output ?? []) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const it = item as { type?: string; content?: unknown[] };
+
+    if (it.type !== "message") {
+      continue;
+    }
+
+    for (const c of it.content ?? []) {
+      if (!c || typeof c !== "object") {
+        continue;
+      }
+
+      const block = c as { type?: string; text?: string; annotations?: unknown[] };
+
+      if (block.type !== "output_text") {
+        continue;
+      }
+
+      if (typeof block.text === "string") {
+        text += block.text;
+      }
+
+      for (const a of block.annotations ?? []) {
+        if (!a || typeof a !== "object") {
+          continue;
+        }
+
+        const ann = a as { type?: string; url?: string; title?: string };
+
+        if (ann.type === "url_citation" && typeof ann.url === "string" && typeof ann.title === "string") {
+          citations.push({ url: ann.url, title: ann.title, providerRaw: a });
+        }
+      }
+    }
+  }
+
+  return {
+    citations,
+    id: typeof obj.id === "string" ? obj.id : "",
+    model: typeof obj.model === "string" ? obj.model : requestedModel,
+    output: text,
+    raw: payload,
+    usage: obj.usage
+      ? {
+          inputTokens: typeof obj.usage.input_tokens === "number" ? obj.usage.input_tokens : 0,
+          outputTokens: typeof obj.usage.output_tokens === "number" ? obj.usage.output_tokens : 0
+        }
+      : undefined
   };
 }
 
