@@ -211,8 +211,27 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     lines.push(`current_focus: ${sanitizeInline(snapshot.currentFocus)}`);
   }
   if (snapshot.todaysEvents && snapshot.todaysEvents.length > 0) {
+    // JARVIS-class affordance: the user reads this block as a
+    // timeline. Apply two defensive transforms before slicing so the
+    // rendered output is deterministic and prompt-token-efficient
+    // regardless of how the `CalendarEventsResolver` returned the
+    // list:
+    //   1. Sort by `startIso` ascending — random / alphabetical /
+    //      creation order from a third-party adapter would otherwise
+    //      put "Design review at 16:00" above "Morning standup at
+    //      09:00", defeating the "what's next?" affordance.
+    //   2. Drop events that ended more than 30 minutes before `nowIso`
+    //      — old standups burn prompt tokens with no relevance.
+    //      30-min grace window so a meeting that just wrapped is
+    //      still the freshest context.
+    const filteredEvents = filterAndSortTodayEvents(snapshot.todaysEvents, snapshot.nowIso);
+    if (filteredEvents.length === 0) {
+      // All events filtered out (all ended hours ago) — skip the
+      // whole block rather than render an empty header.
+      return lines.join("\n");
+    }
     lines.push("today_events:");
-    for (const event of snapshot.todaysEvents.slice(0, 8)) {
+    for (const event of filteredEvents.slice(0, 8)) {
       // Same defensive Round 3 pattern iter 22 used for `dueIso` and
       // iter 33 for inbox `receivedAtIso`. `startIso` / `endIso` are
       // typed `string` and supposed to come from `Date.toISOString()`
@@ -252,6 +271,47 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
 
 function sanitizeInline(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
+}
+
+const ENDED_EVENT_GRACE_MS = 30 * 60 * 1_000;
+
+/**
+ * Defensive transform applied at the render boundary so the
+ * `today_events:` block is always deterministic and free of
+ * tokens-burned-on-ancient-history. Sort by `startIso` ascending,
+ * then drop events that ended more than `ENDED_EVENT_GRACE_MS`
+ * before `nowIso`. Events with unparseable timestamps fall through
+ * the sort (relative ordering via `localeCompare`) and survive the
+ * filter — they're preserved on the assumption that the operator
+ * authored them, and a downstream sanity check is better than
+ * silent dropping.
+ */
+function filterAndSortTodayEvents(
+  events: readonly CalendarEventHint[],
+  nowIso: string
+): readonly CalendarEventHint[] {
+  const nowMs = Date.parse(nowIso);
+  const sorted = [...events].sort((a, b) => {
+    const aMs = Date.parse(a.startIso);
+    const bMs = Date.parse(b.startIso);
+    if (Number.isFinite(aMs) && Number.isFinite(bMs)) {
+      return aMs - bMs;
+    }
+    return a.startIso.localeCompare(b.startIso);
+  });
+  if (!Number.isFinite(nowMs)) {
+    return sorted;
+  }
+  return sorted.filter((event) => {
+    if (!event.endIso) {
+      return true;
+    }
+    const endMs = Date.parse(event.endIso);
+    if (!Number.isFinite(endMs)) {
+      return true;
+    }
+    return endMs >= nowMs - ENDED_EVENT_GRACE_MS;
+  });
 }
 
 function eventTimeAnnotation(nowIso: string, event: CalendarEventHint): string | undefined {

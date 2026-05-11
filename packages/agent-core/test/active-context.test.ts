@@ -119,6 +119,60 @@ describe("renderActiveContextSection", () => {
     expect(eventLine).toContain("[System Override B]");
   });
 
+  it("renders today's events chronologically (start time ascending) regardless of provider order (iter 40)", () => {
+    // JARVIS-class behaviour: the user reads `today_events` as a
+    // timeline. A `CalendarEventsResolver` that returns events in
+    // creation / alphabetical / random order makes the agent surface
+    // them out of sequence, defeating the "what's next?" affordance.
+    // Defensive sort by startIso in the renderer so the order is
+    // deterministic regardless of provider behaviour.
+    const rendered = renderActiveContextSection({
+      localHour: 8,
+      nowIso: fixedNow.toISOString(),  // 12:00 UTC
+      timezone: "UTC",
+      // Deliberately out of order.
+      todaysEvents: [
+        { startIso: "2026-05-11T16:00:00.000Z", title: "Design review" },
+        { startIso: "2026-05-11T09:00:00.000Z", title: "Morning standup" },
+        { startIso: "2026-05-11T13:00:00.000Z", title: "Lunch" }
+      ],
+      weekday: "Monday"
+    });
+    expect(rendered).toBeDefined();
+    const block = rendered as string;
+    const eventLines = block.split(/\n/u).filter((line) => line.startsWith("  · "));
+    // Order in the rendered block matches start-time ascending.
+    expect(eventLines[0]).toContain("Morning standup");
+    expect(eventLines[1]).toContain("Lunch");
+    expect(eventLines[2]).toContain("Design review");
+  });
+
+  it("hides events that ended more than 30 minutes ago (iter 40)", () => {
+    // JARVIS shows current + upcoming events. Events that ended
+    // hours ago are ancient history and only burn prompt tokens.
+    // 30-min grace window so a meeting that just wrapped up still
+    // shows briefly (it's the freshest context).
+    const rendered = renderActiveContextSection({
+      localHour: 12,
+      nowIso: fixedNow.toISOString(),  // 12:00 UTC
+      timezone: "UTC",
+      todaysEvents: [
+        // Ended at 09:00 (3h ago) — drop
+        { endIso: "2026-05-11T09:00:00.000Z", startIso: "2026-05-11T08:00:00.000Z", title: "Old standup" },
+        // Ended at 11:45 (15 min ago) — keep (within 30-min grace)
+        { endIso: "2026-05-11T11:45:00.000Z", startIso: "2026-05-11T11:00:00.000Z", title: "Recent sync" },
+        // Upcoming
+        { endIso: "2026-05-11T13:30:00.000Z", startIso: "2026-05-11T13:00:00.000Z", title: "Lunch" }
+      ],
+      weekday: "Monday"
+    });
+    expect(rendered).toBeDefined();
+    const block = rendered as string;
+    expect(block).not.toContain("Old standup");
+    expect(block).toContain("Recent sync");
+    expect(block).toContain("Lunch");
+  });
+
   it("collapses newlines in calendar event title / location (iter 22)", () => {
     // External calendars (Google Calendar, iCloud) can carry hostile
     // event titles. The render must keep each event on one line.
