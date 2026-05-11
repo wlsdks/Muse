@@ -8,13 +8,16 @@ import {
   fromAnthropicResponse,
   fromGeminiResponse,
   fromOpenAIChatResponse,
+  fromOpenAIResponsesResponse,
   geminiModelCapabilities,
   localModelCapabilities,
+  parseOpenAIResponsesStream,
   parseOpenAIStream,
   renderDiagnosticOutput,
   toAnthropicRequest,
   toGeminiRequest,
-  toOpenAIChatRequest
+  toOpenAIChatRequest,
+  toOpenAIResponsesRequest
 } from "./provider-wire.js";
 
 export { sanitizeGeminiSchema } from "./provider-wire.js";
@@ -334,12 +337,93 @@ export class DiagnosticModelProvider implements ModelProvider {
 }
 
 export class OpenAIProvider extends OpenAICompatibleProvider {
+  private readonly openaiApiKey?: string;
+  private readonly openaiBaseUrl: string;
+  private readonly openaiDefaultModel?: string;
+  private readonly openaiFetchImpl: typeof globalThis.fetch;
+  private readonly openaiHeaders: Readonly<Record<string, string>>;
+
   constructor(options: OpenAIProviderOptions = {}) {
     super({
       ...options,
       baseUrl: options.baseUrl ?? "https://api.openai.com/v1",
       id: options.id ?? "openai"
     });
+    this.openaiApiKey = options.apiKey;
+    this.openaiBaseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/u, "");
+    this.openaiDefaultModel = options.defaultModel;
+    this.openaiFetchImpl = options.fetch ?? globalThis.fetch;
+    this.openaiHeaders = options.headers ?? {};
+  }
+
+  override async generate(request: ModelRequest): Promise<ModelResponse> {
+    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
+      ?? { enabled: false, maxUses: 5 };
+
+    const url = `${this.openaiBaseUrl}/responses`;
+    const body = JSON.stringify(toOpenAIResponsesRequest(request, this.openaiDefaultModel, policy));
+
+    const response = await this.openaiFetchImpl(url, {
+      body,
+      headers: {
+        "content-type": "application/json",
+        ...(this.openaiApiKey ? { authorization: `Bearer ${this.openaiApiKey}` } : {}),
+        ...this.openaiHeaders
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      throw new ModelProviderError(
+        this.id,
+        `OpenAI Responses API error: ${response.status}: ${errBody || response.statusText}`,
+        response.status >= 500
+      );
+    }
+
+    const payload = await response.json();
+    return fromOpenAIResponsesResponse(this.id, request.model, payload);
+  }
+
+  override async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
+      ?? { enabled: false, maxUses: 5 };
+
+    const url = `${this.openaiBaseUrl}/responses`;
+    const body = JSON.stringify({ ...toOpenAIResponsesRequest(request, this.openaiDefaultModel, policy), stream: true });
+
+    const response = await this.openaiFetchImpl(url, {
+      body,
+      headers: {
+        "content-type": "application/json",
+        ...(this.openaiApiKey ? { authorization: `Bearer ${this.openaiApiKey}` } : {}),
+        ...this.openaiHeaders
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      yield {
+        error: new ModelProviderError(
+          this.id,
+          `OpenAI Responses API stream error: ${response.status}: ${errBody || response.statusText}`,
+          response.status >= 500
+        ),
+        type: "error"
+      };
+      return;
+    }
+
+    if (!response.body) {
+      const generated = await this.generate(request);
+      yield { text: generated.output, type: "text-delta" };
+      yield { response: generated, type: "done" };
+      return;
+    }
+
+    yield* parseOpenAIResponsesStream(this.id, request.model, response.body);
   }
 }
 

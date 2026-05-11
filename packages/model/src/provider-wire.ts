@@ -459,13 +459,26 @@ export function fromOpenAIResponsesResponse(
 
   let text = "";
   const citations: WebSearchCitation[] = [];
+  const toolCalls: ModelToolCall[] = [];
 
   for (const item of obj.output ?? []) {
     if (!item || typeof item !== "object") {
       continue;
     }
 
-    const it = item as { type?: string; content?: unknown[] };
+    const it = item as { type?: string; content?: unknown[]; call_id?: string; name?: string; arguments?: string };
+
+    if (it.type === "function_call") {
+      // Function tool call output item: extract into ModelToolCall
+      if (typeof it.name === "string" && typeof it.call_id === "string") {
+        let args: JsonObject = {};
+        try {
+          args = JSON.parse(typeof it.arguments === "string" ? it.arguments : "{}") as JsonObject;
+        } catch { /* leave as empty object */ }
+        toolCalls.push({ id: it.call_id, name: it.name, arguments: args });
+      }
+      continue;
+    }
 
     if (it.type !== "message") {
       continue;
@@ -506,6 +519,7 @@ export function fromOpenAIResponsesResponse(
     model: typeof obj.model === "string" ? obj.model : requestedModel,
     output: text,
     raw: payload,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     usage: obj.usage
       ? {
           inputTokens: typeof obj.usage.input_tokens === "number" ? obj.usage.input_tokens : 0,
@@ -526,6 +540,7 @@ export async function* parseOpenAIResponsesStream(
   let toolStarted = false;
   let textBuf = "";
   const citations: WebSearchCitation[] = [];
+  const toolCalls: ModelToolCall[] = [];
   let finalUsage: ModelUsage | undefined;
   let finalId = "";
   let finalModel = requestedModel;
@@ -542,7 +557,7 @@ export async function* parseOpenAIResponsesStream(
       if (!dataLine || dataLine === "[DONE]") continue;
       let evt: {
         type?: string;
-        item?: { type?: string };
+        item?: { type?: string; call_id?: string; name?: string; arguments?: string };
         delta?: string;
         annotation?: { type?: string; url?: string; title?: string };
         response?: {
@@ -557,6 +572,18 @@ export async function* parseOpenAIResponsesStream(
         yield { type: "tool-call-started", name: "web_search" };
       } else if (evt.type === "response.output_item.done" && evt.item?.type === "web_search_call") {
         yield { type: "tool-call-finished", name: "web_search" };
+      } else if (evt.type === "response.output_item.done" && evt.item?.type === "function_call") {
+        // Completed function tool call — emit the full tool-call event once arguments are finalised
+        const item = evt.item;
+        if (typeof item.name === "string" && typeof item.call_id === "string") {
+          let args: JsonObject = {};
+          try {
+            args = JSON.parse(typeof item.arguments === "string" ? item.arguments : "{}") as JsonObject;
+          } catch { /* leave as empty object */ }
+          const toolCall: ModelToolCall = { id: item.call_id, name: item.name, arguments: args };
+          toolCalls.push(toolCall);
+          yield { type: "tool-call", toolCall };
+        }
       } else if (evt.type === "response.output_text.delta" && typeof evt.delta === "string") {
         textBuf += evt.delta;
         yield { type: "text-delta", text: evt.delta };
@@ -587,6 +614,7 @@ export async function* parseOpenAIResponsesStream(
       model: finalModel,
       output: textBuf,
       raw: undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       usage: finalUsage
     }
   };
