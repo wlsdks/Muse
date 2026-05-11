@@ -292,6 +292,14 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
     .option("--dry-run", "Preview which reminders would fire without sending or persisting")
     .option("--local", "Read/write the local reminders file directly (always implicit; no --no-local mode yet)")
     .option("--json", "Print the raw run summary as JSON")
+    .option(
+      "--watch",
+      "Stay running and re-fire on a cadence (Ctrl-C stops). Mirrors the API server's reminder-tick daemon for users without the server."
+    )
+    .option(
+      "--watch-interval <ms>",
+      "Tick cadence for --watch in milliseconds (default 60000, clamped to [5000, 3600000])"
+    )
     .action(async (
       options: {
         readonly via?: string;
@@ -299,8 +307,60 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
         readonly dryRun?: boolean;
         readonly json?: boolean;
         readonly local?: boolean;
+        readonly watch?: boolean;
+        readonly watchInterval?: string;
       }
     ) => {
+      if (options.watch && options.dryRun) {
+        throw new Error("--watch and --dry-run are mutually exclusive (watch needs real delivery to advance reminders)");
+      }
+      if (options.watch) {
+        const provider = options.via?.trim();
+        const destination = options.destination?.trim();
+        if (!provider || !destination) {
+          throw new Error("--watch requires --via and --destination");
+        }
+        const intervalMs = clampWatchInterval(options.watchInterval);
+        const registry: MessagingProviderRegistry = buildMessagingRegistry(
+          process.env as Record<string, string | undefined>
+        );
+        const file = localRemindersFile();
+        let firing = false;
+        const tick = async (): Promise<void> => {
+          if (firing) {
+            return;
+          }
+          firing = true;
+          try {
+            const summary = await runDueReminders({ destination, file, providerId: provider, registry });
+            if (summary.due > 0) {
+              io.stdout(
+                `[${new Date().toISOString()}] fired ${summary.delivered.toString()} of ${summary.due.toString()} reminder(s) via ${provider}\n`
+              );
+              for (const error of summary.errors) {
+                io.stderr(`  ! ${error}\n`);
+              }
+            }
+          } finally {
+            firing = false;
+          }
+        };
+        io.stdout(`muse remind run --watch: tick every ${intervalMs.toString()}ms via ${provider}. Ctrl-C to stop.\n`);
+        const handle = setInterval(() => { void tick(); }, intervalMs);
+        await new Promise<void>((resolve) => {
+          const stop = (): void => {
+            clearInterval(handle);
+            process.off("SIGINT", stop);
+            process.off("SIGTERM", stop);
+            io.stdout("muse remind run --watch: stopping.\n");
+            resolve();
+          };
+          process.once("SIGINT", stop);
+          process.once("SIGTERM", stop);
+        });
+        return;
+      }
+
       const file = localRemindersFile();
 
       if (options.dryRun) {
@@ -433,6 +493,18 @@ function parseLimitOrDefault(raw: string | undefined): number {
     return 20;
   }
   return Math.min(500, parsed);
+}
+
+const WATCH_INTERVAL_DEFAULT_MS = 60_000;
+const WATCH_INTERVAL_MIN_MS = 5_000;
+const WATCH_INTERVAL_MAX_MS = 60 * 60_000;
+
+function clampWatchInterval(raw: string | undefined): number {
+  const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return WATCH_INTERVAL_DEFAULT_MS;
+  }
+  return Math.max(WATCH_INTERVAL_MIN_MS, Math.min(WATCH_INTERVAL_MAX_MS, parsed));
 }
 
 function formatReminderHistory(payload: {

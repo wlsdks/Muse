@@ -2216,6 +2216,39 @@ describe("cli program", () => {
     }
   });
 
+  it("muse remind run --watch rejects --dry-run and --watch alone (requires --via + --destination)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-remind-watch-"));
+    const remindersFile = path.join(root, "reminders.json");
+    const prev = process.env.MUSE_REMINDERS_FILE;
+    process.env.MUSE_REMINDERS_FILE = remindersFile;
+    try {
+      // --watch + --dry-run is incoherent (watching needs real delivery
+      // so reminders advance; dry-run never delivers).
+      const { io: io1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("fetch must not be called"); } });
+      program1.exitOverride();
+      await expect(
+        program1.parseAsync(
+          ["node", "muse", "remind", "run", "--watch", "--dry-run"],
+          { from: "node" }
+        )
+      ).rejects.toThrow(/mutually exclusive/u);
+
+      // --watch without --via / --destination fails fast.
+      const { io: io2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("fetch must not be called"); } });
+      program2.exitOverride();
+      await expect(
+        program2.parseAsync(
+          ["node", "muse", "remind", "run", "--watch"],
+          { from: "node" }
+        )
+      ).rejects.toThrow(/--watch requires/u);
+    } finally {
+      if (prev === undefined) { delete process.env.MUSE_REMINDERS_FILE; } else { process.env.MUSE_REMINDERS_FILE = prev; }
+    }
+  });
+
   it("muse remind history --local renders newest-first with status icons and route", async () => {
     const { appendReminderHistory } = await import("@muse/mcp");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-remind-hist-"));
