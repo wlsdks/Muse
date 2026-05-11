@@ -621,6 +621,11 @@ export class AgentRuntime {
       }
       await this.invokeHooks("afterComplete", layeredContext, guardedResponse);
       this.recordAgentRun(layeredContext, guardedResponse.model, "completed", startedAtMs);
+      // Iter 48: stamp wall-clock run latency on the trace span too,
+      // not just into the in-process telemetry aggregator. Lets a
+      // trace-store consumer correlate latency with the same
+      // ctx.* span attrs without going through a separate query.
+      runSpan.setAttribute("run.latency_ms", Date.now() - startedAtMs);
       this.recordTelemetry(layeredContext, selected.provider.id, selected.model, guardedResponse, promptBudget, startedAtMs);
       return createRunResult(
         context.runId,
@@ -784,6 +789,9 @@ export class AgentRuntime {
       }
       await this.invokeHooks("afterComplete", layeredContext, response);
       this.recordAgentRun(layeredContext, response.model, "completed", startedAtMs);
+      // Iter 48 — wall-clock run latency on the trace span (same as
+      // the `run` path).
+      runSpan.setAttribute("run.latency_ms", Date.now() - startedAtMs);
       this.recordTelemetry(layeredContext, selected.provider.id, selected.model, response, promptBudget, startedAtMs);
       if ((!forwardTextDeltas || isPlanExecuteRun) && response.output.length > 0) {
         yield { runId: layeredContext.runId, text: response.output, type: "text-delta" };
