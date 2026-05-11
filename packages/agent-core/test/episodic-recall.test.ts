@@ -46,6 +46,46 @@ describe("InMemoryEpisodicRecallProvider", () => {
     expect(snapshot?.matches).toHaveLength(1);
     expect(snapshot?.matches[0]?.sessionId).toBe("s-a");
   });
+
+  it("hides anonymous (no-userId) episodes from a userId-scoped query by default — multi-user safety", async () => {
+    const scoped = new InMemoryEpisodicRecallProvider({
+      episodes: [
+        { narrative: "shared legacy narrative about JARVIS planning", sessionId: "legacy-1" },
+        { narrative: "u1 narrative about JARVIS planning", sessionId: "u1-1", userId: "u1" }
+      ],
+      minScore: 0.05
+    });
+    const snapshot = await scoped.resolve("JARVIS planning", "u1");
+    expect(snapshot?.matches.map((m) => m.sessionId)).toEqual(["u1-1"]);
+    // No-userId query still sees everything (single-user mode).
+    const anonSnapshot = await scoped.resolve("JARVIS planning");
+    expect(anonSnapshot?.matches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("allowAnonymousEpisodes=true opts in to surfacing legacy summaries to userId-scoped queries", async () => {
+    const scoped = new InMemoryEpisodicRecallProvider({
+      allowAnonymousEpisodes: true,
+      episodes: [
+        { narrative: "shared legacy narrative about JARVIS planning", sessionId: "legacy-1" },
+        { narrative: "u1 narrative about JARVIS planning", sessionId: "u1-1", userId: "u1" }
+      ],
+      minScore: 0.05
+    });
+    const snapshot = await scoped.resolve("JARVIS planning", "u1");
+    expect(snapshot?.matches.map((m) => m.sessionId).sort()).toEqual(["legacy-1", "u1-1"]);
+  });
+
+  it("caps maxQueryChars so a huge prompt cannot blow CPU on the recall path", async () => {
+    const provider = new InMemoryEpisodicRecallProvider({
+      episodes: [{ narrative: "JARVIS planning", sessionId: "s-1" }],
+      maxQueryChars: 32,
+      minScore: 0.05
+    });
+    // 100KB query — only the first 32 chars are tokenised.
+    const huge = "JARVIS planning ".repeat(10_000);
+    const snapshot = await provider.resolve(huge);
+    expect(snapshot?.matches[0]?.sessionId).toBe("s-1");
+  });
 });
 
 describe("renderEpisodicSection", () => {

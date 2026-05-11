@@ -35,15 +35,20 @@ export function renderEpisodicSection(snapshot: EpisodicRecallSnapshot | undefin
   let charsUsed = 0;
   for (const match of snapshot.matches) {
     const header = match.createdAtIso ? `(${match.createdAtIso}, sim=${formatSim(match.similarity)})` : `(sim=${formatSim(match.similarity)})`;
-    const remaining = MAX_EPISODIC_CHARS - charsUsed;
+    // Account for the rendered prefix ("— " + header + " ") so the
+    // running `charsUsed` reflects the actual prompt-bytes consumed
+    // — the previous impl counted only narrative length and could
+    // overshoot `MAX_EPISODIC_CHARS` by ~50 chars per match.
+    const prefix = `— ${header} `;
+    const remaining = MAX_EPISODIC_CHARS - charsUsed - prefix.length;
     if (remaining <= 0) {
       break;
     }
     const narrative = match.narrative.length > remaining
       ? `${match.narrative.slice(0, Math.max(0, remaining - 1))}…`
       : match.narrative;
-    lines.push(`— ${header} ${narrative}`);
-    charsUsed += narrative.length;
+    lines.push(`${prefix}${narrative}`);
+    charsUsed += prefix.length + narrative.length;
   }
   return lines.join("\n");
 }
@@ -66,6 +71,23 @@ export interface InMemoryEpisodicRecallProviderOptions {
   readonly topK?: number;
   readonly minScore?: number;
   readonly episodes?: readonly StoredEpisode[];
+  /**
+   * When a request carries a `userId` but a stored episode has none,
+   * default behaviour is to **skip** that episode — anonymous /
+   * legacy data must not leak across users.
+   *
+   * Set `allowAnonymousEpisodes: true` to treat episodes with no
+   * `userId` as globally visible (the previous behaviour, kept for
+   * single-user setups that pre-date per-user scoping).
+   */
+  readonly allowAnonymousEpisodes?: boolean;
+  /**
+   * Cap the user-prompt characters consumed by tokenisation so an
+   * accidentally huge user message can't blow CPU on the recall
+   * path. Defaults to 4_096 — enough for any realistic prompt,
+   * short enough to bound the Jaccard inner loop.
+   */
+  readonly maxQueryChars?: number;
 }
 
 /**
@@ -86,11 +108,15 @@ export class InMemoryEpisodicRecallProvider implements EpisodicRecallProvider {
   private readonly episodes: StoredEpisode[];
   private readonly topK: number;
   private readonly minScore: number;
+  private readonly allowAnonymousEpisodes: boolean;
+  private readonly maxQueryChars: number;
 
   constructor(options: InMemoryEpisodicRecallProviderOptions = {}) {
     this.episodes = [...(options.episodes ?? [])];
     this.topK = Math.max(1, options.topK ?? 3);
     this.minScore = Math.max(0, options.minScore ?? 0.15);
+    this.allowAnonymousEpisodes = options.allowAnonymousEpisodes ?? false;
+    this.maxQueryChars = Math.max(64, options.maxQueryChars ?? 4_096);
   }
 
   add(episode: StoredEpisode): void {
@@ -98,13 +124,14 @@ export class InMemoryEpisodicRecallProvider implements EpisodicRecallProvider {
   }
 
   resolve(query: string, userId?: string): EpisodicRecallSnapshot | undefined {
-    const queryTokens = tokenSet(query);
+    const bounded = query.length > this.maxQueryChars ? query.slice(0, this.maxQueryChars) : query;
+    const queryTokens = tokenSet(bounded);
     if (queryTokens.size === 0) {
       return undefined;
     }
     const scored: EpisodicMatch[] = [];
     for (const episode of this.episodes) {
-      if (userId && episode.userId && episode.userId !== userId) {
+      if (!isVisibleToUser(userId, episode.userId, this.allowAnonymousEpisodes)) {
         continue;
       }
       const score = jaccardSimilarity(queryTokens, tokenSet(episode.narrative));
@@ -125,6 +152,31 @@ export class InMemoryEpisodicRecallProvider implements EpisodicRecallProvider {
     }
     return { matches: top };
   }
+}
+
+/**
+ * Multi-user safety predicate. When a request carries no userId
+ * (single-user setup), everything is visible. When a request DOES
+ * carry a userId, the episode must either match it OR — when the
+ * caller has explicitly opted in via `allowAnonymous` — be anonymous
+ * (no recorded userId). Episodes belonging to a *different* user are
+ * always hidden.
+ */
+function isVisibleToUser(
+  requestUserId: string | undefined,
+  episodeUserId: string | undefined,
+  allowAnonymous: boolean
+): boolean {
+  if (!requestUserId) {
+    return true;
+  }
+  if (episodeUserId === requestUserId) {
+    return true;
+  }
+  if (!episodeUserId && allowAnonymous) {
+    return true;
+  }
+  return false;
 }
 
 export function tokenSet(value: string): Set<string> {
@@ -162,6 +214,14 @@ export interface StoreBackedEpisodicRecallProviderOptions {
   readonly minScore?: number;
   /** Max summaries fetched per resolve. Default 200. */
   readonly maxFetched?: number;
+  /**
+   * When a request carries a `userId` but a stored summary has none,
+   * default behaviour is to **skip** that summary — anonymous /
+   * legacy data must not leak across users.
+   */
+  readonly allowAnonymousEpisodes?: boolean;
+  /** Cap on user-prompt tokenisation input. Default 4_096 chars. */
+  readonly maxQueryChars?: number;
 }
 
 /**
@@ -179,19 +239,24 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
   private readonly topK: number;
   private readonly minScore: number;
   private readonly maxFetched: number;
+  private readonly allowAnonymousEpisodes: boolean;
+  private readonly maxQueryChars: number;
 
   constructor(options: StoreBackedEpisodicRecallProviderOptions) {
     this.store = options.store;
     this.topK = Math.max(1, options.topK ?? 3);
     this.minScore = Math.max(0, options.minScore ?? 0.15);
     this.maxFetched = Math.max(1, options.maxFetched ?? 200);
+    this.allowAnonymousEpisodes = options.allowAnonymousEpisodes ?? false;
+    this.maxQueryChars = Math.max(64, options.maxQueryChars ?? 4_096);
   }
 
   async resolve(query: string, userId?: string): Promise<EpisodicRecallSnapshot | undefined> {
     if (!this.store.listAll) {
       return undefined;
     }
-    const queryTokens = tokenSet(query);
+    const bounded = query.length > this.maxQueryChars ? query.slice(0, this.maxQueryChars) : query;
+    const queryTokens = tokenSet(bounded);
     if (queryTokens.size === 0) {
       return undefined;
     }
@@ -203,7 +268,7 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
     }
     const scored: EpisodicMatch[] = [];
     for (const summary of summaries) {
-      if (userId && summary.userId && summary.userId !== userId) {
+      if (!isVisibleToUser(userId, summary.userId, this.allowAnonymousEpisodes)) {
         continue;
       }
       const score = jaccardSimilarity(queryTokens, tokenSet(summary.narrative));
