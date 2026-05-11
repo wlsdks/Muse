@@ -34,7 +34,7 @@ import {
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import { renderToolResults } from "@muse/prompts";
 
-import { recordTokenUsageEvent } from "./model-invocation.js";
+import { applyCitationSanitisation, recordTokenUsageEvent } from "./model-invocation.js";
 import { appendSystemSection, recordUsageSpanAttributes } from "./runtime-helpers.js";
 import {
   blockedToolResult,
@@ -329,12 +329,12 @@ async function* streamModelTurn(
     }
 
     return {
-      response: response ?? {
+      response: applyCitationSanitisation(response ?? {
         id: `${context.runId}:stream`,
         model: request.model,
         output: streamedOutput,
         toolCalls: toolCalls.size > 0 ? [...toolCalls.values()] : undefined
-      }
+      })
     };
   } catch (error) {
     span.setError(error);

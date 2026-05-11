@@ -23,6 +23,7 @@ import { decideWebSearchPolicy, parseModelName, type ModelProvider, type ModelRe
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import type { JsonObject } from "@muse/shared";
 import { isRetryableProviderError, recordUsageSpanAttributes } from "./runtime-helpers.js";
+import { sanitiseCitations } from "./citation-sanitiser.js";
 
 /**
  * Returns a new ModelRequest with `metadata.webSearchPolicy` populated by
@@ -54,6 +55,17 @@ export function buildModelRequestWithWebSearch(
   };
 }
 
+/**
+ * Returns a new ModelResponse with citations filtered through sanitiseCitations.
+ * Drops any citation whose URL is not http(s) (e.g. javascript:, data:).
+ * No-ops when citations is absent or empty so callers don't branch.
+ */
+export function applyCitationSanitisation(response: ModelResponse): ModelResponse {
+  if (!response.citations || response.citations.length === 0) return response;
+  const { kept } = sanitiseCitations(response.citations);
+  return { ...response, citations: kept };
+}
+
 export interface InvokeModelArgs {
   readonly provider: ModelProvider;
   readonly request: ModelRequest;
@@ -83,7 +95,8 @@ export async function invokeModel(args: InvokeModelArgs): Promise<ModelResponse>
   });
   try {
     const generate = () => invokeWithFallback(args);
-    const response = await (args.circuitBreaker ? args.circuitBreaker.execute(generate) : generate());
+    const raw = await (args.circuitBreaker ? args.circuitBreaker.execute(generate) : generate());
+    const response = applyCitationSanitisation(raw);
     recordUsageSpanAttributes(span, response);
     if (response.usage) {
       args.metrics.recordTokenUsage(response.usage, args.metadata);

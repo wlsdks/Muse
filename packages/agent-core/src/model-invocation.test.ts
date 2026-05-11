@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildModelRequestWithWebSearch } from "./model-invocation.js";
+import { applyCitationSanitisation, buildModelRequestWithWebSearch } from "./model-invocation.js";
 
 describe("buildModelRequestWithWebSearch", () => {
   it("attaches webSearchPolicy from settings", () => {
@@ -41,5 +41,24 @@ describe("buildModelRequestWithWebSearch", () => {
       { settings: { webSearch: { enabled: true } }, override: undefined, env: {} }
     );
     expect((r.metadata as { webSearchPolicy?: { enabled: boolean } } | undefined)?.webSearchPolicy?.enabled).toBe(true);
+  });
+});
+
+describe("applyCitationSanitisation", () => {
+  it("drops javascript: citations and keeps https", () => {
+    const r = applyCitationSanitisation({
+      id: "x", model: "m", output: "hi",
+      citations: [
+        { url: "https://safe.test", title: "S" },
+        { url: "javascript:alert(1)", title: "evil" }
+      ]
+    });
+    expect(r.citations).toHaveLength(1);
+    expect(r.citations?.[0]?.url).toBe("https://safe.test");
+  });
+
+  it("is a no-op when no citations present", () => {
+    const r = applyCitationSanitisation({ id: "x", model: "m", output: "hi" });
+    expect(r.citations).toBeUndefined();
   });
 });
