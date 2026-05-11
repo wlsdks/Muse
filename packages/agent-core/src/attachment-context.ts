@@ -53,6 +53,13 @@ export function parseAttachmentsFromMetadata(metadata: unknown): readonly Attach
     return [];
   }
   const out: AttachmentHint[] = [];
+  // Iter 54 — dedup by (name, size, mimeType). A user dragging the
+  // same file twice (web upload UI, CLI `--attach a.pdf --attach a.pdf`)
+  // or a buggy metadata producer that emits duplicate entries would
+  // otherwise render the file twice in `[Attached Files]`, wasting
+  // prompt tokens and confusing the agent. Different size or
+  // different mime → different file, so the key combines all three.
+  const seen = new Set<string>();
   // Hard cap on iteration. The previous loop scanned every entry in
   // the array regardless of how many would actually surface in the
   // prompt — an attacker who could write `metadata.attachments` (the
@@ -79,14 +86,23 @@ export function parseAttachmentsFromMetadata(metadata: unknown): readonly Attach
     const mimeType = sanitizeAndBound(record.mimeType, MAX_MIME_CHARS);
     const ref = sanitizeAndBound(record.ref, MAX_REF_CHARS);
     const description = sanitizeAndBound(record.description, MAX_DESCRIPTION_CHARS);
+    const size = typeof record.size === "number" && Number.isFinite(record.size) && record.size >= 0
+      ? record.size
+      : undefined;
+    // \x1f Unit Separator joins so a name / mime containing `:` or
+    // `|` can't accidentally collide with another file's key. Same
+    // separator pattern iter 46 used for the inbox group key.
+    const dedupKey = `${name}\x1f${size?.toString() ?? ""}\x1f${mimeType ?? ""}`;
+    if (seen.has(dedupKey)) {
+      continue;
+    }
+    seen.add(dedupKey);
     out.push({
       ...(description ? { description } : {}),
       ...(mimeType ? { mimeType } : {}),
       name,
       ...(ref ? { ref } : {}),
-      ...(typeof record.size === "number" && Number.isFinite(record.size) && record.size >= 0
-        ? { size: record.size }
-        : {})
+      ...(size !== undefined ? { size } : {})
     });
   }
   return out;
