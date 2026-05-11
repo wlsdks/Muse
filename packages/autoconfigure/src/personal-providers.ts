@@ -87,6 +87,7 @@ import {
 } from "@muse/skills";
 
 import type { MuseEnvironment } from "./index.js";
+import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
 
 /**
  * Eight resolvers under personal-providers all share the same
@@ -203,18 +204,16 @@ export function mergeModelKeysFromFile(env: MuseEnvironment): MuseEnvironment {
     return env;
   }
   const fileKeyForEnv: Record<string, string | undefined> = {};
-  const map: ReadonlyArray<{ id: string; envKey: string }> = [
+  const legacy: ReadonlyArray<{ id: string; envKey: string }> = [
     { envKey: "OPENAI_API_KEY", id: "openai" },
     { envKey: "ANTHROPIC_API_KEY", id: "anthropic" },
     { envKey: "GEMINI_API_KEY", id: "gemini" },
     { envKey: "OPENROUTER_API_KEY", id: "openrouter" },
-    { envKey: "OLLAMA_BASE_URL", id: "ollama" },
-    { envKey: "GROQ_API_KEY", id: "groq" },
-    { envKey: "DEEPSEEK_API_KEY", id: "deepseek" },
-    { envKey: "TOGETHER_API_KEY", id: "together" },
-    { envKey: "MISTRAL_API_KEY", id: "mistral" },
-    { envKey: "MOONSHOT_API_KEY", id: "moonshot" },
-    { envKey: "CEREBRAS_API_KEY", id: "cerebras" }
+    { envKey: "OLLAMA_BASE_URL", id: "ollama" }
+  ];
+  const map: ReadonlyArray<{ id: string; envKey: string }> = [
+    ...legacy,
+    ...Object.entries(OPENAI_COMPAT_PRESETS).map(([id, preset]) => ({ envKey: preset.envKey, id }))
   ];
   let firstSuggestedModel: string | undefined;
   for (const entry of map) {

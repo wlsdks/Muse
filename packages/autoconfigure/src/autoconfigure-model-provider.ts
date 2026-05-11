@@ -65,27 +65,7 @@ function inferDefaultModelFromCredentials(env: MuseEnvironment): string | undefi
  * when an unknown providerId is paired with `MUSE_MODEL_BASE_URL`
  * (the local Ollama / LM Studio / vLLM path).
  */
-interface OpenAICompatPreset {
-  readonly baseUrl: string;
-  readonly envKey: string;
-  readonly defaultModel: string;
-}
-
-/**
- * Entry order is the credential-fallback priority used by
- * inferDefaultModelFromCredentials when multiple preset keys are
- * present at once. Keep groq -> deepseek -> together -> mistral ->
- * moonshot -> cerebras to match the historical behavior locked by
- * the parity tests in setup-status.test.ts.
- */
-const OPENAI_COMPAT_PRESETS: Readonly<Record<string, OpenAICompatPreset>> = {
-  groq: { baseUrl: "https://api.groq.com/openai/v1", defaultModel: "groq/llama-3.3-70b-versatile", envKey: "GROQ_API_KEY" },
-  deepseek: { baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek/deepseek-chat", envKey: "DEEPSEEK_API_KEY" },
-  together: { baseUrl: "https://api.together.xyz/v1", defaultModel: "together/meta-llama/Llama-3.3-70B-Instruct-Turbo", envKey: "TOGETHER_API_KEY" },
-  mistral: { baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral/mistral-small-latest", envKey: "MISTRAL_API_KEY" },
-  moonshot: { baseUrl: "https://api.moonshot.ai/v1", defaultModel: "moonshot/moonshot-v1-8k", envKey: "MOONSHOT_API_KEY" },
-  cerebras: { baseUrl: "https://api.cerebras.ai/v1", defaultModel: "cerebras/llama-3.3-70b", envKey: "CEREBRAS_API_KEY" }
-};
+import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
 
 function providerIdFromPrefix(modelSpec: string): string | undefined {
   const lower = modelSpec.toLowerCase();
