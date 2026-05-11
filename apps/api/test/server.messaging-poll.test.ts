@@ -105,6 +105,60 @@ describe("POST /api/messaging/poll", () => {
     expect(response.json().message).toContain("source (channel id) is required");
   });
 
+  it("POST /api/messaging/poll-all 404s when no messagingPollAll dispatcher is wired", async () => {
+    const server = buildServer({
+      logger: false,
+      messaging: buildMessagingRegistryWithStub()
+    });
+    const response = await server.inject({
+      method: "POST",
+      payload: {},
+      url: "/api/messaging/poll-all"
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("POST /api/messaging/poll-all returns 200 with per-provider counts + errors", async () => {
+    let called = 0;
+    const server = buildServer({
+      logger: false,
+      messaging: buildMessagingRegistryWithStub(),
+      messagingPollAll: async () => {
+        called += 1;
+        return {
+          errors: [{ message: "channel ch-bad: not_found", providerId: "discord" }],
+          ingestedByProvider: { discord: 1, slack: 0, telegram: 3 }
+        };
+      }
+    });
+    const response = await server.inject({
+      method: "POST",
+      payload: {},
+      url: "/api/messaging/poll-all"
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      errors: [{ message: "channel ch-bad: not_found", providerId: "discord" }],
+      ingestedByProvider: { discord: 1, slack: 0, telegram: 3 }
+    });
+    expect(called).toBe(1);
+  });
+
+  it("POST /api/messaging/poll-all returns 500 when the dispatcher itself throws", async () => {
+    const server = buildServer({
+      logger: false,
+      messaging: buildMessagingRegistryWithStub(),
+      messagingPollAll: async () => { throw new Error("disk full"); }
+    });
+    const response = await server.inject({
+      method: "POST",
+      payload: {},
+      url: "/api/messaging/poll-all"
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toMatchObject({ code: "MESSAGING_POLL_ALL_FAILED", message: "disk full" });
+  });
+
   it("upstream MessagingProviderError becomes 502 with provider details", async () => {
     const server = buildServer({
       logger: false,

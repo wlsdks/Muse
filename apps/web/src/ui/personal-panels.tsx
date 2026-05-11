@@ -822,6 +822,30 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
   });
   const supportsPullNow = effective === "telegram" || effective === "discord" || effective === "slack";
 
+  // Pull-all spans every wired provider in one call. Visible on
+  // any panel state where the panel has providers — it isn't
+  // provider-specific, so source/effective don't gate it.
+  const [pollAllStatus, setPollAllStatus] = useState<string | null>(null);
+  const pollAll = useMutation({
+    mutationFn: async () =>
+      client.post<{
+        readonly ingestedByProvider?: Readonly<Record<string, number>>;
+        readonly errors?: readonly { readonly providerId: string; readonly message: string }[];
+      }>("/api/messaging/poll-all", {}),
+    onError: (err) => setPollAllStatus(err instanceof Error ? err.message : "Pull-all failed"),
+    onSuccess: async (result) => {
+      const counts = result.ingestedByProvider ?? {};
+      const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+      const breakdown = Object.entries(counts).map(([id, n]) => `${id}:${n.toString()}`).join(" ");
+      const errs = result.errors ?? [];
+      setPollAllStatus(
+        `Pulled ${total.toString()} total${breakdown ? ` (${breakdown})` : ""}` +
+        (errs.length > 0 ? ` · ${errs.length.toString()} error(s)` : "")
+      );
+      await inbox.refetch();
+    }
+  });
+
   return (
     <section className="tool-surface compact" aria-label="Messaging">
       <div className="surface-heading">
@@ -865,9 +889,20 @@ export function MessagingInboxPanel({ client }: { readonly client: ApiClient }) 
                 {pollNow.isPending ? "Pulling…" : "Pull now"}
               </button>
             ) : null}
+            <button
+              aria-label="Pull all"
+              type="button"
+              disabled={pollAll.isPending}
+              onClick={() => { setPollAllStatus(null); pollAll.mutate(); }}
+            >
+              {pollAll.isPending ? "Pulling…" : "Pull all"}
+            </button>
           </div>
           {pollStatus ? (
             <p className="status-info" style={{ fontSize: "0.8em", margin: "0 0 0.5rem 0" }}>{pollStatus}</p>
+          ) : null}
+          {pollAllStatus ? (
+            <p className="status-info" style={{ fontSize: "0.8em", margin: "0 0 0.5rem 0" }}>{pollAllStatus}</p>
           ) : null}
           {inbox.error ? (
             <p className="status-error">{inbox.error instanceof Error ? inbox.error.message : "Failed to load inbox"}</p>

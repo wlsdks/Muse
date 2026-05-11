@@ -280,6 +280,18 @@ export interface MuseRuntimeAssembly {
    * endpoint without rebuilding the per-provider plumbing.
    */
   readonly messagingPollNow?: (providerId: string, source?: string) => Promise<{ ingested: number }>;
+  /**
+   * Companion to `messagingPollNow`: pulls every wired provider in
+   * one call (Telegram + each configured channel for Discord /
+   * Slack). LINE is skipped. Returns per-provider ingestion counts
+   * plus per-channel errors so a single bad channel doesn't black
+   * out the rest. Backs both the `muse.messaging.poll_all` MCP tool
+   * and the `POST /api/messaging/poll-all` REST endpoint.
+   */
+  readonly messagingPollAll?: () => Promise<{
+    readonly ingestedByProvider: Readonly<Record<string, number>>;
+    readonly errors: readonly { readonly providerId: string; readonly message: string }[];
+  }>;
 }
 
 export interface ApiServerAssemblyOptions {
@@ -762,7 +774,9 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     ...(tasksRegistry ? { tasksProviderRegistry: tasksRegistry } : {}),
     voice: buildVoiceRegistry(env),
     messaging: messagingRegistry,
-    ...(messagingRegistry.list().length > 0 ? { messagingPollNow: pollNow } : {})
+    ...(messagingRegistry.list().length > 0
+      ? { messagingPollAll: pollAll, messagingPollNow: pollNow }
+      : {})
   };
 }
 
@@ -860,6 +874,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     voice: assembly.voice,
     messaging: assembly.messaging,
     ...(assembly.messagingPollNow ? { messagingPollNow: assembly.messagingPollNow } : {}),
+    ...(assembly.messagingPollAll ? { messagingPollAll: assembly.messagingPollAll } : {}),
     remindersFile: resolveRemindersFile(env),
     lineInboxFile: resolveLineInboxFile(env),
     telegramInboxFile: resolveTelegramInboxFile(env),

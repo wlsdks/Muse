@@ -29,6 +29,15 @@ interface MessagingRoutesGate {
    * endpoint isn't exposed (404).
    */
   readonly pollNow?: (providerId: string, source?: string) => Promise<{ ingested: number }>;
+  /**
+   * Shared with `muse.messaging.poll_all` MCP tool. When provided,
+   * `POST /api/messaging/poll-all` is registered for one-shot
+   * pulls across every wired provider.
+   */
+  readonly pollAll?: () => Promise<{
+    readonly ingestedByProvider: Readonly<Record<string, number>>;
+    readonly errors: readonly { readonly providerId: string; readonly message: string }[];
+  }>;
 }
 
 export function registerMessagingRoutes(server: FastifyInstance, gate: MessagingRoutesGate): void {
@@ -129,6 +138,25 @@ export function registerMessagingRoutes(server: FastifyInstance, gate: Messaging
       throw error;
     }
   });
+
+  if (gate.pollAll) {
+    const pollAll = gate.pollAll;
+    server.post("/api/messaging/poll-all", async (request, reply) => {
+      if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
+        return reply;
+      }
+      try {
+        const result = await pollAll();
+        return reply.status(200).send({
+          errors: result.errors,
+          ingestedByProvider: result.ingestedByProvider
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return reply.status(500).send({ code: "MESSAGING_POLL_ALL_FAILED", message });
+      }
+    });
+  }
 
   if (gate.pollNow) {
     const pollNow = gate.pollNow;

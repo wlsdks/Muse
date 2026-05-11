@@ -107,6 +107,16 @@ export interface ServerOptions {
    * through the LLM.
    */
   readonly messagingPollNow?: (providerId: string, source?: string) => Promise<{ ingested: number }>;
+  /**
+   * On-demand poll-everything dispatcher shared with
+   * `muse.messaging.poll_all`. When set, the API registers
+   * `POST /api/messaging/poll-all` so the web "Pull all" button
+   * can trigger a one-shot pull across every wired provider.
+   */
+  readonly messagingPollAll?: () => Promise<{
+    readonly ingestedByProvider: Readonly<Record<string, number>>;
+    readonly errors: readonly { readonly providerId: string; readonly message: string }[];
+  }>;
   readonly remindersFile?: string;
   /**
    * Path to the persisted LINE inbox (default ~/.muse/line-inbox.json).
@@ -309,7 +319,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     registerMessagingRoutes(server, {
       authService,
       registry: options.messaging,
-      ...(options.messagingPollNow ? { pollNow: options.messagingPollNow } : {})
+      ...(options.messagingPollNow ? { pollNow: options.messagingPollNow } : {}),
+      ...(options.messagingPollAll ? { pollAll: options.messagingPollAll } : {})
     });
   }
   if (options.remindersFile) {
