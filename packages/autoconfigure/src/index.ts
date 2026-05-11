@@ -126,10 +126,13 @@ import {
 import { createResponseFilters } from "./response-filters.js";
 
 import {
+  buildActiveContextProvider,
   buildCalendarRegistry,
+  buildInboxContextProvider,
   buildMessagingRegistry,
   buildNotesRegistry,
   buildTasksRegistry,
+  buildToolFilter,
   buildVoiceRegistry,
   ensureNotesDir,
   mergeModelKeysFromFile,
@@ -144,9 +147,13 @@ import {
 } from "./personal-providers.js";
 
 export {
+  buildActiveContextProvider,
+  buildInboxContextProvider,
   buildMessagingRegistry,
+  buildToolFilter,
   buildVoiceRegistry,
   mergeModelKeysFromFile,
+  resolveInboxInjectionCursorFile,
   resolveLineInboxFile,
   resolveLocalCalendarFile,
   resolveMessagingCredentialsFile,
@@ -455,11 +462,24 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         const workingBudgetTokens = explicitWorkingBudget !== undefined
           ? parseInteger(explicitWorkingBudget, 0)
           : Math.floor(maxContextWindowTokens * DEFAULT_WORKING_BUDGET_RATIO);
+        // Context Engineering Phase 5: importance-aware compaction.
+        // `MUSE_COMPACTION_STRATEGY=importance` enables score-aware
+        // trimming so multi-day task state survives longer than casual
+        // chat. Default stays `temporal` (legacy oldest-first).
+        const strategyRaw = env.MUSE_COMPACTION_STRATEGY?.trim().toLowerCase();
+        const compactionStrategy: "temporal" | "importance" =
+          strategyRaw === "importance" ? "importance" : "temporal";
+        const importanceThresholdRaw = env.MUSE_COMPACTION_IMPORTANCE_THRESHOLD?.trim();
+        const importanceThreshold = importanceThresholdRaw
+          ? Number.parseFloat(importanceThresholdRaw)
+          : Number.NaN;
         return {
           maxContextWindowTokens,
           outputReserveTokens,
           // 0 disables; positive values pass through to trimConversationMessages.
-          ...(workingBudgetTokens > 0 ? { workingBudgetTokens } : {})
+          ...(workingBudgetTokens > 0 ? { workingBudgetTokens } : {}),
+          compactionStrategy,
+          ...(Number.isFinite(importanceThreshold) ? { importanceThreshold } : {})
         };
       })(),
       historyStore,
@@ -492,7 +512,17 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         : undefined,
       conversationSummaryStore: parseBoolean(env.MUSE_CONVERSATION_SUMMARY_PERSIST, true)
         ? conversationSummaryStore
-        : undefined
+        : undefined,
+      // Context Engineering Phases 1, 2, 4. Each is opt-out (Phase 1)
+      // or opt-in (Phases 2, 4) — see `buildActiveContextProvider`,
+      // `buildInboxContextProvider`, `buildToolFilter` for the toggle
+      // semantics.
+      activeContextProvider: buildActiveContextProvider(
+        env,
+        parseBoolean(env.MUSE_USER_MEMORY_INJECTION, true) ? userMemoryStore : undefined
+      ),
+      inboxContextProvider: buildInboxContextProvider(env),
+      toolFilter: buildToolFilter(env)
     })
     : undefined;
   const schedulerStore = createSchedulerStore(db, env);

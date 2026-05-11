@@ -117,6 +117,36 @@ describe("autoconfigure", () => {
     expect(assembly.voice?.primaryStt()?.id).toBe("openai-whisper");
   });
 
+  it("builds an ActiveContextProvider by default (Phase 1)", async () => {
+    const { buildActiveContextProvider } = await import("../src/personal-providers.js");
+    const provider = buildActiveContextProvider(
+      { MUSE_DEFAULT_TIMEZONE: "UTC" },
+      undefined
+    );
+    expect(provider).toBeDefined();
+    const snapshot = await provider?.resolve();
+    expect(snapshot?.timezone).toBe("UTC");
+    expect(snapshot?.nowIso).toBeTruthy();
+  });
+
+  it("MUSE_ACTIVE_CONTEXT_ENABLED=false suppresses the Phase 1 provider", async () => {
+    const { buildActiveContextProvider } = await import("../src/personal-providers.js");
+    expect(
+      buildActiveContextProvider({ MUSE_ACTIVE_CONTEXT_ENABLED: "false" }, undefined)
+    ).toBeUndefined();
+  });
+
+  it("buildInboxContextProvider stays undefined when no messaging token is registered (Phase 2)", async () => {
+    const { buildInboxContextProvider } = await import("../src/personal-providers.js");
+    expect(buildInboxContextProvider({})).toBeUndefined();
+  });
+
+  it("buildToolFilter is off by default and on with MUSE_TOOL_FILTER_ENABLED=true (Phase 4)", async () => {
+    const { buildToolFilter } = await import("../src/personal-providers.js");
+    expect(buildToolFilter({})).toBeUndefined();
+    expect(buildToolFilter({ MUSE_TOOL_FILTER_ENABLED: "true" })).toBeDefined();
+  });
+
   it("assembles auth and API options when JWT secret is configured", () => {
     const options = createApiServerOptions({
       env: {
@@ -208,6 +238,13 @@ describe("autoconfigure", () => {
     // mis-wired the field.
     const assembly = createMuseRuntimeAssembly({
       env: {
+        // Disable the Context Engineering Phase 1 system-prompt
+        // injection so the budget math is dominated by the
+        // conversation messages this test ships — otherwise the
+        // ~80-token nominal budget tips into `hard_limit` from the
+        // `[Active Context]` block alone, which isn't what this
+        // test is exercising.
+        MUSE_ACTIVE_CONTEXT_ENABLED: "false",
         MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "200",
         MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
         MUSE_MODEL: "diagnostic/smoke",

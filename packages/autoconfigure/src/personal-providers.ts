@@ -48,10 +48,12 @@ import {
 } from "@muse/mcp";
 import {
   DiscordProvider,
+  FileBackedInboxContextProvider,
   LineProvider,
   MessagingProviderRegistry,
   SlackProvider,
   TelegramProvider,
+  type InboxSourceConfig,
   type MessagingProvider
 } from "@muse/messaging";
 import {
@@ -59,6 +61,14 @@ import {
   OpenAIWhisperSttProvider,
   VoiceProviderRegistry
 } from "@muse/voice";
+import {
+  DefaultActiveContextProvider,
+  DefaultToolFilter,
+  type ActiveContextProvider,
+  type InboxContextProvider,
+  type ToolFilter
+} from "@muse/agent-core";
+import type { UserMemoryStore } from "@muse/memory";
 
 import type { MuseEnvironment } from "./index.js";
 
@@ -127,6 +137,14 @@ export function resolveSlackAfterFile(env: MuseEnvironment): string {
 
 export function resolveSlackInboxFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_SLACK_INBOX_FILE", "slack-inbox.json");
+}
+
+export function resolveInboxInjectionCursorFile(env: MuseEnvironment, providerId: string): string {
+  return resolveDotMusePath(
+    env,
+    `MUSE_${providerId.toUpperCase()}_INBOX_INJECTION_CURSOR_FILE`,
+    `${providerId}-inbox-injection.json`
+  );
 }
 
 export function resolveModelKeysFile(env: MuseEnvironment): string {
@@ -555,3 +573,101 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
 
 // Suppress unused-import warning when only the type is referenced.
 export type { MessagingProvider };
+
+/**
+ * Context Engineering Phase 1 — assemble a `DefaultActiveContextProvider`
+ * that always carries current time + timezone, and (when user memory is
+ * available) reads `working_hours` / `timezone` / `current_focus` from
+ * `UserMemoryStore.preferences`. Returns `undefined` when
+ * `MUSE_ACTIVE_CONTEXT_ENABLED=false`.
+ */
+export function buildActiveContextProvider(
+  env: MuseEnvironment,
+  userMemoryStore: UserMemoryStore | undefined
+): ActiveContextProvider | undefined {
+  if (env.MUSE_ACTIVE_CONTEXT_ENABLED?.trim().toLowerCase() === "false") {
+    return undefined;
+  }
+  return new DefaultActiveContextProvider({
+    ...(env.MUSE_DEFAULT_TIMEZONE?.trim() ? { defaultTimezone: env.MUSE_DEFAULT_TIMEZONE.trim() } : {}),
+    ...(userMemoryStore ? { userMemoryProvider: userMemoryStore } : {})
+  });
+}
+
+/**
+ * Context Engineering Phase 2 — build a `FileBackedInboxContextProvider`
+ * over every messaging provider that has a registered token. Each
+ * provider gets its own cursor file under `~/.muse/{id}-inbox-injection.json`
+ * (overrideable via `MUSE_{ID}_INBOX_INJECTION_CURSOR_FILE`). Returns
+ * `undefined` when no messaging provider is configured OR when
+ * `MUSE_INBOX_CONTEXT_ENABLED=false`.
+ */
+export function buildInboxContextProvider(env: MuseEnvironment): InboxContextProvider | undefined {
+  if (env.MUSE_INBOX_CONTEXT_ENABLED?.trim().toLowerCase() === "false") {
+    return undefined;
+  }
+  const sources: InboxSourceConfig[] = [];
+  const credentials = readCredentialsSync(resolveMessagingCredentialsFile(env));
+  const hasToken = (envKey: string, providerId: string): boolean => {
+    const fromEnv = env[envKey]?.trim();
+    if (fromEnv && fromEnv.length > 0) {
+      return true;
+    }
+    const fromFile = stringField(credentials[providerId], "token");
+    return Boolean(fromFile && fromFile.length > 0);
+  };
+  if (hasToken("MUSE_TELEGRAM_BOT_TOKEN", "telegram")) {
+    sources.push({
+      cursorFile: resolveInboxInjectionCursorFile(env, "telegram"),
+      inboxFile: resolveTelegramInboxFile(env),
+      providerId: "telegram"
+    });
+  }
+  if (hasToken("MUSE_DISCORD_BOT_TOKEN", "discord")) {
+    sources.push({
+      cursorFile: resolveInboxInjectionCursorFile(env, "discord"),
+      inboxFile: resolveDiscordInboxFile(env),
+      providerId: "discord"
+    });
+  }
+  if (hasToken("MUSE_SLACK_BOT_TOKEN", "slack")) {
+    sources.push({
+      cursorFile: resolveInboxInjectionCursorFile(env, "slack"),
+      inboxFile: resolveSlackInboxFile(env),
+      providerId: "slack"
+    });
+  }
+  if (hasToken("MUSE_LINE_CHANNEL_ACCESS_TOKEN", "line")) {
+    sources.push({
+      cursorFile: resolveInboxInjectionCursorFile(env, "line"),
+      inboxFile: resolveLineInboxFile(env),
+      providerId: "line"
+    });
+  }
+  if (sources.length === 0) {
+    return undefined;
+  }
+  const perProviderLimit = clampPositive(env.MUSE_INBOX_INJECT_LIMIT, 20);
+  const totalLimit = clampPositive(env.MUSE_INBOX_INJECT_TOTAL_LIMIT, 80);
+  return new FileBackedInboxContextProvider({ perProviderLimit, sources, totalLimit });
+}
+
+/**
+ * Context Engineering Phase 4 — opt-in `DefaultToolFilter` controlled
+ * by `MUSE_TOOL_FILTER_ENABLED=true`. Default off so existing setups
+ * see no behavioural change.
+ */
+export function buildToolFilter(env: MuseEnvironment): ToolFilter | undefined {
+  if (env.MUSE_TOOL_FILTER_ENABLED?.trim().toLowerCase() !== "true") {
+    return undefined;
+  }
+  return new DefaultToolFilter();
+}
+
+function clampPositive(value: string | undefined, fallback: number): number {
+  const parsed = value === undefined ? Number.NaN : Number.parseInt(value.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
