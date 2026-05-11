@@ -4,6 +4,7 @@ import openaiFixture from "../__fixtures__/web-search/openai-responses.json" wit
 
 import {
   fromOpenAIResponsesResponse,
+  parseOpenAIResponsesStream,
   toOpenAIResponsesRequest
 } from "./provider-wire.js";
 
@@ -65,5 +66,39 @@ describe("fromOpenAIResponsesResponse", () => {
     };
     const r = fromOpenAIResponsesResponse("openai", "gpt-4o", payload);
     expect(r.citations).toEqual([]);
+  });
+});
+
+describe("parseOpenAIResponsesStream", () => {
+  function asStream(lines: string[]): ReadableStream<Uint8Array> {
+    const enc = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        for (const line of lines) controller.enqueue(enc.encode(line));
+        controller.close();
+      }
+    });
+  }
+
+  it("emits text-delta, tool-call-started/finished, citations, done", async () => {
+    const sse = [
+      "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"web_search_call\",\"id\":\"ws1\"}}\n\n",
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello \"}\n\n",
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"world\"}\n\n",
+      "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"web_search_call\",\"id\":\"ws1\"}}\n\n",
+      "data: {\"type\":\"response.output_text.annotation.added\",\"annotation\":{\"type\":\"url_citation\",\"url\":\"https://x.test\",\"title\":\"X\"}}\n\n",
+      "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r1\",\"model\":\"gpt-4o\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"total_tokens\":3}}}\n\n",
+      "data: [DONE]\n\n"
+    ];
+    const events: unknown[] = [];
+    for await (const ev of parseOpenAIResponsesStream("openai", "gpt-4o", asStream(sse))) {
+      events.push(ev);
+    }
+    const types = events.map((e) => (e as { type: string }).type);
+    expect(types).toContain("tool-call-started");
+    expect(types).toContain("tool-call-finished");
+    expect(types).toContain("citations");
+    expect(types).toContain("text-delta");
+    expect(types).toContain("done");
   });
 });

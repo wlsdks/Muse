@@ -515,6 +515,83 @@ export function fromOpenAIResponsesResponse(
   };
 }
 
+export async function* parseOpenAIResponsesStream(
+  _providerId: string,
+  requestedModel: string,
+  body: ReadableStream<Uint8Array>
+): AsyncGenerator<ModelEvent> {
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let toolStarted = false;
+  let textBuf = "";
+  const citations: WebSearchCitation[] = [];
+  let finalUsage: ModelUsage | undefined;
+  let finalId = "";
+  let finalModel = requestedModel;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, nl);
+      buf = buf.slice(nl + 2);
+      const dataLine = chunk.split("\n").find((l) => l.startsWith("data:"))?.slice(5).trim();
+      if (!dataLine || dataLine === "[DONE]") continue;
+      let evt: {
+        type?: string;
+        item?: { type?: string };
+        delta?: string;
+        annotation?: { type?: string; url?: string; title?: string };
+        response?: {
+          id?: string;
+          model?: string;
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+      };
+      try { evt = JSON.parse(dataLine); } catch { continue; }
+      if (evt.type === "response.output_item.added" && evt.item?.type === "web_search_call" && !toolStarted) {
+        toolStarted = true;
+        yield { type: "tool-call-started", name: "web_search" };
+      } else if (evt.type === "response.output_item.done" && evt.item?.type === "web_search_call") {
+        yield { type: "tool-call-finished", name: "web_search" };
+      } else if (evt.type === "response.output_text.delta" && typeof evt.delta === "string") {
+        textBuf += evt.delta;
+        yield { type: "text-delta", text: evt.delta };
+      } else if (evt.type === "response.output_text.annotation.added" && evt.annotation?.type === "url_citation") {
+        const a = evt.annotation;
+        if (typeof a.url === "string" && typeof a.title === "string") {
+          citations.push({ url: a.url, title: a.title, providerRaw: a });
+        }
+      } else if (evt.type === "response.completed" && evt.response) {
+        finalId = evt.response.id ?? "";
+        finalModel = evt.response.model ?? requestedModel;
+        if (evt.response.usage) {
+          finalUsage = {
+            inputTokens: evt.response.usage.input_tokens ?? 0,
+            outputTokens: evt.response.usage.output_tokens ?? 0
+          };
+        }
+      }
+    }
+  }
+
+  if (citations.length > 0) yield { type: "citations", items: citations };
+  yield {
+    type: "done",
+    response: {
+      citations,
+      id: finalId,
+      model: finalModel,
+      output: textBuf,
+      raw: undefined,
+      usage: finalUsage
+    }
+  };
+}
+
 export async function* parseOpenAIStream(
   providerId: string,
   requestedModel: string,
