@@ -33,6 +33,7 @@ import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
 import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
+import { registerSetupRoutes } from "./setup-routes.js";
 import { registerTodayRoutes } from "./today-routes.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
 import {
@@ -347,6 +348,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       inboxFile: options.lineInboxFile
     });
   }
+  registerSetupRoutes(server, { authService });
   registerTodayRoutes(server, {
     authService,
     calendar: options.calendar,

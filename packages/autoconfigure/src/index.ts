@@ -204,6 +204,17 @@ import { DynamicToolRegistry } from "./dynamic-tool-registry.js";
 import { loadExternalMcpConfig } from "./external-mcp-config.js";
 
 export {
+  collectSetupStatusJson,
+  countNotes,
+  readMcpEntryCount,
+  readMessagingProviderState,
+  readModelKeyState,
+  readTaskCount,
+  statBytes,
+  type SetupStatusSnapshot
+} from "./setup-status.js";
+
+export {
   diagnoseExternalMcpConfig,
   diagnoseExternalMcpConfigFile,
   loadExternalMcpConfig,
