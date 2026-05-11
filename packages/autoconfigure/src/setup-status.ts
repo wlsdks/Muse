@@ -45,6 +45,45 @@ export interface SetupStatusSnapshot {
   readonly tasks: { readonly status: "ok" | "info"; readonly file: string; readonly entryCount?: number; readonly nextStep?: string };
   readonly voice: { readonly status: "ok" | "info"; readonly source: "openai_api_key" | "muse_voice_openai_api_key" | "none"; readonly nextStep?: string };
   readonly messaging: { readonly status: "ok" | "info"; readonly providers: readonly string[]; readonly nextStep?: string };
+  readonly webSearch: { readonly status: "ok" | "info"; readonly enabled: boolean; readonly maxUses: number; readonly source: "default" | "env" };
+}
+
+export interface WebSearchEnvSnapshot {
+  readonly enabled: boolean;
+  readonly maxUses: number;
+  readonly source: "default" | "env";
+}
+
+const WEB_SEARCH_DEFAULTS: WebSearchEnvSnapshot = {
+  enabled: true,
+  maxUses: 5,
+  source: "default"
+};
+
+export function readWebSearchEnvSnapshot(env: Readonly<Record<string, string | undefined>>): WebSearchEnvSnapshot {
+  let source: "default" | "env" = "default";
+  let enabled = WEB_SEARCH_DEFAULTS.enabled;
+  let maxUses = WEB_SEARCH_DEFAULTS.maxUses;
+
+  const flag = env.MUSE_WEB_SEARCH?.toLowerCase();
+  if (flag === "off") {
+    enabled = false;
+    source = "env";
+  } else if (flag === "on") {
+    enabled = true;
+    source = "env";
+  }
+
+  const rawMax = env.MUSE_WEB_SEARCH_MAX_USES;
+  if (rawMax !== undefined) {
+    const n = Number.parseInt(rawMax, 10);
+    if (Number.isFinite(n) && n > 0) {
+      maxUses = n;
+      source = "env";
+    }
+  }
+
+  return { enabled, maxUses, source };
 }
 
 /**
@@ -155,6 +194,10 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
       ...(voiceSource === "none"
         ? { nextStep: "Run `muse setup model` and pick OpenAI, or export MUSE_VOICE_OPENAI_API_KEY" }
         : {})
+    },
+    webSearch: {
+      ...readWebSearchEnvSnapshot(env),
+      status: "ok" as const
     }
   };
 }
