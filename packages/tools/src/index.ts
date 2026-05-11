@@ -645,3 +645,12 @@ export {
 } from "./runner.js";
 
 export { ToolExecutor } from "./executor.js";
+
+export {
+  createSkillListTool,
+  createSkillReadTool,
+  createSkillRunTool,
+  type SkillCatalogToolEntry,
+  type SkillRegistryView,
+  type SkillRunOptions
+} from "./muse-tools-skills.js";

@@ -84,6 +84,7 @@ import {
 } from "./context-transforms.js";
 import type { ActiveContextProvider, ActiveContextSnapshot } from "./active-context.js";
 import { applyAttachmentContext as applyAttachmentContextFn } from "./attachment-context.js";
+import { applySkillsContext as applySkillsContextFn, type SkillCatalogProvider } from "./skills-context.js";
 import type { InboxContextProvider } from "./inbox-context.js";
 import type { EpisodicRecallProvider } from "./episodic-recall.js";
 import type { ToolFilter } from "./tool-filter.js";
@@ -196,6 +197,12 @@ export {
   renderAttachmentSection,
   type AttachmentHint
 } from "./attachment-context.js";
+export {
+  applySkillsContext,
+  renderSkillsCatalogSection,
+  type SkillCatalogEntry,
+  type SkillCatalogProvider
+} from "./skills-context.js";
 
 
 export {
@@ -290,6 +297,11 @@ export interface AgentRuntimeOptions {
    * per request by user-prompt keywords + metadata scope hints.
    */
   readonly toolFilter?: ToolFilter;
+  /**
+   * SKILL.md catalog provider — surfaces an `[Available Skills]`
+   * block listing registered external-CLI integrations.
+   */
+  readonly skillCatalogProvider?: SkillCatalogProvider;
   readonly defaults?: {
     readonly maxOutputTokens?: number;
     readonly temperature?: number;
@@ -398,6 +410,7 @@ export class AgentRuntime {
   private readonly inboxContextProvider?: InboxContextProvider;
   private readonly episodicRecallProvider?: EpisodicRecallProvider;
   private readonly toolFilter?: ToolFilter;
+  private readonly skillCatalogProvider?: SkillCatalogProvider;
   private readonly defaults: AgentRuntimeOptions["defaults"];
 
   constructor(options: AgentRuntimeOptions) {
@@ -446,6 +459,7 @@ export class AgentRuntime {
     this.inboxContextProvider = options.inboxContextProvider;
     this.episodicRecallProvider = options.episodicRecallProvider;
     this.toolFilter = options.toolFilter;
+    this.skillCatalogProvider = options.skillCatalogProvider;
     this.defaults = options.defaults;
 
     if (!this.modelProvider && !this.modelRegistry) {
@@ -486,7 +500,8 @@ export class AgentRuntime {
       const activeContextSnapshot = await resolveActiveContextSnapshotFn(memoryAppliedContext, this.activeContextProvider);
       const activeContextInput = applyActiveContextFn(memoryAppliedContext, activeContextSnapshot);
       const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: activeContextInput });
-      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: attachmentAppliedInput };
+      const skillsAppliedInput = await applySkillsContextFn({ ...memoryAppliedContext, input: attachmentAppliedInput }, this.skillCatalogProvider);
+      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: skillsAppliedInput };
       const inboxAppliedInput = await applyInboxContextFn(activeContextContext, this.inboxContextProvider);
       const inboxAppliedContext: AgentRunContext = { ...activeContextContext, input: inboxAppliedInput };
       const episodicAppliedInput = await applyEpisodicRecallFn(inboxAppliedContext, this.episodicRecallProvider);
@@ -621,7 +636,8 @@ export class AgentRuntime {
       const activeContextSnapshot = await resolveActiveContextSnapshotFn(memoryAppliedContext, this.activeContextProvider);
       const activeContextInput = applyActiveContextFn(memoryAppliedContext, activeContextSnapshot);
       const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: activeContextInput });
-      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: attachmentAppliedInput };
+      const skillsAppliedInput = await applySkillsContextFn({ ...memoryAppliedContext, input: attachmentAppliedInput }, this.skillCatalogProvider);
+      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: skillsAppliedInput };
       const inboxAppliedInput = await applyInboxContextFn(activeContextContext, this.inboxContextProvider);
       const inboxAppliedContext: AgentRunContext = { ...activeContextContext, input: inboxAppliedInput };
       const episodicAppliedInput = await applyEpisodicRecallFn(inboxAppliedContext, this.episodicRecallProvider);
