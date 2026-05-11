@@ -522,7 +522,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       activeContextProvider: buildActiveContextProvider(
         env,
         parseBoolean(env.MUSE_USER_MEMORY_INJECTION, true) ? userMemoryStore : undefined,
-        taskMemoryStore
+        taskMemoryStore,
+        calendarRegistry
       ),
       inboxContextProvider: buildInboxContextProvider(env),
       // Phase 3: store-backed episodic recall. Reuses the same

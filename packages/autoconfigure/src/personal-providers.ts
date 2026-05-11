@@ -32,6 +32,7 @@ import {
   GoogleCalendarProvider,
   LocalCalendarProvider,
   MacOsCalendarProvider,
+  type CalendarEvent,
   type CalendarProvider
 } from "@muse/calendar";
 import {
@@ -586,11 +587,39 @@ export type { MessagingProvider };
 export function buildActiveContextProvider(
   env: MuseEnvironment,
   userMemoryStore: UserMemoryStore | undefined,
-  taskMemoryStore?: TaskMemoryStore
+  taskMemoryStore?: TaskMemoryStore,
+  calendarRegistry?: CalendarProviderRegistry
 ): ActiveContextProvider | undefined {
   if (env.MUSE_ACTIVE_CONTEXT_ENABLED?.trim().toLowerCase() === "false") {
     return undefined;
   }
+  const calendarEventsResolver = calendarRegistry && env.MUSE_ACTIVE_CONTEXT_CALENDAR_ENABLED?.trim().toLowerCase() !== "false"
+    ? {
+        async resolve(options: { readonly nowIso: string; readonly timezone: string; readonly userId?: string }) {
+          try {
+            const now = new Date(options.nowIso);
+            const dayStart = new Date(now);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(now);
+            dayEnd.setHours(23, 59, 59, 999);
+            const limit = clampPositive(env.MUSE_ACTIVE_CONTEXT_CALENDAR_LIMIT, 8);
+            const events = await calendarRegistry.listEvents({ from: dayStart, to: dayEnd });
+            return [...events]
+              .sort((a: CalendarEvent, b: CalendarEvent) => a.startsAt.getTime() - b.startsAt.getTime())
+              .slice(0, limit)
+              .map((event) => ({
+                allDay: event.allDay,
+                endIso: event.endsAt.toISOString(),
+                ...(event.location ? { location: event.location } : {}),
+                startIso: event.startsAt.toISOString(),
+                title: event.title
+              }));
+          } catch {
+            return undefined;
+          }
+        }
+      }
+    : undefined;
   const activeTaskResolver = taskMemoryStore
     ? {
         async resolve(options: { readonly userId?: string; readonly sessionId?: string }) {
@@ -616,6 +645,7 @@ export function buildActiveContextProvider(
     : undefined;
   return new DefaultActiveContextProvider({
     ...(activeTaskResolver ? { activeTaskResolver } : {}),
+    ...(calendarEventsResolver ? { calendarEventsResolver } : {}),
     ...(env.MUSE_DEFAULT_TIMEZONE?.trim() ? { defaultTimezone: env.MUSE_DEFAULT_TIMEZONE.trim() } : {}),
     ...(userMemoryStore ? { userMemoryProvider: userMemoryStore } : {})
   });

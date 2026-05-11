@@ -83,6 +83,7 @@ import {
   resolveActiveContextSnapshot as resolveActiveContextSnapshotFn
 } from "./context-transforms.js";
 import type { ActiveContextProvider, ActiveContextSnapshot } from "./active-context.js";
+import { applyAttachmentContext as applyAttachmentContextFn } from "./attachment-context.js";
 import type { InboxContextProvider } from "./inbox-context.js";
 import type { EpisodicRecallProvider } from "./episodic-recall.js";
 import type { ToolFilter } from "./tool-filter.js";
@@ -147,9 +148,12 @@ export {
   DefaultActiveContextProvider,
   renderActiveContextSection,
   type ActiveContextProvider,
+  type ActiveContextResolveOptions,
   type ActiveContextSnapshot,
   type ActiveTaskHint,
   type ActiveTaskResolver,
+  type CalendarEventHint,
+  type CalendarEventsResolver,
   type DefaultActiveContextProviderOptions
 } from "./active-context.js";
 export {
@@ -186,6 +190,12 @@ export {
   type ToolFilter,
   type ToolFilterContext
 } from "./tool-filter.js";
+export {
+  applyAttachmentContext,
+  parseAttachmentsFromMetadata,
+  renderAttachmentSection,
+  type AttachmentHint
+} from "./attachment-context.js";
 
 
 export {
@@ -475,7 +485,8 @@ export class AgentRuntime {
       const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
       const activeContextSnapshot = await resolveActiveContextSnapshotFn(memoryAppliedContext, this.activeContextProvider);
       const activeContextInput = applyActiveContextFn(memoryAppliedContext, activeContextSnapshot);
-      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: activeContextInput };
+      const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: activeContextInput });
+      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: attachmentAppliedInput };
       const inboxAppliedInput = await applyInboxContextFn(activeContextContext, this.inboxContextProvider);
       const inboxAppliedContext: AgentRunContext = { ...activeContextContext, input: inboxAppliedInput };
       const episodicAppliedInput = await applyEpisodicRecallFn(inboxAppliedContext, this.episodicRecallProvider);
@@ -609,7 +620,8 @@ export class AgentRuntime {
       const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
       const activeContextSnapshot = await resolveActiveContextSnapshotFn(memoryAppliedContext, this.activeContextProvider);
       const activeContextInput = applyActiveContextFn(memoryAppliedContext, activeContextSnapshot);
-      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: activeContextInput };
+      const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: activeContextInput });
+      const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: attachmentAppliedInput };
       const inboxAppliedInput = await applyInboxContextFn(activeContextContext, this.inboxContextProvider);
       const inboxAppliedContext: AgentRunContext = { ...activeContextContext, input: inboxAppliedInput };
       const episodicAppliedInput = await applyEpisodicRecallFn(inboxAppliedContext, this.episodicRecallProvider);

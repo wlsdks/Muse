@@ -22,6 +22,14 @@ export interface ActiveTaskHint {
   readonly dueIso?: string;
 }
 
+export interface CalendarEventHint {
+  readonly title: string;
+  readonly startIso: string;
+  readonly endIso?: string;
+  readonly allDay?: boolean;
+  readonly location?: string;
+}
+
 export interface ActiveContextSnapshot {
   readonly nowIso: string;
   readonly weekday: string;
@@ -31,6 +39,13 @@ export interface ActiveContextSnapshot {
   readonly isWorkingHours?: boolean;
   readonly activeTask?: ActiveTaskHint;
   readonly currentFocus?: string;
+  /**
+   * Today's calendar events (D1). Surfaced into `[Active Context]`
+   * so the agent does not need to invoke `muse.calendar.upcoming`
+   * just to know "is there a meeting in 30 minutes?". Provider
+   * decides ordering — typically chronological by `startIso`.
+   */
+  readonly todaysEvents?: readonly CalendarEventHint[];
 }
 
 export interface ActiveContextResolveOptions {
@@ -50,10 +65,17 @@ export interface ActiveTaskResolver {
   ): Promise<ActiveTaskHint | undefined> | ActiveTaskHint | undefined;
 }
 
+export interface CalendarEventsResolver {
+  resolve(
+    options: { readonly nowIso: string; readonly timezone: string; readonly userId?: string }
+  ): Promise<readonly CalendarEventHint[] | undefined> | readonly CalendarEventHint[] | undefined;
+}
+
 export interface DefaultActiveContextProviderOptions {
   readonly now?: () => Date;
   readonly userMemoryProvider?: UserMemoryProvider;
   readonly activeTaskResolver?: ActiveTaskResolver;
+  readonly calendarEventsResolver?: CalendarEventsResolver;
   readonly defaultTimezone?: string;
 }
 
@@ -61,12 +83,14 @@ export class DefaultActiveContextProvider implements ActiveContextProvider {
   private readonly now: () => Date;
   private readonly userMemoryProvider?: UserMemoryProvider;
   private readonly activeTaskResolver?: ActiveTaskResolver;
+  private readonly calendarEventsResolver?: CalendarEventsResolver;
   private readonly defaultTimezone?: string;
 
   constructor(options: DefaultActiveContextProviderOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.userMemoryProvider = options.userMemoryProvider;
     this.activeTaskResolver = options.activeTaskResolver;
+    this.calendarEventsResolver = options.calendarEventsResolver;
     this.defaultTimezone = options.defaultTimezone;
   }
 
@@ -112,6 +136,18 @@ export class DefaultActiveContextProvider implements ActiveContextProvider {
         activeTask = undefined;
       }
     }
+    let todaysEvents: readonly CalendarEventHint[] | undefined;
+    if (this.calendarEventsResolver) {
+      try {
+        todaysEvents = (await this.calendarEventsResolver.resolve({
+          nowIso: formatted.iso,
+          timezone: formatted.timezone,
+          userId
+        })) ?? undefined;
+      } catch {
+        todaysEvents = undefined;
+      }
+    }
     return {
       activeTask,
       currentFocus,
@@ -119,6 +155,7 @@ export class DefaultActiveContextProvider implements ActiveContextProvider {
       localHour: formatted.localHour,
       nowIso: formatted.iso,
       timezone: formatted.timezone,
+      todaysEvents,
       weekday: formatted.weekday,
       workingHours
     };
@@ -156,6 +193,18 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
   }
   if (snapshot.currentFocus) {
     lines.push(`current_focus: ${snapshot.currentFocus}`);
+  }
+  if (snapshot.todaysEvents && snapshot.todaysEvents.length > 0) {
+    lines.push("today_events:");
+    for (const event of snapshot.todaysEvents.slice(0, 8)) {
+      const timePart = event.allDay
+        ? "(all day)"
+        : event.endIso
+          ? `${event.startIso} → ${event.endIso}`
+          : event.startIso;
+      const locationPart = event.location ? ` @ ${event.location}` : "";
+      lines.push(`  · ${timePart} ${event.title}${locationPart}`);
+    }
   }
   return lines.join("\n");
 }
