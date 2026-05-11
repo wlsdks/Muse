@@ -103,24 +103,40 @@ export async function applyAgentSpec(
 }
 
 /**
- * Inject `[Active Context]` (current time, timezone, working-hours,
- * active task, current focus) so the agent does not have to call
- * `muse.time.now` or the task tools just to orient itself.
- * Fail-open: any provider error returns the input untouched.
+ * Resolve the `ActiveContextSnapshot` once per request so both the
+ * `applyActiveContext` system-prompt injection AND the importance
+ * scorer used during compaction can read from a single source of
+ * truth. Fail-open: any error returns `undefined`.
  */
-export async function applyActiveContext(
+export async function resolveActiveContextSnapshot(
   context: AgentRunContext,
   provider: ActiveContextProvider | undefined
-): Promise<AgentRunInput> {
+): Promise<ActiveContextSnapshot | undefined> {
   if (!provider) {
-    return context.input;
+    return undefined;
   }
-  let snapshot: ActiveContextSnapshot | undefined;
   try {
-    snapshot = (await provider.resolve(metadataString(context.input.metadata, "userId"))) ?? undefined;
+    return (await provider.resolve({
+      sessionId: metadataString(context.input.metadata, "sessionId"),
+      userId: metadataString(context.input.metadata, "userId")
+    })) ?? undefined;
   } catch {
-    return context.input;
+    return undefined;
   }
+}
+
+/**
+ * Inject `[Active Context]` (current time, timezone, working-hours,
+ * active task, current focus) so the agent does not have to call
+ * `muse.time.now` or the task tools just to orient itself. Caller
+ * pre-resolves the snapshot via `resolveActiveContextSnapshot` so
+ * the value can be shared with the compaction trim's
+ * `importanceContext`.
+ */
+export function applyActiveContext(
+  context: AgentRunContext,
+  snapshot: ActiveContextSnapshot | undefined
+): AgentRunInput {
   const rendered = renderActiveContextSection(snapshot);
   if (!rendered) {
     return context.input;
@@ -312,11 +328,13 @@ export async function persistConversationSummaryFromRequest(
   if (!head || head.role !== "system" || !head.content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
     return;
   }
+  const userId = metadataString(context.input.metadata, "userId");
   try {
     await store.save({
       narrative: head.content,
       sessionId,
-      summarizedUpToIndex
+      summarizedUpToIndex,
+      ...(userId ? { userId } : {})
     });
   } catch {
     // observability writes are fail-open
