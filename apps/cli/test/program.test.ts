@@ -2102,6 +2102,80 @@ describe("cli program", () => {
     }
   });
 
+  it("muse setup status surfaces nextStep guidance under [todo]/[info] sections (Loop #69)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-setup-nextstep-"));
+    const prev = {
+      tasks: process.env.MUSE_TASKS_FILE,
+      notes: process.env.MUSE_NOTES_DIR,
+      cal: process.env.MUSE_CALENDAR_FILE,
+      mcp: process.env.MUSE_MCP_CONFIG,
+      keys: process.env.MUSE_MODEL_KEYS_FILE,
+      messaging: process.env.MUSE_MESSAGING_CREDENTIALS_FILE,
+      model: process.env.MUSE_MODEL,
+      openai: process.env.OPENAI_API_KEY,
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      gemini: process.env.GEMINI_API_KEY,
+      openrouter: process.env.OPENROUTER_API_KEY,
+      ollama: process.env.OLLAMA_BASE_URL,
+      voice: process.env.MUSE_VOICE_OPENAI_API_KEY,
+      telegram: process.env.MUSE_TELEGRAM_BOT_TOKEN,
+      discord: process.env.MUSE_DISCORD_BOT_TOKEN,
+      slack: process.env.MUSE_SLACK_BOT_TOKEN,
+      line: process.env.MUSE_LINE_CHANNEL_ACCESS_TOKEN
+    };
+    // Scrub everything so the snapshot deterministically reports
+    // todo/info statuses on every section.
+    process.env.MUSE_TASKS_FILE = path.join(root, "tasks.json");
+    process.env.MUSE_NOTES_DIR = path.join(root, "notes");
+    process.env.MUSE_CALENDAR_FILE = path.join(root, "cal.json");
+    process.env.MUSE_MCP_CONFIG = path.join(root, "mcp.json");
+    process.env.MUSE_MODEL_KEYS_FILE = path.join(root, "models.json");
+    process.env.MUSE_MESSAGING_CREDENTIALS_FILE = path.join(root, "msg.json");
+    delete process.env.MUSE_MODEL;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.MUSE_VOICE_OPENAI_API_KEY;
+    delete process.env.MUSE_TELEGRAM_BOT_TOKEN;
+    delete process.env.MUSE_DISCORD_BOT_TOKEN;
+    delete process.env.MUSE_SLACK_BOT_TOKEN;
+    delete process.env.MUSE_LINE_CHANNEL_ACCESS_TOKEN;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("fetch must not be called"); } });
+      await program.parseAsync(["node", "muse", "setup"], { from: "node" });
+      const text = output.join("");
+      // Each non-ok section should be followed by a `→ nextStep` line.
+      expect(text).toMatch(/\[todo\] model/u);
+      expect(text).toMatch(/→ Run `muse setup model`/u);
+      expect(text).toMatch(/→ Run `muse setup messaging`/u);
+      expect(text).toMatch(/→ Run `muse setup model` and pick OpenAI/u);
+    } finally {
+      const restore = (key: keyof typeof prev, envKey: string) => {
+        if (prev[key] === undefined) { delete process.env[envKey]; } else { process.env[envKey] = prev[key]!; }
+      };
+      restore("tasks", "MUSE_TASKS_FILE");
+      restore("notes", "MUSE_NOTES_DIR");
+      restore("cal", "MUSE_CALENDAR_FILE");
+      restore("mcp", "MUSE_MCP_CONFIG");
+      restore("keys", "MUSE_MODEL_KEYS_FILE");
+      restore("messaging", "MUSE_MESSAGING_CREDENTIALS_FILE");
+      restore("model", "MUSE_MODEL");
+      restore("openai", "OPENAI_API_KEY");
+      restore("anthropic", "ANTHROPIC_API_KEY");
+      restore("gemini", "GEMINI_API_KEY");
+      restore("openrouter", "OPENROUTER_API_KEY");
+      restore("ollama", "OLLAMA_BASE_URL");
+      restore("voice", "MUSE_VOICE_OPENAI_API_KEY");
+      restore("telegram", "MUSE_TELEGRAM_BOT_TOKEN");
+      restore("discord", "MUSE_DISCORD_BOT_TOKEN");
+      restore("slack", "MUSE_SLACK_BOT_TOKEN");
+      restore("line", "MUSE_LINE_CHANNEL_ACCESS_TOKEN");
+    }
+  });
+
   it("muse setup status reflects ~/.muse/models.json autoload (Loop #56 — no shell-rc export required)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-setup-autoload-"));
     const modelKeysFile = path.join(root, "models.json");
