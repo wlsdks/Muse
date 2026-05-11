@@ -749,6 +749,31 @@ describe("autoconfigure", () => {
     expect(mergedWithModel.MUSE_MODEL).toBe("anthropic/claude-haiku-4-5-20251001");
   });
 
+  it("mergeModelKeysFromFile hydrates the new Groq / DeepSeek / Together / Mistral / Moonshot presets", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "muse-modelkeys-presets-"));
+    const file = join(root, "models.json");
+    writeFileSync(file, JSON.stringify({
+      providers: {
+        deepseek: { token: "from-file-deepseek" },
+        groq: { token: "from-file-groq" },
+        mistral: { token: "from-file-mistral" },
+        moonshot: { token: "from-file-moonshot" },
+        together: { token: "from-file-together" }
+      },
+      version: 1
+    }), "utf8");
+
+    const merged = mergeModelKeysFromFile({ MUSE_MODEL_KEYS_FILE: file });
+    expect(merged.GROQ_API_KEY).toBe("from-file-groq");
+    expect(merged.DEEPSEEK_API_KEY).toBe("from-file-deepseek");
+    expect(merged.TOGETHER_API_KEY).toBe("from-file-together");
+    expect(merged.MISTRAL_API_KEY).toBe("from-file-mistral");
+    expect(merged.MOONSHOT_API_KEY).toBe("from-file-moonshot");
+  });
+
   it("buildMessagingRegistry honours env tokens, the credentials file, and env-overrides-file", async () => {
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
