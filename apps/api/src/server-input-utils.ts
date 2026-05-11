@@ -82,6 +82,20 @@ export function readNumber(value: Record<string, unknown>, key: string, fallback
   return typeof value[key] === "number" && Number.isFinite(value[key]) ? value[key] : undefined;
 }
 
+export function readStringArray(
+  value: Record<string, unknown>,
+  key: string,
+  fallback?: readonly string[]
+): readonly string[] | false | undefined {
+  if (!hasOwn(value, key)) {
+    return fallback;
+  }
+
+  return Array.isArray(value[key]) && value[key].every((item) => typeof item === "string")
+    ? value[key]
+    : false;
+}
+
 export function parseRuntimeSettingType(value: unknown): RuntimeSettingType | undefined {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : undefined;
   return normalized === "string" || normalized === "number" || normalized === "boolean" || normalized === "json"

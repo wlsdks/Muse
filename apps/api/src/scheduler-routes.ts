@@ -10,7 +10,7 @@ import {
 } from "@muse/scheduler";
 import type { FastifyInstance } from "fastify";
 
-import { hasOwn, isRecord, isJsonValue, readBoolean, readNumber } from "./server-input-utils.js";
+import { hasOwn, isRecord, isJsonValue, readBoolean, readNumber, readStringArray } from "./server-input-utils.js";
 
 export interface SchedulerRouteScheduler {
   readonly executionStore?: ScheduledJobExecutionStore;
@@ -503,20 +503,6 @@ function readJsonObject(
   }
 
   return isJsonObject(value[key]) ? value[key] : false;
-}
-
-function readStringArray(
-  value: Record<string, unknown>,
-  key: string,
-  fallback?: readonly string[]
-): readonly string[] | false | undefined {
-  if (!hasOwn(value, key)) {
-    return fallback;
-  }
-
-  return Array.isArray(value[key]) && value[key].every((item) => typeof item === "string")
-    ? value[key]
-    : false;
 }
 
 function isJsonObject(value: unknown): value is NonNullable<ScheduledJobInput["toolArguments"]> {
