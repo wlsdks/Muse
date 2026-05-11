@@ -2090,6 +2090,62 @@ describe("cli program", () => {
     }
   });
 
+  it("muse remind history --local renders newest-first with status icons and route", async () => {
+    const { appendReminderHistory } = await import("@muse/mcp");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-remind-hist-"));
+    const historyFile = path.join(root, "history.json");
+    const prev = process.env.MUSE_REMINDER_HISTORY_FILE;
+    process.env.MUSE_REMINDER_HISTORY_FILE = historyFile;
+    try {
+      await appendReminderHistory(historyFile, {
+        destination: "@me",
+        firedAtIso: "2026-05-11T08:00:00.000Z",
+        providerId: "telegram",
+        reminderId: "rem_ok",
+        status: "delivered",
+        text: "morning brief"
+      });
+      await appendReminderHistory(historyFile, {
+        destination: "C123",
+        error: "channel_not_found",
+        firedAtIso: "2026-05-11T09:30:00.000Z",
+        providerId: "slack",
+        reminderId: "rem_bad",
+        status: "failed",
+        text: "deploy alert"
+      });
+
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("fetch in --local"); } });
+      await program.parseAsync(
+        ["node", "muse", "remind", "history", "--local", "--json"],
+        { from: "node" }
+      );
+      const json = JSON.parse(output.join("")) as { entries: Array<{ reminderId: string; status: string }>; total: number };
+      expect(json.total).toBe(2);
+      expect(json.entries.map((e) => e.reminderId)).toEqual(["rem_bad", "rem_ok"]);
+
+      const { io: io2, output: output2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("fetch in --local"); } });
+      await program2.parseAsync(
+        ["node", "muse", "remind", "history", "--local"],
+        { from: "node" }
+      );
+      const text = output2.join("");
+      expect(text).toContain("✓");
+      expect(text).toContain("✗");
+      expect(text).toContain("telegram→@me");
+      expect(text).toContain("slack→C123");
+      expect(text).toContain("channel_not_found");
+    } finally {
+      if (prev === undefined) {
+        delete process.env.MUSE_REMINDER_HISTORY_FILE;
+      } else {
+        process.env.MUSE_REMINDER_HISTORY_FILE = prev;
+      }
+    }
+  });
+
   it("muse remind run delivers only due reminders via the messaging provider then fires them", async () => {
     const fsp = await import("node:fs/promises");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-remind-run-"));

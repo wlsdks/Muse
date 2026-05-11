@@ -17,17 +17,19 @@
 
 import { randomUUID } from "node:crypto";
 
-import { buildMessagingRegistry, resolveRemindersFile } from "@muse/autoconfigure";
+import { buildMessagingRegistry, resolveReminderHistoryFile, resolveRemindersFile } from "@muse/autoconfigure";
 import {
   filterReminders,
   fireReminder,
   parseReminderDueAt,
+  readReminderHistory,
   readReminders,
   readReminderStatusFilter,
   runDueReminders,
   serializeReminder,
   writeReminders,
-  type PersistedReminder
+  type PersistedReminder,
+  type ReminderHistoryEntry
 } from "@muse/mcp";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import type { Command } from "commander";
@@ -360,6 +362,29 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
     });
 
   remind
+    .command("history")
+    .description("Audit recent reminder firings (newest first). Each entry: status, provider→destination, time, error (if any)")
+    .option("--limit <n>", "Max entries to return (default 20, cap 500)", "20")
+    .option("--local", "Read directly from the local history file instead of the API")
+    .option("--json", "Print the raw response instead of the formatted list")
+    .action(async (options: { readonly limit: string; readonly local?: boolean; readonly json?: boolean }, command) => {
+      const limit = parseLimitOrDefault(options.limit);
+      let payload: { entries: readonly ReminderHistoryEntry[]; total: number };
+      if (options.local) {
+        const file = resolveReminderHistoryFile(process.env as Record<string, string | undefined>);
+        const entries = await readReminderHistory(file, limit);
+        payload = { entries, total: entries.length };
+      } else {
+        payload = (await helpers.apiRequest(io, command, `/api/reminders/history?limit=${limit.toString()}`)) as typeof payload;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, payload);
+        return;
+      }
+      io.stdout(formatReminderHistory(payload));
+    });
+
+  remind
     .command("clear")
     .description("Remove a reminder")
     .argument("<id>", "Reminder id")
@@ -400,4 +425,29 @@ function shortDateTime(iso: string): string {
     return iso;
   }
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+}
+
+function parseLimitOrDefault(raw: string | undefined): number {
+  const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 20;
+  }
+  return Math.min(500, parsed);
+}
+
+function formatReminderHistory(payload: {
+  entries: readonly ReminderHistoryEntry[];
+  total: number;
+}): string {
+  if (payload.entries.length === 0) {
+    return "Reminder history: (none)\n";
+  }
+  const lines = payload.entries.map((entry) => {
+    const mark = entry.status === "delivered" ? "✓" : "✗";
+    const when = shortDateTime(entry.firedAtIso);
+    const route = `${entry.providerId}→${entry.destination}`;
+    const trail = entry.error ? `  ! ${entry.error}` : "";
+    return `  ${mark} ${when}  ${route}  ${entry.text}${trail}`;
+  });
+  return `Reminder history (${payload.entries.length.toString()} of ${payload.total.toString()}):\n${lines.join("\n")}\n`;
 }
