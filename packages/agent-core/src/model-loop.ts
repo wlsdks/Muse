@@ -87,6 +87,9 @@ export type ModelLoopStreamEvent =
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "text-delta" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call" }>)
   | { readonly runId: string; readonly toolCall: ModelToolCall; readonly type: "tool-result" }
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call-started" }>)
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call-finished" }>)
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "citations" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "error" }>);
 
 export async function executeModelLoop(
@@ -287,6 +290,11 @@ async function* streamModelTurn(
 
       if (event.type === "tool-call") {
         toolCalls.set(event.toolCall.id, event.toolCall);
+        yield { ...event, runId: context.runId };
+        continue;
+      }
+
+      if (event.type === "tool-call-started" || event.type === "tool-call-finished" || event.type === "citations") {
         yield { ...event, runId: context.runId };
         continue;
       }

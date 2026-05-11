@@ -343,6 +343,9 @@ export type AgentRuntimeStreamEvent =
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "text-delta" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call" }>)
   | { readonly runId: string; readonly toolCall: ModelToolCall; readonly type: "tool-result" }
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call-started" }>)
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "tool-call-finished" }>)
+  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "citations" }>)
   | { readonly plan: readonly PlanStep[]; readonly runId: string; readonly type: "plan-generated" }
   | {
       readonly description: string;
