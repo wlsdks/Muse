@@ -69,9 +69,17 @@ import {
   type ActiveContextProvider,
   type EpisodicRecallProvider,
   type InboxContextProvider,
+  type SkillCatalogEntry,
+  type SkillCatalogProvider,
   type ToolFilter
 } from "@muse/agent-core";
 import type { ConversationSummaryStore, TaskMemoryStore, UserMemoryStore } from "@muse/memory";
+import {
+  FileSystemSkillLoader,
+  InMemorySkillRegistry,
+  type Skill,
+  type SkillRegistry
+} from "@muse/skills";
 
 import type { MuseEnvironment } from "./index.js";
 
@@ -140,6 +148,15 @@ export function resolveSlackAfterFile(env: MuseEnvironment): string {
 
 export function resolveSlackInboxFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_SLACK_INBOX_FILE", "slack-inbox.json");
+}
+
+export function resolveUserSkillsDir(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_SKILLS_DIR", "skills");
+}
+
+export function resolveWorkspaceSkillsDir(env: MuseEnvironment): string | undefined {
+  const override = env.MUSE_WORKSPACE_SKILLS_DIR?.trim();
+  return override && override.length > 0 ? override : undefined;
 }
 
 export function resolveInboxInjectionCursorFile(env: MuseEnvironment, providerId: string): string {
@@ -752,6 +769,67 @@ export function buildToolFilter(env: MuseEnvironment): ToolFilter | undefined {
     return undefined;
   }
   return new DefaultToolFilter();
+}
+
+/**
+ * Build the SKILL.md registry by scanning user + workspace dirs.
+ * Loads asynchronously off the hot path of
+ * `createMuseRuntimeAssembly` — callers `await` the promise once
+ * during boot to pre-warm the registry before serving traffic.
+ *
+ * Roots in low → high precedence:
+ *   1. user dir (`~/.muse/skills/`)
+ *   2. workspace dir (`MUSE_WORKSPACE_SKILLS_DIR`)
+ *
+ * Returns `undefined` when `MUSE_SKILLS_ENABLED=false`.
+ */
+export async function buildSkillRegistry(env: MuseEnvironment): Promise<SkillRegistry | undefined> {
+  if (env.MUSE_SKILLS_ENABLED?.trim().toLowerCase() === "false") {
+    return undefined;
+  }
+  const roots: { path: string; source: "user" | "workspace" }[] = [
+    { path: resolveUserSkillsDir(env), source: "user" }
+  ];
+  const workspace = resolveWorkspaceSkillsDir(env);
+  if (workspace) {
+    roots.push({ path: workspace, source: "workspace" });
+  }
+  const loader = new FileSystemSkillLoader({ roots });
+  const skills = await loader.loadAll();
+  return new InMemorySkillRegistry(skills);
+}
+
+/**
+ * Wrap a `SkillRegistry` (sync) OR a pending `Promise<SkillRegistry>`
+ * (from the async loader) as a `SkillCatalogProvider`. The catalog
+ * provider's `list()` is async-friendly so the autoconfigure caller
+ * can stay synchronous while the disk scan finishes — the first
+ * request just `await`s the registry promise and subsequent calls
+ * are O(1).
+ */
+export function buildSkillCatalogProvider(
+  registryOrPromise: SkillRegistry | Promise<SkillRegistry | undefined> | undefined
+): SkillCatalogProvider | undefined {
+  if (!registryOrPromise) {
+    return undefined;
+  }
+  return {
+    async list(): Promise<readonly SkillCatalogEntry[]> {
+      const registry = await registryOrPromise;
+      return registry ? registry.list().map(toCatalogEntry) : [];
+    }
+  };
+}
+
+function toCatalogEntry(skill: Skill): SkillCatalogEntry {
+  return {
+    ...(skill.frontmatter.emoji ? { emoji: skill.frontmatter.emoji } : {}),
+    description: skill.description,
+    name: skill.name,
+    ...(skill.frontmatter.requires?.bins && skill.frontmatter.requires.bins.length > 0
+      ? { requiresBins: [...skill.frontmatter.requires.bins] }
+      : {})
+  };
 }
 
 function clampPositive(value: string | undefined, fallback: number): number {

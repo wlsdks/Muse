@@ -105,6 +105,9 @@ import {
   createDefaultToolExposurePolicy,
   createMuseTools,
   createRustRunnerTool,
+  createSkillListTool,
+  createSkillReadTool,
+  createSkillRunTool,
   ToolRegistry,
   type MuseTool,
   type ToolExposurePolicy
@@ -132,6 +135,8 @@ import {
   buildInboxContextProvider,
   buildMessagingRegistry,
   buildNotesRegistry,
+  buildSkillCatalogProvider,
+  buildSkillRegistry,
   buildTasksRegistry,
   buildToolFilter,
   buildVoiceRegistry,
@@ -420,6 +425,55 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const remindersFile = resolveRemindersFile(env);
   const remindersLoopbackTools = createLoopbackMcpMuseTools(createRemindersMcpServer({ file: remindersFile }));
   const schedulerHandle: { current: DynamicScheduler | undefined } = { current: undefined };
+
+  // Skills (SKILL.md) registry — async disk scan deferred via
+  // Promise wrap so this assembly stays synchronous. Tools that
+  // need the registry (`muse.skills.*`) read through a small view
+  // that resolves the promise lazily on the first invocation.
+  const skillRegistryPromise = buildSkillRegistry(env);
+  let skillRegistryCache: Awaited<typeof skillRegistryPromise>;
+  const skillRegistryView = {
+    list: () => {
+      if (!skillRegistryCache) return [];
+      return skillRegistryCache.list().map((skill) => ({
+        body: skill.body,
+        description: skill.description,
+        ...(skill.frontmatter.emoji ? { emoji: skill.frontmatter.emoji } : {}),
+        name: skill.name,
+        ...(skill.frontmatter.requires?.anyBins
+          ? { requiresAnyBins: [...skill.frontmatter.requires.anyBins] }
+          : {}),
+        ...(skill.frontmatter.requires?.bins ? { requiresBins: [...skill.frontmatter.requires.bins] } : {})
+      }));
+    },
+    get: (name: string) => {
+      if (!skillRegistryCache) return undefined;
+      const skill = skillRegistryCache.get(name);
+      if (!skill) return undefined;
+      return {
+        body: skill.body,
+        description: skill.description,
+        ...(skill.frontmatter.emoji ? { emoji: skill.frontmatter.emoji } : {}),
+        name: skill.name,
+        ...(skill.frontmatter.requires?.anyBins
+          ? { requiresAnyBins: [...skill.frontmatter.requires.anyBins] }
+          : {}),
+        ...(skill.frontmatter.requires?.bins ? { requiresBins: [...skill.frontmatter.requires.bins] } : {})
+      };
+    }
+  };
+  void skillRegistryPromise.then((registry) => {
+    skillRegistryCache = registry;
+  });
+
+  const skillTools = parseBoolean(env.MUSE_SKILLS_ENABLED, true)
+    ? [
+        createSkillListTool(skillRegistryView),
+        createSkillReadTool(skillRegistryView),
+        createSkillRunTool(skillRegistryView)
+      ]
+    : [];
+
   const toolRegistry = new DynamicToolRegistry([
     () => museTools,
     () => loopbackMcpTools,
@@ -432,6 +486,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => messagingLoopbackTools,
     () => remindersLoopbackTools,
     () => runnerTools,
+    () => skillTools,
     () => mcpManager.toMuseTools(),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
   ]);
@@ -533,7 +588,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       episodicRecallProvider: parseBoolean(env.MUSE_CONVERSATION_SUMMARY_PERSIST, true)
         ? buildEpisodicRecallProvider(env, conversationSummaryStore)
         : undefined,
-      toolFilter: buildToolFilter(env)
+      toolFilter: buildToolFilter(env),
+      skillCatalogProvider: buildSkillCatalogProvider(skillRegistryPromise)
     })
     : undefined;
   const schedulerStore = createSchedulerStore(db, env);
