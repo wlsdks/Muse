@@ -269,7 +269,7 @@ async function renderSetupStatus(): Promise<string> {
 
   lines.push("");
   lines.push("Wizards:");
-  lines.push("  muse setup model       — LLM provider keys (OpenAI / Anthropic / Gemini / OpenRouter / Ollama)");
+  lines.push("  muse setup model       — LLM provider keys (OpenAI / Anthropic / Gemini / OpenRouter / Ollama / Groq / DeepSeek / Together / Mistral / Moonshot)");
   lines.push("  muse setup calendar    — OAuth / CalDAV / macOS calendar credentials");
   lines.push("  muse setup messaging   — Telegram / Discord / Slack / LINE bot tokens");
   lines.push("  muse mcp config-add    — register an external MCP server");
