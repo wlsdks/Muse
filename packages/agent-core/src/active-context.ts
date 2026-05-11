@@ -35,6 +35,13 @@ export interface CalendarEventHint {
   readonly location?: string;
 }
 
+export interface ReminderHint {
+  /** Free-form reminder text the operator authored. */
+  readonly text: string;
+  /** ISO timestamp when the reminder is/was due. */
+  readonly dueIso: string;
+}
+
 export interface ActiveContextSnapshot {
   readonly nowIso: string;
   readonly weekday: string;
@@ -51,6 +58,14 @@ export interface ActiveContextSnapshot {
    * decides ordering — typically chronological by `startIso`.
    */
   readonly todaysEvents?: readonly CalendarEventHint[];
+  /**
+   * Iter 41: pending reminders due within the next ~2 hours (or
+   * already overdue but still un-fired). Surfaced so the agent can
+   * say "you asked me to remind you about X at 3pm — it's 2:55"
+   * without first calling `muse.reminders.list`. JARVIS-class
+   * proactive nudge surface.
+   */
+  readonly reminders?: readonly ReminderHint[];
 }
 
 export interface ActiveContextResolveOptions {
@@ -76,11 +91,18 @@ export interface CalendarEventsResolver {
   ): Promise<readonly CalendarEventHint[] | undefined> | readonly CalendarEventHint[] | undefined;
 }
 
+export interface RemindersResolver {
+  resolve(
+    options: { readonly nowIso: string; readonly userId?: string }
+  ): Promise<readonly ReminderHint[] | undefined> | readonly ReminderHint[] | undefined;
+}
+
 export interface DefaultActiveContextProviderOptions {
   readonly now?: () => Date;
   readonly userMemoryProvider?: UserMemoryProvider;
   readonly activeTaskResolver?: ActiveTaskResolver;
   readonly calendarEventsResolver?: CalendarEventsResolver;
+  readonly remindersResolver?: RemindersResolver;
   readonly defaultTimezone?: string;
 }
 
@@ -89,6 +111,7 @@ export class DefaultActiveContextProvider implements ActiveContextProvider {
   private readonly userMemoryProvider?: UserMemoryProvider;
   private readonly activeTaskResolver?: ActiveTaskResolver;
   private readonly calendarEventsResolver?: CalendarEventsResolver;
+  private readonly remindersResolver?: RemindersResolver;
   private readonly defaultTimezone?: string;
 
   constructor(options: DefaultActiveContextProviderOptions = {}) {
@@ -96,6 +119,7 @@ export class DefaultActiveContextProvider implements ActiveContextProvider {
     this.userMemoryProvider = options.userMemoryProvider;
     this.activeTaskResolver = options.activeTaskResolver;
     this.calendarEventsResolver = options.calendarEventsResolver;
+    this.remindersResolver = options.remindersResolver;
     this.defaultTimezone = options.defaultTimezone;
   }
 
@@ -156,12 +180,24 @@ export class DefaultActiveContextProvider implements ActiveContextProvider {
         todaysEvents = undefined;
       }
     }
+    let reminders: readonly ReminderHint[] | undefined;
+    if (this.remindersResolver) {
+      try {
+        reminders = (await this.remindersResolver.resolve({
+          nowIso: formatted.iso,
+          userId
+        })) ?? undefined;
+      } catch {
+        reminders = undefined;
+      }
+    }
     return {
       activeTask,
       currentFocus,
       isWorkingHours: workingHours ? isWorkingHours(now, workingHours, formatted.timezone) : undefined,
       localHour: formatted.localHour,
       nowIso: formatted.iso,
+      reminders,
       timezone: formatted.timezone,
       todaysEvents,
       weekday: formatted.weekday,
@@ -225,45 +261,74 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     //      30-min grace window so a meeting that just wrapped is
     //      still the freshest context.
     const filteredEvents = filterAndSortTodayEvents(snapshot.todaysEvents, snapshot.nowIso);
-    if (filteredEvents.length === 0) {
-      // All events filtered out (all ended hours ago) — skip the
-      // whole block rather than render an empty header.
-      return lines.join("\n");
+    // Iter 41: promote the most-imminent event (happening now, or
+    // starting within 30 minutes) to a `next_up:` line BEFORE the
+    // chronological list. JARVIS-class "heads up" affordance — the
+    // agent shouldn't have to scan the whole timeline to know
+    // "you have a meeting in 10 minutes". The event also still
+    // appears in `today_events:` (redundancy is feature: the agent
+    // can cross-reference end-time, location, etc).
+    const imminent = findImminentEvent(filteredEvents, snapshot.nowIso);
+    if (imminent) {
+      const annotation = eventTimeAnnotation(snapshot.nowIso, imminent) ?? "soon";
+      const title = sanitizeInline(imminent.title);
+      const locationPart = imminent.location ? ` @ ${sanitizeInline(imminent.location)}` : "";
+      lines.push(`next_up: [${annotation}] ${title}${locationPart}`);
     }
-    lines.push("today_events:");
-    for (const event of filteredEvents.slice(0, 8)) {
-      // Same defensive Round 3 pattern iter 22 used for `dueIso` and
-      // iter 33 for inbox `receivedAtIso`. `startIso` / `endIso` are
-      // typed `string` and supposed to come from `Date.toISOString()`
-      // but `CalendarEventsResolver` is a third-party-pluggable
-      // interface — a buggy adapter (or a malicious event source
-      // upstream of the calendar API) could land a newline-bearing
-      // string there, splicing a fake `[System Override]` section
-      // header into `[Active Context]`. Inline-sanitise both before
-      // they touch the rendered line.
-      const startIsoSafe = sanitizeInline(event.startIso);
-      const endIsoSafe = event.endIso ? sanitizeInline(event.endIso) : undefined;
-      const timePart = event.allDay
-        ? "(all day)"
-        : endIsoSafe
-          ? `${startIsoSafe} → ${endIsoSafe}`
-          : startIsoSafe;
-      // Humanize the start time relative to now ("in 30 min" / "now"
-      // / "2h ago") so the agent answers "next meeting?" without
-      // doing ISO date arithmetic. Past-ended events get a clear
-      // `ended` marker so they're not mistaken for upcoming.
-      const annotation = event.allDay
-        ? undefined
-        : eventTimeAnnotation(snapshot.nowIso, event);
-      const annotationPart = annotation ? ` [${annotation}]` : "";
-      // External calendars (Google Calendar, iCloud, etc.) supply
-      // `title` and `location`. An attacker who can create a
-      // calendar event in the user's account could embed
-      // `\n[System Override]\n…` in either field — the title is
-      // entirely free-form. Inline sanitise both.
-      const eventTitle = sanitizeInline(event.title);
-      const locationPart = event.location ? ` @ ${sanitizeInline(event.location)}` : "";
-      lines.push(`  · ${timePart}${annotationPart} ${eventTitle}${locationPart}`);
+    if (filteredEvents.length > 0) {
+      lines.push("today_events:");
+      for (const event of filteredEvents.slice(0, 8)) {
+        // Same defensive Round 3 pattern iter 22 used for `dueIso` and
+        // iter 33 for inbox `receivedAtIso`. `startIso` / `endIso` are
+        // typed `string` and supposed to come from `Date.toISOString()`
+        // but `CalendarEventsResolver` is a third-party-pluggable
+        // interface — a buggy adapter (or a malicious event source
+        // upstream of the calendar API) could land a newline-bearing
+        // string there, splicing a fake `[System Override]` section
+        // header into `[Active Context]`. Inline-sanitise both before
+        // they touch the rendered line.
+        const startIsoSafe = sanitizeInline(event.startIso);
+        const endIsoSafe = event.endIso ? sanitizeInline(event.endIso) : undefined;
+        const timePart = event.allDay
+          ? "(all day)"
+          : endIsoSafe
+            ? `${startIsoSafe} → ${endIsoSafe}`
+            : startIsoSafe;
+        // Humanize the start time relative to now ("in 30 min" / "now"
+        // / "2h ago") so the agent answers "next meeting?" without
+        // doing ISO date arithmetic. Past-ended events get a clear
+        // `ended` marker so they're not mistaken for upcoming.
+        const annotation = event.allDay
+          ? undefined
+          : eventTimeAnnotation(snapshot.nowIso, event);
+        const annotationPart = annotation ? ` [${annotation}]` : "";
+        // External calendars (Google Calendar, iCloud, etc.) supply
+        // `title` and `location`. An attacker who can create a
+        // calendar event in the user's account could embed
+        // `\n[System Override]\n…` in either field — the title is
+        // entirely free-form. Inline sanitise both.
+        const eventTitle = sanitizeInline(event.title);
+        const locationPart = event.location ? ` @ ${sanitizeInline(event.location)}` : "";
+        lines.push(`  · ${timePart}${annotationPart} ${eventTitle}${locationPart}`);
+      }
+    }
+  }
+  // Iter 41: pending reminders surfaced inline. Already-overdue or
+  // due within the next ~2h. Filtered + sorted here so a buggy
+  // resolver can't blow the prompt with stale or random-order data.
+  // Same Round 3 sanitisation seam (text + dueIso) the other blocks
+  // already use.
+  if (snapshot.reminders && snapshot.reminders.length > 0) {
+    const filteredReminders = filterAndSortReminders(snapshot.reminders, snapshot.nowIso);
+    if (filteredReminders.length > 0) {
+      lines.push("reminders:");
+      for (const reminder of filteredReminders.slice(0, 8)) {
+        const dueIsoSafe = sanitizeInline(reminder.dueIso);
+        const relative = humanizeRelativeFromIso(snapshot.nowIso, dueIsoSafe);
+        const annotation = relative ? `[${relative}] ` : "";
+        const text = sanitizeInline(reminder.text);
+        lines.push(`  · ${annotation}due=${dueIsoSafe} — ${text}`);
+      }
     }
   }
   return lines.join("\n");
@@ -274,6 +339,79 @@ function sanitizeInline(value: string): string {
 }
 
 const ENDED_EVENT_GRACE_MS = 30 * 60 * 1_000;
+const IMMINENT_EVENT_WINDOW_MS = 30 * 60 * 1_000;
+const REMINDER_WINDOW_MS = 2 * 60 * 60 * 1_000;
+
+/**
+ * Iter 41 — JARVIS-class "heads up" promotion. Returns the event
+ * the operator most needs to know about RIGHT NOW: a currently-
+ * happening event if any, otherwise the next event starting within
+ * `IMMINENT_EVENT_WINDOW_MS` (30 minutes). Returns undefined when
+ * nothing is in the window — the renderer skips the `next_up:` line.
+ * All-day events are excluded (they're not "imminent" in the same
+ * sense — they don't have a specific start moment to nudge about).
+ */
+function findImminentEvent(
+  events: readonly CalendarEventHint[],
+  nowIso: string
+): CalendarEventHint | undefined {
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(nowMs)) {
+    return undefined;
+  }
+  for (const event of events) {
+    if (event.allDay) {
+      continue;
+    }
+    const startMs = Date.parse(event.startIso);
+    if (!Number.isFinite(startMs)) {
+      continue;
+    }
+    const endMs = event.endIso ? Date.parse(event.endIso) : Number.NaN;
+    const happeningNow = startMs <= nowMs && (Number.isFinite(endMs) ? endMs >= nowMs : true);
+    if (happeningNow) {
+      return event;
+    }
+    if (startMs > nowMs && startMs - nowMs <= IMMINENT_EVENT_WINDOW_MS) {
+      return event;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Iter 41 — filter+sort reminders for `[Active Context]`. Keep
+ * pending reminders that are overdue or due within
+ * `REMINDER_WINDOW_MS` (2 hours). Sort by dueIso ascending so the
+ * most-imminent surfaces first. Same defensive shape as
+ * `filterAndSortTodayEvents`.
+ */
+function filterAndSortReminders(
+  reminders: readonly ReminderHint[],
+  nowIso: string
+): readonly ReminderHint[] {
+  const nowMs = Date.parse(nowIso);
+  const sorted = [...reminders].sort((a, b) => {
+    const aMs = Date.parse(a.dueIso);
+    const bMs = Date.parse(b.dueIso);
+    if (Number.isFinite(aMs) && Number.isFinite(bMs)) {
+      return aMs - bMs;
+    }
+    return a.dueIso.localeCompare(b.dueIso);
+  });
+  if (!Number.isFinite(nowMs)) {
+    return sorted;
+  }
+  const horizonMs = nowMs + REMINDER_WINDOW_MS;
+  return sorted.filter((reminder) => {
+    const dueMs = Date.parse(reminder.dueIso);
+    if (!Number.isFinite(dueMs)) {
+      return true;
+    }
+    // Keep overdue (dueMs <= now) AND due within window.
+    return dueMs <= horizonMs;
+  });
+}
 
 /**
  * Defensive transform applied at the render boundary so the

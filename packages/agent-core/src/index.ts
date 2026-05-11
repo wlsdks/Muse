@@ -160,7 +160,9 @@ export {
   type ActiveTaskResolver,
   type CalendarEventHint,
   type CalendarEventsResolver,
-  type DefaultActiveContextProviderOptions
+  type DefaultActiveContextProviderOptions,
+  type ReminderHint,
+  type RemindersResolver
 } from "./active-context.js";
 export {
   formatCurrentTime,

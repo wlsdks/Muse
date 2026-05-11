@@ -44,6 +44,7 @@ import {
   NotionNotesProvider,
   NotionTasksProvider,
   TasksProviderRegistry,
+  readReminders,
   type NotesProvider,
   type TasksProvider
 } from "@muse/mcp";
@@ -70,6 +71,8 @@ import {
   type ActiveContextProvider,
   type EpisodicRecallProvider,
   type InboxContextProvider,
+  type ReminderHint,
+  type RemindersResolver,
   type SkillCatalogEntry,
   type SkillCatalogProvider,
   type TelemetryAggregator,
@@ -662,10 +665,30 @@ export function buildActiveContextProvider(
         }
       }
     : undefined;
+  // Iter 41: read pending reminders from the local store and feed
+  // them into [Active Context] so the agent can say "you asked me
+  // to remind you about X at 3 — it's 2:55" without an extra tool
+  // call. Opt-out via `MUSE_ACTIVE_CONTEXT_REMINDERS_ENABLED=false`.
+  const remindersResolver: RemindersResolver | undefined =
+    env.MUSE_ACTIVE_CONTEXT_REMINDERS_ENABLED?.trim().toLowerCase() === "false"
+      ? undefined
+      : {
+        async resolve(): Promise<readonly ReminderHint[] | undefined> {
+          try {
+            const reminders = await readReminders(resolveRemindersFile(env));
+            return reminders
+              .filter((reminder) => reminder.status === "pending")
+              .map((reminder) => ({ dueIso: reminder.dueAt, text: reminder.text }));
+          } catch {
+            return undefined;
+          }
+        }
+      };
   return new DefaultActiveContextProvider({
     ...(activeTaskResolver ? { activeTaskResolver } : {}),
     ...(calendarEventsResolver ? { calendarEventsResolver } : {}),
     ...(env.MUSE_DEFAULT_TIMEZONE?.trim() ? { defaultTimezone: env.MUSE_DEFAULT_TIMEZONE.trim() } : {}),
+    ...(remindersResolver ? { remindersResolver } : {}),
     ...(userMemoryStore ? { userMemoryProvider: userMemoryStore } : {})
   });
 }
