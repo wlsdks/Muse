@@ -54,6 +54,73 @@ describe("renderActiveContextSection", () => {
     expect(renderActiveContextSection(undefined)).toBeUndefined();
   });
 
+  it("prefixes [OVERDUE] on the active_task line when dueIso is past nowIso (iter 52)", () => {
+    // fixedNow = 2026-05-11T12:00:00.000Z. Task was due 3h ago.
+    // JARVIS-class: the urgency must be the FIRST thing the agent
+    // reads on this line, not buried in a trailing `(3h ago)`
+    // parenthetical.
+    const rendered = renderActiveContextSection({
+      activeTask: {
+        dueIso: "2026-05-11T09:00:00.000Z",
+        id: "T-42",
+        title: "Ship roadmap doc"
+      },
+      localHour: 12,
+      nowIso: fixedNow.toISOString(),
+      timezone: "UTC",
+      weekday: "Monday"
+    });
+    expect(rendered).toContain("active_task: [OVERDUE] Ship roadmap doc");
+    expect(rendered).toContain("3h ago"); // legacy relative-time annotation stays
+  });
+
+  it("prefixes [DUE SOON] when dueIso is within 30 minutes of nowIso (iter 52)", () => {
+    // fixedNow = 2026-05-11T12:00:00.000Z. Task due 20 min from now.
+    const rendered = renderActiveContextSection({
+      activeTask: {
+        dueIso: "2026-05-11T12:20:00.000Z",
+        id: "T-1",
+        title: "Quick triage"
+      },
+      localHour: 12,
+      nowIso: fixedNow.toISOString(),
+      timezone: "UTC",
+      weekday: "Monday"
+    });
+    expect(rendered).toContain("active_task: [DUE SOON] Quick triage");
+    expect(rendered).toContain("in 20 min");
+  });
+
+  it("adds no urgency prefix when dueIso is comfortably in the future (iter 52)", () => {
+    // Due in 2 hours — out of the 30-min DUE SOON window
+    const rendered = renderActiveContextSection({
+      activeTask: {
+        dueIso: "2026-05-11T14:00:00.000Z",
+        title: "Later task"
+      },
+      localHour: 12,
+      nowIso: fixedNow.toISOString(),
+      timezone: "UTC",
+      weekday: "Monday"
+    });
+    expect(rendered).toContain("active_task: Later task");
+    expect(rendered).not.toContain("[OVERDUE]");
+    expect(rendered).not.toContain("[DUE SOON]");
+  });
+
+  it("adds no urgency prefix when activeTask has no dueIso (iter 52)", () => {
+    const rendered = renderActiveContextSection({
+      activeTask: { title: "Open-ended task" },
+      localHour: 12,
+      nowIso: fixedNow.toISOString(),
+      timezone: "UTC",
+      weekday: "Monday"
+    });
+    expect(rendered).toContain("active_task: Open-ended task");
+    expect(rendered).not.toContain("[OVERDUE]");
+    expect(rendered).not.toContain("[DUE SOON]");
+  });
+
   it("collapses newlines in active task title / id / due / currentFocus (iter 22)", () => {
     const rendered = renderActiveContextSection({
       activeTask: {

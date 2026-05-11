@@ -241,7 +241,19 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
       const relative = humanizeRelativeFromIso(snapshot.nowIso, dueIso);
       taskParts.push(relative ? `due=${dueIso} (${relative})` : `due=${dueIso}`);
     }
-    lines.push(`active_task: ${taskParts.join(" · ")}`);
+    // Iter 52 — explicit urgency marker. The `due=... (3h ago)`
+    // string carries the info but the agent has to PARSE "ago" to
+    // realise the task is past due. A JARVIS-class assistant
+    // signals overdue up-front: front-loaded `[OVERDUE]` /
+    // `[DUE SOON]` prefix so the urgency is the FIRST thing the
+    // model reads on this line.
+    //   - past dueIso         → `[OVERDUE]`
+    //   - within next 30 min  → `[DUE SOON]`
+    //   - otherwise           → no marker (the relative time is
+    //                           informative enough)
+    const urgency = computeTaskUrgency(snapshot.activeTask.dueIso, snapshot.nowIso);
+    const urgencyPrefix = urgency ? `[${urgency}] ` : "";
+    lines.push(`active_task: ${urgencyPrefix}${taskParts.join(" · ")}`);
   }
   if (snapshot.currentFocus) {
     lines.push(`current_focus: ${sanitizeInline(snapshot.currentFocus)}`);
@@ -341,6 +353,36 @@ function sanitizeInline(value: string): string {
 const ENDED_EVENT_GRACE_MS = 30 * 60 * 1_000;
 const IMMINENT_EVENT_WINDOW_MS = 30 * 60 * 1_000;
 const REMINDER_WINDOW_MS = 2 * 60 * 60 * 1_000;
+const TASK_DUE_SOON_WINDOW_MS = 30 * 60 * 1_000;
+
+/**
+ * Iter 52 — explicit task-urgency marker. Returns the string the
+ * renderer prefixes onto the `active_task:` line:
+ *   - `"OVERDUE"`   when `dueIso < nowIso`
+ *   - `"DUE SOON"`  when `dueIso - nowIso <= 30 min`
+ *   - `undefined`   otherwise (no prefix)
+ *
+ * JARVIS-class affordance: signal urgency in the first read
+ * position of the line rather than buried in a `(3h ago)` suffix.
+ * Falls open on unparseable timestamps (no marker).
+ */
+function computeTaskUrgency(dueIso: string | undefined, nowIso: string): "OVERDUE" | "DUE SOON" | undefined {
+  if (!dueIso) {
+    return undefined;
+  }
+  const nowMs = Date.parse(nowIso);
+  const dueMs = Date.parse(dueIso);
+  if (!Number.isFinite(nowMs) || !Number.isFinite(dueMs)) {
+    return undefined;
+  }
+  if (dueMs < nowMs) {
+    return "OVERDUE";
+  }
+  if (dueMs - nowMs <= TASK_DUE_SOON_WINDOW_MS) {
+    return "DUE SOON";
+  }
+  return undefined;
+}
 
 /**
  * Iter 41 — JARVIS-class "heads up" promotion. Returns the event
