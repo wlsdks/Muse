@@ -97,7 +97,13 @@ export function registerSetupCommands(program: Command, io: ProgramIO): void {
   setup
     .command("status", { isDefault: true })
     .description("Print a configuration health-check (model, MCP, calendar, notes, tasks)")
-    .action(async () => {
+    .option("--json", "Emit structured JSON instead of the formatted status report")
+    .action(async (options: { readonly json?: boolean }) => {
+      if (options.json) {
+        const snapshot = await collectSetupStatusJson();
+        io.stdout(`${JSON.stringify(snapshot, null, 2)}\n`);
+        return;
+      }
       io.stdout(await renderSetupStatus());
     });
 
@@ -217,6 +223,101 @@ async function renderSetupStatus(): Promise<string> {
   lines.push("  muse setup messaging   — Telegram / Discord / Slack / LINE bot tokens");
   lines.push("  muse mcp config-add    — register an external MCP server");
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Structured counterpart to `renderSetupStatus`. Reuses the same
+ * data-gathering helpers (no second source of truth) and emits a
+ * JSON-serialisable snapshot for `--json` callers (CI status
+ * checks / web setup panel / scripted onboarding).
+ */
+async function collectSetupStatusJson(): Promise<{
+  readonly model: { readonly status: "ok" | "todo"; readonly muse_model?: string; readonly keysFile: string; readonly providerKeys: readonly string[] };
+  readonly mcp: { readonly status: "ok" | "info"; readonly file: string; readonly externalServerCount: number };
+  readonly calendar: {
+    readonly local: { readonly status: "ok" | "info"; readonly file: string; readonly bytes?: number };
+    readonly credentials: { readonly status: "ok" | "info"; readonly file: string };
+  };
+  readonly notes: { readonly status: "ok" | "info"; readonly dir: string; readonly fileCount?: number };
+  readonly tasks: { readonly status: "ok" | "info"; readonly file: string; readonly entryCount?: number };
+  readonly voice: { readonly status: "ok" | "info"; readonly source: "openai_api_key" | "muse_voice_openai_api_key" | "none" };
+  readonly messaging: { readonly status: "ok" | "info"; readonly providers: readonly string[] };
+}> {
+  const env = mergeModelKeysFromFile(process.env as Record<string, string | undefined>);
+  const home = homedir();
+
+  const modelKeysFile = env.MUSE_MODEL_KEYS_FILE?.trim() && env.MUSE_MODEL_KEYS_FILE.trim().length > 0
+    ? env.MUSE_MODEL_KEYS_FILE.trim()
+    : pathJoin(home, ".muse", "models.json");
+  const providerKeys = await readModelKeyState(modelKeysFile, env);
+  const museModel = env.MUSE_MODEL?.trim() ?? "";
+
+  const mcpFile = env.MUSE_MCP_CONFIG?.trim() && env.MUSE_MCP_CONFIG.trim().length > 0
+    ? env.MUSE_MCP_CONFIG.trim()
+    : pathJoin(home, ".muse", "mcp.json");
+  const mcpCount = await readMcpEntryCount(mcpFile);
+
+  const calendarFile = resolveLocalCalendarFile(env);
+  const calendarBytes = await statBytes(calendarFile);
+  const credentialsFile = pathJoin(home, ".muse", "credentials.json");
+  const credentialsBytes = await statBytes(credentialsFile);
+
+  const notesDir = resolveNotesDir(env);
+  const notesCount = await countNotes(notesDir);
+  const tasksFile = resolveTasksFile(env);
+  const tasksCount = await readTaskCount(tasksFile);
+
+  const voiceFromBase = Boolean(env.OPENAI_API_KEY?.trim());
+  const voiceFromMuse = Boolean(env.MUSE_VOICE_OPENAI_API_KEY?.trim());
+  const voiceSource: "openai_api_key" | "muse_voice_openai_api_key" | "none" = voiceFromMuse
+    ? "muse_voice_openai_api_key"
+    : voiceFromBase ? "openai_api_key" : "none";
+
+  const messagingFile = resolveMessagingCredentialsFile(env);
+  const messagingHits = await readMessagingProviderState(messagingFile, env);
+
+  return {
+    calendar: {
+      credentials: {
+        file: credentialsFile,
+        status: credentialsBytes !== undefined ? "ok" : "info"
+      },
+      local: {
+        file: calendarFile,
+        status: calendarBytes !== undefined ? "ok" : "info",
+        ...(calendarBytes !== undefined ? { bytes: calendarBytes } : {})
+      }
+    },
+    messaging: {
+      providers: messagingHits,
+      status: messagingHits.length > 0 ? "ok" : "info"
+    },
+    mcp: {
+      externalServerCount: mcpCount,
+      file: mcpFile,
+      status: mcpCount > 0 ? "ok" : "info"
+    },
+    model: {
+      keysFile: modelKeysFile,
+      providerKeys,
+      status: museModel.length > 0 || providerKeys.length > 0 ? "ok" : "todo",
+      ...(museModel.length > 0 ? { muse_model: museModel } : {})
+    },
+    notes: {
+      dir: notesDir,
+      status: notesCount !== undefined ? "ok" : "info",
+      ...(notesCount !== undefined ? { fileCount: notesCount } : {})
+    },
+    tasks: {
+      file: tasksFile,
+      status: tasksCount !== undefined ? "ok" : "info",
+      ...(tasksCount !== undefined ? { entryCount: tasksCount } : {})
+    },
+    voice: {
+      source: voiceSource,
+      status: voiceSource === "none" ? "info" : "ok"
+    }
+  };
 }
 
 async function readModelKeyState(

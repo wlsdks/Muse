@@ -2030,6 +2030,78 @@ describe("cli program", () => {
     }
   });
 
+  it("muse setup --json emits a structured snapshot mirroring the text report", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-setup-json-"));
+    const tasksFile = path.join(root, "tasks.json");
+    const notesDir = path.join(root, "notes");
+    const calendarFile = path.join(root, "calendar.json");
+    const mcpFile = path.join(root, "mcp.json");
+    const modelKeysFile = path.join(root, "models.json");
+    const fsp = await import("node:fs/promises");
+    await fsp.writeFile(tasksFile, JSON.stringify({
+      tasks: [{ id: "t1", title: "x", status: "open", createdAt: "2026-01-01T00:00:00Z" }]
+    }), "utf8");
+    await fsp.mkdir(notesDir, { recursive: true });
+    await fsp.writeFile(path.join(notesDir, "hello.md"), "hi", "utf8");
+    await fsp.writeFile(modelKeysFile, JSON.stringify({
+      providers: { openai: { suggestedModel: "openai/gpt-4o-mini", token: "sk-from-file" } },
+      version: 1
+    }), "utf8");
+    const prev = {
+      tasks: process.env.MUSE_TASKS_FILE,
+      notes: process.env.MUSE_NOTES_DIR,
+      cal: process.env.MUSE_CALENDAR_FILE,
+      mcp: process.env.MUSE_MCP_CONFIG,
+      model: process.env.MUSE_MODEL,
+      keys: process.env.MUSE_MODEL_KEYS_FILE,
+      openai: process.env.OPENAI_API_KEY,
+      gemini: process.env.GEMINI_API_KEY
+    };
+    process.env.MUSE_TASKS_FILE = tasksFile;
+    process.env.MUSE_NOTES_DIR = notesDir;
+    process.env.MUSE_CALENDAR_FILE = calendarFile;
+    process.env.MUSE_MCP_CONFIG = mcpFile;
+    process.env.MUSE_MODEL_KEYS_FILE = modelKeysFile;
+    delete process.env.MUSE_MODEL;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("fetch must not be called"); } });
+      await program.parseAsync(["node", "muse", "setup", "--json"], { from: "node" });
+      const snapshot = JSON.parse(output.join("")) as {
+        readonly model: { readonly status: string; readonly muse_model?: string; readonly providerKeys: readonly string[] };
+        readonly tasks: { readonly status: string; readonly entryCount?: number };
+        readonly notes: { readonly status: string; readonly fileCount?: number };
+        readonly voice: { readonly status: string; readonly source: string };
+      };
+      // Model derived from file: openai token + MUSE_MODEL auto-set.
+      expect(snapshot.model.status).toBe("ok");
+      expect(snapshot.model.muse_model).toBe("openai/gpt-4o-mini");
+      // Provider hits come back annotated with their source — "openai (file)"
+      // when the wizard saved them, "openai (env)" if the user exported the
+      // raw env var. Either way the provider id must appear.
+      expect(snapshot.model.providerKeys.some((entry) => entry.startsWith("openai"))).toBe(true);
+      // Seeded fixtures: one task + one note.
+      expect(snapshot.tasks).toMatchObject({ status: "ok", entryCount: 1 });
+      expect(snapshot.notes).toMatchObject({ status: "ok", fileCount: 1 });
+      // Voice resolves via merged env (OPENAI_API_KEY from file).
+      expect(snapshot.voice).toMatchObject({ status: "ok", source: "openai_api_key" });
+    } finally {
+      const restore = (key: keyof typeof prev, envKey: string) => {
+        if (prev[key] === undefined) { delete process.env[envKey]; } else { process.env[envKey] = prev[key]!; }
+      };
+      restore("tasks", "MUSE_TASKS_FILE");
+      restore("notes", "MUSE_NOTES_DIR");
+      restore("cal", "MUSE_CALENDAR_FILE");
+      restore("mcp", "MUSE_MCP_CONFIG");
+      restore("model", "MUSE_MODEL");
+      restore("keys", "MUSE_MODEL_KEYS_FILE");
+      restore("openai", "OPENAI_API_KEY");
+      restore("gemini", "GEMINI_API_KEY");
+    }
+  });
+
   it("muse setup status reflects ~/.muse/models.json autoload (Loop #56 — no shell-rc export required)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-setup-autoload-"));
     const modelKeysFile = path.join(root, "models.json");
