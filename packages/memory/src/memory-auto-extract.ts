@@ -364,18 +364,35 @@ async function persist(
   const vetoSlots = sanitizeSlotArray(payload.vetoes, limits.maxVetoes, limits.maxKey, limits.maxValue);
   const goalSlots = sanitizeSlotArray(payload.goals, limits.maxGoals, limits.maxKey, limits.maxValue);
 
+  // Iter 51 — parallelise the writes. Pre-iter-51 this loop ran 16
+  // sequential `await store.upsertX(...)` calls per turn (5 facts +
+  // 5 prefs + 3 vetoes + 3 goals). For an `InMemoryUserMemoryStore`
+  // that's a fixed cost in microseconds — fine. For a Kysely-backed
+  // `KyselyUserMemoryStore` against Postgres each call is a round
+  // trip; 16 sequential trips at ~10ms each = ~160ms blocking
+  // `afterComplete` on every assistant turn. Parallelising drops
+  // wall-clock to ~one round trip.
+  //
+  // The keys are unique within each list (sanitize dedupes via
+  // Object.entries / id-keyed slots) so there's no within-batch
+  // ordering dependency. Per-write `catch` swallows individual
+  // failures: the surrounding `afterComplete` is already
+  // fail-open, and partial success across 16 writes is preferable
+  // to all-or-nothing on the first failure.
+  const writes: Promise<void>[] = [];
   for (const [key, value] of factEntries) {
-    await store.upsertFact(userId, key, value);
+    writes.push(safeWrite(store.upsertFact(userId, key, value)));
   }
   for (const [key, value] of preferenceEntries) {
-    await store.upsertPreference(userId, key, value);
+    writes.push(safeWrite(store.upsertPreference(userId, key, value)));
   }
   // Typed-slot writes are skipped silently when the store doesn't
   // support upsertUserModelSlot (the optional method introduced in
   // round 164). Round 165 made KyselyUserMemoryStore implement it,
   // and InMemoryUserMemoryStore did so in round 164 — so this
   // branch only no-ops for third-party UserMemoryStore impls.
-  if (typeof store.upsertUserModelSlot === "function") {
+  const upsertSlot = store.upsertUserModelSlot?.bind(store);
+  if (upsertSlot) {
     const now = new Date();
     for (const slot of vetoSlots) {
       const veto: UserVetoSlot = {
@@ -385,7 +402,7 @@ async function persist(
         value: slot.value,
         ...(slot.scope ? { scope: slot.scope } : {})
       };
-      await store.upsertUserModelSlot(userId, veto);
+      writes.push(safeWrite(upsertSlot(userId, veto)));
     }
     for (const slot of goalSlots) {
       const goal: UserGoalSlot = {
@@ -394,8 +411,28 @@ async function persist(
         updatedAt: now,
         value: slot.value
       };
-      await store.upsertUserModelSlot(userId, goal);
+      writes.push(safeWrite(upsertSlot(userId, goal)));
     }
+  }
+  await Promise.all(writes);
+}
+
+/**
+ * Per-write catch. The auto-extract hook is fail-open at the
+ * `afterComplete` boundary, so a single store-write failure must
+ * not poison `Promise.all` and abort the other 15 in-flight
+ * writes. Returning `undefined` on rejection lets the parallel
+ * batch settle so every salvageable extraction lands.
+ *
+ * Accepts `Awaitable<T>` (the shape `UserMemoryStore.upsertX`
+ * methods return) — synchronous stores resolve through the
+ * `await` boundary cleanly.
+ */
+async function safeWrite(awaitable: unknown): Promise<void> {
+  try {
+    await awaitable;
+  } catch {
+    // partial failure tolerated
   }
 }
 

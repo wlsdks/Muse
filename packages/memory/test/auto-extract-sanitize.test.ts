@@ -123,6 +123,60 @@ describe("auto-extract value sanitisation at store boundary (iter 20)", () => {
     expect(stored?.value).not.toContain("\n");
   });
 
+  it("persists store writes in parallel so DB-backed stores don't serialise every fact (iter 51)", async () => {
+    // Pre-iter-51 `persist()` ran 16 sequential `await store.upsertX`
+    // calls per turn. For a Kysely-backed Postgres store at ~10ms per
+    // round trip that's ~160ms blocking `afterComplete`. After
+    // iter-51 the writes run concurrently and total wall-clock time
+    // is bounded by the SLOWEST write, not the sum.
+    //
+    // Stub a store where each write awaits 50ms before resolving.
+    // With 6 writes (3 facts + 3 prefs) the sequential total would
+    // be ≥300ms; in parallel it should land ~50-100ms (one batch
+    // round-trip + scheduling jitter).
+    const WRITE_DELAY_MS = 50;
+    const writeCalls: { readonly kind: string; readonly key: string }[] = [];
+    const slowStore = {
+      async findByUserId() { return undefined; },
+      async upsertFact(_userId: string, key: string) {
+        await new Promise<void>((resolve) => setTimeout(resolve, WRITE_DELAY_MS));
+        writeCalls.push({ kind: "fact", key });
+      },
+      async upsertPreference(_userId: string, key: string) {
+        await new Promise<void>((resolve) => setTimeout(resolve, WRITE_DELAY_MS));
+        writeCalls.push({ kind: "pref", key });
+      }
+    } as unknown as InstanceType<typeof InMemoryUserMemoryStore>;
+
+    const hook = createUserMemoryAutoExtractHook({
+      model: "diagnostic/smoke",
+      modelProvider: makeFakeProvider(
+        JSON.stringify({
+          facts: { f1: "v1", f2: "v2", f3: "v3" },
+          goals: [],
+          preferences: { p1: "v1", p2: "v2", p3: "v3" },
+          vetoes: []
+        })
+      ),
+      store: slowStore
+    });
+
+    const started = Date.now();
+    await hook.afterComplete!(
+      {
+        input: { messages: [{ content: "hi", role: "user" }], metadata: { userId: "stark" } },
+        runId: "r-1"
+      },
+      { id: "r-1", model: "diagnostic/smoke", output: "noted." }
+    );
+    const elapsed = Date.now() - started;
+    // Sequential lower bound would be 6 × 50 = 300ms. Parallel should
+    // be well under that — generous 200ms cap so CI scheduling
+    // jitter doesn't flake.
+    expect(elapsed).toBeLessThan(200);
+    expect(writeCalls).toHaveLength(6);
+  });
+
   it("times out a hung extraction call within the configured budget (iter 42)", async () => {
     // A misbehaving extractor model that never resolves would
     // otherwise hang the `afterComplete` chain forever, blocking
