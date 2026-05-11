@@ -13,6 +13,15 @@ export interface MuseToolDefinition {
   readonly dependsOn?: readonly string[];
   readonly keywords?: readonly string[];
   readonly scopes?: readonly ToolExposureScope[];
+  /**
+   * Context Engineering Phase 4: feature domain tag used by
+   * `DefaultToolFilter` to filter the tool catalog by user-prompt
+   * keywords. Suggested values:
+   *   "messaging" | "calendar" | "tasks" | "notes" | "system" | "core"
+   * "core" tools are always advertised. Untagged tools fall back to
+   * the prefix-based heuristic in `inferDomain`.
+   */
+  readonly domain?: string;
 }
 
 export interface MuseToolContext {

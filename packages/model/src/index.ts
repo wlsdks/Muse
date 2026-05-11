@@ -41,6 +41,24 @@ export interface ModelCapabilities {
   readonly local: boolean;
   readonly cost: "free" | "low" | "medium" | "high" | "unknown";
   readonly latencyProfile: "interactive" | "balanced" | "batch" | "unknown";
+  /**
+   * Context Engineering Phase 3: when true, the provider implements
+   * `embed()` and at least one model from `listModels()` is an
+   * embedding model. Optional + default false so legacy adapters that
+   * predate the embed contract stay valid.
+   */
+  readonly embeddings?: boolean;
+}
+
+export interface EmbeddingRequest {
+  readonly model: string;
+  readonly input: readonly string[];
+}
+
+export interface EmbeddingResponse {
+  readonly model: string;
+  readonly vectors: readonly (readonly number[])[];
+  readonly usage?: { readonly inputTokens?: number };
 }
 
 export interface ModelInfo {
@@ -99,6 +117,13 @@ export interface ModelProvider {
   listModels(): Promise<readonly ModelInfo[]>;
   generate(request: ModelRequest): Promise<ModelResponse>;
   stream(request: ModelRequest): AsyncIterable<ModelEvent>;
+  /**
+   * Context Engineering Phase 3: optional embedding endpoint. When
+   * present, callers can use it for episodic-recall vector search.
+   * Providers that do not implement embeddings simply omit this
+   * method (default false in `ModelCapabilities.embeddings`).
+   */
+  embed?(request: EmbeddingRequest): Promise<EmbeddingResponse>;
 }
 
 export interface OpenAICompatibleProviderOptions {
@@ -244,6 +269,37 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
 
     yield* parseOpenAIStream(this.id, request.model, response.body);
+  }
+
+  async embed(request: EmbeddingRequest): Promise<EmbeddingResponse> {
+    const inputs = request.input.length === 0 ? [""] : request.input;
+    const response = await this.fetchImpl(`${this.baseUrl}/embeddings`, {
+      body: JSON.stringify({ input: inputs, model: request.model }),
+      headers: this.requestHeaders(),
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new ModelProviderError(
+        this.id,
+        `OpenAI-compatible embeddings failed with ${response.status}: ${body || response.statusText}`,
+        response.status >= 500
+      );
+    }
+
+    const payload = await response.json() as {
+      readonly data?: ReadonlyArray<{ readonly embedding?: readonly number[]; readonly index?: number }>;
+      readonly model?: string;
+      readonly usage?: { readonly prompt_tokens?: number; readonly total_tokens?: number };
+    };
+    const sorted = [...(payload.data ?? [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    const vectors = sorted.map((entry) => entry.embedding ?? []);
+    return {
+      model: payload.model ?? request.model,
+      usage: payload.usage ? { inputTokens: payload.usage.prompt_tokens } : undefined,
+      vectors
+    };
   }
 
   private requestHeaders(): Record<string, string> {

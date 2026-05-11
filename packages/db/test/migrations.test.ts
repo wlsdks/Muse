@@ -3,7 +3,7 @@ import { migrationNames, migrations } from "../src/index.js";
 
 describe("db migrations", () => {
   it("keeps migration names stable and sorted", () => {
-    expect(migrationNames()).toEqual(["0001_runtime_state"]);
+    expect(migrationNames()).toEqual(["0001_runtime_state", "0002_episodic_recall_pgvector"]);
   });
 
   it("creates core runtime state tables", () => {
