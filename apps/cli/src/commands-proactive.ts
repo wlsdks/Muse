@@ -152,12 +152,17 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       "--user <id>",
       "User identity whose persona personalises proactive notices (default $MUSE_USER_ID or $USER)"
     )
+    .option(
+      "--ignore-routine",
+      "Fire notices even outside the user's routine_active_hours window (default: quiet hours suppress notices)"
+    )
     .action(async (options: {
       readonly interval: string;
       readonly leadMinutes: string;
       readonly provider?: string;
       readonly destination?: string;
       readonly user?: string;
+      readonly ignoreRoutine?: boolean;
     }) => {
       const e = env();
       const interval = Math.max(5, Number.parseInt(options.interval, 10) || 60);
@@ -191,6 +196,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       let personaPreamble: string | undefined;
       let agentModel: string | undefined;
       let modelProvider: Parameters<typeof runDueProactiveNotices>[0]["modelProvider"];
+      let activeHourSet: Set<number> | undefined;
       try {
         const { createMuseRuntimeAssembly } = await import("@muse/autoconfigure");
         const assembly = createMuseRuntimeAssembly();
@@ -202,6 +208,25 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
         if (userMemory) {
           const { buildJarvisPersona } = await import("./program.js");
           personaPreamble = buildJarvisPersona(userMemory, userId);
+          // Parse routine_active_hours fact (e.g. "09,14,20") into a
+          // set of "active" hours +/- 1 for the quiet-hours gate.
+          const routineRaw = userMemory.facts?.routine_active_hours;
+          if (routineRaw && typeof routineRaw === "string") {
+            const hours = routineRaw.split(",")
+              .map((h) => Number.parseInt(h.trim(), 10))
+              .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+            if (hours.length > 0) {
+              activeHourSet = new Set();
+              for (const h of hours) {
+                // Active band: ±2 hours so even one-data-point users
+                // get a sensible window. JARVIS doesn't expect Tony
+                // to be precise to the minute.
+                for (let off = -2; off <= 2; off += 1) {
+                  activeHourSet.add((h + off + 24) % 24);
+                }
+              }
+            }
+          }
         }
       } catch { /* fail-open — synthesis falls back to generic */ }
 
@@ -213,6 +238,12 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
         io.stdout(`  persona: ${userId} (Phase D agent synthesis active via ${agentModel})\n`);
       } else if (agentModel && modelProvider) {
         io.stdout(`  persona: (none for user '${userId}' — generic Phase D)\n`);
+      }
+      if (activeHourSet && !options.ignoreRoutine) {
+        const sortedHours = [...activeHourSet].sort((a, b) => a - b);
+        io.stdout(`  quiet-hours: active band = ${sortedHours.map((h) => h.toString().padStart(2, "0")).join(",")}; ticks outside this window will be skipped\n`);
+      } else if (options.ignoreRoutine && activeHourSet) {
+        io.stdout(`  quiet-hours: routine known but --ignore-routine set; firing all hours\n`);
       }
       io.stdout(`  (Ctrl-C to stop)\n\n`);
 
@@ -228,6 +259,16 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
 
       while (!stopped) {
         const startedAt = new Date();
+        // Quiet-hours gate: if we know the user's routine and the
+        // current hour isn't in the active band, skip this tick.
+        // JARVIS doesn't wake Tony at 3 AM unless explicitly told.
+        if (activeHourSet && !options.ignoreRoutine && !activeHourSet.has(startedAt.getHours())) {
+          // Quiet — sleep until the next interval. No log spam.
+          if (!stopped) {
+            await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+          }
+          continue;
+        }
         try {
           const summary = await runDueProactiveNotices({
             ...(agentModel ? { agentModel } : {}),
