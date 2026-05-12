@@ -46,6 +46,7 @@ interface AskOptions {
   readonly calendar?: boolean;
   readonly calendarDays?: string;
   readonly reminders?: boolean;
+  readonly json?: boolean;
 }
 
 interface IndexChunk {
@@ -134,6 +135,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--no-reminders",
       "Skip injecting pending reminders as grounding context (default: include pending reminders sorted by due date)"
+    )
+    .option(
+      "--json",
+      "Emit a single JSON object on stdout with {query, model, answer, grounded:{...}} (suppresses streaming)"
     )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const argQuery = queryParts.join(" ").trim();
@@ -383,6 +388,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         io.stderr("(no matching notes, tasks, events, or reminders — answering from persona + general knowledge)\n");
       }
 
+      let collectedAnswer = "";
       for await (const event of assembly.modelProvider.stream({
         messages: [
           { content: systemPrompt, role: "system" },
@@ -391,9 +397,48 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         model
       }) as AsyncIterable<{ type: string; text?: string }>) {
         if (event.type === "text-delta" && typeof event.text === "string") {
-          io.stdout(event.text);
+          collectedAnswer += event.text;
+          if (!options.json) io.stdout(event.text);
         }
       }
-      io.stdout("\n");
+
+      if (options.json) {
+        // Emit a single JSON object on stdout — consumers can pipe
+        // through `jq` to extract the answer, grounded sources, or
+        // both. The grounded banner on stderr already announced what
+        // was injected; the JSON repeats it in structured form so
+        // downstream scripts don't have to parse the banner.
+        const payload = {
+          query,
+          model,
+          answer: collectedAnswer,
+          grounded: {
+            noteChunks: scored.map((r) => ({ file: r.file, score: r.score, text: r.chunk.text })),
+            openTasks: openTasks.map((t) => ({
+              id: t.id,
+              title: t.title,
+              ...(t.dueAt ? { dueAt: t.dueAt } : {}),
+              ...(t.urgent ? { urgent: true } : {})
+            })),
+            upcomingEvents: upcomingEvents.map((e) => ({
+              id: e.id,
+              providerId: e.providerId,
+              title: e.title,
+              startsAt: e.startsAt.toISOString(),
+              endsAt: e.endsAt.toISOString(),
+              allDay: e.allDay,
+              ...(e.location ? { location: e.location } : {})
+            })),
+            pendingReminders: pendingReminders.map((r) => ({
+              id: r.id,
+              text: r.text,
+              dueAt: r.dueAt
+            }))
+          }
+        };
+        io.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+      } else {
+        io.stdout("\n");
+      }
     });
 }
