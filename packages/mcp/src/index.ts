@@ -557,6 +557,7 @@ export {
   type ProactiveAgentRuntimeLike,
   type ProactiveFiredEntry,
   type ProactiveFiredKind,
+  type ProactiveModelProviderLike,
   type RunDueProactiveNoticesOptions,
   type RunDueProactiveNoticesSummary
 } from "./proactive-notice-loop.js";

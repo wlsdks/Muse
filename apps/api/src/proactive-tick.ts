@@ -19,7 +19,8 @@ import { dirname } from "node:path";
 import {
   runDueProactiveNotices,
   type ProactiveActivitySource,
-  type ProactiveAgentRuntimeLike
+  type ProactiveAgentRuntimeLike,
+  type ProactiveModelProviderLike
 } from "@muse/mcp";
 import type { CalendarProviderRegistry } from "@muse/calendar";
 import type { MessagingProviderRegistry } from "@muse/messaging";
@@ -44,9 +45,12 @@ export interface ProactiveTickOptions {
   readonly logger?: (message: string) => void;
   readonly errorLogger?: (message: string) => void;
   /**
-   * Phase D — agent-initiated turn. Pass all three to enable
+   * Phase D — agent-initiated turn. Pass `modelProvider` (preferred,
+   * raw text gen without tool registry) OR `agentRuntime` (legacy,
+   * full agent pipeline) along with `agentModel` to enable
    * LLM-composed heads-ups when the user has recent chat activity.
    */
+  readonly modelProvider?: ProactiveModelProviderLike;
   readonly agentRuntime?: ProactiveAgentRuntimeLike;
   readonly agentModel?: string;
   readonly activitySource?: ProactiveActivitySource;
@@ -98,6 +102,7 @@ export function startProactiveTick(options: ProactiveTickOptions): ProactiveTick
         ...(options.activeSessionWindowMs !== undefined ? { activeSessionWindowMs: options.activeSessionWindowMs } : {}),
         ...(options.activitySource ? { activitySource: options.activitySource } : {}),
         ...(options.agentModel ? { agentModel: options.agentModel } : {}),
+        ...(options.modelProvider ? { modelProvider: options.modelProvider } : {}),
         ...(options.agentRuntime ? { agentRuntime: options.agentRuntime } : {}),
         ...(options.calendarRegistry ? { calendarRegistry: options.calendarRegistry } : {}),
         destination: options.destination,

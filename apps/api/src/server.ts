@@ -486,7 +486,15 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     const proactiveHandle = startProactiveTick({
       ...(phaseDProactiveOn && sharedActivityTracker ? { activitySource: sharedActivityTracker } : {}),
       ...(phaseDProactiveOn && options.defaultModel ? { agentModel: options.defaultModel } : {}),
-      ...(phaseDProactiveOn && options.agentRuntime ? { agentRuntime: options.agentRuntime } : {}),
+      // Prefer modelProvider: synthesis is one-shot text gen and the
+      // agent runtime's tool registry trips up ≤ 3B local models
+      // into emitting tool-call JSON. Fall back to agentRuntime when
+      // no provider is available (legacy path).
+      ...(phaseDProactiveOn && options.modelProvider
+        ? { modelProvider: options.modelProvider }
+        : phaseDProactiveOn && options.agentRuntime
+          ? { agentRuntime: options.agentRuntime }
+          : {}),
       ...(phaseDWindowRaw !== undefined ? { activeSessionWindowMs: phaseDWindowRaw } : {}),
       ...(options.proactiveHistoryFile ? { historyFile: options.proactiveHistoryFile } : {}),
       ...(proactiveCalendar ? { calendarRegistry: proactiveCalendar } : {}),

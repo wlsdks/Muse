@@ -128,12 +128,37 @@ export interface ProactiveActivitySource {
  * to dodge the circular path that auto-extract had to dodge too).
  * Consumers (apps/api) pass the real AgentRuntime — TS structural
  * typing makes that work without a runtime type tag.
+ *
+ * @deprecated Phase D synthesis is one-shot text generation; the
+ * tool registry the AgentRuntime wires in causes small models
+ * (≤ 3B params) to emit raw `tool_calls` JSON instead of prose.
+ * Prefer `ProactiveModelProviderLike` (set `modelProvider` in
+ * the options).
  */
 export interface ProactiveAgentRuntimeLike {
   run(input: {
     readonly model: string;
     readonly messages: readonly { readonly role: "system" | "user" | "assistant"; readonly content: string }[];
   }): Promise<{ readonly response: { readonly output: string } }>;
+}
+
+/**
+ * Structural duck-type of `@muse/model`'s `ModelProvider.generate`.
+ * Phase D synthesis only needs raw text generation — no tools, no
+ * agent loop. Calling `generate({ tools: undefined })` keeps the
+ * model from seeing the (otherwise distracting) `muse.tasks.*` /
+ * `muse.calendar.*` registry and emitting tool-call JSON instead
+ * of plain prose. Discovered via local-LLM dogfood with qwen2.5
+ * 1.5B; cloud models silently accepted the system instruction
+ * but small local models followed the tools instead.
+ */
+export interface ProactiveModelProviderLike {
+  generate(request: {
+    readonly model: string;
+    readonly messages: readonly { readonly role: "system" | "user" | "assistant"; readonly content: string }[];
+    readonly maxOutputTokens?: number;
+    readonly temperature?: number;
+  }): Promise<{ readonly output: string }>;
 }
 
 export interface RunDueProactiveNoticesOptions {
@@ -160,13 +185,18 @@ export interface RunDueProactiveNoticesOptions {
   /** Injectable clock for tests. Default `() => new Date()`. */
   readonly now?: () => Date;
   /**
-   * Phase D — agent-initiated turn. When all three are set AND the
+   * Phase D — agent-initiated turn. When `agentModel` is set AND the
    * activity source reports recent activity (within
-   * `activeSessionWindowMs`), the daemon spawns a one-shot agent run
-   * with a synthesis prompt to compose a JARVIS-style heads-up
-   * instead of the flat "⏰ {title} in {N} min" string. On error /
-   * timeout / missing window, falls back to the flat text.
+   * `activeSessionWindowMs`), the daemon emits a one-shot text
+   * generation with a synthesis prompt to compose a JARVIS-style
+   * heads-up instead of the flat "⏰ {title} in {N} min" string.
+   * On error / timeout / missing window, falls back to the flat text.
+   *
+   * Pass either `modelProvider` (preferred — raw text gen, no tools)
+   * OR `agentRuntime` (legacy — full agent pipeline including tools,
+   * which can cause ≤ 3B local models to emit tool-call JSON).
    */
+  readonly modelProvider?: ProactiveModelProviderLike;
   readonly agentRuntime?: ProactiveAgentRuntimeLike;
   readonly agentModel?: string;
   readonly activitySource?: ProactiveActivitySource;
@@ -396,7 +426,7 @@ function taskFactSheet(task: PersistedTask, dueAt: Date, now: Date): string {
 const DEFAULT_ACTIVE_WINDOW_MS = 5 * 60_000;
 
 function isActiveSessionWindow(now: Date, options: RunDueProactiveNoticesOptions): boolean {
-  if (!options.agentRuntime || !options.agentModel || !options.activitySource) {
+  if ((!options.modelProvider && !options.agentRuntime) || !options.agentModel || !options.activitySource) {
     return false;
   }
   const lastMs = options.activitySource.lastActivityMs();
@@ -424,22 +454,59 @@ async function synthesizeNoticeText(
   item: ImminentItem,
   options: RunDueProactiveNoticesOptions
 ): Promise<string> {
-  if (!options.agentRuntime || !options.agentModel) {
+  if (!options.agentModel) {
     return item.text;
   }
-  const result = await options.agentRuntime.run({
-    messages: [
-      { content: PHASE_D_SYSTEM_PROMPT, role: "system" },
-      { content: item.factSheet, role: "user" }
-    ],
-    model: options.agentModel
-  });
-  const reply = result.response.output.trim();
-  if (reply.length === 0) {
+  const messages = [
+    { content: PHASE_D_SYSTEM_PROMPT, role: "system" as const },
+    { content: item.factSheet, role: "user" as const }
+  ];
+  let reply: string;
+  if (options.modelProvider) {
+    // Preferred path — raw text gen, no tools, no agent loop.
+    const result = await options.modelProvider.generate({
+      maxOutputTokens: 200,
+      messages,
+      model: options.agentModel,
+      temperature: 0.4
+    });
+    reply = result.output.trim();
+  } else if (options.agentRuntime) {
+    const result = await options.agentRuntime.run({ messages, model: options.agentModel });
+    reply = result.response.output.trim();
+  } else {
+    return item.text;
+  }
+  // Defensive: if the model output looks like a tool-call JSON object
+  // (small local models love doing this even when the prompt forbids
+  // it), drop back to the flat text instead of delivering junk.
+  if (reply.length === 0 || looksLikeToolCallJson(reply)) {
     return item.text;
   }
   // Prepend the same emoji the flat path uses so the messaging
   // channel keeps a visual signal.
   const prefix = item.kind === "calendar" ? "⏰" : "📋";
   return reply.startsWith(prefix) ? reply : `${prefix} ${reply}`;
+}
+
+/**
+ * Heuristic: a synthesized notice should be prose, not JSON. The
+ * 1.5B / 3B local models occasionally emit a `{"name":"muse.tasks.add",...}`
+ * payload despite the "plain text only" instruction in the system
+ * prompt. Catch and reject so the messaging channel never receives
+ * a literal tool-call envelope as the user-visible text.
+ */
+function looksLikeToolCallJson(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  // Tolerate a leading emoji + space — that's our own prefix.
+  const stripped = trimmed.replace(/^[^\w{[]+/, "");
+  if (!stripped.startsWith("{") && !stripped.startsWith("[")) return false;
+  try {
+    const parsed = JSON.parse(stripped) as unknown;
+    // Any JSON parse success on a Phase-D reply is a tool-call leak.
+    return parsed !== null && typeof parsed === "object";
+  } catch {
+    return false;
+  }
 }

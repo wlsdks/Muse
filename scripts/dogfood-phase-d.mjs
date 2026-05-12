@@ -25,19 +25,40 @@ const autoconfigure = await import(new URL("./packages/autoconfigure/dist/index.
 const { runDueProactiveNotices } = mcp;
 const { createMuseRuntimeAssembly } = autoconfigure;
 
-function pickProvider() {
+async function pickProvider() {
+  // MUSE_DOGFOOD_MODEL lets you force a specific provider for this
+  // dogfood (useful for "prove local-Ollama also synthesises a
+  // JARVIS-style heads-up", not just cloud). Falls through to the
+  // existing env-key precedence when unset.
+  const forced = (process.env.MUSE_DOGFOOD_MODEL ?? "").trim();
+  if (forced) return forced;
   if (process.env.GEMINI_API_KEY) return "gemini/gemini-2.0-flash";
   if (process.env.OPENAI_API_KEY) return "openai/gpt-4o-mini";
   if (process.env.ANTHROPIC_API_KEY) return "anthropic/claude-haiku-4-5-20251001";
+  // Last resort: probe Ollama. If a model is loaded locally, use the
+  // highest-tier one already on disk.
+  try {
+    const tags = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(1000) });
+    const data = await tags.json();
+    const installed = (data.models ?? []).map((m) => m.name);
+    for (const candidate of ["qwen2.5:7b-instruct", "qwen2.5:3b", "qwen2.5:1.5b-instruct"]) {
+      if (installed.includes(candidate)) return `ollama/${candidate}`;
+    }
+  } catch { /* no ollama */ }
   return null;
 }
 
-const modelId = pickProvider();
+const modelId = await pickProvider();
 if (!modelId) {
-  console.error("No provider key. Set GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY.");
+  console.error("No provider key and no local Ollama model. Set GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY, or pull a model with `ollama pull qwen2.5:1.5b-instruct`.");
   process.exit(2);
 }
 process.env.MUSE_MODEL = modelId;
+// ollama/* needs the explicit provider id so the autoconfigure factory
+// routes to OllamaProvider instead of falling back to OpenAI-compat.
+if (modelId.startsWith("ollama/")) {
+  process.env.MUSE_MODEL_PROVIDER_ID = "ollama";
+}
 console.log(`dogfood:phase-d — using ${modelId}`);
 
 const assembly = createMuseRuntimeAssembly();
@@ -82,11 +103,16 @@ const fakeRegistry = {
 // matches and Phase D synthesis fires.
 const activitySource = { lastActivityMs: () => Date.now() };
 
+// Prefer the raw modelProvider path — synthesis is one-shot text
+// generation, the agent runtime's tool registry causes ≤ 3B local
+// models to emit tool-call JSON instead of prose.
 const summary = await runDueProactiveNotices({
   activeSessionWindowMs: 60_000,
   activitySource,
   agentModel: assembly.defaultModel,
-  agentRuntime: assembly.agentRuntime,
+  ...(assembly.modelProvider
+    ? { modelProvider: assembly.modelProvider }
+    : { agentRuntime: assembly.agentRuntime }),
   destination: "@dogfood",
   historyFile,
   leadMinutes: 10,
@@ -114,6 +140,16 @@ if (delivered === flatExpected) {
 }
 if (!delivered.includes("Q3") && !delivered.toLowerCase().includes("budget") && !delivered.toLowerCase().includes("finance")) {
   console.error(`FAIL — synthesized text doesn't reference the task ('${delivered}').`);
+  failures += 1;
+}
+// Tighter assertion: the delivered text MUST be prose, not a
+// tool-call JSON envelope. Small local models (≤ 3B) leak the
+// muse.tasks.add payload otherwise; the synthesis path now drops
+// back to flat text when this happens.
+const proseStripped = delivered.replace(/^[^\w{[]+/, "");
+const looksLikeJson = proseStripped.startsWith("{") || proseStripped.startsWith("[");
+if (looksLikeJson) {
+  console.error(`FAIL — synthesized text is JSON-shaped, not prose ('${delivered.slice(0, 120)}...').`);
   failures += 1;
 }
 if (delivered.length > 300) {

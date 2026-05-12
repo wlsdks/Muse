@@ -3914,6 +3914,96 @@ describe("runDueProactiveNotices", () => {
     expect(summary.errors.some((e) => e.includes("model timeout"))).toBe(true);
   });
 
+  it("Phase D: prefers modelProvider over agentRuntime when both set", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-phaseD-provider-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+
+    let providerCalled = false;
+    let runtimeCalled = false;
+    const modelProvider = {
+      generate: async (request: { model: string; messages: readonly { role: string; content: string }[] }) => {
+        providerCalled = true;
+        expect(request.model).toBe("local/qwen2.5:7b");
+        return { output: "Standup in 5 — want a quick agenda?" };
+      }
+    };
+    const agentRuntime = {
+      run: async () => {
+        runtimeCalled = true;
+        return { response: { output: "should not run" } };
+      }
+    };
+    const activitySource = { lastActivityMs: () => fixedNow.getTime() - 60_000 };
+
+    const summary = await runDueProactiveNotices({
+      activeSessionWindowMs: 5 * 60_000,
+      activitySource,
+      agentModel: "local/qwen2.5:7b",
+      agentRuntime,
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      modelProvider,
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary).toMatchObject({ fired: 1, errors: [] });
+    expect(providerCalled).toBe(true);
+    expect(runtimeCalled).toBe(false);
+    expect(msg.sent[0]?.text).toBe("⏰ Standup in 5 — want a quick agenda?");
+  });
+
+  it("Phase D: drops back to flat text when synthesis emits tool-call JSON", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-phaseD-jsonleak-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+
+    // Small-model failure mode: instruction-tuned 1.5B sometimes
+    // emits the tool-call payload verbatim instead of prose.
+    const modelProvider = {
+      generate: async () => ({
+        output: '{"name": "muse.calendar.list", "arguments": {"range": "today"}}'
+      })
+    };
+    const activitySource = { lastActivityMs: () => fixedNow.getTime() - 60_000 };
+
+    const summary = await runDueProactiveNotices({
+      activeSessionWindowMs: 5 * 60_000,
+      activitySource,
+      agentModel: "ollama/qwen2.5:1.5b-instruct",
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      modelProvider,
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary).toMatchObject({ fired: 1, errors: [] });
+    // Must NOT deliver the JSON; the safety net should engage.
+    expect(msg.sent[0]?.text).toBe("⏰ Standup in 5 min");
+  });
+
   it("combines calendar + task sources in one run", async () => {
     const { runDueProactiveNotices } = await import("../src/index.js");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
