@@ -290,7 +290,11 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
     .option("--top <k>", `Number of results to return (default ${DEFAULT_TOP_K.toString()})`, DEFAULT_TOP_K.toString())
     .option("--model <tag>", "Embedding model (must match the index)", DEFAULT_EMBED_MODEL)
     .option("--json", "Print JSON instead of formatted text")
-    .action(async (queryParts: readonly string[], options: { readonly top: string; readonly model: string; readonly json?: boolean }) => {
+    .option(
+      "--no-auto-reindex",
+      "Skip the auto-stale check before search (default: reindex incrementally when a note's mtime is newer than the index)"
+    )
+    .action(async (queryParts: readonly string[], options: { readonly top: string; readonly model: string; readonly json?: boolean; readonly autoReindex?: boolean }) => {
       const query = queryParts.join(" ").trim();
       if (query.length === 0) {
         io.stderr("usage: muse notes search <query>\n");
@@ -298,6 +302,33 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
         return;
       }
       const indexPath = defaultIndexPath();
+
+      // Auto-stale check + incremental reindex (default on). Same
+      // JARVIS rule as `muse ask` — semantic search results MUST
+      // reflect the current notes dir, not whatever was indexed
+      // last time. Failures fall through with a notice so search
+      // still works against the stale index.
+      if (options.autoReindex !== false) {
+        try {
+          const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+          const stale = await isNotesIndexStale(notesDir, indexPath);
+          if (stale) {
+            const summary = await reindexNotes({
+              dir: notesDir,
+              indexPath,
+              model: options.model
+            });
+            if (summary.embedded > 0 && !options.json) {
+              io.stderr(`(auto-refreshed notes index: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached)\n`);
+            }
+          }
+        } catch (cause) {
+          if (!options.json) {
+            io.stderr(`(auto-reindex skipped: ${cause instanceof Error ? cause.message : String(cause)})\n`);
+          }
+        }
+      }
+
       const index = await loadIndex(indexPath);
       if (!index) {
         io.stderr(`No index at ${indexPath}. Run 'muse notes reindex' first.\n`);
