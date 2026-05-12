@@ -206,7 +206,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
           : undefined;
 
       const body = options.local
-        ? await runLocalChat(io, message, model, agentMode)
+        ? await runLocalChat(io, message, model, agentMode, { disableTools: toolsDisabled })
         : options.stream
           ? await streamRemoteChat(io, command, message, model, options.json === true, agentMode, options.webSearch === false)
         : await apiRequest(io, command, "/api/chat", dropUndefined({
@@ -539,16 +539,41 @@ function createTuiChatSubmitter(
   };
 }
 
-async function runLocalChat(io: ProgramIO, message: string, model: string | undefined, agentMode?: AgentMode) {
+async function runLocalChat(
+  io: ProgramIO,
+  message: string,
+  model: string | undefined,
+  agentMode?: AgentMode,
+  options: { readonly disableTools?: boolean } = {}
+) {
+  // When the caller passes --model explicitly, push it into the
+  // env so the autoconfigure assembly factory wires the matching
+  // provider (the assembly is built lazily here, not at module
+  // load). Without this, `--model ollama/foo` silently uses
+  // whatever provider env inference produced — usually the
+  // `gemini/openai/anthropic` first-match — and the run call
+  // fails with retry-exhausted because the wrong provider sees
+  // an unknown model name.
+  if (model && model.length > 0 && !process.env.MUSE_MODEL) {
+    process.env.MUSE_MODEL = model;
+  }
+  if (model && model.startsWith("ollama/") && !process.env.MUSE_MODEL_PROVIDER_ID) {
+    process.env.MUSE_MODEL_PROVIDER_ID = "ollama";
+  }
   const assembly = io.createRuntimeAssembly?.() ?? createMuseRuntimeAssembly();
 
   if (!assembly.agentRuntime || !(model ?? assembly.defaultModel)) {
     throw new Error("Local chat requires MUSE_MODEL and a configured model provider");
   }
 
+  const metadata: Record<string, string | number> = {};
+  if (agentMode) metadata.agentMode = agentMode;
+  if (options.disableTools) metadata.maxTools = 0;
+  const hasMetadata = Object.keys(metadata).length > 0;
+
   const result = await assembly.agentRuntime.run({
     messages: [{ content: message, role: "user" }],
-    ...(agentMode ? { metadata: { agentMode } } : {}),
+    ...(hasMetadata ? { metadata } : {}),
     model: model ?? assembly.defaultModel ?? "default"
   });
 
