@@ -9,7 +9,7 @@ move from `Unreleased` to dated/versioned headings.
 
 ### Added
 
-- **Proactive surfacing (Phases A + B)**. New daemon scans the
+- **Proactive surfacing (Phases A + B + C)**. New daemon scans the
   calendar registry AND the personal-tasks store every minute
   (`MUSE_PROACTIVE_TICK_MS`, default 60s) and pushes a one-line
   notice via the messaging registry for items in the
@@ -19,6 +19,14 @@ move from `Unreleased` to dated/versioned headings.
     `⏰ {title} in {N} min (location?)`.
   - **Phase B — task due-soon**: open tasks (status="open") with
     `dueAt` in the same window. Format `📋 {title} due in {N} min`.
+  - **Phase C — per-item opt-out**:
+    - Calendar: case-insensitive `[no-proactive]` marker in the
+      event title or notes suppresses the notice. Provider-neutral
+      (works against CalDAV / Google Calendar / LocalCalendar /
+      macOS Calendar) since every backend surfaces user-typed text.
+    - Tasks: explicit `proactive: false` field on a `PersistedTask`
+      suppresses the notice without affecting the rest of the
+      lifecycle (still due, still surfaces in `muse today`).
   Off by default — activates only when `MUSE_PROACTIVE_PROVIDER` +
   `MUSE_PROACTIVE_DESTINATION` are set, the named provider is
   registered, AND at least one signal is available (a calendar
@@ -28,9 +36,8 @@ move from `Unreleased` to dated/versioned headings.
   fires at most once per `{kind, id, startIso}` tuple; a moved
   meeting / rescheduled task re-fires. Quiet-hours inherit from
   `MUSE_REMINDER_QUIET_HOURS` unless overridden by
-  `MUSE_PROACTIVE_QUIET_HOURS`. Phase C (per-event opt-out) and
-  Phase D (agent-initiated turn) are scoped in
-  `docs/design/proactive-surfacing.md`.
+  `MUSE_PROACTIVE_QUIET_HOURS`. Phase D (agent-initiated turn) is
+  scoped in `docs/design/proactive-surfacing.md`.
 
 - **Local Whisper.cpp STT** via the new `WhisperCppSttProvider`. Set
   `MUSE_VOICE_STT=whisper-cpp` to route `/api/voice/stt` (and the

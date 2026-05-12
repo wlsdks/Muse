@@ -28,6 +28,13 @@ export interface PersistedTask {
   readonly dueAt?: string;
   readonly notes?: string;
   readonly tags?: readonly string[];
+  /**
+   * Phase C of docs/design/proactive-surfacing.md. When `false`,
+   * the proactive-tick skips this task even though it has an
+   * imminent `dueAt`. Default behaviour (undefined or `true`):
+   * fire when due-soon.
+   */
+  readonly proactive?: boolean;
 }
 
 export type TaskStatusFilter = "open" | "done" | "all";
@@ -70,7 +77,8 @@ export function serializeTask(task: PersistedTask): JsonObject {
     ...(task.completedAt ? { completedAt: task.completedAt } : {}),
     ...(task.dueAt ? { dueAt: task.dueAt } : {}),
     ...(task.notes ? { notes: task.notes } : {}),
-    ...(task.tags && task.tags.length > 0 ? { tags: [...task.tags] as JsonValue } : {})
+    ...(task.tags && task.tags.length > 0 ? { tags: [...task.tags] as JsonValue } : {}),
+    ...(task.proactive === false ? { proactive: false } : {})
   };
 }
 

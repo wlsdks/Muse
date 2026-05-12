@@ -149,6 +149,12 @@ export async function runDueProactiveNotices(
       for (const event of events) {
         if (event.allDay) continue;
         if (event.startsAt < nowDate || event.startsAt > cutoff) continue;
+        // Phase C opt-out: `[no-proactive]` marker in notes / title
+        // (case-insensitive) tells the daemon to skip this event.
+        // The marker is provider-neutral (works with CalDAV / Google
+        // Calendar / LocalCalendar / macOS Calendar) since every
+        // backend surfaces user-typed notes or title text.
+        if (isCalendarOptedOut(event)) continue;
         imminent.push({
           id: event.id,
           kind: "calendar",
@@ -168,6 +174,10 @@ export async function runDueProactiveNotices(
       for (const task of tasks) {
         if (task.status !== "open") continue;
         if (!task.dueAt) continue;
+        // Phase C opt-out: explicit `proactive: false` on a task
+        // suppresses the notice without affecting the rest of the
+        // task's lifecycle (still due, still surfaces in `muse today`).
+        if (task.proactive === false) continue;
         const dueAt = new Date(task.dueAt);
         if (Number.isNaN(dueAt.getTime())) continue;
         if (dueAt < nowDate || dueAt > cutoff) continue;
@@ -229,6 +239,19 @@ export async function runDueProactiveNotices(
   }
 
   return { errors, fired: firedThisRun, imminent: imminent.length };
+}
+
+/**
+ * Phase C marker — case-insensitive `[no-proactive]` anywhere in the
+ * event's user-visible text (title or notes). Provider-neutral so
+ * the same opt-out works against every CalendarProvider without
+ * needing per-backend extended-property plumbing.
+ */
+function isCalendarOptedOut(event: CalendarEvent): boolean {
+  const marker = "[no-proactive]";
+  if (event.title.toLowerCase().includes(marker)) return true;
+  if (event.notes && event.notes.toLowerCase().includes(marker)) return true;
+  return false;
 }
 
 function calendarNoticeText(event: CalendarEvent, now: Date): string {

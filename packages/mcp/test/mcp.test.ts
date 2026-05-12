@@ -3565,6 +3565,101 @@ describe("runDueProactiveNotices", () => {
     expect(msg.sent).toHaveLength(2);
   });
 
+  it("Phase C: skips calendar events whose title or notes contain [no-proactive]", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-optout-cal-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = {
+      listEvents: async () => [
+        // Opted out via title marker (case-insensitive).
+        {
+          allDay: false,
+          endsAt: new Date("2026-05-12T16:00:00Z"),
+          id: "evt-quiet",
+          providerId: "local",
+          startsAt: new Date("2026-05-12T15:00:00Z"),
+          title: "Standup [No-Proactive]"
+        },
+        // Opted out via notes marker.
+        {
+          allDay: false,
+          endsAt: new Date("2026-05-12T16:01:00Z"),
+          id: "evt-quiet-notes",
+          notes: "private — [no-proactive]",
+          providerId: "local",
+          startsAt: new Date("2026-05-12T15:01:00Z"),
+          title: "1:1"
+        },
+        // No marker — fires normally.
+        {
+          allDay: false,
+          endsAt: new Date("2026-05-12T16:02:00Z"),
+          id: "evt-loud",
+          providerId: "local",
+          startsAt: new Date("2026-05-12T15:02:00Z"),
+          title: "Loud meeting"
+        }
+      ]
+    };
+    const msg = makeFakeMessagingRegistry();
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary).toMatchObject({ fired: 1, imminent: 1 });
+    expect(msg.sent[0]?.text).toContain("Loud meeting");
+  });
+
+  it("Phase C: skips tasks with proactive: false even when imminent", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-optout-task-"));
+    const tasksFile = join(dir, "tasks.json");
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    writeFileSync(tasksFile, JSON.stringify({
+      tasks: [
+        {
+          createdAt: "2026-05-12T00:00:00Z",
+          dueAt: "2026-05-12T15:00:00Z",
+          id: "task-quiet",
+          proactive: false,
+          status: "open",
+          title: "Silent task"
+        },
+        {
+          createdAt: "2026-05-12T00:00:00Z",
+          dueAt: "2026-05-12T15:01:00Z",
+          id: "task-loud",
+          status: "open",
+          title: "Normal task"
+        }
+      ]
+    }), "utf8");
+    const msg = makeFakeMessagingRegistry();
+    const summary = await runDueProactiveNotices({
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => new Date("2026-05-12T14:55:00Z"),
+      providerId: "telegram",
+      sidecarFile,
+      tasksFile
+    });
+    expect(summary).toMatchObject({ fired: 1, imminent: 1 });
+    expect(msg.sent[0]?.text).toContain("Normal task");
+  });
+
   it("combines calendar + task sources in one run", async () => {
     const { runDueProactiveNotices } = await import("../src/index.js");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
