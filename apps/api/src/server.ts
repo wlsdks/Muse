@@ -29,6 +29,7 @@ import { lineWebhookPlugin } from "./messaging-webhooks-routes.js";
 import { registerRemindersRoutes } from "./reminders-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
 import { parseQuietHours, startReminderTick } from "./reminder-tick.js";
+import { startProactiveTick } from "./proactive-tick.js";
 import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js";
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
 import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
@@ -398,6 +399,43 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
     server.addHook("onClose", async () => {
       tickHandle.stop();
+    });
+  }
+
+  // Proactive surfacing daemon (Phase A per docs/design/proactive-surfacing.md).
+  // Off by default; activates when MUSE_PROACTIVE_PROVIDER +
+  // MUSE_PROACTIVE_DESTINATION are set AND the named messaging provider
+  // is registered AND a calendar registry is wired.
+  const proactiveProvider = env.MUSE_PROACTIVE_PROVIDER?.trim();
+  const proactiveDestination = env.MUSE_PROACTIVE_DESTINATION?.trim();
+  if (
+    proactiveProvider && proactiveProvider.length > 0
+    && proactiveDestination && proactiveDestination.length > 0
+    && options.messaging
+    && options.messaging.has(proactiveProvider)
+    && options.calendar
+    && options.calendar.list().length > 0
+  ) {
+    const proactiveTickMsRaw = env.MUSE_PROACTIVE_TICK_MS ? Number(env.MUSE_PROACTIVE_TICK_MS) : undefined;
+    const proactiveLeadRaw = env.MUSE_PROACTIVE_LEAD_MINUTES ? Number(env.MUSE_PROACTIVE_LEAD_MINUTES) : undefined;
+    const proactiveQuietHours = parseQuietHours(env.MUSE_PROACTIVE_QUIET_HOURS)
+      ?? parseQuietHours(env.MUSE_REMINDER_QUIET_HOURS);
+    const proactiveSidecarFile = env.MUSE_PROACTIVE_SIDECAR_FILE?.trim()
+      || `${process.env.HOME ?? ""}/.muse/proactive-fired.json`;
+    const proactiveHandle = startProactiveTick({
+      calendarRegistry: options.calendar,
+      destination: proactiveDestination,
+      errorLogger: (message) => server.log.warn(message),
+      ...(proactiveTickMsRaw !== undefined ? { intervalMs: proactiveTickMsRaw } : {}),
+      ...(proactiveLeadRaw !== undefined ? { leadMinutes: proactiveLeadRaw } : {}),
+      logger: (message) => server.log.info(message),
+      messagingRegistry: options.messaging,
+      providerId: proactiveProvider,
+      ...(proactiveQuietHours ? { quietHours: proactiveQuietHours } : {}),
+      sidecarFile: proactiveSidecarFile
+    });
+    server.addHook("onClose", async () => {
+      proactiveHandle.stop();
     });
   }
 

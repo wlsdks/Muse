@@ -3236,3 +3236,214 @@ describe("muse.reminders.history tool", () => {
     expect((result.entries[0] as { reminderId: string }).reminderId).toBe("rem_2");
   });
 });
+
+describe("runDueProactiveNotices", () => {
+  function makeFakeCalendarRegistry(events: Array<{
+    id: string;
+    title: string;
+    startsAt: Date;
+    endsAt: Date;
+    allDay?: boolean;
+    location?: string;
+  }>) {
+    return {
+      listEvents: async () => events.map((event) => ({
+        allDay: event.allDay ?? false,
+        endsAt: event.endsAt,
+        id: event.id,
+        providerId: "local",
+        startsAt: event.startsAt,
+        title: event.title,
+        ...(event.location ? { location: event.location } : {})
+      }))
+    };
+  }
+
+  function makeFakeMessagingRegistry() {
+    const sent: Array<{ providerId: string; destination: string; text: string }> = [];
+    return {
+      registry: {
+        send: async (providerId: string, message: { destination: string; text: string }) => {
+          sent.push({ destination: message.destination, providerId, text: message.text });
+          return { destination: message.destination, messageId: "stub", providerId };
+        }
+      },
+      sent
+    };
+  }
+
+  it("fires imminent events, persists the sidecar, dedupes on a second run", async () => {
+    const { runDueProactiveNotices, readProactiveFired } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+
+    const first = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(first).toMatchObject({ fired: 1, imminent: 1, errors: [] });
+    expect(msg.sent).toEqual([{ destination: "@me", providerId: "telegram", text: "⏰ Standup in 5 min" }]);
+    const persisted = await readProactiveFired(sidecarFile);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({ id: "evt-1", kind: "calendar" });
+
+    const second = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(second).toMatchObject({ fired: 0, imminent: 1, errors: [] });
+    expect(msg.sent).toHaveLength(1);
+  });
+
+  it("re-fires when an event's startsAt changes (moved meeting)", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-move-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const msg = makeFakeMessagingRegistry();
+    const cal1 = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    await runDueProactiveNotices({
+      calendarRegistry: cal1 as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+
+    const cal2 = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:01:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:01:00Z"), title: "Standup" }
+    ]);
+    const moved = await runDueProactiveNotices({
+      calendarRegistry: cal2 as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(moved.fired).toBe(1);
+    expect(msg.sent).toHaveLength(2);
+  });
+
+  it("skips all-day events", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-allday-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const msg = makeFakeMessagingRegistry();
+    const cal = makeFakeCalendarRegistry([
+      { allDay: true, endsAt: new Date("2026-05-12T23:59:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "OOO" }
+    ]);
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary).toMatchObject({ fired: 0, imminent: 0 });
+  });
+
+  it("appends location when present", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-loc-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const msg = makeFakeMessagingRegistry();
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", location: "Room 3", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Sync" }
+    ]);
+    await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(msg.sent[0]?.text).toBe("⏰ Sync in 5 min (Room 3)");
+  });
+
+  it("returns an error string but does not crash when messaging.send throws", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-err-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Sync" }
+    ]);
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: {
+        send: async () => { throw new Error("upstream 500"); }
+      } as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary.fired).toBe(0);
+    expect(summary.imminent).toBe(1);
+    expect(summary.errors[0]).toContain("upstream 500");
+  });
+
+  it("returns an error and does not crash when calendar.listEvents throws", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-calerr-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: {
+        listEvents: async () => { throw new Error("caldav down"); }
+      } as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: makeFakeMessagingRegistry().registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary).toMatchObject({ fired: 0, imminent: 0 });
+    expect(summary.errors[0]).toContain("caldav down");
+  });
+});

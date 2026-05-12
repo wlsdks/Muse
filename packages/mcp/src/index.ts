@@ -547,6 +547,17 @@ export {
   type RunDueRemindersSummary
 } from "./reminder-firing-loop.js";
 
+// Proactive surfacing Phase A — calendar imminence push.
+// See docs/design/proactive-surfacing.md.
+export {
+  readProactiveFired,
+  runDueProactiveNotices,
+  writeProactiveFired,
+  type ProactiveFiredEntry,
+  type RunDueProactiveNoticesOptions,
+  type RunDueProactiveNoticesSummary
+} from "./proactive-notice-loop.js";
+
 // Outbound messaging loopback (Phase 3 of docs/design/messaging.md):
 // the LLM can call `muse.messaging.{providers, send}` once the user
 // has wired any provider via env tokens.

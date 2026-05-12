@@ -9,6 +9,22 @@ move from `Unreleased` to dated/versioned headings.
 
 ### Added
 
+- **Proactive surfacing (Phase A — calendar imminence push)**. New
+  daemon scans the calendar registry every minute (`MUSE_PROACTIVE_TICK_MS`,
+  default 60s) and pushes a one-line notice via the messaging
+  registry for events starting within `MUSE_PROACTIVE_LEAD_MINUTES`
+  (default 10). Off by default — activates only when
+  `MUSE_PROACTIVE_PROVIDER` + `MUSE_PROACTIVE_DESTINATION` are set
+  and the named provider is registered AND at least one calendar
+  is wired. Dedupe sidecar at `MUSE_PROACTIVE_SIDECAR_FILE`
+  (default `~/.muse/proactive-fired.json`) ensures a single event
+  fires at most once per `{id, startsAt}` tuple; a moved meeting
+  re-fires. Quiet-hours window inherits from
+  `MUSE_REMINDER_QUIET_HOURS` unless overridden by
+  `MUSE_PROACTIVE_QUIET_HOURS`. Phase B (tasks due-soon), Phase C
+  (per-event opt-out) and Phase D (agent-initiated turn) are
+  scoped in `docs/design/proactive-surfacing.md`.
+
 - **Local Whisper.cpp STT** via the new `WhisperCppSttProvider`. Set
   `MUSE_VOICE_STT=whisper-cpp` to route `/api/voice/stt` (and the
   CLI `muse listen` path, once it picks up the runtime registry)
