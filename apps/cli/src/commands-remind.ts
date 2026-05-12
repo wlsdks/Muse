@@ -181,10 +181,8 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       if (options.local) {
         const file = localRemindersFile();
         const reminders = await readReminders(file);
-        const index = reminders.findIndex((reminder) => reminder.id === id);
-        if (index < 0) {
-          throw new Error(`reminder not found: ${id}`);
-        }
+        const resolved = resolveLocalReminderId(id, reminders);
+        const index = reminders.findIndex((reminder) => reminder.id === resolved);
         let nextDueAt: string;
         if (options.in && options.in.trim().length > 0) {
           const parsed = parseReminderDueAt(options.in, () => new Date());
@@ -250,12 +248,13 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       if (options.local) {
         const file = localRemindersFile();
         const reminders = await readReminders(file);
-        const next = fireReminder(reminders, id, firedAt);
+        const resolved = resolveLocalReminderId(id, reminders);
+        const next = fireReminder(reminders, resolved, firedAt);
         if (!next) {
-          throw new Error(`reminder not found: ${id}`);
+          throw new Error(`reminder not found: ${resolved}`);
         }
         await writeReminders(file, next);
-        const fired = next.find((reminder) => reminder.id === id) as PersistedReminder;
+        const fired = next.find((reminder) => reminder.id === resolved) as PersistedReminder;
         payload = serializeReminder(fired);
       } else {
         const body: Record<string, unknown> = {};
@@ -453,12 +452,10 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       if (options.local) {
         const file = localRemindersFile();
         const reminders = await readReminders(file);
-        const next = reminders.filter((reminder) => reminder.id !== id);
-        if (next.length === reminders.length) {
-          throw new Error(`reminder not found: ${id}`);
-        }
+        const resolved = resolveLocalReminderId(id, reminders);
+        const next = reminders.filter((reminder) => reminder.id !== resolved);
         await writeReminders(file, next);
-        io.stdout(`Cleared reminder ${id}\n`);
+        io.stdout(`Cleared reminder ${resolved}\n`);
         return;
       }
       await helpers.apiRequest(io, command, `/api/reminders/${encodeURIComponent(id)}`, undefined, "DELETE");
@@ -522,4 +519,23 @@ function formatReminderHistory(payload: {
     return `  ${mark} ${when}  ${route}  ${entry.text}${trail}`;
   });
   return `Reminder history (${payload.entries.length.toString()} of ${payload.total.toString()}):\n${lines.join("\n")}\n`;
+}
+
+/**
+ * Resolve a reminder id the user typed against the local store.
+ * Accepts the full uuid or the 12-char prefix the list/add
+ * renderers print (`rem_0810976`). Refuses to guess when the
+ * prefix matches more than one row.
+ */
+function resolveLocalReminderId(input: string, all: readonly PersistedReminder[]): string {
+  const exact = all.find((reminder) => reminder.id === input);
+  if (exact) return exact.id;
+  const matches = all.filter((reminder) => reminder.id.startsWith(input));
+  if (matches.length === 1) {
+    return matches[0]!.id;
+  }
+  if (matches.length === 0) {
+    throw new Error(`reminder not found: ${input}`);
+  }
+  throw new Error(`ambiguous reminder prefix '${input}' matched ${matches.length.toString()} reminders; use a longer id`);
 }

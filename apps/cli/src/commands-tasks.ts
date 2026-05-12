@@ -179,10 +179,8 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       if (options.local) {
         const file = localTasksFile();
         const all = await readTasks(file);
-        const index = all.findIndex((task) => task.id === id);
-        if (index < 0) {
-          throw new Error(`task not found: ${id}`);
-        }
+        const resolved = resolveLocalTaskId(id, all);
+        const index = all.findIndex((task) => task.id === resolved);
         const persisted: PersistedTask = { ...all[index]!, completedAt: new Date().toISOString(), status: "done" };
         const next = [...all];
         next[index] = persisted;
@@ -213,15 +211,32 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       if (options.local) {
         const file = localTasksFile();
         const all = await readTasks(file);
-        const next = all.filter((task) => task.id !== id);
-        if (next.length === all.length) {
-          throw new Error(`task not found: ${id}`);
-        }
+        const resolved = resolveLocalTaskId(id, all);
+        const next = all.filter((task) => task.id !== resolved);
         await writeTasks(file, next);
-        io.stdout(`Deleted task ${id}\n`);
+        io.stdout(`Deleted task ${resolved}\n`);
         return;
       }
       await helpers.apiRequest(io, command, `/api/tasks/${encodeURIComponent(id)}`, undefined, "DELETE");
       io.stdout(`Deleted task ${id}\n`);
     });
+}
+
+/**
+ * Resolve a task id that the user typed against the local store.
+ * Accepts both the full uuid and the 12-char prefix the list/add
+ * renderers print (e.g. `task_0810976`). When the input is shorter
+ * than a full id and not unique, refuse to guess.
+ */
+function resolveLocalTaskId(input: string, all: readonly PersistedTask[]): string {
+  const exact = all.find((task) => task.id === input);
+  if (exact) return exact.id;
+  const matches = all.filter((task) => task.id.startsWith(input));
+  if (matches.length === 1) {
+    return matches[0]!.id;
+  }
+  if (matches.length === 0) {
+    throw new Error(`task not found: ${input}`);
+  }
+  throw new Error(`ambiguous task prefix '${input}' matched ${matches.length.toString()} tasks; use a longer id (full uuid is in the on-disk file or --json output)`);
 }
