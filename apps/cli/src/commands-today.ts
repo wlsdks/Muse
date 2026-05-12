@@ -35,6 +35,7 @@ import {
 import type { TextToSpeechProvider } from "@muse/voice";
 import type { Command } from "commander";
 
+import { formatLocalDateTime as shortDateTimeBrief } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 import {
   loadDefaultTts,
@@ -389,12 +390,6 @@ function formatReminders(
   return `\nReminders (${reminders.length}):\n${lines.join("\n")}\n`;
 }
 
-function shortDateTimeBrief(iso: string): string {
-  if (iso.length < 16) {
-    return iso;
-  }
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
 
 function formatTasks(tasks: readonly { readonly id: string; readonly title: string }[] | undefined): string {
   if (!tasks) {

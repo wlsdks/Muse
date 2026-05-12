@@ -207,15 +207,40 @@ function shortId(id: string): string {
 }
 
 /**
- * `2026-05-11T09:00:00.000Z` → `2026-05-11 09:00`.
- * Drops timezone for visual brevity; consumers that need precision
- * pass `--json`.
+ * Render a stored UTC ISO instant in the user's local timezone as
+ * `YYYY-MM-DD HH:MM`. JARVIS UX: a user who types "tomorrow at 3pm"
+ * in KST stores it as UTC internally — surfacing the UTC slice
+ * ("2026-05-14 06:00") on the way out makes them re-do the
+ * conversion in their head every time. We render local time so
+ * what comes back matches what they said.
+ *
+ * `timeZone` overrides the host TZ (used by tests for determinism).
+ * Precision-sensitive callers should pass `--json`.
  */
-function shortDateTime(iso: string): string {
+export function formatLocalDateTime(iso: string, timeZone?: string): string {
   if (iso.length < 16) {
     return iso;
   }
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) {
+    return iso;
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric"
+  }).formatToParts(instant);
+  const get = (type: Intl.DateTimeFormatPartTypes): string => parts.find((p) => p.type === type)?.value ?? "";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")} ${hour}:${get("minute")}`;
+}
+
+function shortDateTime(iso: string): string {
+  return formatLocalDateTime(iso);
 }
 
 export function formatCitations(

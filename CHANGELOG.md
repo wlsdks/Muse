@@ -349,6 +349,16 @@ move from `Unreleased` to dated/versioned headings.
 
 ### Fixed
 
+- **CLI displayed task/reminder times in UTC** — `muse tasks list`,
+  `muse remind list`, `muse today`, and `muse brief` all rendered
+  stored UTC ISO instants by slicing the string ("2026-05-14 06:00")
+  with no timezone conversion. A user in KST who typed
+  `--due "tomorrow at 3pm"` saw `06:00` back, forcing a mental
+  UTC→local conversion on every glance. Times now render in the
+  host's local timezone via a shared `formatLocalDateTime` helper
+  (Intl.DateTimeFormat with `en-CA` to preserve ISO digit ordering),
+  so "tomorrow at 3pm" round-trips as `15:00`. The three previously
+  duplicated `shortDateTime` helpers collapse to one export.
 - **Gemini parallel-tool 400** — when the model issued N parallel
   tool calls (e.g. `muse.tasks.list` + `muse.calendar.list` +
   `muse.notes.list` for "what's on my plate today?"), the wire

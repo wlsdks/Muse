@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import { Command } from "commander";
 import { createProgram, defaultConfigPath } from "../src/program.js";
 import { registerListenCommand, type ListenShells } from "../src/commands-listen.js";
+import { formatLocalDateTime } from "../src/human-formatters.js";
 import { appendChatTurn } from "../src/tui.js";
 
 function captureOutput() {
@@ -1849,7 +1850,7 @@ describe("cli program", () => {
       const addedText = seedIo.output.join("");
       expect(addedText).toMatch(/^Added \[task_/u);
       expect(addedText).toContain("Buy milk");
-      expect(addedText).toContain("due 2026-12-31 23:59");
+      expect(addedText).toContain(`due ${formatLocalDateTime("2026-12-31T23:59:00Z")}`);
 
       const { io, output } = captureOutput();
       const program = createProgram({ ...io, fetch: async () => { throw new Error("local"); } });

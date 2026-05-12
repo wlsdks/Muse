@@ -34,6 +34,7 @@ import {
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import type { Command } from "commander";
 
+import { formatLocalDateTime as shortDateTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 
 export interface RemindCommandHelpers {
@@ -477,12 +478,6 @@ function formatReminderList(payload: { reminders: ReadonlyArray<Record<string, u
   return `Reminders (${payload.reminders.length} ${payload.status}):\n${lines.join("\n")}\n`;
 }
 
-function shortDateTime(iso: string): string {
-  if (iso.length < 16) {
-    return iso;
-  }
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
 
 function parseLimitOrDefault(raw: string | undefined): number {
   const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
