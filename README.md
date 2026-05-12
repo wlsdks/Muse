@@ -83,19 +83,38 @@ pnpm install
 pnpm build
 pnpm test
 
-# Bring up the API with a real provider:
+# 30-second JARVIS demo (auto-picks any local Ollama Qwen 2.5 you have):
+pnpm demo
+```
+
+The demo exercises chat with cross-turn memory, a credential-free
+proactive notice, the setup diagnostic, and the Codex / Claude
+Desktop MCP bridge in one narrated run.
+
+### Daily-driver flows
+
+```bash
+# Continuous REPL (local Ollama, --no-tools for snappy chat,
+# --continue picks up prior turns from ~/.muse/last-chat.jsonl):
+muse chat -i --local --no-tools --continue --model ollama/qwen2.5:7b-instruct
+
+# Stdin piping for ad-hoc summarisation:
+cat note.md | muse chat --local --no-tools --model ollama/qwen2.5:7b-instruct "한 단락으로 요약"
+
+# Real-time proactive daemon (Ctrl-C to stop). LogMessagingProvider
+# writes every notice to ~/.muse/notifications.log — credential-free.
+muse proactive watch --interval 60 --lead-minutes 10
+```
+
+### Cloud + API server (BYOK)
+
+```bash
 GEMINI_API_KEY=… MUSE_MODEL=gemini/gemini-2.0-flash MUSE_MODEL_PROVIDER_ID=gemini \
   pnpm --filter @muse/api dev
 
-# Talk to it:
 curl -X POST http://127.0.0.1:3000/api/chat \
   -H 'content-type: application/json' \
   -d '{"message":"What time is it? Use a tool."}'
-
-# Or use the CLI:
-node apps/cli/dist/index.js \
-  --api-url http://127.0.0.1:3000 \
-  chat "What time is it? Use a tool."
 
 # Or open the Web UI:
 pnpm --filter @muse/web dev   # http://localhost:5173

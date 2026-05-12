@@ -25,7 +25,9 @@ import {
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { CalendarEvent } from "@muse/calendar";
-import { readProactiveHistory } from "@muse/mcp";
+import { readProactiveHistory, runDueProactiveNotices } from "@muse/mcp";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import type { ProgramIO } from "./program.js";
 
@@ -131,6 +133,98 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       }
 
       io.stdout(`${lines.join("\n")}\n`);
+    });
+
+  proactive
+    .command("watch")
+    .description("Run the proactive daemon in the foreground — every interval, fire imminent notices via the configured messaging provider")
+    .option("--interval <seconds>", "Tick interval (default 60)", "60")
+    .option("--lead-minutes <minutes>", "Lead window in minutes (default 10)", "10")
+    .option(
+      "--provider <id>",
+      "Messaging provider id (default MUSE_PROACTIVE_PROVIDER, falling back to 'log' so users without external tokens still see notices)"
+    )
+    .option(
+      "--destination <id>",
+      "Messaging destination — chat id / channel id / log tag (default MUSE_PROACTIVE_DESTINATION or '@me')"
+    )
+    .action(async (options: {
+      readonly interval: string;
+      readonly leadMinutes: string;
+      readonly provider?: string;
+      readonly destination?: string;
+    }) => {
+      const e = env();
+      const interval = Math.max(5, Number.parseInt(options.interval, 10) || 60);
+      const leadMinutes = Math.max(1, Number.parseInt(options.leadMinutes, 10) || 10);
+      const provider = (options.provider ?? e.MUSE_PROACTIVE_PROVIDER ?? "log").trim();
+      const destination = (options.destination ?? e.MUSE_PROACTIVE_DESTINATION ?? "@me").trim();
+
+      const messagingRegistry = buildMessagingRegistry(e);
+      if (!messagingRegistry.has(provider)) {
+        io.stderr(`Provider '${provider}' is not registered. Try --provider log (always available).\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const calendarRegistry = buildCalendarRegistry(e);
+      const tasksFile = resolveTasksFile(e);
+      const historyFile = resolveProactiveHistoryFile(e);
+      // Honour MUSE_PROACTIVE_SIDECAR_FILE so tests + tmp invocations
+      // don't collide with the user's real ~/.muse/proactive-fired.json
+      // dedupe state.
+      const sidecarFile = e.MUSE_PROACTIVE_SIDECAR_FILE?.trim()?.length
+        ? e.MUSE_PROACTIVE_SIDECAR_FILE.trim()
+        : join(homedir(), ".muse", "proactive-fired.json");
+
+      io.stdout(`muse proactive watch — every ${interval.toString()} s, lead ${leadMinutes.toString()} min\n`);
+      io.stdout(`  provider=${provider}, destination=${destination}\n`);
+      io.stdout(`  tasksFile=${tasksFile}\n`);
+      io.stdout(`  historyFile=${historyFile}\n`);
+      io.stdout(`  (Ctrl-C to stop)\n\n`);
+
+      let stopped = false;
+      const stop = (): void => {
+        if (stopped) return;
+        stopped = true;
+        io.stdout("\n(ctrl-c — stopping)\n");
+        process.exit(0);
+      };
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+
+      while (!stopped) {
+        const startedAt = new Date();
+        try {
+          const summary = await runDueProactiveNotices({
+            ...(calendarRegistry.list().length > 0 ? { calendarRegistry } : {}),
+            destination,
+            historyFile,
+            leadMinutes,
+            messagingRegistry,
+            providerId: provider,
+            sidecarFile,
+            tasksFile
+          });
+          const tag = `[${startedAt.toISOString()}]`;
+          if (summary.fired > 0 || summary.errors.length > 0) {
+            io.stdout(`${tag} fired ${summary.fired.toString()}/${summary.imminent.toString()} imminent`);
+            if (summary.errors.length > 0) {
+              io.stdout(`, ${summary.errors.length.toString()} error(s)`);
+              for (const error of summary.errors) {
+                io.stdout(`\n  ! ${error}`);
+              }
+            }
+            io.stdout("\n");
+          } else {
+            io.stdout(`${tag} 0/${summary.imminent.toString()} imminent (quiet)\n`);
+          }
+        } catch (cause) {
+          io.stderr(`tick error: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        }
+        if (!stopped) {
+          await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+        }
+      }
     });
 
   proactive
