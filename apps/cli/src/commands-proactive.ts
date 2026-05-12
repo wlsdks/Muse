@@ -25,7 +25,7 @@ import {
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { CalendarEvent } from "@muse/calendar";
-import { readProactiveHistory, runDueProactiveNotices } from "@muse/mcp";
+import { appendProactiveHistory, readProactiveHistory, readTasks, runDueProactiveNotices, writeTasks } from "@muse/mcp";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -263,6 +263,165 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
           await new Promise((resolve) => setTimeout(resolve, interval * 1000));
         }
       }
+    });
+
+  // ── Two-way proactive — reply to the last notice ──────────────
+  //
+  // The classic JARVIS exchange:
+  //   JARVIS: "Sir, you have a meeting in 5 minutes."
+  //   Tony:   "Push it to 10."
+  //   JARVIS: <pushes the meeting>
+  //
+  // Muse implements this by looking up the most-recent delivered
+  // entry in ~/.muse/proactive-history.json and applying the
+  // requested action to the underlying task. Only tasks are
+  // supported today — calendar back-edits go through the calendar
+  // provider's update path, which differs per backend; deferred.
+  const lastDeliveredTask = async (): Promise<{
+    readonly entry: Awaited<ReturnType<typeof readProactiveHistory>>[number];
+    readonly tasksFile: string;
+  } | undefined> => {
+    const e = env();
+    const file = resolveProactiveHistoryFile(e);
+    const tasksFile = resolveTasksFile(e);
+    const entries = await readProactiveHistory(file, 50);
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const entry = entries[i]!;
+      if (entry.status === "delivered" && entry.kind === "task") {
+        return { entry, tasksFile };
+      }
+    }
+    return undefined;
+  };
+
+  const parseDuration = (s: string): number | undefined => {
+    const match = /^([0-9]+)\s*(s|m|h|d)?$/i.exec(s.trim());
+    if (!match) return undefined;
+    const n = Number(match[1]);
+    const unit = (match[2] ?? "m").toLowerCase();
+    const ms = unit === "s" ? 1000 : unit === "h" ? 3_600_000 : unit === "d" ? 86_400_000 : 60_000;
+    return n * ms;
+  };
+
+  proactive
+    .command("done")
+    .description("Mark the task from the most recent proactive notice as done")
+    .action(async () => {
+      const last = await lastDeliveredTask();
+      if (!last) {
+        io.stderr("No recent delivered task notice. Run `muse proactive watch` first.\n");
+        process.exitCode = 1;
+        return;
+      }
+      const { entry, tasksFile } = last;
+      const tasks = await readTasks(tasksFile);
+      const index = tasks.findIndex((t) => t.id === entry.itemId);
+      if (index < 0) {
+        io.stderr(`Task ${entry.itemId} no longer in ${tasksFile} (already deleted?).\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const next = [...tasks];
+      next[index] = { ...next[index]!, completedAt: new Date().toISOString(), status: "done" };
+      await writeTasks(tasksFile, next);
+      io.stdout(`Marked "${entry.title}" done.\n`);
+      const e = env();
+      await appendProactiveHistory(resolveProactiveHistoryFile(e), {
+        destination: entry.destination,
+        firedAtIso: new Date().toISOString(),
+        itemId: entry.itemId,
+        kind: "task",
+        providerId: "cli-reply",
+        startIso: entry.startIso,
+        status: "delivered",
+        text: `↩ user: done`,
+        title: entry.title
+      });
+    });
+
+  proactive
+    .command("snooze")
+    .description("Push the most recent proactive task's dueAt by a duration (e.g. '10m', '1h', '30s')")
+    .argument("<duration>", "Duration: <number><s|m|h|d>; bare number is minutes")
+    .action(async (duration: string) => {
+      const ms = parseDuration(duration);
+      if (!ms) {
+        io.stderr(`Could not parse '${duration}'. Try '10m', '1h', '30s'.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const last = await lastDeliveredTask();
+      if (!last) {
+        io.stderr("No recent delivered task notice. Run `muse proactive watch` first.\n");
+        process.exitCode = 1;
+        return;
+      }
+      const { entry, tasksFile } = last;
+      const tasks = await readTasks(tasksFile);
+      const index = tasks.findIndex((t) => t.id === entry.itemId);
+      if (index < 0) {
+        io.stderr(`Task ${entry.itemId} no longer in ${tasksFile}.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const current = tasks[index]!;
+      const baselineMs = current.dueAt ? new Date(current.dueAt).getTime() : Date.now();
+      const newDue = new Date(Math.max(Date.now(), baselineMs) + ms).toISOString();
+      const next = [...tasks];
+      next[index] = { ...current, dueAt: newDue, status: "open" };
+      await writeTasks(tasksFile, next);
+      io.stdout(`Snoozed "${entry.title}" — new dueAt ${newDue}\n`);
+      const e = env();
+      // Also clear the sidecar entry for this id so the next proactive
+      // tick re-fires at the new dueAt instead of staying deduped.
+      const sidecarFile = e.MUSE_PROACTIVE_SIDECAR_FILE?.trim()?.length
+        ? e.MUSE_PROACTIVE_SIDECAR_FILE.trim()
+        : join(homedir(), ".muse", "proactive-fired.json");
+      try {
+        const { readProactiveFired, writeProactiveFired } = await import("@muse/mcp");
+        const fired = await readProactiveFired(sidecarFile);
+        const purged = fired.filter((e2) => !(e2.kind === "task" && e2.id === entry.itemId));
+        if (purged.length !== fired.length) {
+          await writeProactiveFired(sidecarFile, purged);
+        }
+      } catch { /* sidecar absent / corrupt — next tick will rebuild */ }
+      await appendProactiveHistory(resolveProactiveHistoryFile(e), {
+        destination: entry.destination,
+        firedAtIso: new Date().toISOString(),
+        itemId: entry.itemId,
+        kind: "task",
+        providerId: "cli-reply",
+        startIso: newDue,
+        status: "delivered",
+        text: `↩ user: snooze ${duration}`,
+        title: entry.title
+      });
+    });
+
+  proactive
+    .command("dismiss")
+    .description("Acknowledge the most recent proactive notice without changing the task — purely a log entry")
+    .action(async () => {
+      const last = await lastDeliveredTask();
+      if (!last) {
+        io.stderr("No recent delivered notice.\n");
+        process.exitCode = 1;
+        return;
+      }
+      const { entry } = last;
+      const e = env();
+      await appendProactiveHistory(resolveProactiveHistoryFile(e), {
+        destination: entry.destination,
+        firedAtIso: new Date().toISOString(),
+        itemId: entry.itemId,
+        kind: entry.kind,
+        providerId: "cli-reply",
+        startIso: entry.startIso,
+        status: "delivered",
+        text: `↩ user: dismiss`,
+        title: entry.title
+      });
+      io.stdout(`Dismissed "${entry.title}" (no state change).\n`);
     });
 
   proactive
