@@ -40,11 +40,11 @@ interface ActivityRow {
   readonly kind: string;
 }
 
-function activityPath(): string {
+export function activityPath(): string {
   return process.env.MUSE_ACTIVITY_FILE?.trim() ?? join(homedir(), ".muse", "activity.jsonl");
 }
 
-async function readActivity(file: string): Promise<readonly ActivityRow[]> {
+export async function readActivity(file: string): Promise<readonly ActivityRow[]> {
   let raw: string;
   try {
     raw = await readFile(file, "utf8");
@@ -70,7 +70,7 @@ async function readActivity(file: string): Promise<readonly ActivityRow[]> {
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function computeRoutine(rows: readonly ActivityRow[]) {
+export function computeRoutine(rows: readonly ActivityRow[]) {
   const hourCounts = new Array(24).fill(0) as number[];
   const dowCounts = new Array(7).fill(0) as number[];
   const days = new Set<string>();

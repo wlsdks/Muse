@@ -621,6 +621,25 @@ async function appendLastChatTurn(turn: { readonly message: string; readonly res
   await writeFile(filePath, payload, { flag: "a", mode: 0o600 });
 }
 
+/**
+ * Heuristic: when did the user's `routine_active_hours` fact last
+ * change? We don't track per-fact mtime, so the closest signal is
+ * `updatedAt` on the whole memory blob. If undefined or older than
+ * the staleness threshold, the REPL fires a background re-aggregation.
+ *
+ * Cheap; returns Date.now() (effectively "fresh") when no signal
+ * exists so we don't spam fact-writes on every empty REPL boot.
+ */
+function parseRoutineUpdateMs(memory: {
+  readonly facts: Readonly<Record<string, string>>;
+  readonly updatedAt?: Date;
+} | undefined): number {
+  if (!memory) return Date.now();
+  if (!memory.facts.routine_active_hours) return 0; // no fact yet → always stale
+  const ts = memory.updatedAt instanceof Date ? memory.updatedAt.getTime() : Date.now();
+  return Number.isFinite(ts) ? ts : Date.now();
+}
+
 // ── Activity log for pattern learning (`muse routine`) ──────────────
 // One JSONL line per REPL start / chat turn. The aggregator reads
 // the log over a rolling window and writes a `routine.active_hours`
@@ -1064,6 +1083,36 @@ async function runChatRepl(
   // can later infer active-hours patterns. Best-effort; failures
   // never block the REPL.
   await appendActivity({ kind: "repl-start", userId }).catch(() => undefined);
+
+  // Auto-refresh routine fact when stale (≥ 7 d since last update).
+  // Background fire-and-forget — keeps the persona's
+  // `routine_active_hours` current without forcing the user to
+  // run `muse routine --apply` periodically. JARVIS keeps its
+  // model of the user current.
+  if (memoryStore) {
+    const lastRoutineUpdateMs = parseRoutineUpdateMs(userMemory);
+    const staleDays = (Date.now() - lastRoutineUpdateMs) / 86_400_000;
+    if (staleDays >= 7) {
+      void (async () => {
+        try {
+          const { activityPath, computeRoutine, readActivity } = await import("./commands-routine.js");
+          const rows = await readActivity(activityPath());
+          const cutoff = Date.now() - 30 * 86_400_000;
+          const filtered = rows.filter((row) => row.userId === userId && new Date(row.tsIso).getTime() >= cutoff);
+          if (filtered.length < 5) return; // not enough signal yet
+          const summary = computeRoutine(filtered);
+          if (summary.topHours.length === 0) return;
+          const hoursFact = summary.topHours.map((h) => h.toString().padStart(2, "0")).join(",");
+          const daysFact = summary.topDays.join(",");
+          await Promise.resolve(memoryStore.upsertFact(userId, "routine_active_hours", hoursFact));
+          if (daysFact) {
+            await Promise.resolve(memoryStore.upsertFact(userId, "routine_active_days", daysFact));
+          }
+          userMemory = await Promise.resolve(memoryStore.findByUserId(userId));
+        } catch { /* fail-open */ }
+      })();
+    }
+  }
 
   io.stdout("\n");
   io.stdout("Muse REPL — type /help for commands, /exit to quit.\n");
