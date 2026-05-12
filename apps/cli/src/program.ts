@@ -166,6 +166,10 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
     .option("--json", "Print machine-readable JSON")
     .option("--no-log", "Do not write .muse/runs JSONL state")
     .option("--no-web-search", "disable native web_search for this request")
+    .option(
+      "--no-tools",
+      "skip the agent tool registry for this request — 15× faster on small local models (qwen2.5:7b: 10s → 0.7s) at the cost of losing calendar/tasks/notes ability"
+    )
     .action(async (
       messageParts: readonly string[],
       options: {
@@ -175,6 +179,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
         readonly mode?: string;
         readonly model?: string;
         readonly stream?: boolean;
+        readonly tools?: boolean;
         readonly webSearch?: boolean;
       },
       command
@@ -187,12 +192,17 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
         throw new Error("--stream requires remote API chat; omit --local");
       }
 
-      // Compose metadata: merge agentMode and optional web_search override.
-      // --no-web-search sets webSearch=false (commander --no-X convention).
+      // Compose metadata: merge agentMode, web_search override, and
+      // --no-tools (maxTools:0) for the chat-only fast path.
       const metadataTools = options.webSearch === false ? { web_search: false } : undefined;
+      const toolsDisabled = options.tools === false;
       const metadata =
-        agentMode || metadataTools
-          ? { ...(agentMode ? { agentMode } : {}), ...(metadataTools ? { tools: metadataTools } : {}) }
+        agentMode || metadataTools || toolsDisabled
+          ? {
+              ...(agentMode ? { agentMode } : {}),
+              ...(metadataTools ? { tools: metadataTools } : {}),
+              ...(toolsDisabled ? { maxTools: 0 } : {})
+            }
           : undefined;
 
       const body = options.local

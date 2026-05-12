@@ -58,10 +58,30 @@ Pass `--check` to dry-run without writing.
 The `/api/chat` figure is wall-clock from request to response and
 includes Muse's agent pipeline (system prompt, tool registry,
 user-memory hook). 7B's 12 s round-trip vs 1.5B's 3 s for the same
-"1+1?" prompt shows the agent overhead scales with model tok/s —
-fine for daily JARVIS use, but if you want **chat-only snappiness on
-a heavy model** drop `/api/chat` and call the model directly through
-the `OllamaProvider`.
+"1+1?" prompt is **almost entirely tool-registry prefill** — the
+small model spends time considering ~30 tool definitions even for
+a trivial question.
+
+Use `muse chat --no-tools` (or `metadata.maxTools=0` in the API) to
+skip the tool registry for a single turn:
+
+| Layer | qwen2.5:7b on M3 Pro |
+| --- | --- |
+| `provider.generate` no tools | **500 ms** |
+| `provider.generate` with full tool list | 22 s |
+| `agentRuntime.run` (default) | 10 s |
+| `agentRuntime.run` with `maxTools:0` | **670 ms** |
+| HTTP `/api/chat` end-to-end | 12 s |
+
+The `--no-tools` fast path makes 7B feel **15× snappier** for casual
+chat, at the cost of losing calendar / tasks / notes access for that
+turn. Pair it with normal `muse chat` (tools enabled) when you
+actually need them:
+
+```bash
+muse chat --no-tools "정리해줘: ..."    # snappy, no tools
+muse chat "오늘 일정 뭐야?"             # full agent, calendar tool fires
+```
 
 All three are **Apache 2.0** — free for any use including commercial.
 
