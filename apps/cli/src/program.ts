@@ -41,6 +41,7 @@ import { registerSchedulerCommands, registerSetupCommands } from "./commands-sch
 import { registerSetupLocalCommand } from "./commands-setup-local.js";
 import { registerSetupVoiceCommand } from "./commands-setup-voice.js";
 import { registerStatusCommand } from "./commands-status.js";
+import { registerWatchFolderCommand } from "./commands-watch-folder.js";
 import { registerSpecsCommands } from "./commands-specs.js";
 import { registerTasksCommands } from "./commands-tasks.js";
 import { registerTelemetryCommands } from "./commands-telemetry.js";
@@ -399,6 +400,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerSetupLocalCommand(program, io, { readConfigStore, writeConfigStore });
   registerSetupVoiceCommand(program, io);
   registerStatusCommand(program, io);
+  registerWatchFolderCommand(program, io);
   registerTasksCommands(program, io, { apiRequest, writeOutput });
   registerRunsCommands(program, io, { apiRequest, writeOutput });
   registerDoctorCommand(program, io, { apiRequest, writeOutput });
