@@ -26,6 +26,7 @@ import { registerCompatibilityRoutes } from "./compat-routes.js";
 import { registerNotesRoutes } from "./notes-routes.js";
 import { registerMessagingRoutes } from "./messaging-routes.js";
 import { lineWebhookPlugin } from "./messaging-webhooks-routes.js";
+import { registerProactiveRoutes } from "./proactive-routes.js";
 import { registerRemindersRoutes } from "./reminders-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
 import { parseQuietHours, startReminderTick } from "./reminder-tick.js";
@@ -134,6 +135,14 @@ export interface ServerOptions {
    * audit recent deliveries.
    */
   readonly reminderHistoryFile?: string;
+  /**
+   * Optional proactive-history sidecar (default
+   * ~/.muse/proactive-history.json). When configured, the
+   * proactive daemon appends each notice attempt so
+   * `muse.proactive.history` / `GET /api/proactive/history` can
+   * audit recent deliveries.
+   */
+  readonly proactiveHistoryFile?: string;
   /**
    * Path to the persisted LINE inbox (default ~/.muse/line-inbox.json).
    * Combined with `MUSE_LINE_CHANNEL_SECRET` from env, enables the
@@ -346,6 +355,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       ...(options.reminderHistoryFile ? { reminderHistoryFile: options.reminderHistoryFile } : {})
     });
   }
+  if (options.proactiveHistoryFile) {
+    registerProactiveRoutes(server, {
+      authService,
+      proactiveHistoryFile: options.proactiveHistoryFile
+    });
+  }
   // LINE webhook (Phase 2.b.2): only registered when both the channel
   // secret and an inbox file path are configured. The plugin scopes a
   // buffer-mode JSON parser so signature verification sees raw bytes.
@@ -473,6 +488,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       ...(phaseDProactiveOn && options.defaultModel ? { agentModel: options.defaultModel } : {}),
       ...(phaseDProactiveOn && options.agentRuntime ? { agentRuntime: options.agentRuntime } : {}),
       ...(phaseDWindowRaw !== undefined ? { activeSessionWindowMs: phaseDWindowRaw } : {}),
+      ...(options.proactiveHistoryFile ? { historyFile: options.proactiveHistoryFile } : {}),
       ...(proactiveCalendar ? { calendarRegistry: proactiveCalendar } : {}),
       ...(options.tasksFile ? { tasksFile: options.tasksFile } : {}),
       destination: proactiveDestination,

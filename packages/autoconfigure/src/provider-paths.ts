@@ -45,6 +45,10 @@ export function resolveReminderHistoryFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_REMINDER_HISTORY_FILE", "reminder-history.json");
 }
 
+export function resolveProactiveHistoryFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_PROACTIVE_HISTORY_FILE", "proactive-history.json");
+}
+
 export function resolveLineInboxFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_LINE_INBOX_FILE", "line-inbox.json");
 }

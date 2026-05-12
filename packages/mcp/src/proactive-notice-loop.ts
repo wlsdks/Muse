@@ -22,6 +22,7 @@ import { dirname } from "node:path";
 import type { CalendarEvent, CalendarProviderRegistry } from "@muse/calendar";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
+import { appendProactiveHistory } from "./personal-proactive-history-store.js";
 import { readTasks, type PersistedTask } from "./personal-tasks-store.js";
 
 export type ProactiveFiredKind = "calendar" | "task";
@@ -94,6 +95,7 @@ function firedKey(entry: { readonly kind: string; readonly id: string; readonly 
 interface ImminentItem {
   readonly kind: ProactiveFiredKind;
   readonly id: string;
+  readonly title: string;
   readonly startsAt: Date;
   readonly text: string;
   /**
@@ -170,6 +172,14 @@ export interface RunDueProactiveNoticesOptions {
   readonly activitySource?: ProactiveActivitySource;
   /** Default 5 minutes (300_000 ms). */
   readonly activeSessionWindowMs?: number;
+  /**
+   * Mirrors reminder firing's history sidecar. When set, every
+   * delivery attempt (success or failure) is appended to this file
+   * via `appendProactiveHistory` so the user / agent can audit
+   * "did the 3pm meeting notice land?" weeks later — even if the
+   * underlying calendar event has since been edited or removed.
+   */
+  readonly historyFile?: string;
 }
 
 export interface RunDueProactiveNoticesSummary {
@@ -204,7 +214,8 @@ export async function runDueProactiveNotices(
           id: event.id,
           kind: "calendar",
           startsAt: event.startsAt,
-          text: calendarNoticeText(event, nowDate)
+          text: calendarNoticeText(event, nowDate),
+          title: event.title
         });
       }
     } catch (cause) {
@@ -228,7 +239,8 @@ export async function runDueProactiveNotices(
           id: task.id,
           kind: "task",
           startsAt: dueAt,
-          text: taskNoticeText(task, dueAt, nowDate)
+          text: taskNoticeText(task, dueAt, nowDate),
+          title: task.title
         });
       }
     } catch (cause) {
@@ -273,6 +285,7 @@ export async function runDueProactiveNotices(
         })
       : item.text;
 
+    const firedAtIso = now().toISOString();
     try {
       await options.messagingRegistry.send(options.providerId, {
         destination: options.destination,
@@ -281,9 +294,36 @@ export async function runDueProactiveNotices(
       firedThisRun += 1;
       nextFired = [...nextFired, candidate];
       seen.add(key);
+      if (options.historyFile) {
+        await appendProactiveHistory(options.historyFile, {
+          destination: options.destination,
+          firedAtIso,
+          itemId: item.id,
+          kind: item.kind,
+          providerId: options.providerId,
+          startIso: item.startsAt.toISOString(),
+          status: "delivered",
+          text: noticeText,
+          title: item.title
+        });
+      }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       errors.push(`${item.kind}:${item.id}: ${message}`);
+      if (options.historyFile) {
+        await appendProactiveHistory(options.historyFile, {
+          destination: options.destination,
+          error: message,
+          firedAtIso,
+          itemId: item.id,
+          kind: item.kind,
+          providerId: options.providerId,
+          startIso: item.startsAt.toISOString(),
+          status: "failed",
+          text: noticeText,
+          title: item.title
+        });
+      }
     }
   }
 

@@ -53,6 +53,14 @@ export interface ProactiveTickOptions {
   /** Phase D session window. Default 5 minutes (300_000 ms). */
   readonly activeSessionWindowMs?: number;
   /**
+   * Optional proactive-history sidecar (default
+   * ~/.muse/proactive-history.json). When set, every delivery
+   * attempt is appended so `muse.proactive.history` /
+   * `GET /api/proactive/history` / `muse proactive history` can
+   * audit "did the 3pm meeting notice land?" weeks later.
+   */
+  readonly historyFile?: string;
+  /**
    * Shared with the reminder daemon — operators rarely want a
    * different quiet window for the two channels. Parse via
    * `parseQuietHours(MUSE_PROACTIVE_QUIET_HOURS ?? MUSE_REMINDER_QUIET_HOURS)`
@@ -93,6 +101,7 @@ export function startProactiveTick(options: ProactiveTickOptions): ProactiveTick
         ...(options.agentRuntime ? { agentRuntime: options.agentRuntime } : {}),
         ...(options.calendarRegistry ? { calendarRegistry: options.calendarRegistry } : {}),
         destination: options.destination,
+        ...(options.historyFile ? { historyFile: options.historyFile } : {}),
         ...(options.leadMinutes !== undefined ? { leadMinutes: options.leadMinutes } : {}),
         messagingRegistry: options.messagingRegistry,
         now,

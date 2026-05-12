@@ -3953,4 +3953,89 @@ describe("runDueProactiveNotices", () => {
       "📋 Send invoice due in 5 min"
     ]);
   });
+
+  it("appends a delivered-row to historyFile when configured", async () => {
+    const { runDueProactiveNotices, readProactiveHistory } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-history-ok-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+    const historyFile = join(dir, "proactive-history.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+    await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      historyFile,
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    const entries = await readProactiveHistory(historyFile);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      destination: "@me",
+      itemId: "evt-1",
+      kind: "calendar",
+      providerId: "telegram",
+      status: "delivered",
+      text: "⏰ Standup in 5 min",
+      title: "Standup"
+    });
+  });
+
+  it("appends a failed-row to historyFile when messaging.send throws", async () => {
+    const { runDueProactiveNotices, readProactiveHistory } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-history-fail-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+    const historyFile = join(dir, "proactive-history.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      historyFile,
+      messagingRegistry: {
+        send: async () => { throw new Error("upstream 503"); }
+      } as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary.fired).toBe(0);
+    const entries = await readProactiveHistory(historyFile);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      destination: "@me",
+      error: "upstream 503",
+      itemId: "evt-1",
+      providerId: "telegram",
+      status: "failed",
+      title: "Standup"
+    });
+  });
+
+  it("readProactiveHistory returns empty + tolerates missing / corrupt files", async () => {
+    const { readProactiveHistory } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-history-edge-"));
+    expect(await readProactiveHistory(join(dir, "missing.json"))).toEqual([]);
+    const garbled = join(dir, "garbled.json");
+    writeFileSync(garbled, "not json", "utf8");
+    expect(await readProactiveHistory(garbled)).toEqual([]);
+  });
 });

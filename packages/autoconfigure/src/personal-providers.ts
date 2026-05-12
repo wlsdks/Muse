@@ -102,6 +102,7 @@ export {
   resolveMessagingCredentialsFile,
   resolveModelKeysFile,
   resolveNotesDir,
+  resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
   resolveRemindersFile,
   resolveSlackAfterFile,

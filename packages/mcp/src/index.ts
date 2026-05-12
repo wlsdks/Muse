@@ -560,6 +560,12 @@ export {
   type RunDueProactiveNoticesOptions,
   type RunDueProactiveNoticesSummary
 } from "./proactive-notice-loop.js";
+export {
+  appendProactiveHistory,
+  readProactiveHistory,
+  type AppendProactiveHistoryOptions,
+  type ProactiveHistoryEntry
+} from "./personal-proactive-history-store.js";
 
 // Outbound messaging loopback (Phase 3 of docs/design/messaging.md):
 // the LLM can call `muse.messaging.{providers, send}` once the user
@@ -576,6 +582,13 @@ export {
   createRemindersMcpServer,
   type RemindersMcpServerOptions
 } from "./loopback-reminders.js";
+
+// Proactive surfacing audit loopback — `muse.proactive.history`
+// over ~/.muse/proactive-history.json.
+export {
+  createProactiveMcpServer,
+  type ProactiveMcpServerOptions
+} from "./loopback-proactive.js";
 
 // Context reference MCP server (round 167 — Context Engineering 1.d
 // foundation). `muse.context.fetch` / `muse.context.list` against an

@@ -104,6 +104,26 @@ move from `Unreleased` to dated/versioned headings.
   shows the provider/destination/lead/tick + Phase D and
   quiet-hours flags when the daemon would activate.
 
+- **Proactive surfacing audit log** — full stack mirror of
+  `reminder-history`. The proactive daemon now appends every
+  delivery attempt (success or failure) to
+  `~/.muse/proactive-history.json` (override via
+  `MUSE_PROACTIVE_HISTORY_FILE`) with the resolved item id, title,
+  startsAt/dueAt, provider/destination, the *delivered* text
+  (flat or Phase D agent-synthesized), the firedAt, status, and
+  error context. The history surface is exposed through four
+  symmetric channels:
+  - **MCP loopback**: new `muse.proactive.history` tool (mirror
+    of `muse.reminders.history`) — the agent can answer "did the
+    3pm meeting notice land?" without an extra tool call.
+  - **REST**: `GET /api/proactive/history?limit=N` returns the
+    newest-first audit log. Auth-gated when an auth service is
+    wired.
+  - **CLI**: `muse proactive history [--limit N] [--json]` — a
+    quick terminal-side audit without needing the API server.
+  - **Library**: `appendProactiveHistory` / `readProactiveHistory`
+    in `@muse/mcp` for callers that want the same shape directly.
+
 - **Setup status now surfaces the reminder firing daemon**. New
   `reminder` section in the snapshot mirrors the `proactive`
   section: `{ enabled, providerId?, destination?, tickMs,

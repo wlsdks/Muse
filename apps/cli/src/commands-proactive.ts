@@ -21,9 +21,11 @@ import type { Command } from "commander";
 import {
   buildCalendarRegistry,
   buildMessagingRegistry,
+  resolveProactiveHistoryFile,
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { CalendarEvent } from "@muse/calendar";
+import { readProactiveHistory } from "@muse/mcp";
 
 import type { ProgramIO } from "./program.js";
 
@@ -129,5 +131,34 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       }
 
       io.stdout(`${lines.join("\n")}\n`);
+    });
+
+  proactive
+    .command("history")
+    .description("Audit recent proactive notices from ~/.muse/proactive-history.json")
+    .option("--limit <count>", "Max entries (newest first, default 20, cap 500)", "20")
+    .option("--json", "Print the raw entries as JSON")
+    .action(async (options: { readonly limit?: string; readonly json?: boolean }) => {
+      const e = env();
+      const file = resolveProactiveHistoryFile(e);
+      const limit = Math.max(1, Math.min(500, Number.parseInt(options.limit ?? "20", 10) || 20));
+      const entries = await readProactiveHistory(file, limit);
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ entries, total: entries.length }, null, 2)}\n`);
+        return;
+      }
+      if (entries.length === 0) {
+        io.stdout(`No proactive history yet (${file})\n`);
+        return;
+      }
+      io.stdout(`${entries.length.toString()} entry/entries (newest first):\n`);
+      for (const entry of entries) {
+        const flag = entry.status === "delivered" ? "✓" : "✗";
+        const head = `${flag} [${entry.firedAtIso}] ${entry.kind}:${entry.itemId.slice(0, 12)} via ${entry.providerId}`;
+        io.stdout(`${head}\n  ${entry.title} — ${entry.text}\n`);
+        if (entry.status === "failed" && entry.error) {
+          io.stdout(`  ! ${entry.error}\n`);
+        }
+      }
     });
 }

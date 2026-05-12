@@ -36,6 +36,7 @@ import {
   createLoopbackMcpMuseTools,
   createMessagingMcpServer,
   createNotesMcpServer,
+  createProactiveMcpServer,
   createRemindersMcpServer,
   createNotesRegistryMcpServer,
   createTasksRegistryMcpServer,
@@ -126,6 +127,7 @@ import {
   ensureNotesDir,
   mergeModelKeysFromFile,
   resolveNotesDir,
+  resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
   resolveRemindersFile,
   resolveTasksFile
@@ -150,6 +152,7 @@ export {
   resolveRemindersFile,
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
+  resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
   resolveSlackAfterFile,
   resolveSlackInboxFile,
@@ -432,6 +435,14 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const remindersLoopbackTools = createLoopbackMcpMuseTools(
     createRemindersMcpServer({ file: remindersFile, historyFile: reminderHistoryFile })
   );
+  // Proactive audit loopback — `muse.proactive.history`. The
+  // daemon's history file lives next to reminder-history; the tool
+  // surfaces it whether or not the proactive daemon is currently
+  // active so the agent can audit historical fires.
+  const proactiveHistoryFile = resolveProactiveHistoryFile(env);
+  const proactiveLoopbackTools = createLoopbackMcpMuseTools(
+    createProactiveMcpServer({ historyFile: proactiveHistoryFile })
+  );
   const schedulerHandle: { current: DynamicScheduler | undefined } = { current: undefined };
 
   const { skillRegistryPromise, skillTools } = createSkillRuntime(env);
@@ -447,6 +458,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => tasksRegistryLoopbackTools,
     () => messagingLoopbackTools,
     () => remindersLoopbackTools,
+    () => proactiveLoopbackTools,
     () => runnerTools,
     () => skillTools,
     () => mcp.manager.toMuseTools(),
