@@ -156,6 +156,10 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       "--ignore-routine",
       "Fire notices even outside the user's routine_active_hours window (default: quiet hours suppress notices)"
     )
+    .option(
+      "--speak",
+      "Also play each delivered notice aloud via the configured TTS (requires MUSE_VOICE_TTS=piper + MUSE_PIPER_VOICE)"
+    )
     .action(async (options: {
       readonly interval: string;
       readonly leadMinutes: string;
@@ -163,6 +167,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       readonly destination?: string;
       readonly user?: string;
       readonly ignoreRoutine?: boolean;
+      readonly speak?: boolean;
     }) => {
       const e = env();
       const interval = Math.max(5, Number.parseInt(options.interval, 10) || 60);
@@ -176,6 +181,61 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
         process.exitCode = 1;
         return;
       }
+      // Resolve TTS once for --speak. Synthesised notices play
+      // through afplay/aplay. Failures are non-fatal.
+      let speakFn: ((text: string) => Promise<void>) | undefined;
+      if (options.speak) {
+        try {
+          const { buildVoiceRegistry } = await import("@muse/autoconfigure");
+          const voiceReg = buildVoiceRegistry(e);
+          const tts = voiceReg?.primaryTts();
+          if (tts) {
+            const { spawn } = await import("node:child_process");
+            const { mkdtempSync, writeFileSync } = await import("node:fs");
+            const { tmpdir, platform } = await import("node:os");
+            const { join: pathJoin } = await import("node:path");
+            speakFn = async (text) => {
+              try {
+                const result = await tts.synthesize({ text });
+                const dir = mkdtempSync(pathJoin(tmpdir(), "muse-proactive-speak-"));
+                const audioFile = pathJoin(dir, `notice.${result.format}`);
+                writeFileSync(audioFile, result.audio);
+                const player = platform() === "darwin" ? "afplay" : "aplay";
+                await new Promise<void>((resolve, reject) => {
+                  const child = spawn(player, [audioFile], { stdio: "ignore" });
+                  child.on("error", reject);
+                  child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${player} exit ${code?.toString() ?? "null"}`)));
+                });
+              } catch (cause) {
+                io.stderr(`speak failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+              }
+            };
+          } else {
+            io.stderr("--speak: TTS not configured (set MUSE_VOICE_TTS=piper + MUSE_PIPER_VOICE). Continuing text-only.\n");
+          }
+        } catch (cause) {
+          io.stderr(`--speak setup failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        }
+      }
+
+      // When --speak is on, wrap the messaging registry so every
+      // successful send ALSO fires the TTS. Single source of truth
+      // for "what JARVIS said" — log file + speaker stay in sync.
+      const effectiveMessagingRegistry = speakFn
+        ? new Proxy(messagingRegistry, {
+            get(target, prop, receiver) {
+              if (prop === "send") {
+                return async (providerId: string, message: { destination: string; text: string }) => {
+                  const result = await target.send(providerId, message);
+                  void speakFn!(message.text);
+                  return result;
+                };
+              }
+              return Reflect.get(target, prop, receiver);
+            }
+          })
+        : messagingRegistry;
+
       const calendarRegistry = buildCalendarRegistry(e);
       const tasksFile = resolveTasksFile(e);
       const historyFile = resolveProactiveHistoryFile(e);
@@ -279,7 +339,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
             destination,
             historyFile,
             leadMinutes,
-            messagingRegistry,
+            messagingRegistry: effectiveMessagingRegistry,
             providerId: provider,
             sidecarFile,
             tasksFile

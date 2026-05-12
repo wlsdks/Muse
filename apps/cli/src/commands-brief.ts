@@ -123,6 +123,28 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
 
       const now = new Date();
       const horizon = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      // Time-of-day greeting tone the LLM should honour. Uses
+      // `routine_active_hours` if known — if the current hour is
+      // outside the user's typical activity band the LLM is told
+      // to acknowledge that ("up late", "early start") instead of
+      // generic "Good morning". JARVIS reads the clock + the user.
+      const hour = now.getHours();
+      const routineHoursRaw = userMemory?.facts?.routine_active_hours;
+      const routineHours = routineHoursRaw
+        ? routineHoursRaw.split(",").map((h) => Number.parseInt(h.trim(), 10)).filter((h) => Number.isInteger(h))
+        : [];
+      const isOutsideRoutine = routineHours.length > 0
+        && !routineHours.some((h) => Math.abs(h - hour) <= 2);
+      const greetingHint = hour < 5 ? "very late night / early hours"
+        : hour < 12 ? "morning"
+        : hour < 17 ? "afternoon"
+        : hour < 21 ? "evening"
+        : "late night";
+      const routineNote = isOutsideRoutine
+        ? `User is OUTSIDE their typical active window (${routineHoursRaw}). Acknowledge briefly ("up late?" / "early start?").`
+        : routineHours.length > 0
+          ? `User is inside their typical active window (${routineHoursRaw}).`
+          : "";
 
       const tasks = await loadTasks();
       const openTasks = tasks.filter((t) => t.status === "open");
@@ -145,7 +167,10 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       const systemPrompt = [
         ...(personaPrompt ? [personaPrompt, ""] : []),
         "You are Muse, the user's JARVIS-style personal AI conductor.",
-        "Compose a brief morning-style summary in 2–3 sentences, in the user's preferred language.",
+        `It is currently ${greetingHint} (local clock ${hour.toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}).`,
+        ...(routineNote ? [routineNote] : []),
+        "Compose a brief summary in 2–3 sentences, in the user's preferred language.",
+        "Open with a short greeting that matches the time of day (and the routine-window hint above).",
         "Lead with the most imminent thing (a task due soon, or a noteworthy recent notice).",
         "If nothing is imminent, say so briefly and suggest one useful action.",
         "Address the user by name if their name is in the persona facts.",

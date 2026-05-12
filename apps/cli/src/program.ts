@@ -990,7 +990,11 @@ async function runChatRepl(
   // `<user>@<persona>` so a single human ("stark") can have a
   // distinct work / home / hobby context with its own facts,
   // prefs, vetoes, goals. No persona suffix → the bare userId.
-  let currentPersona = options.persona?.trim();
+  // Persona resolution order: explicit --persona > shell env > none.
+  // Setting `export MUSE_PERSONA=work` in a shell-rc lets the user
+  // skip --persona on every invocation while keeping the in-session
+  // /persona switch operational. P1 from agent-capability-audit.md.
+  let currentPersona = options.persona?.trim() ?? process.env.MUSE_PERSONA?.trim();
   const composeUserKey = (): string => currentPersona && currentPersona.length > 0
     ? `${baseUserId}@${currentPersona}`
     : baseUserId;
