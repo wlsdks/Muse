@@ -70,6 +70,14 @@ export interface ProgramIO {
   readonly createRuntimeAssembly?: () => {
     readonly agentRuntime?: AgentRuntime;
     readonly defaultModel?: string;
+    // Structural — avoid the cross-package @muse/model dep just for
+    // a type. The REPL's chat-only fast path consumes only `stream`.
+    readonly modelProvider?: {
+      stream(request: {
+        readonly model: string;
+        readonly messages: readonly { readonly role: string; readonly content: string }[];
+      }): AsyncIterable<{ readonly type: string; readonly text?: string }>;
+    };
   };
   /**
    * Optional TTS + speaker shells used by `today --brief --speak`.
@@ -286,6 +294,28 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
           }
         }
       }
+    });
+
+  // `muse repl` — one-keystroke shortcut for the JARVIS daily-driver
+  // surface. Equivalent to:
+  //   muse chat -i --local --no-tools --continue --model $MUSE_MODEL
+  // i.e. continuous conversation, local runtime, no tool-registry
+  // overhead, picks up prior turns from ~/.muse/last-chat.jsonl.
+  // The full `muse chat -i ...` form stays available for fine-grained
+  // control; this is for "just talk to me".
+  program
+    .command("repl")
+    .description("One-keystroke shortcut: continuous local REPL with memory, no tool registry overhead")
+    .option("--model <model>", "Override the model (default MUSE_MODEL or CLI config defaultModel)")
+    .option("--tools", "Enable the tool registry (default off for speed)")
+    .option("--no-continue", "Start a fresh conversation instead of resuming ~/.muse/last-chat.jsonl")
+    .action(async (options: { readonly model?: string; readonly tools?: boolean; readonly continue?: boolean }) => {
+      const cliConfig = await readConfigStore(io);
+      await runChatRepl(io, {
+        continueHistory: options.continue !== false,
+        disableTools: options.tools !== true,
+        model: options.model ?? cliConfig.defaultModel
+      });
     });
 
   registerAuthCommands(program, io, {
@@ -726,6 +756,22 @@ async function runChatRepl(
   let currentModel = options.model;
   let toolsDisabled = options.disableTools;
 
+  // Build the runtime assembly once and reuse across turns; the
+  // streaming loop calls `agentRuntime.stream(...)` directly so
+  // text-delta tokens land in the terminal as the model emits them
+  // (true JARVIS feel — text appears, doesn't pop in all at once).
+  if (currentModel && !process.env.MUSE_MODEL) {
+    process.env.MUSE_MODEL = currentModel;
+  }
+  if (currentModel && currentModel.startsWith("ollama/") && !process.env.MUSE_MODEL_PROVIDER_ID) {
+    process.env.MUSE_MODEL_PROVIDER_ID = "ollama";
+  }
+  const assembly = io.createRuntimeAssembly?.() ?? createMuseRuntimeAssembly();
+  if (!assembly.agentRuntime) {
+    throw new Error("REPL requires a configured model — set MUSE_MODEL (or pass --model) and re-run.");
+  }
+  const agentRuntime = assembly.agentRuntime;
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -734,7 +780,7 @@ async function runChatRepl(
 
   io.stdout("\n");
   io.stdout("Muse REPL — type /help for commands, /exit to quit.\n");
-  io.stdout(`  model: ${currentModel ?? "(default)"}, tools: ${toolsDisabled ? "off" : "on"}, history: ${history.length.toString()} turns\n`);
+  io.stdout(`  model: ${currentModel ?? assembly.defaultModel ?? "(default)"}, tools: ${toolsDisabled ? "off" : "on"}, history: ${history.length.toString()} turns\n`);
   io.stdout("\n");
 
   let active = true;
@@ -807,14 +853,49 @@ async function runChatRepl(
       }
 
       try {
-        const result = await runLocalChat(io, trimmed, currentModel, undefined, {
-          disableTools: toolsDisabled,
-          priorHistory: history
-        });
-        io.stdout(`muse> ${result.response}\n\n`);
+        const messages = [
+          ...history,
+          { content: trimmed, role: "user" as const }
+        ];
+        io.stdout("muse> ");
+        let accumulated = "";
+        if (toolsDisabled && assembly.modelProvider) {
+          // Chat-only fast path: stream tokens directly from the
+          // provider. Agent-runtime guards + filters would buffer
+          // everything until the response is complete (so they can
+          // scrub) — fine for tool-using runs, but kills the
+          // token-by-token JARVIS feel. With tools off there's no
+          // guard surface that needs the full response anyway.
+          for await (const event of assembly.modelProvider.stream({
+            messages,
+            model: currentModel ?? assembly.defaultModel ?? "default"
+          })) {
+            if (event.type === "text-delta" && typeof event.text === "string") {
+              io.stdout(event.text);
+              accumulated += event.text;
+            }
+          }
+        } else {
+          // Tool-using path: route through the agent runtime so the
+          // tool registry + guards + memory hooks fire. Streams the
+          // final text once when the agent settles.
+          const metadata: Record<string, string | number> = {};
+          if (toolsDisabled) metadata.maxTools = 0;
+          for await (const event of agentRuntime.stream({
+            messages,
+            ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+            model: currentModel ?? assembly.defaultModel ?? "default"
+          })) {
+            if (event.type === "text-delta") {
+              io.stdout(event.text);
+              accumulated += event.text;
+            }
+          }
+        }
+        io.stdout("\n\n");
         history.push({ content: trimmed, role: "user" });
-        history.push({ content: result.response, role: "assistant" });
-        await appendLastChatTurn({ message: trimmed, response: result.response });
+        history.push({ content: accumulated, role: "assistant" });
+        await appendLastChatTurn({ message: trimmed, response: accumulated });
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         io.stderr(`(error: ${msg})\n`);
