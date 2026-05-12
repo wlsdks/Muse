@@ -8,6 +8,7 @@
  * Endpoints:
  *   - GET    /api/tasks — list dueAt-first (most-imminent on top, undated last), filterable by status
  *   - POST   /api/tasks — create a new task with title + optional notes/tags/dueAt
+ *   - PATCH  /api/tasks/:id — update title/notes/tags/dueAt/urgent in place; null/empty clears
  *   - POST   /api/tasks/:id/complete — mark done with completedAt
  *   - DELETE /api/tasks/:id — remove
  *
@@ -98,6 +99,56 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
     };
     await writeTasks(tasksFile, [...tasks, created]);
     return reply.status(201).send(created);
+  });
+
+  server.patch("/api/tasks/:id", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
+      return reply;
+    }
+    const { id } = request.params as { readonly id: string };
+    const body = request.body as {
+      readonly title?: unknown;
+      readonly notes?: unknown;
+      readonly tags?: unknown;
+      readonly dueAt?: unknown;
+      readonly urgent?: unknown;
+    };
+    const tasks = await readTasks(tasksFile);
+    const index = tasks.findIndex((task) => task.id === id);
+    if (index < 0) {
+      return reply.status(404).send({ code: "TASK_NOT_FOUND", message: `task not found: ${id}` });
+    }
+    const existing = tasks[index]!;
+    let dueAt: string | undefined | null;
+    if (body.dueAt === null) {
+      dueAt = null;
+    } else if (typeof body.dueAt === "string" && body.dueAt.trim().length > 0) {
+      const parsed = parseTaskDueAt(body.dueAt, () => new Date());
+      if (parsed instanceof Error) {
+        return reply.status(400).send({ code: "BAD_DUE_AT", message: parsed.message });
+      }
+      dueAt = parsed;
+    }
+    const patched: PersistedTask = {
+      ...existing,
+      ...(typeof body.title === "string" && body.title.trim().length > 0 ? { title: body.title.trim() } : {}),
+      ...(typeof body.notes === "string"
+        ? body.notes.length > 0 ? { notes: body.notes } : { notes: undefined as unknown as string }
+        : {}),
+      ...(Array.isArray(body.tags)
+        ? body.tags.length > 0
+          ? { tags: (body.tags as unknown[]).filter((entry): entry is string => typeof entry === "string") }
+          : { tags: undefined as unknown as readonly string[] }
+        : {}),
+      ...(dueAt === null
+        ? { dueAt: undefined as unknown as string }
+        : dueAt !== undefined ? { dueAt } : {}),
+      ...(typeof body.urgent === "boolean" ? { urgent: body.urgent } : {})
+    };
+    const next = [...tasks];
+    next[index] = patched;
+    await writeTasks(tasksFile, next);
+    return patched;
   });
 
   server.post("/api/tasks/:id/complete", async (request, reply) => {

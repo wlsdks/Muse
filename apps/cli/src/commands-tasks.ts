@@ -39,7 +39,7 @@ export interface TasksCommandHelpers {
     command: Command,
     path: string,
     body?: Record<string, unknown>,
-    method?: "GET" | "POST" | "PUT" | "DELETE"
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
   ) => Promise<unknown>;
   readonly writeOutput: (io: ProgramIO, value: unknown, textField?: string) => void;
 }
@@ -206,6 +206,119 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         return;
       }
       io.stdout(formatTaskCompleted(completed as unknown as Parameters<typeof formatTaskCompleted>[0]));
+    });
+
+  tasks
+    .command("edit")
+    .description("Update an existing task in place (--local skips the API)")
+    .argument("<id>", "Task id (full or short prefix)")
+    .option("--title <text...>", "New title")
+    .option("--notes <text>", "New free-form notes (pass an empty string to clear)")
+    .option("--tags <list>", "New comma-separated tag list (pass an empty string to clear)")
+    .option(
+      "--due <when>",
+      "New due date: ISO-8601 or relative phrase ('tomorrow at 6pm'). Pass 'none' to clear."
+    )
+    .option("--urgent", "Mark as urgent")
+    .option("--no-urgent", "Clear the urgent flag")
+    .option("--local", "Update the local tasks file instead of calling the API")
+    .option("--json", "Print the raw task instead of a short confirmation")
+    .action(async (
+      id: string,
+      options: {
+        readonly title?: string | readonly string[];
+        readonly notes?: string;
+        readonly tags?: string;
+        readonly due?: string;
+        readonly urgent?: boolean;
+      } & SharedOptions,
+      command
+    ) => {
+      const nextTitle = Array.isArray(options.title)
+        ? options.title.join(" ").trim()
+        : typeof options.title === "string"
+          ? options.title.trim()
+          : undefined;
+      const updates: Record<string, unknown> = {};
+      if (nextTitle && nextTitle.length > 0) {
+        updates.title = nextTitle;
+      }
+      if (options.notes !== undefined) {
+        updates.notes = options.notes;
+      }
+      if (options.tags !== undefined) {
+        const split = options.tags.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+        updates.tags = split;
+      }
+      if (options.due !== undefined) {
+        if (options.due.trim().toLowerCase() === "none" || options.due.trim().length === 0) {
+          updates.dueAt = null;
+        } else {
+          const parsed = parseTaskDueAt(options.due, () => new Date());
+          if (parsed instanceof Error) {
+            throw parsed;
+          }
+          updates.dueAt = parsed;
+        }
+      }
+      if (typeof options.urgent === "boolean") {
+        updates.urgent = options.urgent;
+      }
+      if (Object.keys(updates).length === 0) {
+        io.stderr("muse tasks edit needs at least one of --title/--notes/--tags/--due/--urgent/--no-urgent\n");
+        process.exitCode = 1;
+        return;
+      }
+
+      let updated: Record<string, unknown>;
+      if (options.local) {
+        const file = localTasksFile();
+        const all = await readTasks(file);
+        const resolved = resolveLocalTaskId(id, all);
+        const index = all.findIndex((task) => task.id === resolved);
+        if (index === -1) {
+          io.stderr(`Task ${id} not found\n`);
+          process.exitCode = 1;
+          return;
+        }
+        const existing = all[index]!;
+        const patched: PersistedTask = {
+          ...existing,
+          ...(typeof updates.title === "string" ? { title: updates.title } : {}),
+          ...(typeof updates.notes === "string"
+            ? updates.notes.length > 0 ? { notes: updates.notes } : { }
+            : { }),
+          ...(Array.isArray(updates.tags)
+            ? (updates.tags as readonly string[]).length > 0 ? { tags: updates.tags as readonly string[] } : { }
+            : { }),
+          ...(typeof updates.dueAt === "string" ? { dueAt: updates.dueAt } : { }),
+          ...(typeof updates.urgent === "boolean" ? { urgent: updates.urgent } : { })
+        };
+        // Clear-out semantics: --notes "" / --tags "" / --due none drop the field.
+        const cleared: PersistedTask = {
+          ...patched,
+          ...(typeof updates.notes === "string" && updates.notes.length === 0 ? { notes: undefined as unknown as string } : {}),
+          ...(Array.isArray(updates.tags) && (updates.tags as readonly string[]).length === 0 ? { tags: undefined as unknown as readonly string[] } : {}),
+          ...(updates.dueAt === null ? { dueAt: undefined as unknown as string } : {})
+        };
+        const next = [...all];
+        next[index] = cleared;
+        await writeTasks(file, next);
+        updated = serializeTask(cleared);
+      } else {
+        updated = (await helpers.apiRequest(
+          io,
+          command,
+          `/api/tasks/${encodeURIComponent(id)}`,
+          updates,
+          "PATCH"
+        )) as Record<string, unknown>;
+      }
+      if (options.json) {
+        helpers.writeOutput(io, updated);
+        return;
+      }
+      io.stdout(`Updated [${String(updated.id).slice(0, 12)}] ${String(updated.title)}\n`);
     });
 
   tasks

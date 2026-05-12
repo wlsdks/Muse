@@ -842,7 +842,7 @@ async function apiRequest(
   command: Command,
   path: string,
   body?: Record<string, unknown>,
-  method?: "GET" | "POST" | "PUT" | "DELETE"
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 ) {
   const { baseUrl, token } = await readApiOptions(io, command);
   let response: Response;
