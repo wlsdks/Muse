@@ -45,21 +45,21 @@ export const LOCAL_MODEL_PRESETS: readonly LocalModelPreset[] = [
   {
     approxSizeGb: 1.0,
     minRamGb: 4,
-    note: "lowest; proven JARVIS-fit (90 ms first-token on M3 Pro); Qwen 2.5 used because qwen3.5:0.8b is Q8-only and times out",
+    note: "lowest; proven 90 ms first-token on M3 Pro",
     tag: "qwen2.5:1.5b-instruct",
     tier: "low"
   },
   {
-    approxSizeGb: 1.9,
-    minRamGb: 6,
-    note: "mid; balanced JARVIS surface, good Korean",
-    tag: "qwen3.5:2b-q4_K_M",
+    approxSizeGb: 4.7,
+    minRamGb: 8,
+    note: "mid; proven 201 ms first-token + 27 tok/s on M3 Pro",
+    tag: "qwen2.5:7b-instruct",
     tier: "mid"
   },
   {
     approxSizeGb: 6.6,
     minRamGb: 12,
-    note: "high; recommended JARVIS daily-driver, stable tool calling",
+    note: "high; newest Qwen 3.5 (Apr 2026) — slower first-token, better quality",
     tag: "qwen3.5:9b-q4_K_M",
     tier: "high"
   },
@@ -73,12 +73,25 @@ export const LOCAL_MODEL_PRESETS: readonly LocalModelPreset[] = [
 ];
 
 /**
- * Default Ollama tags for Qwen 3.5 sizes ship with Q8_0 quantisation
- * (2× the disk + ~3× the inference latency of Q4_K_M for the same
- * weights). Dogfood on M3 Pro: `qwen3.5:2b` first-token = 134 s,
- * `qwen3.5:2b-q4_K_M` first-token < 500 ms. The presets always use
- * the `-q4_K_M` suffix so users don't accidentally pull the slow
- * variant.
+ * Why low + mid stay on Qwen 2.5 (Sep 2024) instead of the newer
+ * Qwen 3.5 (Feb–Apr 2026) family that started this preset overhaul:
+ *
+ * Dogfood on M3 Pro / 36 GB / Ollama 0.21.1:
+ *   qwen2.5:1.5b-instruct  : first-token 90 ms        ← JARVIS-fit
+ *   qwen2.5:7b-instruct    : first-token 201 ms       ← JARVIS-fit
+ *   qwen3.5:2b (Q8 default) : first-token 134 000 ms  ← unusable
+ *   qwen3.5:2b-q4_K_M       : first-token  39 000 ms  ← still unusable
+ *   qwen3.5:0.8b (Q8-only)  : warm-up timed out (>5 min)
+ *
+ * Qwen 3.5 family seems to carry multimodal-Omni preprocessing
+ * overhead even when only text is requested; Q4_K_M helps but
+ * doesn't bring the small sizes into the JARVIS first-token budget.
+ * Qwen 3.5:9b is left as the "high" tier for users who care more
+ * about reply quality than first-token latency; qwen3.6:27b is the
+ * agentic-coding "power" tier where the first-token cost amortises.
+ *
+ * When Alibaba publishes a non-Omni 3.5 build (or Qwen 4 lands),
+ * revisit. Re-run `scripts/dogfood-local-llm.mjs <tag>` to verify.
  */
 
 export interface SetupLocalHelpers {

@@ -13,21 +13,21 @@ describe("pickPreset", () => {
   });
 
   it("prefers highest-tier preset already installed", () => {
-    const installed = new Set(["qwen2.5:1.5b-instruct", "qwen3.5:2b-q4_K_M"]);
-    expect(pickPreset(installed)?.tag).toBe("qwen3.5:2b-q4_K_M");
+    const installed = new Set(["qwen2.5:1.5b-instruct", "qwen2.5:7b-instruct"]);
+    expect(pickPreset(installed)?.tag).toBe("qwen2.5:7b-instruct");
   });
 
   it("returns 9b when 9b installed alongside smaller", () => {
     const installed = new Set([
       "qwen2.5:1.5b-instruct",
-      "qwen3.5:2b-q4_K_M",
+      "qwen2.5:7b-instruct",
       "qwen3.5:9b-q4_K_M"
     ]);
     expect(pickPreset(installed)?.tag).toBe("qwen3.5:9b-q4_K_M");
   });
 
   it("returns power tier when 27b installed", () => {
-    const installed = new Set(["qwen3.5:2b-q4_K_M", "qwen3.6:27b"]);
+    const installed = new Set(["qwen2.5:7b-instruct", "qwen3.6:27b"]);
     expect(pickPreset(installed)?.tag).toBe("qwen3.6:27b");
     expect(pickPreset(installed)?.tier).toBe("power");
   });
@@ -40,7 +40,7 @@ describe("pickPreset", () => {
   });
 
   it("strips the ollama/ prefix from override", () => {
-    expect(pickPreset(new Set(), "ollama/qwen3.5:9b-q4_K_M")?.tag).toBe("qwen3.5:9b-q4_K_M");
+    expect(pickPreset(new Set(), "ollama/qwen2.5:7b-instruct")?.tag).toBe("qwen2.5:7b-instruct");
   });
 
   it("matches an override against the preset table when possible", () => {

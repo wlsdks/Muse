@@ -25,10 +25,10 @@ curl -fsSL https://ollama.com/install.sh | sh           # Linux
 ollama serve &
 
 # 3. pull a model — pick a tier
-ollama pull qwen2.5:1.5b-instruct      # low, ~1 GB (qwen3.5:0.8b is Q8-only, unusably slow)
-ollama pull qwen3.5:2b-q4_K_M          # mid, ~1.9 GB
-ollama pull qwen3.5:9b-q4_K_M          # high, ~6.6 GB  (recommended)
-ollama pull qwen3.6:27b                # power, ~17 GB  (agentic coding)
+ollama pull qwen2.5:1.5b-instruct      # low,  ~1 GB, 90 ms first-token
+ollama pull qwen2.5:7b-instruct        # mid,  4.7 GB, 201 ms first-token (recommended)
+ollama pull qwen3.5:9b-q4_K_M          # high, 6.6 GB, newer/better but ~30 s first-token
+ollama pull qwen3.6:27b                # power, 17 GB, agentic coding
 
 # 4. tell Muse to use it
 muse setup local
@@ -45,23 +45,27 @@ Pass `--check` to dry-run without writing.
 
 | Tier | Model | Size on disk | Min RAM | Strengths | Weaknesses |
 | --- | --- | --- | --- | --- | --- |
-| **low** | `qwen2.5:1.5b-instruct` | 1.0 GB | 4 GB | fits 4 GB laptops; proven 90 ms first-token on M3 Pro | older (Sep 2024); tool calling fragile; basic chat only |
-| **mid** | `qwen3.5:2b-q4_K_M` | 1.9 GB | 6 GB | balanced JARVIS surface, good Korean | tool calling occasionally hesitates |
-| **high** | `qwen3.5:9b-q4_K_M` | 6.6 GB | 12 GB | **recommended daily-driver** — stable tool calling, strong Korean, Apr 2026 release | needs Apple-Silicon or 16 GB+ x86 |
+| **low** | `qwen2.5:1.5b-instruct` | 1.0 GB | 4 GB | **proven 90 ms first-token** on M3 Pro; JARVIS-fit | older (Sep 2024); tool calling fragile |
+| **mid** | `qwen2.5:7b-instruct` | 4.7 GB | 8 GB | **proven 201 ms first-token + 27 tok/s**; recommended daily-driver | older (Sep 2024) |
+| **high** | `qwen3.5:9b-q4_K_M` | 6.6 GB | 12 GB | newest (Apr 2026), better reply quality, multimodal-capable | slower first-token (~30 s on M3 Pro) |
 | **power** | `qwen3.6:27b` | 17 GB | 32 GB | open-weight agentic-coding tier (Apr 2026), best 27 B coding model | M-Pro 32 GB+ or workstation only |
 
-**Always pull the `-q4_K_M` suffix for Qwen 3.5.** The default tags
-(`qwen3.5:2b` without suffix) ship as Q8_0 — half-precision, 1.4–2×
-the disk, and on this machine first-token jumps from **<500 ms (Q4)**
-to **134 s (Q8)** for the 2 B model because of the multimodal-Omni
-preprocessing path. Q4_K_M is what every other "small" tag uses and
-is what JARVIS daily work expects.
+**Why low + mid stay on Qwen 2.5 even though Qwen 3.5 is newer:** the
+3.5 family carries multimodal-Omni preprocessing overhead even for
+plain-text prompts. Dogfood measurements on this machine:
 
-**Qwen 3.5 0.8 B has only a Q8 build published.** Dogfood on M3 Pro
-made the warm-up call time out at 5 minutes — unusable. The low
-tier therefore stays on `qwen2.5:1.5b-instruct`, which has a proven
-Q4_K_M build and a 90 ms warm first-token. When Qwen team publishes
-a Q4 variant for the 0.8 B size, we'll switch.
+| Model | Quant | Warm first-token | Verdict |
+| --- | --- | --- | --- |
+| qwen2.5:1.5b-instruct | Q4_K_M | **90 ms** | JARVIS-fit |
+| qwen2.5:7b-instruct | Q4_K_M | **201 ms** | JARVIS-fit |
+| qwen3.5:0.8b | Q8 (only build) | timed out at 5 min | unusable |
+| qwen3.5:2b (default) | Q8 | 134 s | unusable |
+| qwen3.5:2b-q4_K_M | Q4_K_M | 39 s | borderline |
+
+Qwen 3.5:9 B stays as the "high" tier because at that size reply
+quality matters more than first-token latency, and the multimodal
+overhead amortises better. When Alibaba publishes a non-Omni
+3.5 / 4 build, we'll re-test and likely promote it.
 
 `qwen2.5` (Sep 2024) and `qwen3` (Aug 2025) still work — pass them
 with `--model ollama/<tag>` — but Qwen 3.5 (Feb–Apr 2026) is the
