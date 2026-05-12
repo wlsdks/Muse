@@ -25,9 +25,9 @@ curl -fsSL https://ollama.com/install.sh | sh           # Linux
 ollama serve &
 
 # 3. pull a model — pick a tier
-ollama pull qwen2.5:1.5b-instruct      # low,  ~1 GB, 90 ms first-token
-ollama pull qwen2.5:7b-instruct        # mid,  4.7 GB, 201 ms first-token (recommended)
-ollama pull qwen3.5:9b-q4_K_M          # high, 6.6 GB, newer/better but ~30 s first-token
+ollama pull qwen3.5:2b-q4_K_M          # low,  ~1.9 GB, 159 ms first-token (recommended)
+ollama pull qwen2.5:7b-instruct        # mid,  4.7 GB, proven baseline
+ollama pull qwen3.5:9b-q4_K_M          # high, 6.6 GB, best reply quality
 ollama pull qwen3.6:27b                # power, 17 GB, agentic coding
 
 # 4. tell Muse to use it
