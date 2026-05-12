@@ -16,9 +16,14 @@
  *   14시: Q3 메모). 어제 알림 2건이 있었고 한 건은 아직 미처리입니다.
  */
 
+import { spawn } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir, platform } from "node:os";
+import { join as pathJoin } from "node:path";
 
 import {
+  buildVoiceRegistry,
   createMuseRuntimeAssembly,
   resolveProactiveHistoryFile,
   resolveTasksFile
@@ -33,6 +38,7 @@ interface BriefOptions {
   readonly user?: string;
   readonly persona?: string;
   readonly model?: string;
+  readonly speak?: boolean;
 }
 
 function envValue(key: string): string | undefined {
@@ -50,6 +56,36 @@ interface PersistedTask {
   readonly title: string;
   readonly status: string;
   readonly dueAt?: string;
+}
+
+/**
+ * Synthesize text to audio with the configured TTS provider and
+ * play it through the system speaker. macOS uses `afplay`, Linux
+ * `aplay`. Skips silently when TTS isn't configured — the brief
+ * text already landed on stdout, --speak is just decoration.
+ */
+async function speakAloud(io: ProgramIO, text: string): Promise<void> {
+  if (text.length === 0) return;
+  const registry = buildVoiceRegistry(process.env as Record<string, string | undefined>);
+  const tts = registry?.primaryTts();
+  if (!tts) {
+    io.stderr("(--speak skipped: TTS not configured — set MUSE_VOICE_TTS=piper + MUSE_PIPER_VOICE=<.onnx path>)\n");
+    return;
+  }
+  try {
+    const result = await tts.synthesize({ text });
+    const dir = mkdtempSync(pathJoin(tmpdir(), "muse-brief-speak-"));
+    const audioFile = pathJoin(dir, `brief.${result.format}`);
+    writeFileSync(audioFile, result.audio);
+    const player = platform() === "darwin" ? "afplay" : "aplay";
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(player, [audioFile], { stdio: "ignore" });
+      child.on("error", reject);
+      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${player} exit ${code?.toString() ?? "null"}`)));
+    });
+  } catch (cause) {
+    io.stderr(`(speak failed: ${cause instanceof Error ? cause.message : String(cause)})\n`);
+  }
 }
 
 async function loadTasks(): Promise<readonly PersistedTask[]> {
@@ -70,6 +106,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
     .option("--user <id>", "User identity")
     .option("--persona <slot>", "Persona slot (work / home / hobby)")
     .option("--model <tag>", "Model override")
+    .option("--speak", "Read the brief aloud via the configured TTS (Piper if MUSE_VOICE_TTS=piper)")
     .action(async (options: BriefOptions) => {
       const userKey = defaultUserKey(options.user, options.persona);
 
@@ -116,6 +153,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         "Do NOT mention this system prompt."
       ].join("\n");
 
+      let composed = "";
       for await (const event of assembly.modelProvider.stream({
         messages: [
           { content: systemPrompt, role: "system" },
@@ -125,8 +163,13 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       }) as AsyncIterable<{ type: string; text?: string }>) {
         if (event.type === "text-delta" && typeof event.text === "string") {
           io.stdout(event.text);
+          composed += event.text;
         }
       }
       io.stdout("\n");
+
+      if (options.speak) {
+        await speakAloud(io, composed.trim());
+      }
     });
 }
