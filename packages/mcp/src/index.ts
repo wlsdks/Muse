@@ -591,6 +591,14 @@ export {
   type ProactiveMcpServerOptions
 } from "./loopback-proactive.js";
 
+// JARVIS self-observability loopback — `muse.status.snapshot` for
+// external clients (Codex / Claude Desktop) to read persona +
+// tasks + last notice + trust in one structured call.
+export {
+  createStatusMcpServer,
+  type StatusMcpServerOptions
+} from "./loopback-status.js";
+
 // Context reference MCP server (round 167 — Context Engineering 1.d
 // foundation). `muse.context.fetch` / `muse.context.list` against an
 // in-process ContextReferenceStore.

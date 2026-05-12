@@ -44,6 +44,7 @@ import {
   createNotesMcpServer,
   createProactiveMcpServer,
   createRemindersMcpServer,
+  createStatusMcpServer,
   createTasksMcpServer
 } from "../dist/index.js";
 import { CalendarProviderRegistry, LocalCalendarProvider } from "@muse/calendar";
@@ -51,7 +52,7 @@ import { CalendarProviderRegistry, LocalCalendarProvider } from "@muse/calendar"
 const which = (process.argv[2] ?? "").trim().toLowerCase();
 if (!which) {
   process.stderr.write(
-    "usage: muse-mcp-stdio <notes|tasks|calendar|reminders|proactive>\n"
+    "usage: muse-mcp-stdio <notes|tasks|calendar|reminders|proactive|status>\n"
   );
   process.exit(2);
 }
@@ -86,6 +87,15 @@ switch (which) {
   case "proactive":
     loopback = createProactiveMcpServer({
       historyFile: dot("MUSE_PROACTIVE_HISTORY_FILE", "proactive-history.json")
+    });
+    break;
+  case "status":
+    loopback = createStatusMcpServer({
+      userMemoryFile: dot("MUSE_USER_MEMORY_FILE", "user-memory.json"),
+      tasksFile: dot("MUSE_TASKS_FILE", "tasks.json"),
+      historyFile: dot("MUSE_PROACTIVE_HISTORY_FILE", "proactive-history.json"),
+      logFile: dot("MUSE_MESSAGING_LOG_FILE", "notifications.log"),
+      trustFile: dot("MUSE_TRUST_FILE", "trust.json")
     });
     break;
   default:
