@@ -61,7 +61,7 @@ interface WatchOptions {
 function extractDueHint(body: string): string | undefined {
   const lines = body.split("\n").slice(0, 8);
   for (const line of lines) {
-    const m = /^\s*(?:due|마감|deadline)\s*[:\-]\s*(.+)$/i.exec(line.trim());
+    const m = /^\s*(?:due|마감|deadline)\s*[:-]\s*(.+)$/i.exec(line.trim());
     if (m && m[1]) {
       return m[1].trim();
     }
