@@ -18,17 +18,10 @@
 import { Readable } from "node:stream";
 import {
   buildModelRequestWithWebSearch,
-  GuardBlockedError,
-  OutputGuardBlockedError,
-  PlanExecutionError,
-  PlanValidationFailedError,
-  type AgentRunInput,
-  type AgentRuntime,
-  type AgentRunResult
+  type AgentRunInput
 } from "@muse/agent-core";
 import type { AgentSpecInput } from "@muse/agent-specs";
 import type { RuntimeSettingType } from "@muse/runtime-settings";
-import type { AgentRunRecord } from "@muse/runtime-state";
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import type { ServerOptions } from "./server.js";
@@ -357,214 +350,30 @@ function parseToolCalls(value: unknown): AgentRunInput["messages"][number]["tool
 }
 
 // ---------------------------------------------------------------------------
-// Chat response builders
+// Chat response builders — implementation in `./server-chat-response-builders.js`.
+// Re-exported here so the existing import sites keep working.
 // ---------------------------------------------------------------------------
+import {
+  toCompatChatResponse,
+  toExtendedChatResponse
+} from "./server-chat-response-builders.js";
 
-export function toCompatChatResponse(result: AgentRunResult) {
-  const tokenUsage = compatTokenUsage(result.response.usage);
-  const metadata = compatResponseMetadata(result);
-
-  return {
-    blockReason: typeof metadata.blockReason === "string" ? metadata.blockReason : null,
-    citations: result.response.citations ?? [],
-    content: result.response.output,
-    durationMs: null,
-    errorCode: null,
-    errorMessage: null,
-    grounded: typeof metadata.grounded === "boolean" ? metadata.grounded : null,
-    metadata,
-    model: result.response.model,
-    success: true,
-    tokenUsage,
-    toolsUsed: result.toolsUsed ?? [],
-    verifiedSourceCount: typeof metadata.verifiedSourceCount === "number" ? metadata.verifiedSourceCount : null
-  };
-}
-
-export function toAdminRunSummary(run: AgentRunRecord) {
-  return {
-    id: run.id,
-    inputPreview: previewText(run.input, 120),
-    model: run.model,
-    provider: run.provider,
-    status: run.status
-  };
-}
-
-function previewText(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
-}
-
-export function toExtendedChatResponse(result: AgentRunResult) {
-  return {
-    ...toCompatChatResponse(result),
-    agentSpec: result.agentSpec,
-    contextWindow: result.contextWindow,
-    fromCache: result.fromCache ?? false,
-    response: result.response.output,
-    runId: result.runId,
-    usage: result.response.usage
-  };
-}
-
-function compatTokenUsage(usage: AgentRunResult["response"]["usage"]) {
-  if (!usage) {
-    return null;
-  }
-
-  const promptTokens = usage.inputTokens ?? 0;
-  const completionTokens = usage.outputTokens ?? 0;
-  return {
-    cachedContentTokens: usage.cachedInputTokens ?? null,
-    completionTokens,
-    promptTokens,
-    thoughtsTokens: usage.reasoningTokens ?? null,
-    toolUsePromptTokens: null,
-    totalTokens: promptTokens + completionTokens,
-    trafficType: null
-  };
-}
-
-function compatResponseMetadata(result: AgentRunResult): JsonObject {
-  return {
-    ...(result.agentSpec
-      ? {
-        agentSpec: {
-          confidence: result.agentSpec.confidence,
-          matchedKeywords: [...result.agentSpec.matchedKeywords],
-          name: result.agentSpec.name,
-          toolNames: [...result.agentSpec.toolNames]
-        }
-      }
-      : {}),
-    ...(result.contextWindow
-      ? {
-        contextWindow: {
-          budgetTokens: result.contextWindow.budgetTokens,
-          estimatedTokens: result.contextWindow.estimatedTokens,
-          removedCount: result.contextWindow.removedCount,
-          summaryInserted: result.contextWindow.summaryInserted
-        }
-      }
-      : {}),
-    fromCache: result.fromCache ?? false,
-    runId: result.runId
-  };
-}
+export {
+  toAdminRunSummary,
+  toCompatChatResponse,
+  toExtendedChatResponse
+} from "./server-chat-response-builders.js";
 
 // ---------------------------------------------------------------------------
-// Agent error handling
+// Agent error handling — implementation in `./server-agent-error.js`.
+// Re-exported here so the existing import sites keep working.
 // ---------------------------------------------------------------------------
+import { sendAgentError } from "./server-agent-error.js";
 
-export function sendAgentError(
-  reply: { status(statusCode: number): { send(payload: ApiError): void } },
-  error: unknown,
-  responseMode: "extended" | "compat"
-) {
-  if (error instanceof GuardBlockedError) {
-    return reply.status(403).send(chatErrorResponse({
-      blockReason: error.message,
-      code: error.code ?? "GUARD_BLOCKED",
-      errorCode: error.code ?? "GUARD_BLOCKED",
-      errorMessage: error.message,
-      message: error.message
-    }, responseMode) as ApiError);
-  }
-
-  if (error instanceof OutputGuardBlockedError) {
-    return reply.status(422).send(chatErrorResponse({
-      blockReason: error.message,
-      code: error.code ?? "OUTPUT_GUARD_BLOCKED",
-      errorCode: error.code ?? "OUTPUT_GUARD_BLOCKED",
-      errorMessage: error.message,
-      message: error.message
-    }, responseMode) as ApiError);
-  }
-
-  if (error instanceof PlanExecutionError) {
-    return reply.status(422).send(chatErrorResponse({
-      code: error.code,
-      errorCode: error.code,
-      errorMessage: error.message,
-      message: error.message
-    }, responseMode) as ApiError);
-  }
-
-  if (error instanceof PlanValidationFailedError) {
-    return reply.status(422).send(chatErrorResponse({
-      code: "PLAN_VALIDATION_FAILED",
-      errorCode: "PLAN_VALIDATION_FAILED",
-      errorMessage: error.message,
-      message: error.message
-    }, responseMode) as ApiError);
-  }
-
-  const message = unwrapErrorMessage(error);
-  return reply.status(500).send(chatErrorResponse({
-    code: "AGENT_RUN_FAILED",
-    errorCode: "AGENT_RUN_FAILED",
-    errorMessage: message,
-    message
-  }, responseMode) as ApiError);
-}
-
-/**
- * Unwrap nested error causes (RetryExhaustedError → ModelProviderError →
- * underlying fetch error) so an operator sees the actual upstream error
- * message instead of the generic retry-exhausted wrapper.
- */
-export function unwrapErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Agent run failed";
-  }
-
-  const seen = new Set<unknown>();
-  const segments: string[] = [];
-  let current: unknown = error;
-
-  while (current instanceof Error && !seen.has(current)) {
-    seen.add(current);
-    segments.push(current.message);
-    current = (current as Error & { readonly cause?: unknown }).cause;
-  }
-
-  return segments.join(" — ");
-}
-
-function chatErrorResponse(
-  error: {
-    readonly blockReason?: string;
-    readonly code: string;
-    readonly errorCode: string;
-    readonly errorMessage: string;
-    readonly message: string;
-  },
-  responseMode: "extended" | "compat"
-) {
-  const response = {
-    blockReason: error.blockReason ?? null,
-    content: null,
-    durationMs: null,
-    errorCode: error.errorCode,
-    errorMessage: error.errorMessage,
-    grounded: null,
-    metadata: {},
-    model: null,
-    success: false,
-    tokenUsage: null,
-    toolsUsed: [],
-    verifiedSourceCount: null
-  };
-
-  return responseMode === "compat"
-    ? response
-    : {
-      ...response,
-      code: error.code,
-      message: error.message
-    };
-}
+export {
+  sendAgentError,
+  unwrapErrorMessage
+} from "./server-agent-error.js";
 
 // ---------------------------------------------------------------------------
 // Other parsers
@@ -685,151 +494,12 @@ export {
 };
 
 // ---------------------------------------------------------------------------
-// Multipart + SSE
+// Multipart + SSE — implementation in `./server-multipart-sse.js`.
+// Re-exported here so the existing import sites keep working.
 // ---------------------------------------------------------------------------
+import { toSseStream } from "./server-multipart-sse.js";
 
-export function parseMultipartBody(contentType: string | string[] | undefined, body: Buffer): JsonObject {
-  const header = Array.isArray(contentType) ? contentType[0] : contentType;
-  const boundary = header?.match(/boundary=(?:"([^"]+)"|([^;]+))/iu)?.slice(1).find(Boolean);
-
-  if (!boundary) {
-    throw new Error("Multipart boundary is required");
-  }
-
-  const fields: Record<string, string> = {};
-  const files: JsonObject[] = [];
-  const raw = body.toString("latin1");
-
-  for (const part of raw.split(`--${boundary}`)) {
-    if (part.trim().length === 0 || part.trim() === "--") {
-      continue;
-    }
-
-    const headerEnd = part.indexOf("\r\n\r\n");
-
-    if (headerEnd < 0) {
-      continue;
-    }
-
-    const headers = part.slice(0, headerEnd).toLowerCase();
-    const disposition = headers.match(/content-disposition:[^\r\n]+/iu)?.[0] ?? "";
-    const name = disposition.match(/name="([^"]+)"/iu)?.[1];
-
-    if (!name) {
-      continue;
-    }
-
-    const filename = disposition.match(/filename="([^"]*)"/iu)?.[1];
-    const contentTypeValue = headers.match(/content-type:\s*([^\r\n]+)/iu)?.[1]?.trim();
-    const rawContent = part.slice(headerEnd + 4).replace(/\r\n--$/u, "").replace(/\r\n$/u, "");
-    const content = Buffer.from(rawContent, "latin1");
-
-    if (filename !== undefined) {
-      files.push({
-        contentBase64: content.toString("base64"),
-        contentType: contentTypeValue ?? "application/octet-stream",
-        fieldName: name,
-        filename,
-        size: content.byteLength
-      });
-      continue;
-    }
-
-    fields[name] = content.toString("utf8");
-  }
-
-  return { fields, files };
-}
-
-function sseData(value: string): string {
-  return value.split(/\r?\n/u).map((line) => line.length > 0 ? line : " ").join("\ndata: ");
-}
-
-async function* toSseStream(
-  events: ReturnType<AgentRuntime["stream"]>,
-  responseMode: "extended" | "compat"
-): AsyncIterable<string> {
-  for await (const event of events) {
-    if (event.type === "text-delta") {
-      yield `event: message\ndata: ${sseData(event.text)}\n\n`;
-      continue;
-    }
-
-    if (event.type === "tool-call") {
-      if (responseMode === "compat") {
-        yield `event: tool_start\ndata: ${sseData(event.toolCall.name)}\n\n`;
-        continue;
-      }
-
-      yield `event: tool_call\ndata: ${sseData(JSON.stringify(event.toolCall))}\n\n`;
-      continue;
-    }
-
-    if (event.type === "tool-result") {
-      if (responseMode === "compat") {
-        yield `event: tool_end\ndata: ${sseData(event.toolCall.name)}\n\n`;
-      }
-
-      continue;
-    }
-
-    if (event.type === "tool-call-started") {
-      yield `event: tool_call\ndata: ${sseData(JSON.stringify({ name: event.name, phase: "started" }))}\n\n`;
-      continue;
-    }
-
-    if (event.type === "tool-call-finished") {
-      yield `event: tool_call\ndata: ${sseData(JSON.stringify({ count: event.count, name: event.name, phase: "finished" }))}\n\n`;
-      continue;
-    }
-
-    if (event.type === "citations") {
-      yield `event: citations\ndata: ${sseData(JSON.stringify(event.items))}\n\n`;
-      continue;
-    }
-
-    if (event.type === "error") {
-      yield `event: error\ndata: ${sseData(event.error.message)}\n\n`;
-      continue;
-    }
-
-    if (event.type === "plan-generated") {
-      yield `event: plan_generated\ndata: ${sseData(JSON.stringify({ plan: event.plan, runId: event.runId }))}\n\n`;
-      continue;
-    }
-
-    if (event.type === "plan-step-executing") {
-      yield `event: plan_step_executing\ndata: ${sseData(
-        JSON.stringify({ description: event.description, runId: event.runId, stepIndex: event.stepIndex, tool: event.tool })
-      )}\n\n`;
-      continue;
-    }
-
-    if (event.type === "plan-step-result") {
-      yield `event: plan_step_result\ndata: ${sseData(
-        JSON.stringify({ runId: event.runId, stepIndex: event.stepIndex, success: event.success })
-      )}\n\n`;
-      continue;
-    }
-
-    if (event.type === "synthesis-started") {
-      yield `event: synthesis_started\ndata: ${sseData(JSON.stringify({ runId: event.runId }))}\n\n`;
-      continue;
-    }
-
-    if (responseMode === "compat") {
-      yield "event: done\ndata:\n\n";
-      continue;
-    }
-
-    yield `event: done\ndata: ${sseData(JSON.stringify({
-      model: event.response.model,
-      response: event.response.output,
-      runId: event.runId,
-      usage: event.response.usage
-    }))}\n\n`;
-  }
-}
+export { parseMultipartBody } from "./server-multipart-sse.js";
 
 // ---------------------------------------------------------------------------
 // HTTP plumbing — implementation in `./server-http-plumbing.js`. Re-exported

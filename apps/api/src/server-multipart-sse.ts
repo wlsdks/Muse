@@ -1,0 +1,145 @@
+import type { AgentRuntime } from "@muse/agent-core";
+import type { JsonObject } from "@muse/shared";
+
+export function parseMultipartBody(contentType: string | string[] | undefined, body: Buffer): JsonObject {
+  const header = Array.isArray(contentType) ? contentType[0] : contentType;
+  const boundary = header?.match(/boundary=(?:"([^"]+)"|([^;]+))/iu)?.slice(1).find(Boolean);
+
+  if (!boundary) {
+    throw new Error("Multipart boundary is required");
+  }
+
+  const fields: Record<string, string> = {};
+  const files: JsonObject[] = [];
+  const raw = body.toString("latin1");
+
+  for (const part of raw.split(`--${boundary}`)) {
+    if (part.trim().length === 0 || part.trim() === "--") {
+      continue;
+    }
+
+    const headerEnd = part.indexOf("\r\n\r\n");
+
+    if (headerEnd < 0) {
+      continue;
+    }
+
+    const headers = part.slice(0, headerEnd).toLowerCase();
+    const disposition = headers.match(/content-disposition:[^\r\n]+/iu)?.[0] ?? "";
+    const name = disposition.match(/name="([^"]+)"/iu)?.[1];
+
+    if (!name) {
+      continue;
+    }
+
+    const filename = disposition.match(/filename="([^"]*)"/iu)?.[1];
+    const contentTypeValue = headers.match(/content-type:\s*([^\r\n]+)/iu)?.[1]?.trim();
+    const rawContent = part.slice(headerEnd + 4).replace(/\r\n--$/u, "").replace(/\r\n$/u, "");
+    const content = Buffer.from(rawContent, "latin1");
+
+    if (filename !== undefined) {
+      files.push({
+        contentBase64: content.toString("base64"),
+        contentType: contentTypeValue ?? "application/octet-stream",
+        fieldName: name,
+        filename,
+        size: content.byteLength
+      });
+      continue;
+    }
+
+    fields[name] = content.toString("utf8");
+  }
+
+  return { fields, files };
+}
+
+function sseData(value: string): string {
+  return value.split(/\r?\n/u).map((line) => line.length > 0 ? line : " ").join("\ndata: ");
+}
+
+export async function* toSseStream(
+  events: ReturnType<AgentRuntime["stream"]>,
+  responseMode: "extended" | "compat"
+): AsyncIterable<string> {
+  for await (const event of events) {
+    if (event.type === "text-delta") {
+      yield `event: message\ndata: ${sseData(event.text)}\n\n`;
+      continue;
+    }
+
+    if (event.type === "tool-call") {
+      if (responseMode === "compat") {
+        yield `event: tool_start\ndata: ${sseData(event.toolCall.name)}\n\n`;
+        continue;
+      }
+
+      yield `event: tool_call\ndata: ${sseData(JSON.stringify(event.toolCall))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "tool-result") {
+      if (responseMode === "compat") {
+        yield `event: tool_end\ndata: ${sseData(event.toolCall.name)}\n\n`;
+      }
+
+      continue;
+    }
+
+    if (event.type === "tool-call-started") {
+      yield `event: tool_call\ndata: ${sseData(JSON.stringify({ name: event.name, phase: "started" }))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "tool-call-finished") {
+      yield `event: tool_call\ndata: ${sseData(JSON.stringify({ count: event.count, name: event.name, phase: "finished" }))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "citations") {
+      yield `event: citations\ndata: ${sseData(JSON.stringify(event.items))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "error") {
+      yield `event: error\ndata: ${sseData(event.error.message)}\n\n`;
+      continue;
+    }
+
+    if (event.type === "plan-generated") {
+      yield `event: plan_generated\ndata: ${sseData(JSON.stringify({ plan: event.plan, runId: event.runId }))}\n\n`;
+      continue;
+    }
+
+    if (event.type === "plan-step-executing") {
+      yield `event: plan_step_executing\ndata: ${sseData(
+        JSON.stringify({ description: event.description, runId: event.runId, stepIndex: event.stepIndex, tool: event.tool })
+      )}\n\n`;
+      continue;
+    }
+
+    if (event.type === "plan-step-result") {
+      yield `event: plan_step_result\ndata: ${sseData(
+        JSON.stringify({ runId: event.runId, stepIndex: event.stepIndex, success: event.success })
+      )}\n\n`;
+      continue;
+    }
+
+    if (event.type === "synthesis-started") {
+      yield `event: synthesis_started\ndata: ${sseData(JSON.stringify({ runId: event.runId }))}\n\n`;
+      continue;
+    }
+
+    if (responseMode === "compat") {
+      yield "event: done\ndata:\n\n";
+      continue;
+    }
+
+    yield `event: done\ndata: ${sseData(JSON.stringify({
+      model: event.response.model,
+      response: event.response.output,
+      runId: event.runId,
+      usage: event.response.usage
+    }))}\n\n`;
+  }
+}
