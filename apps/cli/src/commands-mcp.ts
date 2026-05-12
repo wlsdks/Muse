@@ -159,6 +159,37 @@ export function registerMcpCommands(program: Command, io: ProgramIO, helpers: Mc
     });
 
   mcp
+    .command("use")
+    .description("Add a popular MCP server from a preset (one-line shortcut over config-add)")
+    .argument("<preset>", `Preset name (${Object.keys(MCP_PRESETS).join(" / ")})`)
+    .option("--root <dir>", "filesystem preset: root directory (defaults to $HOME)")
+    .option("--name <alias>", "Alias for the entry (default: preset name)")
+    .option("--dry-run", "Print the merged JSON without writing the file")
+    .action((preset: string, options: McpUseOptions, command) => {
+      const recipe = MCP_PRESETS[preset.toLowerCase()];
+      if (!recipe) {
+        io.stderr(
+          `Unknown preset '${preset}'. Available: ${Object.keys(MCP_PRESETS).join(", ")}\n`
+        );
+        command.error("Unknown MCP preset", { exitCode: 1 });
+        return;
+      }
+      const entryName = options.name ?? recipe.defaultName;
+      const entry = recipe.build(options);
+      const path = resolveExternalMcpConfigFile(process.env);
+      const merged = mergeEntryIntoConfigFile(path, entryName, entry, command, io);
+      if (!merged) {
+        return;
+      }
+      if (options.dryRun) {
+        io.stdout(`${JSON.stringify(merged, null, 2)}\n`);
+        return;
+      }
+      writeMcpConfigFile(path, merged);
+      io.stdout(`added ${entryName} (preset=${preset}) → ${path}\n`);
+    });
+
+  mcp
     .command("list")
     .description("List MCP servers")
     .action(async (_options, command) => {
@@ -392,3 +423,57 @@ function writeMcpConfigFile(path: string, value: McpConfigShape): void {
   nodeMkdirSync(dir, { recursive: true });
   nodeWriteFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
+
+interface McpUseOptions {
+  readonly root?: string;
+  readonly name?: string;
+  readonly dryRun?: boolean;
+}
+
+interface McpPresetRecipe {
+  readonly defaultName: string;
+  readonly build: (options: McpUseOptions) => McpJsonEntry;
+}
+
+const MCP_PRESETS: Record<string, McpPresetRecipe> = {
+  filesystem: {
+    defaultName: "filesystem",
+    build: (options): McpJsonEntry => ({
+      args: ["-y", "@modelcontextprotocol/server-filesystem", options.root ?? process.env.HOME ?? "/"],
+      command: "npx",
+      description: `Filesystem read/write rooted at ${options.root ?? "$HOME"}`
+    })
+  },
+  fetch: {
+    defaultName: "fetch",
+    build: (): McpJsonEntry => ({
+      args: ["mcp-server-fetch"],
+      command: "uvx",
+      description: "Generic HTTP fetcher (requires uvx; pipx install uv)"
+    })
+  },
+  time: {
+    defaultName: "time",
+    build: (): McpJsonEntry => ({
+      args: ["mcp-server-time"],
+      command: "uvx",
+      description: "Timezone-aware date/time queries"
+    })
+  },
+  sqlite: {
+    defaultName: "sqlite",
+    build: (options): McpJsonEntry => ({
+      args: ["-y", "@modelcontextprotocol/server-sqlite", options.root ?? "./data.db"],
+      command: "npx",
+      description: `SQLite over ${options.root ?? "./data.db"}`
+    })
+  },
+  memory: {
+    defaultName: "memory",
+    build: (): McpJsonEntry => ({
+      args: ["-y", "@modelcontextprotocol/server-memory"],
+      command: "npx",
+      description: "Anthropic reference memory server (knowledge graph)"
+    })
+  }
+};
