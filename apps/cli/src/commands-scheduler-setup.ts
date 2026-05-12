@@ -318,6 +318,20 @@ async function renderSetupStatus(): Promise<string> {
     pushNext(pr.nextStep);
   }
 
+  // reminder firing daemon
+  const rm = snap.reminder;
+  if (rm.enabled) {
+    const detail: string[] = [];
+    detail.push(`${rm.providerId ?? "?"} → ${rm.destination ?? "?"}`);
+    detail.push(`tick=${rm.tickMs.toString()}ms`);
+    if (rm.agentTurn) detail.push("agent-turn=true");
+    if (rm.quietHours) detail.push(`quiet=${rm.quietHours}`);
+    push("ok", "reminder firing", detail.join(", "));
+  } else {
+    push("info", "reminder firing", "disabled");
+    pushNext(rm.nextStep);
+  }
+
   lines.push("");
   lines.push("Wizards:");
   lines.push("  muse setup wizard      — end-to-end onboarding (model → calendar → messaging)");

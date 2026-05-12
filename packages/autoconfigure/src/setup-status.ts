@@ -81,6 +81,18 @@ export interface SetupStatusSnapshot {
     readonly sidecarFile: string;
     readonly nextStep?: string;
   };
+  readonly reminder: {
+    readonly status: "ok" | "info";
+    /** `true` when the reminder firing daemon would activate. */
+    readonly enabled: boolean;
+    readonly providerId?: string;
+    readonly destination?: string;
+    readonly tickMs: number;
+    /** Phase D — when `true`, fired reminders run through agent synthesis. */
+    readonly agentTurn: boolean;
+    readonly quietHours?: string;
+    readonly nextStep?: string;
+  };
 }
 
 export interface WebSearchEnvSnapshot {
@@ -202,6 +214,18 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
     || pathJoin(home, ".muse", "proactive-fired.json");
   const proactiveEnabled = Boolean(proactiveProvider && proactiveDestination);
 
+  // Reminder firing daemon (env-only view; the server also needs
+  // remindersFile + the messaging registry to actually wire it).
+  const reminderProvider = env.MUSE_REMINDER_DEFAULT_PROVIDER?.trim();
+  const reminderDestination = env.MUSE_REMINDER_DEFAULT_DESTINATION?.trim();
+  const reminderTickRaw = env.MUSE_REMINDER_TICK_MS?.trim();
+  const reminderTickMs = reminderTickRaw && /^\d+$/u.test(reminderTickRaw)
+    ? Number.parseInt(reminderTickRaw, 10)
+    : 60_000;
+  const reminderAgentTurn = env.MUSE_REMINDER_AGENT_TURN?.trim().toLowerCase() === "true";
+  const reminderQuietHours = env.MUSE_REMINDER_QUIET_HOURS?.trim();
+  const reminderEnabled = Boolean(reminderProvider && reminderDestination);
+
   const modelStatus = museModel.length > 0 || providerKeys.length > 0 ? "ok" : "todo";
   const calendarLocalStatus = calendarBytes !== undefined ? "ok" : "info";
   const credentialsStatus = credentialsBytes !== undefined ? "ok" : "info";
@@ -297,6 +321,18 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
       ...(proactiveEnabled
         ? {}
         : { nextStep: "Set MUSE_PROACTIVE_PROVIDER + MUSE_PROACTIVE_DESTINATION to enable calendar/task push notices" })
+    },
+    reminder: {
+      agentTurn: reminderAgentTurn,
+      ...(reminderDestination ? { destination: reminderDestination } : {}),
+      enabled: reminderEnabled,
+      ...(reminderProvider ? { providerId: reminderProvider } : {}),
+      ...(reminderQuietHours ? { quietHours: reminderQuietHours } : {}),
+      status: reminderEnabled ? "ok" as const : "info" as const,
+      tickMs: reminderTickMs,
+      ...(reminderEnabled
+        ? {}
+        : { nextStep: "Set MUSE_REMINDER_DEFAULT_PROVIDER + MUSE_REMINDER_DEFAULT_DESTINATION to enable the reminder firing daemon" })
     }
   };
 }

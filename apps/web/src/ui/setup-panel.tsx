@@ -45,6 +45,14 @@ interface SetupStatusResponse {
     readonly quietHours?: string;
     readonly sidecarFile: string;
   };
+  readonly reminder?: SetupStatusSection & {
+    readonly enabled: boolean;
+    readonly providerId?: string;
+    readonly destination?: string;
+    readonly tickMs: number;
+    readonly agentTurn: boolean;
+    readonly quietHours?: string;
+  };
 }
 
 function statusGlyph(status: "ok" | "todo" | "info"): string {
@@ -132,6 +140,21 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
           id: "proactive",
           nextStep: data.proactive.nextStep,
           status: data.proactive.status
+        }]
+        : []),
+      ...(data.reminder
+        ? [{
+          detail: data.reminder.enabled
+            ? [
+              `${data.reminder.providerId ?? "?"} → ${data.reminder.destination ?? "?"}`,
+              `tick=${data.reminder.tickMs.toString()}ms`,
+              ...(data.reminder.agentTurn ? ["agent-turn=true"] : []),
+              ...(data.reminder.quietHours ? [`quiet=${data.reminder.quietHours}`] : [])
+            ].join(", ")
+            : "disabled",
+          id: "reminder firing",
+          nextStep: data.reminder.nextStep,
+          status: data.reminder.status
         }]
         : [])
     ]

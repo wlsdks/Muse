@@ -104,6 +104,14 @@ move from `Unreleased` to dated/versioned headings.
   shows the provider/destination/lead/tick + Phase D and
   quiet-hours flags when the daemon would activate.
 
+- **Setup status now surfaces the reminder firing daemon**. New
+  `reminder` section in the snapshot mirrors the `proactive`
+  section: `{ enabled, providerId?, destination?, tickMs,
+  agentTurn, quietHours?, nextStep? }`. Both the CLI text
+  renderer and the web SetupPanel print a `reminder firing` row
+  alongside the existing `proactive` row, including the
+  `agent-turn=true` flag when `MUSE_REMINDER_AGENT_TURN=true`.
+
 - **`muse setup status` now surfaces the recent env knobs**. The
   setup-status snapshot (used by both `muse setup` CLI text /
   `--json` and `GET /api/setup/status`) gained three sections /

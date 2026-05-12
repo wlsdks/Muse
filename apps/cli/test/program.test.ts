@@ -2158,6 +2158,9 @@ describe("cli program", () => {
       expect(snapshot.userMemory).toMatchObject({ autoExtract: true, status: "ok" });
       // Proactive surfacing is off without the required env vars.
       expect(snapshot.proactive).toMatchObject({ enabled: false, leadMinutes: 10, status: "info" });
+      // Reminder firing daemon section mirrors proactive.
+      const reminder = (snapshot as unknown as { reminder: { enabled: boolean; status: string; tickMs: number; agentTurn: boolean } }).reminder;
+      expect(reminder).toMatchObject({ enabled: false, status: "info", tickMs: 60_000, agentTurn: false });
     } finally {
       const restore = (key: keyof typeof prev, envKey: string) => {
         if (prev[key] === undefined) { delete process.env[envKey]; } else { process.env[envKey] = prev[key]!; }

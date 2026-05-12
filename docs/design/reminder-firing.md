@@ -76,6 +76,28 @@ The store already supports the read side (`status: "pending" |
   reminders into one digest message). Today each one fires
   individually as it always has.
 
+### Phase E: agent-synthesized reminder text
+
+- Mirrors proactive surfacing's Phase D. When the user has
+  touched a Muse chat surface within the active-session window,
+  the firing loop spawns a one-shot agent run with a JARVIS-style
+  synthesis prompt and uses the LLM reply as the delivered text
+  instead of the raw `reminder.text`.
+- Shipped: `MUSE_REMINDER_AGENT_TURN=true` (opt-in) +
+  `MUSE_REMINDER_ACTIVE_SESSION_WINDOW_MS` (default 5 min). The
+  activity tracker is shared with the proactive daemon — a single
+  `onRequest` hook on `/api/chat*` unlocks both. The file-backed
+  tracker (`MUSE_PROACTIVE_PRESENCE_FILE`) covers the
+  multi-process / multi-device case.
+- Fail-open: synthesis throw / empty reply / stale window all fall
+  back to the raw `reminder.text` so the reminder never gets lost.
+  Synthesis errors surface in `summary.errors` for audit; history
+  records the *delivered* text (so `muse.reminders.history`
+  reflects what the user actually saw).
+- Out of scope (still): per-reminder synthesis opt-out (parallel
+  to Phase C routing). The text-scan layer for "the reminder is
+  too sensitive to expand" hasn't surfaced as a need yet.
+
 ## Contract surface (Phase A landing this iter)
 
 ```ts
