@@ -1375,8 +1375,15 @@ async function runChatRepl(
 
       try {
         const persona = personaPrompt();
+        // Always ground the model in `now`. When persona is set,
+        // buildJarvisPersona already includes the date line; with
+        // empty memory, fall back to a system message containing
+        // just the date. Same fix as commands-ask.ts iter #15 —
+        // JARVIS shouldn't lose track of what day it is when the
+        // user hasn't filed any personal facts.
+        const systemContent = persona ?? formatCurrentContextLine();
         const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-          ...(persona ? [{ content: persona, role: "system" as const }] : []),
+          { content: systemContent, role: "system" as const },
           ...history,
           { content: trimmed, role: "user" as const }
         ];

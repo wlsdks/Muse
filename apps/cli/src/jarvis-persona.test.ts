@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { buildJarvisPersona } from "./program.js";
+import { buildJarvisPersona, formatCurrentContextLine } from "./program.js";
+
+describe("formatCurrentContextLine", () => {
+  it("emits a single 'Current local context: YYYY-MM-DD HH:MM Weekday (TZ).' line", () => {
+    const fixed = new Date("2026-05-13T12:30:00Z");
+    const line = formatCurrentContextLine(fixed);
+    expect(line).toMatch(/^Current local context: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \w+ \([^)]+\)\.$/);
+  });
+
+  it("renders YYYY-MM-DD (en-CA locale) so the date parses unambiguously", () => {
+    // The date depends on the test machine's tz — Jan 9 UTC could be
+    // Jan 8 or Jan 9 locally. Assert either, but never something else.
+    const line = formatCurrentContextLine(new Date("2026-01-09T05:00:00Z"));
+    expect(line).toMatch(/2026-01-0[89]/);
+  });
+
+  it("defaults to `new Date()` when no argument is given", () => {
+    const line = formatCurrentContextLine();
+    expect(line.startsWith("Current local context: ")).toBe(true);
+  });
+});
 
 describe("buildJarvisPersona", () => {
   it("returns undefined when memory is empty (no system-prompt bloat for first-time users)", () => {
