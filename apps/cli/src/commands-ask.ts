@@ -26,9 +26,10 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveNotesDir } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
+import { isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
 import { buildJarvisPersona } from "./program.js";
 import type { ProgramIO } from "./program.js";
 
@@ -38,6 +39,7 @@ interface AskOptions {
   readonly model?: string;
   readonly top?: string;
   readonly embedModel?: string;
+  readonly autoReindex?: boolean;
 }
 
 interface IndexChunk {
@@ -106,6 +108,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option("--model <tag>", "Chat model override")
     .option("--top <k>", "Top-K notes chunks to inject as context (default 3)", "3")
     .option("--embed-model <tag>", "Embedding model (must match the index)", "nomic-embed-text")
+    .option(
+      "--no-auto-reindex",
+      "Skip the auto-stale check before search (default: reindex incrementally when a note's mtime is newer than the index)"
+    )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const query = queryParts.join(" ").trim();
       if (query.length === 0) {
@@ -116,6 +122,28 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const userKey = defaultUserKey(options.user, options.persona);
       const topK = Math.max(1, Math.min(20, Number.parseInt(options.top ?? "3", 10) || 3));
       const embedModel = options.embedModel ?? "nomic-embed-text";
+
+      // Auto-stale check + incremental reindex (default on). JARVIS
+      // shouldn't make the user remember to run reindex; if a note
+      // file is newer than the index, just refresh before search.
+      const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+      if (options.autoReindex !== false) {
+        try {
+          const stale = await isNotesIndexStale(notesDir, notesIndexPath());
+          if (stale) {
+            const summary = await reindexNotes({
+              dir: notesDir,
+              indexPath: notesIndexPath(),
+              model: embedModel
+            });
+            if (summary.embedded > 0) {
+              io.stderr(`(auto-refreshed notes index: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached)\n`);
+            }
+          }
+        } catch (cause) {
+          io.stderr(`(auto-reindex skipped: ${cause instanceof Error ? cause.message : String(cause)})\n`);
+        }
+      }
 
       // Load notes index — soft-fail with hint if missing
       let index: NotesIndex | undefined;

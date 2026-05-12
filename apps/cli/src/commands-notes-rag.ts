@@ -147,6 +147,105 @@ async function saveIndex(path: string, index: NotesIndex): Promise<void> {
   await writeFile(path, `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 });
 }
 
+/**
+ * Reusable reindex routine — used by `muse notes reindex` AND by
+ * `muse ask` for auto-reindex when stale. Returns a summary so the
+ * caller can decide whether to log progress (CLI) or stay silent
+ * (auto-mode).
+ */
+export interface ReindexSummary {
+  readonly indexPath: string;
+  readonly embedded: number;
+  readonly skipped: number;
+  readonly failed: number;
+  readonly totalChunks: number;
+  readonly index: NotesIndex;
+}
+
+export async function reindexNotes(
+  options: {
+    readonly dir: string;
+    readonly model: string;
+    readonly chunkChars?: number;
+    readonly force?: boolean;
+    readonly indexPath?: string;
+    readonly onProgress?: (line: string) => void;
+  }
+): Promise<ReindexSummary> {
+  const chunkChars = Math.max(120, options.chunkChars ?? DEFAULT_CHUNK_CHARS);
+  const indexPath = options.indexPath ?? defaultIndexPath();
+  const existing = options.force ? undefined : await loadIndex(indexPath);
+  const known = new Map<string, FileEntry>();
+  if (existing && existing.model === options.model) {
+    for (const entry of existing.files) known.set(entry.path, entry);
+  }
+  const found = await walkMarkdown(options.dir);
+  const next: FileEntry[] = [];
+  let embedded = 0, skipped = 0, failed = 0;
+  for (const { path, mtimeMs } of found) {
+    const prior = known.get(path);
+    if (prior && prior.mtimeMs === mtimeMs) {
+      next.push(prior);
+      skipped += 1;
+      continue;
+    }
+    let body: string;
+    try {
+      body = await readFile(path, "utf8");
+    } catch {
+      failed += 1;
+      continue;
+    }
+    const chunks = chunkText(body, chunkChars);
+    const out: IndexChunk[] = [];
+    for (let i = 0; i < chunks.length; i += 1) {
+      try {
+        const embedding = await embed(chunks[i]!, options.model);
+        out.push({ chunkIndex: i, embedding, file: path, text: chunks[i]! });
+      } catch (cause) {
+        options.onProgress?.(`embed failed for ${path} chunk ${i.toString()}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }
+    next.push({ chunks: out, mtimeMs, path });
+    embedded += 1;
+    options.onProgress?.(`+ ${path} (${chunks.length.toString()} chunk${chunks.length === 1 ? "" : "s"})`);
+  }
+  const index: NotesIndex = {
+    builtAtIso: new Date().toISOString(),
+    files: next,
+    model: options.model,
+    version: 1
+  };
+  await saveIndex(indexPath, index);
+  return {
+    embedded,
+    failed,
+    index,
+    indexPath,
+    skipped,
+    totalChunks: next.reduce((sum, f) => sum + f.chunks.length, 0)
+  };
+}
+
+/**
+ * Returns true when at least one Markdown file under `dir` has an
+ * mtime newer than the index's `builtAtIso`. Cheap (stat-only). Use
+ * to skip the embed loop when nothing's changed.
+ */
+export async function isNotesIndexStale(dir: string, indexPath?: string): Promise<boolean> {
+  const index = await loadIndex(indexPath ?? defaultIndexPath());
+  if (!index) return true;
+  const builtMs = new Date(index.builtAtIso).getTime();
+  if (!Number.isFinite(builtMs)) return true;
+  const files = await walkMarkdown(dir);
+  for (const { mtimeMs } of files) {
+    if (mtimeMs > builtMs) return true;
+  }
+  // Also stale if files are missing (deleted on disk but still indexed)
+  // — left out for now since deletions are rare for personal-scale corpora.
+  return false;
+}
+
 export function registerNotesRagCommands(program: Command, io: ProgramIO): void {
   // `notes` is registered upstream by commands-notes.ts (the API-wrapping
   // surface). Find it instead of recreating so reindex/search land
@@ -173,54 +272,15 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
       const indexPath = defaultIndexPath();
 
       io.stdout(`muse notes reindex — dir=${dir} model=${model} chunk=${chunkChars.toString()}\n`);
-      const existing = options.force ? undefined : await loadIndex(indexPath);
-      const known = new Map<string, FileEntry>();
-      if (existing && existing.model === model) {
-        for (const entry of existing.files) known.set(entry.path, entry);
-      }
-
-      const found = await walkMarkdown(dir);
-      io.stdout(`  ${found.length.toString()} markdown file(s) under ${dir}\n`);
-
-      const next: FileEntry[] = [];
-      let embedded = 0, skipped = 0, failed = 0;
-      for (const { path, mtimeMs } of found) {
-        const prior = known.get(path);
-        if (prior && prior.mtimeMs === mtimeMs) {
-          next.push(prior);
-          skipped += 1;
-          continue;
-        }
-        let body: string;
-        try {
-          body = await readFile(path, "utf8");
-        } catch {
-          failed += 1;
-          continue;
-        }
-        const chunks = chunkText(body, chunkChars);
-        const out: IndexChunk[] = [];
-        for (let i = 0; i < chunks.length; i += 1) {
-          try {
-            const embedding = await embed(chunks[i]!, model);
-            out.push({ chunkIndex: i, embedding, file: path, text: chunks[i]! });
-          } catch (cause) {
-            io.stderr(`  embed failed for ${path} chunk ${i.toString()}: ${cause instanceof Error ? cause.message : String(cause)}\n`);
-          }
-        }
-        next.push({ chunks: out, mtimeMs, path });
-        embedded += 1;
-        io.stdout(`  + ${path} (${chunks.length.toString()} chunk${chunks.length === 1 ? "" : "s"})\n`);
-      }
-
-      const index: NotesIndex = {
-        builtAtIso: new Date().toISOString(),
-        files: next,
+      const summary = await reindexNotes({
+        chunkChars,
+        dir,
+        ...(options.force === true ? { force: true } : {}),
+        indexPath,
         model,
-        version: 1
-      };
-      await saveIndex(indexPath, index);
-      io.stdout(`\nDone. ${embedded.toString()} embedded, ${skipped.toString()} cached, ${failed.toString()} failed. ${next.reduce((sum, f) => sum + f.chunks.length, 0).toString()} chunks total in ${indexPath}\n`);
+        onProgress: (line) => io.stdout(`  ${line}\n`)
+      });
+      io.stdout(`\nDone. ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached, ${summary.failed.toString()} failed. ${summary.totalChunks.toString()} chunks total in ${summary.indexPath}\n`);
     });
 
   notes
