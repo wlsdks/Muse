@@ -26,6 +26,7 @@ export { TelegramProvider, type TelegramProviderOptions } from "./telegram-provi
 export { DiscordProvider, type DiscordProviderOptions } from "./discord-provider.js";
 export { SlackProvider, type SlackProviderOptions } from "./slack-provider.js";
 export { LineProvider, type LineProviderOptions } from "./line-provider.js";
+export { LogMessagingProvider, type LogMessagingProviderOptions } from "./log-provider.js";
 
 export { validateOutboundMessage } from "./validate.js";
 

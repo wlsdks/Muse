@@ -47,6 +47,7 @@ import {
 import {
   DiscordProvider,
   LineProvider,
+  LogMessagingProvider,
   MessagingProviderRegistry,
   SlackProvider,
   TelegramProvider,
@@ -560,6 +561,15 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
       inboxFile: resolveLineInboxFile(env),
       token: lineToken
     }));
+  }
+  // `log` is the credential-free, local-only outbound surface — write
+  // every notice to `~/.muse/notifications.log` (override via
+  // `MUSE_MESSAGING_LOG_FILE`). On by default so the proactive daemon
+  // works end-to-end without any external chat-bot setup; opt out
+  // with `MUSE_MESSAGING_LOG_ENABLED=false`.
+  if (env.MUSE_MESSAGING_LOG_ENABLED !== "false") {
+    const logFile = env.MUSE_MESSAGING_LOG_FILE?.trim();
+    registry.register(new LogMessagingProvider(logFile ? { file: logFile } : {}));
   }
   return registry;
 }

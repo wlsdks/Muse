@@ -791,16 +791,17 @@ describe("autoconfigure", () => {
       version: 1
     }), "utf8");
 
-    // file-only: no env at all
+    // file-only: no env at all. `log` always registers unless
+    // explicitly disabled — credential-free local-log surface.
     const fileOnly = buildMessagingRegistry({ MUSE_MESSAGING_CREDENTIALS_FILE: file });
-    expect(fileOnly.describe().map((entry) => entry.id).sort()).toEqual(["line", "slack", "telegram"]);
+    expect(fileOnly.describe().map((entry) => entry.id).sort()).toEqual(["line", "log", "slack", "telegram"]);
 
     // env-only: env token registers, file ignored for that one
     const envOnly = buildMessagingRegistry({
       MUSE_DISCORD_BOT_TOKEN: "from-env-discord",
       MUSE_MESSAGING_CREDENTIALS_FILE: join(root, "missing.json")
     });
-    expect(envOnly.describe().map((entry) => entry.id)).toEqual(["discord"]);
+    expect(envOnly.describe().map((entry) => entry.id).sort()).toEqual(["discord", "log"]);
 
     // env wins when both are present (no easy way to assert which token without
     // calling send, but the registration count + presence proves the merge).
@@ -808,7 +809,15 @@ describe("autoconfigure", () => {
       MUSE_MESSAGING_CREDENTIALS_FILE: file,
       MUSE_DISCORD_BOT_TOKEN: "from-env-discord"
     });
-    expect(merged.describe().map((entry) => entry.id).sort()).toEqual(["discord", "line", "slack", "telegram"]);
+    expect(merged.describe().map((entry) => entry.id).sort()).toEqual(["discord", "line", "log", "slack", "telegram"]);
+
+    // opt out: MUSE_MESSAGING_LOG_ENABLED=false suppresses the
+    // credential-free local-log provider.
+    const noLog = buildMessagingRegistry({
+      MUSE_MESSAGING_CREDENTIALS_FILE: file,
+      MUSE_MESSAGING_LOG_ENABLED: "false"
+    });
+    expect(noLog.describe().map((entry) => entry.id).sort()).toEqual(["line", "slack", "telegram"]);
   });
 
   it("buildMessagingRegistry wires offset + inbox files into the TelegramProvider", async () => {
