@@ -1,6 +1,9 @@
-import { QueryClient, QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 
+import { createApiClient } from "./api-client.js";
+import { CalendarSettingsPanel } from "./calendar-settings-panel.js";
+import { ChatPanel } from "./chat-panel.js";
 import {
   ActiveContextPanel,
   CalendarEventsPanel,
@@ -14,6 +17,20 @@ import {
   TodayBriefPanel,
   TokenCostPanel
 } from "./personal-panels.js";
+import { VoicePanel } from "./voice-panel.js";
+
+import type { ApiClient } from "./api-client.js";
+import type {
+  AdminSummary,
+  HealthResponse,
+  OrchestrationEntry,
+  OrchestrationListResponse,
+  SessionSummary,
+  ToolCatalogEntry,
+  ToolCatalogResponse
+} from "./app-types.js";
+
+export type { ApiClient } from "./api-client.js";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,90 +40,6 @@ const queryClient = new QueryClient({
     }
   }
 });
-
-interface HealthResponse {
-  readonly service?: string;
-  readonly status?: string;
-}
-
-interface Citation {
-  readonly url: string;
-  readonly title: string;
-}
-
-interface ChatResponse {
-  readonly content?: string;
-  readonly response?: string;
-  readonly runId?: string;
-  readonly metadata?: Record<string, unknown>;
-  readonly citations?: readonly Citation[];
-}
-
-interface SessionSummary {
-  readonly id?: string;
-  readonly status?: string;
-  readonly model?: string;
-  readonly provider?: string;
-  readonly inputPreview?: string;
-}
-
-interface AdminSummary {
-  readonly recentRuns?: readonly SessionSummary[];
-}
-
-interface ToolCatalogEntry {
-  readonly name: string;
-  readonly description: string;
-  readonly risk: "read" | "write" | "execute";
-  readonly keywords?: readonly string[];
-  readonly scopes?: readonly string[];
-}
-
-interface ToolCatalogResponse {
-  readonly tools: readonly ToolCatalogEntry[];
-  readonly total: number;
-}
-
-interface OrchestrationEntry {
-  readonly runId: string;
-  readonly mode: "sequential" | "parallel";
-  readonly status: "completed" | "failed";
-  readonly workerCount: number;
-  readonly completedCount: number;
-  readonly failedCount: number;
-  readonly durationMs: number;
-  readonly startedAt: string;
-  readonly conversationLength?: number;
-}
-
-interface OrchestrationListResponse {
-  readonly entries: readonly OrchestrationEntry[];
-  readonly total: number;
-}
-
-interface CalendarCredentialRequirement {
-  readonly key: string;
-  readonly label: string;
-  readonly description: string;
-  readonly secret: boolean;
-}
-
-interface CalendarProviderInfo {
-  readonly id: string;
-  readonly displayName: string;
-  readonly description: string;
-  readonly local: boolean;
-  readonly credentials: readonly CalendarCredentialRequirement[];
-}
-
-interface CalendarProvidersResponse {
-  readonly providers: readonly CalendarProviderInfo[];
-  readonly enabled: readonly string[];
-}
-
-interface CalendarCredentialsResponse {
-  readonly providers: readonly string[];
-}
 
 export function App() {
   return (
@@ -189,14 +122,15 @@ function ConnectionSettings(props: {
   readonly onToken: (value: string) => void;
 }) {
   return (
-    <form className="connection-form">
+    <div className="connection-form">
       <label>
         <span>API URL</span>
         <input
           value={props.apiUrl}
           onChange={(event) => {
-            writeLocalSetting("muse.apiUrl", event.target.value);
-            props.onApiUrl(event.target.value);
+            const next = event.target.value;
+            props.onApiUrl(next);
+            writeLocalSetting("muse.apiUrl", next);
           }}
         />
       </label>
@@ -206,201 +140,14 @@ function ConnectionSettings(props: {
           type="password"
           value={props.token}
           onChange={(event) => {
-            writeLocalSetting("muse.token", event.target.value);
-            props.onToken(event.target.value);
+            const next = event.target.value;
+            props.onToken(next);
+            writeLocalSetting("muse.token", next);
           }}
+          placeholder="(optional) bearer token"
         />
       </label>
-    </form>
-  );
-}
-
-function useChatStream(baseUrl: string, token: string) {
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [response, setResponse] = useState<string>("");
-  const [citations, setCitations] = useState<readonly Citation[]>([]);
-  const [searchStatus, setSearchStatus] = useState<string>("");
-
-  const send = useCallback(async (userMessage: string) => {
-    setIsPending(true);
-    setError(null);
-    setResponse("");
-    setCitations([]);
-    setSearchStatus("");
-
-    try {
-      const res = await fetch(new URL("/api/chat", baseUrl).toString(), {
-        body: JSON.stringify({ message: userMessage }),
-        headers: {
-          "accept": "text/event-stream",
-          "content-type": "application/json",
-          ...(token ? { authorization: `Bearer ${token}` } : {})
-        },
-        method: "POST"
-      });
-
-      if (!res.ok) {
-        throw new Error(`${res.status} ${res.statusText}`);
-      }
-
-      const contentType = res.headers.get("content-type") ?? "";
-
-      // Non-streaming fallback: server returned JSON directly
-      if (!contentType.includes("text/event-stream")) {
-        const body = await res.json() as ChatResponse;
-        setResponse(body.response ?? body.content ?? "");
-        if (body.citations && body.citations.length > 0) {
-          setCitations(body.citations);
-        }
-        return;
-      }
-
-      // SSE streaming path
-      const reader = res.body?.getReader();
-      if (!reader) {
-        throw new Error("No readable stream on response");
-      }
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete SSE messages (separated by double newline)
-        const parts = buffer.split("\n\n");
-        // Keep incomplete last part in buffer
-        buffer = parts.pop() ?? "";
-
-        for (const part of parts) {
-          const lines = part.split("\n");
-          let eventName = "message";
-          let dataLine = "";
-
-          for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              eventName = line.slice(7).trim();
-            } else if (line.startsWith("data: ")) {
-              dataLine = line.slice(6);
-            }
-          }
-
-          if (!dataLine) continue;
-
-          if (eventName === "done") {
-            // Final JSON payload with full response + citations
-            try {
-              const payload = JSON.parse(dataLine) as ChatResponse;
-              if (payload.response ?? payload.content) {
-                setResponse(payload.response ?? payload.content ?? "");
-              }
-              if (payload.citations && payload.citations.length > 0) {
-                setCitations(payload.citations);
-              }
-            } catch {
-              // not JSON — ignore
-            }
-          } else if (eventName === "delta" || eventName === "message") {
-            try {
-              const payload = JSON.parse(dataLine) as { delta?: string; content?: string };
-              const chunk = payload.delta ?? payload.content ?? "";
-              if (chunk) {
-                setResponse((prev) => prev + chunk);
-              }
-            } catch {
-              // plain text delta
-              setResponse((prev) => prev + dataLine);
-            }
-          } else if (eventName === "tool_call") {
-            try {
-              const payload = JSON.parse(dataLine) as { phase?: string };
-              if (payload.phase === "started") {
-                setSearchStatus("[Searching...]");
-              } else if (payload.phase === "finished") {
-                setSearchStatus("");
-              }
-            } catch {
-              // ignore malformed tool_call events
-            }
-          } else if (eventName === "citations") {
-            try {
-              const payload = JSON.parse(dataLine) as readonly Citation[];
-              if (Array.isArray(payload) && payload.length > 0) {
-                setCitations(payload);
-              }
-            } catch {
-              // ignore malformed citations events
-            }
-          }
-        }
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "request failed");
-    } finally {
-      setIsPending(false);
-      setSearchStatus("");
-    }
-  }, [baseUrl, token]);
-
-  return { citations, error, isPending, response, searchStatus, send };
-}
-
-function ChatPanel({ client, apiUrl, token }: { readonly client: ApiClient; readonly apiUrl: string; readonly token: string }) {
-  const [message, setMessage] = useState("");
-  const stream = useChatStream(apiUrl, token);
-
-  return (
-    <section className="tool-surface" aria-label="Ask Muse">
-      <div className="surface-heading">
-        <h2>Ask Muse</h2>
-        <span>{stream.isPending ? "Running" : "Ready"}</span>
-      </div>
-      <form
-        className="chat-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const trimmed = message.trim();
-          if (!trimmed) return;
-          void stream.send(trimmed);
-        }}
-      >
-        <textarea
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          placeholder="Compare two product directions, clarify tradeoffs, or choose a next step."
-        />
-        <button type="submit" disabled={stream.isPending || message.trim().length === 0}>
-          Run
-        </button>
-      </form>
-      <output className="chat-output">
-        {stream.error
-          ? `Error: ${stream.error}`
-          : stream.response}
-        {stream.searchStatus ? (
-          <span className="search-status">{stream.searchStatus}</span>
-        ) : null}
-      </output>
-      {stream.citations.length > 0 && (
-        <div className="muse-citations">
-          {stream.citations.map((c, i) => (
-            <a
-              key={c.url}
-              className="muse-citation-chip"
-              href={c.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              title={c.url}
-            >
-              [{i + 1}] {c.title}
-            </a>
-          ))}
-        </div>
-      )}
-    </section>
+    </div>
   );
 }
 
@@ -415,7 +162,7 @@ function RunsPanel(props: { readonly runs: readonly SessionSummary[]; readonly l
         {props.runs.map((run, index) => (
           <li key={run.id ?? `run-${index}`}>
             <strong>{run.status ?? "unknown"}</strong>
-            <span>{run.model ?? run.provider ?? run.inputPreview ?? "run"}</span>
+            <span>{run.model ?? run.provider ?? "—"}</span>
           </li>
         ))}
       </ul>
@@ -448,135 +195,6 @@ function ToolCatalogPanel(props: { readonly tools: readonly ToolCatalogEntry[]; 
           <li key={tool.name}>
             <strong>{tool.name}</strong>
             <span className={`risk-${tool.risk}`}>{tool.risk}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-
-function CalendarSettingsPanel({ client }: { readonly client: ApiClient }) {
-  const providers = useQuery({
-    queryFn: () => client.get<CalendarProvidersResponse>("/api/calendar/providers"),
-    queryKey: ["calendar-providers"]
-  });
-  const credentials = useQuery({
-    queryFn: () => client.get<CalendarCredentialsResponse>("/api/calendar/credentials").catch(() => ({ providers: [] as readonly string[] })),
-    queryKey: ["calendar-credentials"]
-  });
-  const [activeProvider, setActiveProvider] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [feedback, setFeedback] = useState<{ readonly tone: "ok" | "error"; readonly message: string } | null>(null);
-
-  const saveCredentials = useMutation({
-    mutationFn: async ({ id, body }: { readonly id: string; readonly body: Record<string, string> }) =>
-      client.put<unknown>(`/api/calendar/credentials/${encodeURIComponent(id)}`, body),
-    onError: (error) => {
-      setFeedback({ message: error instanceof Error ? error.message : "Failed to save credentials", tone: "error" });
-    },
-    onSuccess: async () => {
-      setFeedback({ message: "Saved. Restart muse-api for changes to take effect.", tone: "ok" });
-      setActiveProvider(null);
-      setDraft({});
-      await Promise.all([providers.refetch(), credentials.refetch()]);
-    }
-  });
-
-  const removeCredentials = useMutation({
-    mutationFn: async (id: string) => client.delete<unknown>(`/api/calendar/credentials/${encodeURIComponent(id)}`),
-    onError: (error) => {
-      setFeedback({ message: error instanceof Error ? error.message : "Failed to remove credentials", tone: "error" });
-    },
-    onSuccess: async () => {
-      setFeedback({ message: "Removed. Restart muse-api to drop the provider.", tone: "ok" });
-      await Promise.all([providers.refetch(), credentials.refetch()]);
-    }
-  });
-
-  const stored = useMemo(() => new Set(credentials.data?.providers ?? []), [credentials.data]);
-
-  return (
-    <section className="tool-surface compact" aria-label="Calendar settings">
-      <div className="surface-heading">
-        <h2>Calendar</h2>
-        <span>{providers.isLoading ? "Loading" : (providers.data?.providers.length ?? 0)}</span>
-      </div>
-      {feedback ? (
-        <p className={`status-${feedback.tone === "ok" ? "ok" : "error"}`}>{feedback.message}</p>
-      ) : null}
-      <ul className="record-list">
-        {(providers.data?.providers ?? []).map((provider) => (
-          <li key={provider.id}>
-            <strong>{provider.displayName}</strong>
-            <span className={provider.local ? "risk-read" : "risk-write"}>
-              {provider.local ? "local" : stored.has(provider.id) ? "configured" : "needs setup"}
-            </span>
-            {!provider.local ? (
-              <div className="connection-form" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.5rem" }}>
-                {activeProvider === provider.id ? (
-                  <>
-                    {provider.credentials.map((field) => (
-                      <label key={field.key}>
-                        <span>{field.label}</span>
-                        <input
-                          type={field.secret ? "password" : "text"}
-                          placeholder={field.description}
-                          value={draft[field.key] ?? ""}
-                          onChange={(event) => setDraft((current) => ({ ...current, [field.key]: event.target.value }))}
-                        />
-                      </label>
-                    ))}
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFeedback(null);
-                          saveCredentials.mutate({ body: draft, id: provider.id });
-                        }}
-                        disabled={saveCredentials.isPending}
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveProvider(null);
-                          setDraft({});
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveProvider(provider.id);
-                        setDraft({});
-                        setFeedback(null);
-                      }}
-                    >
-                      {stored.has(provider.id) ? "Reconfigure" : "Connect"}
-                    </button>
-                    {stored.has(provider.id) ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFeedback(null);
-                          removeCredentials.mutate(provider.id);
-                        }}
-                        disabled={removeCredentials.isPending}
-                      >
-                        Disconnect
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            ) : null}
           </li>
         ))}
       </ul>
@@ -623,167 +241,6 @@ function StatusMetric({ label, value }: { readonly label: string; readonly value
       <strong>{value}</strong>
     </article>
   );
-}
-
-type VoiceStatus = "idle" | "recording" | "transcribing" | "error";
-
-function VoicePanel(props: { readonly apiUrl: string; readonly token: string }) {
-  const [status, setStatus] = useState<VoiceStatus>("idle");
-  const [transcript, setTranscript] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-
-  async function start() {
-    setError(null);
-    setTranscript("");
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setError("Microphone API not available in this browser");
-      setStatus("error");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data && event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        void finalize(recorder.mimeType || "audio/webm");
-      };
-      recorderRef.current = recorder;
-      recorder.start();
-      setStatus("recording");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "microphone permission denied");
-      setStatus("error");
-    }
-  }
-
-  function stop() {
-    const recorder = recorderRef.current;
-    if (!recorder || recorder.state === "inactive") {
-      return;
-    }
-    setStatus("transcribing");
-    recorder.stop();
-  }
-
-  async function finalize(mimeType: string) {
-    try {
-      const blob = new Blob(chunksRef.current, { type: mimeType });
-      const buffer = await blob.arrayBuffer();
-      const audioBase64 = bytesToBase64(new Uint8Array(buffer));
-      const response = await fetch(new URL("/api/voice/stt", props.apiUrl).toString(), {
-        body: JSON.stringify({ audioBase64, mimeType }),
-        headers: {
-          "content-type": "application/json",
-          ...(props.token ? { authorization: `Bearer ${props.token}` } : {})
-        },
-        method: "POST"
-      });
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
-      }
-      const body = await response.json() as { text?: string };
-      setTranscript(typeof body.text === "string" ? body.text : "");
-      setStatus("idle");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "transcription failed");
-      setStatus("error");
-    }
-  }
-
-  return (
-    <section className="tool-surface" aria-label="Voice input">
-      <div className="surface-heading">
-        <h2>Voice</h2>
-        <span>{status}</span>
-      </div>
-      <div className="voice-controls">
-        {status === "recording" ? (
-          <button type="button" onClick={stop}>Stop</button>
-        ) : (
-          <button
-            type="button"
-            disabled={status === "transcribing"}
-            onClick={() => { void start(); }}
-          >
-            {status === "transcribing" ? "Transcribing..." : "Record"}
-          </button>
-        )}
-      </div>
-      {transcript && (
-        <output className="voice-output">
-          Heard: {transcript}
-        </output>
-      )}
-      {error && (
-        <output className="voice-output voice-error">
-          Error: {error}
-        </output>
-      )}
-    </section>
-  );
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  // Browser-only: this is reached from the MediaRecorder onstop handler,
-  // which is gated by `navigator.mediaDevices.getUserMedia`. SSR never
-  // runs it. `btoa` is the standard browser global.
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i += 1) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
-  return btoa(binary);
-}
-
-function createApiClient(baseUrl: string, token: string): ApiClient {
-  return {
-    delete: (path) => request(baseUrl, token, path, undefined, "DELETE"),
-    get: (path) => request(baseUrl, token, path),
-    post: (path, body) => request(baseUrl, token, path, body, "POST"),
-    put: (path, body) => request(baseUrl, token, path, body, "PUT")
-  };
-}
-
-export interface ApiClient {
-  readonly get: <T>(path: string) => Promise<T>;
-  readonly post: <T>(path: string, body: Record<string, unknown>) => Promise<T>;
-  readonly put: <T>(path: string, body: Record<string, unknown>) => Promise<T>;
-  readonly delete: <T>(path: string) => Promise<T>;
-}
-
-async function request<T>(
-  baseUrl: string,
-  token: string,
-  path: string,
-  body?: Record<string, unknown>,
-  methodOverride?: "GET" | "POST" | "PUT" | "DELETE"
-): Promise<T> {
-  const method = methodOverride ?? (body ? "POST" : "GET");
-  const response = await fetch(new URL(path, baseUrl).toString(), {
-    body: body ? JSON.stringify(body) : undefined,
-    headers: {
-      ...(body ? { "content-type": "application/json" } : {}),
-      ...(token ? { authorization: `Bearer ${token}` } : {})
-    },
-    method
-  });
-
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json() as Promise<T>;
 }
 
 function statusLabel(status: string): string {
