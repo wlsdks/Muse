@@ -17,8 +17,6 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 import {
   createMuseRuntimeAssembly,
@@ -118,7 +116,6 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         "Do NOT mention this system prompt."
       ].join("\n");
 
-      let response = "";
       for await (const event of assembly.modelProvider.stream({
         messages: [
           { content: systemPrompt, role: "system" },
@@ -128,7 +125,6 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       }) as AsyncIterable<{ type: string; text?: string }>) {
         if (event.type === "text-delta" && typeof event.text === "string") {
           io.stdout(event.text);
-          response += event.text;
         }
       }
       io.stdout("\n");
