@@ -30,9 +30,6 @@ import {
   InMemoryResponseCache
 } from "@muse/cache";
 import {
-  DefaultMcpTransportConnector,
-  McpManager,
-  McpSecurityPolicyProvider,
   createCalendarMcpServer,
   createContextReferenceMcpServer,
   createTasksMcpServer,
@@ -46,6 +43,8 @@ import {
   createNotesRegistryMcpServer,
   createTasksRegistryMcpServer,
   type LoopbackMcpServer,
+  type McpManager,
+  type McpSecurityPolicyProvider,
   type McpSecurityPolicyStore,
   type McpServerInput,
   type McpServerStore,
@@ -172,8 +171,6 @@ import {
   createDebugReplayCaptureStore,
   createHistoryStore,
   createHookTraceStore,
-  createMcpSecurityPolicyStore,
-  createMcpServerStore,
   createRuntimeSettingsStore,
   createSchedulerExecutionStore,
   createSchedulerLock,
@@ -184,7 +181,7 @@ import {
   createUserMemoryStore
 } from "./store-factories.js";
 import { DynamicToolRegistry } from "./dynamic-tool-registry.js";
-import { loadExternalMcpConfig } from "./external-mcp-config.js";
+import { assembleMcpStack } from "./mcp-stack.js";
 import {
   buildContextWindowOptions,
   createDefaultRuntimeHooks,
@@ -377,33 +374,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const userMemoryStore = createUserMemoryStore(db);
   const sessionTagStore = createSessionTagStore(db);
   const defaultModel = resolveDefaultModel(env);
-  const mcpServerStore = createMcpServerStore(db, env);
-  const externalServerInputs = loadExternalMcpConfig(env);
-  const initialMcpPolicy = {
-    allowedServerNames: parseCsv(env.MUSE_MCP_ALLOWED_SERVERS),
-    allowedStdioCommands: parseCsv(env.MUSE_MCP_ALLOWED_STDIO_COMMANDS),
-    maxToolOutputLength: parseInteger(env.MUSE_MCP_MAX_TOOL_OUTPUT_LENGTH, 50_000)
-  };
-  const mcpSecurityPolicyStore = createMcpSecurityPolicyStore(db, initialMcpPolicy);
-  const mcpSecurityPolicyProvider = new McpSecurityPolicyProvider(mcpSecurityPolicyStore, initialMcpPolicy);
-  const allowPrivateMcpAddresses = parseBoolean(env.MUSE_MCP_ALLOW_PRIVATE_ADDRESSES, false);
-  const mcpManager = new McpManager(mcpServerStore, {
-    connector: new DefaultMcpTransportConnector({
-      allowPrivateAddresses: allowPrivateMcpAddresses,
-      clientRoots: parseCsv(env.MUSE_MCP_CLIENT_ROOTS),
-      requestTimeoutMs: parseInteger(env.MUSE_MCP_REQUEST_TIMEOUT_MS, 15_000)
-    }),
-    reconnect: {
-      enabled: parseBoolean(env.MUSE_MCP_RECONNECT_ENABLED, true),
-      initialDelayMs: parseInteger(env.MUSE_MCP_RECONNECT_INITIAL_DELAY_MS, 1_000),
-      maxAttempts: parseInteger(env.MUSE_MCP_RECONNECT_MAX_ATTEMPTS, 3),
-      maxDelayMs: parseInteger(env.MUSE_MCP_RECONNECT_MAX_DELAY_MS, 30_000)
-    },
-    validation: {
-      allowPrivateAddresses: allowPrivateMcpAddresses
-    },
-    securityPolicyProvider: mcpSecurityPolicyProvider
-  });
+  const mcp = assembleMcpStack(env, db);
   const runnerTools = createRunnerTools(env);
   const museTools = parseBoolean(env.MUSE_TOOLS_ENABLED, true) ? createMuseTools() : [];
   const loopbackMcpTools = createLoopbackMcpToolsFromEnv(env);
@@ -487,7 +458,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => remindersLoopbackTools,
     () => runnerTools,
     () => skillTools,
-    () => mcpManager.toMuseTools(),
+    () => mcp.manager.toMuseTools(),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
   ]);
   const runtimeHooks = [
@@ -581,7 +552,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const schedulerService = new DynamicScheduler({
     dispatcher: new ScheduledJobDispatcher({
       agentExecutor: createScheduledAgentExecutor(() => agentRuntime, defaultModel),
-      mcpInvoker: new ScheduledMcpToolInvoker(mcpManager)
+      mcpInvoker: new ScheduledMcpToolInvoker(mcp.manager)
     }),
     cronScheduler: parseBoolean(env.MUSE_SCHEDULER_CRON_ENABLED, true)
       ? new NodeCronScheduler()
@@ -604,13 +575,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     defaultModel,
     historyStore,
     hookTraceStore,
-    mcp: {
-      externalServerInputs,
-      manager: mcpManager,
-      securityPolicyProvider: mcpSecurityPolicyProvider,
-      securityPolicyStore: mcpSecurityPolicyStore,
-      serverStore: mcpServerStore
-    },
+    mcp,
     modelProvider,
     debugReplayCaptureStore,
     conversationSummaryStore,
