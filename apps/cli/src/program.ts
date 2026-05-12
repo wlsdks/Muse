@@ -56,6 +56,13 @@ export interface ProgramIO {
   readonly stdout: (message: string) => void;
   readonly stderr: (message: string) => void;
   readonly prompts?: CliPromptAdapter;
+  /**
+   * Read piped stdin for `muse chat`. Tests inject a stub returning
+   * an empty string so vitest doesn't hang waiting on the harness'
+   * (non-TTY) stdin. Production omits and falls back to the real
+   * `for await (const chunk of process.stdin)` reader.
+   */
+  readonly readPipedStdin?: () => Promise<string>;
   readonly workspaceDir?: string;
   readonly configDir?: string;
   readonly credentialKey?: string;
@@ -171,20 +178,33 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       "--no-tools",
       "skip the agent tool registry for this request — 15× faster on small local models (qwen2.5:7b: 10s → 0.7s) at the cost of losing calendar/tasks/notes ability"
     )
+    .option(
+      "-c, --continue",
+      "include prior turns from ~/.muse/last-chat.jsonl so the model remembers the conversation across CLI invocations (--local only)"
+    )
+    .option(
+      "--reset",
+      "clear ~/.muse/last-chat.jsonl before this turn (use after --continue to start a fresh conversation)"
+    )
     .action(async (
       messageParts: readonly string[],
       options: {
+        readonly continue?: boolean;
         readonly json?: boolean;
         readonly local?: boolean;
         readonly log?: boolean;
         readonly mode?: string;
         readonly model?: string;
+        readonly reset?: boolean;
         readonly stream?: boolean;
         readonly tools?: boolean;
         readonly webSearch?: boolean;
       },
       command
     ) => {
+      if (options.reset) {
+        await clearLastChatHistory();
+      }
       const message = await resolveChatMessage(io, messageParts);
       const cliConfig = await readConfigStore(io);
       const model = options.model ?? cliConfig.defaultModel;
@@ -206,8 +226,10 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
             }
           : undefined;
 
+      const priorHistory = options.continue && options.local ? await readLastChatHistory() : [];
+
       const body = options.local
-        ? await runLocalChat(io, message, model, agentMode, { disableTools: toolsDisabled })
+        ? await runLocalChat(io, message, model, agentMode, { disableTools: toolsDisabled, priorHistory })
         : options.stream
           ? await streamRemoteChat(io, command, message, model, options.json === true, agentMode, options.webSearch === false)
         : await apiRequest(io, command, "/api/chat", dropUndefined({
@@ -225,6 +247,17 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
           response: body,
           source: options.local ? "cli.local" : options.stream ? "cli.remote.stream" : "cli.remote"
         });
+      }
+
+      // Persist the just-completed turn so a future `muse chat -c`
+      // can resume. Stored regardless of --continue so the *next*
+      // call can pick up the conversation. Cap kept implicit (the
+      // reader trims by recent N turns); --reset clears.
+      if (options.local) {
+        const responseText = isRecord(body) && typeof body.response === "string" ? body.response : undefined;
+        if (responseText) {
+          await appendLastChatTurn({ message, response: responseText });
+        }
       }
 
       if (!options.stream || options.json) {
@@ -328,15 +361,116 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 
 async function resolveChatMessage(io: ProgramIO, messageParts: readonly string[]): Promise<string> {
   const message = messageParts.join(" ").trim();
+  const piped = await (io.readPipedStdin ?? readPipedStdin)();
 
+  // Daily-driver ergonomic: `cat doc.md | muse chat "summarize"` should
+  // concatenate piped stdin AFTER the args so the model sees the
+  // instruction first. When only stdin is provided, use it directly.
+  // Falls back to the interactive prompt only on a true TTY with no
+  // args + no pipe.
+  if (message.length > 0 && piped.length > 0) {
+    return `${message}\n\n${piped}`;
+  }
   if (message.length > 0) {
     return message;
+  }
+  if (piped.length > 0) {
+    return piped;
   }
 
   return promptText(io, {
     message: "What would you like to ask Muse?",
     placeholder: "Compare these options..."
   });
+}
+
+async function readPipedStdin(): Promise<string> {
+  // Skip when stdin is a TTY — interactive shells leave stdin attached
+  // even when no one's typing; reading it would block forever.
+  //
+  // Note: Node sets `process.stdin.isTTY` to `true` for a terminal and
+  // leaves it `undefined` when stdin is redirected. So the guard has
+  // to be a truthy check; `!== false` would treat `undefined` as
+  // "still a TTY" and miss the pipe case.
+  if (process.stdin.isTTY) {
+    return "";
+  }
+  let raw = "";
+  process.stdin.setEncoding("utf8");
+  for await (const chunk of process.stdin) {
+    raw += chunk;
+  }
+  return raw.trim();
+}
+
+// ── Conversation history for `muse chat -c` ──────────────────────────
+// One JSONL line per turn: { role: "user" | "assistant", content: string }.
+// Stored at ~/.muse/last-chat.jsonl. Cap to the most recent
+// HISTORY_TURN_LIMIT turns so an open-ended conversation doesn't blow
+// the model context. Larger / persistent history belongs in the
+// runtime's ConversationSummaryStore, not this CLI cache.
+
+const HISTORY_TURN_LIMIT = 12;
+
+function lastChatHistoryPath(): string {
+  const home = process.env.HOME ?? "~";
+  return path.join(home, ".muse", "last-chat.jsonl");
+}
+
+interface LastChatLine {
+  readonly role: "user" | "assistant";
+  readonly content: string;
+}
+
+async function readLastChatHistory(): Promise<readonly LastChatLine[]> {
+  const filePath = lastChatHistoryPath();
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+  const lines: LastChatLine[] = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (
+        isRecord(parsed)
+        && (parsed.role === "user" || parsed.role === "assistant")
+        && typeof parsed.content === "string"
+        && parsed.content.length > 0
+      ) {
+        lines.push({ content: parsed.content, role: parsed.role });
+      }
+    } catch { /* skip malformed lines */ }
+  }
+  return lines.slice(-HISTORY_TURN_LIMIT * 2);
+}
+
+async function appendLastChatTurn(turn: { readonly message: string; readonly response: string }): Promise<void> {
+  const filePath = lastChatHistoryPath();
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const payload =
+    `${JSON.stringify({ content: turn.message, role: "user" })}\n` +
+    `${JSON.stringify({ content: turn.response, role: "assistant" })}\n`;
+  await writeFile(filePath, payload, { flag: "a", mode: 0o600 });
+}
+
+async function clearLastChatHistory(): Promise<void> {
+  const filePath = lastChatHistoryPath();
+  try {
+    await writeFile(filePath, "", { mode: 0o600 });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
 }
 
 async function resolveAuthToken(io: ProgramIO, token: string | undefined): Promise<string> {
@@ -546,7 +680,10 @@ async function runLocalChat(
   message: string,
   model: string | undefined,
   agentMode?: AgentMode,
-  options: { readonly disableTools?: boolean } = {}
+  options: {
+    readonly disableTools?: boolean;
+    readonly priorHistory?: readonly { readonly role: "user" | "assistant"; readonly content: string }[];
+  } = {}
 ) {
   // When the caller passes --model explicitly, push it into the
   // env so the autoconfigure assembly factory wires the matching
@@ -573,8 +710,12 @@ async function runLocalChat(
   if (options.disableTools) metadata.maxTools = 0;
   const hasMetadata = Object.keys(metadata).length > 0;
 
+  const messages = [
+    ...(options.priorHistory ?? []),
+    { content: message, role: "user" as const }
+  ];
   const result = await assembly.agentRuntime.run({
-    messages: [{ content: message, role: "user" }],
+    messages,
     ...(hasMetadata ? { metadata } : {}),
     model: model ?? assembly.defaultModel ?? "default"
   });

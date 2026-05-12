@@ -13,6 +13,10 @@ function captureOutput() {
   const output: string[] = [];
   return {
     io: {
+      // Tests never have a piped stdin; this stub keeps the chat
+      // action from blocking on `for await (const chunk of process.stdin)`
+      // when vitest runs in a non-TTY harness.
+      readPipedStdin: async () => "",
       stderr: (message: string) => output.push(message),
       stdout: (message: string) => output.push(message)
     },
