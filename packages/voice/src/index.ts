@@ -49,3 +49,13 @@ export {
   type WakeWordDetectorInfo,
   type WakeWordDetectorResult
 } from "./wake-word.js";
+export {
+  FakeLiveVoiceProvider,
+  FakeLiveVoiceSession,
+  type FakeLiveVoiceProviderOptions,
+  type LiveVoiceEvent,
+  type LiveVoiceOpenOptions,
+  type LiveVoiceProvider,
+  type LiveVoiceProviderInfo,
+  type LiveVoiceSession
+} from "./live-voice.js";

@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  FakeLiveVoiceProvider,
   OpenAITtsProvider,
   OpenAIWhisperSttProvider,
   PiperTtsProvider,
@@ -11,6 +12,7 @@ import {
   VoiceProviderRegistry,
   VoiceValidationError,
   WhisperCppSttProvider,
+  type LiveVoiceEvent,
   type PiperRunner,
   type WhisperCppRunner
 } from "../src/index.js";
@@ -403,6 +405,59 @@ describe("TextScanWakeWordDetector", () => {
     const info = detector.describe();
     expect(info.id).toBe("text-scan");
     expect(info.description).toContain("open sesame");
+  });
+});
+
+describe("FakeLiveVoiceProvider", () => {
+  it("describes itself as local with the configured id", () => {
+    const provider = new FakeLiveVoiceProvider({ id: "live-test", script: [] });
+    const info = provider.describe();
+    expect(info.id).toBe("live-test");
+    expect(info.local).toBe(true);
+  });
+
+  it("captures sendAudio + endTurn calls on the session", async () => {
+    const provider = new FakeLiveVoiceProvider({ script: [] });
+    const session = await provider.open();
+    await session.sendAudio(new Uint8Array([1, 2, 3]));
+    await session.sendAudio(new Uint8Array(0)); // empty no-op
+    await session.endTurn();
+    expect(provider.sessions).toHaveLength(1);
+    expect(provider.sessions[0]!.audioChunks).toHaveLength(1);
+    expect(provider.sessions[0]!.endTurns).toBe(1);
+  });
+
+  it("emits scripted events through events() until the script ends", async () => {
+    const script: readonly LiveVoiceEvent[] = [
+      { text: "hello", type: "text-delta" },
+      { text: " there", type: "text-delta" },
+      { type: "turn-complete" }
+    ];
+    const provider = new FakeLiveVoiceProvider({ script });
+    const session = await provider.open();
+    const collected: LiveVoiceEvent[] = [];
+    for await (const event of session.events()) {
+      collected.push(event);
+    }
+    expect(collected).toHaveLength(3);
+    expect(collected[0]).toMatchObject({ type: "text-delta", text: "hello" });
+    expect(collected[2]).toMatchObject({ type: "turn-complete" });
+  });
+
+  it("rejects sendAudio / endTurn after close()", async () => {
+    const provider = new FakeLiveVoiceProvider({ script: [] });
+    const session = await provider.open();
+    await session.close();
+    await expect(session.sendAudio(new Uint8Array([1]))).rejects.toThrow(/after close/u);
+    await expect(session.endTurn()).rejects.toThrow(/after close/u);
+  });
+
+  it("close() is idempotent", async () => {
+    const provider = new FakeLiveVoiceProvider({ script: [] });
+    const session = await provider.open();
+    await session.close();
+    await session.close(); // should not throw
+    expect(provider.sessions[0]!.closed).toBe(true);
   });
 });
 

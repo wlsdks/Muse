@@ -60,6 +60,16 @@ move from `Unreleased` to dated/versioned headings.
   bring their own model). See `docs/design/voice-mode.md` for the
   full Phase F contract.
 
+- **`LiveVoiceProvider` abstraction** for duplex (audio-in /
+  audio+text-out) providers like Gemini Live and OpenAI Realtime
+  (Voice Phase F.3). Ships the interface
+  (`LiveVoiceSession.sendAudio` / `endTurn` / `events()` /
+  `close()`) and a `FakeLiveVoiceProvider` for tests / dry runs.
+  Concrete `GeminiLiveProvider` / `OpenAIRealtimeProvider`
+  implementations are future work — websocket reconnect +
+  partial-message accumulation are the fragile pieces and ship
+  once dogfood demand justifies the integration cost.
+
 - **Wake-word ambient mode** for `muse listen` (Voice Phase F.1
   first cut). New `--wake "hey muse"` flag turns the CLI into a
   continuous-listen daemon: short rolling clips (default 5s,
