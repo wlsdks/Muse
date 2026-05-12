@@ -20,7 +20,14 @@ import type { MessagingProviderRegistry } from "@muse/messaging";
 import { isQuietHour, type QuietHourRange } from "./reminder-tick.js";
 
 export interface ProactiveTickOptions {
-  readonly calendarRegistry: CalendarProviderRegistry;
+  readonly calendarRegistry?: CalendarProviderRegistry;
+  /**
+   * Personal-tasks store file (`~/.muse/tasks.json` by default).
+   * When set, open tasks with imminent dueAt fire alongside
+   * calendar imminent events. Phase B of
+   * docs/design/proactive-surfacing.md.
+   */
+  readonly tasksFile?: string;
   readonly messagingRegistry: MessagingProviderRegistry;
   readonly providerId: string;
   readonly destination: string;
@@ -64,13 +71,14 @@ export function startProactiveTick(options: ProactiveTickOptions): ProactiveTick
     firing = true;
     try {
       const summary = await runDueProactiveNotices({
-        calendarRegistry: options.calendarRegistry,
+        ...(options.calendarRegistry ? { calendarRegistry: options.calendarRegistry } : {}),
         destination: options.destination,
         ...(options.leadMinutes !== undefined ? { leadMinutes: options.leadMinutes } : {}),
         messagingRegistry: options.messagingRegistry,
         now,
         providerId: options.providerId,
-        sidecarFile: options.sidecarFile
+        sidecarFile: options.sidecarFile,
+        ...(options.tasksFile ? { tasksFile: options.tasksFile } : {})
       });
       if (summary.fired > 0 || summary.errors.length > 0) {
         options.logger?.(

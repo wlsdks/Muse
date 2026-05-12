@@ -547,13 +547,14 @@ export {
   type RunDueRemindersSummary
 } from "./reminder-firing-loop.js";
 
-// Proactive surfacing Phase A — calendar imminence push.
-// See docs/design/proactive-surfacing.md.
+// Proactive surfacing (Phase A — calendar imminence, Phase B —
+// tasks due-soon). See docs/design/proactive-surfacing.md.
 export {
   readProactiveFired,
   runDueProactiveNotices,
   writeProactiveFired,
   type ProactiveFiredEntry,
+  type ProactiveFiredKind,
   type RunDueProactiveNoticesOptions,
   type RunDueProactiveNoticesSummary
 } from "./proactive-notice-loop.js";

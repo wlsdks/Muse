@@ -408,13 +408,16 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // is registered AND a calendar registry is wired.
   const proactiveProvider = env.MUSE_PROACTIVE_PROVIDER?.trim();
   const proactiveDestination = env.MUSE_PROACTIVE_DESTINATION?.trim();
+  const proactiveCalendar = options.calendar && options.calendar.list().length > 0
+    ? options.calendar
+    : undefined;
+  const proactiveHasSignal = Boolean(proactiveCalendar) || Boolean(options.tasksFile);
   if (
     proactiveProvider && proactiveProvider.length > 0
     && proactiveDestination && proactiveDestination.length > 0
     && options.messaging
     && options.messaging.has(proactiveProvider)
-    && options.calendar
-    && options.calendar.list().length > 0
+    && proactiveHasSignal
   ) {
     const proactiveTickMsRaw = env.MUSE_PROACTIVE_TICK_MS ? Number(env.MUSE_PROACTIVE_TICK_MS) : undefined;
     const proactiveLeadRaw = env.MUSE_PROACTIVE_LEAD_MINUTES ? Number(env.MUSE_PROACTIVE_LEAD_MINUTES) : undefined;
@@ -423,7 +426,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     const proactiveSidecarFile = env.MUSE_PROACTIVE_SIDECAR_FILE?.trim()
       || `${process.env.HOME ?? ""}/.muse/proactive-fired.json`;
     const proactiveHandle = startProactiveTick({
-      calendarRegistry: options.calendar,
+      ...(proactiveCalendar ? { calendarRegistry: proactiveCalendar } : {}),
+      ...(options.tasksFile ? { tasksFile: options.tasksFile } : {}),
       destination: proactiveDestination,
       errorLogger: (message) => server.log.warn(message),
       ...(proactiveTickMsRaw !== undefined ? { intervalMs: proactiveTickMsRaw } : {}),

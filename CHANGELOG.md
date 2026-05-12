@@ -9,21 +9,28 @@ move from `Unreleased` to dated/versioned headings.
 
 ### Added
 
-- **Proactive surfacing (Phase A — calendar imminence push)**. New
-  daemon scans the calendar registry every minute (`MUSE_PROACTIVE_TICK_MS`,
-  default 60s) and pushes a one-line notice via the messaging
-  registry for events starting within `MUSE_PROACTIVE_LEAD_MINUTES`
-  (default 10). Off by default — activates only when
-  `MUSE_PROACTIVE_PROVIDER` + `MUSE_PROACTIVE_DESTINATION` are set
-  and the named provider is registered AND at least one calendar
-  is wired. Dedupe sidecar at `MUSE_PROACTIVE_SIDECAR_FILE`
-  (default `~/.muse/proactive-fired.json`) ensures a single event
-  fires at most once per `{id, startsAt}` tuple; a moved meeting
-  re-fires. Quiet-hours window inherits from
+- **Proactive surfacing (Phases A + B)**. New daemon scans the
+  calendar registry AND the personal-tasks store every minute
+  (`MUSE_PROACTIVE_TICK_MS`, default 60s) and pushes a one-line
+  notice via the messaging registry for items in the
+  `MUSE_PROACTIVE_LEAD_MINUTES` window (default 10):
+  - **Phase A — calendar imminence**: non-all-day events whose
+    `startsAt` is in `[now, now + leadMinutes]`. Format
+    `⏰ {title} in {N} min (location?)`.
+  - **Phase B — task due-soon**: open tasks (status="open") with
+    `dueAt` in the same window. Format `📋 {title} due in {N} min`.
+  Off by default — activates only when `MUSE_PROACTIVE_PROVIDER` +
+  `MUSE_PROACTIVE_DESTINATION` are set, the named provider is
+  registered, AND at least one signal is available (a calendar
+  registry with ≥1 wired provider OR a `tasksFile` configured).
+  Shared dedupe sidecar at `MUSE_PROACTIVE_SIDECAR_FILE`
+  (default `~/.muse/proactive-fired.json`) ensures a single item
+  fires at most once per `{kind, id, startIso}` tuple; a moved
+  meeting / rescheduled task re-fires. Quiet-hours inherit from
   `MUSE_REMINDER_QUIET_HOURS` unless overridden by
-  `MUSE_PROACTIVE_QUIET_HOURS`. Phase B (tasks due-soon), Phase C
-  (per-event opt-out) and Phase D (agent-initiated turn) are
-  scoped in `docs/design/proactive-surfacing.md`.
+  `MUSE_PROACTIVE_QUIET_HOURS`. Phase C (per-event opt-out) and
+  Phase D (agent-initiated turn) are scoped in
+  `docs/design/proactive-surfacing.md`.
 
 - **Local Whisper.cpp STT** via the new `WhisperCppSttProvider`. Set
   `MUSE_VOICE_STT=whisper-cpp` to route `/api/voice/stt` (and the

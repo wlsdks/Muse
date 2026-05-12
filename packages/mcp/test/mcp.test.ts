@@ -3446,4 +3446,162 @@ describe("runDueProactiveNotices", () => {
     expect(summary).toMatchObject({ fired: 0, imminent: 0 });
     expect(summary.errors[0]).toContain("caldav down");
   });
+
+  it("fires due-soon open tasks (Phase B) and dedupes the same way as calendar", async () => {
+    const { runDueProactiveNotices, readProactiveFired } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-task-"));
+    const tasksFile = join(dir, "tasks.json");
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    writeFileSync(tasksFile, JSON.stringify({
+      tasks: [
+        {
+          createdAt: "2026-05-12T00:00:00Z",
+          dueAt: "2026-05-12T15:00:00Z",
+          id: "task-soon",
+          status: "open",
+          title: "Send invoice"
+        },
+        {
+          createdAt: "2026-05-12T00:00:00Z",
+          dueAt: "2030-01-01T00:00:00Z", // far future
+          id: "task-far",
+          status: "open",
+          title: "Year-end review"
+        },
+        {
+          createdAt: "2026-05-12T00:00:00Z",
+          dueAt: "2026-05-12T15:02:00Z",
+          id: "task-done",
+          status: "done", // not open — must skip
+          title: "Already finished"
+        }
+      ]
+    }), "utf8");
+
+    const msg = makeFakeMessagingRegistry();
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+
+    const first = await runDueProactiveNotices({
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile,
+      tasksFile
+    });
+    expect(first).toMatchObject({ fired: 1, imminent: 1, errors: [] });
+    expect(msg.sent).toEqual([{ destination: "@me", providerId: "telegram", text: "📋 Send invoice due in 5 min" }]);
+
+    const persisted = await readProactiveFired(sidecarFile);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({ id: "task-soon", kind: "task" });
+
+    // Dedupe on a second run within the same window.
+    const second = await runDueProactiveNotices({
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile,
+      tasksFile
+    });
+    expect(second.fired).toBe(0);
+    expect(msg.sent).toHaveLength(1);
+  });
+
+  it("re-fires a rescheduled task (same id, new dueAt)", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-task-move-"));
+    const tasksFile = join(dir, "tasks.json");
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const msg = makeFakeMessagingRegistry();
+
+    writeFileSync(tasksFile, JSON.stringify({
+      tasks: [{
+        createdAt: "2026-05-12T00:00:00Z",
+        dueAt: "2026-05-12T15:00:00Z",
+        id: "task-1",
+        status: "open",
+        title: "Send invoice"
+      }]
+    }), "utf8");
+    await runDueProactiveNotices({
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile,
+      tasksFile
+    });
+
+    // Reschedule the same task.
+    writeFileSync(tasksFile, JSON.stringify({
+      tasks: [{
+        createdAt: "2026-05-12T00:00:00Z",
+        dueAt: "2026-05-12T15:01:00Z",
+        id: "task-1",
+        status: "open",
+        title: "Send invoice"
+      }]
+    }), "utf8");
+    const moved = await runDueProactiveNotices({
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile,
+      tasksFile
+    });
+    expect(moved.fired).toBe(1);
+    expect(msg.sent).toHaveLength(2);
+  });
+
+  it("combines calendar + task sources in one run", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-combined-"));
+    const tasksFile = join(dir, "tasks.json");
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    writeFileSync(tasksFile, JSON.stringify({
+      tasks: [{
+        createdAt: "2026-05-12T00:00:00Z",
+        dueAt: "2026-05-12T15:00:00Z",
+        id: "task-1",
+        status: "open",
+        title: "Send invoice"
+      }]
+    }), "utf8");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-1", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile,
+      tasksFile
+    });
+    expect(summary).toMatchObject({ fired: 2, imminent: 2, errors: [] });
+    expect(msg.sent.map((entry) => entry.text)).toEqual([
+      "⏰ Standup in 5 min",
+      "📋 Send invoice due in 5 min"
+    ]);
+  });
 });
