@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCitations, formatLocalDateTime } from "./human-formatters.js";
+import { formatCitations, formatLocalDate, formatLocalDateTime, formatLocalTime } from "./human-formatters.js";
 
 describe("formatCitations", () => {
   it("returns empty string when no citations", () => {
@@ -41,5 +41,23 @@ describe("formatLocalDateTime", () => {
     // Midnight in America/Los_Angeles is 2026-05-14T07:00:00Z
     expect(formatLocalDateTime("2026-05-14T07:00:00Z", "America/Los_Angeles"))
       .toBe("2026-05-14 00:00");
+  });
+});
+
+describe("formatLocalDate / formatLocalTime", () => {
+  it("formatLocalDate returns the date slice of the local datetime (crosses date boundary in KST)", () => {
+    // 2026-05-13T23:00Z is 2026-05-14 08:00 KST — date differs.
+    expect(formatLocalDate("2026-05-13T23:00:00Z", "Asia/Seoul")).toBe("2026-05-14");
+    expect(formatLocalDate("2026-05-13T23:00:00Z", "UTC")).toBe("2026-05-13");
+  });
+
+  it("formatLocalTime returns HH:MM in the requested zone", () => {
+    expect(formatLocalTime("2026-05-14T06:00:00Z", "Asia/Seoul")).toBe("15:00");
+    expect(formatLocalTime("2026-05-14T06:00:00Z", "UTC")).toBe("06:00");
+  });
+
+  it("returns the input unchanged for unparseable strings", () => {
+    expect(formatLocalDate("nope")).toBe("nope");
+    expect(formatLocalTime("nope")).toBe("nope");
   });
 });

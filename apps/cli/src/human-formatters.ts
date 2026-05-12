@@ -239,6 +239,27 @@ export function formatLocalDateTime(iso: string, timeZone?: string): string {
   return `${get("year")}-${get("month")}-${get("day")} ${hour}:${get("minute")}`;
 }
 
+/**
+ * Date-only flavor of `formatLocalDateTime` — returns `YYYY-MM-DD`
+ * in the host's local timezone. Useful for all-day events and
+ * "Today:" headers where a UTC ISO date can be off by one day for
+ * users west of GMT or east of the date line.
+ */
+export function formatLocalDate(iso: string, timeZone?: string): string {
+  const dateTime = formatLocalDateTime(iso, timeZone);
+  return dateTime.length >= 10 ? dateTime.slice(0, 10) : dateTime;
+}
+
+/**
+ * Time-only flavor of `formatLocalDateTime` — returns `HH:MM` in
+ * the host's local timezone. Used for compact event-range and
+ * reminder lines in `muse brief`.
+ */
+export function formatLocalTime(iso: string, timeZone?: string): string {
+  const dateTime = formatLocalDateTime(iso, timeZone);
+  return dateTime.length >= 16 ? dateTime.slice(11, 16) : dateTime;
+}
+
 function shortDateTime(iso: string): string {
   return formatLocalDateTime(iso);
 }

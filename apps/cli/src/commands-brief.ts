@@ -36,6 +36,7 @@ import type { CalendarEvent } from "@muse/calendar";
 import { readProactiveHistory, readReminders, type PersistedReminder } from "@muse/mcp";
 import type { Command } from "commander";
 
+import { formatLocalDate, formatLocalDateTime, formatLocalTime } from "./human-formatters.js";
 import { buildJarvisPersona } from "./program.js";
 import type { ProgramIO } from "./program.js";
 
@@ -203,23 +204,28 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         // reminders file missing or unreadable — brief still works
       }
 
+      const nowIso = now.toISOString();
       const factSheet = [
-        `Today: ${now.toISOString().slice(0, 10)} ${now.toLocaleDateString("en-US", { weekday: "long" })} ${now.toTimeString().slice(0, 5)} local`,
+        `Today: ${formatLocalDate(nowIso)} ${now.toLocaleDateString("en-US", { weekday: "long" })} ${formatLocalTime(nowIso)} local`,
         `Open tasks: ${openTasks.length.toString()}`,
         `Tasks due in next 24h: ${dueSoon.length.toString()}`,
-        ...dueSoon.slice(0, 5).map((t) => `  · ${t.title} (due ${t.dueAt})`),
+        ...dueSoon.slice(0, 5).map((t) => `  · ${t.title} (due ${t.dueAt ? formatLocalDateTime(t.dueAt) : "no date"})`),
         `Events in next 24h: ${upcomingEvents.length.toString()}`,
         ...upcomingEvents.map((e) => {
+          const startIso = e.startsAt.toISOString();
           const when = e.allDay
-            ? `${e.startsAt.toISOString().slice(0, 10)} (all-day)`
-            : `${e.startsAt.toISOString().slice(11, 16)}–${e.endsAt.toISOString().slice(11, 16)} UTC`;
+            ? `${formatLocalDate(startIso)} (all-day)`
+            : `${formatLocalTime(startIso)}–${formatLocalTime(e.endsAt.toISOString())}`;
           const loc = e.location ? ` @ ${e.location}` : "";
           return `  · ${when} ${e.title}${loc} [${e.providerId}]`;
         }),
         `Pending reminders due in next 24h: ${dueReminders.length.toString()}`,
-        ...dueReminders.map((r) => `  · ${r.dueAt.slice(11, 16)} UTC ${r.text}`),
+        ...dueReminders.map((r) => `  · ${formatLocalTime(r.dueAt)} ${r.text}`),
         `Recent proactive notices (last 5): ${recentHistory.length.toString()}`,
-        ...recentHistory.slice(-3).map((entry) => `  · ${entry.firedAtIso ?? "?"} ${entry.title}: ${entry.text.slice(0, 80)}`)
+        ...recentHistory.slice(-3).map((entry) => {
+          const fired = entry.firedAtIso ? formatLocalDateTime(entry.firedAtIso) : "?";
+          return `  · ${fired} ${entry.title}: ${entry.text.slice(0, 80)}`;
+        })
       ].join("\n");
 
       const systemPrompt = [
