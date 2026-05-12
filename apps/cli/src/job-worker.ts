@@ -82,8 +82,7 @@ async function main(): Promise<void> {
         model
       })) {
         if (event.type === "text-delta") {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const text = (event as any).text;
+          const text = (event as { text?: string }).text;
           if (typeof text === "string" && text.length > 0) {
             await appendEvent(args.jobFile, { text, type: "progress" });
           }
