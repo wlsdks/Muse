@@ -22,7 +22,7 @@ import type { ConfigCommandHelpers } from "./commands-config.js";
 import type { ProgramIO } from "./program.js";
 
 export interface LocalModelPreset {
-  readonly tier: "low" | "mid" | "high";
+  readonly tier: "low" | "mid" | "high" | "power";
   readonly tag: string;
   readonly approxSizeGb: number;
   readonly minRamGb: number;
@@ -30,34 +30,45 @@ export interface LocalModelPreset {
 }
 
 /**
- * Recommended models, ordered low → high. All Apache 2.0 except where
- * marked — license metadata lives in docs/setup-local-llm.md.
+ * Recommended models, ordered low → power. Qwen 3.5 (Feb–Apr 2026)
+ * is the current default family — improved tool calling, native
+ * multilingual including Korean, smaller-on-disk than the 2.5 line.
+ * Qwen 3.6:27b (Apr 2026) is the open-weight agentic-coding tier
+ * for users with ≥ 32 GB RAM.
  *
  * The CLI's default picker walks this list and prefers the highest
  * tier that is *already pulled*; the user always wins by passing
- * `--model <tag>` explicitly.
+ * `--model <tag>` explicitly. License notes live in
+ * `docs/setup-local-llm.md`.
  */
 export const LOCAL_MODEL_PRESETS: readonly LocalModelPreset[] = [
   {
     approxSizeGb: 1.0,
     minRamGb: 4,
-    note: "low-spec; chat OK, tool-calling fragile",
-    tag: "qwen2.5:1.5b-instruct",
+    note: "lowest; chat-only on 4 GB hardware",
+    tag: "qwen3.5:0.8b",
     tier: "low"
   },
   {
-    approxSizeGb: 2.0,
-    minRamGb: 6,
-    note: "mid; usable JARVIS surface",
-    tag: "qwen2.5:3b",
+    approxSizeGb: 2.7,
+    minRamGb: 8,
+    note: "mid; balanced JARVIS surface, good Korean",
+    tag: "qwen3.5:2b",
     tier: "mid"
   },
   {
-    approxSizeGb: 4.7,
-    minRamGb: 8,
-    note: "high; recommended JARVIS daily-driver",
-    tag: "qwen2.5:7b-instruct",
+    approxSizeGb: 6.6,
+    minRamGb: 12,
+    note: "high; recommended JARVIS daily-driver, stable tool calling",
+    tag: "qwen3.5:9b",
     tier: "high"
+  },
+  {
+    approxSizeGb: 17.0,
+    minRamGb: 32,
+    note: "power; Apr 2026 open-weight agentic-coding model, M-Pro 32 GB+",
+    tag: "qwen3.6:27b",
+    tier: "power"
   }
 ];
 

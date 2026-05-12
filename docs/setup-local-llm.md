@@ -4,12 +4,14 @@ Muse is provider-neutral — it talks to any LLM through a Muse-owned
 adapter. The easiest way to run Muse without paying for cloud API
 calls is to point it at a local open-source model via **Ollama**.
 
-This document covers two paths:
+This document covers four tiers, smallest to largest:
 
-- **Low-spec** — a 4–6 GB RAM laptop, quick chat, basic reminders. ~1 GB model.
-- **High-spec** — an 8+ GB RAM laptop / Apple-Silicon Mac, JARVIS daily-driver. ~5 GB model.
+- **Low** — 4 GB RAM laptop, chat-only. ~1.0 GB model.
+- **Mid** — 8+ GB RAM, balanced JARVIS surface. ~2.7 GB model.
+- **High** *(recommended)* — 12+ GB RAM, stable tool calling. ~6.6 GB model.
+- **Power** — 32+ GB RAM (M-Pro / M-Max), agentic-coding tier. ~17 GB model.
 
-Neither path requires an API key. Neither sends your data to anyone.
+No tier requires an API key. None of them send your data to anyone.
 
 ## 30-second quickstart
 
@@ -22,15 +24,16 @@ curl -fsSL https://ollama.com/install.sh | sh           # Linux
 # 2. start the daemon (skip on Windows — the installer starts it)
 ollama serve &
 
-# 3. pull a model — pick low or high spec
-ollama pull qwen2.5:1.5b-instruct      # low-spec, ~1 GB
-ollama pull qwen2.5:7b-instruct        # high-spec, ~5 GB  (recommended)
+# 3. pull a model — pick a tier
+ollama pull qwen3.5:0.8b               # low, ~1 GB
+ollama pull qwen3.5:2b                 # mid, ~2.7 GB
+ollama pull qwen3.5:9b                 # high, ~6.6 GB  (recommended)
+ollama pull qwen3.6:27b                # power, ~17 GB  (agentic coding)
 
 # 4. tell Muse to use it
 muse setup local
 
 # 5. talk
-export MUSE_MODEL=ollama/qwen2.5:7b-instruct
 muse chat "안녕"
 ```
 
@@ -42,12 +45,20 @@ Pass `--check` to dry-run without writing.
 
 | Tier | Model | Size on disk | Min RAM | Strengths | Weaknesses |
 | --- | --- | --- | --- | --- | --- |
-| **low** | `qwen2.5:1.5b-instruct` | 1.0 GB | 4 GB | fits 4 GB laptops, **snappy** (90 ms first-token on M3 Pro), Korean OK | tool calling fragile; long reasoning fails |
-| **mid** | `qwen2.5:3b` | 2.0 GB | 6 GB | useful JARVIS surface | Korean weaker than 7B |
-| **high** | `qwen2.5:7b-instruct` | 4.7 GB | 8 GB | stable tool-calling, strong Korean | model load takes ~2 s on first request; ~27 tok/s feels "OK" not "snappy" |
+| **low** | `qwen3.5:0.8b` | 1.0 GB | 4 GB | fits 4 GB laptops; truly snappy | tool calling unreliable; basic chat only |
+| **mid** | `qwen3.5:2b` | 2.7 GB | 8 GB | balanced JARVIS surface, good Korean | tool calling occasionally hesitates |
+| **high** | `qwen3.5:9b` | 6.6 GB | 12 GB | **recommended daily-driver** — stable tool calling, strong Korean, Apr 2026 release | needs Apple-Silicon or 16 GB+ x86 |
+| **power** | `qwen3.6:27b` | 17 GB | 32 GB | open-weight agentic-coding tier (Apr 2026), best 27 B coding model | M-Pro 32 GB+ or workstation only |
+
+`qwen2.5` (Sep 2024) and `qwen3` (Aug 2025) still work — pass them
+with `--model ollama/<tag>` — but Qwen 3.5 (Feb–Apr 2026) is the
+default. It has tighter tool calling and noticeably better multilingual
+performance than the 2.5 line at the same parameter count.
 
 **Measured on M3 Pro / 36 GB RAM, Ollama 0.21.1** (run
-`node scripts/dogfood-local-llm.mjs <tag>` to reproduce):
+`node scripts/dogfood-local-llm.mjs <tag>` to reproduce). Numbers
+below are from Qwen 2.5 (still recorded as historical baseline);
+re-run for Qwen 3.5 on your hardware:
 
 | Model | Cold-start | Warm first-token | Tok/s (raw) | Muse `/api/chat` | Tier |
 | --- | --- | --- | --- | --- | --- |
@@ -111,7 +122,7 @@ override per call when you need cloud reasoning:
 
 ```bash
 # default = local
-muse config set defaultModel ollama/qwen2.5:7b-instruct
+muse config set defaultModel ollama/qwen3.5:9b
 
 # one-off cloud call when you need it
 muse chat --model gemini/gemini-2.5-pro "Plan the Q3 migration."
@@ -141,16 +152,16 @@ others work but you wire them through env vars.
 macOS Homebrew install: `brew services start ollama`. On Linux the
 installer should add a systemd unit.
 
-**`Model 'qwen2.5:7b-instruct' not pulled`** — exactly what it says.
+**`Model 'qwen3.5:9b' not pulled`** — exactly what it says.
 Run the `ollama pull` line above and retry.
 
 **Slow first response, fast afterwards** — Ollama loads the model into
 RAM on first use; subsequent calls reuse the loaded model. The first
-call after `ollama serve` startup will take 3–10 seconds for a 7B
+call after `ollama serve` startup will take 3–10 seconds for a 9B
 model; subsequent calls return tokens in <500 ms.
 
 **Out-of-memory crash** — drop to the next-smaller tier
-(`qwen2.5:7b-instruct` → `qwen2.5:3b` → `qwen2.5:1.5b-instruct`).
+(`qwen3.5:9b` → `qwen3.5:2b` → `qwen3.5:0.8b`).
 Available RAM ≠ installed RAM; close browsers / VSCode first.
 
 ## Model licenses
@@ -160,9 +171,11 @@ you should know what you're running before commercial use.
 
 | Model family | License | Commercial use |
 | --- | --- | --- |
-| **Qwen 2.5** (0.5B / 1.5B / 7B / 14B / 32B) | Apache 2.0 | yes |
-| Qwen 2.5 **3B** | Qwen Research License | non-commercial only |
-| Qwen 2.5 **72B** | Qwen License | commercial requires registration |
+| **Qwen 3.5** (0.8B / 2B / 4B / 9B / 27B) | Apache 2.0 | yes |
+| Qwen 3.5 **35B / 122B** | Qwen License | commercial requires registration |
+| **Qwen 3.6** (27B open weights, Apr 2026) | Apache 2.0 | yes |
+| Qwen 3.6 **Plus** (cloud-only) | Alibaba Cloud terms | API pay-as-you-go |
+| Qwen 2.5 (legacy) | Apache 2.0 except 3B/72B | yes (most sizes) |
 | Llama 3.x | Llama Community License | yes if MAU < 700M |
 | Gemma 2 | Gemma Terms + Prohibited Use Policy | yes with restrictions |
 | Phi-3 | MIT | yes |
@@ -176,7 +189,7 @@ the license if you plan to deploy Muse as a service for paying users.
 To prove the integration works end-to-end on your machine:
 
 ```bash
-node scripts/dogfood-local-llm.mjs qwen2.5:7b-instruct
+node scripts/dogfood-local-llm.mjs qwen3.5:9b
 ```
 
 The script:

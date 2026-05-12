@@ -176,12 +176,12 @@ Free / offline path — Ollama with an open-source model:
 
 ```bash
 brew install ollama && ollama serve &
-ollama pull qwen2.5:7b-instruct        # 4.7 GB, Apache 2.0
+ollama pull qwen3.5:9b                 # 6.6 GB, Apr 2026 — recommended daily-driver
 muse setup local                       # wires defaultModel into ~/.config/muse/config.json
 ```
 
-See [`docs/setup-local-llm.md`](docs/setup-local-llm.md) for low-spec
-(1.5B) vs high-spec (7B) tiers, license notes, and the dogfood script
+See [`docs/setup-local-llm.md`](docs/setup-local-llm.md) for the
+four tiers (0.8B / 2B / 9B / 27B), license notes, and the dogfood script
 that measures first-token latency on your hardware.
 
 Personal-domain toggles:

@@ -5,22 +5,31 @@ import { LOCAL_MODEL_PRESETS, pickPreset } from "./commands-setup-local.js";
 describe("pickPreset", () => {
   it("returns highest-tier preset when nothing pulled (so caller can render pull hint)", () => {
     const chosen = pickPreset(new Set());
-    expect(chosen?.tag).toBe("qwen2.5:7b-instruct");
-    expect(chosen?.tier).toBe("high");
+    // Power tier is the head when present; the picker walks reversed
+    // and stops at the first installed, but with nothing installed the
+    // very-first reversed entry surfaces as the recommendation.
+    expect(chosen?.tier).toBe("power");
+    expect(chosen?.tag).toBe("qwen3.6:27b");
   });
 
   it("prefers highest-tier preset already installed", () => {
-    const installed = new Set(["qwen2.5:1.5b-instruct", "qwen2.5:3b"]);
-    expect(pickPreset(installed)?.tag).toBe("qwen2.5:3b");
+    const installed = new Set(["qwen3.5:0.8b", "qwen3.5:2b"]);
+    expect(pickPreset(installed)?.tag).toBe("qwen3.5:2b");
   });
 
-  it("returns 7b when 7b installed alongside smaller", () => {
+  it("returns 9b when 9b installed alongside smaller", () => {
     const installed = new Set([
-      "qwen2.5:1.5b-instruct",
-      "qwen2.5:3b",
-      "qwen2.5:7b-instruct"
+      "qwen3.5:0.8b",
+      "qwen3.5:2b",
+      "qwen3.5:9b"
     ]);
-    expect(pickPreset(installed)?.tag).toBe("qwen2.5:7b-instruct");
+    expect(pickPreset(installed)?.tag).toBe("qwen3.5:9b");
+  });
+
+  it("returns power tier when 27b installed", () => {
+    const installed = new Set(["qwen3.5:2b", "qwen3.6:27b"]);
+    expect(pickPreset(installed)?.tag).toBe("qwen3.6:27b");
+    expect(pickPreset(installed)?.tier).toBe("power");
   });
 
   it("honours explicit override even when not in presets", () => {
@@ -31,19 +40,19 @@ describe("pickPreset", () => {
   });
 
   it("strips the ollama/ prefix from override", () => {
-    expect(pickPreset(new Set(), "ollama/qwen2.5:7b-instruct")?.tag).toBe("qwen2.5:7b-instruct");
+    expect(pickPreset(new Set(), "ollama/qwen3.5:9b")?.tag).toBe("qwen3.5:9b");
   });
 
   it("matches an override against the preset table when possible", () => {
-    const chosen = pickPreset(new Set(), "qwen2.5:1.5b-instruct");
+    const chosen = pickPreset(new Set(), "qwen3.5:0.8b");
     expect(chosen?.tier).toBe("low");
     expect(chosen?.approxSizeGb).toBe(1.0);
   });
 });
 
 describe("LOCAL_MODEL_PRESETS", () => {
-  it("is ordered low → mid → high so the highest-tier picker walks it last", () => {
-    expect(LOCAL_MODEL_PRESETS.map((preset) => preset.tier)).toEqual(["low", "mid", "high"]);
+  it("is ordered low → mid → high → power so the highest-tier picker walks it last", () => {
+    expect(LOCAL_MODEL_PRESETS.map((preset) => preset.tier)).toEqual(["low", "mid", "high", "power"]);
   });
 
   it("has strictly increasing RAM requirements", () => {
