@@ -46,9 +46,19 @@ move from `Unreleased` to dated/versioned headings.
   Tune the binary / model paths with `MUSE_WHISPER_CPP_PATH`
   (default `whisper-cpp` via `$PATH`) and `MUSE_WHISPER_CPP_MODEL`
   (default `~/.muse/whisper-models/ggml-base.en.bin` — operators
-  bring their own model). OpenAI TTS is still registered when an
-  `OPENAI_API_KEY` is set; Piper TTS lands in voice-mode Phase F.3.
-  See `docs/design/voice-mode.md` for the full Phase F contract.
+  bring their own model). See `docs/design/voice-mode.md` for the
+  full Phase F contract.
+
+- **Local Piper TTS** via the new `PiperTtsProvider`. Set
+  `MUSE_VOICE_TTS=piper` AND `MUSE_PIPER_VOICE=/path/to/voice.onnx`
+  to route `/api/voice/tts` through the local `piper` binary
+  instead of OpenAI TTS. Override the binary path with
+  `MUSE_PIPER_PATH` (default `piper` via `$PATH`). Piper produces
+  WAV only (the existing `format: wav` request stays valid; mp3 /
+  opus etc. requests are rejected with `UNSUPPORTED_FORMAT` so
+  callers transcode downstream if needed). Voice files come from
+  https://github.com/rhasspy/piper/blob/master/VOICES.md. Phase
+  F.3's Gemini Live duplex stream remains future work.
 
 ### Changed
 

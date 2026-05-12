@@ -5,10 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   OpenAITtsProvider,
   OpenAIWhisperSttProvider,
+  PiperTtsProvider,
   VoiceProviderError,
   VoiceProviderRegistry,
   VoiceValidationError,
   WhisperCppSttProvider,
+  type PiperRunner,
   type WhisperCppRunner
 } from "../src/index.js";
 
@@ -270,6 +272,94 @@ describe("WhisperCppSttProvider", () => {
   });
 });
 
+describe("PiperTtsProvider", () => {
+  it("requires a modelPath", () => {
+    expect(() => new PiperTtsProvider({ modelPath: "", runner: noopPiperRunner() })).toThrow(
+      VoiceValidationError
+    );
+  });
+
+  it("describes itself as local with the model path in the description", () => {
+    const provider = new PiperTtsProvider({ modelPath: "/voices/amy.onnx", runner: noopPiperRunner() });
+    const info = provider.describe();
+    expect(info.id).toBe("piper");
+    expect(info.local).toBe(true);
+    expect(info.supportedFormats).toEqual(["wav"]);
+    expect(info.description).toContain("/voices/amy.onnx");
+  });
+
+  it("rejects empty text", async () => {
+    const provider = new PiperTtsProvider({ modelPath: "/voices/amy.onnx", runner: noopPiperRunner() });
+    await expect(provider.synthesize({ text: "" })).rejects.toBeInstanceOf(VoiceValidationError);
+  });
+
+  it("rejects non-wav format requests", async () => {
+    const provider = new PiperTtsProvider({ modelPath: "/voices/amy.onnx", runner: noopPiperRunner() });
+    await expect(
+      provider.synthesize({ text: "hello", format: "mp3" })
+    ).rejects.toBeInstanceOf(VoiceValidationError);
+  });
+
+  it("spawns piper with the expected argv, pipes text on stdin, returns the wav bytes", async () => {
+    let capturedBinary = "";
+    let capturedArgs: readonly string[] = [];
+    let capturedStdin = "";
+    const runner: PiperRunner = async (binary, args, stdin) => {
+      capturedBinary = binary;
+      capturedArgs = args;
+      capturedStdin = stdin;
+      const fIndex = args.indexOf("-f");
+      const outputPath = args[fIndex + 1];
+      if (outputPath) {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(outputPath, Buffer.from([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00]));
+      }
+      return { exitCode: 0, stderr: "" };
+    };
+    const provider = new PiperTtsProvider({
+      binaryPath: "/custom/piper",
+      modelPath: "/voices/amy.onnx",
+      runner
+    });
+    const result = await provider.synthesize({ text: "hello world" });
+    expect(capturedBinary).toBe("/custom/piper");
+    expect(capturedArgs).toContain("-m");
+    expect(capturedArgs).toContain("/voices/amy.onnx");
+    expect(capturedArgs).toContain("-f");
+    expect(capturedStdin).toBe("hello world");
+    expect(result.mimeType).toBe("audio/wav");
+    expect(result.format).toBe("wav");
+    expect(result.audio.byteLength).toBe(8);
+  });
+
+  it("wraps non-zero exit codes as VoiceProviderError with EXIT_<n>", async () => {
+    const runner: PiperRunner = async () => ({ exitCode: 3, stderr: "model load failed" });
+    const provider = new PiperTtsProvider({ modelPath: "/voices/x.onnx", runner });
+    const error = await provider.synthesize({ text: "hi" }).catch((err) => err);
+    expect(error).toBeInstanceOf(VoiceProviderError);
+    expect((error as VoiceProviderError).code).toBe("EXIT_3");
+    expect((error as VoiceProviderError).message).toContain("model load failed");
+  });
+
+  it("surfaces OUTPUT_MISSING when piper exits 0 but no .wav was produced", async () => {
+    const runner: PiperRunner = async () => ({ exitCode: 0, stderr: "" });
+    const provider = new PiperTtsProvider({ modelPath: "/voices/x.onnx", runner });
+    const error = await provider.synthesize({ text: "hi" }).catch((err) => err);
+    expect(error).toBeInstanceOf(VoiceProviderError);
+    expect((error as VoiceProviderError).code).toBe("OUTPUT_MISSING");
+  });
+
+  it("wraps a runner-throw as VoiceProviderError SPAWN_FAILED", async () => {
+    const runner: PiperRunner = async () => {
+      throw new Error("ENOENT piper");
+    };
+    const provider = new PiperTtsProvider({ modelPath: "/voices/x.onnx", runner });
+    const error = await provider.synthesize({ text: "hi" }).catch((err) => err);
+    expect(error).toBeInstanceOf(VoiceProviderError);
+    expect((error as VoiceProviderError).code).toBe("SPAWN_FAILED");
+  });
+});
+
 describe("VoiceProviderRegistry", () => {
   it("registers and looks up providers by id", () => {
     const registry = new VoiceProviderRegistry();
@@ -295,5 +385,9 @@ function dummyFetch(): (input: string, init: RequestInit) => Promise<Response> {
 }
 
 function noopRunner(): WhisperCppRunner {
+  return async () => ({ exitCode: 0, stderr: "" });
+}
+
+function noopPiperRunner(): PiperRunner {
   return async () => ({ exitCode: 0, stderr: "" });
 }

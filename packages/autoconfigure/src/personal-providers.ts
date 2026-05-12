@@ -55,6 +55,7 @@ import {
 import {
   OpenAITtsProvider,
   OpenAIWhisperSttProvider,
+  PiperTtsProvider,
   VoiceProviderRegistry,
   WhisperCppSttProvider
 } from "@muse/voice";
@@ -403,36 +404,37 @@ function tryBuildTasksProvider(id: string, env: MuseEnvironment): TasksProvider 
  *
  * STT selection (Phase F.2 — local Whisper.cpp):
  *   - `MUSE_VOICE_STT=whisper-cpp` → register `WhisperCppSttProvider`
- *     (no OpenAI key required). The provider spawns the
- *     `whisper-cpp` binary; tune the binary / model paths via
+ *     (no OpenAI key required). Binary / model paths come from
  *     `MUSE_WHISPER_CPP_PATH` and `MUSE_WHISPER_CPP_MODEL`.
  *   - `MUSE_VOICE_STT=openai-whisper` (default) → register
  *     `OpenAIWhisperSttProvider` when an OpenAI key is set.
  *
- * TTS:
- *   - `OpenAITtsProvider` registered when an OpenAI key is present.
- *     Piper / Gemini Live land in Phase F.3.
+ * TTS selection (Phase F.3 — local Piper):
+ *   - `MUSE_VOICE_TTS=piper` → register `PiperTtsProvider`
+ *     (no OpenAI key required). Requires `MUSE_PIPER_VOICE` (path to
+ *     a .onnx voice file). `MUSE_PIPER_PATH` overrides the binary.
+ *   - `MUSE_VOICE_TTS=openai-tts` (default) → register
+ *     `OpenAITtsProvider` when an OpenAI key is set.
  *
  * Env (OpenAI resolution order):
- *   - `MUSE_VOICE_OPENAI_API_KEY` — Muse-specific override. Set this
- *     to use a different OpenAI key for voice than for the chat
- *     model (e.g. separate billing).
- *   - `OPENAI_API_KEY` — standard OpenAI SDK convention. The chat
- *     model already uses this as a fallback, so a personal user who
- *     sets it once gets both chat AND voice for free.
- *   - When neither is set AND `MUSE_VOICE_STT` isn't `whisper-cpp`,
- *     the registry is empty and the routes are not registered (404).
- *   - `MUSE_VOICE_TTS_VOICE` — default voice (alloy / echo / fable /
- *     onyx / nova / shimmer). Defaults to `alloy`.
+ *   - `MUSE_VOICE_OPENAI_API_KEY` — Muse-specific override.
+ *   - `OPENAI_API_KEY` — standard convention.
+ *   - When neither is set AND neither STT nor TTS chooses a local
+ *     backend, the registry is empty and the routes are not
+ *     registered (404).
+ *   - `MUSE_VOICE_TTS_VOICE` — OpenAI voice name (alloy / echo / …).
  *   - `MUSE_VOICE_TTS_MODEL` / `MUSE_VOICE_STT_MODEL` — model overrides.
  */
 export function buildVoiceRegistry(env: MuseEnvironment): VoiceProviderRegistry | undefined {
   const sttChoice = env.MUSE_VOICE_STT?.trim().toLowerCase();
+  const ttsChoice = env.MUSE_VOICE_TTS?.trim().toLowerCase();
+  const piperVoice = env.MUSE_PIPER_VOICE?.trim();
   const openAiKey = env.MUSE_VOICE_OPENAI_API_KEY?.trim()
     || env.OPENAI_API_KEY?.trim();
   const useLocalStt = sttChoice === "whisper-cpp";
+  const useLocalTts = ttsChoice === "piper" && piperVoice && piperVoice.length > 0;
 
-  if (!openAiKey && !useLocalStt) {
+  if (!openAiKey && !useLocalStt && !useLocalTts) {
     return undefined;
   }
 
@@ -454,7 +456,14 @@ export function buildVoiceRegistry(env: MuseEnvironment): VoiceProviderRegistry 
     );
   }
 
-  if (openAiKey) {
+  if (useLocalTts && piperVoice) {
+    registry.registerTts(
+      new PiperTtsProvider({
+        modelPath: piperVoice,
+        ...(env.MUSE_PIPER_PATH?.trim() ? { binaryPath: env.MUSE_PIPER_PATH.trim() } : {})
+      })
+    );
+  } else if (openAiKey) {
     registry.registerTts(
       new OpenAITtsProvider({
         apiKey: openAiKey,

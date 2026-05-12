@@ -35,4 +35,10 @@ export {
   OpenAITtsProvider,
   type OpenAITtsProviderOptions
 } from "./openai-tts.js";
+export {
+  PiperTtsProvider,
+  type PiperRunResult,
+  type PiperRunner,
+  type PiperTtsProviderOptions
+} from "./piper.js";
 export { VoiceProviderRegistry } from "./registry.js";
