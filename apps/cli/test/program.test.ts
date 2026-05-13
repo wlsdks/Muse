@@ -3209,6 +3209,75 @@ describe("cli program", () => {
     }
   });
 
+  it("muse doctor --local --json reports the searxng probe across unset / unreachable / healthy states", async () => {
+    const originalFetch = globalThis.fetch;
+    const prev = process.env.MUSE_SEARXNG_URL;
+    try {
+      // 1) Unset → "ok" with the DDG-fallback explainer.
+      delete process.env.MUSE_SEARXNG_URL;
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("api fetch off"); } });
+      await program1.parseAsync(["node", "muse", "doctor", "--local", "--json"], { from: "node" });
+      const r1 = JSON.parse(out1.join("")) as { checks: Array<{ name: string; status: string; detail: string }> };
+      const probe1 = r1.checks.find((c) => c.name === "searxng");
+      expect(probe1).toBeDefined();
+      expect(probe1!.status).toBe("ok");
+      expect(probe1!.detail).toContain("MUSE_SEARXNG_URL not set");
+
+      // 2) Reachable + JSON-format works → "ok".
+      process.env.MUSE_SEARXNG_URL = "http://searx.test.local";
+      globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.endsWith("/healthz")) return new Response("OK", { status: 200 });
+        if (url.includes("/search?q=health&format=json")) {
+          return new Response(JSON.stringify({ results: [{ title: "x", url: "y" }] }), {
+            headers: { "content-type": "application/json" },
+            status: 200
+          });
+        }
+        return new Response("unexpected", { status: 404 });
+      }) as typeof globalThis.fetch;
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("api fetch off"); } });
+      await program2.parseAsync(["node", "muse", "doctor", "--local", "--json"], { from: "node" });
+      const r2 = JSON.parse(out2.join("")) as { checks: Array<{ name: string; status: string; detail: string }> };
+      const probe2 = r2.checks.find((c) => c.name === "searxng");
+      expect(probe2).toBeDefined();
+      expect(probe2!.status).toBe("ok");
+      expect(probe2!.detail).toContain("JSON format enabled");
+
+      // 3) /healthz down → "fail".
+      globalThis.fetch = (async () => { throw new Error("connection refused"); }) as typeof globalThis.fetch;
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("api fetch off"); } });
+      await program3.parseAsync(["node", "muse", "doctor", "--local", "--json"], { from: "node" });
+      const r3 = JSON.parse(out3.join("")) as { checks: Array<{ name: string; status: string; detail: string }> };
+      const probe3 = r3.checks.find((c) => c.name === "searxng");
+      expect(probe3).toBeDefined();
+      expect(probe3!.status).toBe("fail");
+      expect(probe3!.detail).toContain("not reachable");
+
+      // 4) /healthz ok but JSON path returns 400 → "fail" with settings.yml hint.
+      globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.endsWith("/healthz")) return new Response("OK", { status: 200 });
+        return new Response("format not enabled", { status: 400 });
+      }) as typeof globalThis.fetch;
+      const { io: io4, output: out4 } = captureOutput();
+      const program4 = createProgram({ ...io4, fetch: async () => { throw new Error("api fetch off"); } });
+      await program4.parseAsync(["node", "muse", "doctor", "--local", "--json"], { from: "node" });
+      const r4 = JSON.parse(out4.join("")) as { checks: Array<{ name: string; status: string; detail: string }> };
+      const probe4 = r4.checks.find((c) => c.name === "searxng");
+      expect(probe4).toBeDefined();
+      expect(probe4!.status).toBe("fail");
+      expect(probe4!.detail).toContain("settings.yml");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prev !== undefined) process.env.MUSE_SEARXNG_URL = prev;
+      else delete process.env.MUSE_SEARXNG_URL;
+    }
+  });
+
   it("muse status surfaces followup + episode + pattern counts when the stores carry data", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-tracks-"));
     const fsp = await import("node:fs/promises");

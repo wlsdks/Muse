@@ -157,6 +157,80 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     checks.push({ detail: `${ollama_base} not reachable (skip if you don't use Ollama)`, name: "ollama", status: "warn" });
   }
 
+  // SearXNG (optional — `MUSE_SEARXNG_URL` opt-in). When set, probe
+  // both reachability (`/healthz`) AND the JSON-format path that
+  // `muse.search` actually uses — a SearXNG instance with the
+  // default upstream settings.yml ships HTML-only and returns 400
+  // on `format=json`, which would silently send every search through
+  // the DDG fallback. Better to surface that here than discover it
+  // mid-conversation.
+  const searxng_url = process.env.MUSE_SEARXNG_URL?.trim();
+  if (searxng_url && searxng_url.length > 0) {
+    const base = searxng_url.replace(/\/+$/u, "");
+    let health_ok: boolean;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
+      const r = await fetch(`${base}/healthz`, { signal: controller.signal });
+      clearTimeout(timeout);
+      health_ok = r.ok;
+    } catch {
+      health_ok = false;
+    }
+    if (!health_ok) {
+      checks.push({
+        detail: `${base} not reachable (container down? stop with 'docker stop muse-searxng' or restart per docs/setup-local-llm.md)`,
+        name: "searxng",
+        status: "fail"
+      });
+    } else {
+      // JSON-format probe — the actual code path muse.search uses.
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2_500);
+        const r = await fetch(`${base}/search?q=health&format=json`, {
+          headers: { "accept": "application/json" },
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (!r.ok) {
+          checks.push({
+            detail: `${base} up but /search?format=json returned ${r.status.toString()} — enable JSON in settings.yml (see docs/setup-local-llm.md)`,
+            name: "searxng",
+            status: "fail"
+          });
+        } else {
+          const body = await r.json() as { results?: unknown };
+          if (!Array.isArray(body.results)) {
+            checks.push({
+              detail: `${base} returned non-array results — settings.yml may be misconfigured`,
+              name: "searxng",
+              status: "warn"
+            });
+          } else {
+            checks.push({
+              detail: `${base} — JSON format enabled, ${body.results.length.toString()} probe result(s)`,
+              name: "searxng",
+              status: "ok"
+            });
+          }
+        }
+      } catch (cause) {
+        checks.push({
+          detail: `${base} JSON probe failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          name: "searxng",
+          status: "warn"
+        });
+      }
+    }
+  } else {
+    checks.push({
+      detail: "MUSE_SEARXNG_URL not set — muse.search falls back to DuckDuckGo HTML scraping (works, but fragile)",
+      name: "searxng",
+      status: "ok"
+    });
+  }
+
   // user-memory.json
   const memory_path = join(muse_home, "user-memory.json");
   try {
