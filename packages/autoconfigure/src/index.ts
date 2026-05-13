@@ -32,26 +32,15 @@ import {
   InMemoryResponseCache
 } from "@muse/cache";
 import {
-  createCalendarMcpServer,
   createContextReferenceMcpServer,
-  createTasksMcpServer,
   createDefaultLoopbackMcpServers,
-  createEpisodesMcpServer,
   createFetchMcpServer,
   createFilesystemMcpServer,
-  createFollowupsMcpServer,
   formatFollowupLlmBudgetDay,
   incrementFollowupLlmBudget,
   isFollowupLlmBudgetExhausted,
   readFollowupLlmBudget,
   createLoopbackMcpMuseTools,
-  createMessagingMcpServer,
-  createNotesMcpServer,
-  createPatternsMcpServer,
-  createProactiveMcpServer,
-  createRemindersMcpServer,
-  createNotesRegistryMcpServer,
-  createTasksRegistryMcpServer,
   upsertFollowup,
   type LoopbackMcpServer,
   type McpManager,
@@ -136,6 +125,7 @@ import {
 import { createResponseFilters } from "./response-filters.js";
 import { createMessagingPollDispatchers } from "./messaging-poll-dispatchers.js";
 import { createSkillRuntime } from "./skills-runtime.js";
+import { buildLoopbackTools } from "./loopback-tools.js";
 
 import {
   buildActiveContextProvider,
@@ -468,102 +458,59 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   // provider instance the runtime uses. See the assignment near the
   // `agentRuntime` declaration.
   let contextReferenceLoopbackTools: readonly MuseTool[] = [];
+
+  // Resolve every personal-store path + registry the loopback tools
+  // need. Some of these (notesDir, tasksFile, followupsFile,
+  // patternsFiredFile, messagingRegistry, pollAll, pollNow) are
+  // referenced by daemons/hooks downstream, so they stay as locals.
   const notesDir = resolveNotesDir(env);
   ensureNotesDir(notesDir);
-  const notesLoopbackTools = parseBoolean(env.MUSE_NOTES_ENABLED, true)
-    ? createLoopbackMcpMuseTools(createNotesMcpServer({
-        notesDir,
-        // LLM-judge search mode opts in only when modelProvider +
-        // defaultModel are wired (same gate as episodes). Substring
-        // mode keeps working without a model.
-        ...(modelProvider && defaultModel ? { model: defaultModel, modelProvider } : {})
-      }))
-    : [];
-  // Notes registry MCP surface (`muse.notes-multi`): only registered
-  // when the user opts into >1 provider via MUSE_NOTES_PROVIDERS.
-  // Default users (LocalDir only) get the inline `muse.notes` server
-  // above and skip the registry overhead.
-  const notesRegistry = parseBoolean(env.MUSE_NOTES_ENABLED, true)
-    ? buildNotesRegistry(env)
-    : undefined;
-  const notesRegistryLoopbackTools = notesRegistry && notesRegistry.list().length >= 2
-    ? createLoopbackMcpMuseTools(createNotesRegistryMcpServer({ registry: notesRegistry }))
-    : [];
+  const notesRegistry = parseBoolean(env.MUSE_NOTES_ENABLED, true) ? buildNotesRegistry(env) : undefined;
   const calendarRegistry = buildCalendarRegistry(env);
-  const calendarLoopbackTools = parseBoolean(env.MUSE_CALENDAR_ENABLED, true) && calendarRegistry.list().length > 0
-    ? createLoopbackMcpMuseTools(createCalendarMcpServer({ registry: calendarRegistry }))
-    : [];
   const tasksFile = resolveTasksFile(env);
-  const tasksLoopbackTools = parseBoolean(env.MUSE_TASKS_ENABLED, true)
-    ? createLoopbackMcpMuseTools(createTasksMcpServer({ file: tasksFile }))
-    : [];
-  // Tasks registry MCP surface (`muse.tasks-multi`): only registered
-  // when the user opts into >1 provider via MUSE_TASKS_PROVIDERS.
-  // Default users (LocalFile only) get the inline `muse.tasks` server
-  // above and skip the registry overhead. Symmetric with notesRegistry.
-  const tasksRegistry = parseBoolean(env.MUSE_TASKS_ENABLED, true)
-    ? buildTasksRegistry(env)
-    : undefined;
-  const tasksRegistryLoopbackTools = tasksRegistry && tasksRegistry.list().length >= 2
-    ? createLoopbackMcpMuseTools(createTasksRegistryMcpServer({ registry: tasksRegistry }))
-    : [];
-  // Messaging loopback (Phase 3): only registered when at least one
-  // provider is configured via env tokens, so the LLM doesn't see a
-  // tool that always errors with "no providers configured". Read +
-  // write surface (`providers` / `send`).
+  const tasksRegistry = parseBoolean(env.MUSE_TASKS_ENABLED, true) ? buildTasksRegistry(env) : undefined;
   const messagingRegistry = buildMessagingRegistry(env);
   const { pollAll, pollNow } = createMessagingPollDispatchers(env, messagingRegistry);
-  const messagingLoopbackTools = messagingRegistry.list().length > 0
-    ? createLoopbackMcpMuseTools(createMessagingMcpServer({ pollAll, pollNow, registry: messagingRegistry }))
-    : [];
-  // Reminders loopback: always registered. The store self-creates on
-  // first write, so a fresh install sees the tool but the file is
-  // absent until the LLM adds the first reminder.
   const remindersFile = resolveRemindersFile(env);
   const reminderHistoryFile = resolveReminderHistoryFile(env);
-  const remindersLoopbackTools = createLoopbackMcpMuseTools(
-    createRemindersMcpServer({ file: remindersFile, historyFile: reminderHistoryFile })
-  );
-  // Proactive audit loopback — `muse.proactive.history`. The
-  // daemon's history file lives next to reminder-history; the tool
-  // surfaces it whether or not the proactive daemon is currently
-  // active so the agent can audit historical fires.
   const proactiveHistoryFile = resolveProactiveHistoryFile(env);
-  const proactiveLoopbackTools = createLoopbackMcpMuseTools(
-    createProactiveMcpServer({ historyFile: proactiveHistoryFile })
-  );
-  // Self-followup loopback — list / cancel / snooze the agent's
-  // own captured promises. Capture is automatic (runtime hook);
-  // firing is daemon-only — the LLM only sees the queue + the
-  // two write tools that modify lifecycle.
   const followupsFile = resolveFollowupsFile(env);
-  const followupsLoopbackTools = createLoopbackMcpMuseTools(
-    createFollowupsMcpServer({ file: followupsFile })
-  );
-  // Episode loopback — read-shaped tools plus user-revocable
-  // remove/clear. No agent-side `add` (capture is automatic at
-  // REPL exit; manual add would let the LLM lie about history).
   const episodesFile = resolveEpisodesFile(env);
-  const episodesLoopbackTools = createLoopbackMcpMuseTools(
-    createEpisodesMcpServer({
-      file: episodesFile,
-      // LLM-judge search mode opts in only when a modelProvider +
-      // defaultModel are wired. Without them, the substring path
-      // still works; llm-judge requests return a clear error rather
-      // than silently degrading.
-      ...(modelProvider && defaultModel ? { model: defaultModel, modelProvider } : {})
-    })
-  );
-  // Pattern loopback — run detectors on demand, audit fired
-  // history, reset cooldown. The daemon stays the sole firer.
   const patternsFiredFile = resolvePatternsFiredFile(env);
-  const patternsLoopbackTools = createLoopbackMcpMuseTools(
-    createPatternsMcpServer({
-      file: patternsFiredFile,
-      notesDir,
-      tasksFile: resolveTasksFile(env)
-    })
-  );
+
+  // 11 loopback-tool bundles in one call. `buildLoopbackTools`
+  // owns the env-gate + LLM-judge-opt-in logic that used to live
+  // inline as 95 LOC of repeated scaffolding.
+  const loopback = buildLoopbackTools({
+    calendarRegistry,
+    defaultModel,
+    env,
+    episodesFile,
+    followupsFile,
+    messagingRegistry,
+    modelProvider,
+    notesDir,
+    notesRegistry,
+    patternsFiredFile,
+    pollAll,
+    pollNow,
+    proactiveHistoryFile,
+    reminderHistoryFile,
+    remindersFile,
+    tasksFile,
+    tasksRegistry
+  });
+  const notesLoopbackTools = loopback.notes;
+  const notesRegistryLoopbackTools = loopback.notesRegistry;
+  const calendarLoopbackTools = loopback.calendar;
+  const tasksLoopbackTools = loopback.tasks;
+  const tasksRegistryLoopbackTools = loopback.tasksRegistry;
+  const messagingLoopbackTools = loopback.messaging;
+  const remindersLoopbackTools = loopback.reminders;
+  const proactiveLoopbackTools = loopback.proactive;
+  const followupsLoopbackTools = loopback.followups;
+  const episodesLoopbackTools = loopback.episodes;
+  const patternsLoopbackTools = loopback.patterns;
   const schedulerHandle: { current: DynamicScheduler | undefined } = { current: undefined };
 
   const { skillRegistryPromise, skillTools } = createSkillRuntime(env);

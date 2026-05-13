@@ -1,0 +1,176 @@
+/**
+ * Loopback MCP tool wiring — extracted from
+ * `createMuseRuntimeAssembly` so the main assembly file no longer
+ * carries 95 LOC of nearly-identical `createXxxMcpServer + wrap`
+ * blocks. Each personal store / registry that exposes an MCP
+ * loopback surface gets a small builder here; the assembly
+ * destructures the bundle and hands the tool arrays to the
+ * `DynamicToolRegistry`.
+ *
+ * Pure refactor — every existing env flag, gate, and option
+ * spread is preserved line-for-line. The `contextReference`
+ * loopback stays inline in the assembly because it's `let`-mutated
+ * later (assigned after `activeContextProvider` is built).
+ */
+
+import {
+  createCalendarMcpServer,
+  createEpisodesMcpServer,
+  createFollowupsMcpServer,
+  createLoopbackMcpMuseTools,
+  createMessagingMcpServer,
+  createNotesMcpServer,
+  createNotesRegistryMcpServer,
+  createPatternsMcpServer,
+  createProactiveMcpServer,
+  createRemindersMcpServer,
+  createTasksMcpServer,
+  createTasksRegistryMcpServer
+} from "@muse/mcp";
+import type { NotesProviderRegistry, TasksProviderRegistry } from "@muse/mcp";
+import type { CalendarProviderRegistry } from "@muse/calendar";
+import type { MessagingProviderRegistry } from "@muse/messaging";
+import type { MuseTool } from "@muse/tools";
+import type { ModelProvider } from "@muse/model";
+
+import { parseBoolean } from "./env-parsers.js";
+import type { MuseEnvironment } from "./index.js";
+
+export interface LoopbackToolsDeps {
+  readonly env: MuseEnvironment;
+  /** Optional LLM provider for `mode: "llm-judge"` paths on notes / episodes search. */
+  readonly modelProvider?: ModelProvider;
+  readonly defaultModel?: string;
+  // File paths the assembly already resolved.
+  readonly notesDir: string;
+  readonly tasksFile: string;
+  readonly remindersFile: string;
+  readonly reminderHistoryFile: string;
+  readonly proactiveHistoryFile: string;
+  readonly followupsFile: string;
+  readonly episodesFile: string;
+  readonly patternsFiredFile: string;
+  // Registries the assembly already constructed.
+  readonly notesRegistry: NotesProviderRegistry | undefined;
+  readonly calendarRegistry: CalendarProviderRegistry;
+  readonly tasksRegistry: TasksProviderRegistry | undefined;
+  readonly messagingRegistry: MessagingProviderRegistry;
+  readonly pollAll: (() => Promise<{
+    readonly ingestedByProvider: Readonly<Record<string, number>>;
+    readonly errors: readonly { readonly providerId: string; readonly message: string }[];
+  }>) | undefined;
+  readonly pollNow: ((providerId: string, source?: string) => Promise<{ ingested: number }>) | undefined;
+}
+
+export interface LoopbackToolsBundle {
+  readonly notes: readonly MuseTool[];
+  readonly notesRegistry: readonly MuseTool[];
+  readonly calendar: readonly MuseTool[];
+  readonly tasks: readonly MuseTool[];
+  readonly tasksRegistry: readonly MuseTool[];
+  readonly messaging: readonly MuseTool[];
+  readonly reminders: readonly MuseTool[];
+  readonly proactive: readonly MuseTool[];
+  readonly followups: readonly MuseTool[];
+  readonly episodes: readonly MuseTool[];
+  readonly patterns: readonly MuseTool[];
+}
+
+export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle {
+  const { env } = deps;
+  const llmJudge = deps.modelProvider && deps.defaultModel
+    ? { model: deps.defaultModel, modelProvider: deps.modelProvider }
+    : {};
+
+  const notes = parseBoolean(env.MUSE_NOTES_ENABLED, true)
+    ? createLoopbackMcpMuseTools(createNotesMcpServer({
+        notesDir: deps.notesDir,
+        // LLM-judge search mode opts in only when modelProvider +
+        // defaultModel are wired (same gate as episodes). Substring
+        // mode keeps working without a model.
+        ...llmJudge
+      }))
+    : [];
+
+  // Notes registry MCP surface (`muse.notes-multi`): only registered
+  // when the user opts into >1 provider via MUSE_NOTES_PROVIDERS.
+  const notesRegistry = deps.notesRegistry && deps.notesRegistry.list().length >= 2
+    ? createLoopbackMcpMuseTools(createNotesRegistryMcpServer({ registry: deps.notesRegistry }))
+    : [];
+
+  const calendar = parseBoolean(env.MUSE_CALENDAR_ENABLED, true) && deps.calendarRegistry.list().length > 0
+    ? createLoopbackMcpMuseTools(createCalendarMcpServer({ registry: deps.calendarRegistry }))
+    : [];
+
+  const tasks = parseBoolean(env.MUSE_TASKS_ENABLED, true)
+    ? createLoopbackMcpMuseTools(createTasksMcpServer({ file: deps.tasksFile }))
+    : [];
+
+  // Tasks registry MCP surface (`muse.tasks-multi`): symmetric with
+  // notesRegistry — only when the user opts into >1 provider.
+  const tasksRegistry = deps.tasksRegistry && deps.tasksRegistry.list().length >= 2
+    ? createLoopbackMcpMuseTools(createTasksRegistryMcpServer({ registry: deps.tasksRegistry }))
+    : [];
+
+  // Messaging loopback: only registered when at least one provider
+  // is configured, so the LLM doesn't see a tool that always
+  // errors with "no providers configured".
+  const messaging = deps.messagingRegistry.list().length > 0 && deps.pollAll && deps.pollNow
+    ? createLoopbackMcpMuseTools(createMessagingMcpServer({
+        pollAll: deps.pollAll,
+        pollNow: deps.pollNow,
+        registry: deps.messagingRegistry
+      }))
+    : [];
+
+  // Reminders loopback: always registered. The store self-creates
+  // on first write; the file may be absent on fresh installs.
+  const reminders = createLoopbackMcpMuseTools(
+    createRemindersMcpServer({ file: deps.remindersFile, historyFile: deps.reminderHistoryFile })
+  );
+
+  // Proactive audit loopback — `muse.proactive.history`.
+  const proactive = createLoopbackMcpMuseTools(
+    createProactiveMcpServer({ historyFile: deps.proactiveHistoryFile })
+  );
+
+  // Self-followup loopback — list / cancel / snooze the agent's
+  // own captured promises.
+  const followups = createLoopbackMcpMuseTools(
+    createFollowupsMcpServer({ file: deps.followupsFile })
+  );
+
+  // Episode loopback — read-shaped tools plus user-revocable
+  // remove/clear. No agent-side `add` (capture is automatic at
+  // REPL exit; manual add would let the LLM lie about history).
+  const episodes = createLoopbackMcpMuseTools(
+    createEpisodesMcpServer({
+      file: deps.episodesFile,
+      ...llmJudge
+    })
+  );
+
+  // Pattern loopback — run detectors on demand, audit fired
+  // history, reset cooldown. The daemon stays the sole firer.
+  const patterns = createLoopbackMcpMuseTools(
+    createPatternsMcpServer({
+      file: deps.patternsFiredFile,
+      notesDir: deps.notesDir,
+      tasksFile: deps.tasksFile
+    })
+  );
+
+  return {
+    calendar,
+    episodes,
+    followups,
+    messaging,
+    notes,
+    notesRegistry,
+    patterns,
+    proactive,
+    reminders,
+    tasks,
+    tasksRegistry
+  };
+}
