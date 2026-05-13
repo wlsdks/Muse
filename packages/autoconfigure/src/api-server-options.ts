@@ -110,6 +110,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     ...(assembly.tasksProviderRegistry ? { tasksProviderRegistry: assembly.tasksProviderRegistry } : {}),
     voice: assembly.voice,
     ...(assembly.activeContextProvider ? { activeContextProvider: assembly.activeContextProvider } : {}),
+    agentInitiatedNoticeBroker: assembly.agentInitiatedNoticeBroker,
     messaging: assembly.messaging,
     ...(assembly.messagingPollNow ? { messagingPollNow: assembly.messagingPollNow } : {}),
     ...(assembly.messagingPollAll ? { messagingPollAll: assembly.messagingPollAll } : {}),

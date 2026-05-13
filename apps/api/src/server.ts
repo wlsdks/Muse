@@ -1,4 +1,4 @@
-import type { ActiveContextProvider, AgentRuntime } from "@muse/agent-core";
+import type { ActiveContextProvider, AgentInitiatedNoticeBroker, AgentRuntime } from "@muse/agent-core";
 import {
   InMemoryAgentSpecRegistry,
   RuleBasedAgentSpecResolver,
@@ -36,6 +36,7 @@ import { startTelegramPollTick } from "./telegram-poll-tick.js";
 import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
 import { registerSchedulerRoutes, type SchedulerRouteScheduler } from "./scheduler-routes.js";
 import { registerActiveContextRoutes } from "./active-context-routes.js";
+import { registerAgentNoticesRoutes } from "./agent-notices-routes.js";
 import { registerSetupRoutes } from "./setup-routes.js";
 import { registerTodayRoutes } from "./today-routes.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
@@ -109,6 +110,12 @@ export interface ServerOptions {
    * scripts can read the same snapshot the agent loop injects.
    */
   readonly activeContextProvider?: ActiveContextProvider;
+  /**
+   * Phase D agent-initiated notice broker. When set, the API
+   * registers `GET /api/agent-notices/stream` as the SSE consumer
+   * surface that fans broker publishes to chat-stream clients.
+   */
+  readonly agentInitiatedNoticeBroker?: AgentInitiatedNoticeBroker;
   readonly messaging?: MessagingProviderRegistry;
   /**
    * On-demand poll dispatcher shared with `muse.messaging.poll_now`.
@@ -376,6 +383,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     authService,
     ...(options.activeContextProvider ? { activeContextProvider: options.activeContextProvider } : {})
   });
+  if (options.agentInitiatedNoticeBroker) {
+    registerAgentNoticesRoutes(server, {
+      agentInitiatedNoticeBroker: options.agentInitiatedNoticeBroker,
+      authService
+    });
+  }
   registerTodayRoutes(server, {
     authService,
     calendar: options.calendar,

@@ -1,7 +1,9 @@
 import { CalendarProviderRegistry } from "@muse/calendar";
 import {
   createAgentRuntime,
+  InMemoryAgentInitiatedNoticeBroker,
   type ActiveContextProvider,
+  type AgentInitiatedNoticeBroker,
   type AgentRuntime,
   type HookStage
 } from "@muse/agent-core";
@@ -288,6 +290,14 @@ export interface MuseRuntimeAssembly {
    * `undefined` when `MUSE_ACTIVE_CONTEXT_ENABLED=false`.
    */
   readonly activeContextProvider?: ActiveContextProvider;
+  /**
+   * Phase D agent-initiated notice broker. The proactive-notice loop
+   * (producer) publishes synthesised one-line responses here, and the
+   * `GET /api/agent-notices/stream` SSE route fans them out to live
+   * chat-stream subscribers. Always present — fail-soft no-op when
+   * nobody subscribes.
+   */
+  readonly agentInitiatedNoticeBroker: AgentInitiatedNoticeBroker;
   readonly messaging?: MessagingProviderRegistry;
   /**
    * Shared poll-now dispatcher (same closure that backs the
@@ -625,6 +635,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     ...(tasksRegistry ? { tasksProviderRegistry: tasksRegistry } : {}),
     voice: buildVoiceRegistry(env),
     ...(activeContextProvider ? { activeContextProvider } : {}),
+    agentInitiatedNoticeBroker: new InMemoryAgentInitiatedNoticeBroker(),
     messaging: messagingRegistry,
     ...(messagingRegistry.list().length > 0
       ? { messagingPollAll: pollAll, messagingPollNow: pollNow }
