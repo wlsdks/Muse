@@ -3209,6 +3209,92 @@ describe("cli program", () => {
     }
   });
 
+  it("muse search --json routes through SearXNG when MUSE_SEARXNG_URL is set; falls through to DDG when SearXNG fails", async () => {
+    const originalFetch = globalThis.fetch;
+    const prev = process.env.MUSE_SEARXNG_URL;
+    try {
+      // Path 1 — SearXNG primary.
+      process.env.MUSE_SEARXNG_URL = "http://searx.test.local";
+      globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.startsWith("http://searx.test.local")) {
+          return new Response(JSON.stringify({
+            results: [
+              { title: "Searx First", url: "https://example.com/a", content: "first body" },
+              { title: "Searx Second", url: "https://example.com/b", content: "second body" }
+            ]
+          }), { status: 200 });
+        }
+        throw new Error("DDG should not be called when SearXNG returns hits");
+      }) as typeof globalThis.fetch;
+
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("api fetch off"); } });
+      await program1.parseAsync(["node", "muse", "search", "muse", "personal", "agent", "--json"], { from: "node" });
+      const r1 = JSON.parse(out1.join("")) as { backend: string; total: number; results: Array<{ url: string }> };
+      expect(r1.backend).toBe("searxng");
+      expect(r1.total).toBe(2);
+      expect(r1.results.map((r) => r.url)).toEqual(["https://example.com/a", "https://example.com/b"]);
+
+      // Path 2 — SearXNG returns zero hits → DDG fallback runs.
+      globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.startsWith("http://searx.test.local")) {
+          return new Response(JSON.stringify({ results: [] }), { status: 200 });
+        }
+        // DDG HTML response with one parseable row.
+        return new Response(
+          `<a rel="nofollow" class="result__a" href="https://ddg.example/x">DDG hit</a>` +
+          `<a class="result__snippet" href="x">snippet text</a>`,
+          { status: 200 }
+        );
+      }) as typeof globalThis.fetch;
+
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("api fetch off"); } });
+      await program2.parseAsync(["node", "muse", "search", "anything", "--json"], { from: "node" });
+      const r2 = JSON.parse(out2.join("")) as { backend: string; total: number; results: Array<{ url: string }> };
+      expect(r2.backend).toBe("duckduckgo");
+      expect(r2.total).toBe(1);
+      expect(r2.results[0]!.url).toBe("https://ddg.example/x");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prev !== undefined) process.env.MUSE_SEARXNG_URL = prev;
+      else delete process.env.MUSE_SEARXNG_URL;
+    }
+  });
+
+  it("muse search formatted output (no --json) renders backend banner + numbered result block", async () => {
+    const originalFetch = globalThis.fetch;
+    const prev = process.env.MUSE_SEARXNG_URL;
+    try {
+      delete process.env.MUSE_SEARXNG_URL;
+      globalThis.fetch = (async (): Promise<Response> => {
+        return new Response(
+          `<a rel="nofollow" class="result__a" href="https://example.com/one">First Result</a>` +
+          `<a class="result__snippet" href="x">first snippet body</a>` +
+          `<a rel="nofollow" class="result__a" href="https://example.com/two">Second Result</a>` +
+          `<a class="result__snippet" href="y">second snippet body</a>`,
+          { status: 200 }
+        );
+      }) as typeof globalThis.fetch;
+
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("api fetch off"); } });
+      await program.parseAsync(["node", "muse", "search", "test query"], { from: "node" });
+      const text = output.join("");
+      expect(text).toContain("(2 result(s) via duckduckgo)");
+      expect(text).toContain("[1] First Result");
+      expect(text).toContain("https://example.com/one");
+      expect(text).toContain("first snippet body");
+      expect(text).toContain("[2] Second Result");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prev !== undefined) process.env.MUSE_SEARXNG_URL = prev;
+      else delete process.env.MUSE_SEARXNG_URL;
+    }
+  });
+
   it("muse doctor --local --json reports the searxng probe across unset / unreachable / healthy states", async () => {
     const originalFetch = globalThis.fetch;
     const prev = process.env.MUSE_SEARXNG_URL;
