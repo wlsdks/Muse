@@ -27,12 +27,12 @@ import {
   appendActivity,
   appendLastChatTurn,
   appendSessionBoundary,
-  clearLastChatHistory,
   maybeCompactLastChatHistory,
   parseRoutineUpdateMs,
   readLastChatHistory
 } from "./chat-history.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
+import { handleSlashCommand, type SlashContext, type SlashDeps } from "./chat-repl-slash.js";
 import {
   apiRequest,
   promptText,
@@ -233,6 +233,18 @@ export async function runChatRepl(
     return buildMusePersona({ ...userMemory, episodes: personaEpisodes }, userId);
   };
 
+  // Immutable references that flow into every slash-command call.
+  // The mutable state (userId, userMemory, etc.) goes through a
+  // SlashContext built per command instead — see the dispatch site
+  // below.
+  const slashDeps: SlashDeps = {
+    assembly,
+    autoExtract,
+    composeUserKey,
+    memoryStore: memoryStore as SlashDeps["memoryStore"],
+    readTrust
+  };
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -314,215 +326,28 @@ export async function runChatRepl(
       if (trimmed.startsWith("/")) {
         const [cmd, ...rest] = trimmed.slice(1).split(/\s+/);
         const arg = rest.join(" ").trim();
-        switch (cmd) {
-          case "exit":
-          case "quit":
-            io.stdout("(bye)\n");
-            active = false;
-            break;
-          case "reset":
-            history.length = 0;
-            await clearLastChatHistory();
-            io.stdout("(history cleared)\n");
-            break;
-          case "history":
-            io.stdout(`(${history.length.toString()} turns in context)\n`);
-            break;
-          case "model":
-            if (arg.length === 0) {
-              io.stdout(`(current model: ${currentModel ?? "(default)"})\n`);
-            } else {
-              currentModel = arg;
-              io.stdout(`(model → ${arg})\n`);
-            }
-            break;
-          case "tools":
-            if (arg === "on") {
-              toolsDisabled = false;
-              io.stdout("(tools on)\n");
-            } else if (arg === "off") {
-              toolsDisabled = true;
-              io.stdout("(tools off — chat-only fast path)\n");
-            } else {
-              io.stdout(`(tools currently ${toolsDisabled ? "off" : "on"}; usage: /tools on|off)\n`);
-            }
-            break;
-          case "fact":
-          case "pref": {
-            const eq = arg.indexOf("=");
-            if (eq < 0 || !memoryStore) {
-              io.stdout(`(usage: /${cmd} <key>=<value>${memoryStore ? "" : "; no user-memory store available"})\n`);
-              break;
-            }
-            const key = arg.slice(0, eq).trim();
-            const value = arg.slice(eq + 1).trim();
-            if (key.length === 0 || value.length === 0) {
-              io.stdout(`(usage: /${cmd} <key>=<value>)\n`);
-              break;
-            }
-            await Promise.resolve(
-              cmd === "fact"
-                ? memoryStore.upsertFact(userId, key, value)
-                : memoryStore.upsertPreference(userId, key, value)
-            );
-            userMemory = await Promise.resolve(memoryStore.findByUserId(userId));
-            io.stdout(`(remembered ${cmd}.${key}=${value})\n`);
-            break;
-          }
-          case "whoami":
-            if (!userMemory) {
-              io.stdout(`(no memory for user '${userId}' yet — try /fact name=YourName)\n`);
-            } else {
-              io.stdout(`user: ${userId}\n`);
-              for (const [key, value] of Object.entries(userMemory.facts)) {
-                io.stdout(`  fact.${key}: ${value}\n`);
-              }
-              for (const [key, value] of Object.entries(userMemory.preferences)) {
-                io.stdout(`  pref.${key}: ${value}\n`);
-              }
-            }
-            break;
-          case "persona":
-            if (arg.length === 0) {
-              io.stdout(`(current persona: ${currentPersona ?? "(none — base profile)"}; usage: /persona work | /persona home | /persona none)\n`);
-            } else {
-              const next = arg === "none" || arg === "off" || arg === "default" ? undefined : arg;
-              currentPersona = next;
-              userId = composeUserKey();
-              userMemory = memoryStore ? await Promise.resolve(memoryStore.findByUserId(userId)) : undefined;
-              trust = await readTrust(userId).catch(() => ({ blockedTools: [] as string[], trustedTools: [] as string[] }));
-              io.stdout(`(persona → ${currentPersona ?? "(base)"}; userKey=${userId})\n`);
-              if (userMemory) {
-                const factCount = Object.keys(userMemory.facts).length;
-                const prefCount = Object.keys(userMemory.preferences).length;
-                io.stdout(`  remembered: ${factCount.toString()} fact(s), ${prefCount.toString()} pref(s) for this persona\n`);
-              } else {
-                io.stdout(`  (no memory for this persona yet — start fresh)\n`);
-              }
-            }
-            break;
-          case "trust":
-            io.stdout(`  trust for ${userId}:\n`);
-            io.stdout(`    + trusted (${trust.trustedTools.length.toString()}): ${trust.trustedTools.join(", ") || "(none)"}\n`);
-            io.stdout(`    × blocked (${trust.blockedTools.length.toString()}): ${trust.blockedTools.join(", ") || "(none)"}\n`);
-            break;
-          case "remember": {
-            // Natural-language LLM extraction → upsert into memory.
-            // Mirrors the top-level `muse remember` command but works
-            // in-REPL so the user can teach JARVIS mid-conversation.
-            if (arg.length === 0 || !assembly.modelProvider) {
-              io.stdout(`(usage: /remember <text>; requires a configured model)\n`);
-              break;
-            }
-            try {
-              const sysPrompt = autoExtract?.pickSystemPrompt(arg) ?? "Extract user facts as JSON.";
-              let raw = "";
-              for await (const ev of assembly.modelProvider.stream({
-                messages: [
-                  { content: sysPrompt, role: "system" },
-                  { content: `User turn:\n${arg}\n\nAssistant reply:\n(no reply — extract from the statement)`, role: "user" }
-                ],
-                model: currentModel ?? assembly.defaultModel ?? "default"
-              })) {
-                if (ev.type === "text-delta" && typeof ev.text === "string") raw += ev.text;
-              }
-              const payload = autoExtract?.extractJsonObject(raw);
-              if (!payload || !memoryStore) {
-                io.stdout("(nothing extracted — try rephrasing)\n");
-                break;
-              }
-              let wrote = 0;
-              for (const [k, v] of Object.entries(payload.facts ?? {})) {
-                if (typeof v === "string" && v.length > 0) {
-                  await Promise.resolve(memoryStore.upsertFact(userId, k, v));
-                  io.stdout(`  + fact.${k} = ${v}\n`);
-                  wrote += 1;
-                }
-              }
-              for (const [k, v] of Object.entries(payload.preferences ?? {})) {
-                if (typeof v === "string" && v.length > 0) {
-                  await Promise.resolve(memoryStore.upsertPreference(userId, k, v));
-                  io.stdout(`  + pref.${k} = ${v}\n`);
-                  wrote += 1;
-                }
-              }
-              for (const slot of payload.vetoes ?? []) {
-                if (slot && typeof slot.value === "string" && slot.value.length > 0) {
-                  const k = `veto:${slot.id || slot.value.slice(0, 24)}`;
-                  await Promise.resolve(memoryStore.upsertPreference(userId, k, slot.value));
-                  io.stdout(`  + ${k} = ${slot.value}\n`);
-                  wrote += 1;
-                }
-              }
-              for (const slot of payload.goals ?? []) {
-                if (slot && typeof slot.value === "string" && slot.value.length > 0) {
-                  const k = `goal:${slot.id || slot.value.slice(0, 24)}`;
-                  await Promise.resolve(memoryStore.upsertPreference(userId, k, slot.value));
-                  io.stdout(`  + ${k} = ${slot.value}\n`);
-                  wrote += 1;
-                }
-              }
-              userMemory = await Promise.resolve(memoryStore.findByUserId(userId));
-              io.stdout(`(remembered ${wrote.toString()} item(s))\n`);
-            } catch (cause) {
-              io.stderr(`(/remember failed: ${cause instanceof Error ? cause.message : String(cause)})\n`);
-            }
-            break;
-          }
-          case "forget": {
-            if (arg.length === 0 || !memoryStore) {
-              io.stdout(`(usage: /forget <key> | /forget --all)\n`);
-              break;
-            }
-            if (arg === "--all" || arg === "all") {
-              const dropped = await Promise.resolve(memoryStore.deleteByUserId(userId));
-              userMemory = undefined;
-              io.stdout(dropped ? `(wiped all memory for ${userId})\n` : `(no memory to wipe)\n`);
-              break;
-            }
-            const k = arg;
-            if (!userMemory) {
-              io.stdout(`(no memory for ${userId})\n`);
-              break;
-            }
-            const factHit = userMemory.facts[k];
-            const prefHit = userMemory.preferences[k] ?? userMemory.preferences[`veto:${k}`] ?? userMemory.preferences[`goal:${k}`];
-            if (factHit === undefined && prefHit === undefined) {
-              io.stdout(`(key '${k}' not in memory)\n`);
-              break;
-            }
-            // Wipe + rebuild-without (mirrors top-level forget).
-            const snapshot = userMemory;
-            await Promise.resolve(memoryStore.deleteByUserId(userId));
-            for (const [fk, fv] of Object.entries(snapshot.facts)) {
-              if (fk !== k) await Promise.resolve(memoryStore.upsertFact(userId, fk, fv));
-            }
-            for (const [pk, pv] of Object.entries(snapshot.preferences)) {
-              if (pk === k || pk === `veto:${k}` || pk === `goal:${k}`) continue;
-              await Promise.resolve(memoryStore.upsertPreference(userId, pk, pv));
-            }
-            userMemory = await Promise.resolve(memoryStore.findByUserId(userId));
-            io.stdout(`(forgot ${k})\n`);
-            break;
-          }
-          case "help":
-            io.stdout("  /exit, /quit          leave\n");
-            io.stdout("  /reset                clear history (both memory + disk)\n");
-            io.stdout("  /history              show turn count\n");
-            io.stdout("  /model <tag>          switch model (e.g. ollama/qwen2.5:7b-instruct)\n");
-            io.stdout("  /tools on|off         toggle tool registry\n");
-            io.stdout("  /fact key=value       remember a fact about you (persists across sessions)\n");
-            io.stdout("  /pref key=value       remember a preference\n");
-            io.stdout("  /whoami               show what Muse knows about you\n");
-            io.stdout("  /persona <slot>       switch persona slot (work / home / none); each has its own memory\n");
-            io.stdout("  /trust                show this user's trusted + blocked tools\n");
-            io.stdout("  /remember <text>      LLM-extract facts/prefs/vetoes/goals from natural language\n");
-            io.stdout("  /forget <key>         drop a single fact/pref; /forget --all wipes the persona\n");
-            io.stdout("  /help                 this list\n");
-            break;
-          default:
-            io.stdout(`(unknown command: /${cmd ?? ""} — try /help)\n`);
-        }
+        // Reify the slash-handler context once per command. The handler
+        // mutates fields back on this object; observed reads below
+        // continue working against the same local bindings via the
+        // post-call sync block.
+        const slashCtx: SlashContext = {
+          active,
+          currentModel,
+          currentPersona,
+          history,
+          toolsDisabled,
+          trust,
+          userId,
+          userMemory
+        };
+        await handleSlashCommand(cmd, arg, slashCtx, slashDeps, io);
+        active = slashCtx.active;
+        currentModel = slashCtx.currentModel;
+        currentPersona = slashCtx.currentPersona;
+        toolsDisabled = slashCtx.toolsDisabled;
+        trust = slashCtx.trust;
+        userId = slashCtx.userId;
+        userMemory = slashCtx.userMemory;
         continue;
       }
 
