@@ -2824,4 +2824,126 @@ describe("cli program", () => {
       else delete process.env.MUSE_CALENDAR_FILE;
     }
   });
+
+  it("muse followup list --json filters by status and sorts by scheduledFor asc", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-followup-list-"));
+    const followupsFile = path.join(root, "followups.json");
+    const fsp = await import("node:fs/promises");
+    const prev = process.env.MUSE_FOLLOWUPS_FILE;
+    process.env.MUSE_FOLLOWUPS_FILE = followupsFile;
+    try {
+      await fsp.writeFile(followupsFile, JSON.stringify({
+        followups: [
+          { createdAt: "2026-05-10T00:00:00Z", id: "fu_b_later", scheduledFor: "2026-05-12T10:00:00Z", status: "scheduled", summary: "Later promise", userId: "stark" },
+          { createdAt: "2026-05-10T00:00:00Z", id: "fu_a_sooner", scheduledFor: "2026-05-11T09:00:00Z", status: "scheduled", summary: "Sooner promise", userId: "stark" },
+          { createdAt: "2026-05-10T00:00:00Z", firedAt: "2026-05-10T13:00:00Z", id: "fu_done", scheduledFor: "2026-05-10T12:00:00Z", status: "fired", summary: "Old fired", userId: "stark" },
+          { cancelReason: "user-cancelled", createdAt: "2026-05-10T00:00:00Z", id: "fu_dropped", scheduledFor: "2026-05-10T08:00:00Z", status: "cancelled", summary: "Dropped one", userId: "stark" }
+        ]
+      }), "utf8");
+
+      // Default --status=scheduled returns the two scheduled, sorted by scheduledFor.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "followup", "list", "--json"], { from: "node" });
+      const listed1 = JSON.parse(out1.join("")) as { followups: Array<{ id: string }>; status: string; total: number };
+      expect(listed1.status).toBe("scheduled");
+      expect(listed1.total).toBe(2);
+      expect(listed1.followups.map((f) => f.id)).toEqual(["fu_a_sooner", "fu_b_later"]);
+
+      // --status all returns all four.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "followup", "list", "--status", "all", "--json"], { from: "node" });
+      const listed2 = JSON.parse(out2.join("")) as { total: number };
+      expect(listed2.total).toBe(4);
+
+      // --status fired returns just the fired one.
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "followup", "list", "--status", "fired", "--json"], { from: "node" });
+      const listed3 = JSON.parse(out3.join("")) as { followups: Array<{ id: string }>; total: number };
+      expect(listed3.total).toBe(1);
+      expect(listed3.followups[0]?.id).toBe("fu_done");
+    } finally {
+      if (prev !== undefined) process.env.MUSE_FOLLOWUPS_FILE = prev;
+      else delete process.env.MUSE_FOLLOWUPS_FILE;
+    }
+  });
+
+  it("muse followup show resolves a unique id prefix; rejects ambiguous prefixes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-followup-show-"));
+    const followupsFile = path.join(root, "followups.json");
+    const fsp = await import("node:fs/promises");
+    const prev = process.env.MUSE_FOLLOWUPS_FILE;
+    process.env.MUSE_FOLLOWUPS_FILE = followupsFile;
+    try {
+      await fsp.writeFile(followupsFile, JSON.stringify({
+        followups: [
+          { createdAt: "2026-05-10T00:00:00Z", id: "fu_alpha", originRunId: "run_42", scheduledFor: "2026-05-11T09:00:00Z", status: "scheduled", summary: "Alpha promise", userId: "stark" },
+          { createdAt: "2026-05-10T00:00:00Z", id: "fu_ambig_one", scheduledFor: "2026-05-11T10:00:00Z", status: "scheduled", summary: "Ambig 1", userId: "stark" },
+          { createdAt: "2026-05-10T00:00:00Z", id: "fu_ambig_two", scheduledFor: "2026-05-11T11:00:00Z", status: "scheduled", summary: "Ambig 2", userId: "stark" }
+        ]
+      }), "utf8");
+
+      // Unique prefix resolves and --json round-trips the full record.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "followup", "show", "fu_alpha", "--json"], { from: "node" });
+      const shown = JSON.parse(out1.join("")) as { id: string; summary: string; originRunId: string };
+      expect(shown.id).toBe("fu_alpha");
+      expect(shown.summary).toBe("Alpha promise");
+      expect(shown.originRunId).toBe("run_42");
+
+      // Ambiguous prefix throws with a helpful message.
+      const { io: io2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      program2.exitOverride();
+      await expect(program2.parseAsync(["node", "muse", "followup", "show", "fu_ambig", "--json"], { from: "node" }))
+        .rejects.toThrow(/Ambiguous followup id/u);
+    } finally {
+      if (prev !== undefined) process.env.MUSE_FOLLOWUPS_FILE = prev;
+      else delete process.env.MUSE_FOLLOWUPS_FILE;
+    }
+  });
+
+  it("muse followup cancel flips scheduled → cancelled; rejects already-fired", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-followup-cancel-"));
+    const followupsFile = path.join(root, "followups.json");
+    const fsp = await import("node:fs/promises");
+    const prev = process.env.MUSE_FOLLOWUPS_FILE;
+    process.env.MUSE_FOLLOWUPS_FILE = followupsFile;
+    try {
+      await fsp.writeFile(followupsFile, JSON.stringify({
+        followups: [
+          { createdAt: "2026-05-10T00:00:00Z", id: "fu_target", scheduledFor: "2026-05-11T09:00:00Z", status: "scheduled", summary: "Cancel me", userId: "stark" },
+          { createdAt: "2026-05-10T00:00:00Z", firedAt: "2026-05-10T13:00:00Z", id: "fu_done", scheduledFor: "2026-05-10T12:00:00Z", status: "fired", summary: "Already fired", userId: "stark" }
+        ]
+      }), "utf8");
+
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "followup", "cancel", "fu_target", "--reason", "out-of-scope", "--json"], { from: "node" });
+      const patched = JSON.parse(out1.join("")) as { id: string; status: string; cancelReason: string };
+      expect(patched.id).toBe("fu_target");
+      expect(patched.status).toBe("cancelled");
+      expect(patched.cancelReason).toBe("out-of-scope");
+
+      // Second cancel on the same id surfaces "already cancelled" instead of silently no-op.
+      const { io: io2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      program2.exitOverride();
+      await expect(program2.parseAsync(["node", "muse", "followup", "cancel", "fu_target"], { from: "node" }))
+        .rejects.toThrow(/already cancelled/u);
+
+      // Cancelling an already-fired entry also rejects.
+      const { io: io3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      program3.exitOverride();
+      await expect(program3.parseAsync(["node", "muse", "followup", "cancel", "fu_done"], { from: "node" }))
+        .rejects.toThrow(/already fired/u);
+    } finally {
+      if (prev !== undefined) process.env.MUSE_FOLLOWUPS_FILE = prev;
+      else delete process.env.MUSE_FOLLOWUPS_FILE;
+    }
+  });
 });
