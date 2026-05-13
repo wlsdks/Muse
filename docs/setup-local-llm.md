@@ -164,6 +164,74 @@ endpoint works with Muse. Common alternatives:
 The `muse setup local` wizard only knows about Ollama today; the
 others work but you wire them through env vars.
 
+## Web search (optional — SearXNG self-hosted)
+
+Local models (Qwen / Llama / etc.) don't have a server-side
+`web_search` tool the way Gemini / Anthropic / OpenAI do. Muse's
+`muse.search` MCP tool fills the gap with **two backends, picked
+in order**:
+
+1. **SearXNG** (preferred when `MUSE_SEARXNG_URL` is set) — JSON
+   API over a self-hosted aggregator. Hits 200+ upstream engines
+   (Google, Brave, Bing, Wikipedia, StackOverflow, arXiv, …),
+   cross-validates results across them, and returns
+   `{ title, url, content }`. No API key, no rate limit beyond
+   what your instance enforces. AGPL-licensed.
+2. **DuckDuckGo HTML scrape** (default, zero-config) — works out
+   of the box but brittle (DDG can change markup) and rate-limited.
+
+For a JARVIS-class agent on a 2B local model, search quality
+bounds answer quality, so SearXNG is the recommended path.
+
+### Verified install (Docker Desktop / Rancher Desktop, ~2 min):
+
+```bash
+# 1. Settings (enables JSON format — required by muse.search).
+mkdir -p ~/.muse/searxng
+cat > ~/.muse/searxng/settings.yml <<'YAML'
+use_default_settings: true
+server:
+  secret_key: "muse-searxng-local-only-not-secret"
+  limiter: false
+  image_proxy: false
+search:
+  formats:
+    - html
+    - json
+YAML
+
+# 2. Run (foreground stops with Ctrl-C; -d for background).
+docker run -d --rm --name muse-searxng \
+  -p 8888:8080 \
+  -v ~/.muse/searxng:/etc/searxng:rw \
+  -e BASE_URL=http://localhost:8888/ \
+  searxng/searxng:latest
+
+# 3. Smoke (should return JSON with `results` array).
+curl -s "http://localhost:8888/search?q=test&format=json" | head -c 200
+```
+
+### Wire it into Muse:
+
+```bash
+export MUSE_LOOPBACK_MCP_ENABLED=true
+export MUSE_SEARXNG_URL=http://localhost:8888
+# Optional CSV — restricts to specific upstream engines.
+# export MUSE_SEARXNG_ENGINES=google,brave,duckduckgo
+```
+
+`muse.search` will now route queries to SearXNG and fall back to
+DDG only if SearXNG fails (HTTP error, malformed JSON, zero
+hits). Result payloads include a `backend: "searxng" | "duckduckgo"`
+field so you can see which path responded.
+
+### Stop / restart:
+
+```bash
+docker stop muse-searxng    # graceful stop (--rm removes the container)
+docker logs muse-searxng    # if you started it without -d, just Ctrl-C
+```
+
 ## Voice mode (optional)
 
 Muse's voice loop (Whisper STT → local LLM → Piper TTS) needs two
