@@ -3251,6 +3251,119 @@ describe("cli program", () => {
     }
   });
 
+  it("muse pattern list runs both detectors and surfaces clusters; respects --min-confidence + --limit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-pat-list-"));
+    // aggregateActivitySignals resolves paths against $HOME — mirror its
+    // default `~/.muse/notes` layout so an option-less call finds them.
+    const museDir = path.join(root, ".muse");
+    const notesDir = path.join(museDir, "notes");
+    const fsp = await import("node:fs/promises");
+    await fsp.mkdir(museDir);
+    await fsp.mkdir(notesDir);
+    await fsp.mkdir(path.join(notesDir, "journal"));
+    // Three Tuesdays at 21:30 local → strong cluster.
+    const tuesdays = [
+      new Date(2026, 3, 14, 21, 30),
+      new Date(2026, 3, 21, 21, 30),
+      new Date(2026, 3, 28, 21, 30)
+    ];
+    for (let i = 0; i < tuesdays.length; i++) {
+      const file = path.join(notesDir, "journal", `entry-${i.toString()}.md`);
+      await fsp.writeFile(file, "x", "utf8");
+      const secs = tuesdays[i]!.getTime() / 1000;
+      await fsp.utimes(file, secs, secs);
+    }
+    const prev = {
+      activity: process.env.MUSE_ACTIVITY_LOG_FILE,
+      home: process.env.HOME,
+      notes: process.env.MUSE_NOTES_DIR,
+      tasks: process.env.MUSE_TASKS_FILE
+    };
+    process.env.HOME = root;
+    process.env.MUSE_NOTES_DIR = notesDir;
+    process.env.MUSE_TASKS_FILE = path.join(root, "no-tasks.json");
+    process.env.MUSE_ACTIVITY_LOG_FILE = path.join(root, "no-activity.jsonl");
+    try {
+      // List with no filter → at least one cluster surfaces.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "pattern", "list", "--json"], { from: "node" });
+      const listed = JSON.parse(out1.join("")) as { patterns: Array<{ category: string; confidence: number }>; total: number };
+      expect(listed.total).toBeGreaterThan(0);
+      const tod = listed.patterns.find((p) => p.category === "time-of-day-action");
+      expect(tod).toBeDefined();
+      expect(tod!.confidence).toBeGreaterThan(0);
+
+      // --min-confidence above 1.0 suppresses everything.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "pattern", "list", "--min-confidence", "1.01", "--json"], { from: "node" });
+      const tight = JSON.parse(out2.join("")) as { total: number };
+      // 1.01 is out of range so it falls back to default 0 — still shows clusters.
+      expect(tight.total).toBeGreaterThan(0);
+
+      // --limit caps the slice
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "pattern", "list", "--limit", "1", "--json"], { from: "node" });
+      const capped = JSON.parse(out3.join("")) as { total: number };
+      expect(capped.total).toBe(1);
+    } finally {
+      const restore = (key: keyof typeof prev, envKey: string): void => {
+        if (prev[key] === undefined) { delete process.env[envKey]; } else { process.env[envKey] = prev[key]!; }
+      };
+      restore("home", "HOME");
+      restore("notes", "MUSE_NOTES_DIR");
+      restore("tasks", "MUSE_TASKS_FILE");
+      restore("activity", "MUSE_ACTIVITY_LOG_FILE");
+    }
+  });
+
+  it("muse pattern fired lists cooldown records newest-first; reset --yes wipes them", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-pat-fired-"));
+    const firedFile = path.join(root, "patterns-fired.json");
+    const fsp = await import("node:fs/promises");
+    const prev = process.env.MUSE_PATTERNS_FIRED_FILE;
+    process.env.MUSE_PATTERNS_FIRED_FILE = firedFile;
+    try {
+      await fsp.writeFile(firedFile, JSON.stringify({
+        fired: [
+          { patternId: "abc123def456", firedAtMs: 1_000_000_000_000 },
+          { patternId: "deadbeef0001", firedAtMs: 1_700_000_000_000 },
+          { patternId: "abc123def456", firedAtMs: 1_500_000_000_000 }
+        ]
+      }), "utf8");
+
+      // Fired list — newest first.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "pattern", "fired", "--json"], { from: "node" });
+      const listed = JSON.parse(out1.join("")) as { fired: Array<{ patternId: string; firedAtMs: number }>; total: number };
+      expect(listed.total).toBe(3);
+      expect(listed.fired[0]!.firedAtMs).toBe(1_700_000_000_000);
+      expect(listed.fired[2]!.firedAtMs).toBe(1_000_000_000_000);
+
+      // reset without --yes refuses.
+      const { io: io2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      program2.exitOverride();
+      await expect(program2.parseAsync(["node", "muse", "pattern", "reset"], { from: "node" }))
+        .rejects.toThrow(/Refusing to reset without --yes/u);
+
+      // reset --yes wipes.
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "pattern", "reset", "--yes", "--json"], { from: "node" });
+      const result = JSON.parse(out3.join("")) as { cleared: boolean; removed: number };
+      expect(result).toEqual({ cleared: true, removed: 3 });
+      const after = JSON.parse(await fsp.readFile(firedFile, "utf8")) as { fired: unknown[] };
+      expect(after.fired).toEqual([]);
+    } finally {
+      if (prev !== undefined) process.env.MUSE_PATTERNS_FIRED_FILE = prev;
+      else delete process.env.MUSE_PATTERNS_FIRED_FILE;
+    }
+  });
+
   it("readSessionBoundaries returns [] when last-chat.jsonl is missing", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-boundary-missing-"));
     const prev = process.env.HOME;
