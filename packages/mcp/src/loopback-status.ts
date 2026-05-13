@@ -32,6 +32,17 @@ export interface StatusMcpServerOptions {
   readonly logFile?: string;
   /** Override path for ~/.muse/trust.json. */
   readonly trustFile?: string;
+  /**
+   * Resolved active model name (typically autoconfigure's
+   * `defaultModel`, which already merges `~/.muse/models.json`'s
+   * `suggestedModel` into env). When omitted the snapshot falls
+   * back to `process.env.MUSE_MODEL` — kept for backward compat
+   * but produces the same misleading "model: null" that
+   * `muse status` had before iter 44 when a wizard-only user
+   * skipped the shell export. New callers should always pass
+   * `model`.
+   */
+  readonly model?: string;
 }
 
 function homeMuse(name: string): string {
@@ -132,7 +143,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           text: lastNotice.text,
           title: lastNotice.title
         } as unknown as JsonValue) : null,
-        model: (process.env.MUSE_MODEL?.trim() ?? null) as JsonValue,
+        model: (options.model?.trim() || process.env.MUSE_MODEL?.trim() || null) as JsonValue,
         persona: {
           fact_count: factCount,
           goal_count: goalCount,

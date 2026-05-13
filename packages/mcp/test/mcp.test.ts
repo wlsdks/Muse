@@ -5515,6 +5515,70 @@ describe("personal-followup-llm-budget-store", () => {
   });
 });
 
+describe("muse.status loopback server", () => {
+  it("snapshot returns the model from the constructor's `options.model` (overrides env)", async () => {
+    const { createStatusMcpServer, createLoopbackMcpConnection } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-status-mcp-"));
+    const userMemoryFile = join(dir, "user-memory.json");
+    const tasksFile = join(dir, "tasks.json");
+    const historyFile = join(dir, "proactive-history.json");
+    const logFile = join(dir, "notifications.log");
+    const trustFile = join(dir, "trust.json");
+    writeFileSync(userMemoryFile, JSON.stringify({ users: { stark: { facts: { name: "Tony" } } } }), "utf8");
+    writeFileSync(tasksFile, JSON.stringify({ tasks: [] }), "utf8");
+
+    const prev = process.env.MUSE_MODEL;
+    process.env.MUSE_MODEL = "env-model-should-not-win";
+    try {
+      const connection = createLoopbackMcpConnection(createStatusMcpServer({
+        historyFile,
+        logFile,
+        model: "gemini-2.5-pro",
+        tasksFile,
+        trustFile,
+        userMemoryFile
+      }));
+      const snap = await connection.callTool!("snapshot", { user_id: "stark" });
+      expect((snap as { model?: unknown }).model).toBe("gemini-2.5-pro");
+    } finally {
+      if (prev === undefined) delete process.env.MUSE_MODEL;
+      else process.env.MUSE_MODEL = prev;
+    }
+  });
+
+  it("snapshot falls back to process.env.MUSE_MODEL when no options.model is set", async () => {
+    const { createStatusMcpServer, createLoopbackMcpConnection } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-status-mcp-env-"));
+    const userMemoryFile = join(dir, "user-memory.json");
+    const tasksFile = join(dir, "tasks.json");
+    writeFileSync(userMemoryFile, JSON.stringify({ users: {} }), "utf8");
+    writeFileSync(tasksFile, JSON.stringify({ tasks: [] }), "utf8");
+
+    const prev = process.env.MUSE_MODEL;
+    process.env.MUSE_MODEL = "env-fallback-model";
+    try {
+      const connection = createLoopbackMcpConnection(createStatusMcpServer({
+        historyFile: join(dir, "no-such-history.json"),
+        logFile: join(dir, "no-such-log.log"),
+        tasksFile,
+        trustFile: join(dir, "no-such-trust.json"),
+        userMemoryFile
+      }));
+      const snap = await connection.callTool!("snapshot", { user_id: "default" });
+      expect((snap as { model?: unknown }).model).toBe("env-fallback-model");
+    } finally {
+      if (prev === undefined) delete process.env.MUSE_MODEL;
+      else process.env.MUSE_MODEL = prev;
+    }
+  });
+});
+
 describe("muse.history loopback server", () => {
   async function seedFiles() {
     const { mkdtempSync, writeFileSync } = await import("node:fs");

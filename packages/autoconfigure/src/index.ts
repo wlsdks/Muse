@@ -512,6 +512,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const episodesLoopbackTools = loopback.episodes;
   const patternsLoopbackTools = loopback.patterns;
   const historyLoopbackTools = loopback.history;
+  const statusLoopbackTools = loopback.status;
   const schedulerHandle: { current: DynamicScheduler | undefined } = { current: undefined };
 
   const { skillRegistryPromise, skillTools } = createSkillRuntime(env);
@@ -532,6 +533,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => episodesLoopbackTools,
     () => patternsLoopbackTools,
     () => historyLoopbackTools,
+    () => statusLoopbackTools,
     () => runnerTools,
     () => skillTools,
     () => mcp.manager.toMuseTools(),

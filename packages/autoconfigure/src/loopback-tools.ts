@@ -25,6 +25,7 @@ import {
   createPatternsMcpServer,
   createProactiveMcpServer,
   createRemindersMcpServer,
+  createStatusMcpServer,
   createTasksMcpServer,
   createTasksRegistryMcpServer
 } from "@muse/mcp";
@@ -76,6 +77,7 @@ export interface LoopbackToolsBundle {
   readonly episodes: readonly MuseTool[];
   readonly patterns: readonly MuseTool[];
   readonly history: readonly MuseTool[];
+  readonly status: readonly MuseTool[];
 }
 
 export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle {
@@ -177,6 +179,22 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
     })
   );
 
+  // JARVIS self-observability loopback — `muse.status.snapshot`.
+  // The `model` field is the autoconfigure-resolved defaultModel
+  // (which already merges ~/.muse/models.json's suggestedModel),
+  // so an external Claude-Desktop agent calling this tool sees the
+  // same model the runtime actually uses — not the env-only view
+  // that previously misreported "null" for wizard-only setups.
+  // userMemoryFile + trustFile default to ~/.muse/*.json inside
+  // the loopback server; autoconfigure doesn't override them.
+  const status = createLoopbackMcpMuseTools(
+    createStatusMcpServer({
+      historyFile: deps.proactiveHistoryFile,
+      tasksFile: deps.tasksFile,
+      ...(deps.defaultModel ? { model: deps.defaultModel } : {})
+    })
+  );
+
   return {
     calendar,
     episodes,
@@ -188,6 +206,7 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
     patterns,
     proactive,
     reminders,
+    status,
     tasks,
     tasksRegistry
   };
