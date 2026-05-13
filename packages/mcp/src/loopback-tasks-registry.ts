@@ -1,7 +1,7 @@
 /**
  * `muse.tasks-multi` — provider-neutral tasks MCP surface backed by
  * `TasksProviderRegistry`. Mirrors `createNotesRegistryMcpServer`
- * (round 128) for the tasks domain so the agent can target any
+ * for the tasks domain so the agent can target any
  * registered backend (LocalFile, Apple Reminders, Notion DB) via
  * `providerId`.
  *

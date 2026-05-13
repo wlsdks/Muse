@@ -2595,7 +2595,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse telemetry summary calls /admin/telemetry/summary and pretty-prints the result (iter 48)", async () => {
+  it("muse telemetry summary calls /admin/telemetry/summary and pretty-prints the result", async () => {
     const { io, output } = captureOutput();
     const requests: { readonly url: string }[] = [];
     const program = createProgram({
@@ -2632,7 +2632,7 @@ describe("cli program", () => {
     expect(text).toContain("inboxContextMessageCount: 3.50");
   });
 
-  it("muse telemetry recent hits /admin/telemetry/recent with limit + sinceMs (iter 48)", async () => {
+  it("muse telemetry recent hits /admin/telemetry/recent with limit + sinceMs", async () => {
     const { io, output } = captureOutput();
     const requests: { readonly url: string }[] = [];
     const program = createProgram({
@@ -2669,7 +2669,7 @@ describe("cli program", () => {
     expect(text).toContain("run=r-1");
   });
 
-  it("muse telemetry summary reports `disabled` cleanly when aggregator is off (iter 48)", async () => {
+  it("muse telemetry summary reports `disabled` cleanly when aggregator is off", async () => {
     const { io, output } = captureOutput();
     const program = createProgram({
       ...io,

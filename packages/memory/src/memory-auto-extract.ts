@@ -367,7 +367,7 @@ async function persist(
   const vetoSlots = sanitizeSlotArray(payload.vetoes, limits.maxVetoes, limits.maxKey, limits.maxValue);
   const goalSlots = sanitizeSlotArray(payload.goals, limits.maxGoals, limits.maxKey, limits.maxValue);
 
-  // Iter 51 — parallelise the writes. Pre-iter-51 this loop ran 16
+  // parallelise the writes. Pre-iter-51 this loop ran 16
   // sequential `await store.upsertX(...)` calls per turn (5 facts +
   // 5 prefs + 3 vetoes + 3 goals). For an `InMemoryUserMemoryStore`
   // that's a fixed cost in microseconds — fine. For a Kysely-backed
@@ -390,10 +390,9 @@ async function persist(
     writes.push(safeWrite(store.upsertPreference(userId, key, value)));
   }
   // Typed-slot writes are skipped silently when the store doesn't
-  // support upsertUserModelSlot (the optional method introduced in
-  // round 164). Round 165 made KyselyUserMemoryStore implement it,
-  // and InMemoryUserMemoryStore did so in round 164 — so this
-  // branch only no-ops for third-party UserMemoryStore impls.
+  // support upsertUserModelSlot (an optional method on
+  // UserMemoryStore). The first-party InMemory + Kysely stores
+  // implement it; this branch no-ops for third-party impls.
   const upsertSlot = store.upsertUserModelSlot?.bind(store);
   if (upsertSlot) {
     const now = new Date();

@@ -27,7 +27,7 @@ describe("active context calendar surface (D1)", () => {
     expect(rendered).toContain("(all day)");
   });
 
-  it("annotates events with human-readable relative time (iter 7)", () => {
+  it("annotates events with human-readable relative time", () => {
     // fixedNow is 2026-05-11T08:00:00.000Z
     const rendered = renderActiveContextSection({
       localHour: 8,
@@ -52,7 +52,7 @@ describe("active context calendar surface (D1)", () => {
     expect(rendered).toContain("[in 4h]");
   });
 
-  it("annotates active_task due time relative to now (iter 7)", () => {
+  it("annotates active_task due time relative to now", () => {
     const rendered = renderActiveContextSection({
       activeTask: { dueIso: "2026-05-11T09:00:00.000Z", id: "T-1", title: "Ship the doc" },
       localHour: 8,

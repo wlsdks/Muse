@@ -344,7 +344,7 @@ export function renderUserMemorySection(memory: UserMemorySnapshot, maxEntries: 
 
 /**
  * Build the compact persona snapshot string consumed by
- * `trimConversationMessages.personaSnapshot` (round 159). Different
+ * `trimConversationMessages.personaSnapshot`. Different
  * shape from `renderUserMemorySection` — this one is a single-line
  * `key=value; key=value; …` form so it slots cleanly into the
  * `[User context: …]` block of a compaction summary without
@@ -369,7 +369,7 @@ export function buildPersonaSnapshot(memory: UserMemorySnapshot, maxEntries: num
   if (topics.length > 0) {
     parts.push(`topics=${topics.join(",")}`);
   }
-  // Round 163: when the snapshot carries typed slots, append the
+  // when the snapshot carries typed slots, append the
   // structured composition so the agent gets the higher-signal
   // shape (kind prefix + decorators) ALONGSIDE the legacy facts.
   // composeUserModelSnapshot returns undefined for empty models,

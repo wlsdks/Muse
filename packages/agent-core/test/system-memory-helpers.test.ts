@@ -128,7 +128,7 @@ describe("buildPersonaSnapshot", () => {
     ).toBeUndefined();
   });
 
-  it("appends the typed-slot composition when userModel is present (round 163)", () => {
+  it("appends the typed-slot composition when userModel is present", () => {
     const snapshot = buildPersonaSnapshot(
       {
         facts: { name: "Alice" },

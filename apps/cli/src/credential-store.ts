@@ -10,7 +10,7 @@
  *
  * Lifted out of `program.ts` (which had grown past 800 LOC) so the
  * crypto + on-disk storage code is one focused module. `program.ts`
- * imports the helpers directly; `commands-auth.ts` (round 94) takes
+ * imports the helpers directly; `commands-auth.ts` takes
  * them via DI from `program.ts` and stays unchanged.
  */
 

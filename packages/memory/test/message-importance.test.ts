@@ -52,7 +52,7 @@ describe("scoreMessageImportance", () => {
     expect(score).toBeGreaterThan(0);
   });
 
-  it("gives plain assistant turns a role bonus (iter 6 regression — previously 0)", () => {
+  it("gives plain assistant turns a role bonus", () => {
     // Previously plain assistant text fell through every role
     // branch in the if/else-if chain and got 0 role bonus, which
     // kept every assistant reply under the default threshold (0.5)
@@ -71,7 +71,7 @@ describe("scoreMessageImportance", () => {
     expect(plain).toBeGreaterThan(0.2);
   });
 
-  it("recognises Korean decision vocabulary (iter 6)", () => {
+  it("recognises Korean decision vocabulary", () => {
     const plain = scoreMessageImportance(userMessage("뭐 먹을지 고민"), {
       messageIndex: 0,
       totalMessages: 10
@@ -88,7 +88,7 @@ describe("scoreMessageImportance", () => {
     expect(agreement).toBeGreaterThan(plain);
   });
 
-  it("recognises expanded English decision vocabulary (iter 6)", () => {
+  it("recognises expanded English decision vocabulary", () => {
     const plain = scoreMessageImportance(userMessage("idle chitchat"), {
       messageIndex: 0,
       totalMessages: 10
@@ -105,7 +105,7 @@ describe("scoreMessageImportance", () => {
     expect(shipIt).toBeGreaterThan(plain);
   });
 
-  it("ignores too-short activeTaskTitle so a 1-char hint can't saturate every message (iter 18)", () => {
+  it("ignores too-short activeTaskTitle so a 1-char hint can't saturate every message", () => {
     // Pathological: a one-character activeTaskTitle like "X" would
     // substring-match every English message ("X" appears in "fix",
     // "exit", "tax" …). The guard rejects hints shorter than 3
@@ -131,7 +131,7 @@ describe("scoreMessageImportance", () => {
     expect(matchedWithRealHint).toBeGreaterThan(unrelatedWithoutHint);
   });
 
-  it("ignores too-short activeTaskId and currentFocus the same way (iter 18)", () => {
+  it("ignores too-short activeTaskId and currentFocus the same way", () => {
     const base = scoreMessageImportance(userMessage("totally unrelated stuff"), {
       messageIndex: 0,
       totalMessages: 10
@@ -151,8 +151,8 @@ describe("scoreMessageImportance", () => {
   });
 });
 
-describe("scoreMessageContent + recencyBonus split (iter 49)", () => {
-  // Iter 49 split the public `scoreMessageImportance` into the
+describe("scoreMessageContent + recencyBonus split", () => {
+  // split the public `scoreMessageImportance` into the
   // content-only `scoreMessageContent` + the iteration-dependent
   // `recencyBonus`, so the trim's outer while-loop can WeakMap-cache
   // the expensive substring-search work. These tests pin that the

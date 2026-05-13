@@ -89,7 +89,7 @@ describe("InMemoryTelemetryAggregator (phase A)", () => {
     expect(agg.recent(Number.NaN)).toEqual([]);
   });
 
-  it("recent({ sinceMs }) filters to events at or after the threshold (iter 26)", () => {
+  it("recent({ sinceMs }) filters to events at or after the threshold", () => {
     // The new options-object overload makes `recent` symmetric with
     // `summary({ sinceMs })`: ops can ask "show me raw events from
     // the last hour" without re-filtering by hand.
@@ -111,7 +111,7 @@ describe("InMemoryTelemetryAggregator (phase A)", () => {
     expect(agg.recent({}).map((e) => e.runId)).toEqual(["r-1", "r-2"]);
   });
 
-  it("rolls up latency stats (average / max / p95) across events that carry latencyMs (iter 37)", () => {
+  it("rolls up latency stats (average / max / p95) across events that carry latencyMs", () => {
     const now = 10_000;
     const agg = new InMemoryTelemetryAggregator({ now: () => now });
     // 10 runs with latencies 100..1000 in 100ms steps.
@@ -131,7 +131,7 @@ describe("InMemoryTelemetryAggregator (phase A)", () => {
     expect(summary.latency?.p95Ms).toBe(1_000);
   });
 
-  it("omits the latency block when no event in window carries latencyMs (iter 37)", () => {
+  it("omits the latency block when no event in window carries latencyMs", () => {
     const now = 10_000;
     const agg = new InMemoryTelemetryAggregator({ now: () => now });
     agg.record(evt({ recordedAtMs: now - 100, runId: "r-no-latency" }));
@@ -139,7 +139,7 @@ describe("InMemoryTelemetryAggregator (phase A)", () => {
     expect(summary.latency).toBeUndefined();
   });
 
-  it("ignores negative / non-finite latency values defensively (iter 37)", () => {
+  it("ignores negative / non-finite latency values defensively", () => {
     const now = 10_000;
     const agg = new InMemoryTelemetryAggregator({ now: () => now });
     agg.record(evt({ latencyMs: -5, recordedAtMs: now - 50, runId: "r-neg" }));

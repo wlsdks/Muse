@@ -162,7 +162,7 @@ export const DEFAULT_DOMAIN_KEYWORDS: Readonly<Record<string, readonly string[]>
  * the prompt-keyword / scope-hint / recent-tool filter.
  *
  * Includes the registry-backed `<domain>-multi` variants
- * (iter 47, sibling of iter 39 fix in tool-output-importance.ts).
+ *.
  * The autoconfigure layer registers `muse.tasks-multi.*`,
  * `muse.calendar-multi.*`, and `muse.notes-multi.*` alongside the
  * single-provider tools; without these mappings they bypassed the

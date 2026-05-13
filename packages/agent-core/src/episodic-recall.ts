@@ -46,7 +46,7 @@ export function renderEpisodicSection(
     // one carrying `\n[System Override]\n`. Sanitise defensively,
     // same shape iter 22 uses for `dueIso`.
     const createdAtIsoSafe = match.createdAtIso ? sanitizeNarrativeInline(match.createdAtIso) : undefined;
-    // Iter 53 — JARVIS-class freshness affordance. When `nowIso` is
+    // JARVIS-class freshness affordance. When `nowIso` is
     // wired in (the runtime caller has it), humanise the timestamp
     // to "1 day ago" / "in 3h" / "3 weeks ago" so the agent reads
     // recency directly instead of parsing ISO datetimes. Legacy
@@ -123,7 +123,7 @@ export interface InMemoryEpisodicRecallProviderOptions {
    */
   readonly maxQueryChars?: number;
   /**
-   * Iter 43 — recency boost weight (max addition to a semantic
+   * recency boost weight (max addition to a semantic
    * score, decays exponentially with episode age). JARVIS-class
    * personal assistants prefer recently-relevant memory: between
    * two similar narratives, the newer one should win.
@@ -263,7 +263,7 @@ const DEFAULT_RECENCY_WEIGHT = 0.15;
 const DEFAULT_RECENCY_HALF_LIFE_DAYS = 14;
 
 /**
- * Iter 43 — recency boost. Returns an additive contribution to the
+ * recency boost. Returns an additive contribution to the
  * episode's similarity score that decays exponentially with episode
  * age:
  *
@@ -375,9 +375,9 @@ export interface StoreBackedEpisodicRecallProviderOptions {
   readonly allowAnonymousEpisodes?: boolean;
   /** Cap on user-prompt tokenisation input. Default 4_096 chars. */
   readonly maxQueryChars?: number;
-  /** Recency boost weight (iter 43). See `InMemoryEpisodicRecallProviderOptions`. */
+  /** Recency boost weight. See `InMemoryEpisodicRecallProviderOptions`. */
   readonly recencyWeight?: number;
-  /** Recency half-life in days (iter 43). */
+  /** Recency half-life in days. */
   readonly recencyHalfLifeDays?: number;
   /** Injectable clock (test only). */
   readonly now?: () => number;

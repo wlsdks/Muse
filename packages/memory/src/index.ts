@@ -345,7 +345,7 @@ export {
   trimConversationMessages
 } from "./memory-token-trim.js";
 
-// Tool-output trimming primitive (round 161 — Context Engineering
+// Tool-output trimming primitive (Context Engineering
 // step 1.b). Used by agent-core/model-loop to cap individual tool
 // results before they land as messages.
 export {
@@ -354,7 +354,7 @@ export {
   type ToolOutputTrimResult
 } from "./memory-tool-output-trim.js";
 
-// In-process content-by-reference store (round 167 — Context
+// In-process content-by-reference store (Context
 // Engineering step 1.d foundation). Tools that return large
 // content can stash the original here under a short id; the
 // agent fetches expanded content via the `muse.context` MCP
@@ -366,7 +366,7 @@ export {
   type InMemoryContextReferenceStoreOptions
 } from "./context-reference-store.js";
 
-// Typed user-model slots (round 162 — Context Engineering step
+// Typed user-model slots (Context Engineering step
 // 1.c foundation). Parallel structure to the legacy free-text
 // `Record<string,string>` facts/preferences. Persistence + runtime
 // wiring lands in subsequent iters.

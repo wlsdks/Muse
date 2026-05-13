@@ -53,7 +53,7 @@ export function parseAttachmentsFromMetadata(metadata: unknown): readonly Attach
     return [];
   }
   const out: AttachmentHint[] = [];
-  // Iter 54 — dedup by (name, size, mimeType). A user dragging the
+  // dedup by (name, size, mimeType). A user dragging the
   // same file twice (web upload UI, CLI `--attach a.pdf --attach a.pdf`)
   // or a buggy metadata producer that emits duplicate entries would
   // otherwise render the file twice in `[Attached Files]`, wasting
@@ -72,7 +72,7 @@ export function parseAttachmentsFromMetadata(metadata: unknown): readonly Attach
     }
     const record = entry as Record<string, unknown>;
     // EVERY user-supplied string gets the same inline-sanitisation
-    // pass before the bound check. Round 1 (iter 4) only sanitised
+    // pass before the bound check. Round 1 only sanitised
     // `description`, which left a CRLF or `\n[System Override]\n`
     // injection vector wide open on `name` — the most prominent
     // field of all. `name` / `mimeType` / `ref` all sit on the
@@ -149,7 +149,7 @@ export function renderAttachmentSection(attachments: readonly AttachmentHint[]):
   lines.push("Files the user attached to this turn. Treat as primary source material when relevant.");
   const shown = attachments.slice(0, MAX_ATTACHMENT_ENTRIES);
   for (const entry of shown) {
-    // Iter 44 — render-boundary defensive sanitisation. The
+    // render-boundary defensive sanitisation. The
     // `parseAttachmentsFromMetadata` path already strips newlines
     // at parse time, but `renderAttachmentSection` is exported and
     // external callers can hand in `AttachmentHint[]` directly

@@ -1181,7 +1181,7 @@ describe("createUserMemoryAutoExtractHook", () => {
     expect(keys[0]).toMatch(/^[a-z0-9_]+$/);
   });
 
-  it("persists typed veto and goal slots from the extraction (round 166)", async () => {
+  it("persists typed veto and goal slots from the extraction", async () => {
     const store = new InMemoryUserMemoryStore();
     const provider = makeProvider(JSON.stringify({
       facts: {},
@@ -1245,7 +1245,7 @@ describe("createUserMemoryAutoExtractHook", () => {
     expect(memory?.userModel?.goals.map((slot) => slot.id)).toEqual(["g1", "g2"]);
   });
 
-  it("InMemoryContextReferenceStore stores, retrieves, lists, deletes, and TTL-evicts entries (round 167)", () => {
+  it("InMemoryContextReferenceStore stores, retrieves, lists, deletes, and TTL-evicts entries", () => {
     let now = new Date("2026-05-10T00:00:00.000Z");
     const store = new InMemoryContextReferenceStore({
       maxEntries: 3,

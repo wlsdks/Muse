@@ -1,9 +1,9 @@
 /**
- * Typed user-model slots (Context Engineering step 1.c, round 162).
+ * Typed user-model slots (Context Engineering step 1.c).
  *
  * The legacy `UserMemory` shape stores everything as free-text
  * `facts: Record<string, string>` + `preferences: Record<string, string>`.
- * Per the round 157 audit (Letta memory blocks + Anthropic
+ * Per the audit (Letta memory blocks + Anthropic
  * effective-context-engineering), this loses structure and makes
  * persona-snapshot composition inconsistent across runs — a "bedtime"
  * preference and a "favorite color" preference get the same shape

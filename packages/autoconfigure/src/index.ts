@@ -383,7 +383,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const runnerTools = createRunnerTools(env);
   const museTools = parseBoolean(env.MUSE_TOOLS_ENABLED, true) ? createMuseTools() : [];
   const loopbackMcpTools = createLoopbackMcpToolsFromEnv(env);
-  // Round 168: in-process ref store for just-in-time retrieval. Used
+  // in-process ref store for just-in-time retrieval. Used
   // by AgentRuntime's tool-output truncation to stash full content
   // and surface ref=<id> in the marker; the agent fetches via the
   // muse.context loopback server when the budget is worth it.
@@ -512,7 +512,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       historyStore,
       hooks: runtimeHooks,
       hookTraceStore,
-      // Round 161: per-tool-result character cap. Default 8_000
+      // per-tool-result character cap. Default 8_000
       // chars (~2_000 tokens at the rough 1-token-per-4-chars
       // approximation) — large enough for small file reads and
       // typical tool replies, small enough that a single huge
@@ -555,7 +555,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         : undefined,
       toolFilter: buildToolFilter(env),
       skillCatalogProvider: buildSkillCatalogProvider(skillRegistryPromise),
-      // iter 38: actually instantiate the aggregator so the
+      // actually instantiate the aggregator so the
       // recordTelemetry call site in AgentRuntime stops no-op-ing.
       ...(telemetryAggregator ? { telemetryAggregator } : {})
     })

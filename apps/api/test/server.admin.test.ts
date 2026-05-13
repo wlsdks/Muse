@@ -540,14 +540,14 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(purgeTerminal.json()).toMatchObject({ deleted: 1 });
   });
 
-  it("GET /admin/telemetry/summary returns enabled:false when no aggregator wired (iter 38)", async () => {
+  it("GET /admin/telemetry/summary returns enabled:false when no aggregator wired", async () => {
     const server = buildServer({ logger: false });
     const response = await server.inject({ method: "GET", url: "/admin/telemetry/summary" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ enabled: false });
   });
 
-  it("GET /admin/telemetry/summary returns rolled-up stats when aggregator is wired (iter 38)", async () => {
+  it("GET /admin/telemetry/summary returns rolled-up stats when aggregator is wired", async () => {
     const telemetryAggregator = new InMemoryTelemetryAggregator({ now: () => 10_000 });
     telemetryAggregator.record({
       contextCounters: { inboxContextMessageCount: 4 },
@@ -585,7 +585,7 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(body.summary.latency?.averageMs).toBe(300);
   });
 
-  it("GET /admin/telemetry/recent returns the latest events with limit + sinceMs (iter 38)", async () => {
+  it("GET /admin/telemetry/recent returns the latest events with limit + sinceMs", async () => {
     const telemetryAggregator = new InMemoryTelemetryAggregator({ now: () => 10_000 });
     for (let i = 0; i < 5; i++) {
       telemetryAggregator.record({

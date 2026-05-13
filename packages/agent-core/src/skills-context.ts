@@ -38,7 +38,7 @@ export interface SkillCatalogProvider {
 }
 
 const MAX_SKILLS_PER_PROMPT = 40;
-// Iter 55 — per-skill description cap. SKILL.md `description`
+// per-skill description cap. SKILL.md `description`
 // frontmatter has no parser-side bound, so a verbose author (or a
 // catalog with 40+ skills carrying long routing prose) can balloon
 // the `[Available Skills]` block well past 10K tokens — pure
@@ -67,7 +67,7 @@ export function renderSkillsCatalogSection(entries: readonly SkillCatalogEntry[]
     const bins = entry.requiresBins && entry.requiresBins.length > 0
       ? ` (bins: ${entry.requiresBins.map(sanitizeInline).join(", ")})`
       : "";
-    // Any-of binary requirement (iter 45) — surface so the agent
+    // Any-of binary requirement — surface so the agent
     // can pick whichever CLI is on PATH when the skill supports
     // multiple equivalents.
     const anyBins = entry.requiresAnyBins && entry.requiresAnyBins.length > 0

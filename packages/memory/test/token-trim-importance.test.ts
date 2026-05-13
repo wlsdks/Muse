@@ -42,7 +42,7 @@ describe("trimConversationMessages with compactionStrategy=\"importance\"", () =
     expect(result.removedCount).toBeGreaterThan(0);
   });
 
-  it("never removes the last user message even after many importance-trim iterations (iter 27)", () => {
+  it("never removes the last user message even after many importance-trim iterations", () => {
     // Pre-iter-27 bug: `trimByImportance` captured `protectedIndex`
     // ONCE before the while-loop, so subsequent removals shifted the
     // last-user message left into the victim-candidate range. The

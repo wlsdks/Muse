@@ -146,7 +146,7 @@ export async function executeModelLoop(
       deduplicator.record(toolCall, executed.result);
       toolsUsed.push(toolCall.name);
       toolResults.push(executed);
-      // Round 161: cap individual tool results so a single big
+      // cap individual tool results so a single big
       // output doesn't blow the context window. Original
       // executed.result.output is left intact for traces / metrics
       // — only the message-bound copy is truncated.
@@ -236,7 +236,7 @@ export async function* executeStreamingModelLoop(
       deduplicator.record(toolCall, executed.result);
       toolsUsed.push(toolCall.name);
       toolResults.push(executed);
-      // Round 161: cap individual tool results so a single big
+      // cap individual tool results so a single big
       // output doesn't blow the context window. Original
       // executed.result.output is left intact for traces / metrics
       // — only the message-bound copy is truncated.
@@ -354,7 +354,7 @@ async function* streamModelTurn(
 
 
 /**
- * Apply the per-tool-result character cap (round 161). Pure
+ * Apply the per-tool-result character cap. Pure
  * delegate to `trimToolOutput` from @muse/memory; here just
  * threads in the per-tool hint that surfaces in the elision
  * marker. When `maxChars` is undefined or 0, the original
@@ -375,7 +375,7 @@ export function capToolOutput(
   // heuristic as `inferDomain`, neutral 1.0 fallback.
   const importance = scoreToolOutputImportance(toolName);
   const effectiveMaxChars = applyToolOutputImportance(maxChars, importance);
-  // Round 168: when a ref store is configured, stash the full
+  // when a ref store is configured, stash the full
   // output BEFORE trimming and surface `ref=<id>` in the marker.
   // Content-addressed via sha256 prefix so the same payload
   // returned by repeated tool calls dedupes.

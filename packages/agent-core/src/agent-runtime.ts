@@ -146,7 +146,7 @@ export interface AgentRuntimeOptions {
   readonly maxToolCalls?: number;
   /**
    * Per-tool-result character cap (Context Engineering step 1.b,
-   * round 161). When set and a tool returns more than `maxChars`
+   * When set and a tool returns more than `maxChars`
    * characters, the message-bound copy is truncated head+tail with
    * an explicit elision marker so the agent sees the truncation
    * rather than guessing why the result looks short. The original
@@ -156,13 +156,13 @@ export interface AgentRuntimeOptions {
   readonly maxToolOutputChars?: number;
   /**
    * Optional ContextReferenceStore for just-in-time retrieval
-   * (Context Engineering step 1.d, round 168). When provided AND a
+   * (Context Engineering step 1.d). When provided AND a
    * tool result triggers truncation, the full original output is
    * stashed in the store under a sha256-prefix id and the
    * truncation marker surfaces `ref=<id>` so the agent can call
    * `muse.context.fetch({ ref })` to expand on demand. Same
    * content → same ref so repeated truncations dedupe. When
-   * undefined, truncation behaves exactly as it did in round 161
+   * undefined, truncation behaves exactly as it did 
    * (head+tail+marker, no ref).
    */
   readonly contextReferenceStore?: ContextReferenceStore;
@@ -555,7 +555,7 @@ export class AgentRuntime {
     const episodicAppliedContext: AgentRunContext = { ...inboxAppliedContext, input: episodicAppliedInput };
     const summaryAppliedInput = await applyStoredConversationSummaryFn(episodicAppliedContext, this.conversationSummaryStore);
     const summaryAppliedContext: AgentRunContext = { ...episodicAppliedContext, input: summaryAppliedInput };
-    // Round 160: resolve the persona snapshot once per request and
+    // resolve the persona snapshot once per request and
     // forward to the trim layer so a compaction during this turn
     // re-injects user-context inside the [User context: ...] block.
     const personaSnapshot = await resolvePersonaSnapshotFn(
@@ -620,7 +620,7 @@ export class AgentRuntime {
     }
     await this.invokeHooks("afterComplete", context, guarded);
     this.recordAgentRun(context, guarded.model, "completed", startedAtMs);
-    // Iter 48: stamp wall-clock run latency on the trace span so a
+    // stamp wall-clock run latency on the trace span so a
     // trace-store consumer can correlate latency with the same ctx.*
     // span attrs without going through a separate query.
     runSpan.setAttribute("run.latency_ms", Date.now() - startedAtMs);
@@ -712,7 +712,7 @@ export class AgentRuntime {
 
     // Merge the resolved persona snapshot into the trim options so
     // it becomes part of the compaction summary's `[User context: ...]`
-    // block when the trim fires (round 159 primitive). When unset
+    // block when the trim fires. When unset
     // (no provider / no userId / empty memory), trim sees `undefined`
     // and behaves identically to before.
     // Phase 5 plumbing: also pipe the active task / focus from the

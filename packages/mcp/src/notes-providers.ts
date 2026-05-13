@@ -138,19 +138,19 @@ export class NotesProviderRegistry {
   }
 }
 
-// Local-dir adapter is in its own file (round 130 lift). Re-export so
+// Local-dir adapter is in its own file. Re-export so
 // existing `import { LocalDirNotesProvider } from "@muse/mcp/.../notes-providers"`
 // stays byte-identical.
 export { LocalDirNotesProvider } from "./notes-providers-local.js";
 export type { LocalDirNotesProviderOptions } from "./notes-providers-local.js";
 
-// Apple Notes adapter is in its own file (round 129 lift). Re-export so
+// Apple Notes adapter is in its own file. Re-export so
 // existing `import { AppleNotesProvider } from "@muse/mcp/.../notes-providers"`
 // stays byte-identical.
 export { AppleNotesProvider } from "./notes-providers-apple.js";
 export type { AppleNotesProviderOptions } from "./notes-providers-apple.js";
 
-// Notion adapter is in its own file (round 128 lift). Re-export so
+// Notion adapter is in its own file. Re-export so
 // existing `import { NotionNotesProvider } from "@muse/mcp/.../notes-providers"`
 // stays byte-identical.
 export { NotionNotesProvider } from "./notes-providers-notion.js";

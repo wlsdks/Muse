@@ -138,7 +138,7 @@ export function readWebSearchEnvSnapshot(env: Readonly<Record<string, string | u
  * (CLI --json, REST /api/setup/status) call this with no arguments;
  * the env-merge mirrors autoconfigure's runtime boot so the snapshot
  * reflects what the next `muse` invocation will see, not just raw
- * process.env (Loop #56's UX-drift fix).
+ * process.env.
  */
 export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
   const env = mergeModelKeysFromFile(process.env as Record<string, string | undefined>);

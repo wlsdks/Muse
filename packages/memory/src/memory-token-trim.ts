@@ -238,7 +238,7 @@ function trimByImportance(
     return currentTokens;
   }
   const threshold = options.importanceThreshold ?? IMPORTANCE_DEFAULT_THRESHOLD;
-  // Iter 49 — content-score cache. The content-dependent portion of
+  // content-score cache. The content-dependent portion of
   // the importance score is INVARIANT for a given message across
   // every iteration of the while-loop (it doesn't depend on the
   // message's current index in the array). Only the recency bonus
@@ -308,7 +308,7 @@ function trimByImportance(
       if (message.role === "tool") {
         continue;
       }
-      // Iter 49 — combine cached content score with per-iteration
+      // combine cached content score with per-iteration
       // recency bonus. Functionally identical to the prior
       // `scoreMessageImportance` call but avoids redoing the
       // substring searches over `DECISION_HINTS` + activeTaskTitle /

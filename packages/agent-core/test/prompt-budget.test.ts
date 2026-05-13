@@ -6,7 +6,7 @@ import {
   promptBudgetSpanAttributes
 } from "../src/prompt-budget.js";
 
-describe("measureSystemPromptText (iter 17)", () => {
+describe("measureSystemPromptText", () => {
   it("counts the whole content as prelude when no markers are present", () => {
     const report = measureSystemPromptText("You are Muse. Be terse.");
     expect(report.sections).toEqual([]);
@@ -58,7 +58,7 @@ describe("measureSystemPromptText (iter 17)", () => {
   });
 });
 
-describe("measureSystemPromptBudget (iter 17)", () => {
+describe("measureSystemPromptBudget", () => {
   it("returns undefined when there is no system message", () => {
     expect(
       measureSystemPromptBudget([
@@ -78,7 +78,7 @@ describe("measureSystemPromptBudget (iter 17)", () => {
   });
 });
 
-describe("promptBudgetSpanAttributes (iter 17)", () => {
+describe("promptBudgetSpanAttributes", () => {
   it("flattens a report into ctx.budget.* attributes", () => {
     const attrs = promptBudgetSpanAttributes({
       preludeChars: 12,

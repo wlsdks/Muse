@@ -1,11 +1,11 @@
 /**
  * In-process content-by-reference store (Context Engineering 1.d,
- * round 167).
+ * 
  *
  * The premise from Anthropic's effective-context-engineering audit:
  * keep lightweight identifiers in context and let the agent pull
  * bytes via tools on demand. When a tool returns more content than
- * the per-tool cap (round 161), the truncation marker can stash
+ * the per-tool cap, the truncation marker can stash
  * the full content here under a short reference id; the agent can
  * later call `muse.context.fetch(ref)` to expand the elided bytes
  * exactly when (and only when) needed.

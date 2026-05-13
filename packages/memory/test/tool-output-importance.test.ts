@@ -22,7 +22,7 @@ describe("scoreToolOutputImportance (D5)", () => {
     expect(scoreToolOutputImportance("muse.unknown.op")).toBe(1);
   });
 
-  it("recognises the `<domain>-multi` provider-registry variants (iter 39)", () => {
+  it("recognises the `<domain>-multi` provider-registry variants", () => {
     // `muse.tasks-multi.*`, `muse.calendar-multi.*`, `muse.notes-multi.*`
     // are the registry-backed siblings of `muse.tasks.*` etc. They surface
     // the same personal-data semantics — a meeting list out of

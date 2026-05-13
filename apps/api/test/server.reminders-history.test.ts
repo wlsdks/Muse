@@ -1,5 +1,5 @@
 /**
- * Coverage for `GET /api/reminders/history` (Loop #52). The route
+ * Coverage for `GET /api/reminders/history`. The route
  * is only registered when `reminderHistoryFile` is threaded through
  * ServerOptions — without it, 404. With it, the route serves the
  * daemon-appended entries newest-first.

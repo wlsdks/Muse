@@ -1,5 +1,5 @@
 /**
- * Prompt Budget Orchestrator (iter 17, cross-cutting).
+ * Prompt Budget Orchestrator.
  *
  * Each Context Engineering transform (Phase 1-7) lands a section
  * in the first system message under a `<!-- muse:{sectionId} -->`

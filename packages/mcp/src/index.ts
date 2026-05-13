@@ -328,17 +328,17 @@ export class McpSecurityPolicyProvider {
   }
 }
 
-// McpManager runtime registry lives in `./manager.ts` (round 142 lift).
+// McpManager runtime registry lives in `./manager.ts`.
 // Re-export so external call-sites stay byte-identical.
 export { McpManager } from "./manager.js";
 
 
 // Transport connector + SDK connection adapter live in `./transport.ts`
-// (round 141 lift). Re-export so external call-sites stay byte-identical.
+//. Re-export so external call-sites stay byte-identical.
 export { DefaultMcpTransportConnector } from "./transport.js";
 
 // Kysely-backed persistence lives in `packages/mcp/src/server-stores.ts`
-// (round 139 lift). Re-export so existing call-sites stay byte-identical.
+//. Re-export so existing call-sites stay byte-identical.
 export { KyselyMcpSecurityPolicyStore, KyselyMcpServerStore } from "./server-stores.js";
 
 
@@ -428,7 +428,7 @@ export function createMcpMuseTool(serverName: string, tool: McpRemoteTool, conne
   };
 }
 
-// Row builders + mappers live in `./server-stores.ts` (round 139 lift).
+// Row builders + mappers live in `./server-stores.ts`.
 // Re-exported so external call-sites stay byte-identical.
 export {
   createMcpSecurityPolicyInsert,
@@ -493,7 +493,7 @@ export {
   type NotesRegistryMcpServerOptions
 } from "./loopback-notes-registry.js";
 
-// Tasks registry MCP server (round 154). Companion to muse.tasks
+// Tasks registry MCP server. Companion to muse.tasks
 // (filesystem-only) — exposes `muse.tasks-multi.*` against any
 // composed TasksProviderRegistry.
 export {
@@ -602,7 +602,7 @@ export {
   type StatusMcpServerOptions
 } from "./loopback-status.js";
 
-// Context reference MCP server (round 167 — Context Engineering 1.d
+// Context reference MCP server (Context Engineering 1.d
 // foundation). `muse.context.fetch` / `muse.context.list` against an
 // in-process ContextReferenceStore.
 export {
@@ -629,9 +629,9 @@ export {
   type NotionNotesProviderOptions
 } from "./notes-providers.js";
 
-// Tasks provider abstraction (round 152). Mirrors the notes-providers
+// Tasks provider abstraction. Mirrors the notes-providers
 // pattern. LocalFile + AppleReminders backends landed in rounds 152 +
-// 153; Notion DB joined in round 169.
+// 153; Notion DB joined .
 export {
   AppleRemindersProvider,
   LocalFileTasksProvider,

@@ -94,7 +94,7 @@ export function createDefaultRuntimeHooks(_env: MuseEnvironment): readonly HookS
 /**
  * Build `AgentRuntime.contextWindow` options from env.
  *
- * Working-budget compaction (round 157+158): proactive compaction at
+ * Working-budget compaction: proactive compaction at
  * ~40% of nominal keeps quality high before the hard cap is hit
  * (Anthropic effective-context-engineering / NoLiMa context-rot
  * research). Operators override the soft target via

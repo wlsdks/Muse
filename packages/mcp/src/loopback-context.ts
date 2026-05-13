@@ -1,12 +1,12 @@
 /**
  * `muse.context` loopback MCP server — agent-callable surface over
- * the `ContextReferenceStore` (Context Engineering 1.d, round 167)
+ * the `ContextReferenceStore` (Context Engineering 1.d)
  * and the Phase-1 `ActiveContextProvider`.
  *
  * Tools:
  *   - `muse.context.fetch({ ref })` — return the full content
  *     stashed under `ref`. The marker emitted by tool-output
- *     truncation (round 161) is the typical `ref` source. Returns
+ *  truncation is the typical `ref` source. Returns
  *     `{ found: false }` when the ref is unknown / expired.
  *   - `muse.context.list()` — enumerate currently-cached refs with
  *     their source tool, `originalLength`, and `createdAt`. Useful

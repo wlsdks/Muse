@@ -147,7 +147,7 @@ describe("autoconfigure", () => {
     expect(buildToolFilter({ MUSE_TOOL_FILTER_ENABLED: "true" })).toBeDefined();
   });
 
-  it("buildTelemetryAggregator is ON by default and OFF when MUSE_TELEMETRY_AGGREGATOR_ENABLED=false (iter 38)", async () => {
+  it("buildTelemetryAggregator is ON by default and OFF when MUSE_TELEMETRY_AGGREGATOR_ENABLED=false", async () => {
     const { buildTelemetryAggregator } = await import("../src/personal-providers.js");
     expect(buildTelemetryAggregator({})).toBeDefined();
     expect(buildTelemetryAggregator({ MUSE_TELEMETRY_AGGREGATOR_ENABLED: "false" })).toBeUndefined();
@@ -155,7 +155,7 @@ describe("autoconfigure", () => {
     expect(buildTelemetryAggregator({ MUSE_TELEMETRY_AGGREGATOR_ENABLED: "true" })).toBeDefined();
   });
 
-  it("buildTelemetryAggregator honours MUSE_TELEMETRY_AGGREGATOR_CAPACITY (iter 38)", async () => {
+  it("buildTelemetryAggregator honours MUSE_TELEMETRY_AGGREGATOR_CAPACITY", async () => {
     const { buildTelemetryAggregator } = await import("../src/personal-providers.js");
     const agg = buildTelemetryAggregator({ MUSE_TELEMETRY_AGGREGATOR_CAPACITY: "3" });
     expect(agg).toBeDefined();
@@ -273,8 +273,8 @@ describe("autoconfigure", () => {
     });
   });
 
-  it("wires working-budget compaction into the AgentRuntime by default (round 158)", async () => {
-    // Round 157 added workingBudgetTokens to ConversationTrimOptions.
+  it("wires working-budget compaction into the AgentRuntime by default", async () => {
+    // added workingBudgetTokens to ConversationTrimOptions.
     // Round 158 wires autoconfigure to compute it as 40% of nominal
     // by default. We verify the soft trigger by setting a tiny
     // nominal context window (200 tokens) so the working budget

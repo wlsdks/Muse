@@ -3,7 +3,7 @@
  * the inline `createTasksMcpServer` in `loopback-tasks.ts`
  * (`{ tasks: PersistedTask[] }` with atomic-rename writes).
  *
- * Lifted out of the inline server (round 152) to live behind the
+ * Lifted out of the inline server to live behind the
  * `TasksProvider` interface so it slots into the new
  * `TasksProviderRegistry` alongside the upcoming
  * `AppleRemindersProvider` + `NotionTasksProvider`. The inline

@@ -2472,7 +2472,7 @@ describe("tasks provider abstraction", () => {
   });
 });
 
-describe("muse.context loopback server (round 167)", () => {
+describe("muse.context loopback server", () => {
   it("fetch returns content for a known ref and { found: false } for unknown / expired", async () => {
     const { InMemoryContextReferenceStore } = await import("@muse/memory");
     let now = new Date("2026-05-10T00:00:00.000Z");

@@ -73,7 +73,7 @@ export interface ActiveContextSnapshot {
    */
   readonly todaysEvents?: readonly CalendarEventHint[];
   /**
-   * Iter 41: pending reminders due within the next ~2 hours (or
+   * pending reminders due within the next ~2 hours (or
    * already overdue but still un-fired). Surfaced so the agent can
    * say "you asked me to remind you about X at 3pm — it's 2:55"
    * without first calling `muse.reminders.list`. JARVIS-class
@@ -273,7 +273,7 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
       const relative = humanizeRelativeFromIso(snapshot.nowIso, dueIso);
       taskParts.push(relative ? `due=${dueIso} (${relative})` : `due=${dueIso}`);
     }
-    // Iter 52 — explicit urgency marker. The `due=... (3h ago)`
+    // explicit urgency marker. The `due=... (3h ago)`
     // string carries the info but the agent has to PARSE "ago" to
     // realise the task is past due. A JARVIS-class assistant
     // signals overdue up-front: front-loaded `[OVERDUE]` /
@@ -305,7 +305,7 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     //      30-min grace window so a meeting that just wrapped is
     //      still the freshest context.
     const filteredEvents = filterAndSortTodayEvents(snapshot.todaysEvents, snapshot.nowIso);
-    // Iter 41: promote the most-imminent event (happening now, or
+    // promote the most-imminent event (happening now, or
     // starting within 30 minutes) to a `next_up:` line BEFORE the
     // chronological list. JARVIS-class "heads up" affordance — the
     // agent shouldn't have to scan the whole timeline to know
@@ -357,7 +357,7 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
       }
     }
   }
-  // Iter 41: pending reminders surfaced inline. Already-overdue or
+  // pending reminders surfaced inline. Already-overdue or
   // due within the next ~2h. Filtered + sorted here so a buggy
   // resolver can't blow the prompt with stale or random-order data.
   // Same Round 3 sanitisation seam (text + dueIso) the other blocks
@@ -464,7 +464,7 @@ const REMINDER_WINDOW_MS = 2 * 60 * 60 * 1_000;
 const TASK_DUE_SOON_WINDOW_MS = 30 * 60 * 1_000;
 
 /**
- * Iter 52 — explicit task-urgency marker. Returns the string the
+ * explicit task-urgency marker. Returns the string the
  * renderer prefixes onto the `active_task:` line:
  *   - `"OVERDUE"`   when `dueIso < nowIso`
  *   - `"DUE SOON"`  when `dueIso - nowIso <= 30 min`
@@ -493,7 +493,7 @@ function computeTaskUrgency(dueIso: string | undefined, nowIso: string): "OVERDU
 }
 
 /**
- * Iter 41 — JARVIS-class "heads up" promotion. Returns the event
+ * JARVIS-class "heads up" promotion. Returns the event
  * the operator most needs to know about RIGHT NOW: a currently-
  * happening event if any, otherwise the next event starting within
  * `IMMINENT_EVENT_WINDOW_MS` (30 minutes). Returns undefined when
@@ -530,7 +530,7 @@ function findImminentEvent(
 }
 
 /**
- * Iter 41 — filter+sort reminders for `[Active Context]`. Keep
+ * filter+sort reminders for `[Active Context]`. Keep
  * pending reminders that are overdue or due within
  * `REMINDER_WINDOW_MS` (2 hours). Sort by dueIso ascending so the
  * most-imminent surfaces first. Same defensive shape as

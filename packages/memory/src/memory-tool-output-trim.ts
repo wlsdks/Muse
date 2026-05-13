@@ -1,6 +1,6 @@
 /**
  * Tool-output context-aware trimming (Context Engineering step 1.b,
- * round 161). Anthropic's effective-context-engineering guidance
+ * Anthropic's effective-context-engineering guidance
  * names tool output as the #1 source of context bloat — a single
  * large tool result (file read, web fetch, DB query) can blow the
  * window in one call. This module provides a deterministic

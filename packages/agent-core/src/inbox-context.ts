@@ -95,7 +95,7 @@ export function renderInboxSection(
       // there. Round 3 defensive seam, mirrors iter 22's `dueIso`
       // sanitisation and iter 24's episodic `createdAtIso`.
       const receivedAtIsoSafe = sanitizeInline(message.receivedAtIso);
-      // Iter 56 — JARVIS-class freshness affordance. When `nowIso`
+      // JARVIS-class freshness affordance. When `nowIso`
       // is wired (the runtime caller has it), humanise the
       // timestamp to "[5 min ago]" / "[3h ago]" so the agent reads
       // recency directly instead of parsing ISO datetimes. Mirrors

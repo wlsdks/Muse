@@ -36,7 +36,7 @@ describe("DefaultToolFilter", () => {
     expect(kept.map((t) => t.definition.name)).toContain("muse.calendar.upcoming");
   });
 
-  it("rejects single-character keywords that would match every prompt (iter 16)", () => {
+  it("rejects single-character keywords that would match every prompt", () => {
     // A tool author who writes `keywords: ["a"]` would otherwise
     // pull this messaging tool into every English prompt — every
     // sentence contains "a". The min-length-2 guard preserves the
@@ -72,7 +72,7 @@ describe("DefaultToolFilter", () => {
     expect(dmHit.map((t) => t.definition.name)).not.toContain("evil.noisy");
   });
 
-  it("rejects single-character entries inside DEFAULT_DOMAIN_KEYWORDS overrides (iter 16)", () => {
+  it("rejects single-character entries inside DEFAULT_DOMAIN_KEYWORDS overrides", () => {
     const filter = new DefaultToolFilter({
       domainKeywords: { messaging: ["x", "slack"] } // "x" is too short
     });
@@ -91,7 +91,7 @@ describe("DefaultToolFilter", () => {
     expect(kept2).toHaveLength(1);
   });
 
-  it("retains tools the agent already used on a prior turn (iter 5)", () => {
+  it("retains tools the agent already used on a prior turn", () => {
     // No messaging keyword in this turn, but the agent invoked
     // muse.messaging.send last turn — retain it so a follow-up like
     // "reply to that" can still trigger the messaging path.
@@ -106,7 +106,7 @@ describe("DefaultToolFilter", () => {
   });
 });
 
-describe("inferDomain prefix table — registry-backed siblings (iter 47)", () => {
+describe("inferDomain prefix table — registry-backed siblings", () => {
   // Iter 39 sibling for tool-filter. `muse.tasks-multi.*` /
   // `muse.calendar-multi.*` / `muse.notes-multi.*` are the
   // registry-backed variants the autoconfigure layer wires
@@ -156,7 +156,7 @@ describe("inferDomain prefix table — registry-backed siblings (iter 47)", () =
   });
 });
 
-describe("inferDomain prefix table (iter 5)", () => {
+describe("inferDomain prefix table", () => {
   it("recognises muse.skills.* as core (always-on)", () => {
     expect(inferDomain({ description: "", inputSchema: {}, name: "muse.skills.list", risk: "read" })).toBe("core");
     expect(inferDomain({ description: "", inputSchema: {}, name: "muse.skills.run", risk: "execute" })).toBe("core");
@@ -184,7 +184,7 @@ describe("inferDomain", () => {
     );
   });
 
-  it("normalises explicit domains to lowercase (iter 25)", () => {
+  it("normalises explicit domains to lowercase", () => {
     // Before iter 25 the explicit-domain path returned the raw trimmed
     // value. A tool tagged `domain: "Messaging"` therefore landed on a
     // case-sensitive heuristics lookup that silently failed, while the
@@ -205,7 +205,7 @@ describe("inferDomain", () => {
   });
 });
 
-describe("DefaultToolFilter keyword word-boundary matching (iter 36)", () => {
+describe("DefaultToolFilter keyword word-boundary matching", () => {
   it("does not match short ASCII keywords as substrings inside larger words", () => {
     // Pre-iter-36 the keyword loop used `promptLower.includes(kw)`
     // unconditionally. "dm" is a legitimate messaging keyword (Slack
@@ -259,7 +259,7 @@ describe("DefaultToolFilter keyword word-boundary matching (iter 36)", () => {
   });
 });
 
-describe("DefaultToolFilter explicit-domain case handling (iter 25)", () => {
+describe("DefaultToolFilter explicit-domain case handling", () => {
   it("matches heuristics for tools whose explicit domain has non-lowercase casing", () => {
     // Personal-assistant users adding custom tools naturally write
     // `domain: "Messaging"` (sentence case). Before iter 25 the

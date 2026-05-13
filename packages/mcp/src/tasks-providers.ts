@@ -2,7 +2,7 @@
  * Provider-neutral tasks abstraction (mirrors `notes-providers.ts`
  * from rounds 128-130).
  *
- * Round 152 introduces a registry over the personal-todo surface so
+ * introduces a registry over the personal-todo surface so
  * future iterations can wire macOS Reminders.app (osascript) and
  * Notion DB next to the existing single-file backend without
  * rewriting `createTasksMcpServer`. The inline filesystem-only
@@ -129,16 +129,16 @@ export class TasksProviderRegistry {
   }
 }
 
-// LocalFile adapter is in its own file (round 152). Re-export so
+// LocalFile adapter is in its own file. Re-export so
 // external `import { LocalFileTasksProvider } from "@muse/mcp"`
 // stays byte-identical.
 export { LocalFileTasksProvider } from "./tasks-providers-local-file.js";
 export type { LocalFileTasksProviderOptions } from "./tasks-providers-local-file.js";
 
-// Apple Reminders adapter is in its own file (round 153 lift).
+// Apple Reminders adapter is in its own file.
 export { AppleRemindersProvider } from "./tasks-providers-apple.js";
 export type { AppleRemindersProviderOptions } from "./tasks-providers-apple.js";
 
-// Notion DB adapter (round 169) — talks to api.notion.com/v1.
+// Notion DB adapter — talks to api.notion.com/v1.
 export { NotionTasksProvider } from "./tasks-providers-notion.js";
 export type { NotionTasksProviderOptions } from "./tasks-providers-notion.js";

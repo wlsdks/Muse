@@ -2,7 +2,7 @@
  * Telemetry aggregator (phase A — real-usage data layer).
  *
  * Iter 8 stamped `ctx.<feature>_*` attrs onto every run span, and
- * iter 17 added `ctx.budget.section.*` per-section breakdown. But
+ * added `ctx.budget.section.*` per-section breakdown. But
  * span attrs are *per-turn* — the operator who wants to answer
  * "how often does inbox surface in the last 24h?" or "what's my
  * average prompt-budget per turn?" had to query the trace store

@@ -1,5 +1,5 @@
 /**
- * Coverage for `GET /api/setup/status` (Loop #65). The route just
+ * Coverage for `GET /api/setup/status`. The route just
  * wraps `collectSetupStatusJson` from @muse/autoconfigure, so this
  * test asserts the shape comes back unmolested and key fields land
  * in their expected places — full data-gathering coverage lives in

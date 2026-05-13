@@ -117,7 +117,7 @@ export interface UserMemoryTable {
   readonly recent_topics: string;
   readonly updated_at: Timestamp;
   /**
-   * Typed user-model slots (Context Engineering 1.c, round 165).
+   * Typed user-model slots (Context Engineering 1.c).
    * Stored as JSONB so the runtime can evolve the slot taxonomy
    * without further migrations. Nullable — old rows that pre-date
    * this column have no typed slots, which the @muse/memory layer

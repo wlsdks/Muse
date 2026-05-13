@@ -420,7 +420,7 @@ describe("AgentRuntime", () => {
     });
   });
 
-  it("stamps run.latency_ms on the muse.agent.run span (iter 48)", async () => {
+  it("stamps run.latency_ms on the muse.agent.run span", async () => {
     const tracer = new InMemoryMuseTracer();
     const runtime = createAgentRuntime({ modelProvider: createProvider(), tracer });
     await runtime.run({

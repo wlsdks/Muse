@@ -1,6 +1,6 @@
 /**
  * macOS Reminders.app adapter via AppleScript (osascript) — mirrors
- * the round 129 `AppleNotesProvider` pattern for the tasks domain.
+ * the `AppleNotesProvider` pattern for the tasks domain.
  *
  * Uses tab-separated AppleScript output so titles + bodies (which can
  * contain commas, newlines, parentheses) never have to be parsed

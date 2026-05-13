@@ -95,7 +95,7 @@ export function buildActiveContextProvider(
         }
       }
     : undefined;
-  // Iter 41: read pending reminders from the local store and feed
+  // read pending reminders from the local store and feed
   // them into [Active Context] so the agent can say "you asked me
   // to remind you about X at 3 — it's 2:55" without an extra tool
   // call. Opt-out via `MUSE_ACTIVE_CONTEXT_REMINDERS_ENABLED=false`.
@@ -227,7 +227,7 @@ export function buildToolFilter(env: MuseEnvironment): ToolFilter | undefined {
 }
 
 /**
- * In-process telemetry aggregator (iter 38 — wiring the surface
+ * In-process telemetry aggregator (wiring the surface
  * iters 8 / 17 / 26 / 37 built but never instantiated in
  * production). Default ON; `MUSE_TELEMETRY_AGGREGATOR_ENABLED=false`
  * skips construction (returns undefined → AgentRuntime no-ops the

@@ -2,14 +2,12 @@
  * McpManager — the runtime registry that owns MCP server lifecycle:
  * register / connect / health / preflight / reconnect / tool catalog.
  *
- * Lifted out of `packages/mcp/src/index.ts` (round 142, after rounds
- * 139 + 140 + 141 split out the Kysely stores, the validators, and
- * the SDK transport adapter). The abstractions (`McpConnection`,
- * `McpServerStore`, `McpManagerOptions`, the typed `McpServer*` /
- * `McpHealth*` / `McpPreflight*` shapes), the in-memory stores, the
- * security policy provider, the normalisers, the typed errors,
- * and `createMcpMuseTool` all stay in `index.ts`; this file imports
- * them back.
+ * Companion to `packages/mcp/src/index.ts`: the abstractions
+ * (`McpConnection`, `McpServerStore`, `McpManagerOptions`, the typed
+ * `McpServer*` / `McpHealth*` / `McpPreflight*` shapes), the
+ * in-memory stores, the security policy provider, the normalisers,
+ * the typed errors, and `createMcpMuseTool` all live in `index.ts`;
+ * this file imports them back.
  *
  * Two private helpers come over because they were only used by
  * the manager:

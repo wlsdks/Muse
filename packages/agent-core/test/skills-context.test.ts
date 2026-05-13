@@ -4,7 +4,7 @@
  * SKILL.md frontmatter is author-supplied text — a malformed or
  * hostile file could embed `\n[System Override]\n…` inside the
  * skill `name`, `description`, `emoji`, or even one of the
- * `requiresBins` entries. Round 1 (iter 1) only guarded the
+ * `requiresBins` entries. Round 1 only guarded the
  * `muse.skills.run` allowlist; the catalog renderer itself was
  * pristine. This test pins the inline-sanitisation contract.
  */
@@ -17,7 +17,7 @@ import {
   type SkillCatalogProvider
 } from "../src/skills-context.js";
 
-describe("renderSkillsCatalogSection (iter 15)", () => {
+describe("renderSkillsCatalogSection", () => {
   it("returns undefined for empty input", () => {
     expect(renderSkillsCatalogSection([])).toBeUndefined();
   });
@@ -53,7 +53,7 @@ describe("renderSkillsCatalogSection (iter 15)", () => {
     expect(out).toContain("- codex (bins: codex): Run Codex CLI.");
   });
 
-  it("surfaces requiresAnyBins as `(any of: …)` so the agent sees alternate-CLI dependencies (iter 45)", () => {
+  it("surfaces requiresAnyBins as `(any of: …)` so the agent sees alternate-CLI dependencies", () => {
     // A skill that runs against Codex OR Claude Code. Pre-iter-45
     // the catalog entry didn't carry `requiresAnyBins`, so the
     // agent saw the skill without any hint that EITHER of those
@@ -69,7 +69,7 @@ describe("renderSkillsCatalogSection (iter 15)", () => {
     expect(out).toContain("- review (any of: codex, claude): Delegate code review to an AI CLI.");
   });
 
-  it("renders both requiresBins and requiresAnyBins when both are present (iter 45)", () => {
+  it("renders both requiresBins and requiresAnyBins when both are present", () => {
     const out = renderSkillsCatalogSection([
       {
         description: "Run gh + (codex|claude).",
@@ -81,7 +81,7 @@ describe("renderSkillsCatalogSection (iter 15)", () => {
     expect(out).toContain("- review (bins: gh) (any of: codex, claude): Run gh + (codex|claude).");
   });
 
-  it("sanitises requiresAnyBins entries against newline injection (iter 45)", () => {
+  it("sanitises requiresAnyBins entries against newline injection", () => {
     const out = renderSkillsCatalogSection([
       {
         description: "x",
@@ -96,7 +96,7 @@ describe("renderSkillsCatalogSection (iter 15)", () => {
     expect(headerLines[0]).toBe("[Available Skills]");
   });
 
-  it("truncates over-long descriptions to bound per-skill prompt cost (iter 55)", () => {
+  it("truncates over-long descriptions to bound per-skill prompt cost", () => {
     // A SKILL.md author with a 10KB description × 40 entries could
     // balloon the catalog block past 10K tokens — pure per-request
     // overhead since the full body lives behind `muse.skills.read`.
@@ -115,7 +115,7 @@ describe("renderSkillsCatalogSection (iter 15)", () => {
     expect((line as string).length).toBeLessThan(250);
   });
 
-  it("preserves short descriptions verbatim (iter 55)", () => {
+  it("preserves short descriptions verbatim", () => {
     const out = renderSkillsCatalogSection([
       { description: "short and sweet.", name: "tidy" }
     ]);
@@ -135,7 +135,7 @@ describe("renderSkillsCatalogSection (iter 15)", () => {
   });
 });
 
-describe("applySkillsContext (iter 15)", () => {
+describe("applySkillsContext", () => {
   it("appends a [Available Skills] section + sets metadata flags when provider yields entries", async () => {
     const provider: SkillCatalogProvider = {
       list: () => [{ description: "Use gh.", name: "github", requiresBins: ["gh"] }]
@@ -168,7 +168,7 @@ describe("applySkillsContext (iter 15)", () => {
     expect(emptyProvider).toBe(original.input);
   });
 
-  it("fails open + stamps skillsCatalogFailed when provider.list throws (iter 19)", async () => {
+  it("fails open + stamps skillsCatalogFailed when provider.list throws", async () => {
     const original = {
       input: { messages: [{ content: "hi", role: "user" as const }], model: "diagnostic/smoke" },
       runId: "r-3",

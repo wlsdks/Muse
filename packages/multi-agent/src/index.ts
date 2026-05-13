@@ -64,11 +64,10 @@ export interface OrchestrationRunOptions {
    */
   readonly maxOutputCharsPerWorker?: number;
   /**
-   * LLM-summarized fan-in (Context Engineering step 1.e — round 183
-   * upgrade over round 170's deterministic head+tail trim). When
+   * LLM-summarized fan-in (Context Engineering step 1.e). When
    * provided, each worker's `response.output` is replaced with the
-   * summarizer's return value BEFORE the deterministic trim and
-   * BEFORE the parent concat. Composes naturally with
+   * summarizer's return value BEFORE the deterministic head+tail
+   * trim and BEFORE the parent concat. Composes naturally with
    * `maxOutputCharsPerWorker`: summarize first, then trim the
    * summary as a belt-and-suspenders guard against an unbounded
    * summarizer return.

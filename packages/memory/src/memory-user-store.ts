@@ -43,7 +43,7 @@ export class InMemoryUserMemoryStore implements UserMemoryStore {
   }
 
   /**
-   * Round 164: typed-slot upsert. Replace-by-id semantics within
+   * typed-slot upsert. Replace-by-id semantics within
    * the slot's `kind` — a new preference with the same `id` overwrites
    * the prior one. New slots are appended. Other kinds are left
    * untouched.
@@ -116,7 +116,7 @@ export class KyselyUserMemoryStore implements UserMemoryStore {
   }
 
   /**
-   * Round 165: typed-slot upsert, mirrors `InMemoryUserMemoryStore.upsertUserModelSlot`.
+   * typed-slot upsert, mirrors `InMemoryUserMemoryStore.upsertUserModelSlot`.
    * Replace-by-id within the slot's `kind`, other kinds untouched.
    * Stored as JSONB on `user_memories.user_model`.
    */

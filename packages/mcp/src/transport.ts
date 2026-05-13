@@ -3,13 +3,12 @@
  * `Client` + transport classes (stdio / sse / streamable) into the
  * provider-neutral `McpConnection` shape Muse runs on.
  *
- * Lifted out of `packages/mcp/src/index.ts` (round 141, after the
- * round 139 store split + round 140 validators split) so the SDK
- * coupling stays in one focused module. The abstractions
+ * Companion to `packages/mcp/src/index.ts`: the abstractions
  * (`McpConnection`, `McpTransportConnector`,
  * `DefaultMcpTransportConnectorOptions`, the typed errors, the
- * `McpServer` / `McpSecurityPolicy` types) all stay in `index.ts`;
- * this file imports them back.
+ * `McpServer` / `McpSecurityPolicy` types) all live in `index.ts`;
+ * this file imports them back so the SDK coupling stays in one
+ * focused module.
  *
  * What moved:
  *   - DefaultMcpTransportConnector class (~115 LOC)

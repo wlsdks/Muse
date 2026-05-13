@@ -1,10 +1,9 @@
 /**
  * MCP server / transport validators.
  *
- * Lifted out of `packages/mcp/src/index.ts` (round 140, after the
- * Kysely store split in round 139) so the validation logic — input
- * shape checks, allowed-command lists, URL safety — lives in its
- * own focused module.
+ * Companion to `packages/mcp/src/index.ts` — the validation logic
+ * (input shape checks, allowed-command lists, URL safety) lives in
+ * its own focused module.
  *
  * What stays in `index.ts`: the abstractions (`McpServer`,
  * `McpSecurityPolicy`, `McpServerValidationOptions` types), the

@@ -66,7 +66,7 @@ describe("parseWorkingHoursString", () => {
   });
 });
 
-describe("humanizeRelativeFromIso (iter 7)", () => {
+describe("humanizeRelativeFromIso", () => {
   const now = "2026-05-11T12:00:00.000Z";
 
   it("returns 'now' when within ±60 seconds", async () => {

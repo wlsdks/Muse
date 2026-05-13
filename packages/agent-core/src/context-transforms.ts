@@ -191,7 +191,7 @@ export async function applyInboxContext(
     // "transform failed" from "transform not configured".
     return failedMetadata(context.input, "inboxContextFailed");
   }
-  // Iter 56 — thread the run's start time as `nowIso` so the
+  // thread the run's start time as `nowIso` so the
   // inbox renderer can humanise `receivedAtIso` into "[5 min ago]"
   // / "[3h ago]" / etc. Matches the freshness affordance the other
   // context surfaces already use.
@@ -233,7 +233,7 @@ export async function applyEpisodicRecall(
   } catch {
     return failedMetadata(context.input, "episodicRecallFailed");
   }
-  // Iter 53 — thread the run's start time as `nowIso` so the
+  // thread the run's start time as `nowIso` so the
   // episodic renderer can humanise `createdAtIso` into "1 day ago"
   // / "3 weeks ago" / etc. Matches the freshness affordance the
   // active-context and reminders blocks already use.

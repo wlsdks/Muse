@@ -65,7 +65,7 @@ export function registerAdminRoutes(server: FastifyInstance, options: AdminRoute
     };
   });
 
-  // Iter 38: surfaces the in-process `TelemetryAggregator` that
+  // surfaces the in-process `TelemetryAggregator` that
   // autoconfigure now instantiates by default. Reads the rolling
   // 7-day window of ctx.* flags, counters, budget tokens, latency
   // stats. Returns 503-shaped `{ enabled: false }` when the

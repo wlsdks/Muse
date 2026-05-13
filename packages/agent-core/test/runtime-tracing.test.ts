@@ -53,7 +53,7 @@ describe("recordContextWindowSpanAttributes", () => {
     expect(span.recorded).toEqual([]);
   });
 
-  it("stamps context.triggered_by when the report carries it (iter 8)", () => {
+  it("stamps context.triggered_by when the report carries it", () => {
     const span = fakeSpan();
     recordContextWindowSpanAttributes(span, {
       budgetTokens: 8_000,
@@ -69,7 +69,7 @@ describe("recordContextWindowSpanAttributes", () => {
   });
 });
 
-describe("recordContextEngineeringSpanAttributes (iter 8)", () => {
+describe("recordContextEngineeringSpanAttributes", () => {
   it("surfaces every Phase 1-7 metadata flag the runtime stamps", () => {
     const span = fakeSpan();
     recordContextEngineeringSpanAttributes(span, {
@@ -116,7 +116,7 @@ describe("recordContextEngineeringSpanAttributes (iter 8)", () => {
     expect(span.recorded).toEqual([]);
   });
 
-  it("surfaces every transform failure flag (iter 19)", () => {
+  it("surfaces every transform failure flag", () => {
     const span = fakeSpan();
     recordContextEngineeringSpanAttributes(span, {
       episodicRecallFailed: true,
@@ -131,7 +131,7 @@ describe("recordContextEngineeringSpanAttributes (iter 8)", () => {
     expect(byKey.get("ctx.skills_catalog_failed")).toBe(true);
   });
 
-  it("leaves failure attributes absent on a healthy turn (iter 19)", () => {
+  it("leaves failure attributes absent on a healthy turn", () => {
     const span = fakeSpan();
     recordContextEngineeringSpanAttributes(span, {
       activeContextApplied: true,

@@ -41,7 +41,7 @@ export function scoreToolOutputImportance(toolName: string): number {
       //   `muse.tasks-multi.*`, `muse.calendar-multi.*`, `muse.notes-multi.*`
       // surface the same personal-data semantics as their single-
       // provider siblings, so they get the same elevated weight
-      // (iter 39).
+      //.
       lower.startsWith(`muse.${prefix}-multi.`) ||
       lower.includes(`.${prefix}.`) ||
       lower.startsWith(`${prefix}.`)

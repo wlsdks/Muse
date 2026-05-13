@@ -1,8 +1,7 @@
 /**
  * macOS Notes.app adapter via AppleScript (osascript).
  *
- * Lifted out of `notes-providers.ts` (round 129, after the Notion
- * carve in round 128) so each upstream adapter lives in its own
+ * Each upstream adapter (Local, Notion, Apple) lives in its own
  * file. The shared abstraction layer — `NotesProvider` interface,
  * `NotesValidationError`, `NotesProviderError`, and the common
  * payload types — stays in `notes-providers.ts`.

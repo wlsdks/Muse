@@ -1,6 +1,6 @@
 /**
  * Coverage for the on-demand pull endpoint `POST /api/messaging/poll`,
- * shared with the `muse.messaging.poll_now` MCP tool (Loop #46). The
+ * shared with the `muse.messaging.poll_now` MCP tool. The
  * route is only registered when a `messagingPollNow` dispatcher is
  * threaded through ServerOptions — without one, it 404s, which lets
  * fresh installs / tests stay quiet.

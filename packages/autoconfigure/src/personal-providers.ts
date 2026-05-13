@@ -320,7 +320,7 @@ function tryBuildNotesProvider(
  * `LocalFileTasksProvider` (rooted at `MUSE_TASKS_FILE` resolved via
  * `resolveTasksFile`) so the agent has at least filesystem-backed
  * tasks. Apple Reminders (osascript, macOS-only) and Notion DB
- * (round 169) register opt-in via `MUSE_TASKS_PROVIDERS`.
+ * register opt-in via `MUSE_TASKS_PROVIDERS`.
  *
  * Env (resolution order):
  *   - `MUSE_TASKS_PROVIDERS` — comma-separated subset of
@@ -695,7 +695,7 @@ function toCatalogEntry(skill: Skill): SkillCatalogEntry {
     ...(skill.frontmatter.requires?.bins && skill.frontmatter.requires.bins.length > 0
       ? { requiresBins: [...skill.frontmatter.requires.bins] }
       : {}),
-    // iter 45: any-of CLI requirement (e.g. "codex OR claude")
+    // any-of CLI requirement (e.g. "codex OR claude")
     // forwarded so the agent can see the alternate-CLI dependency
     // in `[Available Skills]` and route accordingly.
     ...(skill.frontmatter.requires?.anyBins && skill.frontmatter.requires.anyBins.length > 0

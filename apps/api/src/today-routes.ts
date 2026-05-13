@@ -8,7 +8,7 @@
  *   - Recent notes from `notesDir` (top 5 by descending name; the
  *     same heuristic the CLI's `muse today` uses)
  *
- * `muse today` (round 119+121) currently does the same fan-out
+ * `muse today` currently does the same fan-out
  * client-side over three separate routes; this gives the same view
  * to the web UI / future surfaces as one fetch and centralizes the
  * formatting decisions on the server.

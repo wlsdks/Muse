@@ -1,11 +1,10 @@
 /**
  * Filesystem-backed notes provider.
  *
- * Lifted out of `notes-providers.ts` (round 130, after the Notion +
- * Apple lifts in rounds 128 + 129) so each upstream adapter lives
- * in its own file. The shared abstraction layer — `NotesProvider`
- * interface, `NotesValidationError`, `NotesProviderError`, and the
- * common payload types — stays in `notes-providers.ts`.
+ * Each upstream adapter (Local, Notion, Apple) lives in its own
+ * file. The shared abstraction layer — `NotesProvider` interface,
+ * `NotesValidationError`, `NotesProviderError`, and the common
+ * payload types — stays in `notes-providers.ts`.
  *
  * Stores notes as `.md` / `.markdown` / `.txt` files inside
  * `notesDir`. Same sandbox + path-safety semantics as the inline

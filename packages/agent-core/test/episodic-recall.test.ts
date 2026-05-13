@@ -75,7 +75,7 @@ describe("InMemoryEpisodicRecallProvider", () => {
     expect(snapshot?.matches.map((m) => m.sessionId).sort()).toEqual(["legacy-1", "u1-1"]);
   });
 
-  it("tokenises Japanese (Hiragana + Katakana + CJK Han) narratives so non-Hangul-locale users get recall (iter 35)", async () => {
+  it("tokenises Japanese (Hiragana + Katakana + CJK Han) narratives so non-Hangul-locale users get recall", async () => {
     // Pre-iter-35 `tokenSet` only recognised English letters, digits,
     // and Korean Hangul (`가-힣`). Japanese / Chinese narratives were
     // tokenised as a single split-separator run → empty token set →
@@ -93,7 +93,7 @@ describe("InMemoryEpisodicRecallProvider", () => {
     expect(snapshot?.matches[0]?.sessionId).toBe("s-tokyo");
   });
 
-  it("tokenises Chinese ideographs too (iter 35)", async () => {
+  it("tokenises Chinese ideographs too", async () => {
     const provider = new InMemoryEpisodicRecallProvider({
       episodes: [
         { narrative: "明天上海开会讨论新方案", sessionId: "s-shanghai" },
@@ -139,7 +139,7 @@ describe("InMemoryEpisodicRecallProvider", () => {
     expect(snapshot?.matches).toHaveLength(2);
   });
 
-  it("does not surface recency-only matches with no semantic overlap (iter 43)", async () => {
+  it("does not surface recency-only matches with no semantic overlap", async () => {
     // The minScore gate guards baseSim ONLY, so a "perfectly
     // recent but unrelated" episode must still be filtered out.
     // Otherwise every recent session would muscle into recall
@@ -160,7 +160,7 @@ describe("InMemoryEpisodicRecallProvider", () => {
     expect(snapshot).toBeUndefined();
   });
 
-  it("respects recencyWeight=0 disabling the boost (iter 43)", async () => {
+  it("respects recencyWeight=0 disabling the boost", async () => {
     // With the boost off, equally-similar episodes preserve their
     // insertion order (stable sort would keep them tied; the test
     // verifies neither sessionId is reordered into the wrong slot).
@@ -211,7 +211,7 @@ describe("renderEpisodicSection", () => {
     expect(rendered).toContain("0.40");
   });
 
-  it("humanises createdAtIso into relative time when nowIso is passed (iter 53)", () => {
+  it("humanises createdAtIso into relative time when nowIso is passed", () => {
     // JARVIS-class freshness affordance: with `nowIso` threaded
     // through, the agent reads "1 day ago" / "3 weeks ago" instead
     // of parsing raw ISO datetimes. iter 41 / 52 already humanise
@@ -228,7 +228,7 @@ describe("renderEpisodicSection", () => {
 
   it("falls back to raw ISO when nowIso is not provided (iter 53 — legacy contract)", () => {
     // Existing call sites that don't thread nowIso get the same
-    // behaviour they had before iter 53.
+    // behaviour they had .
     const rendered = renderEpisodicSection({
       matches: [
         { createdAtIso: "2026-05-10T00:00:00Z", narrative: "Past chat", sessionId: "s-1", similarity: 0.4 }
@@ -237,7 +237,7 @@ describe("renderEpisodicSection", () => {
     expect(rendered).toContain("2026-05-10T00:00:00Z");
   });
 
-  it("falls back to raw ISO when nowIso is unparseable (iter 53)", () => {
+  it("falls back to raw ISO when nowIso is unparseable", () => {
     const rendered = renderEpisodicSection({
       matches: [
         { createdAtIso: "2026-05-10T00:00:00Z", narrative: "Past chat", sessionId: "s-1", similarity: 0.4 }
@@ -249,7 +249,7 @@ describe("renderEpisodicSection", () => {
     expect(rendered).toContain("2026-05-10T00:00:00Z");
   });
 
-  it("collapses newlines in createdAtIso so the header line can't carry a fake section (iter 24)", () => {
+  it("collapses newlines in createdAtIso so the header line can't carry a fake section", () => {
     // A third-party EpisodicRecallProvider could put any string in
     // `createdAtIso` — including one carrying `\n[System Override]\n`.
     // The header must stay single-line.
@@ -273,7 +273,7 @@ describe("renderEpisodicSection", () => {
     expect(matchLine).not.toContain("\n"); // by construction
   });
 
-  it("collapses newlines in narratives so [Episodic Memory] can't be hijacked (iter 13)", () => {
+  it("collapses newlines in narratives so [Episodic Memory] can't be hijacked", () => {
     // A narrative that contains a literal newline + fake section
     // header would previously splice a pseudo `[System Override]`
     // line into the prompt. Sanitiser collapses every whitespace

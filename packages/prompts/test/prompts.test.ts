@@ -122,7 +122,7 @@ describe("system prompt building", () => {
     expect(stripPromptCacheBoundary(prompt)).toBe("stable\ndynamic");
   });
 
-  it("strips ALL occurrences of the boundary marker, not just the first (iter 21)", () => {
+  it("strips ALL occurrences of the boundary marker, not just the first", () => {
     // A buggy producer or a future code path that emits two markers
     // — accidental or otherwise — must not leak the second one to
     // the model. `replaceAll` defends against that.
@@ -136,7 +136,7 @@ describe("system prompt building", () => {
     expect(stripPromptCacheBoundary(prompt)).not.toContain(MUSE_CACHE_BOUNDARY_MARKER);
   });
 
-  it("does not leave a triple-newline artifact when the marker sat between two section gaps (iter 28)", () => {
+  it("does not leave a triple-newline artifact when the marker sat between two section gaps", () => {
     // Production-case layout: `buildSystemPrompt({ includeCacheBoundary: true })`
     // joins sections with `\n\n`, so the marker is bounded by two
     // newlines on each side: `STABLE\n\n<marker>\n\nDYNAMIC`.
@@ -154,7 +154,7 @@ describe("system prompt building", () => {
     expect(stripPromptCacheBoundary(prompt)).toBe("STABLE\n\nDYNAMIC");
   });
 
-  it("preserves intentional triple-newlines that did not result from marker removal (iter 28)", () => {
+  it("preserves intentional triple-newlines that did not result from marker removal", () => {
     // Negative case for the iter-28 fix: stripping the marker must
     // not collapse `\n\n\n` runs elsewhere in the prompt. The
     // ordered-pattern fix (longest match first) only removes the

@@ -55,7 +55,7 @@ export function scoreMessageImportance(
 
 /**
  * Content-only portion of the importance score — invariant across
- * iterations of `trimByImportance`'s while-loop. Iter 49 split this
+ * iterations of `trimByImportance`'s while-loop. split this
  * out from `scoreMessageImportance` so the trim can WeakMap-cache
  * the expensive substring-search work per message and only
  * recompute the cheap recency bonus per scan. For a 1000-message

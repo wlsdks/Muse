@@ -11,7 +11,7 @@ import { readString } from "./loopback-helpers.js";
  * base64/hex encoding + RFC 4122 v4 UUIDs.
  *
  * Lifted out of `loopback.ts` (the next-biggest ambient factory after
- * regex was lifted in round 116). Same public surface:
+ * regex was lifted ). Same public surface:
  * `createCryptoMcpServer(options?)`. Re-exported from `loopback.ts`
  * so the `@muse/mcp` barrel and existing tests keep working without
  * import-site edits.

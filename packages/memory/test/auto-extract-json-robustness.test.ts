@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { extractJsonObject } from "../src/memory-auto-extract.js";
 
-describe("extractJsonObject (iter 9)", () => {
+describe("extractJsonObject", () => {
   it("parses a clean JSON object", () => {
     const out = extractJsonObject('{"facts": {"name": "Stark"}}');
     expect(out?.facts).toEqual({ name: "Stark" });

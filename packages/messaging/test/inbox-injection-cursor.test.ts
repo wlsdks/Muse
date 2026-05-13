@@ -49,7 +49,7 @@ describe("inbox-injection-cursor", () => {
     });
   });
 
-  it("isolates per-user cursors so user A's seen state doesn't shadow user B's (iter 12)", async () => {
+  it("isolates per-user cursors so user A's seen state doesn't shadow user B's", async () => {
     await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T08:00:00.000Z" }, "alice");
     await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T09:00:00.000Z" }, "bob");
 
@@ -63,7 +63,7 @@ describe("inbox-injection-cursor", () => {
     expect(await readInboxInjectionCursor(cursorFile)).toEqual({});
   });
 
-  it("migrates a v1 (flat) cursor file into the _global slot transparently (iter 12)", async () => {
+  it("migrates a v1 (flat) cursor file into the _global slot transparently", async () => {
     const { promises: fs } = await import("node:fs");
     await fs.writeFile(
       cursorFile,
@@ -78,7 +78,7 @@ describe("inbox-injection-cursor", () => {
     expect(await readInboxInjectionCursor(cursorFile, "alice")).toEqual({});
   });
 
-  it("advance for one user preserves other users' cursors (iter 12)", async () => {
+  it("advance for one user preserves other users' cursors", async () => {
     await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T08:00:00.000Z" }, "alice");
     await advanceInboxInjectionCursor(cursorFile, { C1: "2026-05-11T10:00:00.000Z" }, "bob");
 

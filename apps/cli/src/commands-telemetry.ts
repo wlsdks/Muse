@@ -1,5 +1,5 @@
 /**
- * `muse telemetry` command group (iter 48).
+ * `muse telemetry` command group.
  *
  * Closes the loop from iter 38: the runtime's `InMemoryTelemetryAggregator`
  * was wired into autoconfigure and exposed via `/admin/telemetry/summary`
