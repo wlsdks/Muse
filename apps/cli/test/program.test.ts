@@ -3295,6 +3295,40 @@ describe("cli program", () => {
     }
   });
 
+  it("resolveOllamaUrl reads OLLAMA_BASE_URL from env first, then ~/.muse/models.json, then default", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-ollama-url-"));
+    const fsp = await import("node:fs/promises");
+    const modelKeysFile = path.join(root, "models.json");
+    const prev = {
+      ollama: process.env.OLLAMA_BASE_URL,
+      modelKeysFile: process.env.MUSE_MODEL_KEYS_FILE
+    };
+    delete process.env.OLLAMA_BASE_URL;
+    process.env.MUSE_MODEL_KEYS_FILE = modelKeysFile;
+    const { resolveOllamaUrl } = await import("../src/ollama-url.js");
+    try {
+      // Default (no env, no file).
+      expect(resolveOllamaUrl()).toBe("http://127.0.0.1:11434");
+
+      // File-only (wizard wrote ollama URL via `muse setup model`).
+      await fsp.writeFile(modelKeysFile, JSON.stringify({
+        providers: { ollama: { token: "http://192.168.1.10:11434/" } }
+      }), "utf8");
+      expect(resolveOllamaUrl()).toBe("http://192.168.1.10:11434");
+
+      // Env wins on conflict.
+      process.env.OLLAMA_BASE_URL = "http://localhost:9999//";
+      expect(resolveOllamaUrl()).toBe("http://localhost:9999");
+    } finally {
+      const restore = (envKey: keyof typeof prev, k: string): void => {
+        if (prev[envKey] === undefined) delete process.env[k];
+        else process.env[k] = prev[envKey];
+      };
+      restore("ollama", "OLLAMA_BASE_URL");
+      restore("modelKeysFile", "MUSE_MODEL_KEYS_FILE");
+    }
+  });
+
   it("muse doctor --local model env probe reads MUSE_MODEL from ~/.muse/models.json suggestedModel, not just env", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-doctor-models-"));
     const fsp = await import("node:fs/promises");

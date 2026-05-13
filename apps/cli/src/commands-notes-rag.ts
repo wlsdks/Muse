@@ -22,6 +22,7 @@ import { join as pathJoin, resolve as pathResolve, sep as pathSep } from "node:p
 import { resolveNotesDir } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
+import { resolveOllamaUrl } from "./ollama-url.js";
 import type { ProgramIO } from "./program.js";
 
 const DEFAULT_EMBED_MODEL = "nomic-embed-text";
@@ -53,12 +54,8 @@ function defaultIndexPath(): string {
   return pathJoin(home, ".muse", "notes-index.json");
 }
 
-function ollamaUrl(): string {
-  return (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
-}
-
 async function embed(text: string, model: string): Promise<number[]> {
-  const resp = await fetch(`${ollamaUrl()}/api/embeddings`, {
+  const resp = await fetch(`${resolveOllamaUrl()}/api/embeddings`, {
     body: JSON.stringify({ model, prompt: text }),
     headers: { "content-type": "application/json" },
     method: "POST"

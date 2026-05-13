@@ -32,6 +32,7 @@ import { readReminders, readTasks, type PersistedReminder, type PersistedTask } 
 import type { Command } from "commander";
 
 import { isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
+import { resolveOllamaUrl } from "./ollama-url.js";
 import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
 import type { ProgramIO } from "./program.js";
 
@@ -72,17 +73,13 @@ function notesIndexPath(): string {
   return join(homedir(), ".muse", "notes-index.json");
 }
 
-function ollamaUrl(): string {
-  return (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
-}
-
 function defaultUserKey(user: string | undefined, persona: string | undefined): string {
   const base = user ?? process.env.MUSE_USER_ID ?? process.env.USER ?? "default";
   return persona && persona.length > 0 ? `${base}@${persona}` : base;
 }
 
 async function embed(text: string, model: string): Promise<number[]> {
-  const resp = await fetch(`${ollamaUrl()}/api/embeddings`, {
+  const resp = await fetch(`${resolveOllamaUrl()}/api/embeddings`, {
     body: JSON.stringify({ model, prompt: text }),
     headers: { "content-type": "application/json" },
     method: "POST"
