@@ -31,6 +31,7 @@ import { registerRemindersRoutes } from "./reminders-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
 import { parseQuietHours, startReminderTick } from "./reminder-tick.js";
 import { createFileBackedActivityTracker, createInMemoryActivityTracker, startProactiveTick } from "./proactive-tick.js";
+import { startFollowupTick } from "./followup-tick.js";
 import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js";
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
 import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
@@ -150,6 +151,13 @@ export interface ServerOptions {
    * audit recent deliveries.
    */
   readonly proactiveHistoryFile?: string;
+  /**
+   * Path to the self-followup store (default ~/.muse/followups.json).
+   * When set alongside MUSE_FOLLOWUP_DEFAULT_PROVIDER /
+   * MUSE_FOLLOWUP_DEFAULT_DESTINATION and a wired modelProvider,
+   * the followup-tick daemon synthesizes + delivers due promises.
+   */
+  readonly followupsFile?: string;
   /**
    * Path to the persisted LINE inbox (default ~/.muse/line-inbox.json).
    * Combined with `MUSE_LINE_CHANNEL_SECRET` from env, enables the
@@ -524,6 +532,43 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
     server.addHook("onClose", async () => {
       proactiveHandle.stop();
+    });
+  }
+
+  // Self-followup firing daemon — step 4 of agent-self-followup.md.
+  // Off by default; activates when MUSE_FOLLOWUP_DEFAULT_PROVIDER +
+  // MUSE_FOLLOWUP_DEFAULT_DESTINATION are set AND a modelProvider
+  // is wired (synthesis is the primary path, not opt-in).
+  const followupProvider = env.MUSE_FOLLOWUP_DEFAULT_PROVIDER?.trim();
+  const followupDestination = env.MUSE_FOLLOWUP_DEFAULT_DESTINATION?.trim();
+  if (
+    followupProvider && followupProvider.length > 0
+    && followupDestination && followupDestination.length > 0
+    && options.followupsFile
+    && options.messaging
+    && options.messaging.has(followupProvider)
+    && options.modelProvider
+    && options.defaultModel
+  ) {
+    const followupTickMsRaw = env.MUSE_FOLLOWUP_TICK_MS ? Number(env.MUSE_FOLLOWUP_TICK_MS) : undefined;
+    const followupMaxPerTickRaw = env.MUSE_FOLLOWUP_MAX_PER_TICK ? Number(env.MUSE_FOLLOWUP_MAX_PER_TICK) : undefined;
+    const followupQuietHours = parseQuietHours(env.MUSE_FOLLOWUP_QUIET_HOURS)
+      ?? parseQuietHours(env.MUSE_REMINDER_QUIET_HOURS);
+    const followupHandle = startFollowupTick({
+      destination: followupDestination,
+      errorLogger: (message) => server.log.warn(message),
+      followupsFile: options.followupsFile,
+      ...(followupTickMsRaw !== undefined ? { intervalMs: followupTickMsRaw } : {}),
+      logger: (message) => server.log.info(message),
+      ...(followupMaxPerTickRaw !== undefined ? { maxPerTick: followupMaxPerTickRaw } : {}),
+      model: options.defaultModel,
+      modelProvider: options.modelProvider,
+      providerId: followupProvider,
+      ...(followupQuietHours ? { quietHours: followupQuietHours } : {}),
+      registry: options.messaging
+    });
+    server.addHook("onClose", async () => {
+      followupHandle.stop();
     });
   }
 
