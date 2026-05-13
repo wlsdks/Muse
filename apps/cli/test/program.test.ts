@@ -3209,6 +3209,79 @@ describe("cli program", () => {
     }
   });
 
+  it("muse status surfaces followup + episode + pattern counts when the stores carry data", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-tracks-"));
+    const fsp = await import("node:fs/promises");
+    const userId = "stark";
+    const followupsFile = path.join(root, "followups.json");
+    const episodesFile = path.join(root, "episodes.json");
+    const patternsFiredFile = path.join(root, "patterns-fired.json");
+    await fsp.writeFile(followupsFile, JSON.stringify({
+      followups: [
+        { id: "fu_a", userId, scheduledFor: "2030-01-01T09:00:00Z", status: "scheduled", summary: "Q3 budget memo check", createdAt: "2026-05-12T00:00:00Z" },
+        { id: "fu_b", userId, scheduledFor: "2030-02-01T09:00:00Z", status: "scheduled", summary: "Later promise", createdAt: "2026-05-13T00:00:00Z" },
+        { id: "fu_c", userId, scheduledFor: "2026-05-10T09:00:00Z", status: "fired", summary: "Older fired", firedAt: "2026-05-10T09:30:00Z", createdAt: "2026-05-09T00:00:00Z" },
+        { id: "fu_d", userId, scheduledFor: "2026-05-09T09:00:00Z", status: "cancelled", summary: "Dropped", cancelReason: "user-cancelled", createdAt: "2026-05-08T00:00:00Z" },
+        // Different userId — should NOT count.
+        { id: "fu_other", userId: "rhodey", scheduledFor: "2030-01-01T09:00:00Z", status: "scheduled", summary: "Other user", createdAt: "2026-05-12T00:00:00Z" }
+      ]
+    }), "utf8");
+    await fsp.writeFile(episodesFile, JSON.stringify({
+      episodes: [
+        { id: "ep_1", userId, startedAt: "2026-05-10T22:00:00Z", endedAt: "2026-05-10T22:18:00Z", summary: "First session" },
+        { id: "ep_2", userId, startedAt: "2026-05-12T22:00:00Z", endedAt: "2026-05-12T22:30:00Z", summary: "Second, newest session" },
+        { id: "ep_other", userId: "rhodey", startedAt: "2026-05-11T22:00:00Z", endedAt: "2026-05-11T22:18:00Z", summary: "Other user" }
+      ]
+    }), "utf8");
+    await fsp.writeFile(patternsFiredFile, JSON.stringify({
+      fired: [
+        { patternId: "abc123", firedAtMs: 1_700_000_000_000 },
+        { patternId: "def456", firedAtMs: 1_800_000_000_000 }
+      ]
+    }), "utf8");
+
+    const prev = {
+      followups: process.env.MUSE_FOLLOWUPS_FILE,
+      episodes: process.env.MUSE_EPISODES_FILE,
+      patterns: process.env.MUSE_PATTERNS_FIRED_FILE
+    };
+    process.env.MUSE_FOLLOWUPS_FILE = followupsFile;
+    process.env.MUSE_EPISODES_FILE = episodesFile;
+    process.env.MUSE_PATTERNS_FIRED_FILE = patternsFiredFile;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "status", "--user", userId, "--json"], { from: "node" });
+      const snap = JSON.parse(output.join("")) as {
+        followups: { scheduled: number; fired: number; cancelled: number; total: number; nextScheduledFor?: string };
+        episodes: { total: number; lastEndedAt?: string };
+        patterns: { total: number; lastFiredAtIso?: string };
+      };
+
+      // userId filter: rhodey's followup + episode are dropped.
+      expect(snap.followups).toMatchObject({ scheduled: 2, fired: 1, cancelled: 1, total: 4 });
+      // Next-scheduled picks the earliest of the two scheduled.
+      expect(snap.followups.nextScheduledFor).toBe("2030-01-01T09:00:00Z");
+
+      expect(snap.episodes.total).toBe(2);
+      // Newest endedAt wins.
+      expect(snap.episodes.lastEndedAt).toBe("2026-05-12T22:30:00Z");
+
+      // Patterns sidecar isn't user-scoped — both records count.
+      expect(snap.patterns.total).toBe(2);
+      // Latest firedAtMs (1.8 T) → ISO.
+      expect(snap.patterns.lastFiredAtIso).toBe(new Date(1_800_000_000_000).toISOString());
+    } finally {
+      const restore = (k: keyof typeof prev, envKey: string): void => {
+        if (prev[k] === undefined) delete process.env[envKey];
+        else process.env[envKey] = prev[k];
+      };
+      restore("followups", "MUSE_FOLLOWUPS_FILE");
+      restore("episodes", "MUSE_EPISODES_FILE");
+      restore("patterns", "MUSE_PATTERNS_FIRED_FILE");
+    }
+  });
+
   it("muse episode search --json (substring) matches summary + topics case-insensitively", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-episode-search-"));
     const episodesFile = path.join(root, "episodes.json");

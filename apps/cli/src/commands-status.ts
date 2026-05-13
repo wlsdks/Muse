@@ -77,6 +77,18 @@ function defaultProactiveHistoryFile(): string {
   return envValue("MUSE_PROACTIVE_HISTORY_FILE") ?? join(homedir(), ".muse", "proactive-history.json");
 }
 
+function defaultFollowupsFile(): string {
+  return envValue("MUSE_FOLLOWUPS_FILE") ?? join(homedir(), ".muse", "followups.json");
+}
+
+function defaultEpisodesFile(): string {
+  return envValue("MUSE_EPISODES_FILE") ?? join(homedir(), ".muse", "episodes.json");
+}
+
+function defaultPatternsFiredFile(): string {
+  return envValue("MUSE_PATTERNS_FIRED_FILE") ?? join(homedir(), ".muse", "patterns-fired.json");
+}
+
 function defaultLogFile(): string {
   return envValue("MUSE_MESSAGING_LOG_FILE") ?? join(homedir(), ".muse", "notifications.log");
 }
@@ -94,6 +106,26 @@ interface ProactiveHistoryEntry {
   readonly kind?: string;
   readonly providerId?: string;
   readonly text?: string;
+}
+
+interface FollowupRow {
+  readonly id?: unknown;
+  readonly userId?: unknown;
+  readonly scheduledFor?: unknown;
+  readonly status?: unknown;
+  readonly summary?: unknown;
+}
+
+interface EpisodeRow {
+  readonly id?: unknown;
+  readonly userId?: unknown;
+  readonly endedAt?: unknown;
+  readonly summary?: unknown;
+}
+
+interface PatternFiredRow {
+  readonly patternId?: unknown;
+  readonly firedAtMs?: unknown;
 }
 
 async function collectStatus(userId: string) {
@@ -122,6 +154,15 @@ async function collectStatus(userId: string) {
 
   const historyDoc = await safeReadJson(historyFile) as { entries?: readonly ProactiveHistoryEntry[] } | undefined;
   const lastNotice = historyDoc?.entries?.[historyDoc.entries.length - 1];
+
+  const followupsDoc = await safeReadJson(defaultFollowupsFile()) as { followups?: readonly FollowupRow[] } | undefined;
+  const followupsByStatus = summariseFollowups(followupsDoc?.followups ?? [], userId);
+
+  const episodesDoc = await safeReadJson(defaultEpisodesFile()) as { episodes?: readonly EpisodeRow[] } | undefined;
+  const episodesSummary = summariseEpisodes(episodesDoc?.episodes ?? [], userId);
+
+  const patternsFiredDoc = await safeReadJson(defaultPatternsFiredFile()) as { fired?: readonly PatternFiredRow[] } | undefined;
+  const patternsSummary = summarisePatternsFired(patternsFiredDoc?.fired ?? []);
 
   const logTail = await readLogTail(logFile, 1);
   const logBytes = await fileSize(logFile);
@@ -168,7 +209,93 @@ async function collectStatus(userId: string) {
     routine: {
       activeHours: routineHours,
       activeDays: routineDays
+    },
+    followups: followupsByStatus,
+    episodes: episodesSummary,
+    patterns: patternsSummary
+  };
+}
+
+/**
+ * Pull a `{ scheduled, fired, cancelled, total, nextScheduledFor }`
+ * envelope out of `~/.muse/followups.json`. Filters to the active
+ * userId so a shared-machine install doesn't surface other users'
+ * queues.
+ */
+function summariseFollowups(rows: readonly FollowupRow[], userId: string) {
+  let scheduled = 0;
+  let fired = 0;
+  let cancelled = 0;
+  let nextScheduledForMs = Number.POSITIVE_INFINITY;
+  let nextScheduledForIso: string | undefined;
+  let nextScheduledSummary: string | undefined;
+  let total = 0;
+  for (const row of rows) {
+    if (typeof row.userId !== "string" || row.userId !== userId) continue;
+    total += 1;
+    if (row.status === "scheduled") {
+      scheduled += 1;
+      if (typeof row.scheduledFor === "string") {
+        const ms = Date.parse(row.scheduledFor);
+        if (Number.isFinite(ms) && ms < nextScheduledForMs) {
+          nextScheduledForMs = ms;
+          nextScheduledForIso = row.scheduledFor;
+          nextScheduledSummary = typeof row.summary === "string" ? row.summary : undefined;
+        }
+      }
+    } else if (row.status === "fired") {
+      fired += 1;
+    } else if (row.status === "cancelled") {
+      cancelled += 1;
     }
+  }
+  return {
+    cancelled,
+    fired,
+    nextScheduledFor: nextScheduledForIso,
+    nextScheduledSummary,
+    scheduled,
+    total
+  };
+}
+
+/**
+ * `{ total, lastEndedAt, lastSummary }` for the user's prior-session
+ * memory store. Filters to the active userId to avoid cross-leak.
+ */
+function summariseEpisodes(rows: readonly EpisodeRow[], userId: string) {
+  let total = 0;
+  let lastEndedAt: string | undefined;
+  let lastSummary: string | undefined;
+  for (const row of rows) {
+    if (typeof row.userId !== "string" || row.userId !== userId) continue;
+    total += 1;
+    if (typeof row.endedAt === "string" && (lastEndedAt === undefined || row.endedAt > lastEndedAt)) {
+      lastEndedAt = row.endedAt;
+      lastSummary = typeof row.summary === "string" ? row.summary : undefined;
+    }
+  }
+  return { lastEndedAt, lastSummary, total };
+}
+
+/**
+ * `{ total, lastFiredAtIso }` over the cooldown sidecar.
+ * patternsFired.json doesn't carry a userId — it's a single-user
+ * file by design.
+ */
+function summarisePatternsFired(rows: readonly PatternFiredRow[]) {
+  let total = 0;
+  let lastFiredMs = Number.NEGATIVE_INFINITY;
+  for (const row of rows) {
+    if (typeof row.patternId !== "string") continue;
+    total += 1;
+    if (typeof row.firedAtMs === "number" && Number.isFinite(row.firedAtMs) && row.firedAtMs > lastFiredMs) {
+      lastFiredMs = row.firedAtMs;
+    }
+  }
+  return {
+    lastFiredAtIso: Number.isFinite(lastFiredMs) ? new Date(lastFiredMs).toISOString() : undefined,
+    total
   };
 }
 
@@ -215,6 +342,29 @@ export function registerStatusCommand(program: Command, io: ProgramIO): void {
         io.stdout(`    · ${task.title} (${task.dueAt ?? "no due"})\n`);
       }
       io.stdout("\n");
+      if (snap.followups.total > 0) {
+        io.stdout(`  followups: ${snap.followups.scheduled.toString()} scheduled, ${snap.followups.fired.toString()} fired, ${snap.followups.cancelled.toString()} cancelled\n`);
+        if (snap.followups.nextScheduledFor) {
+          const summary = snap.followups.nextScheduledSummary
+            ? ` — ${snap.followups.nextScheduledSummary.slice(0, 80)}`
+            : "";
+          io.stdout(`    next: ${snap.followups.nextScheduledFor}${summary}\n`);
+        }
+        io.stdout("\n");
+      }
+      if (snap.episodes.total > 0) {
+        io.stdout(`  episodes: ${snap.episodes.total.toString()} captured`);
+        io.stdout(snap.episodes.lastEndedAt ? `, last ${snap.episodes.lastEndedAt}\n` : "\n");
+        if (snap.episodes.lastSummary) {
+          io.stdout(`    last: ${snap.episodes.lastSummary.slice(0, 120)}\n`);
+        }
+        io.stdout("\n");
+      }
+      if (snap.patterns.total > 0) {
+        io.stdout(`  patterns: ${snap.patterns.total.toString()} fired`);
+        io.stdout(snap.patterns.lastFiredAtIso ? `, last ${snap.patterns.lastFiredAtIso}\n` : "\n");
+        io.stdout("\n");
+      }
       if (snap.lastNotice) {
         io.stdout(`  last notice: [${snap.lastNotice.firedAtIso ?? "?"}] via ${snap.lastNotice.providerId ?? "?"}\n`);
         if (snap.lastNotice.text) {
