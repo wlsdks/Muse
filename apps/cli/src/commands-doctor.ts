@@ -15,6 +15,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { mergeModelKeysFromFile } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
@@ -95,15 +96,23 @@ interface LocalDoctorReport {
 async function runLocalDoctor(): Promise<LocalDoctorReport> {
   const checks: LocalCheck[] = [];
 
+  // Merge ~/.muse/models.json keys into the env view so the model
+  // checks below see what the runtime sees. Without this, a user
+  // who configured providers exclusively via `muse setup model`
+  // (no shell export) gets a misleading "no MUSE_MODEL / provider
+  // key — chat/ask/brief will fail" — even though chat/ask/brief
+  // actually work because the runtime does its own merge at boot.
+  const env = mergeModelKeysFromFile({ ...process.env });
+
   // Model env
-  const muse_model = process.env.MUSE_MODEL ?? process.env.MUSE_DEFAULT_MODEL;
+  const muse_model = env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL;
   if (muse_model) {
     checks.push({ detail: muse_model, name: "model env", status: "ok" });
   } else {
     const anyKey = [
       "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
       "OPENROUTER_API_KEY", "OLLAMA_BASE_URL"
-    ].find((k) => (process.env[k] ?? "").trim().length > 0);
+    ].find((k) => (env[k] ?? "").trim().length > 0);
     if (anyKey) {
       checks.push({ detail: `inferred from ${anyKey}`, name: "model env", status: "warn" });
     } else {
@@ -140,7 +149,7 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   }
 
   // Ollama reachability (only if base URL is set or default port responds)
-  const ollama_base = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+  const ollama_base = env.OLLAMA_BASE_URL ?? "http://localhost:11434";
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1500);

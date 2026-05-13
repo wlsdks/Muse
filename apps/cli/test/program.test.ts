@@ -3295,6 +3295,83 @@ describe("cli program", () => {
     }
   });
 
+  it("muse doctor --local model env probe reads MUSE_MODEL from ~/.muse/models.json suggestedModel, not just env", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-doctor-models-"));
+    const fsp = await import("node:fs/promises");
+    const modelKeysFile = path.join(root, "models.json");
+    const prev = {
+      muse_model: process.env.MUSE_MODEL,
+      muse_default_model: process.env.MUSE_DEFAULT_MODEL,
+      gemini: process.env.GEMINI_API_KEY,
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+      openrouter: process.env.OPENROUTER_API_KEY,
+      ollama: process.env.OLLAMA_BASE_URL,
+      modelKeysFile: process.env.MUSE_MODEL_KEYS_FILE
+    };
+    delete process.env.MUSE_MODEL;
+    delete process.env.MUSE_DEFAULT_MODEL;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OLLAMA_BASE_URL;
+    process.env.MUSE_MODEL_KEYS_FILE = modelKeysFile;
+    try {
+      // No env, no file → fail.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("api fetch off"); } });
+      await program1.parseAsync(["node", "muse", "doctor", "--local", "--json"], { from: "node" });
+      const r1 = JSON.parse(out1.join("")) as { checks: Array<{ name: string; status: string; detail: string }> };
+      const probe1 = r1.checks.find((c) => c.name === "model env");
+      expect(probe1).toBeDefined();
+      expect(probe1!.status).toBe("fail");
+
+      // File-only with suggestedModel — picked up via the merge.
+      await fsp.writeFile(modelKeysFile, JSON.stringify({
+        providers: {
+          gemini: { token: "gem-from-file", suggestedModel: "gemini-2.5-pro" }
+        }
+      }), "utf8");
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("api fetch off"); } });
+      await program2.parseAsync(["node", "muse", "doctor", "--local", "--json"], { from: "node" });
+      const r2 = JSON.parse(out2.join("")) as { checks: Array<{ name: string; status: string; detail: string }> };
+      const probe2 = r2.checks.find((c) => c.name === "model env");
+      expect(probe2).toBeDefined();
+      expect(probe2!.status).toBe("ok");
+      expect(probe2!.detail).toBe("gemini-2.5-pro");
+
+      // File without suggestedModel but with a token → warn ("inferred
+      // from GEMINI_API_KEY"). Confirms the GEMINI_API_KEY token from
+      // the merged env is what the warn-path picks up.
+      await fsp.writeFile(modelKeysFile, JSON.stringify({
+        providers: { gemini: { token: "gem-from-file" } }
+      }), "utf8");
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("api fetch off"); } });
+      await program3.parseAsync(["node", "muse", "doctor", "--local", "--json"], { from: "node" });
+      const r3 = JSON.parse(out3.join("")) as { checks: Array<{ name: string; status: string; detail: string }> };
+      const probe3 = r3.checks.find((c) => c.name === "model env");
+      expect(probe3).toBeDefined();
+      expect(probe3!.status).toBe("warn");
+      expect(probe3!.detail).toContain("GEMINI_API_KEY");
+    } finally {
+      const restore = (envKey: keyof typeof prev, k: string): void => {
+        if (prev[envKey] === undefined) delete process.env[k];
+        else process.env[k] = prev[envKey];
+      };
+      restore("muse_model", "MUSE_MODEL");
+      restore("muse_default_model", "MUSE_DEFAULT_MODEL");
+      restore("gemini", "GEMINI_API_KEY");
+      restore("anthropic", "ANTHROPIC_API_KEY");
+      restore("openai", "OPENAI_API_KEY");
+      restore("openrouter", "OPENROUTER_API_KEY");
+      restore("ollama", "OLLAMA_BASE_URL");
+      restore("modelKeysFile", "MUSE_MODEL_KEYS_FILE");
+    }
+  });
+
   it("muse doctor --local --json reports the searxng probe across unset / unreachable / healthy states", async () => {
     const originalFetch = globalThis.fetch;
     const prev = process.env.MUSE_SEARXNG_URL;
