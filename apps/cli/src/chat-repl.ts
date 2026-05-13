@@ -655,6 +655,21 @@ export async function runChatRepl(
   } finally {
     rl.off("SIGINT", onSigint);
     rl.close();
+    // Episodic-memory step 3b — summarise the just-finished session
+    // and persist into ~/.muse/episodes.json. Off by default
+    // (MUSE_EPISODIC_MEMORY_ENABLED=true to opt in); fail-soft so
+    // a flaky model or filesystem never blocks REPL exit.
+    // The ProgramIO type allows a stream-only modelProvider for the
+    // test seam; the summariser needs `generate`, so we structural-
+    // guard for it before invoking.
+    if (assembly.modelProvider && "generate" in assembly.modelProvider) {
+      const { captureEndOfSessionEpisode } = await import("./chat-end-session.js");
+      await captureEndOfSessionEpisode({
+        model: currentModel ?? assembly.defaultModel ?? "default",
+        modelProvider: assembly.modelProvider,
+        userId
+      }).catch(() => undefined);
+    }
   }
 }
 

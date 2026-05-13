@@ -2987,6 +2987,148 @@ describe("cli program", () => {
     }
   });
 
+  it("captureEndOfSessionEpisode is gated by MUSE_EPISODIC_MEMORY_ENABLED and writes a real episode on the happy path", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-eos-"));
+    const fsp = await import("node:fs/promises");
+    const prevHome = process.env.HOME;
+    const prevEnabled = process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    process.env.HOME = root;
+    try {
+      // Seed last-chat.jsonl: boundary line + two turns.
+      const { appendLastChatTurn, appendSessionBoundary } = await import("../src/chat-history.js");
+      await appendSessionBoundary({ tsIso: "2026-05-13T08:00:00.000Z", userId: "stark" });
+      await appendLastChatTurn({ message: "Help me plan the Q3 memo", response: "Notion seems good" });
+
+      const { captureEndOfSessionEpisode } = await import("../src/chat-end-session.js");
+
+      const stubProvider = {
+        id: "stub",
+        listModels: async () => [],
+        generate: async () => ({
+          id: "stub-resp",
+          model: "stub",
+          output: "Discussed Q3 budget memo. User decided to draft in Notion.\ntopics: Q3 budget memo, Notion"
+        }),
+        // The summariser only calls .generate but the structural type
+        // includes stream; stub a no-op so the shape is complete.
+        stream: async function* () { /* not used */ }
+      } as unknown as Parameters<typeof captureEndOfSessionEpisode>[0]["modelProvider"];
+
+      // Disabled path — gate stays closed even with valid setup.
+      delete process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+      const skipped = await captureEndOfSessionEpisode({
+        model: "stub",
+        modelProvider: stubProvider,
+        userId: "stark"
+      });
+      expect(skipped).toMatchObject({ status: "skipped", reason: expect.stringContaining("MUSE_EPISODIC_MEMORY_ENABLED") });
+
+      // Enabled path — captures the episode.
+      process.env.MUSE_EPISODIC_MEMORY_ENABLED = "true";
+      const captured = await captureEndOfSessionEpisode({
+        model: "stub",
+        modelProvider: stubProvider,
+        now: () => new Date("2026-05-13T08:15:00.000Z"),
+        userId: "stark"
+      });
+      expect(captured.status).toBe("captured");
+      if (captured.status !== "captured") return;
+      expect(captured.episode).toMatchObject({
+        endedAt: "2026-05-13T08:15:00.000Z",
+        startedAt: "2026-05-13T08:00:00.000Z",
+        summary: "Discussed Q3 budget memo. User decided to draft in Notion.",
+        topics: ["Q3 budget memo", "Notion"],
+        userId: "stark"
+      });
+      expect(captured.episode.id).toMatch(/^ep_/u);
+
+      // The episode actually landed in `~/.muse/episodes.json` under
+      // the same userId.
+      const onDisk = JSON.parse(await fsp.readFile(path.join(root, ".muse", "episodes.json"), "utf8")) as {
+        episodes: Array<{ id: string; summary: string; userId: string }>;
+      };
+      expect(onDisk.episodes).toHaveLength(1);
+      expect(onDisk.episodes[0]).toMatchObject({ id: captured.episode.id, userId: "stark" });
+    } finally {
+      if (prevHome !== undefined) process.env.HOME = prevHome;
+      else delete process.env.HOME;
+      if (prevEnabled !== undefined) process.env.MUSE_EPISODIC_MEMORY_ENABLED = prevEnabled;
+      else delete process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    }
+  });
+
+  it("captureEndOfSessionEpisode fails soft and writes nothing when the summariser errors", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-eos-soft-"));
+    const fsp = await import("node:fs/promises");
+    const prevHome = process.env.HOME;
+    const prevEnabled = process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    process.env.HOME = root;
+    process.env.MUSE_EPISODIC_MEMORY_ENABLED = "true";
+    try {
+      const { appendLastChatTurn, appendSessionBoundary } = await import("../src/chat-history.js");
+      await appendSessionBoundary({ tsIso: "2026-05-13T08:00:00.000Z", userId: "stark" });
+      await appendLastChatTurn({ message: "Hi", response: "Hello" });
+
+      const { captureEndOfSessionEpisode } = await import("../src/chat-end-session.js");
+      const errorProvider = {
+        id: "err",
+        listModels: async () => [],
+        generate: async () => { throw new Error("model down"); },
+        stream: async function* () { /* not used */ }
+      } as unknown as Parameters<typeof captureEndOfSessionEpisode>[0]["modelProvider"];
+
+      const result = await captureEndOfSessionEpisode({
+        model: "stub",
+        modelProvider: errorProvider,
+        userId: "stark"
+      });
+      expect(result).toMatchObject({
+        status: "skipped",
+        reason: expect.stringContaining("summariser returned undefined")
+      });
+
+      // No episodes.json should have been written.
+      await expect(fsp.readFile(path.join(root, ".muse", "episodes.json"), "utf8")).rejects.toThrow();
+    } finally {
+      if (prevHome !== undefined) process.env.HOME = prevHome;
+      else delete process.env.HOME;
+      if (prevEnabled !== undefined) process.env.MUSE_EPISODIC_MEMORY_ENABLED = prevEnabled;
+      else delete process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    }
+  });
+
+  it("captureEndOfSessionEpisode skips when current session has no turns or no boundary", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-eos-empty-"));
+    const prevHome = process.env.HOME;
+    const prevEnabled = process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    process.env.HOME = root;
+    process.env.MUSE_EPISODIC_MEMORY_ENABLED = "true";
+    try {
+      const { captureEndOfSessionEpisode } = await import("../src/chat-end-session.js");
+      const provider = {
+        id: "p",
+        listModels: async () => [],
+        generate: async () => ({ id: "x", model: "p", output: "Summary.\ntopics: x" }),
+        stream: async function* () { /* not used */ }
+      } as unknown as Parameters<typeof captureEndOfSessionEpisode>[0]["modelProvider"];
+
+      // No file at all → no boundary, no turns.
+      const result1 = await captureEndOfSessionEpisode({ model: "p", modelProvider: provider, userId: "stark" });
+      expect(result1).toMatchObject({ status: "skipped", reason: expect.stringContaining("no current-session range") });
+
+      // Boundary but no chat turns yet.
+      const { appendSessionBoundary } = await import("../src/chat-history.js");
+      await appendSessionBoundary({ tsIso: "2026-05-13T08:00:00.000Z", userId: "stark" });
+      const result2 = await captureEndOfSessionEpisode({ model: "p", modelProvider: provider, userId: "stark" });
+      expect(result2.status).toBe("skipped");
+    } finally {
+      if (prevHome !== undefined) process.env.HOME = prevHome;
+      else delete process.env.HOME;
+      if (prevEnabled !== undefined) process.env.MUSE_EPISODIC_MEMORY_ENABLED = prevEnabled;
+      else delete process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    }
+  });
+
   it("readSessionBoundaries returns [] when last-chat.jsonl is missing", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-boundary-missing-"));
     const prev = process.env.HOME;
