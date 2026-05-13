@@ -14,6 +14,7 @@ import {
   createLoopbackMcpConnection,
   createLoopbackMcpMuseTools,
   createCryptoMcpServer,
+  createSearchMcpServer,
   createDiffMcpServer,
   createFetchMcpServer,
   createFilesystemMcpServer,
@@ -573,7 +574,7 @@ function createPostgresBuilder(): Kysely<MuseDatabase> {
 }
 
 describe("loopback MCP servers", () => {
-  it("createDefaultLoopbackMcpServers ships eight reference servers (time/text/math/json/url/crypto/diff/regex) by default", () => {
+  it("createDefaultLoopbackMcpServers ships nine reference servers (time/text/math/json/url/crypto/diff/regex/search) by default", () => {
     const servers = createDefaultLoopbackMcpServers({ now: () => new Date("2026-05-15T00:00:00.000Z") });
     expect(servers.map((server) => server.name).sort()).toEqual([
       "muse.crypto",
@@ -581,6 +582,7 @@ describe("loopback MCP servers", () => {
       "muse.json",
       "muse.math",
       "muse.regex",
+      "muse.search",
       "muse.text",
       "muse.time",
       "muse.url"
@@ -1331,6 +1333,68 @@ describe("muse.fs loopback server", () => {
 
     const escapeAttempt = await connection.callTool!("read", { path: `${root}/../etc/passwd` });
     expect(escapeAttempt).toMatchObject({ error: expect.stringContaining("not under any configured allowlist root") });
+  });
+});
+
+describe("muse.search loopback server", () => {
+  // Minimal DDG HTML fixture in the shape parseDuckDuckGoHtml expects.
+  const HTML = `
+    <html><body>
+    <div class="result">
+      <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa&amp;rut=x">First &amp; result</a>
+      <a class="result__snippet" href="https://example.com/a">Snippet for the first result.</a>
+    </div>
+    <div class="result">
+      <a rel="nofollow" class="result__a" href="https://no-redirect.test/two">Second result</a>
+      <a class="result__snippet" href="https://no-redirect.test/two">Another snippet here.</a>
+    </div>
+    </body></html>`;
+
+  it("returns parsed results with title/url/snippet and unwraps the DDG redirect", async () => {
+    const fakeFetch: typeof globalThis.fetch = async () => new Response(HTML, { status: 200 });
+    const server = createSearchMcpServer({ fetch: fakeFetch });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("search", { query: "muse" });
+    expect(result).toMatchObject({ query: "muse", total: 2 });
+    const rows = (result.results as { title: string; url: string; snippet: string }[]);
+    expect(rows[0]?.url).toBe("https://example.com/a");
+    expect(rows[0]?.title).toBe("First & result");
+    expect(rows[0]?.snippet).toContain("Snippet for");
+    expect(rows[1]?.url).toBe("https://no-redirect.test/two");
+  });
+
+  it("returns an error when the upstream responds non-2xx", async () => {
+    const fakeFetch: typeof globalThis.fetch = async () => new Response("oops", { status: 503 });
+    const server = createSearchMcpServer({ fetch: fakeFetch });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("search", { query: "x" });
+    expect(result.error).toContain("503");
+  });
+
+  it("returns an error when the markup parses to zero rows (parser drift detector)", async () => {
+    const fakeFetch: typeof globalThis.fetch = async () => new Response("<html>no results</html>", { status: 200 });
+    const server = createSearchMcpServer({ fetch: fakeFetch });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("search", { query: "x" });
+    expect(result.error).toContain("0 results");
+  });
+
+  it("rejects an empty query before hitting the backend", async () => {
+    let called = false;
+    const fakeFetch: typeof globalThis.fetch = async () => {
+      called = true;
+      return new Response("", { status: 200 });
+    };
+    const server = createSearchMcpServer({ fetch: fakeFetch });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("search", { query: "" });
+    expect(result.error).toContain("query is required");
+    expect(called).toBe(false);
+  });
+
+  it("is included in createDefaultLoopbackMcpServers by default", () => {
+    const names = createDefaultLoopbackMcpServers().map((s) => s.name);
+    expect(names).toContain("muse.search");
   });
 });
 

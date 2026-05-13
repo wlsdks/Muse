@@ -470,6 +470,7 @@ export {
   createMathMcpServer,
   createNotesMcpServer,
   createRegexMcpServer,
+  createSearchMcpServer,
   createTextUtilsMcpServer,
   createTimeMcpServer,
   createUrlMcpServer,
@@ -479,7 +480,8 @@ export {
   type LoopbackMcpCatalogEntry,
   type LoopbackMcpServer,
   type LoopbackMcpToolDefinition,
-  type NotesMcpServerOptions
+  type NotesMcpServerOptions,
+  type SearchMcpServerOptions
 } from "./loopback.js";
 
 // Notes provider abstraction. LocalDir, Apple Notes (osascript), and

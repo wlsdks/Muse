@@ -389,16 +389,16 @@ try {
     assert(timeNow.inputSchema && typeof timeNow.inputSchema === "object", "expected real inputSchema for time_now");
   });
 
-  await record("Eight loopback MCP servers (time/text/math/json/url/crypto/diff/regex) expose tools end-to-end", async () => {
+  await record("Nine loopback MCP servers (time/text/math/json/url/crypto/diff/regex/search) expose tools end-to-end", async () => {
     const {
       createDefaultLoopbackMcpServers,
       createLoopbackMcpConnection
     } = await import(`${rootDir}/packages/mcp/dist/index.js`);
     const servers = createDefaultLoopbackMcpServers();
-    assert(servers.length === 8, `expected 8 default loopback servers, got ${servers.length}`);
+    assert(servers.length === 9, `expected 9 default loopback servers, got ${servers.length}`);
     const names = servers.map((s) => s.name).sort();
     assert(
-      JSON.stringify(names) === JSON.stringify(["muse.crypto", "muse.diff", "muse.json", "muse.math", "muse.regex", "muse.text", "muse.time", "muse.url"]),
+      JSON.stringify(names) === JSON.stringify(["muse.crypto", "muse.diff", "muse.json", "muse.math", "muse.regex", "muse.search", "muse.text", "muse.time", "muse.url"]),
       `expected default names, got ${JSON.stringify(names)}`
     );
 

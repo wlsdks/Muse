@@ -132,6 +132,10 @@ import { createRegexMcpServer } from "./loopback-regex.js";
 
 export { createRegexMcpServer };
 
+import { createSearchMcpServer } from "./loopback-search.js";
+
+export { createSearchMcpServer, type SearchMcpServerOptions } from "./loopback-search.js";
+
 /**
  * `muse.fetch` bounded HTTP GET/HEAD fetcher (allowlist-required).
  *
@@ -278,7 +282,7 @@ export {
   type NotesMcpServerOptions
 } from "./loopback-notes.js";
 
-/** All eight default loopback servers (time / text / math / json / url / crypto / diff / regex). `muse.fetch` is opt-in via `createFetchMcpServer`. */
+/** All nine default loopback servers (time / text / math / json / url / crypto / diff / regex / search). `muse.fetch` is opt-in via `createFetchMcpServer`. */
 export function createDefaultLoopbackMcpServers(options: BuiltinLoopbackOptions = {}): readonly LoopbackMcpServer[] {
   return [
     createTimeMcpServer(options),
@@ -288,7 +292,8 @@ export function createDefaultLoopbackMcpServers(options: BuiltinLoopbackOptions 
     createUrlMcpServer(),
     createCryptoMcpServer(options),
     createDiffMcpServer(),
-    createRegexMcpServer()
+    createRegexMcpServer(),
+    createSearchMcpServer()
   ];
 }
 
