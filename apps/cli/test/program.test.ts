@@ -1816,6 +1816,128 @@ describe("cli program", () => {
     }
   });
 
+  it("muse history merges reminder + proactive + followup + pattern + episode firings, newest first", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-history-"));
+    const fsp = await import("node:fs/promises");
+
+    const reminderHistoryFile = path.join(root, "reminder-history.json");
+    const proactiveHistoryFile = path.join(root, "proactive-history.json");
+    const followupsFile = path.join(root, "followups.json");
+    const patternsFiredFile = path.join(root, "patterns-fired.json");
+    const episodesFile = path.join(root, "episodes.json");
+
+    // Times: 5 distinct moments, scattered across two days.
+    const t1 = "2026-05-12T08:00:00.000Z"; // pattern
+    const t2 = "2026-05-12T09:30:00.000Z"; // reminder
+    const t3 = "2026-05-12T10:15:00.000Z"; // followup
+    const t4 = "2026-05-12T22:00:00.000Z"; // episode (newest of the 12th)
+    const t5 = "2026-05-13T07:45:00.000Z"; // proactive (newest of all)
+    // One pre-since entry that --since should drop:
+    const t0 = "2026-05-10T00:00:00.000Z";
+
+    await fsp.writeFile(reminderHistoryFile, JSON.stringify({
+      entries: [
+        { reminderId: "rem_old", text: "old reminder", providerId: "telegram", destination: "@me", firedAtIso: t0, status: "delivered" },
+        { reminderId: "rem_a", text: "Pick up dry cleaning", providerId: "telegram", destination: "@me", firedAtIso: t2, status: "delivered" }
+      ],
+      version: 1
+    }), "utf8");
+    await fsp.writeFile(proactiveHistoryFile, JSON.stringify({
+      entries: [
+        { kind: "calendar", itemId: "evt_a", startIso: t5, title: "Standup", providerId: "telegram", destination: "@me", text: "Standup in 5 min", firedAtIso: t5, status: "delivered" }
+      ],
+      version: 1
+    }), "utf8");
+    await fsp.writeFile(followupsFile, JSON.stringify({
+      followups: [
+        { id: "fu_a", userId: "stark", scheduledFor: t3, status: "fired", summary: "Send Q3 memo", firedAt: t3, createdAt: t1 },
+        { id: "fu_scheduled", userId: "stark", scheduledFor: "2030-01-01T00:00:00Z", status: "scheduled", summary: "Later", createdAt: t1 }
+      ]
+    }), "utf8");
+    await fsp.writeFile(patternsFiredFile, JSON.stringify({
+      fired: [
+        { patternId: "pat_morning_walk", firedAtMs: Date.parse(t1), suggestion: "morning walk routine" }
+      ]
+    }), "utf8");
+    await fsp.writeFile(episodesFile, JSON.stringify({
+      episodes: [
+        { id: "ep_a", userId: "stark", startedAt: "2026-05-12T21:30:00Z", endedAt: t4, summary: "Reviewed Q3 budget memo" }
+      ]
+    }), "utf8");
+
+    const prev = {
+      reminderHistory: process.env.MUSE_REMINDER_HISTORY_FILE,
+      proactiveHistory: process.env.MUSE_PROACTIVE_HISTORY_FILE,
+      followups: process.env.MUSE_FOLLOWUPS_FILE,
+      patternsFired: process.env.MUSE_PATTERNS_FIRED_FILE,
+      episodes: process.env.MUSE_EPISODES_FILE
+    };
+    process.env.MUSE_REMINDER_HISTORY_FILE = reminderHistoryFile;
+    process.env.MUSE_PROACTIVE_HISTORY_FILE = proactiveHistoryFile;
+    process.env.MUSE_FOLLOWUPS_FILE = followupsFile;
+    process.env.MUSE_PATTERNS_FIRED_FILE = patternsFiredFile;
+    process.env.MUSE_EPISODES_FILE = episodesFile;
+    try {
+      // No filters — all five sources show up; scheduled followup is
+      // excluded (only fired ones), and t0 reminder is included since
+      // no --since gate.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "history", "--json"], { from: "node" });
+      const r1 = JSON.parse(out1.join("")) as { entries: Array<{ kind: string; whenIso: string; id?: string }>; total: number };
+      // Newest first: proactive(t5) → episode(t4) → followup(t3) → reminder(t2) → pattern(t1) → reminder-old(t0).
+      expect(r1.entries.map((e) => `${e.kind}:${e.id ?? ""}`)).toEqual([
+        "proactive:evt_a",
+        "episode:ep_a",
+        "followup:fu_a",
+        "reminder:rem_a",
+        "pattern:pat_morning_walk",
+        "reminder:rem_old"
+      ]);
+
+      // --kind filter narrows to one source.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "history", "--kind", "followup", "--json"], { from: "node" });
+      const r2 = JSON.parse(out2.join("")) as { entries: Array<{ kind: string; id?: string }> };
+      expect(r2.entries.map((e) => e.id)).toEqual(["fu_a"]);
+
+      // --since gates out the t0 reminder.
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "history", "--since", "2026-05-12T00:00:00Z", "--json"], { from: "node" });
+      const r3 = JSON.parse(out3.join("")) as { entries: Array<{ id?: string }> };
+      expect(r3.entries.map((e) => e.id)).not.toContain("rem_old");
+      expect(r3.entries).toHaveLength(5);
+
+      // Formatted output renders the header + each entry.
+      const { io: io4, output: out4 } = captureOutput();
+      const program4 = createProgram({ ...io4, fetch: async () => { throw new Error("no fetch"); } });
+      await program4.parseAsync(["node", "muse", "history", "--limit", "5"], { from: "node" });
+      const text = out4.join("");
+      expect(text).toContain("Activity (5 entries, newest first):");
+      expect(text).toContain("Standup in 5 min");
+      expect(text).toContain("Send Q3 memo");
+
+      // --kind validates input.
+      const { io: io5 } = captureOutput();
+      const program5 = createProgram({ ...io5, fetch: async () => { throw new Error("no fetch"); } });
+      program5.exitOverride();
+      await expect(program5.parseAsync(["node", "muse", "history", "--kind", "bogus", "--json"], { from: "node" }))
+        .rejects.toThrow(/--kind must be one of/u);
+    } finally {
+      const restore = (k: keyof typeof prev, envKey: string): void => {
+        if (prev[k] === undefined) delete process.env[envKey];
+        else process.env[envKey] = prev[k];
+      };
+      restore("reminderHistory", "MUSE_REMINDER_HISTORY_FILE");
+      restore("proactiveHistory", "MUSE_PROACTIVE_HISTORY_FILE");
+      restore("followups", "MUSE_FOLLOWUPS_FILE");
+      restore("patternsFired", "MUSE_PATTERNS_FIRED_FILE");
+      restore("episodes", "MUSE_EPISODES_FILE");
+    }
+  });
+
   it("today --local surfaces scheduled followups due within the horizon", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-today-followups-"));
     const fsp = await import("node:fs/promises");
