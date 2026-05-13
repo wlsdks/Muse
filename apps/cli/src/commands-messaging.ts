@@ -12,6 +12,11 @@
  */
 
 import { buildMessagingRegistry } from "@muse/autoconfigure";
+import type {
+  InboundMessage,
+  MessagingProviderInfo,
+  OutboundReceipt
+} from "@muse/messaging";
 import type { Command } from "commander";
 
 import { formatProvidersList } from "./human-formatters.js";
@@ -46,18 +51,20 @@ export function registerMessagingCommands(
     .option("--local", "Build the registry from process.env directly instead of querying the API")
     .option("--json", "Print the raw response instead of the formatted list")
     .action(async (options: SharedOptions, command) => {
-      let payload: { providers?: ReadonlyArray<Record<string, unknown>> };
+      let providers: readonly MessagingProviderInfo[];
       if (options.local) {
         const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
-        payload = { providers: registry.describe() as unknown as ReadonlyArray<Record<string, unknown>> };
+        providers = registry.describe();
       } else {
-        payload = (await helpers.apiRequest(io, command, "/api/messaging/providers")) as typeof payload;
+        const payload = await helpers.apiRequest(io, command, "/api/messaging/providers") as {
+          readonly providers?: readonly MessagingProviderInfo[];
+        };
+        providers = payload.providers ?? [];
       }
       if (options.json) {
-        helpers.writeOutput(io, payload);
+        helpers.writeOutput(io, { providers });
         return;
       }
-      const providers = (payload.providers ?? []) as Parameters<typeof formatProvidersList>[1];
       io.stdout(formatProvidersList("Messaging providers", providers));
     });
 
@@ -75,7 +82,7 @@ export function registerMessagingCommands(
       command
     ) => {
       const limitNum = options.limit ? Number(options.limit) : undefined;
-      let inbound: ReadonlyArray<Record<string, unknown>>;
+      let inbound: readonly InboundMessage[];
       if (options.local) {
         const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
         const opts: { limit?: number; source?: string } = {};
@@ -85,7 +92,7 @@ export function registerMessagingCommands(
         if (options.source && options.source.length > 0) {
           opts.source = options.source;
         }
-        inbound = (await registry.fetchInbound(provider, Object.keys(opts).length > 0 ? opts : undefined)) as unknown as ReadonlyArray<Record<string, unknown>>;
+        inbound = await registry.fetchInbound(provider, Object.keys(opts).length > 0 ? opts : undefined);
       } else {
         const params = new URLSearchParams({ providerId: provider });
         if (limitNum !== undefined && Number.isFinite(limitNum)) {
@@ -94,8 +101,8 @@ export function registerMessagingCommands(
         if (options.source && options.source.length > 0) {
           params.set("source", options.source);
         }
-        const response = (await helpers.apiRequest(io, command, `/api/messaging/inbox?${params.toString()}`)) as {
-          inbound: ReadonlyArray<Record<string, unknown>>;
+        const response = await helpers.apiRequest(io, command, `/api/messaging/inbox?${params.toString()}`) as {
+          readonly inbound?: readonly InboundMessage[];
         };
         inbound = response.inbound ?? [];
       }
@@ -108,9 +115,9 @@ export function registerMessagingCommands(
         return;
       }
       const lines = inbound.map((entry) => {
-        const sender = entry.sender ? `@${String(entry.sender)}` : `chat ${String(entry.source ?? "?")}`;
-        const time = String(entry.receivedAtIso ?? "").slice(0, 16).replace("T", " ");
-        return `  ${time}  ${sender}: ${String(entry.text ?? "")}`;
+        const sender = entry.sender ? `@${entry.sender}` : `chat ${entry.source}`;
+        const time = entry.receivedAtIso.slice(0, 16).replace("T", " ");
+        return `  ${time}  ${sender}: ${entry.text}`;
       });
       io.stdout(`Inbox (${provider}, ${inbound.length}):\n${lines.join("\n")}\n`);
     });
@@ -134,23 +141,23 @@ export function registerMessagingCommands(
       if (text.length === 0) {
         throw new Error("text is required");
       }
-      let receipt: Record<string, unknown>;
+      let receipt: OutboundReceipt;
       if (options.local) {
         const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
-        receipt = await registry.send(provider, { destination, text }) as unknown as Record<string, unknown>;
+        receipt = await registry.send(provider, { destination, text });
       } else {
-        receipt = (await helpers.apiRequest(
+        receipt = await helpers.apiRequest(
           io,
           command,
           "/api/messaging/send",
           { destination, providerId: provider, text },
           "POST"
-        )) as Record<string, unknown>;
+        ) as OutboundReceipt;
       }
       if (options.json) {
         helpers.writeOutput(io, receipt);
         return;
       }
-      io.stdout(`Sent ${provider} → ${destination} (id ${String(receipt.messageId ?? "")})\n`);
+      io.stdout(`Sent ${provider} → ${destination} (id ${receipt.messageId})\n`);
     });
 }
