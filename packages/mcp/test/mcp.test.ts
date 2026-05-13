@@ -4563,3 +4563,56 @@ describe("runDueFollowups", () => {
     expect(summary).toMatchObject({ delivered: 2, due: 2 });
   });
 });
+
+describe("snoozeFollowup", () => {
+  it("updates scheduledFor on a scheduled entry and leaves others untouched", async () => {
+    const { snoozeFollowup, readFollowups } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "muse-followup-snooze-"));
+    const file = join(dir, "followups.json");
+    writeFileSync(file, JSON.stringify({
+      followups: [
+        { createdAt: "2026-05-10T00:00:00Z", id: "fu_target", scheduledFor: "2026-05-11T09:00:00Z", status: "scheduled", summary: "Push me", userId: "stark" },
+        { createdAt: "2026-05-10T00:00:00Z", id: "fu_neighbour", scheduledFor: "2026-05-11T10:00:00Z", status: "scheduled", summary: "Untouched", userId: "stark" }
+      ]
+    }), "utf8");
+
+    const patched = await snoozeFollowup(file, "fu_target", "2026-05-12T15:00:00Z");
+    expect(patched).toMatchObject({ id: "fu_target", scheduledFor: "2026-05-12T15:00:00Z", status: "scheduled" });
+
+    const after = await readFollowups(file);
+    expect(after.find((f) => f.id === "fu_target")?.scheduledFor).toBe("2026-05-12T15:00:00Z");
+    expect(after.find((f) => f.id === "fu_neighbour")?.scheduledFor).toBe("2026-05-11T10:00:00Z");
+  });
+
+  it("returns undefined and does not rewrite when the entry is already fired or cancelled", async () => {
+    const { snoozeFollowup, readFollowups } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync, statSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "muse-followup-snooze-guard-"));
+    const file = join(dir, "followups.json");
+    writeFileSync(file, JSON.stringify({
+      followups: [
+        { createdAt: "2026-05-10T00:00:00Z", firedAt: "2026-05-11T08:00:00Z", id: "fu_done", scheduledFor: "2026-05-11T07:00:00Z", status: "fired", summary: "Already fired", userId: "stark" },
+        { cancelReason: "user-cancelled", createdAt: "2026-05-10T00:00:00Z", id: "fu_dropped", scheduledFor: "2026-05-11T07:00:00Z", status: "cancelled", summary: "Already cancelled", userId: "stark" }
+      ]
+    }), "utf8");
+    const before = statSync(file).mtimeMs;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(await snoozeFollowup(file, "fu_done", "2026-05-12T00:00:00Z")).toBeUndefined();
+    expect(await snoozeFollowup(file, "fu_dropped", "2026-05-12T00:00:00Z")).toBeUndefined();
+    expect(await snoozeFollowup(file, "fu_missing", "2026-05-12T00:00:00Z")).toBeUndefined();
+
+    // mtime unchanged → guard short-circuited before writing.
+    expect(statSync(file).mtimeMs).toBe(before);
+    const after = await readFollowups(file);
+    expect(after.find((f) => f.id === "fu_done")?.status).toBe("fired");
+    expect(after.find((f) => f.id === "fu_dropped")?.status).toBe("cancelled");
+  });
+});

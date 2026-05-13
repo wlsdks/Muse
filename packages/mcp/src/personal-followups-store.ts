@@ -166,6 +166,30 @@ export async function cancelFollowup(
   return patched;
 }
 
+/**
+ * Push a scheduled followup's `scheduledFor` to a new ISO timestamp.
+ * Lifecycle-guarded — returns undefined when the id is missing or
+ * the entry is already fired/cancelled (snoozing a stale entry
+ * would either no-op silently or, worse, resurrect a cancelled
+ * promise). Caller resolves the new ISO via the same date grammar
+ * the rest of the CLI uses (e.g. `parseReminderDueAt`).
+ */
+export async function snoozeFollowup(
+  file: string,
+  id: string,
+  newScheduledForIso: string
+): Promise<PersistedFollowup | undefined> {
+  const existing = await readFollowups(file);
+  const target = existing.find((entry) => entry.id === id);
+  if (!target || target.status !== "scheduled") {
+    return undefined;
+  }
+  const patched: PersistedFollowup = { ...target, scheduledFor: newScheduledForIso };
+  const next = existing.map((entry) => (entry.id === id ? patched : entry));
+  await writeFollowups(file, next);
+  return patched;
+}
+
 function isPersistedFollowup(value: unknown): value is PersistedFollowup {
   if (!value || typeof value !== "object") {
     return false;

@@ -2906,6 +2906,43 @@ describe("cli program", () => {
     }
   });
 
+  it("muse followup snooze parses relative <when> and updates scheduledFor on a scheduled entry", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-followup-snooze-"));
+    const followupsFile = path.join(root, "followups.json");
+    const fsp = await import("node:fs/promises");
+    const prev = process.env.MUSE_FOLLOWUPS_FILE;
+    process.env.MUSE_FOLLOWUPS_FILE = followupsFile;
+    try {
+      await fsp.writeFile(followupsFile, JSON.stringify({
+        followups: [
+          { createdAt: "2026-05-10T00:00:00Z", id: "fu_push", scheduledFor: "2026-05-11T09:00:00Z", status: "scheduled", summary: "Push out", userId: "stark" },
+          { createdAt: "2026-05-10T00:00:00Z", firedAt: "2026-05-10T13:00:00Z", id: "fu_done", scheduledFor: "2026-05-10T12:00:00Z", status: "fired", summary: "Already fired", userId: "stark" }
+        ]
+      }), "utf8");
+
+      // Happy path: relative phrase resolves and the patched record shows new scheduledFor.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "followup", "snooze", "fu_push", "in", "2", "hours", "--json"], { from: "node" });
+      const patched = JSON.parse(out1.join("")) as { id: string; scheduledFor: string; status: string };
+      expect(patched.id).toBe("fu_push");
+      expect(patched.status).toBe("scheduled");
+      // We can't pin the wall-clock exactly, but it must differ from the original.
+      expect(patched.scheduledFor).not.toBe("2026-05-11T09:00:00Z");
+      expect(Date.parse(patched.scheduledFor)).toBeGreaterThan(Date.now() - 60_000);
+
+      // Already-fired entry rejects with a guiding message.
+      const { io: io2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      program2.exitOverride();
+      await expect(program2.parseAsync(["node", "muse", "followup", "snooze", "fu_done", "in", "1", "hour"], { from: "node" }))
+        .rejects.toThrow(/only scheduled followups can be snoozed/u);
+    } finally {
+      if (prev !== undefined) process.env.MUSE_FOLLOWUPS_FILE = prev;
+      else delete process.env.MUSE_FOLLOWUPS_FILE;
+    }
+  });
+
   it("muse followup cancel flips scheduled → cancelled; rejects already-fired", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-followup-cancel-"));
     const followupsFile = path.join(root, "followups.json");

@@ -530,6 +530,7 @@ export {
   readFollowups,
   readFollowupStatusFilter,
   serializeFollowup,
+  snoozeFollowup,
   upsertFollowup,
   writeFollowups,
   type FollowupStatus,

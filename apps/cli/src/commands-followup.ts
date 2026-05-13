@@ -20,9 +20,11 @@
 import { resolveFollowupsFile } from "@muse/autoconfigure";
 import {
   cancelFollowup,
+  parseReminderDueAt,
   readFollowups,
   readFollowupStatusFilter,
   serializeFollowup,
+  snoozeFollowup,
   type FollowupStatusFilter,
   type PersistedFollowup
 } from "@muse/mcp";
@@ -88,6 +90,39 @@ export function registerFollowupCommands(program: Command, io: ProgramIO): void 
         return;
       }
       io.stdout(formatFollowupDetail(record));
+    });
+
+  followup
+    .command("snooze")
+    .description("Push a scheduled followup's scheduledFor forward. <when> accepts ISO-8601 or relative ('in 30 min', 'tomorrow at 9am', '2시간 뒤')")
+    .argument("<id>", "Followup id or unambiguous prefix")
+    .argument("<when...>", "New target time")
+    .option("--json", "Print the patched record as JSON")
+    .action(async (id: string, whenParts: readonly string[], options: SharedOptions) => {
+      const whenRaw = whenParts.join(" ").trim();
+      if (whenRaw.length === 0) {
+        throw new Error("<when> is required");
+      }
+      const parsed = parseReminderDueAt(whenRaw, () => new Date());
+      if (parsed instanceof Error) {
+        throw parsed;
+      }
+      const file = localFollowupsFile();
+      const all = await readFollowups(file);
+      const resolved = resolveFollowupId(id, all);
+      const patched = await snoozeFollowup(file, resolved, parsed);
+      if (!patched) {
+        const existing = all.find((entry) => entry.id === resolved);
+        if (!existing) {
+          throw new Error(`No followup found with id "${id}"`);
+        }
+        throw new Error(`Followup ${resolved.slice(0, 12)} is already ${existing.status}; only scheduled followups can be snoozed`);
+      }
+      if (options.json) {
+        io.stdout(`${JSON.stringify(serializeFollowup(patched), null, 2)}\n`);
+        return;
+      }
+      io.stdout(`Snoozed [${patched.id.slice(0, 12)}] ${patched.summary} → ${shortDateTime(patched.scheduledFor)}\n`);
     });
 
   followup
