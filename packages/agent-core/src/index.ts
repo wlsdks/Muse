@@ -37,6 +37,12 @@ export {
   type RemindersResolver
 } from "./active-context.js";
 export {
+  InMemoryAgentInitiatedNoticeBroker,
+  type AgentInitiatedNotice,
+  type AgentInitiatedNoticeBroker,
+  type InMemoryAgentInitiatedNoticeBrokerOptions
+} from "./agent-initiated-notice.js";
+export {
   formatCurrentTime,
   humanizeRelativeFromIso,
   humanizeRelativeMs,
