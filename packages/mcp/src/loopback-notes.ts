@@ -291,7 +291,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           if (typeof safe === "string") {
             return { error: safe };
           }
-          let exists = false;
+          let exists: boolean;
           try {
             await nodeStat(safe.absolute);
             exists = true;

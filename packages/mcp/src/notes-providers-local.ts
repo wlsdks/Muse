@@ -197,7 +197,7 @@ export class LocalDirNotesProvider implements NotesProvider {
     if (buffer.byteLength > this.maxFileBytes) {
       throw new NotesValidationError("BODY_TOO_LARGE", `body exceeds maxFileBytes ${this.maxFileBytes}`);
     }
-    let exists = false;
+    let exists: boolean;
     try {
       await fs.stat(safe.absolute);
       exists = true;

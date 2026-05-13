@@ -138,15 +138,13 @@ export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOpt
     userId: ownerId
   };
 
-  let dropped = 0;
   try {
     await upsertEpisode(episodesFile, episode);
-    dropped = await vacuumEpisodes(episodesFile, options.maxEntries);
+    const dropped = await vacuumEpisodes(episodesFile, options.maxEntries);
+    return { dropped, episode, status: "captured" };
   } catch (cause) {
     return { reason: `persist failed: ${errorMessage(cause)}`, status: "skipped" };
   }
-
-  return { dropped, episode, status: "captured" };
 }
 
 function errorMessage(cause: unknown): string {

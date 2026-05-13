@@ -37,6 +37,6 @@
     "@muse/skills": "workspace:*",
     "@muse/tools": "workspace:*",
     "@muse/voice": "workspace:*",
-    "kysely": "^0.28.17"
+    "kysely": "^0.29.0"
   }
 }

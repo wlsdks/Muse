@@ -20,6 +20,6 @@
     "@muse/shared": "workspace:*"
   },
   "devDependencies": {
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.6"
   }
 }

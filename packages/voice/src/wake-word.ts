@@ -231,9 +231,8 @@ function sliceAfterPhraseInOriginal(original: string, needle: string): string {
   // original-text tail from that position. Defensive — if normalisation
   // collapses runs, the cursor might land inside whitespace; trim the
   // tail.
-  let normalisedSoFar = "";
   for (let i = 0; i < original.length; i += 1) {
-    normalisedSoFar = normalise(original.slice(0, i + 1));
+    const normalisedSoFar = normalise(original.slice(0, i + 1));
     const matchIndex = normalisedSoFar.indexOf(needle);
     if (matchIndex >= 0 && matchIndex + needle.length === normalisedSoFar.length) {
       return original.slice(i + 1).trim();
