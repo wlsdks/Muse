@@ -80,6 +80,16 @@ export {
   type SummaryListSource
 } from "./episodic-recall.js";
 export {
+  extractCurrentSessionTurns,
+  redactSecrets,
+  summariseSession,
+  type CurrentSessionRange,
+  type SessionBoundaryRef,
+  type SessionSummary,
+  type SessionTurnLine,
+  type SummariseSessionOptions
+} from "./episodic-summariser.js";
+export {
   DefaultToolFilter,
   DEFAULT_DOMAIN_KEYWORDS,
   inferDomain,
