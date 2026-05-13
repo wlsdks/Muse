@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildJsonToolSchema,
   errorMessage,
   readBoolean,
   readJsonObject,
@@ -66,5 +67,29 @@ describe("errorMessage", () => {
     expect(errorMessage(42)).toBe("42");
     expect(errorMessage(null)).toBe("null");
     expect(errorMessage(undefined)).toBe("undefined");
+  });
+});
+
+describe("buildJsonToolSchema", () => {
+  it("emits the canonical { type, additionalProperties:false, properties } shape", () => {
+    expect(buildJsonToolSchema({ query: { type: "string" } })).toEqual({
+      additionalProperties: false,
+      properties: { query: { type: "string" } },
+      type: "object"
+    });
+  });
+  it("includes `required` only when the list is non-empty", () => {
+    const withReq = buildJsonToolSchema({ q: { type: "string" } }, ["q"]);
+    expect(withReq).toMatchObject({ required: ["q"] });
+    const noReq = buildJsonToolSchema({ q: { type: "string" } }, []);
+    expect("required" in noReq).toBe(false);
+    const noReqArg = buildJsonToolSchema({ q: { type: "string" } });
+    expect("required" in noReqArg).toBe(false);
+  });
+  it("returns a fresh required array, not a reference to the input", () => {
+    const required = ["a", "b"];
+    const out = buildJsonToolSchema({ a: { type: "string" }, b: { type: "string" } }, required);
+    expect(out.required).toEqual(["a", "b"]);
+    expect(out.required).not.toBe(required);
   });
 });

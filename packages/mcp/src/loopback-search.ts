@@ -1,7 +1,7 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import type { LoopbackMcpServer } from "./loopback.js";
-import { readString } from "./loopback-helpers.js";
+import { buildJsonToolSchema, readString } from "./loopback-helpers.js";
 
 /**
  * `muse.search` loopback MCP server — model-agnostic web search.
@@ -87,14 +87,7 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           }
           return { query, results: parsed as unknown as JsonValue, total: parsed.length };
         },
-        inputSchema: {
-          additionalProperties: false,
-          properties: {
-            query: { type: "string" }
-          },
-          required: ["query"],
-          type: "object"
-        },
+        inputSchema: buildJsonToolSchema({ query: { type: "string" } }, ["query"]),
         name: "search",
         risk: "read"
       }

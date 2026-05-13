@@ -44,3 +44,27 @@ export function errorMessage(error: unknown): string {
   }
   return String(error);
 }
+
+/**
+ * Build a closed JSON-schema object literal for a loopback tool's
+ * `inputSchema`. Every loopback tool repeats the same
+ * `{type: "object", additionalProperties: false, properties, required?}`
+ * shape — close to 70 sites before this helper landed. Wrapping it
+ * means schema-shape changes (e.g. adding `unevaluatedProperties:
+ * false` for stricter MCP compliance) become a one-line edit.
+ *
+ * Caller passes the `properties` map and optional `required` list.
+ * Empty `required` lists are dropped so the emitted schema doesn't
+ * carry a noisy `required: []` field.
+ */
+export function buildJsonToolSchema(
+  properties: Record<string, JsonObject>,
+  required?: readonly string[]
+): JsonObject {
+  return {
+    additionalProperties: false,
+    properties: properties as unknown as JsonObject,
+    type: "object",
+    ...(required && required.length > 0 ? { required: [...required] } : {})
+  };
+}

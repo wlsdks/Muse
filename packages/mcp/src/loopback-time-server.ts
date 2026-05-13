@@ -1,5 +1,6 @@
 import type { JsonObject } from "@muse/shared";
 
+import { buildJsonToolSchema } from "./loopback-helpers.js";
 import type { BuiltinLoopbackOptions, LoopbackMcpServer } from "./loopback.js";
 
 /**
@@ -35,13 +36,7 @@ export function createTimeMcpServer(options: BuiltinLoopbackOptions = {}): Loopb
             return { error: `unsupported timezone: ${timezone}` };
           }
         },
-        inputSchema: {
-          additionalProperties: false,
-          properties: {
-            timezone: { type: "string" }
-          },
-          type: "object"
-        },
+        inputSchema: buildJsonToolSchema({ timezone: { type: "string" } }),
         name: "now",
         risk: "read"
       },
@@ -55,15 +50,10 @@ export function createTimeMcpServer(options: BuiltinLoopbackOptions = {}): Loopb
           }
           return { milliseconds: to.getTime() - from.getTime() } satisfies JsonObject;
         },
-        inputSchema: {
-          additionalProperties: false,
-          properties: {
-            from: { type: "string" },
-            to: { type: "string" }
-          },
-          required: ["from", "to"],
-          type: "object"
-        },
+        inputSchema: buildJsonToolSchema(
+          { from: { type: "string" }, to: { type: "string" } },
+          ["from", "to"]
+        ),
         name: "diff_ms",
         risk: "read"
       }
