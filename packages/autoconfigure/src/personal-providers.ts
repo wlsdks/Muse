@@ -101,6 +101,7 @@ export {
   resolveEpisodesFile,
   resolveFollowupsFile,
   resolveInboxInjectionCursorFile,
+  resolvePatternsFiredFile,
   resolveLineInboxFile,
   resolveLocalCalendarFile,
   resolveMessagingCredentialsFile,

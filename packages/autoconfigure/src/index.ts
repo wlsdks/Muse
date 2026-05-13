@@ -164,6 +164,7 @@ export {
   mergeModelKeysFromFile,
   resolveEpisodesFile,
   resolveFollowupsFile,
+  resolvePatternsFiredFile,
   resolveInboxInjectionCursorFile,
   resolveLineInboxFile,
   resolveLocalCalendarFile,

@@ -4712,6 +4712,67 @@ describe("muse.followup loopback server", () => {
   });
 });
 
+describe("personal-patterns-fired-store", () => {
+  it("read tolerates missing / bad / wrong-shape files and drops malformed entries", async () => {
+    const { readPatternsFired } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "muse-pat-fired-read-"));
+    expect(await readPatternsFired(join(dir, "missing.json"))).toEqual([]);
+
+    const bad = join(dir, "bad.json");
+    writeFileSync(bad, "not-json", "utf8");
+    expect(await readPatternsFired(bad)).toEqual([]);
+
+    const wrong = join(dir, "wrong.json");
+    writeFileSync(wrong, JSON.stringify({ wrongKey: 1 }), "utf8");
+    expect(await readPatternsFired(wrong)).toEqual([]);
+
+    const mixed = join(dir, "mixed.json");
+    writeFileSync(mixed, JSON.stringify({
+      fired: [
+        { patternId: "p1", firedAtMs: 1000 },
+        { patternId: "p2" }, // missing firedAtMs
+        { firedAtMs: 2000 }, // missing patternId
+        { patternId: "p3", firedAtMs: "stringy" }, // wrong type
+        "not-an-object",
+        { patternId: "p4", firedAtMs: Number.POSITIVE_INFINITY }, // non-finite drops
+        { patternId: "p5", firedAtMs: 3000 }
+      ]
+    }), "utf8");
+    const survivors = await readPatternsFired(mixed);
+    expect(survivors.map((r) => r.patternId)).toEqual(["p1", "p5"]);
+  });
+
+  it("recordPatternFired appends atomically; isPatternOnCooldown picks the newest entry per id", async () => {
+    const { recordPatternFired, readPatternsFired, isPatternOnCooldown } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "muse-pat-fired-rec-"));
+    const file = join(dir, "patterns-fired.json");
+
+    await recordPatternFired(file, "abc123", 1_000);
+    await recordPatternFired(file, "def456", 2_000);
+    await recordPatternFired(file, "abc123", 5_000); // newer than the first, same id
+
+    const all = await readPatternsFired(file);
+    expect(all).toHaveLength(3);
+
+    // 1 second after the newest "abc123" entry — under default cooldown.
+    expect(isPatternOnCooldown(all, "abc123", 5_500, 24 * 60 * 60_000)).toBe(true);
+    // 25 hours after the newest — past cooldown.
+    expect(isPatternOnCooldown(all, "abc123", 5_000 + 25 * 60 * 60_000, 24 * 60 * 60_000)).toBe(false);
+    // Pattern that was never fired → never on cooldown.
+    expect(isPatternOnCooldown(all, "never-fired", 1_000_000, 24 * 60 * 60_000)).toBe(false);
+    // cooldownMs <= 0 → always off.
+    expect(isPatternOnCooldown(all, "abc123", 5_500, 0)).toBe(false);
+  });
+});
+
 describe("personal-episodes-store", () => {
   it("read tolerates missing / corrupt / wrong-shape files and drops invalid entries", async () => {
     const { readEpisodes } = await import("../src/index.js");

@@ -538,6 +538,18 @@ export {
   type PersistedFollowup
 } from "./personal-followups-store.js";
 
+// Pattern-detection cooldown sidecar — step 4 of
+// docs/design/pattern-detection.md. Tracks the last firing time
+// per detector-assigned pattern id so a fired suggestion does not
+// re-spam the user within MUSE_PROACTIVE_PATTERN_COOLDOWN_MS.
+export {
+  isPatternOnCooldown,
+  readPatternsFired,
+  recordPatternFired,
+  writePatternsFired,
+  type PatternFiredRecord
+} from "./personal-patterns-fired-store.js";
+
 // Episodic memory store — step 1 of docs/design/episodic-memory.md.
 // Pure CRUD over `~/.muse/episodes.json`; later steps add the
 // session-boundary sentinel, end-of-session summariser hook,

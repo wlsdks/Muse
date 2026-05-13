@@ -413,5 +413,10 @@ export {
   type Weekday,
   type WeeklyTaskMatch
 } from "./pattern-detector.js";
+export {
+  selectFireablePatterns,
+  type CooldownRecordLike,
+  type SelectFireablePatternsOptions
+} from "./pattern-orchestration.js";
 
 
