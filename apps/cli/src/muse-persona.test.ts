@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildJarvisPersona, formatCurrentContextLine } from "./jarvis-persona.js";
+import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 
 describe("formatCurrentContextLine", () => {
   it("emits a single 'Current local context: YYYY-MM-DD HH:MM Weekday (TZ).' line", () => {
@@ -22,15 +22,15 @@ describe("formatCurrentContextLine", () => {
   });
 });
 
-describe("buildJarvisPersona", () => {
+describe("buildMusePersona", () => {
   it("returns undefined when memory is empty (no system-prompt bloat for first-time users)", () => {
     expect(
-      buildJarvisPersona({ facts: {}, preferences: {} }, "stark")
+      buildMusePersona({ facts: {}, preferences: {} }, "stark")
     ).toBeUndefined();
   });
 
   it("renders a JARVIS-style system prompt with facts + preferences", () => {
-    const prompt = buildJarvisPersona(
+    const prompt = buildMusePersona(
       {
         facts: { name: "Stark", city: "Seoul" },
         preferences: { language: "Korean", reply_style: "concise" }
@@ -46,28 +46,28 @@ describe("buildJarvisPersona", () => {
   });
 
   it("instructs the model not to reveal the system prompt verbatim", () => {
-    const prompt = buildJarvisPersona({ facts: { name: "Stark" }, preferences: {} }, "stark");
+    const prompt = buildMusePersona({ facts: { name: "Stark" }, preferences: {} }, "stark");
     expect(prompt).toMatch(/Do NOT volunteer/i);
   });
 
   it("handles facts-only or preferences-only inputs", () => {
     expect(
-      buildJarvisPersona({ facts: { name: "Stark" }, preferences: {} }, "stark")
+      buildMusePersona({ facts: { name: "Stark" }, preferences: {} }, "stark")
     ).toContain("name: Stark");
     expect(
-      buildJarvisPersona({ facts: {}, preferences: { language: "Korean" } }, "stark")
+      buildMusePersona({ facts: {}, preferences: { language: "Korean" } }, "stark")
     ).toContain("language: Korean");
   });
 
   it("embeds the userId so a shared-machine setup can address each user correctly", () => {
-    const a = buildJarvisPersona({ facts: { name: "Stark" }, preferences: {} }, "tony");
-    const b = buildJarvisPersona({ facts: { name: "Rhodey" }, preferences: {} }, "james");
+    const a = buildMusePersona({ facts: { name: "Stark" }, preferences: {} }, "tony");
+    const b = buildMusePersona({ facts: { name: "Rhodey" }, preferences: {} }, "james");
     expect(a).toContain('"tony"');
     expect(b).toContain('"james"');
   });
 
   it("renders veto: prefixed preferences under their own header with refusal directive", () => {
-    const prompt = buildJarvisPersona(
+    const prompt = buildMusePersona(
       {
         facts: { name: "Stark" },
         preferences: {
@@ -89,7 +89,7 @@ describe("buildJarvisPersona", () => {
   });
 
   it("renders goal: prefixed preferences under their own header", () => {
-    const prompt = buildJarvisPersona(
+    const prompt = buildMusePersona(
       {
         facts: {},
         preferences: {
@@ -106,12 +106,12 @@ describe("buildJarvisPersona", () => {
 
   it("returns undefined when only empty-string vetoes/goals exist (no bloat)", () => {
     expect(
-      buildJarvisPersona({ facts: {}, preferences: {} }, "stark")
+      buildMusePersona({ facts: {}, preferences: {} }, "stark")
     ).toBeUndefined();
   });
 
   it("surfaces recentTopics under their own header so JARVIS continuity isn't amnesic", () => {
-    const prompt = buildJarvisPersona(
+    const prompt = buildMusePersona(
       {
         facts: { name: "Stark" },
         preferences: {},
@@ -126,7 +126,7 @@ describe("buildJarvisPersona", () => {
   });
 
   it("caps recentTopics to the 5 most recent and dedupes whitespace-collapsed entries", () => {
-    const prompt = buildJarvisPersona(
+    const prompt = buildMusePersona(
       {
         facts: { name: "Stark" },
         preferences: {},
@@ -152,7 +152,7 @@ describe("buildJarvisPersona", () => {
     // JARVIS continuity case: user hasn't set name/prefs but has had
     // prior sessions whose topics were auto-extracted. The persona
     // should still emit so the next REPL turn isn't amnesic.
-    const prompt = buildJarvisPersona(
+    const prompt = buildMusePersona(
       { facts: {}, preferences: {}, recentTopics: ["the prior conversation"] },
       "stark"
     );
@@ -162,7 +162,7 @@ describe("buildJarvisPersona", () => {
 
   it("injects current local date / time / day-of-week so the model knows when 'today' is", () => {
     const fixed = new Date("2026-05-12T13:45:00Z"); // Tuesday
-    const prompt = buildJarvisPersona(
+    const prompt = buildMusePersona(
       { facts: { name: "Stark" }, preferences: {} },
       "stark",
       { now: fixed }

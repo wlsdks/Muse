@@ -31,7 +31,7 @@ import {
   parseRoutineUpdateMs,
   readLastChatHistory
 } from "./chat-history.js";
-import { buildJarvisPersona, formatCurrentContextLine } from "./jarvis-persona.js";
+import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import {
   apiRequest,
   promptText,
@@ -224,7 +224,7 @@ export async function runChatRepl(
   let userMemory = memoryStore ? await Promise.resolve(memoryStore.findByUserId(userId)) : undefined;
   const personaPrompt = (): string | undefined => {
     if (!userMemory) return undefined;
-    return buildJarvisPersona(userMemory, userId);
+    return buildMusePersona(userMemory, userId);
   };
 
   const rl = readline.createInterface({
@@ -517,7 +517,7 @@ export async function runChatRepl(
       try {
         const persona = personaPrompt();
         // Always ground the model in `now`. When persona is set,
-        // buildJarvisPersona already includes the date line; with
+        // buildMusePersona already includes the date line; with
         // empty memory, fall back to a system message containing
         // just the date. Same fix as commands-ask.ts —
         // JARVIS shouldn't lose track of what day it is when the
@@ -616,7 +616,7 @@ export async function runChatRepl(
               }
               // Encode vetoes + goals as prefixed preferences so the
               // FileUserMemoryStore (which doesn't own a typed-slot
-              // column) still persists them. buildJarvisPersona
+              // column) still persists them. buildMusePersona
               // splits them back out for display.
               for (const slot of payload.vetoes ?? []) {
                 if (slot && typeof slot.value === "string" && slot.value.length > 0) {

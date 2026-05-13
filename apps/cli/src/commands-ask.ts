@@ -32,7 +32,7 @@ import { readReminders, readTasks, type PersistedReminder, type PersistedTask } 
 import type { Command } from "commander";
 
 import { isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
-import { buildJarvisPersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
+import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
 import type { ProgramIO } from "./program.js";
 
 interface AskOptions {
@@ -228,7 +228,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const model = options.model ?? assembly.defaultModel!;
 
       const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userKey));
-      const personaPrompt = userMemory ? buildJarvisPersona(userMemory, userKey) : undefined;
+      const personaPrompt = userMemory ? buildMusePersona(userMemory, userKey) : undefined;
 
       // Compose RAG context block
       const contextBlock = scored.length === 0
@@ -342,7 +342,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // questions like "anything due today?" / "is the dentist
         // tomorrow?" require the model to know `now`, regardless of
         // whether any facts have been remembered. When a persona is
-        // injected, this duplicates the line buildJarvisPersona
+        // injected, this duplicates the line buildMusePersona
         // emits; that's harmless. When persona is absent, this is
         // the only path that grounds the model in time.
         formatCurrentContextLine(),

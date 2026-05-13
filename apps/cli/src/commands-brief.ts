@@ -37,7 +37,7 @@ import { readProactiveHistory, readReminders, type PersistedReminder } from "@mu
 import type { Command } from "commander";
 
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from "./human-formatters.js";
-import { buildJarvisPersona } from "./program.js";
+import { buildMusePersona } from "./program.js";
 import type { ProgramIO } from "./program.js";
 
 interface BriefOptions {
@@ -125,7 +125,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       const model = options.model ?? assembly.defaultModel!;
 
       const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userKey));
-      const personaPrompt = userMemory ? buildJarvisPersona(userMemory, userKey) : undefined;
+      const personaPrompt = userMemory ? buildMusePersona(userMemory, userKey) : undefined;
 
       const now = new Date();
       const horizon = new Date(now.getTime() + 24 * 60 * 60 * 1000);

@@ -266,8 +266,8 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
         }
         const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userId));
         if (userMemory) {
-          const { buildJarvisPersona } = await import("./program.js");
-          personaPreamble = buildJarvisPersona(userMemory, userId);
+          const { buildMusePersona } = await import("./program.js");
+          personaPreamble = buildMusePersona(userMemory, userId);
           // Parse routine_active_hours fact (e.g. "09,14,20") into a
           // set of "active" hours +/- 1 for the quiet-hours gate.
           const routineRaw = userMemory.facts?.routine_active_hours;

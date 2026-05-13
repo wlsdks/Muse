@@ -10,7 +10,7 @@ import {
   writeStoredToken
 } from "./credential-store.js";
 import { formatCitations } from "./human-formatters.js";
-import { buildJarvisPersona, formatCurrentContextLine } from "./jarvis-persona.js";
+import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import {
   appendLastChatTurn,
   clearLastChatHistory,
@@ -476,12 +476,12 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 }
 
 
-// JARVIS persona helpers (`buildJarvisPersona`,
-// `formatCurrentContextLine`) live in ./jarvis-persona.ts and are
+// JARVIS persona helpers (`buildMusePersona`,
+// `formatCurrentContextLine`) live in ./muse-persona.ts and are
 // imported at the top of this file. They're re-exported below so
 // the historical `./program.js` import path keeps working for
-// jarvis-persona.test.ts and other consumers.
-export { buildJarvisPersona, formatCurrentContextLine };
+// muse-persona.test.ts and other consumers.
+export { buildMusePersona, formatCurrentContextLine };
 
 // Chat-history + activity-log lifecycle helpers live in
 // ./chat-history.ts. Re-exported below so the historical

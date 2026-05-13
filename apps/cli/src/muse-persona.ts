@@ -4,11 +4,11 @@
  *
  *   - `formatCurrentContextLine(now?)` — single-line "Current local
  *     context: YYYY-MM-DD HH:MM Weekday (TZ)." string. Injected by
- *     both `buildJarvisPersona` (when a persona exists) and the
+ *     both `buildMusePersona` (when a persona exists) and the
  *     `muse ask` path (always, even with no persona) so the model
  *     never has to guess what "today" / "tomorrow" means.
  *
- *   - `buildJarvisPersona(memory, userId, options?)` — the full
+ *   - `buildMusePersona(memory, userId, options?)` — the full
  *     persona block: facts, plain preferences, vetoes, goals, and
  *     the 5 most-recent topics from prior sessions. Returns
  *     undefined when every section is empty so first-time users
@@ -29,7 +29,7 @@ export function formatCurrentContextLine(now: Date = new Date()): string {
   return `Current local context: ${dateStr} ${timeStr} ${dayOfWeek} (${tz}).`;
 }
 
-export function buildJarvisPersona(
+export function buildMusePersona(
   memory: JarvisPersonaMemory,
   userId: string,
   options: { readonly now?: Date } = {}
@@ -37,7 +37,7 @@ export function buildJarvisPersona(
   const facts = Object.entries(memory.facts);
   // Preferences encode three slot types: plain `pref.X`, `veto:X`
   // (things the user has refused), and `goal:X` (active objectives).
-  // Split them so buildJarvisPersona renders each under its own
+  // Split them so buildMusePersona renders each under its own
   // header — JARVIS doesn't lump "I don't drink coffee" in with
   // "speak Korean".
   const plainPrefs: [string, string][] = [];
