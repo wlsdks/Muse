@@ -82,6 +82,7 @@ import { registerStatusCommand } from "./commands-status.js";
 import { registerRoutineCommand } from "./commands-routine.js";
 import { registerTrustCommands } from "./commands-trust.js";
 import { registerWatchFolderCommand } from "./commands-watch-folder.js";
+import { registerAgentNoticesCommands } from "./commands-agent-notices.js";
 import { registerWebhookCommand } from "./commands-webhook.js";
 import { registerSpecsCommands } from "./commands-specs.js";
 import { registerTasksCommands } from "./commands-tasks.js";
@@ -454,6 +455,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerRoutineCommand(program, io);
   registerTrustCommands(program, io);
   registerWebhookCommand(program, io);
+  registerAgentNoticesCommands(program, io, { apiRequest });
   registerTasksCommands(program, io, { apiRequest, writeOutput });
   registerRunsCommands(program, io, { apiRequest, writeOutput });
   registerDoctorCommand(program, io, { apiRequest, writeOutput });

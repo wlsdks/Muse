@@ -1931,6 +1931,69 @@ describe("cli program", () => {
     }
   });
 
+  it("agent-notices tail consumes the SSE stream and renders notice events", async () => {
+    const { io, output } = captureOutput();
+    const requests: Array<{ readonly url: string }> = [];
+    const sseBody = [
+      `event: open\ndata: ${JSON.stringify({ userId: "stark" })}\n\n`,
+      `event: notice\ndata: ${JSON.stringify({
+        generatedAt: "2026-05-13T14:55:00Z",
+        kind: "calendar",
+        sourceId: "evt-1",
+        text: "Standup in 5 — want the agenda?"
+      })}\n\n`
+    ].join("");
+    const program = createProgram({
+      ...io,
+      fetch: async (url) => {
+        requests.push({ url: String(url) });
+        return new Response(sseBody, {
+          headers: { "content-type": "text/event-stream" }
+        });
+      }
+    });
+
+    const prevUser = process.env.MUSE_USER_ID;
+    process.env.MUSE_USER_ID = "stark";
+    try {
+      await program.parseAsync(
+        ["node", "muse", "--api-url", "http://api.test", "agent-notices", "tail"],
+        { from: "node" }
+      );
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.url).toBe("http://api.test/api/agent-notices/stream?userId=stark");
+      const combined = output.join("");
+      expect(combined).toContain("(listening for agent-notices on user 'stark'");
+      expect(combined).toContain("[14:55]");
+      expect(combined).toContain("[calendar]");
+      expect(combined).toContain("Standup in 5 — want the agenda?");
+    } finally {
+      if (prevUser === undefined) { delete process.env.MUSE_USER_ID; } else { process.env.MUSE_USER_ID = prevUser; }
+    }
+  });
+
+  it("agent-notices tail --json emits the raw payload line-by-line", async () => {
+    const { io, output } = captureOutput();
+    const sseBody = `event: open\ndata: {}\n\nevent: notice\ndata: {"kind":"task","text":"file taxes","generatedAt":"2026-05-13T22:00:00Z"}\n\n`;
+    const program = createProgram({
+      ...io,
+      fetch: async () => new Response(sseBody, { headers: { "content-type": "text/event-stream" } })
+    });
+    const prevUser = process.env.MUSE_USER_ID;
+    process.env.MUSE_USER_ID = "stark";
+    try {
+      await program.parseAsync(
+        ["node", "muse", "--api-url", "http://api.test", "agent-notices", "tail", "--json"],
+        { from: "node" }
+      );
+      const combined = output.join("");
+      expect(combined).not.toContain("(listening for agent-notices");
+      expect(combined).toContain(`{"kind":"task","text":"file taxes"`);
+    } finally {
+      if (prevUser === undefined) { delete process.env.MUSE_USER_ID; } else { process.env.MUSE_USER_ID = prevUser; }
+    }
+  });
+
   it("notes read prints the file content directly by default and --json restores the envelope", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-notes-human-"));
     const prev = process.env.MUSE_NOTES_DIR;
