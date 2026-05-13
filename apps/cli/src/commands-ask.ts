@@ -47,6 +47,7 @@ interface AskOptions {
   readonly calendarDays?: string;
   readonly reminders?: boolean;
   readonly json?: boolean;
+  readonly withTools?: boolean;
 }
 
 interface IndexChunk {
@@ -139,6 +140,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--json",
       "Emit a single JSON object on stdout with {query, model, answer, grounded:{...}} (suppresses streaming)"
+    )
+    .option(
+      "--with-tools",
+      "Run through the agent runtime so the model can call MCP tools (muse.search, muse.notes.*, muse.tasks.*, etc.). Default off — the chat-only fast path streams ~2x faster but can't fetch fresh web data."
     )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const argQuery = queryParts.join(" ").trim();
@@ -407,16 +412,49 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       }
 
       let collectedAnswer = "";
-      for await (const event of assembly.modelProvider.stream({
-        messages: [
-          { content: systemPrompt, role: "system" },
-          { content: query, role: "user" }
-        ],
-        model
-      }) as AsyncIterable<{ type: string; text?: string }>) {
-        if (event.type === "text-delta" && typeof event.text === "string") {
-          collectedAnswer += event.text;
-          if (!options.json) io.stdout(event.text);
+      let toolsUsed: readonly string[] = [];
+      if (options.withTools) {
+        // Agent-runtime path — tools (muse.search, muse.notes.*,
+        // muse.tasks.*, etc.) are exposed to the model and tool calls
+        // get full round-trip execution. Slower (every tool round is
+        // an extra request) but unlocks fresh-web answers + side-
+        // effecting actions from a single `muse ask` shot.
+        if (!assembly.agentRuntime) {
+          io.stderr("(--with-tools requires a configured agent runtime — set MUSE_MODEL or provider key and re-run)\n");
+          process.exitCode = 1;
+          return;
+        }
+        const result = await assembly.agentRuntime.run({
+          messages: [
+            { content: systemPrompt, role: "system" },
+            { content: query, role: "user" }
+          ],
+          metadata: { userId: userKey },
+          model
+        });
+        collectedAnswer = result.response.output ?? "";
+        toolsUsed = result.toolsUsed ?? [];
+        if (!options.json) {
+          if (toolsUsed.length > 0) {
+            io.stderr(`(tools used: ${toolsUsed.join(", ")})\n`);
+          }
+          io.stdout(collectedAnswer);
+        }
+      } else {
+        // Chat-only fast path — direct modelProvider.stream, no tool
+        // registry. Suitable for "explain this", "summarise that"
+        // queries that don't need fresh external data.
+        for await (const event of assembly.modelProvider.stream({
+          messages: [
+            { content: systemPrompt, role: "system" },
+            { content: query, role: "user" }
+          ],
+          model
+        }) as AsyncIterable<{ type: string; text?: string }>) {
+          if (event.type === "text-delta" && typeof event.text === "string") {
+            collectedAnswer += event.text;
+            if (!options.json) io.stdout(event.text);
+          }
         }
       }
 
@@ -430,6 +468,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           query,
           model,
           answer: collectedAnswer,
+          ...(options.withTools ? { toolsUsed } : {}),
           grounded: {
             noteChunks: scored.map((r) => ({ file: r.file, score: r.score, text: r.chunk.text })),
             openTasks: openTasks.map((t) => ({
