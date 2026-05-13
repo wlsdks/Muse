@@ -26,9 +26,6 @@ export interface AuthProperties {
   readonly jwtSecret: string;
   readonly jwtExpirationMs?: number;
   readonly selfRegistrationEnabled?: boolean;
-  readonly publicPaths?: readonly string[];
-  readonly loginRateLimitPerMinute?: number;
-  readonly trustForwardedHeaders?: boolean;
 }
 
 export interface AuthProvider {
@@ -391,10 +388,6 @@ export class JwtTokenProvider {
 
   extractEmail(token: string): string | undefined {
     return this.parseToken(token)?.email;
-  }
-
-  extractAccountId(token: string): string | undefined {
-    return this.parseToken(token)?.accountId;
   }
 
   extractTokenId(token: string): string | undefined {
