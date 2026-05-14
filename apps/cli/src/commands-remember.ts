@@ -23,6 +23,7 @@ import {
 } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
+import { resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 
 interface RememberOptions {
@@ -46,7 +47,8 @@ function envValue(key: string): string | undefined {
 
 function composeKey(user: string | undefined, persona: string | undefined): string {
   const base = user ?? envValue("MUSE_USER_ID") ?? envValue("USER") ?? "default";
-  return persona && persona.length > 0 ? `${base}@${persona}` : base;
+  const resolved = resolvePersona(persona);
+  return resolved ? `${base}@${resolved}` : base;
 }
 
 export function registerRememberCommands(program: Command, io: ProgramIO): void {

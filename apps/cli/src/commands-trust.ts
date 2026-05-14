@@ -27,6 +27,7 @@ import { dirname, join } from "node:path";
 
 import type { Command } from "commander";
 
+import { resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 
 interface TrustEntry {
@@ -69,7 +70,8 @@ async function writeTrustFile(path: string, data: TrustFile): Promise<void> {
 
 function defaultUserKey(persona: string | undefined): string {
   const base = process.env.MUSE_USER_ID ?? process.env.USER ?? "default";
-  return persona && persona.length > 0 ? `${base}@${persona}` : base;
+  const resolved = resolvePersona(persona);
+  return resolved ? `${base}@${resolved}` : base;
 }
 
 function entryFor(file: TrustFile, key: string): TrustEntry {

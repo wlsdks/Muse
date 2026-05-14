@@ -59,6 +59,25 @@ export function defaultConfigPath(home = process.env.HOME ?? "~"): string {
   return path.join(home, ".config", "muse", "config.json");
 }
 
+/**
+ * Resolve a persona slot: explicit option > `MUSE_PERSONA` env > none.
+ *
+ * Centralises persona precedence so every subcommand (chat REPL,
+ * brief, remember, ask, trust, approval, jobs) honours the same
+ * env fallback. Setting `export MUSE_PERSONA=work` in a shell-rc
+ * lets the user skip `--persona` on every invocation while keeping
+ * the in-session `/persona` switch and explicit `--persona` flag
+ * operational. P1 from `docs/agent-capability-audit.md`.
+ */
+export function resolvePersona(personaOption: string | undefined): string | undefined {
+  const explicit = personaOption?.trim();
+  if (explicit && explicit.length > 0) {
+    return explicit;
+  }
+  const fromEnv = process.env.MUSE_PERSONA?.trim();
+  return fromEnv && fromEnv.length > 0 ? fromEnv : undefined;
+}
+
 export function configPath(io: ProgramIO): string {
   return io.configDir ? path.join(io.configDir, "config.json") : defaultConfigPath();
 }

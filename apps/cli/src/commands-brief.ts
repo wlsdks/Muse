@@ -37,6 +37,7 @@ import { readProactiveHistory, readReminders, type PersistedReminder } from "@mu
 import type { Command } from "commander";
 
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from "./human-formatters.js";
+import { resolvePersona } from "./program-helpers.js";
 import { buildMusePersona } from "./program.js";
 import type { ProgramIO } from "./program.js";
 
@@ -54,7 +55,8 @@ function envValue(key: string): string | undefined {
 
 function defaultUserKey(user?: string, persona?: string): string {
   const base = user ?? envValue("MUSE_USER_ID") ?? envValue("USER") ?? "default";
-  return persona && persona.length > 0 ? `${base}@${persona}` : base;
+  const resolved = resolvePersona(persona);
+  return resolved ? `${base}@${resolved}` : base;
 }
 
 interface PersistedTask {

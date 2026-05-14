@@ -29,6 +29,7 @@ const here = pathDirname(fileURLToPath(import.meta.url));
 
 import type { Command } from "commander";
 
+import { resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 
 function jobsDir(): string {
@@ -128,13 +129,14 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
       const file = jobPath(id);
 
       const env = { ...process.env };
+      const resolvedPersona = resolvePersona(options.persona);
       const argv = [
         `--job-id=${id}`,
         `--job-file=${file}`,
         `--job-prompt=${prompt}`,
         ...(options.model ? [`--job-model=${options.model}`] : []),
         ...(options.user ? [`--job-user=${options.user}`] : []),
-        ...(options.persona ? [`--job-persona=${options.persona}`] : []),
+        ...(resolvedPersona ? [`--job-persona=${resolvedPersona}`] : []),
         ...(options.tools === false ? ["--job-no-tools"] : [])
       ];
       const workerPath = pathJoin(here, "job-worker.js");

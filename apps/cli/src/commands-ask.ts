@@ -33,6 +33,7 @@ import type { Command } from "commander";
 
 import { isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
 import { resolveOllamaUrl } from "./ollama-url.js";
+import { resolvePersona } from "./program-helpers.js";
 import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
 import type { ProgramIO } from "./program.js";
 import { withSigintAbort } from "./sigint-abort.js";
@@ -93,7 +94,8 @@ function notesIndexPath(): string {
 
 function defaultUserKey(user: string | undefined, persona: string | undefined): string {
   const base = user ?? process.env.MUSE_USER_ID ?? process.env.USER ?? "default";
-  return persona && persona.length > 0 ? `${base}@${persona}` : base;
+  const resolved = resolvePersona(persona);
+  return resolved ? `${base}@${resolved}` : base;
 }
 
 async function embed(text: string, model: string): Promise<number[]> {
