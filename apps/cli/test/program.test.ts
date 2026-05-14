@@ -3940,6 +3940,22 @@ describe("cli program", () => {
     }
   });
 
+  it("wireReplGracefulExit fires its onSignal for SIGTERM (goal 072)", async () => {
+    const { wireReplGracefulExit } = await import("../src/chat-repl.js");
+    const sawSignals: NodeJS.Signals[] = [];
+    const teardown = wireReplGracefulExit({
+      onSignal: (sig) => { sawSignals.push(sig); }
+    });
+    process.emit("SIGTERM");
+    expect(sawSignals).toEqual(["SIGTERM"]);
+    teardown();
+    // After teardown a follow-up SIGTERM doesn't re-fire (the
+    // SIGINT once-handler was removed by teardown so this also
+    // doesn't pollute later SIGINT-emitting tests).
+    process.emit("SIGTERM");
+    expect(sawSignals).toEqual(["SIGTERM"]);
+  });
+
   it("resolveDoctorWatchIntervalMs defaults to 5s and clamps to [1s, 3600s] (goal 068)", async () => {
     const { resolveDoctorWatchIntervalMs } = await import("../src/commands-doctor.js");
     expect(resolveDoctorWatchIntervalMs(undefined)).toBe(5_000);

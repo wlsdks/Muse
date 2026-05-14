@@ -324,6 +324,20 @@ export async function runChatRepl(
     rl.close();
   };
   rl.on("SIGINT", onSigint);
+  // Goal 072 — SIGTERM (kill / docker stop / systemd shutdown)
+  // would otherwise bypass the `finally` block that captures the
+  // end-of-session episode. The helper closes the readline so its
+  // in-flight `question` promise rejects + control returns to the
+  // finally where the episode summariser runs. SIGINT at the
+  // process level (rare — readline usually catches it first)
+  // gets the same treatment for parity.
+  const teardownProcessSignals = wireReplGracefulExit({
+    onSignal: (signal) => {
+      io.stdout(`\n(${signal} — exiting)\n`);
+      active = false;
+      rl.close();
+    }
+  });
 
   try {
     while (active) {
@@ -498,6 +512,7 @@ export async function runChatRepl(
     }
   } finally {
     rl.off("SIGINT", onSigint);
+    teardownProcessSignals();
     rl.close();
     // Episodic-memory step 3b — summarise the just-finished session
     // and persist into ~/.muse/episodes.json. Off by default
@@ -653,5 +668,26 @@ export function resolveReplHistoryCap(raw: string | undefined): number {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return 2000;
   return parsed;
+}
+
+/**
+ * Goal 072 — wire process-level SIGTERM + SIGINT to a single
+ * graceful-exit callback. Returns a teardown function that
+ * removes both listeners (call from the REPL's `finally` block
+ * so the next REPL instance installs fresh listeners). Exported
+ * for direct unit-test coverage — the chat REPL itself can't be
+ * driven from a vitest worker without a real TTY.
+ */
+export function wireReplGracefulExit(args: {
+  readonly onSignal: (signal: NodeJS.Signals) => void;
+}): () => void {
+  const sigterm = (): void => args.onSignal("SIGTERM");
+  const sigintProcess = (): void => args.onSignal("SIGINT");
+  process.once("SIGTERM", sigterm);
+  process.once("SIGINT", sigintProcess);
+  return () => {
+    process.off("SIGTERM", sigterm);
+    process.off("SIGINT", sigintProcess);
+  };
 }
 
