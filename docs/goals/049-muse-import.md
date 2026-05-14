@@ -16,4 +16,12 @@ Mirror of 048. Refuse to overwrite existing files unless --force.
 
 ## Status
 
-open
+done — `muse import <bundle> [--dry-run] [--force]` restores a
+`muse export` tarball into `~/.muse/`. Collision detection
+inspects every `.muse/*` entry in the bundle against the user's
+home and refuses to extract if any pre-existing file would be
+overwritten, unless `--force` is passed. `--dry-run` prints the
+plan with per-entry `OVERWRITE` / `create` labels without
+touching disk. cli +1 round-trip unit test exercises export →
+list-entries → find-collisions (clean home + conflict home) so
+the contract is locked in.

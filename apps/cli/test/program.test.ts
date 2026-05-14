@@ -3616,6 +3616,48 @@ describe("cli program", () => {
     expect(resolveReplHistoryCap("9999")).toBe(9999);
   });
 
+  it("listMuseImportEntries + findImportCollisions round-trip an exported bundle correctly (goal 049)", async () => {
+    const { buildMuseExport } = await import("../src/commands-export.js");
+    const { listMuseImportEntries, findImportCollisions } = await import("../src/commands-import.js");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-import-"));
+    const fsp = await import("node:fs/promises");
+    const museDir = path.join(root, "src", ".muse");
+    const notesDir = path.join(museDir, "notes");
+    await fsp.mkdir(museDir, { recursive: true });
+    await fsp.mkdir(notesDir, { recursive: true });
+    await fsp.writeFile(path.join(museDir, "tasks.json"), JSON.stringify({ tasks: [] }));
+    await fsp.writeFile(path.join(museDir, "reminders.json"), JSON.stringify({ reminders: [] }));
+    await fsp.writeFile(path.join(notesDir, "a.md"), "hi");
+    const bundle = path.join(root, "bundle.tar.gz");
+    await buildMuseExport({ museDir, notesDir, outputPath: bundle });
+
+    // listMuseImportEntries filters to .muse/* file entries only.
+    const entries = await listMuseImportEntries(bundle);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.startsWith(".muse/")).toBe(true);
+      expect(e.endsWith("/")).toBe(false);
+    }
+    // Contains the two stores + the note file + the README.
+    expect(entries).toContain(".muse/tasks.json");
+    expect(entries).toContain(".muse/reminders.json");
+    expect(entries.some((e) => e === ".muse/notes/a.md")).toBe(true);
+
+    // findImportCollisions against a clean home directory: zero.
+    const cleanHome = path.join(root, "clean-home");
+    await fsp.mkdir(cleanHome, { recursive: true });
+    expect(await findImportCollisions(cleanHome, entries)).toEqual([]);
+
+    // findImportCollisions against a home that already has one
+    // matching file flags it as a collision (prefix stripped).
+    const conflictHome = path.join(root, "conflict-home");
+    await fsp.mkdir(path.join(conflictHome, ".muse"), { recursive: true });
+    await fsp.writeFile(path.join(conflictHome, ".muse", "tasks.json"), "{}");
+    const collisions = await findImportCollisions(conflictHome, entries);
+    expect(collisions).toContain("tasks.json");
+    expect(collisions).not.toContain("reminders.json");
+  });
+
   it("buildMuseExport bundles every present ~/.muse/*.json + the notes tree, skipping missing siblings (goal 048)", async () => {
     const { buildMuseExport, buildExportReadme, DEFAULT_EXPORT_FILES } = await import("../src/commands-export.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-export-"));

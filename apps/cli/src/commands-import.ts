@@ -1,0 +1,154 @@
+/**
+ * `muse import <tar> [--dry-run] [--force]` — restore a backup
+ * produced by `muse export` (goal 048) into `~/.muse/`.
+ *
+ * Goal 049 — refuses to overwrite an existing file unless `--force`
+ * is set. `--dry-run` prints the plan without touching disk.
+ *
+ * Shells out to system `tar` (same dep posture as
+ * `commands-export.ts`). Reads the manifest via `tar -tzf` first,
+ * runs the collision check, then either reports the plan or
+ * extracts with `tar -xzf`.
+ */
+
+import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+
+import type { Command } from "commander";
+
+import type { ProgramIO } from "./program.js";
+
+interface ImportOptions {
+  readonly force?: boolean;
+  readonly dryRun?: boolean;
+}
+
+/**
+ * Run `tar -tzf <bundle>` and parse the entries the bundle would
+ * extract. Only entries under the `.muse/` prefix produced by the
+ * export command are returned — anything else is silently ignored
+ * so a hand-rolled tar with extra junk can't sneak files into
+ * unrelated directories. Exported for direct test coverage of the
+ * filter logic.
+ */
+export async function listMuseImportEntries(bundlePath: string): Promise<readonly string[]> {
+  const stdout = await new Promise<string>((resolveSpawn, reject) => {
+    const child = spawn("tar", ["-tzf", bundlePath], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk: Buffer) => { out += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk: Buffer) => { err += chunk.toString("utf8"); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolveSpawn(out);
+      } else {
+        reject(new Error(`tar -tzf exited with code ${(code ?? -1).toString()}: ${err.trim()}`));
+      }
+    });
+  });
+  return stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && line.startsWith(".muse/") && !line.endsWith("/"));
+}
+
+/**
+ * Inspect the destination home directory for entries that would
+ * be overwritten by extracting `entries`. Returns the relative
+ * paths (already without the `.muse/` prefix, suitable for
+ * surfacing to the user). Exported for direct testing.
+ */
+export async function findImportCollisions(
+  home: string,
+  entries: readonly string[]
+): Promise<readonly string[]> {
+  const collisions: string[] = [];
+  for (const entry of entries) {
+    const abs = join(home, entry);
+    try {
+      const s = await stat(abs);
+      if (s.isFile()) {
+        collisions.push(entry.replace(/^\.muse\//, ""));
+      }
+    } catch {
+      // missing — no collision
+    }
+  }
+  return collisions;
+}
+
+async function extractMuseBundle(bundlePath: string, home: string): Promise<void> {
+  await new Promise<void>((resolveSpawn, reject) => {
+    const child = spawn("tar", ["-xzf", bundlePath, "-C", home], { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolveSpawn();
+      } else {
+        reject(new Error(`tar -xzf exited with code ${(code ?? -1).toString()}: ${stderr.trim()}`));
+      }
+    });
+  });
+}
+
+export function registerImportCommand(program: Command, io: ProgramIO): void {
+  program
+    .command("import")
+    .description("Restore a `muse export` tarball into ~/.muse/ (goal 049). Refuses to overwrite without --force.")
+    .argument("<bundle>", "Path to a `.tar.gz` produced by `muse export`")
+    .option("--force", "Overwrite existing ~/.muse/* files when they collide with bundle entries")
+    .option("--dry-run", "Print the plan without touching disk")
+    .action(async (bundlePathArg: string, options: ImportOptions) => {
+      const bundlePath = resolve(bundlePathArg);
+      try {
+        await stat(bundlePath);
+      } catch {
+        io.stderr(`Bundle not found: ${bundlePath}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const entries = await listMuseImportEntries(bundlePath);
+      if (entries.length === 0) {
+        io.stderr(`Bundle ${bundlePath} contains no .muse/* entries — refusing to extract.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const home = homedir();
+      const collisions = await findImportCollisions(home, entries);
+
+      if (options.dryRun) {
+        io.stdout(`Plan for ${bundlePath} → ${home}:\n`);
+        for (const entry of entries) {
+          const rel = entry.replace(/^\.muse\//, "");
+          const willOverwrite = collisions.includes(rel);
+          io.stdout(`  ${willOverwrite ? "OVERWRITE" : "create   "} ~/.muse/${rel}\n`);
+        }
+        io.stdout(`\n${entries.length.toString()} entry/entries, ${collisions.length.toString()} collision(s).\n`);
+        return;
+      }
+
+      if (collisions.length > 0 && !options.force) {
+        io.stderr(`Refusing to overwrite ${collisions.length.toString()} existing file(s) in ~/.muse:\n`);
+        for (const rel of collisions.slice(0, 10)) {
+          io.stderr(`  - ${rel}\n`);
+        }
+        if (collisions.length > 10) {
+          io.stderr(`  - … (${(collisions.length - 10).toString()} more)\n`);
+        }
+        io.stderr(`Re-run with --force to overwrite, or --dry-run to inspect.\n`);
+        process.exitCode = 1;
+        return;
+      }
+
+      await extractMuseBundle(bundlePath, home);
+      io.stdout(`Restored ${entries.length.toString()} file(s) into ~/.muse from ${bundlePath}\n`);
+      if (collisions.length > 0) {
+        io.stdout(`  (${collisions.length.toString()} pre-existing file(s) overwritten via --force)\n`);
+      }
+    });
+}
