@@ -139,6 +139,58 @@ describe("CalendarProviderRegistry", () => {
 
     rmSync(dir, { force: true, recursive: true });
   });
+
+  it("falls back to surviving providers when one throws; diagnostics name the failure (goal 071)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-cal-fallback-"));
+    const local = new LocalCalendarProvider({ file: join(dir, "cal.json") });
+    await local.createEvent({
+      endsAt: new Date("2026-05-15T11:00:00Z"),
+      startsAt: new Date("2026-05-15T10:00:00Z"),
+      title: "From local"
+    });
+
+    // Stub a flaky remote provider that always throws.
+    const flakyRemote = {
+      id: "gcal",
+      describe: () => ({ id: "gcal", name: "Google", capabilities: { write: true } as never }),
+      listEvents: async () => {
+        throw new Error("gcal upstream 503");
+      },
+      createEvent: async () => { throw new Error("not used"); },
+      updateEvent: async () => { throw new Error("not used"); },
+      deleteEvent: async () => { throw new Error("not used"); }
+    };
+
+    const errorLog: { id: string; msg: string }[] = [];
+    const registry = new CalendarProviderRegistry([local, flakyRemote as never], {
+      onProviderError: (id, msg) => errorLog.push({ id, msg })
+    });
+
+    // Plain listEvents returns the local provider's events (other
+    // providers swallowed); the diagnostics path names the failed
+    // provider explicitly.
+    const events = await registry.listEvents({ from: new Date(0), to: new Date("2026-05-16T00:00:00Z") });
+    expect(events.length).toBe(1);
+    expect(events[0]?.title).toBe("From local");
+
+    const detailed = await registry.listEventsWithDiagnostics({
+      from: new Date(0),
+      to: new Date("2026-05-16T00:00:00Z")
+    });
+    expect(detailed.events.length).toBe(1);
+    expect(detailed.failedProviders).toEqual([
+      { providerId: "gcal", message: "gcal upstream 503" }
+    ]);
+    // onProviderError fires once per failed provider per call —
+    // both listEvents() and listEventsWithDiagnostics() hit gcal,
+    // so the log has two entries (one per fan-out).
+    expect(errorLog).toEqual([
+      { id: "gcal", msg: "gcal upstream 503" },
+      { id: "gcal", msg: "gcal upstream 503" }
+    ]);
+
+    rmSync(dir, { force: true, recursive: true });
+  });
 });
 
 describe("FileCalendarCredentialStore", () => {

@@ -9,6 +9,30 @@ import type {
 } from "./types.js";
 
 /**
+ * Goal 071 — diagnostic snapshot returned by
+ * `listEventsWithDiagnostics`. Lets callers see which providers
+ * fell back (typically a remote Google / CalDAV failure that
+ * the registry silently swallowed for the simple `listEvents`
+ * caller).
+ */
+export interface CalendarListEventsDiagnostics {
+  readonly events: readonly CalendarEvent[];
+  readonly failedProviders: readonly { readonly providerId: string; readonly message: string }[];
+}
+
+export interface CalendarProviderRegistryOptions {
+  /**
+   * Goal 071 — optional callback invoked once per failed
+   * provider on `listEvents`. The registry already swallows the
+   * error so other providers (notably the local file) still
+   * yield events; this hook lets a daemon log "(gcal failed —
+   * falling back to local: <reason>)" without changing the
+   * return shape.
+   */
+  readonly onProviderError?: (providerId: string, message: string) => void;
+}
+
+/**
  * Holds the set of active calendar providers and routes per-provider
  * operations. The registry is a small fan-out: every "list events"
  * call hits each provider in parallel and concatenates the results
@@ -16,10 +40,17 @@ import type {
  */
 export class CalendarProviderRegistry {
   private readonly providers = new Map<string, CalendarProvider>();
+  private readonly onProviderError?: (providerId: string, message: string) => void;
 
-  constructor(providers: Iterable<CalendarProvider> = []) {
+  constructor(
+    providers: Iterable<CalendarProvider> = [],
+    options: CalendarProviderRegistryOptions = {}
+  ) {
     for (const provider of providers) {
       this.register(provider);
+    }
+    if (options.onProviderError) {
+      this.onProviderError = options.onProviderError;
     }
   }
 
@@ -61,17 +92,31 @@ export class CalendarProviderRegistry {
     if (providerId) {
       return this.require(providerId).listEvents(range);
     }
+    return (await this.listEventsWithDiagnostics(range)).events;
+  }
 
+  /**
+   * Goal 071 — same fan-out as `listEvents` but returns a richer
+   * payload that names which providers failed. Useful for daemons
+   * that want to log "(gcal failed — falling back to local)"
+   * instead of silently dropping the upstream error.
+   */
+  async listEventsWithDiagnostics(range: CalendarRange): Promise<CalendarListEventsDiagnostics> {
+    const failedProviders: { providerId: string; message: string }[] = [];
     const buckets = await Promise.all(
       this.list().map(async (provider) => {
         try {
           return await provider.listEvents(range);
-        } catch {
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : String(cause);
+          failedProviders.push({ providerId: provider.id, message });
+          this.onProviderError?.(provider.id, message);
           return [] as readonly CalendarEvent[];
         }
       })
     );
-    return buckets.flat().sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime());
+    const events = buckets.flat().sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime());
+    return { events, failedProviders };
   }
 
   createEvent(providerId: string | undefined, input: CalendarEventInput): Promise<CalendarEvent> {
