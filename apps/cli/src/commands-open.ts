@@ -32,6 +32,12 @@ import type { ProgramIO } from "./program.js";
 
 interface OpenOptions {
   readonly json?: boolean;
+  /**
+   * Goal 056 — emit ONLY the raw record JSON (no kind header,
+   * no `{ kind, record: ... }` envelope, no formatted lines).
+   * Designed for `muse open <id> --raw | jq` pipelines.
+   */
+  readonly raw?: boolean;
 }
 
 interface Hit {
@@ -99,7 +105,8 @@ export function registerOpenCommand(program: Command, io: ProgramIO): void {
     .command("open")
     .description("Look up an activity record by ID prefix (scans every store; first hit wins, ambiguous matches surfaced)")
     .argument("<prefix>", "Substring matched against record IDs (must be a prefix, e.g. 'rem_a' or 'ep_b')")
-    .option("--json", "Emit the matched record as JSON")
+    .option("--json", "Emit the matched record as JSON wrapped in { kind, record }")
+    .option("--raw", "Emit only the raw record JSON — no kind header, no envelope, no formatted lines. For piping into jq. (goal 056)")
     .action(async (prefix: string, options: OpenOptions) => {
       const trimmed = prefix.trim();
       if (trimmed.length === 0) {
@@ -108,8 +115,14 @@ export function registerOpenCommand(program: Command, io: ProgramIO): void {
         return;
       }
       const hits = await scanAll(trimmed);
+      // `--raw` only differs from `--json` on the happy path
+      // (single unambiguous hit). On 0 / many hits the diagnostic
+      // payload is identical to `--json` so jq still sees structured
+      // data instead of formatted text. Exit codes are unchanged.
+      const wantJson = options.json === true;
+      const wantRaw = options.raw === true;
       if (hits.length === 0) {
-        if (options.json) {
+        if (wantJson || wantRaw) {
           io.stdout(`${JSON.stringify({ matches: 0, prefix: trimmed }, null, 2)}\n`);
         } else {
           io.stdout(`(no records found with id prefix '${trimmed}')\n`);
@@ -118,7 +131,7 @@ export function registerOpenCommand(program: Command, io: ProgramIO): void {
         return;
       }
       if (hits.length > 1) {
-        if (options.json) {
+        if (wantJson || wantRaw) {
           io.stdout(`${JSON.stringify({
             ambiguous: true,
             hits: hits.map((h) => ({ kind: h.kind, id: h.id }))
@@ -134,7 +147,15 @@ export function registerOpenCommand(program: Command, io: ProgramIO): void {
         return;
       }
       const hit = hits[0]!;
-      if (options.json) {
+      if (wantRaw) {
+        // Goal 056 — pure record JSON, no envelope. The kind
+        // information is recoverable from the record itself in
+        // every store the open command scans, so consumers don't
+        // lose anything by going envelope-free.
+        io.stdout(`${JSON.stringify(hit.record, null, 2)}\n`);
+        return;
+      }
+      if (wantJson) {
         io.stdout(`${JSON.stringify({ kind: hit.kind, record: hit.record }, null, 2)}\n`);
         return;
       }

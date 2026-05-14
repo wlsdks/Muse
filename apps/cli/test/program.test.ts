@@ -1905,6 +1905,18 @@ describe("cli program", () => {
       const program4 = createProgram({ ...io4, fetch: async () => { throw new Error("no fetch"); } });
       await program4.parseAsync(["node", "muse", "open", "nonexistent_xyz"], { from: "node" });
       expect(out4.join("")).toContain("no records found with id prefix");
+
+      // Goal 056 — `--raw` emits only the raw record JSON (no
+      // `{ kind, record }` envelope, no formatted header).
+      const { io: ioRaw, output: outRaw } = captureOutput();
+      const programRaw = createProgram({ ...ioRaw, fetch: async () => { throw new Error("no fetch"); } });
+      await programRaw.parseAsync(["node", "muse", "open", "fu_send", "--raw"], { from: "node" });
+      const parsedRaw = JSON.parse(outRaw.join("")) as Record<string, unknown>;
+      expect(parsedRaw["id"]).toBe("fu_send_memo");
+      expect(parsedRaw["summary"]).toBe("Send Q3 memo");
+      // No envelope keys.
+      expect(parsedRaw["kind"]).toBeUndefined();
+      expect(parsedRaw["record"]).toBeUndefined();
     } finally {
       const restore = (k: keyof typeof prev, envKey: string): void => {
         if (prev[k] === undefined) delete process.env[envKey];
