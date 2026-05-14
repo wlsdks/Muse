@@ -87,6 +87,8 @@ import {
   type TokenCostQuery,
   type TokenUsageSink
 } from "@muse/observability";
+import { readFileSync } from "node:fs";
+
 import { CircuitBreakerRegistry } from "@muse/resilience";
 import { RuntimeSettings } from "@muse/runtime-settings";
 import {
@@ -799,16 +801,72 @@ export function createLoopbackMcpToolsFromEnv(env: MuseEnvironment): readonly Mu
   return servers.flatMap((server) => createLoopbackMcpMuseTools(server));
 }
 
+/**
+ * Goal 082 — synchronous, fail-open reader for the JWT rotation
+ * state file (`~/.muse/auth-secrets.json` by default; overridable
+ * via `MUSE_AUTH_SECRETS_FILE`). Any read / parse / shape error
+ * returns `undefined` so the auth service silently falls through
+ * to the env-only path — a corrupted state file cannot lock an
+ * operator out of their own daemon.
+ */
+interface AutoconfigureJwtRotationState {
+  readonly current: string;
+  readonly previous: ReadonlyArray<{ readonly secret: string; readonly validUntil: string }>;
+}
+function loadJwtRotationStateSync(env: MuseEnvironment): AutoconfigureJwtRotationState | undefined {
+  const overridden = env.MUSE_AUTH_SECRETS_FILE?.trim();
+  const file = overridden && overridden.length > 0
+    ? overridden
+    : `${env.HOME ?? process.env.HOME ?? ""}/.muse/auth-secrets.json`;
+  let raw: string;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const candidate = parsed as { current?: unknown; previous?: unknown };
+  if (typeof candidate.current !== "string" || candidate.current.length < 32) return undefined;
+  const previousRaw = Array.isArray(candidate.previous) ? candidate.previous : [];
+  const previous: AutoconfigureJwtRotationState["previous"] = previousRaw.flatMap((entry: unknown) => {
+    if (!entry || typeof entry !== "object") return [];
+    const e = entry as { secret?: unknown; validUntil?: unknown };
+    if (typeof e.secret !== "string" || e.secret.length < 32) return [];
+    if (typeof e.validUntil !== "string") return [];
+    return [{ secret: e.secret, validUntil: e.validUntil }];
+  });
+  return { current: candidate.current, previous };
+}
+
 function createAuthService(env: MuseEnvironment, db: Kysely<MuseDatabase> | undefined): MuseAuth | undefined {
-  const jwtSecret = env.MUSE_AUTH_JWT_SECRET?.trim();
+  const rotation = loadJwtRotationStateSync(env);
+  const jwtSecret = rotation?.current ?? env.MUSE_AUTH_JWT_SECRET?.trim();
 
   if (!jwtSecret) {
     return undefined;
   }
 
+  // Goal 082 — when `~/.muse/auth-secrets.json` is present, its
+  // `current` overrides the env secret + non-expired entries on
+  // `previous` flow in as `previousJwtSecrets` for the grace
+  // window. When the file is absent or malformed we fall through
+  // to env-only (the pre-082 behavior).
+  const previousJwtSecrets = rotation
+    ? rotation.previous
+        .filter((entry) => Date.parse(entry.validUntil) > Date.now())
+        .map((entry) => entry.secret)
+    : undefined;
+
   const jwt = new JwtTokenProvider({
     jwtExpirationMs: parseInteger(env.MUSE_AUTH_JWT_EXPIRATION_MS, 86_400_000),
-    jwtSecret
+    jwtSecret,
+    ...(previousJwtSecrets && previousJwtSecrets.length > 0 ? { previousJwtSecrets } : {})
   });
 
   if (db) {

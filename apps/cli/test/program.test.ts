@@ -3838,6 +3838,91 @@ describe("cli program", () => {
     expect(collisions).not.toContain("reminders.json");
   });
 
+  it("rotateJwtState promotes a new current + grace-windows the previous secret (goal 082)", async () => {
+    const { rotateJwtState, pruneExpiredPreviousSecrets } = await import("../src/jwt-rotation-store.js");
+    const now = new Date("2026-05-14T12:00:00Z");
+
+    // Fresh rotation with no prior state + no fallback → bootstrap.
+    const bootstrap = rotateJwtState({
+      state: undefined,
+      now,
+      graceMs: 24 * 60 * 60 * 1000,
+      secretFactory: () => "a".repeat(64)
+    });
+    expect(bootstrap.current).toBe("a".repeat(64));
+    expect(bootstrap.previous).toEqual([]);
+
+    // Rotation with prior state pushes the old current onto previous.
+    const rotated = rotateJwtState({
+      state: bootstrap,
+      now,
+      graceMs: 1 * 60 * 60 * 1000,
+      secretFactory: () => "b".repeat(64)
+    });
+    expect(rotated.current).toBe("b".repeat(64));
+    expect(rotated.previous.length).toBe(1);
+    expect(rotated.previous[0]?.secret).toBe("a".repeat(64));
+    expect(new Date(rotated.previous[0]?.validUntil ?? "").getTime() - now.getTime()).toBe(60 * 60_000);
+
+    // Prune drops entries whose validUntil has passed.
+    const past = new Date(now.getTime() + 2 * 60 * 60_000); // 2h later
+    const pruned = pruneExpiredPreviousSecrets(rotated, past);
+    expect(pruned.previous.length).toBe(0);
+
+    // Future-rotated entries stay.
+    const futurePruned = pruneExpiredPreviousSecrets(rotated, now);
+    expect(futurePruned.previous.length).toBe(1);
+  });
+
+  it("muse auth rotate-jwt writes the state file + grace-windows old env-only secret (goal 082)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-rotate-jwt-"));
+    const file = path.join(root, "auth-secrets.json");
+    const prev = {
+      secrets: process.env.MUSE_AUTH_SECRETS_FILE,
+      jwt: process.env.MUSE_AUTH_JWT_SECRET
+    };
+    process.env.MUSE_AUTH_SECRETS_FILE = file;
+    process.env.MUSE_AUTH_JWT_SECRET = "Z".repeat(64);
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(
+        ["node", "muse", "auth", "rotate-jwt", "--grace-hours", "2", "--json"],
+        { from: "node" }
+      );
+      const parsed = JSON.parse(output.join("")) as {
+        current: string;
+        previous: Array<{ secret: string; validUntil: string }>;
+      };
+      expect(parsed.current).not.toBe("Z".repeat(64)); // fresh secret
+      expect(parsed.current.length).toBeGreaterThanOrEqual(32);
+      expect(parsed.previous.length).toBe(1);
+      expect(parsed.previous[0]?.secret).toBe("Z".repeat(64)); // env was grace-windowed
+      const validUntilMs = new Date(parsed.previous[0]?.validUntil ?? "").getTime();
+      const nowMs = Date.now();
+      const graceMs = 2 * 60 * 60_000;
+      expect(validUntilMs).toBeGreaterThan(nowMs);
+      expect(validUntilMs).toBeLessThanOrEqual(nowMs + graceMs + 5_000);
+
+      // Second rotation pushes the just-rotated value down.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(
+        ["node", "muse", "auth", "rotate-jwt", "--grace-hours", "2", "--json"],
+        { from: "node" }
+      );
+      const second = JSON.parse(out2.join("")) as { current: string; previous: Array<{ secret: string }> };
+      expect(second.current).not.toBe(parsed.current);
+      // The previous from round 1 is now at the head of `previous`.
+      expect(second.previous[0]?.secret).toBe(parsed.current);
+    } finally {
+      if (prev.secrets === undefined) delete process.env.MUSE_AUTH_SECRETS_FILE;
+      else process.env.MUSE_AUTH_SECRETS_FILE = prev.secrets;
+      if (prev.jwt === undefined) delete process.env.MUSE_AUTH_JWT_SECRET;
+      else process.env.MUSE_AUTH_JWT_SECRET = prev.jwt;
+    }
+  });
+
   it("encryptExportBuffer + decryptExportBuffer round-trip with the right passphrase (goal 081)", async () => {
     const { encryptExportBuffer, decryptExportBuffer, isEncryptedExportBuffer } = await import("../src/export-crypto.js");
     const plain = Buffer.from("hello-muse-export-bytes\n");

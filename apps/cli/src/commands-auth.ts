@@ -14,6 +14,12 @@
 
 import type { Command } from "commander";
 
+import {
+  defaultAuthSecretsFile,
+  readJwtRotationState,
+  rotateJwtState,
+  writeJwtRotationState
+} from "./jwt-rotation-store.js";
 import type { ProgramIO } from "./program.js";
 
 export interface ReadApiOptionsResult {
@@ -76,5 +82,45 @@ export function registerAuthCommands(program: Command, io: ProgramIO, helpers: A
       const { baseUrl } = await helpers.readApiOptions(io, command, { includeStoredToken: false });
       await helpers.deleteStoredToken(io, baseUrl);
       io.stdout(`Removed Muse API token for ${baseUrl}\n`);
+    });
+
+  // Goal 082 — operator-driven JWT secret rotation. Writes a new
+  // 32-byte hex secret to ~/.muse/auth-secrets.json, pushes the
+  // old one onto the grace-window list with a validUntil =
+  // now + --grace-hours (default 24). The runtime reads the file
+  // at boot (env stays the fallback when the file is missing).
+  // Operator restarts the server after rotating; live reload is
+  // a follow-up (no file-watch hook exists today).
+  auth
+    .command("rotate-jwt")
+    .description("Generate a fresh JWT signing secret and grace-window the old one (goal 082)")
+    .option("--grace-hours <n>", "Hours the old secret keeps verifying tokens (default 24)")
+    .option("--json", "Emit the new state as JSON (secrets included — pipe to a file you keep safe)")
+    .action(async (options: { readonly graceHours?: string; readonly json?: boolean }) => {
+      const file = defaultAuthSecretsFile();
+      const graceHours = options.graceHours ? Number.parseFloat(options.graceHours) : 24;
+      if (!Number.isFinite(graceHours) || graceHours < 0) {
+        io.stderr("--grace-hours must be a non-negative number\n");
+        process.exitCode = 1;
+        return;
+      }
+      const existing = await readJwtRotationState(file);
+      const fallbackCurrent = process.env.MUSE_AUTH_JWT_SECRET?.trim();
+      const next = rotateJwtState({
+        state: existing,
+        ...(fallbackCurrent ? { fallbackCurrent } : {}),
+        now: new Date(),
+        graceMs: graceHours * 60 * 60 * 1000
+      });
+      await writeJwtRotationState(file, next);
+      if (options.json) {
+        io.stdout(`${JSON.stringify(next, null, 2)}\n`);
+        return;
+      }
+      const graceMins = Math.round(graceHours * 60);
+      const prevCount = next.previous.length;
+      io.stdout(`Rotated JWT secret. New "current" written to ${file}.\n`);
+      io.stdout(`  Grace window: ${graceMins.toString()} min — ${prevCount.toString()} previous secret(s) still verify.\n`);
+      io.stdout(`Restart the Muse server (or your daemon manager) so the new secret takes effect.\n`);
     });
 }
