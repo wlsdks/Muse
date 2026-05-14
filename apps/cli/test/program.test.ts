@@ -1976,6 +1976,56 @@ describe("cli program", () => {
     }
   });
 
+  it("today --local on a fresh install surfaces empty-state onboarding hints", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-today-empty-"));
+    const prevTasks = process.env.MUSE_TASKS_FILE;
+    const prevNotes = process.env.MUSE_NOTES_DIR;
+    const prevReminders = process.env.MUSE_REMINDERS_FILE;
+    const prevFollowups = process.env.MUSE_FOLLOWUPS_FILE;
+    process.env.MUSE_TASKS_FILE = path.join(root, "tasks.json");
+    process.env.MUSE_NOTES_DIR = path.join(root, "notes");
+    process.env.MUSE_REMINDERS_FILE = path.join(root, "reminders.json");
+    process.env.MUSE_FOLLOWUPS_FILE = path.join(root, "followups.json");
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("fetch in --local"); } });
+      await program.parseAsync(["node", "muse", "today", "--local"], { from: "node" });
+      const text = output.join("");
+      expect(text).toContain("Looks like a fresh start.");
+      expect(text).toContain("muse tasks add");
+      expect(text).toContain("muse remind add");
+      expect(text).toContain("muse notes save");
+      expect(text).toContain("muse remember");
+    } finally {
+      if (prevTasks === undefined) delete process.env.MUSE_TASKS_FILE; else process.env.MUSE_TASKS_FILE = prevTasks;
+      if (prevNotes === undefined) delete process.env.MUSE_NOTES_DIR; else process.env.MUSE_NOTES_DIR = prevNotes;
+      if (prevReminders === undefined) delete process.env.MUSE_REMINDERS_FILE; else process.env.MUSE_REMINDERS_FILE = prevReminders;
+      if (prevFollowups === undefined) delete process.env.MUSE_FOLLOWUPS_FILE; else process.env.MUSE_FOLLOWUPS_FILE = prevFollowups;
+    }
+  });
+
+  it("today --local hides empty-state hints once any section has content", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-today-empty-suppress-"));
+    const tasksFile = path.join(root, "tasks.json");
+    const prev = process.env.MUSE_TASKS_FILE;
+    process.env.MUSE_TASKS_FILE = tasksFile;
+    try {
+      // Seed one task — empty-state hints should NOT appear.
+      const seedIo = captureOutput();
+      const seed = createProgram({ ...seedIo.io, fetch: async () => { throw new Error("local"); } });
+      await seed.parseAsync(["node", "muse", "tasks", "add", "Send memo", "--local"], { from: "node" });
+
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("local"); } });
+      await program.parseAsync(["node", "muse", "today", "--local"], { from: "node" });
+      const text = output.join("");
+      expect(text).toContain("Send memo");
+      expect(text).not.toContain("Looks like a fresh start");
+    } finally {
+      if (prev === undefined) delete process.env.MUSE_TASKS_FILE; else process.env.MUSE_TASKS_FILE = prev;
+    }
+  });
+
   it("today --local composes tasks + recent notes without touching the API", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-local-today-"));
     const tasksFile = path.join(root, "tasks.json");

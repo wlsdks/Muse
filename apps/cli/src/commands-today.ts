@@ -161,7 +161,38 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
       io.stdout(formatTasks(briefing.tasks));
       io.stdout(formatEvents(briefing.events));
       io.stdout(formatNotes(briefing.notes));
+      io.stdout(formatEmptyStateHints(briefing));
     });
+}
+
+/**
+ * When every section came back empty (fresh install — no tasks, no
+ * events, no notes, no reminders, no followups), the briefing
+ * collapses to a wall of "(none)" lines with no next step. Surface
+ * a few onboarding commands so a first-time user knows where to
+ * start. Suppressed the moment any section carries data — once
+ * the user has at least one of anything the report is informative
+ * on its own.
+ */
+function formatEmptyStateHints(briefing: TodayBriefing): string {
+  const hasContent =
+    (briefing.tasks?.length ?? 0) > 0
+    || (briefing.events?.length ?? 0) > 0
+    || (briefing.notes?.length ?? 0) > 0
+    || (briefing.reminders?.length ?? 0) > 0
+    || (briefing.followups?.length ?? 0) > 0;
+  if (hasContent) {
+    return "";
+  }
+  return [
+    "",
+    "Looks like a fresh start. A few JARVIS-friendly ways to seed today:",
+    "  muse tasks add \"Send Q3 memo\" --due tomorrow",
+    "  muse remind add \"Call vet\" \"tomorrow at 6pm\"",
+    "  muse notes save daily/2026-05-14.md \"Today's plan: ...\"",
+    "  muse remember \"I prefer concise Korean replies\"",
+    ""
+  ].join("\n");
 }
 
 
