@@ -3940,6 +3940,37 @@ describe("cli program", () => {
     }
   });
 
+  it("muse completion bash + zsh emit valid scripts mentioning real subcommands (goal 066)", async () => {
+    const { io, output } = captureOutput();
+    const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    await program.parseAsync(["node", "muse", "completion", "bash"], { from: "node" });
+    const bash = output.join("");
+    expect(bash).toContain("_muse_completions()");
+    expect(bash).toContain("complete -F _muse_completions muse");
+    expect(bash).toContain("status");
+    expect(bash).toContain("history");
+    expect(bash).toContain("export");
+    // The 'completion' verb is excluded from the verb list so
+    // `muse completion <tab>` doesn't suggest itself.
+    expect(bash).not.toMatch(/local subs="[^"]*\bcompletion\b/);
+
+    const { io: io2, output: out2 } = captureOutput();
+    const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+    await program2.parseAsync(["node", "muse", "completion", "zsh"], { from: "node" });
+    const zsh = out2.join("");
+    expect(zsh.startsWith("#compdef muse")).toBe(true);
+    expect(zsh).toContain("_describe -t commands");
+    expect(zsh).toContain("'status'");
+
+    // Bad shell name → exits non-zero with a useful message.
+    const { io: io3, output: out3 } = captureOutput();
+    const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+    await program3.parseAsync(["node", "muse", "completion", "fish"], { from: "node" });
+    expect(out3.join("")).toMatch(/only 'bash' and 'zsh' are supported/);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
   it("colorize respects NO_COLOR + isTty + force flags (goal 061)", async () => {
     const { colorize, colorAllowed } = await import("../src/tty-color.js");
     const prev = process.env.NO_COLOR;
