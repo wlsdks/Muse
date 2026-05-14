@@ -264,6 +264,44 @@ function shortDateTime(iso: string): string {
   return formatLocalDateTime(iso);
 }
 
+/**
+ * Goal 062 — humanise an ISO timestamp relative to `now`.
+ *
+ *   ≤ 60 s   → "Ns ago"
+ *   ≤ 60 min → "Nm ago"
+ *   ≤ 24 h   → "Nh ago"
+ *   ≤ 7 d    → "Nd ago"
+ *   > 7 d    → the full local timestamp (falls back to
+ *              `formatLocalDateTime` so the rest of the table
+ *              stays consistent)
+ *
+ * Future timestamps mirror the structure with an "in N…" prefix
+ * — useful for next-reminder hints. Invalid inputs are returned
+ * verbatim so the caller still sees something.
+ */
+export function formatRelativeTime(iso: string, now: Date = new Date(), timeZone?: string): string {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return iso;
+  const diffMs = then.getTime() - now.getTime();
+  const absSec = Math.abs(diffMs) / 1000;
+  const past = diffMs < 0;
+
+  const pick = (n: number, unit: string): string => `${past ? "" : "in "}${n.toString()}${unit}${past ? " ago" : ""}`;
+
+  if (absSec < 5) return past ? "just now" : "in a moment";
+  if (absSec < 60) return pick(Math.round(absSec), "s");
+  const absMin = absSec / 60;
+  if (absMin < 60) return pick(Math.round(absMin), "m");
+  const absHr = absMin / 60;
+  if (absHr < 24) return pick(Math.round(absHr), "h");
+  const absDay = absHr / 24;
+  if (absDay < 7) return pick(Math.round(absDay), "d");
+  // > 7 days: defer to the absolute formatter so the table stays
+  // readable (we're not going to invent "2 weeks ago" precision
+  // when the ISO is right there).
+  return formatLocalDateTime(iso, timeZone);
+}
+
 export function formatCitations(
   citations: ReadonlyArray<{ url: string; title: string }> | undefined
 ): string {

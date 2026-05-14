@@ -16,4 +16,11 @@ recent; ISO for older entries.
 
 ## Status
 
-open
+done — new `formatRelativeTime(iso, now, timeZone?)` helper in
+`human-formatters.ts` returns "Ns / Nm / Nh / Nd ago" (and
+matching "in N…" prefixes for future timestamps) when the delta
+is ≤ 7 days; otherwise delegates to `formatLocalDateTime` so the
+table keeps full precision past the relative window.
+`commands-history.ts` swaps its render path over to the new
+helper. cli +1 test covers past / future / fallback past 7d /
+invalid input.

@@ -33,7 +33,7 @@ import {
 } from "@muse/mcp";
 import type { Command } from "commander";
 
-import { formatLocalDateTime } from "./human-formatters.js";
+import { formatRelativeTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 
 interface HistoryOptions {
@@ -143,12 +143,17 @@ export function registerHistoryCommand(program: Command, io: ProgramIO): void {
         return;
       }
       io.stdout(`Activity (${merged.length.toString()} entries, newest first):\n\n`);
+      // Goal 062 — entries within the past week render as relative
+      // time ("2h ago" / "yesterday"-class strings); older entries
+      // keep the full local timestamp (delegated to
+      // `formatRelativeTime` which decides per-entry).
+      const now = new Date();
       for (const entry of merged) {
         const status = entry.status ? ` ${entry.status}` : "";
         const via = entry.providerId
           ? ` via ${entry.providerId}${entry.destination ? `→${entry.destination}` : ""}`
           : "";
-        const when = formatLocalDateTime(entry.whenIso);
+        const when = formatRelativeTime(entry.whenIso, now);
         const head = `[${when}] ${entry.kind}${status}${via}`;
         io.stdout(`  ${head}\n`);
         const summary = entry.summary.replace(/\s+/gu, " ").trim();

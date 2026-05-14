@@ -3628,6 +3628,27 @@ describe("cli program", () => {
     expect(resolveReplHistoryCap("9999")).toBe(9999);
   });
 
+  it("formatRelativeTime renders past + future deltas and falls back to ISO past 7 days (goal 062)", async () => {
+    const { formatRelativeTime } = await import("../src/human-formatters.js");
+    const now = new Date("2026-05-14T12:00:00Z");
+    // Same moment → "just now" / "in a moment" (depending on sign).
+    const sameMoment = formatRelativeTime("2026-05-14T12:00:00Z", now);
+    expect(sameMoment === "just now" || sameMoment === "in a moment").toBe(true);
+    // Minutes.
+    expect(formatRelativeTime("2026-05-14T11:45:00Z", now)).toBe("15m ago");
+    expect(formatRelativeTime("2026-05-14T12:30:00Z", now)).toBe("in 30m");
+    // Hours.
+    expect(formatRelativeTime("2026-05-14T08:00:00Z", now)).toBe("4h ago");
+    // Days.
+    expect(formatRelativeTime("2026-05-12T12:00:00Z", now)).toBe("2d ago");
+    // Past 7 days → falls back to absolute formatter (presence of '-' is enough,
+    // we don't care about the exact local-zone string).
+    const distant = formatRelativeTime("2024-01-01T00:00:00Z", now);
+    expect(distant).toContain("2024");
+    // Invalid input returns the original string.
+    expect(formatRelativeTime("not-a-date", now)).toBe("not-a-date");
+  });
+
   it("resolveLockUntilMs honours --hours + --minutes and defaults to 1h on zero (goal 052)", async () => {
     const { resolveLockUntilMs } = await import("../src/commands-session.js");
     const now = 1_000_000_000_000; // arbitrary fixed epoch

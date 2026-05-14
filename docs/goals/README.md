@@ -81,7 +81,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 059 | [`muse calendar import <file.ics>`](059-muse-calendar-import-ics.md)               | JARVIS feature       | open   |
 | 060 | [Top-level muse with no args prints help](060-muse-help-on-empty.md)               | UX polish            | done   |
 | 061 | [`muse today` colorize output (TTY-aware)](061-today-colorize.md)                  | UX polish            | open   |
-| 062 | [`muse history` relative time format](062-history-relative-time.md)                | UX polish            | open   |
+| 062 | [`muse history` relative time format](062-history-relative-time.md)                | UX polish            | done   |
 | 063 | [`muse history` icon-per-kind](063-history-icon-per-kind.md)                       | UX polish            | open   |
 | 064 | [`muse status` JSON schemaVersion](064-status-schema-version.md)                   | UX polish            | open   |
 | 065 | [`muse search` backend latency in output](065-search-backend-latency.md)           | UX polish            | open   |
