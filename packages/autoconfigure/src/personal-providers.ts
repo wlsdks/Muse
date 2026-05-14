@@ -10,13 +10,14 @@
  *   - Default-path resolvers for the personal-domain trio's local
  *     storage: notes dir, tasks file, local calendar file, plus the
  *     credentials JSON file consumed by remote calendar providers
- *   - `buildCalendarRegistry` + `tryBuildCalendarProvider` — env +
- *     credentials → `CalendarProviderRegistry` with any registered
- *     subset of: local / gcal / caldav / macos
  *   - `buildVoiceRegistry` — env → `VoiceProviderRegistry` with
  *     OpenAI Whisper + TTS-1 when an API key is available
  *   - `ensureNotesDir` — best-effort `mkdir -p` so the inline
  *     Notes MCP server has a directory to land into
+ *
+ * Registry builders that have outgrown an inline definition live
+ * under `./registry-builders/` — `buildMessagingRegistry` (goal 007)
+ * and `buildCalendarRegistry` (goal 041) so far.
  *
  * The shape of `MuseEnvironment` stays in `index.ts`; this module
  * imports it back as a type-only consumer.
@@ -24,14 +25,6 @@
 
 import { mkdirSync } from "node:fs";
 
-import {
-  CalDAVCalendarProvider,
-  CalendarProviderRegistry,
-  GoogleCalendarProvider,
-  LocalCalendarProvider,
-  MacOsCalendarProvider,
-  type CalendarProvider
-} from "@muse/calendar";
 import {
   AppleNotesProvider,
   AppleRemindersProvider,
@@ -69,7 +62,6 @@ import { readCredentialsSync, stringField } from "./provider-utils.js";
 
 import {
   resolveCredentialsFile,
-  resolveLocalCalendarFile,
   resolveModelKeysFile,
   resolveNotesDir,
   resolveTasksFile,
@@ -165,65 +157,7 @@ export function mergeModelKeysFromFile(env: MuseEnvironment): MuseEnvironment {
   return { ...fileKeyForEnv, ...env };
 }
 
-export function buildCalendarRegistry(env: MuseEnvironment): CalendarProviderRegistry {
-  const registry = new CalendarProviderRegistry();
-  const requested = (env.MUSE_CALENDAR_PROVIDERS?.trim() || "local")
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => entry.length > 0);
-  const credentials = readCredentialsSync(resolveCredentialsFile(env));
-
-  for (const id of requested) {
-    const provider = tryBuildCalendarProvider(id, env, credentials[id]);
-    if (provider) {
-      registry.register(provider);
-    }
-  }
-
-  return registry;
-}
-
-function tryBuildCalendarProvider(
-  id: string,
-  env: MuseEnvironment,
-  credentials: { readonly [key: string]: unknown } | undefined
-): CalendarProvider | undefined {
-  if (id === "local") {
-    return new LocalCalendarProvider({ file: resolveLocalCalendarFile(env) });
-  }
-
-  if (id === "gcal") {
-    const clientId = stringField(credentials, "clientId") ?? env.MUSE_GCAL_CLIENT_ID;
-    const clientSecret = stringField(credentials, "clientSecret") ?? env.MUSE_GCAL_CLIENT_SECRET;
-    const refreshToken = stringField(credentials, "refreshToken") ?? env.MUSE_GCAL_REFRESH_TOKEN;
-    if (!clientId || !clientSecret || !refreshToken) {
-      return undefined;
-    }
-    return new GoogleCalendarProvider({
-      calendarId: stringField(credentials, "calendarId") ?? env.MUSE_GCAL_CALENDAR_ID ?? "primary",
-      clientId,
-      clientSecret,
-      refreshToken
-    });
-  }
-
-  if (id === "caldav") {
-    const url = stringField(credentials, "url") ?? env.MUSE_CALDAV_URL;
-    const username = stringField(credentials, "username") ?? env.MUSE_CALDAV_USERNAME;
-    const password = stringField(credentials, "password") ?? env.MUSE_CALDAV_APP_PASSWORD;
-    if (!url || !username || !password) {
-      return undefined;
-    }
-    return new CalDAVCalendarProvider({ password, url, username });
-  }
-
-  if (id === "macos") {
-    const calendarName = stringField(credentials, "calendarName") ?? env.MUSE_MACOS_CALENDAR_NAME;
-    return new MacOsCalendarProvider(calendarName ? { calendarName } : {});
-  }
-
-  return undefined;
-}
+export { buildCalendarRegistry } from "./registry-builders/calendar.js";
 
 /**
  * Build a `NotesProviderRegistry` from env. Always registers

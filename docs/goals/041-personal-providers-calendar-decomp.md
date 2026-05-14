@@ -17,4 +17,8 @@ is next-most-cohesive (~87 LOC + tryBuildCalendarProvider helper).
 
 ## Status
 
-open
+done — `buildCalendarRegistry` + `tryBuildCalendarProvider` moved
+to `registry-builders/calendar.ts` mirroring goal 007's messaging
+extraction. `personal-providers.ts` shrank from 609 → 543 LOC (and
+drops the calendar SDK imports entirely). The function is
+re-exported so `index.ts` callers don't change. All gates green.

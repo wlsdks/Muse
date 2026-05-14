@@ -60,7 +60,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 038 | [Followup write durability + recovery](038-followup-write-durability.md)           | security/robustness  | done   |
 | 039 | [Webhook signature validation (LINE / Slack)](039-webhook-signature-validation.md) | security/robustness  | done   |
 | 040 | [CORS allowlist instead of wildcard](040-cors-allowlist-not-wildcard.md)           | security/robustness  | done   |
-| 041 | [Extract buildCalendarRegistry](041-personal-providers-calendar-decomp.md)         | big-file decomp      | open   |
+| 041 | [Extract buildCalendarRegistry](041-personal-providers-calendar-decomp.md)         | big-file decomp      | done   |
 | 042 | [Extract buildVoiceRegistry](042-personal-providers-voice-decomp.md)               | big-file decomp      | open   |
 | 043 | [Extract buildNotesRegistry](043-personal-providers-notes-decomp.md)               | big-file decomp      | open   |
 | 044 | [Extract buildTasksRegistry](044-personal-providers-tasks-decomp.md)               | big-file decomp      | open   |
