@@ -3956,6 +3956,55 @@ describe("cli program", () => {
     expect(sawSignals).toEqual(["SIGTERM"]);
   });
 
+  it("suggestPatternHints surfaces patterns whose median hour matches now (goal 095)", async () => {
+    const { suggestPatternHints } = await import("../src/commands-status.js");
+    const now = new Date("2026-05-15T09:00:00Z"); // 09 UTC
+
+    // 5 firings of "morning_tasks" at 09 UTC, 5 of "evening_tasks" at 22 UTC.
+    const fired = [
+      ...Array.from({ length: 5 }, (_, i) => ({
+        patternId: "morning_tasks",
+        firedAtIso: `2026-05-${(10 + i).toString().padStart(2, "0")}T09:0${i.toString()}:00Z`
+      })),
+      ...Array.from({ length: 5 }, (_, i) => ({
+        patternId: "evening_tasks",
+        firedAtIso: `2026-05-${(10 + i).toString().padStart(2, "0")}T22:0${i.toString()}:00Z`
+      }))
+    ];
+
+    const hints = suggestPatternHints(fired, now);
+    expect(hints.length).toBe(1);
+    expect(hints[0]?.patternId).toBe("morning_tasks");
+    expect(hints[0]?.medianHourUtc).toBe(9);
+    expect(hints[0]?.firings).toBe(5);
+
+    // Different "now" picks the other pattern.
+    const evening = suggestPatternHints(fired, new Date("2026-05-15T22:00:00Z"));
+    expect(evening[0]?.patternId).toBe("evening_tasks");
+
+    // < 3 firings → ignored.
+    expect(suggestPatternHints([
+      { patternId: "rare", firedAtIso: "2026-05-15T09:00:00Z" },
+      { patternId: "rare", firedAtIso: "2026-05-14T09:00:00Z" }
+    ], now)).toEqual([]);
+
+    // maxHints clamps when multiple patterns qualify.
+    const many = Array.from({ length: 5 }, (_, i) => ({ patternId: "x", firedAtIso: `2026-05-10T09:0${i.toString()}:00Z` }));
+    const both = [
+      ...many,
+      ...Array.from({ length: 5 }, (_, i) => ({ patternId: "y", firedAtIso: `2026-05-10T09:0${i.toString()}:00Z` }))
+    ];
+    expect(suggestPatternHints(both, now, { maxHints: 1 })).toHaveLength(1);
+
+    // Malformed entries skipped silently.
+    expect(suggestPatternHints([
+      { patternId: 123 },
+      { firedAtIso: "no-pattern" },
+      null,
+      "garbage"
+    ] as unknown as readonly unknown[], now)).toEqual([]);
+  });
+
   it("persona store: read missing → default, switch active, custom preamble overrides built-in (goal 094)", async () => {
     const {
       BUILTIN_PERSONAS,

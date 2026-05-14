@@ -52,6 +52,13 @@ interface StatusOptions {
   readonly watch?: boolean;
   /** Seconds between renders in --watch mode. Defaults to 5. */
   readonly interval?: string;
+  /**
+   * Goal 095 — surface "you usually do X around this hour"
+   * hints derived from patterns-fired. Silent when fewer than
+   * 3 firings per pattern or when no pattern matches the
+   * current hour.
+   */
+  readonly suggestions?: boolean;
 }
 
 function envValue(key: string): string | undefined {
@@ -207,6 +214,10 @@ async function collectStatus(userId: string) {
 
   const patternsFiredDoc = await safeReadJson(defaultPatternsFiredFile()) as { fired?: readonly unknown[] } | undefined;
   const patternsSummary = summarisePatternsFiredRows(patternsFiredDoc?.fired ?? []);
+  // Goal 095 — derive 1-3 "you usually do X around now" hints
+  // from the same patterns-fired sidecar. Pure helper so the
+  // unit test pins each branch without standing up state.
+  const suggestions = suggestPatternHints(patternsFiredDoc?.fired ?? [], new Date());
 
   const reminders = await readReminders(defaultRemindersFile()).catch(() => [] as const);
   const remindersSummary = summariseRemindersRows(reminders, now);
@@ -271,8 +282,79 @@ async function collectStatus(userId: string) {
     episodes: episodesSummary,
     patterns: patternsSummary,
     reminders: remindersSummary,
-    cost: tokenCost
+    cost: tokenCost,
+    suggestions
   };
+}
+
+/**
+ * Goal 095 — anticipatory hint generator. Groups firings by
+ * `patternId`, computes the median firing hour of day (UTC), and
+ * emits "you usually <pattern> around this hour" when the
+ * current hour is within ±1 of the median. Cap at 3.
+ *
+ * Exported so the unit test can drive the matrix without
+ * spinning up `muse status` itself.
+ */
+export interface PatternSuggestion {
+  readonly patternId: string;
+  readonly medianHourUtc: number;
+  readonly firings: number;
+}
+
+/**
+ * Goal 095 — formatted renderer for the `--suggestions` flag.
+ * Silent when there are no hits so a fresh install with empty
+ * patterns-fired doesn't show a useless "Suggestions (0):"
+ * line.
+ */
+function renderSuggestions(io: ProgramIO, suggestions: readonly PatternSuggestion[]): void {
+  if (suggestions.length === 0) return;
+  io.stdout(`\nSuggestions (${suggestions.length.toString()}):\n`);
+  for (const hint of suggestions) {
+    io.stdout(
+      `  * you usually ${hint.patternId} around ${hint.medianHourUtc.toString().padStart(2, "0")}:00 UTC ` +
+      `(seen ${hint.firings.toString()}x)\n`
+    );
+  }
+}
+export function suggestPatternHints(
+  fired: readonly unknown[],
+  now: Date,
+  options: { readonly minFirings?: number; readonly maxHints?: number } = {}
+): readonly PatternSuggestion[] {
+  const minFirings = Math.max(1, options.minFirings ?? 3);
+  const maxHints = Math.max(1, options.maxHints ?? 3);
+  const nowHour = now.getUTCHours();
+
+  const buckets = new Map<string, number[]>();
+  for (const raw of fired) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = raw as { patternId?: unknown; firedAtIso?: unknown };
+    if (typeof entry.patternId !== "string" || typeof entry.firedAtIso !== "string") continue;
+    const t = Date.parse(entry.firedAtIso);
+    if (!Number.isFinite(t)) continue;
+    const hour = new Date(t).getUTCHours();
+    const prior = buckets.get(entry.patternId) ?? [];
+    prior.push(hour);
+    buckets.set(entry.patternId, prior);
+  }
+
+  const candidates: PatternSuggestion[] = [];
+  for (const [patternId, hours] of buckets) {
+    if (hours.length < minFirings) continue;
+    const sorted = [...hours].sort((a, b) => a - b);
+    const medianHourUtc = sorted[Math.floor(sorted.length / 2)]!;
+    const delta = Math.min(
+      Math.abs(nowHour - medianHourUtc),
+      24 - Math.abs(nowHour - medianHourUtc)
+    );
+    if (delta <= 1) {
+      candidates.push({ patternId, medianHourUtc, firings: hours.length });
+    }
+  }
+  // Most-fired first (more evidence = higher confidence).
+  return candidates.sort((a, b) => b.firings - a.firings).slice(0, maxHints);
 }
 
 /**
@@ -493,6 +575,7 @@ export function registerStatusCommand(program: Command, io: ProgramIO): void {
     .description("JARVIS-style at-a-glance dashboard: persona + model + imminent tasks + last notice")
     .option("--user <id>", "User identity (default $MUSE_USER_ID or $USER)")
     .option("--json", "Emit structured JSON instead of the formatted report")
+    .option("--suggestions", "Append 'you usually do X around now' hints from patterns-fired (goal 095)")
     .option("--watch", "Redraw the dashboard on a fixed cadence until Ctrl-C (goal 046)")
     .option(
       "--interval <seconds>",
@@ -512,6 +595,7 @@ export function registerStatusCommand(program: Command, io: ProgramIO): void {
       if (!options.watch) {
         const snap = await collectStatus(userId);
         renderStatus(io, snap);
+        if (options.suggestions) renderSuggestions(io, snap.suggestions);
         return;
       }
 
@@ -529,6 +613,7 @@ export function registerStatusCommand(program: Command, io: ProgramIO): void {
           io.stdout("[2J[H");
           const snap = await collectStatus(userId);
           renderStatus(io, snap);
+          if (options.suggestions) renderSuggestions(io, snap.suggestions);
           io.stdout(`\n  (watching every ${(intervalMs / 1000).toString()}s — Ctrl-C to exit)\n`);
           if (stopped) break;
           await new Promise<void>((resolve) => {

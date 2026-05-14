@@ -51,4 +51,22 @@ patterns-fired sidecar.
 
 ## Status
 
-open
+done — `muse status --suggestions` reads patterns-fired,
+groups by `patternId`, computes each pattern's median firing
+hour (UTC), and emits "you usually <id> around HH:00 UTC
+(seen Nx)" when the current hour is within ±1 of the median.
+Min 3 firings per pattern to qualify; cap at 3 suggestions
+per render; silent otherwise so a fresh install doesn't
+surface a useless empty section.
+
+`PatternSuggestion[]` is added to the snapshot under
+`suggestions` so the JSON output carries the hints (additive,
+no schemaVersion bump). Renderer wires under both the
+one-shot and the `--watch` loop paths.
+
+cli +1 unit test on `suggestPatternHints` covers hour-match /
+different-now / below-minFirings / maxHints clamp / malformed
+entries. Dogfood seeded patterns-fired with three firings at
+the current UTC hour + ran `muse status --suggestions` — the
+"Suggestions (1): you usually morning_tasks around HH:00 UTC"
+line surfaced; pass criterion met.
