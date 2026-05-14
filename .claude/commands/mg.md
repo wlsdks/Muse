@@ -1,17 +1,20 @@
 ---
-description: Execute a Muse goal from docs/goals/
+description: Execute a Muse goal from docs/goals/ (muse-goal — `/goal` is reserved by Claude Code)
 ---
 
-# /goal — execute a Muse goal
+# /mg — execute a Muse goal (Muse-Goal)
 
 Read `docs/goals/README.md` for the prioritized index, then pick + execute
 a single goal end-to-end.
 
+Named `/mg` rather than `/goal` because Claude Code reserves `/goal` for
+its autonomous-mode goal-condition prompt.
+
 ## Input parsing
 
-The user invokes as `/goal <arg>` where `<arg>` is one of:
+The user invokes as `/mg <arg>` where `<arg>` is one of:
 - empty / `next` — pick the lowest `NNN` with status `open` in the README.
-- `<NNN>` — execute that specific goal (e.g. `/goal 042` or `/goal 42`).
+- `<NNN>` — execute that specific goal (e.g. `/mg 042` or `/mg 42`).
 - `list` — print the open goals to chat without executing anything.
 - `<NNN> defer <reason>` — flip the goal to `deferred` with the given
   reason instead of executing.
@@ -49,7 +52,7 @@ The user invokes as `/goal <arg>` where `<arg>` is one of:
 - No push without explicit user approval (CLAUDE.md push policy).
 - Honour the existing rules under `.claude/rules/` — they're load-bearing.
 
-## When the user types `/goal` with no arg
+## When the user types `/mg` with no arg
 
 Default to `next`. Pick the lowest `NNN` whose status column is `open`
 (skip `done`, `partial`, `deferred`) and execute it.
