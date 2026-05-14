@@ -193,11 +193,6 @@ async function collectStatus(userId: string) {
   const historyFile = defaultProactiveHistoryFile();
   const logFile = defaultLogFile();
 
-  const memoryDoc = await safeReadJson(userMemoryFile) as { users?: Record<string, unknown> } | undefined;
-  const persona = (memoryDoc?.users?.[userId] ?? undefined) as
-    | { facts?: Record<string, string>; preferences?: Record<string, string>; updatedAt?: string }
-    | undefined;
-
   // Goal 098 — surface the two "persona" axes that aren't otherwise
   // visible to the user without spelunking through env + persona.json:
   //   - slot: the active multi-persona memory keying (work / home / …)
@@ -208,13 +203,24 @@ async function collectStatus(userId: string) {
   //   - template: the active persona-template (jarvis / casual / …)
   //     from `~/.muse/persona.json`; tells the user which tone every
   //     ask / brief / today / proactive-synthesis call will adopt.
+  // Goal 104 — resolve the slot BEFORE reading memory + trust so the
+  // status dashboard surfaces the correct slot's data when
+  // MUSE_PERSONA is set. Otherwise the persona badge said "work" but
+  // facts/prefs/trust came from the bare `<user>` record — exactly
+  // the silent-divergence bug goal 103 fixed for `muse memory`.
   const slot = resolvePersona(undefined);
+  const effectiveUserKey = slot ? `${userId}@${slot}` : userId;
   const personaStore = await readPersonaStore(defaultPersonaFile()).catch(() => undefined);
   const activeTemplateId = personaStore?.activeId ?? "default";
   const activePreamble = personaStore ? resolveActivePersonaPreamble(personaStore) : "";
   const builtinDescription = BUILTIN_PERSONAS.find((p) => p.id === activeTemplateId)?.description;
 
-  const trust = await readTrust(userId).catch(() => ({ blockedTools: [] as string[], trustedTools: [] as string[] }));
+  const memoryDoc = await safeReadJson(userMemoryFile) as { users?: Record<string, unknown> } | undefined;
+  const persona = (memoryDoc?.users?.[effectiveUserKey] ?? undefined) as
+    | { facts?: Record<string, string>; preferences?: Record<string, string>; updatedAt?: string }
+    | undefined;
+
+  const trust = await readTrust(effectiveUserKey).catch(() => ({ blockedTools: [] as string[], trustedTools: [] as string[] }));
   const routineHours = persona?.facts?.routine_active_hours;
   const routineDays = persona?.facts?.routine_active_days;
 
@@ -274,7 +280,12 @@ async function collectStatus(userId: string) {
         : 0,
       // Goal 098 — active multi-persona slot from --persona /
       // MUSE_PERSONA (status has no CLI flag so it's env-only here).
-      ...(slot ? { slot, slotSource: "MUSE_PERSONA" as const } : {}),
+      // Goal 104 — `effectiveUserKey` is the slot-composed key that
+      // memory + trust lookups actually use; surfaced so jq pipelines
+      // + downstream tooling don't have to recompose it.
+      ...(slot
+        ? { slot, slotSource: "MUSE_PERSONA" as const, effectiveUserKey }
+        : {}),
       // Goal 098 — active persona-template (jarvis / casual / …).
       template: {
         activeId: activeTemplateId,

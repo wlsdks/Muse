@@ -6015,6 +6015,84 @@ describe("cli program", () => {
     }
   });
 
+  it("muse status reads memory + trust at user@slot when MUSE_PERSONA is set (goal 104)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-effective-key-"));
+    const fsp = await import("node:fs/promises");
+    const userMemoryFile = path.join(root, "user-memory.json");
+    const trustFile = path.join(root, "trust.json");
+    // Seed two records: bare `stark` (the bug-state default) AND the
+    // slot-keyed `stark@work` record. A slot-aware status MUST pick
+    // the second one when MUSE_PERSONA=work.
+    await fsp.writeFile(userMemoryFile, JSON.stringify({
+      users: {
+        stark: { facts: { name: "Stark (home)" }, preferences: {}, updatedAt: "2026-05-13T00:00:00Z" },
+        "stark@work": {
+          facts: { name: "Stark (work)", role: "ceo" },
+          preferences: { tone: "professional", "veto:no_emoji": "skip emoji on work-slot" },
+          updatedAt: "2026-05-15T00:00:00Z"
+        }
+      }
+    }), "utf8");
+    await fsp.writeFile(trustFile, JSON.stringify({
+      users: {
+        stark: { trustedTools: ["calendar.list"], blockedTools: [] },
+        "stark@work": { trustedTools: ["mail.send"], blockedTools: ["shell.exec"] }
+      }
+    }), "utf8");
+
+    const prevMemoryFile = process.env.MUSE_USER_MEMORY_FILE;
+    const prevTrustFile = process.env.MUSE_TRUST_FILE;
+    const prevPersona = process.env.MUSE_PERSONA;
+    process.env.MUSE_USER_MEMORY_FILE = userMemoryFile;
+    process.env.MUSE_TRUST_FILE = trustFile;
+    process.env.MUSE_PERSONA = "work";
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap = JSON.parse(output.join("")) as {
+        persona: {
+          userId: string;
+          slot?: string;
+          effectiveUserKey?: string;
+          factCount: number;
+          preferenceCount: number;
+          vetoCount: number;
+          updatedAt?: string;
+        };
+      };
+
+      // Snap surfaces the composed key + counts from the WORK record.
+      expect(snap.persona.userId).toBe("stark");
+      expect(snap.persona.slot).toBe("work");
+      expect(snap.persona.effectiveUserKey).toBe("stark@work");
+      expect(snap.persona.factCount).toBe(2);            // name + role
+      expect(snap.persona.preferenceCount).toBe(2);      // tone + veto:no_emoji
+      expect(snap.persona.vetoCount).toBe(1);
+      expect(snap.persona.updatedAt).toBe("2026-05-15T00:00:00Z");
+
+      // With no MUSE_PERSONA, status falls back to the bare record
+      // and effectiveUserKey is omitted from the snap.
+      delete process.env.MUSE_PERSONA;
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap2 = JSON.parse(out2.join("")) as {
+        persona: { factCount: number; slot?: string; effectiveUserKey?: string };
+      };
+      expect(snap2.persona.slot).toBeUndefined();
+      expect(snap2.persona.effectiveUserKey).toBeUndefined();
+      expect(snap2.persona.factCount).toBe(1);           // just "name"
+    } finally {
+      if (prevMemoryFile === undefined) delete process.env.MUSE_USER_MEMORY_FILE;
+      else process.env.MUSE_USER_MEMORY_FILE = prevMemoryFile;
+      if (prevTrustFile === undefined) delete process.env.MUSE_TRUST_FILE;
+      else process.env.MUSE_TRUST_FILE = prevTrustFile;
+      if (prevPersona === undefined) delete process.env.MUSE_PERSONA;
+      else process.env.MUSE_PERSONA = prevPersona;
+    }
+  });
+
   it("muse status surfaces active persona slot (MUSE_PERSONA) and template (~/.muse/persona.json) (goal 098)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-persona-"));
     const fsp = await import("node:fs/promises");
