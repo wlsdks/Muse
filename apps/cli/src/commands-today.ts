@@ -95,6 +95,7 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
     .option("--speak", "After printing the brief, synthesize via TTS and play through the speakers")
     .option("--audio-voice <name>", "TTS voice id (provider-specific, e.g. 'alloy' for OpenAI)")
     .option("--audio-format <type>", "TTS output format: mp3 | wav | opus | aac | flac (default mp3)")
+    .option("--save-to-notes <path>", "Persist the --brief narrative to a markdown note (relative to MUSE_NOTES_DIR). Requires --brief. (goal 054)")
     .action(async (
       options: {
         readonly json?: boolean;
@@ -105,11 +106,15 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         readonly speak?: boolean;
         readonly audioVoice?: string;
         readonly audioFormat?: string;
+        readonly saveToNotes?: string;
       },
       command
     ) => {
       if (options.speak && !options.brief) {
         throw new Error("--speak requires --brief (only the brief prose is spoken)");
+      }
+      if (options.saveToNotes && !options.brief) {
+        throw new Error("--save-to-notes requires --brief (only the brief narrative is saved)");
       }
       let briefing: TodayBriefing;
       let usedLocal = options.local === true;
@@ -146,6 +151,38 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         }
         if (options.speak) {
           await speakPlain(io, helpers.shells, prose, options.audioVoice, parseAudioFormat(options.audioFormat));
+        }
+        if (options.saveToNotes && options.saveToNotes.trim().length > 0) {
+          // Goal 054 — persist the narrative as a journal-style note
+          // (markdown body). Uses the same LocalDirNotesProvider path
+          // `muse search --to-notes` does so the file lands under the
+          // user's configured notes dir. Stderr banner mirrors the
+          // search-to-notes UX so a piped stdout consumer still gets
+          // only the prose itself.
+          const { resolveNotesDir } = await import("@muse/autoconfigure");
+          const { LocalDirNotesProvider } = await import("@muse/mcp");
+          const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+          const provider = new LocalDirNotesProvider({ notesDir });
+          const title = `Today brief — ${shortDateLabel(briefing.generatedAt)}`;
+          const body = [
+            `# ${title}`,
+            "",
+            prose.trim(),
+            ""
+          ].join("\n");
+          try {
+            await provider.save({
+              body,
+              id: options.saveToNotes.trim(),
+              overwrite: true,
+              title: title.slice(0, 120)
+            });
+            io.stderr(`(saved brief to ${options.saveToNotes.trim()} in ${notesDir})\n`);
+          } catch (cause) {
+            const msg = cause instanceof Error ? cause.message : String(cause);
+            io.stderr(`(failed to save brief: ${msg})\n`);
+            process.exitCode = 1;
+          }
         }
         return;
       }

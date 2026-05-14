@@ -2462,6 +2462,22 @@ describe("cli program", () => {
     expect(output.join("")).toContain("You have 1 open task: Buy milk.");
   });
 
+  it("today --save-to-notes requires --brief (goal 054)", async () => {
+    const { io, output } = captureOutput();
+    const program = createProgram({ ...io, fetch: async () => { throw new Error("not reached"); } });
+    let threw: Error | undefined;
+    try {
+      await program.parseAsync(
+        ["node", "muse", "--api-url", "http://api.test", "today", "--save-to-notes", "journal/today.md"],
+        { from: "node" }
+      );
+    } catch (cause) {
+      threw = cause as Error;
+    }
+    expect(threw?.message).toMatch(/--save-to-notes requires --brief/);
+    expect(output.join("")).not.toContain("brief saved");
+  });
+
   it("messaging providers/send round-trip: --local routes through the in-process registry without the API", async () => {
     const prevTg = process.env.MUSE_TELEGRAM_BOT_TOKEN;
     process.env.MUSE_TELEGRAM_BOT_TOKEN = "fake-token";
