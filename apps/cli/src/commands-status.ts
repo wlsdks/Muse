@@ -29,6 +29,14 @@ import {
 } from "@muse/mcp";
 import type { Command } from "commander";
 
+import {
+  BUILTIN_PERSONAS,
+  defaultPersonaFile,
+  isBuiltinPersonaId,
+  readPersonaStore,
+  resolveActivePersonaPreamble
+} from "./persona-store.js";
+import { resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 import { readTrust } from "./commands-trust.js";
 
@@ -190,6 +198,22 @@ async function collectStatus(userId: string) {
     | { facts?: Record<string, string>; preferences?: Record<string, string>; updatedAt?: string }
     | undefined;
 
+  // Goal 098 — surface the two "persona" axes that aren't otherwise
+  // visible to the user without spelunking through env + persona.json:
+  //   - slot: the active multi-persona memory keying (work / home / …)
+  //     resolved via `resolvePersona` so the same precedence as every
+  //     other persona-aware subcommand (--persona > MUSE_PERSONA env)
+  //     is applied; `muse status` itself has no --persona flag, so
+  //     here it's env-only and `slotSource` says so.
+  //   - template: the active persona-template (jarvis / casual / …)
+  //     from `~/.muse/persona.json`; tells the user which tone every
+  //     ask / brief / today / proactive-synthesis call will adopt.
+  const slot = resolvePersona(undefined);
+  const personaStore = await readPersonaStore(defaultPersonaFile()).catch(() => undefined);
+  const activeTemplateId = personaStore?.activeId ?? "default";
+  const activePreamble = personaStore ? resolveActivePersonaPreamble(personaStore) : "";
+  const builtinDescription = BUILTIN_PERSONAS.find((p) => p.id === activeTemplateId)?.description;
+
   const trust = await readTrust(userId).catch(() => ({ blockedTools: [] as string[], trustedTools: [] as string[] }));
   const routineHours = persona?.facts?.routine_active_hours;
   const routineDays = persona?.facts?.routine_active_days;
@@ -247,7 +271,17 @@ async function collectStatus(userId: string) {
         : 0,
       goalCount: persona?.preferences
         ? Object.keys(persona.preferences).filter((k) => k.startsWith("goal:")).length
-        : 0
+        : 0,
+      // Goal 098 — active multi-persona slot from --persona /
+      // MUSE_PERSONA (status has no CLI flag so it's env-only here).
+      ...(slot ? { slot, slotSource: "MUSE_PERSONA" as const } : {}),
+      // Goal 098 — active persona-template (jarvis / casual / …).
+      template: {
+        activeId: activeTemplateId,
+        isBuiltin: isBuiltinPersonaId(activeTemplateId),
+        preambleBytes: activePreamble.length,
+        ...(builtinDescription ? { description: builtinDescription } : {})
+      }
     },
     tasks: {
       file: tasksFile,
@@ -446,6 +480,13 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
   io.stdout("Muse status:\n");
       io.stdout("\n");
       io.stdout(`  user: ${snap.persona.userId}\n`);
+      if (snap.persona.slot) {
+        io.stdout(`    slot: ${snap.persona.slot} (from ${snap.persona.slotSource ?? "MUSE_PERSONA"})\n`);
+      }
+      if (snap.persona.template.activeId !== "default" || snap.persona.template.preambleBytes > 0) {
+        const tag = snap.persona.template.isBuiltin ? "built-in" : "custom";
+        io.stdout(`    template: ${snap.persona.template.activeId} (${tag}, ${snap.persona.template.preambleBytes.toString()}-byte preamble)\n`);
+      }
       if (snap.persona.factCount + snap.persona.preferenceCount > 0) {
         const parts: string[] = [];
         if (snap.persona.factCount > 0) parts.push(`${snap.persona.factCount.toString()} fact(s)`);

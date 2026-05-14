@@ -5864,4 +5864,56 @@ describe("cli program", () => {
       else delete process.env.MUSE_FOLLOWUPS_FILE;
     }
   });
+
+  it("muse status surfaces active persona slot (MUSE_PERSONA) and template (~/.muse/persona.json) (goal 098)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-persona-"));
+    const fsp = await import("node:fs/promises");
+    const personaFile = path.join(root, "persona.json");
+    await fsp.writeFile(personaFile, JSON.stringify({ activeId: "jarvis", custom: {} }), "utf8");
+
+    const prevPersonaFile = process.env.MUSE_PERSONA_FILE;
+    const prevPersonaEnv = process.env.MUSE_PERSONA;
+    process.env.MUSE_PERSONA_FILE = personaFile;
+    process.env.MUSE_PERSONA = "work";
+    try {
+      // --json shape carries slot + template fields.
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap = JSON.parse(output.join("")) as {
+        persona: {
+          slot?: string;
+          slotSource?: string;
+          template: { activeId: string; isBuiltin: boolean; preambleBytes: number; description?: string };
+        };
+      };
+      expect(snap.persona.slot).toBe("work");
+      expect(snap.persona.slotSource).toBe("MUSE_PERSONA");
+      expect(snap.persona.template.activeId).toBe("jarvis");
+      expect(snap.persona.template.isBuiltin).toBe(true);
+      expect(snap.persona.template.preambleBytes).toBeGreaterThan(0);
+
+      // Text renderer surfaces the same in human form.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "status", "--user", "stark"], { from: "node" });
+      const text = out2.join("");
+      expect(text).toContain("slot: work (from MUSE_PERSONA)");
+      expect(text).toMatch(/template: jarvis \(built-in, \d+-byte preamble\)/u);
+
+      // With env unset, slot is dropped from JSON.
+      delete process.env.MUSE_PERSONA;
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap3 = JSON.parse(out3.join("")) as { persona: { slot?: string; template: { activeId: string } } };
+      expect(snap3.persona.slot).toBeUndefined();
+      expect(snap3.persona.template.activeId).toBe("jarvis");
+    } finally {
+      if (prevPersonaFile !== undefined) process.env.MUSE_PERSONA_FILE = prevPersonaFile;
+      else delete process.env.MUSE_PERSONA_FILE;
+      if (prevPersonaEnv !== undefined) process.env.MUSE_PERSONA = prevPersonaEnv;
+      else delete process.env.MUSE_PERSONA;
+    }
+  });
 });
