@@ -72,8 +72,9 @@ export async function writeReminders(file: string, reminders: readonly Persisted
   const payload = `${JSON.stringify({ reminders }, null, 2)}\n`;
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, payload, "utf8");
+  await fs.writeFile(tmp, payload, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
+  await fs.chmod(file, 0o600).catch(() => undefined);
 }
 
 export function serializeReminder(reminder: PersistedReminder): JsonObject {

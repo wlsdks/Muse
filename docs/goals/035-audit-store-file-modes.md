@@ -21,4 +21,10 @@ may carry sensitive content (user-memory) that warrants 0o600 too.
 
 ## Status
 
-open
+done — classified each ~/.muse/*.json writer + applied 0o600 to
+the six sensitive ones: episodes, tasks, reminders, followups,
+reminder-history, proactive-history. user-memory was already
+0o600 from prior work. patterns-fired + followup-llm-budget left
+default — they carry only ids + counters, no PII. Pattern:
+`writeFile(tmp, …, { encoding, mode: 0o600 })` + post-rename
+`chmod 0o600` fallback. mcp +2 lock-in tests.

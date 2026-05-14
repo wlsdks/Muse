@@ -5779,6 +5779,49 @@ describe("muse.status loopback server", () => {
   });
 });
 
+describe("sensitive store file-mode lock-ins (goal 035)", () => {
+  it("writeFollowups persists ~/.muse/followups.json with mode 0600", async () => {
+    if (process.platform === "win32") return;
+    const { mkdtempSync, statSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { writeFollowups } = await import("../src/index.js");
+    const dir = mkdtempSync(join(tmpdir(), "muse-store-mode-fu-"));
+    const file = join(dir, "followups.json");
+    await writeFollowups(file, [
+      { id: "fu_a", userId: "stark", scheduledFor: "2026-05-15T09:00:00Z", status: "scheduled", summary: "Send Q3 memo", createdAt: "2026-05-12T00:00:00Z" }
+    ]);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it("writeEpisodes / writeReminders / writeTasks all yield mode 0600", async () => {
+    if (process.platform === "win32") return;
+    const { mkdtempSync, statSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { writeEpisodes, writeReminders, writeTasks } = await import("../src/index.js");
+    const dir = mkdtempSync(join(tmpdir(), "muse-store-mode-sweep-"));
+
+    const epFile = join(dir, "episodes.json");
+    await writeEpisodes(epFile, [
+      { id: "ep_a", userId: "stark", startedAt: "2026-05-12T22:00:00Z", endedAt: "2026-05-12T22:30:00Z", summary: "x" }
+    ]);
+    expect(statSync(epFile).mode & 0o777).toBe(0o600);
+
+    const remFile = join(dir, "reminders.json");
+    await writeReminders(remFile, [
+      { id: "rem_a", text: "x", dueAt: "2026-05-15T09:00:00Z", status: "pending", createdAt: "2026-05-12T00:00:00Z" }
+    ]);
+    expect(statSync(remFile).mode & 0o777).toBe(0o600);
+
+    const taskFile = join(dir, "tasks.json");
+    await writeTasks(taskFile, [
+      { id: "task_a", title: "x", status: "open", createdAt: "2026-05-12T00:00:00Z" }
+    ]);
+    expect(statSync(taskFile).mode & 0o777).toBe(0o600);
+  });
+});
+
 describe("muse.history loopback server", () => {
   async function seedFiles() {
     const { mkdtempSync, writeFileSync } = await import("node:fs");

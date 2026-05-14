@@ -70,8 +70,9 @@ export async function writeEpisodes(file: string, episodes: readonly PersistedEp
   const payload = `${JSON.stringify({ episodes }, null, 2)}\n`;
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, payload, "utf8");
+  await fs.writeFile(tmp, payload, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
+  await fs.chmod(file, 0o600).catch(() => undefined);
 }
 
 export function serializeEpisode(episode: PersistedEpisode): JsonObject {
