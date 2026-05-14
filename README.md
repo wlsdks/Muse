@@ -138,7 +138,7 @@ turn AND every proactive notice.
 GEMINI_API_KEY=… MUSE_MODEL=gemini/gemini-2.0-flash MUSE_MODEL_PROVIDER_ID=gemini \
   pnpm --filter @muse/api dev
 
-curl -X POST http://127.0.0.1:3000/api/chat \
+curl -X POST http://127.0.0.1:3030/api/chat \
   -H 'content-type: application/json' \
   -d '{"message":"What time is it? Use a tool."}'
 

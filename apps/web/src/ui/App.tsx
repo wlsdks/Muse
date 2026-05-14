@@ -50,7 +50,7 @@ export function App() {
 }
 
 export function MuseConsole() {
-  const [apiUrl, setApiUrl] = useState(() => readLocalSetting("muse.apiUrl", "http://127.0.0.1:3000"));
+  const [apiUrl, setApiUrl] = useState(() => readLocalSetting("muse.apiUrl", "http://127.0.0.1:3030"));
   const [token, setToken] = useState(() => readLocalSetting("muse.token", ""));
   const client = useMemo(() => createApiClient(apiUrl, token), [apiUrl, token]);
   const health = useQuery({

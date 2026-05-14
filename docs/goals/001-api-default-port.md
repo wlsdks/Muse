@@ -29,4 +29,7 @@ Pick one of:
 
 ## Status
 
-open
+done — committed in the same change (path (a) — port 3000 → 3030
+across API server, CLI default, web App default, web e2e mocks,
+CLI tests, README + README.ko). Web stays on Next.js's
+canonical :3000.

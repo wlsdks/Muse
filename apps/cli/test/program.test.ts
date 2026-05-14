@@ -249,7 +249,7 @@ describe("cli program", () => {
     await program.parseAsync(["node", "muse", "chat", "--no-log"], { from: "node" });
 
     expect(output.join("")).toBe("interactive answer\n");
-    expect(requests[0]).toMatchObject({ url: "http://127.0.0.1:3000/api/chat" });
+    expect(requests[0]).toMatchObject({ url: "http://127.0.0.1:3030/api/chat" });
     expect(JSON.parse(requests[0]?.body ?? "{}")).toEqual({ message: "interactive hello" });
   });
 
@@ -317,7 +317,7 @@ describe("cli program", () => {
     });
     expect(requests[1]).toMatchObject({
       method: "POST",
-      url: "http://127.0.0.1:3000/api/scheduler/jobs/job-1/trigger"
+      url: "http://127.0.0.1:3030/api/scheduler/jobs/job-1/trigger"
     });
     expect(output.join("")).toContain("\"ok\": true");
   });
@@ -3799,8 +3799,9 @@ describe("cli program", () => {
   it("apiRequest formats an HTML 404 into a one-line hint instead of dumping the body", async () => {
     const { formatApiErrorResponse } = await import("../src/program-helpers.js");
     // A multi-KB HTML 404 (what Next.js dev server returns when
-    // the CLI's --api-url defaults to 127.0.0.1:3000 and the user
-    // has the web app on that port instead of the muse API).
+    // the user points --api-url at the web port (3000) instead of
+    // the muse API. Goal 001 moved the API default to 3030 so the
+    // collision no longer happens on a clean install).
     const htmlBody = `<!DOCTYPE html><html><head><title>404</title></head><body>${"<script>".repeat(500)}</body></html>`;
     const fakeResponse = {
       status: 404,
@@ -3811,8 +3812,8 @@ describe("cli program", () => {
         }
       }
     };
-    const err = formatApiErrorResponse(fakeResponse, htmlBody, "http://127.0.0.1:3000");
-    expect(err.message).toContain("Muse API 404 at http://127.0.0.1:3000");
+    const err = formatApiErrorResponse(fakeResponse, htmlBody, "http://127.0.0.1:3030");
+    expect(err.message).toContain("Muse API 404 at http://127.0.0.1:3030");
     expect(err.message).toContain("response was HTML, not JSON");
     expect(err.message).toContain("--api-url");
     expect(err.message).not.toContain("<!DOCTYPE");
@@ -3827,7 +3828,7 @@ describe("cli program", () => {
       statusText: "Unprocessable Entity",
       headers: { get: (): string | null => "application/json" }
     };
-    const err = formatApiErrorResponse(fakeResponse, longJson, "http://localhost:3000");
+    const err = formatApiErrorResponse(fakeResponse, longJson, "http://localhost:3030");
     expect(err.message).toMatch(/^Muse API 422:/);
     // Trimmed preview + ellipsis indicator (240 chars + 1 for the ellipsis).
     expect(err.message.length).toBeLessThan(280);
@@ -3841,7 +3842,7 @@ describe("cli program", () => {
       statusText: "Internal Server Error",
       headers: { get: (): string | null => null }
     };
-    const err = formatApiErrorResponse(fakeResponse, "", "http://localhost:3000");
+    const err = formatApiErrorResponse(fakeResponse, "", "http://localhost:3030");
     expect(err.message).toBe("Muse API 500: Internal Server Error");
   });
 

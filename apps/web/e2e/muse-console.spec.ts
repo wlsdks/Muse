@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 test("operator console smokes chat and recent runs against API routes", async ({ page }) => {
-  await page.route("http://127.0.0.1:3000/health", async (route) => {
+  await page.route("http://127.0.0.1:3030/health", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       json: { service: "muse-api", status: "ok" }
     });
   });
-  await page.route("http://127.0.0.1:3000/admin/summary", async (route) => {
+  await page.route("http://127.0.0.1:3030/admin/summary", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       json: {
@@ -23,7 +23,7 @@ test("operator console smokes chat and recent runs against API routes", async ({
       }
     });
   });
-  await page.route("http://127.0.0.1:3000/api/chat", async (route) => {
+  await page.route("http://127.0.0.1:3030/api/chat", async (route) => {
     expect(route.request().method()).toBe("POST");
     expect(route.request().postDataJSON()).toEqual({ message: "Compare launch options" });
     await route.fulfill({

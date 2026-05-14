@@ -135,11 +135,13 @@ export async function apiRequest(
 
 /**
  * Build a one-line Error from a non-OK API response. Caps large
- * bodies + special-cases HTML responses — the common dogfood
- * failure mode is `--api-url` (or the default `127.0.0.1:3000`)
- * pointing at a Next.js dev server instead of the Muse API, in
- * which case the upstream returns a multi-kilobyte HTML 404 page.
- * Dumping the raw HTML into the terminal hid the actual problem.
+ * bodies + special-cases HTML responses — a common dogfood
+ * failure mode is `--api-url` pointing at a different web server
+ * (a stray Next.js dev or another local app) instead of the Muse
+ * API, in which case the upstream returns a multi-kilobyte HTML
+ * 404 page. Dumping the raw HTML into the terminal hid the actual
+ * problem. The Muse API itself defaults to port 3030 (was 3000
+ * before goal 001 — moved to avoid the canonical Next.js port).
  */
 export function formatApiErrorResponse(
   response: { readonly status: number; readonly statusText: string; readonly headers: { get(name: string): string | null } },
@@ -187,7 +189,7 @@ export async function readApiOptions(
 ): Promise<ApiOptions> {
   const globalOptions = command.optsWithGlobals() as { readonly apiUrl?: string; readonly token?: string };
   const config = await readConfigStore(io);
-  const baseUrl = globalOptions.apiUrl ?? process.env.MUSE_API_URL ?? config.apiUrl ?? "http://127.0.0.1:3000";
+  const baseUrl = globalOptions.apiUrl ?? process.env.MUSE_API_URL ?? config.apiUrl ?? "http://127.0.0.1:3030";
   const explicitToken = globalOptions.token ?? process.env.MUSE_API_TOKEN;
 
   return {
@@ -392,7 +394,7 @@ export async function writeRunLog(workspaceDir: string, input: RunLogInput, now 
   const runId = readResponseRunId(input.response) ?? `cli-${now.getTime().toString()}`;
   const filePath = path.join(runDir, `${runId}.jsonl`);
   const event = {
-    apiUrl: input.apiUrl ?? process.env.MUSE_API_URL ?? "http://127.0.0.1:3000",
+    apiUrl: input.apiUrl ?? process.env.MUSE_API_URL ?? "http://127.0.0.1:3030",
     message: input.message,
     model: input.model ?? null,
     recordedAt: now.toISOString(),

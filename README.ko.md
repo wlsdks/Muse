@@ -87,13 +87,13 @@ GEMINI_API_KEY=… MUSE_MODEL=gemini/gemini-2.0-flash MUSE_MODEL_PROVIDER_ID=gem
   pnpm --filter @muse/api dev
 
 # 호출:
-curl -X POST http://127.0.0.1:3000/api/chat \
+curl -X POST http://127.0.0.1:3030/api/chat \
   -H 'content-type: application/json' \
   -d '{"message":"몇 시야? 도구 써."}'
 
 # CLI로 호출:
 node apps/cli/dist/index.js \
-  --api-url http://127.0.0.1:3000 \
+  --api-url http://127.0.0.1:3030 \
   chat "몇 시야? 도구 써."
 
 # Web UI:

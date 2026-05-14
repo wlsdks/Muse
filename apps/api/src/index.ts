@@ -1,7 +1,7 @@
 import { createApiServerOptions, seedExternalMcpServers } from "@muse/autoconfigure";
 import { buildServer } from "./server.js";
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.PORT ?? 3030);
 const host = process.env.HOST ?? "127.0.0.1";
 
 const options = createApiServerOptions();
