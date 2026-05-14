@@ -1923,6 +1923,29 @@ describe("muse.tasks loopback server", () => {
         .toBe("2026-05-17T12:00:00.000Z");
     });
 
+    it("parses 'in N month(s)' with calendar-month math (goal 110)", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      // Anchor on a safe mid-month date so the test doesn't trip
+      // the JS month-rollover edge case (Jan 31 + 1 -> Mar 3).
+      const fixed = new Date("2026-05-10T12:00:00Z");
+      const now = () => fixed;
+
+      // Singular + plural both work.
+      const oneMonth = resolveRelativeTimePhrase("in 1 month", now);
+      expect(oneMonth?.getUTCMonth()).toBe(5);          // June (0-indexed)
+      expect(oneMonth?.getUTCDate()).toBe(10);
+      expect(oneMonth?.getUTCHours()).toBe(12);
+
+      const threeMonths = resolveRelativeTimePhrase("in 3 months", now);
+      expect(threeMonths?.getUTCMonth()).toBe(7);       // August
+      expect(threeMonths?.getUTCDate()).toBe(10);
+
+      // Crossing the year boundary is fine.
+      const twelve = resolveRelativeTimePhrase("in 12 months", now);
+      expect(twelve?.getUTCFullYear()).toBe(2027);
+      expect(twelve?.getUTCMonth()).toBe(4);            // back to May
+    });
+
     it("supports time-of-day suffixes (am/pm/HH:MM/noon/midnight)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const tomorrow6pm = resolveRelativeTimePhrase("tomorrow at 6pm", () => new Date("2026-05-10T12:00:00Z"));

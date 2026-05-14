@@ -13,6 +13,8 @@
  *   "tomorrow at 6pm" / "tomorrow at 14:30"      → next day at the given time
  *   "today" / "today at 6pm"                     → today at 09:00 (or given time)
  *   "in 3 hours" / "in 30 minutes" / "in 2 days" → reference + offset
+ *   "in 1 week" / "in 2 weeks"                   → reference + 7N days
+ *   "in 1 month" / "in 3 months"                 → calendar-month offset (goal 110)
  *   "next monday" / "next mon"                   → next Monday at 09:00
  *   "next monday at 6pm"                         → next Monday at 18:00
  *   "noon" / "midnight" (suffix to a day phrase) → 12:00 / 00:00
@@ -48,10 +50,22 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
   }
   const reference = now();
 
-  const inMatch = /^in\s+(\d+)\s+(minute|hour|day|week)s?$/u.exec(trimmed);
+  const inMatch = /^in\s+(\d+)\s+(minute|hour|day|week|month)s?$/u.exec(trimmed);
   if (inMatch) {
     const amount = Number.parseInt(inMatch[1] ?? "0", 10);
     const unit = inMatch[2];
+    // Goal 110 — month math goes through Date.setMonth so calendar
+    // semantics hold (Jan 15 + 1 month → Feb 15, not "30 days later").
+    // JS rolls over when the target month is shorter than the source
+    // day-of-month (Jan 31 + 1 month → Mar 3); that's the standard
+    // behaviour and matches what a user typing "remind me in 1 month"
+    // expects from a personal scheduler. Other units stay on the
+    // simpler millisecond offset.
+    if (unit === "month") {
+      const next = new Date(reference);
+      next.setMonth(next.getMonth() + amount);
+      return next;
+    }
     const offsetMs = unit === "minute" ? amount * 60_000
       : unit === "hour" ? amount * 3_600_000
       : unit === "day" ? amount * 86_400_000
