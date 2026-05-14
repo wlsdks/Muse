@@ -112,6 +112,15 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
       const updated = fireReminder(next, reminder.id, firedAtIso);
       if (updated) {
         next = updated;
+        // Goal 069 — persist the status flip immediately after each
+        // successful delivery, not just at the end of the loop. If
+        // the daemon crashes between deliveries (kill -9, OOM,
+        // hardware failure), the reminders already delivered are
+        // already `fired` on disk so restart's `filterReminders`
+        // sees status: "fired" and doesn't re-deliver. The previous
+        // batched write at line ~149 would lose every delivered
+        // reminder up to the crash point.
+        await writeReminders(options.file, next);
         const justFired = updated.find((entry) => entry.id === reminder.id);
         if (justFired) {
           fired.push(justFired);
@@ -145,9 +154,11 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
     }
   }
 
-  if (delivered > 0) {
-    await writeReminders(options.file, next);
-  }
+  // Goal 069 — the per-delivery `writeReminders` above already
+  // persists every status flip. No trailing batch write needed,
+  // which also closes the previous crash window where the
+  // batch fire-and-write would lose every in-tick delivery if
+  // the daemon died after `send` but before the final flush.
 
   return { delivered, due: due.length, errors, fired };
 }

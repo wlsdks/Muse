@@ -3470,6 +3470,69 @@ describe("runDueReminders", () => {
     expect(summary.errors[0]).toContain("upstream 503");
   });
 
+  it("persists the status flip after EACH delivery so a crash mid-tick doesn't re-fire (goal 069)", async () => {
+    const { runDueReminders, readReminders } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-fire-idempotent-"));
+    const file = join(dir, "reminders.json");
+    writeFileSync(file, JSON.stringify({
+      reminders: [
+        { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_first", status: "pending", text: "first" },
+        { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_second", status: "pending", text: "second" }
+      ]
+    }));
+
+    // Simulate "delivery #2 fails": first send succeeds (gets
+    // persisted), second send throws (so its status stays pending).
+    // The pre-069 behavior would lose the rem_first flip because the
+    // final batched write happened only at the end of the tick.
+    const sentDuringFirstTick: Array<{ destination: string; text: string }> = [];
+    const flakyRegistry = {
+      send: async (_providerId: string, msg: { destination: string; text: string }) => {
+        sentDuringFirstTick.push({ destination: msg.destination, text: msg.text });
+        if (sentDuringFirstTick.length === 2) {
+          throw new Error("simulated upstream failure mid-tick");
+        }
+      }
+    };
+
+    const firstSummary = await runDueReminders({
+      destination: "@me",
+      file,
+      providerId: "telegram",
+      registry: flakyRegistry as unknown as Parameters<typeof runDueReminders>[0]["registry"]
+    });
+    expect(firstSummary.delivered).toBe(1);
+    expect(firstSummary.errors.length).toBe(1);
+    // Goal 069 — the per-delivery write means rem_first is already
+    // `fired` on disk even though the tick failed mid-way.
+    const midTickState = await readReminders(file);
+    expect(midTickState.find((e) => e.id === "rem_first")?.status).toBe("fired");
+    expect(midTickState.find((e) => e.id === "rem_second")?.status).toBe("pending");
+
+    // Restart: only the still-pending reminder fires.
+    const sentAfterRestart: Array<{ destination: string }> = [];
+    const fineRegistry = {
+      send: async (_providerId: string, msg: { destination: string; text: string }) => {
+        sentAfterRestart.push({ destination: msg.destination });
+      }
+    };
+    const secondSummary = await runDueReminders({
+      destination: "@me",
+      file,
+      providerId: "telegram",
+      registry: fineRegistry as unknown as Parameters<typeof runDueReminders>[0]["registry"]
+    });
+    expect(secondSummary.delivered).toBe(1);
+    expect(sentAfterRestart.length).toBe(1);
+    // After both ticks, both reminders are fired exactly once.
+    const finalState = await readReminders(file);
+    const firedIds = finalState.filter((e) => e.status === "fired").map((e) => e.id).sort();
+    expect(firedIds).toEqual(["rem_first", "rem_second"]);
+  });
+
   it("respects per-reminder via override (Phase C); falls back to defaults when via is absent", async () => {
     const { runDueReminders } = await import("../src/index.js");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
