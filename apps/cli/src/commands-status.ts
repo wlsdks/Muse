@@ -377,11 +377,23 @@ export function registerStatusCommand(program: Command, io: ProgramIO): void {
         io.stdout(`  last notice: (none yet — run 'muse proactive watch' to start delivering)\n`);
       }
       io.stdout("\n");
-      io.stdout(`  notifications log: ${snap.notificationLog.file}${
-        snap.notificationLog.bytes !== undefined ? ` (${snap.notificationLog.bytes.toString()} bytes)` : " (not yet created)"
-      }\n`);
-      if (snap.notificationLog.lastLine) {
-        io.stdout(`    last: ${snap.notificationLog.lastLine}\n`);
+      // The "log" messaging provider writes to ~/.muse/notifications.log
+      // separately from ~/.muse/proactive-history.json. When the
+      // history shows a delivery via "log" but the log file is
+      // missing, the user has been bitten by a rotation / cleanup
+      // / wrong-path mismatch — surface that explicitly so they
+      // know to check (not just "(not yet created)" which implies
+      // nothing ever fired).
+      const logFile = snap.notificationLog.file;
+      if (snap.notificationLog.bytes !== undefined) {
+        io.stdout(`  notifications log: ${logFile} (${snap.notificationLog.bytes.toString()} bytes)\n`);
+        if (snap.notificationLog.lastLine) {
+          io.stdout(`    last: ${snap.notificationLog.lastLine}\n`);
+        }
+      } else if (snap.lastNotice?.providerId === "log") {
+        io.stdout(`  notifications log: ${logFile} (file missing — proactive history shows a 'log' delivery on ${snap.lastNotice.firedAtIso ?? "?"}; may have been rotated, removed, or written to a different MUSE_MESSAGING_LOG_FILE)\n`);
+      } else {
+        io.stdout(`  notifications log: ${logFile} (not yet created — no 'log' messaging provider has fired)\n`);
       }
       io.stdout("\n");
       if (snap.routine.activeHours || snap.routine.activeDays) {

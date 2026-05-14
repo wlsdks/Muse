@@ -3796,6 +3796,53 @@ describe("cli program", () => {
     }
   });
 
+  it("muse status surfaces the log-file / last-notice inconsistency instead of saying '(not yet created)'", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-loginconsist-"));
+    const fsp = await import("node:fs/promises");
+    const proactiveHistoryFile = path.join(root, "proactive-history.json");
+    const logFile = path.join(root, "notifications.log");
+
+    // Seed proactive history with a 'log' delivery — the log file
+    // itself stays missing.
+    await fsp.writeFile(proactiveHistoryFile, JSON.stringify({
+      entries: [{
+        kind: "calendar",
+        itemId: "evt_a",
+        startIso: "2026-05-12T11:00:00.000Z",
+        title: "Q3 memo",
+        providerId: "log",
+        destination: "@me",
+        text: "Send the Q3 memo",
+        firedAtIso: "2026-05-12T11:49:47.830Z",
+        status: "delivered"
+      }],
+      version: 1
+    }), "utf8");
+
+    const prev = {
+      proactive: process.env.MUSE_PROACTIVE_HISTORY_FILE,
+      log: process.env.MUSE_MESSAGING_LOG_FILE
+    };
+    process.env.MUSE_PROACTIVE_HISTORY_FILE = proactiveHistoryFile;
+    process.env.MUSE_MESSAGING_LOG_FILE = logFile;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "status", "--user", "stark"], { from: "node" });
+      const text = output.join("");
+      // Old (misleading) wording is gone:
+      expect(text).not.toContain("(not yet created)");
+      // New diagnosis is surfaced:
+      expect(text).toContain("file missing — proactive history shows a 'log' delivery");
+      expect(text).toContain("2026-05-12T11:49:47.830Z");
+    } finally {
+      if (prev.proactive === undefined) delete process.env.MUSE_PROACTIVE_HISTORY_FILE;
+      else process.env.MUSE_PROACTIVE_HISTORY_FILE = prev.proactive;
+      if (prev.log === undefined) delete process.env.MUSE_MESSAGING_LOG_FILE;
+      else process.env.MUSE_MESSAGING_LOG_FILE = prev.log;
+    }
+  });
+
   it("muse status reports the inferred model when MUSE_MODEL is unset but a provider key resolves one", async () => {
     const prev = {
       muse_model: process.env.MUSE_MODEL,
