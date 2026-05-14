@@ -25,4 +25,10 @@ candidate for per-registry split.
 
 ## Status
 
-open
+partial — extracted `buildMessagingRegistry` (the largest, ~88
+LOC) into `registry-builders/messaging.ts` (119 LOC). personal-
+providers.ts went 710 → 609 LOC — under the 700-LOC big-file
+threshold. The other four builders (calendar / notes / tasks /
+voice) stay in personal-providers.ts; further extraction follows
+the same pattern but earns less per-iter since the file no longer
+trips the threshold. Filed remaining splits as a follow-up.

@@ -26,7 +26,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 004 | [Tool-loop timeout + max-iterations audit](004-tool-loop-timeout-audit.md)        | security/robustness  | done   |
 | 005 | [Models.json file-mode 0600](005-models-json-file-mode.md)                        | security/robustness  | done   |
 | 006 | [Auth JWT-rotation surface](006-auth-jwt-rotation.md)                             | security/robustness  | done   |
-| 007 | [personal-providers.ts decomp](007-personal-providers-decomp.md)                  | big-file decomp      | open   |
+| 007 | [personal-providers.ts decomp](007-personal-providers-decomp.md)                  | big-file decomp      | partial |
 | 008 | [autoconfigure/index.ts sub-builder extraction](008-autoconfigure-decomp.md)      | big-file decomp      | open   |
 | 009 | [agent-runtime.ts method-cluster extraction](009-agent-runtime-decomp.md)         | big-file decomp      | open   |
 | 010 | [chat-repl.ts seam decomp](010-chat-repl-decomp.md)                               | big-file decomp      | open   |
