@@ -93,6 +93,10 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           if (!query || query.length === 0) {
             return { error: "query is required" };
           }
+          // Goal 055 — accept a `time_range` hint; map to SearXNG's
+          // native `time_range=` and DuckDuckGo's `df=` (their date
+          // filter). Unknown / missing values fall through unfiltered.
+          const timeRange = normaliseTimeRange(readString(args, "time_range"));
 
           // Path 1 — SearXNG when configured. Fall through to DDG on
           // any failure (HTTP error, JSON parse error, zero results).
@@ -103,7 +107,8 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
               maxResults,
               query,
               searxngUrl,
-              timeoutMs
+              timeoutMs,
+              ...(timeRange ? { timeRange } : {})
             });
             if (searxResults !== undefined && searxResults.length > 0) {
               return {
@@ -122,8 +127,23 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), timeoutMs);
           let html: string;
+          // Goal 055 — DDG's `df=` query string filters by date.
+          // Map: today → d, week → w, month → m, year → y. We've
+          // already normalised the input above; this is just the
+          // letter mapping.
+          const ddgDf = timeRange === "day"
+            ? "d"
+            : timeRange === "week"
+              ? "w"
+              : timeRange === "month"
+                ? "m"
+                : timeRange === "year"
+                  ? "y"
+                  : undefined;
+          const ddgQs = new URLSearchParams({ q: query });
+          if (ddgDf) ddgQs.set("df", ddgDf);
           try {
-            const response = await fetchImpl(`${endpoint}?q=${encodeURIComponent(query)}`, {
+            const response = await fetchImpl(`${endpoint}?${ddgQs.toString()}`, {
               headers: {
                 "accept": "text/html",
                 "user-agent": "muse-search-loopback/1.0"
@@ -153,12 +173,36 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           }
           return { backend: "duckduckgo", query, results: parsed as unknown as JsonValue, total: parsed.length };
         },
-        inputSchema: buildJsonToolSchema({ query: { type: "string" } }, ["query"]),
+        inputSchema: buildJsonToolSchema(
+          {
+            query: { type: "string" },
+            time_range: { type: "string", enum: ["day", "week", "month", "year"] }
+          },
+          ["query"]
+        ),
         name: "search",
         risk: "read"
       }
     ]
   };
+}
+
+/**
+ * Goal 055 — normalise user-supplied date hints into one of the
+ * four SearXNG `time_range` values (`day` / `week` / `month` /
+ * `year`). Accepts the natural CLI words (`today`, `week`,
+ * `month`, `year`) so `muse search --time today` maps to `day`
+ * before reaching the backend. Returns `undefined` for empty /
+ * unknown input — the caller treats that as "no filter".
+ */
+export function normaliseTimeRange(raw: string | undefined): "day" | "week" | "month" | "year" | undefined {
+  if (!raw) return undefined;
+  const normalised = raw.trim().toLowerCase();
+  if (normalised === "today" || normalised === "day" || normalised === "24h") return "day";
+  if (normalised === "week" || normalised === "7d") return "week";
+  if (normalised === "month" || normalised === "30d") return "month";
+  if (normalised === "year" || normalised === "365d") return "year";
+  return undefined;
 }
 
 interface QuerySearxngArgs {
@@ -168,6 +212,7 @@ interface QuerySearxngArgs {
   readonly timeoutMs: number;
   readonly fetchImpl: typeof globalThis.fetch;
   readonly engines: string | undefined;
+  readonly timeRange?: "day" | "week" | "month" | "year";
 }
 
 interface SearxngResultRow {
@@ -188,6 +233,7 @@ async function querySearxng(args: QuerySearxngArgs): Promise<readonly SearchResu
   const timer = setTimeout(() => controller.abort(), args.timeoutMs);
   const params = new URLSearchParams({ format: "json", q: args.query });
   if (args.engines) params.set("engines", args.engines);
+  if (args.timeRange) params.set("time_range", args.timeRange);
   try {
     const response = await args.fetchImpl(`${args.searxngUrl}/search?${params.toString()}`, {
       headers: {

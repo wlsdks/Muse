@@ -1507,6 +1507,49 @@ describe("muse.search loopback server", () => {
     expect(names).toContain("muse.search");
   });
 
+  it("forwards time_range to SearXNG and df to DuckDuckGo (goal 055)", async () => {
+    // Path 1 — SearXNG. The hint is normalised: 'today' → 'day'.
+    let searxUrl = "";
+    const searxFetch: typeof globalThis.fetch = async (input) => {
+      searxUrl = String(input);
+      return new Response(JSON.stringify({
+        results: [{ title: "x", url: "https://x.test/a", content: "y" }]
+      }), { headers: { "content-type": "application/json" }, status: 200 });
+    };
+    const searxServer = createSearchMcpServer({ fetch: searxFetch, searxngUrl: "http://searx.local" });
+    await createLoopbackMcpConnection(searxServer).callTool!("search", { query: "muse", time_range: "today" });
+    expect(searxUrl).toContain("time_range=day");
+
+    // Path 2 — DuckDuckGo fallback. 'month' → 'df=m'.
+    let ddgUrl = "";
+    const ddgFetch: typeof globalThis.fetch = async (input) => {
+      ddgUrl = String(input);
+      return new Response(
+        `<div class="result"><a class="result__a" href="https://e.test/p">e</a>` +
+        `<a class="result__snippet" href="https://e.test/p">snip</a></div>`,
+        { status: 200 }
+      );
+    };
+    const ddgServer = createSearchMcpServer({ fetch: ddgFetch });
+    await createLoopbackMcpConnection(ddgServer).callTool!("search", { query: "muse", time_range: "month" });
+    expect(ddgUrl).toContain("df=m");
+
+    // Unknown values fall through cleanly — no time_range / df is added.
+    let plainUrl = "";
+    const plainFetch: typeof globalThis.fetch = async (input) => {
+      plainUrl = String(input);
+      return new Response(
+        `<div class="result"><a class="result__a" href="https://e.test/p">e</a>` +
+        `<a class="result__snippet" href="https://e.test/p">snip</a></div>`,
+        { status: 200 }
+      );
+    };
+    const plainServer = createSearchMcpServer({ fetch: plainFetch });
+    await createLoopbackMcpConnection(plainServer).callTool!("search", { query: "muse", time_range: "nonsense" });
+    expect(plainUrl).not.toContain("df=");
+    expect(plainUrl).not.toContain("time_range=");
+  });
+
   it("when searxngUrl is set, hits SearXNG JSON first and returns its results with backend=searxng", async () => {
     let calledSearxng = false;
     let calledDdg = false;

@@ -74,7 +74,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 052 | [`muse session lock --hours N`](052-muse-session-lock.md)                          | JARVIS feature       | open   |
 | 053 | [`muse trust list --by-domain`](053-muse-trust-by-domain.md)                       | JARVIS feature       | done   |
 | 054 | [`muse today --summarize`](054-muse-summarize-today.md)                            | JARVIS feature       | open   |
-| 055 | [`muse search --time today\|week\|month`](055-muse-search-time-range.md)          | JARVIS feature       | open   |
+| 055 | [`muse search --time today\|week\|month`](055-muse-search-time-range.md)          | JARVIS feature       | done   |
 | 056 | [`muse open <id> --raw`](056-muse-open-raw.md)                                     | JARVIS feature       | done   |
 | 057 | [`muse runs delete <run-id>`](057-muse-runs-delete.md)                             | JARVIS feature       | open   |
 | 058 | [`muse notes search --mode llm-judge` polish](058-muse-notes-search-llm-judge-polish.md) | JARVIS feature | open |
