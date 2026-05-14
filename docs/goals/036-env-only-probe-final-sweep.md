@@ -20,4 +20,20 @@ the file-overlay merge?
 
 ## Status
 
-open
+done — full sweep complete, no surviving env-only probes that
+bypass `mergeModelKeysFromFile`. Confirmed sites:
+
+- `apps/cli/src/job-worker.ts:57-60` + `chat-repl.ts:200,538` —
+  WRITES (sets env from CLI args). Not read probes.
+- `apps/cli/src/commands-doctor.ts:116` — reads `env.MUSE_MODEL`
+  where `env` is the merged view (iter 45).
+- `packages/mcp/src/loopback-status.ts:208` — documented
+  backward-compat fallback (iter 53), not a bug.
+- `packages/autoconfigure/src/autoconfigure-model-provider.ts` —
+  reads `env.*_API_KEY` where `env` is the caller-supplied merged
+  view.
+- `packages/autoconfigure/src/setup-status.ts:144` — explicit
+  `mergeModelKeysFromFile(process.env)` before any field read.
+
+Iters 44/45/46/53 + this sweep close the env-only-probe class. No
+code change needed.
