@@ -27,6 +27,7 @@
     "@muse/voice": "workspace:*",
     "commander": "^14.0.3",
     "ink": "^7.0.2",
+    "pdf-parse": "^2.4.5",
     "react": "^19.2.6"
   },
   "devDependencies": {

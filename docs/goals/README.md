@@ -107,7 +107,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 085 | [Prompt injection detection telemetry](085-injection-detection-telemetry.md)       | security/robustness  | done   |
 | 086 | [Proactive notice secret redaction](086-proactive-notice-secret-redaction.md)      | security/robustness  | done   |
 | 087 | [`muse vision <image>` via Ollama](087-muse-vision-ollama.md)                      | JARVIS feature       | done   |
-| 088 | [`muse read <pdf>` document understanding](088-muse-read-pdf.md)                   | JARVIS feature       | open   |
+| 088 | [`muse read <pdf>` document understanding](088-muse-read-pdf.md)                   | JARVIS feature       | done   |
 | 089 | [`muse glance` active-window awareness](089-muse-glance-active-window.md)          | JARVIS feature       | open   |
 | 090 | [Episode semantic index](090-episode-semantic-index.md)                            | JARVIS feature       | open   |
 | 091 | [`muse recall <query>` cross-store](091-muse-recall-cross-store.md)                | JARVIS feature       | open   |

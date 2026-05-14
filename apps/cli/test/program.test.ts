@@ -3956,6 +3956,30 @@ describe("cli program", () => {
     expect(sawSignals).toEqual(["SIGTERM"]);
   });
 
+  it("muse read parses a hand-rolled PDF + builds grounded ask prompt (goal 088)", async () => {
+    const { parsePdfBuffer, buildReadAskSystemPrompt } = await import("../src/commands-read.js");
+    // System prompt structurally pins the document boundaries.
+    const prompt = buildReadAskSystemPrompt("hello world body text");
+    expect(prompt).toContain("=== DOCUMENT START ===");
+    expect(prompt).toContain("hello world body text");
+    expect(prompt).toContain("=== DOCUMENT END ===");
+    expect(prompt).toMatch(/USING ONLY the document/i);
+
+    // Parse a hand-rolled minimal PDF carrying "hello jarvis".
+    const pdfBytes = Buffer.from(
+      "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+      "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+      "3 0 obj<</Type/Page/Parent 2 0 R/Resources<</Font<</F1 4 0 R>>>>/MediaBox[0 0 300 100]/Contents 5 0 R>>endobj\n" +
+      "4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n" +
+      "5 0 obj<</Length 44>>stream\nBT /F1 12 Tf 50 50 Td (hello jarvis) Tj ET\nendstream\nendobj\n" +
+      "xref\n0 6\n0000000000 65535 f\n0000000009 00000 n\n0000000052 00000 n\n0000000101 00000 n\n0000000196 00000 n\n0000000257 00000 n\n" +
+      "trailer<</Size 6/Root 1 0 R>>\nstartxref\n349\n%%EOF\n"
+    );
+    const parsed = await parsePdfBuffer(pdfBytes);
+    expect(typeof parsed.text).toBe("string");
+    expect(parsed.text.includes("hello jarvis")).toBe(true);
+  });
+
   it("muse vision helpers: resolveVisionModel + loadImageAsBase64 + buildOllamaVisionBody (goal 087)", async () => {
     const { resolveVisionModel, loadImageAsBase64, buildOllamaVisionBody } = await import("../src/commands-vision.js");
 

@@ -42,4 +42,21 @@ LLM via `--ask "<question>"`. OSS only, all local.
 
 ## Status
 
-open
+done — `muse read <path.pdf> [--ask "..."] [--model <id>]
+[--json]` ingests a PDF via `pdf-parse` v2's `PDFParse` class
+(MIT, pure JS). Default mode prints extracted text; `--ask`
+streams an LLM reply grounded in the document via a strict
+"USING ONLY the document" system prompt + the existing
+`assembly.modelProvider.stream` path. Reuses goal 067's
+`withSigintAbort` for clean Ctrl-C exit.
+
+Scope deviation: the goal text mentioned the older `pdf-parse`
+function API; the installed v2 ships a class-based API.
+Wrapper `parsePdfBuffer` normalises the result to
+`{ text, pageCount }` so the CLI body stays version-stable.
+
+cli +1 test exercises `parsePdfBuffer` against a hand-rolled
+minimal PDF carrying "hello jarvis" + asserts the structural
+`=== DOCUMENT START/END ===` boundaries in
+`buildReadAskSystemPrompt`. Dogfood: same PDF dropped on
+disk + `muse read` returns "hello jarvis" on stdout.
