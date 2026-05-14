@@ -91,4 +91,40 @@ describe("POST /api/chat per-IP rate limit (goal 031)", () => {
     expect(denied.retryAfterSeconds).toBeGreaterThanOrEqual(1);
     expect(denied.retryAfterSeconds).toBeLessThanOrEqual(31);
   });
+
+  it("clientKeyFromRequest prefers authenticated userId over IP (goal 084)", async () => {
+    const { clientKeyFromRequest } = await import("../src/chat-rate-limiter.js");
+    // Authenticated → user-namespaced.
+    expect(
+      clientKeyFromRequest({ ip: "10.0.0.1", auth: { userId: "alice" } })
+    ).toBe("user:alice");
+    // Anonymous → ip-namespaced.
+    expect(
+      clientKeyFromRequest({ ip: "10.0.0.1" })
+    ).toBe("ip:10.0.0.1");
+    // Anonymous + no ip → fallback bucket (still namespaced as IP).
+    expect(clientKeyFromRequest({})).toBe("ip:unknown");
+    // Empty auth.userId falls back to ip.
+    expect(
+      clientKeyFromRequest({ ip: "10.0.0.2", auth: { userId: "" } })
+    ).toBe("ip:10.0.0.2");
+    // The two namespaces don't collide — a user named "10.0.0.1"
+    // gets a different bucket than the IP 10.0.0.1.
+    expect(clientKeyFromRequest({ auth: { userId: "10.0.0.1" } }))
+      .not.toBe(clientKeyFromRequest({ ip: "10.0.0.1" }));
+  });
+
+  it("two authenticated users sharing one IP get independent buckets (goal 084)", () => {
+    const limiter = new ChatRateLimiter({ capacity: 2, windowMs: 60_000 });
+    // Alice burns her bucket.
+    expect(limiter.consume("user:alice").allowed).toBe(true);
+    expect(limiter.consume("user:alice").allowed).toBe(true);
+    expect(limiter.consume("user:alice").allowed).toBe(false);
+    // Bob (same IP in production, different userId) still has his own.
+    expect(limiter.consume("user:bob").allowed).toBe(true);
+    expect(limiter.consume("user:bob").allowed).toBe(true);
+    expect(limiter.consume("user:bob").allowed).toBe(false);
+    // Anonymous IP bucket from the same egress is also independent.
+    expect(limiter.consume("ip:10.0.0.1").allowed).toBe(true);
+  });
 });

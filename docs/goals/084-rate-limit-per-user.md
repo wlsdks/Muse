@@ -31,4 +31,28 @@ public / anonymous flows still get protection.
 
 ## Status
 
-open
+done — `clientKeyFromRequest` now prefers the authenticated
+identity attached to the request by `attachAuthIdentity`
+(set in the `onRequest` hook when a Bearer token validates).
+Keys are namespaced — `user:<userId>` vs `ip:<addr>` — so the
+two pools never accidentally collide; a user named "10.0.0.1"
+still gets a separate bucket from the IP 10.0.0.1.
+
+Net effect: two users behind a shared corporate egress IP each
+get an independent 60-req/min bucket. Anonymous traffic still
+limits per-IP, preserving the goal 031 hardening contract.
+
+Scope deviation from the proposal: the env-var split into
+`MUSE_RATE_LIMIT_CHAT_USER_PER_MINUTE` /
+`MUSE_RATE_LIMIT_CHAT_IP_PER_MINUTE` is omitted — the keying
+fix is the load-bearing anti-starvation change; per-prefix cap
+tuning is operator sugar that can land as an additive follow-up
+without breaking the existing `MUSE_RATE_LIMIT_CHAT_PER_MINUTE`.
+
+api +2 tests:
+  - `clientKeyFromRequest` covers authenticated (user-prefix),
+    anonymous (ip-prefix), empty/missing inputs, and the
+    namespace-collision guard.
+  - end-to-end via the limiter: alice + bob both exhaust their
+    own buckets independently; the anonymous IP bucket from the
+    same source remains unaffected.

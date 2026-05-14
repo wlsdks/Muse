@@ -100,13 +100,24 @@ export class ChatRateLimiter {
 }
 
 /**
- * Extract a client identifier from a Fastify request. Prefers
- * `request.ip` (Fastify's built-in, already honours trust-proxy
- * settings); falls back to `unknown` so a malformed request still
- * gets some bucket (rather than bypassing the limit by sending
- * a header that confuses ip extraction).
+ * Extract a client identifier from a Fastify request.
+ *
+ * Goal 084 — when the request carries an authenticated identity
+ * (i.e. `attachAuthIdentity` wrote `request.auth.userId` during
+ * the `onRequest` hook), key on that so two users sharing a
+ * corporate egress IP each get independent buckets. Anonymous
+ * requests still fall back to `request.ip`; only as a last
+ * resort do we return `"unknown"`. Prefixing the key with
+ * `user:` / `ip:` keeps the two namespaces from accidentally
+ * colliding in the in-memory map.
  */
-export function clientKeyFromRequest(request: { ip?: string }): string {
+export function clientKeyFromRequest(request: { ip?: string; auth?: { userId?: string } }): string {
+  const userId = typeof request.auth?.userId === "string" && request.auth.userId.length > 0
+    ? request.auth.userId
+    : undefined;
+  if (userId) {
+    return `user:${userId}`;
+  }
   const ip = typeof request.ip === "string" && request.ip.length > 0 ? request.ip : undefined;
-  return ip ?? "unknown";
+  return ip ? `ip:${ip}` : "ip:unknown";
 }
