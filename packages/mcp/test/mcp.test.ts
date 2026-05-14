@@ -1229,11 +1229,34 @@ describe("muse.notes loopback server (filesystem-backed)", () => {
     expect(result.mode).toBe("llm-judge");
     expect((result.matches as Array<{ path: string }>).map((m) => m.path)).toEqual(["journal/2026-05-12.md"]);
     // The hallucinated path is dropped — never appears in the result set.
-    expect(JSON.stringify(result)).not.toContain("hallucinated");
+    expect((result.matches as Array<{ path: string }>).map((m) => m.path)).not.toContain("fake/hallucinated.md");
+    // Goal 058 — and the dropped count is surfaced as a diagnostic
+    // so callers can spot prompt drift without leaking the bad
+    // strings themselves.
+    expect(result.hallucinatedDropped).toBe(1);
     // User message contained the actual file previews.
     expect(seenUser).toContain("Query: Notion thing");
     expect(seenUser).toContain("[journal/2026-05-12.md]");
     expect(seenUser).toContain("Q3 budget memo");
+  });
+
+  it("muse.notes.search mode=llm-judge omits hallucinatedDropped when all paths are valid (goal 058)", async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-notes-judge-clean-"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "a.md"), "alpha content", "utf8");
+    writeFileSync(join(dir, "b.md"), "beta content", "utf8");
+    const connection = createLoopbackMcpConnection(createNotesMcpServer({
+      model: "stub",
+      modelProvider: { generate: async () => ({ output: '["a.md","b.md"]' }) },
+      notesDir: dir
+    }));
+    const result = await connection.callTool!("search", { mode: "llm-judge", query: "anything" });
+    // Both paths exist → diagnostic field is omitted entirely.
+    expect(result.hallucinatedDropped).toBeUndefined();
+    expect((result.matches as Array<{ path: string }>).length).toBe(2);
   });
 
   it("muse.notes.search mode=llm-judge tolerates prose wrap; returns [] on malformed JSON", async () => {

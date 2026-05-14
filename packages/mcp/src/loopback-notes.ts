@@ -221,7 +221,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               return { error: "llm-judge mode requires modelProvider + model wired into createNotesMcpServer; re-run with mode: 'substring' or configure the provider" };
             }
             try {
-              const paths = await runNotesLlmJudge({
+              const judged = await runNotesLlmJudge({
                 judgeMaxCandidates: Math.max(1, Math.trunc(options.judgeMaxCandidates ?? 200)),
                 judgePreviewChars: Math.max(50, Math.trunc(options.judgePreviewChars ?? 200)),
                 limit,
@@ -232,9 +232,16 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
                 root
               });
               return {
-                matches: paths.map((p) => ({ path: p })) as JsonValue,
+                matches: judged.paths.map((p) => ({ path: p })) as JsonValue,
                 mode: "llm-judge",
-                query
+                query,
+                // Goal 058 — diagnostic surface: how many paths the
+                // model returned that did NOT exist in the candidate
+                // set. Non-zero means the model is fabricating —
+                // callers can log + degrade silently or surface a
+                // warning. Path strings themselves are NOT echoed
+                // (they're untrusted output).
+                ...(judged.hallucinatedDropped > 0 ? { hallucinatedDropped: judged.hallucinatedDropped } : {})
               } satisfies JsonObject;
             } catch (cause) {
               return { error: `llm-judge failed: ${cause instanceof Error ? cause.message : String(cause)}` };
@@ -443,16 +450,37 @@ async function walkMarkdownFrom(
   }
 }
 
+/**
+ * Goal 058 — system prompt for the `mode: "llm-judge"` notes
+ * search. Explicit selection criteria + JSON-only output shape so
+ * smaller (2–8B) local models still produce usable arrays. The
+ * caller adds a defense-in-depth filter to drop hallucinated
+ * paths after parsing (so any prompt drift is contained).
+ */
 const NOTES_JUDGE_SYSTEM_PROMPT =
-  `You are a notes-path selector. The user gives you a natural-language
-query and a list of (path, first-paragraph-preview) pairs from their
-markdown notes. Return the paths most relevant to the query, in
-descending order of relevance.
+  `You are a notes-path selector for a personal-JARVIS assistant.
 
-Output STRICT JSON: a single array of path strings, e.g.
-["daily/2026-05-12.md", "projects/q3-budget.md"]. NEVER invent paths
-that were not in the input. NEVER include explanatory text. Return
-[] when nothing meaningfully matches.`;
+INPUT
+  Query: a natural-language question from the user.
+  Notes:  a list of "[<path>] <preview>" pairs from the user's markdown.
+
+TASK
+  Return the paths most relevant to the query, in descending order of
+  relevance. Use the preview to judge topical match — direct keyword
+  overlap, paraphrase / synonym overlap, or clearly-related project /
+  person / date context all count. Prefer recall over precision when
+  the query is ambiguous; the caller caps the count downstream.
+
+RULES
+  1. Output STRICT JSON: a single array of path strings, no prose,
+     no markdown fences, no leading or trailing text. Example:
+     ["daily/2026-05-12.md","projects/q3-budget.md"]
+  2. Each path MUST appear verbatim in the input (same casing, same
+     extension, same separators). Do NOT invent new files, do NOT
+     rewrite paths, do NOT prefix or suffix anything.
+  3. Return [] when nothing meaningfully matches. Never fabricate
+     a "best guess" path just to look helpful.
+  4. Do not include the preview text in the output; only paths.`;
 
 interface NotesLlmJudgeArgs {
   readonly root: string;
@@ -465,10 +493,21 @@ interface NotesLlmJudgeArgs {
   readonly model: string;
 }
 
-async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<readonly string[]> {
+interface NotesLlmJudgeResult {
+  readonly paths: readonly string[];
+  /**
+   * Goal 058 — count of paths the model returned that did not
+   * appear in the candidate set (i.e. fabricated). Surfaced
+   * upstream as a search-result diagnostic so callers can detect
+   * prompt drift without leaking the hallucinated strings.
+   */
+  readonly hallucinatedDropped: number;
+}
+
+async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<NotesLlmJudgeResult> {
   const files: string[] = [];
   await walkMarkdownFrom(args.root, args.root, (rel) => { files.push(rel); }, new Set());
-  if (files.length === 0) return [];
+  if (files.length === 0) return { paths: [], hallucinatedDropped: 0 };
 
   // Build (path, preview) pairs. Preview = first non-blank chunk of the
   // note, capped to `judgePreviewChars`. Skips files over maxFileBytes
@@ -494,7 +533,7 @@ async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<readonly strin
     const preview = previewOf(body, args.judgePreviewChars);
     pairs.push({ path: rel, preview });
   }
-  if (pairs.length === 0) return [];
+  if (pairs.length === 0) return { paths: [], hallucinatedDropped: 0 };
 
   const lines = pairs.map((p) => `[${p.path}] ${p.preview}`);
   const userMessage = `Query: ${args.query}\n\nNotes:\n${lines.join("\n")}\n\nReturn at most ${args.limit.toString()} paths.`;
@@ -511,17 +550,25 @@ async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<readonly strin
   const parsed = parseNotesJudgeOutput((response.output ?? "").trim());
 
   // Resolve in model order, drop hallucinated paths, cap at limit.
+  // The defense-in-depth filter is non-negotiable: the prompt tells
+  // the model not to invent paths but smaller models still do, and
+  // returning a fabricated string upstream would break the caller's
+  // muse.notes.read of the result.
   const known = new Set(pairs.map((p) => p.path));
   const seen = new Set<string>();
   const out: string[] = [];
+  let hallucinatedDropped = 0;
   for (const path of parsed) {
     if (seen.has(path)) continue;
-    if (!known.has(path)) continue;
+    if (!known.has(path)) {
+      hallucinatedDropped += 1;
+      continue;
+    }
     seen.add(path);
     out.push(path);
     if (out.length >= args.limit) break;
   }
-  return out;
+  return { paths: out, hallucinatedDropped };
 }
 
 function previewOf(body: string, maxChars: number): string {
