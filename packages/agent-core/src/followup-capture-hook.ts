@@ -95,6 +95,22 @@ export interface FollowupCaptureHookOptions {
 }
 
 const DEFAULT_MAX = 8;
+const MAX_SUMMARY_CHARS = 160;
+
+/**
+ * Strip C0/C1 control bytes (except newline + tab) from a followup
+ * summary before persisting. Reason: the captured text comes from
+ * the assistant turn, which may have echoed control sequences from
+ * upstream tool output. Once persisted, the firing daemon routes
+ * the summary out to messaging providers (Telegram / Slack / log)
+ * — leaving ANSI / BEL / DEL in the payload corrupts the channel
+ * and gives an attacker who controls tool output a way to mess
+ * with the user's messaging stream.
+ */
+export function sanitizeFollowupSummary(raw: string): string {
+  const stripped = raw.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/gu, "");
+  return stripped.slice(0, MAX_SUMMARY_CHARS);
+}
 
 export function createFollowupCaptureHook(options: FollowupCaptureHookOptions): HookStage {
   const now = options.now ?? (() => new Date());
@@ -152,7 +168,7 @@ export function createFollowupCaptureHook(options: FollowupCaptureHookOptions): 
           originTurnHash: turnHash,
           scheduledFor,
           status: "scheduled",
-          summary: promise.originalText.slice(0, 160),
+          summary: sanitizeFollowupSummary(promise.originalText),
           userId
         };
         try {

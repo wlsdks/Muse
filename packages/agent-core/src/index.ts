@@ -49,6 +49,7 @@ export {
 } from "./followup-detector.js";
 export {
   createFollowupCaptureHook,
+  sanitizeFollowupSummary,
   type CapturedFollowup,
   type FollowupCaptureHookOptions
 } from "./followup-capture-hook.js";

@@ -204,4 +204,43 @@ describe("createFollowupCaptureHook", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]!.scheduledFor).toBe("2026-05-13T08:30:00.000Z");
   });
+
+  it("summary strips ANSI / control bytes that rode through from tool output", async () => {
+    const captured: CapturedFollowup[] = [];
+    const hook = createFollowupCaptureHook({
+      now: () => new Date("2026-05-13T08:00:00Z"),
+      persist: (followup) => { captured.push(followup); }
+    });
+    // The assistant turn echoes a control-byte payload from an upstream
+    // tool result. The captured summary must NOT carry those bytes
+    // into ~/.muse/followups.json (the firing daemon would otherwise
+    // route them to Telegram/Slack/log verbatim).
+    await hook.afterComplete?.(
+      context(),
+      response("\x1b[2JI'll ping you in 30 minutes \x07with control bytes.")
+    );
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.summary).not.toMatch(/\x1b/u);
+    expect(captured[0]!.summary).not.toMatch(/\x07/u);
+    expect(captured[0]!.summary).toContain("30 minutes");
+  });
+});
+
+describe("sanitizeFollowupSummary (direct unit tests)", () => {
+  it("strips ESC / BEL / NUL / DEL / C1 high-set bytes", async () => {
+    const { sanitizeFollowupSummary } = await import("../src/index.js");
+    expect(sanitizeFollowupSummary("a\x1bb\x07c\x00d\x7fe\x9bf")).toBe("abcdef");
+  });
+
+  it("preserves newline + tab + multi-byte Unicode", async () => {
+    const { sanitizeFollowupSummary } = await import("../src/index.js");
+    expect(sanitizeFollowupSummary("line1\nline2\tindented")).toBe("line1\nline2\tindented");
+    expect(sanitizeFollowupSummary("Q3 메모 보내기")).toBe("Q3 메모 보내기");
+  });
+
+  it("caps to 160 chars", async () => {
+    const { sanitizeFollowupSummary } = await import("../src/index.js");
+    const big = "x".repeat(500);
+    expect(sanitizeFollowupSummary(big).length).toBe(160);
+  });
 });
