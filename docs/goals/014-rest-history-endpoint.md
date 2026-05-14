@@ -25,4 +25,10 @@ or call the MCP loopback. Add the third surface.
 
 ## Status
 
-open
+done — `GET /api/history?kind=&sinceIso=&limit=` registered.
+Consumes the same `readActivityFeed` helper as the CLI + MCP
+loopback (zero drift across the three surfaces). Auth-gated via
+`requireAuthenticated`. server.ts gained a new `episodesFile`
+option in lockstep; `createApiServerOptions` resolves it via
+`resolveEpisodesFile`. api +3 tests (merge order, kind /
+sinceIso validation, empty-config baseline).

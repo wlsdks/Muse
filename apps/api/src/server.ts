@@ -26,6 +26,7 @@ import { registerCompatibilityRoutes } from "./compat-routes.js";
 import { registerNotesRoutes } from "./notes-routes.js";
 import { registerMessagingRoutes } from "./messaging-routes.js";
 import { lineWebhookPlugin } from "./messaging-webhooks-routes.js";
+import { registerHistoryRoutes } from "./history-routes.js";
 import { registerProactiveRoutes } from "./proactive-routes.js";
 import { registerRemindersRoutes } from "./reminders-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
@@ -171,6 +172,12 @@ export interface ServerOptions {
    * and fires the strongest in-slot patterns.
    */
   readonly patternsFiredFile?: string;
+  /**
+   * Path to the episodes store (default ~/.muse/episodes.json).
+   * Read by `/api/history` to surface prior-session summaries
+   * alongside reminder / proactive / followup / pattern firings.
+   */
+  readonly episodesFile?: string;
   /**
    * Path to the persisted LINE inbox (default ~/.muse/line-inbox.json).
    * Combined with `MUSE_LINE_CHANNEL_SECRET` from env, enables the
@@ -417,6 +424,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     tasksFile: options.tasksFile,
     ...(options.remindersFile ? { remindersFile: options.remindersFile } : {}),
     ...(options.followupsFile ? { followupsFile: options.followupsFile } : {})
+  });
+  registerHistoryRoutes(server, {
+    authService,
+    ...(options.reminderHistoryFile ? { reminderHistoryFile: options.reminderHistoryFile } : {}),
+    ...(options.proactiveHistoryFile ? { proactiveHistoryFile: options.proactiveHistoryFile } : {}),
+    ...(options.followupsFile ? { followupsFile: options.followupsFile } : {}),
+    ...(options.patternsFiredFile ? { patternsFiredFile: options.patternsFiredFile } : {}),
+    ...(options.episodesFile ? { episodesFile: options.episodesFile } : {})
   });
 
   // Optional Phase B daemon: every MUSE_REMINDER_TICK_MS (default

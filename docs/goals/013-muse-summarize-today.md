@@ -27,4 +27,11 @@ on schedule." Useful as a daily-log paste-in for notes.
 
 ## Status
 
-open
+deferred — overlaps significantly with the existing `muse today
+--brief` (already pipes the briefing through the LLM for a
+2-3 sentence summary, post-iter 49). A separate `summarize today`
+command would mostly be (a) adding history to the briefing
+payload and (b) a different prompt. Worth doing once the
+"end-of-day journal" use case has concrete dogfood feedback;
+right now `muse today --brief --save-to-notes` (a smaller scope)
+might satisfy the same workflow without a new command.
