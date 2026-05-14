@@ -223,6 +223,7 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
 
   // Ollama reachability (only if base URL is set or default port responds)
   const ollama_base = env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+  let ollamaModels: readonly OllamaTagsEntry[] | undefined;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1500);
@@ -230,13 +231,35 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     clearTimeout(timeout);
     if (r.ok) {
       const j = await r.json() as { models?: unknown[] };
-      const count = Array.isArray(j.models) ? j.models.length : 0;
-      checks.push({ detail: `${ollama_base} — ${count.toString()} model(s) loaded`, name: "ollama", status: "ok" });
+      ollamaModels = Array.isArray(j.models) ? j.models.filter(isOllamaTagsEntry) : [];
+      checks.push({ detail: `${ollama_base} — ${ollamaModels.length.toString()} model(s) loaded`, name: "ollama", status: "ok" });
     } else {
       checks.push({ detail: `${ollama_base} responded ${r.status.toString()}`, name: "ollama", status: "warn" });
     }
   } catch {
     checks.push({ detail: `${ollama_base} not reachable (skip if you don't use Ollama)`, name: "ollama", status: "warn" });
+  }
+
+  // Goal 101 — if MUSE_MODEL points at an `ollama/<tag>` model AND
+  // Ollama is reachable, cross-check that the tag is actually pulled.
+  // Catches the canonical first-run footgun: a user runs
+  // `muse setup model` once, the config sticks at `ollama/qwen3.6:27b`,
+  // they later switch machines / wipe `~/.ollama`, and now every
+  // chat fails with a confusing 404 mid-stream. Surfacing the gap
+  // here lets `muse doctor --local` produce a one-line fix
+  // ("ollama pull <tag>") before the user hits the failure.
+  if (ollamaModels && muse_model && muse_model.startsWith("ollama/")) {
+    const tag = muse_model.replace(/^ollama\//, "");
+    const match = findOllamaModelTag(ollamaModels, tag);
+    if (match) {
+      checks.push({ detail: `${tag} pulled (${formatBytes(match.size)})`, name: "ollama model", status: "ok" });
+    } else {
+      checks.push({
+        detail: `${tag} NOT pulled — run \`ollama pull ${tag}\``,
+        name: "ollama model",
+        status: "warn"
+      });
+    }
   }
 
   // SearXNG (optional — `MUSE_SEARXNG_URL` opt-in). When set, probe
@@ -369,4 +392,54 @@ function formatLocalDoctor(report: LocalDoctorReport): string {
   lines.push("");
   lines.push(`Overall: ${overall}  (${okCount.toString()} ok / ${warnCount.toString()} warn / ${failCount.toString()} fail across ${report.checks.length.toString()} checks)`);
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Goal 101 — shape of the `/api/tags` model entry we rely on for
+ * the model-pulled check. Real Ollama responses also carry
+ * `digest`, `modified_at`, and a `details` block; we only need
+ * `name` (the full tag, e.g. `qwen3.5:9b-q4_K_M`) and `size` (for
+ * the friendly "(6.6 GB)" suffix).
+ */
+export interface OllamaTagsEntry {
+  readonly name: string;
+  readonly size?: number;
+}
+
+function isOllamaTagsEntry(value: unknown): value is OllamaTagsEntry {
+  return Boolean(value)
+    && typeof value === "object"
+    && typeof (value as { name?: unknown }).name === "string"
+    && ((value as { size?: unknown }).size === undefined
+      || typeof (value as { size?: unknown }).size === "number");
+}
+
+/**
+ * Goal 101 — match `configuredTag` against an Ollama `/api/tags`
+ * response. Ollama serialises model identities two ways:
+ *   - `name: "qwen3.5:9b-q4_K_M"` for an explicit tag
+ *   - `name: "qwen3.5:latest"` when the user pulled `qwen3.5`
+ *     without a tag suffix (the "latest" tag is implicit).
+ * The doctor user may have configured either form; treat
+ * `<base>` and `<base>:latest` as the same identity so a config of
+ * `ollama/qwen3.5` still matches when Ollama recorded
+ * `qwen3.5:latest`. Returns the matched entry (so callers can
+ * surface `.size`) or `undefined`.
+ */
+export function findOllamaModelTag(
+  models: readonly OllamaTagsEntry[],
+  configuredTag: string
+): OllamaTagsEntry | undefined {
+  const normalize = (s: string): string => (s.includes(":") ? s : `${s}:latest`);
+  const target = normalize(configuredTag.trim());
+  return models.find((m) => normalize(m.name) === target);
+}
+
+/** GB / MB / kB formatter for doctor's model-pulled detail line. */
+function formatBytes(bytes: number | undefined): string {
+  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return "size unknown";
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
+  if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} kB`;
+  return `${bytes.toString()} B`;
 }
