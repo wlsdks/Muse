@@ -41,4 +41,28 @@ export function registerRunsCommands(program: Command, io: ProgramIO, helpers: R
         await helpers.apiRequest(io, command, `/api/admin/runs/${encodeURIComponent(runId)}`)
       );
     });
+
+  // Goal 057 — admin cleanup. Single-run delete by id, or bulk
+  // delete every run started at or before `--before <iso>`.
+  runs
+    .command("delete")
+    .description("Delete one or more agent runs from history (goal 057)")
+    .argument("[run-id]", "Run ID to delete; omit when using --before")
+    .option("--before <iso>", "Bulk-delete every run whose startedAt is at or before this ISO timestamp")
+    .action(async (runId: string | undefined, options: { readonly before?: string }, command: Command) => {
+      if (!runId && !options.before) {
+        io.stderr("muse runs delete: pass <run-id> or --before <iso>\n");
+        process.exitCode = 1;
+        return;
+      }
+      if (runId && options.before) {
+        io.stderr("muse runs delete: pass either <run-id> or --before, not both\n");
+        process.exitCode = 1;
+        return;
+      }
+      const path = options.before
+        ? `/api/admin/runs?before=${encodeURIComponent(options.before)}`
+        : `/api/admin/runs/${encodeURIComponent(runId!)}`;
+      helpers.writeOutput(io, await helpers.apiRequest(io, command, path, undefined, "DELETE"));
+    });
 }

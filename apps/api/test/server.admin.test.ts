@@ -615,4 +615,51 @@ describe("api server: admin / ops / settings / memory", () => {
       events: [{ runId: "r-3" }, { runId: "r-4" }]
     });
   });
+
+  it("DELETE /api/admin/runs/:runId removes a run, returns 404 once gone (goal 057)", async () => {
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    historyStore.createRun({ id: "run-del-1", input: "x", model: "m", provider: "p", userId: "u" });
+    const server = buildServer({ historyStore, logger: false });
+
+    const ok = await server.inject({ method: "DELETE", url: "/api/admin/runs/run-del-1" });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ deleted: true, runId: "run-del-1" });
+
+    const gone = await server.inject({ method: "DELETE", url: "/api/admin/runs/run-del-1" });
+    expect(gone.statusCode).toBe(404);
+    expect(gone.json()).toMatchObject({ code: "RUN_NOT_FOUND" });
+  });
+
+  it("DELETE /api/admin/runs?before=<iso> bulk-removes runs at or before the cutoff (goal 057)", async () => {
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    historyStore.createRun({
+      id: "run-old", input: "x", model: "m", provider: "p", userId: "u",
+      startedAt: new Date("2026-01-01T00:00:00Z")
+    });
+    historyStore.createRun({
+      id: "run-recent", input: "x", model: "m", provider: "p", userId: "u",
+      startedAt: new Date("2026-05-01T00:00:00Z")
+    });
+    const server = buildServer({ historyStore, logger: false });
+
+    // Missing `before` → 400.
+    const missing = await server.inject({ method: "DELETE", url: "/api/admin/runs" });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json()).toMatchObject({ code: "MISSING_BEFORE" });
+
+    // Invalid `before` → 400.
+    const invalid = await server.inject({ method: "DELETE", url: "/api/admin/runs?before=not-a-date" });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({ code: "INVALID_BEFORE" });
+
+    // Cutoff between old and recent → only old deletes.
+    const bulk = await server.inject({
+      method: "DELETE",
+      url: "/api/admin/runs?before=2026-03-01T00:00:00Z"
+    });
+    expect(bulk.statusCode).toBe(200);
+    expect(bulk.json()).toMatchObject({ deleted: 1 });
+    expect(await historyStore.findRun("run-old")).toBeUndefined();
+    expect(await historyStore.findRun("run-recent")).toBeTruthy();
+  });
 });
