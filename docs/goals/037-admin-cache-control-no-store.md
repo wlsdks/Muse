@@ -18,4 +18,6 @@ proxies could cache them. Surface Cache-Control: no-store on every
 
 ## Status
 
-open
+done — onRequest hook sets `Cache-Control: no-store` on every
+URL starting with `/api/admin/`. api +2 tests (admin gets the
+header; non-admin /health does not).

@@ -245,6 +245,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     applyCompatWebContractHeaders(request.url, request.headers["x-request-id"], reply);
     applyCorsHeaders(options.cors, request.headers.origin, reply);
 
+    // Goal 037: prevent any intermediate proxy / browser cache from
+    // holding onto operator-only admin responses (live doctor
+    // snapshots, run history, trace tails). The user expects these
+    // to reflect the live state every time.
+    if (request.url.startsWith("/api/admin/")) {
+      reply.header("Cache-Control", "no-store");
+    }
+
     if (request.method === "OPTIONS") {
       return reply.status(204).send();
     }
