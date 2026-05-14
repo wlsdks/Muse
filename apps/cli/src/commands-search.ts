@@ -82,10 +82,17 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
         ...(engines ? { searxngEngines: engines } : {})
       });
       const connection = createLoopbackMcpConnection(server);
+      // Goal 065 — surface the backend wall-clock latency in the
+      // formatted output so a user pondering "did this even hit
+      // SearXNG?" sees `(123 ms)` after the result-count banner.
+      // The JSON output stays unchanged — structured consumers
+      // already get richer signal from the raw payload.
+      const searchStartedAt = Date.now();
       const result = await connection.callTool!("search", {
         query,
         ...(options.time && options.time.trim().length > 0 ? { time_range: options.time.trim() } : {})
       });
+      const searchLatencyMs = Date.now() - searchStartedAt;
       const errMsg = (result as { error?: unknown }).error;
       if (typeof errMsg === "string") {
         io.stderr(`(search failed: ${errMsg})\n`);
@@ -141,7 +148,7 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
         io.stdout(`${JSON.stringify(result, null, 2)}\n`);
         return;
       }
-      io.stdout(`(${total.toString()} result(s) via ${backend})\n\n`);
+      io.stdout(`(${total.toString()} result(s) via ${backend} — ${searchLatencyMs.toString()} ms)\n\n`);
       for (let i = 0; i < rows.length; i += 1) {
         const r = rows[i]!;
         const title = stripUntrustedTerminalChars(r.title ?? "").trim() || "(untitled)";

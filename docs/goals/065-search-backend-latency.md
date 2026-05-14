@@ -15,4 +15,12 @@ After the result count + backend banner, append '(N ms)'.
 
 ## Status
 
-open
+done — `muse search`'s formatted banner now ends with the
+backend round-trip wall-clock time: `(2 result(s) via
+duckduckgo — 47 ms)`. The JSON output is unchanged so
+structured consumers stay byte-identical.
+
+cli +1 test asserts the latency segment appears, and the
+existing search-output test was updated to match the new
+format (which is the only behavioral consumer that pinned the
+banner shape).

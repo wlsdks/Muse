@@ -3621,7 +3621,8 @@ describe("cli program", () => {
       const program = createProgram({ ...io, fetch: async () => { throw new Error("api fetch off"); } });
       await program.parseAsync(["node", "muse", "search", "test query"], { from: "node" });
       const text = output.join("");
-      expect(text).toContain("(2 result(s) via duckduckgo)");
+      // Goal 065 — banner now includes backend latency.
+      expect(text).toMatch(/\(2 result\(s\) via duckduckgo — \d+ ms\)/);
       expect(text).toContain("[1] First Result");
       expect(text).toContain("https://example.com/one");
       expect(text).toContain("first snippet body");
@@ -3961,6 +3962,25 @@ describe("cli program", () => {
     } finally {
       if (prev === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = prev;
+    }
+  });
+
+  it("muse search formatted output prints backend latency (goal 065)", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async (): Promise<Response> => new Response(
+        `<a rel="nofollow" class="result__a" href="https://e.test/p">hit</a>` +
+        `<a class="result__snippet" href="x">snip</a>`,
+        { status: 200 }
+      )) as typeof globalThis.fetch;
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("api fetch off"); } });
+      await program.parseAsync(["node", "muse", "search", "anything"], { from: "node" });
+      const text = output.join("");
+      // Banner now ends with "— <N> ms)" before the results.
+      expect(text).toMatch(/result\(s\) via duckduckgo — \d+ ms\)/);
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   });
 
