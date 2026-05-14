@@ -116,6 +116,9 @@ importers:
       '@muse/prompts':
         specifier: workspace:*
         version: link:../../packages/prompts
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@muse/voice':
         specifier: workspace:*
         version: link:../../packages/voice

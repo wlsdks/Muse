@@ -16,9 +16,14 @@
  */
 
 import { createSearchMcpServer, createLoopbackMcpConnection } from "@muse/mcp";
+import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
+
+// Re-exported so existing call-sites + tests that imported it from
+// here keep working. The canonical home is `@muse/shared` (goal 003).
+export { stripUntrustedTerminalChars };
 
 interface SearchOptions {
   readonly limit?: string;
@@ -80,20 +85,6 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
         io.stdout("\n");
       }
     });
-}
-
-/**
- * Strip C0/C1 control characters from untrusted text before
- * writing to the terminal. Search results come from external HTTP
- * backends (SearXNG or DuckDuckGo HTML scraping); a hostile result
- * could embed ANSI escape sequences (`\x1b[…m`, `\x1b[2J`, `\x1b]…`)
- * to clear the screen, hide text, set window titles, or otherwise
- * confuse the user. We allow newline + tab through other paths and
- * already collapse whitespace; for the unsafe range we just drop
- * the bytes entirely. Treat tool output as untrusted (CLAUDE.md).
- */
-export function stripUntrustedTerminalChars(value: string): string {
-  return value.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/gu, "");
 }
 
 function parseLimit(raw: string | undefined, fallback: number, cap: number): number {

@@ -180,6 +180,38 @@ describe("cli program", () => {
       .toContain("\"source\":\"cli.remote.stream\"");
   });
 
+  it("streams remote chat strips ANSI / control bytes from SSE message data before stdout", async () => {
+    const { io, output } = captureOutput();
+    const workspaceDir = await mkdtemp(path.join(tmpdir(), "muse-cli-stream-safe-"));
+    const program = createProgram({
+      ...io,
+      workspaceDir,
+      fetch: async () => new Response([
+        // Hostile delta: ESC[2J clears screen, BEL is annoying, NUL terminates strings on some terminals.
+        "event: message\ndata: Hello \x1b[2J\x07\x00World\n\n",
+        "event: done\ndata:\n\n"
+      ].join(""), {
+        headers: { "content-type": "text/event-stream" }
+      })
+    });
+
+    await program.parseAsync([
+      "node",
+      "muse",
+      "--api-url",
+      "http://api.test",
+      "chat",
+      "--stream",
+      "hi"
+    ], { from: "node" });
+
+    const text = output.join("");
+    expect(text).not.toMatch(/\x1b/u);
+    expect(text).not.toMatch(/\x07/u);
+    expect(text).not.toMatch(/\x00/u);
+    expect(text).toContain("Hello [2JWorld"); // ESC stripped, the literal "[2J" survives as plain text
+  });
+
   it("stores API tokens in the encrypted credential store and reuses them", async () => {
     const { io, output } = captureOutput();
     const configDir = await mkdtemp(path.join(tmpdir(), "muse-cli-config-"));

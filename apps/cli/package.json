@@ -23,6 +23,7 @@
     "@muse/memory": "workspace:*",
     "@muse/messaging": "workspace:*",
     "@muse/prompts": "workspace:*",
+    "@muse/shared": "workspace:*",
     "@muse/voice": "workspace:*",
     "commander": "^14.0.3",
     "ink": "^7.0.2",

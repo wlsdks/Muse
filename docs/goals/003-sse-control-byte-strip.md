@@ -24,6 +24,14 @@ would land verbatim on the user's terminal.
 - New test asserts ANSI sequences in SSE `data:` lines don't make
   it to stdout.
 
+open
+
 ## Status
 
-open
+done — `stripUntrustedTerminalChars` lifted from `commands-search.ts`
+into `@muse/shared` so multiple surfaces share one impl. Applied to:
+- `streamRemoteChat` SSE message frames (program-helpers.ts:472)
+- `commands-search.ts` (re-exports from shared for back-compat)
+
+CLI test +1 (SSE delta with ESC[2J + BEL + NUL — stdout sees the
+sanitized "Hello [2JWorld" text only).

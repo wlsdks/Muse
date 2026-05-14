@@ -83,6 +83,24 @@ export const DEFAULT_ERROR_BODY_CAP = 240;
  * the empty string — caller decides whether to fall back to
  * `statusText`.
  */
+/**
+ * Strip C0 control bytes (except newline + tab) plus DEL + C1
+ * high-set (\x7f-\x9f) from untrusted text before writing it to a
+ * terminal or persisting it where it'll later be displayed.
+ * Defense against ANSI escape (`\x1b[2J`, `\x1b]…\x07`), bare CSI
+ * on permissive terminals (`\x9b`), BEL, NUL, etc.
+ *
+ * Anywhere Muse hands tool output / search results / model deltas
+ * straight to the user's stdout or a downstream display, this is
+ * the single sanitizer to use. Goal 003 lifted the helper out of
+ * the CLI-only `commands-search.ts` so the SSE consumer +
+ * messaging providers + any future surface share one
+ * implementation.
+ */
+export function stripUntrustedTerminalChars(value: string): string {
+  return value.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/gu, "");
+}
+
 export function truncateErrorBody(body: string | undefined, cap: number = DEFAULT_ERROR_BODY_CAP): string {
   if (!body) {
     return "";

@@ -21,6 +21,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { isCancel, password, text } from "@clack/prompts";
+import { stripUntrustedTerminalChars, truncateErrorBody } from "@muse/shared";
 import type { Command } from "commander";
 
 import { isRecord, readStoredToken } from "./credential-store.js";
@@ -459,13 +460,19 @@ export async function streamRemoteChat(
 
   for await (const event of readSseEvents(response)) {
     if (event.event === "error") {
-      throw new Error(`Muse API stream error: ${event.data}`);
+      throw new Error(`Muse API stream error: ${truncateErrorBody(event.data)}`);
     }
 
     if (event.event === "message") {
-      output += event.data;
+      // event.data here carries model output that may have echoed
+      // untrusted upstream tool result text. Strip control bytes
+      // (ANSI escape, BEL, NUL, etc.) before stdout — keep the
+      // accumulated `output` in sync so callers see the same safe
+      // string the user did.
+      const safe = stripUntrustedTerminalChars(event.data);
+      output += safe;
       if (!jsonMode) {
-        io.stdout(event.data);
+        io.stdout(safe);
       }
       continue;
     }
