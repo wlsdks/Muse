@@ -26,6 +26,7 @@
     "@muse/shared": "workspace:*",
     "@muse/voice": "workspace:*",
     "commander": "^14.0.3",
+    "fast-xml-parser": "^5.8.0",
     "ink": "^7.0.2",
     "pdf-parse": "^2.4.5",
     "react": "^19.2.6"

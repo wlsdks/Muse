@@ -1,0 +1,209 @@
+/**
+ * `muse feeds` — RSS / Atom ingest (goal 092).
+ *
+ *   muse feeds add <url> [--id <alias>] [--name <name>]
+ *   muse feeds list [--json]
+ *   muse feeds remove <id>
+ *   muse feeds refresh [--id <id>]
+ *   muse feeds today [--hours <n>] [--json]
+ *
+ * `~/.muse/feeds.json` carries every feed's url + cached entries
+ * so `today` doesn't need network. Pure XML parsing via
+ * `fast-xml-parser` (MIT). Supports both `file://` URLs (for
+ * dogfood + offline tests) and `http(s)://`.
+ */
+
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+import type { Command } from "commander";
+
+import {
+  defaultFeedsFile,
+  filterRecentFeedEntries,
+  parseFeedBody,
+  readFeedsStore,
+  writeFeedsStore,
+  type FeedEntry,
+  type FeedRecord,
+  type FeedsStore
+} from "./feeds-store.js";
+import type { ProgramIO } from "./program.js";
+
+/**
+ * Goal 092 — fetch the feed body. Supports `file://` so the
+ * dogfood can plant a fixture and exercise the parser without
+ * network. Exported for direct test coverage.
+ */
+export async function loadFeedBody(url: string): Promise<string> {
+  if (url.startsWith("file://")) {
+    return readFile(fileURLToPath(url), "utf8");
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`feed fetch ${url} returned ${response.status.toString()}`);
+  }
+  return response.text();
+}
+
+function slugifyUrl(url: string): string {
+  return url
+    .replace(/^https?:\/\//u, "")
+    .replace(/^file:\/\//u, "")
+    .replace(/[^A-Za-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 60) || "feed";
+}
+
+async function refreshSingleFeed(record: FeedRecord, io: ProgramIO): Promise<FeedRecord> {
+  try {
+    const body = await loadFeedBody(record.url);
+    const entries = parseFeedBody(body);
+    return { ...record, lastFetchedAt: new Date().toISOString(), entries };
+  } catch (cause) {
+    io.stderr(`  ${record.id}: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+    return record;
+  }
+}
+
+export function registerFeedsCommand(program: Command, io: ProgramIO): void {
+  const feeds = program.command("feeds").description("RSS/Atom feed ingest for ambient world-state (goal 092)");
+
+  feeds
+    .command("add")
+    .description("Register a new feed; fetches once on add")
+    .argument("<url>", "RSS / Atom feed URL (http(s):// or file://)")
+    .option("--id <alias>", "Stable id (default: slug of URL)")
+    .option("--name <name>", "Human-readable name")
+    .action(async (url: string, options: { readonly id?: string; readonly name?: string }) => {
+      const file = defaultFeedsFile();
+      const store = await readFeedsStore(file);
+      const id = (options.id ?? slugifyUrl(url)).trim();
+      if (store.feeds.some((f) => f.id === id)) {
+        io.stderr(`muse feeds add: id '${id}' already exists. Pass --id <new-alias> or remove the existing entry.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      let entries: readonly FeedEntry[];
+      try {
+        const body = await loadFeedBody(url);
+        entries = parseFeedBody(body);
+      } catch (cause) {
+        io.stderr(`muse feeds add: initial fetch failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const next: FeedsStore = {
+        version: store.version,
+        feeds: [
+          ...store.feeds,
+          { id, url, name: options.name ?? id, lastFetchedAt: new Date().toISOString(), entries }
+        ]
+      };
+      await writeFeedsStore(file, next);
+      io.stdout(`Added feed ${id} (${entries.length.toString()} entry/entries) — ${url}\n`);
+    });
+
+  feeds
+    .command("list")
+    .description("List configured feeds + last-fetched timestamps")
+    .option("--json", "Emit the raw store")
+    .action(async (options: { readonly json?: boolean }) => {
+      const store = await readFeedsStore(defaultFeedsFile());
+      if (options.json) {
+        io.stdout(`${JSON.stringify({
+          feeds: store.feeds.map((f) => ({
+            id: f.id, url: f.url, name: f.name,
+            lastFetchedAt: f.lastFetchedAt, entries: f.entries.length
+          }))
+        }, null, 2)}\n`);
+        return;
+      }
+      if (store.feeds.length === 0) {
+        io.stdout("(no feeds — `muse feeds add <url>` to register one)\n");
+        return;
+      }
+      for (const feed of store.feeds) {
+        io.stdout(`${feed.id}\t${feed.entries.length.toString()} entries\t${feed.url}\n`);
+      }
+    });
+
+  feeds
+    .command("remove")
+    .description("Drop a feed by id")
+    .argument("<id>", "Feed id (see `muse feeds list`)")
+    .action(async (id: string) => {
+      const file = defaultFeedsFile();
+      const store = await readFeedsStore(file);
+      const before = store.feeds.length;
+      const next = { version: store.version, feeds: store.feeds.filter((f) => f.id !== id) };
+      if (next.feeds.length === before) {
+        io.stderr(`muse feeds remove: no feed with id '${id}'\n`);
+        process.exitCode = 1;
+        return;
+      }
+      await writeFeedsStore(file, next);
+      io.stdout(`Removed feed '${id}'\n`);
+    });
+
+  feeds
+    .command("refresh")
+    .description("Re-fetch all feeds (or one with --id)")
+    .option("--id <id>", "Refresh just one feed")
+    .action(async (options: { readonly id?: string }) => {
+      const file = defaultFeedsFile();
+      const store = await readFeedsStore(file);
+      const targets = options.id ? store.feeds.filter((f) => f.id === options.id) : store.feeds;
+      if (targets.length === 0) {
+        io.stdout("(no feeds to refresh)\n");
+        return;
+      }
+      const refreshed: FeedRecord[] = [];
+      for (const feed of store.feeds) {
+        if (targets.includes(feed)) {
+          refreshed.push(await refreshSingleFeed(feed, io));
+        } else {
+          refreshed.push(feed);
+        }
+      }
+      await writeFeedsStore(file, { version: store.version, feeds: refreshed });
+      io.stdout(`Refreshed ${targets.length.toString()} feed(s)\n`);
+    });
+
+  feeds
+    .command("today")
+    .description("Show entries published within the lookback window")
+    .option("--hours <n>", "Lookback hours (default 24)")
+    .option("--json", "Emit a structured payload")
+    .action(async (options: { readonly hours?: string; readonly json?: boolean }) => {
+      const hoursRaw = options.hours ? Number.parseFloat(options.hours) : 24;
+      const hours = Number.isFinite(hoursRaw) && hoursRaw > 0 ? hoursRaw : 24;
+      const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+      const store = await readFeedsStore(defaultFeedsFile());
+      const rolled = store.feeds.flatMap((feed) =>
+        filterRecentFeedEntries(feed.entries, cutoff).map((entry) => ({
+          feedId: feed.id, feedName: feed.name,
+          title: entry.title, link: entry.link,
+          publishedAt: entry.publishedAt, summary: entry.summary
+        }))
+      ).sort((a, b) => {
+        const ta = Date.parse(a.publishedAt);
+        const tb = Date.parse(b.publishedAt);
+        if (!Number.isFinite(ta)) return 1;
+        if (!Number.isFinite(tb)) return -1;
+        return tb - ta;
+      });
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ hours, entries: rolled }, null, 2)}\n`);
+        return;
+      }
+      if (rolled.length === 0) {
+        io.stdout(`(no feed entries in the last ${hours.toString()}h — try a longer --hours window or run \`muse feeds refresh\`)\n`);
+        return;
+      }
+      for (const entry of rolled) {
+        io.stdout(`[${entry.feedId}] ${entry.title} — ${entry.publishedAt || "(no date)"}\n`);
+        if (entry.link) io.stdout(`  ${entry.link}\n`);
+      }
+    });
+}

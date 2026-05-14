@@ -3956,6 +3956,66 @@ describe("cli program", () => {
     expect(sawSignals).toEqual(["SIGTERM"]);
   });
 
+  it("parseFeedBody handles RSS 2.0 + Atom + filterRecentFeedEntries cutoff (goal 092)", async () => {
+    const { parseFeedBody, filterRecentFeedEntries } = await import("../src/feeds-store.js");
+
+    // RSS 2.0.
+    const rss = `<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Test</title>
+  <item>
+    <title>First post</title>
+    <link>https://example.test/a</link>
+    <pubDate>Wed, 14 May 2026 12:00:00 GMT</pubDate>
+    <description>first body</description>
+    <guid>guid-1</guid>
+  </item>
+  <item>
+    <title>Second post</title>
+    <link>https://example.test/b</link>
+    <pubDate>Tue, 13 May 2026 09:00:00 GMT</pubDate>
+    <description>second body</description>
+  </item>
+</channel></rss>`;
+    const rssEntries = parseFeedBody(rss);
+    expect(rssEntries).toHaveLength(2);
+    expect(rssEntries[0]?.title).toBe("First post");
+    expect(rssEntries[0]?.id).toBe("guid-1");
+    expect(rssEntries[1]?.id).toBe("https://example.test/b"); // falls back to link
+
+    // Atom.
+    const atom = `<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Test</title>
+  <entry>
+    <id>tag:example,2026:1</id>
+    <title>Atom entry</title>
+    <link href="https://example.test/atom/1"/>
+    <updated>2026-05-14T10:00:00Z</updated>
+    <summary>summary text</summary>
+  </entry>
+</feed>`;
+    const atomEntries = parseFeedBody(atom);
+    expect(atomEntries).toHaveLength(1);
+    expect(atomEntries[0]?.title).toBe("Atom entry");
+    expect(atomEntries[0]?.link).toBe("https://example.test/atom/1");
+    expect(atomEntries[0]?.id).toBe("tag:example,2026:1");
+
+    // Garbage body → empty array, no throw.
+    expect(parseFeedBody("not xml at all")).toEqual([]);
+
+    // filterRecentFeedEntries cutoff.
+    const cutoff = new Date("2026-05-14T00:00:00Z");
+    const recent = filterRecentFeedEntries(rssEntries, cutoff);
+    expect(recent.map((e) => e.title)).toEqual(["First post"]); // second is before cutoff
+
+    // Missing publishedAt is kept (no false-negative filtering).
+    const noDate: typeof rssEntries = [
+      { id: "x", title: "T", link: "", publishedAt: "", summary: "" }
+    ];
+    expect(filterRecentFeedEntries(noDate, cutoff)).toHaveLength(1);
+  });
+
   it("rankRecallCandidates merges + sorts notes + episodes by cosine (goal 091)", async () => {
     const { rankRecallCandidates } = await import("../src/commands-recall.js");
     const queryVec = [1, 0, 0, 0];

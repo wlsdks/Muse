@@ -52,4 +52,20 @@ search. Add an RSS/Atom poller that stores feed config in
 
 ## Status
 
-open
+done — `muse feeds add / list / remove / refresh / today`
+covers the full CRUD + lookback surface. Storage in
+`~/.muse/feeds.json` (env override `MUSE_FEEDS_FILE`) via
+atomic tmp+rename writes + 0o600 mode mirroring the rest of
+the personal stores. Pure XML parsing via `fast-xml-parser`
+(MIT, ~30KB); supports both RSS 2.0 (`channel/item`) and Atom
+(`feed/entry`) feeds.
+
+`file://` URLs supported alongside `http(s)://` so dogfood +
+offline tests skip network. `today --hours N` defaults to
+24h, stable date-sort keeps undated entries in tail position.
+
+cli +1 test exercises `parseFeedBody` (RSS 2.0 / Atom /
+garbage→empty) and `filterRecentFeedEntries` (cutoff +
+undated kept). Dogfood: planted a `file://` RSS fixture +
+`feeds add` + `feeds today --hours 24000 --json` returned
+the `Hello JARVIS` entry; pass criterion met.

@@ -111,7 +111,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 089 | [`muse glance` active-window awareness](089-muse-glance-active-window.md)          | JARVIS feature       | done   |
 | 090 | [Episode semantic index](090-episode-semantic-index.md)                            | JARVIS feature       | done   |
 | 091 | [`muse recall <query>` cross-store](091-muse-recall-cross-store.md)                | JARVIS feature       | done   |
-| 092 | [`muse feeds` RSS/Atom ingest](092-muse-feeds-rss.md)                              | JARVIS feature       | open   |
+| 092 | [`muse feeds` RSS/Atom ingest](092-muse-feeds-rss.md)                              | JARVIS feature       | done   |
 | 093 | [Linux libnotify provider](093-linux-libnotify-provider.md)                        | JARVIS feature       | open   |
 | 094 | [`muse persona` templates](094-muse-persona-templates.md)                          | JARVIS feature       | open   |
 | 095 | [`muse status --suggestions`](095-muse-status-suggestions.md)                      | JARVIS feature       | open   |
