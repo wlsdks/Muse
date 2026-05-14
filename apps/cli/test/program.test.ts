@@ -3956,6 +3956,20 @@ describe("cli program", () => {
     expect(sawSignals).toEqual(["SIGTERM"]);
   });
 
+  it("parseOsascriptGlance normalises missing/empty fields (goal 089)", async () => {
+    const { parseOsascriptGlance } = await import("../src/commands-glance.js");
+    expect(parseOsascriptGlance("Terminal\nmuse — repl\nselected text here\n")).toEqual({
+      app: "Terminal", window: "muse — repl", selected: "selected text here"
+    });
+    expect(parseOsascriptGlance("Safari\nmissing value\n\n")).toEqual({
+      app: "Safari", window: "", selected: ""
+    });
+    expect(parseOsascriptGlance("  Code  \n  main.ts  \n  abc  \n")).toEqual({
+      app: "Code", window: "main.ts", selected: "abc"
+    });
+    expect(parseOsascriptGlance("")).toEqual({ app: "", window: "", selected: "" });
+  });
+
   it("muse read parses a hand-rolled PDF + builds grounded ask prompt (goal 088)", async () => {
     const { parsePdfBuffer, buildReadAskSystemPrompt } = await import("../src/commands-read.js");
     // System prompt structurally pins the document boundaries.

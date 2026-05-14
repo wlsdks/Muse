@@ -36,4 +36,25 @@ shell-out, no extra dep.
 
 ## Status
 
-open
+done — `muse glance [--json]` shells out to `osascript` and
+returns `{ app, window, selected }`. Selected-text capture
+uses an AppleScript Cmd-C fallback (no native Accessibility
+API binding); the script swallows failures so missing
+permissions degrade to empty `selected` while `app` + `window`
+still surface.
+
+Scope deviation: the original "Accessibility API" approach
+would need a native Swift bridge. Cmd-C fallback covers the
+common case (text selected in any focused app) with zero
+native deps. Side effect: when nothing is selected, the user's
+clipboard contents land in `selected` — documented in the
+help text.
+
+Pure parser `parseOsascriptGlance` normalises AppleScript's
+literal `"missing value"` + whitespace to empty strings.
+Non-darwin → stderr hint + exit 1.
+
+cli +1 unit test on the pure parser (happy / missing-value /
+whitespace / empty). Dogfood on this macOS host hit the live
+`osascript` path; JSON returned `app: "Google Chrome"` —
+non-empty, matches the pass criterion.
