@@ -3939,6 +3939,31 @@ describe("cli program", () => {
     }
   });
 
+  it("colorize respects NO_COLOR + isTty + force flags (goal 061)", async () => {
+    const { colorize, colorAllowed } = await import("../src/tty-color.js");
+    const prev = process.env.NO_COLOR;
+    try {
+      delete process.env.NO_COLOR;
+      // Force on → ANSI sequence wraps the value.
+      expect(colorize("over", "red", { force: true })).toBe("\x1b[31mover\x1b[0m");
+      // No-TTY → plain string passes through.
+      expect(colorize("over", "red", { isTty: false })).toBe("over");
+      expect(colorAllowed({ isTty: false })).toBe(false);
+      // NO_COLOR (https://no-color.org/) wins over both isTty and force.
+      process.env.NO_COLOR = "1";
+      expect(colorAllowed({ force: true })).toBe(false);
+      expect(colorAllowed({ isTty: true })).toBe(false);
+      expect(colorize("over", "red", { isTty: true })).toBe("over");
+      expect(colorize("over", "red", { force: true })).toBe("over");
+      // Unknown color name falls through untouched.
+      delete process.env.NO_COLOR;
+      expect(colorize("plain", "not-a-color" as never, { force: true })).toBe("plain");
+    } finally {
+      if (prev === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = prev;
+    }
+  });
+
   it("parseIcsEvents extracts the minimum-viable VEVENT shape (goal 059)", async () => {
     const { parseIcsEvents } = await import("../src/ics-parser.js");
     const body = [

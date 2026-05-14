@@ -40,6 +40,7 @@ import type { Command } from "commander";
 
 import { formatLocalDate, formatLocalDateTime as shortDateTimeBrief } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
+import { colorize } from "./tty-color.js";
 import {
   loadDefaultTts,
   parseAudioFormat,
@@ -522,10 +523,12 @@ function formatReminders(
   const nowMs = Date.parse(generatedAt);
   const lines = reminders.map((reminder) => {
     const dueMs = Date.parse(reminder.dueAt);
-    const overdue = Number.isFinite(dueMs) && Number.isFinite(nowMs) && dueMs < nowMs ? " (overdue)" : "";
+    const overdue = Number.isFinite(dueMs) && Number.isFinite(nowMs) && dueMs < nowMs
+      ? ` ${colorize("(overdue)", "red")}`
+      : "";
     return `  - [${reminder.id.slice(0, 12)}] ${shortDateTimeBrief(reminder.dueAt)}  ${reminder.text}${overdue}`;
   });
-  return `\nReminders (${reminders.length}):\n${lines.join("\n")}\n`;
+  return `\n${colorize(`Reminders (${reminders.length.toString()}):`, "bold")}\n${lines.join("\n")}\n`;
 }
 
 
@@ -539,10 +542,12 @@ function formatFollowups(
   const nowMs = Date.parse(generatedAt);
   const lines = followups.map((followup) => {
     const dueMs = Date.parse(followup.scheduledFor);
-    const overdue = Number.isFinite(dueMs) && Number.isFinite(nowMs) && dueMs < nowMs ? " (overdue)" : "";
+    const overdue = Number.isFinite(dueMs) && Number.isFinite(nowMs) && dueMs < nowMs
+      ? ` ${colorize("(overdue)", "red")}`
+      : "";
     return `  - [${followup.id.slice(0, 12)}] ${shortDateTimeBrief(followup.scheduledFor)}  ${followup.summary}${overdue}`;
   });
-  return `\nFollowups (${followups.length}):\n${lines.join("\n")}\n`;
+  return `\n${colorize(`Followups (${followups.length.toString()}):`, "bold")}\n${lines.join("\n")}\n`;
 }
 
 function formatTasks(tasks: readonly { readonly id: string; readonly title: string }[] | undefined): string {
