@@ -437,6 +437,7 @@ export {
 export {
   appendProactiveHistory,
   readProactiveHistory,
+  rotateProactiveHistoryFiles,
   type AppendProactiveHistoryOptions,
   type ProactiveHistoryEntry
 } from "./personal-proactive-history-store.js";

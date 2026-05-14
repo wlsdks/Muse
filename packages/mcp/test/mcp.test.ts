@@ -6314,3 +6314,80 @@ describe("muse.history loopback server", () => {
     expect(badSince).toMatchObject({ error: expect.stringContaining("parseable ISO timestamp") });
   });
 });
+
+describe("proactive-history rotation on capacity (goal 079)", () => {
+  function makeEntry(itemId: string): import("../src/index.js").ProactiveHistoryEntry {
+    return {
+      destination: "@me",
+      firedAtIso: "2026-05-14T00:00:00Z",
+      itemId,
+      kind: "task",
+      providerId: "log",
+      startIso: "2026-05-14T01:00:00Z",
+      status: "delivered",
+      text: `hello ${itemId}`,
+      title: itemId
+    };
+  }
+
+  it("rotates the live file to .1 + shifts older archives + drops past the retention budget", async () => {
+    const { appendProactiveHistory, readProactiveHistory, rotateProactiveHistoryFiles } = await import("../src/index.js");
+    const { mkdtempSync, readFileSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-rotate-"));
+    const file = join(dir, "proactive-history.json");
+
+    // capacity=2 so two appends fill the file; the third triggers
+    // rotation with archiveMaxFiles=2 → file → .1, fresh start.
+    await appendProactiveHistory(file, makeEntry("a"), { capacity: 2, archiveMaxFiles: 2 });
+    await appendProactiveHistory(file, makeEntry("b"), { capacity: 2, archiveMaxFiles: 2 });
+    expect((await readProactiveHistory(file)).map((e) => e.itemId).sort()).toEqual(["a", "b"]);
+    expect(existsSync(`${file}.1`)).toBe(false);
+
+    // Third append rotates; live file now carries only "c", and
+    // the previous two move to .1.
+    await appendProactiveHistory(file, makeEntry("c"), { capacity: 2, archiveMaxFiles: 2 });
+    expect((await readProactiveHistory(file)).map((e) => e.itemId)).toEqual(["c"]);
+    const archive1 = JSON.parse(readFileSync(`${file}.1`, "utf8")) as { entries: Array<{ itemId: string }> };
+    expect(archive1.entries.map((e) => e.itemId).sort()).toEqual(["a", "b"]);
+
+    // Fill again + rotate again → .1 (previously [a,b]) shifts to
+    // .2, the live file's pre-rotate state ([c,d]) becomes .1, and
+    // the fresh live carries only "e".
+    await appendProactiveHistory(file, makeEntry("d"), { capacity: 2, archiveMaxFiles: 2 });
+    // After "d": file = [c, d], .1 still [a, b].
+    await appendProactiveHistory(file, makeEntry("e"), { capacity: 2, archiveMaxFiles: 2 });
+    // After "e": rotation fires (file was at-capacity), so
+    // .1 ([a,b]) shifts to .2; file's prior [c,d] becomes .1;
+    // fresh file = [e].
+    expect((await readProactiveHistory(file)).map((e) => e.itemId)).toEqual(["e"]);
+    const archiveAfter1 = JSON.parse(readFileSync(`${file}.1`, "utf8")) as { entries: Array<{ itemId: string }> };
+    expect(archiveAfter1.entries.map((e) => e.itemId)).toEqual(["c", "d"]);
+    const archiveAfter2 = JSON.parse(readFileSync(`${file}.2`, "utf8")) as { entries: Array<{ itemId: string }> };
+    expect(archiveAfter2.entries.map((e) => e.itemId)).toEqual(["a", "b"]);
+
+    // rotateProactiveHistoryFiles can be called directly + cleans
+    // beyond-budget archives.
+    void rotateProactiveHistoryFiles;
+  });
+
+  it("preserves the pre-079 trim-without-rotation path when archiveMaxFiles is 0 / unset", async () => {
+    const { appendProactiveHistory, readProactiveHistory } = await import("../src/index.js");
+    const { mkdtempSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-rotate-off-"));
+    const file = join(dir, "proactive-history.json");
+
+    for (const id of ["a", "b", "c"]) {
+      await appendProactiveHistory(file, makeEntry(id), { capacity: 2 });
+    }
+    // Capacity=2, no archive → newest two survive, "a" dropped.
+    expect((await readProactiveHistory(file)).map((e) => e.itemId).sort()).toEqual(["b", "c"]);
+    // No archive files were created.
+    expect(existsSync(`${file}.1`)).toBe(false);
+  });
+});
