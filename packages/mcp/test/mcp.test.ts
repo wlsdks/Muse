@@ -513,6 +513,72 @@ describe("McpManager", () => {
       summary: { failCount: 1 }
     });
   });
+
+  it("verifyServerFingerprint passes when no fingerprint is pinned (goal 083)", async () => {
+    const { verifyServerFingerprint } = await import("../src/manager.js");
+    const server = {
+      id: "id-1",
+      name: "n",
+      transportType: "stdio" as const,
+      config: { command: "/nonexistent/whatever", args: [] },
+      autoConnect: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    expect(verifyServerFingerprint(server).matched).toBe(true);
+  });
+
+  it("verifyServerFingerprint matches a pinned sha256 + refuses on mismatch (goal 083)", async () => {
+    const { verifyServerFingerprint } = await import("../src/manager.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { createHash } = await import("node:crypto");
+    const dir = mkdtempSync(join(tmpdir(), "muse-mcp-fingerprint-"));
+    const binPath = join(dir, "fake-mcp");
+    writeFileSync(binPath, "#!/bin/sh\necho hello\n", { mode: 0o755 });
+    const actualHash = createHash("sha256").update("#!/bin/sh\necho hello\n").digest("hex");
+
+    const baseServer = {
+      id: "id-1",
+      name: "fake",
+      transportType: "stdio" as const,
+      autoConnect: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Matching pin → allowed.
+    const matched = verifyServerFingerprint({
+      ...baseServer,
+      config: { command: binPath, args: [], fingerprintSha256: actualHash }
+    });
+    expect(matched.matched).toBe(true);
+
+    // Mismatched pin → refused with a clear reason.
+    const mismatch = verifyServerFingerprint({
+      ...baseServer,
+      config: { command: binPath, args: [], fingerprintSha256: "0".repeat(64) }
+    });
+    expect(mismatch.matched).toBe(false);
+    expect(mismatch.reason).toMatch(/fingerprint mismatch/i);
+
+    // Non-stdio transport rejects pinning attempts up front.
+    const wrongTransport = verifyServerFingerprint({
+      ...baseServer,
+      transportType: "http" as const,
+      config: { command: binPath, args: [], fingerprintSha256: actualHash }
+    });
+    expect(wrongTransport.matched).toBe(false);
+    expect(wrongTransport.reason).toMatch(/only supported for stdio/i);
+
+    // Malformed pin (not 64 hex chars) is silently treated as "no pin".
+    const malformedPin = verifyServerFingerprint({
+      ...baseServer,
+      config: { command: binPath, args: [], fingerprintSha256: "deadbeef" }
+    });
+    expect(malformedPin.matched).toBe(true);
+  });
 });
 
 describe("Kysely MCP stores", () => {

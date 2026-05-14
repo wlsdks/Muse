@@ -29,4 +29,23 @@ binary + first argv element and refuse on mismatch.
 
 ## Status
 
-open
+done — `McpServer.config.fingerprintSha256` is the opt-in
+contract (no schema migration — sits inside the existing
+`JsonObject` config). On `McpManager.connect`,
+`verifyServerFingerprint` reads the pin, hashes the resolved
+command binary, and refuses on mismatch by flipping to
+`disabled` + writing an unhealthy diagnostic (same shape as
+goal 032's allowlist denial). For `node`/`deno`/`bun`/`python`
+invocations the first non-flag `args[0]` (the entrypoint
+script) is folded into the hash too so a swapped script with
+the same node binary still trips the pin.
+
+Scope deviation: `muse mcp pin <name>` CLI subcommand is
+deferred — the helper is exported so the CLI command is a
+trivial follow-up. Missing fingerprint = no enforcement
+(matches the empty-allowlist posture of goal 032).
+Non-stdio transports refuse pinning attempts up front.
+
+mcp +2 tests: no-pin pass-through; matching pin allowed,
+mismatched pin refused with clear reason, malformed pin
+treated as no-pin, non-stdio transport rejected.

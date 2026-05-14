@@ -16,6 +16,9 @@
  *   - toErrorMessage (Error.message / String fallback)
  */
 
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
 import type { MuseTool } from "@muse/tools";
 
 import {
@@ -141,6 +144,20 @@ export class McpManager {
     if (!validation.valid) {
       this.statuses.set(name, "failed");
       this.scheduleReconnect(name, validation.reason ?? "MCP server validation failed");
+      return false;
+    }
+
+    // Goal 083 — when the registration carries an expected
+    // `fingerprintSha256`, hash the resolved command binary and
+    // refuse on mismatch. Missing fingerprint = no enforcement
+    // (matches goal 032's empty-allowlist posture). A mismatch
+    // flips to `disabled` (not `failed`) + posts an unhealthy
+    // diagnostic so the operator sees a clear refusal instead
+    // of a transient "tried to connect" log line.
+    const fingerprintVerdict = verifyServerFingerprint(server);
+    if (!fingerprintVerdict.matched) {
+      this.statuses.set(name, "disabled");
+      this.health.set(name, this.createHealthSnapshot(name, "unhealthy", fingerprintVerdict.reason));
       return false;
     }
 
@@ -371,6 +388,81 @@ export class McpManager {
       summary
     };
   }
+}
+
+/**
+ * Goal 083 — sha256 fingerprint pinning for external MCP server
+ * binaries. When `server.config.fingerprintSha256` is set, we
+ * resolve the command path, hash its bytes, and compare to the
+ * pinned value. Returns `{ matched: true }` when no fingerprint
+ * was pinned (matches the empty-allowlist posture from goal 032
+ * — opt-in enforcement). Returns `{ matched: false, reason }`
+ * on mismatch / unreadable binary / non-stdio transport so the
+ * caller flips the server to `disabled` with an unhealthy
+ * diagnostic.
+ *
+ * Hash input: the resolved `command` file bytes. For `node`-style
+ * invocations where the entrypoint script lives in `args[0]`, we
+ * also fold that file's bytes into the hash. The hash is read
+ * once per connect — production reconnect cycles aren't on a
+ * hot enough path for this to matter.
+ *
+ * Exported for direct unit-test coverage so tests can build a
+ * tempfile fixture, compute the expected hash, and verify the
+ * happy + mismatch branches without spinning up the manager.
+ */
+export function verifyServerFingerprint(server: McpServer): { matched: boolean; reason?: string } {
+  const pinned = readPinnedFingerprint(server.config);
+  if (!pinned) return { matched: true };
+  if (server.transportType !== "stdio") {
+    return { matched: false, reason: `fingerprint pinning only supported for stdio transport (got ${server.transportType})` };
+  }
+  const command = readCommandPath(server.config);
+  if (!command) {
+    return { matched: false, reason: "fingerprint pinned but stdio command path missing from config" };
+  }
+  const entrypoint = readNodeEntrypointPath(server.config);
+  const hash = createHash("sha256");
+  try {
+    hash.update(readFileSync(command));
+    if (entrypoint) hash.update(readFileSync(entrypoint));
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return { matched: false, reason: `fingerprint check could not read binary: ${message}` };
+  }
+  const actual = hash.digest("hex");
+  if (actual !== pinned) {
+    return { matched: false, reason: `fingerprint mismatch — refused on connect (sha256 differs from pinned value)` };
+  }
+  return { matched: true };
+}
+
+function readPinnedFingerprint(config: unknown): string | undefined {
+  if (!config || typeof config !== "object") return undefined;
+  const value = (config as { fingerprintSha256?: unknown }).fingerprintSha256;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/u.test(trimmed) ? trimmed : undefined;
+}
+
+function readCommandPath(config: unknown): string | undefined {
+  if (!config || typeof config !== "object") return undefined;
+  const c = (config as { command?: unknown }).command;
+  return typeof c === "string" && c.length > 0 ? c : undefined;
+}
+
+function readNodeEntrypointPath(config: unknown): string | undefined {
+  if (!config || typeof config !== "object") return undefined;
+  const cmd = readCommandPath(config);
+  if (!cmd) return undefined;
+  // For `node script.js` style invocations the entrypoint script is
+  // the real surface — fold it into the hash so a swapped script
+  // (same node binary) still trips the pin.
+  if (!/(^|\/)(?:node|deno|bun|python|python3)$/u.test(cmd)) return undefined;
+  const args = (config as { args?: unknown }).args;
+  if (!Array.isArray(args)) return undefined;
+  const first = args.find((value: unknown) => typeof value === "string" && !value.startsWith("-"));
+  return typeof first === "string" ? first : undefined;
 }
 
 async function closeConnectionQuietly(connection: McpConnection): Promise<void> {
