@@ -15,6 +15,7 @@ import { describeBuiltinLoopbackMcpServers } from "@muse/mcp";
 import type { RuntimeSettings } from "@muse/runtime-settings";
 import type { FastifyInstance } from "fastify";
 
+import { ChatRateLimiter, clientKeyFromRequest } from "./chat-rate-limiter.js";
 import {
   requireAuthenticated,
   createOpenApiDocument,
@@ -55,11 +56,52 @@ export function registerCoreRoutes(
 }
 
 export function registerChatRoutes(server: FastifyInstance, options: ServerOptions): void {
-  server.post("/chat", async (request, reply) => runChat(request.body, reply, options, "extended", getAuthIdentity(request)?.userId));
-  server.post("/api/chat", async (request, reply) => runChat(request.body, reply, options, "compat", getAuthIdentity(request)?.userId));
-  server.post("/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "extended", getAuthIdentity(request)?.userId));
-  server.post("/api/chat/stream", async (request, reply) => runChatStream(request.body, reply, options, "compat", getAuthIdentity(request)?.userId));
-  server.post("/api/chat/multipart", async (request, reply) => runMultipartChat(request.body, reply, options, getAuthIdentity(request)?.userId));
+  // Goal 031: per-IP token bucket protecting the five chat entry
+  // points. Defaults: 60 req/min/IP. Override via env. Disabled
+  // when MUSE_RATE_LIMIT_CHAT_DISABLED is set (handy for the cli
+  // smoke loop that hammers /api/chat).
+  const rateLimiter = options.chatRateLimiter ?? buildDefaultChatRateLimiter();
+  const enforce = (request: { ip?: string }, reply: { status(code: number): { send(body: unknown): unknown }; header(name: string, value: string): unknown }): boolean => {
+    if (rateLimiter === undefined) return true;
+    const verdict = rateLimiter.consume(clientKeyFromRequest(request));
+    if (verdict.allowed) return true;
+    reply.header("Retry-After", String(verdict.retryAfterSeconds ?? 60));
+    reply.status(429).send({
+      error: "rate limit exceeded — too many chat requests from this IP. Try again shortly.",
+      retryAfterSeconds: verdict.retryAfterSeconds ?? 60
+    });
+    return false;
+  };
+
+  server.post("/chat", async (request, reply) => {
+    if (!enforce(request, reply)) return reply;
+    return runChat(request.body, reply, options, "extended", getAuthIdentity(request)?.userId);
+  });
+  server.post("/api/chat", async (request, reply) => {
+    if (!enforce(request, reply)) return reply;
+    return runChat(request.body, reply, options, "compat", getAuthIdentity(request)?.userId);
+  });
+  server.post("/chat/stream", async (request, reply) => {
+    if (!enforce(request, reply)) return reply;
+    return runChatStream(request.body, reply, options, "extended", getAuthIdentity(request)?.userId);
+  });
+  server.post("/api/chat/stream", async (request, reply) => {
+    if (!enforce(request, reply)) return reply;
+    return runChatStream(request.body, reply, options, "compat", getAuthIdentity(request)?.userId);
+  });
+  server.post("/api/chat/multipart", async (request, reply) => {
+    if (!enforce(request, reply)) return reply;
+    return runMultipartChat(request.body, reply, options, getAuthIdentity(request)?.userId);
+  });
+}
+
+function buildDefaultChatRateLimiter(): ChatRateLimiter | undefined {
+  if (process.env.MUSE_RATE_LIMIT_CHAT_DISABLED === "true") {
+    return undefined;
+  }
+  const rawCapacity = Number.parseInt(process.env.MUSE_RATE_LIMIT_CHAT_PER_MINUTE ?? "", 10);
+  const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0 ? rawCapacity : 60;
+  return new ChatRateLimiter({ capacity, windowMs: 60_000 });
 }
 
 export function registerAdminRunRoutes(

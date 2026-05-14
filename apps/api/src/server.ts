@@ -77,6 +77,15 @@ export { unwrapErrorMessage };
 export interface ServerOptions {
   readonly logger?: boolean;
   readonly cors?: CorsOptions;
+  /**
+   * Optional injection point for the chat-route per-IP rate
+   * limiter (goal 031). Tests pass a deterministic ChatRateLimiter
+   * with a small capacity + injected clock. Production callers
+   * leave this unset and the default 60-req/min limiter is built
+   * inside `registerChatRoutes` (or skipped when
+   * `MUSE_RATE_LIMIT_CHAT_DISABLED=true`).
+   */
+  readonly chatRateLimiter?: import("./chat-rate-limiter.js").ChatRateLimiter;
   readonly agentRuntime?: AgentRuntime;
   readonly admin?: AdminRouteState;
   readonly agentSpecRegistry?: AgentSpecRegistry;

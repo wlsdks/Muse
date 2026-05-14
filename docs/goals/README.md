@@ -48,9 +48,10 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 026 | [Followup dedupe — same-summary same-minute](026-followup-dedupe.md)              | reliability          | deferred |
 | 027 | [Proactive circuit-breaker — notices/hour cap](027-proactive-circuit-breaker.md)  | reliability          | deferred |
 | 028 | [Pattern detector LLM-judge mode](028-pattern-llm-judge.md)                       | reliability          | deferred |
-| 029 | [User-memory diff broadcaster](029-user-memory-diff-broadcaster.md)               | reliability          | done   |
+| 029 | [User-memory diff broadcaster](029-user-memory-diff-broadcaster.md)               | reliability          | deferred |
 | 030 | [`muse doctor` overall health summary + exit code](030-doctor-summary-exit.md)    | UX polish            | done   |
-
+| 031 | [Rate-limit POST /api/chat per-IP](031-rate-limit-api-chat.md)                    | security/robustness  | done   |
+| 032 | [MCP allowlist validation](032-mcp-allowlist-validate.md)                          | security/robustness  | open   |
 | 033 | [Expand prompt-injection input guard library](033-prompt-injection-pattern-library.md) | security/robustness | open   |
 | 034 | [REPL long-session memory audit](034-repl-memory-leak-audit.md)                    | security/robustness  | open   |
 | 035 | [Audit every ~/.muse JSON store file-mode](035-audit-store-file-modes.md)          | security/robustness  | open   |

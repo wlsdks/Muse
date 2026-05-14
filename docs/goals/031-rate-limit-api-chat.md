@@ -20,4 +20,9 @@ Add a per-IP token bucket — basic but real DoS hardening.
 
 ## Status
 
-open
+done — new `ChatRateLimiter` (hand-rolled token bucket) gates all
+five chat entry points. Default 60 req/min/IP; override via
+MUSE_RATE_LIMIT_CHAT_PER_MINUTE; bypass with
+MUSE_RATE_LIMIT_CHAT_DISABLED=true. 429 response includes
+Retry-After header + structured error body with retryAfterSeconds.
+api +3 tests.
