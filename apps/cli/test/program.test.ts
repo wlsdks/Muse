@@ -2526,6 +2526,64 @@ describe("cli program", () => {
     expect(output.join("")).toContain("You have 1 open task: Buy milk.");
   });
 
+  it("today --brief --save-to-notes scrubs credential shapes before notes write (goal 112)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-today-redact-"));
+    const fsp = await import("node:fs/promises");
+    const prevNotes = process.env.MUSE_NOTES_DIR;
+    process.env.MUSE_NOTES_DIR = root;
+    try {
+      const { io } = captureOutput();
+      const program = createProgram({
+        ...io,
+        fetch: async (url) => {
+          const p = String(url);
+          if (p.endsWith("/api/today")) {
+            return new Response(JSON.stringify({
+              generatedAt: "2026-05-10T08:00:00Z",
+              lookaheadHours: 24,
+              tasks: [{ id: "t-1", title: "Buy milk" }],
+              events: [],
+              notes: []
+            }));
+          }
+          if (p.endsWith("/api/chat")) {
+            // The LLM brief hallucinates a credential shape into the
+            // prose body — exactly the case the redaction has to catch.
+            return new Response(JSON.stringify({
+              content: "Reminder: rotate sk-proj-abcdefghijklmnopqrstuvwxyz today. Old ghp_abcdefghijklmnopqrstuvwxyzABCDEF too.",
+              success: true
+            }));
+          }
+          return new Response("{}");
+        }
+      });
+
+      await program.parseAsync(
+        ["node", "muse", "--api-url", "http://api.test", "today", "--brief", "--save-to-notes", "journal/today.md"],
+        { from: "node" }
+      );
+
+      const saved = await fsp.readFile(path.join(root, "journal", "today.md"), "utf8");
+      // Verbatim secrets MUST NOT survive to the saved note (the file
+      // is long-lived and may sync to a third-party note store).
+      expect(saved).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz");
+      expect(saved).not.toContain("ghp_abcdefghijklmnopqrstuvwxyzABCDEF");
+      // Redaction markers DO survive so the context (the user mentioned
+      // a key) is preserved.
+      expect(saved).toContain("[redacted-openai-key]");
+      expect(saved).toContain("[redacted-github-pat]");
+      // Non-credential prose passes through untouched.
+      expect(saved).toContain("Reminder: rotate");
+      expect(saved).toContain("today");
+      // The note still has the standard heading the goal-054 save
+      // path writes.
+      expect(saved).toContain("# Today brief —");
+    } finally {
+      if (prevNotes === undefined) delete process.env.MUSE_NOTES_DIR;
+      else process.env.MUSE_NOTES_DIR = prevNotes;
+    }
+  });
+
   it("today --save-to-notes requires --brief (goal 054)", async () => {
     const { io, output } = captureOutput();
     const program = createProgram({ ...io, fetch: async () => { throw new Error("not reached"); } });

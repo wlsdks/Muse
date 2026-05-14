@@ -35,6 +35,7 @@ import {
   TODAY_BRIEF_SYSTEM_PROMPT as BRIEF_SYSTEM_PROMPT,
   buildTodayBriefUserMessage
 } from "@muse/prompts";
+import { redactSecretsInText } from "@muse/shared";
 import type { TextToSpeechProvider } from "@muse/voice";
 import type { Command } from "commander";
 
@@ -165,10 +166,17 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
           const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
           const provider = new LocalDirNotesProvider({ notesDir });
           const title = `Today brief — ${shortDateLabel(briefing.generatedAt)}`;
+          // Goal 112 — defence-in-depth scrub on the LLM-generated
+          // brief prose before it persists as a markdown note. A task
+          // or calendar title carrying a credential ("rotate sk-…")
+          // could surface in the brief, and the saved note is
+          // long-lived and may sync to a third-party note store. Pair
+          // with goals 108 / 109 / 111 so every long-lived /
+          // outbound-bound surface shares the same hygiene.
           const body = [
             `# ${title}`,
             "",
-            prose.trim(),
+            redactSecretsInText(prose.trim()),
             ""
           ].join("\n");
           try {
