@@ -94,7 +94,11 @@ export function registerHistoryCommand(program: Command, io: ProgramIO): void {
         return;
       }
       if (merged.length === 0) {
-        io.stdout("(no activity yet — JARVIS hasn't fired anything in the configured stores)\n");
+        if (kindFilter) {
+          io.stdout(`(no ${kindFilter} activity yet — try \`muse history\` without the filter to see other kinds)\n`);
+        } else {
+          io.stdout("(no activity yet — JARVIS hasn't fired anything in the configured stores)\n");
+        }
         return;
       }
       io.stdout(`Activity (${merged.length.toString()} entries, newest first):\n\n`);

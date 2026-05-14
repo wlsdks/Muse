@@ -3605,6 +3605,81 @@ describe("cli program", () => {
     }
   });
 
+  it("muse history --kind X empty output tailors the empty hint to the requested kind (goal 022)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-hist-emptyhint-"));
+    const fsp = await import("node:fs/promises");
+    const remindersHistoryFile = path.join(root, "reminder-history.json");
+    const followupsFile = path.join(root, "followups.json");
+    await fsp.writeFile(remindersHistoryFile, JSON.stringify({ entries: [], version: 1 }), "utf8");
+    await fsp.writeFile(followupsFile, JSON.stringify({ followups: [] }), "utf8");
+
+    const prev = {
+      reminderHistory: process.env.MUSE_REMINDER_HISTORY_FILE,
+      followups: process.env.MUSE_FOLLOWUPS_FILE
+    };
+    process.env.MUSE_REMINDER_HISTORY_FILE = remindersHistoryFile;
+    process.env.MUSE_FOLLOWUPS_FILE = followupsFile;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "history", "--kind", "followup"], { from: "node" });
+      expect(output.join("")).toContain("no followup activity yet");
+    } finally {
+      if (prev.reminderHistory === undefined) delete process.env.MUSE_REMINDER_HISTORY_FILE;
+      else process.env.MUSE_REMINDER_HISTORY_FILE = prev.reminderHistory;
+      if (prev.followups === undefined) delete process.env.MUSE_FOLLOWUPS_FILE;
+      else process.env.MUSE_FOLLOWUPS_FILE = prev.followups;
+    }
+  });
+
+  it("muse doctor --local prints an overall verdict footer + exits non-zero on fail (goal 030)", async () => {
+    // Force the "fail" branch by un-setting MUSE_MODEL / every provider key.
+    const prev = {
+      muse_model: process.env.MUSE_MODEL,
+      muse_default_model: process.env.MUSE_DEFAULT_MODEL,
+      gemini: process.env.GEMINI_API_KEY,
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+      openrouter: process.env.OPENROUTER_API_KEY,
+      google: process.env.GOOGLE_API_KEY,
+      modelKeysFile: process.env.MUSE_MODEL_KEYS_FILE
+    };
+    delete process.env.MUSE_MODEL;
+    delete process.env.MUSE_DEFAULT_MODEL;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    process.env.MUSE_MODEL_KEYS_FILE = path.join(await mkdtemp(path.join(tmpdir(), "muse-cli-doctor-fail-")), "missing.json");
+    const prevOllama = process.env.OLLAMA_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("api off"); } });
+      await program.parseAsync(["node", "muse", "doctor", "--local"], { from: "node" });
+      const text = output.join("");
+      expect(text).toContain("Overall: FAIL");
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0;
+    } finally {
+      const restore = (envKey: keyof typeof prev, k: string): void => {
+        if (prev[envKey] === undefined) delete process.env[k];
+        else process.env[k] = prev[envKey];
+      };
+      restore("muse_model", "MUSE_MODEL");
+      restore("muse_default_model", "MUSE_DEFAULT_MODEL");
+      restore("gemini", "GEMINI_API_KEY");
+      restore("anthropic", "ANTHROPIC_API_KEY");
+      restore("openai", "OPENAI_API_KEY");
+      restore("openrouter", "OPENROUTER_API_KEY");
+      restore("google", "GOOGLE_API_KEY");
+      restore("modelKeysFile", "MUSE_MODEL_KEYS_FILE");
+      if (prevOllama === undefined) delete process.env.OLLAMA_BASE_URL;
+      else process.env.OLLAMA_BASE_URL = prevOllama;
+    }
+  });
+
   it("muse search --site <domain> prepends site:<domain> to the query (goal 017)", async () => {
     const originalFetch = globalThis.fetch;
     const prev = process.env.MUSE_SEARXNG_URL;

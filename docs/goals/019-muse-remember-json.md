@@ -21,4 +21,7 @@ wants structured output. Add `--json` to emit the parsed payload
 
 ## Status
 
-open
+done
+ — `--json` emits `{ written: [{kind,key,value}], skipped, userKey }`
+and suppresses the human-readable `+` lines. Lets a wrapper script
+pipe extraction results to jq without manual parsing.

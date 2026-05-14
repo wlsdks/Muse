@@ -20,4 +20,10 @@ hint "rate-limited — back off for a minute, or self-host SearXNG
 
 ## Status
 
-open
+done
+ — DDG-fallback path's non-OK branch now special-cases 429 with
+a structured response `{ error: "search backend rate-limited (429)
+— back off for a minute, or self-host SearXNG ...", rateLimited:
+true, status: 429 }`. Other non-OK statuses surface their numeric
+code in the error message. CLI display unchanged (the `error`
+field is already rendered).

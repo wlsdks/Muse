@@ -29,6 +29,7 @@ interface RememberOptions {
   readonly user?: string;
   readonly persona?: string;
   readonly model?: string;
+  readonly json?: boolean;
 }
 
 interface ForgetOptions {
@@ -56,6 +57,7 @@ export function registerRememberCommands(program: Command, io: ProgramIO): void 
     .option("--user <id>", "User identity (default $MUSE_USER_ID / $USER)")
     .option("--persona <slot>", "Persona slot (work / home)")
     .option("--model <tag>", "Model override")
+    .option("--json", "Emit a structured {written:[{kind,key,value}], skipped:[{...}]} payload instead of human-readable lines")
     .action(async (textParts: readonly string[], options: RememberOptions) => {
       const text = textParts.join(" ").trim();
       if (text.length === 0) {
@@ -97,41 +99,54 @@ export function registerRememberCommands(program: Command, io: ProgramIO): void 
         return;
       }
 
-      let wrote = 0;
+      const written: Array<{ kind: "fact" | "preference" | "veto" | "goal"; key: string; value: string }> = [];
+      const skipped: Array<{ kind: string; key?: string; reason: string }> = [];
+      const emitWrite = (kind: "fact" | "preference" | "veto" | "goal", key: string, value: string, label: string): void => {
+        written.push({ key, kind, value });
+        if (!options.json) {
+          io.stdout(`  + ${label} = ${value}\n`);
+        }
+      };
       for (const [key, value] of Object.entries(payload.facts ?? {})) {
         if (typeof value === "string" && value.length > 0) {
           await assembly.userMemoryStore.upsertFact(userKey, key, value);
-          io.stdout(`  + fact.${key} = ${value}\n`);
-          wrote += 1;
+          emitWrite("fact", key, value, `fact.${key}`);
+        } else {
+          skipped.push({ key, kind: "fact", reason: "empty or non-string value" });
         }
       }
       for (const [key, value] of Object.entries(payload.preferences ?? {})) {
         if (typeof value === "string" && value.length > 0) {
           await assembly.userMemoryStore.upsertPreference(userKey, key, value);
-          io.stdout(`  + pref.${key} = ${value}\n`);
-          wrote += 1;
+          emitWrite("preference", key, value, `pref.${key}`);
+        } else {
+          skipped.push({ key, kind: "preference", reason: "empty or non-string value" });
         }
       }
       for (const slot of payload.vetoes ?? []) {
         if (slot && typeof slot.value === "string" && slot.value.length > 0) {
           const key = `veto:${slot.id || slot.value.slice(0, 24)}`;
           await assembly.userMemoryStore.upsertPreference(userKey, key, slot.value);
-          io.stdout(`  + ${key} = ${slot.value}\n`);
-          wrote += 1;
+          emitWrite("veto", key, slot.value, key);
+        } else {
+          skipped.push({ kind: "veto", reason: "empty or non-string value" });
         }
       }
       for (const slot of payload.goals ?? []) {
         if (slot && typeof slot.value === "string" && slot.value.length > 0) {
           const key = `goal:${slot.id || slot.value.slice(0, 24)}`;
           await assembly.userMemoryStore.upsertPreference(userKey, key, slot.value);
-          io.stdout(`  + ${key} = ${slot.value}\n`);
-          wrote += 1;
+          emitWrite("goal", key, slot.value, key);
+        } else {
+          skipped.push({ kind: "goal", reason: "empty or non-string value" });
         }
       }
-      if (wrote === 0) {
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ skipped, userKey, written }, null, 2)}\n`);
+      } else if (written.length === 0) {
         io.stdout("(model parsed the statement but found nothing new to remember — already in memory or content was not extractable)\n");
       } else {
-        io.stdout(`Remembered ${wrote.toString()} item(s) under user '${userKey}'.\n`);
+        io.stdout(`Remembered ${written.length.toString()} item(s) under user '${userKey}'.\n`);
       }
     });
 

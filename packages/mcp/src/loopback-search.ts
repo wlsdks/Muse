@@ -131,7 +131,14 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
               signal: controller.signal
             });
             if (!response.ok) {
-              return { error: `search backend responded ${response.status.toString()}` };
+              if (response.status === 429) {
+                return {
+                  error: "search backend rate-limited (429) — back off for a minute, or self-host SearXNG (see docs/setup-local-llm.md)",
+                  rateLimited: true,
+                  status: 429
+                };
+              }
+              return { error: `search backend responded ${response.status.toString()}`, status: response.status };
             }
             html = await response.text();
           } catch (error) {

@@ -55,9 +55,17 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
         const report = await runLocalDoctor();
         if (options.json || options.full) {
           helpers.writeOutput(io, report);
-          return;
+        } else {
+          io.stdout(formatLocalDoctor(report));
         }
-        io.stdout(formatLocalDoctor(report));
+        // Goal 030: surface the overall verdict as an exit code so
+        // CI / dotfile bootstrap scripts can `muse doctor --local
+        // || warn-user`. 0 for ok+warn (non-fatal); 1 for fail.
+        // Warn doesn't fail because it's expected on a personal
+        // install where (e.g.) Ollama isn't running.
+        if (report.worst === "fail") {
+          process.exitCode = 1;
+        }
         return;
       }
       const path = options.full ? "/api/admin/doctor" : "/api/admin/doctor/summary";
@@ -282,5 +290,18 @@ function formatLocalDoctor(report: LocalDoctorReport): string {
     const marker = c.status === "ok" ? "✓" : c.status === "warn" ? "·" : "✗";
     lines.push(`  ${marker} ${c.name}: ${c.detail}`);
   }
+  // Goal 030: explicit summary footer + overall verdict so a script
+  // wrapper can grep one line and a human can scan to the bottom for
+  // a clear "should I worry?" signal.
+  const warnCount = report.checks.filter((c) => c.status === "warn").length;
+  const failCount = report.checks.filter((c) => c.status === "fail").length;
+  const okCount = report.checks.filter((c) => c.status === "ok").length;
+  const overall = report.worst === "ok"
+    ? "OK"
+    : report.worst === "warn"
+      ? `WARN — ${warnCount.toString()} warning(s)`
+      : `FAIL — ${failCount.toString()} failure(s), ${warnCount.toString()} warning(s)`;
+  lines.push("");
+  lines.push(`Overall: ${overall}  (${okCount.toString()} ok / ${warnCount.toString()} warn / ${failCount.toString()} fail across ${report.checks.length.toString()} checks)`);
   return `${lines.join("\n")}\n`;
 }

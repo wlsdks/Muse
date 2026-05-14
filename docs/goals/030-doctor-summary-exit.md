@@ -22,4 +22,9 @@ shell wrapper) wants a single overall status + exit code for CI.
 
 ## Status
 
-open
+done
+ — Formatted-mode output gains a blank-line + `Overall: OK | WARN
+— N warning(s) | FAIL — N failure(s), M warning(s)` footer plus
+the counts. Process exit code: 1 on fail, 0 otherwise (warn is
+expected on a personal install). cli +1 test asserts the FAIL
+verdict + exit code when no MUSE_MODEL / provider key is set.

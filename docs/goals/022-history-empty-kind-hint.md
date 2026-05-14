@@ -22,4 +22,8 @@ yet — try `muse history` without the filter to see other kinds)".
 
 ## Status
 
-open
+done
+ — empty formatted-mode output with `--kind X` now reads
+"(no <kind> activity yet — try \`muse history\` without the filter
+to see other kinds)". The unfiltered empty case keeps its original
+generic message. cli +1 test (followup empty case).
