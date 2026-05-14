@@ -3956,6 +3956,34 @@ describe("cli program", () => {
     expect(sawSignals).toEqual(["SIGTERM"]);
   });
 
+  it("formatMetricsSnapshot pretty-prints SLO / drift / token / budget sections (goal 077)", async () => {
+    const { formatMetricsSnapshot } = await import("../src/commands-metrics.js");
+    // Empty payload → friendly hint.
+    expect(formatMetricsSnapshot(null)).toContain("empty snapshot");
+    expect(formatMetricsSnapshot({})).toContain("empty snapshot");
+
+    // Full payload: each known section renders + values pass through.
+    const rendered = formatMetricsSnapshot({
+      slo: { passRate: 0.98, errorBudget: "ok" },
+      drift: { agentA: { runs: 12, percent: 3.2 } },
+      tokenCost: { totalUsd: 1.42, runs: 47 },
+      budget: { remainingUsd: 12.5 },
+      unknownExtra: "stays under 'other'"
+    });
+    expect(rendered).toContain("Muse metrics:");
+    expect(rendered).toContain("  slo:");
+    expect(rendered).toContain("passRate: 0.98");
+    expect(rendered).toContain("errorBudget: ok");
+    expect(rendered).toContain("  drift:");
+    expect(rendered).toContain("agentA:"); // nested record stringified
+    expect(rendered).toContain("  token cost:");
+    expect(rendered).toContain("totalUsd: 1.42");
+    expect(rendered).toContain("  budget:");
+    expect(rendered).toContain("remainingUsd: 12.5");
+    expect(rendered).toContain("  other:");
+    expect(rendered).toContain("unknownExtra: stays under 'other'");
+  });
+
   it("muse trace tail helpers parse interval / limit / events (goal 076)", async () => {
     const {
       resolveTraceTailIntervalMs,
