@@ -99,7 +99,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 077 | [`muse metrics show` (SLO + drift)](077-muse-metrics-show.md)                      | observability        | done   |
 | 078 | [`muse status` today's token-cost rollup](078-status-token-cost-rollup.md)         | observability        | done   |
 | 079 | [proactive-history.json rotation on size](079-proactive-history-rotation.md)       | observability        | done   |
-| 080 | [Activity log compaction](080-activity-log-compaction.md)                          | observability        | open   |
+| 080 | [Activity log compaction](080-activity-log-compaction.md)                          | observability        | done   |
 | 081 | [`muse export --encrypt`](081-muse-export-encrypt.md)                              | security/robustness  | done   |
 | 082 | [`muse auth rotate-jwt`](082-muse-auth-rotate-jwt.md)                              | security/robustness  | done   |
 | 083 | [MCP server fingerprint pinning](083-mcp-server-fingerprint-pinning.md)            | security/robustness  | done   |

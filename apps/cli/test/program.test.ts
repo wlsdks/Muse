@@ -3956,6 +3956,44 @@ describe("cli program", () => {
     expect(sawSignals).toEqual(["SIGTERM"]);
   });
 
+  it("planActivityLogCompaction filters by suffix + age + allow-list (goal 080)", async () => {
+    const { planActivityLogCompaction, COMPACTABLE_STORE_BASENAMES } = await import("../src/commands-maintenance.js");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-compact-"));
+    const fsp = await import("node:fs/promises");
+    const museDir = root;
+    const archiveDir = path.join(root, "archive");
+    const nowMs = Date.now();
+
+    // Allow-listed sidecar from goal 079.
+    expect(COMPACTABLE_STORE_BASENAMES).toContain("proactive-history.json");
+
+    await fsp.writeFile(path.join(museDir, "proactive-history.json.1"), "{}");
+    await fsp.writeFile(path.join(museDir, "proactive-history.json.2"), "{}");
+    // Not on the allow-list — must be ignored even though the
+    // naming pattern matches.
+    await fsp.writeFile(path.join(museDir, "random-sidecar.json.1"), "{}");
+    // Live file (no numeric suffix) — never compacted.
+    await fsp.writeFile(path.join(museDir, "proactive-history.json"), "{}");
+
+    // No --keep-days → both allow-listed archives are in scope.
+    const fullPlan = await planActivityLogCompaction({ museDir, archiveDir, nowMs });
+    expect(fullPlan.map((e) => path.basename(e.source)).sort()).toEqual([
+      "proactive-history.json.1",
+      "proactive-history.json.2"
+    ]);
+    expect(fullPlan.every((e) => e.destination.startsWith(archiveDir))).toBe(true);
+
+    // keep-days=7 with file mtimes "now" → nothing matches.
+    const recentOnly = await planActivityLogCompaction({ museDir, archiveDir, nowMs, keepDays: 7 });
+    expect(recentOnly).toEqual([]);
+
+    // Backdate one archive so keep-days=1 matches just that file.
+    const oldMs = nowMs - 10 * 24 * 60 * 60 * 1000;
+    await fsp.utimes(path.join(museDir, "proactive-history.json.1"), oldMs / 1000, oldMs / 1000);
+    const oldOnly = await planActivityLogCompaction({ museDir, archiveDir, nowMs, keepDays: 1 });
+    expect(oldOnly.map((e) => path.basename(e.source))).toEqual(["proactive-history.json.1"]);
+  });
+
   it("muse status surfaces today's token-cost rollup from the sidecar JSON (goal 078)", async () => {
     const { readTokenCostToday } = await import("../src/commands-status.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-cost-"));
