@@ -64,7 +64,7 @@ verifiable. Open-ended ideas don't count — they live in `docs/design/`.
 | 042 | [Extract buildVoiceRegistry](042-personal-providers-voice-decomp.md)               | big-file decomp      | done   |
 | 043 | [Extract buildNotesRegistry](043-personal-providers-notes-decomp.md)               | big-file decomp      | done   |
 | 044 | [Extract buildTasksRegistry](044-personal-providers-tasks-decomp.md)               | big-file decomp      | done   |
-| 045 | [server.ts ServerOptions type cleanup](045-server-options-type-cleanup.md)         | big-file decomp      | open   |
+| 045 | [server.ts ServerOptions type cleanup](045-server-options-type-cleanup.md)         | big-file decomp      | done   |
 | 046 | [`muse status --watch`](046-muse-status-watch.md)                                  | JARVIS feature       | open   |
 | 047 | [`muse ask --notes-only`](047-muse-ask-notes-only.md)                              | JARVIS feature       | open   |
 | 048 | [`muse export` (backup tarball)](048-muse-export.md)                               | JARVIS feature       | open   |

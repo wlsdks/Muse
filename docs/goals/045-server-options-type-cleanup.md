@@ -17,4 +17,9 @@ own types module so the registrations have more breathing room.
 
 ## Status
 
-open
+done — `ServerOptions` + `CorsOptions` + `ToolCatalogEntry` moved
+to new `apps/api/src/server-options.ts` (185 LOC). `server.ts`
+shrank from 597 → 428 LOC and dropped ~15 type-only imports that
+were only there for the option block. The three types are
+re-exported from `server.ts` so callers stay byte-identical.
+All gates green.
