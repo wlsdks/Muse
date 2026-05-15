@@ -30,6 +30,7 @@ import {
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
+import { parseAudioFormat } from "./voice-playback.js";
 
 export interface ListenShells {
   /** Returns the absolute path to a binary on PATH, or undefined when missing. */
@@ -91,7 +92,7 @@ export function registerListenCommand(program: Command, io: ProgramIO, helpers: 
         const tts = await providers.tts!.synthesize({
           text: reply,
           ...(options.voice ? { voice: options.voice } : {}),
-          ...(options.format ? { format: parseFormat(options.format) } : {})
+          ...(options.format ? { format: parseAudioFormat(options.format) } : {})
         });
         const dir = mkdtempSync(pathJoin(tmpdir(), "muse-listen-"));
         const audioFile = pathJoin(dir, `reply.${tts.format}`);
@@ -246,14 +247,6 @@ interface ListenOptions {
   readonly format?: string;
   readonly wake?: string;
   readonly clipSeconds?: string;
-}
-
-function parseFormat(raw: string): "mp3" | "wav" | "opus" | "aac" | "flac" {
-  const trimmed = raw.trim().toLowerCase();
-  if (trimmed === "mp3" || trimmed === "wav" || trimmed === "opus" || trimmed === "aac" || trimmed === "flac") {
-    return trimmed;
-  }
-  return "mp3";
 }
 
 function defaultShells(): ListenShells {

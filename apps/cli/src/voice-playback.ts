@@ -18,7 +18,10 @@ import { platform } from "node:process";
 import { buildVoiceRegistry } from "@muse/autoconfigure";
 import type { TextToSpeechProvider } from "@muse/voice";
 
-export type AudioFormat = "mp3" | "wav" | "opus" | "aac" | "flac";
+import { closestCommandName } from "./closest-command.js";
+
+export const AUDIO_FORMATS = ["mp3", "wav", "opus", "aac", "flac"] as const;
+export type AudioFormat = (typeof AUDIO_FORMATS)[number];
 
 export interface SpeakerShells {
   readonly playAudio: (filePath: string) => Promise<void>;
@@ -54,15 +57,26 @@ export async function synthesizeAndPlay(
   }
 }
 
+/**
+ * Resolve an audio-format string. Absent / empty → the "mp3"
+ * default (legitimate: most callers omit it). An explicitly
+ * supplied but unrecognised value throws with a closest-match
+ * hint instead of silently coercing to mp3 — a user who asked
+ * for "wave" must not silently get "mp3".
+ */
 export function parseAudioFormat(raw: string | undefined): AudioFormat {
-  if (!raw) {
+  if (raw === undefined || raw.trim().length === 0) {
     return "mp3";
   }
   const trimmed = raw.trim().toLowerCase();
-  if (trimmed === "mp3" || trimmed === "wav" || trimmed === "opus" || trimmed === "aac" || trimmed === "flac") {
-    return trimmed;
+  if ((AUDIO_FORMATS as readonly string[]).includes(trimmed)) {
+    return trimmed as AudioFormat;
   }
-  return "mp3";
+  const suggestion = closestCommandName(trimmed, AUDIO_FORMATS);
+  const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
+  throw new Error(
+    `invalid audio format '${raw}'${hint} (valid: ${AUDIO_FORMATS.join(", ")})`
+  );
 }
 
 /**
