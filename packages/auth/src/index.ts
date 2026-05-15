@@ -357,12 +357,9 @@ export function extractBearerToken(authorization: string | undefined): string | 
     return undefined;
   }
 
-  // Goal 122 — `split(/\s+/u)` on `"  Bearer abc"` (leading
-  // whitespace) returns `["", "Bearer", "abc"]`, so `scheme`
-  // lands on the empty string and the header is rejected.
-  // Real-world reverse proxies + HTTP libraries occasionally
-  // prepend whitespace; trim first to make the parser
-  // forgiving without changing the structural contract.
+  // Some reverse proxies prepend whitespace; without trimming,
+  // split(/\s+/u) on "  Bearer abc" puts scheme on "" and the
+  // header is wrongly rejected.
   const trimmed = authorization.trim();
   if (trimmed.length === 0) {
     return undefined;

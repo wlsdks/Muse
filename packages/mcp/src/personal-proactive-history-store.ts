@@ -84,25 +84,16 @@ export async function appendProactiveHistory(
   const archiveMaxFiles = Math.max(0, Math.trunc(options.archiveMaxFiles ?? 0));
   let existing = await readRaw(file);
 
-  // Goal 079 — rotate before the append when the live file is
-  // already at-or-over capacity. The cutoff is `>= capacity`
-  // (not `> capacity`) because adding one more would exceed it;
-  // rotating now keeps the archive boundary at exactly capacity.
+  // `>= capacity` (not `>`): one more append would exceed, so
+  // rotate now to keep the archive boundary at exactly capacity.
   if (archiveMaxFiles > 0 && existing.length >= capacity) {
     await rotateProactiveHistoryFiles(file, archiveMaxFiles);
     existing = [];
   }
 
-  // Goal 139 — defence-in-depth: scrub credential shapes from the
-  // three free-text fields (`title`, `text`, `error`) at the
-  // persist chokepoint. The proactive-notice loop already
-  // redacts `text` upstream, but `title` flows raw from the
-  // task/event source (a `"rotate sk-proj-..."` task title would
-  // otherwise survive verbatim) and `error` carries upstream
-  // exception messages that may quote request bodies. Centralising
-  // here means every caller of `appendProactiveHistory`
-  // (proactive loop, watch-folder, webhook bridges, future direct
-  // writers) inherits the same guarantee.
+  // Scrub at the persist chokepoint so every caller inherits it.
+  // title flows raw from the task/event source and error may
+  // quote request bodies — neither is scrubbed upstream.
   const scrubbed: ProactiveHistoryEntry = {
     ...entry,
     title: redactSecretsInText(entry.title),

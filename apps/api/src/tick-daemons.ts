@@ -186,8 +186,6 @@ export function startPatternDaemonIfConfigured(
   server: FastifyInstance,
   options: ServerOptions
 ): void {
-  // Goal 130 — route through the goal-128 parseBoolean so common
-  // admin spellings (`1`, `yes`, `on`) work uniformly.
   const patternEnabled = parseBoolean(env.MUSE_PROACTIVE_PATTERN_ENABLED, false);
   const patternProvider = env.MUSE_PROACTIVE_PATTERN_PROVIDER?.trim();
   const patternDestination = env.MUSE_PROACTIVE_PATTERN_DESTINATION?.trim();

@@ -40,10 +40,8 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     authService: assembly.authService,
     cors: {
       allowCredentials: true,
-      // Goal 040: env-driven CORS allowlist (CSV). Reject `*` so a
-      // typoed env can't silently downgrade to wildcard mode — the
-      // strict defaults in server-http-plumbing already exclude `*`,
-      // so this just extends the list when the operator opts in.
+      // Reject `*` so a typoed env can't silently downgrade to
+      // wildcard CORS.
       ...(() => {
         const raw = env.MUSE_CORS_ALLOWED_ORIGINS?.trim();
         if (!raw) return {};

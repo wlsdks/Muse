@@ -77,10 +77,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     applyCompatWebContractHeaders(request.url, request.headers["x-request-id"], reply);
     applyCorsHeaders(options.cors, request.headers.origin, reply);
 
-    // Goal 037: prevent any intermediate proxy / browser cache from
-    // holding onto operator-only admin responses (live doctor
-    // snapshots, run history, trace tails). The user expects these
-    // to reflect the live state every time.
+    // Admin responses must reflect live state — block any
+    // intermediate proxy / browser cache.
     if (request.url.startsWith("/api/admin/")) {
       reply.header("Cache-Control", "no-store");
     }
@@ -295,9 +293,6 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // text via their respective MUSE_*_AGENT_TURN flag; when either is
   // active AND an agent runtime is wired, one tracker records
   // /api/chat* presence and feeds both downstream consumers.
-  // Goal 130 — route through the goal-128 parseBoolean so common
-  // admin spellings (`1`, `yes`, `on`, case-insensitive) work
-  // uniformly with the rest of Muse's env-flag parsing.
   const phaseDReminderOn = parseBoolean(env.MUSE_REMINDER_AGENT_TURN, false)
     && Boolean(options.agentRuntime)
     && Boolean(options.defaultModel);

@@ -318,8 +318,7 @@ export class NotionNotesProvider implements NotesProvider {
     if (!response.ok) {
       const detail = await safeReadText(response);
       const code = mapNotionStatus(response.status);
-      // Goal 136 — forward response.status so callers can branch
-      // on `err.retryable` (429 + 5xx) without parsing the code.
+      // Forward status so callers get err.retryable for free.
       throw new NotesProviderError(
         this.id,
         code,

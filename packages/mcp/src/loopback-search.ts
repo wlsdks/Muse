@@ -93,9 +93,7 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           if (!query || query.length === 0) {
             return { error: "query is required" };
           }
-          // Goal 055 — accept a `time_range` hint; map to SearXNG's
-          // native `time_range=` and DuckDuckGo's `df=` (their date
-          // filter). Unknown / missing values fall through unfiltered.
+          // Unknown / missing time_range falls through unfiltered.
           const timeRange = normaliseTimeRange(readString(args, "time_range"));
 
           // Path 1 — SearXNG when configured. Fall through to DDG on
@@ -127,10 +125,7 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), timeoutMs);
           let html: string;
-          // Goal 055 — DDG's `df=` query string filters by date.
-          // Map: today → d, week → w, month → m, year → y. We've
-          // already normalised the input above; this is just the
-          // letter mapping.
+          // DuckDuckGo's df= date filter wants single letters.
           const ddgDf = timeRange === "day"
             ? "d"
             : timeRange === "week"

@@ -71,13 +71,9 @@ export const commonPiiPatterns: readonly PiiPattern[] = [
     name: "ipv4",
     regex: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/
   },
-  // Goal 120 — IPv6 alongside IPv4. Recognises the canonical
-  // 8-group `xxxx:xxxx:…` (any of the 8 groups can be 1-4 hex
-  // digits) AND the `::`-compressed form (any number of leading /
-  // middle / trailing groups elided to a single `::`). The
-  // `(?:…)` non-capturing groups keep replace() output stable.
-  // Word boundaries (`\b`) guard against matching the inside of
-  // longer hex blobs.
+  // Matches the canonical 8-group form AND the ::-compressed
+  // form. The \b boundaries stop it matching inside longer hex
+  // blobs; the (?:…) groups keep replace() output stable.
   {
     mask: "[IPV6 MASKED]",
     name: "ipv6",

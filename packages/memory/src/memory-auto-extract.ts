@@ -168,9 +168,8 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
   const maxUserPrompt = Math.max(64, Math.trunc(options.maxUserPromptChars ?? 2_048));
   const maxAssistantOutput = Math.max(64, Math.trunc(options.maxAssistantOutputChars ?? 2_048));
   const extractionTimeoutMs = Math.max(100, Math.trunc(options.extractionTimeoutMs ?? 10_000));
-  // Goal 073 — per-user cooldown to prevent a burst of short
-  // turns from churning user-memory.json. Default 1/min;
-  // explicit 0 disables.
+  // Per-user cooldown stops a burst of short turns from churning
+  // user-memory.json. Explicit 0 disables.
   const extractionCooldownMs = Math.max(0, Math.trunc(options.extractionCooldownMs ?? 60_000));
   const now = options.now ?? (() => Date.now());
   const lastFiredByUser = new Map<string, number>();
@@ -186,11 +185,8 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
       if (!userPrompt || !assistantOutput) {
         return;
       }
-      // Goal 073 — throttle gate. When the previous extraction
-      // for this user fired within `extractionCooldownMs`, skip
-      // silently (no extraction, no write). Fail-open posture
-      // matches the rest of the hook — losing a single throttled
-      // extraction is preferable to blocking subsequent runs.
+      // Throttle gate — skip silently within the cooldown window.
+      // Fail-open: a lost extraction beats blocking later runs.
       if (extractionCooldownMs > 0) {
         const lastFiredAt = lastFiredByUser.get(userId);
         const nowMs = now();

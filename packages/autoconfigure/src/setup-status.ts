@@ -208,10 +208,6 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
   const proactiveTickMs = proactiveTickRaw && /^\d+$/u.test(proactiveTickRaw)
     ? Number.parseInt(proactiveTickRaw, 10)
     : 60_000;
-  // Goal 130 — route env flags through the goal-128 parseBoolean
-  // so common admin spellings (`1`, `yes`, `on`, case-insensitive)
-  // work uniformly with the rest of Muse's flag parsing instead of
-  // requiring the exact literal `"true"`.
   const proactiveAgentTurn = parseBoolean(env.MUSE_PROACTIVE_AGENT_TURN, false);
   const proactiveQuietHours = env.MUSE_PROACTIVE_QUIET_HOURS?.trim()
     || env.MUSE_REMINDER_QUIET_HOURS?.trim();

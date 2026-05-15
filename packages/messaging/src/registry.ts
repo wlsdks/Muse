@@ -54,17 +54,10 @@ export class MessagingProviderRegistry {
   }
 
   async send(providerId: string, message: OutboundMessage): Promise<OutboundReceipt> {
-    // Goal 111 — credential hygiene at the dispatch chokepoint.
-    // The proactive-notice loop already scrubs before calling .send(),
-    // but every OTHER send caller (pattern/followup firing loops, the
-    // muse.messaging.send MCP tool, `muse messaging send` CLI, the
-    // watch-folder + webhook bridges, `/api/messaging/send`) hit the
-    // registry directly. Centralising the scrub here means every
-    // outbound surface — Telegram / Discord / Slack / LINE /
-    // macOS Notification / log / libnotify — inherits the same
-    // safety net. `redactSecretsInText` is a pure identity on
-    // text without matches, so the proactive path's earlier scrub
-    // doesn't double-flag anything.
+    // Credential scrub at the single dispatch chokepoint so every
+    // outbound surface inherits it (most callers hit the registry
+    // directly, not via the proactive loop's earlier scrub).
+    // redactSecretsInText is idempotent, so double-scrub is safe.
     const scrubbed: OutboundMessage = {
       ...message,
       text: redactSecretsInText(message.text)

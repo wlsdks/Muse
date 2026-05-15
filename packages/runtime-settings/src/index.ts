@@ -106,15 +106,8 @@ export class RuntimeSettings {
       return defaultValue;
     }
 
-    // Goal 127 — tolerate the common boolean spellings that admins
-    // type into the runtime-settings UI / API (`1` / `yes` / `on`,
-    // and their negative twins). Pre-iteration the parser only
-    // recognised the exact literal `"true"`, so a setting of `"1"`
-    // silently became `false` even when defaultValue was true — a
-    // user trying to enable webSearch via the admin route hit
-    // exactly this. Anything outside the recognised set falls back
-    // to defaultValue, which is safer than the old "unknown → false"
-    // since the admin's intent is preserved.
+    // Unknown spellings fall back to defaultValue (not false) so an
+    // admin's intent isn't silently inverted.
     const parsed = parseBooleanValue(value);
     return parsed ?? defaultValue;
   }

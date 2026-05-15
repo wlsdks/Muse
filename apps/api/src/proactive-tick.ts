@@ -133,9 +133,7 @@ export function startProactiveTick(options: ProactiveTickOptions): ProactiveTick
         ...(options.tasksFile ? { tasksFile: options.tasksFile } : {})
       });
       if (summary.sessionLockedUntil) {
-        // Goal 052 — log once per tick when the session lock blocks
-        // firing. Keeps the audit trail intact ("did anything fire
-        // during my focus block?") without spamming the user.
+        // One log per tick — audit trail without user spam.
         options.logger?.(
           `proactive-tick: skipped (session locked until ${summary.sessionLockedUntil})`
         );

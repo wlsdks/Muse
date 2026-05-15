@@ -56,10 +56,6 @@ export function registerCoreRoutes(
 }
 
 export function registerChatRoutes(server: FastifyInstance, options: ServerOptions): void {
-  // Goal 031: per-IP token bucket protecting the five chat entry
-  // points. Defaults: 60 req/min/IP. Override via env. Disabled
-  // when MUSE_RATE_LIMIT_CHAT_DISABLED is set (handy for the cli
-  // smoke loop that hammers /api/chat).
   const rateLimiter = options.chatRateLimiter ?? buildDefaultChatRateLimiter();
   const enforce = (request: { ip?: string }, reply: { status(code: number): { send(body: unknown): unknown }; header(name: string, value: string): unknown }): boolean => {
     if (rateLimiter === undefined) return true;
@@ -217,8 +213,7 @@ export function registerAdminRunRoutes(
     };
   });
 
-  // Goal 057 — admin cleanup: DELETE a single run by id, or bulk
-  // by `?before=<iso>` (every run started_at <= the cutoff).
+  // DELETE a single run by id, or bulk by ?before=<iso>.
   server.delete("/api/admin/runs/:runId", async (request, reply) => {
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
@@ -286,12 +281,8 @@ export function registerAdminRunRoutes(
     return { before, deleted, scanned: runs.length };
   });
 
-  // Goal 085 — operators can read the live per-family
-  // injection-detection counter snapshot. The guard layer is
-  // responsible for bumping the counter on every firing pattern;
-  // this route just exposes the read so dashboards can scrape
-  // it. 404 when no counter is wired so callers can disambiguate
-  // "no detections yet" from "telemetry is off".
+  // 404 (not 200 + zero) when no counter is wired so callers can
+  // tell "no detections yet" apart from "telemetry off".
   server.get("/api/admin/security/injection-counts", async (request, reply) => {
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;

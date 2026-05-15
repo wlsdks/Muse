@@ -421,12 +421,8 @@ export function isLocalProvider(model: string): boolean {
 }
 
 export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
-  // Goal 117 — local inference is free. Without this short-circuit
-  // a user running `ollama/qwen3.5:9b-q4_K_M` got the `defaultPricing`
-  // rate applied to every token, and `muse status` / `muse metrics
-  // show` showed fictional dollars spent. Treat any
-  // `<local-provider>/<model>` prefix as $0 regardless of the
-  // model substring (qwen / llama / gemma / etc).
+  // Local inference is free — without this, defaultPricing is
+  // applied per token and status/metrics report fictional spend.
   if (isLocalProvider(model)) {
     return 0;
   }

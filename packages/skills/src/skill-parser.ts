@@ -120,10 +120,8 @@ export function parseSkillFrontmatter(frontmatter: string): SkillFrontmatter {
     }
     if (inRequires) {
       requiresJson += `${line}\n`;
-      // Goal 126 — brace-balanced exit so a nested `requires: {
-      // "openclaw": { ... } }` block doesn't terminate at the first
-      // inner `}`. The pre-iter-32 brittleness was already noted in
-      // the metadata branch above; same fix lands here.
+      // Brace-balanced exit so a nested requires block doesn't
+      // terminate at the first inner }.
       if (isJsonBlockComplete(requiresJson, "{", "}")) {
         inRequires = false;
       }
@@ -131,11 +129,8 @@ export function parseSkillFrontmatter(frontmatter: string): SkillFrontmatter {
     }
     if (inInstall) {
       installJson += `${line}\n`;
-      // Goal 126 — bracket-balanced exit. `install:` is an array,
-      // but its entries are typically objects (each entry may carry
-      // its own nested array of `args`). A `line.trim() === "]"`
-      // exit would fire at the first inner `]`. Same depth counter,
-      // open/close parameters swapped.
+      // Bracket-balanced exit — install entries nest their own
+      // arrays, so a plain "]" check would exit too early.
       if (isJsonBlockComplete(installJson, "[", "]")) {
         inInstall = false;
       }

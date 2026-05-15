@@ -87,11 +87,9 @@ export async function writeFollowups(file: string, followups: readonly Persisted
   const payload = `${JSON.stringify({ followups }, null, 2)}\n`;
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  // Goal 038: write + fsync the tmp file before rename so the
-  // promised payload is on disk before the metadata flip. Without
-  // fsync, a power loss between writeFile() and rename() can
-  // leave the rename committed pointing at zero-length / partial
-  // data (filesystems journal metadata + data separately).
+  // fsync before rename: filesystems journal metadata and data
+  // separately, so a crash can otherwise commit the rename
+  // pointing at a zero-length / partial file.
   const handle = await fs.open(tmp, "w", 0o600);
   try {
     await handle.writeFile(payload, "utf8");

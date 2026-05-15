@@ -235,12 +235,8 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
                 matches: judged.paths.map((p) => ({ path: p })) as JsonValue,
                 mode: "llm-judge",
                 query,
-                // Goal 058 — diagnostic surface: how many paths the
-                // model returned that did NOT exist in the candidate
-                // set. Non-zero means the model is fabricating —
-                // callers can log + degrade silently or surface a
-                // warning. Path strings themselves are NOT echoed
-                // (they're untrusted output).
+                // Count only — non-zero means the model fabricated
+                // paths. The path strings are untrusted; never echo.
                 ...(judged.hallucinatedDropped > 0 ? { hallucinatedDropped: judged.hallucinatedDropped } : {})
               } satisfies JsonObject;
             } catch (cause) {

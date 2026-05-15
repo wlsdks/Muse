@@ -116,9 +116,6 @@ export const sharedInjectionPatterns: readonly InjectionPattern[] = [
   { name: "environment_extraction", regex: /(환경\s*변수|env|environment).{0,15}(값|value|확인|알려|보여|출력|조회|read|print|echo|get)/is },
   { name: "command_injection", regex: /(curl|wget|fetch|http).{0,10}(internal|localhost|127\.0\.0|10\.|172\.|192\.168)/is },
   { name: "cross_user_access", regex: /(다른|타|other).{0,10}(사용자|유저|사람|user|계정|account).{0,15}(대화|채팅|메시지|이력|기록|데이터|정보|내역|chat|message|history|data)/is },
-  // goal 033 — five additional pattern families covering attack
-  // vectors the previous library didn't catch:
-  //
   // 1. Conversation history poisoning — claims about what the
   //    "previous" turn said, designed to trick the model into
   //    treating attacker-supplied text as trusted history.

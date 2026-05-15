@@ -116,9 +116,8 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
       // shouldn't break boot on Linux.
     }
   }
-  // Goal 093 — `libnotify` is the Linux parallel of the macOS
-  // notification provider. Same OPT-IN posture; same skip-on-wrong-OS
-  // contract via the provider's own constructor guard.
+  // Linux parallel of the macOS notification provider — opt-in,
+  // skips on wrong OS via the provider's own constructor guard.
   if (env.MUSE_MESSAGING_LIBNOTIFY_ENABLED === "true") {
     try {
       const title = env.MUSE_MESSAGING_LIBNOTIFY_TITLE?.trim();

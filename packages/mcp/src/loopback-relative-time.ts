@@ -54,13 +54,8 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
   if (inMatch) {
     const amount = Number.parseInt(inMatch[1] ?? "0", 10);
     const unit = inMatch[2];
-    // Goal 110 — month math goes through Date.setMonth so calendar
-    // semantics hold (Jan 15 + 1 month → Feb 15, not "30 days later").
-    // JS rolls over when the target month is shorter than the source
-    // day-of-month (Jan 31 + 1 month → Mar 3); that's the standard
-    // behaviour and matches what a user typing "remind me in 1 month"
-    // expects from a personal scheduler. Other units stay on the
-    // simpler millisecond offset.
+    // Month uses Date.setMonth for calendar semantics (Jan 15 +
+    // 1mo → Feb 15, not +30d). Other units use a flat ms offset.
     if (unit === "month") {
       const next = new Date(reference);
       next.setMonth(next.getMonth() + amount);

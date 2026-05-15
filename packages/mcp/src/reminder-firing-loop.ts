@@ -105,11 +105,6 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
         })
       : reminder.text;
     try {
-      // Goal 149 — share the goal-070 / goal-148 retry-with-backoff
-      // path with the proactive surface. A transient 5xx no longer
-      // loses the 9am reminder; a permanent 401 / 404 / validation
-      // error short-circuits on attempt 1 instead of burning the
-      // full ~1s ladder (see `messaging-retry.ts`).
       await sendWithRetry(options.registry, providerId, {
         destination,
         text: deliveredText
@@ -118,14 +113,8 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
       const updated = fireReminder(next, reminder.id, firedAtIso);
       if (updated) {
         next = updated;
-        // Goal 069 — persist the status flip immediately after each
-        // successful delivery, not just at the end of the loop. If
-        // the daemon crashes between deliveries (kill -9, OOM,
-        // hardware failure), the reminders already delivered are
-        // already `fired` on disk so restart's `filterReminders`
-        // sees status: "fired" and doesn't re-deliver. The previous
-        // batched write at line ~149 would lose every delivered
-        // reminder up to the crash point.
+        // Persist per-delivery, not batched at loop end: a crash
+        // mid-loop must not re-deliver already-sent reminders.
         await writeReminders(options.file, next);
         const justFired = updated.find((entry) => entry.id === reminder.id);
         if (justFired) {
@@ -160,11 +149,8 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
     }
   }
 
-  // Goal 069 — the per-delivery `writeReminders` above already
-  // persists every status flip. No trailing batch write needed,
-  // which also closes the previous crash window where the
-  // batch fire-and-write would lose every in-tick delivery if
-  // the daemon died after `send` but before the final flush.
+  // No trailing batch write — the per-delivery writeReminders
+  // above already persisted every status flip.
 
   return { delivered, due: due.length, errors, fired };
 }

@@ -147,13 +147,10 @@ export class McpManager {
       return false;
     }
 
-    // Goal 083 — when the registration carries an expected
-    // `fingerprintSha256`, hash the resolved command binary and
-    // refuse on mismatch. Missing fingerprint = no enforcement
-    // (matches goal 032's empty-allowlist posture). A mismatch
-    // flips to `disabled` (not `failed`) + posts an unhealthy
-    // diagnostic so the operator sees a clear refusal instead
-    // of a transient "tried to connect" log line.
+    // Missing fingerprint = no enforcement (opt-in posture). A
+    // mismatch → `disabled` (not `failed`) + an unhealthy
+    // diagnostic so the operator sees a clear refusal, not a
+    // transient connect attempt.
     const fingerprintVerdict = verifyServerFingerprint(server);
     if (!fingerprintVerdict.matched) {
       this.statuses.set(name, "disabled");

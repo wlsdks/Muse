@@ -852,11 +852,8 @@ function createAuthService(env: MuseEnvironment, db: Kysely<MuseDatabase> | unde
     return undefined;
   }
 
-  // Goal 082 — when `~/.muse/auth-secrets.json` is present, its
-  // `current` overrides the env secret + non-expired entries on
-  // `previous` flow in as `previousJwtSecrets` for the grace
-  // window. When the file is absent or malformed we fall through
-  // to env-only (the pre-082 behavior).
+  // Non-expired rotation `previous` secrets flow in for the grace
+  // window; absent/malformed file → env-only.
   const previousJwtSecrets = rotation
     ? rotation.previous
         .filter((entry) => Date.parse(entry.validUntil) > Date.now())

@@ -342,12 +342,9 @@ export async function runDueProactiveNotices(
   const leadMinutes = options.leadMinutes ?? 10;
   const nowDate = now();
 
-  // Goal 052 — short-circuit before any work when the user has put
-  // the session into Do-Not-Disturb. We surface `sessionLockedUntil`
-  // on the summary so the daemon can log it (vs. silently looking
-  // dead). The lock is fail-open: any read / parse error treats the
-  // session as unlocked, so a corrupted marker can't permanently
-  // gag the daemon.
+  // Fail-open DND: a read/parse error treats the session as
+  // unlocked so a corrupted marker can't permanently gag the
+  // daemon. sessionLockedUntil is surfaced so it can be logged.
   if (options.sessionLockFile) {
     const lock = await readSessionLock(options.sessionLockFile, nowDate);
     if (lock) {
@@ -442,20 +439,12 @@ export async function runDueProactiveNotices(
           return item.text;
         })
       : item.text;
-    // Goal 086 — scrub high-confidence credential shapes before
-    // anything downstream (messaging sink, history sidecar, live
-    // broker subscribers) sees the text. The synthesised notice
-    // had access to persona facts + task summaries; a task title
-    // like `"rotate API key sk-proj-..."` would otherwise round-
-    // trip back via Telegram / Slack.
+    // Scrub before any downstream sink — the synthesised notice
+    // saw persona facts + task summaries that may quote a secret.
     const noticeText = redactSecretsInText(rawNoticeText);
 
     const firedAtIso = now().toISOString();
     try {
-      // Goal 070 — retry transient messaging errors with
-      // exponential backoff (3 attempts: 0ms, 200ms, 800ms).
-      // Final failure still falls through to the catch +
-      // history append below.
       await sendWithRetry(
         options.messagingRegistry,
         options.providerId,
