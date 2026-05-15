@@ -889,6 +889,49 @@ describe("MonthlyBudgetTracker", () => {
     expect(() => new MonthlyBudgetTracker({ warningPercent: 0 })).toThrow(/warningPercent/u);
     expect(() => new MonthlyBudgetTracker({ warningPercent: 110 })).toThrow(/warningPercent/u);
   });
+
+  it("snapshot exposes remainingUsd + percentUsed when a positive limit is configured (goal 113)", () => {
+    const tracker = new MonthlyBudgetTracker({
+      monthlyLimitUsd: 10,
+      now: () => new Date("2026-05-15T00:00:00Z"),
+      warningPercent: 80
+    });
+
+    // Fresh tracker: full remaining + 0% used.
+    let snap = tracker.snapshot();
+    expect(snap.remainingUsd).toBe(10);
+    expect(snap.percentUsed).toBe(0);
+
+    // After half the budget: half remaining, 50%.
+    tracker.recordCost(5);
+    snap = tracker.snapshot();
+    expect(snap.remainingUsd).toBe(5);
+    expect(snap.percentUsed).toBe(50);
+
+    // Past the limit: remaining clamps to 0, percent clamps to 100
+    // (so a dashboard never renders "remaining: $-2" or "112%").
+    tracker.recordCost(7);  // total = 12
+    snap = tracker.snapshot();
+    expect(snap.remainingUsd).toBe(0);
+    expect(snap.percentUsed).toBe(100);
+    expect(snap.status).toBe("exceeded");
+    // The raw running total stays accurate — only the derived
+    // fields clamp.
+    expect(snap.totalCostUsd).toBe(12);
+  });
+
+  it("snapshot omits remainingUsd + percentUsed when the budget is unlimited (goal 113)", () => {
+    const tracker = new MonthlyBudgetTracker({ now: () => new Date("2026-05-15T00:00:00Z") });
+    tracker.recordCost(5);
+    const snap = tracker.snapshot();
+    expect(snap.limitUsd).toBe(0);
+    expect(snap.totalCostUsd).toBe(5);
+    expect(snap.status).toBe("ok");
+    // Both derived fields omitted (vs. NaN / Infinity / negative
+    // numbers a naive divide-by-zero would produce).
+    expect(snap.remainingUsd).toBeUndefined();
+    expect(snap.percentUsed).toBeUndefined();
+  });
 });
 
 describe("createMuseObservabilitySnapshotProvider", () => {

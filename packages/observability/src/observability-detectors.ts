@@ -24,6 +24,21 @@ export interface MonthlyBudgetSnapshot {
   readonly totalCostUsd: number;
   readonly limitUsd: number;
   readonly status: MonthlyBudgetStatus;
+  /**
+   * Goal 113 — limit - totalCostUsd, clamped to 0 (can't go
+   * negative once exceeded). Only set when a positive
+   * `limitUsd` is configured; omitted for unlimited budgets so
+   * a consumer can't accidentally render "remaining: $-12.34".
+   */
+  readonly remainingUsd?: number;
+  /**
+   * Goal 113 — `totalCostUsd / limitUsd * 100`, clamped to
+   * [0, 100]. Same omission rule as `remainingUsd`: undefined
+   * when `limitUsd <= 0` to avoid divide-by-zero artefacts.
+   * Surfaced so the status dashboard renders a single
+   * "27% used" without each consumer recomputing the ratio.
+   */
+  readonly percentUsed?: number;
 }
 
 export interface MonthlyBudgetTrackerOptions {
@@ -70,11 +85,18 @@ export class MonthlyBudgetTracker {
 
   snapshot(): MonthlyBudgetSnapshot {
     const total = this.currentCost();
+    const hasLimit = this.#monthlyLimitUsd > 0;
     return {
       limitUsd: this.#monthlyLimitUsd,
       month: this.#currentMonth,
       status: this.statusFor(total),
-      totalCostUsd: total
+      totalCostUsd: total,
+      ...(hasLimit
+        ? {
+            percentUsed: Math.min(100, Math.max(0, (total / this.#monthlyLimitUsd) * 100)),
+            remainingUsd: Math.max(0, this.#monthlyLimitUsd - total)
+          }
+        : {})
     };
   }
 
