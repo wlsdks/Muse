@@ -48,6 +48,10 @@ export class ModelProviderError extends Error {
  *     provider (OpenAI, Anthropic, Gemini, OpenRouter, Ollama)
  *     uses this status for token/RPS budgeting; retry-after
  *     backoff is the right response, not fail-fast.
+ *   - 408: Request Timeout. The server gave up waiting for the
+ *     request, so it was not processed — transient and safe to
+ *     retry, exactly like 429/5xx. A reverse proxy / gateway in
+ *     front of a local Qwen backend is the common source.
  *
  * Anything else (400, 401, 403, 404, 422 …) is the caller's
  * problem — bad key, bad model, malformed payload — and MUST
@@ -59,7 +63,7 @@ export class ModelProviderError extends Error {
  */
 export function isRetryableHttpStatus(status: number): boolean {
   if (!Number.isFinite(status)) return false;
-  if (status === 429) return true;
+  if (status === 408 || status === 429) return true;
   return status >= 500 && status <= 599;
 }
 

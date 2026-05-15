@@ -14,6 +14,10 @@ describe("isRetryableHttpStatus (goal 106)", () => {
     expect(isRetryableHttpStatus(429)).toBe(true);
   });
 
+  it("classifies 408 (request timeout) as retryable — transient, request not processed", () => {
+    expect(isRetryableHttpStatus(408)).toBe(true);
+  });
+
   it("classifies 5xx server errors as retryable", () => {
     expect(isRetryableHttpStatus(500)).toBe(true);
     expect(isRetryableHttpStatus(502)).toBe(true);
