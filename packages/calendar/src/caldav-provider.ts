@@ -80,7 +80,7 @@ export class CalDAVCalendarProvider implements CalendarProvider {
     });
 
     if (!response.ok) {
-      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response));
+      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response), undefined, response.status);
     }
 
     const xml = await response.text();
@@ -99,7 +99,7 @@ export class CalDAVCalendarProvider implements CalendarProvider {
     });
 
     if (!response.ok) {
-      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response));
+      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response), undefined, response.status);
     }
 
     return {
@@ -144,7 +144,7 @@ export class CalDAVCalendarProvider implements CalendarProvider {
     });
 
     if (!response.ok) {
-      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response));
+      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response), undefined, response.status);
     }
 
     return { ...existing, ...merged, id, providerId: this.id };
@@ -157,7 +157,7 @@ export class CalDAVCalendarProvider implements CalendarProvider {
     });
 
     if (!response.ok && response.status !== 404) {
-      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response));
+      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response), undefined, response.status);
     }
   }
 

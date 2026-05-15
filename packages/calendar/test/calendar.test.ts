@@ -8,7 +8,8 @@ import {
   CalendarProviderRegistry,
   CalendarValidationError,
   FileCalendarCredentialStore,
-  LocalCalendarProvider
+  LocalCalendarProvider,
+  isRetryableCalendarStatus
 } from "../src/index.js";
 
 describe("LocalCalendarProvider", () => {
@@ -210,6 +211,31 @@ describe("FileCalendarCredentialStore", () => {
     expect(await store.list()).toEqual([]);
 
     rmSync(dir, { force: true, recursive: true });
+  });
+});
+
+describe("isRetryableCalendarStatus (goal 135)", () => {
+  it("classifies 429 + 5xx as retryable, everything else as fail-fast", () => {
+    expect(isRetryableCalendarStatus(429)).toBe(true);
+    expect(isRetryableCalendarStatus(500)).toBe(true);
+    expect(isRetryableCalendarStatus(503)).toBe(true);
+    expect(isRetryableCalendarStatus(599)).toBe(true);
+    for (const s of [400, 401, 403, 404, 412, 422]) {
+      expect(isRetryableCalendarStatus(s)).toBe(false);
+    }
+    expect(isRetryableCalendarStatus(200)).toBe(false);
+    expect(isRetryableCalendarStatus(600)).toBe(false);
+    expect(isRetryableCalendarStatus(Number.NaN)).toBe(false);
+    expect(isRetryableCalendarStatus(undefined)).toBe(false);
+  });
+
+  it("CalendarProviderError carries retryable derived from status", () => {
+    expect(new CalendarProviderError("gcal", "HTTP_429", "rate-limited", undefined, 429).retryable).toBe(true);
+    expect(new CalendarProviderError("gcal", "HTTP_503", "down", undefined, 503).retryable).toBe(true);
+    expect(new CalendarProviderError("gcal", "HTTP_401", "bad token", undefined, 401).retryable).toBe(false);
+    // Legacy call sites that don't pass status — local / validation
+    // errors aren't transient.
+    expect(new CalendarProviderError("local", "EVENT_NOT_FOUND", "missing").retryable).toBe(false);
   });
 });
 

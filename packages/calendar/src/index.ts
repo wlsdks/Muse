@@ -28,7 +28,7 @@ export type {
   CalendarRange,
   CredentialRequirement
 } from "./types.js";
-export { CalendarProviderError, CalendarValidationError } from "./errors.js";
+export { CalendarProviderError, CalendarValidationError, isRetryableCalendarStatus } from "./errors.js";
 export { CalendarProviderRegistry } from "./registry.js";
 export { LocalCalendarProvider, type LocalCalendarProviderOptions } from "./local-provider.js";
 export {

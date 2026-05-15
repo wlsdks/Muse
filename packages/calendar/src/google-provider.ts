@@ -175,7 +175,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
       throw new CalendarProviderError(
         this.id,
         `HTTP_${response.status}`,
-        `Google Calendar request failed: ${response.status} ${text}`.slice(0, 500)
+        `Google Calendar request failed: ${response.status} ${text}`.slice(0, 500),
+        undefined,
+        response.status
       );
     }
 
@@ -207,7 +209,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
       throw new CalendarProviderError(
         this.id,
         `OAUTH_${response.status}`,
-        `Google OAuth refresh failed: ${response.status} ${text}`.slice(0, 500)
+        `Google OAuth refresh failed: ${response.status} ${text}`.slice(0, 500),
+        undefined,
+        response.status
       );
     }
 
