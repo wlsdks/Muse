@@ -12,12 +12,33 @@
  * the fallback, so a typo'd MUSE_* var won't abort runtime boot.
  */
 
+/**
+ * Goal 128 — align env-var boolean parsing with the goal-127
+ * `RuntimeSettings.getBoolean` contract:
+ *
+ *   - whitespace-trimmed + lowercased
+ *   - `"true" / "1" / "yes" / "on"` → `true`
+ *   - `"false" / "0" / "no" / "off"` → `false`
+ *   - anything else (typo, garbage, blank) → `fallback`
+ *
+ * Before this iteration, the parser only matched the truthy set
+ * and silently returned `false` for anything else — so a typo'd
+ * `MUSE_PROACTIVE_AGENT_TURN=Treu` produced `false` regardless of
+ * the caller's fallback intent. The fallback-on-unknown branch
+ * preserves the operator's stated default when the env value is
+ * unrecognised, which is safer than the "unknown → false" coercion.
+ */
+const TRUTHY_ENV_VALUES: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
+const FALSY_ENV_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
+
 export function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback;
   }
-
-  return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+  const normalised = value.trim().toLowerCase();
+  if (TRUTHY_ENV_VALUES.has(normalised)) return true;
+  if (FALSY_ENV_VALUES.has(normalised)) return false;
+  return fallback;
 }
 
 export function parseInteger(value: string | undefined, fallback: number): number {

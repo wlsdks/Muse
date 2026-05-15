@@ -552,6 +552,25 @@ describe("autoconfigure", () => {
     expect(parseInteger("bad", 7)).toBe(7);
   });
 
+  it("parseBoolean accepts 'on/off' + falls back on unknown values (goal 128)", () => {
+    // Truthy set widened to include `on` for symmetry with the
+    // goal-127 RuntimeSettings.getBoolean contract.
+    expect(parseBoolean("on", false)).toBe(true);
+    expect(parseBoolean("1", false)).toBe(true);
+    expect(parseBoolean("True", false)).toBe(true);   // case-insensitive
+    expect(parseBoolean("  yes  ", false)).toBe(true); // whitespace trim
+    // Falsy set covers the negative twins.
+    expect(parseBoolean("off", true)).toBe(false);
+    expect(parseBoolean("0", true)).toBe(false);
+    expect(parseBoolean("FALSE", true)).toBe(false);
+    // Unknown values respect the fallback (was silently `false`
+    // pre-goal-128, regardless of caller intent).
+    expect(parseBoolean("maybe", true)).toBe(true);
+    expect(parseBoolean("Treu", true)).toBe(true);    // typo
+    expect(parseBoolean("", true)).toBe(true);        // blank-after-trim
+    expect(parseBoolean("garbage", false)).toBe(false);
+  });
+
   it("fails clearly for required missing variables", () => {
     expect(() => requireEnv({}, "MUSE_REQUIRED")).toThrow(ConfigurationError);
   });
