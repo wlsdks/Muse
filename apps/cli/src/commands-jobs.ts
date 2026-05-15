@@ -29,9 +29,35 @@ const here = pathDirname(fileURLToPath(import.meta.url));
 
 import type { Command } from "commander";
 
+import { closestCommandName } from "./closest-command.js";
 import { resolveJobIdByPrefix } from "./job-id-prefix.js";
 import { resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
+
+/**
+ * Goal 151 — accepted values for `muse job list --status`.
+ * Mirrors `jobSummary().status` plus `"all"` (the default,
+ * meaning no filter). Kept as a readonly tuple so commander
+ * + the fuzzy-suggest hint share a single source of truth.
+ */
+export const JOB_STATUS_FILTER_VALUES = ["all", "running", "done", "error", "unknown"] as const;
+export type JobStatusFilter = (typeof JOB_STATUS_FILTER_VALUES)[number];
+
+/**
+ * Goal 151 — case-insensitive validation. Returns `"all"` when
+ * the user omitted the flag, `"invalid"` when it's not a
+ * known value (caller renders the typo hint), otherwise the
+ * normalised filter to compare against `jobSummary().status`.
+ */
+export function resolveJobStatusFilter(input: string | undefined): JobStatusFilter | "invalid" {
+  if (input === undefined) return "all";
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed.length === 0) return "all";
+  if ((JOB_STATUS_FILTER_VALUES as readonly string[]).includes(trimmed)) {
+    return trimmed as JobStatusFilter;
+  }
+  return "invalid";
+}
 
 function jobsDir(): string {
   return process.env.MUSE_JOBS_DIR?.trim() ?? pathJoin(homedir(), ".muse", "jobs");
@@ -242,26 +268,48 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
     .command("list")
     .description("Recent jobs (newest first)")
     .option("--limit <n>", "Max entries (default 20)", "20")
-    .action(async (options: { readonly limit: string }) => {
+    .option(
+      "--status <state>",
+      "Only show jobs with this status: running, done, error, unknown, or all (default: all)"
+    )
+    .action(async (options: { readonly limit: string; readonly status?: string }) => {
       const dir = jobsDir();
       if (!existsSync(dir)) {
         io.stdout(`No jobs yet (dir ${dir} doesn't exist).\n`);
+        return;
+      }
+      // Goal 151 — validate --status against the known JobStatus set
+      // before scanning the dir. A typo like `--status runing` used
+      // to silently filter-to-zero with no signal; now it bails
+      // with a fuzzy-suggest hint (reuses the goal-099 helper).
+      const statusFilter = resolveJobStatusFilter(options.status);
+      if (statusFilter === "invalid") {
+        const suggestion = closestCommandName(options.status!.trim(), JOB_STATUS_FILTER_VALUES);
+        io.stderr(`muse job list: invalid --status '${options.status!}'`);
+        if (suggestion) io.stderr(` — did you mean '${suggestion}'?`);
+        io.stderr(` (valid: ${JOB_STATUS_FILTER_VALUES.join(", ")})\n`);
+        process.exitCode = 1;
         return;
       }
       const limit = Math.max(1, Math.min(200, Number.parseInt(options.limit, 10) || 20));
       const files = readdirSync(dir)
         .filter((name) => name.endsWith(".jsonl"))
         .sort()
-        .reverse()
-        .slice(0, limit);
-      io.stdout(`${files.length.toString()} job(s) in ${dir}:\n`);
+        .reverse();
+      const matched: Array<{ id: string; status: ReturnType<typeof jobSummary>["status"]; prompt: string }> = [];
       for (const name of files) {
-        const id = name.replace(/\.jsonl$/, "");
+        if (matched.length >= limit) break;
+        const id = name.replace(/\.jsonl$/u, "");
         const events = await readJobLines(pathJoin(dir, name));
         const summary = jobSummary(events);
-        const flag = summary.status === "done" ? "✓" : summary.status === "error" ? "✗" : summary.status === "running" ? "…" : "?";
-        const preview = (summary.prompt ?? "").slice(0, 60);
-        io.stdout(`  ${flag} ${id}  ${preview}${(summary.prompt ?? "").length > 60 ? "…" : ""}\n`);
+        if (statusFilter !== "all" && summary.status !== statusFilter) continue;
+        matched.push({ id, prompt: summary.prompt ?? "", status: summary.status });
+      }
+      io.stdout(`${matched.length.toString()} job(s) in ${dir}${statusFilter === "all" ? "" : ` (status=${statusFilter})`}:\n`);
+      for (const entry of matched) {
+        const flag = entry.status === "done" ? "✓" : entry.status === "error" ? "✗" : entry.status === "running" ? "…" : "?";
+        const preview = entry.prompt.slice(0, 60);
+        io.stdout(`  ${flag} ${entry.id}  ${preview}${entry.prompt.length > 60 ? "…" : ""}\n`);
       }
     });
 
