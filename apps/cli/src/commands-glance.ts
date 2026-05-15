@@ -89,7 +89,7 @@ async function runOsascript(): Promise<string> {
 export function registerGlanceCommand(program: Command, io: ProgramIO): void {
   program
     .command("glance")
-    .description("Read the frontmost app + window title (+ selected text when Accessibility is granted). macOS only. (goal 089)")
+    .description("Read the frontmost app + window title (+ selected text when Accessibility is granted). macOS only.")
     .option("--json", "Emit the structured snapshot instead of formatted lines")
     .action(async (options: GlanceOptions) => {
       if (process.platform !== "darwin") {

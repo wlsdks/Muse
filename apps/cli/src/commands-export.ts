@@ -275,9 +275,9 @@ export async function resolveExportPassphrase(): Promise<string> {
 export function registerExportCommand(program: Command, io: ProgramIO): void {
   program
     .command("export")
-    .description("Bundle every ~/.muse/*.json store + the notes tree into a single timestamped tar.gz (goal 048)")
+    .description("Bundle every ~/.muse/*.json store + the notes tree into a single timestamped tar.gz")
     .option("--output <path>", "Override the default `./muse-backup-<timestamp>.tar.gz` destination")
-    .option("--encrypt", "Encrypt the bundle with AES-256-GCM (passphrase via $MUSE_EXPORT_PASSPHRASE or interactive prompt). Output gets a .enc suffix. (goal 081)")
+    .option("--encrypt", "Encrypt the bundle with AES-256-GCM (passphrase via $MUSE_EXPORT_PASSPHRASE or interactive prompt). Output gets a .enc suffix.")
     .action(async (options: ExportOptions) => {
       const museDir = join(homedir(), ".muse");
       const notesDir = defaultNotesDir();

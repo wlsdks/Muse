@@ -99,7 +99,7 @@ function parseStrictNumeric(flag: string, raw: string | undefined): number {
 }
 
 export function registerSessionCommands(program: Command, io: ProgramIO): void {
-  const session = program.command("session").description("Focus / Do-Not-Disturb controls for proactive notices (goal 052)");
+  const session = program.command("session").description("Focus / Do-Not-Disturb controls for proactive notices");
 
   session
     .command("lock")

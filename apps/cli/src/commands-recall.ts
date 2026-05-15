@@ -167,7 +167,7 @@ function maybeReadTestEmbedding(): number[] | undefined {
 export function registerRecallCommand(program: Command, io: ProgramIO): void {
   program
     .command("recall")
-    .description("Semantic search across notes + episodes indices (goal 091)")
+    .description("Semantic search across notes + episodes indices")
     .argument("<query>", "Free-text query to embed + match")
     .option("--limit <n>", "Top-K hits to return (default 5, cap 50)")
     .option("--source <id>", "Restrict to one store: notes | episodes | all (default all)")

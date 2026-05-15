@@ -45,7 +45,7 @@ export function registerTracesCommands(program: Command, io: ProgramIO, helpers:
   // strand the polling timer.
   traces
     .command("tail")
-    .description("Poll /api/admin/traces and print new trace events as they arrive (goal 076)")
+    .description("Poll /api/admin/traces and print new trace events as they arrive")
     .option("--interval <seconds>", "Poll interval in seconds (default 2, clamped to [1, 60])")
     .option("--limit <n>", "Max events surfaced per tick (default 20)")
     .action(async (

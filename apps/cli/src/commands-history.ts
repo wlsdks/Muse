@@ -106,7 +106,7 @@ export function registerHistoryCommand(program: Command, io: ProgramIO): void {
     .option("--kind <one>", "Filter to a single kind: reminder | proactive | followup | pattern | episode")
     .option("--since <iso>", "Drop entries older than this ISO timestamp")
     .option("--limit <n>", "Max entries (default 20, cap 200)")
-    .option("--grep <pattern>", "Filter entries whose summary matches the given substring or regex (goal 050)")
+    .option("--grep <pattern>", "Filter entries whose summary matches the given substring or regex")
     .option("--case-sensitive", "Make --grep case-sensitive (default: case-insensitive)")
     .option("--json", "Emit a structured array instead of the formatted feed")
     .action(async (options: HistoryOptions) => {

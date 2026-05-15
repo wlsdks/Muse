@@ -89,7 +89,7 @@ export function registerAuthCommands(program: Command, io: ProgramIO, helpers: A
   // restart the server after rotating (no live reload).
   auth
     .command("rotate-jwt")
-    .description("Generate a fresh JWT signing secret and grace-window the old one (goal 082)")
+    .description("Generate a fresh JWT signing secret and grace-window the old one")
     .option("--grace-hours <n>", "Hours the old secret keeps verifying tokens (default 24)")
     .option("--json", "Emit the new state as JSON (secrets included — pipe to a file you keep safe)")
     .action(async (options: { readonly graceHours?: string; readonly json?: boolean }) => {

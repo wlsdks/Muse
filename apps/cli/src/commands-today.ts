@@ -98,7 +98,7 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
     .option("--speak", "After printing the brief, synthesize via TTS and play through the speakers")
     .option("--audio-voice <name>", "TTS voice id (provider-specific, e.g. 'alloy' for OpenAI)")
     .option("--audio-format <type>", "TTS output format: mp3 | wav | opus | aac | flac (default mp3)")
-    .option("--save-to-notes <path>", "Persist the --brief narrative to a markdown note (relative to MUSE_NOTES_DIR). Requires --brief. (goal 054)")
+    .option("--save-to-notes <path>", "Persist the --brief narrative to a markdown note (relative to MUSE_NOTES_DIR). Requires --brief.")
     .action(async (
       options: {
         readonly json?: boolean;

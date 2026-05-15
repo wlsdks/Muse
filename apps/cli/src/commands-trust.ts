@@ -126,7 +126,7 @@ export function registerTrustCommands(program: Command, io: ProgramIO): void {
     .option("--user <id>", "User identity (default: $MUSE_USER_ID or $USER)")
     .option("--persona <slot>", "Persona slot")
     .option("--json", "Print machine-readable JSON")
-    .option("--by-domain", "Group entries by MCP server domain (the tool-name prefix before the first '.') (goal 053)")
+    .option("--by-domain", "Group entries by MCP server domain (the tool-name prefix before the first '.')")
     .action(async (options: { readonly user?: string; readonly persona?: string; readonly json?: boolean; readonly byDomain?: boolean }) => {
       const key = options.user
         ? (options.persona ? `${options.user}@${options.persona}` : options.user)

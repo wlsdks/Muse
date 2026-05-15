@@ -45,7 +45,7 @@ export function registerRunsCommands(program: Command, io: ProgramIO, helpers: R
   // Delete a single run by id, or bulk via --before <iso>.
   runs
     .command("delete")
-    .description("Delete one or more agent runs from history (goal 057)")
+    .description("Delete one or more agent runs from history")
     .argument("[run-id]", "Run ID to delete; omit when using --before")
     .option("--before <iso>", "Bulk-delete every run whose startedAt is at or before this ISO timestamp")
     .action(async (runId: string | undefined, options: { readonly before?: string }, command: Command) => {

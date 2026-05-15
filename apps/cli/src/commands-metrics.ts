@@ -27,7 +27,7 @@ export function registerMetricsCommands(program: Command, io: ProgramIO, helpers
 
   metrics
     .command("show")
-    .description("At-a-glance snapshot from /api/admin/muse/snapshot (goal 077)")
+    .description("At-a-glance snapshot from /api/admin/muse/snapshot")
     .option("--json", "Print the raw payload instead of the formatted summary")
     .action(async (options: { readonly json?: boolean }, command: Command) => {
       const snapshot = await helpers.apiRequest(io, command, "/api/admin/muse/snapshot");

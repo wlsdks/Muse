@@ -88,7 +88,7 @@ async function externalOpen(path: string): Promise<number> {
 export function registerShowCommand(program: Command, io: ProgramIO): void {
   program
     .command("show")
-    .description("Render an image inline in the terminal (iTerm2/Kitty/WezTerm). Falls back to native viewer on plain terminals. (goal 096)")
+    .description("Render an image inline in the terminal (iTerm2/Kitty/WezTerm). Falls back to native viewer on plain terminals.")
     .argument("<path>", "Path to an image file")
     .option("--name <label>", "Label shown in the inline header (default: basename of <path>)")
     .option("--inline-only", "Skip the open/xdg-open fallback when inline support is unavailable")

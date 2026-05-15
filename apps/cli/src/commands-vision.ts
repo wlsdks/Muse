@@ -101,7 +101,7 @@ export function buildOllamaVisionBody(args: {
 export function registerVisionCommand(program: Command, io: ProgramIO): void {
   program
     .command("vision")
-    .description("Describe a local or remote image via a local Ollama vision model (goal 087)")
+    .description("Describe a local or remote image via a local Ollama vision model")
     .argument("<source>", "Path, http(s):// URL, or data: URL")
     .option("--prompt <text>", "Override the default 'describe this image' prompt")
     .option("--model <tag>", "Ollama model id (default $MUSE_VISION_MODEL or llama3.2-vision:latest)")

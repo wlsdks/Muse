@@ -110,7 +110,7 @@ async function gzCompact(source: string, destination: string): Promise<void> {
 }
 
 export function registerMaintenanceCommand(program: Command, io: ProgramIO): void {
-  const maintenance = program.command("maintenance").description("Housekeeping for ~/.muse archives (goal 080)");
+  const maintenance = program.command("maintenance").description("Housekeeping for ~/.muse archives");
 
   maintenance
     .command("compact")

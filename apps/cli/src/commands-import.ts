@@ -140,11 +140,11 @@ async function extractMuseBundle(bundlePath: string, home: string): Promise<void
 export function registerImportCommand(program: Command, io: ProgramIO): void {
   program
     .command("import")
-    .description("Restore a `muse export` tarball into ~/.muse/ (goal 049). Refuses to overwrite without --force.")
+    .description("Restore a `muse export` tarball into ~/.muse/. Refuses to overwrite without --force.")
     .argument("<bundle>", "Path to a `.tar.gz` produced by `muse export` (encrypted `.enc` bundles auto-detected)")
     .option("--force", "Overwrite existing ~/.muse/* files when they collide with bundle entries")
     .option("--dry-run", "Print the plan without touching disk")
-    .option("--decrypt", "Require an encrypted bundle (passphrase via $MUSE_EXPORT_PASSPHRASE or interactive prompt). Auto-detection runs without the flag too. (goal 081)")
+    .option("--decrypt", "Require an encrypted bundle (passphrase via $MUSE_EXPORT_PASSPHRASE or interactive prompt). Auto-detection runs without the flag too.")
     .action(async (bundlePathArg: string, options: ImportOptions) => {
       const bundlePath = resolve(bundlePathArg);
       try {

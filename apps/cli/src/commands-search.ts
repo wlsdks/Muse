@@ -66,7 +66,7 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
     .option("--site <domain>", "Restrict to one domain (prepends `site:<domain>` to the query — works on both SearXNG and DDG)")
     .option("--to-notes <path>", "Save results as a markdown note under MUSE_NOTES_DIR (path is relative)")
     .option("--overwrite", "When used with --to-notes, allow overwriting an existing note")
-    .option("--time <range>", "Date-range hint forwarded to the backend (today | week | month | year). SearXNG: time_range, DuckDuckGo: df. (goal 055)")
+    .option("--time <range>", "Date-range hint forwarded to the backend (today | week | month | year). SearXNG: time_range, DuckDuckGo: df.")
     .option("--json", "Emit the raw {backend, query, results, total} payload")
     .action(async (queryParts: readonly string[], options: SearchOptions) => {
       const rawQuery = queryParts.join(" ").trim();

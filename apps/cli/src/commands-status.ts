@@ -660,8 +660,8 @@ export function registerStatusCommand(program: Command, io: ProgramIO): void {
     .description("JARVIS-style at-a-glance dashboard: persona + model + imminent tasks + last notice")
     .option("--user <id>", "User identity (default $MUSE_USER_ID or $USER)")
     .option("--json", "Emit structured JSON instead of the formatted report")
-    .option("--suggestions", "Append 'you usually do X around now' hints from patterns-fired (goal 095)")
-    .option("--watch", "Redraw the dashboard on a fixed cadence until Ctrl-C (goal 046)")
+    .option("--suggestions", "Append 'you usually do X around now' hints from patterns-fired")
+    .option("--watch", "Redraw the dashboard on a fixed cadence until Ctrl-C")
     .option(
       "--interval <seconds>",
       "Refresh interval in seconds when --watch is set (default 5, clamped to [1, 3600])"

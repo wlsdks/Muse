@@ -106,7 +106,7 @@ export function registerOpenCommand(program: Command, io: ProgramIO): void {
     .description("Look up an activity record by ID prefix (scans every store; first hit wins, ambiguous matches surfaced)")
     .argument("<prefix>", "Substring matched against record IDs (must be a prefix, e.g. 'rem_a' or 'ep_b')")
     .option("--json", "Emit the matched record as JSON wrapped in { kind, record }")
-    .option("--raw", "Emit only the raw record JSON — no kind header, no envelope, no formatted lines. For piping into jq. (goal 056)")
+    .option("--raw", "Emit only the raw record JSON — no kind header, no envelope, no formatted lines. For piping into jq.")
     .action(async (prefix: string, options: OpenOptions) => {
       const trimmed = prefix.trim();
       if (trimmed.length === 0) {

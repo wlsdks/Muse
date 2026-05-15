@@ -73,7 +73,7 @@ async function refreshSingleFeed(record: FeedRecord, io: ProgramIO): Promise<Fee
 }
 
 export function registerFeedsCommand(program: Command, io: ProgramIO): void {
-  const feeds = program.command("feeds").description("RSS/Atom feed ingest for ambient world-state (goal 092)");
+  const feeds = program.command("feeds").description("RSS/Atom feed ingest for ambient world-state");
 
   feeds
     .command("add")

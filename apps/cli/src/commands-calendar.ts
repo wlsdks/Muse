@@ -187,7 +187,7 @@ export function registerCalendarCommands(program: Command, io: ProgramIO, helper
   // doesn't duplicate. --allow-duplicates bypasses the dedupe.
   calendar
     .command("import")
-    .description("Bulk-import an .ics file into the local calendar provider (idempotent by title+start) (goal 059)")
+    .description("Bulk-import an .ics file into the local calendar provider (idempotent by title+start)")
     .argument("<file>", "Path to a .ics file")
     .option("--allow-duplicates", "Skip the (title, startsAt) dedupe check and write every parsed event")
     .option("--dry-run", "Parse + report what would be written without touching disk")

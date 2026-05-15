@@ -51,7 +51,7 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
     .option("--full", "Emit the full JSON report instead of the one-line summary")
     .option("--json", "Emit JSON even for the summary form")
     .option("--local", "Probe local-only signals (skip the API daemon)")
-    .option("--watch", "Re-run on a fixed cadence until Ctrl-C (default 5s) (goal 068)")
+    .option("--watch", "Re-run on a fixed cadence until Ctrl-C (default 5s)")
     .option(
       "--interval <seconds>",
       "Refresh interval in seconds when --watch is set (default 5, clamped to [1, 3600])"

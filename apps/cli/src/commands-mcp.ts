@@ -203,7 +203,7 @@ export function registerMcpCommands(program: Command, io: ProgramIO, helpers: Mc
   // "disconnected" unsure whether a retry is still scheduled.
   mcp
     .command("status")
-    .description("Show per-server health, including reconnect schedule (goal 075)")
+    .description("Show per-server health, including reconnect schedule")
     .option("--json", "Print the raw health payload from /api/mcp/servers/:name/health")
     .action(async (options: { readonly json?: boolean }, command) => {
       const servers = (await apiRequest(io, command, "/api/mcp/servers")) as Array<{ name: string }>;

@@ -71,7 +71,7 @@ export function buildReadAskSystemPrompt(documentText: string): string {
 export function registerReadCommand(program: Command, io: ProgramIO): void {
   program
     .command("read")
-    .description("Read a local PDF; optionally answer a question grounded in its text (goal 088)")
+    .description("Read a local PDF; optionally answer a question grounded in its text")
     .argument("<path>", "Path to a .pdf file")
     .option("--ask <question>", "Stream an LLM answer grounded in the PDF text")
     .option("--model <id>", "Model override for --ask (defaults to MUSE_MODEL)")

@@ -148,7 +148,7 @@ export function registerMemoryCommands(program: Command, io: ProgramIO, helpers:
 
   memory
     .command("diff")
-    .description("Show added / changed / removed facts + preferences since a baseline snapshot (goal 051)")
+    .description("Show added / changed / removed facts + preferences since a baseline snapshot")
     .option("--user <id>", "User identity (default $MUSE_USER_ID or $USER)")
     .option("--persona <slot>", "Persona slot (work / home / hobby / …); falls back to MUSE_PERSONA env")
     .option("--baseline <path>", "Path to a baseline JSON file (shape: { facts?, preferences? }). When omitted, treats baseline as empty so every entry shows as added.")

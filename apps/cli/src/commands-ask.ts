@@ -224,7 +224,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     )
     .option(
       "--notes-only",
-      "Clamp grounding to local notes + memory only — disables native web_search on every provider path and, when combined with --with-tools, allowlists the agent runtime to muse.notes / muse.notes-multi / muse.context only (goal 047)."
+      "Clamp grounding to local notes + memory only — disables native web_search on every provider path and, when combined with --with-tools, allowlists the agent runtime to muse.notes / muse.notes-multi / muse.context only."
     )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const argQuery = queryParts.join(" ").trim();

@@ -40,7 +40,7 @@ export function collectTopLevelCommandNames(program: Command): readonly string[]
 export function renderBashCompletion(commandNames: readonly string[]): string {
   const subs = commandNames.join(" ");
   return [
-    "# muse bash completion (goal 066)",
+    "# muse bash completion",
     "# Source from ~/.bashrc:  source <(muse completion bash)",
     "_muse_completions() {",
     "  local cur=\"${COMP_WORDS[COMP_CWORD]}\"",
@@ -66,7 +66,7 @@ export function renderZshCompletion(commandNames: readonly string[]): string {
   const lines = commandNames.map((name) => `    '${name}'`).join("\n");
   return [
     "#compdef muse",
-    "# muse zsh completion (goal 066)",
+    "# muse zsh completion",
     "# Save under any directory on $fpath, e.g. ${fpath[1]}/_muse",
     "_muse() {",
     "  local -a subs",
@@ -85,7 +85,7 @@ export function renderZshCompletion(commandNames: readonly string[]): string {
 export function registerCompletionCommand(program: Command, io: ProgramIO): void {
   program
     .command("completion")
-    .description("Print a shell-completion script for bash or zsh (goal 066)")
+    .description("Print a shell-completion script for bash or zsh")
     .argument("<shell>", "Target shell: 'bash' or 'zsh'")
     .action((shell: string) => {
       const normalized = shell.trim().toLowerCase() as SupportedShell;
