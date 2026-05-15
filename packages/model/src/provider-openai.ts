@@ -27,7 +27,8 @@ import {
   isJsonObject,
   isRecord,
   parseJson,
-  readFiniteNumber
+  readFiniteNumber,
+  stripLeadingThinkBlock
 } from "./provider-shared.js";
 
 export function toOpenAIChatRequest(request: ModelRequest, defaultModel: string | undefined) {
@@ -120,7 +121,7 @@ export function fromOpenAIChatResponse(providerId: string, requestedModel: strin
 
   const choice = Array.isArray(payload.choices) && isRecord(payload.choices[0]) ? payload.choices[0] : undefined;
   const message = isRecord(choice?.message) ? choice.message : undefined;
-  const output = readOpenAIContent(message?.content);
+  const output = stripLeadingThinkBlock(readOpenAIContent(message?.content));
 
   return {
     id: typeof payload.id === "string" ? payload.id : `${providerId}-response`,

@@ -13,6 +13,7 @@ import {
   OpenRouterProvider,
   parseModelName,
   sanitizeGeminiSchema,
+  stripLeadingThinkBlock,
   type ModelInfo,
   type ModelRequest,
   type ModelProvider
@@ -190,6 +191,31 @@ function createProvider(id: string, models: readonly ModelInfo[]): ModelProvider
     }
   };
 }
+
+describe("stripLeadingThinkBlock (goal 172)", () => {
+  it("removes a leaked leading <think>…</think> block and its trailing whitespace", () => {
+    expect(stripLeadingThinkBlock("<think>\nlet me reason\n</think>\n\nThe answer is 42."))
+      .toBe("The answer is 42.");
+    expect(stripLeadingThinkBlock("  <think></think>  hello")).toBe("hello");
+  });
+
+  it("leaves content without a leading think block untouched", () => {
+    expect(stripLeadingThinkBlock("Just the answer.")).toBe("Just the answer.");
+    // A <think> later in prose/code must NOT be stripped.
+    expect(stripLeadingThinkBlock("Use the <think> tag like </think> in XML."))
+      .toBe("Use the <think> tag like </think> in XML.");
+  });
+
+  it("leaves an unterminated block intact rather than nuking everything (truncated output)", () => {
+    expect(stripLeadingThinkBlock("<think>\nreasoning got cut off"))
+      .toBe("<think>\nreasoning got cut off");
+  });
+
+  it("strips only the FIRST block (non-greedy), keeping later content", () => {
+    expect(stripLeadingThinkBlock("<think>a</think>answer <think>b</think> tail"))
+      .toBe("answer <think>b</think> tail");
+  });
+});
 
 describe("ModelProviderRegistry", () => {
   const openai = createProvider("openai", [

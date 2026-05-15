@@ -45,6 +45,23 @@ export function parseJson(value: string): unknown {
   }
 }
 
+/**
+ * Defense-in-depth for reasoning=false: a Qwen3-class model
+ * whose upstream think-suppression switch was ignored (older
+ * Ollama, an OpenAI-compatible server that drops
+ * chat_template_kwargs) leaks a leading `<think>…</think>`
+ * block before the real answer. Strip exactly one such leading
+ * block. Anchored at the start with optional whitespace and
+ * non-greedy to the FIRST `</think>`, so a legitimate `<think>`
+ * later in prose/code is never touched; an unterminated block
+ * (truncated output) is left intact rather than nuking
+ * everything.
+ */
+export function stripLeadingThinkBlock(text: string): string {
+  const match = /^\s*<think>[\s\S]*?<\/think>\s*/u.exec(text);
+  return match ? text.slice(match[0].length) : text;
+}
+
 export function readFiniteNumber(value: unknown, key: string): number | undefined {
   return isRecord(value) && typeof value[key] === "number" && Number.isFinite(value[key])
     ? value[key]

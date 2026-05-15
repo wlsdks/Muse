@@ -21,6 +21,7 @@ import {
   localModelCapabilities
 } from "./provider-wire.js";
 import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus } from "./provider-base.js";
+import { stripLeadingThinkBlock } from "./provider-shared.js";
 import type {
   ModelEvent,
   ModelInfo,
@@ -76,7 +77,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     return {
       id: `${this.id}-${Date.now().toString()}`,
       model: json.model ?? request.model ?? this.nativeDefaultModel ?? "unknown",
-      output: json.message?.content ?? "",
+      output: stripLeadingThinkBlock(json.message?.content ?? ""),
       raw: json,
       ...(json.message?.tool_calls && json.message.tool_calls.length > 0
         ? {
