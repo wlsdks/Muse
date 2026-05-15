@@ -59,6 +59,18 @@ export function resolveJobStatusFilter(input: string | undefined): JobStatusFilt
   return "invalid";
 }
 
+// Blank → default 20; a genuine number is truncated + clamped
+// to [1, 200]; a unit slip / non-numeric / non-positive value
+// rejects rather than silently using 20.
+export function parseJobListLimit(raw: string | undefined): number {
+  if (raw === undefined || raw.trim().length === 0) return 20;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`--limit must be a positive number (got '${raw}')`);
+  }
+  return Math.min(200, Math.trunc(parsed));
+}
+
 function jobsDir(): string {
   return process.env.MUSE_JOBS_DIR?.trim() ?? pathJoin(homedir(), ".muse", "jobs");
 }
@@ -291,7 +303,7 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
         process.exitCode = 1;
         return;
       }
-      const limit = Math.max(1, Math.min(200, Number.parseInt(options.limit, 10) || 20));
+      const limit = parseJobListLimit(options.limit);
       const files = readdirSync(dir)
         .filter((name) => name.endsWith(".jsonl"))
         .sort()

@@ -5,7 +5,29 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { JOB_STATUS_FILTER_VALUES, registerJobCommands, resolveJobStatusFilter } from "./commands-jobs.js";
+import { JOB_STATUS_FILTER_VALUES, parseJobListLimit, registerJobCommands, resolveJobStatusFilter } from "./commands-jobs.js";
+
+describe("parseJobListLimit (goal 184)", () => {
+  it("defaults to 20 when blank", () => {
+    expect(parseJobListLimit(undefined)).toBe(20);
+    expect(parseJobListLimit("")).toBe(20);
+    expect(parseJobListLimit("   ")).toBe(20);
+  });
+
+  it("accepts a genuine number, truncating and clamping to 200", () => {
+    expect(parseJobListLimit("5")).toBe(5);
+    expect(parseJobListLimit(" 12 ")).toBe(12);
+    expect(parseJobListLimit("3.9")).toBe(3);
+    expect(parseJobListLimit("999")).toBe(200);
+  });
+
+  it("rejects a unit slip / non-numeric / non-positive instead of silently using 20", () => {
+    expect(() => parseJobListLimit("20x")).toThrow(/--limit must be a positive number \(got '20x'\)/u);
+    expect(() => parseJobListLimit("abc")).toThrow(/positive number/u);
+    expect(() => parseJobListLimit("0")).toThrow(/positive number/u);
+    expect(() => parseJobListLimit("-4")).toThrow(/positive number/u);
+  });
+});
 
 describe("resolveJobStatusFilter (goal 151)", () => {
   it("returns 'all' when input is undefined or empty/whitespace", () => {
