@@ -3955,6 +3955,12 @@ describe("cli program", () => {
     expect(() => resolveLockUntilMs(undefined, "-5", now)).toThrow();
     // Non-numeric rejects.
     expect(() => resolveLockUntilMs("abc", undefined, now)).toThrow();
+    // Goal 155 — unit-slip rejects strictly (pre-iter Number.parseFloat
+    // silently parsed "4h" → 4; now Number() returns NaN → throws).
+    expect(() => resolveLockUntilMs("4h", undefined, now)).toThrow("--hours must be numeric");
+    expect(() => resolveLockUntilMs(undefined, "30m", now)).toThrow("--minutes must be numeric");
+    // Whitespace + empty string still treated as "not supplied" (no throw).
+    expect(resolveLockUntilMs("  ", undefined, now) - now).toBe(60 * 60_000);
   });
 
   it("formatRemainingDuration renders 'Xh Ym' / 'X min' / '<1 min' (goal 141)", async () => {

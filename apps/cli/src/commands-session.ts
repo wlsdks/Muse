@@ -72,11 +72,14 @@ export function formatRemainingDuration(rawMinutes: number): string {
 }
 
 export function resolveLockUntilMs(rawHours: string | undefined, rawMinutes: string | undefined, nowMs: number): number {
-  const hours = rawHours ? Number.parseFloat(rawHours) : 0;
-  const minutes = rawMinutes ? Number.parseFloat(rawMinutes) : 0;
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
-    throw new Error("--hours / --minutes must be numeric");
-  }
+  // Goal 155 — parallel to goals 143 + 144: switch from
+  // Number.parseFloat (forgiving prefix parse, "4h" → 4) to
+  // strict Number(). A user who typed `--hours 4h` (forgetting
+  // that the unit is already implied) used to get a 4-hour lock
+  // silently; now they get an explicit rejection so they can
+  // re-issue with the intended value.
+  const hours = parseStrictNumeric("--hours", rawHours);
+  const minutes = parseStrictNumeric("--minutes", rawMinutes);
   if (hours < 0 || minutes < 0) {
     throw new Error("--hours / --minutes must be non-negative");
   }
@@ -86,6 +89,17 @@ export function resolveLockUntilMs(rawHours: string | undefined, rawMinutes: str
     return nowMs + 60 * 60 * 1000;
   }
   return nowMs + totalMs;
+}
+
+function parseStrictNumeric(flag: string, raw: string | undefined): number {
+  if (raw === undefined) return 0;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return 0;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${flag} must be numeric (got '${raw}')`);
+  }
+  return parsed;
 }
 
 export function registerSessionCommands(program: Command, io: ProgramIO): void {
