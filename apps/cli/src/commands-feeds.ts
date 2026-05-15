@@ -182,8 +182,30 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
     .option("--hours <n>", "Lookback hours (default 24)")
     .option("--json", "Emit a structured payload")
     .action(async (options: { readonly hours?: string; readonly json?: boolean }) => {
-      const hoursRaw = options.hours ? Number.parseFloat(options.hours) : 24;
-      const hours = Number.isFinite(hoursRaw) && hoursRaw > 0 ? hoursRaw : 24;
+      // Goal 143 — reject non-numeric `--hours` instead of silently
+      // falling back to 24. The pre-iter behaviour ("abc" → 24h)
+      // looked like a successful filter but actually ignored the
+      // input, so a user who typed `--hours 4h` (forgetting the
+      // unit) thought they'd filtered to 4h when they got 24h.
+      let hours = 24;
+      if (options.hours !== undefined) {
+        const trimmed = options.hours.trim();
+        if (trimmed.length === 0) {
+          throw new Error("--hours must not be empty");
+        }
+        // Use Number() (strict) instead of Number.parseFloat
+        // (forgiving prefix parse) so "4h" / "12hrs" reject instead
+        // of silently becoming 4 / 12 — those are user-unit-confusion
+        // typos, not the integer the flag wants.
+        const parsed = Number(trimmed);
+        if (!Number.isFinite(parsed)) {
+          throw new Error(`--hours must be a positive number (got '${options.hours}')`);
+        }
+        if (parsed <= 0) {
+          throw new Error(`--hours must be > 0 (got ${parsed.toString()})`);
+        }
+        hours = parsed;
+      }
       const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
       const store = await readFeedsStore(defaultFeedsFile());
       const rolled = store.feeds.flatMap((feed) =>

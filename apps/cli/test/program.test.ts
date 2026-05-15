@@ -6759,6 +6759,46 @@ describe("cli program", () => {
     }
   });
 
+  it("muse feeds today --hours rejects non-numeric / non-positive input (goal 143)", async () => {
+    const { io } = captureOutput();
+
+    // Non-numeric → error with the offending input verbatim.
+    const program1 = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    program1.exitOverride();
+    await expect(program1.parseAsync(["node", "muse", "feeds", "today", "--hours", "abc"], { from: "node" }))
+      .rejects.toThrow(/--hours must be a positive number \(got 'abc'\)/u);
+
+    // Common typo (forgot to drop the unit) — `4h` → still rejected.
+    const program2 = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    program2.exitOverride();
+    await expect(program2.parseAsync(["node", "muse", "feeds", "today", "--hours", "4h"], { from: "node" }))
+      .rejects.toThrow(/--hours must be a positive number/u);
+
+    // 0 / negative rejected explicitly.
+    const program3 = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    program3.exitOverride();
+    await expect(program3.parseAsync(["node", "muse", "feeds", "today", "--hours", "0"], { from: "node" }))
+      .rejects.toThrow(/--hours must be > 0/u);
+
+    const program4 = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    program4.exitOverride();
+    await expect(program4.parseAsync(["node", "muse", "feeds", "today", "--hours", "-3"], { from: "node" }))
+      .rejects.toThrow(/--hours must be > 0/u);
+
+    // Whitespace-only rejected.
+    const program5 = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    program5.exitOverride();
+    await expect(program5.parseAsync(["node", "muse", "feeds", "today", "--hours", "   "], { from: "node" }))
+      .rejects.toThrow(/--hours must not be empty/u);
+
+    // Happy path: positive number passes validation, default keeps
+    // working without the flag.
+    const program6 = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    await expect(program6.parseAsync(["node", "muse", "feeds", "today", "--hours", "12"], { from: "node" })).resolves.toBeDefined();
+    const program7 = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+    await expect(program7.parseAsync(["node", "muse", "feeds", "today"], { from: "node" })).resolves.toBeDefined();
+  });
+
   it("muse remind list rejects --status typos with a closest-match hint (goal 137)", async () => {
     const { io } = captureOutput();
 
