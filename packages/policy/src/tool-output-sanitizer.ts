@@ -60,7 +60,11 @@ const toolOutputInjectionPatterns = [
   ...sharedInjectionPatterns,
   { name: "prompt_override", regex: /new (role|persona|instructions?)/i },
   { name: "data_exfil", regex: /(fetch|send|post|get)\s+https?:\/\/[^\s]+/i },
-  { name: "data_exfil", regex: /exfiltrate|leak\s+data|send\s+to\s+external/i }
+  { name: "data_exfil", regex: /exfiltrate|leak\s+data|send\s+to\s+external/i },
+  // A tool returning the wrapper's own delimiter could close the
+  // sandbox early so the rest reads as trusted instructions —
+  // defang any forged BEGIN/END TOOL DATA marker line.
+  { name: "tool_data_fence_forgery", regex: /-{3,}\s*(?:BEGIN|END)\s+TOOL\s+DATA\b[^\n]*/i }
 ] as const;
 
 function wrapToolData(toolName: string, content: string): string {
