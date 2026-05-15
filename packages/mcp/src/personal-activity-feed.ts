@@ -120,7 +120,12 @@ async function readPatternActivity(file: string | undefined): Promise<readonly A
   const doc = await safeReadJson(file) as { fired?: readonly PatternFiredRow[] } | undefined;
   const rows = doc?.fired ?? [];
   return rows.flatMap((row): readonly ActivityEntry[] => {
-    if (typeof row.patternId !== "string" || typeof row.firedAtMs !== "number" || !Number.isFinite(row.firedAtMs)) {
+    // Number.isFinite(firedAtMs) isn't enough: a finite but
+    // out-of-range ms makes an Invalid Date whose toISOString()
+    // throws, which would reject the whole feed's Promise.all.
+    if (typeof row.patternId !== "string"
+      || typeof row.firedAtMs !== "number"
+      || !Number.isFinite(new Date(row.firedAtMs).getTime())) {
       return [];
     }
     return [{

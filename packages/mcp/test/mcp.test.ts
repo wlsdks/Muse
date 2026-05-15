@@ -6590,6 +6590,30 @@ describe("personal-status-summary helpers (direct unit tests)", () => {
   });
 });
 
+describe("readActivityFeed — corrupt firedAtMs must not sink the whole feed", () => {
+  it("drops a pattern row with an out-of-range firedAtMs instead of throwing", async () => {
+    const { readActivityFeed } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-activity-corrupt-"));
+    const file = join(dir, "patterns-fired.json");
+    writeFileSync(file, JSON.stringify({
+      fired: [
+        { patternId: "bad", firedAtMs: 1e30 }, // finite but new Date(1e30) is Invalid
+        { patternId: "ok", firedAtMs: 1_800_000_000_000, suggestion: "do X" }
+      ]
+    }));
+
+    let entries: Awaited<ReturnType<typeof readActivityFeed>> = [];
+    await expect((async () => {
+      entries = await readActivityFeed({ patternsFiredFile: file, kind: "pattern" });
+    })()).resolves.toBeUndefined();
+    expect(entries.map((e) => e.id)).toEqual(["ok"]);
+    expect(entries[0]!.whenIso).toBe(new Date(1_800_000_000_000).toISOString());
+  });
+});
+
 describe("muse.status loopback server", () => {
   it("snapshot returns the model from the constructor's `options.model` (overrides env)", async () => {
     const { createStatusMcpServer, createLoopbackMcpConnection } = await import("../src/index.js");
