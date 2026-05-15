@@ -34,8 +34,28 @@ import {
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import type { Command } from "commander";
 
+import { closestCommandName } from "./closest-command.js";
 import { formatLocalDateTime as shortDateTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
+
+/**
+ * Goal 137 — CLI-side strict validation for `muse remind list
+ * --status <value>`. Pairs with goal 125 (`muse tasks list
+ * --status`): the shared `readReminderStatusFilter` is
+ * deliberately lenient (LLM tool path), but the CLI surface
+ * should surface typos with the closest-match hint.
+ */
+const REMIND_STATUS_VALUES = ["pending", "fired", "all", "due"] as const;
+
+function assertReminderStatusInput(raw: string): void {
+  const trimmed = raw.trim().toLowerCase();
+  if (REMIND_STATUS_VALUES.includes(trimmed as (typeof REMIND_STATUS_VALUES)[number])) {
+    return;
+  }
+  const suggestion = closestCommandName(trimmed, REMIND_STATUS_VALUES);
+  const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
+  throw new Error(`--status must be one of: ${REMIND_STATUS_VALUES.join(", ")} (got '${raw}')${hint}`);
+}
 
 export interface RemindCommandHelpers {
   readonly apiRequest: (
@@ -140,6 +160,11 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
     .option("--local", "Read directly from the local reminders file instead of the API")
     .option("--json", "Print the raw response instead of the formatted list")
     .action(async (options: { readonly status: string } & SharedOptions, command) => {
+      // Goal 137 — strict --status validation with a typo hint
+      // (same shape as goal-125 for `muse tasks list`). Throws
+      // before either branch dispatches so the user doesn't get a
+      // silently-wrong "pending" list when they typed "due"-ish.
+      assertReminderStatusInput(options.status);
       let payload: { reminders: ReadonlyArray<Record<string, unknown>>; status: string; total: number };
       if (options.local) {
         const file = localRemindersFile();

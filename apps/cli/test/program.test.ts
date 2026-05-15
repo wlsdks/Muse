@@ -6637,6 +6637,41 @@ describe("cli program", () => {
     }
   });
 
+  it("muse remind list rejects --status typos with a closest-match hint (goal 137)", async () => {
+    const { io } = captureOutput();
+
+    // One-edit typo for "fired" → suggests "fired".
+    const program1 = createProgram({ ...io, fetch: async () => { throw new Error("not reached"); } });
+    program1.exitOverride();
+    await expect(program1.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "remind", "list", "--status", "fire"],
+      { from: "node" }
+    )).rejects.toThrow(/did you mean 'fired'\?/u);
+
+    // Plural slip on "due" → suggests "due".
+    const program2 = createProgram({ ...io, fetch: async () => { throw new Error("not reached"); } });
+    program2.exitOverride();
+    await expect(program2.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "remind", "list", "--status", "dues"],
+      { from: "node" }
+    )).rejects.toThrow(/did you mean 'due'\?/u);
+
+    // Unrelated input → error fires, no false-positive suggestion.
+    const program3 = createProgram({ ...io, fetch: async () => { throw new Error("not reached"); } });
+    program3.exitOverride();
+    await expect(program3.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "remind", "list", "--status", "totally-unrelated"],
+      { from: "node" }
+    )).rejects.toThrow(/--status must be one of: pending, fired, all, due/u);
+
+    // Happy path: a valid value passes validation.
+    const program4 = createProgram({ ...io, fetch: async () => new Response(JSON.stringify({ reminders: [], status: "pending", total: 0 })) });
+    await expect(program4.parseAsync(
+      ["node", "muse", "--api-url", "http://api.test", "remind", "list", "--status", "pending"],
+      { from: "node" }
+    )).resolves.toBeDefined();
+  });
+
   it("muse tasks list rejects --status typos with a closest-match hint (goal 125)", async () => {
     const { io } = captureOutput();
     const program = createProgram({ ...io, fetch: async () => { throw new Error("not reached — should reject before fetch"); } });
