@@ -31,6 +31,25 @@ describe("RuntimeSettings", () => {
     await service.set({ key: "limits.decimal", type: "number", value: "12.5" });
 
     await expect(service.getBoolean("feature.enabled", false)).resolves.toBe(true);
+    // Goal 127 — boolean parser tolerates common admin spellings.
+    await service.set({ key: "feature.alt", value: "1" });
+    await expect(service.getBoolean("feature.alt", false)).resolves.toBe(true);
+    await service.set({ key: "feature.alt", value: "Yes" });
+    await expect(service.getBoolean("feature.alt", false)).resolves.toBe(true);
+    await service.set({ key: "feature.alt", value: "on" });
+    await expect(service.getBoolean("feature.alt", false)).resolves.toBe(true);
+    await service.set({ key: "feature.alt", value: "0" });
+    await expect(service.getBoolean("feature.alt", true)).resolves.toBe(false);
+    await service.set({ key: "feature.alt", value: "No" });
+    await expect(service.getBoolean("feature.alt", true)).resolves.toBe(false);
+    await service.set({ key: "feature.alt", value: "off" });
+    await expect(service.getBoolean("feature.alt", true)).resolves.toBe(false);
+    // Unknown values fall back to the caller-supplied default
+    // (was silently `false` pre-goal-127).
+    await service.set({ key: "feature.alt", value: "maybe" });
+    await expect(service.getBoolean("feature.alt", true)).resolves.toBe(true);
+    await expect(service.getBoolean("feature.alt", false)).resolves.toBe(false);
+
     await expect(service.getInteger("limits.maxTools", 4)).resolves.toBe(12);
     await expect(service.getInteger("limits.decimal", 4)).resolves.toBe(4);
     await expect(service.getNumber("limits.decimal", 1.5)).resolves.toBe(12.5);

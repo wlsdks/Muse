@@ -106,7 +106,17 @@ export class RuntimeSettings {
       return defaultValue;
     }
 
-    return value.toLowerCase() === "true";
+    // Goal 127 — tolerate the common boolean spellings that admins
+    // type into the runtime-settings UI / API (`1` / `yes` / `on`,
+    // and their negative twins). Pre-iteration the parser only
+    // recognised the exact literal `"true"`, so a setting of `"1"`
+    // silently became `false` even when defaultValue was true — a
+    // user trying to enable webSearch via the admin route hit
+    // exactly this. Anything outside the recognised set falls back
+    // to defaultValue, which is safer than the old "unknown → false"
+    // since the admin's intent is preserved.
+    const parsed = parseBooleanValue(value);
+    return parsed ?? defaultValue;
   }
 
   async getNumber(key: string, defaultValue: number): Promise<number> {
@@ -192,6 +202,28 @@ function parseFiniteNumber(value: string | undefined): number | undefined {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * Goal 127 — recognise the common admin spellings of true / false.
+ * Returns `undefined` for anything unrecognised so `getBoolean`
+ * can fall back to its caller-supplied default. Exported (via
+ * `parseBooleanSetting`) so consumers wiring custom boolean-shaped
+ * RuntimeSetting values share the same parser.
+ */
+export function parseBooleanSetting(value: string | undefined): boolean | undefined {
+  return parseBooleanValue(value);
+}
+
+const TRUTHY_VALUES: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
+const FALSY_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
+
+function parseBooleanValue(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  const normalised = value.trim().toLowerCase();
+  if (TRUTHY_VALUES.has(normalised)) return true;
+  if (FALSY_VALUES.has(normalised)) return false;
+  return undefined;
 }
 
 export interface WebSearchRuntimeSettings {
