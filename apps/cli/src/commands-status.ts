@@ -278,6 +278,16 @@ async function collectStatus(userId: string) {
       goalCount: persona?.preferences
         ? Object.keys(persona.preferences).filter((k) => k.startsWith("goal:")).length
         : 0,
+      // Goal 146 — surface `current_focus` (preferences first, facts
+      // fallback — same precedence as active-context.ts). JARVIS
+      // dashboard's "what am I working on?" affordance: a single
+      // line the user sees when they `muse status` after a context
+      // switch, no need to grep memory.
+      ...(typeof persona?.preferences?.["current_focus"] === "string" && persona.preferences["current_focus"].trim().length > 0
+        ? { currentFocus: persona.preferences["current_focus"].trim() }
+        : typeof persona?.facts?.["current_focus"] === "string" && persona.facts["current_focus"].trim().length > 0
+          ? { currentFocus: persona.facts["current_focus"].trim() }
+          : {}),
       // Goal 098 — active multi-persona slot from --persona /
       // MUSE_PERSONA (status has no CLI flag so it's env-only here).
       // Goal 104 — `effectiveUserKey` is the slot-composed key that
@@ -497,6 +507,9 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
       if (snap.persona.template.activeId !== "default" || snap.persona.template.preambleBytes > 0) {
         const tag = snap.persona.template.isBuiltin ? "built-in" : "custom";
         io.stdout(`    template: ${snap.persona.template.activeId} (${tag}, ${snap.persona.template.preambleBytes.toString()}-byte preamble)\n`);
+      }
+      if (snap.persona.currentFocus) {
+        io.stdout(`    current focus: ${snap.persona.currentFocus}\n`);
       }
       if (snap.persona.factCount + snap.persona.preferenceCount > 0) {
         const parts: string[] = [];

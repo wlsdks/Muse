@@ -6414,6 +6414,69 @@ describe("cli program", () => {
     }
   });
 
+  it("muse status surfaces persona.currentFocus from memory (goal 146)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-focus-"));
+    const fsp = await import("node:fs/promises");
+    const userMemoryFile = path.join(root, "user-memory.json");
+
+    const prevMemoryFile = process.env.MUSE_USER_MEMORY_FILE;
+    process.env.MUSE_USER_MEMORY_FILE = userMemoryFile;
+    try {
+      // Preferences win over facts (active-context.ts precedence).
+      await fsp.writeFile(userMemoryFile, JSON.stringify({
+        users: {
+          stark: {
+            facts: { name: "Stark", current_focus: "fact-side" },
+            preferences: { current_focus: "Q3 budget memo" },
+            updatedAt: "2026-05-15T00:00:00Z"
+          }
+        }
+      }), "utf8");
+
+      // --json surfaces the field.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap = JSON.parse(out1.join("")) as { persona: { currentFocus?: string } };
+      expect(snap.persona.currentFocus).toBe("Q3 budget memo");
+
+      // Text renderer prints a one-line "current focus" entry.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "status", "--user", "stark"], { from: "node" });
+      expect(out2.join("")).toContain("current focus: Q3 budget memo");
+
+      // Falls back to facts when preferences.current_focus absent.
+      await fsp.writeFile(userMemoryFile, JSON.stringify({
+        users: {
+          stark: {
+            facts: { current_focus: "fact-only focus" },
+            preferences: {},
+            updatedAt: "2026-05-15T00:00:00Z"
+          }
+        }
+      }), "utf8");
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap3 = JSON.parse(out3.join("")) as { persona: { currentFocus?: string } };
+      expect(snap3.persona.currentFocus).toBe("fact-only focus");
+
+      // Missing → omitted from JSON (no fake "(none)" string).
+      await fsp.writeFile(userMemoryFile, JSON.stringify({
+        users: { stark: { facts: {}, preferences: {}, updatedAt: "2026-05-15T00:00:00Z" } }
+      }), "utf8");
+      const { io: io4, output: out4 } = captureOutput();
+      const program4 = createProgram({ ...io4, fetch: async () => { throw new Error("no fetch"); } });
+      await program4.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap4 = JSON.parse(out4.join("")) as { persona: { currentFocus?: string } };
+      expect(snap4.persona.currentFocus).toBeUndefined();
+    } finally {
+      if (prevMemoryFile === undefined) delete process.env.MUSE_USER_MEMORY_FILE;
+      else process.env.MUSE_USER_MEMORY_FILE = prevMemoryFile;
+    }
+  });
+
   it("muse status reads memory + trust at user@slot when MUSE_PERSONA is set (goal 104)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-effective-key-"));
     const fsp = await import("node:fs/promises");
