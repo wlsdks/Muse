@@ -398,6 +398,15 @@ export async function runChatRepl(
             messages,
             model: currentModel ?? assembly.defaultModel ?? "default"
           })) {
+            if (event.type === "error") {
+              // Mirror the agent-runtime path: surface the provider
+              // error via the outer catch instead of swallowing it
+              // and persisting an empty assistant turn.
+              const err = (event as { error?: unknown }).error;
+              throw err instanceof Error
+                ? err
+                : new Error(typeof err === "string" ? err : "model stream failed");
+            }
             if (event.type === "text-delta" && typeof event.text === "string") {
               io.stdout(event.text);
               accumulated += event.text;
