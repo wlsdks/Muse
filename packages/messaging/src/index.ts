@@ -1,6 +1,7 @@
 export {
   MessagingProviderError,
   MessagingValidationError,
+  isRetryableMessagingStatus,
   type MessagingErrorCode
 } from "./errors.js";
 

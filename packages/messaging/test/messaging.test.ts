@@ -5,6 +5,7 @@ import {
   FileMessagingCredentialStore,
   LineProvider,
   MessagingProviderError,
+  isRetryableMessagingStatus,
   MessagingProviderRegistry,
   MessagingValidationError,
   SlackProvider,
@@ -110,7 +111,31 @@ describe("TelegramProvider", () => {
       token: "x"
     });
     await expect(provider.send({ destination: "1", text: "hi" }))
-      .rejects.toMatchObject({ code: "UPSTREAM_FAILED", providerId: "telegram", status: 401 });
+      .rejects.toMatchObject({ code: "UPSTREAM_FAILED", providerId: "telegram", status: 401, retryable: false });
+  });
+
+  it("classifies 429 (rate limit) and 5xx as retryable (goal 134)", async () => {
+    const provider429 = new TelegramProvider({
+      fetch: async () => fakeJsonResponse({ description: "Too Many Requests", ok: false }, { status: 429 }),
+      token: "x"
+    });
+    await expect(provider429.send({ destination: "1", text: "hi" }))
+      .rejects.toMatchObject({ status: 429, retryable: true });
+
+    const provider503 = new TelegramProvider({
+      fetch: async () => fakeJsonResponse({ description: "Bad Gateway", ok: false }, { status: 503 }),
+      token: "x"
+    });
+    await expect(provider503.send({ destination: "1", text: "hi" }))
+      .rejects.toMatchObject({ status: 503, retryable: true });
+
+    // 4xx other than 429 stays fail-fast.
+    const provider404 = new TelegramProvider({
+      fetch: async () => fakeJsonResponse({ description: "Not Found", ok: false }, { status: 404 }),
+      token: "x"
+    });
+    await expect(provider404.send({ destination: "1", text: "hi" }))
+      .rejects.toMatchObject({ status: 404, retryable: false });
   });
 });
 
@@ -782,6 +807,35 @@ describe("TelegramProvider.fetchInbound offset tracking", () => {
     });
     await provider.fetchInbound();
     expect(await readTelegramOffset(offsetFile)).toBe(7);
+  });
+});
+
+describe("isRetryableMessagingStatus (goal 134)", () => {
+  it("classifies 429 + 5xx as retryable, everything else as fail-fast", () => {
+    expect(isRetryableMessagingStatus(429)).toBe(true);
+    expect(isRetryableMessagingStatus(500)).toBe(true);
+    expect(isRetryableMessagingStatus(502)).toBe(true);
+    expect(isRetryableMessagingStatus(599)).toBe(true);
+    // 4xx other than 429: caller's problem.
+    for (const s of [400, 401, 403, 404, 422]) {
+      expect(isRetryableMessagingStatus(s)).toBe(false);
+    }
+    // 2xx/3xx: success path — shouldn't be asked.
+    expect(isRetryableMessagingStatus(200)).toBe(false);
+    expect(isRetryableMessagingStatus(301)).toBe(false);
+    // Out-of-spec, NaN, undefined.
+    expect(isRetryableMessagingStatus(600)).toBe(false);
+    expect(isRetryableMessagingStatus(Number.NaN)).toBe(false);
+    expect(isRetryableMessagingStatus(undefined)).toBe(false);
+  });
+
+  it("MessagingProviderError carries retryable derived from status", () => {
+    expect(new MessagingProviderError("telegram", "UPSTREAM_FAILED", "boom", 429).retryable).toBe(true);
+    expect(new MessagingProviderError("telegram", "UPSTREAM_FAILED", "boom", 502).retryable).toBe(true);
+    expect(new MessagingProviderError("telegram", "UPSTREAM_FAILED", "boom", 401).retryable).toBe(false);
+    // Non-HTTP codes (no status) → not retryable.
+    expect(new MessagingProviderError("telegram", "PROVIDER_NOT_FOUND", "not found").retryable).toBe(false);
+    expect(new MessagingProviderError("telegram", "INVALID_DESTINATION", "bad dest").retryable).toBe(false);
   });
 });
 
