@@ -207,9 +207,17 @@ describe("stripLeadingThinkBlock (goal 172)", () => {
       .toBe("Use the <think> tag like </think> in XML.");
   });
 
-  it("leaves an unterminated block intact rather than nuking everything (truncated output)", () => {
-    expect(stripLeadingThinkBlock("<think>\nreasoning got cut off"))
-      .toBe("<think>\nreasoning got cut off");
+  it("strips a leading <think> with no closing tag (pure leaked reasoning → empty)", () => {
+    expect(stripLeadingThinkBlock("<think>\nreasoning got cut off")).toBe("");
+    expect(stripLeadingThinkBlock("  <think>still thinking, never closed")).toBe("");
+    // Agrees with the streaming counterpart, which also yields ""
+    // here — both honor reasoning=false instead of leaking CoT.
+    expect(createLeadingThinkStripper()("<think>reasoning got cut off")).toBe("");
+  });
+
+  it("still preserves a partial answer after a CLOSED block (truncated answer)", () => {
+    expect(stripLeadingThinkBlock("<think>done</think>The answer is 4"))
+      .toBe("The answer is 4");
   });
 
   it("strips only the FIRST block (non-greedy), keeping later content", () => {

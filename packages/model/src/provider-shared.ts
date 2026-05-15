@@ -53,13 +53,22 @@ export function parseJson(value: string): unknown {
  * block before the real answer. Strip exactly one such leading
  * block. Anchored at the start with optional whitespace and
  * non-greedy to the FIRST `</think>`, so a legitimate `<think>`
- * later in prose/code is never touched; an unterminated block
- * (truncated output) is left intact rather than nuking
- * everything.
+ * later in prose/code is never touched.
+ *
+ * A leading `<think>` with NO closing tag is 100% leaked
+ * reasoning — there is no answer after it to preserve — so it
+ * returns "". Leaving it intact would dump raw chain-of-thought
+ * to the user (violating reasoning=false) and disagree with the
+ * streaming counterpart, which already yields "" here. A
+ * *closed* block followed by a truncated answer is unaffected:
+ * the regex matches the closed block and the partial answer is
+ * preserved.
  */
 export function stripLeadingThinkBlock(text: string): string {
   const match = /^\s*<think>[\s\S]*?<\/think>\s*/u.exec(text);
-  return match ? text.slice(match[0].length) : text;
+  if (match) return text.slice(match[0].length);
+  if (/^\s*<think>/u.test(text)) return "";
+  return text;
 }
 
 const OPEN_TAG = "<think>";
