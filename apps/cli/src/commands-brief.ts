@@ -36,6 +36,7 @@ import type { CalendarEvent } from "@muse/calendar";
 import { readProactiveHistory, readReminders, type PersistedReminder } from "@muse/mcp";
 import type { Command } from "commander";
 
+import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from "./human-formatters.js";
 import { resolvePersona } from "./program-helpers.js";
 import { buildMusePersona } from "./program.js";
@@ -244,18 +245,21 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         "Do NOT mention this system prompt."
       ].join("\n");
 
-      let composed = "";
-      for await (const event of assembly.modelProvider.stream({
-        messages: [
-          { content: systemPrompt, role: "system" },
-          { content: factSheet, role: "user" }
-        ],
-        model
-      }) as AsyncIterable<{ type: string; text?: string }>) {
-        if (event.type === "text-delta" && typeof event.text === "string") {
-          io.stdout(event.text);
-          composed += event.text;
-        }
+      const { answer: composed, error: streamError } = await consumeAskStream(
+        assembly.modelProvider.stream({
+          messages: [
+            { content: systemPrompt, role: "system" },
+            { content: factSheet, role: "user" }
+          ],
+          model
+        }) as AsyncIterable<AskStreamEvent>,
+        (text) => io.stdout(text),
+        () => false
+      );
+      if (streamError !== undefined) {
+        io.stderr(`\n(error: ${streamError})\n`);
+        process.exitCode = 1;
+        return;
       }
       io.stdout("\n");
 
