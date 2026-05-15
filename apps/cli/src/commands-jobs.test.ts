@@ -1,6 +1,11 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { JOB_STATUS_FILTER_VALUES, resolveJobStatusFilter } from "./commands-jobs.js";
+import { JOB_STATUS_FILTER_VALUES, registerJobCommands, resolveJobStatusFilter } from "./commands-jobs.js";
 
 describe("resolveJobStatusFilter (goal 151)", () => {
   it("returns 'all' when input is undefined or empty/whitespace", () => {
@@ -29,5 +34,84 @@ describe("resolveJobStatusFilter (goal 151)", () => {
 
   it("treats surrounding whitespace as a non-issue", () => {
     expect(resolveJobStatusFilter("  done  ")).toBe("done");
+  });
+});
+
+describe("muse job list --json (goal 152)", () => {
+  function seedJob(dir: string, id: string, events: ReadonlyArray<Record<string, unknown>>): void {
+    writeFileSync(join(dir, `${id}.jsonl`), events.map((ev) => JSON.stringify(ev)).join("\n"), "utf8");
+  }
+
+  async function runJobList(args: readonly string[], jobsDir: string): Promise<{ stdout: string; stderr: string }> {
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    const io = {
+      stdout: (msg: string) => stdoutChunks.push(msg),
+      stderr: (msg: string) => stderrChunks.push(msg)
+    };
+    const previous = process.env.MUSE_JOBS_DIR;
+    process.env.MUSE_JOBS_DIR = jobsDir;
+    try {
+      const program = new Command();
+      registerJobCommands(program, io);
+      await program.parseAsync(["node", "muse", "job", "list", ...args]);
+    } finally {
+      if (previous === undefined) delete process.env.MUSE_JOBS_DIR;
+      else process.env.MUSE_JOBS_DIR = previous;
+    }
+    return { stderr: stderrChunks.join(""), stdout: stdoutChunks.join("") };
+  }
+
+  it("emits the structured payload with dir / status / matched / jobs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-job-list-json-"));
+    seedJob(dir, "job_2026-05-15T10-00-00_done0001", [
+      { prompt: "research", tsIso: "2026-05-15T10:00:00Z", type: "started" },
+      { tsIso: "2026-05-15T10:01:00Z", type: "done" }
+    ]);
+    seedJob(dir, "job_2026-05-15T11-00-00_runn0002", [
+      { prompt: "draft doc", tsIso: "2026-05-15T11:00:00Z", type: "started" }
+    ]);
+
+    const { stdout } = await runJobList(["--json"], dir);
+    const payload = JSON.parse(stdout) as {
+      dir: string;
+      status: string;
+      matched: number;
+      jobs: ReadonlyArray<{ id: string; status: string; prompt: string }>;
+    };
+    expect(payload.dir).toBe(dir);
+    expect(payload.status).toBe("all");
+    expect(payload.matched).toBe(2);
+    expect(payload.jobs.map((j) => j.status).sort()).toEqual(["done", "running"]);
+  });
+
+  it("honours --status filter inside the JSON payload", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-job-list-json-filter-"));
+    seedJob(dir, "job_2026-05-15T10-00-00_done0001", [
+      { prompt: "a", tsIso: "2026-05-15T10:00:00Z", type: "started" },
+      { tsIso: "2026-05-15T10:01:00Z", type: "done" }
+    ]);
+    seedJob(dir, "job_2026-05-15T11-00-00_runn0002", [
+      { prompt: "b", tsIso: "2026-05-15T11:00:00Z", type: "started" }
+    ]);
+
+    const { stdout } = await runJobList(["--json", "--status", "running"], dir);
+    const payload = JSON.parse(stdout) as {
+      status: string;
+      matched: number;
+      jobs: ReadonlyArray<{ id: string; status: string }>;
+    };
+    expect(payload.status).toBe("running");
+    expect(payload.matched).toBe(1);
+    expect(payload.jobs[0]?.status).toBe("running");
+  });
+
+  it("returns an empty jobs array (not an error) when the dir doesn't exist", async () => {
+    const dir = join(tmpdir(), `muse-job-list-missing-${Date.now().toString()}-${Math.random().toString().slice(2)}`);
+    const { stdout, stderr } = await runJobList(["--json"], dir);
+    expect(stderr).toBe("");
+    const payload = JSON.parse(stdout) as { jobs: unknown[]; matched: number };
+    expect(payload.jobs).toEqual([]);
+    expect(payload.matched).toBe(0);
   });
 });

@@ -272,10 +272,15 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
       "--status <state>",
       "Only show jobs with this status: running, done, error, unknown, or all (default: all)"
     )
-    .action(async (options: { readonly limit: string; readonly status?: string }) => {
+    .option("--json", "Emit a structured payload (parity with `muse job status --json`)")
+    .action(async (options: { readonly limit: string; readonly status?: string; readonly json?: boolean }) => {
       const dir = jobsDir();
       if (!existsSync(dir)) {
-        io.stdout(`No jobs yet (dir ${dir} doesn't exist).\n`);
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ dir, jobs: [], matched: 0, status: "all" }, null, 2)}\n`);
+        } else {
+          io.stdout(`No jobs yet (dir ${dir} doesn't exist).\n`);
+        }
         return;
       }
       // Goal 151 — validate --status against the known JobStatus set
@@ -304,6 +309,19 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
         const summary = jobSummary(events);
         if (statusFilter !== "all" && summary.status !== statusFilter) continue;
         matched.push({ id, prompt: summary.prompt ?? "", status: summary.status });
+      }
+      if (options.json) {
+        // Goal 152 — structured payload for scripting / pipelines.
+        // Shape mirrors `muse job status --json` (id, status,
+        // prompt) plus the count + active filter so consumers can
+        // distinguish "no jobs ever" from "no jobs matching filter".
+        io.stdout(`${JSON.stringify({
+          dir,
+          jobs: matched,
+          matched: matched.length,
+          status: statusFilter
+        }, null, 2)}\n`);
+        return;
       }
       io.stdout(`${matched.length.toString()} job(s) in ${dir}${statusFilter === "all" ? "" : ` (status=${statusFilter})`}:\n`);
       for (const entry of matched) {
