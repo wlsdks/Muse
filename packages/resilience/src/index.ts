@@ -329,13 +329,20 @@ export async function retry<T>(operation: () => Awaitable<T>, options: RetryOpti
       }
 
       lastError = error;
+      options.metricsRecorder?.recordRetryAttempt?.(options.name ?? "operation", attempt, false);
 
-      if (attempt >= maxAttempts || options.retryable?.(error, attempt) === false) {
-        options.metricsRecorder?.recordRetryAttempt?.(options.name ?? "operation", attempt, false);
+      // A non-retryable error (4xx model-not-found / bad key, per
+      // architecture.md) MUST fail fast with its own clean message.
+      // Wrapping it in RetryExhaustedError("…3 attempt(s)") both
+      // lies about the count and buries the root cause.
+      if (options.retryable?.(error, attempt) === false) {
+        throw error;
+      }
+
+      if (attempt >= maxAttempts) {
         break;
       }
 
-      options.metricsRecorder?.recordRetryAttempt?.(options.name ?? "operation", attempt, false);
       await sleep(computeRetryDelay(attempt, options));
     }
   }

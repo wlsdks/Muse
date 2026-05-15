@@ -136,6 +136,42 @@ describe("retry and timeout", () => {
       .rejects.toBeInstanceOf(RetryExhaustedError);
   });
 
+  it("fails fast with the ORIGINAL error on a non-retryable failure (goal 174)", async () => {
+    let attempts = 0;
+    const rootCause = new Error("model 'xyz' not found");
+    const result = await retry(
+      () => {
+        attempts += 1;
+        return Promise.reject(rootCause);
+      },
+      {
+        maxAttempts: 5,
+        retryable: () => false,
+        sleep: async () => {}
+      }
+    ).then(() => undefined, (e: unknown) => e);
+
+    // Original error, NOT a RetryExhaustedError that lies "5 attempt(s)".
+    expect(result).toBe(rootCause);
+    expect(result).not.toBeInstanceOf(RetryExhaustedError);
+    expect(attempts).toBe(1);
+  });
+
+  it("still exhausts + wraps when the error stays retryable (goal 174 regression)", async () => {
+    let attempts = 0;
+    const err = await retry(
+      () => {
+        attempts += 1;
+        return Promise.reject(new Error("transient"));
+      },
+      { maxAttempts: 3, retryable: () => true, sleep: async () => {} }
+    ).then(() => undefined, (e: unknown) => e);
+
+    expect(err).toBeInstanceOf(RetryExhaustedError);
+    expect((err as RetryExhaustedError).attempts).toBe(3);
+    expect(attempts).toBe(3);
+  });
+
   it("aborts operations that exceed the timeout", async () => {
     await expect(withTimeout(() => new Promise((resolve) => setTimeout(resolve, 20)), 1))
       .rejects.toBeInstanceOf(TimeoutError);
