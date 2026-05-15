@@ -86,6 +86,15 @@ async function main(): Promise<void> {
         messages: [{ content: args.prompt, role: "user" }],
         model
       })) {
+        if (event.type === "error") {
+          // A provider error event is not an exception; without
+          // this the loop ends, the job is recorded `done` with
+          // no output, and the worker exits 0 — a false success.
+          const err = (event as { error?: unknown }).error;
+          throw err instanceof Error
+            ? err
+            : new Error(typeof err === "string" ? err : "model stream failed");
+        }
         if (event.type === "text-delta") {
           const text = (event as { text?: string }).text;
           if (typeof text === "string" && text.length > 0) {
