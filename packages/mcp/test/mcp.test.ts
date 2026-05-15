@@ -6425,6 +6425,61 @@ describe("proactive-history rotation on capacity (goal 079)", () => {
     void rotateProactiveHistoryFiles;
   });
 
+  it("scrubs credential shapes from title / text / error before persistence (goal 139)", async () => {
+    const { appendProactiveHistory, readProactiveHistory } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-redact-"));
+    const file = join(dir, "proactive-history.json");
+
+    // Delivered path: title + text carry credentials.
+    await appendProactiveHistory(file, {
+      destination: "@me",
+      firedAtIso: "2026-05-14T00:00:00Z",
+      itemId: "t1",
+      kind: "task",
+      providerId: "log",
+      startIso: "2026-05-14T01:00:00Z",
+      status: "delivered",
+      text: "📋 rotate sk-proj-abcdefghijklmnopqrstuvwxyz due in 10 min",
+      title: "rotate ghp_abcdefghijklmnopqrstuvwxyzABCDEF"
+    });
+
+    // Failed path: error field also carries credential.
+    await appendProactiveHistory(file, {
+      destination: "@me",
+      error: "send failed with sk-ant-api03-abcdefghijklmnop",
+      firedAtIso: "2026-05-14T00:01:00Z",
+      itemId: "t2",
+      kind: "task",
+      providerId: "log",
+      startIso: "2026-05-14T01:00:00Z",
+      status: "failed",
+      text: "x",
+      title: "noisy task"
+    });
+
+    const entries = await readProactiveHistory(file);
+    expect(entries).toHaveLength(2);
+
+    const delivered = entries.find((e) => e.itemId === "t1");
+    expect(delivered).toBeDefined();
+    expect(delivered!.title).toContain("[redacted-github-pat]");
+    expect(delivered!.title).not.toContain("ghp_abcdefghijklmnopqrstuvwxyzABCDEF");
+    expect(delivered!.text).toContain("[redacted-openai-key]");
+    expect(delivered!.text).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz");
+    // Surrounding prose survives.
+    expect(delivered!.text).toContain("rotate ");
+    expect(delivered!.text).toContain("due in 10 min");
+
+    const failed = entries.find((e) => e.itemId === "t2");
+    expect(failed).toBeDefined();
+    expect(failed!.error).toContain("[redacted-anthropic-key]");
+    expect(failed!.error).not.toContain("sk-ant-api03-abcdefghijklmnop");
+  });
+
   it("preserves the pre-079 trim-without-rotation path when archiveMaxFiles is 0 / unset", async () => {
     const { appendProactiveHistory, readProactiveHistory } = await import("../src/index.js");
     const { mkdtempSync, existsSync } = await import("node:fs");

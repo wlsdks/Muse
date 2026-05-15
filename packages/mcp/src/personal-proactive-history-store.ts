@@ -19,6 +19,8 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
+import { redactSecretsInText } from "@muse/shared";
+
 import type { ProactiveFiredKind } from "./proactive-notice-loop.js";
 
 export interface ProactiveHistoryEntry {
@@ -91,7 +93,23 @@ export async function appendProactiveHistory(
     existing = [];
   }
 
-  const next = [...existing, entry];
+  // Goal 139 — defence-in-depth: scrub credential shapes from the
+  // three free-text fields (`title`, `text`, `error`) at the
+  // persist chokepoint. The proactive-notice loop already
+  // redacts `text` upstream, but `title` flows raw from the
+  // task/event source (a `"rotate sk-proj-..."` task title would
+  // otherwise survive verbatim) and `error` carries upstream
+  // exception messages that may quote request bodies. Centralising
+  // here means every caller of `appendProactiveHistory`
+  // (proactive loop, watch-folder, webhook bridges, future direct
+  // writers) inherits the same guarantee.
+  const scrubbed: ProactiveHistoryEntry = {
+    ...entry,
+    title: redactSecretsInText(entry.title),
+    text: redactSecretsInText(entry.text),
+    ...(entry.error ? { error: redactSecretsInText(entry.error) } : {})
+  };
+  const next = [...existing, scrubbed];
   const trimmed = next.length > capacity ? next.slice(next.length - capacity) : next;
   const payload: PersistedShape = { entries: trimmed, version: 1 };
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
