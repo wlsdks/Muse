@@ -31,6 +31,9 @@
  *   "오늘 15시"             → today 15:00 (bare 24h hour)
  *   "30분 후" / "3일 뒤"     → reference + offset
  *   "2시간 후" / "3개월 후"  → +N hours / calendar-month offset
+ *   "월요일"                → next occurrence (always future)
+ *   "이번 주 금요일"         → this ISO-week's Friday
+ *   "다음 주 월요일 오후 3시" → next ISO-week's Monday 15:00
  *
  * All resolved times use the local timezone for the wall-clock
  * computation, then return an ISO-8601 UTC (`Z`) string. So
@@ -185,6 +188,7 @@ const KOREAN_DAY_OFFSET: Record<string, number> = {
  *   "오늘 15시"             → today 15:00 (bare 24h hour)
  *   "30분 후" / "3일 뒤"     → reference + offset
  *   "2시간 후" / "3개월 후"  → +N hours / calendar-month offset
+ *   "다음 주 월요일 오후 3시" → next ISO-week's Monday 15:00
  * Returns undefined when the phrase isn't a recognised Korean
  * shape so the caller falls through to the English patterns.
  */
@@ -192,6 +196,10 @@ function resolveKoreanRelativePhrase(phrase: string, reference: Date): Date | un
   const offset = resolveKoreanDurationOffset(phrase, reference);
   if (offset) {
     return offset;
+  }
+  const weekday = resolveKoreanWeekdayPhrase(phrase, reference);
+  if (weekday) {
+    return weekday;
   }
   const match = /^(오늘|내일|모레|글피)(?:\s+(.+))?$/u.exec(phrase);
   if (!match) {
@@ -206,6 +214,49 @@ function resolveKoreanRelativePhrase(phrase: string, reference: Date): Date | un
     return undefined;
   }
   const target = startOfDay(new Date(reference.getTime() + offsetDays * 86_400_000));
+  target.setHours(time.hour, time.minute, 0, 0);
+  return target;
+}
+
+const KOREAN_WEEKDAY_ISO: Record<string, number> = {
+  "월": 1, "화": 2, "수": 3, "목": 4, "금": 5, "토": 6, "일": 7
+};
+
+/**
+ * Korean weekday: "[다음 주|이번 주] <요일>요일 [time]".
+ *   "월요일"            → next occurrence (always future, like
+ *                          the English bare-weekday semantics)
+ *   "이번 주 금요일"     → this ISO-week's Friday (may be today/past)
+ *   "다음 주 월요일 오후 3시" → next ISO-week's Monday 15:00
+ * Week starts Monday (ISO / Korean convention).
+ */
+function resolveKoreanWeekdayPhrase(phrase: string, reference: Date): Date | undefined {
+  const m = /^(다음\s*주|다음주|담주|이번\s*주|이번주)?\s*([월화수목금토일])요일(?:\s+(.+))?$/u.exec(phrase);
+  if (!m) {
+    return undefined;
+  }
+  const targetIso = KOREAN_WEEKDAY_ISO[m[2] ?? ""];
+  if (targetIso === undefined) {
+    return undefined;
+  }
+  const time = parseKoreanTimeOfDay(m[3]);
+  if (time === "invalid") {
+    return undefined;
+  }
+  const referenceDay = startOfDay(reference);
+  const jsDay = referenceDay.getDay();
+  const isoDow = jsDay === 0 ? 7 : jsDay;
+  const prefix = (m[1] ?? "").replace(/\s+/gu, "");
+
+  let deltaDays: number;
+  if (prefix === "이번주") {
+    deltaDays = targetIso - isoDow;
+  } else if (prefix === "다음주" || prefix === "담주") {
+    deltaDays = targetIso - isoDow + 7;
+  } else {
+    deltaDays = ((targetIso - isoDow + 7) % 7) || 7;
+  }
+  const target = new Date(referenceDay.getTime() + deltaDays * 86_400_000);
   target.setHours(time.hour, time.minute, 0, 0);
   return target;
 }

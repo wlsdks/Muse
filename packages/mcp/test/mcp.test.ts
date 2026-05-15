@@ -2054,6 +2054,36 @@ describe("muse.tasks loopback server", () => {
         .toBe(new Date("2026-05-18T12:00:00Z").toISOString());
     });
 
+    it("resolves Korean weekday phrases — 다음 주 / 이번 주 (goal 162)", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday
+
+      // Bare weekday → next occurrence (always future), default 09:00.
+      const monday = resolveRelativeTimePhrase("월요일", ref);
+      expect(monday?.getDate()).toBe(18); // Mon 2026-05-18
+      expect(monday?.getHours()).toBe(9);
+
+      // Bare = today's weekday → +7 (matches English next-occurrence).
+      expect(resolveRelativeTimePhrase("금요일", ref)?.getDate()).toBe(22);
+
+      // 이번 주 = this ISO-week's occurrence (may be past).
+      expect(resolveRelativeTimePhrase("이번 주 월요일", ref)?.getDate()).toBe(11);
+      expect(resolveRelativeTimePhrase("이번 주 일요일", ref)?.getDate()).toBe(17);
+
+      // 다음 주 = next ISO-week's occurrence.
+      expect(resolveRelativeTimePhrase("다음 주 월요일", ref)?.getDate()).toBe(18);
+      expect(resolveRelativeTimePhrase("다음주 금요일", ref)?.getDate()).toBe(22);
+
+      // Weekday + time.
+      const nextMon3pm = resolveRelativeTimePhrase("다음 주 월요일 오후 3시", ref);
+      expect(nextMon3pm?.getDate()).toBe(18);
+      expect(nextMon3pm?.getHours()).toBe(15);
+
+      const wed10am = resolveRelativeTimePhrase("수요일 오전 10시", ref);
+      expect(wed10am?.getDate()).toBe(20); // next Wed
+      expect(wed10am?.getHours()).toBe(10);
+    });
+
     it("returns undefined for unsupported phrases (caller decides fallback)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const now = () => new Date("2026-05-10T12:00:00Z");
