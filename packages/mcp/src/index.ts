@@ -546,6 +546,7 @@ export {
   NotesProviderRegistry,
   NotesValidationError,
   NotionNotesProvider,
+  isRetryableNotesStatus,
   type AppleNotesProviderOptions,
   type LocalDirNotesProviderOptions,
   type NotesAppendInput,

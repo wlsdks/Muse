@@ -2200,6 +2200,35 @@ describe("notes provider abstraction", () => {
     const error = await notion.list().catch((err) => err);
     expect(error).toBeInstanceOf(NotesProviderError);
     expect((error as NotesProviderError).code).toBe("NOTION_AUTH");
+    // Goal 136 — 401 is a permanent auth error, never retryable.
+    expect((error as NotesProviderError).retryable).toBe(false);
+    expect((error as NotesProviderError).status).toBe(401);
+  });
+
+  it("NotionNotesProvider 429 / 5xx errors land as retryable (goal 136)", async () => {
+    const make429 = async () => new Response("Too Many Requests", { status: 429 });
+    const notion429 = new NotionNotesProvider({ databaseId: "db1", fetchImpl: make429, token: "t" });
+    const e429 = await notion429.list().catch((err) => err);
+    expect(e429).toBeInstanceOf(NotesProviderError);
+    expect((e429 as NotesProviderError).retryable).toBe(true);
+    expect((e429 as NotesProviderError).status).toBe(429);
+
+    const make503 = async () => new Response("Bad Gateway", { status: 503 });
+    const notion503 = new NotionNotesProvider({ databaseId: "db1", fetchImpl: make503, token: "t" });
+    const e503 = await notion503.list().catch((err) => err);
+    expect((e503 as NotesProviderError).retryable).toBe(true);
+    expect((e503 as NotesProviderError).status).toBe(503);
+
+    // 404 stays fail-fast.
+    const make404 = async () => new Response("Not Found", { status: 404 });
+    const notion404 = new NotionNotesProvider({ databaseId: "db1", fetchImpl: make404, token: "t" });
+    const e404 = await notion404.list().catch((err) => err);
+    expect((e404 as NotesProviderError).retryable).toBe(false);
+
+    // Legacy 3-arg constructor (local / apple providers) → not retryable.
+    const local = new NotesProviderError("local", "FILE_TOO_LARGE", "200KB > 100KB");
+    expect(local.retryable).toBe(false);
+    expect(local.status).toBeUndefined();
   });
 
   it("NotionNotesProvider.search hits /v1/search and maps to NotesSearchHit", async () => {

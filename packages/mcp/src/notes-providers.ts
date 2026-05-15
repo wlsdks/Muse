@@ -88,15 +88,40 @@ export class NotesValidationError extends Error {
   }
 }
 
+/**
+ * Goal 136 — classify an HTTP status from a notes provider
+ * (today only Notion) as retryable. Mirrors the goal-106 /
+ * 134 / 135 contract:
+ *
+ *   - 5xx: server-side failure, transient.
+ *   - 429: Notion's rate limit (with Retry-After header).
+ *
+ * Anything else (401 / 403 / 404 / 422) fails fast — bad token,
+ * missing page, malformed body. Local + Apple Notes providers
+ * never construct with a `status`, so they always land on
+ * `retryable: false`.
+ */
+export function isRetryableNotesStatus(status: number | undefined): boolean {
+  if (status === undefined || !Number.isFinite(status)) return false;
+  if (status === 429) return true;
+  return status >= 500 && status <= 599;
+}
+
 export class NotesProviderError extends Error {
   readonly providerId: string;
   readonly code: string;
+  readonly status?: number;
+  readonly retryable: boolean;
 
-  constructor(providerId: string, code: string, message: string) {
+  constructor(providerId: string, code: string, message: string, status?: number) {
     super(message);
     this.name = "NotesProviderError";
     this.providerId = providerId;
     this.code = code;
+    if (status !== undefined) {
+      this.status = status;
+    }
+    this.retryable = isRetryableNotesStatus(status);
   }
 }
 
