@@ -3499,12 +3499,16 @@ describe("runDueReminders", () => {
       ]
     }), "utf8");
 
+    // Goal 149 — rem_a fails non-retryably (401 bad token) so the
+    // new retry path doesn't mask it. The test still demonstrates
+    // "errors don't abort the loop" — rem_b still gets sent.
+    const { MessagingProviderError } = await import("@muse/messaging");
     let calls = 0;
     const fakeRegistry = {
       send: async () => {
         calls += 1;
         if (calls === 1) {
-          throw new Error("upstream 503");
+          throw new MessagingProviderError("telegram", "UPSTREAM_FAILED", "upstream 401", 401);
         }
         return { destination: "@me", messageId: "ok", providerId: "telegram" };
       }
@@ -3519,7 +3523,7 @@ describe("runDueReminders", () => {
     expect(summary.due).toBe(2);
     expect(summary.errors).toHaveLength(1);
     expect(summary.errors[0]).toContain("rem_a");
-    expect(summary.errors[0]).toContain("upstream 503");
+    expect(summary.errors[0]).toContain("upstream 401");
   });
 
   it("persists the status flip after EACH delivery so a crash mid-tick doesn't re-fire (goal 069)", async () => {
@@ -3540,12 +3544,23 @@ describe("runDueReminders", () => {
     // persisted), second send throws (so its status stays pending).
     // The pre-069 behavior would lose the rem_first flip because the
     // final batched write happened only at the end of the tick.
+    //
+    // Goal 149 — the failure is a non-retryable MessagingProviderError
+    // (401) so the new shared retry-with-backoff doesn't mask it.
+    // Pre-149 a plain Error here meant a single attempt; with retry
+    // wired in, plain errors would trigger 3 attempts and we'd need
+    // a different sentinel for "this one always fails". Non-retryable
+    // matches the spirit (a bad token mid-tick) and keeps the
+    // accounting (1 delivered, 1 failed, mid-tick state persisted).
+    const { MessagingProviderError } = await import("@muse/messaging");
     const sentDuringFirstTick: Array<{ destination: string; text: string }> = [];
     const flakyRegistry = {
       send: async (_providerId: string, msg: { destination: string; text: string }) => {
         sentDuringFirstTick.push({ destination: msg.destination, text: msg.text });
         if (sentDuringFirstTick.length === 2) {
-          throw new Error("simulated upstream failure mid-tick");
+          throw new MessagingProviderError(
+            "telegram", "UPSTREAM_FAILED", "simulated upstream failure mid-tick", 401
+          );
         }
       }
     };
@@ -3632,6 +3647,82 @@ describe("runDueReminders", () => {
       { destination: "C123", providerId: "slack", text: "Deploy alert" },
       { destination: "@me", providerId: "telegram", text: "Buy milk" }
     ]));
+  });
+
+  it("retries transient messaging failures with exponential backoff (goal 149)", async () => {
+    const { runDueReminders } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-fire-retry-"));
+    const file = join(dir, "reminders.json");
+    writeFileSync(file, JSON.stringify({
+      reminders: [
+        { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_flaky", status: "pending", text: "Standup" }
+      ]
+    }), "utf8");
+
+    // First two sends throw (plain Error → looks like a transient
+    // 5xx / network blip to sendWithRetry); third succeeds. Pre-149
+    // this would have been recorded as a single failure even though
+    // the next attempt would have landed.
+    const attempts: string[] = [];
+    const flakyRegistry = {
+      send: async (providerId: string, msg: { destination: string; text: string }) => {
+        attempts.push(`${providerId}:${msg.destination}`);
+        if (attempts.length < 3) {
+          throw new Error("upstream 503");
+        }
+        return { destination: msg.destination, messageId: "ok", providerId };
+      }
+    };
+
+    const summary = await runDueReminders({
+      destination: "@me",
+      file,
+      providerId: "telegram",
+      registry: flakyRegistry as unknown as Parameters<typeof runDueReminders>[0]["registry"]
+    });
+    expect(summary.delivered).toBe(1);
+    expect(summary.errors).toEqual([]);
+    expect(attempts.length).toBe(3);
+  });
+
+  it("breaks out of the retry loop early on non-retryable messaging errors (goal 149)", async () => {
+    const { runDueReminders } = await import("../src/index.js");
+    const { MessagingProviderError } = await import("@muse/messaging");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-fire-non-retry-"));
+    const file = join(dir, "reminders.json");
+    writeFileSync(file, JSON.stringify({
+      reminders: [
+        { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_permanent", status: "pending", text: "Standup" }
+      ]
+    }), "utf8");
+
+    let attempts = 0;
+    const alwaysFailing = {
+      send: async (_pid: string, _msg: { destination: string; text: string }) => {
+        attempts += 1;
+        throw new MessagingProviderError(
+          "telegram", "UPSTREAM_FAILED", "401 bad token", 401
+        );
+      }
+    };
+
+    const summary = await runDueReminders({
+      destination: "@me",
+      file,
+      providerId: "telegram",
+      registry: alwaysFailing as unknown as Parameters<typeof runDueReminders>[0]["registry"]
+    });
+    expect(summary.delivered).toBe(0);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]).toContain("rem_permanent");
+    expect(summary.errors[0]).toContain("401 bad token");
+    expect(attempts).toBe(1);
   });
 });
 
@@ -3825,12 +3916,19 @@ describe("runDueReminders historyFile", () => {
         { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_fail", status: "pending", text: "FAIL" }
       ]
     }), "utf8");
+    // Goal 149 — rem_fail throws a non-retryable MessagingProviderError
+    // so the shared retry path short-circuits on attempt 1 (instead of
+    // 3 calls of "upstream 503"). The test still asserts the history
+    // records a 'failed' entry with the original error message.
+    const { MessagingProviderError } = await import("@muse/messaging");
     let calls = 0;
     const fakeRegistry = {
       send: async (_pid: string, message: { destination: string; text: string }) => {
         calls += 1;
         if (message.text === "FAIL") {
-          throw new Error("upstream 503");
+          throw new MessagingProviderError(
+            "telegram", "UPSTREAM_FAILED", "upstream 401", 401
+          );
         }
         return { destination: message.destination, messageId: "stub", providerId: "telegram" };
       }
@@ -3852,7 +3950,7 @@ describe("runDueReminders historyFile", () => {
       status: "delivered"
     });
     expect(history.find((e) => e.reminderId === "rem_fail")).toMatchObject({
-      error: "upstream 503",
+      error: "upstream 401",
       status: "failed"
     });
   });

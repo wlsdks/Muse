@@ -20,8 +20,10 @@ import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
 import type { CalendarEvent, CalendarProviderRegistry } from "@muse/calendar";
-import { MessagingProviderError, type MessagingProviderRegistry } from "@muse/messaging";
+import type { MessagingProviderRegistry } from "@muse/messaging";
 import { redactSecretsInText } from "@muse/shared";
+
+import { sendWithRetry } from "./messaging-retry.js";
 
 /**
  * Structural shape of the Phase D broker (defined in
@@ -59,50 +61,6 @@ export interface ProactiveFiredEntry {
 }
 
 const MAX_FIRED_ENTRIES = 1_000;
-
-/**
- * Goal 070 — wrap `messagingRegistry.send` in a 3-attempt
- * exponential backoff (0ms, 200ms, 800ms). Transient 5xx /
- * network blips often resolve on a second try; the prior loop
- * marked them as `failed` on the first throw and the user had
- * to manually re-fire. The retry is intentionally narrow — only
- * three tries, no jitter, no infinite ladder — because the
- * outer tick cadence (typically 60s) gives us a free retry
- * every minute anyway.
- *
- * Errors from the final attempt re-throw so the caller's
- * existing catch block writes the failed-status history entry.
- */
-async function sendWithRetry(
-  registry: MessagingProviderRegistry,
-  providerId: string,
-  message: { readonly destination: string; readonly text: string }
-): Promise<void> {
-  const backoffsMs: readonly number[] = [0, 200, 800];
-  let lastError: unknown;
-  for (const backoff of backoffsMs) {
-    if (backoff > 0) {
-      await new Promise<void>((resolve) => setTimeout(resolve, backoff));
-    }
-    try {
-      await registry.send(providerId, message);
-      return;
-    } catch (cause) {
-      lastError = cause;
-      // Goal 148 — honour the goal-134 `MessagingProviderError.retryable`
-      // boolean. Pre-iter the loop burned all three attempts on a
-      // permanent error (401 bad token, 404 missing destination,
-      // INVALID_DESTINATION / INVALID_TEXT validation failures),
-      // delaying the recorded failure by ~1s for no gain and
-      // hiding the real error in the second / third attempt's
-      // backoff. Now a non-retryable error breaks out immediately.
-      if (cause instanceof MessagingProviderError && !cause.retryable) {
-        break;
-      }
-    }
-  }
-  throw lastError;
-}
 
 /**
  * Goal 052 — payload of `~/.muse/session-lock.json`. Written by

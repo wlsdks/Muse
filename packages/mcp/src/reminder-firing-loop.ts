@@ -1,5 +1,6 @@
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
+import { sendWithRetry } from "./messaging-retry.js";
 import { appendReminderHistory } from "./personal-reminder-history-store.js";
 import {
   filterReminders,
@@ -104,7 +105,12 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
         })
       : reminder.text;
     try {
-      await options.registry.send(providerId, {
+      // Goal 149 — share the goal-070 / goal-148 retry-with-backoff
+      // path with the proactive surface. A transient 5xx no longer
+      // loses the 9am reminder; a permanent 401 / 404 / validation
+      // error short-circuits on attempt 1 instead of burning the
+      // full ~1s ladder (see `messaging-retry.ts`).
+      await sendWithRetry(options.registry, providerId, {
         destination,
         text: deliveredText
       });
