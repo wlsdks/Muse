@@ -406,7 +406,30 @@ export function resolveIdentityScope(metadata: JsonObject): string {
   return "";
 }
 
+/**
+ * Goal 117 — provider ids whose marginal inference cost is $0
+ * (the model runs on the user's machine, no per-token billing).
+ * `estimateCostUsd` short-circuits to 0 for these so the budget
+ * meter / token-cost rollup don't manufacture phantom spend when
+ * a user runs Qwen / Llama / etc. through Ollama or LM Studio.
+ */
+const LOCAL_PROVIDERS: ReadonlySet<string> = new Set(["ollama", "lmstudio"]);
+
+export function isLocalProvider(model: string): boolean {
+  const provider = resolveProvider(model);
+  return LOCAL_PROVIDERS.has(provider);
+}
+
 export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+  // Goal 117 — local inference is free. Without this short-circuit
+  // a user running `ollama/qwen3.5:9b-q4_K_M` got the `defaultPricing`
+  // rate applied to every token, and `muse status` / `muse metrics
+  // show` showed fictional dollars spent. Treat any
+  // `<local-provider>/<model>` prefix as $0 regardless of the
+  // model substring (qwen / llama / gemma / etc).
+  if (isLocalProvider(model)) {
+    return 0;
+  }
   const normalized = model.toLowerCase();
   const [inputRate, outputRate] =
     modelPricing.find(([prefix]) => normalized.includes(prefix))?.[1] ?? defaultPricing;

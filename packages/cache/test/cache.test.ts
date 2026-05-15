@@ -12,6 +12,7 @@ import {
   cacheableModelRequest,
   cachedResponseFromModelResponse,
   estimateCostUsd,
+  isLocalProvider,
   normalizeUserId,
   resolveIdentityScope,
   resolveProvider
@@ -127,6 +128,31 @@ describe("cache metrics", () => {
     expect(resolveProvider("anthropic/claude-3-haiku")).toBe("anthropic");
     expect(resolveProvider("openrouter/anthropic/claude-3-haiku")).toBe("openrouter");
     expect(resolveProvider("OpenAI/gpt-4o")).toBe("openai");
+  });
+
+  it("estimateCostUsd returns 0 for local providers (Ollama / LM Studio) — goal 117", () => {
+    // Explicit `<provider>/<model>` form lands directly on the
+    // local-provider allowlist.
+    expect(estimateCostUsd("ollama/qwen3.5:9b-q4_K_M", 5000, 1000)).toBe(0);
+    expect(estimateCostUsd("ollama/qwen3.6:27b", 100_000, 50_000)).toBe(0);
+    expect(estimateCostUsd("lmstudio/some-local-tag", 1, 1)).toBe(0);
+
+    // Bare local-prefixed names (no `ollama/` wrapper) — `qwen` and
+    // `llama` map to ollama through knownModelPrefixes, so they
+    // should also short-circuit.
+    expect(estimateCostUsd("qwen3.5:9b-q4_K_M", 5000, 1000)).toBe(0);
+    expect(estimateCostUsd("llama3.2", 5000, 1000)).toBe(0);
+
+    // Non-local providers stay billed.
+    expect(estimateCostUsd("gpt-4o-mini", 1_000, 1_000)).toBeCloseTo(0.00075);
+    expect(estimateCostUsd("anthropic/claude-3-haiku", 1_000, 1_000)).toBeGreaterThan(0);
+
+    // isLocalProvider mirrors the same classification.
+    expect(isLocalProvider("ollama/qwen3.5:9b")).toBe(true);
+    expect(isLocalProvider("qwen3.5:9b")).toBe(true);
+    expect(isLocalProvider("lmstudio/foo")).toBe(true);
+    expect(isLocalProvider("gpt-4o")).toBe(false);
+    expect(isLocalProvider("anthropic/claude-3-haiku")).toBe(false);
   });
 });
 
