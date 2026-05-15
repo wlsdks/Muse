@@ -15,11 +15,26 @@
  * to keep the cold-path < 100 ms.
  */
 
-import { createSearchMcpServer, createLoopbackMcpConnection } from "@muse/mcp";
+import { createSearchMcpServer, createLoopbackMcpConnection, normaliseTimeRange } from "@muse/mcp";
 import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
+import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
+
+/**
+ * Goal 133 — accepted `--time` spellings, surfaced via
+ * `normaliseTimeRange` in @muse/mcp. Kept here as a typed literal
+ * so the CLI's typo-suggestion hint covers every form the
+ * normaliser knows about (the user-friendly canonical + each
+ * shortcut alias).
+ */
+const TIME_RANGE_FORMS = [
+  "today", "day", "24h",
+  "week", "7d",
+  "month", "30d",
+  "year", "365d"
+] as const;
 
 // Re-exported so existing call-sites + tests that imported it from
 // here keep working. The canonical home is `@muse/shared` (goal 003).
@@ -70,6 +85,22 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
           throw new Error(`--site must be a bare domain (got '${domain}')`);
         }
         query = `site:${domain} ${rawQuery}`;
+      }
+      // Goal 133 — reject `--time <bogus>` up-front with a
+      // closest-match hint. The MCP server (loopback-search.ts)
+      // silently drops unknown values so an LLM passing garbage
+      // doesn't crash; on the CLI a typo is a real user error —
+      // surface it instead of pretending the filter applied.
+      if (options.time && options.time.trim().length > 0) {
+        const normalised = normaliseTimeRange(options.time);
+        if (!normalised) {
+          const suggestion = closestCommandName(options.time.trim(), TIME_RANGE_FORMS);
+          const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
+          throw new Error(
+            `--time must be one of: today, week, month, year ` +
+            `(got '${options.time}')${hint}`
+          );
+        }
       }
       const limit = parseLimit(options.limit, 10, 50);
       const searxngUrl = process.env.MUSE_SEARXNG_URL?.trim();

@@ -271,6 +271,8 @@ export {
   type SearchMcpServerOptions
 } from "./loopback.js";
 
+export { normaliseTimeRange } from "./loopback-search.js";
+
 // Notes provider abstraction. LocalDir, Apple Notes (osascript), and
 // Notion (api.notion.com) are all real adapters. The `muse.notes-multi`
 // MCP server in `loopback-notes-registry.ts` routes between them via

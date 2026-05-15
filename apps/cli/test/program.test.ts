@@ -6509,6 +6509,35 @@ describe("cli program", () => {
     }
   });
 
+  it("muse search --time <typo> rejects with a closest-match hint (goal 133)", async () => {
+    // One-edit typo on the canonical "week".
+    const { io: io1 } = captureOutput();
+    const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+    program1.exitOverride();
+    await expect(program1.parseAsync(
+      ["node", "muse", "search", "Q3 budget", "--time", "weak"],
+      { from: "node" }
+    )).rejects.toThrow(/did you mean 'week'\?/u);
+
+    // Plural slip on "month" → suggests month.
+    const { io: io2 } = captureOutput();
+    const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+    program2.exitOverride();
+    await expect(program2.parseAsync(
+      ["node", "muse", "search", "Q3 budget", "--time", "months"],
+      { from: "node" }
+    )).rejects.toThrow(/did you mean 'month'\?/u);
+
+    // Unrelated input → error fires, no false-positive suggestion.
+    const { io: io3 } = captureOutput();
+    const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+    program3.exitOverride();
+    await expect(program3.parseAsync(
+      ["node", "muse", "search", "Q3 budget", "--time", "totally-unrelated"],
+      { from: "node" }
+    )).rejects.toThrow(/--time must be one of/u);
+  });
+
   it("muse watch-folder --provider <typo> suggests the closest registered provider (goal 132)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-watch-folder-typo-"));
     const prevTg = process.env.MUSE_TELEGRAM_BOT_TOKEN;
