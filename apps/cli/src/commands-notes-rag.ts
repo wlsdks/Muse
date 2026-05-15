@@ -297,6 +297,28 @@ export async function isNotesIndexStale(dir: string, indexPath?: string): Promis
   return false;
 }
 
+// Absent flag → fallback. A genuine number is truncated and
+// clamped to max; a non-numeric / below-min value (typo, unit
+// slip like `5x`, `abc`, `0`) rejects with a clear message
+// instead of silently using the default — the strict-numeric
+// line. `Number()` not `parseInt` so `600x` rejects, not 600.
+export function parseRagBoundedInt(
+  raw: string | undefined,
+  flag: string,
+  min: number,
+  max: number,
+  fallback: number
+): number {
+  if (raw === undefined || raw.trim().length === 0) {
+    return fallback;
+  }
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || parsed < min) {
+    throw new Error(`${flag} must be an integer in [${min.toString()}, ${max.toString()}] (got '${raw}')`);
+  }
+  return Math.min(max, Math.trunc(parsed));
+}
+
 export function registerNotesRagCommands(program: Command, io: ProgramIO): void {
   // `notes` is registered upstream by commands-notes.ts (the API-wrapping
   // surface). Find it instead of recreating so reindex/search land
@@ -319,7 +341,7 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
     }) => {
       const dir = options.dir ?? resolveNotesDir(process.env as Record<string, string | undefined>);
       const model = options.model;
-      const chunkChars = Math.max(120, Number.parseInt(options.chunkChars, 10) || DEFAULT_CHUNK_CHARS);
+      const chunkChars = parseRagBoundedInt(options.chunkChars, "--chunk-chars", 120, 8000, DEFAULT_CHUNK_CHARS);
       const indexPath = defaultIndexPath();
 
       io.stdout(`muse notes reindex — dir=${dir} model=${model} chunk=${chunkChars.toString()}\n`);
@@ -393,7 +415,7 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
       }
 
       const queryEmbedding = await embed(query, options.model);
-      const k = Math.max(1, Math.min(50, Number.parseInt(options.top, 10) || DEFAULT_TOP_K));
+      const k = parseRagBoundedInt(options.top, "--top", 1, 50, DEFAULT_TOP_K);
 
       const scored = index.files.flatMap((f) => f.chunks.map((chunk) => ({
         chunk,

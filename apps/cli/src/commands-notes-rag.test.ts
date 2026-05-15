@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { isNotesIndexStale } from "./commands-notes-rag.js";
+import { isNotesIndexStale, parseRagBoundedInt } from "./commands-notes-rag.js";
 
 async function writeIndex(indexPath: string, files: { path: string; mtimeMs: number }[]): Promise<void> {
   const payload = {
@@ -58,5 +58,30 @@ describe("isNotesIndexStale", () => {
     };
     await writeFile(indexPath, JSON.stringify(payload), "utf8");
     expect(await isNotesIndexStale(root, indexPath)).toBe(false);
+  });
+});
+
+describe("parseRagBoundedInt", () => {
+  it("absent or empty falls back to the default", () => {
+    expect(parseRagBoundedInt(undefined, "--top", 1, 50, 5)).toBe(5);
+    expect(parseRagBoundedInt("   ", "--top", 1, 50, 5)).toBe(5);
+  });
+
+  it("truncates a genuine in-range number", () => {
+    expect(parseRagBoundedInt("7.9", "--top", 1, 50, 5)).toBe(7);
+    expect(parseRagBoundedInt("600", "--chunk-chars", 120, 8000, 600)).toBe(600);
+  });
+
+  it("clamps above max instead of rejecting (matches the strict line)", () => {
+    expect(parseRagBoundedInt("999", "--top", 1, 50, 5)).toBe(50);
+    expect(parseRagBoundedInt("999999999", "--chunk-chars", 120, 8000, 600)).toBe(8000);
+  });
+
+  it("rejects non-numeric, trailing-garbage, zero, negative, and below-min", () => {
+    for (const bad of ["abc", "1O", "600x", "0", "-3"]) {
+      expect(() => parseRagBoundedInt(bad, "--top", 1, 50, 5)).toThrow(/--top must be an integer in \[1, 50\]/u);
+    }
+    expect(() => parseRagBoundedInt("50", "--chunk-chars", 120, 8000, 600))
+      .toThrow(/--chunk-chars must be an integer in \[120, 8000\]/u);
   });
 });
