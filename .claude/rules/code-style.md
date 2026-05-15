@@ -57,19 +57,51 @@ When a recurring bug class shows up, add a single rule to
 3. Set the rule to `error` once the sweep is clean — `warn` is for
    the transition period only.
 
-## Naming + comments
+## Comments — write one ONLY when it is necessary
 
-The CLAUDE.md baseline applies (no emojis, comment WHY not WHAT).
-Add to that:
+The default is **no comment**. A comment is a liability: it rots,
+it lies eventually, and it costs every future reader (human or AI
+agent) attention and context-window budget. Write one only when
+the code cannot carry the information itself.
+
+**Allowed (the WHY a reader cannot derive from the code):**
+
+- A non-obvious constraint or invariant ("this API rejects 401 —
+  never retry it; it is a permanent failure").
+- A workaround whose reason is invisible ("upstream lib mutates
+  the array; clone before passing").
+- A deliberate, surprising choice ("strict `Number()` not
+  `parseFloat` so `4h` is rejected, not silently 4").
+
+**Forbidden — delete on sight:**
+
+- **Round / iteration / goal markers.** `// Goal 158 —`,
+  `// goal 070`, `round 167`, `added in iter #57`. The history
+  lives in `git blame`, the commit message, and `CHANGELOG.md`.
+  In source it is pure rot and noise. This is a hard rule.
+- **WHAT narration.** `// loop over users`, `// increment count`,
+  `// return the result` — the code already says this.
+- **Task / PR / caller references.** `// used by the X flow`,
+  `// added for issue #42`, `// see PR 1234`.
+- **Restating the signature** in a docstring
+  (`@param x the x value`).
+
+**When in doubt, delete it.** If removing the comment loses
+information a competent reader genuinely needs, rewrite it as one
+short WHY line. Otherwise it goes.
+
+`docs/goals/*.md` is where goal/iteration context belongs — never
+in source comments.
+
+## Naming
 
 - **Names earn their length.** A two-character abbreviation that
   saves typing is a bad trade if a reader has to scroll up to learn
   it. Single-letter names belong only to obvious loop indices and
   `(a, b) => ...` comparators.
-- **No round-marker noise in code.** Comments referencing the
-  iteration round (`round 167`, `added in iter #57`) belong in
-  commit messages and `CHANGELOG.md`, not in source. They rot and
-  add no information a fresh reader needs.
+- **Re-stating history in comments** (`round 167`, `iter #57`,
+  `Goal NNN`) belongs in commit messages and `CHANGELOG.md`, not
+  source. See the comment rule above.
 - **Re-export-only imports go away.** If `import { X } from "./y"` is
   paired with `export { X } from "./y"` and `X` isn't used in the
   file body, drop the `import` line — `export-from` covers it.
