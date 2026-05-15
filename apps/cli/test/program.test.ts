@@ -4560,6 +4560,32 @@ describe("cli program", () => {
     }
   });
 
+  it("compareFeedEntriesNewestFirst is a consistent total order incl. undated (goal 181)", async () => {
+    const { compareFeedEntriesNewestFirst } = await import("../src/feeds-store.js");
+    const newer = { publishedAt: "2026-05-15T12:00:00Z" };
+    const older = { publishedAt: "2026-05-10T12:00:00Z" };
+    const undatedA = { publishedAt: "" };
+    const undatedB = { publishedAt: "not a date" };
+
+    // Newest-first among dated.
+    expect(compareFeedEntriesNewestFirst(newer, older)).toBeLessThan(0);
+    expect(compareFeedEntriesNewestFirst(older, newer)).toBeGreaterThan(0);
+
+    // Dated sorts before undated, both directions consistent.
+    expect(compareFeedEntriesNewestFirst(newer, undatedA)).toBeLessThan(0);
+    expect(compareFeedEntriesNewestFirst(undatedA, newer)).toBeGreaterThan(0);
+
+    // Two undated entries compare EQUAL (the bug: was 1 both ways,
+    // a non-antisymmetric comparator).
+    expect(compareFeedEntriesNewestFirst(undatedA, undatedB)).toBe(0);
+    expect(compareFeedEntriesNewestFirst(undatedB, undatedA)).toBe(0);
+
+    // Array.sort produces a stable, deterministic order.
+    const sorted = [undatedA, older, undatedB, newer].sort(compareFeedEntriesNewestFirst);
+    expect(sorted.slice(0, 2)).toEqual([newer, older]);
+    expect(sorted.slice(2)).toEqual(expect.arrayContaining([undatedA, undatedB]));
+  });
+
   it("parseFeedBody handles RSS 2.0 + Atom + filterRecentFeedEntries cutoff (goal 092)", async () => {
     const { parseFeedBody, filterRecentFeedEntries } = await import("../src/feeds-store.js");
 

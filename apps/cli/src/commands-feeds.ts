@@ -20,6 +20,7 @@ import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
 import {
+  compareFeedEntriesNewestFirst,
   defaultFeedsFile,
   filterRecentFeedEntries,
   mergeFeedEntries,
@@ -228,13 +229,7 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
           title: entry.title, link: entry.link,
           publishedAt: entry.publishedAt, summary: entry.summary
         }))
-      ).sort((a, b) => {
-        const ta = Date.parse(a.publishedAt);
-        const tb = Date.parse(b.publishedAt);
-        if (!Number.isFinite(ta)) return 1;
-        if (!Number.isFinite(tb)) return -1;
-        return tb - ta;
-      });
+      ).sort(compareFeedEntriesNewestFirst);
       if (options.json) {
         io.stdout(`${JSON.stringify({ hours, entries: rolled }, null, 2)}\n`);
         return;

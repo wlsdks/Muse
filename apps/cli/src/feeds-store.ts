@@ -230,6 +230,28 @@ export function mergeFeedEntries(
 }
 
 /**
+ * Newest-first order with a *consistent* undated tail: two
+ * undated entries compare equal (0), a single undated entry
+ * sorts after a dated one. The earlier `muse feeds today`
+ * inline comparator omitted the both-undated → 0 guard, making
+ * `compare(a,b)===compare(b,a)===1` for two undated entries —
+ * a non-antisymmetric comparator V8 may order arbitrarily.
+ * Single-sourced here so the per-feed and merged sorts can't
+ * drift again.
+ */
+export function compareFeedEntriesNewestFirst(
+  a: { readonly publishedAt: string },
+  b: { readonly publishedAt: string }
+): number {
+  const ta = Date.parse(a.publishedAt);
+  const tb = Date.parse(b.publishedAt);
+  if (!Number.isFinite(ta) && !Number.isFinite(tb)) return 0;
+  if (!Number.isFinite(ta)) return 1;
+  if (!Number.isFinite(tb)) return -1;
+  return tb - ta;
+}
+
+/**
  * Goal 092 — pure filter: drop entries whose `publishedAt` is
  * older than `cutoff`. Entries missing or with an unparseable
  * date are kept (no false-negative filtering on RSS feeds that
@@ -244,12 +266,5 @@ export function filterRecentFeedEntries(
     const t = Date.parse(entry.publishedAt);
     if (!Number.isFinite(t)) return true;
     return t >= cutoff.getTime();
-  }).sort((a, b) => {
-    const ta = Date.parse(a.publishedAt);
-    const tb = Date.parse(b.publishedAt);
-    if (!Number.isFinite(ta) && !Number.isFinite(tb)) return 0;
-    if (!Number.isFinite(ta)) return 1;
-    if (!Number.isFinite(tb)) return -1;
-    return tb - ta;
-  });
+  }).sort(compareFeedEntriesNewestFirst);
 }
