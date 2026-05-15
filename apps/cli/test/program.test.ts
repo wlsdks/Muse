@@ -6637,6 +6637,53 @@ describe("cli program", () => {
     }
   });
 
+  it("maybeCompactLastChatHistory scrubs credential shapes from the LLM summary before write (goal 138)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-chat-compact-redact-"));
+    const fsp = await import("node:fs/promises");
+    const prev = process.env.HOME;
+    process.env.HOME = root;
+    try {
+      const {
+        HISTORY_COMPACT_THRESHOLD,
+        appendLastChatTurn,
+        maybeCompactLastChatHistory
+      } = await import("../src/chat-history.js");
+
+      // Seed last-chat.jsonl with enough lines (> threshold) to
+      // trigger compaction. Each appendLastChatTurn writes 2 lines.
+      const seedTurns = Math.ceil((HISTORY_COMPACT_THRESHOLD + 4) / 2);
+      for (let i = 0; i < seedTurns; i += 1) {
+        await appendLastChatTurn({ message: `turn ${i.toString()}`, response: `reply ${i.toString()}` });
+      }
+
+      // Stub provider hallucinates a credential into the summary.
+      const stubProvider = {
+        async *stream() {
+          yield {
+            type: "text-delta",
+            text: "User asked about key rotation; remembered sk-proj-abcdefghijklmnopqrstuvwxyz for context."
+          };
+        }
+      } as unknown as Parameters<typeof maybeCompactLastChatHistory>[0];
+
+      const result = await maybeCompactLastChatHistory(stubProvider, "stub-model");
+      expect(result.compacted).toBe(true);
+      // Returned summary is the scrubbed form (callers read it).
+      expect(result.summary).toContain("[redacted-openai-key]");
+      expect(result.summary).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz");
+
+      // On-disk file carries the scrubbed summary too.
+      const onDisk = await fsp.readFile(path.join(root, ".muse", "last-chat.jsonl"), "utf8");
+      expect(onDisk).toContain("[redacted-openai-key]");
+      expect(onDisk).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz");
+      // Surrounding prose survives.
+      expect(onDisk).toContain("User asked about key rotation");
+    } finally {
+      if (prev !== undefined) process.env.HOME = prev;
+      else delete process.env.HOME;
+    }
+  });
+
   it("muse remind list rejects --status typos with a closest-match hint (goal 137)", async () => {
     const { io } = captureOutput();
 

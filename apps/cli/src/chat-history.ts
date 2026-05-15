@@ -278,10 +278,19 @@ export async function maybeCompactLastChatHistory(
   } catch {
     return { compacted: false, dropped: 0 };
   }
-  const trimmedSummary = summary.trim();
-  if (trimmedSummary.length === 0) {
+  const rawSummary = summary.trim();
+  if (rawSummary.length === 0) {
     return { compacted: false, dropped: 0 };
   }
+  // Goal 138 — defense-in-depth scrub on the LLM-generated
+  // compaction summary, paired with goal 108 (chat-history append
+  // scrub) and goal 109 (episode summary scrub). The input turns
+  // are already redacted on disk (goal 108), but the model is
+  // free to hallucinate a credential-shaped string back into the
+  // summary; running the same shared helper here means the on-disk
+  // compaction artifact shares the credential-hygiene guarantee
+  // with the rest of the persistence layer.
+  const trimmedSummary = redactSecretsInText(rawSummary);
   const nextLines = [
     JSON.stringify({ content: `(Previous-conversation summary) ${trimmedSummary}`, role: "system" }),
     ...recent
