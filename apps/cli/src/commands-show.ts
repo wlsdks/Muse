@@ -29,10 +29,25 @@ interface ShowOptions {
  * Goal 096 — detect inline-image support from the terminal env.
  * Pure so the unit test pins each branch without process-env
  * mutation gymnastics.
+ *
+ * Goal 142 — recognise Ghostty (`TERM_PROGRAM=ghostty`) and the
+ * VS Code integrated terminal (`TERM_PROGRAM=vscode`); both ship
+ * the iTerm2 inline-image protocol natively (Ghostty since v1.0,
+ * VS Code since 1.93). Without the recognition, `muse show`
+ * silently falls back to `open` / `xdg-open` on those terminals
+ * even though the bytes would have rendered inline correctly.
  */
+const INLINE_IMAGE_TERM_PROGRAMS: ReadonlySet<string> = new Set([
+  "iTerm.app",
+  "WezTerm",
+  "tabby",
+  "ghostty",
+  "vscode"
+]);
+
 export function detectInlineImageSupport(env: NodeJS.ProcessEnv): boolean {
   const program = env.TERM_PROGRAM?.trim();
-  if (program === "iTerm.app" || program === "WezTerm" || program === "tabby") {
+  if (program && INLINE_IMAGE_TERM_PROGRAMS.has(program)) {
     return true;
   }
   const term = env.TERM?.trim() ?? "";

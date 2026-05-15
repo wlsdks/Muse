@@ -4282,6 +4282,10 @@ describe("cli program", () => {
     expect(detectInlineImageSupport({ TERM_PROGRAM: "WezTerm" } as NodeJS.ProcessEnv)).toBe(true);
     expect(detectInlineImageSupport({ TERM_PROGRAM: "tabby" } as NodeJS.ProcessEnv)).toBe(true);
     expect(detectInlineImageSupport({ TERM: "xterm-kitty" } as NodeJS.ProcessEnv)).toBe(true);
+    // Goal 142 — Ghostty + VS Code integrated terminal both
+    // implement the iTerm2 inline-image protocol natively.
+    expect(detectInlineImageSupport({ TERM_PROGRAM: "ghostty" } as NodeJS.ProcessEnv)).toBe(true);
+    expect(detectInlineImageSupport({ TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv)).toBe(true);
     expect(detectInlineImageSupport({ TERM_PROGRAM: "Apple_Terminal" } as NodeJS.ProcessEnv)).toBe(false);
     expect(detectInlineImageSupport({} as NodeJS.ProcessEnv)).toBe(false);
   });
