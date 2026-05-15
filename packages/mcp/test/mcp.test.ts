@@ -2029,6 +2029,31 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("오늘 오전 12시", ref)?.getHours()).toBe(0);
     });
 
+    it("resolves Korean duration offsets — 후 / 뒤 (goal 161)", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const ref = () => new Date("2026-05-15T12:00:00Z");
+
+      expect(resolveRelativeTimePhrase("30분 후", ref)?.toISOString())
+        .toBe(new Date("2026-05-15T12:30:00Z").toISOString());
+      expect(resolveRelativeTimePhrase("2시간 후", ref)?.toISOString())
+        .toBe(new Date("2026-05-15T14:00:00Z").toISOString());
+      expect(resolveRelativeTimePhrase("3일 뒤", ref)?.toISOString())
+        .toBe(new Date("2026-05-18T12:00:00Z").toISOString());
+      expect(resolveRelativeTimePhrase("2주 후", ref)?.toISOString())
+        .toBe(new Date("2026-05-29T12:00:00Z").toISOString());
+
+      // 개월 / 달 use calendar-month semantics (May 15 → Aug 15).
+      const threeMonths = resolveRelativeTimePhrase("3개월 후", ref);
+      expect(threeMonths?.getUTCMonth()).toBe(7);
+      expect(threeMonths?.getUTCDate()).toBe(15);
+      const oneMonthDal = resolveRelativeTimePhrase("1달 후", ref);
+      expect(oneMonthDal?.getUTCMonth()).toBe(5);
+
+      // Spacing-tolerant: "3 일 후" with stray space still parses.
+      expect(resolveRelativeTimePhrase("3 일 후", ref)?.toISOString())
+        .toBe(new Date("2026-05-18T12:00:00Z").toISOString());
+    });
+
     it("returns undefined for unsupported phrases (caller decides fallback)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const now = () => new Date("2026-05-10T12:00:00Z");

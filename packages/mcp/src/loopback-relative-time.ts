@@ -29,6 +29,8 @@
  *   "오늘 오전 9시 30분"     → today 09:30
  *   "모레 정오" / "내일 자정" → +2d 12:00 / tomorrow 00:00
  *   "오늘 15시"             → today 15:00 (bare 24h hour)
+ *   "30분 후" / "3일 뒤"     → reference + offset
+ *   "2시간 후" / "3개월 후"  → +N hours / calendar-month offset
  *
  * All resolved times use the local timezone for the wall-clock
  * computation, then return an ISO-8601 UTC (`Z`) string. So
@@ -175,16 +177,22 @@ const KOREAN_DAY_OFFSET: Record<string, number> = {
 };
 
 /**
- * Korean day + time. Forms:
+ * Korean day + time, or a duration offset. Forms:
  *   "내일"                  → tomorrow 09:00
  *   "내일 오후 3시"          → tomorrow 15:00
  *   "오늘 오전 9시 30분"     → today 09:30
  *   "모레 정오" / "내일 자정" → +2d 12:00 / tomorrow 00:00
  *   "오늘 15시"             → today 15:00 (bare 24h hour)
+ *   "30분 후" / "3일 뒤"     → reference + offset
+ *   "2시간 후" / "3개월 후"  → +N hours / calendar-month offset
  * Returns undefined when the phrase isn't a recognised Korean
  * shape so the caller falls through to the English patterns.
  */
 function resolveKoreanRelativePhrase(phrase: string, reference: Date): Date | undefined {
+  const offset = resolveKoreanDurationOffset(phrase, reference);
+  if (offset) {
+    return offset;
+  }
   const match = /^(오늘|내일|모레|글피)(?:\s+(.+))?$/u.exec(phrase);
   if (!match) {
     return undefined;
@@ -200,6 +208,31 @@ function resolveKoreanRelativePhrase(phrase: string, reference: Date): Date | un
   const target = startOfDay(new Date(reference.getTime() + offsetDays * 86_400_000));
   target.setHours(time.hour, time.minute, 0, 0);
   return target;
+}
+
+/**
+ * Korean duration offset: "<N><unit> 후|뒤" ("30분 후", "3일 뒤").
+ * Mirrors the English "in N units" branch — 개월/달 use
+ * calendar-month semantics; the rest are flat ms offsets.
+ */
+function resolveKoreanDurationOffset(phrase: string, reference: Date): Date | undefined {
+  const m = /^(\d+)\s*(분|시간|일|주|개월|달)\s*(?:후|뒤)$/u.exec(phrase);
+  if (!m) {
+    return undefined;
+  }
+  const amount = Number.parseInt(m[1] ?? "0", 10);
+  const unit = m[2];
+  if (unit === "개월" || unit === "달") {
+    const next = new Date(reference);
+    next.setMonth(next.getMonth() + amount);
+    return next;
+  }
+  const offsetMs = unit === "분" ? amount * 60_000
+    : unit === "시간" ? amount * 3_600_000
+    : unit === "일" ? amount * 86_400_000
+    : unit === "주" ? amount * 7 * 86_400_000
+    : 0;
+  return new Date(reference.getTime() + offsetMs);
 }
 
 function parseKoreanTimeOfDay(spec: string | undefined): { hour: number; minute: number } | "invalid" {
