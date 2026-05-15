@@ -54,10 +54,6 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
       const store = await readPersonaStore(file);
       const exists = isBuiltinPersonaId(trimmed) || trimmed in store.custom;
       if (!exists) {
-        // Goal 100 — fuzzy-suggest the closest valid id when the
-        // user mistyped (`jarvss` → `jarvis`). Reuses the goal-099
-        // Levenshtein helper so the precedence + length-aware
-        // edit cap stays consistent across CLI surfaces.
         const candidates = [
           ...BUILTIN_PERSONAS.map((p) => p.id),
           ...Object.keys(store.custom)

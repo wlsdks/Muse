@@ -169,8 +169,6 @@ export function registerMcpCommands(program: Command, io: ProgramIO, helpers: Mc
     .action((preset: string, options: McpUseOptions, command) => {
       const recipe = MCP_PRESETS[preset.toLowerCase()];
       if (!recipe) {
-        // Goal 131 — extend the typo-suggestion line (goals 099 /
-        // 100 / 118 / 119 / 124 / 125) into the MCP preset surface.
         const suggestion = closestCommandName(preset, Object.keys(MCP_PRESETS));
         const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
         io.stderr(
@@ -201,11 +199,8 @@ export function registerMcpCommands(program: Command, io: ProgramIO, helpers: Mc
       writeOutput(io, await apiRequest(io, command, "/api/mcp/servers"));
     });
 
-  // Goal 075 — surface reconnect progress. `getHealth` returns
-  // `{ status, error?, reconnectAttempts, nextReconnectAt? }`
-  // per server; we render "reconnecting in 8s" so an operator
-  // doesn't stare at "disconnected" wondering whether retry is
-  // still scheduled.
+  // Render "reconnecting in 8s" so an operator doesn't stare at
+  // "disconnected" unsure whether a retry is still scheduled.
   mcp
     .command("status")
     .description("Show per-server health, including reconnect schedule (goal 075)")

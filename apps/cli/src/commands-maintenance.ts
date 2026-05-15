@@ -121,10 +121,8 @@ export function registerMaintenanceCommand(program: Command, io: ProgramIO): voi
     .action(async (options: MaintenanceCompactOptions) => {
       const museDir = options.museDir ?? join(homedir(), ".muse");
       const archiveDir = options.archiveDir ?? join(museDir, "archive");
-      // Goal 144 — strict Number() parse so `--keep-days 7d` doesn't
-      // silently coerce to 7 (Number.parseFloat eats the suffix).
-      // Pre-iter the unit slip read as a successful filter; now the
-      // user gets the rejection they need to spot the typo.
+      // strict Number() so a "7d" unit-slip rejects instead of
+      // silently becoming 7.
       const keepDays = options.keepDays !== undefined
         ? Number(options.keepDays.trim())
         : undefined;

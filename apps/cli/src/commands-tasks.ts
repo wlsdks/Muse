@@ -99,10 +99,8 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .option("--local", "Read directly from the local tasks file instead of the API")
     .option("--json", "Print the raw API response instead of the formatted list")
     .action(async (options: { readonly status: string } & SharedOptions, command) => {
-      // Goal 125 — strict --status validation with a typo hint.
-      // Throws before either the local or remote branch dispatches
-      // so the user doesn't get a silently-wrong "open" list when
-      // they typed "doe" / "doneish" / etc.
+      // Throws before dispatch so a typo'd --status doesn't return
+      // a silently-wrong "open" list.
       assertTaskStatusInput(options.status);
       let payload: { status: string; tasks: readonly Record<string, unknown>[]; total: number };
       if (options.local) {

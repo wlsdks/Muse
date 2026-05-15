@@ -255,9 +255,6 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
 
       const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userKey));
       const personaPrompt = userMemory ? buildMusePersona(userMemory, userKey) : undefined;
-      // Goal 094 — persona template preamble (JARVIS / casual /
-      // professional / default). Loaded lazily so a fresh install
-      // without the persona.json sidecar just silent-falls to "".
       const { loadActivePersonaPreamble } = await import("./persona-store.js");
       const personaTemplatePreamble = await loadActivePersonaPreamble();
 
@@ -438,13 +435,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         io.stderr("(no matching notes, tasks, events, or reminders — answering from persona + general knowledge)\n");
       }
 
-      // Goal 047 — when --notes-only is set, native web_search is
-      // hard-disabled on both the chat-only fast path and the
-      // agent-runtime path. The flag also clamps the tool registry
-      // in the agent-runtime case (see allowedToolNames metadata
-      // below). Cost: zero — `webSearchPolicy.enabled: false` flows
-      // through adapter-anthropic / adapter-openai / adapter-gemini
-      // so they don't request the native tool from the upstream API.
+      // --notes-only hard-disables native web_search (the adapters
+      // honour enabled:false and skip the upstream tool request)
+      // and clamps the tool registry (allowedToolNames below).
       const webSearchPolicy = options.notesOnly
         ? { enabled: false, maxUses: 0 }
         : undefined;
@@ -486,9 +479,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // Chat-only fast path — direct modelProvider.stream, no tool
         // registry. Suitable for "explain this", "summarise that"
         // queries that don't need fresh external data.
-        // Goal 067 — wrap the streaming loop in `withSigintAbort` so
-        // a Ctrl-C exits cleanly with code 130 instead of leaving
-        // the stream pump dangling on the model adapter side.
+        // withSigintAbort so Ctrl-C exits 130 instead of leaving
+        // the stream pump dangling on the adapter side.
         await withSigintAbort(async (signal) => {
           for await (const event of assembly.modelProvider!.stream({
             messages: [

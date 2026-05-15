@@ -96,19 +96,15 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
 
       if (!options.watch) {
         const worst = await runOnce();
-        // Goal 030: surface the overall verdict as an exit code so
-        // CI / dotfile bootstrap scripts can `muse doctor --local
-        // || warn-user`. 0 for ok+warn (non-fatal); 1 for fail.
+        // Exit code for CI: 0 for ok+warn (non-fatal), 1 for fail.
         if (options.local && worst === "fail") {
           process.exitCode = 1;
         }
         return;
       }
 
-      // Goal 068 — watch mode. Same ANSI clear / cursor-home as
-      // `muse status --watch` (goal 046) so the UX is consistent.
-      // `--json` short-circuits the loop — emitting JSON every tick
-      // is a stream-consumer's job, not doctor's.
+      // --json short-circuits watch mode — per-tick JSON is a
+      // stream-consumer's job, not doctor's.
       if (options.json) {
         await runOnce();
         return;
@@ -240,14 +236,9 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     checks.push({ detail: `${ollama_base} not reachable (skip if you don't use Ollama)`, name: "ollama", status: "warn" });
   }
 
-  // Goal 101 — if MUSE_MODEL points at an `ollama/<tag>` model AND
-  // Ollama is reachable, cross-check that the tag is actually pulled.
-  // Catches the canonical first-run footgun: a user runs
-  // `muse setup model` once, the config sticks at `ollama/qwen3.6:27b`,
-  // they later switch machines / wipe `~/.ollama`, and now every
-  // chat fails with a confusing 404 mid-stream. Surfacing the gap
-  // here lets `muse doctor --local` produce a one-line fix
-  // ("ollama pull <tag>") before the user hits the failure.
+  // Cross-check the configured ollama tag is actually pulled —
+  // otherwise the user hits a confusing mid-stream 404 instead
+  // of a clear "ollama pull <tag>" hint here.
   if (ollamaModels && muse_model && muse_model.startsWith("ollama/")) {
     const tag = muse_model.replace(/^ollama\//, "");
     const match = findOllamaModelTag(ollamaModels, tag);
@@ -262,13 +253,8 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     }
   }
 
-  // Goal 102 — same footgun, embedding edition. When the user has
-  // ever run `muse notes reindex`, `~/.muse/notes-index.json` exists
-  // and records the embedding model in its `model` field. Falling
-  // back to `nomic-embed-text` (the default in `commands-notes-rag.ts`)
-  // keeps the probe useful when the file is malformed or pre-versioned.
-  // Probe only when (a) the index exists AND (b) Ollama is reachable —
-  // we don't want to nag users who never opted into notes RAG.
+  // Same check for the embedding model — but only when the notes
+  // index exists, so users who never opted into RAG aren't nagged.
   if (ollamaModels) {
     const notesIndexPath = join(muse_home, "notes-index.json");
     const embedModel = await readNotesIndexEmbedModel(notesIndexPath);
@@ -406,9 +392,7 @@ function formatLocalDoctor(report: LocalDoctorReport): string {
     const marker = c.status === "ok" ? "✓" : c.status === "warn" ? "·" : "✗";
     lines.push(`  ${marker} ${c.name}: ${c.detail}`);
   }
-  // Goal 030: explicit summary footer + overall verdict so a script
-  // wrapper can grep one line and a human can scan to the bottom for
-  // a clear "should I worry?" signal.
+  // Summary footer — one greppable verdict line for script wrappers.
   const warnCount = report.checks.filter((c) => c.status === "warn").length;
   const failCount = report.checks.filter((c) => c.status === "fail").length;
   const okCount = report.checks.filter((c) => c.status === "ok").length;

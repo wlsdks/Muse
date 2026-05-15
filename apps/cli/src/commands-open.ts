@@ -148,10 +148,7 @@ export function registerOpenCommand(program: Command, io: ProgramIO): void {
       }
       const hit = hits[0]!;
       if (wantRaw) {
-        // Goal 056 — pure record JSON, no envelope. The kind
-        // information is recoverable from the record itself in
-        // every store the open command scans, so consumers don't
-        // lose anything by going envelope-free.
+        // No envelope — kind is recoverable from the record itself.
         io.stdout(`${JSON.stringify(hit.record, null, 2)}\n`);
         return;
       }

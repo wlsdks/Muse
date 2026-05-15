@@ -61,10 +61,8 @@ async function refreshSingleFeed(record: FeedRecord, io: ProgramIO): Promise<Fee
   try {
     const body = await loadFeedBody(record.url);
     const incoming = parseFeedBody(body);
-    // Goal 115 — merge incoming with the on-disk archive so entries
-    // that have rolled off the publisher's window survive locally.
-    // dedup by entry.id, newest-first, capped to the default to
-    // bound disk growth.
+    // Merge with the on-disk archive so entries that rolled off
+    // the publisher's window survive locally (deduped, capped).
     const entries = mergeFeedEntries(record.entries, incoming);
     return { ...record, lastFetchedAt: new Date().toISOString(), entries };
   } catch (cause) {
@@ -145,9 +143,6 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
       const trimmed = id.trim();
       const exists = store.feeds.some((f) => f.id === trimmed);
       if (!exists) {
-        // Goal 153 — fuzzy-suggest the closest known id when the
-        // user typed `tech-news` for `tech_news`. Reuses the goal-099
-        // Levenshtein helper for consistent typo UX across surfaces.
         const suggestion = closestCommandName(trimmed, store.feeds.map((f) => f.id));
         io.stderr(`muse feeds remove: no feed with id '${trimmed}'`);
         if (suggestion) io.stderr(` — did you mean '${suggestion}'?`);
@@ -167,11 +162,8 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
     .action(async (options: { readonly id?: string }) => {
       const file = defaultFeedsFile();
       const store = await readFeedsStore(file);
-      // Goal 153 — when --id is supplied but doesn't match, surface
-      // a fuzzy hint instead of the silent "(no feeds to refresh)"
-      // line. Without the hint a typo (`--id tech-news` for
-      // `tech_news`) looks indistinguishable from a successful
-      // refresh of a feed that happened to have nothing new.
+      // A bad --id must error, not print "(no feeds to refresh)"
+      // — that's indistinguishable from a successful no-op refresh.
       if (options.id !== undefined) {
         const trimmed = options.id.trim();
         const exists = store.feeds.some((f) => f.id === trimmed);
@@ -207,11 +199,8 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
     .option("--hours <n>", "Lookback hours (default 24)")
     .option("--json", "Emit a structured payload")
     .action(async (options: { readonly hours?: string; readonly json?: boolean }) => {
-      // Goal 143 — reject non-numeric `--hours` instead of silently
-      // falling back to 24. The pre-iter behaviour ("abc" → 24h)
-      // looked like a successful filter but actually ignored the
-      // input, so a user who typed `--hours 4h` (forgetting the
-      // unit) thought they'd filtered to 4h when they got 24h.
+      // Reject non-numeric --hours rather than silently using 24
+      // (a "4h" unit-slip must not look like a successful filter).
       let hours = 24;
       if (options.hours !== undefined) {
         const trimmed = options.hours.trim();

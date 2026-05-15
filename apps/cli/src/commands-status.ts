@@ -193,21 +193,9 @@ async function collectStatus(userId: string) {
   const historyFile = defaultProactiveHistoryFile();
   const logFile = defaultLogFile();
 
-  // Goal 098 — surface the two "persona" axes that aren't otherwise
-  // visible to the user without spelunking through env + persona.json:
-  //   - slot: the active multi-persona memory keying (work / home / …)
-  //     resolved via `resolvePersona` so the same precedence as every
-  //     other persona-aware subcommand (--persona > MUSE_PERSONA env)
-  //     is applied; `muse status` itself has no --persona flag, so
-  //     here it's env-only and `slotSource` says so.
-  //   - template: the active persona-template (jarvis / casual / …)
-  //     from `~/.muse/persona.json`; tells the user which tone every
-  //     ask / brief / today / proactive-synthesis call will adopt.
-  // Goal 104 — resolve the slot BEFORE reading memory + trust so the
-  // status dashboard surfaces the correct slot's data when
-  // MUSE_PERSONA is set. Otherwise the persona badge said "work" but
-  // facts/prefs/trust came from the bare `<user>` record — exactly
-  // the silent-divergence bug goal 103 fixed for `muse memory`.
+  // Resolve the slot BEFORE reading memory + trust, else the badge
+  // shows the slot but facts/prefs/trust come from the bare
+  // <user> record (silent divergence when MUSE_PERSONA is set).
   const slot = resolvePersona(undefined);
   const effectiveUserKey = slot ? `${userId}@${slot}` : userId;
   const personaStore = await readPersonaStore(defaultPersonaFile()).catch(() => undefined);
@@ -244,9 +232,8 @@ async function collectStatus(userId: string) {
 
   const patternsFiredDoc = await safeReadJson(defaultPatternsFiredFile()) as { fired?: readonly unknown[] } | undefined;
   const patternsSummary = summarisePatternsFiredRows(patternsFiredDoc?.fired ?? []);
-  // Goal 095 — derive 1-3 "you usually do X around now" hints
-  // from the same patterns-fired sidecar. Pure helper so the
-  // unit test pins each branch without standing up state.
+  // 1-3 "you usually do X around now" hints from the
+  // patterns-fired sidecar.
   const suggestions = suggestPatternHints(patternsFiredDoc?.fired ?? [], new Date());
 
   const reminders = await readReminders(defaultRemindersFile()).catch(() => [] as const);
@@ -255,15 +242,11 @@ async function collectStatus(userId: string) {
   const logTail = await readLogTail(logFile, 1);
   const logBytes = await fileSize(logFile);
 
-  // Goal 078 — today's token-cost rollup from the sidecar a
-  // future observability dump (or operator cron) writes.
-  // Missing file → `{ available: false }`, renderer says so.
   const tokenCost = await readTokenCostToday(defaultTokenCostTodayFile());
 
   return {
-    // Goal 064 — schemaVersion lets jq pipelines detect breaking
-    // changes ("if .schemaVersion >= 2 then …"). Bump when fields
-    // are renamed / removed (additive changes don't bump).
+    // Bump only on breaking field renames/removals (not additive
+    // changes) — jq pipelines branch on this.
     schemaVersion: MUSE_STATUS_SCHEMA_VERSION,
     ...resolveModelInfo(),
     providers: summariseProviders(),
@@ -278,34 +261,22 @@ async function collectStatus(userId: string) {
       goalCount: persona?.preferences
         ? Object.keys(persona.preferences).filter((k) => k.startsWith("goal:")).length
         : 0,
-      // Goal 146 — surface `current_focus` (preferences first, facts
-      // fallback — same precedence as active-context.ts). JARVIS
-      // dashboard's "what am I working on?" affordance: a single
-      // line the user sees when they `muse status` after a context
-      // switch, no need to grep memory.
+      // preferences-first, facts-fallback — matches active-context.ts.
       ...(typeof persona?.preferences?.["current_focus"] === "string" && persona.preferences["current_focus"].trim().length > 0
         ? { currentFocus: persona.preferences["current_focus"].trim() }
         : typeof persona?.facts?.["current_focus"] === "string" && persona.facts["current_focus"].trim().length > 0
           ? { currentFocus: persona.facts["current_focus"].trim() }
           : {}),
-      // Goal 147 — surface `working_hours` (e.g. "9-18") the same
-      // way current_focus shows. `[Active Context]` already reads
-      // this through preferences only (see active-context.ts:165),
-      // so the dashboard mirrors that precedence — no facts
-      // fallback here. The raw "<start>-<end>" string is echoed
-      // as-is; jq pipelines can parse on their side if needed.
+      // preferences-only (no facts fallback) — mirrors how
+      // active-context.ts reads working_hours.
       ...(typeof persona?.preferences?.["working_hours"] === "string" && persona.preferences["working_hours"].trim().length > 0
         ? { workingHours: persona.preferences["working_hours"].trim() }
         : {}),
-      // Goal 098 — active multi-persona slot from --persona /
-      // MUSE_PERSONA (status has no CLI flag so it's env-only here).
-      // Goal 104 — `effectiveUserKey` is the slot-composed key that
-      // memory + trust lookups actually use; surfaced so jq pipelines
-      // + downstream tooling don't have to recompose it.
+      // effectiveUserKey is the slot-composed key memory + trust
+      // actually use — surfaced so callers don't recompose it.
       ...(slot
         ? { slot, slotSource: "MUSE_PERSONA" as const, effectiveUserKey }
         : {}),
-      // Goal 098 — active persona-template (jarvis / casual / …).
       template: {
         activeId: activeTemplateId,
         isBuiltin: isBuiltinPersonaId(activeTemplateId),
@@ -590,9 +561,8 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
         }
         io.stdout("\n");
       }
-      // Goal 078 — today's token-cost rollup. Renders only when
-      // the sidecar JSON is present + parseable; otherwise stays
-      // silent so a fresh install doesn't show a useless line.
+      // Silent when the sidecar is absent so a fresh install
+      // doesn't show a useless line.
       if (snap.cost.available) {
         const usd = typeof snap.cost.totalUsd === "number" ? `$${snap.cost.totalUsd.toFixed(4)}` : "(no usd)";
         const tokens = typeof snap.cost.totalTokens === "number" ? `${snap.cost.totalTokens.toString()} tokens` : "(no tokens)";

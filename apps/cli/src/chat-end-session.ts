@@ -130,13 +130,9 @@ export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOpt
   if (!ownerId) {
     return { reason: "no userId available (boundary missing it, no fallback supplied)", status: "skipped" };
   }
-  // Goal 109 — defense-in-depth scrub on the LLM-generated summary
-  // + topics. The input turns are already redacted (goal 108 hits
-  // last-chat.jsonl), but a model is free to hallucinate a
-  // credential-shaped string into its summary or echo a token
-  // verbatim from a non-history surface. Running the same shared
-  // helper here means the on-disk episode shares the credential-
-  // hygiene guarantee with the rest of the persistence layer.
+  // Re-scrub: the model can hallucinate a credential-shaped
+  // string into the summary/topics even though input turns were
+  // already redacted.
   const scrubbedTopics = summary.topics.map((topic) => redactSecretsInText(topic));
   const episode: PersistedEpisode = {
     endedAt: now().toISOString(),

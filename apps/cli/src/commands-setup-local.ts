@@ -243,8 +243,8 @@ export function registerSetupLocalCommand(
       io.stdout(`  tier: ${chosen.tier}  approx ${chosen.approxSizeGb.toFixed(1)} GB on disk, ≥ ${chosen.minRamGb.toString()} GB RAM\n`);
       io.stdout(`  note: ${chosen.note}\n`);
 
-      // Goal 105 — pre-flight RAM check so we don't silently send
-      // a user with an 8 GB laptop to pull a 17 GB power-tier model.
+      // Pre-flight RAM check so an 8 GB laptop isn't sent to pull
+      // a 17 GB power-tier model.
       const ramWarning = checkPresetRam(totalmem() / (1024 ** 3), chosen);
       if (ramWarning) {
         io.stdout(`  warn: ${ramWarning.message}\n`);

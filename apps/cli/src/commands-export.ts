@@ -175,11 +175,9 @@ export async function buildMuseExport(args: {
 }): Promise<{ readonly outputPath: string; readonly files: readonly string[]; readonly notesIncluded: boolean; readonly encrypted: boolean }> {
   const sources = await collectSources(args.museDir, args.notesDir);
 
-  // Goal 081 — when encrypting we still build the tar with system
-  // `tar` (same posture as the cleartext path), but route it
-  // through a temp file we can read + encrypt + final-write +
-  // unlink. The temp path lives next to the final output so a
-  // partial failure doesn't leave a cleartext sibling in cwd.
+  // When encrypting, build the tar into a temp sibling of the
+  // final output then encrypt+unlink, so a partial failure
+  // doesn't strand a cleartext file in cwd.
   const passphrase = args.passphrase;
   const tarPath = passphrase ? `${args.outputPath}.cleartext.tmp` : args.outputPath;
 

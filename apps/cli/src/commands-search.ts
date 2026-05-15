@@ -86,11 +86,8 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
         }
         query = `site:${domain} ${rawQuery}`;
       }
-      // Goal 133 — reject `--time <bogus>` up-front with a
-      // closest-match hint. The MCP server (loopback-search.ts)
-      // silently drops unknown values so an LLM passing garbage
-      // doesn't crash; on the CLI a typo is a real user error —
-      // surface it instead of pretending the filter applied.
+      // The MCP server silently drops a bad --time (LLM safety);
+      // on the CLI a typo is a real user error, so surface it.
       if (options.time && options.time.trim().length > 0) {
         const normalised = normaliseTimeRange(options.time);
         if (!normalised) {
@@ -113,11 +110,6 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
         ...(engines ? { searxngEngines: engines } : {})
       });
       const connection = createLoopbackMcpConnection(server);
-      // Goal 065 — surface the backend wall-clock latency in the
-      // formatted output so a user pondering "did this even hit
-      // SearXNG?" sees `(123 ms)` after the result-count banner.
-      // The JSON output stays unchanged — structured consumers
-      // already get richer signal from the raw payload.
       const searchStartedAt = Date.now();
       const result = await connection.callTool!("search", {
         query,
@@ -151,14 +143,9 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
         ];
         for (let i = 0; i < rows.length; i += 1) {
           const r = rows[i]!;
-          // Goal 140 — search results come from external backends
-          // (SearXNG, DuckDuckGo) and the snippet body can quote
-          // credentials from indexed forum posts / API docs. The
-          // saved note may sync to iCloud / Obsidian / Notion / git
-          // (same long-lived-with-third-party-sync surface goal 112
-          // covered for the daily brief), so scrub title + snippet
-          // through the shared helper. URLs stay verbatim — they're
-          // clickable identifiers, mangling them breaks the note.
+          // Scrub title + snippet — external results can quote
+          // credentials and the note may sync to a third party.
+          // URLs stay verbatim (mangling breaks the clickable link).
           const title = redactSecretsInText((r.title ?? "").trim() || "(untitled)");
           const url = (r.url ?? "").trim();
           const snippet = redactSecretsInText((r.snippet ?? "").replace(/\s+/gu, " ").trim());

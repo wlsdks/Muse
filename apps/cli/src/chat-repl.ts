@@ -165,13 +165,9 @@ export async function runChatRepl(
   }
   const seedHistory = options.continueHistory ? await readLastChatHistory() : [];
   const history: { role: "user" | "assistant"; content: string }[] = [...seedHistory];
-  // Goal 034: keep the in-memory history array bounded so a
-  // multi-day REPL session doesn't grow the heap without limit.
-  // Default cap holds 1000 turns (2000 entries — user + assistant
-  // pair). The on-disk history file via `appendLastChatTurn` stays
-  // authoritative; in-memory eviction only affects what's passed
-  // to the next model call, which the runtime's own context-window
-  // trim handles separately anyway.
+  // Bound the in-memory history (heap guard for multi-day
+  // sessions). The on-disk file stays authoritative; eviction
+  // only trims what's passed to the next model call.
   const maxHistoryEntries = resolveReplHistoryCap(process.env.MUSE_REPL_MAX_HISTORY_ENTRIES);
   const trimHistoryIfOversize = (): void => {
     if (history.length > maxHistoryEntries) {
@@ -325,13 +321,9 @@ export async function runChatRepl(
     rl.close();
   };
   rl.on("SIGINT", onSigint);
-  // Goal 072 — SIGTERM (kill / docker stop / systemd shutdown)
-  // would otherwise bypass the `finally` block that captures the
-  // end-of-session episode. The helper closes the readline so its
-  // in-flight `question` promise rejects + control returns to the
-  // finally where the episode summariser runs. SIGINT at the
-  // process level (rare — readline usually catches it first)
-  // gets the same treatment for parity.
+  // Without this, SIGTERM bypasses the finally that captures the
+  // end-of-session episode. Closing readline rejects its in-flight
+  // question promise so control returns to the finally.
   const teardownProcessSignals = wireReplGracefulExit({
     onSignal: (signal) => {
       io.stdout(`\n(${signal} — exiting)\n`);

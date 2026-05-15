@@ -72,12 +72,8 @@ export function formatRemainingDuration(rawMinutes: number): string {
 }
 
 export function resolveLockUntilMs(rawHours: string | undefined, rawMinutes: string | undefined, nowMs: number): number {
-  // Goal 155 — parallel to goals 143 + 144: switch from
-  // Number.parseFloat (forgiving prefix parse, "4h" → 4) to
-  // strict Number(). A user who typed `--hours 4h` (forgetting
-  // that the unit is already implied) used to get a 4-hour lock
-  // silently; now they get an explicit rejection so they can
-  // re-issue with the intended value.
+  // strict Number() (not parseFloat) so a "4h" unit-slip rejects
+  // instead of silently becoming a 4-hour lock.
   const hours = parseStrictNumeric("--hours", rawHours);
   const minutes = parseStrictNumeric("--minutes", rawMinutes);
   if (hours < 0 || minutes < 0) {

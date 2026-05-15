@@ -93,7 +93,6 @@ export function registerWebhookCommand(program: Command, io: ProgramIO): void {
 
       const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
       if (!registry.has(provider)) {
-        // Goal 132 — closest-match hint same as watch-folder.
         const known = registry.list().map((p) => p.id);
         const suggestion = closestCommandName(provider, known);
         const hint = suggestion ? ` — did you mean --provider ${suggestion}?` : "";

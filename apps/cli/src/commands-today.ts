@@ -155,24 +155,16 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
           await speakPlain(io, helpers.shells, prose, options.audioVoice, parseAudioFormat(options.audioFormat));
         }
         if (options.saveToNotes && options.saveToNotes.trim().length > 0) {
-          // Goal 054 — persist the narrative as a journal-style note
-          // (markdown body). Uses the same LocalDirNotesProvider path
-          // `muse search --to-notes` does so the file lands under the
-          // user's configured notes dir. Stderr banner mirrors the
-          // search-to-notes UX so a piped stdout consumer still gets
-          // only the prose itself.
+          // Banner goes to stderr so a piped stdout consumer
+          // still gets only the prose.
           const { resolveNotesDir } = await import("@muse/autoconfigure");
           const { LocalDirNotesProvider } = await import("@muse/mcp");
           const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
           const provider = new LocalDirNotesProvider({ notesDir });
           const title = `Today brief — ${shortDateLabel(briefing.generatedAt)}`;
-          // Goal 112 — defence-in-depth scrub on the LLM-generated
-          // brief prose before it persists as a markdown note. A task
-          // or calendar title carrying a credential ("rotate sk-…")
-          // could surface in the brief, and the saved note is
-          // long-lived and may sync to a third-party note store. Pair
-          // with goals 108 / 109 / 111 so every long-lived /
-          // outbound-bound surface shares the same hygiene.
+          // Scrub the LLM brief before it persists — a task/event
+          // title may quote a credential and the note is long-lived
+          // and may sync to a third-party store.
           const body = [
             `# ${title}`,
             "",

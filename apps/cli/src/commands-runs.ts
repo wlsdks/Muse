@@ -42,8 +42,7 @@ export function registerRunsCommands(program: Command, io: ProgramIO, helpers: R
       );
     });
 
-  // Goal 057 — admin cleanup. Single-run delete by id, or bulk
-  // delete every run started at or before `--before <iso>`.
+  // Delete a single run by id, or bulk via --before <iso>.
   runs
     .command("delete")
     .description("Delete one or more agent runs from history (goal 057)")

@@ -112,9 +112,6 @@ export function registerHistoryCommand(program: Command, io: ProgramIO): void {
     .action(async (options: HistoryOptions) => {
       const kindFilter = options.kind?.trim().toLowerCase();
       if (kindFilter && !ACTIVITY_KINDS.has(kindFilter as ActivityKind)) {
-        // Goal 124 — closest-match hint on typos (joins the goal
-        // 099 / 100 / 118 / 119 typo-suggestion line). ACTIVITY_KINDS
-        // is a Set; spread to an array for the helper.
         const suggestion = closestCommandName(kindFilter, [...ACTIVITY_KINDS]);
         const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
         throw new Error(`--kind must be one of: reminder, proactive, followup, pattern, episode (got '${kindFilter}')${hint}`);
@@ -129,11 +126,8 @@ export function registerHistoryCommand(program: Command, io: ProgramIO): void {
       }
       const limit = parseLimit(options.limit, 20, 200);
 
-      // Goal 050 — when `--grep` is set, read above the normal cap
-      // (×10, still bounded) and post-filter so the user still sees
-      // up to `limit` MATCHING entries. Without the bump, a 200-entry
-      // history that mostly doesn't match the pattern would silently
-      // return zero hits.
+      // With --grep, read ×10 the cap then post-filter, else a
+      // mostly-non-matching history returns zero hits under limit.
       const grepPattern = options.grep
         ? compileHistoryGrep(options.grep, options.caseSensitive === true)
         : undefined;
@@ -167,10 +161,6 @@ export function registerHistoryCommand(program: Command, io: ProgramIO): void {
         return;
       }
       io.stdout(`Activity (${merged.length.toString()} entries, newest first):\n\n`);
-      // Goal 062 — entries within the past week render as relative
-      // time ("2h ago" / "yesterday"-class strings); older entries
-      // keep the full local timestamp (delegated to
-      // `formatRelativeTime` which decides per-entry).
       const now = new Date();
       for (const entry of merged) {
         const status = entry.status ? ` ${entry.status}` : "";

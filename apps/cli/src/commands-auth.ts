@@ -84,13 +84,9 @@ export function registerAuthCommands(program: Command, io: ProgramIO, helpers: A
       io.stdout(`Removed Muse API token for ${baseUrl}\n`);
     });
 
-  // Goal 082 — operator-driven JWT secret rotation. Writes a new
-  // 32-byte hex secret to ~/.muse/auth-secrets.json, pushes the
-  // old one onto the grace-window list with a validUntil =
-  // now + --grace-hours (default 24). The runtime reads the file
-  // at boot (env stays the fallback when the file is missing).
-  // Operator restarts the server after rotating; live reload is
-  // a follow-up (no file-watch hook exists today).
+  // The old secret keeps working for --grace-hours (default 24)
+  // via the grace-window list. Runtime reads the file at boot —
+  // restart the server after rotating (no live reload).
   auth
     .command("rotate-jwt")
     .description("Generate a fresh JWT signing secret and grace-window the old one (goal 082)")

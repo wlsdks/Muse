@@ -175,8 +175,8 @@ export function registerRecallCommand(program: Command, io: ProgramIO): void {
         return;
       }
       const limit = clampLimit(options.limit);
-      // Goal 157 — bail early on an unknown --source so a typo
-      // (e.g. `--source note`) doesn't silently widen to "all".
+      // Bail on unknown --source so `--source note` doesn't
+      // silently widen to "all".
       const sourceResolution = resolveSource(options.source);
       if (sourceResolution.kind === "invalid") {
         const suggestion = closestCommandName(sourceResolution.input.trim().toLowerCase(), RECALL_SOURCE_VALUES);
@@ -203,13 +203,9 @@ export function registerRecallCommand(program: Command, io: ProgramIO): void {
         io.stderr("(recall: no episodes-index.json — run `muse episode reindex` to populate)\n");
       }
 
-      // Goal 114 — model-mismatch warning. Cosine similarity between
-      // vectors from two different embedding models is mostly noise
-      // (the spaces don't align), so a `--embed-model X` query against
-      // an index built with `Y` returns garbage ranks with high-
-      // confidence-looking scores. Surface the gap up-front so the
-      // user knows to `muse notes reindex` / `muse episode reindex`
-      // before trusting the hit list.
+      // Cosines across two embedding models are noise (the spaces
+      // don't align) — warn so the user reindexes before trusting
+      // confident-looking but garbage ranks.
       const notesMismatch = notesIndex?.model && notesIndex.model !== embedModel
         ? notesIndex.model : undefined;
       const episodeMismatch = episodeIndex?.model && episodeIndex.model !== embedModel

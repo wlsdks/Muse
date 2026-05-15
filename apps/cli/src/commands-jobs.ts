@@ -237,9 +237,6 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
     .argument("<id>", "Job id or unique prefix (from `muse job list` or the `run` output)")
     .option("--json", "Emit machine-readable JSON")
     .action(async (id: string, options: { readonly json?: boolean }) => {
-      // Goal 150 — accept a unique prefix. Full id keeps working
-      // (resolves as `exact`); ambiguous prefix prints candidates
-      // and bails with exit 1.
       const resolved = resolveOrReportJobId(io, id, "muse job status");
       if (resolved === undefined) return;
       const file = jobPath(resolved);
@@ -283,10 +280,8 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
         }
         return;
       }
-      // Goal 151 — validate --status against the known JobStatus set
-      // before scanning the dir. A typo like `--status runing` used
-      // to silently filter-to-zero with no signal; now it bails
-      // with a fuzzy-suggest hint (reuses the goal-099 helper).
+      // Validate before scanning so `--status runing` gets a
+      // fuzzy hint instead of silently filtering to zero.
       const statusFilter = resolveJobStatusFilter(options.status);
       if (statusFilter === "invalid") {
         const suggestion = closestCommandName(options.status!.trim(), JOB_STATUS_FILTER_VALUES);
@@ -311,10 +306,8 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
         matched.push({ id, prompt: summary.prompt ?? "", status: summary.status });
       }
       if (options.json) {
-        // Goal 152 — structured payload for scripting / pipelines.
-        // Shape mirrors `muse job status --json` (id, status,
-        // prompt) plus the count + active filter so consumers can
-        // distinguish "no jobs ever" from "no jobs matching filter".
+        // status echoes the active filter so consumers can tell
+        // "no jobs ever" from "none matched the filter".
         io.stdout(`${JSON.stringify({
           dir,
           jobs: matched,
@@ -336,9 +329,8 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
     .description("Live-follow a job's progress events (tail -f equivalent)")
     .argument("<id>", "Job id or unique prefix")
     .action(async (id: string) => {
-      // Goal 150 — same prefix resolution as `muse job status`. Bail
-      // before opening the tail loop so an ambiguous prefix isn't
-      // mistaken for a non-existent file.
+      // Resolve before the tail loop so an ambiguous prefix isn't
+      // mistaken for a missing file.
       const resolved = resolveOrReportJobId(io, id, "muse job tail");
       if (resolved === undefined) return;
       const file = jobPath(resolved);

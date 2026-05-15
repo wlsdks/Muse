@@ -136,10 +136,6 @@ export function registerRoutineCommand(program: Command, io: ProgramIO): void {
         return;
       }
 
-      // Goal 129 — proper singular / plural so the dashboard reads
-      // "across 1 day" / "across 5 days" instead of the awkward
-      // "day(s)" placeholder. Same cleanup as goal 123 for the
-      // [Active Context] prompt formatter.
       const dayUnit = summary.daysObserved === 1 ? "day" : "days";
       io.stdout(`Routine — user=${result.user}, window=${days.toString()}d, file=${file}\n`);
       io.stdout(`  sessions: ${summary.totalSessions.toString()} across ${summary.daysObserved.toString()} ${dayUnit} (avg ${summary.sessionsPerDay.toString()}/day)\n`);

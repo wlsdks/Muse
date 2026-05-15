@@ -40,12 +40,9 @@ export function registerTracesCommands(program: Command, io: ProgramIO, helpers:
       );
     });
 
-  // Goal 076 — live-tail recent trace events. The in-memory
-  // trace sink doesn't support SSE today, so the implementation
-  // polls `/api/admin/traces` on a cadence and prints the newest
-  // events since the previous tick. SIGINT exits cleanly via the
-  // shared `wireReplGracefulExit` helper (goal 067/072 scaffold)
-  // so a Ctrl-C doesn't strand the polling timer.
+  // Polls (the in-memory trace sink has no SSE) and prints new
+  // events per tick. wireReplGracefulExit so Ctrl-C doesn't
+  // strand the polling timer.
   traces
     .command("tail")
     .description("Poll /api/admin/traces and print new trace events as they arrive (goal 076)")

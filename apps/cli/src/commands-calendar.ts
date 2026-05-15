@@ -126,9 +126,6 @@ export function registerCalendarCommands(program: Command, io: ProgramIO, helper
       io.stdout(formatCalendarEvents(payload as unknown as Parameters<typeof formatCalendarEvents>[0]));
     });
 
-  // Goal 021: quick subcommands for the two most common ad-hoc queries.
-  // Both delegate to the same `events` action by setting from/to in the
-  // local timezone, so the underlying logic stays single-sourced.
   const registerQuickRange = (name: string, description: string, computeRange: () => { from: Date; to: Date }): void => {
     calendar
       .command(name)
@@ -186,10 +183,8 @@ export function registerCalendarCommands(program: Command, io: ProgramIO, helper
     return { from: now, to: end };
   });
 
-  // Goal 059 — one-shot bulk import from an .ics file into the
-  // local calendar provider. Idempotent by (title, startsAt) so
-  // re-running the same import doesn't duplicate. Use
-  // `--allow-duplicates` to bypass the dedupe.
+  // Idempotent by (title, startsAt) — re-running the same import
+  // doesn't duplicate. --allow-duplicates bypasses the dedupe.
   calendar
     .command("import")
     .description("Bulk-import an .ics file into the local calendar provider (idempotent by title+start) (goal 059)")

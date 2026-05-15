@@ -92,9 +92,8 @@ export function registerWatchFolderCommand(program: Command, io: ProgramIO): voi
       const provider = options.provider ?? "log";
       const destination = options.destination ?? "@me";
       const asTask = options.asTask === true;
-      // Goal 144 — strict Number() validation so `--default-lead-minutes
-      // 90m` (unit slip) rejects up-front instead of becoming 90
-      // (Number.parseInt's forgiving prefix parse swallowed the m).
+      // strict Number() so a "90m" unit-slip rejects instead of
+      // becoming 90 (parseInt eats the suffix).
       let defaultLead = 60;
       if (options.defaultLeadMinutes !== undefined) {
         const trimmed = options.defaultLeadMinutes.trim();
@@ -118,9 +117,6 @@ export function registerWatchFolderCommand(program: Command, io: ProgramIO): voi
 
       const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
       if (!registry.has(provider)) {
-        // Goal 132 — closest-match hint on typos (extends the typo
-        // line of goals 099/100/118/119/124/125/131 into messaging
-        // provider selection).
         const known = registry.list().map((p) => p.id);
         const suggestion = closestCommandName(provider, known);
         const hint = suggestion ? ` — did you mean --provider ${suggestion}?` : "";

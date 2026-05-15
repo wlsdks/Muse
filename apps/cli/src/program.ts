@@ -522,15 +522,10 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   });
   registerVoiceCommands(program, io, { apiRequest, readApiOptions, writeOutput });
 
-  // Goal 060 — `muse` with no subcommand should print help instead
-  // of exiting silently. Goal 099 — `muse statu` (and other typos)
-  // should suggest the closest command instead of commander's
-  // confusing "too many arguments" error. Accept an optional
-  // positional and either show help (no arg) or a
-  // friendly-with-suggestion error (unknown arg). The argument is
-  // a fallback catchall — overriding the usage line keeps the help
-  // banner clean ("muse [options] [command]" stays the canonical
-  // form a user sees).
+  // Catch-all positional: no arg → print help; unknown arg →
+  // closest-command suggestion instead of commander's confusing
+  // "too many arguments". Usage line is overridden below so the
+  // help banner stays "muse [options] [command]".
   program.argument("[unknown_subcommand]");
   program.allowExcessArguments(true);
   program.usage("[options] [command]");

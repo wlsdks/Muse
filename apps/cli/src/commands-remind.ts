@@ -160,10 +160,8 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
     .option("--local", "Read directly from the local reminders file instead of the API")
     .option("--json", "Print the raw response instead of the formatted list")
     .action(async (options: { readonly status: string } & SharedOptions, command) => {
-      // Goal 137 — strict --status validation with a typo hint
-      // (same shape as goal-125 for `muse tasks list`). Throws
-      // before either branch dispatches so the user doesn't get a
-      // silently-wrong "pending" list when they typed "due"-ish.
+      // Throws before dispatch so a typo'd --status doesn't return
+      // a silently-wrong "pending" list.
       assertReminderStatusInput(options.status);
       let payload: { reminders: ReadonlyArray<Record<string, unknown>>; status: string; total: number };
       if (options.local) {

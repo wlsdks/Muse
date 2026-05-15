@@ -184,9 +184,8 @@ export function registerEpisodeCommands(program: Command, io: ProgramIO): void {
       io.stdout(`Cleared ${before.length.toString()} episode(s)\n`);
     });
 
-  // Goal 090 — semantic index over episodes.json. Mirrors the
-  // notes-index pipeline so `muse recall` (goal 091) can fan
-  // across notes + episodes with one cosine math implementation.
+  // Mirrors the notes-index pipeline so `muse recall` shares one
+  // cosine implementation across notes + episodes.
   episode
     .command("reindex")
     .description("Embed every episode summary into ~/.muse/episodes-index.json (goal 090)")

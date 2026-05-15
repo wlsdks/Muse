@@ -192,12 +192,8 @@ export function registerTrustCommands(program: Command, io: ProgramIO): void {
       const key = options.user
         ? (options.persona ? `${options.user}@${options.persona}` : options.user)
         : defaultUserKey(options.persona);
-      // Goal 118 — peek the pre-state so we can warn when the tool
-      // the user typed wasn't actually in the trusted list. Without
-      // this hint a typo (`muse trust revoke noteon.write`) was a
-      // silent no-op — file state was already what they wanted, but
-      // they'd think the tool got revoked. `wasPresent` keys the
-      // warning + the closest-tool suggestion below.
+      // Peek pre-state so a typo'd revoke (no-op against a name
+      // never in the list) warns instead of reading as success.
       const beforeFile = await readTrustFile(trustPath());
       const wasPresent = entryFor(beforeFile, key).trustedTools.includes(tool);
       const entry = await mutate(key, (e) => ({
@@ -243,9 +239,8 @@ export function registerTrustCommands(program: Command, io: ProgramIO): void {
       const key = options.user
         ? (options.persona ? `${options.user}@${options.persona}` : options.user)
         : defaultUserKey(options.persona);
-      // Goal 118 — same typo-detection as revoke. The unblock surface
-      // is idempotent (removing nothing leaves nothing) but a typo
-      // shouldn't read as silent success.
+      // Same typo-detection as revoke — idempotent unblock must
+      // not let a typo read as success.
       const beforeFile = await readTrustFile(trustPath());
       const wasPresent = entryFor(beforeFile, key).blockedTools.includes(tool);
       const entry = await mutate(key, (e) => ({

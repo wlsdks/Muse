@@ -151,17 +151,13 @@ async function loadIndex(path: string): Promise<NotesIndex | undefined> {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    // Goal 074 — malformed JSON treated the same as a schema
-    // mismatch: discard so the next reindex rebuilds.
+    // Malformed JSON → discard so the next reindex rebuilds.
     return undefined;
   }
   if (!parsed || typeof parsed !== "object") return undefined;
   const candidate = parsed as Partial<NotesIndex>;
-  // Goal 074 — schema-version gate. Discarding the index on
-  // version mismatch forces `reindexNotes` to start from a
-  // clean slate instead of carrying stale (incompatible)
-  // entries forward. `isNotesIndexValid` surfaces the same
-  // check to `isNotesIndexStale` so callers can log a hint.
+  // Version mismatch → discard so reindex rebuilds clean rather
+  // than carrying incompatible entries forward.
   if (!isNotesIndexValid(candidate)) return undefined;
   return candidate as NotesIndex;
 }

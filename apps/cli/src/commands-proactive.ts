@@ -59,7 +59,6 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       }
       const registry = buildMessagingRegistry(e);
       if (!registry.has(provider)) {
-        // Goal 132 — closest-match hint for provider typos.
         const known = registry.list().map((p) => p.id);
         const suggestion = closestCommandName(provider, known);
         const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
@@ -182,8 +181,6 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
 
       const messagingRegistry = buildMessagingRegistry(e);
       if (!messagingRegistry.has(provider)) {
-        // Goal 132 — closest-match hint same shape as the other
-        // three provider-not-registered sites.
         const known = messagingRegistry.list().map((p) => p.id);
         const suggestion = closestCommandName(provider, known);
         const hint = suggestion ? ` — did you mean --provider ${suggestion}?` : "";

@@ -92,14 +92,8 @@ export async function readLastChatHistory(): Promise<readonly LastChatLine[]> {
 export async function appendLastChatTurn(turn: { readonly message: string; readonly response: string }): Promise<void> {
   const filePath = lastChatHistoryPath();
   await mkdir(path.dirname(filePath), { recursive: true });
-  // Goal 108 — scrub credentials BEFORE the JSONL write so a leaked
-  // sk-/glpat-/AKIA... in either side of the turn doesn't persist on
-  // disk and round-trip back into the model on the next
-  // `muse chat --continue`. Pure helper (`redactSecretsInText`)
-  // replaces matches with `[redacted-<name>]` markers; the rest of
-  // the turn passes through unchanged so the conversation reads
-  // normally. The trade is intentional: a personal JARVIS should
-  // forget credential strings rather than recall them verbatim.
+  // Scrub before the write so a leaked secret doesn't persist on
+  // disk and round-trip back into the model on --continue.
   const payload =
     `${JSON.stringify({ content: redactSecretsInText(turn.message), role: "user" })}\n` +
     `${JSON.stringify({ content: redactSecretsInText(turn.response), role: "assistant" })}\n`;
@@ -282,14 +276,9 @@ export async function maybeCompactLastChatHistory(
   if (rawSummary.length === 0) {
     return { compacted: false, dropped: 0 };
   }
-  // Goal 138 — defense-in-depth scrub on the LLM-generated
-  // compaction summary, paired with goal 108 (chat-history append
-  // scrub) and goal 109 (episode summary scrub). The input turns
-  // are already redacted on disk (goal 108), but the model is
-  // free to hallucinate a credential-shaped string back into the
-  // summary; running the same shared helper here means the on-disk
-  // compaction artifact shares the credential-hygiene guarantee
-  // with the rest of the persistence layer.
+  // Re-scrub: the model can hallucinate a credential-shaped
+  // string into the summary even though the input turns were
+  // already redacted on disk.
   const trimmedSummary = redactSecretsInText(rawSummary);
   const nextLines = [
     JSON.stringify({ content: `(Previous-conversation summary) ${trimmedSummary}`, role: "system" }),

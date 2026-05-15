@@ -42,10 +42,8 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
 }
 
 async function appendEvent(file: string, event: Record<string, unknown>): Promise<void> {
-  // Goal 116 — scrub credential shapes from `prompt` / `text` before
-  // the JSONL write so a leaked sk-/ghp-/etc. in the user's prompt
-  // or the model's output doesn't persist on disk (and can't be
-  // replayed via `muse job tail` / future read paths).
+  // Scrub before the JSONL write so a leaked secret in the prompt
+  // or model output doesn't persist and replay via `job tail`.
   const scrubbed = scrubJobEvent(event);
   await appendFile(
     file,
