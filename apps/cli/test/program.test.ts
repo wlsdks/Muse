@@ -6759,6 +6759,62 @@ describe("cli program", () => {
     }
   });
 
+  it("muse maintenance compact --keep-days strict Number() parse (goal 144)", async () => {
+    const { io, output } = captureOutput();
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      // Unit-slip "7d" rejected (Number.parseFloat would have eaten the d).
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "maintenance", "compact", "--keep-days", "7d"], { from: "node" });
+      expect(output.join("")).toContain("--keep-days must be a non-negative number");
+      expect(output.join("")).toContain("got '7d'");
+      expect(process.exitCode).toBe(1);
+
+      // Negative rejected.
+      process.exitCode = 0;
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "maintenance", "compact", "--keep-days", "-3"], { from: "node" });
+      expect(out2.join("")).toContain("--keep-days must be a non-negative number");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExitCode;
+    }
+  });
+
+  it("muse watch-folder --default-lead-minutes strict Number() parse (goal 144)", async () => {
+    const { tmpdir } = await import("node:os");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-watch-lead-"));
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      // Unit-slip "60m" rejected.
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(
+        ["node", "muse", "watch-folder", "--path", root, "--default-lead-minutes", "60m"],
+        { from: "node" }
+      );
+      expect(output.join("")).toContain("--default-lead-minutes must be >= 1");
+      expect(output.join("")).toContain("got '60m'");
+      expect(process.exitCode).toBe(1);
+
+      // 0 rejected (must be >= 1).
+      process.exitCode = 0;
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(
+        ["node", "muse", "watch-folder", "--path", root, "--default-lead-minutes", "0"],
+        { from: "node" }
+      );
+      expect(out2.join("")).toContain("--default-lead-minutes must be >= 1");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExitCode;
+    }
+  });
+
   it("muse feeds today --hours rejects non-numeric / non-positive input (goal 143)", async () => {
     const { io } = captureOutput();
 

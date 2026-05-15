@@ -121,11 +121,15 @@ export function registerMaintenanceCommand(program: Command, io: ProgramIO): voi
     .action(async (options: MaintenanceCompactOptions) => {
       const museDir = options.museDir ?? join(homedir(), ".muse");
       const archiveDir = options.archiveDir ?? join(museDir, "archive");
+      // Goal 144 — strict Number() parse so `--keep-days 7d` doesn't
+      // silently coerce to 7 (Number.parseFloat eats the suffix).
+      // Pre-iter the unit slip read as a successful filter; now the
+      // user gets the rejection they need to spot the typo.
       const keepDays = options.keepDays !== undefined
-        ? Number.parseFloat(options.keepDays)
+        ? Number(options.keepDays.trim())
         : undefined;
       if (keepDays !== undefined && (!Number.isFinite(keepDays) || keepDays < 0)) {
-        io.stderr("--keep-days must be a non-negative number\n");
+        io.stderr(`--keep-days must be a non-negative number (got '${options.keepDays ?? ""}')\n`);
         process.exitCode = 1;
         return;
       }

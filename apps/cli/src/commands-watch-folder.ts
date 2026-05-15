@@ -92,7 +92,25 @@ export function registerWatchFolderCommand(program: Command, io: ProgramIO): voi
       const provider = options.provider ?? "log";
       const destination = options.destination ?? "@me";
       const asTask = options.asTask === true;
-      const defaultLead = Math.max(1, Number.parseInt(options.defaultLeadMinutes ?? "60", 10) || 60);
+      // Goal 144 — strict Number() validation so `--default-lead-minutes
+      // 90m` (unit slip) rejects up-front instead of becoming 90
+      // (Number.parseInt's forgiving prefix parse swallowed the m).
+      let defaultLead = 60;
+      if (options.defaultLeadMinutes !== undefined) {
+        const trimmed = options.defaultLeadMinutes.trim();
+        if (trimmed.length === 0) {
+          io.stderr("--default-lead-minutes must not be empty\n");
+          process.exitCode = 1;
+          return;
+        }
+        const parsed = Number(trimmed);
+        if (!Number.isFinite(parsed) || parsed < 1) {
+          io.stderr(`--default-lead-minutes must be >= 1 (got '${options.defaultLeadMinutes}')\n`);
+          process.exitCode = 1;
+          return;
+        }
+        defaultLead = Math.max(1, Math.trunc(parsed));
+      }
       const tasksFile = asTask ? resolveTasksFile(process.env as Record<string, string | undefined>) : undefined;
 
       await mkdir(dir, { recursive: true });
