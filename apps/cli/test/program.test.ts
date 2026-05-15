@@ -6414,6 +6414,68 @@ describe("cli program", () => {
     }
   });
 
+  it("muse status surfaces persona.workingHours from memory (goal 147)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-working-hours-"));
+    const fsp = await import("node:fs/promises");
+    const userMemoryFile = path.join(root, "user-memory.json");
+
+    const prevMemoryFile = process.env.MUSE_USER_MEMORY_FILE;
+    process.env.MUSE_USER_MEMORY_FILE = userMemoryFile;
+    try {
+      await fsp.writeFile(userMemoryFile, JSON.stringify({
+        users: {
+          stark: {
+            facts: { name: "Stark" },
+            preferences: { working_hours: "9-18" },
+            updatedAt: "2026-05-15T00:00:00Z"
+          }
+        }
+      }), "utf8");
+
+      // JSON shape carries the raw string.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap = JSON.parse(out1.join("")) as { persona: { workingHours?: string } };
+      expect(snap.persona.workingHours).toBe("9-18");
+
+      // Text renderer prints the line.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "status", "--user", "stark"], { from: "node" });
+      expect(out2.join("")).toContain("working hours: 9-18");
+
+      // Missing → omitted from JSON (no "(none)" filler).
+      await fsp.writeFile(userMemoryFile, JSON.stringify({
+        users: { stark: { facts: {}, preferences: {}, updatedAt: "2026-05-15T00:00:00Z" } }
+      }), "utf8");
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap3 = JSON.parse(out3.join("")) as { persona: { workingHours?: string } };
+      expect(snap3.persona.workingHours).toBeUndefined();
+
+      // Whitespace-only treated as missing.
+      await fsp.writeFile(userMemoryFile, JSON.stringify({
+        users: {
+          stark: {
+            facts: {},
+            preferences: { working_hours: "   " },
+            updatedAt: "2026-05-15T00:00:00Z"
+          }
+        }
+      }), "utf8");
+      const { io: io4, output: out4 } = captureOutput();
+      const program4 = createProgram({ ...io4, fetch: async () => { throw new Error("no fetch"); } });
+      await program4.parseAsync(["node", "muse", "status", "--user", "stark", "--json"], { from: "node" });
+      const snap4 = JSON.parse(out4.join("")) as { persona: { workingHours?: string } };
+      expect(snap4.persona.workingHours).toBeUndefined();
+    } finally {
+      if (prevMemoryFile === undefined) delete process.env.MUSE_USER_MEMORY_FILE;
+      else process.env.MUSE_USER_MEMORY_FILE = prevMemoryFile;
+    }
+  });
+
   it("muse status surfaces persona.currentFocus from memory (goal 146)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-focus-"));
     const fsp = await import("node:fs/promises");

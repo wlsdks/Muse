@@ -288,6 +288,15 @@ async function collectStatus(userId: string) {
         : typeof persona?.facts?.["current_focus"] === "string" && persona.facts["current_focus"].trim().length > 0
           ? { currentFocus: persona.facts["current_focus"].trim() }
           : {}),
+      // Goal 147 — surface `working_hours` (e.g. "9-18") the same
+      // way current_focus shows. `[Active Context]` already reads
+      // this through preferences only (see active-context.ts:165),
+      // so the dashboard mirrors that precedence — no facts
+      // fallback here. The raw "<start>-<end>" string is echoed
+      // as-is; jq pipelines can parse on their side if needed.
+      ...(typeof persona?.preferences?.["working_hours"] === "string" && persona.preferences["working_hours"].trim().length > 0
+        ? { workingHours: persona.preferences["working_hours"].trim() }
+        : {}),
       // Goal 098 — active multi-persona slot from --persona /
       // MUSE_PERSONA (status has no CLI flag so it's env-only here).
       // Goal 104 — `effectiveUserKey` is the slot-composed key that
@@ -510,6 +519,9 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
       }
       if (snap.persona.currentFocus) {
         io.stdout(`    current focus: ${snap.persona.currentFocus}\n`);
+      }
+      if (snap.persona.workingHours) {
+        io.stdout(`    working hours: ${snap.persona.workingHours}\n`);
       }
       if (snap.persona.factCount + snap.persona.preferenceCount > 0) {
         const parts: string[] = [];
