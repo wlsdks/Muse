@@ -31,10 +31,11 @@ import {
 } from "./provider-shared.js";
 
 export function toOpenAIChatRequest(request: ModelRequest, defaultModel: string | undefined) {
+  const modelId = parseModelName(request.model || defaultModel || "").modelId;
   return {
     max_tokens: request.maxOutputTokens,
     messages: request.messages.map(toOpenAIMessage),
-    model: parseModelName(request.model || defaultModel || "").modelId,
+    model: modelId,
     temperature: request.temperature,
     tools: request.tools?.map((tool) => ({
       function: {
@@ -43,7 +44,16 @@ export function toOpenAIChatRequest(request: ModelRequest, defaultModel: string 
         parameters: tool.inputSchema
       },
       type: "function"
-    }))
+    })),
+    // Qwen3 emits chain-of-thought by default. The native Ollama
+    // path kills it with `think:false`; on OpenAI-compatible
+    // backends (vLLM / SGLang / LM Studio / OpenRouter) the
+    // portable switch is the chat-template kwarg. Gated to qwen3
+    // model ids so a strict server (real OpenAI/Azure) never sees
+    // an unknown body key for non-Qwen models.
+    ...(/qwen3/iu.test(modelId)
+      ? { chat_template_kwargs: { enable_thinking: false } }
+      : {})
   };
 }
 

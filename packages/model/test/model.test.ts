@@ -367,6 +367,34 @@ describe("OpenAICompatibleProvider", () => {
     });
   });
 
+  it("suppresses Qwen3 thinking via chat_template_kwargs, only for qwen3 models (goal 171)", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const makeProvider = (defaultModel: string) => new OpenAICompatibleProvider({
+      baseUrl: "https://llm.example.test/v1",
+      defaultModel,
+      fetch: async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "ok" } }], id: "c1", model: defaultModel
+        }));
+      }
+    });
+
+    await makeProvider("qwen3:8b").generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/qwen3:8b" });
+    expect(bodies[0]).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
+
+    await makeProvider("qwen/qwen3-30b-a3b").generate({ messages: [{ content: "hi", role: "user" }], model: "openrouter/qwen/qwen3-30b-a3b" });
+    expect(bodies[1]).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
+
+    // Non-Qwen models must NOT get the unknown key (strict
+    // OpenAI/Azure would 400 on it).
+    await makeProvider("gpt-test").generate({ messages: [{ content: "hi", role: "user" }], model: "openai/gpt-test" });
+    expect(bodies[2]).not.toHaveProperty("chat_template_kwargs");
+
+    await makeProvider("qwen2.5:7b").generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/qwen2.5:7b" });
+    expect(bodies[3]).not.toHaveProperty("chat_template_kwargs");
+  });
+
   it("streams server-sent event text deltas into model events", async () => {
     const provider = new OpenAICompatibleProvider({
       baseUrl: "https://llm.example.test/v1",
