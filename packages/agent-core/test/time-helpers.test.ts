@@ -79,14 +79,24 @@ describe("humanizeRelativeFromIso", () => {
     const { humanizeRelativeFromIso } = await import("../src/time-helpers.js");
     expect(humanizeRelativeFromIso(now, "2026-05-11T12:30:00.000Z")).toBe("in 30 min");
     expect(humanizeRelativeFromIso(now, "2026-05-11T14:00:00.000Z")).toBe("in 2h");
-    expect(humanizeRelativeFromIso(now, "2026-05-14T12:00:00.000Z")).toBe("in 3 day(s)");
+    expect(humanizeRelativeFromIso(now, "2026-05-14T12:00:00.000Z")).toBe("in 3 days");
   });
 
   it("formats past offsets with 'ago'", async () => {
     const { humanizeRelativeFromIso } = await import("../src/time-helpers.js");
     expect(humanizeRelativeFromIso(now, "2026-05-11T11:30:00.000Z")).toBe("30 min ago");
     expect(humanizeRelativeFromIso(now, "2026-05-11T10:00:00.000Z")).toBe("2h ago");
-    expect(humanizeRelativeFromIso(now, "2026-05-09T12:00:00.000Z")).toBe("2 day(s) ago");
+    expect(humanizeRelativeFromIso(now, "2026-05-09T12:00:00.000Z")).toBe("2 days ago");
+  });
+
+  it("pluralises 'day' correctly — singular for exactly 1, plural otherwise (goal 123)", async () => {
+    const { humanizeRelativeFromIso } = await import("../src/time-helpers.js");
+    // Singular future + past.
+    expect(humanizeRelativeFromIso(now, "2026-05-12T12:00:00.000Z")).toBe("in 1 day");
+    expect(humanizeRelativeFromIso(now, "2026-05-10T12:00:00.000Z")).toBe("1 day ago");
+    // Plural for any other rounded count.
+    expect(humanizeRelativeFromIso(now, "2026-05-13T12:00:00.000Z")).toBe("in 2 days");
+    expect(humanizeRelativeFromIso(now, "2026-05-08T12:00:00.000Z")).toBe("3 days ago");
   });
 
   it("returns undefined for unparseable input", async () => {

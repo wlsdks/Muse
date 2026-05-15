@@ -222,7 +222,7 @@ describe("renderEpisodicSection", () => {
       ]
     }, "2026-05-11T12:00:00Z");
     expect(rendered).toBeDefined();
-    expect(rendered).toContain("(1 day(s) ago, sim=0.40)");
+    expect(rendered).toContain("(1 day ago, sim=0.40)");
     expect(rendered).not.toContain("2026-05-10T12:00:00Z"); // raw ISO replaced
   });
 
