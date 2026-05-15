@@ -29,6 +29,7 @@ import { appendProactiveHistory, readProactiveHistory, readTasks, runDueProactiv
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
 export interface ProactiveHelpers {
@@ -58,8 +59,12 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       }
       const registry = buildMessagingRegistry(e);
       if (!registry.has(provider)) {
+        // Goal 132 — closest-match hint for provider typos.
+        const known = registry.list().map((p) => p.id);
+        const suggestion = closestCommandName(provider, known);
+        const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
         io.stderr(
-          `messaging provider '${provider}' is not registered — set the relevant token ` +
+          `messaging provider '${provider}' is not registered${hint} — set the relevant token ` +
             `(e.g. MUSE_TELEGRAM_BOT_TOKEN / MUSE_DISCORD_BOT_TOKEN / MUSE_SLACK_BOT_TOKEN / MUSE_LINE_CHANNEL_ACCESS_TOKEN).\n`
         );
         command.error("Provider not registered", { exitCode: 1 });
@@ -177,7 +182,12 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
 
       const messagingRegistry = buildMessagingRegistry(e);
       if (!messagingRegistry.has(provider)) {
-        io.stderr(`Provider '${provider}' is not registered. Try --provider log (always available).\n`);
+        // Goal 132 — closest-match hint same shape as the other
+        // three provider-not-registered sites.
+        const known = messagingRegistry.list().map((p) => p.id);
+        const suggestion = closestCommandName(provider, known);
+        const hint = suggestion ? ` — did you mean --provider ${suggestion}?` : "";
+        io.stderr(`Provider '${provider}' is not registered${hint}. Try --provider log (always available).\n`);
         process.exitCode = 1;
         return;
       }

@@ -6509,6 +6509,43 @@ describe("cli program", () => {
     }
   });
 
+  it("muse watch-folder --provider <typo> suggests the closest registered provider (goal 132)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-watch-folder-typo-"));
+    const prevTg = process.env.MUSE_TELEGRAM_BOT_TOKEN;
+    const prevExitCode = process.exitCode;
+    process.env.MUSE_TELEGRAM_BOT_TOKEN = "fake-token";  // makes 'telegram' a registered provider
+    process.exitCode = 0;
+    try {
+      // One-edit typo for "telegram".
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(
+        ["node", "muse", "watch-folder", "--provider", "telegrma", "--path", root],
+        { from: "node" }
+      );
+      const text = output.join("");
+      expect(text).toContain("Provider 'telegrma' is not registered");
+      expect(text).toContain("did you mean --provider telegram?");
+      expect(process.exitCode).toBe(1);
+
+      // Unrelated input → no false-positive suggestion.
+      process.exitCode = 0;
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(
+        ["node", "muse", "watch-folder", "--provider", "totally-unknown-provider-name", "--path", root],
+        { from: "node" }
+      );
+      const text2 = out2.join("");
+      expect(text2).toContain("is not registered");
+      expect(text2).not.toContain("did you mean");
+    } finally {
+      process.exitCode = prevExitCode;
+      if (prevTg === undefined) delete process.env.MUSE_TELEGRAM_BOT_TOKEN;
+      else process.env.MUSE_TELEGRAM_BOT_TOKEN = prevTg;
+    }
+  });
+
   it("muse mcp use <typo-preset> suggests the closest valid preset (goal 131)", async () => {
     // One-edit typo for "filesystem".
     const { io: io1, output: out1 } = captureOutput();

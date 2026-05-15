@@ -39,6 +39,7 @@ import {
 } from "@muse/mcp";
 import type { Command } from "commander";
 
+import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
 interface ServeOptions {
@@ -92,7 +93,11 @@ export function registerWebhookCommand(program: Command, io: ProgramIO): void {
 
       const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
       if (!registry.has(provider)) {
-        io.stderr(`Provider '${provider}' is not registered. Try --provider log.\n`);
+        // Goal 132 — closest-match hint same as watch-folder.
+        const known = registry.list().map((p) => p.id);
+        const suggestion = closestCommandName(provider, known);
+        const hint = suggestion ? ` — did you mean --provider ${suggestion}?` : "";
+        io.stderr(`Provider '${provider}' is not registered${hint}. Try --provider log.\n`);
         process.exitCode = 1;
         return;
       }

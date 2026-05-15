@@ -36,6 +36,7 @@ import {
 import { appendProactiveHistory, parseTaskDueAt, readTasks, writeTasks, type PersistedTask } from "@muse/mcp";
 import type { Command } from "commander";
 
+import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
 const MAX_PREVIEW_BYTES = 10 * 1024;
@@ -99,7 +100,13 @@ export function registerWatchFolderCommand(program: Command, io: ProgramIO): voi
 
       const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
       if (!registry.has(provider)) {
-        io.stderr(`Provider '${provider}' is not registered. Try --provider log.\n`);
+        // Goal 132 — closest-match hint on typos (extends the typo
+        // line of goals 099/100/118/119/124/125/131 into messaging
+        // provider selection).
+        const known = registry.list().map((p) => p.id);
+        const suggestion = closestCommandName(provider, known);
+        const hint = suggestion ? ` — did you mean --provider ${suggestion}?` : "";
+        io.stderr(`Provider '${provider}' is not registered${hint}. Try --provider log.\n`);
         process.exitCode = 1;
         return;
       }
