@@ -5044,7 +5044,7 @@ describe("cli program", () => {
 
     // buildOllamaVisionBody shape.
     const body = buildOllamaVisionBody({ model: "m", prompt: "p", imageBase64: "QkFTRTY0" });
-    expect(body).toEqual({ model: "m", prompt: "p", images: ["QkFTRTY0"], stream: false });
+    expect(body).toEqual({ model: "m", prompt: "p", images: ["QkFTRTY0"], stream: false, think: false });
 
     // Malformed data URL throws.
     await expect(loadImageAsBase64("data:image/png;base64NOCOMMA")).rejects.toThrow(/comma/);

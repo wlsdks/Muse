@@ -94,7 +94,11 @@ export function buildOllamaVisionBody(args: {
     model: args.model,
     prompt: args.prompt,
     images: [args.imageBase64],
-    stream: false
+    stream: false,
+    // Kill chain-of-thought for a Qwen3-class vision model — a
+    // Qwen-only setup points MUSE_VISION_MODEL at one. `/api/generate`
+    // honours `think` like `/api/chat`; non-thinking models ignore it.
+    think: false
   };
 }
 
