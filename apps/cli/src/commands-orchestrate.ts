@@ -10,6 +10,7 @@
 
 import type { Command } from "commander";
 
+import { parseBoundedInt } from "./commands-ask.js";
 import type { ProgramIO } from "./program.js";
 
 export interface OrchestrateHelpers {
@@ -50,10 +51,9 @@ export function registerOrchestrateCommands(program: Command, io: ProgramIO, hel
       const workerIds = options.workers
         ? options.workers.split(",").map((id) => id.trim()).filter((id) => id.length > 0)
         : undefined;
-      const maxWorkers = options.maxWorkers === undefined ? undefined : Number.parseInt(options.maxWorkers, 10);
-      if (maxWorkers !== undefined && (!Number.isInteger(maxWorkers) || maxWorkers <= 0)) {
-        throw new Error("--max-workers must be a positive integer");
-      }
+      const maxWorkers = options.maxWorkers === undefined
+        ? undefined
+        : parseBoundedInt(options.maxWorkers, "--max-workers", 1, 64, 1);
       writeOutput(io, await apiRequest(io, command, "/api/multi-agent/orchestrate", {
         message,
         mode: options.mode,
@@ -68,7 +68,12 @@ export function registerOrchestrateCommands(program: Command, io: ProgramIO, hel
     .description("GET /api/multi-agent/orchestrations — recent orchestration history")
     .option("--limit <n>", "Maximum entries to return")
     .action(async (options: { readonly limit?: string }, command) => {
-      const path = options.limit ? `/api/multi-agent/orchestrations?limit=${encodeURIComponent(options.limit)}` : "/api/multi-agent/orchestrations";
+      const limit = options.limit === undefined
+        ? undefined
+        : parseBoundedInt(options.limit, "--limit", 1, 500, 20);
+      const path = limit !== undefined
+        ? `/api/multi-agent/orchestrations?limit=${limit.toString()}`
+        : "/api/multi-agent/orchestrations";
       writeOutput(io, await apiRequest(io, command, path));
     });
 
