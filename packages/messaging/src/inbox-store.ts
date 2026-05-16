@@ -21,7 +21,7 @@ import type { InboundMessage } from "./types.js";
 const DEFAULT_CAPACITY = 500;
 const MAX_CAPACITY = 5_000;
 const DEFAULT_READ_LIMIT = 100;
-const MAX_READ_LIMIT = 200;
+export const MAX_READ_LIMIT = 200;
 
 interface PersistedShape {
   readonly version: 1;

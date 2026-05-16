@@ -6,7 +6,7 @@
  * fresh installs / tests stay quiet.
  */
 
-import { MessagingProviderError, MessagingProviderRegistry } from "@muse/messaging";
+import { MAX_READ_LIMIT, MessagingProviderError, MessagingProviderRegistry } from "@muse/messaging";
 import { describe, expect, it } from "vitest";
 
 import { buildServer } from "../src/server.js";
@@ -178,5 +178,51 @@ describe("POST /api/messaging/poll", () => {
       providerId: "telegram",
       upstreamStatus: 503
     });
+  });
+});
+
+describe("GET /api/messaging/inbox limit normalisation", () => {
+  function registryCapturing(received: (number | undefined)[]): MessagingProviderRegistry {
+    const registry = new MessagingProviderRegistry();
+    registry.register({
+      describe: () => ({ description: "cap", displayName: "Cap", id: "cap" }),
+      fetchInbound: async (options) => {
+        received.push(options?.limit);
+        return [];
+      },
+      id: "cap",
+      send: async () => { throw new Error("not used"); }
+    });
+    return registry;
+  }
+
+  it("clamps a negative / zero / float / unbounded ?limit at the HTTP boundary", async () => {
+    for (const [raw, expected] of [
+      ["-5", 1],
+      ["0", 1],
+      ["5.9", 5],
+      ["99999", MAX_READ_LIMIT],
+      ["50", 50]
+    ] as const) {
+      const received: (number | undefined)[] = [];
+      const server = buildServer({ logger: false, messaging: registryCapturing(received) });
+      const response = await server.inject({
+        method: "GET",
+        url: `/api/messaging/inbox?providerId=cap&limit=${raw}`
+      });
+      expect(response.statusCode).toBe(200);
+      expect(received).toEqual([expected]);
+    }
+  });
+
+  it("drops a non-numeric ?limit instead of forwarding NaN to the provider", async () => {
+    const received: (number | undefined)[] = [];
+    const server = buildServer({ logger: false, messaging: registryCapturing(received) });
+    const response = await server.inject({
+      method: "GET",
+      url: "/api/messaging/inbox?providerId=cap&limit=abc"
+    });
+    expect(response.statusCode).toBe(200);
+    expect(received).toEqual([undefined]);
   });
 });

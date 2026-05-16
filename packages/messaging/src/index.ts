@@ -47,6 +47,7 @@ export { validateOutboundMessage } from "./validate.js";
 
 export {
   appendInbound,
+  MAX_READ_LIMIT,
   readInbox,
   type AppendInboundOptions
 } from "./inbox-store.js";

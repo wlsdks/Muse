@@ -10,6 +10,7 @@
  */
 
 import {
+  MAX_READ_LIMIT,
   MessagingProviderError,
   MessagingValidationError,
   type MessagingProviderRegistry
@@ -56,7 +57,11 @@ export function registerMessagingRoutes(server: FastifyInstance, gate: Messaging
     const limitNum = query.limit ? Number(query.limit) : undefined;
     const opts: { limit?: number; source?: string } = {};
     if (limitNum !== undefined && Number.isFinite(limitNum)) {
-      opts.limit = limitNum;
+      // Normalise at the HTTP boundary so a negative / zero / float
+      // / unbounded `?limit=` can't reach a live-API provider
+      // (Telegram / Discord / Slack) raw. Same clamp the file-backed
+      // path applies internally, sharing one cap constant.
+      opts.limit = Math.max(1, Math.min(MAX_READ_LIMIT, Math.trunc(limitNum)));
     }
     if (typeof query.source === "string" && query.source.length > 0) {
       opts.source = query.source;
