@@ -5361,6 +5361,15 @@ describe("cli program", () => {
 
     // Malformed data URL throws.
     await expect(loadImageAsBase64("data:image/png;base64NOCOMMA")).rejects.toThrow(/comma/);
+
+    // A non-base64 data URL (SVG / text) is rejected with an
+    // actionable error instead of being passed through as garbage.
+    await expect(loadImageAsBase64("data:image/svg+xml,%3Csvg%2F%3E"))
+      .rejects.toThrow(/must be base64-encoded/u);
+    await expect(loadImageAsBase64("data:,hello"))
+      .rejects.toThrow(/must be base64-encoded/u);
+    // A bare-mediatype-less base64 data URL still passes through.
+    expect(await loadImageAsBase64("data:;base64,QUJD")).toBe("QUJD");
   });
 
   it("planActivityLogCompaction filters by suffix + age + allow-list (goal 080)", async () => {

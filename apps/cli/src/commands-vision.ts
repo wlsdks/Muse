@@ -62,9 +62,18 @@ export async function loadImageAsBase64(
 ): Promise<string> {
   const trimmed = source.trim();
   if (trimmed.startsWith("data:")) {
-    // data:image/png;base64,XXXX — peel the prefix.
+    // data:image/png;base64,XXXX — peel the prefix. Reject a
+    // non-base64 data URL: the post-comma payload is then
+    // URL-encoded text (SVG / plain), and passing it through as
+    // "base64" would silently feed the vision model garbage.
     const comma = trimmed.indexOf(",");
     if (comma < 0) throw new Error("malformed data URL (no comma separator)");
+    if (!/;base64$/iu.test(trimmed.slice("data:".length, comma))) {
+      throw new Error(
+        "data: URL must be base64-encoded image bytes (e.g. data:image/png;base64,…); " +
+        "a non-base64 (URL-encoded / SVG / text) data URL is not a supported vision image"
+      );
+    }
     return trimmed.slice(comma + 1);
   }
   if (/^https?:\/\//iu.test(trimmed)) {
