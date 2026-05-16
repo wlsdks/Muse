@@ -895,6 +895,25 @@ describe("createMuseTools", () => {
     expect(await tool.execute({ expression: "1 / 0" }, { runId: "run-1" })).toEqual({
       error: expect.stringContaining("division by zero")
     });
+
+    // A multi-dot literal must error, not silently truncate to 1.2
+    // (parseFloat's behaviour) and report a confident wrong result.
+    expect(await tool.execute({ expression: "1.2.3" }, { runId: "run-1" })).toEqual({
+      error: expect.stringContaining("invalid number literal")
+    });
+    expect(await tool.execute({ expression: "3.14.15 * 2" }, { runId: "run-1" })).toEqual({
+      error: expect.stringContaining("invalid number literal")
+    });
+    // Well-formed literals (leading / trailing dot, leading zeros)
+    // still evaluate correctly under `Number`.
+    expect(await tool.execute({ expression: ".5 + 5." }, { runId: "run-1" })).toEqual({
+      expression: ".5 + 5.",
+      result: 5.5
+    });
+    expect(await tool.execute({ expression: "007 + 1" }, { runId: "run-1" })).toEqual({
+      expression: "007 + 1",
+      result: 8
+    });
   });
 
   it("json_query resolves dotted paths through objects and arrays", async () => {

@@ -372,7 +372,11 @@ function evaluateArithmetic(expression: string): number {
       throw new Error("expected number");
     }
     const literal = stripped.slice(start, cursor);
-    const value = Number.parseFloat(literal);
+    // `Number`, not `parseFloat`: parseFloat leniently truncates a
+    // multi-dot literal ("1.2.3" -> 1.2) and would return a
+    // confidently wrong result; `Number("1.2.3")` is NaN and is
+    // rejected below.
+    const value = Number(literal);
     if (Number.isNaN(value)) {
       throw new Error(`invalid number literal: ${literal}`);
     }
