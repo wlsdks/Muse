@@ -257,6 +257,16 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // shouldn't make the user remember to run reindex; if a note
       // file is newer than the index, just refresh before search.
       const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+      // Preserve the model the index was built with: a stale
+      // refresh must NOT silently re-embed a custom-model index
+      // with the default just because --embed-model was omitted.
+      // The mismatch is still surfaced by the explicit guard below.
+      let existingIndexModel: string | undefined;
+      try {
+        existingIndexModel = (JSON.parse(await readFile(notesIndexPath(), "utf8")) as NotesIndex).model;
+      } catch {
+        existingIndexModel = undefined;
+      }
       if (options.autoReindex !== false) {
         try {
           const stale = await isNotesIndexStale(notesDir, notesIndexPath());
@@ -264,7 +274,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             const summary = await reindexNotes({
               dir: notesDir,
               indexPath: notesIndexPath(),
-              model: embedModel
+              model: existingIndexModel ?? embedModel
             });
             if (summary.embedded > 0) {
               io.stderr(`(auto-refreshed notes index: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached)\n`);

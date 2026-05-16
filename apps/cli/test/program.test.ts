@@ -3681,6 +3681,51 @@ describe("cli program", () => {
     }
   });
 
+  it("muse ask auto-reindex preserves the index's embed model (goal 258)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-ask-model-"));
+    const fsp = await import("node:fs/promises");
+    const { NOTES_INDEX_SCHEMA_VERSION } = await import("../src/commands-notes-rag.js");
+    const prevHome = process.env.HOME;
+    const prevNotes = process.env.MUSE_NOTES_DIR;
+    const notesDir = path.join(root, "notes");
+    const indexPath = path.join(root, ".muse", "notes-index.json");
+    await fsp.mkdir(notesDir, { recursive: true });
+    await fsp.mkdir(path.join(root, ".muse"), { recursive: true });
+    await fsp.writeFile(path.join(notesDir, "a.md"), "the quarterly budget review notes", "utf8");
+    await fsp.writeFile(indexPath, JSON.stringify({
+      builtAtIso: "2020-01-01T00:00:00.000Z",
+      files: [],
+      model: "custom-embed-xl",
+      version: NOTES_INDEX_SCHEMA_VERSION
+    }), "utf8");
+    process.env.HOME = root;
+    process.env.MUSE_NOTES_DIR = notesDir;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no api"); } });
+      const prevExit = process.exitCode;
+      process.exitCode = 0;
+      // No --embed-model → defaults to nomic-embed-text. The stale
+      // auto-reindex must keep the index's own model, not silently
+      // rebuild it with the default; the explicit guard then fires.
+      await program.parseAsync(
+        ["node", "muse", "ask", "budget", "--no-tasks", "--no-calendar", "--no-reminders"],
+        { from: "node" }
+      );
+      process.exitCode = prevExit;
+
+      const text = output.join("");
+      expect(text).toContain("Index was built with embed model 'custom-embed-xl'");
+      expect(text).toMatch(/--embed-model custom-embed-xl/u);
+
+      const onDisk = JSON.parse(await fsp.readFile(indexPath, "utf8")) as { model: string };
+      expect(onDisk.model).toBe("custom-embed-xl");
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+      if (prevNotes === undefined) delete process.env.MUSE_NOTES_DIR; else process.env.MUSE_NOTES_DIR = prevNotes;
+    }
+  });
+
   it("appendLastChatTurn redacts credential shapes before persisting to disk (goal 108)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-chat-redact-"));
     const fsp = await import("node:fs/promises");
