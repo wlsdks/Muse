@@ -140,7 +140,11 @@ export function normalizeForInjectionDetection(text: string): string {
     return text;
   }
 
-  return stripDiacriticalMarks(replaceHomoglyphs(decodeHtmlEntities(stripZeroWidth(text).normalize("NFKC"))));
+  // Decode HTML entities BEFORE stripping zero-width chars: an
+  // entity-encoded zero-width (`igno&#x200b;re`) would otherwise be
+  // decoded after the strip and survive into the matched text,
+  // splitting a keyword and evading every pattern.
+  return stripDiacriticalMarks(replaceHomoglyphs(stripZeroWidth(decodeHtmlEntities(text).normalize("NFKC"))));
 }
 
 export function findInjectionPatterns(
