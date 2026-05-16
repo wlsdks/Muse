@@ -19,6 +19,7 @@ import { mergeModelKeysFromFile } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
 import { DEFAULT_EMBED_MODEL } from "./commands-notes-rag.js";
+import { resolveOllamaUrl } from "./ollama-url.js";
 import type { ProgramIO } from "./program.js";
 
 export interface DoctorCommandHelpers {
@@ -218,8 +219,12 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     checks.push({ detail: "no mcp.json — only loopback servers available", name: "mcp.json", status: "warn" });
   }
 
-  // Ollama reachability (only if base URL is set or default port responds)
-  const ollama_base = env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+  // Probe exactly what the runtime uses (canonical resolver:
+  // default 127.0.0.1 — NOT localhost, which can resolve to IPv6
+  // ::1 while Ollama binds IPv4 — + models.json merge + trailing
+  // slash trim). Otherwise doctor can falsely report "not
+  // reachable" while `muse ask` works.
+  const ollama_base = resolveOllamaUrl();
   let ollamaModels: readonly OllamaTagsEntry[] | undefined;
   try {
     const controller = new AbortController();
