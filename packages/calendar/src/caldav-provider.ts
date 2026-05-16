@@ -255,8 +255,10 @@ function parseVEvent(ics: string, providerId: string, fallbackId: string): Calen
   }
 
   const allDay = dtstart.params.includes("VALUE=DATE");
-  const startsAt = parseIcsTime(dtstart.value, allDay);
-  const endsAt = dtend ? parseIcsTime(dtend.value, allDay) : startsAt;
+  const startsAt = parseIcsTime(dtstart.value, allDay, icsTzid(dtstart.params));
+  const endsAt = dtend
+    ? parseIcsTime(dtend.value, allDay, icsTzid(dtend.params))
+    : startsAt;
 
   if (!startsAt || !endsAt) {
     return undefined;
@@ -312,7 +314,7 @@ function formatIcsDate(value: Date): string {
   return value.toISOString().slice(0, 10).replace(/-/gu, "");
 }
 
-function parseIcsTime(value: string, allDay: boolean): Date | undefined {
+function parseIcsTime(value: string, allDay: boolean, timeZone?: string): Date | undefined {
   if (allDay && /^\d{8}$/u.test(value)) {
     const year = value.slice(0, 4);
     const month = value.slice(4, 6);
@@ -326,9 +328,78 @@ function parseIcsTime(value: string, allDay: boolean): Date | undefined {
     return undefined;
   }
   const [, year, month, day, hour, minute, second, zulu] = match;
+  if (zulu !== "Z" && timeZone) {
+    const ms = zonedWallTimeToUtcMs(
+      Number(year), Number(month), Number(day),
+      Number(hour), Number(minute), Number(second),
+      timeZone
+    );
+    // Unknown / invalid TZID → fall through to the floating (local)
+    // parse rather than dropping the whole event.
+    if (ms !== undefined) {
+      return new Date(ms);
+    }
+  }
   const iso = `${year}-${month}-${day}T${hour}:${minute}:${second}${zulu === "Z" ? "Z" : ""}`;
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+/**
+ * The UTC offset (ms) the named IANA zone is at for a given UTC
+ * instant. Returns undefined for an invalid zone (Intl throws).
+ */
+function zoneOffsetMsAt(utcMs: number, timeZone: string): number | undefined {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+      minute: "2-digit",
+      month: "2-digit",
+      second: "2-digit",
+      timeZone,
+      year: "numeric"
+    }).formatToParts(new Date(utcMs));
+  } catch {
+    return undefined;
+  }
+  const get = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value);
+  const asUtc = Date.UTC(
+    get("year"), get("month") - 1, get("day"),
+    get("hour"), get("minute"), get("second")
+  );
+  return asUtc - utcMs;
+}
+
+/**
+ * Convert a wall-clock time *in `timeZone`* to a UTC epoch-ms.
+ * Two passes so a DST offset change between the naive guess and the
+ * true instant is corrected (the standard Intl technique — a
+ * single pass is wrong by an hour around transitions).
+ */
+function zonedWallTimeToUtcMs(
+  year: number, month: number, day: number,
+  hour: number, minute: number, second: number,
+  timeZone: string
+): number | undefined {
+  const guess = Date.UTC(year, month - 1, day, hour, minute, second);
+  if (Number.isNaN(guess)) {
+    return undefined;
+  }
+  const o1 = zoneOffsetMsAt(guess, timeZone);
+  if (o1 === undefined) {
+    return undefined;
+  }
+  const o2 = zoneOffsetMsAt(guess - o1, timeZone);
+  return guess - (o2 ?? o1);
+}
+
+function icsTzid(params: string): string | undefined {
+  const match = params.match(/;TZID=([^;:]+)/u);
+  return match?.[1]?.trim() || undefined;
 }
 
 function hrefToId(href: string, baseUrl: string): string {

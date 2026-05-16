@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  CalDAVCalendarProvider,
   CalendarProviderError,
   CalendarProviderRegistry,
   CalendarValidationError,
@@ -11,6 +12,65 @@ import {
   LocalCalendarProvider,
   isRetryableCalendarStatus
 } from "../src/index.js";
+
+describe("CalDAVCalendarProvider ICS time parsing", () => {
+  function providerReturning(ics: string): CalDAVCalendarProvider {
+    const xml =
+      `<?xml version="1.0"?><D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
+      `<D:response><D:href>/dav/evt.ics</D:href><D:propstat><D:prop>` +
+      `<C:calendar-data>${ics}</C:calendar-data></D:prop></D:propstat></D:response>` +
+      `</D:multistatus>`;
+    return new CalDAVCalendarProvider({
+      fetchImpl: async () => new Response(xml, { status: 200 }),
+      password: "p",
+      url: "https://cal.test/dav/",
+      username: "u"
+    });
+  }
+
+  const range = { from: new Date("2026-01-01T00:00:00Z"), to: new Date("2027-01-01T00:00:00Z") };
+
+  it("resolves a TZID-qualified DTSTART to the correct UTC instant", async () => {
+    const ics = [
+      "BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:ny-1", "SUMMARY:NY meeting",
+      "DTSTART;TZID=America/New_York:20260517T100000",
+      "DTEND;TZID=America/New_York:20260517T110000",
+      "END:VEVENT", "END:VCALENDAR"
+    ].join("\n");
+    const [event] = await providerReturning(ics).listEvents(range);
+    // 2026-05-17 is EDT (UTC-4): 10:00 New York == 14:00 UTC.
+    expect(event?.startsAt.toISOString()).toBe("2026-05-17T14:00:00.000Z");
+    expect(event?.endsAt.toISOString()).toBe("2026-05-17T15:00:00.000Z");
+  });
+
+  it("keeps an explicit Z (UTC) DTSTART and an all-day DATE unchanged", async () => {
+    const zEvent = [
+      "BEGIN:VEVENT", "UID:z-1", "SUMMARY:UTC call",
+      "DTSTART:20260517T100000Z", "DTEND:20260517T110000Z", "END:VEVENT"
+    ].join("\n");
+    const [z] = await providerReturning(zEvent).listEvents(range);
+    expect(z?.startsAt.toISOString()).toBe("2026-05-17T10:00:00.000Z");
+
+    const allDay = [
+      "BEGIN:VEVENT", "UID:ad-1", "SUMMARY:Holiday",
+      "DTSTART;VALUE=DATE:20260517", "DTEND;VALUE=DATE:20260518", "END:VEVENT"
+    ].join("\n");
+    const [a] = await providerReturning(allDay).listEvents(range);
+    expect(a?.allDay).toBe(true);
+    expect(a?.startsAt.toISOString()).toBe("2026-05-17T00:00:00.000Z");
+  });
+
+  it("falls back to a floating parse (does not drop the event) on an unknown TZID", async () => {
+    const ics = [
+      "BEGIN:VEVENT", "UID:bad-tz", "SUMMARY:Bad zone",
+      "DTSTART;TZID=Not/AZone:20260517T100000",
+      "DTEND;TZID=Not/AZone:20260517T110000", "END:VEVENT"
+    ].join("\n");
+    const [event] = await providerReturning(ics).listEvents(range);
+    expect(event?.title).toBe("Bad zone");
+    expect(Number.isNaN(event?.startsAt.getTime() ?? Number.NaN)).toBe(false);
+  });
+});
 
 describe("LocalCalendarProvider", () => {
   let dir: string;
