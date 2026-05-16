@@ -399,6 +399,23 @@ describe("TextScanWakeWordDetector", () => {
     expect(detector.scan("hello there").detected).toBe(false);
   });
 
+  it("matches whole phrases only — never fires inside a longer word (goal 270)", () => {
+    const bare = new TextScanWakeWordDetector({ phrase: "hey muse", aliases: ["muse"] });
+    // A bare "muse" must NOT trigger on museum / amusement / bemused.
+    expect(bare.scan("I visited the museum today").detected).toBe(false);
+    expect(bare.scan("that was pure amusement").detected).toBe(false);
+    expect(bare.scan("she was bemused by it").detected).toBe(false);
+    // …but the wake word as its own token still fires, with residual.
+    const ok = bare.scan("muse, what's next?");
+    expect(ok.detected).toBe(true);
+    expect(ok.residual).toContain("what's next");
+    // Multi-word phrase embedded in a longer word ("t[hey muse]ums")
+    // no longer false-positives; a real utterance still wakes.
+    const hm = new TextScanWakeWordDetector({ phrase: "hey muse" });
+    expect(hm.scan("they museums are open").detected).toBe(false);
+    expect(hm.scan("hey muse open the door").detected).toBe(true);
+  });
+
   it("handles empty / missing transcripts", () => {
     const detector = new TextScanWakeWordDetector({ phrase: "hey muse" });
     expect(detector.scan("").detected).toBe(false);

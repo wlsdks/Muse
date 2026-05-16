@@ -123,15 +123,11 @@ export class TextScanWakeWordDetector implements WakeWordDetector {
     if (!text) {
       return { detected: false };
     }
-    const haystack = normalise(text);
     for (const needle of this.needles) {
-      if (haystack.indexOf(needle) < 0) continue;
-      // Find the same offset in the original text by re-normalising
-      // prefixes until lengths match. This is O(text length) but the
-      // transcripts we scan are short (single utterance).
-      const tailOriginal = sliceAfterPhraseInOriginal(text, needle);
-      return tailOriginal.length > 0
-        ? { detected: true, residual: tailOriginal }
+      const match = findWholePhrase(text, needle);
+      if (!match.matched) continue;
+      return match.residual.length > 0
+        ? { detected: true, residual: match.residual }
         : { detected: true };
     }
     return { detected: false };
@@ -258,19 +254,26 @@ export class FakeAudioFrameWakeWordDetector implements AudioFrameWakeWordDetecto
   }
 }
 
-function sliceAfterPhraseInOriginal(original: string, needle: string): string {
-  // Walk the original text character-by-character, tracking the
-  // normalised cursor. When the cursor passes the end of the
-  // (needle's first match in the normalised string), return the
-  // original-text tail from that position. Defensive — if normalisation
-  // collapses runs, the cursor might land inside whitespace; trim the
-  // tail.
+/**
+ * First WHOLE-phrase occurrence of `needle` (a normalised,
+ * space-delimited token sequence) in `original`, with the trimmed
+ * text after it. Whole-phrase, not substring, so a short wake word
+ * like "muse" never fires on "museum" / "amusement" / "bemused":
+ * the left edge is the string start or a separator (collapsed to a
+ * space by `normalise`), and the right edge must end the string or
+ * be a separator — not a letter that continues the word.
+ */
+function findWholePhrase(original: string, needle: string): { matched: boolean; residual: string } {
   for (let i = 0; i < original.length; i += 1) {
     const normalisedSoFar = normalise(original.slice(0, i + 1));
-    const matchIndex = normalisedSoFar.indexOf(needle);
-    if (matchIndex >= 0 && matchIndex + needle.length === normalisedSoFar.length) {
-      return original.slice(i + 1).trim();
+    if (normalisedSoFar !== needle && !normalisedSoFar.endsWith(` ${needle}`)) {
+      continue;
     }
+    const next = original[i + 1];
+    if (next !== undefined && !/[\p{P}\p{S}\s]/u.test(next)) {
+      continue;
+    }
+    return { matched: true, residual: original.slice(i + 1).trim() };
   }
-  return "";
+  return { matched: false, residual: "" };
 }
