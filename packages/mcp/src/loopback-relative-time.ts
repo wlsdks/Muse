@@ -70,6 +70,22 @@ function finiteDate(date: Date | undefined): Date | undefined {
   return date && Number.isFinite(date.getTime()) ? date : undefined;
 }
 
+/**
+ * `reference + amount` calendar months. Raw `Date.setMonth`
+ * overflows — Jan 31 + 1mo becomes Mar 3 because Feb has no 31st —
+ * which silently lands a reminder in the wrong month. Clamp the
+ * day back to the last day of the intended month instead.
+ */
+function addCalendarMonths(reference: Date, amount: number): Date {
+  const next = new Date(reference);
+  const targetMonth = next.getMonth() + amount;
+  next.setMonth(targetMonth);
+  if (next.getMonth() !== ((targetMonth % 12) + 12) % 12) {
+    next.setDate(0);
+  }
+  return next;
+}
+
 export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date | undefined {
   const trimmed = phrase.trim().toLowerCase();
   if (trimmed.length === 0) {
@@ -89,12 +105,10 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
   if (inMatch) {
     const amount = Number.parseInt(inMatch[1] ?? "0", 10);
     const unit = inMatch[2];
-    // Month uses Date.setMonth for calendar semantics (Jan 15 +
-    // 1mo → Feb 15, not +30d). Other units use a flat ms offset.
+    // Month uses calendar semantics (Jan 15 + 1mo → Feb 15, not
+    // +30d). Other units use a flat ms offset.
     if (unit === "month") {
-      const next = new Date(reference);
-      next.setMonth(next.getMonth() + amount);
-      return finiteDate(next);
+      return finiteDate(addCalendarMonths(reference, amount));
     }
     const offsetMs = unit === "minute" ? amount * 60_000
       : unit === "hour" ? amount * 3_600_000
@@ -286,9 +300,7 @@ function resolveKoreanDurationOffset(phrase: string, reference: Date): Date | un
   const amount = Number.parseInt(m[1] ?? "0", 10);
   const unit = m[2];
   if (unit === "개월" || unit === "달") {
-    const next = new Date(reference);
-    next.setMonth(next.getMonth() + amount);
-    return next;
+    return addCalendarMonths(reference, amount);
   }
   const offsetMs = unit === "분" ? amount * 60_000
     : unit === "시간" ? amount * 3_600_000

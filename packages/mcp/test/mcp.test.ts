@@ -1999,8 +1999,6 @@ describe("muse.tasks loopback server", () => {
 
     it("parses 'in N month(s)' with calendar-month math (goal 110)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
-      // Anchor on a safe mid-month date so the test doesn't trip
-      // the JS month-rollover edge case (Jan 31 + 1 -> Mar 3).
       const fixed = new Date("2026-05-10T12:00:00Z");
       const now = () => fixed;
 
@@ -2018,6 +2016,38 @@ describe("muse.tasks loopback server", () => {
       const twelve = resolveRelativeTimePhrase("in 12 months", now);
       expect(twelve?.getUTCFullYear()).toBe(2027);
       expect(twelve?.getUTCMonth()).toBe(4);            // back to May
+    });
+
+    it("clamps month-end overflow instead of rolling into a later month", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const { parseTaskDueAt } = await import("../src/personal-tasks-store.js");
+      const jan31 = () => new Date("2026-01-31T12:00:00Z");
+
+      // "in 1 month" from Jan 31 → Feb 28 (2026 non-leap), NOT
+      // Mar 3 (raw Date.setMonth overflow).
+      const en = resolveRelativeTimePhrase("in 1 month", jan31);
+      expect(en?.getUTCMonth()).toBe(1);
+      expect(en?.getUTCDate()).toBe(28);
+
+      // The Korean native-language path has the same guarantee.
+      const ko = resolveRelativeTimePhrase("1개월 후", jan31);
+      expect(ko?.getUTCMonth()).toBe(1);
+      expect(ko?.getUTCDate()).toBe(28);
+
+      // Mar 31 + 1mo → Apr 30 (April has 30 days).
+      const apr = resolveRelativeTimePhrase("in 1 month", () => new Date("2026-03-31T09:00:00Z"));
+      expect(apr?.getUTCMonth()).toBe(3);
+      expect(apr?.getUTCDate()).toBe(30);
+
+      // A non-overflow day is untouched: Jan 15 + 1mo → Feb 15.
+      const mid = resolveRelativeTimePhrase("in 1 month", () => new Date("2026-01-15T12:00:00Z"));
+      expect(mid?.getUTCMonth()).toBe(1);
+      expect(mid?.getUTCDate()).toBe(15);
+
+      // End-to-end through parseTaskDueAt: valid ISO, no RangeError.
+      const iso = parseTaskDueAt("in 1 month", jan31);
+      expect(typeof iso).toBe("string");
+      expect(String(iso).startsWith("2026-02-28")).toBe(true);
     });
 
     it("returns undefined (not an Invalid Date) for out-of-range offsets", async () => {
