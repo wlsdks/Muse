@@ -37,6 +37,28 @@ export interface ProactiveHelpers {
   readonly env?: () => NodeJS.ProcessEnv;
 }
 
+// Absent → fallback. A genuine number is truncated and clamped
+// to max; a non-numeric / unit-slip / below-min value rejects
+// with an actionable message instead of silently running the
+// daemon at a wrong cadence — `Number()` not `parseInt` so
+// `30abc` rejects, not 30.
+export function parseBoundedFlag(
+  raw: string | undefined,
+  flag: string,
+  min: number,
+  max: number,
+  fallback: number
+): number {
+  if (raw === undefined || raw.trim().length === 0) {
+    return fallback;
+  }
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || parsed < min) {
+    throw new Error(`${flag} must be an integer in [${min.toString()}, ${max.toString()}] (got '${raw}')`);
+  }
+  return Math.min(max, Math.trunc(parsed));
+}
+
 export function registerProactiveCommands(program: Command, io: ProgramIO, helpers: ProactiveHelpers = {}): void {
   const env = () => helpers.env?.() ?? process.env;
 
@@ -174,8 +196,8 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       readonly speak?: boolean;
     }) => {
       const e = env();
-      const interval = Math.max(5, Number.parseInt(options.interval, 10) || 60);
-      const leadMinutes = Math.max(1, Number.parseInt(options.leadMinutes, 10) || 10);
+      const interval = parseBoundedFlag(options.interval, "--interval", 5, 86_400, 60);
+      const leadMinutes = parseBoundedFlag(options.leadMinutes, "--lead-minutes", 1, 1_440, 10);
       const provider = (options.provider ?? e.MUSE_PROACTIVE_PROVIDER ?? "log").trim();
       const destination = (options.destination ?? e.MUSE_PROACTIVE_DESTINATION ?? "@me").trim();
 
