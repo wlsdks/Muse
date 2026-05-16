@@ -461,11 +461,18 @@ export class ModelFallbackStrategy implements FallbackStrategy {
 }
 
 export function computeRetryDelay(attempt: number, options: RetryPolicy = {}): number {
-  const initial = Math.max(0, options.initialDelayMs ?? defaultRetryDelayMs);
-  const multiplier = Math.max(1, options.multiplier ?? defaultRetryMultiplier);
-  const maxDelay = Math.max(initial, options.maxDelayMs ?? Number.MAX_SAFE_INTEGER);
-  const base = Math.min(maxDelay, initial * multiplier ** Math.max(0, attempt - 1));
-  const jitterRatio = Math.max(0, Math.min(1, options.jitterRatio ?? 0));
+  // `?? default` does NOT catch NaN / Infinity (a misconfigured
+  // env-derived `Number("")` is NaN). Without this an unguarded
+  // knob poisons the whole computation and the loop calls
+  // `sleep(NaN)`, which `setTimeout` coerces to 0 — backoff
+  // silently disabled, retries hammering a failing provider. Same
+  // non-finite posture as `withTimeout`.
+  const initial = Math.max(0, finiteOr(options.initialDelayMs, defaultRetryDelayMs));
+  const multiplier = Math.max(1, finiteOr(options.multiplier, defaultRetryMultiplier));
+  const maxDelay = Math.max(initial, finiteOr(options.maxDelayMs, Number.MAX_SAFE_INTEGER));
+  const safeAttempt = Number.isFinite(attempt) ? attempt : 1;
+  const base = Math.min(maxDelay, initial * multiplier ** Math.max(0, safeAttempt - 1));
+  const jitterRatio = Math.max(0, Math.min(1, finiteOr(options.jitterRatio, 0)));
 
   if (jitterRatio === 0) {
     return base;
@@ -475,8 +482,14 @@ export function computeRetryDelay(attempt: number, options: RetryPolicy = {}): n
   const jitter = base * jitterRatio;
   // Clamp to maxDelay: jitter is applied after the cap, so an
   // unclamped result could exceed maxDelayMs by up to base*ratio
-  // (≈2× with ratio 1) — maxDelayMs must stay a hard ceiling.
-  return Math.min(maxDelay, Math.max(0, base - jitter + rng() * jitter * 2));
+  // (≈2× with ratio 1) — maxDelayMs must stay a hard ceiling. A
+  // misbehaving injected `random` can't leak a non-finite delay.
+  const jittered = Math.min(maxDelay, Math.max(0, base - jitter + rng() * jitter * 2));
+  return Number.isFinite(jittered) ? jittered : base;
+}
+
+function finiteOr(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 export function isCancellationLikeError(error: unknown): boolean {

@@ -200,6 +200,30 @@ describe("retry and timeout", () => {
     expect(computeRetryDelay(1, { ...base, random: () => 1 })).toBe(150);
   });
 
+  it("never returns a non-finite delay when a knob is NaN / Infinity", () => {
+    // `?? default` doesn't catch NaN — pre-fix these poisoned the
+    // whole computation and the retry loop slept NaN (→ 0ms,
+    // backoff disabled). Each must fall back to a finite delay.
+    for (const opts of [
+      { initialDelayMs: Number.NaN },
+      { initialDelayMs: 100, multiplier: Number.NaN },
+      { initialDelayMs: 100, maxDelayMs: Number.NaN },
+      { initialDelayMs: 100, jitterRatio: Number.NaN, random: () => 0.5 },
+      { initialDelayMs: Number.POSITIVE_INFINITY }
+    ] as const) {
+      const d = computeRetryDelay(3, opts);
+      expect(Number.isFinite(d)).toBe(true);
+      expect(d).toBeGreaterThanOrEqual(0);
+    }
+    // A non-finite `attempt` is treated as the first attempt.
+    expect(computeRetryDelay(Number.NaN, { initialDelayMs: 100, multiplier: 2 })).toBe(100);
+    // A misbehaving injected RNG can't leak a non-finite delay.
+    const bad = computeRetryDelay(1, { initialDelayMs: 100, jitterRatio: 0.5, random: () => Number.NaN });
+    expect(Number.isFinite(bad)).toBe(true);
+    // Valid inputs are unchanged (parity with the existing cases).
+    expect(computeRetryDelay(3, { initialDelayMs: 100, maxDelayMs: 250, multiplier: 2 })).toBe(250);
+  });
+
   it("keeps maxDelayMs a hard ceiling even with jitter", () => {
     const delay = computeRetryDelay(5, {
       initialDelayMs: 100,
