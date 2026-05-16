@@ -70,10 +70,14 @@ export class MonthlyBudgetTracker {
   }
 
   recordCost(costUsd: number): MonthlyBudgetStatus {
+    // Roll the month over BEFORE the validity check: a non-finite /
+    // negative cost (e.g. a provider reporting NaN — `?? 0` doesn't
+    // coerce NaN) arriving first in a new month must not return the
+    // previous month's (possibly "exceeded") status for a $0 month.
+    this.#resetIfNewMonth();
     if (!Number.isFinite(costUsd) || costUsd < 0) {
       return this.statusFor(this.#total);
     }
-    this.#resetIfNewMonth();
     this.#total += costUsd;
     return this.statusFor(this.#total);
   }

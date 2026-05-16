@@ -900,6 +900,22 @@ describe("MonthlyBudgetTracker", () => {
     expect(tracker.snapshot().month).toBe("2026-06");
   });
 
+  it("rolls the month over even when the first cost of the new month is invalid (NaN)", () => {
+    let nowDate = new Date("2026-05-20T12:00:00Z");
+    const tracker = new MonthlyBudgetTracker({ monthlyLimitUsd: 10, now: () => nowDate, warningPercent: 50 });
+    tracker.recordCost(12); // previous month exceeded the limit
+    expect(tracker.recordCost(0)).toBe("exceeded");
+
+    nowDate = new Date("2026-06-01T00:05:00Z");
+    // A NaN cost (provider returned a malformed number; `?? 0` does
+    // NOT coerce NaN) is the first event of the new month — it must
+    // not surface last month's "exceeded" for a $0 June.
+    expect(tracker.recordCost(Number.NaN)).toBe("ok");
+    const snap = tracker.snapshot();
+    expect(snap.month).toBe("2026-06");
+    expect(snap.totalCostUsd).toBe(0);
+  });
+
   it("rejects invalid configuration", () => {
     expect(() => new MonthlyBudgetTracker({ monthlyLimitUsd: -1 })).toThrow(/monthlyLimitUsd/u);
     expect(() => new MonthlyBudgetTracker({ warningPercent: 0 })).toThrow(/warningPercent/u);
