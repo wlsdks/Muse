@@ -49,6 +49,28 @@ describe("inbox-injection-cursor", () => {
     });
   });
 
+  it("advances by instant, not raw string (mixed precision / timezone offset / garbage)", async () => {
+    await writeInboxInjectionCursor(cursorFile, {
+      C1: "2026-05-11T08:00:01Z", // whole-second prior, no fraction
+      C2: "2026-05-11T10:00:00.000Z",
+      C3: "2026-05-11T05:00:00.000Z"
+    });
+    const merged = await advanceInboxInjectionCursor(cursorFile, {
+      // Later instant but string-sorts BEFORE "…01Z" ("." < "Z").
+      C1: "2026-05-11T08:00:01.500Z",
+      // 18:00+09:00 == 09:00Z — EARLIER than the 10:00Z prior, but
+      // string-sorts after it ("18" > "10"). Must not move backward.
+      C2: "2026-05-11T18:00:00+09:00",
+      // Unparseable — must never be stored as a cursor value.
+      C3: "soon"
+    });
+    expect(merged).toEqual({
+      C1: "2026-05-11T08:00:01.500Z", // advanced (instant is later)
+      C2: "2026-05-11T10:00:00.000Z", // unchanged (incoming is earlier)
+      C3: "2026-05-11T05:00:00.000Z"  // unchanged (garbage skipped)
+    });
+  });
+
   it("isolates per-user cursors so user A's seen state doesn't shadow user B's", async () => {
     await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T08:00:00.000Z" }, "alice");
     await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T09:00:00.000Z" }, "bob");

@@ -118,11 +118,10 @@ export async function writeInboxInjectionCursor(
 
 /**
  * Merge an `advance` map into the persisted cursor for `userId`.
- * Each (source → iso) pair is only written when the new ISO is
- * strictly greater than the existing one (string comparison works
- * for ISO-8601 in UTC). Other users' cursors are preserved
- * untouched. Returns the merged cursor for the supplied user so
- * callers can avoid an extra read.
+ * Each (source → iso) pair is only written when the new timestamp
+ * is a strictly later instant than the existing one. Other users'
+ * cursors are preserved untouched. Returns the merged cursor for
+ * the supplied user so callers can avoid an extra read.
  */
 export async function advanceInboxInjectionCursor(
   file: string,
@@ -134,8 +133,17 @@ export async function advanceInboxInjectionCursor(
   const current = existing[key] ?? {};
   const merged: Record<string, string> = { ...current };
   for (const [source, iso] of Object.entries(advance)) {
+    // Compare parsed instants, not raw strings: lexicographic
+    // ordering is wrong across mixed precision ("…01.500Z" sorts
+    // BEFORE "…01Z") and timezone offsets, which would stall the
+    // cursor and re-inject the same message every poll.
+    const incoming = Date.parse(iso);
+    if (Number.isNaN(incoming)) {
+      continue;
+    }
     const prior = merged[source];
-    if (!prior || iso > prior) {
+    const priorTime = prior !== undefined ? Date.parse(prior) : Number.NaN;
+    if (Number.isNaN(priorTime) || incoming > priorTime) {
       merged[source] = iso;
     }
   }
