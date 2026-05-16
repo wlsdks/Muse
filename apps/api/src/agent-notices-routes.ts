@@ -57,7 +57,8 @@ export function registerAgentNoticesRoutes(
   });
 }
 
-async function* streamNoticesFor(
+/** Exported for direct test coverage of the unsubscribe lifecycle. */
+export async function* streamNoticesFor(
   broker: AgentInitiatedNoticeBroker,
   userId: string,
   socket: { once(event: "close", listener: () => void): void }
@@ -80,13 +81,18 @@ async function* streamNoticesFor(
     resume?.();
   });
 
-  // Emit a one-shot `event: open` so clients can synchronise on the
-  // subscription becoming live before the first publish. Without
-  // this, a producer that fires immediately after the route opens
-  // can race the consumer's listener registration.
-  yield `event: open\ndata: ${JSON.stringify({ userId })}\n\n`;
-
   try {
+    // The open frame is inside the try so an early consumer
+    // disconnect (generator .return() while suspended here, before
+    // the loop) still runs `finally` — otherwise the broker
+    // subscription + its unbounded queue leak forever.
+    //
+    // One-shot `event: open` so clients can synchronise on the
+    // subscription becoming live before the first publish; without
+    // it a producer firing immediately after the route opens can
+    // race the consumer's listener registration.
+    yield `event: open\ndata: ${JSON.stringify({ userId })}\n\n`;
+
     while (!closed) {
       if (queue.length === 0) {
         await new Promise<void>((resolve) => { resolveNext = resolve; });
