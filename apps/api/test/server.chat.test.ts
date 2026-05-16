@@ -364,3 +364,20 @@ function createProviderFrom(generate: ModelProvider["generate"]): ModelProvider 
     }
   };
 }
+
+describe("sseData line-splitting", () => {
+  it("splits CRLF / lone CR / LF each as one SSE data segment", async () => {
+    const { sseData } = await import("../src/server-multipart-sse.js");
+    // A bare \r is an SSE line terminator; pre-fix it stayed raw
+    // inside the data line and the client truncated the stream.
+    expect(sseData("a\rb")).toBe("a\ndata: b");
+    expect(sseData("a\rb")).not.toContain("\r");
+    // CRLF and LF normalise to the same framing (no regression).
+    expect(sseData("a\r\nb")).toBe("a\ndata: b");
+    expect(sseData("a\nb")).toBe("a\ndata: b");
+    // CRLF is one separator, not two — no spurious empty segment.
+    expect(sseData("x\r\ny")).toBe("x\ndata: y");
+    // Empty interior line still becomes a single-space data line.
+    expect(sseData("a\n\nb")).toContain("data:  ");
+  });
+});

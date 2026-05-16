@@ -54,8 +54,16 @@ export function parseMultipartBody(contentType: string | string[] | undefined, b
   return { fields, files };
 }
 
-function sseData(value: string): string {
-  return value.split(/\r?\n/u).map((line) => line.length > 0 ? line : " ").join("\ndata: ");
+/**
+ * Frame a value as SSE `data:` lines. The EventSource spec treats
+ * CRLF, a lone CR, and LF all as line terminators, so a bare `\r`
+ * in model output / tool JSON must split into its own `data:`
+ * segment too — otherwise the client parses past it and truncates
+ * the stream. CRLF is matched first so it stays one separator.
+ * Exported for direct test coverage of the line-splitting.
+ */
+export function sseData(value: string): string {
+  return value.split(/\r\n|\r|\n/u).map((line) => line.length > 0 ? line : " ").join("\ndata: ");
 }
 
 export async function* toSseStream(
