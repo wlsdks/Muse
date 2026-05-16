@@ -375,6 +375,12 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
         return;
       }
       const indexPath = defaultIndexPath();
+      // Preserve the model the index was built with: a stale
+      // refresh must NOT silently re-embed an existing custom-model
+      // index with the default just because this search omitted
+      // --model. The mismatch is still surfaced by the explicit
+      // guard below — consistently, stale or not.
+      const existingIndexModel = (await loadIndex(indexPath))?.model;
 
       // Auto-stale check + incremental reindex (default on). Same
       // JARVIS rule as `muse ask` — semantic search results MUST
@@ -389,7 +395,7 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
             const summary = await reindexNotes({
               dir: notesDir,
               indexPath,
-              model: options.model
+              model: existingIndexModel ?? options.model
             });
             if (summary.embedded > 0 && !options.json) {
               io.stderr(`(auto-refreshed notes index: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached)\n`);
