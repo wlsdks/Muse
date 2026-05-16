@@ -3,7 +3,7 @@ import { truncateErrorBody } from "@muse/shared";
 import { readDiscordAfter, writeDiscordAfter } from "./discord-after-store.js";
 import { MessagingProviderError } from "./errors.js";
 import { readInbox } from "./inbox-store.js";
-import { clampInboundLimit, tryParseJson } from "./provider-helpers.js";
+import { clampInboundLimit, clampOutboundText, tryParseJson } from "./provider-helpers.js";
 import type {
   InboundFetchOptions,
   InboundMessage,
@@ -186,10 +186,15 @@ export class DiscordProvider implements MessagingProvider {
   }
 
   async send(message: OutboundMessage): Promise<OutboundReceipt> {
-    validateOutboundMessage(message);
+    // Discord's content hard-limit is 2000 — below
+    // validateOutboundMessage's 4096 — so a 2001..4096-char
+    // message would pass validation then be 400-dropped by the
+    // API. Truncate so it's delivered instead.
+    const outboundText = clampOutboundText(message.text, 2000);
+    validateOutboundMessage({ ...message, text: outboundText });
     const url = `${this.baseUrl}/${this.apiVersion}/channels/${encodeURIComponent(message.destination)}/messages`;
     const response = await this.fetchImpl(url, {
-      body: JSON.stringify({ content: message.text }),
+      body: JSON.stringify({ content: outboundText }),
       headers: {
         authorization: `Bot ${this.token}`,
         "content-type": "application/json"

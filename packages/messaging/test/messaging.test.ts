@@ -157,6 +157,25 @@ describe("DiscordProvider", () => {
     expect(seenAuth).toBe("Bot BOT123");
     expect(receipt).toMatchObject({ destination: "ch-9", messageId: "msg-1", providerId: "discord" });
   });
+
+  it("truncates a >2000-char message to Discord's content limit instead of dropping it", async () => {
+    let sentContent = "";
+    const provider = new DiscordProvider({
+      baseUrl: "https://disc.test/api",
+      fetch: async (_url, init) => {
+        sentContent = (JSON.parse(String(init?.body)) as { content: string }).content;
+        return fakeJsonResponse({ id: "msg-2" });
+      },
+      token: "BOT123"
+    });
+    await provider.send({ destination: "ch-9", text: "Z".repeat(5000) });
+    expect(sentContent.length).toBe(2000);
+    expect(sentContent.endsWith("… [truncated]")).toBe(true);
+
+    // A short message is posted unchanged.
+    await provider.send({ destination: "ch-9", text: "short" });
+    expect(sentContent).toBe("short");
+  });
 });
 
 describe("DiscordProvider.fetchInbound", () => {
