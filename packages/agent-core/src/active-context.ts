@@ -13,6 +13,8 @@
  *     the task memory store) to surface a single task line.
  */
 
+import { stripUntrustedTerminalChars } from "@muse/shared";
+
 import type { UserMemoryProvider } from "./types.js";
 import {
   formatCurrentTime,
@@ -455,7 +457,11 @@ function buildRoutineHint(
 }
 
 function sanitizeInline(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
+  // `\s+` collapse alone neutralises a `\n[System Override]\n`
+  // splice, but an externally-controllable field (a calendar
+  // invite title, a poisoned task) can carry ESC / C0 / C1 / DEL
+  // bytes that survive it and reach the prompt AND the terminal.
+  return stripUntrustedTerminalChars(value).replace(/\s+/gu, " ").trim();
 }
 
 const ENDED_EVENT_GRACE_MS = 30 * 60 * 1_000;
