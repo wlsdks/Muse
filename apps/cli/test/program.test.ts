@@ -4614,11 +4614,14 @@ describe("cli program", () => {
     expect(Buffer.from(headerMatch![1]!, "base64").toString("utf8")).toBe("muse.png");
     expect(Buffer.from(headerMatch![2]!, "base64").equals(imageBytes)).toBe(true);
 
-    // Capability gate: iTerm/WezTerm/tabby/kitty → true; everything else → false.
+    // Capability gate: only terminals honouring iTerm2 OSC-1337 → true.
     expect(detectInlineImageSupport({ TERM_PROGRAM: "iTerm.app" } as NodeJS.ProcessEnv)).toBe(true);
     expect(detectInlineImageSupport({ TERM_PROGRAM: "WezTerm" } as NodeJS.ProcessEnv)).toBe(true);
     expect(detectInlineImageSupport({ TERM_PROGRAM: "tabby" } as NodeJS.ProcessEnv)).toBe(true);
-    expect(detectInlineImageSupport({ TERM: "xterm-kitty" } as NodeJS.ProcessEnv)).toBe(true);
+    // Kitty uses its own incompatible graphics protocol — must NOT
+    // claim inline support (else its working viewer fallback is
+    // suppressed and `muse show` is a silent no-op there).
+    expect(detectInlineImageSupport({ TERM: "xterm-kitty" } as NodeJS.ProcessEnv)).toBe(false);
     // Goal 142 — Ghostty + VS Code integrated terminal both
     // implement the iTerm2 inline-image protocol natively.
     expect(detectInlineImageSupport({ TERM_PROGRAM: "ghostty" } as NodeJS.ProcessEnv)).toBe(true);

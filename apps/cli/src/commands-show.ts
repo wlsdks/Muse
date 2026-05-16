@@ -46,13 +46,13 @@ const INLINE_IMAGE_TERM_PROGRAMS: ReadonlySet<string> = new Set([
 ]);
 
 export function detectInlineImageSupport(env: NodeJS.ProcessEnv): boolean {
+  // Only terminals that honour the iTerm2 OSC-1337 protocol this
+  // command emits. Kitty (`TERM=xterm-kitty`) deliberately is NOT
+  // here: it uses its own, incompatible graphics protocol, so
+  // claiming support would emit bytes it ignores AND suppress the
+  // working OS-viewer fallback — a silent no-op for Kitty users.
   const program = env.TERM_PROGRAM?.trim();
-  if (program && INLINE_IMAGE_TERM_PROGRAMS.has(program)) {
-    return true;
-  }
-  const term = env.TERM?.trim() ?? "";
-  if (term.startsWith("xterm-kitty")) return true;
-  return false;
+  return Boolean(program && INLINE_IMAGE_TERM_PROGRAMS.has(program));
 }
 
 /**
@@ -88,7 +88,7 @@ async function externalOpen(path: string): Promise<number> {
 export function registerShowCommand(program: Command, io: ProgramIO): void {
   program
     .command("show")
-    .description("Render an image inline in the terminal (iTerm2/Kitty/WezTerm). Falls back to native viewer on plain terminals.")
+    .description("Render an image inline in the terminal (iTerm2/WezTerm/Ghostty). Falls back to the native viewer on other terminals (incl. Kitty, which uses an incompatible protocol).")
     .argument("<path>", "Path to an image file")
     .option("--name <label>", "Label shown in the inline header (default: basename of <path>)")
     .option("--inline-only", "Skip the open/xdg-open fallback when inline support is unavailable")
