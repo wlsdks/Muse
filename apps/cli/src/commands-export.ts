@@ -12,7 +12,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, stat, writeFile, unlink } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, stat, writeFile, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -121,6 +121,22 @@ export function buildExportReadme(
   return lines.join("\n");
 }
 
+/**
+ * Pre-create the intermediate cleartext tarball at owner-only
+ * perms. The encrypt path tars secrets (credentials.json,
+ * messaging-credentials.json, …) to this temp before encrypting;
+ * `tar -f` truncates an existing file *without* resetting its
+ * mode, so reserving it 0o600 first means the cleartext bundle is
+ * never world-readable on a multi-user host for the encrypt
+ * window. `chmod` covers a stale temp left by a hard-killed run
+ * (writeFile's `mode` is ignored when the file already exists).
+ * Exported for direct test coverage.
+ */
+export async function reserveCleartextTemp(path: string): Promise<void> {
+  await writeFile(path, "", { mode: 0o600 });
+  await chmod(path, 0o600);
+}
+
 interface CollectedSources {
   readonly files: readonly string[];
   readonly notesDir: string | undefined;
@@ -215,6 +231,9 @@ export async function buildMuseExport(args: {
       "-C", museParent,
       ...tarEntries.map((entry) => `${museBase}/${entry}`)
     ];
+    if (passphrase) {
+      await reserveCleartextTemp(tarPath);
+    }
     await new Promise<void>((resolveSpawn, reject) => {
       const child = spawn("tar", tarArgs, { stdio: ["ignore", "ignore", "pipe"] });
       let stderr = "";

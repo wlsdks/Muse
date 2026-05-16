@@ -5581,6 +5581,26 @@ describe("cli program", () => {
     expect(entries.some((e) => e === ".muse/notes/hi.md")).toBe(true);
   });
 
+  it("reserveCleartextTemp keeps the pre-encrypt secret tarball owner-only, even over a stale temp (goal 239)", async () => {
+    const { reserveCleartextTemp } = await import("../src/commands-export.js");
+    const fsp = await import("node:fs/promises");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-export-perms-"));
+
+    // Fresh create → 0o600.
+    const fresh = path.join(root, "bundle.tar.gz.cleartext.tmp");
+    await reserveCleartextTemp(fresh);
+    expect((await fsp.stat(fresh)).mode & 0o777).toBe(0o600);
+
+    // A stale world-readable temp from a hard-killed run is tightened
+    // (writeFile's `mode` is ignored when the file already exists, so
+    // the explicit chmod is what closes this).
+    const stale = path.join(root, "stale.cleartext.tmp");
+    await fsp.writeFile(stale, "leftover secrets", { mode: 0o666 });
+    await reserveCleartextTemp(stale);
+    expect((await fsp.stat(stale)).mode & 0o777).toBe(0o600);
+    expect(await fsp.readFile(stale, "utf8")).toBe("");
+  });
+
   it("buildMuseExport bundles every present ~/.muse/*.json + the notes tree, skipping missing siblings (goal 048)", async () => {
     const { buildMuseExport, buildExportReadme, DEFAULT_EXPORT_FILES } = await import("../src/commands-export.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-export-"));
