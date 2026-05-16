@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -85,6 +87,40 @@ describe("JwtTokenProvider edge cases", () => {
 
   it("rejects a JWT secret shorter than the HS256 minimum", () => {
     expect(() => new JwtTokenProvider({ jwtSecret: "short" })).toThrow(AuthError);
+  });
+
+  it("rejects a token whose payload was tampered after signing", () => {
+    const token = jwt.createToken(sampleUser);
+    const [h, p, s] = token.split(".");
+    const claims = JSON.parse(Buffer.from(p!, "base64url").toString("utf8")) as Record<string, unknown>;
+    const forgedPayload = Buffer.from(JSON.stringify({ ...claims, sub: "attacker" })).toString("base64url");
+    expect(jwt.parseToken(`${h!}.${forgedPayload}.${s!}`)).toBeUndefined();
+  });
+
+  it("rejects a signature-valid token whose header alg is not HS256 (no alg confusion)", () => {
+    const claims = {
+      email: "user@example.com",
+      exp: Math.floor(Date.now() / 1_000) + 60,
+      iat: Math.floor(Date.now() / 1_000),
+      jti: "j1",
+      sub: "user-1"
+    };
+    const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+    // A *valid* HMAC-SHA256 signature over the bytes — only the
+    // header's alg differs. The verifier must reject on alg, since
+    // without that check this forged-alg token would be accepted.
+    const forgedHeader = Buffer.from(JSON.stringify({ alg: "HS512", typ: "JWT" })).toString("base64url");
+    const forgedUnsigned = `${forgedHeader}.${payload}`;
+    const forgedSig = createHmac("sha256", strongSecret).update(forgedUnsigned).digest("base64url");
+    expect(jwt.parseToken(`${forgedUnsigned}.${forgedSig}`)).toBeUndefined();
+
+    // Sanity: the identical payload + signature with a correct
+    // HS256 header DOES verify — proving the rejection above is the
+    // alg check, not a broken fixture.
+    const okHeader = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+    const okUnsigned = `${okHeader}.${payload}`;
+    const okSig = createHmac("sha256", strongSecret).update(okUnsigned).digest("base64url");
+    expect(jwt.parseToken(`${okUnsigned}.${okSig}`)?.sub).toBe("user-1");
   });
 });
 
