@@ -11,6 +11,26 @@
 const MAX_INBOUND_LIMIT = 100;
 const DEFAULT_INBOUND_LIMIT = 20;
 
+const DEFAULT_OUTBOUND_TEXT_MAX = 4096;
+const TRUNCATION_MARKER = "… [truncated]";
+
+/**
+ * Clamp outbound message text to a platform hard limit so a long
+ * brief / answer is *delivered truncated* rather than dropped
+ * whole when it exceeds the cap. The marker is counted inside
+ * `max` so the result never exceeds it. `max` defaults to
+ * Telegram's 4096; pass a smaller value for tighter platforms.
+ */
+export function clampOutboundText(text: string, max: number = DEFAULT_OUTBOUND_TEXT_MAX): string {
+  if (text.length <= max) {
+    return text;
+  }
+  if (max <= TRUNCATION_MARKER.length) {
+    return text.slice(0, Math.max(0, max));
+  }
+  return `${text.slice(0, max - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`;
+}
+
 /**
  * Normalise a caller-supplied inbound message limit. NaN / undefined /
  * non-finite falls back to {@link DEFAULT_INBOUND_LIMIT}; finite values

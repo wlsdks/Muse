@@ -1,6 +1,32 @@
 import { describe, expect, it } from "vitest";
 
-import { clampInboundLimit, tryParseJson } from "./provider-helpers.js";
+import { clampInboundLimit, clampOutboundText, tryParseJson } from "./provider-helpers.js";
+
+describe("clampOutboundText", () => {
+  it("returns short text unchanged", () => {
+    expect(clampOutboundText("hello", 4096)).toBe("hello");
+    expect(clampOutboundText("x".repeat(4096), 4096)).toBe("x".repeat(4096));
+  });
+
+  it("truncates over-limit text with a marker, never exceeding max", () => {
+    const out = clampOutboundText("y".repeat(5000), 4096);
+    expect(out.length).toBe(4096);
+    expect(out.endsWith("… [truncated]")).toBe(true);
+    expect(out.startsWith("y")).toBe(true);
+  });
+
+  it("defaults to Telegram's 4096 cap and supports a tighter platform cap", () => {
+    expect(clampOutboundText("z".repeat(5000)).length).toBe(4096);
+    const discord = clampOutboundText("z".repeat(3000), 2000);
+    expect(discord.length).toBe(2000);
+    expect(discord.endsWith("… [truncated]")).toBe(true);
+  });
+
+  it("degrades safely when max is smaller than the marker", () => {
+    expect(clampOutboundText("abcdef", 3)).toBe("abc");
+    expect(clampOutboundText("abcdef", 0)).toBe("");
+  });
+});
 
 describe("clampInboundLimit", () => {
   it("falls back to default 20 when raw is undefined / non-finite", () => {

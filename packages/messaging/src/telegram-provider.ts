@@ -2,7 +2,7 @@ import { truncateErrorBody } from "@muse/shared";
 
 import { MessagingProviderError, MessagingValidationError } from "./errors.js";
 import { readInbox } from "./inbox-store.js";
-import { clampInboundLimit, tryParseJson } from "./provider-helpers.js";
+import { clampInboundLimit, clampOutboundText, tryParseJson } from "./provider-helpers.js";
 import { readTelegramOffset, writeTelegramOffset } from "./telegram-offset-store.js";
 import type {
   InboundFetchOptions,
@@ -174,11 +174,15 @@ export class TelegramProvider implements MessagingProvider {
   }
 
   async send(message: OutboundMessage): Promise<OutboundReceipt> {
-    validateOutboundMessage(message);
+    // Truncate to Telegram's 4096-char hard limit so a long brief
+    // / answer is delivered (truncated) instead of dropped whole
+    // by validateOutboundMessage's length throw.
+    const outboundText = clampOutboundText(message.text);
+    validateOutboundMessage({ ...message, text: outboundText });
     const response = await this.fetchImpl(`${this.baseUrl}/bot${this.token}/sendMessage`, {
       body: JSON.stringify({
         chat_id: message.destination,
-        text: message.text,
+        text: outboundText,
         ...(this.parseMode ? { parse_mode: this.parseMode } : {})
       }),
       headers: { "content-type": "application/json" },
