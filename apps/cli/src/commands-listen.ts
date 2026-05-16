@@ -29,6 +29,7 @@ import {
 } from "@muse/voice";
 import type { Command } from "commander";
 
+import { parseBoundedInt } from "./commands-ask.js";
 import type { ProgramIO } from "./program.js";
 import { parseAudioFormat } from "./voice-playback.js";
 
@@ -111,7 +112,7 @@ export function registerListenCommand(program: Command, io: ProgramIO, helpers: 
       // Phase F.1 — wake-word ambient mode.
       if (options.wake && options.wake.trim().length > 0) {
         const detector = new TextScanWakeWordDetector({ phrase: options.wake.trim() });
-        const clipSeconds = Math.max(2, Math.min(30, Number(options.clipSeconds ?? "5")));
+        const clipSeconds = parseBoundedInt(options.clipSeconds, "--clip-seconds", 2, 30, 5);
         io.stdout(`Listening for "${options.wake.trim()}"... Ctrl-C to stop.\n`);
         let active = true;
         const onSignal = (): void => {
