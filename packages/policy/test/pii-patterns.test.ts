@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allPiiPatterns,
   commonPiiPatterns,
+  findPii,
   internationalPiiPatterns,
   krPiiPatterns,
   maskPii
@@ -14,6 +15,21 @@ describe("PII patterns", () => {
       ...internationalPiiPatterns.map((pattern) => pattern.name),
       ...commonPiiPatterns.map((pattern) => pattern.name)
     ]);
+  });
+
+  it("findPii detects zero-width / fullwidth / entity-split PII the raw regex misses", () => {
+    const ZW = "\u200b";
+    const fw = (s: string) =>
+      [...s].map((c) => String.fromCodePoint(0xff10 + (c.charCodeAt(0) - 48))).join("");
+
+    expect(findPii(`12${ZW}3-45-6789`).map((f) => f.name)).toContain("us-ssn");
+    expect(findPii(`${fw("4111")} ${fw("4111")} ${fw("4111")} ${fw("4111")}`).map((f) => f.name))
+      .toContain("credit-card");
+    expect(findPii("123&#x200b;-45-6789").map((f) => f.name)).toContain("us-ssn");
+    // Plain PII still detected (parity with maskPii detection).
+    expect(findPii("my ssn is 123-45-6789").map((f) => f.name)).toContain("us-ssn");
+    // No false positive on ordinary text.
+    expect(findPii("Review the Q3 budget by Friday")).toEqual([]);
   });
 
   it("masks representative private identifiers", () => {

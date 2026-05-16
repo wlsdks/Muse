@@ -2,6 +2,7 @@ import {
   detectSystemPromptLeakage,
   detectTopicDrift,
   findInjectionPatterns,
+  findPii,
   maskPii,
   type TopicDriftOptions
 } from "@muse/policy";
@@ -40,16 +41,16 @@ export function createInjectionInputGuard(): GuardStage {
 export function createPiiInputGuard(): GuardStage {
   return {
     evaluate: (context: AgentRunContext) => {
-      const result = maskPii(joinMessages(context.input.messages));
+      const findings = findPii(joinMessages(context.input.messages));
 
-      if (result.findings.length === 0) {
+      if (findings.length === 0) {
         return { allowed: true };
       }
 
       return {
         allowed: false,
         code: "PII_DETECTED",
-        reason: `Input guard detected private identifiers: ${result.findings.map((finding) => finding.name).join(", ")}`
+        reason: `Input guard detected private identifiers: ${findings.map((finding) => finding.name).join(", ")}`
       };
     },
     id: "pii-input-guard"

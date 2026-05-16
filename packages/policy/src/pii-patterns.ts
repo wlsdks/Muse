@@ -1,3 +1,5 @@
+import { normalizeForInjectionDetection } from "./injection-patterns.js";
+
 export interface PiiPattern {
   readonly name: string;
   readonly regex: RegExp;
@@ -108,6 +110,31 @@ export function maskPii(text: string, patterns: readonly PiiPattern[] = allPiiPa
     findings: [...findings.entries()].map(([name, count]) => ({ count, name })),
     text: masked
   };
+}
+
+/**
+ * Detection-only PII scan over the *normalised* text (NFKC, strip
+ * zero-width, decode entities, fold homoglyphs/diacritics — the
+ * same canonicaliser the injection detector uses). `maskPii`
+ * deliberately runs on the raw text because it rewrites content
+ * and must not corrupt legitimate output; the fail-close PII
+ * *input* guard only needs to know whether PII is present, so it
+ * uses this so a zero-width / homoglyph / entity-split SSN or card
+ * can't slip past the regexes.
+ */
+export function findPii(text: string, patterns: readonly PiiPattern[] = allPiiPatterns): readonly PiiFinding[] {
+  const normalized = normalizeForInjectionDetection(text);
+  const findings = new Map<string, number>();
+
+  for (const pattern of patterns) {
+    const matches = normalized.match(toGlobal(pattern.regex));
+
+    if (matches && matches.length > 0) {
+      findings.set(pattern.name, (findings.get(pattern.name) ?? 0) + matches.length);
+    }
+  }
+
+  return [...findings.entries()].map(([name, count]) => ({ count, name }));
 }
 
 function toGlobal(regex: RegExp): RegExp {
