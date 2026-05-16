@@ -267,7 +267,8 @@ interface SseStreamArgs {
   readonly mode: OrchestrationMode;
 }
 
-async function* toMultiAgentSseStream(args: SseStreamArgs): AsyncIterable<string> {
+/** Exported for direct test coverage of the unsubscribe lifecycle. */
+export async function* toMultiAgentSseStream(args: SseStreamArgs): AsyncIterable<string> {
   const queue: AgentMessage[] = [];
   let resolveNext: (() => void) | undefined;
 
@@ -277,8 +278,6 @@ async function* toMultiAgentSseStream(args: SseStreamArgs): AsyncIterable<string
     resolveNext = undefined;
     resume?.();
   });
-
-  yield `event: start\ndata: ${sseData(JSON.stringify({ mode: args.mode }))}\n\n`;
 
   let result: MultiAgentOrchestrationResult | undefined;
   let runtimeError: unknown;
@@ -300,6 +299,11 @@ async function* toMultiAgentSseStream(args: SseStreamArgs): AsyncIterable<string
   );
 
   try {
+    // Inside the try so an early consumer disconnect (generator
+    // .return() suspended at the start frame) still runs `finally`
+    // — otherwise the bus subscription + queue leak.
+    yield `event: start\ndata: ${sseData(JSON.stringify({ mode: args.mode }))}\n\n`;
+
     while (!finished || queue.length > 0) {
       if (queue.length === 0 && !finished) {
         await new Promise<void>((resolve) => {
