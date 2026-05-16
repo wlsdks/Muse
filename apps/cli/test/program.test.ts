@@ -5299,6 +5299,22 @@ describe("cli program", () => {
       app: "Code", window: "main.ts", selected: "abc"
     });
     expect(parseOsascriptGlance("")).toEqual({ app: "", window: "", selected: "" });
+
+    // A hostile window title / clipboard (any site's <title>, raw
+    // clipboard) carrying ANSI/C0/C1/DEL is neutralised, not
+    // printed raw to the terminal.
+    const ESC = String.fromCharCode(27);
+    const C1 = String.fromCharCode(0x9b);
+    const DEL = String.fromCharCode(127);
+    const snap = parseOsascriptGlance(
+      `Safari${ESC}[2J\nEvil${C1}Page\ncopied${DEL} text  with   spaces`
+    );
+    for (const field of [snap.app, snap.window, snap.selected]) {
+      for (const bad of [ESC, C1, DEL]) {
+        expect(field.includes(bad)).toBe(false);
+      }
+    }
+    expect(snap).toEqual({ app: "Safari[2J", window: "EvilPage", selected: "copied text with spaces" });
   });
 
   it("muse read parses a hand-rolled PDF + builds grounded ask prompt (goal 088)", async () => {

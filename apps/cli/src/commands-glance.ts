@@ -11,6 +11,7 @@
 
 import { spawn } from "node:child_process";
 
+import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
@@ -38,11 +39,15 @@ export interface GlanceSnapshot {
  */
 export function parseOsascriptGlance(raw: string): GlanceSnapshot {
   const lines = raw.split(/\r?\n/u);
+  // Window titles (any website's <title>) and clipboard text are
+  // attacker-influenceable and printed straight to the terminal —
+  // strip ESC/C0/C1/DEL and collapse whitespace, the same boundary
+  // treatment the feeds / inbox / search surfaces apply.
   const norm = (value: string | undefined): string => {
     if (!value) return "";
-    const trimmed = value.trim();
-    if (trimmed === "missing value" || trimmed === "") return "";
-    return trimmed;
+    const cleaned = stripUntrustedTerminalChars(value).replace(/\s+/gu, " ").trim();
+    if (cleaned === "missing value" || cleaned === "") return "";
+    return cleaned;
   };
   return {
     app: norm(lines[0]),
