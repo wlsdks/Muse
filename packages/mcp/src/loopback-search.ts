@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@muse/shared";
+import { stripUntrustedTerminalChars, type JsonObject, type JsonValue } from "@muse/shared";
 
 import type { LoopbackMcpServer } from "./loopback.js";
 import { buildJsonToolSchema, readString } from "./loopback-helpers.js";
@@ -249,7 +249,11 @@ async function querySearxng(args: QuerySearxngArgs): Promise<readonly SearchResu
       if (out.length >= args.maxResults) break;
       if (typeof row.url !== "string" || typeof row.title !== "string") continue;
       const snippet = typeof row.content === "string" ? row.content : "";
-      out.push({ snippet: snippet.replace(/\s+/gu, " ").trim(), title: row.title.trim(), url: row.url });
+      out.push({
+        snippet: sanitizeSearchField(snippet),
+        title: sanitizeSearchField(row.title),
+        url: sanitizeSearchField(row.url)
+      });
     }
     return out;
   } catch {
@@ -266,6 +270,18 @@ interface SearchResult {
 }
 
 /**
+ * Search hits are attacker-influenceable (a page that ranks for a
+ * query, or a compromised SearXNG instance) and this tool's output
+ * is fed straight into the model context AND printed to the
+ * terminal. Strip ESC / C0 / C1 / DEL then collapse whitespace —
+ * the same boundary treatment the notes / feeds / inbox surfaces
+ * apply to untrusted text.
+ */
+function sanitizeSearchField(raw: string): string {
+  return stripUntrustedTerminalChars(raw).replace(/\s+/gu, " ").trim();
+}
+
+/**
  * Regex-extract result rows from DuckDuckGo's html.duckduckgo.com/html/
  * markup. Two stable class names since 2019:
  *   - `<a class="result__a" href="…">title</a>`
@@ -278,9 +294,9 @@ export function parseDuckDuckGoHtml(html: string, max: number): readonly SearchR
   const blockRe = /<a\s+rel="nofollow"\s+class="result__a"\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a\s+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gu;
   let match: RegExpExecArray | null;
   while ((match = blockRe.exec(html)) !== null && out.length < max) {
-    const href = decodeDuckDuckGoRedirect(match[1] ?? "");
-    const title = stripTags(match[2] ?? "").trim();
-    const snippet = stripTags(match[3] ?? "").trim();
+    const href = sanitizeSearchField(decodeDuckDuckGoRedirect(match[1] ?? ""));
+    const title = sanitizeSearchField(stripTags(match[2] ?? ""));
+    const snippet = sanitizeSearchField(stripTags(match[3] ?? ""));
     if (href && title) {
       out.push({ snippet, title, url: href });
     }
