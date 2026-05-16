@@ -328,6 +328,17 @@ Report the successful issue lookup, state the pull request lookup failed, and of
     expect(rendered.match(/\[Example 2 - Missing evidence\]/g)).toHaveLength(1);
   });
 
+  it("renders a pinned exemplar that is ALSO a top scorer exactly once (no duplicate few-shot)", async () => {
+    const retriever = new InMemoryExemplarRetriever(exemplarMarkdown, {
+      pinnedIds: ["exemplar-1"], // pin the same one the query scores highest
+      topK: 1
+    });
+    const rendered = await retriever.retrieveTopK("Compare search options before choosing", 1);
+
+    expect(rendered).toContain("[Example 1 - Compare options]");
+    expect(rendered.match(/\[Example 1 - Compare options\]/g)).toHaveLength(1);
+  });
+
   it("falls back to full exemplar content when retrieval has no usable match", async () => {
     const fallback = new FullExemplarRetriever("full fallback examples");
     const retriever = new InMemoryExemplarRetriever(exemplarMarkdown, {

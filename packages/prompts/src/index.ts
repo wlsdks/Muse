@@ -322,7 +322,18 @@ export class InMemoryExemplarRetriever implements ExemplarRetriever {
       return this.fallback.retrieveTopK(userPrompt, k);
     }
 
-    return renderExemplarDocuments([...scored, ...pinned], this.headerPreamble);
+    // A pinned id can also be a top scorer; without dedup the same
+    // exemplar is rendered twice — wasted context + a degraded
+    // few-shot signal. Scored order is kept; pins fill the gaps.
+    const deduped: ExemplarDocument[] = [];
+    const seen = new Set<string>();
+    for (const document of [...scored, ...pinned]) {
+      if (seen.has(document.id)) continue;
+      seen.add(document.id);
+      deduped.push(document);
+    }
+
+    return renderExemplarDocuments(deduped, this.headerPreamble);
   }
 }
 
