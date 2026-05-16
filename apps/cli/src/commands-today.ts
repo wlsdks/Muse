@@ -23,6 +23,7 @@ import {
 } from "@muse/autoconfigure";
 import { LocalCalendarProvider } from "@muse/calendar";
 import {
+  compareTasksByDueDate,
   readFollowups,
   readReminders,
   readTasks,
@@ -454,7 +455,11 @@ async function readOpenTasks(tasksFile: string): Promise<readonly { id: string; 
   const all = await readTasks(tasksFile);
   return all
     .filter((task: PersistedTask) => task.status === "open")
-    .sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))
+    // Due-soonest first (same comparator as `muse tasks list`) so the
+    // briefing leads with imminent deadlines instead of burying them
+    // under recent quick-captures — and the slice keeps the most
+    // due-relevant 50, not just the 50 newest.
+    .sort(compareTasksByDueDate)
     .slice(0, 50)
     .map((task) => {
       const serialized = serializeTask(task);

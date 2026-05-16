@@ -2251,6 +2251,55 @@ describe("cli program", () => {
     }
   });
 
+  it("today --local lists open tasks due-soonest first, not newest-created (goal 255)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-today-taskorder-"));
+    const fsp = await import("node:fs/promises");
+    const tasksFile = path.join(root, "tasks.json");
+    const soon = new Date(Date.now() + 2 * 60 * 60_000).toISOString();
+    const far = new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString();
+    await fsp.writeFile(tasksFile, JSON.stringify({
+      tasks: [
+        // Imminent deadline, but created long ago — the case the
+        // createdAt-desc sort buried under recent captures.
+        { id: "t_soon", title: "Ship release", status: "open", dueAt: soon, createdAt: "2026-04-01T00:00:00Z" },
+        { id: "t_far", title: "Quarterly review", status: "open", dueAt: far, createdAt: "2026-05-15T00:00:00Z" },
+        { id: "t_new_undated", title: "Quick capture", status: "open", createdAt: "2026-05-16T09:00:00Z" },
+        { id: "t_old_undated", title: "Stale idea", status: "open", createdAt: "2026-03-01T00:00:00Z" },
+        { id: "t_done", title: "Already done", status: "done", createdAt: "2026-05-16T10:00:00Z" }
+      ]
+    }), "utf8");
+    const saved = {
+      tasks: process.env.MUSE_TASKS_FILE,
+      reminders: process.env.MUSE_REMINDERS_FILE,
+      followups: process.env.MUSE_FOLLOWUPS_FILE,
+      calendar: process.env.MUSE_CALENDAR_FILE,
+      notes: process.env.MUSE_NOTES_DIR
+    };
+    process.env.MUSE_TASKS_FILE = tasksFile;
+    process.env.MUSE_REMINDERS_FILE = path.join(root, "no-reminders.json");
+    process.env.MUSE_FOLLOWUPS_FILE = path.join(root, "no-followups.json");
+    process.env.MUSE_CALENDAR_FILE = path.join(root, "no-calendar.json");
+    process.env.MUSE_NOTES_DIR = path.join(root, "no-notes");
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("local"); } });
+      await program.parseAsync(["node", "muse", "today", "--local", "--json"], { from: "node" });
+      const briefing = JSON.parse(output.join("")) as { tasks: Array<{ id: string; title: string }> };
+      // Dated soonest→latest first, then undated newest→oldest;
+      // done task excluded. Pre-fix this was t_new_undated first.
+      expect(briefing.tasks.map((t) => t.id))
+        .toEqual(["t_soon", "t_far", "t_new_undated", "t_old_undated"]);
+    } finally {
+      for (const [k, v] of [
+        ["MUSE_TASKS_FILE", saved.tasks], ["MUSE_REMINDERS_FILE", saved.reminders],
+        ["MUSE_FOLLOWUPS_FILE", saved.followups], ["MUSE_CALENDAR_FILE", saved.calendar],
+        ["MUSE_NOTES_DIR", saved.notes]
+      ] as const) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    }
+  });
+
   it("today --local on a fresh install surfaces empty-state onboarding hints", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-today-empty-"));
     const prevTasks = process.env.MUSE_TASKS_FILE;
