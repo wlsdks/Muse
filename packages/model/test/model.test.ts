@@ -1104,6 +1104,52 @@ describe("OllamaProvider streaming tool-call delivered in a done:false chunk", (
   });
 });
 
+describe("OllamaProvider streaming flushes an unterminated final NDJSON line", () => {
+  it("recovers the terminal done:true chunk (content + usage) when it has no trailing newline", async () => {
+    const fetch: typeof globalThis.fetch = async (url) => {
+      if (String(url).includes("/models")) {
+        return new Response(JSON.stringify({ data: [{ id: "qwen3:8b", object: "model" }] }));
+      }
+      return new Response(new ReadableStream({
+        start(controller) {
+          const enc = new TextEncoder();
+          // Non-terminal delta WITH newline …
+          controller.enqueue(enc.encode(JSON.stringify({
+            done: false,
+            message: { content: "hel", role: "assistant" },
+            model: "qwen3:8b"
+          }) + "\n"));
+          // … terminal done:true chunk with the rest of the answer
+          // and the token usage, deliberately NOT newline-terminated.
+          controller.enqueue(enc.encode(JSON.stringify({
+            done: true,
+            eval_count: 3,
+            message: { content: "lo", role: "assistant" },
+            model: "qwen3:8b",
+            prompt_eval_count: 7
+          })));
+          controller.close();
+        }
+      }));
+    };
+    const provider = new OllamaProvider({
+      baseUrl: "http://o.test/v1",
+      defaultModel: "qwen3:8b",
+      fetch,
+      models: ["qwen3:8b"]
+    });
+    const events: { type: string; text?: string; response?: { output?: string; usage?: unknown } }[] = [];
+    for await (const ev of provider.stream({ messages: [{ content: "hi", role: "user" }], model: "ollama/qwen3:8b" })) {
+      events.push(ev as (typeof events)[number]);
+    }
+    const text = events.filter((e) => e.type === "text-delta").map((e) => e.text).join("");
+    expect(text).toBe("hello");
+    const done = events.find((e) => e.type === "done");
+    expect(done?.response?.output).toBe("hello");
+    expect(done?.response?.usage).toEqual({ inputTokens: 7, outputTokens: 3 });
+  });
+});
+
 describe("OllamaProvider num_ctx (goal 165)", () => {
   function captureBodyFetch(): { fetch: typeof globalThis.fetch; bodies: Record<string, unknown>[] } {
     const bodies: Record<string, unknown>[] = [];

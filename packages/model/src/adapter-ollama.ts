@@ -139,6 +139,45 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     const streamedToolCalls: ModelToolCall[] = [];
     const seenToolKeys = new Set<string>();
     let toolFallbackIndex = 0;
+
+    const handleLine = function* (line: string): Generator<ModelEvent> {
+      let parsed: OllamaNativeChatResponse;
+      try {
+        parsed = JSON.parse(line) as OllamaNativeChatResponse;
+      } catch { return; }
+      lastJson = parsed;
+      const delta = parsed.message?.content ?? "";
+      if (delta) {
+        output += delta;
+        const emit = stripThink(delta);
+        if (emit.length > 0) {
+          yield { text: emit, type: "text-delta" };
+        }
+      }
+      // Ollama streams tool_calls in a chunk that may be `done:false`
+      // (qwen3 does exactly this), with no tool_calls on the terminal
+      // `done:true` line — so capture them from ANY chunk, deduped,
+      // and carry them into the final response too.
+      if (parsed.message?.tool_calls && parsed.message.tool_calls.length > 0) {
+        for (const tc of parsed.message.tool_calls) {
+          const rawArgs = typeof tc.function?.arguments === "string"
+            ? safeParseToolArgs(tc.function.arguments)
+            : (tc.function?.arguments ?? {});
+          const args: JsonObject = (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs))
+            ? rawArgs as JsonObject
+            : {};
+          const name = tc.function?.name ?? "unknown";
+          const id = tc.id ?? `tool-${(toolFallbackIndex++).toString()}`;
+          const key = tc.id ?? `${name}:${JSON.stringify(args)}`;
+          if (seenToolKeys.has(key)) continue;
+          seenToolKeys.add(key);
+          const toolCall: ModelToolCall = { arguments: args, id, name };
+          streamedToolCalls.push(toolCall);
+          yield { toolCall, type: "tool-call" };
+        }
+      }
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -149,42 +188,19 @@ export class OllamaProvider extends OpenAICompatibleProvider {
         const line = buf.slice(0, i).trim();
         buf = buf.slice(i + 1);
         if (!line) continue;
-        let parsed: OllamaNativeChatResponse;
-        try {
-          parsed = JSON.parse(line) as OllamaNativeChatResponse;
-        } catch { continue; }
-        lastJson = parsed;
-        const delta = parsed.message?.content ?? "";
-        if (delta) {
-          output += delta;
-          const emit = stripThink(delta);
-          if (emit.length > 0) {
-            yield { text: emit, type: "text-delta" };
-          }
-        }
-        // Ollama streams tool_calls in a chunk that may be `done:false`
-        // (qwen3 does exactly this), with no tool_calls on the terminal
-        // `done:true` line — so capture them from ANY chunk, deduped,
-        // and carry them into the final response too.
-        if (parsed.message?.tool_calls && parsed.message.tool_calls.length > 0) {
-          for (const tc of parsed.message.tool_calls) {
-            const rawArgs = typeof tc.function?.arguments === "string"
-              ? safeParseToolArgs(tc.function.arguments)
-              : (tc.function?.arguments ?? {});
-            const args: JsonObject = (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs))
-              ? rawArgs as JsonObject
-              : {};
-            const name = tc.function?.name ?? "unknown";
-            const id = tc.id ?? `tool-${(toolFallbackIndex++).toString()}`;
-            const key = tc.id ?? `${name}:${JSON.stringify(args)}`;
-            if (seenToolKeys.has(key)) continue;
-            seenToolKeys.add(key);
-            const toolCall: ModelToolCall = { arguments: args, id, name };
-            streamedToolCalls.push(toolCall);
-            yield { toolCall, type: "tool-call" };
-          }
-        }
+        yield* handleLine(line);
       }
+    }
+
+    // Drain the decoder and any unterminated final line. Ollama's
+    // native NDJSON is not guaranteed to end with a newline, and the
+    // terminal `done:true` chunk carries the token usage (and can
+    // carry the last content / tool_calls) — without this flush a
+    // missing trailing "\n" silently drops the whole final message.
+    buf += decoder.decode();
+    for (const raw of buf.split("\n")) {
+      const line = raw.trim();
+      if (line) yield* handleLine(line);
     }
 
     const final: ModelResponse = {
