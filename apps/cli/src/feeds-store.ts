@@ -17,6 +17,7 @@ import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
+import { stripUntrustedTerminalChars } from "@muse/shared";
 import { XMLParser } from "fast-xml-parser";
 
 export const FEEDS_STORE_SCHEMA_VERSION = 1;
@@ -128,41 +129,42 @@ function toArray<T>(value: T | T[] | undefined): readonly T[] {
 function toRssEntry(item: unknown): readonly FeedEntry[] {
   if (!item || typeof item !== "object") return [];
   const raw = item as Record<string, unknown>;
-  const title = readScalar(raw.title);
-  const link = readScalar(raw.link);
-  const guid = readScalar(raw.guid) ?? link ?? title;
-  if (!title || !guid) return [];
+  const title = sanitizeFeedText(readScalar(raw.title));
+  const link = sanitizeFeedText(readScalar(raw.link));
+  const id = sanitizeFeedText(readScalar(raw.guid)) || link || title;
+  if (!title || !id) return [];
   return [{
-    id: guid,
+    id,
     title,
-    link: link ?? "",
-    publishedAt: readScalar(raw.pubDate) ?? "",
-    summary: readScalar(raw.description) ?? ""
+    link,
+    publishedAt: sanitizeFeedText(readScalar(raw.pubDate)),
+    summary: sanitizeFeedText(readScalar(raw.description))
   }];
 }
 
 function toAtomEntry(entry: unknown): readonly FeedEntry[] {
   if (!entry || typeof entry !== "object") return [];
   const raw = entry as Record<string, unknown>;
-  const title = readScalar(raw.title);
-  let link = "";
+  const title = sanitizeFeedText(readScalar(raw.title));
+  let linkRawValue = "";
   const linkRaw = raw.link;
   if (typeof linkRaw === "string") {
-    link = linkRaw;
+    linkRawValue = linkRaw;
   } else if (Array.isArray(linkRaw) && linkRaw.length > 0) {
     const first = linkRaw[0];
-    link = (typeof first === "object" && first ? (first as Record<string, unknown>)["@_href"] as string : "") ?? "";
+    linkRawValue = (typeof first === "object" && first ? (first as Record<string, unknown>)["@_href"] as string : "") ?? "";
   } else if (linkRaw && typeof linkRaw === "object") {
-    link = (linkRaw as Record<string, unknown>)["@_href"] as string ?? "";
+    linkRawValue = (linkRaw as Record<string, unknown>)["@_href"] as string ?? "";
   }
-  const id = readScalar(raw.id) ?? link ?? title;
+  const link = sanitizeFeedText(linkRawValue);
+  const id = sanitizeFeedText(readScalar(raw.id)) || link || title;
   if (!title || !id) return [];
   return [{
     id,
     title,
     link,
-    publishedAt: readScalar(raw.updated) ?? readScalar(raw.published) ?? "",
-    summary: readScalar(raw.summary) ?? readScalar(raw.content) ?? ""
+    publishedAt: sanitizeFeedText(readScalar(raw.updated) ?? readScalar(raw.published)),
+    summary: sanitizeFeedText(readScalar(raw.summary) ?? readScalar(raw.content))
   }];
 }
 
@@ -174,6 +176,17 @@ function readScalar(value: unknown): string | undefined {
     if (typeof inner === "string") return inner;
   }
   return undefined;
+}
+
+/**
+ * Feed title / summary / link are wholly publisher-controlled and
+ * land both on the terminal (`muse feeds today`) and in
+ * `~/.muse/feeds.json`. Strip ESC / C0 / C1 / DEL bytes before they
+ * reach a terminal, then collapse whitespace — the same boundary
+ * treatment the inbox / search surfaces apply to untrusted text.
+ */
+function sanitizeFeedText(value: string | undefined): string {
+  return stripUntrustedTerminalChars(value ?? "").replace(/\s+/gu, " ").trim();
 }
 
 /**

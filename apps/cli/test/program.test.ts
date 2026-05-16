@@ -4777,6 +4777,43 @@ describe("cli program", () => {
     expect(filterRecentFeedEntries(noDate, cutoff)).toHaveLength(1);
   });
 
+  it("parseFeedBody strips terminal-injection bytes + collapses whitespace in feed text (goal 240)", async () => {
+    const { parseFeedBody } = await import("../src/feeds-store.js");
+    const ESC = String.fromCharCode(27);
+    const BEL = String.fromCharCode(7);
+    const DEL = String.fromCharCode(127);
+    const C1 = String.fromCharCode(0x9b);
+    // A publisher-controlled <title>/<description> carrying an ANSI
+    // clear-screen + OSC title-spoof + C1/DEL bytes + a newline splice
+    // — exactly what would hijack the terminal on `muse feeds today`.
+    const rss = `<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Feed</title>
+  <item>
+    <title>Hot${ESC}[2J${C1}news\n\n   from${DEL} space</title>
+    <link>https://example.test/${ESC}[31mx</link>
+    <pubDate>Wed, 14 May 2026 12:00:00 GMT</pubDate>
+    <description>line one${BEL}\n\nline   two</description>
+    <guid>g-${ESC}1</guid>
+  </item>
+</channel></rss>`;
+    const entries = parseFeedBody(rss);
+    expect(entries).toHaveLength(1);
+    const e = entries[0]!;
+    for (const field of [e.title, e.link, e.summary, e.id, e.publishedAt]) {
+      for (const bad of [ESC, BEL, DEL, C1]) {
+        expect(field.includes(bad)).toBe(false);
+      }
+    }
+    // Visible text preserved; ESC/C1/DEL gone; internal whitespace
+    // collapsed (proves our normaliser ran — the XML parser only
+    // end-trims, it does not collapse internal runs).
+    expect(e.title).toBe("Hot[2Jnews from space");
+    expect(e.summary).toBe("line one line two");
+    expect(e.link).toBe("https://example.test/[31mx");
+    expect(e.id).toBe("g-1");
+  });
+
   it("mergeFeedEntries dedupes + retains rolled-off entries + caps growth (goal 115)", async () => {
     const { mergeFeedEntries, DEFAULT_FEED_ENTRIES_CAP } = await import("../src/feeds-store.js");
 
