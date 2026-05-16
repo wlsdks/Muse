@@ -13,6 +13,8 @@
  * wires a `SkillCatalogProvider` that reads from `InMemorySkillRegistry`.
  */
 
+import { stripUntrustedTerminalChars } from "@muse/shared";
+
 import type { AgentRunContext, AgentRunInput } from "./types.js";
 import { appendSystemSection } from "./runtime-helpers.js";
 
@@ -89,7 +91,10 @@ function truncate(value: string, max: number): string {
 }
 
 function sanitizeInline(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
+  // A hostile / buggy SKILL.md on disk can carry ESC / C0 / C1
+  // / DEL bytes that survive a `\s+` collapse and reach the
+  // [Available Skills] prompt AND the terminal. Strip them first.
+  return stripUntrustedTerminalChars(value).replace(/\s+/gu, " ").trim();
 }
 
 export async function applySkillsContext(
