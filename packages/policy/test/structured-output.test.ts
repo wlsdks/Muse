@@ -20,6 +20,39 @@ describe("normalizeStructuredOutput", () => {
     });
   });
 
+  it("takes the first balanced object when the model trails an example (goal 304)", () => {
+    const result = normalizeStructuredOutput(
+      "Result: {\"answer\":42}. For example {\"answer\":0}",
+      "json"
+    );
+    expect(result).toEqual({
+      content: "{\n  \"answer\": 42\n}",
+      normalized: true
+    });
+  });
+
+  it("extracts a prose-embedded JSON array with a trailing blob", () => {
+    const result = normalizeStructuredOutput(
+      "Items: [1,2,3] (e.g. [9])",
+      "json"
+    );
+    expect(result).toEqual({
+      content: "[\n  1,\n  2,\n  3\n]",
+      normalized: true
+    });
+  });
+
+  it("does not let a brace inside a string close the value early", () => {
+    const result = normalizeStructuredOutput(
+      "Here: {\"motto\":\"closes } here\",\"n\":1} trailing",
+      "json"
+    );
+    expect(result).toEqual({
+      content: "{\n  \"motto\": \"closes } here\",\n  \"n\": 1\n}",
+      normalized: true
+    });
+  });
+
   it("fails open when JSON is invalid", () => {
     const result = normalizeStructuredOutput("{\"ok\":", "json");
 

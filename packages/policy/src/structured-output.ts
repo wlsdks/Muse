@@ -74,9 +74,42 @@ function extractJsonCandidate(content: string): string | undefined {
     return undefined;
   }
 
-  const opener = trimmed[start];
-  const closer = opener === "{" ? "}" : "]";
-  const end = trimmed.lastIndexOf(closer);
+  // First *balanced* value from the opener, not first-opener →
+  // last-closer: a small model trailing an example/note (e.g.
+  // `{...} note: {...}`) made the crude span engulf prose and
+  // fail to parse, silently rejecting a valid structured answer.
+  return firstBalancedJsonBlock(trimmed, start);
+}
 
-  return end > start ? trimmed.slice(start, end + 1) : undefined;
+function firstBalancedJsonBlock(input: string, start: number): string | undefined {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let index = start; index < input.length; index += 1) {
+    const ch = input[index];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\" && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (ch === "{" || ch === "[") {
+      depth += 1;
+    } else if (ch === "}" || ch === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return input.slice(start, index + 1);
+      }
+    }
+  }
+  return undefined;
 }
