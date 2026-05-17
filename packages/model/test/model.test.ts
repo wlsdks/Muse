@@ -1360,6 +1360,63 @@ describe("OllamaProvider native 200-but-non-JSON body", () => {
   });
 });
 
+describe("OllamaProvider native tool-call request/response contract", () => {
+  it("sends the native /api/chat tool shape + think:false and parses message.tool_calls", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const fetch: typeof globalThis.fetch = async (url, init) => {
+      if (String(url).includes("/models")) {
+        return new Response(JSON.stringify({ data: [{ id: "qwen3:8b", object: "model" }] }));
+      }
+      captured = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        done: true,
+        eval_count: 3,
+        message: {
+          content: "",
+          role: "assistant",
+          tool_calls: [{ function: { arguments: { city: "Paris" }, name: "get_weather" }, id: "call_x" }]
+        },
+        model: "qwen3:8b",
+        prompt_eval_count: 7
+      }));
+    };
+    const provider = new OllamaProvider({
+      baseUrl: "http://o.test/v1",
+      defaultModel: "qwen3:8b",
+      fetch,
+      models: ["qwen3:8b"]
+    });
+
+    const result = await provider.generate({
+      messages: [{ content: "weather in Paris?", role: "user" }],
+      model: "ollama/qwen3:8b",
+      tools: [{
+        description: "Get current weather for a city",
+        inputSchema: { properties: { city: { type: "string" } }, required: ["city"], type: "object" },
+        name: "get_weather"
+      }]
+    });
+
+    // Request: native Ollama tool shape + the qwen3 CoT-suppression flag.
+    expect(captured?.["stream"]).toBe(false);
+    expect(captured?.["think"]).toBe(false);
+    expect(captured?.["tools"]).toEqual([{
+      function: {
+        description: "Get current weather for a city",
+        name: "get_weather",
+        parameters: { properties: { city: { type: "string" } }, required: ["city"], type: "object" }
+      },
+      type: "function"
+    }]);
+    // Response: native message.tool_calls → result.toolCalls.
+    expect(result.toolCalls).toEqual([
+      { arguments: { city: "Paris" }, id: "call_x", name: "get_weather" }
+    ]);
+    expect(result.output).toBe("");
+    expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 3 });
+  });
+});
+
 /**
  * Ollama's native /api/chat shape — used by OllamaProvider's
  * think:false override. NDJSON streaming, single-JSON non-streaming.
