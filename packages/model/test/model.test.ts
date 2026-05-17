@@ -903,6 +903,34 @@ describe("provider adapter contracts", () => {
     ]);
   });
 
+  it("openai-compatible base gives an actionable connection-failure hint (local vs remote)", async () => {
+    const econn = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
+    const makeProvider = (baseUrl: string) => new OpenAICompatibleProvider({
+      baseUrl,
+      defaultModel: "m",
+      fetch: async () => { throw econn; },
+      id: "lmstudio",
+      models: ["m"]
+    });
+
+    const local = await makeProvider("http://127.0.0.1:1234/v1")
+      .generate({ ...contractRequest, model: "lmstudio/m" })
+      .then(() => undefined, (e: unknown) => e as Error);
+    expect(local?.message).toContain("is the local model server running");
+    expect(local?.message).toContain("fetch failed"); // underlying detail preserved
+
+    const localhost = await makeProvider("http://localhost:8080")
+      .generate({ ...contractRequest, model: "lmstudio/m" })
+      .then(() => undefined, (e: unknown) => e as Error);
+    expect(localhost?.message).toContain("is the local model server running");
+
+    const remote = await makeProvider("https://openrouter.example/api/v1")
+      .generate({ ...contractRequest, model: "lmstudio/m" })
+      .then(() => undefined, (e: unknown) => e as Error);
+    expect(remote?.message).toContain("endpoint unreachable");
+    expect(remote?.message).not.toContain("local model server");
+  });
+
   it("openai-compatible base wraps a 200-but-non-JSON body as a retryable ModelProviderError, not a raw SyntaxError", async () => {
     const htmlBody = `<!DOCTYPE html><html><body>captive portal login</body></html>${"x".repeat(5000)}`;
     const provider = new OpenAICompatibleProvider({

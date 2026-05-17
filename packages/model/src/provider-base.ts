@@ -178,9 +178,17 @@ export class OpenAICompatibleProvider implements ModelProvider {
       // failure (ECONNREFUSED/ECONNRESET/ETIMEDOUT) — transient
       // like a 5xx, so retryable rather than a hard agent failure.
       const detail = cause instanceof Error ? cause.message : String(cause);
+      // Actionable hint, parallel to the native-Ollama path: a
+      // loopback baseUrl that refuses connection almost always
+      // means the local model server isn't started.
+      const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/iu
+        .test(this.baseUrl);
+      const hint = isLoopback
+        ? " — is the local model server running at this address?"
+        : " — endpoint unreachable; check the URL and network";
       throw new ModelProviderError(
         this.id,
-        `OpenAI-compatible request to ${this.baseUrl} failed: ${detail}`,
+        `OpenAI-compatible request to ${this.baseUrl} failed: ${detail}${hint}`,
         true
       );
     }
