@@ -183,8 +183,24 @@ function stripZeroWidth(text: string): string {
   return result;
 }
 
+// HTML5 named entities for the invisible / bidi code points that
+// are already in `zeroWidthCodePoints`. Decoding only the NUMERIC
+// form left `igno&shy;re` (named soft-hyphen) splitting a keyword
+// and evading every pattern while `igno&#173;re` was caught.
+const namedInvisibleEntities: Record<string, number> = {
+  lrm: 0x200e,
+  rlm: 0x200f,
+  shy: 0x00ad,
+  zwj: 0x200d,
+  zwnj: 0x200c
+};
+
 function decodeHtmlEntities(text: string): string {
   return text
+    .replace(
+      /&(shy|zwnj|zwj|lrm|rlm);/g,
+      (match, name: string) => decodeCodePoint(match, namedInvisibleEntities[name] ?? -1)
+    )
     .replace(/&#(\d+);/g, (match, value: string) => decodeCodePoint(match, Number.parseInt(value, 10)))
     .replace(/&#x([0-9a-fA-F]+);/g, (match, value: string) => decodeCodePoint(match, Number.parseInt(value, 16)));
 }
