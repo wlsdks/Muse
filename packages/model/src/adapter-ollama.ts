@@ -15,13 +15,14 @@
  * expects — only the capabilities get rewritten to `localModelCapabilities`.
  */
 
+import { truncateErrorBody } from "@muse/shared";
 import type { JsonObject } from "@muse/shared";
 
 import {
   localModelCapabilities
 } from "./provider-wire.js";
 import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus } from "./provider-base.js";
-import { createLeadingThinkStripper, stripLeadingThinkBlock } from "./provider-shared.js";
+import { createLeadingThinkStripper, parseJson, stripLeadingThinkBlock } from "./provider-shared.js";
 import type {
   ModelEvent,
   ModelInfo,
@@ -70,7 +71,20 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     if (!resp.ok) {
       throw await this.buildNativeError(request, resp, "/api/chat");
     }
-    const json = await resp.json() as OllamaNativeChatResponse;
+    const rawBody = await resp.text().catch(() => "");
+    const parsed = parseJson(rawBody);
+    if (parsed === undefined) {
+      // A non-JSON 200 is a transport anomaly (proxy/portal HTML,
+      // truncated body from a local Ollama under load) — retryable
+      // ModelProviderError, not a raw SyntaxError, so the .retryable
+      // contract holds.
+      throw new ModelProviderError(
+        this.id,
+        `Ollama /api/chat response was not valid JSON: ${truncateErrorBody(rawBody) || resp.statusText}`,
+        true
+      );
+    }
+    const json = parsed as OllamaNativeChatResponse;
     return {
       id: `${this.id}-${Date.now().toString()}`,
       model: json.model ?? request.model ?? this.nativeDefaultModel ?? "unknown",

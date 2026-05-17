@@ -1294,6 +1294,24 @@ describe("OllamaProvider model-not-found hint (goal 176)", () => {
   });
 });
 
+describe("OllamaProvider native 200-but-non-JSON body", () => {
+  it("wraps a 200 non-JSON /api/chat body as a retryable ModelProviderError, not a raw SyntaxError", async () => {
+    const htmlBody = `<!DOCTYPE html><html>captive portal</html>${"x".repeat(5000)}`;
+    const fetch: typeof globalThis.fetch = async (url) => {
+      if (String(url).includes("/models")) return new Response(JSON.stringify({ data: [] }));
+      return new Response(htmlBody, { status: 200, headers: { "content-type": "text/html" } });
+    };
+    const provider = new OllamaProvider({ baseUrl: "http://o.test/v1", defaultModel: "qwen3:8b", fetch, models: ["qwen3:8b"] });
+    let caught: unknown;
+    await provider.generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/qwen3:8b" })
+      .catch((error: unknown) => { caught = error; });
+    expect(caught).toMatchObject({ name: "ModelProviderError", providerId: "ollama", retryable: true });
+    const message = (caught as { message: string }).message;
+    expect(message).toContain("was not valid JSON");
+    expect(message.length).toBeLessThan(360);
+  });
+});
+
 /**
  * Ollama's native /api/chat shape — used by OllamaProvider's
  * think:false override. NDJSON streaming, single-JSON non-streaming.
