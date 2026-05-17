@@ -67,6 +67,18 @@ const DAY_PART_HOURS: Record<string, number> = {
   night: 21
 };
 
+// Standalone day-part phrase ("tonight", "this evening",
+// "afternoon") → that hour TODAY. "tonight" is the natural
+// synonym for the night slot. Bare/`this `-prefixed only — a
+// day-headed form like "tomorrow evening" is handled by the
+// dayPattern + parseTimeOfDay path, so the two never overlap.
+function standaloneDayPartHour(phrase: string): number | undefined {
+  const key = phrase === "tonight"
+    ? "night"
+    : /^(?:this\s+)?(morning|afternoon|evening|night)$/u.exec(phrase)?.[1];
+  return key === undefined ? undefined : DAY_PART_HOURS[key];
+}
+
 // A huge offset ("in 9999999999 days", "99999999999일 후") or a
 // month overflow pushes the Date past ±8.64e15 ms → an Invalid
 // Date (NaN time). Returning that lets the caller's
@@ -127,6 +139,13 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
       : unit === "week" ? amount * 7 * 86_400_000
       : 0;
     return finiteDate(new Date(reference.getTime() + offsetMs));
+  }
+
+  const standaloneHour = standaloneDayPartHour(trimmed);
+  if (standaloneHour !== undefined) {
+    const day = startOfDay(reference);
+    day.setHours(standaloneHour, 0, 0, 0);
+    return finiteDate(day);
   }
 
   const dayPattern = /^(today|tomorrow|next\s+([a-z]+)|([a-z]+))(?:\s+(?:at\s+)?(.+))?$/u;

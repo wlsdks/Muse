@@ -2318,6 +2318,29 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("tomorrow lunchtime", ref)).toBeUndefined();
     });
 
+    it("resolves a standalone day-part as today at that hour", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const ref = () => new Date("2026-05-18T09:00:00Z"); // Monday
+
+      const tonight = resolveRelativeTimePhrase("tonight", ref);
+      expect(tonight?.getDate()).toBe(18);
+      expect(tonight?.getHours()).toBe(21);
+      expect(tonight?.getMinutes()).toBe(0);
+
+      expect(resolveRelativeTimePhrase("this evening", ref)?.getHours()).toBe(18);
+      expect(resolveRelativeTimePhrase("this afternoon", ref)?.getHours()).toBe(15);
+      expect(resolveRelativeTimePhrase("this morning", ref)?.getHours()).toBe(9);
+      expect(resolveRelativeTimePhrase("evening", ref)?.getHours()).toBe(18);
+
+      // Same-day (today), not tomorrow.
+      expect(resolveRelativeTimePhrase("this evening", ref)?.getDate()).toBe(18);
+      // Day-headed forms are unaffected (still go through dayPattern).
+      expect(resolveRelativeTimePhrase("tomorrow evening", ref)?.getDate()).toBe(19);
+      expect(resolveRelativeTimePhrase("tomorrow evening", ref)?.getHours()).toBe(18);
+      // A non-day-part word is still unrecognized.
+      expect(resolveRelativeTimePhrase("this lunchtime", ref)).toBeUndefined();
+    });
+
     it("resolves Korean day + time phrases (goal 160)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday
