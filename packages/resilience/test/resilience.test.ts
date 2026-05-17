@@ -9,6 +9,7 @@ import {
   RetryExhaustedError,
   TimeoutError,
   computeRetryDelay,
+  isCancellationLikeError,
   retry,
   withTimeout
 } from "../src/index.js";
@@ -234,6 +235,43 @@ describe("retry and timeout", () => {
     });
     expect(delay).toBe(250);
     expect(delay).toBeLessThanOrEqual(250);
+  });
+});
+
+describe("isCancellationLikeError", () => {
+  it("recognises the abort signatures", () => {
+    expect(isCancellationLikeError({ name: "AbortError" })).toBe(true);
+    expect(isCancellationLikeError({ code: "ABORT_ERR" })).toBe(true);
+    const abortErr = Object.assign(new Error("aborted"), { name: "AbortError" });
+    expect(isCancellationLikeError(abortErr)).toBe(true);
+    const domLike = new DOMException("aborted", "AbortError");
+    expect(isCancellationLikeError(domLike)).toBe(true);
+  });
+
+  it("returns false for non-cancellation values (incl. primitives / nullish)", () => {
+    expect(isCancellationLikeError(new Error("boom"))).toBe(false);
+    expect(isCancellationLikeError({ name: "TypeError", code: "ERR_X" })).toBe(false);
+    expect(isCancellationLikeError(null)).toBe(false);
+    expect(isCancellationLikeError(undefined)).toBe(false);
+    expect(isCancellationLikeError("AbortError")).toBe(false);
+    expect(isCancellationLikeError(42)).toBe(false);
+    expect(isCancellationLikeError({})).toBe(false);
+  });
+
+  it("short-circuits retry: a cancellation re-throws as-is, never retried or wrapped", async () => {
+    let calls = 0;
+    const abortErr = Object.assign(new Error("user cancelled"), { name: "AbortError" });
+    await expect(
+      retry(
+        () => {
+          calls += 1;
+          throw abortErr;
+        },
+        { maxAttempts: 5, sleep: async () => {} }
+      )
+    ).rejects.toBe(abortErr);
+    // Exactly one call — not retried — and not wrapped in RetryExhaustedError.
+    expect(calls).toBe(1);
   });
 });
 
