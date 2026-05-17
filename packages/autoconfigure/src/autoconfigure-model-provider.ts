@@ -67,6 +67,21 @@ function inferDefaultModelFromCredentials(env: MuseEnvironment): string | undefi
  */
 import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
 
+/**
+ * `OllamaProvider` expects the OpenAI-compat `…/v1` base, but the
+ * conventional `OLLAMA_BASE_URL` (matching the CLI's resolveOllamaUrl)
+ * is the bare host with no `/v1`. Trim trailing slashes and append a
+ * single `/v1` so either form works; undefined when unset so the
+ * provider keeps its own 127.0.0.1 default.
+ */
+function normalizeOllamaBaseUrl(raw: string | undefined): string | undefined {
+  const value = parseOptionalString(raw)?.replace(/\/+$/u, "");
+  if (!value) {
+    return undefined;
+  }
+  return /\/v1$/u.test(value) ? value : `${value}/v1`;
+}
+
 function providerIdFromPrefix(modelSpec: string): string | undefined {
   const lower = modelSpec.toLowerCase();
   for (const [prefix, providerId] of Object.entries(knownModelPrefixes())) {
@@ -114,7 +129,11 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
       });
     case "ollama":
       return new OllamaProvider({
-        baseUrl,
+        // `OLLAMA_BASE_URL` is the conventional Ollama env (and what
+        // the CLI's resolveOllamaUrl honours) — without this its
+        // value was discarded and a remote/custom host silently fell
+        // back to 127.0.0.1. `MUSE_MODEL_BASE_URL` still wins.
+        baseUrl: baseUrl ?? normalizeOllamaBaseUrl(env.OLLAMA_BASE_URL),
         defaultModel,
         models,
         numCtx: parseInteger(env.MUSE_OLLAMA_NUM_CTX, 8192)

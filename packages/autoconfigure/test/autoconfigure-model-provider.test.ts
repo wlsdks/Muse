@@ -116,3 +116,51 @@ describe("createModelProvider — OpenAI-compatible presets", () => {
     expect(provider?.id).toBe("ollama");
   });
 });
+
+describe("createModelProvider — Ollama base URL is honoured", () => {
+  async function capturedGenerateUrl(env: Record<string, string>): Promise<string> {
+    let url = "";
+    const original = globalThis.fetch;
+    // Stub BEFORE createModelProvider — OllamaProvider binds
+    // globalThis.fetch at construction time.
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      url = String(input);
+      return new Response(JSON.stringify({ message: { content: "ok" }, model: "m" }), { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const provider = createModelProvider(env);
+      expect(provider?.id).toBe("ollama");
+      await provider?.generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/llama3.2" });
+    } finally {
+      globalThis.fetch = original;
+    }
+    return url;
+  }
+
+  it("routes /api/chat to the OLLAMA_BASE_URL host (was silently 127.0.0.1)", async () => {
+    expect(await capturedGenerateUrl({ OLLAMA_BASE_URL: "http://remote.test:11434" }))
+      .toBe("http://remote.test:11434/api/chat");
+    // Trailing slash and an already-/v1 form both normalise.
+    expect(await capturedGenerateUrl({ OLLAMA_BASE_URL: "http://remote.test:11434/" }))
+      .toBe("http://remote.test:11434/api/chat");
+    expect(await capturedGenerateUrl({ OLLAMA_BASE_URL: "http://remote.test:11434/v1" }))
+      .toBe("http://remote.test:11434/api/chat");
+  });
+
+  it("an explicit MUSE_MODEL_BASE_URL on the ollama provider still wins over OLLAMA_BASE_URL", async () => {
+    // MUSE_MODEL_PROVIDER_ID forces the ollama case even with a
+    // base URL set (otherwise a base URL routes via the generic
+    // OpenAI-compat path); the explicit base must win the `??`.
+    expect(await capturedGenerateUrl({
+      MUSE_MODEL: "ollama/llama3.2",
+      MUSE_MODEL_BASE_URL: "http://explicit.test:9999/v1",
+      MUSE_MODEL_PROVIDER_ID: "ollama",
+      OLLAMA_BASE_URL: "http://remote.test:11434"
+    })).toBe("http://explicit.test:9999/api/chat");
+  });
+
+  it("falls back to the 127.0.0.1 default when neither base-URL env is set", async () => {
+    expect(await capturedGenerateUrl({ MUSE_MODEL: "ollama/llama3.2" }))
+      .toBe("http://127.0.0.1:11434/api/chat");
+  });
+});
