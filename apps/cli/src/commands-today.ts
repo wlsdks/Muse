@@ -36,7 +36,7 @@ import {
   TODAY_BRIEF_SYSTEM_PROMPT as BRIEF_SYSTEM_PROMPT,
   buildTodayBriefUserMessage
 } from "@muse/prompts";
-import { redactSecretsInText } from "@muse/shared";
+import { redactSecretsInText, stripUntrustedTerminalChars } from "@muse/shared";
 import type { TextToSpeechProvider } from "@muse/voice";
 import type { Command } from "commander";
 
@@ -591,14 +591,21 @@ function formatTasks(tasks: readonly { readonly id: string; readonly title: stri
   return `\nTasks (${tasks.length} open):\n${lines.join("\n")}\n`;
 }
 
-function formatEvents(events: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string }[] | undefined): string {
+export function formatEvents(events: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string }[] | undefined): string {
   if (!events) {
     return "\nUpcoming: (calendar not configured)\n";
   }
   if (events.length === 0) {
     return "\nUpcoming: (no calendar events in window)\n";
   }
-  const lines = events.map((event) => `  - ${event.startsAtIso.slice(11, 16)} — ${event.title}`);
+  // A calendar event SUMMARY is set by whoever sent the invite
+  // (CalDAV / Google / shared calendars) — third-party-controlled
+  // and printed straight to the terminal, so strip ESC/C0/C1/DEL
+  // like the inbox / feeds / search surfaces.
+  const lines = events.map((event) => {
+    const title = stripUntrustedTerminalChars(event.title).replace(/\s+/gu, " ").trim();
+    return `  - ${event.startsAtIso.slice(11, 16)} — ${title}`;
+  });
   return `\nUpcoming (${events.length}):\n${lines.join("\n")}\n`;
 }
 

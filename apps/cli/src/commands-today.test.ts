@@ -1,6 +1,39 @@
 import { describe, expect, it } from "vitest";
 
-import { parseLookaheadHours } from "./commands-today.js";
+import { formatEvents, parseLookaheadHours } from "./commands-today.js";
+
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+
+function hasTerminalControl(s: string): boolean {
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s.charCodeAt(i);
+    if (c <= 0x08 || (c >= 0x0b && c <= 0x1f) || c === 0x7f) return true;
+  }
+  return false;
+}
+
+describe("formatEvents terminal-injection hardening (goal 346/347 sibling — calendar)", () => {
+  it("strips control sequences from a third-party event title", () => {
+    const out = formatEvents([
+      {
+        id: "e1",
+        startsAtIso: "2026-05-18T15:00:00.000Z",
+        title: `${ESC}[2J${ESC}]0;pwned${BEL}Hostile invite\nsecond line`
+      }
+    ]);
+    expect(hasTerminalControl(out)).toBe(false);
+    expect(out).toContain("Hostile invite second line");
+    expect(out).toContain("15:00 —");
+  });
+
+  it("leaves a clean event untouched + preserves the empty/unconfigured states", () => {
+    expect(formatEvents([{ id: "e", startsAtIso: "2026-05-18T09:30:00.000Z", title: "Standup" }]))
+      .toBe("\nUpcoming (1):\n  - 09:30 — Standup\n");
+    expect(formatEvents(undefined)).toBe("\nUpcoming: (calendar not configured)\n");
+    expect(formatEvents([])).toBe("\nUpcoming: (no calendar events in window)\n");
+  });
+});
 
 describe("parseLookaheadHours", () => {
   it("absent or blank → the 24h default", () => {
