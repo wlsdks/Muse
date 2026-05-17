@@ -177,4 +177,34 @@ describe("recordUsageSpanAttributes", () => {
     recordUsageSpanAttributes(span, { id: "r-3", model: "diagnostic/smoke", output: "ok" });
     expect(span.recorded).toEqual([]);
   });
+
+  it("never stamps a non-finite token count or cache ratio (telemetry poisoning guard)", () => {
+    const span = fakeSpan();
+    recordUsageSpanAttributes(span, {
+      id: "r-4",
+      model: "diagnostic/smoke",
+      output: "ok",
+      usage: {
+        cachedInputTokens: Number.NaN,
+        inputTokens: Number.NaN,
+        outputTokens: Number.POSITIVE_INFINITY,
+        reasoningTokens: 9
+      }
+    });
+    // Only the one finite field is stamped; no NaN/Infinity, no
+    // NaN cache_hit_ratio derived from the bad inputs.
+    expect(span.recorded).toEqual([{ key: "usage.reasoning_tokens", value: 9 }]);
+  });
+
+  it("stamps a finite cache_hit_ratio clamped to [0,1] when both inputs are valid", () => {
+    const span = fakeSpan();
+    recordUsageSpanAttributes(span, {
+      id: "r-5",
+      model: "diagnostic/smoke",
+      output: "ok",
+      usage: { cachedInputTokens: 40, inputTokens: 100 }
+    });
+    expect(span.recorded).toContainEqual({ key: "usage.cached_input_tokens", value: 40 });
+    expect(span.recorded).toContainEqual({ key: "usage.cache_hit_ratio", value: 0.4 });
+  });
 });

@@ -282,29 +282,33 @@ export function recordUsageSpanAttributes(span: SpanHandle, response: ModelRespo
 
   const usage = response.usage;
 
-  if (usage.inputTokens !== undefined) {
-    span.setAttribute("usage.input_tokens", usage.inputTokens);
-  }
+  // Only stamp finite values: `!== undefined` admits NaN/Infinity
+  // from a malformed provider usage field, which then poisons
+  // trace / OTel token dashboards (a windowed avg over one NaN is
+  // NaN). Same telemetry-non-finite posture as the budget /
+  // SLO / cost recorders.
+  const stampFinite = (key: string, value: number | undefined): void => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      span.setAttribute(key, value);
+    }
+  };
 
-  if (usage.outputTokens !== undefined) {
-    span.setAttribute("usage.output_tokens", usage.outputTokens);
-  }
-
-  if (usage.reasoningTokens !== undefined) {
-    span.setAttribute("usage.reasoning_tokens", usage.reasoningTokens);
-  }
+  stampFinite("usage.input_tokens", usage.inputTokens);
+  stampFinite("usage.output_tokens", usage.outputTokens);
+  stampFinite("usage.reasoning_tokens", usage.reasoningTokens);
 
   // D9 (observability-only path): surface prompt-cache hit
   // contribution when the provider reports it (OpenAI auto-caching
   // and Anthropic ephemeral cache both populate this). For
   // personal-scope Gemini setups the field stays absent and the
   // attribute is simply not stamped.
-  if (usage.cachedInputTokens !== undefined) {
-    span.setAttribute("usage.cached_input_tokens", usage.cachedInputTokens);
-    if (usage.inputTokens !== undefined && usage.inputTokens > 0) {
-      const ratio = usage.cachedInputTokens / usage.inputTokens;
-      span.setAttribute("usage.cache_hit_ratio", Math.max(0, Math.min(1, ratio)));
-    }
+  stampFinite("usage.cached_input_tokens", usage.cachedInputTokens);
+  if (
+    typeof usage.cachedInputTokens === "number" && Number.isFinite(usage.cachedInputTokens) &&
+    typeof usage.inputTokens === "number" && Number.isFinite(usage.inputTokens) && usage.inputTokens > 0
+  ) {
+    const ratio = usage.cachedInputTokens / usage.inputTokens;
+    span.setAttribute("usage.cache_hit_ratio", Math.max(0, Math.min(1, ratio)));
   }
 }
 
