@@ -7,6 +7,7 @@ import {
   createMuseObservabilitySnapshotProvider,
   InMemoryFollowupSuggestionStore,
   InMemoryLatencyQuery,
+  createBudgetTrackingTokenUsageSink,
   MonthlyBudgetTracker,
   PromptDriftDetector,
   SloAlertEvaluator,
@@ -991,6 +992,72 @@ describe("MonthlyBudgetTracker", () => {
     // numbers a naive divide-by-zero would produce).
     expect(snap.remainingUsd).toBeUndefined();
     expect(snap.percentUsed).toBeUndefined();
+  });
+});
+
+describe("createBudgetTrackingTokenUsageSink", () => {
+  const rec = (estimatedCostUsd: number | undefined) => ({
+    completionTokens: 50,
+    estimatedCostUsd,
+    model: "ollama/qwen3:8b",
+    promptTokens: 100,
+    provider: "ollama",
+    runId: "run-1",
+    totalTokens: 150
+  });
+
+  it("delegates to the inner sink AND accumulates cost in the tracker", async () => {
+    const inner = new InMemoryTokenUsageSink();
+    const tracker = new MonthlyBudgetTracker({ now: () => new Date("2026-05-15T00:00:00Z") });
+    const sink = createBudgetTrackingTokenUsageSink(tracker, inner);
+
+    await sink.record(rec(2));
+    await sink.record(rec(3));
+
+    // Inner sink still received every event (delegation preserved).
+    expect(inner.list().map((e) => e.estimatedCostUsd)).toEqual([2, 3]);
+    // Tracker accumulated the cost end-to-end.
+    expect(tracker.snapshot().totalCostUsd).toBe(5);
+  });
+
+  it("treats a missing estimatedCostUsd as 0 so a costless event can't poison the budget", async () => {
+    const inner = new InMemoryTokenUsageSink();
+    const tracker = new MonthlyBudgetTracker({ now: () => new Date("2026-05-15T00:00:00Z") });
+    const sink = createBudgetTrackingTokenUsageSink(tracker, inner);
+
+    await sink.record(rec(undefined));
+
+    expect(tracker.snapshot().totalCostUsd).toBe(0);
+    // The event is still delegated even though it carried no cost.
+    expect(inner.list()).toHaveLength(1);
+  });
+
+  it("preserves the queryable list() passthrough when the inner sink is queryable", async () => {
+    const inner = new InMemoryTokenUsageSink();
+    const tracker = new MonthlyBudgetTracker({ now: () => new Date("2026-05-15T00:00:00Z") });
+    const sink = createBudgetTrackingTokenUsageSink(tracker, inner) as typeof inner;
+
+    await sink.record(rec(1));
+
+    expect(typeof sink.list).toBe("function");
+    expect(sink.list().map((e) => e.estimatedCostUsd)).toEqual([1]);
+  });
+
+  it("drives the tracker through warning → exceeded via the wrapper", async () => {
+    const inner = new InMemoryTokenUsageSink();
+    const tracker = new MonthlyBudgetTracker({
+      monthlyLimitUsd: 10,
+      now: () => new Date("2026-05-15T00:00:00Z"),
+      warningPercent: 80
+    });
+    const sink = createBudgetTrackingTokenUsageSink(tracker, inner);
+
+    await sink.record(rec(5));
+    expect(tracker.snapshot().status).toBe("ok");
+    await sink.record(rec(3.1));
+    expect(tracker.snapshot().status).toBe("warning");
+    await sink.record(rec(2.5));
+    expect(tracker.snapshot().status).toBe("exceeded");
   });
 });
 
