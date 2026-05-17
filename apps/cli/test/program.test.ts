@@ -4383,6 +4383,38 @@ describe("cli program", () => {
     }
   });
 
+  it("muse <unique-prefix> suggests the command Levenshtein would miss (e.g. 'cal' → 'calendar')", async () => {
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "cal"], { from: "node" });
+      const text = output.join("");
+      expect(text).toContain("unknown command 'cal'");
+      expect(text).toContain("Did you mean 'muse calendar'?");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExitCode;
+    }
+  });
+
+  it("muse <ambiguous-prefix> stays silent rather than guessing (e.g. 're')", async () => {
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      const { io, output } = captureOutput();
+      const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
+      await program.parseAsync(["node", "muse", "re"], { from: "node" });
+      const text = output.join("");
+      expect(text).toContain("unknown command 're'");
+      expect(text).not.toContain("Did you mean");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExitCode;
+    }
+  });
+
   it("compileHistoryGrep treats input as regex first, falls back to substring on metacharacter errors (goal 050)", async () => {
     const { compileHistoryGrep } = await import("../src/commands-history.js");
     // Plain substring matches the literal anywhere.

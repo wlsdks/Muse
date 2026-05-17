@@ -536,7 +536,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       return;
     }
     const known = listAllCommandNames(program);
-    const suggestion = closestCommandName(attempted, known);
+    const suggestion = closestCommandName(attempted, known) ?? uniqueCommandPrefix(attempted, known);
     io.stderr(`error: unknown command '${attempted}'\n`);
     if (suggestion) {
       io.stderr(`Did you mean 'muse ${suggestion}'?\n`);
@@ -562,6 +562,22 @@ function listAllCommandNames(program: Command): readonly string[] {
     seen.add(name);
   }
   return Array.from(seen).sort();
+}
+
+/**
+ * Prefix fallback for the "Did you mean" suggestion: users
+ * naturally abbreviate (`muse cal` → `calendar`,
+ * `muse sched` → `scheduler-setup`), which pure Levenshtein
+ * misses (5+ edits, far over the length-aware cap). Only suggest
+ * when EXACTLY ONE command has the prefix — an ambiguous prefix
+ * ("re" → recall/remember/remind) must stay silent rather than
+ * guess wrong.
+ */
+function uniqueCommandPrefix(input: string, names: readonly string[]): string | undefined {
+  const prefix = input.trim().toLowerCase();
+  if (prefix.length < 2) return undefined;
+  const matches = names.filter((name) => name.toLowerCase().startsWith(prefix));
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 
