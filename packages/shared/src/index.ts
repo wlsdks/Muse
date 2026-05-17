@@ -121,6 +121,13 @@ export function stripUntrustedTerminalChars(value: string): string {
  * string" heuristics.
  */
 const SECRET_PATTERNS: ReadonlyArray<{ readonly name: string; readonly regex: RegExp }> = [
+  // `<scheme>://[user]:password@host` — DB / cache / broker
+  // connection URIs with an inline password. Runs FIRST so the
+  // whole credentialed URI is redacted as one unit before a
+  // sub-pattern can nibble (e.g. a JWT-shaped password). A
+  // credential-free `https://host` lacks `:pass@` and is left
+  // intact. Sibling of the migration-redaction connection rule.
+  { name: "connection-uri", regex: /\b[a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]*:[^\s/?#@]+@[^\s)"'<>]+/giu },
   // Order matters: the more-specific Anthropic / OpenAI-project
   // prefixes must run before the generic `sk-` so a token like
   // `sk-ant-api03-...` lands in the right bucket.

@@ -150,6 +150,27 @@ describe("boundary and cancellation helpers", () => {
       .toBe("set a github_pat_ in your env");
   });
 
+  it("redactSecretsInText scrubs connection URIs with an inline password (goal 309)", () => {
+    expect(redactSecretsInText("DB=postgres://muse:notarealpw@db.internal:5432/muse_db ok"))
+      .toBe("DB=[redacted-connection-uri] ok");
+    // Password-only (Redis-style) URI.
+    expect(redactSecretsInText("cache redis://:authpw@host:6379/0 used"))
+      .toContain("[redacted-connection-uri]");
+    expect(redactSecretsInText("amqp://guest:guest@rabbit/vhost"))
+      .toBe("[redacted-connection-uri]");
+    // The whole credentialed URI is one unit even with a JWT-shaped
+    // password (connection-uri runs before the jwt pattern).
+    expect(
+      redactSecretsInText("conn db://u:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.aaaaaaaaaa@host/x")
+    ).toBe("conn [redacted-connection-uri]");
+    // A credential-free https URL is NOT redacted (no regression).
+    expect(redactSecretsInText("see https://docs.example.com/path"))
+      .toBe("see https://docs.example.com/path");
+    // Prose with an @ but no scheme:// is untouched.
+    expect(redactSecretsInText("ping me at user@host about it"))
+      .toBe("ping me at user@host about it");
+  });
+
   it("truncateErrorBody trims + caps + appends ellipsis when over the cap", () => {
     expect(truncateErrorBody("")).toBe("");
     expect(truncateErrorBody(undefined)).toBe("");
