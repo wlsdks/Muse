@@ -16,8 +16,9 @@
  *   - patterns-fired → every row with a valid `firedAtMs`
  *   - episodes → every row with a valid `endedAt`
  *
- * Sort: ISO lexicographic descending on `whenIso`. Caller decides
- * the post-sort cap.
+ * Sort: most-recent first by parsed instant (not raw ISO string,
+ * so mixed precision / offset across the merged sources still
+ * orders correctly). Caller decides the post-sort cap.
  */
 
 import { promises as fs } from "node:fs";
@@ -179,6 +180,24 @@ export async function readActivityFeed(options: ReadActivityFeedOptions): Promis
     const t = Date.parse(entry.whenIso);
     return Number.isFinite(t) && t >= options.sinceMs;
   });
-  merged.sort((left, right) => right.whenIso.localeCompare(left.whenIso));
+  // Sort by parsed instant (newest first), NOT raw string: the
+  // merged sources emit `whenIso` in heterogeneous ISO forms (raw
+  // passthrough vs `toISOString()`), and lexicographic order is
+  // wrong across mixed precision / timezone offsets — it would
+  // interleave the feed out of true chronological order. Matches
+  // the instant-based window filter just above. Unparseable values
+  // keep the prior deterministic string order.
+  merged.sort((left, right) => {
+    const l = Date.parse(left.whenIso);
+    const r = Date.parse(right.whenIso);
+    if (Number.isFinite(l) && Number.isFinite(r)) {
+      if (l !== r) {
+        return r - l;
+      }
+    } else if (left.whenIso !== right.whenIso) {
+      return right.whenIso.localeCompare(left.whenIso);
+    }
+    return 0;
+  });
   return options.limit !== undefined ? merged.slice(0, options.limit) : merged;
 }

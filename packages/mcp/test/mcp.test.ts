@@ -6805,6 +6805,30 @@ describe("readActivityFeed — corrupt firedAtMs must not sink the whole feed", 
     expect(entries.map((e) => e.id)).toEqual(["ok"]);
     expect(entries[0]!.whenIso).toBe(new Date(1_800_000_000_000).toISOString());
   });
+
+  it("orders the merged feed by instant, not raw ISO string (mixed precision / offset)", async () => {
+    const { readActivityFeed } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-activity-order-"));
+    const file = join(dir, "episodes.json");
+    // endedAt is passed straight through as whenIso (no normalisation).
+    writeFileSync(file, JSON.stringify({
+      episodes: [
+        { id: "newest-ms", endedAt: "2026-05-14T09:00:00.500Z", summary: "a" },
+        { id: "utc", endedAt: "2026-05-14T09:00:00Z", summary: "b" },
+        { id: "offset", endedAt: "2026-05-14T18:00:00+09:00", summary: "c" }
+      ]
+    }));
+
+    const entries = await readActivityFeed({ episodesFile: file, kind: "episode" });
+    // Instants: newest-ms 09:00:00.500, utc & offset both 09:00:00.000
+    // (offset 18:00+09:00 == 09:00Z). Newest first; the equal-instant
+    // pair keeps file order (stable). Pre-fix localeCompare gave
+    // ["offset","utc","newest-ms"] — newest sorted LAST.
+    expect(entries.map((e) => e.id)).toEqual(["newest-ms", "utc", "offset"]);
+  });
 });
 
 describe("muse.status loopback server", () => {
