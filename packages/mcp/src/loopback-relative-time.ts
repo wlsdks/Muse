@@ -101,9 +101,12 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     return korean;
   }
 
-  const inMatch = /^in\s+(\d+)\s+(minute|hour|day|week|month)s?$/u.exec(trimmed);
+  const inMatch = /^in\s+(\d+|an?)\s+(minute|hour|day|week|month)s?$/u.exec(trimmed);
   if (inMatch) {
-    const amount = Number.parseInt(inMatch[1] ?? "0", 10);
+    const rawAmount = inMatch[1] ?? "0";
+    const amount = rawAmount === "a" || rawAmount === "an"
+      ? 1
+      : Number.parseInt(rawAmount, 10);
     const unit = inMatch[2];
     // Month uses calendar semantics (Jan 15 + 1mo → Feb 15, not
     // +30d). Other units use a flat ms offset.

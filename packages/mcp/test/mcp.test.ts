@@ -2118,6 +2118,27 @@ describe("muse.tasks loopback server", () => {
         .toBe("2026-05-17T12:00:00.000Z");
     });
 
+    it("treats the indefinite article 'a'/'an' as quantity 1", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const now = () => new Date("2026-05-10T12:00:00Z");
+      expect(resolveRelativeTimePhrase("in a minute", now)?.toISOString())
+        .toBe("2026-05-10T12:01:00.000Z");
+      expect(resolveRelativeTimePhrase("in an hour", now)?.toISOString())
+        .toBe("2026-05-10T13:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in a day", now)?.toISOString())
+        .toBe("2026-05-11T12:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in a week", now)?.toISOString())
+        .toBe("2026-05-17T12:00:00.000Z");
+      // Calendar-month semantics still apply for the article form.
+      expect(resolveRelativeTimePhrase("in a month", now)?.toISOString())
+        .toBe("2026-06-10T12:00:00.000Z");
+      // The numeric form is unchanged (no regression).
+      expect(resolveRelativeTimePhrase("in 2 hours", now)?.toISOString())
+        .toBe("2026-05-10T14:00:00.000Z");
+      // A vague quantifier is still correctly unrecognized.
+      expect(resolveRelativeTimePhrase("in a few minutes", now)).toBeUndefined();
+    });
+
     it("parses 'in N month(s)' with calendar-month math (goal 110)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const fixed = new Date("2026-05-10T12:00:00Z");
