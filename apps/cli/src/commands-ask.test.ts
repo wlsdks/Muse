@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { consumeAskStream, parseBoundedInt, type AskStreamEvent } from "./commands-ask.js";
+import { consumeAskStream, parseBoundedInt, renderAskStreamError, type AskStreamEvent } from "./commands-ask.js";
+
+describe("renderAskStreamError", () => {
+  const base = { answer: "partial ", error: "Ollama request failed — is Ollama running? (`ollama serve`)", model: "ollama/qwen3:8b", query: "hi" };
+
+  it("--json emits a parseable structured error on stdout (no stderr)", () => {
+    const r = renderAskStreamError({ ...base, json: true });
+    expect(r.stderr).toBeUndefined();
+    expect(r.stdout).toBeDefined();
+    const parsed = JSON.parse(r.stdout!) as Record<string, unknown>;
+    expect(parsed).toEqual({
+      query: "hi",
+      model: "ollama/qwen3:8b",
+      answer: "partial ",
+      error: base.error
+    });
+    expect(r.stdout!.endsWith("\n")).toBe(true);
+  });
+
+  it("non-json keeps the human stderr line and no stdout (unchanged behaviour)", () => {
+    const r = renderAskStreamError({ ...base, json: false });
+    expect(r.stdout).toBeUndefined();
+    expect(r.stderr).toBe(`\n(error: ${base.error})\n`);
+  });
+});
 
 async function* gen(events: AskStreamEvent[]): AsyncIterable<AskStreamEvent> {
   for (const e of events) yield e;

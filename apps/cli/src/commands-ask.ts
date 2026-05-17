@@ -183,6 +183,32 @@ export async function consumeAskStream(
   return { answer };
 }
 
+/**
+ * Render a chat-only stream failure. `--json` must stay a
+ * parseable contract even on error — emit a structured object
+ * on stdout (with any partial answer) so `muse ask --json | jq`
+ * can detect it, rather than empty stdout + a human-only stderr
+ * line. Pure so the unit test can pin the contract directly.
+ */
+export function renderAskStreamError(params: {
+  readonly json: boolean;
+  readonly query: string;
+  readonly model: string;
+  readonly answer: string;
+  readonly error: string;
+}): { readonly stdout?: string; readonly stderr?: string } {
+  if (params.json) {
+    return {
+      stdout: `${JSON.stringify(
+        { query: params.query, model: params.model, answer: params.answer, error: params.error },
+        null,
+        2
+      )}\n`
+    };
+  }
+  return { stderr: `\n(error: ${params.error})\n` };
+}
+
 export function registerAskCommand(program: Command, io: ProgramIO): void {
   program
     .command("ask")
@@ -586,7 +612,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           streamError = res.error;
         }, { onSigint: () => { if (!options.json) io.stderr("\n(Ctrl-C — aborting…)\n"); } });
         if (streamError !== undefined) {
-          io.stderr(`\n(error: ${streamError})\n`);
+          const rendered = renderAskStreamError({
+            answer: collectedAnswer,
+            error: streamError,
+            json: options.json ?? false,
+            model,
+            query
+          });
+          if (rendered.stdout !== undefined) io.stdout(rendered.stdout);
+          if (rendered.stderr !== undefined) io.stderr(rendered.stderr);
           process.exitCode = 1;
           return;
         }
