@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
+import type { spawn } from "node:child_process";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   LinuxLibnotifyProvider,
@@ -6,6 +9,56 @@ import {
   buildNotifySendArgv,
   type NotifySendRunner
 } from "../src/index.js";
+import { defaultRunner } from "../src/linux-libnotify-provider.js";
+
+interface FakeChild extends EventEmitter {
+  stderr: EventEmitter;
+  kill: (signal?: string) => boolean;
+  killedWith?: string;
+}
+
+function fakeSpawn(): { spawnFn: typeof spawn; child: FakeChild } {
+  const child = new EventEmitter() as FakeChild;
+  child.stderr = new EventEmitter();
+  child.kill = (signal?: string): boolean => {
+    child.killedWith = signal ?? "SIGTERM";
+    return true;
+  };
+  return { child, spawnFn: (() => child) as unknown as typeof spawn };
+}
+
+describe("notify-send defaultRunner watchdog", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves the exit code on a clean close", async () => {
+    const { child, spawnFn } = fakeSpawn();
+    const p = defaultRunner(["Muse", "hi"], spawnFn);
+    child.emit("close", 0);
+    await expect(p).resolves.toEqual({ exitCode: 0, stderr: "" });
+  });
+
+  it("SIGKILLs and rejects when notify-send wedges past the timeout", async () => {
+    vi.useFakeTimers();
+    const { child, spawnFn } = fakeSpawn();
+    const p = defaultRunner(["Muse", "hi"], spawnFn);
+    const assertion = expect(p).rejects.toThrow(/timed out after 30000ms/u);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+    expect(child.killedWith).toBe("SIGKILL");
+  });
+
+  it("ignores a late close after the timeout (single-settle)", async () => {
+    vi.useFakeTimers();
+    const { child, spawnFn } = fakeSpawn();
+    const p = defaultRunner(["Muse", "hi"], spawnFn);
+    const assertion = expect(p).rejects.toThrow(/timed out/u);
+    await vi.advanceTimersByTimeAsync(30_000);
+    child.emit("close", 0);
+    await assertion;
+  });
+});
 
 function fakeRunner(): { runner: NotifySendRunner; calls: readonly string[][] } {
   const calls: string[][] = [];

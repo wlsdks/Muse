@@ -39,17 +39,38 @@ export interface OsascriptRunResult {
 
 export type OsascriptRunner = (script: string) => Promise<OsascriptRunResult>;
 
-const defaultRunner: OsascriptRunner = (script) => {
+const NOTIFICATION_OSASCRIPT_TIMEOUT_MS = 30_000;
+
+export function defaultRunner(
+  script: string,
+  spawnFn: typeof spawn = spawn
+): Promise<OsascriptRunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn("osascript", ["-e", script], { stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawnFn("osascript", ["-e", script], { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
+    let settled = false;
+    const finish = (action: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      action();
+    };
+    // Without this watchdog a wedged Notification Center leaves
+    // osascript blocked, so `send()` never resolves and the
+    // awaiting firing/proactive loop tick hangs forever.
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(() => reject(new Error(
+        `osascript notification timed out after ${NOTIFICATION_OSASCRIPT_TIMEOUT_MS.toString()}ms and was killed`
+      )));
+    }, NOTIFICATION_OSASCRIPT_TIMEOUT_MS);
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ exitCode: code, stderr }));
+    child.on("error", (error) => { finish(() => reject(error)); });
+    child.on("close", (code) => { finish(() => resolve({ exitCode: code, stderr })); });
   });
-};
+}
 
 export interface MacosNotificationProviderOptions {
   readonly id?: string;

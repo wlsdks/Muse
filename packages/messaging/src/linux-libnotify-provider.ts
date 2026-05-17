@@ -38,17 +38,38 @@ export interface NotifySendRunResult {
 
 export type NotifySendRunner = (args: readonly string[]) => Promise<NotifySendRunResult>;
 
-const defaultRunner: NotifySendRunner = (args) => {
+const NOTIFY_SEND_TIMEOUT_MS = 30_000;
+
+export function defaultRunner(
+  args: readonly string[],
+  spawnFn: typeof spawn = spawn
+): Promise<NotifySendRunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn("notify-send", [...args], { stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawnFn("notify-send", [...args], { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
+    let settled = false;
+    const finish = (action: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      action();
+    };
+    // notify-send blocks until the notification daemon replies on
+    // the session bus; with no D-Bus session (headless / SSH) it
+    // can hang, freezing the awaiting firing/proactive loop tick.
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(() => reject(new Error(
+        `notify-send timed out after ${NOTIFY_SEND_TIMEOUT_MS.toString()}ms and was killed`
+      )));
+    }, NOTIFY_SEND_TIMEOUT_MS);
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ exitCode: code, stderr }));
+    child.on("error", (error) => { finish(() => reject(error)); });
+    child.on("close", (code) => { finish(() => resolve({ exitCode: code, stderr })); });
   });
-};
+}
 
 export interface LinuxLibnotifyProviderOptions {
   readonly id?: string;
