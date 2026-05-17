@@ -2108,6 +2108,12 @@ describe("muse.tasks loopback server", () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const fixed = new Date("2026-05-10T12:00:00Z");
       const now = () => fixed;
+      expect(resolveRelativeTimePhrase("in 30 seconds", now)?.toISOString())
+        .toBe("2026-05-10T12:00:30.000Z");
+      expect(resolveRelativeTimePhrase("in 1 second", now)?.toISOString())
+        .toBe("2026-05-10T12:00:01.000Z");
+      expect(resolveRelativeTimePhrase("in a second", now)?.toISOString())
+        .toBe("2026-05-10T12:00:01.000Z");
       expect(resolveRelativeTimePhrase("in 30 minutes", now)?.toISOString())
         .toBe("2026-05-10T12:30:00.000Z");
       expect(resolveRelativeTimePhrase("in 3 hours", now)?.toISOString())

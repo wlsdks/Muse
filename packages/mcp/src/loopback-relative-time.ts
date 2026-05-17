@@ -101,7 +101,7 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     return korean;
   }
 
-  const inMatch = /^in\s+(\d+|an?)\s+(minute|hour|day|week|month)s?$/u.exec(trimmed);
+  const inMatch = /^in\s+(\d+|an?)\s+(second|minute|hour|day|week|month)s?$/u.exec(trimmed);
   if (inMatch) {
     const rawAmount = inMatch[1] ?? "0";
     const amount = rawAmount === "a" || rawAmount === "an"
@@ -113,7 +113,8 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     if (unit === "month") {
       return finiteDate(addCalendarMonths(reference, amount));
     }
-    const offsetMs = unit === "minute" ? amount * 60_000
+    const offsetMs = unit === "second" ? amount * 1000
+      : unit === "minute" ? amount * 60_000
       : unit === "hour" ? amount * 3_600_000
       : unit === "day" ? amount * 86_400_000
       : unit === "week" ? amount * 7 * 86_400_000
