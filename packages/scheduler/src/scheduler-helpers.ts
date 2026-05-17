@@ -110,7 +110,11 @@ export function compareJobs(left: ScheduledJob, right: ScheduledJob): number {
 
 export function resolveJobTimeout(job: ScheduledJob, fallbackMs: number): number {
   const value = job.executionTimeoutMs ?? fallbackMs;
-  return value <= 0 ? fallbackMs : value;
+  // `??` does NOT catch NaN/Infinity: a corrupt persisted
+  // executionTimeoutMs would otherwise flow into the lock TTL
+  // (Math.max(min, NaN) → NaN) and the watchdog (setTimeout(NaN)
+  // → 0 → instant timeout). Non-finite or non-positive → fallback.
+  return Number.isFinite(value) && value > 0 ? value : fallbackMs;
 }
 
 export function computeNextRunAt(

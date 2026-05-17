@@ -25,6 +25,7 @@ import {
   mapScheduledJobRow,
   normalizeScheduledJob,
   renderTemplateVariables,
+  resolveJobTimeout,
   type CronScheduler,
   type DistributedSchedulerLock,
   type ScheduledJob
@@ -456,6 +457,28 @@ describe("Kysely mapping helpers", () => {
         status: "success"
       })
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("resolveJobTimeout", () => {
+  const FALLBACK = 30_000;
+
+  it("passes through a valid positive executionTimeoutMs", () => {
+    expect(resolveJobTimeout(createAgentJob({ executionTimeoutMs: 5_000 }), FALLBACK)).toBe(5_000);
+  });
+
+  it("falls back when executionTimeoutMs is absent or non-positive", () => {
+    expect(resolveJobTimeout(createAgentJob({ executionTimeoutMs: undefined }), FALLBACK)).toBe(FALLBACK);
+    expect(resolveJobTimeout(createAgentJob({ executionTimeoutMs: 0 }), FALLBACK)).toBe(FALLBACK);
+    expect(resolveJobTimeout(createAgentJob({ executionTimeoutMs: -1 }), FALLBACK)).toBe(FALLBACK);
+  });
+
+  it("falls back for a non-finite executionTimeoutMs (corrupt persisted job)", () => {
+    // `??` does not catch these; without the finite guard they
+    // poison the lock TTL / watchdog instead of timing the job out.
+    expect(resolveJobTimeout(createAgentJob({ executionTimeoutMs: Number.NaN }), FALLBACK)).toBe(FALLBACK);
+    expect(resolveJobTimeout(createAgentJob({ executionTimeoutMs: Number.POSITIVE_INFINITY }), FALLBACK)).toBe(FALLBACK);
+    expect(resolveJobTimeout(createAgentJob({ executionTimeoutMs: Number.NEGATIVE_INFINITY }), FALLBACK)).toBe(FALLBACK);
   });
 });
 
