@@ -5872,8 +5872,8 @@ describe("cli program", () => {
     // Wrong passphrase throws a clear, non-byte-leaking message.
     expect(() => decryptExportBuffer(cipher, "WRONG")).toThrow(/wrong passphrase/i);
     // A buffer without the magic header is detected up front.
-    expect(isEncryptedExportBuffer(Buffer.from("PK"))).toBe(false);
-    expect(() => decryptExportBuffer(Buffer.from("PK"), "anything")).toThrow(/MUSE magic/);
+    expect(isEncryptedExportBuffer(Buffer.from("PK\x03\x04"))).toBe(false);
+    expect(() => decryptExportBuffer(Buffer.from("PK\x03\x04"), "anything")).toThrow(/MUSE magic/);
   });
 
   it("buildMuseExport --encrypt round-trips through muse import --decrypt (goal 081)", async () => {
