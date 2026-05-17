@@ -2365,6 +2365,38 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("at lunch", ref)).toBeUndefined();
     });
 
+    it("resolves an absolute month-name date (with next-occurrence + impossible-date rejection)", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const ref = () => new Date("2026-05-18T12:00:00Z"); // Monday
+
+      const may20 = resolveRelativeTimePhrase("May 20", ref);
+      expect(may20?.getFullYear()).toBe(2026);
+      expect(may20?.getMonth()).toBe(4); // May
+      expect(may20?.getDate()).toBe(20);
+      expect(may20?.getHours()).toBe(9); // bare-day default
+
+      expect(resolveRelativeTimePhrase("dec 25", ref)?.getMonth()).toBe(11);
+      // Day-first form.
+      expect(resolveRelativeTimePhrase("20 may", ref)?.getDate()).toBe(20);
+      // Trailing time-of-day is parsed.
+      const dec25pm = resolveRelativeTimePhrase("December 25 at 3pm", ref);
+      expect(dec25pm?.getMonth()).toBe(11);
+      expect(dec25pm?.getHours()).toBe(15);
+      // Explicit year is honoured.
+      expect(resolveRelativeTimePhrase("May 20 2027", ref)?.getFullYear()).toBe(2027);
+      // Already-past this year → next occurrence (weekday convention).
+      const may15 = resolveRelativeTimePhrase("May 15", ref); // today is May 18
+      expect(may15?.getFullYear()).toBe(2027);
+      expect(may15?.getMonth()).toBe(4);
+      // Impossible / malformed → undefined (not silently defaulted).
+      expect(resolveRelativeTimePhrase("Feb 30", ref)).toBeUndefined();
+      expect(resolveRelativeTimePhrase("Apr 31", ref)).toBeUndefined();
+      expect(resolveRelativeTimePhrase("May 20 garbage", ref)).toBeUndefined();
+      // No regression: weekday / today still go through dayPattern.
+      expect(resolveRelativeTimePhrase("monday", ref)?.getDay()).toBe(1);
+      expect(resolveRelativeTimePhrase("tomorrow", ref)?.getDate()).toBe(19);
+    });
+
     it("resolves Korean day + time phrases (goal 160)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday

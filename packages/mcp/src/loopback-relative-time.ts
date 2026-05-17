@@ -79,6 +79,54 @@ function standaloneDayPartHour(phrase: string): number | undefined {
   return key === undefined ? undefined : DAY_PART_HOURS[key];
 }
 
+const MONTHS: Record<string, number> = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+  may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10,
+  dec: 11, december: 11
+};
+const MONTH_ALT = Object.keys(MONTHS).join("|");
+const MONTH_FIRST = new RegExp(`^(${MONTH_ALT})\\s+(\\d{1,2})(?:,?\\s+(\\d{4}))?(?:\\s+(?:at\\s+)?(.+))?$`, "u");
+const DAY_FIRST = new RegExp(`^(\\d{1,2})\\s+(${MONTH_ALT})(?:,?\\s+(\\d{4}))?(?:\\s+(?:at\\s+)?(.+))?$`, "u");
+
+// Absolute month-name date: "May 20", "Dec 25 at 3pm",
+// "June 1 9am", "20 May 2027". No explicit year + already past
+// this year → next occurrence, matching the weekday "next"
+// convention. Reuses parseTimeOfDay (undefined timeSpec → 09:00,
+// same as a bare day word); a malformed trailing time fails the
+// whole phrase rather than silently defaulting.
+function resolveAbsoluteMonthDate(phrase: string, reference: Date): Date | undefined {
+  let monthName: string | undefined;
+  let dayStr: string | undefined;
+  let yearStr: string | undefined;
+  let timeSpec: string | undefined;
+  const mf = MONTH_FIRST.exec(phrase);
+  if (mf) {
+    [, monthName, dayStr, yearStr, timeSpec] = mf;
+  } else {
+    const df = DAY_FIRST.exec(phrase);
+    if (df) {
+      [, dayStr, monthName, yearStr, timeSpec] = df;
+    }
+  }
+  if (monthName === undefined || dayStr === undefined) return undefined;
+  const monthIndex = MONTHS[monthName];
+  if (monthIndex === undefined) return undefined;
+  const day = Number.parseInt(dayStr, 10);
+  if (day < 1 || day > 31) return undefined;
+  const time = parseTimeOfDay(timeSpec);
+  if (time === "invalid") return undefined;
+  const year = yearStr !== undefined ? Number.parseInt(yearStr, 10) : reference.getFullYear();
+  const built = new Date(year, monthIndex, day, time.hour, time.minute, 0, 0);
+  if (built.getFullYear() !== year || built.getMonth() !== monthIndex || built.getDate() !== day) {
+    return undefined;
+  }
+  if (yearStr === undefined && built.getTime() < reference.getTime()) {
+    return new Date(year + 1, monthIndex, day, time.hour, time.minute, 0, 0);
+  }
+  return built;
+}
+
 // A huge offset ("in 9999999999 days", "99999999999일 후") or a
 // month overflow pushes the Date past ±8.64e15 ms → an Invalid
 // Date (NaN time). Returning that lets the caller's
@@ -159,6 +207,11 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     const day = startOfDay(reference);
     day.setHours(bareTime.hour, bareTime.minute, 0, 0);
     return finiteDate(day);
+  }
+
+  const absoluteDate = finiteDate(resolveAbsoluteMonthDate(trimmed, reference));
+  if (absoluteDate) {
+    return absoluteDate;
   }
 
   const dayPattern = /^(today|tomorrow|next\s+([a-z]+)|([a-z]+))(?:\s+(?:at\s+)?(.+))?$/u;
