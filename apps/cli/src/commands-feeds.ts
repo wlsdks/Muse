@@ -16,6 +16,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
@@ -56,6 +57,28 @@ export function slugifyUrl(url: string): string {
     .replace(/[^A-Za-z0-9._-]+/gu, "-")
     .replace(/^-+|-+$/gu, "")
     .slice(0, 60) || "feed";
+}
+
+/**
+ * Human-readable lines for one rolled-up feed entry. `title` /
+ * `link` / `publishedAt` are third-party-controlled (the feed
+ * author sets them) and printed straight to the terminal, so
+ * they get the same ESC/C0/C1/DEL strip + whitespace-collapse
+ * the inbox / search surfaces apply — a hostile feed must not be
+ * able to hijack the terminal.
+ */
+export function formatFeedEntryLines(entry: {
+  readonly feedId: string;
+  readonly title: string;
+  readonly link: string;
+  readonly publishedAt: string;
+}): readonly string[] {
+  const clean = (value: string): string =>
+    stripUntrustedTerminalChars(value).replace(/\s+/gu, " ").trim();
+  const lines = [`[${clean(entry.feedId)}] ${clean(entry.title)} — ${clean(entry.publishedAt) || "(no date)"}`];
+  const link = clean(entry.link);
+  if (link) lines.push(`  ${link}`);
+  return lines;
 }
 
 async function refreshSingleFeed(record: FeedRecord, io: ProgramIO): Promise<FeedRecord> {
@@ -239,8 +262,7 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
         return;
       }
       for (const entry of rolled) {
-        io.stdout(`[${entry.feedId}] ${entry.title} — ${entry.publishedAt || "(no date)"}\n`);
-        if (entry.link) io.stdout(`  ${entry.link}\n`);
+        for (const line of formatFeedEntryLines(entry)) io.stdout(`${line}\n`);
       }
     });
 }

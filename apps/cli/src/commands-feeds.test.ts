@@ -5,7 +5,57 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { registerFeedsCommand, slugifyUrl } from "./commands-feeds.js";
+import { formatFeedEntryLines, registerFeedsCommand, slugifyUrl } from "./commands-feeds.js";
+
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+
+function hasTerminalControl(s: string): boolean {
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s.charCodeAt(i);
+    if (c <= 0x08 || (c >= 0x0b && c <= 0x1f) || c === 0x7f) return true;
+  }
+  return false;
+}
+
+describe("formatFeedEntryLines (goal 346 sibling — feeds)", () => {
+  it("strips terminal control sequences from third-party feed fields", () => {
+    const lines = formatFeedEntryLines({
+      feedId: "news",
+      title: `${ESC}[2J${ESC}]0;pwned${BEL}Breaking: hostile feed`,
+      link: `https://x.example/${ESC}[31m`,
+      publishedAt: "2026-05-18"
+    });
+    const joined = lines.join("\n");
+    expect(hasTerminalControl(joined)).toBe(false);
+    expect(joined).toContain("Breaking: hostile feed");
+    expect(joined).toContain("[news]");
+    expect(joined).toContain("2026-05-18");
+  });
+
+  it("collapses newlines and falls back to (no date)", () => {
+    const lines = formatFeedEntryLines({
+      feedId: "f1",
+      title: "multi\nline\ntitle",
+      link: "",
+      publishedAt: "   "
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toBe("[f1] multi line title — (no date)");
+  });
+
+  it("leaves a clean entry untouched (no regression)", () => {
+    expect(formatFeedEntryLines({
+      feedId: "hn",
+      title: "Show HN: a thing",
+      link: "https://news.example/1",
+      publishedAt: "2026-05-18T09:00:00Z"
+    })).toEqual([
+      "[hn] Show HN: a thing — 2026-05-18T09:00:00Z",
+      "  https://news.example/1"
+    ]);
+  });
+});
 
 describe("slugifyUrl (goal 185)", () => {
   it("strips the http(s) / file scheme prefix", () => {
