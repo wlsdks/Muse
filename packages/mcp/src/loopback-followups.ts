@@ -4,6 +4,7 @@ import { errorMessage, readString } from "./loopback-helpers.js";
 import type { LoopbackMcpServer } from "./loopback.js";
 import {
   cancelFollowup,
+  compareFollowupsByScheduledFor,
   readFollowups,
   readFollowupStatusFilter,
   serializeFollowup,
@@ -57,7 +58,7 @@ export function createFollowupsMcpServer(options: FollowupsMcpServerOptions): Lo
           const all = await readFollowups(file);
           const filtered = status === "all" ? all : all.filter((entry) => entry.status === status);
           const sorted = [...filtered]
-            .sort((left, right) => left.scheduledFor.localeCompare(right.scheduledFor))
+            .sort(compareFollowupsByScheduledFor)
             .slice(0, maxListEntries);
           return {
             followups: sorted.map(serializeFollowup) as JsonValue,

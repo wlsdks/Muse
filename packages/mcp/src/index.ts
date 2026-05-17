@@ -316,6 +316,7 @@ export {
 export {
   cancelFollowup,
   cleanupFollowupTempFiles,
+  compareFollowupsByScheduledFor,
   markFollowupFired,
   readFollowups,
   readFollowupStatusFilter,

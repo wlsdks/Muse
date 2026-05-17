@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  compareFollowupsByScheduledFor,
   compareRemindersByDueAt,
   compareTasksByDueDate,
   createDefaultLoopbackMcpServers,
@@ -1856,6 +1857,34 @@ describe("compareRemindersByDueAt", () => {
       mk("new", "2026-05-14T18:00:00+09:00", "2026-05-13T00:00:00Z")
     ];
     expect([...reminders].sort(compareRemindersByDueAt).map((r) => r.id)).toEqual(["new", "old"]);
+  });
+});
+
+describe("compareFollowupsByScheduledFor", () => {
+  const mk = (id: string, scheduledFor: string, createdAt: string) => ({
+    createdAt, id, scheduledFor, status: "scheduled" as const,
+    summary: id, userId: "u", runId: "r"
+  });
+
+  it("orders soonest-first by instant across mixed ISO forms", () => {
+    const followups = [
+      mk("late", "2026-05-20T00:00:00Z", "2026-05-13T01:00:00Z"),
+      // 18:00+09:00 == 09:00Z — earliest instant, string-sorts last.
+      mk("offset-soonest", "2026-05-14T18:00:00+09:00", "2026-05-13T02:00:00Z"),
+      // 09:00:00.500Z — later than offset-soonest, string-sorts BEFORE "…Z".
+      mk("ms-mid", "2026-05-14T09:00:00.500Z", "2026-05-13T03:00:00Z")
+    ];
+    expect([...followups].sort(compareFollowupsByScheduledFor).map((f) => f.id))
+      .toEqual(["offset-soonest", "ms-mid", "late"]);
+  });
+
+  it("breaks equal-instant ties by newest-created first (matches task/reminder ordering)", () => {
+    const followups = [
+      mk("old", "2026-05-14T09:00:00Z", "2026-05-12T00:00:00Z"),
+      mk("new", "2026-05-14T18:00:00+09:00", "2026-05-13T00:00:00Z")
+    ];
+    expect([...followups].sort(compareFollowupsByScheduledFor).map((f) => f.id))
+      .toEqual(["new", "old"]);
   });
 });
 

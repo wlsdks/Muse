@@ -169,6 +169,33 @@ export function readFollowupStatusFilter(value: string | undefined): FollowupSta
 }
 
 /**
+ * Soonest-first followup ordering, parallel to
+ * `compareRemindersByDueAt` / `compareTasksByDueDate`. Compare
+ * parsed instants, not raw strings: `scheduledFor` is a free-form
+ * string (hand-edited followups.json / imports need not be
+ * canonical) and lexicographic ISO order is wrong across mixed
+ * precision ("…00.500Z" sorts before "…00Z") and timezone
+ * offsets — it would surface the wrong followup as most imminent.
+ * Equal instants break to newest-created-first; unparseable
+ * values keep the prior deterministic string order.
+ */
+export function compareFollowupsByScheduledFor(
+  left: PersistedFollowup,
+  right: PersistedFollowup
+): number {
+  const leftMs = Date.parse(left.scheduledFor);
+  const rightMs = Date.parse(right.scheduledFor);
+  if (Number.isFinite(leftMs) && Number.isFinite(rightMs)) {
+    if (leftMs !== rightMs) {
+      return leftMs - rightMs;
+    }
+  } else if (left.scheduledFor !== right.scheduledFor) {
+    return left.scheduledFor.localeCompare(right.scheduledFor);
+  }
+  return right.createdAt.localeCompare(left.createdAt);
+}
+
+/**
  * Append a single followup to the on-disk store. Reads the
  * existing list, appends, writes atomically. Idempotent on `id`:
  * an entry whose `id` already exists is REPLACED (so a re-detect
