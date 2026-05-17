@@ -7455,3 +7455,38 @@ describe("proactive-history rotation on capacity (goal 079)", () => {
     expect(existsSync(`${file}.1`)).toBe(false);
   });
 });
+
+describe("Apple osascript timeout watchdog (notes + reminders)", () => {
+  async function fakeOsascript(body: string): Promise<string> {
+    const { mkdtempSync, writeFileSync, chmodSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-apple-osascript-"));
+    const script = join(dir, "fake-osascript");
+    writeFileSync(script, `#!${process.execPath}\n${body}\n`);
+    chmodSync(script, 0o755);
+    return script;
+  }
+
+  it("AppleNotesProvider SIGKILLs a wedged osascript and rejects OSASCRIPT_TIMEOUT", async () => {
+    const hung = await fakeOsascript("setInterval(() => {}, 1000);");
+    const apple = new AppleNotesProvider({ osascriptPath: hung, timeoutMs: 150 });
+    const start = Date.now();
+    await expect(apple.list()).rejects.toMatchObject({ code: "OSASCRIPT_TIMEOUT", providerId: "apple" });
+    expect(Date.now() - start).toBeLessThan(5_000);
+  });
+
+  it("AppleRemindersProvider SIGKILLs a wedged osascript and rejects OSASCRIPT_TIMEOUT", async () => {
+    const hung = await fakeOsascript("setInterval(() => {}, 1000);");
+    const apple = new AppleRemindersProvider({ osascriptPath: hung, timeoutMs: 150 });
+    const start = Date.now();
+    await expect(apple.list()).rejects.toMatchObject({ code: "OSASCRIPT_TIMEOUT", providerId: "apple-reminders" });
+    expect(Date.now() - start).toBeLessThan(5_000);
+  });
+
+  it("a fast-exiting osascript still resolves (watchdog cleared, no double-settle)", async () => {
+    const ok = await fakeOsascript("process.exit(0);");
+    await expect(new AppleNotesProvider({ osascriptPath: ok, timeoutMs: 10_000 }).list()).resolves.toEqual([]);
+    await expect(new AppleRemindersProvider({ osascriptPath: ok, timeoutMs: 10_000 }).list()).resolves.toEqual([]);
+  });
+});

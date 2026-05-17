@@ -48,6 +48,8 @@ export interface AppleNotesProviderOptions {
    * in tests with a stub that produces canned output.
    */
   readonly osascriptPath?: string;
+  /** osascript watchdog timeout (ms). Defaults to 30_000. */
+  readonly timeoutMs?: number;
 }
 
 /**
@@ -61,15 +63,21 @@ export interface AppleNotesProviderOptions {
  * between the AppleScript template and `parseSearchOutput`.
  */
 const APPLE_NOTES_SEARCH_DELIM = "~~~MUSE_NOTES_SEARCH_END~~~";
+const APPLE_NOTES_OSASCRIPT_TIMEOUT_MS = 30_000;
 
 export class AppleNotesProvider implements NotesProvider {
   readonly id = "apple";
   private readonly folder?: string;
   private readonly osascriptPath: string;
+  private readonly timeoutMs: number;
 
   constructor(options: AppleNotesProviderOptions = {}) {
     this.folder = options.folder;
     this.osascriptPath = options.osascriptPath ?? "/usr/bin/osascript";
+    this.timeoutMs =
+      typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+        ? options.timeoutMs
+        : APPLE_NOTES_OSASCRIPT_TIMEOUT_MS;
   }
 
   describe(): NotesProviderInfo {
@@ -238,31 +246,51 @@ export class AppleNotesProvider implements NotesProvider {
       const child = spawn(this.osascriptPath, ["-"], { stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
+      let settled = false;
+      const finish = (action: () => void): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        action();
+      };
+      // Without this watchdog an unanswered Notes Automation
+      // permission prompt (or a wedged Notes.app) leaves osascript
+      // blocked and every notes read/write hangs forever.
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        finish(() => reject(new NotesProviderError(
+          this.id,
+          "OSASCRIPT_TIMEOUT",
+          `osascript timed out after ${this.timeoutMs.toString()}ms and was killed (unanswered Notes Automation prompt or a wedged Notes.app?)`
+        )));
+      }, this.timeoutMs);
 
       child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
       child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
 
       child.on("error", (error) => {
-        reject(new NotesProviderError(this.id, "OSASCRIPT_FAILED", error.message));
+        finish(() => reject(new NotesProviderError(this.id, "OSASCRIPT_FAILED", error.message)));
       });
 
       child.on("close", (code) => {
-        if (code === 0) {
-          resolve(stdout);
-          return;
-        }
+        finish(() => {
+          if (code === 0) {
+            resolve(stdout);
+            return;
+          }
 
-        if (/not allowed to access|don't have permission|not authorised/iu.test(stderr)) {
-          reject(new NotesProviderError(this.id, "NOTES_PERMISSION", "Notes access permission denied — grant access in System Settings → Privacy & Security → Automation."));
-          return;
-        }
+          if (/not allowed to access|don't have permission|not authorised/iu.test(stderr)) {
+            reject(new NotesProviderError(this.id, "NOTES_PERMISSION", "Notes access permission denied — grant access in System Settings → Privacy & Security → Automation."));
+            return;
+          }
 
-        if (/NOTE_NOT_FOUND/u.test(stderr)) {
-          reject(new NotesProviderError(this.id, "NOTE_NOT_FOUND", "Apple Notes note not found"));
-          return;
-        }
+          if (/NOTE_NOT_FOUND/u.test(stderr)) {
+            reject(new NotesProviderError(this.id, "NOTE_NOT_FOUND", "Apple Notes note not found"));
+            return;
+          }
 
-        reject(new NotesProviderError(this.id, `EXIT_${code ?? "UNKNOWN"}`, `osascript failed: ${stderr.trim().slice(0, 500)}`));
+          reject(new NotesProviderError(this.id, `EXIT_${code ?? "UNKNOWN"}`, `osascript failed: ${stderr.trim().slice(0, 500)}`));
+        });
       });
 
       child.stdin.write(script);

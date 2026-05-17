@@ -56,16 +56,23 @@ export interface AppleRemindersProviderOptions {
    * Override in tests with a stub that produces canned output.
    */
   readonly osascriptPath?: string;
+  /** osascript watchdog timeout (ms). Defaults to 30_000. */
+  readonly timeoutMs?: number;
 }
 
 export class AppleRemindersProvider implements TasksProvider {
   readonly id = "apple-reminders";
   private readonly listName?: string;
   private readonly osascriptPath: string;
+  private readonly timeoutMs: number;
 
   constructor(options: AppleRemindersProviderOptions = {}) {
     this.listName = options.list;
     this.osascriptPath = options.osascriptPath ?? "/usr/bin/osascript";
+    this.timeoutMs =
+      typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+        ? options.timeoutMs
+        : APPLE_REMINDERS_OSASCRIPT_TIMEOUT_MS;
   }
 
   describe(): TasksProviderInfo {
@@ -232,32 +239,52 @@ export class AppleRemindersProvider implements TasksProvider {
       const child = spawn(this.osascriptPath, ["-"], { stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
+      let settled = false;
+      const finish = (action: () => void): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        action();
+      };
+      // Without this watchdog an unanswered Reminders Automation
+      // permission prompt (or a wedged Reminders.app) leaves
+      // osascript blocked and every task read/write hangs forever.
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        finish(() => reject(new TasksProviderError(
+          this.id,
+          "OSASCRIPT_TIMEOUT",
+          `osascript timed out after ${this.timeoutMs.toString()}ms and was killed (unanswered Reminders Automation prompt or a wedged Reminders.app?)`
+        )));
+      }, this.timeoutMs);
 
       child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
       child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
 
       child.on("error", (error) => {
-        reject(new TasksProviderError(this.id, "OSASCRIPT_FAILED", error.message));
+        finish(() => reject(new TasksProviderError(this.id, "OSASCRIPT_FAILED", error.message)));
       });
 
       child.on("close", (code) => {
-        if (code === 0) {
-          resolve(stdout);
-          return;
-        }
-        if (/not allowed to access|don't have permission|not authorised/iu.test(stderr)) {
+        finish(() => {
+          if (code === 0) {
+            resolve(stdout);
+            return;
+          }
+          if (/not allowed to access|don't have permission|not authorised/iu.test(stderr)) {
+            reject(new TasksProviderError(
+              this.id,
+              "REMINDERS_PERMISSION",
+              "Reminders access permission denied — grant access in System Settings → Privacy & Security → Automation."
+            ));
+            return;
+          }
           reject(new TasksProviderError(
             this.id,
-            "REMINDERS_PERMISSION",
-            "Reminders access permission denied — grant access in System Settings → Privacy & Security → Automation."
+            `EXIT_${code ?? "UNKNOWN"}`,
+            `osascript failed: ${stderr.trim().slice(0, 500)}`
           ));
-          return;
-        }
-        reject(new TasksProviderError(
-          this.id,
-          `EXIT_${code ?? "UNKNOWN"}`,
-          `osascript failed: ${stderr.trim().slice(0, 500)}`
-        ));
+        });
       });
 
       child.stdin.write(script);
@@ -273,6 +300,7 @@ export class AppleRemindersProvider implements TasksProvider {
  * reminder body.
  */
 const APPLE_REMINDERS_SEARCH_DELIM = "~~~MUSE_REMINDERS_SEARCH_END~~~";
+const APPLE_REMINDERS_OSASCRIPT_TIMEOUT_MS = 30_000;
 
 function parseListOutput(output: string, providerId: string): readonly Task[] {
   return output
