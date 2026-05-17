@@ -14,7 +14,17 @@ import type {
 export interface MacOsCalendarProviderOptions {
   readonly calendarName?: string;
   readonly osascriptPath?: string;
+  /**
+   * Hard wall-clock cap for a single `osascript` spawn. A wedged
+   * AppleScript, an EventKit deadlock, or an unanswered Calendar
+   * TCC permission prompt would otherwise hang every calendar
+   * operation forever — CLAUDE.md: tool loops have explicit
+   * timeouts. Default 30 s (generous for Calendar.app/EventKit).
+   */
+  readonly timeoutMs?: number;
 }
+
+const DEFAULT_MACOS_TIMEOUT_MS = 30_000;
 
 const credentialRequirements: readonly CredentialRequirement[] = [
   {
@@ -40,10 +50,15 @@ export class MacOsCalendarProvider implements CalendarProvider {
   readonly id = "macos";
   private readonly calendarName?: string;
   private readonly osascriptPath: string;
+  private readonly timeoutMs: number;
 
   constructor(options: MacOsCalendarProviderOptions = {}) {
     this.calendarName = options.calendarName;
     this.osascriptPath = options.osascriptPath ?? "/usr/bin/osascript";
+    this.timeoutMs =
+      typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+        ? options.timeoutMs
+        : DEFAULT_MACOS_TIMEOUT_MS;
   }
 
   describe(): CalendarProviderInfo {
@@ -172,31 +187,51 @@ export class MacOsCalendarProvider implements CalendarProvider {
       const child = spawn(this.osascriptPath, ["-"], { stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
+      let settled = false;
+      const finish = (action: () => void): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        action();
+      };
+      const timer = setTimeout(() => {
+        const wasSettled = settled;
+        child.kill("SIGKILL");
+        if (!wasSettled) {
+          finish(() => reject(new CalendarProviderError(
+            this.id,
+            "OSASCRIPT_TIMEOUT",
+            `osascript timed out after ${this.timeoutMs.toString()}ms and was killed (wedged AppleScript or an unanswered Calendar permission prompt?)`
+          )));
+        }
+      }, this.timeoutMs);
 
       child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
       child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
 
       child.on("error", (error) => {
-        reject(new CalendarProviderError(this.id, "OSASCRIPT_FAILED", error.message, error));
+        finish(() => reject(new CalendarProviderError(this.id, "OSASCRIPT_FAILED", error.message, error)));
       });
 
       child.on("close", (code) => {
-        if (code === 0) {
-          resolve(stdout);
-          return;
-        }
+        finish(() => {
+          if (code === 0) {
+            resolve(stdout);
+            return;
+          }
 
-        if (/not allowed to access|don't have permission/iu.test(stderr)) {
-          reject(new CalendarProviderError(this.id, "EVENT_PERMISSION", "Calendar access permission denied — grant access to your terminal in System Settings → Privacy & Security → Calendars."));
-          return;
-        }
+          if (/not allowed to access|don't have permission/iu.test(stderr)) {
+            reject(new CalendarProviderError(this.id, "EVENT_PERMISSION", "Calendar access permission denied — grant access to your terminal in System Settings → Privacy & Security → Calendars."));
+            return;
+          }
 
-        if (/EVENT_NOT_FOUND/u.test(stderr)) {
-          reject(new CalendarProviderError(this.id, "EVENT_NOT_FOUND", "macOS Calendar event not found"));
-          return;
-        }
+          if (/EVENT_NOT_FOUND/u.test(stderr)) {
+            reject(new CalendarProviderError(this.id, "EVENT_NOT_FOUND", "macOS Calendar event not found"));
+            return;
+          }
 
-        reject(new CalendarProviderError(this.id, `EXIT_${code}`, `osascript failed: ${stderr.trim().slice(0, 500)}`));
+          reject(new CalendarProviderError(this.id, `EXIT_${code}`, `osascript failed: ${stderr.trim().slice(0, 500)}`));
+        });
       });
 
       child.stdin.write(script);

@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { chmodSync } from "node:fs";
+
 import {
   CalDAVCalendarProvider,
   CalendarProviderError,
@@ -10,8 +12,41 @@ import {
   CalendarValidationError,
   FileCalendarCredentialStore,
   LocalCalendarProvider,
+  MacOsCalendarProvider,
   isRetryableCalendarStatus
 } from "../src/index.js";
+
+describe("MacOsCalendarProvider osascript spawn timeout", () => {
+  function hungScript(): string {
+    const dir = mkdtempSync(join(tmpdir(), "muse-osascript-hang-"));
+    const script = join(dir, "fake-osascript");
+    // Real executable that never exits and ignores stdin — proves
+    // the watchdog kills it, not the test merely timing out.
+    writeFileSync(script, `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`);
+    chmodSync(script, 0o755);
+    return script;
+  }
+
+  it("SIGKILLs a wedged osascript and rejects OSASCRIPT_TIMEOUT (no infinite hang)", async () => {
+    const provider = new MacOsCalendarProvider({ osascriptPath: hungScript(), timeoutMs: 150 });
+    const start = Date.now();
+    await expect(
+      provider.listEvents({ from: new Date(0), to: new Date(Date.now() + 86_400_000) })
+    ).rejects.toMatchObject({ code: "OSASCRIPT_TIMEOUT" });
+    expect(Date.now() - start).toBeLessThan(5_000);
+  });
+
+  it("resolves normally for a fast-exiting osascript (empty event list)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-osascript-ok-"));
+    const ok = join(dir, "fake-osascript");
+    writeFileSync(ok, `#!${process.execPath}\nprocess.exit(0);\n`);
+    chmodSync(ok, 0o755);
+    const provider = new MacOsCalendarProvider({ osascriptPath: ok, timeoutMs: 10_000 });
+    await expect(
+      provider.listEvents({ from: new Date(0), to: new Date(Date.now() + 86_400_000) })
+    ).resolves.toEqual([]);
+  });
+});
 
 describe("CalDAVCalendarProvider ICS time parsing", () => {
   function providerReturning(ics: string): CalDAVCalendarProvider {
