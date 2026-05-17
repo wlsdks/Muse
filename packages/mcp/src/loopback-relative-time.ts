@@ -148,6 +148,19 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     return finiteDate(day);
   }
 
+  // Bare time with no day word ("at 5pm", "5pm", "17:30",
+  // "noon") → today at that time, matching the "today <time>"
+  // semantics. Gated purely on parseTimeOfDay validity: every
+  // day word ("today"/"tomorrow"/weekday) is "invalid" there and
+  // falls through to dayPattern, so the two never overlap.
+  const bareTimeSpec = /^at\s+(.+)$/u.exec(trimmed)?.[1] ?? trimmed;
+  const bareTime = parseTimeOfDay(bareTimeSpec);
+  if (bareTime !== "invalid") {
+    const day = startOfDay(reference);
+    day.setHours(bareTime.hour, bareTime.minute, 0, 0);
+    return finiteDate(day);
+  }
+
   const dayPattern = /^(today|tomorrow|next\s+([a-z]+)|([a-z]+))(?:\s+(?:at\s+)?(.+))?$/u;
   const dayMatch = dayPattern.exec(trimmed);
   if (!dayMatch) {

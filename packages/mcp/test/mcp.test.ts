@@ -2341,6 +2341,30 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("this lunchtime", ref)).toBeUndefined();
     });
 
+    it("resolves a bare time (no day word) as today at that time", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const ref = () => new Date("2026-05-18T09:00:00Z"); // Monday
+
+      const at5 = resolveRelativeTimePhrase("at 5pm", ref);
+      expect(at5?.getDate()).toBe(18);
+      expect(at5?.getHours()).toBe(17);
+      expect(at5?.getMinutes()).toBe(0);
+
+      expect(resolveRelativeTimePhrase("5pm", ref)?.getHours()).toBe(17);
+      expect(resolveRelativeTimePhrase("at 17:30", ref)?.getHours()).toBe(17);
+      expect(resolveRelativeTimePhrase("at 17:30", ref)?.getMinutes()).toBe(30);
+      expect(resolveRelativeTimePhrase("noon", ref)?.getHours()).toBe(12);
+      expect(resolveRelativeTimePhrase("at midnight", ref)?.getHours()).toBe(0);
+      // All resolve to TODAY (the reference date), not tomorrow.
+      expect(resolveRelativeTimePhrase("5pm", ref)?.getDate()).toBe(18);
+
+      // Day-headed forms are unaffected (still go via dayPattern).
+      expect(resolveRelativeTimePhrase("tomorrow at 5pm", ref)?.getDate()).toBe(19);
+      expect(resolveRelativeTimePhrase("tomorrow at 5pm", ref)?.getHours()).toBe(17);
+      // A non-time word is still unrecognized.
+      expect(resolveRelativeTimePhrase("at lunch", ref)).toBeUndefined();
+    });
+
     it("resolves Korean day + time phrases (goal 160)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday
