@@ -229,9 +229,18 @@ function isPersistedReminder(value: unknown): value is PersistedReminder {
   const candidate = value as PersistedReminder;
   if (typeof candidate.id !== "string"
     || typeof candidate.text !== "string"
-    || typeof candidate.dueAt !== "string"
     || typeof candidate.createdAt !== "string"
     || (candidate.status !== "pending" && candidate.status !== "fired")) {
+    return false;
+  }
+  // dueAt must actually PARSE, not merely be a string: filterReminders
+  // selects due entries with `Date.parse(dueAt) <= now`, and an
+  // unparseable value yields NaN — `NaN <= now` is false, so a
+  // hand-edited/imported reminders.json with a bad timestamp would
+  // never fire and sit "pending" forever with no error. Drop it at
+  // load, the posture isPersistedEvent / isPersistedFollowup use.
+  if (typeof candidate.dueAt !== "string"
+    || !Number.isFinite(Date.parse(candidate.dueAt))) {
     return false;
   }
   if (candidate.firedAt !== undefined && typeof candidate.firedAt !== "string") {

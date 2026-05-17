@@ -3861,6 +3861,26 @@ describe("runDueReminders", () => {
     expect(persisted.reminders.find((r) => r.id === "rem_future")).toMatchObject({ status: "pending" });
   });
 
+  it("readReminders drops an entry with an unparseable dueAt instead of letting it sit un-fireable", async () => {
+    const { readReminders } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-rem-badtime-"));
+    const file = join(dir, "reminders.json");
+    writeFileSync(file, JSON.stringify({
+      reminders: [
+        { createdAt: "2026-05-17T00:00:00Z", dueAt: "2030-01-01T00:00:00Z", id: "rem_ok", status: "pending", text: "valid" },
+        { createdAt: "2026-05-17T00:00:00Z", dueAt: "tomorrow", id: "rem_bad", status: "pending", text: "corrupt" }
+      ]
+    }), "utf8");
+    // rem_bad is excluded at load: an unparseable dueAt makes
+    // filterReminders' `Date.parse(dueAt) <= now` NaN, so it would
+    // never be "due", never fire, and sit "pending" forever. Drop it
+    // at the type-guard — consistent + visible, not silently dead.
+    expect((await readReminders(file)).map((r) => r.id)).toEqual(["rem_ok"]);
+  });
+
   it("does not write when no reminders are due (idempotent zero-call)", async () => {
     const { runDueReminders } = await import("../src/index.js");
     const { mkdtempSync, writeFileSync, statSync } = await import("node:fs");
