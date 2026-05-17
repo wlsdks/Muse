@@ -92,14 +92,18 @@ export class InMemoryUserStore implements UserStore {
     const user = normalizeUserInput({ ...input, email });
     const existing = this.usersById.get(user.id);
 
-    if (existing && existing.email !== email) {
-      this.usersByEmail.delete(existing.email);
-    }
-
+    // Validate BEFORE mutating: deleting the old email key first
+    // meant a failed email-change (target already taken) left the
+    // user in usersById but unreachable via findByEmail — a silent
+    // lock-out of their own account.
     const duplicate = this.usersByEmail.get(email);
 
     if (duplicate && duplicate.id !== user.id) {
       throw new AuthError("USER_EXISTS", `User already exists: ${email}`);
+    }
+
+    if (existing && existing.email !== email) {
+      this.usersByEmail.delete(existing.email);
     }
 
     this.usersById.set(user.id, user);

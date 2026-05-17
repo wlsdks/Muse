@@ -41,6 +41,35 @@ describe("users and password auth", () => {
     expect(provider.authenticate("user_account", "correct-password")?.id).toBe(user.id);
     expect(provider.authenticate("user_account", "wrong-password")).toBeUndefined();
   });
+
+  it("a failed email-change (target already taken) does not lock the user out", () => {
+    const store = new InMemoryUserStore();
+    const a = store.save({ email: "a@x.com", name: "A", passwordHash: "ha" });
+    store.save({ email: "b@x.com", name: "B", passwordHash: "hb" });
+
+    expect(() =>
+      store.update({ email: "b@x.com", id: a.id, name: "A", passwordHash: "ha" })
+    ).toThrow(/User already exists/u);
+
+    // A must still resolve under its ORIGINAL email (pre-fix the
+    // old key was deleted before the throw → A became a ghost).
+    expect(store.findByEmail("a@x.com")?.id).toBe(a.id);
+    expect(store.findByEmail("a@x.com")?.email).toBe("a@x.com");
+    // B is untouched and the store has exactly the two users.
+    expect(store.findByEmail("b@x.com")?.name).toBe("B");
+    expect(store.count()).toBe(2);
+  });
+
+  it("a successful email-change reindexes under the new email and frees the old", () => {
+    const store = new InMemoryUserStore();
+    const a = store.save({ email: "old@x.com", name: "A", passwordHash: "ha" });
+
+    const updated = store.update({ email: "new@x.com", id: a.id, name: "A", passwordHash: "ha" });
+    expect(updated.email).toBe("new@x.com");
+    expect(store.findByEmail("new@x.com")?.id).toBe(a.id);
+    expect(store.findByEmail("old@x.com")).toBeUndefined();
+    expect(store.count()).toBe(1);
+  });
 });
 
 describe("Kysely auth mapping", () => {
