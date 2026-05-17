@@ -14,6 +14,7 @@ import {
   parseExemplarMarkdown,
   renderExemplarContext,
   renderJsonInstruction,
+  renderResponseFormatInstruction,
   renderRetrievedContext,
   renderToolResults,
   renderYamlInstruction,
@@ -31,6 +32,21 @@ describe("prompt instruction rendering", () => {
     expect(json).toContain("Expected JSON schema:");
     expect(yaml).toContain("valid YAML only");
     expect(yaml).not.toContain("Expected YAML structure:");
+  });
+
+  it("renderResponseFormatInstruction dispatches by format and forwards the schema", () => {
+    // json/yaml delegate verbatim (no wrapping, schema forwarded).
+    expect(renderResponseFormatInstruction("json", '{"type":"object"}'))
+      .toBe(renderJsonInstruction('{"type":"object"}'));
+    expect(renderResponseFormatInstruction("json")).toBe(renderJsonInstruction());
+    expect(renderResponseFormatInstruction("yaml", "root: object"))
+      .toBe(renderYamlInstruction("root: object"));
+    expect(renderResponseFormatInstruction("json")).toContain("valid JSON only");
+    expect(renderResponseFormatInstruction("yaml")).toContain("valid YAML only");
+    // text / undefined contribute NO format instruction — a
+    // free-text turn must not be told to emit JSON/YAML.
+    expect(renderResponseFormatInstruction("text", '{"x":1}')).toBeUndefined();
+    expect(renderResponseFormatInstruction(undefined)).toBeUndefined();
   });
 
   it("keeps retrieved context distinct from tool results", () => {
