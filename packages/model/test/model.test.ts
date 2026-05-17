@@ -257,6 +257,26 @@ describe("createLeadingThinkStripper (goal 173)", () => {
   it("handles the close tag immediately followed by the answer, no whitespace", () => {
     expect(feed(["<think>x</think>answer"])).toBe("answer");
   });
+
+  it("swallows post-close whitespace spanning several whitespace-only chunks (trim mode)", () => {
+    // The close tag + blank line + indentation commonly arrive as
+    // separate SSE deltas — trim mode must persist across them.
+    expect(feed(["<think>reasoning", "</think>", "\n", "\n  ", "  ", "The answer."]))
+      .toBe("The answer.");
+  });
+
+  it("emits a buffered <thought>/<thinking> prefix verbatim — only exact <think> is stripped", () => {
+    // "<th" is a prefix of "<think>" so scan-mode buffers it; once
+    // it resolves to a different tag the buffered text must NOT be
+    // eaten — it is real content.
+    expect(feed(["<th", "ought>keep me</thought> done"]))
+      .toBe("<thought>keep me</thought> done");
+    expect(feed(["<thi", "nking>real text"])).toBe("<thinking>real text");
+  });
+
+  it("strips a think block preceded by whitespace split across chunks", () => {
+    expect(feed(["  ", " <th", "ink>cot</think>", "real"])).toBe("real");
+  });
 });
 
 describe("ModelProviderRegistry", () => {
