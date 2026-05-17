@@ -1,3 +1,5 @@
+import { normalizeForInjectionDetection } from "./injection-patterns.js";
+
 export interface PromptLeakageOptions {
   readonly canaryTokens?: readonly string[];
   readonly extraPatterns?: readonly PromptLeakagePattern[];
@@ -18,15 +20,20 @@ export function detectSystemPromptLeakage(
   options: PromptLeakageOptions = {}
 ): readonly PromptLeakageFinding[] {
   const findings: PromptLeakageFinding[] = [];
+  // Canonicalise first — the system prompt for a personal JARVIS
+  // carries the user's persona/context/memory, so a leak echoed
+  // with a zero-width / homoglyph / entity split must not slip
+  // past. Every sibling policy guard normalises; this one didn't.
+  const normalized = normalizeForInjectionDetection(content);
 
   for (const token of options.canaryTokens ?? []) {
-    if (token.length > 0 && content.includes(token)) {
+    if (token.length > 0 && normalized.includes(token)) {
       findings.push({ match: token, name: "canary_token" });
     }
   }
 
   for (const { name, pattern } of [...defaultPromptLeakagePatterns, ...(options.extraPatterns ?? [])]) {
-    const match = pattern.exec(content);
+    const match = pattern.exec(normalized);
 
     if (match?.[0]) {
       findings.push({ match: match[0], name });

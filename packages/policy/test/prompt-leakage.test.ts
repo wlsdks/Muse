@@ -36,4 +36,27 @@ describe("prompt leakage policy", () => {
   it("does not flag ordinary explanations about prompt engineering", () => {
     expect(detectSystemPromptLeakage("We should design prompts with clear examples and constraints.")).toEqual([]);
   });
+
+  it("detects leaks obfuscated with zero-width / homoglyph splits (goal 298)", () => {
+    // Built from escapes (never raw invisible bytes in source).
+    const ZW = String.fromCharCode(0x200b);
+    const cyrA = String.fromCharCode(0x0430); // Cyrillic homoglyph of "a"
+
+    // ZW inside "prompt" — readable to a human; stripping it
+    // restores "my system prompt is" which the raw regex missed.
+    expect(detectSystemPromptLeakage(`Sure, my system pro${ZW}mpt is: be a helpful agent`)
+      .map((f) => f.name)).toContain("my_system_prompt");
+
+    // Cyrillic homoglyph in a section marker → folds to "[Language Rule]".
+    expect(detectSystemPromptLeakage(`verbatim: [L${cyrA}nguage Rule] then more`)
+      .map((f) => f.name)).toContain("prompt_section_marker");
+
+    // Canary split by a zero-width char must still be caught.
+    expect(
+      detectSystemPromptLeakage(`the hidden marker is CANA${ZW}RY123`, { canaryTokens: ["CANARY123"] })
+    ).toContainEqual({ match: "CANARY123", name: "canary_token" });
+
+    // Clean benign text is still not flagged (normalize is identity).
+    expect(detectSystemPromptLeakage("Let's compare two design options.")).toEqual([]);
+  });
 });
