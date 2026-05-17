@@ -156,7 +156,13 @@ function sendVoiceError(reply: FastifyReply, error: unknown): FastifyReply {
       providerId: error.providerId
     });
   }
-  return reply.status(500).send({ error: error instanceof Error ? error.message : String(error) });
+  // Unexpected (non-typed) failure: log the raw detail
+  // server-side but never echo it to the network client — a raw
+  // Error message can leak internal paths / ECONNREFUSED hosts /
+  // connection URIs. Typed Voice*Error branches above keep their
+  // curated, client-safe messages.
+  reply.log.error({ err: error }, "voice route internal error");
+  return reply.status(500).send({ code: "VOICE_INTERNAL_ERROR", error: "internal voice processing error" });
 }
 
 // Re-export to silence "unused param" lint complaints when the typed

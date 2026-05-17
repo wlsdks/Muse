@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   OpenAITtsProvider,
   OpenAIWhisperSttProvider,
-  VoiceProviderRegistry
+  VoiceProviderRegistry,
+  type SpeechToTextProvider
 } from "@muse/voice";
 
 import { buildServer } from "../src/server.js";
@@ -50,6 +51,31 @@ describe("api server: /api/voice/*", () => {
     expect(body.language).toBe("en");
     expect(body.durationMs).toBe(420);
     expect(body.providerId).toBe("openai-whisper");
+  });
+
+  it("POST /api/voice/stt does not leak a raw internal error message on a 500", async () => {
+    const SECRET = "ECONNREFUSED 127.0.0.1:5432 /Users/internal/secret/path";
+    const exploding: SpeechToTextProvider = {
+      describe: () => ({ description: "", displayName: "boom", id: "boom", local: true, supportedFormats: ["audio/wav"] }),
+      id: "boom",
+      transcribe: async () => { throw new Error(SECRET); }
+    } as unknown as SpeechToTextProvider;
+    const registry = new VoiceProviderRegistry();
+    registry.registerStt(exploding);
+    const server = buildServer({ logger: false, voice: registry });
+
+    const audio = Buffer.from(Uint8Array.from([0, 1, 2, 3])).toString("base64");
+    const reply = await server.inject({
+      method: "POST",
+      payload: { audioBase64: audio, mimeType: "audio/wav" },
+      url: "/api/voice/stt"
+    });
+
+    expect(reply.statusCode).toBe(500);
+    expect(reply.json()).toEqual({ code: "VOICE_INTERNAL_ERROR", error: "internal voice processing error" });
+    // The raw internal detail must never reach the network client.
+    expect(reply.body).not.toContain("ECONNREFUSED");
+    expect(reply.body).not.toContain("/Users/internal/secret/path");
   });
 
   it("POST /api/voice/stt rejects empty audio with 400", async () => {
