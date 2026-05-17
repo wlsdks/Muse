@@ -339,7 +339,13 @@ export async function runDueProactiveNotices(
   options: RunDueProactiveNoticesOptions
 ): Promise<RunDueProactiveNoticesSummary> {
   const now = options.now ?? (() => new Date());
-  const leadMinutes = options.leadMinutes ?? 10;
+  // `??` does NOT catch NaN/Infinity: an env-derived
+  // (Number("")) leadMinutes would make `now + NaN*60_000` an
+  // Invalid Date cutoff, so every `startsAt <= cutoff` is false
+  // and the daemon silently surfaces nothing. Non-finite → default.
+  const leadMinutes = typeof options.leadMinutes === "number" && Number.isFinite(options.leadMinutes)
+    ? options.leadMinutes
+    : 10;
   const nowDate = now();
 
   // Fail-open DND: a read/parse error treats the session as
@@ -580,7 +586,11 @@ function isActiveSessionWindow(now: Date, options: RunDueProactiveNoticesOptions
   if (lastMs === undefined) {
     return false;
   }
-  const window = options.activeSessionWindowMs ?? DEFAULT_ACTIVE_WINDOW_MS;
+  // Same non-finite guard as leadMinutes: a NaN window makes
+  // `delta <= NaN` always false, silently disabling Phase D.
+  const window = typeof options.activeSessionWindowMs === "number" && Number.isFinite(options.activeSessionWindowMs)
+    ? options.activeSessionWindowMs
+    : DEFAULT_ACTIVE_WINDOW_MS;
   return now.getTime() - lastMs <= window;
 }
 

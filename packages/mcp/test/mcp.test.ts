@@ -4655,6 +4655,42 @@ describe("runDueProactiveNotices", () => {
     expect(attempts.length).toBe(3);
   });
 
+  it("treats a non-finite leadMinutes as the default instead of silently surfacing nothing", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-nan-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    // Event starts 5 min out — inside the 10-min default window
+    // but only if NaN falls back rather than poisoning the cutoff.
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-nan", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const sent: string[] = [];
+    const registry = {
+      send: async (providerId: string, msg: { destination: string; text: string }) => {
+        sent.push(`${providerId}:${msg.destination}`);
+        return { destination: msg.destination, messageId: "ok", providerId };
+      }
+    };
+
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      leadMinutes: Number.NaN,
+      messagingRegistry: registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+    // Pre-fix: NaN → Invalid Date cutoff → 0 fired (silent dead).
+    expect(summary.fired).toBe(1);
+    expect(sent).toEqual(["telegram:@me"]);
+  });
+
   it("gives up after 3 attempts and records failure in history (goal 070)", async () => {
     const { runDueProactiveNotices } = await import("../src/index.js");
     const { mkdtempSync, readFileSync } = await import("node:fs");
