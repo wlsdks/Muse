@@ -1,7 +1,9 @@
 # Muse
 
-A provider-neutral, JARVIS-style personal AI conductor. One coherent
-reasoning loop, any LLM, any tool, any MCP server.
+A personal AI assistant that learns you over time, anticipates what
+you'll need, and gets things done on your behalf — speaking up first
+when it matters, answering instantly when you ask. It runs on your
+machine, with your choice of model, and your data stays local.
 
 [한국어 README →](README.ko.md)
 
@@ -9,10 +11,17 @@ reasoning loop, any LLM, any tool, any MCP server.
 
 ## What Muse is
 
-Muse orchestrates an LLM-powered agent without locking you into a
-single vendor. The same `agent-core` runtime drives the API server,
-the CLI, and the React web UI — and you choose the model provider at
-runtime, not at build time.
+Muse is meant to be the assistant you actually delegate to: it
+builds a picture of you from real use, notices what you'd want
+before you ask, looks into it, and either does it or checks with
+you first. It reaches you where you are — chat, voice, the
+terminal — and acts through your real tools: calendar, notes,
+tasks, messaging, the web, your machine.
+
+And you own all of it. Any LLM (local Ollama/Qwen or any cloud
+provider), any tool, any MCP server; the same runtime drives the
+CLI, the API, and the web UI, so nothing is tied to a vendor or a
+build, and your data stays local by default. Under the hood:
 
 - **Model-neutral core.** OpenAI, Anthropic, Google Gemini, OpenRouter,
   Ollama, LM Studio, and any OpenAI-compatible endpoint live behind a
