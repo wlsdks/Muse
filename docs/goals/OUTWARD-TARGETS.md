@@ -62,10 +62,10 @@ hollow if it doesn't know you and what you'd want. **Priority:
 interwoven with P1 (P1 is only the interaction substrate); P0
 precedes P2+. The loop works P0 next once P1's in-flight slice
 lands.**
-- [ ] Auto-extract wired into the API agent runtime AND on
+- [x] Auto-extract wired into the API agent runtime AND on
   tool-using turns (today REPL-only / `toolsDisabled`-only) so the
   user model grows from real use. Check: a tool-using API turn
-  produces a stored memory (integration).
+  produces a stored memory (integration). — 378 s1
 - [ ] Recall is embedding-similarity (not Jaccard; notes RAG
   already has cosine) AND a stored preference is actually applied
   to a later answer. Check: state a preference → differently-worded

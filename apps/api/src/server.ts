@@ -379,6 +379,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       run: async ({ messages, providerId, source }) => {
         const result = await agentRuntime.run({
           messages,
+          // The channel identity is the user-memory scope for this
+          // chat, so the auto-extract hook grows the knows-you model
+          // from channel conversations (without a userId the hook
+          // no-ops — a channel chat that never learns the user).
+          metadata: { userId: `${providerId}:${source}` },
           model: replyModel,
           toolApprovalGate: createChannelApprovalGate({
             providerId,
