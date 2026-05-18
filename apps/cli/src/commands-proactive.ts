@@ -226,10 +226,10 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
           const voiceReg = buildVoiceRegistry(e);
           const tts = voiceReg?.primaryTts();
           if (tts) {
-            const { spawn } = await import("node:child_process");
             const { mkdtempSync, writeFileSync } = await import("node:fs");
             const { tmpdir, platform } = await import("node:os");
             const { join: pathJoin } = await import("node:path");
+            const { playAudioWithWatchdog } = await import("./voice-playback.js");
             speakFn = async (text) => {
               try {
                 const result = await tts.synthesize({ text });
@@ -237,11 +237,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
                 const audioFile = pathJoin(dir, `notice.${result.format}`);
                 writeFileSync(audioFile, result.audio);
                 const player = platform() === "darwin" ? "afplay" : "aplay";
-                await new Promise<void>((resolve, reject) => {
-                  const child = spawn(player, [audioFile], { stdio: "ignore" });
-                  child.on("error", reject);
-                  child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${player} exit ${code?.toString() ?? "null"}`)));
-                });
+                await playAudioWithWatchdog(player, audioFile);
               } catch (cause) {
                 io.stderr(`speak failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
               }
