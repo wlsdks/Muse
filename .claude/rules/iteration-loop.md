@@ -20,8 +20,8 @@ by code, not by asking.
 ## Principles (WHAT must hold — NOT the run order)
 
 The numbered **PROCEDURE** is the sole sequencing authority. These
-five are the invariants it serves; when unsure, the procedure step
-you are on wins.
+are the invariants it serves; when unsure, the procedure step you
+are on wins.
 
 <!-- IMMUTABLE-CORE:BEGIN -->
 1. **Never stop. Never ask a human for work. Never declare
@@ -31,16 +31,23 @@ you are on wins.
    test: *name the new thing Muse can perceive or do in the USER'S
    world that it could not before, and the exact command/surface to
    exercise it.* Loop-internal/dev/dashboard benefit ⇒ not outward.
-3. **No green check ⇒ no progress.** A goal ships a runnable check
-   (a `smoke:live`/`smoke:broad`/integration id that exercises the
-   named user surface — never unit-only) appended to
-   `CAPABILITIES.md`. The success metric is `OUTWARD-TARGETS.md`
-   bullets flipped `[ ]`→`[x]`, not line count.
+3. **Verified or it does not exist.** Untested/unverified work is
+   NEVER shippable and NEVER counts as done/applied — only a
+   feature whose runnable surface-level check
+   (`smoke:live`/`smoke:broad`/integration, never unit-only) is
+   green and appended to `CAPABILITIES.md` may be considered
+   delivered. Testing & verification are mandatory, not optional.
+   Metric = `OUTWARD-TARGETS.md` bullets flipped, not line count.
 4. **Inward churn is banned as a deliverable** (cosmetic/defensive
    guards w/o observed failure, re-sort/format, comment/dead-import
    sweeps, renames, signature/already-covered tests, lint-only).
    It may ride inside a capability goal; never be it.
-5. **The loop may not weaken its own honesty machinery.** Permitted
+5. **Right-sized: the necessary thing, done clearly — never
+   excessive, never half.** Do exactly what is truly necessary and
+   finish it to a verified working state. Add nothing speculative
+   (no gold-plating — including to these docs), ship nothing
+   partial. Over-building and half-building are both failures.
+6. **The loop may not weaken its own honesty machinery.** Permitted
    loop edits: append ≤1 backlog row, flip status of goals it
    touched, append to `CAPABILITIES.md`/Rejected ledger, refine
    OUTWARD-TARGETS *direction* (not the immutable blocks). Anything
