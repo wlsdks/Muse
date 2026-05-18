@@ -111,6 +111,28 @@ export async function addObjective(file: string, objective: StandingObjective): 
   await writeObjectives(file, [...filtered, objective]);
 }
 
+/**
+ * Shallow-merge a patch into one objective and persist atomically.
+ * Returns the patched entry, or `undefined` when the id is absent.
+ * `id` is never overwritten. This is the durable status-flip the
+ * re-evaluation loop uses (active → done | escalated, attempts /
+ * nextEvalAt bumps) — parallel to followups' markFollowupFired.
+ */
+export async function patchObjective(
+  file: string,
+  id: string,
+  patch: Partial<Omit<StandingObjective, "id">>
+): Promise<StandingObjective | undefined> {
+  const existing = await readObjectives(file);
+  const target = existing.find((entry) => entry.id === id);
+  if (!target) {
+    return undefined;
+  }
+  const patched: StandingObjective = { ...target, ...patch, id: target.id };
+  await writeObjectives(file, existing.map((entry) => (entry.id === id ? patched : entry)));
+  return patched;
+}
+
 export function serializeObjective(objective: StandingObjective): JsonObject {
   return {
     createdAt: objective.createdAt,

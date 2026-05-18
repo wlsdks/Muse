@@ -1,0 +1,145 @@
+/**
+ * Standing-objective re-evaluation engine — the long-horizon
+ * counterpart to `runDueFollowups`. Reads `~/.muse/objectives.json`,
+ * picks every `active` objective whose backoff window has elapsed,
+ * asks the injected evaluator whether its condition holds, and:
+ *   - met        → run the action, flip to `done` (durable)
+ *   - unmet      → exponential-backoff retry; never spin
+ *   - unmeetable → flip to `escalated` (durable, visible — never
+ *                  silently dropped), optional escalate callback
+ *   - unmet too many times → escalate (no infinite retry)
+ *
+ * `evaluate` / `act` / `escalate` / `now` are injected so tests run
+ * without env, network, or a real model. The `setInterval` daemon
+ * that drives this lives in `apps/api`, mirroring the followup /
+ * reminder / proactive ticks.
+ */
+
+import {
+  patchObjective,
+  readObjectives,
+  type StandingObjective
+} from "./personal-objectives-store.js";
+
+export type ObjectiveEvaluation =
+  | { readonly outcome: "met" }
+  | { readonly outcome: "unmet" }
+  | { readonly outcome: "unmeetable"; readonly reason: string };
+
+export interface RunDueObjectivesOptions {
+  readonly file: string;
+  /** Decide whether the objective's condition currently holds. */
+  readonly evaluate: (objective: StandingObjective) => Promise<ObjectiveEvaluation>;
+  /** Fired exactly once when the condition is met (before `done`). */
+  readonly act: (objective: StandingObjective) => Promise<void>;
+  /** Optional escalation sink (e.g. message the user it gave up). */
+  readonly escalate?: (objective: StandingObjective, reason: string) => Promise<void>;
+  readonly now?: () => Date;
+  /** Cap objectives processed per tick so a backlog can't burst. Default 5. */
+  readonly maxPerTick?: number;
+  /** Unmet this many times → escalate instead of retrying forever. Default 6. */
+  readonly maxAttempts?: number;
+  /** First backoff delay; doubles each unmet attempt. Default 60_000ms. */
+  readonly backoffBaseMs?: number;
+  /** Backoff ceiling. Default 6h. */
+  readonly backoffMaxMs?: number;
+}
+
+export interface RunDueObjectivesSummary {
+  readonly due: number;
+  /** ids whose condition was met → acted → marked done. */
+  readonly fired: readonly string[];
+  /** ids escalated (unmeetable or attempts exhausted). */
+  readonly escalated: readonly string[];
+  /** ids backed-off for a later tick. */
+  readonly retried: readonly string[];
+  readonly errors: readonly string[];
+}
+
+const DEFAULT_MAX_PER_TICK = 5;
+const DEFAULT_MAX_ATTEMPTS = 6;
+const DEFAULT_BACKOFF_BASE_MS = 60_000;
+const DEFAULT_BACKOFF_MAX_MS = 6 * 60 * 60_000;
+
+export async function runDueObjectives(options: RunDueObjectivesOptions): Promise<RunDueObjectivesSummary> {
+  const now = options.now ?? (() => new Date());
+  const max = Math.max(1, options.maxPerTick ?? DEFAULT_MAX_PER_TICK);
+  const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+  const base = options.backoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS;
+  const cap = options.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
+
+  const nowMs = now().getTime();
+  const all = await readObjectives(options.file);
+  const due = all
+    .filter(
+      (o) => o.status === "active" && (!o.nextEvalAt || Date.parse(o.nextEvalAt) <= nowMs)
+    )
+    .slice(0, max);
+
+  if (due.length === 0) {
+    return { due: 0, errors: [], escalated: [], fired: [], retried: [] };
+  }
+
+  const fired: string[] = [];
+  const escalated: string[] = [];
+  const retried: string[] = [];
+  const errors: string[] = [];
+
+  for (const objective of due) {
+    try {
+      const evaluation = await options.evaluate(objective);
+      const nowIso = now().toISOString();
+
+      if (evaluation.outcome === "met") {
+        await options.act(objective);
+        await patchObjective(options.file, objective.id, {
+          lastEvaluatedAt: nowIso,
+          resolution: "condition met",
+          status: "done"
+        });
+        fired.push(objective.id);
+        continue;
+      }
+
+      if (evaluation.outcome === "unmeetable") {
+        await options.escalate?.(objective, evaluation.reason);
+        await patchObjective(options.file, objective.id, {
+          lastEvaluatedAt: nowIso,
+          resolution: evaluation.reason,
+          status: "escalated"
+        });
+        escalated.push(objective.id);
+        continue;
+      }
+
+      const attempts = (objective.attempts ?? 0) + 1;
+      if (attempts >= maxAttempts) {
+        const reason = `unmeetable: ${maxAttempts.toString()} attempts exhausted`;
+        await options.escalate?.(objective, reason);
+        await patchObjective(options.file, objective.id, {
+          attempts,
+          lastEvaluatedAt: nowIso,
+          resolution: reason,
+          status: "escalated"
+        });
+        escalated.push(objective.id);
+        continue;
+      }
+
+      const delay = Math.min(cap, base * 2 ** (attempts - 1));
+      await patchObjective(options.file, objective.id, {
+        attempts,
+        lastEvaluatedAt: nowIso,
+        nextEvalAt: new Date(nowMs + delay).toISOString()
+      });
+      retried.push(objective.id);
+    } catch (cause) {
+      // Fail-open: an evaluator/action error leaves the objective
+      // active for the next tick — it is recorded, never silently
+      // dropped, and never crashes the loop for sibling objectives.
+      errors.push(`${objective.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+
+  return { due: due.length, errors, escalated, fired, retried };
+}

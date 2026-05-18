@@ -186,10 +186,13 @@ assistant you delegate to". A standing objective is not a one-shot.
   -store: atomic fsync+rename, tolerant/corrupt-quarantine read,
   idempotent register; integration proves register → fresh read
   with no shared in-memory = post-restart → still tracked)
-- [ ] It is autonomously re-evaluated on a tick with backoff and
+- [x] It is autonomously re-evaluated on a tick with backoff and
   either fires its action when the condition is met or escalates
   when unmeetable — never silently dropped. Check: condition flips
   → action fires + marked done; unmet → backoff retry (integration).
+  — 386 (runDueObjectives: met→act→durable done; unmet→exponential
+  backoff; unmeetable / attempts-exhausted→durable escalated +
+  escalate sink; fail-open; integration over the real on-disk store)
 - [ ] Acting on an objective uses the user's *scoped* service
   credentials under recorded consent (the act-as-the-user
   prerequisite, shared with P4). Check: an objective performs a

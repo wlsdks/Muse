@@ -28,9 +28,16 @@ foundation; P5-b2 (tick re-eval + backoff/escalation) and P5-b3
     `addObjective` (register; idempotent on id),
     `serializeObjective`.
   Verified by `personal-objectives-store.test.ts`.
-- s2 (P5-b2, next): tick re-evaluation with backoff — condition
-  flips → action fires + marked done; unmet → backoff retry;
-  unmeetable → escalate (never silently dropped).
+- s2 (P5-b2, DONE): `packages/mcp/src/objective-evaluation-loop.ts`
+  — `runDueObjectives`: picks every `active` objective whose
+  backoff window elapsed, asks an injected `evaluate`, and: met →
+  `act` once then durable `done`; unmet → exponential-backoff
+  retry (`attempts`/`nextEvalAt` bumped, not due before it);
+  unmeetable OR `maxAttempts` exhausted → durable `escalated` +
+  optional `escalate` sink (never silently dropped); evaluator/
+  action throw → fail-open (recorded, stays active, loop survives).
+  Added a minimal `patchObjective` durable status-flip to the
+  store. Verified by `objective-evaluation-loop.test.ts`.
 - s3 (P5-b3, later): acting on an objective via the user's scoped
   service credential under recorded consent.
 
@@ -58,7 +65,25 @@ registrations, idempotent re-register, missing/corrupt tolerance,
 and 0600 round-trip are all covered. P5-b1 flipped `[ ]`→`[x]`;
 one CAPABILITIES line appended; README backlog row added.
 
-P5-b2 and P5-b3 stay `[ ]` (separate bullets, separate slices).
+P5-b2 done. `runDueObjectives` autonomously re-evaluates active
+objectives on a tick: the integration test proves condition-met →
+the action fires exactly once → the objective is durably marked
+`done` (read back from the real on-disk store); unmet →
+exponential backoff (`nextEvalAt` grows 2^n, not due before it);
+unmeetable / attempts-exhausted → durably `escalated` + escalate
+sink (never silently dropped); a throwing evaluator/action is
+fail-open (recorded, objective stays active, loop survives, and
+`done` is NOT set if `act` failed). P5-b2 flipped `[ ]`→`[x]`; one
+CAPABILITIES line appended; README backlog row updated.
+
+A `tsc` strict error (`async (o) => acted.push(o.id)` returns
+`Promise<number>`, not the `Promise<void>` the callback type
+requires) surfaced under `pnpm check` though vitest's esbuild
+transpile passed — root-fixed with block-body callbacks, not
+worked around.
+
+P5-b3 (scoped-credential acting under recorded consent) stays
+`[ ]` — separate bullet, separate slice.
 
 ## Decisions
 
@@ -83,3 +108,15 @@ P5-b2 and P5-b3 stay `[ ]` (separate bullets, separate slices).
   long-horizon objective that no longer evaporates at the loop
   boundary), consistent with how the personal-store siblings were
   typed.
+- P5-b2's `evaluate`/`act`/`escalate`/`now` are injected — the
+  exact proven `runDueFollowups` seam — so the integration test
+  runs without env/network/model while the backoff math, status
+  transitions and durable persistence (real `patchObjective` →
+  real on-disk store, asserted via `readObjectives`) are fully
+  real. The bullet's check is "(integration)"; this is it. Wiring
+  a concrete LLM/condition-source evaluator + the `setInterval`
+  daemon is the daemon-wiring concern, not this bullet's check.
+- `act` runs BEFORE the `done` flip and both are inside the
+  per-objective try: if `act` throws, the objective is NOT marked
+  done (stays active, retried next tick) — a delivered action must
+  never be lost to a half-applied state.
