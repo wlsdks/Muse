@@ -100,18 +100,31 @@ call inward work outward or skip the check.
    reviewer whose only job is to prove "this is busywork / fake
    progress / inward in disguise", attack your diff. If it lands,
    revise or regenerate before committing.
-7. **Verify for real.** `pnpm check` + `pnpm lint` (0/0) +
-   `pnpm smoke:broad`. Any request/response-path change → `pnpm
-   smoke:live` MUST execute a round-trip. smoke:live uses the loop
-   PC's **LOCAL OLLAMA QWEN ONLY — never a cloud API**. "smoke:live
-   auto-skips" is a banned justification (= a skipped test). If the
-   change is request/response-path and smoke:live did NOT actually
-   execute a round-trip (Ollama down), the new `CAPABILITIES.md`
-   line is tagged `[UNVERIFIED-LIVE]` — it ships but **does NOT
-   count toward the metric** until a later iteration runs the live
-   check and removes the tag. So unverifiable work can never
-   inflate progress; getting Ollama/Qwen up to clear the tag is
-   then the highest-priority outward goal.
+7. **Verify proportionately (not exhaustively).** Test cost must
+   stay proportionate to the change — running the whole suite after
+   a 3-minute edit is waste and quietly biases the loop toward tiny
+   work. Mandatory, always: (a) **this goal's own capability check
+   green** — never skip this, it is the metric's backbone; (b)
+   `pnpm lint` (0/0); (c) the **narrowest tests covering the
+   touched package(s)** (`pnpm --filter @muse/<pkg> test`). Scale
+   UP only when the change actually reaches further: cross-package
+   or shared-core/runtime/contract change → `pnpm check`;
+   request/response-path change → the **relevant** `pnpm smoke:live`
+   endpoint(s) MUST execute a real round-trip (not necessarily all
+   6 — pick what the change touches; prefer a fast local qwen).
+   `pnpm smoke:broad` when an HTTP surface changed. The full
+   suite + `smoke:broad` is otherwise amortised onto the 10-iter
+   regression sweep and legacy-epic close — not every iteration.
+   Judgement call, but the bias is: smallest set that truly
+   exercises the change, never zero, never the capability check
+   skipped. smoke:live uses the loop PC's **LOCAL OLLAMA QWEN ONLY
+   — never a cloud API**; "auto-skips" is a banned justification
+   for a request/response-path change. If such a change could not
+   run its live round-trip (Ollama down), its `CAPABILITIES.md`
+   line is tagged `[UNVERIFIED-LIVE]` — it ships but does NOT count
+   toward the metric until a later iteration runs the live check
+   and clears the tag, so unverifiable work never inflates progress
+   and getting Ollama/Qwen up becomes the priority outward goal.
 8. **Capability ledger + the metric.** Append one `CAPABILITIES.md`
    line `[axis] capability — command/surface — <runnable check id>`
    (anti-zero: every goal adds one). **The success metric is NOT
