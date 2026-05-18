@@ -168,3 +168,25 @@ Append one line when a discovery path is evaluated and deferred:
   default-off survives composition). No drift; no bullet reopened.
   P3 (ambient perception loop) is genuinely delivered end-to-end.
   P0/P1/P2/P3 now all delivered + audited.
+- P4 audit — packages/calendar/test/calendar-write-contract.test.ts
+  + apps/cli/src/commands-listen.test.ts — PASS: P4's two
+  CAPABILITIES checks re-run green together (calendar WRITE 8/8,
+  voice round-trip 4/4) and each was scrutinised for "marked done
+  but went sideways": P4-b1 instantiates the REAL Google / CalDAV /
+  macOS providers with only the transport (fetchImpl / osascript
+  spawn) faked and asserts the exact outbound request for
+  create/move/cancel — not read-only, not a fake provider; P4-b2
+  drives the REAL `registerListenCommand` via `parseAsync` with
+  only the I/O boundaries faked and asserts every stage's data
+  flowed (WAV→STT→/api/chat→TTS→played file) — full path, not a
+  re-implemented pipeline. No seam test, unlike P0–P3: P4's two
+  bullets are INDEPENDENT trust-closures (calendar-write trust;
+  voice-round-trip trust), not a composed pipeline — a synthetic
+  voice→calendar composition would need the full agent+tool+server
+  stack and is an unnatural seam the bullets do not claim
+  (gold-plating, which the contract bans). The faithful Step-4
+  exercise for an independent-bullet target is the joint re-run +
+  faithfulness scrutiny + the falsifiable-test check, all of which
+  pass. No drift; no bullet reopened. P4 (close the trust-blocking
+  PARTIALs) is genuinely delivered. P0/P1/P2/P3/P4 now all
+  delivered + audited.
