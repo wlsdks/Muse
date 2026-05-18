@@ -309,13 +309,13 @@ server autonomously drives the loop.
   crash the rider (integration). — 394 (apps/api objectives-tick.ts
   rider mirroring followup-tick; objectives-tick.test.ts: due→done,
   single-flight, fail-soft+survives, wild-interval clamped)
-- [ ] The objectives + situational-briefing daemons are env-gated
+- [x] The objectives + situational-briefing daemons are env-gated
   and started in the apps/api daemon set (parallel to
   `startFollowupDaemonIfConfigured`), off by default, with the
   concrete production evaluator/actuator wired. Check: with the
   env configured a real server start registers + can stop the
-  daemons; absent env ⇒ not started (integration). [SPLIT — parent
-  stays `[ ]` until BOTH children met]
+  daemons; absent env ⇒ not started (integration). — 398 (both
+  children met; the 397 [UNVERIFIED-LIVE] cleared — see child)
   - [x] The situational-briefing apps/api daemon rider exists
     (`startSituationalBriefingTick`, the parallel of the P9-b1
     objectives rider): clamp + single-flight + fail-soft + unref,
@@ -329,26 +329,22 @@ server autonomously drives the loop.
     off by default. — 396 (env+options+provider → onClose stop
     hook; absent env / missing options / unregistered provider ⇒
     not started — situational-briefing-daemon.test.ts)
-  - [ ] The objectives daemon is env-gated + registered in the
+  - [x] The objectives daemon is env-gated + registered in the
     apps/api daemon set with a concrete production
-    evaluator/actuator (the agent/LLM condition-evaluator — the
-    smoke:live-class remainder). Check: env configured → server
-    start registers + can stop the objectives daemon; absent ⇒
-    not started; the evaluator decides a real objective's
-    condition (integration/smoke:live). — 397 PARTIAL: env-gating
-    + registration + the model-evaluator strict parse + safe
-    fail-soft + the messaging actuator are all SHIPPED &
-    deterministically verified (objectives-daemon.test.ts 4/4,
-    objective-evaluator.test.ts 4/4). But the "evaluator decides a
-    real objective's condition" clause is **[UNVERIFIED-LIVE]**:
-    dog-fooded against the loop's mandated local qwen3:8b it does
-    NOT reliably emit a parseable verdict (empty / endpoint
-    errors), so the evaluator conservatively defers (`unmet`) —
-    safe, never false-acts, but not genuinely deciding. Per the
-    contract this does NOT count toward the metric; parent P9-b2
-    stays `[ ]`. Priority follow-up: make the small-local-model
-    verdict reliable (prompt-hardening / a tool-using agent
-    evaluator / model-capability gating) and clear the tag.
+    evaluator/actuator. Check: env configured → server start
+    registers + can stop the objectives daemon; absent ⇒ not
+    started; the evaluator decides a real objective's condition
+    (integration/smoke:live). — 397 shipped+deterministically
+    verified (objectives-daemon.test.ts 4/4,
+    objective-evaluator.test.ts 4/4); **398 CLEARS the 397
+    [UNVERIFIED-LIVE]**: the prior tag was a dog-food request-shape
+    bug (OpenAI-compat + invalid `reasoning:false` bool → empty /
+    400), NOT a code gap. Re-dog-fooded the real production
+    `createModelObjectiveEvaluator` against the loop's mandated
+    local qwen3:8b via the correct zero-think path (native
+    `/api/chat` `think:false`): met-time → `{met}`, future-time →
+    `{unmet}`, logically-impossible → `{unmeetable,reason}` — it
+    genuinely decides. Live-verified.
 
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is

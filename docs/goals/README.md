@@ -43,7 +43,8 @@ delete an open row, never rewrite another goal's status.
 | 394 | [Delegated-autonomy loops run](394-autonomy-loops-run.md)                 | epic / outward | P9-b1 done; P9-b2 split (rider child done) |
 | 395 | [Situational-briefing daemon rider](395-briefing-daemon-rider.md)         | epic / outward | P9-b2 child done (rider) |
 | 396 | [Briefing daemon env-gated](396-briefing-daemon-env-gated.md)             | epic / outward | P9-b2 child done; objectives-daemon child next |
-| 397 | [Objectives daemon + model evaluator](397-objectives-daemon-evaluator.md) | epic / outward | wiring done; live-decision [UNVERIFIED-LIVE] |
+| 397 | [Objectives daemon + model evaluator](397-objectives-daemon-evaluator.md) | epic / outward | wiring done; [UNVERIFIED-LIVE] cleared by 398 |
+| 398 | [Objectives evaluator live-verified](398-objectives-evaluator-live.md)     | epic / outward | done — [UNVERIFIED-LIVE] cleared; P9-b2 flipped |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
@@ -308,4 +309,14 @@ Append one line when a discovery path is evaluated and deferred:
   evaluator's safe-default means it never false-acts — it just
   defers — so shipping the wiring is safe; clearing the
   [UNVERIFIED-LIVE] (reliable small-model verdict) is the priority
-  follow-up.)
+  follow-up.) (RESOLVED 398: the 397 [UNVERIFIED-LIVE] was a
+  dog-food request-shape bug, NOT a code gap — the script used the
+  OpenAI-compat endpoint with an invalid `reasoning:false` bool
+  (400) / `/no_think` (empty). Re-dog-fooded the real production
+  `createModelObjectiveEvaluator` via the correct zero-think path
+  (native `/api/chat` `think:false`) against the mandated local
+  qwen3:8b: met-time→`{met}`, future→`{unmet}`,
+  impossible→`{unmeetable,reason}` — it genuinely decides. Tag
+  cleared, parent P9-b2 flipped `[x]`, CAPABILITIES line appended.
+  No code change needed — the evaluator/parser were always
+  correct; the prior failure was the harness.)
