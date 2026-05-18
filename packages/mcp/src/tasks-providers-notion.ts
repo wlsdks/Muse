@@ -1,8 +1,6 @@
 /**
  * Notion tasks provider — talks to `api.notion.com/v1` over HTTPS.
- * Parallels the `NotionNotesProvider` for the tasks domain
- * (rounds 152-153 carved out the LocalFile + Apple Reminders adapters
- * and `tasks-providers.ts` reserved the slot for this Notion adapter).
+ * Parallels the `NotionNotesProvider` for the tasks domain.
  *
  * Maps `Task` to a row in a Notion database. Required: `databaseId` —
  * unlike notes, tasks are inherently row-shaped, so a free-floating

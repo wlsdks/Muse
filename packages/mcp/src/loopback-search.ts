@@ -183,7 +183,7 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
 }
 
 /**
- * Goal 055 — normalise user-supplied date hints into one of the
+ * Normalise user-supplied date hints into one of the
  * four SearXNG `time_range` values (`day` / `week` / `month` /
  * `year`). Accepts the natural CLI words (`today`, `week`,
  * `month`, `year`) so `muse search --time today` maps to `day`

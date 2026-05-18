@@ -53,10 +53,9 @@ export interface StatusMcpServerOptions {
    * `defaultModel`, which already merges `~/.muse/models.json`'s
    * `suggestedModel` into env). When omitted the snapshot falls
    * back to `process.env.MUSE_MODEL` — kept for backward compat
-   * but produces the same misleading "model: null" that
-   * `muse status` had before iter 44 when a wizard-only user
-   * skipped the shell export. New callers should always pass
-   * `model`.
+   * but produces the same misleading "model: null" a wizard-only
+   * user who skipped the shell export would see. New callers should
+   * always pass `model`.
    */
   readonly model?: string;
 }

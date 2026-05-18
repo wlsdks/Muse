@@ -12,7 +12,7 @@
  * Why a leaf module: the snapshot MCP server and the CLI status
  * command both need the same counting logic; duplicating it would
  * drift the moment one surface gains a field. Pattern matches
- * `personal-activity-feed.ts` (iter 52) — pure-data merge helpers
+ * `personal-activity-feed.ts` — pure-data merge helpers
  * imported by both surfaces.
  */
 

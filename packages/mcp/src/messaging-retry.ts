@@ -1,14 +1,14 @@
 /**
- * Shared retry-with-backoff for messaging dispatch (goal 149).
+ * Shared retry-with-backoff for messaging dispatch.
  *
- * Lifted out of `proactive-notice-loop.ts` (goal 070 + goal 148) so
+ * Lifted out of `proactive-notice-loop.ts` so
  * `reminder-firing-loop.ts` can use the same transient-resilience
  * path: a 9am reminder shouldn't fail because Telegram returned a
  * one-off 503. Three attempts (0ms / 200ms / 800ms backoff) match
  * the proactive surface; permanent errors (401, 404,
  * INVALID_DESTINATION / INVALID_TEXT validation failures) short-
  * circuit on attempt 1 via `MessagingProviderError.retryable`
- * (goal 134) instead of burning the full ladder.
+ * instead of burning the full ladder.
  *
  * Pure helper — `registry` is injected so tests fake the messenger
  * directly without env or real provider keys.

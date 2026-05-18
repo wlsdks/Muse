@@ -562,8 +562,7 @@ export {
 } from "./notes-providers.js";
 
 // Tasks provider abstraction. Mirrors the notes-providers
-// pattern. LocalFile + AppleReminders backends landed in rounds 152 +
-// 153; Notion DB joined .
+// pattern.
 export {
   AppleRemindersProvider,
   LocalFileTasksProvider,

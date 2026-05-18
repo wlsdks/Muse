@@ -9,7 +9,7 @@
  * the merge rules + which followup/pattern/episode rows count.
  *
  * Letting the agent call this itself closes the introspection gap
- * that prompted iter 50's CLI command: a chat-REPL or Claude-
+ * the CLI command also covers: a chat-REPL or Claude-
  * Desktop session can now ask "what did you do for me last night?"
  * without bouncing through a shell.
  */

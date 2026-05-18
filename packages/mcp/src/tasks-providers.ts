@@ -1,6 +1,5 @@
 /**
- * Provider-neutral tasks abstraction (mirrors `notes-providers.ts`
- * from rounds 128-130).
+ * Provider-neutral tasks abstraction (mirrors `notes-providers.ts`).
  *
  * introduces a registry over the personal-todo surface so
  * future iterations can wire macOS Reminders.app (osascript) and

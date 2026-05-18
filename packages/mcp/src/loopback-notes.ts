@@ -447,7 +447,7 @@ async function walkMarkdownFrom(
 }
 
 /**
- * Goal 058 — system prompt for the `mode: "llm-judge"` notes
+ * System prompt for the `mode: "llm-judge"` notes
  * search. Explicit selection criteria + JSON-only output shape so
  * smaller (2–8B) local models still produce usable arrays. The
  * caller adds a defense-in-depth filter to drop hallucinated
@@ -492,7 +492,7 @@ interface NotesLlmJudgeArgs {
 interface NotesLlmJudgeResult {
   readonly paths: readonly string[];
   /**
-   * Goal 058 — count of paths the model returned that did not
+   * Count of paths the model returned that did not
    * appear in the candidate set (i.e. fabricated). Surfaced
    * upstream as a search-result diagnostic so callers can detect
    * prompt drift without leaking the hallucinated strings.

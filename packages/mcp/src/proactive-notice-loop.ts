@@ -63,7 +63,7 @@ export interface ProactiveFiredEntry {
 const MAX_FIRED_ENTRIES = 1_000;
 
 /**
- * Goal 052 — payload of `~/.muse/session-lock.json`. Written by
+ * Payload of `~/.muse/session-lock.json`. Written by
  * `muse session lock --hours N`, read by `runDueProactiveNotices`
  * to gate firing. The `reason` field is optional and exists so the
  * user can write "deep work" / "PR review" / etc. — surfaced in
@@ -76,7 +76,7 @@ export interface SessionLockPayload {
 }
 
 /**
- * Goal 052 — write a fresh session-lock marker. Atomic write via
+ * Write a fresh session-lock marker. Atomic write via
  * tmp+rename + 0o600 file mode to match the other personal stores.
  */
 export async function writeSessionLock(file: string, payload: SessionLockPayload): Promise<void> {
@@ -90,7 +90,7 @@ export async function writeSessionLock(file: string, payload: SessionLockPayload
 }
 
 /**
- * Goal 052 — best-effort read + expiry check. Returns the `until`
+ * Best-effort read + expiry check. Returns the `until`
  * ISO string when the lock is still active at `nowDate`; otherwise
  * `undefined`. Tolerant: any read / JSON / shape error treats the
  * session as unlocked (fail-open) so a corrupted marker cannot
@@ -309,7 +309,7 @@ export interface RunDueProactiveNoticesOptions {
   readonly agentInitiatedNoticeBroker?: AgentInitiatedNoticeBrokerLike;
   readonly agentInitiatedNoticeUserId?: string;
   /**
-   * Goal 052 — path to the session-lock marker file. When the file
+   * Path to the session-lock marker file. When the file
    * exists and its payload's `until` timestamp is still in the
    * future, the proactive loop skips firing for this tick and
    * surfaces the marker via `sessionLockedUntil` in the summary so
@@ -327,7 +327,7 @@ export interface RunDueProactiveNoticesSummary {
   /** Human-readable error strings, one per failed delivery. */
   readonly errors: readonly string[];
   /**
-   * Goal 052 — when a session lock was active for this tick, the
+   * When a session lock was active for this tick, the
    * ISO timestamp the lock expires at. Otherwise undefined. Callers
    * use this to log "skipped tick — locked until …" lines so the
    * user understands why nothing fired during a focus window.

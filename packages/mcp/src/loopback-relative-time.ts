@@ -14,7 +14,7 @@
  *   "today" / "today 6pm" / "today at 6pm"       → today at 09:00 (or given time)
  *   "in 3 hours" / "in 30 minutes" / "in 2 days" → reference + offset
  *   "in 1 week" / "in 2 weeks"                   → reference + 7N days
- *   "in 1 month" / "in 3 months"                 → calendar-month offset (goal 110)
+ *   "in 1 month" / "in 3 months"                 → calendar-month offset
  *   "next monday" / "next mon"                   → next Monday at 09:00
  *   "next monday at 6pm" / "next monday 6pm"     → next Monday at 18:00
  *

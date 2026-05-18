@@ -116,7 +116,7 @@ export async function writeFollowups(file: string, followups: readonly Persisted
 }
 
 /**
- * Goal 038: clean up orphan `.tmp-*` siblings of `file` left over
+ * Clean up orphan `.tmp-*` siblings of `file` left over
  * from a previous crash mid-write. Called by `readFollowups`
  * (idempotent + cheap on a normal install where no orphans exist).
  * Best-effort — a stale temp file is annoying disk-space but not

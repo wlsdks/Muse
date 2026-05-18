@@ -3,9 +3,8 @@ import type { JsonObject } from "@muse/shared";
 /**
  * Shared shape-readers for loopback MCP tool implementations.
  *
- * Across rounds 82-118 each `loopback-*.ts` factory file inlined its
- * own copies of these helpers to keep per-iter splits self-contained.
- * Now that all 8 sibling files exist, the inlined copies have become
+ * Each `loopback-*.ts` factory file used to inline its own copies
+ * of these helpers; those copies have become
  * pure duplication — this module consolidates the 5 helpers that are
  * shared by 2 or more loopback factories. Module-specific helpers
  * (e.g. tasks' `readStatusFilter`, calendar's `parseIsoDate`) stay

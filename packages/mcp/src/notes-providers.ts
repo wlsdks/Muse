@@ -4,7 +4,7 @@
  * This file holds the abstraction layer only — `NotesProvider`
  * interface, the common payload types, the validation/upstream
  * error classes, and the `NotesProviderRegistry`. The three concrete
- * adapters live in their own per-provider files (rounds 128-130):
+ * adapters live in their own per-provider files:
  *
  *   - `LocalDirNotesProvider` → `notes-providers-local.ts`
  *   - `AppleNotesProvider`    → `notes-providers-apple.ts`
@@ -89,9 +89,9 @@ export class NotesValidationError extends Error {
 }
 
 /**
- * Goal 136 — classify an HTTP status from a notes provider
- * (today only Notion) as retryable. Mirrors the goal-106 /
- * 134 / 135 contract:
+ * Classify an HTTP status from a notes provider
+ * (today only Notion) as retryable. Mirrors the shared
+ * retryable-status contract:
  *
  *   - 5xx: server-side failure, transient.
  *   - 429: Notion's rate limit (with Retry-After header).

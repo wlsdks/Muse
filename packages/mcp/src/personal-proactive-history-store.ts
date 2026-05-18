@@ -64,7 +64,7 @@ export async function readProactiveHistory(file: string, limit?: number): Promis
 export interface AppendProactiveHistoryOptions {
   readonly capacity?: number;
   /**
-   * Goal 079 — when set ≥ 1, an append that would push the live
+   * When set ≥ 1, an append that would push the live
    * file past `capacity` first rotates the current file to
    * `${file}.1` (shifting `.1` → `.2`, …, capped at
    * `archiveMaxFiles` archives — older archives are unlinked).
@@ -111,7 +111,7 @@ export async function appendProactiveHistory(
 }
 
 /**
- * Goal 079 — rotation step: rename `${file}.<archiveMaxFiles-1>` →
+ * Rotation step: rename `${file}.<archiveMaxFiles-1>` →
  * `${file}.<archiveMaxFiles>`, …, `${file}` → `${file}.1`. Any
  * existing `.${archiveMaxFiles+1}` (older than the operator's
  * retention budget) is unlinked. Exported for direct test

@@ -398,12 +398,12 @@ export class McpManager {
 }
 
 /**
- * Goal 083 — sha256 fingerprint pinning for external MCP server
+ * sha256 fingerprint pinning for external MCP server
  * binaries. When `server.config.fingerprintSha256` is set, we
  * resolve the command path, hash its bytes, and compare to the
  * pinned value. Returns `{ matched: true }` when no fingerprint
- * was pinned (matches the empty-allowlist posture from goal 032
- * — opt-in enforcement). Returns `{ matched: false, reason }`
+ * was pinned (matches the empty-allowlist opt-in enforcement
+ * posture). Returns `{ matched: false, reason }`
  * on mismatch / unreadable binary / non-stdio transport so the
  * caller flips the server to `disabled` with an unhealthy
  * diagnostic.

@@ -18,8 +18,8 @@ import {
  * `muse.tasks` loopback MCP server — personal todo list backed by a
  * single JSON file (default `~/.muse/tasks.json` via autoconfigure).
  *
- * Lifted out of `loopback.ts` (which had grown past 1,800 LOC even
- * after rounds 82-83) to keep the on-disk task storage helpers
+ * Lifted out of `loopback.ts` (which had grown past 1,800 LOC)
+ * to keep the on-disk task storage helpers
  * (`readTasks` / `writeTasks` / atomic-rename / shape guards) in
  * one cohesive module. Same public surface as before:
  * `TasksMcpServerOptions` + `createTasksMcpServer`. Both symbols
