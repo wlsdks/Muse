@@ -3,174 +3,165 @@
 A fresh, context-free agent fires every ~20 min, ships one commit,
 repeats **forever**.
 
-**Mandatory reads every iteration: exactly two — THIS file and
-`docs/goals/CAPABILITIES.md`.** Consult `OUTWARD-TARGETS.md` at
-step 4 (selection), the backlog/ledger in `README.md` at step 3,
-and `MEMORY.md` only if a step sends you there. Two files carry the
-invariant; the rest are referenced on demand, not re-read wholesale
-(reduces skip risk on a 20-min agent).
+**Always-read core: this file + `docs/goals/CAPABILITIES.md`.** The
+PROCEDURE below names every other file at the step that needs it
+(OUTWARD-TARGETS at step 5, README backlog/ledger at step 4, a goal
+md when you touch it) — read those on demand; never pre-read the
+`docs/goals/` tree.
+
+A deterministic `commit-msg` hook (`scripts/guard-immutable.mjs`)
+**rejects** any commit whose diff touches an `IMMUTABLE-CORE` block
+unless a human put `[core-change: human]` in the message. The loop
+may never use that token. Constraints below are therefore enforced
+by code, not by asking.
 
 ---
 
-# ★ READ THIS FIRST — the 5 rules. If you internalise nothing else:
+## Principles (WHAT must hold — NOT the run order)
 
+The numbered **PROCEDURE** is the sole sequencing authority. These
+five are the invariants it serves; when unsure, the procedure step
+you are on wins.
+
+<!-- IMMUTABLE-CORE:BEGIN -->
 1. **Never stop. Never ask a human for work. Never declare
-   complete.** Infinite operation is the invariant. A human only
-   intervenes by issuing a direct command; absent that, you decide
-   and proceed.
-2. **First action every iteration: falsify the previous
-   iteration's capability claim.** Run the automated check named in
-   the newest `CAPABILITIES.md` line. If it does not pass
-   end-to-end, repairing that is THIS entire iteration. A faked or
-   broken capability is the highest-priority work — no new goal
-   until the ledger is honest.
-3. **Advance the highest unmet target in `OUTWARD-TARGETS.md`.**
-   Direction is yours to choose and evolve toward the north star
-   (proactive + instantly-responsive personal assistant) — but
-   every goal must pass the falsifiable-outward test and ship a
-   **green automated check** (test/smoke id), appended as one line
-   to `CAPABILITIES.md`. No green check ⇒ not a capability ⇒ not a
-   valid iteration.
-4. **Inward churn is banned as a deliverable.** Cosmetic/defensive
-   guards w/o an observed failure, re-sort/re-format, comment/
-   dead-import/provenance sweeps, pure renames, signature-only or
-   already-covered tests, lint-only. They may ride *inside* a
-   capability goal; never be it. Relabelling these "outward" is the
-   exact prior failure — forbidden.
-5. **The immutable core is not yours to edit.** You may ONLY:
-   append ≤1 backlog row, flip status of goals you touched, append
-   to `CAPABILITIES.md` and the Rejected ledger, and refine the
-   target map's *direction* with a recorded rationale. You may NOT
-   weaken the north star, the outward test, the banned list, the
-   capability-check/verification rules, or the never-stop
-   invariant. Those change by human command only.
+   complete.** Infinite operation is the invariant. A human
+   intervenes only by direct command.
+2. **Outward only.** Every shipped goal must pass the falsifiable
+   test: *name the new thing Muse can perceive or do in the USER'S
+   world that it could not before, and the exact command/surface to
+   exercise it.* Loop-internal/dev/dashboard benefit ⇒ not outward.
+3. **No green check ⇒ no progress.** A goal ships a runnable check
+   (a `smoke:live`/`smoke:broad`/integration id that exercises the
+   named user surface — never unit-only) appended to
+   `CAPABILITIES.md`. The success metric is `OUTWARD-TARGETS.md`
+   bullets flipped `[ ]`→`[x]`, not line count.
+4. **Inward churn is banned as a deliverable** (cosmetic/defensive
+   guards w/o observed failure, re-sort/format, comment/dead-import
+   sweeps, renames, signature/already-covered tests, lint-only).
+   It may ride inside a capability goal; never be it.
+5. **The loop may not weaken its own honesty machinery.** Permitted
+   loop edits: append ≤1 backlog row, flip status of goals it
+   touched, append to `CAPABILITIES.md`/Rejected ledger, refine
+   OUTWARD-TARGETS *direction* (not the immutable blocks). Anything
+   inside an `IMMUTABLE-CORE` block changes by human command only.
+<!-- IMMUTABLE-CORE:END -->
 
-Everything below is detail serving these five.
+Direction is otherwise yours: you are the intelligence — choose and
+evolve the outward direction in `OUTWARD-TARGETS.md` toward its
+north star using best-practice judgement; record why in the goal's
+`## Decisions`.
 
 ---
 
-## Cold-start: legacy goals (deterministic — no judgement)
+## PROCEDURE — the sole ordering authority. Do these in order.
 
-The **legacy set is exactly {373, 375}** — epics authored before
-`OUTWARD-TARGETS.md`. Their remaining slices are **exempt from the
-falsifiable-outward test and the metric** (they predate it).
-Mandate: finish every undone legacy slice **first, one per
-iteration, before any other work or any new goal**, then close
-them. When {373,375} are both done this clause is spent forever —
-**no goal created after this may ever be tagged `legacy`**, and the
-full outward bar applies to everything else with no exception.
-This removes the continuity-vs-outward deadlock at the boundary.
+**Step 1 — Sync & health.** Ensure clean, synced tree. If dirty
+from an interrupted iter, restoring a clean tree IS this iteration
+(commit; done).
 
-## Direction is self-directed (this is the point)
+**Step 2 — Falsify the previous claim.** Run the newest
+`CAPABILITIES.md` line's check. Not green end-to-end ⇒ repairing it
+is the WHOLE iteration (commit; done). This precedes everything
+below.
 
-You are the intelligence; choosing and evolving the outward
-direction is your job, drawing on best-practice knowledge of what
-a great personal AI assistant does. `OUTWARD-TARGETS.md` is the
-loop's own map — you may reorder/split/extend it when your
-judgement finds a stronger outward direction; record why in the
-goal's `## Decisions`. The ONLY brake on direction is rule 4 + the
-immutable core: freedom to choose *what* outward, never freedom to
-call inward work outward or skip the check.
+**Step 3 — Legacy gate (suspends Steps 4–7 while active).**
+Ground truth: **373 is closed; only 375 (slices 2–3) remains
+legacy.** While any 375 slice is undone: do exactly its next slice,
+exempt from the outward test and the metric, and **skip Steps 4–7
+and the Step-8 stagnation check entirely**; verify per Step 9;
+commit; done. The iteration that finishes 375's last slice **MUST
+delete this entire "Legacy gate" step in that same commit** — this
+is the ONE part of this file the loop is required to delete; after
+that no goal may ever be "legacy" and the full bar applies with no
+exception.
 
-## Per-iteration procedure
+**Step 4 — Continuity.** (Reached only when no legacy slice is
+open.) Read open goals' `## Status`/`## Decisions` + README's
+Rejected ledger. Advance the oldest open epic's next undone slice
+before any new goal. New `NNN` only when no open epic has an undone
+slice.
 
-1. **Falsify previous claim (rule 2).** Run the newest
-   `CAPABILITIES.md` check. Not green end-to-end → fixing it is the
-   whole iteration; commit; done.
-2. **Health + stagnation.** `git status` clean & synced (if dirty
-   from an interrupted iter, restoring a clean tree IS the
-   iteration). `git log --oneline -8`: if ≥3 recent commits are
-   janitorial/off-target or one area churned, you MUST pick a
-   different outward target this iteration. Detection forces
-   redirect — never a halt.
-3. **Legacy first, then continuity.** If any legacy slice
-   ({373,375}) is undone, do exactly that — skip steps 4–6, it is
-   exempt from the outward test/metric; commit; done. Else read
-   every open goal's `## Status`/`## Decisions` + the Rejected
-   ledger and advance the oldest open epic's next undone slice
-   before self-generating any new goal. New `NNN` only when no open
-   epic has an undone slice.
-4. **Select.** Highest unmet `OUTWARD-TARGETS.md` target → its next
-   real slice, finishable as one commit, non-trivial (state why),
-   behaviourally distinct from the last 8 shipped goals.
-5. **Define the check up front.** State the executable acceptance
-   check (a real test or smoke id), the failing case it closes,
-   and that it fails before / passes after. No check ⇒ regenerate.
-6. **Implement, then adversarial self-critique.** As a hostile
-   reviewer whose only job is to prove "this is busywork / fake
-   progress / inward in disguise", attack your diff. If it lands,
-   revise or regenerate before committing.
-7. **Verify proportionately (not exhaustively).** Test cost must
-   stay proportionate to the change — running the whole suite after
-   a 3-minute edit is waste and quietly biases the loop toward tiny
-   work. Mandatory, always: (a) **this goal's own capability check
-   green** — never skip this, it is the metric's backbone; (b)
-   `pnpm lint` (0/0); (c) the **narrowest tests covering the
-   touched package(s)** (`pnpm --filter @muse/<pkg> test`). Scale
-   UP only when the change actually reaches further: cross-package
-   or shared-core/runtime/contract change → `pnpm check`;
-   request/response-path change → the **relevant** `pnpm smoke:live`
-   endpoint(s) MUST execute a real round-trip (not necessarily all
-   6 — pick what the change touches; prefer a fast local qwen).
-   `pnpm smoke:broad` when an HTTP surface changed. The full
-   suite + `smoke:broad` is otherwise amortised onto the 10-iter
-   regression sweep and legacy-epic close — not every iteration.
-   Judgement call, but the bias is: smallest set that truly
-   exercises the change, never zero, never the capability check
-   skipped. smoke:live uses the loop PC's **LOCAL OLLAMA QWEN ONLY
-   — never a cloud API**; "auto-skips" is a banned justification
-   for a request/response-path change. If such a change could not
-   run its live round-trip (Ollama down), its `CAPABILITIES.md`
-   line is tagged `[UNVERIFIED-LIVE]` — it ships but does NOT count
-   toward the metric until a later iteration runs the live check
-   and clears the tag, so unverifiable work never inflates progress
-   and getting Ollama/Qwen up becomes the priority outward goal.
-8. **Capability ledger + the metric.** Append one `CAPABILITIES.md`
-   line `[axis] capability — command/surface — <runnable check id>`
-   (anti-zero: every goal adds one). **The success metric is NOT
-   line count — it is OUTWARD-TARGETS *bullets* flipped
-   unmet→met.** A bullet is "met" only when a non-`[UNVERIFIED-LIVE]`
-   line with a green check delivers it end-to-end; thin work that
-   adds a line without flipping a bullet does not satisfy the
-   metric. **If no bullet has flipped unmet→met in the last 5
-   iterations, the next iteration's sole mandate is to flip one
-   bullet end-to-end** (no other work). Flat bullets over 5 iters =
-   degeneration; act on it — never stop, never ask.
-9. **Commit + ledgers.** One Conventional Commit, dashboard-legible
-   subject. Append outcome to `## Status` + non-obvious choices to
-   `## Decisions`. Deferred discovery path → one Rejected-ledger
-   line in `README.md` so no future agent re-mines it.
-10. **Continue.** Backlog table append/flip-only: ≤1 new row, flip
-    only goals you touched; never reorder/delete an open row or
-    rewrite another goal's status (merge-safe on the shared
-    remote). The loop never stops.
+**Step 5 — Select (outward).** Highest unmet `OUTWARD-TARGETS.md`
+bullet → its next slice, finishable in one commit, non-trivial.
 
-## Long-horizon regression sweep (move 4)
+**Step 6 — Define the check up front.** State the runnable
+acceptance check (smoke/integration id exercising the user
+surface), the failing case it closes, that it fails before /
+passes after. No such check ⇒ regenerate the goal.
 
-Every iteration whose number is a multiple of 10 (count
-`CAPABILITIES.md` lines): re-run **all** capability checks. Any
-regression → the next iteration's sole mandate is to restore it
-(an outward, on-map goal). This makes "are we still actually
-better after hundreds of iters" a mechanical, recurring,
-no-human gate.
+**Step 7 — Implement, then attack your own diff** as a hostile
+reviewer proving "busywork / fake / inward in disguise"; if it
+lands, revise or regenerate before committing.
+
+**Step 8 — Stagnation guard.** `git log --oneline -10`. Count only
+`^(feat|fix|refactor)` commits (steering `chore(loop)`/`docs` and
+legacy iters are infra, NOT stagnation). If ≥3 of those are
+janitorial/off-target or one area churned, this iteration MUST
+target a different outward bullet. Detection forces redirect —
+never a halt.
+
+**Step 9 — Verify proportionately.** Always: this goal's own
+capability check green; `pnpm lint` 0/0; narrowest touched-package
+test (`pnpm --filter @muse/<pkg> test`). Scale up only as the
+change reaches: cross-package/shared-core ⇒ `pnpm check`;
+request/response-path ⇒ the relevant `pnpm smoke:live`
+endpoint(s) MUST run a real round-trip; HTTP surface ⇒
+`pnpm smoke:broad`. smoke:live = loop PC's **LOCAL OLLAMA QWEN
+ONLY, never a cloud API**; if a request/response change could not
+run its live check (Ollama down) its `CAPABILITIES.md` line is
+tagged `[UNVERIFIED-LIVE]` (does not count toward the metric until
+a later iter clears it; getting Ollama up is then the priority
+outward goal). Full suite + `smoke:broad` are otherwise amortised
+to the regression sweep.
+
+**Step 10 — Ledger & commit.** Append one `CAPABILITIES.md` line
+`[axis] capability — surface — <runnable check id> — P<n> bullet`
+and, in `OUTWARD-TARGETS.md`, flip the delivered bullet `[ ]`→`[x]`
+annotated with this commit's short hash. A bullet flips ONLY when a
+non-`[UNVERIFIED-LIVE]`, green, surface-level check delivers that
+exact bullet end-to-end; a line that flips no bullet is thin and
+does not satisfy the metric. One Conventional Commit
+(`chore(loop)`/`docs` for steering upkeep, else `feat|fix|...`),
+dashboard-legible subject; record non-obvious choices in
+`## Decisions`; deferred discovery → one README Rejected-ledger
+line. Backlog table append/flip-only.
+
+**Step 11 — Continue.** Never stop.
+
+### Mechanical counters (so windows are computable)
+
+"Iteration" = a commit whose subject matches
+`^(feat|fix|refactor|test)` after contract epoch `5267763f`
+(steering `chore(loop)`/`docs`, merges, rebases excluded).
+- **Metric trip-wire:** no bullet flipped in the last 5 such
+  iterations ⇒ next iteration's sole mandate is to flip one
+  end-to-end.
+- **Regression sweep:** every 10th such iteration, re-run ALL
+  `CAPABILITIES.md` checks. Any regression ⇒ next iteration
+  restores it. A sweep check that cannot run (Ollama down) is
+  tagged `[UNVERIFIED-LIVE]` and **deferred, not skipped** — the
+  next iteration's sole outward mandate is to restore the
+  environment. The loop never stalls and never lies about a skip.
 
 ## Guaranteed non-stall fallback
 
-"Nothing permissible" is impossible: if step 4 yields nothing
-finishable in one commit, decompose the largest unbuilt
-`docs/design/*.md` gap into one more end-to-end vertical slice and
-ship its smallest real increment (never a stub/guard/test-only). A
-void iteration (no functional diff) is a failed iteration: record
-why in the next goal's `## Status` while still shipping the slice.
+If Step 5 yields nothing finishable in one commit: decompose the
+largest unbuilt `docs/design/*.md` gap into one end-to-end vertical
+slice and ship its smallest real increment (never stub/guard/
+test-only). A void iteration (no functional diff) is a failed
+iteration: record why in the next goal's `## Status` while still
+shipping the slice.
 
 ## Dashboard = infra, not iteration work
 
-`scripts/dashboard-server.mjs` renders live from git; needs no
-per-commit edit. Never commit a LIVE_URL/tunnel/dashboard change as
-shipped work. Goal 376 is closed human-operated infra.
+`scripts/dashboard-server.mjs` renders live from git. Never commit
+a LIVE_URL/tunnel/dashboard change as shipped work. Goal 376 is
+closed human-operated infra.
 
 ## After-correction protocol
 
-Only a human-directed change edits the immutable core or this file.
-If the loop is seen degenerating, the human adds one concrete
-prohibition here; the loop never edits it itself.
+Only a human-directed change (carrying `[core-change: human]` when
+it touches an `IMMUTABLE-CORE` block) edits this file's invariants.
+If the loop degenerates, the human adds one concrete prohibition
+here; the loop never edits it itself.

@@ -26,16 +26,18 @@ Two qualities define every outward goal:
 
 Each `- [ ]` bullet below is one **deliverable unit** — the
 metric. The loop pursues the highest-priority target with an
-unmet bullet, flips `- [ ]`→`- [x]` ONLY when a green,
-non-`[UNVERIFIED-LIVE]` `CAPABILITIES.md` line delivers that exact
-bullet end-to-end, and appends the check id in parentheses. A
-bullet is too coarse for thin work to satisfy — that is the point
-(closes the thin-progress hole). The loop **may refine, reorder,
-split, or extend bullets autonomously** when its best-practice
-judgement finds a stronger outward direction; record why in the
-goal's `## Decisions`. It may NOT relabel inward churn as a flip,
-weaken the outward test, or skip the check — direction is free,
-the honesty machinery is not.
+unmet bullet and flips `- [ ]`→`- [x]` ONLY when a green,
+non-`[UNVERIFIED-LIVE]` `CAPABILITIES.md` line whose check is a
+`smoke:live`/`smoke:broad`/integration id exercising that bullet's
+named user surface (never a unit-only test) delivers that exact
+bullet end-to-end, annotated with the closing commit's short hash.
+A bullet is too coarse for thin work to satisfy — that is the
+point. The loop **may extend or reorder** bullets when its
+best-practice judgement finds a stronger outward direction (record
+why in `## Decisions`), and may **split** a bullet only if the
+parent stays `[ ]` until ALL children are met (no flipping a
+trivially-met sub-bullet to game the metric). It may NOT relabel
+inward churn as a flip, weaken the outward test, or skip the check.
 
 **P1 — Active messaging assistant** (drive to fully-delivered first)
 - [ ] Proactively message the user on a wired channel when a real
@@ -72,16 +74,24 @@ The loop extends this map itself when all targets are fully
 delivered or when its judgement finds a stronger outward
 direction. "Nothing to do" is impossible by construction.
 
+<!-- IMMUTABLE-CORE:BEGIN -->
 ## Immutable core (the loop must NEVER edit — honesty machinery)
 
 Direction is the loop's to choose. These are NOT, and exist so
 autonomy can't decay into busywork:
 
-- the north-star definition above,
+- the north-star definition (proactive + instantly-responsive
+  personal assistant; the loop never weakens it),
 - the falsifiable-outward test, the banned-shapes list,
 - the `CAPABILITIES.md` rules + the requirement that every goal
-  ship a green automated check,
-- the cross-iteration falsification + regression sweep,
+  ship a green surface-level (not unit-only) automated check,
+- the cross-iteration falsification + 10-iter regression sweep,
 - never stop / never ask a human / never complete.
 
+A commit-msg hook (`scripts/guard-immutable.mjs`) rejects any
+change to lines in this block without `[core-change: human]`.
 Changing the immutable core is a human-only action.
+<!-- IMMUTABLE-CORE:END -->
+
+The loop's enforced freedom: extend/reorder targets and bullets,
+never the lines between the IMMUTABLE-CORE markers.
