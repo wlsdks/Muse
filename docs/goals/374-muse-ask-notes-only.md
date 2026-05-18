@@ -29,4 +29,14 @@ and notes-RAG embedding path.
 
 ## Status
 
-open
+done — already implemented in `apps/cli/src/commands-ask.ts`
+(carried-forward doc, the code predates the backlog reset). The
+`--notes-only` flag is wired on both paths: it sets
+`webSearchPolicy { enabled: false, maxUses: 0 }` (chat-only stream
+metadata + agent-runtime metadata) so native web_search is
+hard-disabled, and on the `--with-tools` path additionally passes
+`metadata.allowedToolNames = NOTES_ONLY_TOOL_ALLOWLIST` (notes +
+memory tools only). Verified by source read; no further code work
+was warranted — re-pinning shipped logic with a test-only
+iteration would be inward churn (banned). Closed as bookkeeping
+during the goal-375-slice-1 iteration.

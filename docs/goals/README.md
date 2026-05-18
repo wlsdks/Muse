@@ -117,7 +117,7 @@ tracer-bullet `## Slices`, ship one slice per commit.
 | #   | Goal                                                                    | Category       | Status         |
 | --- | ----------------------------------------------------------------------- | -------------- | -------------- |
 | 373 | [Proactive multi-device routing](373-proactive-multi-device-routing.md) | epic / outward | slice 2/3 done |
-| 374 | [`muse ask --notes-only`](374-muse-ask-notes-only.md)                   | outward        | open           |
-| 375 | [Web UI history panel](375-web-history-panel.md)                        | epic / outward | open           |
+| 374 | [`muse ask --notes-only`](374-muse-ask-notes-only.md)                   | outward        | done (pre-built) |
+| 375 | [Web UI history panel](375-web-history-panel.md)                        | epic / outward | slice 1/3 done |
 | 376 | [Progress dashboard + safe tunnel](376-progress-dashboard-and-safe-tunnel.md) | epic / outward | open     |
 | …   | *self-generated outward via discovery — never ends*                     |                |                |

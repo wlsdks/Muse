@@ -30,4 +30,18 @@ activity stream.
 
 ## Status
 
-open
+slice 1 done — `apps/web/src/ui/history-panel.tsx`: `HistoryPanel`
+(tanstack-query `/api/history?limit=20`, style-matched to
+`CalendarEventsPanel` — `tool-surface compact`, `surface-heading`,
+`record-list`) renders the unified activity feed (kind · relative
+time · status). Exported pure `relativeFromNow(iso, nowMs)` does
+the relative-time formatting (just now / Nm·Nh·Nd ago / future
+`in N…` / >7d locale date / junk passthrough). +5 component/unit
+tests (no-data surface render, seeded-entry render, relative-time
+buckets). Not yet mounted — slice 3 mounts it in `App.tsx` + e2e.
+
+Outward gain: Presence — the operator can now see the Muse
+activity stream in the web console (previously API-only).
+
+Remaining: slice 2 (kind-filter + limit controls), slice 3
+(mount + Playwright e2e).
