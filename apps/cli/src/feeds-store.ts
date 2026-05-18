@@ -1,5 +1,5 @@
 /**
- * Goal 092 — pure data layer for `~/.muse/feeds.json`. Shape:
+ * Pure data layer for `~/.muse/feeds.json`. Shape:
  *
  *   { version: 1, feeds: [
  *     { id, url, name, lastFetchedAt?, entries: [
@@ -82,7 +82,7 @@ export async function writeFeedsStore(file: string, store: FeedsStore): Promise<
 }
 
 /**
- * Goal 092 — parse an RSS 2.0 OR Atom feed body into a uniform
+ * Parse an RSS 2.0 OR Atom feed body into a uniform
  * `FeedEntry[]`. Pure (string in, array out) so a unit test can
  * pin the format detection without touching fetch.
  *
@@ -146,17 +146,7 @@ function toAtomEntry(entry: unknown): readonly FeedEntry[] {
   if (!entry || typeof entry !== "object") return [];
   const raw = entry as Record<string, unknown>;
   const title = sanitizeFeedText(readScalar(raw.title));
-  let linkRawValue = "";
-  const linkRaw = raw.link;
-  if (typeof linkRaw === "string") {
-    linkRawValue = linkRaw;
-  } else if (Array.isArray(linkRaw) && linkRaw.length > 0) {
-    const first = linkRaw[0];
-    linkRawValue = (typeof first === "object" && first ? (first as Record<string, unknown>)["@_href"] as string : "") ?? "";
-  } else if (linkRaw && typeof linkRaw === "object") {
-    linkRawValue = (linkRaw as Record<string, unknown>)["@_href"] as string ?? "";
-  }
-  const link = sanitizeFeedText(linkRawValue);
+  const link = sanitizeFeedText(pickAtomLinkHref(raw.link));
   const id = sanitizeFeedText(readScalar(raw.id)) || link || title;
   if (!title || !id) return [];
   return [{
@@ -166,6 +156,32 @@ function toAtomEntry(entry: unknown): readonly FeedEntry[] {
     publishedAt: sanitizeFeedText(readScalar(raw.updated) ?? readScalar(raw.published)),
     summary: sanitizeFeedText(readScalar(raw.summary) ?? readScalar(raw.content))
   }];
+}
+
+/**
+ * RFC 4287 §4.2.7.2: an Atom entry may carry several `<link>`
+ * elements (`alternate` = the human permalink, `self` / `edit` /
+ * `enclosure` = feed/API/asset URLs). A missing `rel` MUST be read
+ * as `alternate`. The old code took `link[0]` blindly, so a feed
+ * that lists `rel="self"` first recorded the feed's own XML URL as
+ * the article link. Pick the first `alternate` href; only if none
+ * exists fall back to the first href (best effort — don't drop the
+ * entry on a malformed feed).
+ */
+function pickAtomLinkHref(linkRaw: unknown): string {
+  if (typeof linkRaw === "string") return linkRaw;
+  const candidates = (Array.isArray(linkRaw) ? linkRaw : [linkRaw]).filter(
+    (l): l is Record<string, unknown> => Boolean(l) && typeof l === "object"
+  );
+  let firstHref = "";
+  for (const candidate of candidates) {
+    const href = typeof candidate["@_href"] === "string" ? candidate["@_href"] : "";
+    if (!href) continue;
+    if (!firstHref) firstHref = href;
+    const rel = typeof candidate["@_rel"] === "string" ? candidate["@_rel"] : "alternate";
+    if (rel === "alternate") return href;
+  }
+  return firstHref;
 }
 
 function readScalar(value: unknown): string | undefined {
