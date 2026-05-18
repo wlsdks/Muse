@@ -41,6 +41,30 @@ describe("parseObjectiveVerdict — strict, conservative safe default", () => {
     expect(parseObjectiveVerdict('{"outcome":"maybe"}')).toEqual({ outcome: "unmet" });
     expect(parseObjectiveVerdict('{"broken json')).toEqual({ outcome: "unmet" });
   });
+
+  it("provider-agnostic robustness: fenced / <think>-wrapped / prose-flanked verdicts parse (not silent unmet)", () => {
+    // markdown code fence (the single most common LLM JSON shape)
+    expect(parseObjectiveVerdict('```json\n{"outcome":"met"}\n```')).toEqual({ outcome: "met" });
+    // reasoning-model leak: a brace-bearing <think> then the real
+    // verdict — the OLD greedy /\{[\s\S]*\}/ spanned both → invalid
+    // JSON → silent unmet (a MET objective would never complete).
+    expect(
+      parseObjectiveVerdict('<think>maybe {state: open}? after 3pm so yes</think>\n{"outcome":"met"}')
+    ).toEqual({ outcome: "met" });
+    // prose either side; take the verdict object
+    expect(parseObjectiveVerdict('Sure — here is the verdict:\n{"outcome":"unmeetable","reason":"repo gone"}\nDone.'))
+      .toEqual({ outcome: "unmeetable", reason: "repo gone" });
+    // a non-verdict object before the real one must not shadow it;
+    // the LAST recognised-outcome object wins
+    expect(parseObjectiveVerdict('{"note":"context"} {"outcome":"met"}')).toEqual({ outcome: "met" });
+    // `}` inside a string value must not close the object early
+    expect(parseObjectiveVerdict('{"outcome":"unmeetable","reason":"saw a } brace"}')).toEqual({
+      outcome: "unmeetable",
+      reason: "saw a } brace"
+    });
+    // still conservative: a fence with no recognised outcome ⇒ unmet
+    expect(parseObjectiveVerdict("```\n{\"status\":\"ok\"}\n```")).toEqual({ outcome: "unmet" });
+  });
 });
 
 describe("createModelObjectiveEvaluator", () => {

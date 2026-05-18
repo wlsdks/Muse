@@ -67,27 +67,77 @@ export function createModelObjectiveEvaluator(
   };
 }
 
+/**
+ * Collect every balanced top-level `{…}` span. A balanced scan
+ * (not a greedy regex) so `<think>{…}</think> {"outcome":"met"}`
+ * yields TWO candidates instead of one over-wide invalid span.
+ * String-aware so a `}` inside a JSON string value doesn't close
+ * the object early.
+ */
+function balancedJsonCandidates(text: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== "{") continue;
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = i; j < text.length; j += 1) {
+      const ch = text[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          out.push(text.slice(i, j + 1));
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Provider-agnostic, unattended-safe verdict parse. The objectives
+ * daemon runs autonomously across 7 model families, so the verdict
+ * can arrive fenced (```json…```), reasoning-wrapped
+ * (`<think>…</think>`), or with prose either side. Strip the
+ * wrappers, scan ALL balanced JSON objects, and take the LAST one
+ * that parses with a recognised `outcome` — a model that "thinks"
+ * then answers puts the real verdict last. Anything ambiguous ⇒
+ * the conservative `unmet` safe default (never crash, never a
+ * false `met`/`unmeetable`).
+ */
 export function parseObjectiveVerdict(raw: string): ObjectiveEvaluation {
-  const match = /\{[\s\S]*\}/u.exec(raw);
-  if (!match) {
-    return { outcome: "unmet" };
+  const cleaned = raw
+    .replace(/<think>[\s\S]*?<\/think>/giu, " ")
+    .replace(/```[a-zA-Z]*\n?|```/gu, " ");
+  let verdict: ObjectiveEvaluation = { outcome: "unmet" };
+  for (const candidate of balancedJsonCandidates(cleaned)) {
+    let parsed: { outcome?: unknown; reason?: unknown };
+    try {
+      parsed = JSON.parse(candidate) as { outcome?: unknown; reason?: unknown };
+    } catch {
+      continue;
+    }
+    if (parsed.outcome === "met") {
+      verdict = { outcome: "met" };
+    } else if (parsed.outcome === "unmeetable") {
+      const reason = typeof parsed.reason === "string" && parsed.reason.trim().length > 0
+        ? parsed.reason.trim()
+        : "model deemed the objective unmeetable";
+      verdict = { outcome: "unmeetable", reason };
+    } else if (parsed.outcome === "unmet") {
+      verdict = { outcome: "unmet" };
+    }
   }
-  let parsed: { outcome?: unknown; reason?: unknown };
-  try {
-    parsed = JSON.parse(match[0]) as { outcome?: unknown; reason?: unknown };
-  } catch {
-    return { outcome: "unmet" };
-  }
-  if (parsed.outcome === "met") {
-    return { outcome: "met" };
-  }
-  if (parsed.outcome === "unmeetable") {
-    const reason = typeof parsed.reason === "string" && parsed.reason.trim().length > 0
-      ? parsed.reason.trim()
-      : "model deemed the objective unmeetable";
-    return { outcome: "unmeetable", reason };
-  }
-  return { outcome: "unmet" };
+  return verdict;
 }
 
 export interface MessagingObjectiveActuatorOptions {
