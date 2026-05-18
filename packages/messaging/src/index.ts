@@ -18,6 +18,17 @@ export {
 export { appendReplyCursor, readReplyCursor } from "./inbox-reply-cursor.js";
 
 export {
+  appendThreadTurns,
+  readThread,
+  type ThreadTurn
+} from "./inbound-thread-store.js";
+
+export {
+  createThreadedInboundRunner,
+  type ThreadedAgentRun
+} from "./inbound-threaded-runner.js";
+
+export {
   FileMessagingCredentialStore,
   type MessagingCredentialStore,
   type MessagingCredentials

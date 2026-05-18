@@ -46,6 +46,42 @@ chat IS a Muse session"; that reply loop is the missing piece.
 
 ## Status
 
+slice 4 done — flips OUTWARD-TARGETS new **P1-b3** ("thread context
+carries across turns on the channel — the chat IS a Muse session.
+Check: multi-turn inbound retains context"). New
+`packages/messaging/src/inbound-thread-store.ts` (per-channel
+bounded conversation memory keyed `{providerId}:{source}`, atomic
+0o600) + `inbound-threaded-runner.ts`
+(`createThreadedInboundRunner`): wraps the agent call so prior
+turns (user + Muse) are prepended to the next inbound message on
+that channel and the new exchange is persisted — channels never
+bleed into each other. `respondToInbound` / the tick / slices
+1–3 are untouched; continuity lives behind the runner. server.ts
+boot now builds the inbound runner via `createThreadedInboundRunner`
+(thread file `${telegramInboxFile}.threads.json`), passing the
+composed `messages[]` to `agentRuntime.run`.
+
+Integration test `@muse/messaging`
+inbound-threaded-runner.test.ts: turn-1 sees only its own message;
+turn-2 on the same channel sees turn-1's user msg + Muse reply +
+the new message; a different `source` and a different `providerId`
+are independent threads (no bleed). Composes thread-store
+persistence + the runner across turns — surface check for P1-b3,
+not unit-only.
+
+Verification note: the `agentRuntime.run({ messages, model })`
+shape is unchanged — only MORE prior turns are composed in, handled
+by the already-live-verified multi-message agent path (slice 2
+smoke:live PASSed `/api/chat` + `plan_execute (live)`, both
+multi-message). P1-b3 itself is deterministic per-channel context
+composition; its mandated check ("multi-turn inbound retains
+context") is the green integration test. No new LLM
+request/response surface ⇒ re-running full smoke:live is not the
+proportionate gate here.
+
+Remaining under P1: new **P1-b4** (in-chat approval for risky
+actions) — last P1 bullet.
+
 slice 3 done — flips OUTWARD-TARGETS new **P1-b2** ("the result is
 sent back over the same channel via the messaging registry. Check:
 a smoke exercising inbound→reply on one provider — contract-faithful

@@ -27,7 +27,7 @@ import {
 import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js";
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
 import { startInboundReplyTick } from "./inbound-reply-tick.js";
-import type { InboundAgentRunner } from "@muse/messaging";
+import { createThreadedInboundRunner, type InboundAgentRunner } from "@muse/messaging";
 import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
 import { registerSchedulerRoutes } from "./scheduler-routes.js";
 import { registerActiveContextRoutes } from "./active-context-routes.js";
@@ -374,15 +374,16 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   ) {
     const agentRuntime = options.agentRuntime;
     const replyModel = options.defaultModel ?? "default";
-    const runner: InboundAgentRunner = {
-      run: async ({ text }) => {
+    const runner: InboundAgentRunner = createThreadedInboundRunner({
+      run: async ({ messages }) => {
         const result = await agentRuntime.run({
-          messages: [{ content: text, role: "user" }],
+          messages,
           model: replyModel
         } as Parameters<typeof agentRuntime.run>[0]);
         return result.response?.output ?? "";
-      }
-    };
+      },
+      threadFile: `${options.telegramInboxFile}.threads.json`
+    });
     const replyMsRaw = process.env.MUSE_INBOUND_REPLY_INTERVAL_MS
       ? Number(process.env.MUSE_INBOUND_REPLY_INTERVAL_MS)
       : undefined;

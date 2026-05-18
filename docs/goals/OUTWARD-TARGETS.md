@@ -98,8 +98,9 @@ but cannot converse back. Drive to fully-delivered FIRST.
   messaging registry. Check: a `smoke` exercising inbound→reply on
   one provider (contract-faithful HTTP fake or real) asserting the
   outbound POST — never a fake registry. — 377 s3
-- [ ] Thread context carries across turns on the channel (the chat
+- [x] Thread context carries across turns on the channel (the chat
   IS a Muse session). Check: multi-turn inbound retains context.
+  — 377 s4
 - [ ] Risky actions prompt for in-chat approval before executing.
   Check: approval gate exercised over the channel path.
 
