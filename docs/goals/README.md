@@ -151,3 +151,19 @@ Append one line when a discovery path is evaluated and deferred:
   pre/post (apps/api 170 deterministic tests green via pnpm check);
   not a regression, not [UNVERIFIED-LIVE] (round-trip executed).
   P3-b1 flipped.)
+- P3 audit — packages/agent-core/test/p3-seam.test.ts — PASS: P3's
+  one CAPABILITIES check passes (`@muse/agent-core`
+  ambient-context.test.ts + ambient-context-runtime.test.ts, 9/9)
+  AND the target works as one end-to-end flow — the seam for a
+  single-bullet target is ambient-vs-the-rest. p3-seam.test.ts
+  drives the real `createAgentRuntime`: with ambient enabled
+  alongside a user-memory provider, BOTH the `[Ambient Context]`
+  and `[User Memory]` blocks reach the model (appendSystemSection
+  merges, no clobber); a throwing ambient provider degrades the
+  run (no ambient block) but never breaks it — fail-open proven
+  through the real runtime, not just the unit resolver — with
+  other context still intact; and with no provider there is no
+  ambient block even when other context is active (privacy
+  default-off survives composition). No drift; no bullet reopened.
+  P3 (ambient perception loop) is genuinely delivered end-to-end.
+  P0/P1/P2/P3 now all delivered + audited.
