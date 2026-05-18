@@ -29,6 +29,30 @@ fact/preference influence a later answer.
 
 ## Status
 
+slice 4 — P0-b3 SPLIT (parent stays `[ ]` until both children met).
+Delivered the **investigate-and-surface mechanism**: the proactive
+notice loop now accepts an injected
+`investigate(item) → Promise<string|undefined>`; when set it runs
+on the imminent item and **appends the finding to the unasked
+notice** (so Muse doesn't only announce "Q3 review in 5 min" but
+also "📎 Found 2 related notes…"). **Fail-open** — a thrown / empty
+investigator just omits the finding; the notice still fires.
+Integration tests (`@muse/mcp` mcp.test.ts, deterministic, no
+network): seeded "Q3 review" context → investigator invoked with
+the title → notice contains the base line + the investigated
+finding (the bullet's "seeded context → an investigated, relevant
+surfacing without being asked" check); and a throwing investigator
+never drops the notice.
+
+No bullet flip / no `CAPABILITIES.md` line (parent P0-b3 stays
+`[ ]`; appending a non-flipping line would be thin — honest epic
+decomposition, same as 378 s2). Remaining child: wire a real
+production investigator (a notes/tool lookup keyed off the imminent
+item) so it surfaces real findings — Rejected-ledger note added.
+Right-sized: shipped the verified mechanism as one coherent slice,
+not over-building + half-testing the production investigator in the
+same commit.
+
 slice 3 done — **P0-b2 parent flipped** (all split children met).
 `StoreBackedEpisodicRecallProvider` (the production episodic-recall
 provider built by `buildEpisodicRecallProvider`) gained an optional

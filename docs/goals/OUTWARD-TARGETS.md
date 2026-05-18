@@ -86,7 +86,14 @@ lands.**
   infers a likely UNSTATED need, autonomously investigates it
   (tool / web / notes), and surfaces the finding unasked. Check:
   seeded context → an investigated, relevant surfacing without
-  being asked (integration/smoke).
+  being asked (integration/smoke). (Split — parent stays [ ] until
+  both children met; see 378 Decisions.)
+  - [x] Investigate-and-surface mechanism: the proactive loop
+    accepts an injected investigator, runs it on the imminent
+    item, and appends the finding to the unasked notice (fail-open
+    if it throws). — 378 s4
+  - [ ] Production investigator wired (a real notes/tool lookup
+    keyed off the imminent item) so it surfaces real findings.
 - [ ] On an ambiguous / under-specified request the agent asks a
   clarifying question instead of guessing, and offers ("shall I
   X?") when it detects a likely-wanted action. Check: ambiguous

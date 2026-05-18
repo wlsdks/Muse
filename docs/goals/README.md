@@ -32,7 +32,7 @@ delete an open row, never rewrite another goal's status.
 | 374 | [`muse ask --notes-only`](374-muse-ask-notes-only.md)                   | outward        | done (pre-built) |
 | 375 | [Web UI history panel](375-web-history-panel.md)                        | epic / outward | done             |
 | 377 | [Inbound conversational replies](377-inbound-conversational-replies.md)  | epic / outward | done — P1 fully delivered (b1–b4) |
-| 378 | [Knows-you from real use](378-knows-you-from-real-use.md)                | epic / outward | P0-b1+b2 done; P0-b3/b4 next |
+| 378 | [Knows-you from real use](378-knows-you-from-real-use.md)                | epic / outward | P0-b1+b2 done; P0-b3 split (mechanism done, investigator wiring next), b4 |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
@@ -85,3 +85,12 @@ Append one line when a discovery path is evaluated and deferred:
   `createMuseRuntimeAssembly` so production episodic recall uses
   `EmbeddingEpisodicRecallProvider`. Next 378 slice — kept separate
   from the provider so neither half is half-shipped.
+  (RESOLVED 378 s3: production embedder wired, fail-open; P0-b2
+  parent flipped.)
+- P0-b3 production investigator wiring — iter (378 s4) — deferred:
+  the investigate-and-surface mechanism (proactive loop accepts an
+  injected investigator, appends the finding to the unasked notice,
+  fail-open) shipped + integration-verified; remaining child is a
+  real production investigator (a notes/tool lookup keyed off the
+  imminent item) wired into the daemon's assembly. Next 378 slice —
+  kept separate so neither half is half-shipped.

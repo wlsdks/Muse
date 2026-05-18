@@ -5985,6 +5985,72 @@ describe("runDueProactiveNotices", () => {
     expect(delivered).toEqual([]);
     expect(msg.sent).toEqual([{ destination: "@me", providerId: "telegram", text: "⏰ Standup in 5 min" }]);
   });
+
+  it("autonomously investigates the unstated need and surfaces the finding in the unasked notice", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-investigate-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-q3", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Q3 review" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+    const investigatedTitles: string[] = [];
+
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      investigate: async ({ title }) => {
+        investigatedTitles.push(title);
+        return title.includes("Q3")
+          ? "📎 Found 2 related notes: q3-plan.md, q3-metrics.md"
+          : undefined;
+      },
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+
+    expect(summary).toMatchObject({ fired: 1, imminent: 1, errors: [] });
+    // Inferred the need (Q3 → its notes), investigated, surfaced
+    // the finding unasked — the base notice PLUS the finding.
+    expect(investigatedTitles).toEqual(["Q3 review"]);
+    expect(msg.sent[0]?.text).toContain("Q3 review in 5 min");
+    expect(msg.sent[0]?.text).toContain("Found 2 related notes: q3-plan.md, q3-metrics.md");
+  });
+
+  it("fail-open: a throwing investigator never drops the notice", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-investigate-failopen-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-fo", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+
+    const summary = await runDueProactiveNotices({
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      investigate: () => Promise.reject(new Error("notes index unreadable")),
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile
+    });
+
+    expect(summary).toMatchObject({ fired: 1, imminent: 1, errors: [] });
+    expect(msg.sent).toEqual([{ destination: "@me", providerId: "telegram", text: "⏰ Standup in 5 min" }]);
+  });
 });
 
 describe("runDueFollowups", () => {

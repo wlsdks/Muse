@@ -284,6 +284,19 @@ export interface ProactiveModelProviderLike {
 export interface RunDueProactiveNoticesOptions {
   readonly calendarRegistry?: CalendarProviderRegistry;
   /**
+   * Optional autonomous investigator. Given the imminent item's
+   * context it returns a one-line finding (a notes / tool / web
+   * lookup of the likely UNSTATED need) appended to the proactive
+   * notice — so Muse doesn't just announce "X in 30 min" but also
+   * surfaces "…and here's the related doc," unasked. Fail-open: a
+   * thrown / empty result just omits the finding.
+   */
+  readonly investigate?: (item: {
+    readonly title: string;
+    readonly kind: string;
+    readonly factSheet: string;
+  }) => Promise<string | undefined>;
+  /**
    * Personal-tasks store path (`~/.muse/tasks.json` by default).
    * When set, open tasks whose `dueAt` falls in
    * `[now, now + leadMinutes]` are surfaced alongside calendar
@@ -505,13 +518,31 @@ export async function runDueProactiveNotices(
       continue;
     }
 
-    const rawNoticeText = phaseDActive
+    let rawNoticeText = phaseDActive
       ? await synthesizeNoticeText(item, options).catch((cause) => {
           const message = cause instanceof Error ? cause.message : String(cause);
           errors.push(`${item.kind}:${item.id} synthesis: ${message}`);
           return item.text;
         })
       : item.text;
+    // Anticipation: autonomously investigate the likely unstated
+    // need behind this item and surface the finding unasked. Fail-
+    // open — a failed/empty investigation just omits the finding;
+    // the notice still fires.
+    if (options.investigate) {
+      try {
+        const finding = await options.investigate({
+          factSheet: item.factSheet,
+          kind: item.kind,
+          title: item.title
+        });
+        if (finding && finding.trim().length > 0) {
+          rawNoticeText = `${rawNoticeText}\n${finding.trim()}`;
+        }
+      } catch {
+        // investigation failed — keep the base notice
+      }
+    }
     // Scrub before any downstream sink — the synthesised notice
     // saw persona facts + task summaries that may quote a secret.
     const noticeText = redactSecretsInText(rawNoticeText);
