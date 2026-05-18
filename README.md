@@ -5,6 +5,12 @@ reasoning loop, any LLM, any tool, any MCP server.
 
 [한국어 README →](README.ko.md)
 
+📊 **Live progress** — what the autonomous loop is doing, in plain
+language: _public link pinned here once the dashboard tunnel is set
+up (see [goal 376](docs/goals/376-progress-dashboard-and-safe-tunnel.md))._
+View it locally now: `node scripts/dashboard-server.mjs` →
+<http://127.0.0.1:8787> (read-only, 127.0.0.1-only).
+
 ## What Muse is
 
 Muse orchestrates an LLM-powered agent without locking you into a
