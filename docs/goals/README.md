@@ -1,88 +1,116 @@
 # Goals
 
-Prioritized work items for the autonomous iteration loop.
+The self-driving backlog for the autonomous iteration loop.
 
-This backlog was **reset on 2026-05-18**. The previous backlog (goals
-001–372) drove ~39 hours of uninterrupted loop work that converged
-into low-value janitorial micro-fixes — the substantive roadmap was
-largely complete, but the loop had no instruction to *stop*, so it
-kept minting one safe edge-case goal every ~20 minutes. The full
-history is preserved in `git log` and `CHANGELOG.md`. This file and
-[`.claude/rules/iteration-loop.md`](../../.claude/rules/iteration-loop.md)
-exist to prevent that failure mode from recurring.
+The loop **never stops and never asks a human for work**. Every
+iteration it discovers, defines, and ships the next genuinely-
+productive piece of forward development, appends what it discovers
+to this backlog, and continues — indefinitely. This is a self-
+evolving (자가발전) loop: each iteration must leave Muse materially
+more capable than the last.
 
-## What the loop is for
+The earlier run (goals 255–372) failed **not** because it self-
+generated work — that is the intended engine — but because the
+self-generated work was cosmetic janitorial churn (non-finite
+guards, control-byte strips, re-sorts, comment sweeps). The fix is
+not a stop button and not a human checkpoint. The fix is a
+**productivity bar** the loop must clear every iteration, plus a
+concrete discovery procedure so the self-generated goal is always
+real forward progress.
 
-The loop's job is to **deepen Muse toward its mission** — a
-provider-neutral, JARVIS-class AI conductor (see auto-memory
-`project_muse_identity.md`). It is *not* to stay busy. A loop that
-produces nothing this iteration because no goal clears the bar is
-working correctly; a loop that invents a cosmetic goal to avoid
-stopping is not.
+## What "productive" means (the bar — every iteration must clear it)
 
-## The value bar (a goal is eligible only if it clears this)
+An iteration's goal is valid **only** if it is one of:
 
-A goal belongs in the Open table below **only** if it is one of:
+- **New user-visible capability** — Muse can do something it
+  couldn't before.
+- **Closing a design-doc gap** — `docs/design/*.md` describes intent
+  the code doesn't yet fully deliver; this iteration narrows it.
+- **Architecture deepening with stated leverage** — a boundary or
+  contract whose change makes ≥2 future goals cheaper. Say which.
+- **A dogfood-observed real bug** — you ran Muse, saw it behave
+  wrong, and cite the observed failure.
 
-- **User-visible capability** — a new thing a Muse operator can do.
-- **Architecture deepening** — a real module boundary, contract, or
-  testability improvement that makes the next feature cheaper.
-- **A genuine robustness gap with a concrete failure story** — not
-  "this could theoretically be non-finite" but "X input observably
-  breaks Y for a real user."
+**Banned — never self-generate a goal of this shape** (this is
+exactly what 255–372 degenerated into):
 
-**Not eligible** (these are what the old backlog degraded into):
-cosmetic edge-case hardening with no observed failure, defensive
-guards on already-validated inputs, restating-the-obvious tests,
-comment sweeps. If that is all that's left, the loop **stops**.
+- defensive / non-finite guards on already-validated input with no
+  observed failure story,
+- control-byte / escaping / sanitiser sweeps with no reported
+  breakage,
+- re-sort / re-format / relative-time niceties,
+- comment / provenance / dead-import sweeps,
+- tests that only restate a signature or pin already-covered logic,
+- pure renames.
 
-## Workflow
+If the obvious next step looks like one of these, it does **not**
+count as an iteration. Filler is forbidden; stopping is forbidden;
+asking a human is forbidden. The only exit from an iteration is
+shipped real progress — widen discovery until you find it.
+
+## Self-generation — how the loop finds its next goal
+
+Run this discovery procedure each iteration, in order; take the
+**first source that yields a goal clearing the bar**:
+
+1. **Dogfood**: exercise a real Muse surface aligned with the
+   mission (`project_muse_identity`). Observe an actual wrong
+   behaviour → that bug is the goal.
+2. **Design-doc gap**: pick a `docs/design/*.md`, diff its described
+   intent against the code, take the largest unbuilt slice.
+3. **Mission capability gap**: compare Muse against JARVIS-class
+   behaviour the mission demands; the missing capability is the goal.
+4. **Architecture leverage**: a deepening that unblocks ≥2 future
+   goals — state the leverage explicitly.
+5. **Evidence-backed quality/perf**: a *measured* regression or
+   hotspot (numbers, not speculation).
+
+Then append it to the table below as the next `NNN`, write
+`NNN-slug.md` (`## Why`, `## Scope`/`## Slices`, `## Verify`,
+`## Status`), and execute. **Self-expansion of this backlog is the
+engine — it is required, not forbidden.** The table grows for as
+long as the loop runs; there is no terminal state.
+
+## Forward-progress guard (keeps infinite ≠ churn)
+
+- **No more than 2 consecutive iterations on the same capability
+  surface.** The third must move to a different surface or deepen
+  architecture.
+- Every 3 iterations must include at least one *new user-visible
+  capability* or *design-doc-gap closure* — not three architecture
+  or three bug-fix iterations in a row.
+- If discovery only surfaces banned-shape work, that is the signal
+  that the current scope is mined out: **escalate by widening
+  scope** (deeper dogfood, a fresh `docs/design/` area, a new
+  mission capability). Never emit filler, never stop, never ask.
+
+## Workflow per iteration
 
 1. Read [`.claude/rules/iteration-loop.md`](../../.claude/rules/iteration-loop.md)
-   and auto-memory `MEMORY.md` first.
-2. Pick the lowest open `NNN` from the table below whose category is
-   the highest-priority among open goals (see priority order).
-3. Read its `NNN-slug.md`.
-4. If it's an **epic**, do the next undone slice only — one slice =
-   one commit. Don't attempt the whole epic in one iteration.
-5. Execute → `pnpm check` → `pnpm lint` → `pnpm smoke:broad` →
-   `pnpm smoke:live` (when a provider key is set).
-6. Commit (one goal/slice per commit, Conventional Commits).
-7. Flip the goal's `## Status` to `done — <hash>` (or
-   `slice N done — <hash>` for epics) and update the table here.
-8. **If no open goal clears the value bar: do not invent one. Halt
-   and surface that the backlog is exhausted so a human can set
-   strategic direction.** This is the single most important rule.
-
-## Priority order (highest first)
-
-1. `architecture` — deepening that unblocks later features
-2. `feature` — user-visible capability
-3. `robustness` — only with a concrete failure story
-4. *(nothing else is eligible — see the value bar)*
-
-Within the same category, lowest open `NNN` wins.
+   and auto-memory `MEMORY.md`.
+2. Run the discovery procedure → a goal that clears the bar.
+3. Append it as the next `NNN` here; write its md.
+4. Epic? Do the next undone slice only — one slice = one commit.
+5. Execute → `pnpm check` → `pnpm lint` (0/0) → `pnpm smoke:broad`
+   → `pnpm smoke:live` (when a provider key is set).
+6. Commit (Conventional Commits, one goal/slice per commit).
+7. Flip `## Status` → `done — <hash>` / `slice N done — <hash>`,
+   update the table.
+8. Continue to the next iteration. Never halt.
 
 ## Epics
 
-A goal may be larger than one iteration. Mark it `epic` and list
-ordered tracer-bullet slices in its md (`## Slices`). Each slice is
-independently shippable and verifiable — one commit per slice. This
-replaces the old "single-iter only" admission rule, which is what
-starved the deep work in the first place.
+A goal may exceed one iteration: mark it `epic`, list ordered
+tracer-bullet `## Slices`, ship one slice per commit.
 
-## Open backlog
+## Backlog
 
-Seeded with the genuinely-remaining forward work grounded in the
-design docs and the previously-deferred feature set. Humans add
-strategic goals here — the loop must not.
+Seeded with three grounded goals; the loop appends `376, 377, …`
+itself via discovery.
 
-| #   | Goal                                                                    | Category       | Status |
-| --- | ----------------------------------------------------------------------- | -------------- | ------ |
+| #   | Goal                                                                    | Category       | Status         |
+| --- | ----------------------------------------------------------------------- | -------------- | -------------- |
 | 373 | [Proactive multi-device routing](373-proactive-multi-device-routing.md) | epic / feature | slice 1/3 done |
-| 374 | [`muse ask --notes-only`](374-muse-ask-notes-only.md)                   | feature        | open   |
-| 375 | [Web UI history panel](375-web-history-panel.md)                        | epic / feature | open   |
-
-When all three are `done` and no human has added a strategic goal,
-the loop halts per workflow step 8 — that is the expected, correct
-terminal state, not a problem to route around.
+| 374 | [`muse ask --notes-only`](374-muse-ask-notes-only.md)                   | feature        | open           |
+| 375 | [Web UI history panel](375-web-history-panel.md)                        | epic / feature | open           |
+| …   | *self-generated via discovery — never ends*                             |                |                |
