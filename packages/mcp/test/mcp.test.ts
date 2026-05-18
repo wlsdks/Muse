@@ -5876,6 +5876,16 @@ describe("runDueProactiveNotices", () => {
     expect(selectProactiveSink(undefined, true)).toBe("messaging");
   });
 
+  it("selectProactiveSink: presence older than the freshness window falls back to messaging", async () => {
+    const { selectProactiveSink } = await import("../src/index.js");
+    const now = 1_700_000_000_000;
+    const win = { maxAgeMs: 300_000, nowMs: now };
+    expect(selectProactiveSink({ lastActivityMs: () => now - 60_000 }, true, win)).toBe("terminal");
+    expect(selectProactiveSink({ lastActivityMs: () => now - 600_000 }, true, win)).toBe("messaging");
+    // No freshness arg keeps slice-1 semantics (defined → terminal).
+    expect(selectProactiveSink({ lastActivityMs: () => now - 600_000 }, true)).toBe("terminal");
+  });
+
   it("routes the notice to the terminal sink (not messaging) when local presence is recorded", async () => {
     const { runDueProactiveNotices } = await import("../src/index.js");
     const { mkdtempSync } = await import("node:fs");
@@ -5908,6 +5918,41 @@ describe("runDueProactiveNotices", () => {
     // "messaging wasn't called" fall-back assertion.
     expect(delivered).toEqual([{ kind: "calendar", text: "⏰ Standup in 5 min", title: "Standup" }]);
     expect(msg.sent).toEqual([]);
+  });
+
+  it("falls back to messaging when terminal presence is stale (backgrounded terminal, no black-hole)", async () => {
+    const { runDueProactiveNotices } = await import("../src/index.js");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-proactive-stale-"));
+    const sidecarFile = join(dir, "proactive-fired.json");
+
+    const fixedNow = new Date("2026-05-12T14:55:00Z");
+    const cal = makeFakeCalendarRegistry([
+      { endsAt: new Date("2026-05-12T16:00:00Z"), id: "evt-stale", startsAt: new Date("2026-05-12T15:00:00Z"), title: "Standup" }
+    ]);
+    const msg = makeFakeMessagingRegistry();
+    const delivered: unknown[] = [];
+    const terminalSink = { deliver: (n: unknown) => { delivered.push(n); } };
+
+    const summary = await runDueProactiveNotices({
+      // Last seen 30 min ago — well past the 5-min default window.
+      activitySource: { lastActivityMs: () => fixedNow.getTime() - 30 * 60_000 },
+      calendarRegistry: cal as unknown as Parameters<typeof runDueProactiveNotices>[0]["calendarRegistry"],
+      destination: "@me",
+      messagingRegistry: msg.registry as unknown as Parameters<typeof runDueProactiveNotices>[0]["messagingRegistry"],
+      now: () => fixedNow,
+      providerId: "telegram",
+      sidecarFile,
+      terminalSink
+    });
+
+    expect(summary).toMatchObject({ fired: 1, imminent: 1, errors: [] });
+    // The capability: a stale/backgrounded terminal does NOT
+    // black-hole the notice — it reaches the user via messaging.
+    expect(msg.sent).toEqual([{ destination: "@me", providerId: "telegram", text: "⏰ Standup in 5 min" }]);
+    expect(delivered).toEqual([]);
   });
 
   it("falls back to messaging when a terminal sink is wired but no presence is recorded", async () => {

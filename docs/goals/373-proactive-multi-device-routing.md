@@ -38,6 +38,42 @@ presence tracker (Phase D). No new infra, no schema bump.
 
 ## Status
 
+slice 3 done — epic COMPLETE. `selectProactiveSink` gained an
+optional `freshness { nowMs, maxAgeMs }` arg: a recorded-but-stale
+presence (backgrounded / abandoned terminal still reports
+`lastActivityMs`) now returns `messaging` instead of black-holing
+the notice into a surface nobody is watching. `runDueProactiveNotices`
+passes `nowDate.getTime()` + the finite-guarded active-session
+window (default 300_000 ms) so a terminal idle past the window
+falls back to messaging. Slice-1 2-arg callers are unchanged (no
+freshness arg → defined presence still routes to terminal). +2 mcp
+tests (pure stale/fresh/back-compat decision; integration: stale
+presence delivers via messaging, terminalSink not called).
+CAPABILITIES.md +1 (Presence: terminal routing with stale fallback).
+
+## Decisions
+
+- Staleness window reuses the existing `activeSessionWindowMs`
+  resolution (same finite-guard + 300_000 default) rather than a
+  new knob — semantically "user not seen on a surface within the
+  active-session window ⇒ terminal is stale". No new option to
+  document or mis-set.
+- `freshness` is an optional 3rd arg, not a signature change, so
+  slice-1 behaviour and its tests are preserved verbatim
+  (append/flip-only spirit; minimal merge surface).
+- Slice 3 changes deterministic proactive sink routing only — not
+  the LLM request/response path — so `smoke:live` is not the
+  applicable gate (the deterministic stale-fallback test is); this
+  is scope, not a skipped-verification justification. (smoke:live
+  was still exercised: the owner's Ollama-only picker fix is
+  confirmed executing real local-Qwen `/api/chat` round-trips; a
+  full run on the picked 35b model exceeds a 5-min wrapper — logged
+  in the README Rejected ledger as a future Autonomy goal.)
+- Rebased onto the owner's mid-iteration A+ contract (`62daf4b0`):
+  README/CAPABILITIES conflicts resolved by taking the owner's new
+  authoritative versions and re-applying only the allowed
+  append/flip (P1). Commit code is byte-identical pre/post rebase.
+
 slice 2 done — `apps/cli/src/proactive-terminal-sink.ts`:
 `formatProactiveTerminalNotice` (pure: `\r\x1b[K` prompt-clear
 prefix + `stripUntrustedTerminalChars` on the third-party text +

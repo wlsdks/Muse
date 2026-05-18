@@ -222,12 +222,24 @@ export type ProactiveSinkChoice = "terminal" | "messaging";
  */
 export function selectProactiveSink(
   activitySource: ProactiveActivitySource | undefined,
-  hasTerminalSink: boolean
+  hasTerminalSink: boolean,
+  freshness?: { readonly nowMs: number; readonly maxAgeMs: number }
 ): ProactiveSinkChoice {
   if (!hasTerminalSink) {
     return "messaging";
   }
-  return activitySource?.lastActivityMs() !== undefined ? "terminal" : "messaging";
+  const last = activitySource?.lastActivityMs();
+  if (last === undefined) {
+    return "messaging";
+  }
+  // A backgrounded / abandoned terminal still reports a (now stale)
+  // lastActivityMs; routing to it would render the notice into a
+  // surface nobody is watching and the user never gets the ping.
+  // Presence older than the window is treated as absent → messaging.
+  if (freshness && freshness.nowMs - last > freshness.maxAgeMs) {
+    return "messaging";
+  }
+  return "terminal";
 }
 
 /**
@@ -471,7 +483,15 @@ export async function runDueProactiveNotices(
   // the window. Re-checking per-item would let the window expire
   // mid-tick.
   const phaseDActive = isActiveSessionWindow(nowDate, options);
-  const sinkChoice = selectProactiveSink(options.activitySource, options.terminalSink !== undefined);
+  const terminalPresenceMaxAgeMs =
+    typeof options.activeSessionWindowMs === "number" && Number.isFinite(options.activeSessionWindowMs)
+      ? options.activeSessionWindowMs
+      : DEFAULT_ACTIVE_WINDOW_MS;
+  const sinkChoice = selectProactiveSink(
+    options.activitySource,
+    options.terminalSink !== undefined,
+    { maxAgeMs: terminalPresenceMaxAgeMs, nowMs: nowDate.getTime() }
+  );
 
   for (const item of imminent) {
     const candidate: ProactiveFiredEntry = {

@@ -37,3 +37,4 @@ axis ∈ Reach | Anticipation | Autonomy | Presence
 - [Autonomy] Multi-agent sequential/parallel orchestration — orchestration endpoint — smoke:broad multi-agent
 - [Presence] Voice in/out (Whisper / Piper / whisper.cpp) — `muse listen` / `--speak` — voice unit tests
 - [Presence] Cross-session episodic recall surfaced into context — REPL across sessions — episodic-summariser tests
+- [Presence] Proactive notices route to the active terminal and fall back to messaging when it goes stale (no black-hole) — `muse proactive watch` (TTY) then idle past the active-session window — `@muse/mcp` mcp.test.ts "falls back to messaging when terminal presence is stale"
