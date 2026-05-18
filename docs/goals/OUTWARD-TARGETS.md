@@ -278,11 +278,15 @@ lifecycle) substrate into the situational picture.
   "Needs you" w/ resolution + active "Still tracking";
   done/cancelled excluded; undefined when nothing to say; NaN-date
   dropped; whitespace-collapsed)
-- [ ] The briefing is delivered proactively on the real channel
+- [x] The briefing is delivered proactively on the real channel
   (composing the P2 contract-faithful HTTP-faked delivery path),
   once per situation-window, deduped. Check: seeded context → one
   briefing POSTed to the real channel API; a second tick in-window
-  does not re-POST (integration).
+  does not re-POST (integration). — 392 (runDueSituationalBriefing
+  over a real TelegramProvider HTTP fake: asserts Bot API URL +
+  chat_id + synthesised briefing text; real last-fired sidecar
+  dedupes in-window; nothing-to-say is silent; re-briefs once the
+  window elapses)
 
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is

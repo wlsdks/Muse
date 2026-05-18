@@ -382,6 +382,11 @@ export {
   type SituationalBriefingInput
 } from "./situational-briefing.js";
 export {
+  runDueSituationalBriefing,
+  type RunDueSituationalBriefingOptions,
+  type RunDueSituationalBriefingSummary
+} from "./situational-briefing-loop.js";
+export {
   undoLoggedAction,
   type UndoLoggedActionOptions,
   type UndoLoggedActionResult

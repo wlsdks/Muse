@@ -32,9 +32,15 @@ genuine next outward gap and it composes the P2 (imminent) + P5
   narrate an empty schedule); NaN-date items dropped;
   whitespace-collapsed so a multiline title cannot break the
   layout. Verified by `situational-briefing.test.ts`.
-- s2 (P8-b2, next): deliver the briefing proactively on the real
-  channel (compose the P2 contract-faithful HTTP-faked delivery
-  path), once per situation-window, deduped.
+- s2 (P8-b2, DONE): `situational-briefing-loop.ts` —
+  `runDueSituationalBriefing` composes the P8-b1 composer + the P2
+  `sendWithRetry` real-channel path + a minimal atomic last-fired
+  sidecar: nothing-to-say ⇒ silent (no POST); else POST the one
+  briefing over the messaging registry and stamp the sidecar; a
+  second tick within `windowMs` is deduped; the window elapsing
+  allows a fresh brief. Verified by
+  `situational-briefing-loop.test.ts` against a real
+  `TelegramProvider` with only the HTTP boundary faked.
 
 ## Verify
 
@@ -61,7 +67,20 @@ context, drops NaN dates, and collapses whitespace. P8-b1 flipped
 `[ ]`→`[x]`; one CAPABILITIES line appended; README backlog row
 added.
 
-P8-b2 stays `[ ]` (separate bullet, separate slice).
+P8-b2 done. The bullet's check ("seeded context → one briefing
+POSTed to the real channel API; a second tick in-window does not
+re-POST (integration)") is delivered: a real `TelegramProvider`
+(only the HTTP boundary faked) receives exactly one Bot API POST
+carrying the synthesised briefing (the imminent item AND the
+objective in one message); a second in-window tick is deduped by
+the real last-fired sidecar; an empty situation is silent; the
+window elapsing allows a fresh brief. P8-b2 flipped `[ ]`→`[x]`;
+one CAPABILITIES line appended; README backlog row flipped to
+done.
+
+**P8 fully delivered (b1 synthesise · b2 deliver-deduped).** With
+P0–P8 all delivered, the next iteration is — per contract Step 4 —
+the P8 target-completion audit.
 
 ## Decisions
 
@@ -82,3 +101,13 @@ P8-b2 stays `[ ]` (separate bullet, separate slice).
 - `feat(mcp)`: a new user-world capability surface (the synthesised
   situational picture), consistent with the personal-store /
   proactive siblings.
+- P8-b2 dedupe is window-based (a minimal `{lastFiredAt}` sidecar),
+  not the per-item proactive-fired structure: "once per
+  situation-window" is a single cadence gate, not per-item
+  dedupe — a dedicated one-field sidecar is the right-sized fit,
+  not a reuse of the heavier per-item store.
+- The setInterval daemon that drives `runDueSituationalBriefing`
+  (mirroring the proactive/reminder ticks in apps/api) is the
+  natural follow-up; the bullet's check is the contract-faithful
+  delivery integration, delivered here — daemon wiring is not
+  gold-plated in.
