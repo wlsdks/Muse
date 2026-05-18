@@ -366,6 +366,19 @@ export {
   type ActionLogEntry,
   type ActionResult
 } from "./personal-action-log-store.js";
+export {
+  hasVeto,
+  readVetoes,
+  recordVeto,
+  serializeVeto,
+  writeVetoes,
+  type ActionVeto
+} from "./personal-veto-store.js";
+export {
+  undoLoggedAction,
+  type UndoLoggedActionOptions,
+  type UndoLoggedActionResult
+} from "./undo-action.js";
 
 // LLM-fallback budget tracker — step 5 of agent-self-followup.md.
 // Per-day counter so MUSE_FOLLOWUP_LLM_FALLBACK=true can't

@@ -213,10 +213,14 @@ safely delegable.
   append-only durable; integration: runDueObjectives → consented
   act → appendActionLog → queryActionLog returns the what/why/when/
   result entry; refusals logged too)
-- [ ] One-tap undo/veto of a logged action reverses it where
+- [x] One-tap undo/veto of a logged action reverses it where
   reversible AND writes a memory veto so that action class does not
   recur. Check: act → undo → reversed + veto recorded → same
-  trigger no longer auto-acts (integration).
+  trigger no longer auto-acts (integration). — 388 (personal-veto
+  -store + undoLoggedAction; veto gate wired into
+  performConsentedAction fail-closed BEFORE consent; integration:
+  act → undo reverses + records veto + logs the undo → re-triggered
+  objective is refused, no HTTP, not falsely completed)
 
 *Quality bar (not a bullet — not objectively surface-checkable):*
 judgement & interruption etiquette (when to act silently vs ask vs

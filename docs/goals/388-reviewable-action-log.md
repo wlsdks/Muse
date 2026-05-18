@@ -28,9 +28,14 @@ autonomy is unaccountable.
   Verified by `personal-action-log-store.test.ts`, including the
   composed integration: `runDueObjectives` → `performConsentedAction`
   → `appendActionLog` → `queryActionLog`.
-- s2 (P6-b2, next): one-tap undo/veto — reverse a logged action
-  where reversible AND write a memory veto so the same trigger no
-  longer auto-acts.
+- s2 (P6-b2, DONE): `personal-veto-store.ts` (durable memory
+  vetoes, same posture) + `undoLoggedAction` (reverse-where-
+  reversible via an injected inverse + `recordVeto` + log the undo
+  itself for symmetric accountability) + the veto gate wired into
+  `performConsentedAction` (optional `vetoFile`, checked BEFORE
+  consent, fail-closed — a veto overrides prior consent). Verified
+  by `undo-action.test.ts`; P5-b3's `consented-action.test.ts`
+  re-run green (the optional `vetoFile` is inert when absent).
 
 ## Verify
 
@@ -58,7 +63,22 @@ Append-only, missing/corrupt tolerance, and user-scoped newest-
 first query are all covered. P6-b1 flipped `[ ]`→`[x]`; one
 CAPABILITIES line appended; README backlog row added.
 
-P6-b2 stays `[ ]` (separate bullet, separate slice).
+P6-b2 done. The bullet's check ("act → undo → reversed + veto
+recorded → same trigger no longer auto-acts") is delivered
+end-to-end: the autonomous consented action performs and is
+logged; `undoLoggedAction` calls the injected inverse (reversed),
+records a durable veto, and logs the undo; then the SAME objective
+re-registered and re-ticked is refused by `performConsentedAction`
+because the veto overrides prior consent (no HTTP, objective not
+falsely completed). Irreversible actions still record the veto
+(reversed:false). Veto match is exact (scope/objective). P6-b2
+flipped `[ ]`→`[x]`; one CAPABILITIES line appended; README
+backlog row flipped to done.
+
+**P6 fully delivered (b1 see · b2 undo+teach).** With P0–P6 all
+delivered, the next iteration is — per contract Step 4 — the P6
+target-completion audit; after that the loop self-extends the
+OUTWARD-TARGETS map toward its north star (no human authors it).
 
 ## Decisions
 
@@ -81,3 +101,15 @@ P6-b2 stays `[ ]` (separate bullet, separate slice).
   asserts.
 - `feat(mcp)`: a new user-world capability (the user can review
   what Muse did/declined on their behalf and why).
+- P6-b2: a veto OVERRIDES prior consent and is checked FIRST in
+  `performConsentedAction` (before the consent check, fail-closed)
+  — "stop doing this" must beat an older "yes you may". The
+  `vetoFile` is optional so P5-b3's consent-only behaviour is
+  unchanged when not wired (regression test green).
+- The undo is itself appended to the action log (`what: "undo of
+  <id>"`): a correction is as accountable as the original action —
+  the user can later see they vetoed it and why.
+- Irreversible actions (no `reverse`) still record the veto and
+  log the undo with an "irreversible" detail: the *teach* half
+  (don't recur) holds even when the *reverse* half cannot — never
+  silently do nothing.

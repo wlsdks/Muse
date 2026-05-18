@@ -11,6 +11,7 @@
  */
 
 import { hasConsent } from "./personal-consent-store.js";
+import { hasVeto } from "./personal-veto-store.js";
 
 export interface ConsentedActionRequest {
   readonly url: string;
@@ -28,6 +29,13 @@ export interface PerformConsentedActionOptions {
   readonly credential: string;
   readonly request: ConsentedActionRequest;
   readonly fetchImpl: typeof fetch;
+  /**
+   * Optional veto store. When set and a veto matches
+   * {userId, objectiveId, scope}, the action is refused BEFORE the
+   * consent check — a recorded veto overrides any prior consent
+   * ("don't do this again" wins). Absent ⇒ consent-only gating.
+   */
+  readonly vetoFile?: string;
 }
 
 export type ConsentedActionOutcome =
@@ -37,6 +45,18 @@ export type ConsentedActionOutcome =
 export async function performConsentedAction(
   options: PerformConsentedActionOptions
 ): Promise<ConsentedActionOutcome> {
+  if (options.vetoFile) {
+    const vetoed = await hasVeto(options.vetoFile, {
+      objectiveId: options.objectiveId,
+      scope: options.scope,
+      userId: options.userId
+    });
+    if (vetoed) {
+      // A veto overrides prior consent — checked first, fail-closed.
+      return { performed: false, reason: `vetoed: action class ${options.scope} for objective ${options.objectiveId}` };
+    }
+  }
+
   const consented = await hasConsent(options.consentFile, {
     objectiveId: options.objectiveId,
     scope: options.scope,
