@@ -344,6 +344,20 @@ export {
   type RunDueObjectivesOptions,
   type RunDueObjectivesSummary
 } from "./objective-evaluation-loop.js";
+export {
+  hasConsent,
+  readConsents,
+  recordConsent,
+  serializeConsent,
+  writeConsents,
+  type ScopedConsent
+} from "./personal-consent-store.js";
+export {
+  performConsentedAction,
+  type ConsentedActionOutcome,
+  type ConsentedActionRequest,
+  type PerformConsentedActionOptions
+} from "./consented-action.js";
 
 // LLM-fallback budget tracker — step 5 of agent-self-followup.md.
 // Per-day counter so MUSE_FOLLOWUP_LLM_FALLBACK=true can't

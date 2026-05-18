@@ -38,8 +38,16 @@ foundation; P5-b2 (tick re-eval + backoff/escalation) and P5-b3
   action throw → fail-open (recorded, stays active, loop survives).
   Added a minimal `patchObjective` durable status-flip to the
   store. Verified by `objective-evaluation-loop.test.ts`.
-- s3 (P5-b3, later): acting on an objective via the user's scoped
-  service credential under recorded consent.
+- s3 (P5-b3, DONE): `personal-consent-store.ts` (durable scoped
+  consent records, same posture) + `consented-action.ts`
+  (`performConsentedAction`): fail-closed — `hasConsent` is
+  checked BEFORE the credential is touched, so absent or
+  scope-mismatched consent ⇒ no credential resolution and no HTTP;
+  recorded consent ⇒ the real (HTTP-faked) external request fires
+  carrying the scoped `Bearer` credential. Composed with
+  `runDueObjectives`: met objective → consented action → durable
+  `done`; no-consent → fail-closed, objective NOT falsely
+  completed (stays active). Verified by `consented-action.test.ts`.
 
 ## Verify
 
@@ -82,8 +90,22 @@ requires) surfaced under `pnpm check` though vitest's esbuild
 transpile passed — root-fixed with block-body callbacks, not
 worked around.
 
-P5-b3 (scoped-credential acting under recorded consent) stays
-`[ ]` — separate bullet, separate slice.
+P5-b3 done. The act-as-the-user gate is fail-closed and
+deterministic: `hasConsent` runs before any credential use, so no
+consent / scope-mismatched consent ⇒ no HTTP call (the scoped
+credential is never even resolved); a matching consent record ⇒
+the real HTTP-faked external request fires carrying the scoped
+`Bearer` credential. End-to-end through `runDueObjectives`: a met
+objective performs the real external action and is durably marked
+`done`; without consent the objective is NOT falsely completed
+(the failed action keeps it active for backoff). P5-b3 flipped
+`[ ]`→`[x]`; one CAPABILITIES line appended; README backlog row
+flipped to done.
+
+**P5 fully delivered (b1 durable register · b2 autonomous
+re-evaluation w/ backoff & escalation · b3 act-as-the-user under
+recorded consent).** Next iteration: per contract Step 4, the P5
+target-completion audit.
 
 ## Decisions
 
@@ -120,3 +142,15 @@ P5-b3 (scoped-credential acting under recorded consent) stays
   per-objective try: if `act` throws, the objective is NOT marked
   done (stays active, retried next tick) — a delivered action must
   never be lost to a half-applied state.
+- P5-b3 security posture (CLAUDE.md non-negotiable — guards
+  fail-close, security is deterministic code, not prompt): the
+  consent check is the FIRST thing `performConsentedAction` does;
+  it returns before the credential is read or any request is made,
+  and `hasConsent` degrades to `false` on any read/parse error (no
+  consent ⇒ no action — the safe direction). Scope match is exact:
+  consent for `github:issues:read` does NOT authorise
+  `github:issues:write` — consent is never broadened implicitly.
+- The scoped credential is passed into `performConsentedAction`,
+  not resolved from a vault here — credential storage/rotation is
+  a separate concern the bullet's check does not require; baking a
+  vault in would be speculative over-building.

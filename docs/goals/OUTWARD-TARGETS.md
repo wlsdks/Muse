@@ -193,11 +193,15 @@ assistant you delegate to". A standing objective is not a one-shot.
   — 386 (runDueObjectives: met→act→durable done; unmet→exponential
   backoff; unmeetable / attempts-exhausted→durable escalated +
   escalate sink; fail-open; integration over the real on-disk store)
-- [ ] Acting on an objective uses the user's *scoped* service
+- [x] Acting on an objective uses the user's *scoped* service
   credentials under recorded consent (the act-as-the-user
   prerequisite, shared with P4). Check: an objective performs a
   real (HTTP-faked) external action via a scoped credential with
-  consent recorded.
+  consent recorded. — 386 (personal-consent-store +
+  performConsentedAction: fail-closed — no/scope-mismatched consent
+  ⇒ no credential use, no HTTP; recorded consent ⇒ real HTTP-faked
+  request carrying the scoped Bearer cred; end-to-end via
+  runDueObjectives — met → consented action → durable done)
 
 **P6 — Accountability & correction loop** — trust requires the user
 can see, undo, and teach. Without this, P4/P5 autonomy is not
