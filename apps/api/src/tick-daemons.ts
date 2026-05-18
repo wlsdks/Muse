@@ -25,6 +25,7 @@ import { startProactiveTick, type InMemoryActivityTracker } from "./proactive-ti
 import { createNotesInvestigator } from "@muse/mcp";
 import { startFollowupTick } from "./followup-tick.js";
 import { startPatternTick } from "./pattern-tick.js";
+import { startSituationalBriefingTick } from "./situational-briefing-tick.js";
 
 export interface PhaseDActivityWiring {
   readonly phaseDReminderOn: boolean;
@@ -188,6 +189,44 @@ export function startFollowupDaemonIfConfigured(
   });
   server.addHook("onClose", async () => {
     followupHandle.stop();
+  });
+}
+
+export function startSituationalBriefingDaemonIfConfigured(
+  env: NodeJS.ProcessEnv,
+  server: FastifyInstance,
+  options: ServerOptions
+): void {
+  const briefingProvider = env.MUSE_BRIEFING_PROVIDER?.trim();
+  const briefingDestination = env.MUSE_BRIEFING_DESTINATION?.trim();
+  if (
+    !briefingProvider || briefingProvider.length === 0
+    || !briefingDestination || briefingDestination.length === 0
+    || !options.objectivesFile
+    || !options.briefingSidecarFile
+    || !options.messaging
+    || !options.messaging.has(briefingProvider)
+  ) {
+    return;
+  }
+  const tickMsRaw = env.MUSE_BRIEFING_TICK_MS ? Number(env.MUSE_BRIEFING_TICK_MS) : undefined;
+  const windowMsRaw = env.MUSE_BRIEFING_WINDOW_MS ? Number(env.MUSE_BRIEFING_WINDOW_MS) : undefined;
+  const briefingQuietHours = parseQuietHours(env.MUSE_BRIEFING_QUIET_HOURS)
+    ?? parseQuietHours(env.MUSE_REMINDER_QUIET_HOURS);
+  const briefingHandle = startSituationalBriefingTick({
+    destination: briefingDestination,
+    errorLogger: (message) => server.log.warn(message),
+    ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
+    logger: (message) => server.log.info(message),
+    objectivesFile: options.objectivesFile,
+    providerId: briefingProvider,
+    ...(briefingQuietHours ? { quietHours: briefingQuietHours } : {}),
+    registry: options.messaging,
+    sidecarFile: options.briefingSidecarFile,
+    ...(windowMsRaw !== undefined ? { windowMs: windowMsRaw } : {})
+  });
+  server.addHook("onClose", async () => {
+    briefingHandle.stop();
   });
 }
 

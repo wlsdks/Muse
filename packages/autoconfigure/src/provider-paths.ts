@@ -66,6 +66,14 @@ export function resolveFollowupLlmBudgetFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_FOLLOWUP_LLM_BUDGET_FILE", "followup-llm-budget.json");
 }
 
+export function resolveObjectivesFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_OBJECTIVES_FILE", "objectives.json");
+}
+
+export function resolveBriefingSidecarFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_BRIEFING_SIDECAR_FILE", "briefing-fired.json");
+}
+
 export function resolveEpisodesFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_EPISODES_FILE", "episodes.json");
 }

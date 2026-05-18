@@ -22,7 +22,8 @@ import {
   startFollowupDaemonIfConfigured,
   startPatternDaemonIfConfigured,
   startProactiveDaemonIfConfigured,
-  startReminderDaemonIfConfigured
+  startReminderDaemonIfConfigured,
+  startSituationalBriefingDaemonIfConfigured
 } from "./tick-daemons.js";
 import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js";
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
@@ -326,6 +327,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   startProactiveDaemonIfConfigured(env, server, options, phaseDWiring);
   startFollowupDaemonIfConfigured(env, server, options);
   startPatternDaemonIfConfigured(env, server, options);
+  startSituationalBriefingDaemonIfConfigured(env, server, options);
 
   // Optional Phase 2.a.3 daemon: poll Telegram every
   // MUSE_TELEGRAM_POLL_INTERVAL_MS (default 30s) and persist each

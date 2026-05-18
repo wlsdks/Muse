@@ -48,6 +48,7 @@ import {
 } from "./provider-paths.js";
 
 export {
+  resolveBriefingSidecarFile,
   resolveCredentialsFile,
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
@@ -61,6 +62,7 @@ export {
   resolveMessagingCredentialsFile,
   resolveModelKeysFile,
   resolveNotesDir,
+  resolveObjectivesFile,
   resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
   resolveRemindersFile,

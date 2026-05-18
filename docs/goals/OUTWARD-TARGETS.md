@@ -322,11 +322,20 @@ server autonomously drives the loop.
     drives `runDueSituationalBriefing` over a real provider,
     deduped. — 395 (situational-briefing-tick.ts +
     situational-briefing-tick.test.ts)
-  - [ ] Both riders env-gated + registered in the apps/api daemon
-    set (`start…DaemonIfConfigured` + ServerOptions plumbing +
-    server.ts wiring), off by default, with the concrete
-    objectives evaluator/actuator. Check: env configured → server
-    start registers + can stop; absent ⇒ not started.
+  - [x] The situational-briefing daemon is env-gated + registered
+    in the apps/api daemon set (`startSituationalBriefing
+    DaemonIfConfigured` + ServerOptions `objectivesFile` /
+    `briefingSidecarFile` + autoconfigure resolution + server.ts),
+    off by default. — 396 (env+options+provider → onClose stop
+    hook; absent env / missing options / unregistered provider ⇒
+    not started — situational-briefing-daemon.test.ts)
+  - [ ] The objectives daemon is env-gated + registered in the
+    apps/api daemon set with a concrete production
+    evaluator/actuator (the agent/LLM condition-evaluator — the
+    smoke:live-class remainder). Check: env configured → server
+    start registers + can stop the objectives daemon; absent ⇒
+    not started; the evaluator decides a real objective's
+    condition (integration/smoke:live).
 
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is

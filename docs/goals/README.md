@@ -41,7 +41,8 @@ delete an open row, never rewrite another goal's status.
 | 390 | [Learns from correction](390-learns-from-correction.md)                   | epic / outward | done — P7 fully delivered (b1–b2) |
 | 392 | [Proactive situational briefing](392-situational-briefing.md)             | epic / outward | done — P8 fully delivered (b1–b2) |
 | 394 | [Delegated-autonomy loops run](394-autonomy-loops-run.md)                 | epic / outward | P9-b1 done; P9-b2 split (rider child done) |
-| 395 | [Situational-briefing daemon rider](395-briefing-daemon-rider.md)         | epic / outward | P9-b2 child 1/2 done; env-wiring child next |
+| 395 | [Situational-briefing daemon rider](395-briefing-daemon-rider.md)         | epic / outward | P9-b2 child done (rider) |
+| 396 | [Briefing daemon env-gated](396-briefing-daemon-env-gated.md)             | epic / outward | P9-b2 child done; objectives-daemon child next |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
@@ -290,4 +291,10 @@ Append one line when a discovery path is evaluated and deferred:
   parallel of the P9-b1 objectives rider — shipped + tested (395).
   Parent P9-b2 stays `[ ]` until (b)+(c). Honest split, the
   378-s2 / P5 precedent — no parent flip, no CAPABILITIES line
-  until the parent is met end-to-end.
+  until the parent is met end-to-end. (PROGRESS 396: child (b) done
+  for the situational-briefing daemon — env-gated + registered in
+  the apps/api daemon set end-to-end, ServerOptions +
+  autoconfigure + server.ts + integration test. Remaining: the
+  objectives daemon env-gated + a concrete agent/LLM
+  condition-evaluator — the smoke:live-class (c). Parent still
+  `[ ]`.)

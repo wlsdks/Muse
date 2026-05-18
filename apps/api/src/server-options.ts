@@ -135,6 +135,17 @@ export interface ServerOptions {
    */
   readonly followupsFile?: string;
   /**
+   * Path to the standing-objectives store (default
+   * ~/.muse/objectives.json) and the situational-briefing
+   * last-fired dedupe sidecar (default ~/.muse/briefing-fired.json).
+   * When set alongside MUSE_BRIEFING_PROVIDER /
+   * MUSE_BRIEFING_DESTINATION + a registered messaging provider,
+   * the situational-briefing daemon periodically briefs
+   * delegated-objective status.
+   */
+  readonly objectivesFile?: string;
+  readonly briefingSidecarFile?: string;
+  /**
    * Path to the pattern-detection cooldown sidecar (default
    * ~/.muse/patterns-fired.json). When set alongside
    * MUSE_PROACTIVE_PATTERN_ENABLED=true + provider/destination
