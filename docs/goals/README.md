@@ -320,3 +320,22 @@ Append one line when a discovery path is evaluated and deferred:
   cleared, parent P9-b2 flipped `[x]`, CAPABILITIES line appended.
   No code change needed — the evaluator/parser were always
   correct; the prior failure was the harness.)
+- P9 audit — apps/api/test/p9-seam.test.ts — PASS: P9's bullets
+  ARE a composed production pipeline (env-gated daemon-set fn →
+  builds concrete `createModelObjectiveEvaluator` +
+  `createMessagingObjectiveActuator` → P9-b1 `startObjectivesTick`
+  rider → `runDueObjectives` over the real on-disk store). All
+  P9 deterministic backing checks re-run green together
+  (`@muse/mcp` 17/17 evaluator+loop+store; `@muse/api` 15/15
+  rider+daemon ×2). p9-seam.test.ts exercises the WHOLE chain
+  composed exactly as `startObjectivesDaemonIfConfigured` wires it
+  (only the model verdict — a deterministic strict-JSON stand-in;
+  the live qwen3:8b decision was separately verified by goal 398's
+  real round-trip — and the HTTP boundary faked): a `met` verdict
+  → "✅ Objective met:" POSTed over a real `TelegramProvider` +
+  the objective durably `done`; `unmet` → no POST, stays `active`
+  with attempts/backoff; `unmeetable` → "⚠ Objective needs you:"
+  escalation POSTed + durably `escalated`. No drift; no bullet
+  reopened. P9 (the delegated-autonomy loops actually run in
+  production) is genuinely delivered end-to-end. **P0–P9 now ALL
+  delivered + audited.**
