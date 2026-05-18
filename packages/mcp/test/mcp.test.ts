@@ -2139,6 +2139,40 @@ describe("muse.tasks loopback server", () => {
         .toBe("2026-05-17T12:00:00.000Z");
     });
 
+    it("parses compact unit-suffix offsets ('in 1h', 'in 30m', 'in 5 hrs')", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const now = () => new Date("2026-05-10T12:00:00Z");
+      expect(resolveRelativeTimePhrase("in 1h", now)?.toISOString())
+        .toBe("2026-05-10T13:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in 30m", now)?.toISOString())
+        .toBe("2026-05-10T12:30:00.000Z");
+      expect(resolveRelativeTimePhrase("in 2d", now)?.toISOString())
+        .toBe("2026-05-12T12:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in 15s", now)?.toISOString())
+        .toBe("2026-05-10T12:00:15.000Z");
+      expect(resolveRelativeTimePhrase("in 1w", now)?.toISOString())
+        .toBe("2026-05-17T12:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in 3 hr", now)?.toISOString())
+        .toBe("2026-05-10T15:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in 5 hrs", now)?.toISOString())
+        .toBe("2026-05-10T17:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in 10 mins", now)?.toISOString())
+        .toBe("2026-05-10T12:10:00.000Z");
+      expect(resolveRelativeTimePhrase("in 1 h", now)?.toISOString())
+        .toBe("2026-05-10T13:00:00.000Z");
+      expect(resolveRelativeTimePhrase("in 5 sec", now)?.toISOString())
+        .toBe("2026-05-10T12:00:05.000Z");
+      // `mo` is NOT a recognised abbrev (collides with `m`=minute);
+      // the full-word month handler is unaffected (no regression).
+      expect(resolveRelativeTimePhrase("in 5mo", now)).toBeUndefined();
+      expect(resolveRelativeTimePhrase("in 2 months", now)?.toISOString())
+        .toBe("2026-07-10T12:00:00.000Z");
+      // Requires the "in " prefix; a bare token / unknown unit stays
+      // unrecognised (no false positive).
+      expect(resolveRelativeTimePhrase("1h", now)).toBeUndefined();
+      expect(resolveRelativeTimePhrase("in 3 horses", now)).toBeUndefined();
+    });
+
     it("treats the indefinite article 'a'/'an' as quantity 1", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const now = () => new Date("2026-05-10T12:00:00Z");

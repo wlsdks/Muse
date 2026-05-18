@@ -227,6 +227,24 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     return finiteDate(new Date(reference.getTime() + offsetMs));
   }
 
+  // Compact unit-suffix form ("in 1h", "in 30m", "in 2d", "in 90 mins").
+  // Disjoint from the full-word handler above (which requires a space
+  // + a spelled-out unit). `m` = minute, matching the project's own
+  // `/loop` interval grammar (Nm/Nh/Nd/Ns); no month abbrev — `mo`
+  // collides with `m` and the codebase rejects ambiguous phrases.
+  const compactMatch = /^in\s+(\d+)\s*(secs?|s|mins?|m|hrs?|h|d|w)$/u.exec(trimmed);
+  if (compactMatch) {
+    const amount = Number.parseInt(compactMatch[1] ?? "0", 10);
+    const token = compactMatch[2] ?? "";
+    const unitMs = token === "s" || token === "sec" || token === "secs" ? 1000
+      : token === "m" || token === "min" || token === "mins" ? 60_000
+      : token === "h" || token === "hr" || token === "hrs" ? 3_600_000
+      : token === "d" ? 86_400_000
+      : token === "w" ? 7 * 86_400_000
+      : 0;
+    return finiteDate(new Date(reference.getTime() + amount * unitMs));
+  }
+
   const fractionalMs = resolveFractionalDurationMs(trimmed);
   if (fractionalMs !== undefined) {
     return finiteDate(new Date(reference.getTime() + fractionalMs));
