@@ -46,6 +46,20 @@ chat IS a Muse session"; that reply loop is the missing piece.
 
 ## Status
 
+P1 target audit (Step 4.5) — **PASS**. New
+`apps/api/test/p1-seam.test.ts` wires the pieces exactly as
+`server.ts` does (tick → respondToInbound → threaded runner →
+channel approval gate → real `TelegramProvider` HTTP + cursor +
+thread persistence) and proves the whole user flow composes:
+turn-1 ingested & replied over real HTTP; turn-2 on the same
+channel carries turn-1's user msg + Muse reply into the agent
+(thread continuity survives the tick path); a risky
+(write/execute) tool is blocked with an in-chat approval prompt
+POSTed to the same chat. All four P1 CAPABILITIES checks pass
+together. No drift, no bullet reopened — P1 is genuinely delivered
+end-to-end, not just per-piece. (Audit ships no new capability /
+bullet flip by design; recorded in the README Rejected ledger.)
+
 slice 5 done — flips OUTWARD-TARGETS new **P1-b4** ("risky actions
 prompt for in-chat approval before executing. Check: approval gate
 exercised over the channel path"). **P1 is now fully delivered

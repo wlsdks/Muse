@@ -68,3 +68,13 @@ Append one line when a discovery path is evaluated and deferred:
   CAPABILITIES checks robust to local-model variance (prompt
   hardening / model-capability gating), or tag them
   `[UNVERIFIED-LIVE]`. Not 377-scope.
+- P1 audit — apps/api/test/p1-seam.test.ts — PASS: P1's four
+  CAPABILITIES checks pass together AND compose end-to-end —
+  `startInboundReplyTick` → `respondToInbound` →
+  `createThreadedInboundRunner` → channel approval gate → real
+  `TelegramProvider` HTTP, with the turn-1 user+reply carried into
+  the turn-2 agent run (thread continuity through the tick path)
+  and a write/execute tool blocked with an in-chat approval prompt
+  POSTed to the same chat. No drift; no bullet reopened. P1
+  (two-way conversation on a real channel) is genuinely delivered
+  for the user, not just per-piece.
