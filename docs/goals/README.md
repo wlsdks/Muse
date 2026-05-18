@@ -96,3 +96,19 @@ Append one line when a discovery path is evaluated and deferred:
   kept separate so neither half is half-shipped.
   (RESOLVED 378 s5: createNotesInvestigator over the primary notes
   provider wired into tick-daemons; P0-b3 parent flipped.)
+- P0 audit — packages/agent-core/test/p0-seam.test.ts — PASS: P0's
+  four CAPABILITIES checks pass together (agent-core 555 incl.
+  auto-extract-tool-turn / episodic-recall-embedding /
+  clarify-directive; `@muse/mcp` 375 incl. notes-investigator +
+  proactive-loop) AND compose end-to-end through the real pipeline:
+  a tool-turn fact stored under the run's userId (b1) is recalled
+  on a LATER zero-token-overlap request via `applyUserMemory`
+  wholesale injection (b2 — wording never gates it), `applyUserMemory`
+  → `applyClarifyDirective` run in the live agent-runtime order so
+  clarify stays silent on a well-specified request yet still steers
+  an under-specified first turn to ask while the injected user
+  memory remains present (b4 composes with knows-you, neither
+  transform suppresses the other). b3 (proactive
+  investigate-and-surface) re-run green on its own surface (the
+  proactive daemon). No drift; no bullet reopened. P0 (knows-you ·
+  anticipates · asks) is genuinely delivered end-to-end.
