@@ -96,11 +96,12 @@ lands.**
     over the primary notes provider, wired into the proactive
     daemon — the notice surfaces "📎 Related notes: …" for the
     item's topic, unasked. — 378 s5
-- [ ] On an ambiguous / under-specified request the agent asks a
+- [x] On an ambiguous / under-specified request the agent asks a
   clarifying question instead of guessing, and offers ("shall I
   X?") when it detects a likely-wanted action. Check: ambiguous
   input → a clarifying question, not a hallucinated action
-  (integration).
+  (integration). — 378 s6 (conservative detector + clarify-directive
+  transform wired LIVE into the agent-runtime pipeline)
 
 *Quality bar (not a bullet — not objectively checkable):* the
 anticipation must feel timely and not noisy; graded inside P0/P2

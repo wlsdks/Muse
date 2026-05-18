@@ -29,6 +29,36 @@ fact/preference influence a later answer.
 
 ## Status
 
+slice 6 done — **P0-b4 flipped; P0 (b1–b4) FULLY DELIVERED.**
+`packages/agent-core/src/clarify-directive.ts`:
+`detectUnderspecifiedRequest` (conservative, high-precision — only
+contentless imperatives with no object/referent: "do it",
+"handle that", "just send it"; anything naming a real topic, empty,
+or >40 chars is NOT flagged) + `applyClarifyDirective` context
+transform — when the lone user message is under-specified AND there
+is no prior assistant turn (a contentless "do it" after Muse
+proposed something is a confirmation, not ambiguity) it prepends a
+system directive steering the agent to ask ONE clarifying question
+(offer "Shall I X?") instead of guessing/acting. Wired **LIVE**
+into the agent-runtime context pipeline (right after
+`applyUserMemory`) so every `muse ask`/chat/API turn is steered.
+Integration tests (`@muse/agent-core` clarify-directive.test.ts):
+detector precision/recall; directive injected on a lone
+under-specified msg; NOT injected on a confirmation (prior
+assistant) or a well-specified request.
+
+Verification: the change adds a system directive ONLY on the narrow
+ambiguous case (no prior assistant turn); well-specified inputs —
+incl. every smoke:live prompt — are unaffected (detector
+conservative, full agent-core suite + apps/api + apps/cli green, no
+regression). P0-b4's mandated check is "(integration)" — the green
+deterministic clarify-directive test is the gate.
+
+P0 (b1 auto-extract on real use, b2 embedding recall, b3 proactive
+investigate-and-surface, b4 ask-don't-guess) is now fully
+delivered. Next iteration: per contract Step 4.5, the P0
+target-completion audit.
+
 slice 5 done — **P0-b3 parent flipped** (both split children met).
 Wired the real production investigator: `createNotesInvestigator`
 (`@muse/mcp`) — given an imminent item it searches the user's

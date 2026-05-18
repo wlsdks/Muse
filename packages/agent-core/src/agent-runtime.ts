@@ -61,6 +61,7 @@ import {
   persistConversationSummaryFromRequest as persistConversationSummaryFromRequestFn,
   resolveActiveContextSnapshot as resolveActiveContextSnapshotFn
 } from "./context-transforms.js";
+import { applyClarifyDirective as applyClarifyDirectiveFn } from "./clarify-directive.js";
 import type { EpisodicRecallProvider } from "./episodic-recall.js";
 import { ModelRoutingError } from "./errors.js";
 import {
@@ -419,7 +420,8 @@ export class AgentRuntime {
     await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
     const memoryAppliedInput = await applyUserMemoryFn(layeredContext, this.userMemoryProvider, this.userMemoryMaxEntries);
-    const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: memoryAppliedInput };
+    const clarifyAppliedInput = applyClarifyDirectiveFn({ ...layeredContext, input: memoryAppliedInput });
+    const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: clarifyAppliedInput };
     const activeContextSnapshot = await resolveActiveContextSnapshotFn(memoryAppliedContext, this.activeContextProvider);
     const activeContextInput = applyActiveContextFn(memoryAppliedContext, activeContextSnapshot);
     const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: activeContextInput });

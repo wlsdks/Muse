@@ -72,6 +72,8 @@ export {
   type InboxContextProvider,
   type InboxSnapshot
 } from "./inbox-context.js";
+export { applyClarifyDirective, detectUnderspecifiedRequest } from "./clarify-directive.js";
+
 export {
   cosineSimilarity,
   EmbeddingEpisodicRecallProvider,
