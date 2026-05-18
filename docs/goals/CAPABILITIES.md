@@ -6,18 +6,23 @@ exact command/surface, and the executable check that proves it.
 
 Rules (enforced by `.claude/rules/iteration-loop.md`):
 
-- Every shipped outward goal MUST append exactly one new line here,
-  backed by a test or smoke endpoint that exercises the capability
-  end-to-end (assert the capability, not that code compiles).
-- This file is append-only. Never delete or weaken a line. If a
-  capability regresses, the iteration's job is to restore it.
-- **The count of lines below = the loop's success metric.** If it
-  has not strictly increased across the last 5 iterations, the next
-  iteration's sole mandate is to add one real capability + its
-  check. Flat capability over 5 iterations is the degeneration
-  signal — act on it; never stop, never ask a human.
+- Every shipped outward goal MUST append exactly one new line here.
+  The `<check>` MUST be a concrete automated test or smoke id that
+  actually runs green under `pnpm check` / `pnpm smoke:broad` /
+  `pnpm smoke:live` and asserts the *capability* end-to-end (not
+  that code compiles). Prose with no runnable id is not a check.
+- **Cross-time falsification:** every iteration's first action is
+  to run the newest line's check and prove it still passes. A
+  faked/broken line = the next iteration's whole job is to fix it.
+- **Regression sweep:** every 10th iteration re-runs ALL checks;
+  any regression = next iteration must restore it.
+- Append-only. Never delete or weaken a line.
+- **Line count = the loop's only success metric.** Not strictly
+  increased across the last 5 iterations ⇒ next iteration's sole
+  mandate is one real capability + check. Flat = degeneration; act
+  on it — never stop, never ask a human.
 
-Format: `- [<axis>] <capability> — <command/surface> — <check>`
+Format: `- [<axis>] <capability> — <command/surface> — <runnable check id>`
 axis ∈ Reach | Anticipation | Autonomy | Presence
 
 ## Inventory
