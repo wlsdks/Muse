@@ -24,46 +24,49 @@ Two qualities define every outward goal:
 
 ## Self-directed target map (the loop OWNS and EVOLVES this)
 
-The loop pursues the highest-priority target not yet fully
-delivered ("fully delivered" = every bullet has a green automated
-check in `CAPABILITIES.md`), then the next. The loop **may refine,
-reorder, split, or extend these targets autonomously** when its
-own best-practice judgement says a better outward direction exists
-— that is the desired self-evolution. It records the rationale in
-the goal's `## Decisions`.
-
-What the loop may NOT do (the only constraint on direction): use
-this freedom to relabel inward churn as outward, weaken the
-falsifiable-outward test, or skip a capability check. Direction is
-free; the honesty machinery is not (see "Immutable core" below).
+Each `- [ ]` bullet below is one **deliverable unit** — the
+metric. The loop pursues the highest-priority target with an
+unmet bullet, flips `- [ ]`→`- [x]` ONLY when a green,
+non-`[UNVERIFIED-LIVE]` `CAPABILITIES.md` line delivers that exact
+bullet end-to-end, and appends the check id in parentheses. A
+bullet is too coarse for thin work to satisfy — that is the point
+(closes the thin-progress hole). The loop **may refine, reorder,
+split, or extend bullets autonomously** when its best-practice
+judgement finds a stronger outward direction; record why in the
+goal's `## Decisions`. It may NOT relabel inward churn as a flip,
+weaken the outward test, or skip the check — direction is free,
+the honesty machinery is not.
 
 **P1 — Active messaging assistant** (drive to fully-delivered first)
-- Proactively message the user on a wired channel when a real
+- [ ] Proactively message the user on a wired channel when a real
   trigger fires (reminder / calendar / pattern / follow-up), with
   the why + a concrete suggested action.
-- When the user replies in chat, run the full agent loop (tools,
-  multi-step, approvals) and complete the task, replying with the
-  result. The chat IS a Muse session.
-- Thread context survives across turns and the ~20-min boundary.
-- Risky actions get an in-chat approval prompt first.
-- Provider-neutral over the messaging registry (Telegram / Slack /
-  Discord / LINE — whatever is wired).
+- [ ] When the user replies in chat, run the full agent loop
+  (tools, multi-step, approvals) and complete the task, replying
+  with the result. The chat IS a Muse session.
+- [ ] Thread context survives across turns and the ~20-min
+  boundary.
+- [ ] Risky actions get an in-chat approval prompt first.
+- [ ] Provider-neutral over the messaging registry (Telegram /
+  Slack / Discord / LINE — whatever is wired).
 
 **P2 — Calendar / scheduling autonomy**
-- Read AND write across Local / Google / CalDAV / macOS; create /
-  move / cancel from chat or CLI.
-- Anticipatory prep ("meeting in 15 min — here's the doc/thread"),
-  surfaced proactively (ties to P1).
+- [ ] Read AND write across Local / Google / CalDAV / macOS;
+  create / move / cancel from chat or CLI.
+- [ ] Anticipatory prep ("meeting in 15 min — here's the
+  doc/thread"), surfaced proactively (ties to P1).
 
 **P3 — Personal knowledge grounding (2nd brain)**
-- Ingest + index notes / local files / a drive folder; answer
-  grounded with citations; act on it (file, summarise, link,
-  de-dupe) — not just retrieve.
+- [ ] Ingest + index notes / local files / a drive folder; answer
+  grounded with citations.
+- [ ] Act on the knowledge (file, summarise, link, de-dupe) — not
+  just retrieve.
 
 **P4 — Device / OS / home ambient awareness**
-- Perceive screen / clipboard / active app / notifications as
-  context unasked; act locally where safe via the runner; ambient
-  hints (ties to P1).
+- [ ] Perceive screen / clipboard / active app / notifications as
+  context unasked.
+- [ ] Act locally where safe via the runner; ambient hints (ties
+  to P1).
 
 The loop extends this map itself when all targets are fully
 delivered or when its judgement finds a stronger outward

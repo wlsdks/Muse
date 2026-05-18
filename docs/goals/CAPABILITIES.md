@@ -16,13 +16,19 @@ Rules (enforced by `.claude/rules/iteration-loop.md`):
   faked/broken line = the next iteration's whole job is to fix it.
 - **Regression sweep:** every 10th iteration re-runs ALL checks;
   any regression = next iteration must restore it.
+- A request/response-path capability whose `smoke:live` did NOT
+  actually run is tagged `[UNVERIFIED-LIVE]`; it does not count
+  until a later iteration runs the live check and drops the tag.
 - Append-only. Never delete or weaken a line.
-- **Line count = the loop's only success metric.** Not strictly
-  increased across the last 5 iterations ⇒ next iteration's sole
-  mandate is one real capability + check. Flat = degeneration; act
-  on it — never stop, never ask a human.
+- **The success metric is NOT this line count.** It is
+  `OUTWARD-TARGETS.md` bullets flipped `[ ]`→`[x]`. A line here is
+  the *evidence* for a flip (cite the bullet it delivers); a line
+  that adds no bullet flip is thin and does not satisfy the metric.
+  No bullet flipped in the last 5 iterations ⇒ next iteration's
+  sole mandate is to flip one end-to-end. Flat bullets =
+  degeneration; act on it — never stop, never ask a human.
 
-Format: `- [<axis>] <capability> — <command/surface> — <runnable check id>`
+Format: `- [<axis>] <capability> — <command/surface> — <runnable check id> — P<n> bullet`
 axis ∈ Reach | Anticipation | Autonomy | Presence
 
 ## Inventory
