@@ -53,6 +53,7 @@ delete an open row, never rewrite another goal's status.
 | 405 | [Objectives daemon actions are P6-accountable](405-objectives-actions-accountable.md) | epic / outward | done — daemon actions logged reviewably |
 | 406 | [`muse actions` — read the accountability log](406-actions-cli.md)        | epic / outward | done — P6 log now user-readable from CLI |
 | 407 | [Direct coverage for the security guard factories](407-guards-direct-coverage.md) | test / robustness | done — 6 fail-close guards now directly unit-tested |
+| 408 | [P8 b3/b4 production-assembly seam audit](408-p8-b3b4-daemon-imminent-seam.md) | audit / robustness | done — the daemon's real task+calendar imminent-union is now guarded |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
@@ -360,3 +361,21 @@ Append one line when a discovery path is evaluated and deferred:
   reopened. P9 (the delegated-autonomy loops actually run in
   production) is genuinely delivered end-to-end. **P0–P9 now ALL
   delivered + audited.**
+- P8 audit (b3/b4 re-audit) — apps/api/test/situational-briefing-daemon-imminent-seam.test.ts — PASS: the original P8 audit
+  (above) predated and explicitly covered only b1/b2 (the 8/8
+  piece-checks); the loop-extended b3 (400) + b4 (401) added the
+  REAL task/calendar imminence grounding AFTER it. Their per-piece
+  checks existed, but the actual production assembly —
+  `startSituationalBriefingDaemonIfConfigured` constructing the
+  `deriveBriefingImminent(tasksFile)` ⊎ `deriveCalendarBriefing
+  Imminent(calendar)` union from `ServerOptions` — was unguarded:
+  goal 396 tested only its env-gate/register/stop, the b3/b4 tick
+  tests hand-build the union themselves. A regression dropping the
+  calendar branch or mis-wiring the file would have kept every test
+  green. New seam drives the real builder with a real tasksFile +
+  real calendar lister and asserts the wired imminentProvider
+  unions both (and is absent when neither is set). All P8 checks
+  re-run green together (`@muse/mcp` 13/13 composer+loop+seam+
+  derivers; `@muse/api` 11/11 tick+daemon+new-seam). No drift; no
+  bullet reopened — the production code was correct, only
+  unguarded; it is now guarded.
