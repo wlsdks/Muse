@@ -34,7 +34,7 @@ delete an open row, never rewrite another goal's status.
 | 377 | [Inbound conversational replies](377-inbound-conversational-replies.md)  | epic / outward | done — P1 fully delivered (b1–b4) |
 | 378 | [Knows-you from real use](378-knows-you-from-real-use.md)                | epic / outward | done — P0 fully delivered (b1–b4) |
 | 380 | [Proactive delivery on a real channel](380-proactive-real-channel.md)     | epic / outward | done — P2 fully delivered (b1–b2) |
-| 382 | [Ambient perception loop](382-ambient-perception.md)                     | epic / outward | P3-b1 mechanism shipped; live-wiring next |
+| 382 | [Ambient perception loop](382-ambient-perception.md)                     | epic / outward | done — P3-b1 delivered (live-wired) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
@@ -140,3 +140,14 @@ Append one line when a discovery path is evaluated and deferred:
   a subsequent agent answer — integration). Next 382 slice — kept
   separate so neither half is half-shipped (377 s1 / 378 s2,s4
   no-flip-mechanism precedent).
+  (RESOLVED 382 s2: `applyAmbientContext` + `resolveAmbientSnapshot`
+  wired into the live agent-runtime pipeline behind an opt-in
+  `ambientSnapshotProvider`; ambient-context-runtime.test.ts proves
+  an ambient change alters a subsequent answer; off by default.
+  smoke:live ran a real Qwen round-trip = 9 pass / 4 fail, the
+  pre-existing ledgered local-Qwen nondeterminism on endpoints
+  this change provably does not touch — no `ambientSnapshotProvider`
+  is wired in `apps/api`, so the gated-off path is byte-identical
+  pre/post (apps/api 170 deterministic tests green via pnpm check);
+  not a regression, not [UNVERIFIED-LIVE] (round-trip executed).
+  P3-b1 flipped.)

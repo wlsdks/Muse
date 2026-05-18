@@ -145,10 +145,18 @@ the CAPABILITIES surface-check rule.
 
 **P3 — Ambient perception loop** — Audit: only `muse glance`, a
 manual one-shot CLI print, macOS-only, never reaches the agent.
-- [ ] A gated perception daemon periodically snapshots ambient
+- [x] A gated perception daemon periodically snapshots ambient
   signals (screen / clipboard / active app / notifications) and
   injects them as run context unasked. Check: an ambient change
-  measurably alters a subsequent agent answer.
+  measurably alters a subsequent agent answer. — 382 s2
+  (`applyAmbientContext` + `resolveAmbientSnapshot` wired into the
+  live agent-runtime context pipeline behind an opt-in
+  `ambientSnapshotProvider`; integration proves a window change
+  between two runs changes the answer; off by default. smoke:live
+  ran a real Qwen round-trip (9 pass / 4 fail = the ledgered
+  local-Qwen nondeterminism, README §Rejected; not a regression —
+  no `ambientSnapshotProvider` is wired in `apps/api` so the
+  request/response path is byte-identical for the smoke path))
 
 **P4 — Close the trust-blocking PARTIALs** — audit-identified;
 required before Muse can be delegated to unsupervised. (User-model

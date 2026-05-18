@@ -62,12 +62,43 @@ neither half is half-shipped).
 
 ## Status
 
-P3-b1 mechanism shipped and verified; **P3-b1 NOT flipped** — the
-parent bullet stays `[ ]` until s2's production-wiring slice
-delivers the end-to-end surface check. Recorded as a deferred
-split in the README Rejected ledger. No CAPABILITIES line this
-slice (a mechanism slice is not an end-to-end bullet delivery,
-per the contract's no-flip-mechanism discipline).
+**P3-b1 DELIVERED (s1 mechanism + s2 live-wiring).** s2 wired
+`applyAmbientContext` + `resolveAmbientSnapshot` into the live
+agent-runtime context pipeline (right after `applyActiveContext`)
+behind an opt-in `AgentRuntimeOptions.ambientSnapshotProvider`
+(absence = off; perception is privacy-sensitive). End-to-end
+surface check `ambient-context-runtime.test.ts`: with the provider
+wired, a window change between two sequential `runtime.run` calls
+measurably changes the agent's answer (the model echoes the
+injected `[Ambient Context]`); with no provider the answer carries
+no perception (privacy default-off proven through the real
+pipeline). P3-b1 flipped `[ ]`→`[x]` (— 382 s2); one CAPABILITIES
+line appended; README backlog + deferred-ledger line resolved.
+
+Verification: `@muse/agent-core` 564 pass (+2 e2e, +7 mechanism
+total, no regression); `pnpm check` green (apps/cli 681, all
+packages incl. apps/api 170 deterministic); `pnpm lint` 0/0;
+`pnpm guard:core` clean. The wiring touches the request/response
+path, so `pnpm smoke:live` ran a real local-Ollama-Qwen
+round-trip: 9 pass / 4 fail. The 4 are the **pre-existing,
+ledgered local-Qwen nondeterminism** (README Rejected ledger, from
+377 s2 — qwen3:8b free-form output variance + cold-load slowness
+on live-LLM substring assertions), **not a regression from this
+change**: no `ambientSnapshotProvider` is wired anywhere in
+`apps/api` / `apps/cli` / `autoconfigure`, so `ambientEnabled` is
+`false` on the smoke path and both `resolveAmbientSnapshot` and
+`applyAmbientContext` short-circuit to a no-op — the
+request/response path is byte-identical pre/post (the green
+apps/api 170 deterministic suite confirms zero behavioural drift).
+Not `[UNVERIFIED-LIVE]` — the round-trip executed; the failures
+are environmental small-model variance on endpoints this change
+does not (and provably cannot) affect. The bullet's mandated
+Check is the deterministic integration `ambient-context-runtime
+.test.ts`, which is green.
+
+P3 (ambient perception loop) is the only P3 bullet and is now
+delivered + verified; next iteration: per contract Step 4, the P3
+target-completion audit.
 
 ## Decisions
 

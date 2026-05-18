@@ -38,6 +38,7 @@ import type {
 } from "@muse/tools";
 
 import type { ActiveContextProvider } from "./active-context.js";
+import type { AmbientSnapshotProvider } from "./ambient-context.js";
 import type { EpisodicRecallProvider } from "./episodic-recall.js";
 import type { HookRegistry } from "./hook-registry.js";
 import type { InboxContextProvider } from "./inbox-context.js";
@@ -123,6 +124,13 @@ export interface AgentRuntimeOptions {
    * system-prompt block. Fail-open per transform.
    */
   readonly activeContextProvider?: ActiveContextProvider;
+  /**
+   * Ambient perception: when set, the agent perceives the user's
+   * environment (frontmost app / window / selection / clipboard /
+   * notifications) as an `[Ambient Context]` system block, unasked.
+   * Opt-in only — privacy-sensitive, so absence = off; fail-open.
+   */
+  readonly ambientSnapshotProvider?: AmbientSnapshotProvider;
   /**
    * Context Engineering Phase 2: surface recent inbound messages
    * (Slack / Discord / Telegram / LINE) as a `[Recent Messages]`

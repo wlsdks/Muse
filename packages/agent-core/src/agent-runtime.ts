@@ -61,6 +61,11 @@ import {
   persistConversationSummaryFromRequest as persistConversationSummaryFromRequestFn,
   resolveActiveContextSnapshot as resolveActiveContextSnapshotFn
 } from "./context-transforms.js";
+import {
+  applyAmbientContext as applyAmbientContextFn,
+  resolveAmbientSnapshot as resolveAmbientSnapshotFn
+} from "./ambient-context.js";
+import type { AmbientSnapshotProvider } from "./ambient-context.js";
 import { applyClarifyDirective as applyClarifyDirectiveFn } from "./clarify-directive.js";
 import type { EpisodicRecallProvider } from "./episodic-recall.js";
 import { ModelRoutingError } from "./errors.js";
@@ -181,6 +186,7 @@ export class AgentRuntime {
   private readonly exemplarTopK: number;
   private readonly promptLayerRegistry?: PromptLayerRegistry;
   private readonly activeContextProvider?: ActiveContextProvider;
+  private readonly ambientSnapshotProvider?: AmbientSnapshotProvider;
   private readonly inboxContextProvider?: InboxContextProvider;
   private readonly episodicRecallProvider?: EpisodicRecallProvider;
   private readonly toolFilter?: ToolFilter;
@@ -236,6 +242,7 @@ export class AgentRuntime {
     this.exemplarTopK = Math.max(1, options.exemplarTopK ?? 3);
     this.promptLayerRegistry = options.promptLayerRegistry;
     this.activeContextProvider = options.activeContextProvider;
+    this.ambientSnapshotProvider = options.ambientSnapshotProvider;
     this.inboxContextProvider = options.inboxContextProvider;
     this.episodicRecallProvider = options.episodicRecallProvider;
     this.toolFilter = options.toolFilter;
@@ -424,7 +431,14 @@ export class AgentRuntime {
     const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: clarifyAppliedInput };
     const activeContextSnapshot = await resolveActiveContextSnapshotFn(memoryAppliedContext, this.activeContextProvider);
     const activeContextInput = applyActiveContextFn(memoryAppliedContext, activeContextSnapshot);
-    const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: activeContextInput });
+    const ambientEnabled = this.ambientSnapshotProvider !== undefined;
+    const ambientSnapshot = await resolveAmbientSnapshotFn(this.ambientSnapshotProvider, ambientEnabled);
+    const ambientContextInput = applyAmbientContextFn(
+      { ...memoryAppliedContext, input: activeContextInput },
+      ambientSnapshot,
+      ambientEnabled
+    );
+    const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: ambientContextInput });
     const skillsAppliedInput = await applySkillsContextFn({ ...memoryAppliedContext, input: attachmentAppliedInput }, this.skillCatalogProvider);
     const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: skillsAppliedInput };
     const inboxAppliedInput = await applyInboxContextFn(activeContextContext, this.inboxContextProvider);
