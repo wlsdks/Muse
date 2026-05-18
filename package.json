@@ -22,6 +22,8 @@
     "check": "pnpm build && pnpm test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "dashboard": "node scripts/dashboard-server.mjs",
+    "dashboard:tunnel": "bash scripts/dashboard-tunnel.sh",
     "smoke:broad": "node scripts/smoke-broad-http.mjs",
     "smoke:cli": "pnpm --filter @muse/cli build && node scripts/smoke-cli.mjs",
     "smoke:diagnostic": "node scripts/smoke-diagnostic-runtime.mjs",

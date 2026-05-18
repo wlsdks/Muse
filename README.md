@@ -5,11 +5,7 @@ reasoning loop, any LLM, any tool, any MCP server.
 
 [한국어 README →](README.ko.md)
 
-📊 **Live progress** — what the autonomous loop is doing, in plain
-language: _public link pinned here once the dashboard tunnel is set
-up (see [goal 376](docs/goals/376-progress-dashboard-and-safe-tunnel.md))._
-View it locally now: `node scripts/dashboard-server.mjs` →
-<http://127.0.0.1:8787> (read-only, 127.0.0.1-only).
+<!--LIVE_URL-->📊 **Live progress:** _not exposed yet — start it with `pnpm dashboard:tunnel` (needs the `cloudflared` binary; no account). The loop writes the current public URL on this line and refreshes it when it rotates. Locally any time: `node scripts/dashboard-server.mjs` → <http://127.0.0.1:8787> (read-only, 127.0.0.1-only)._<!--/LIVE_URL-->
 
 ## What Muse is
 
