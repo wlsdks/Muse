@@ -91,6 +91,7 @@ delete an open row, never rewrite another goal's status.
 | 443 | [Non-finite token count can't poison the token-volume ranking](443-token-cost-nonfinite-token-guard.md) | fix / safety | done — 428 sibling; finiteTokens guards the totalTokens sort key that is primary under Qwen-only/$0 (mutation-proven) |
 | 444 | [Float env-parsers reject lenient-garbage like parseInteger](444-env-float-parsers-strict.md) | fix / robustness | done — 414 sibling; `0.5x`/`60s`/`0x` float MUSE_* now → fallback not silent-truncate; +first direct coverage (mutation-proven) |
 | 445 | [Reminders/tasks accept decimal relative durations](445-relative-time-decimal-durations.md) | feat / UX | done — "in 1.5 hours" / "in 2.5 days" now resolve (was ERROR); deferred-ledger decimal half delivered (mutation-proven) |
+| 446 | [ToolCallDeduplicator bounds its result cache](446-tool-call-deduplicator-bounded.md) | fix / safety | done — 434 sibling; per-run dedup cache now oldest-first bounded (was unbounded; runaway tool loop memory; mutation-proven) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —

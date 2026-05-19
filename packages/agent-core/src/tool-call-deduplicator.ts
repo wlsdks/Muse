@@ -28,8 +28,20 @@ export interface ToolCallNotDuplicate {
 
 export type ToolCallDeduplicationDecision = ToolCallDuplicate | ToolCallNotDuplicate;
 
+const DEFAULT_MAX_DEDUP_ENTRIES = 256;
+
 export class ToolCallDeduplicator {
   readonly #completedResults = new Map<string, ToolExecutionResult>();
+  readonly #maxEntries: number;
+
+  constructor(maxEntries: number = DEFAULT_MAX_DEDUP_ENTRIES) {
+    // Finite-guard the bound: a non-finite cap would make the
+    // `size > maxEntries` check always false and silently restore
+    // the unbounded behaviour this cap exists to prevent.
+    this.#maxEntries = Number.isFinite(maxEntries) && maxEntries > 0
+      ? Math.trunc(maxEntries)
+      : DEFAULT_MAX_DEDUP_ENTRIES;
+  }
 
   buildSignature(toolCall: ModelToolCall): string {
     return `${toolCall.name}:${stableJson(toolCall.arguments)}`;
@@ -60,6 +72,15 @@ export class ToolCallDeduplicator {
     }
 
     this.#completedResults.set(this.buildSignature(toolCall), result);
+    if (this.#completedResults.size > this.#maxEntries) {
+      // Oldest-first (insertion-order) eviction so a long tool loop
+      // can't pin unbounded memory in full tool outputs; an evicted
+      // repeat just re-executes, which is correct, only unmemoized.
+      const oldest = this.#completedResults.keys().next().value;
+      if (oldest !== undefined) {
+        this.#completedResults.delete(oldest);
+      }
+    }
   }
 }
 

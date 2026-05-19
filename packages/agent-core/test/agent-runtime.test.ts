@@ -381,6 +381,37 @@ describe("ToolCallDeduplicator", () => {
 
     expect(deduplicator.check({ ...toolCall, id: "tool-2" })).toMatchObject({ duplicate: false });
   });
+
+  it("bounds memory: oldest distinct completed calls are evicted past maxEntries", () => {
+    const deduplicator = new ToolCallDeduplicator(2);
+    const mk = (n: number) => ({ arguments: { n }, id: `t${n}`, name: "read" });
+    for (const n of [1, 2, 3]) {
+      const call = mk(n);
+      expect(deduplicator.check(call)).toMatchObject({ duplicate: false });
+      deduplicator.record(call, { id: call.id, name: call.name, output: `r${n}`, status: "completed" });
+    }
+
+    // Cap is 2: call 1 (oldest) evicted → re-executes; 2 and 3 retained.
+    expect(deduplicator.check(mk(1))).toMatchObject({ duplicate: false });
+    expect(deduplicator.check(mk(2))).toMatchObject({ duplicate: true, result: { output: "r2" } });
+    expect(deduplicator.check(mk(3))).toMatchObject({ duplicate: true, result: { output: "r3" } });
+
+    // Re-recording an existing signature updates in place (no growth,
+    // no spurious eviction of the other retained entry).
+    const two = mk(2);
+    deduplicator.record(two, { id: two.id, name: two.name, output: "r2b", status: "completed" });
+    expect(deduplicator.check(mk(2))).toMatchObject({ duplicate: true, result: { output: "r2b" } });
+    expect(deduplicator.check(mk(3))).toMatchObject({ duplicate: true, result: { output: "r3" } });
+
+    // A non-finite / non-positive cap falls back to the default
+    // bound, never an always-false (silently unbounded) check.
+    for (const bad of [Number.NaN, 0, -5, Number.POSITIVE_INFINITY]) {
+      const d = new ToolCallDeduplicator(bad);
+      const c = { arguments: {}, id: "x", name: "read" };
+      d.record(c, { id: "x", name: "read", output: "ok", status: "completed" });
+      expect(d.check({ ...c, id: "y" })).toMatchObject({ duplicate: true, result: { output: "ok" } });
+    }
+  });
 });
 
 describe("AgentRuntime", () => {
