@@ -186,19 +186,41 @@ function stripZeroWidth(text: string): string {
 // HTML5 named entities for the invisible / bidi code points that
 // are already in `zeroWidthCodePoints`. Decoding only the NUMERIC
 // form left `igno&shy;re` (named soft-hyphen) splitting a keyword
-// and evading every pattern while `igno&#173;re` was caught.
+// and evading every pattern while `igno&#173;re` was caught. This
+// must cover EVERY HTML5 named entity whose code point the
+// normaliser strips, else the named form is a free evasion — the
+// iconic `&ZeroWidthSpace;` (U+200B) / `&NoBreak;` (U+2060) and
+// the invisible-math operators were the remaining holes.
 const namedInvisibleEntities: Record<string, number> = {
+  af: 0x2061,
+  ApplyFunction: 0x2061,
+  ic: 0x2063,
+  InvisibleComma: 0x2063,
+  InvisibleTimes: 0x2062,
+  it: 0x2062,
   lrm: 0x200e,
+  NoBreak: 0x2060,
   rlm: 0x200f,
   shy: 0x00ad,
+  ZeroWidthSpace: 0x200b,
   zwj: 0x200d,
   zwnj: 0x200c
 };
 
+// Built from the map so a new entity can't desync the matcher.
+// Longest-first keeps the `;`-anchored alternation unambiguous;
+// HTML5 entity names are case-sensitive, so no `i` flag.
+const namedInvisibleEntityPattern = new RegExp(
+  `&(${Object.keys(namedInvisibleEntities)
+    .sort((a, b) => b.length - a.length)
+    .join("|")});`,
+  "g"
+);
+
 function decodeHtmlEntities(text: string): string {
   return text
     .replace(
-      /&(shy|zwnj|zwj|lrm|rlm);/g,
+      namedInvisibleEntityPattern,
       (match, name: string) => decodeCodePoint(match, namedInvisibleEntities[name] ?? -1)
     )
     .replace(/&#(\d+);/g, (match, value: string) => decodeCodePoint(match, Number.parseInt(value, 10)))

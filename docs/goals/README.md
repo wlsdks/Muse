@@ -55,6 +55,7 @@ delete an open row, never rewrite another goal's status.
 | 407 | [Direct coverage for the security guard factories](407-guards-direct-coverage.md) | test / robustness | done — 6 fail-close guards now directly unit-tested |
 | 408 | [P8 b3/b4 production-assembly seam audit](408-p8-b3b4-daemon-imminent-seam.md) | audit / robustness | done — the daemon's real task+calendar imminent-union is now guarded |
 | 409 | [Fix Atom feed permalink selection](409-atom-feed-permalink-fix.md) | fix / robustness | done — `muse feeds` records the rel=alternate permalink, not the self/feed URL |
+| 410 | [Close named-invisible-entity injection evasion](410-named-invisible-entity-evasion.md) | fix / security | done — `&ZeroWidthSpace;`/`&NoBreak;` no longer evade injection/PII/leakage guards |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
