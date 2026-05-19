@@ -155,17 +155,23 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         ? options.tags.split(",").map((tag) => tag.trim()).filter((tag) => tag.length > 0)
         : undefined;
 
+      // Validate `--due` before dispatch in BOTH modes: the
+      // `/api/tasks` route uses the same `parseTaskDueAt` grammar,
+      // so a bad `--due` gets the identical actionable error
+      // whether or not `--local` is set — no degraded API error,
+      // no wasted round-trip on input the server would only reject.
+      let resolvedDueAt: string | undefined;
+      if (options.due && options.due.trim().length > 0) {
+        const parsed = parseTaskDueAt(options.due, () => new Date());
+        if (parsed instanceof Error) {
+          throw parsed;
+        }
+        resolvedDueAt = parsed;
+      }
+
       let created: Record<string, unknown>;
       if (options.local) {
         const file = localTasksFile();
-        let dueAt: string | undefined;
-        if (options.due && options.due.trim().length > 0) {
-          const parsed = parseTaskDueAt(options.due, () => new Date());
-          if (parsed instanceof Error) {
-            throw parsed;
-          }
-          dueAt = parsed;
-        }
         const persisted: PersistedTask = {
           createdAt: new Date().toISOString(),
           id: `task_${randomUUID()}`,
@@ -173,7 +179,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
           title,
           ...(options.notes && options.notes.length > 0 ? { notes: options.notes } : {}),
           ...(tags && tags.length > 0 ? { tags } : {}),
-          ...(dueAt ? { dueAt } : {}),
+          ...(resolvedDueAt ? { dueAt: resolvedDueAt } : {}),
           ...(options.urgent === true ? { urgent: true } : {})
         };
         const existing = await readTasks(file);

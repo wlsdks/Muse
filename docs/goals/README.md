@@ -65,6 +65,7 @@ delete an open row, never rewrite another goal's status.
 | 417 | [Bare Korean time phrase resolves to today](417-bare-korean-time-phrase.md) | fix / consistency | done — `오후 5시`/`정오`/`자정` resolve like `5pm`/`noon`, not error |
 | 418 | [Episodes summary compares parsed instants](418-episodes-summary-instant-compare.md) | fix / consistency | done — `muse status` "last session" no longer wrong on mixed-precision/tz endedAt |
 | 419 | [`muse remind` validates `<when>` before dispatch](419-remind-predispatch-when-validation.md) | fix / UX | done — remote mode fails fast with the actionable error, no doomed round-trip; +command test |
+| 420 | [`muse tasks add` validates `--due` before dispatch](420-tasks-predispatch-due-validation.md) | fix / UX | done — 419 follow-up discharged; tasks/remind now consistent; +command test |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
