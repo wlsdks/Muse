@@ -134,6 +134,36 @@ describe("TelegramProvider", () => {
     expect(escapeForTelegramParseMode("path\\to", "MarkdownV2")).toBe("path\\\\to");
   });
 
+  it("escapeForTelegramParseMode escapes every Telegram MarkdownV2 reserved char and leaves the rest alone", () => {
+    // Telegram rejects sendMessage with 400 "can't parse entities"
+    // if ANY of these 18 is unescaped — dropping the whole notice.
+    // Each must be pinned individually so removing one from the
+    // regex fails here, not silently in production.
+    for (const ch of ["_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"]) {
+      expect(escapeForTelegramParseMode(ch, "MarkdownV2")).toBe(`\\${ch}`);
+      expect(escapeForTelegramParseMode(`x${ch}y`, "MarkdownV2")).toBe(`x\\${ch}y`);
+    }
+
+    // Non-reserved characters must NOT be escaped: an over-eager
+    // regex would corrupt every message's readability.
+    for (const ch of ["a", "Z", "9", " ", "@", ":", "/", ",", "%", '"', "'", "&", "<", "?", "한"]) {
+      expect(escapeForTelegramParseMode(ch, "MarkdownV2")).toBe(ch);
+    }
+
+    // HTML mode: exactly &,<,> and ampersand-first so an already-
+    // entity-looking "&lt;" is not double-mangled into "&amp;lt;"
+    // incorrectly; quotes/apostrophes/dots are NOT touched (Telegram
+    // HTML text mode only requires the triple).
+    expect(escapeForTelegramParseMode("<&>", "HTML")).toBe("&lt;&amp;&gt;");
+    expect(escapeForTelegramParseMode("&lt;", "HTML")).toBe("&amp;lt;");
+    expect(escapeForTelegramParseMode('a "b" .c- _d_', "HTML")).toBe('a "b" .c- _d_');
+
+    // Empty string is identity under every mode.
+    for (const mode of ["MarkdownV2", "HTML", undefined] as const) {
+      expect(escapeForTelegramParseMode("", mode)).toBe("");
+    }
+  });
+
   it("throws MessagingProviderError on 401 with description", async () => {
     const provider = new TelegramProvider({
       fetch: async () => fakeJsonResponse({ description: "Unauthorized", ok: false }, { status: 401 }),
