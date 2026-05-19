@@ -2292,6 +2292,37 @@ describe("muse.tasks loopback server", () => {
       }
     });
 
+    it("rejects impossible calendar dates instead of silently rolling them over", async () => {
+      const { parseTaskDueAt } = await import("../src/personal-tasks-store.js");
+      const { parseReminderDueAt } = await import("../src/personal-reminders-store.js");
+      const now = () => new Date("2026-05-19T12:00:00Z");
+
+      // `new Date("2026-02-30")` rolls to Mar 2 — accepting it would
+      // schedule the reminder/task on the wrong day. These must error
+      // exactly like the already-rejected "2026-13-45", not roll.
+      for (const bad of [
+        "2026-02-30",
+        "2026-02-29", // 2026 is not a leap year
+        "2026-04-31",
+        "2026-06-31",
+        "2026-09-31",
+        "2026-11-31",
+        "2026-00-10",
+        "2026-13-01"
+      ]) {
+        expect(parseTaskDueAt(bad, now)).toBeInstanceOf(Error);
+        expect(parseReminderDueAt(bad, now)).toBeInstanceOf(Error);
+      }
+
+      // No regression: real dates, a genuine leap day, a full ISO
+      // datetime, and relative phrases all still resolve.
+      expect(String(parseTaskDueAt("2026-05-20", now))).toMatch(/^2026-05-20T/u);
+      expect(String(parseTaskDueAt("2026-12-31", now))).toMatch(/^2026-12-31T/u);
+      expect(String(parseTaskDueAt("2028-02-29", now))).toMatch(/^2028-02-29T/u); // 2028 is a leap year
+      expect(parseTaskDueAt("2026-05-20T15:30:00Z", now)).toBe("2026-05-20T15:30:00.000Z");
+      expect(typeof parseTaskDueAt("in 30 minutes", now)).toBe("string");
+    });
+
     it("supports time-of-day suffixes (am/pm/HH:MM/noon/midnight)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const tomorrow6pm = resolveRelativeTimePhrase("tomorrow at 6pm", () => new Date("2026-05-10T12:00:00Z"));

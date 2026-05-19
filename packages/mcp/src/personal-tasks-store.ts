@@ -127,8 +127,19 @@ export function parseTaskDueAt(raw: string, now: () => Date): string | Error {
     return new Error("dueAt is empty");
   }
   const isoParsed = new Date(trimmed);
-  if (!Number.isNaN(isoParsed.getTime()) && /^\d{4}-\d{2}-\d{2}/u.test(trimmed)) {
-    return isoParsed.toISOString();
+  const dateHead = /^(\d{4})-(\d{2})-(\d{2})/u.exec(trimmed);
+  if (!Number.isNaN(isoParsed.getTime()) && dateHead) {
+    // `new Date("2026-02-30")` silently rolls over to Mar 2 rather
+    // than failing — accepting it would schedule the reminder ~2
+    // days off. A real calendar date round-trips its Y-M-D through
+    // Date.UTC unchanged; a rolled-over one does not.
+    const y = Number(dateHead[1]);
+    const mo = Number(dateHead[2]);
+    const d = Number(dateHead[3]);
+    const probe = new Date(Date.UTC(y, mo - 1, d));
+    if (probe.getUTCFullYear() === y && probe.getUTCMonth() === mo - 1 && probe.getUTCDate() === d) {
+      return isoParsed.toISOString();
+    }
   }
   const relative = resolveRelativeTimePhrase(trimmed, now);
   if (!relative) {
