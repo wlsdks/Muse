@@ -135,6 +135,7 @@ interface EpisodeRow {
  */
 export function summariseEpisodesRows(rows: readonly unknown[], userId: string): EpisodesSummary {
   let total = 0;
+  let lastEndedMs = Number.NEGATIVE_INFINITY;
   let lastEndedAt: string | undefined;
   let lastSummary: string | undefined;
   for (const raw of rows) {
@@ -142,9 +143,19 @@ export function summariseEpisodesRows(rows: readonly unknown[], userId: string):
     const row = raw as EpisodeRow;
     if (typeof row.userId !== "string" || row.userId !== userId) continue;
     total += 1;
-    if (typeof row.endedAt === "string" && (lastEndedAt === undefined || row.endedAt > lastEndedAt)) {
-      lastEndedAt = row.endedAt;
-      lastSummary = typeof row.summary === "string" ? row.summary : undefined;
+    // Compare parsed instants, not raw strings: endedAt is a
+    // free-form timestamp (runtime-written / imported / hand-
+    // edited), and lexicographic ISO order is wrong across mixed
+    // sub-second precision and timezone offsets — it would surface
+    // the wrong episode as the most recent one. Mirrors the
+    // sibling reminder/followup/patterns summarisers.
+    if (typeof row.endedAt === "string") {
+      const ms = Date.parse(row.endedAt);
+      if (Number.isFinite(ms) && ms > lastEndedMs) {
+        lastEndedMs = ms;
+        lastEndedAt = row.endedAt;
+        lastSummary = typeof row.summary === "string" ? row.summary : undefined;
+      }
     }
   }
   return { lastEndedAt, lastSummary, total };

@@ -7383,6 +7383,36 @@ describe("personal-status-summary helpers (direct unit tests)", () => {
     expect(summary.lastSummary).toBe("Newest");
   });
 
+  it("summariseEpisodesRows compares parsed instants, not raw strings (mixed precision / tz offsets)", async () => {
+    const { summariseEpisodesRows } = await import("../src/index.js");
+    // ...00.500Z is LATER than ...00Z, but lexicographically
+    // "...00Z" > "...00.500Z" — pre-fix this returned "earlier".
+    const precision = [
+      { id: "p1", userId: "u", endedAt: "2026-05-19T10:00:00Z", summary: "earlier" },
+      { id: "p2", userId: "u", endedAt: "2026-05-19T10:00:00.500Z", summary: "later" }
+    ];
+    expect(summariseEpisodesRows(precision, "u").lastSummary).toBe("later");
+
+    // 02:00Z is later than 10:00+09:00 (=01:00Z); string compare
+    // wrongly picked the +09:00 one.
+    const tz = [
+      { id: "t1", userId: "u", endedAt: "2026-05-19T10:00:00+09:00", summary: "01:00Z" },
+      { id: "t2", userId: "u", endedAt: "2026-05-19T02:00:00Z", summary: "02:00Z latest" }
+    ];
+    expect(summariseEpisodesRows(tz, "u").lastSummary).toBe("02:00Z latest");
+
+    // An unparseable endedAt no longer wins via lexicographic
+    // compare (now consistent with the sibling summarisers).
+    const garbage = [
+      { id: "g1", userId: "u", endedAt: "zzz-not-a-date", summary: "garbage" },
+      { id: "g2", userId: "u", endedAt: "2026-05-19T00:00:00Z", summary: "valid" }
+    ];
+    const g = summariseEpisodesRows(garbage, "u");
+    expect(g.total).toBe(2);
+    expect(g.lastEndedAt).toBe("2026-05-19T00:00:00Z");
+    expect(g.lastSummary).toBe("valid");
+  });
+
   it("summarisePatternsFiredRows: counts every row with a string patternId; only valid firedAtMs updates last", async () => {
     const { summarisePatternsFiredRows } = await import("../src/index.js");
     const rows = [
