@@ -778,6 +778,18 @@ describe("VoiceProviderRegistry", () => {
     expect(() => registry.requireStt("missing")).toThrow(VoiceProviderError);
     expect(() => registry.requireTts("missing")).toThrow(VoiceProviderError);
   });
+
+  it("the unknown-id error names the registered providers so the caller can recover", () => {
+    const empty = new VoiceProviderRegistry();
+    expect(() => empty.requireStt("whisper")).toThrow(/none registered/u);
+    expect(() => empty.requireTts("piper")).toThrow(/none registered/u);
+
+    const registry = new VoiceProviderRegistry();
+    registry.registerStt(new OpenAIWhisperSttProvider({ apiKey, fetchImpl: dummyFetch() }));
+    registry.registerTts(new OpenAITtsProvider({ apiKey, fetchImpl: dummyFetch() }));
+    expect(() => registry.requireStt("openai-wisper")).toThrow(/registered: openai-whisper/u);
+    expect(() => registry.requireTts("opena-tts")).toThrow(/registered: openai-tts/u);
+  });
 });
 
 function dummyFetch(): (input: string, init: RequestInit) => Promise<Response> {

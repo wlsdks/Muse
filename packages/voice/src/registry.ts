@@ -40,7 +40,11 @@ export class VoiceProviderRegistry {
   requireStt(id: string): SpeechToTextProvider {
     const provider = this.stt.get(id);
     if (!provider) {
-      throw new VoiceProviderError(id, "STT_NOT_FOUND", `STT provider not registered: ${id}`);
+      throw new VoiceProviderError(
+        id,
+        "STT_NOT_FOUND",
+        `STT provider not registered: ${id}${registeredHint([...this.stt.keys()])}`
+      );
     }
     return provider;
   }
@@ -48,8 +52,16 @@ export class VoiceProviderRegistry {
   requireTts(id: string): TextToSpeechProvider {
     const provider = this.tts.get(id);
     if (!provider) {
-      throw new VoiceProviderError(id, "TTS_NOT_FOUND", `TTS provider not registered: ${id}`);
+      throw new VoiceProviderError(
+        id,
+        "TTS_NOT_FOUND",
+        `TTS provider not registered: ${id}${registeredHint([...this.tts.keys()])}`
+      );
     }
     return provider;
   }
+}
+
+function registeredHint(ids: readonly string[]): string {
+  return ids.length > 0 ? ` (registered: ${ids.join(", ")})` : " (none registered)";
 }
