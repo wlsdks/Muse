@@ -51,6 +51,16 @@ export function sendAgentError(
     }, responseMode) as ApiError);
   }
 
+  if (isRetryableUpstreamError(error)) {
+    const upstreamMessage = unwrapErrorMessage(error);
+    return reply.status(503).send(chatErrorResponse({
+      code: "UPSTREAM_UNAVAILABLE",
+      errorCode: "UPSTREAM_UNAVAILABLE",
+      errorMessage: upstreamMessage,
+      message: upstreamMessage
+    }, responseMode) as ApiError);
+  }
+
   const message = unwrapErrorMessage(error);
   return reply.status(500).send(chatErrorResponse({
     code: "AGENT_RUN_FAILED",
@@ -58,6 +68,29 @@ export function sendAgentError(
     errorMessage: message,
     message
   }, responseMode) as ApiError);
+}
+
+/**
+ * A transient upstream failure (provider unreachable, 5xx/429, the
+ * stream no-body fallback failing) carries `retryable: true` on a
+ * `ModelProviderError` — possibly nested under RetryExhaustedError.
+ * Surfacing it as 503 (not a flat 500) lets a client / proxy tell
+ * "retry in a moment" from a permanent bug. Duck-typed on the
+ * documented `.retryable` contract so a cross-package instanceof
+ * mismatch can't silently drop the signal.
+ */
+function isRetryableUpstreamError(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    const candidate = current as { name?: unknown; retryable?: unknown; cause?: unknown };
+    if (candidate.name === "ModelProviderError" && candidate.retryable === true) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
 }
 
 /**

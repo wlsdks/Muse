@@ -94,6 +94,7 @@ delete an open row, never rewrite another goal's status.
 | 446 | [ToolCallDeduplicator bounds its result cache](446-tool-call-deduplicator-bounded.md) | fix / safety | done — 434 sibling; per-run dedup cache now oldest-first bounded (was unbounded; runaway tool loop memory; mutation-proven) |
 | 447 | [Re-mentioned recent topic keeps its freshest position](447-persona-recent-topics-freshest-dedupe.md) | fix / UX | done — persona continuity: a topic the user just resumed no longer dropped by first-occurrence dedupe + slice(-5) (425/433 class, mutation-proven) |
 | 448 | [Failing no-body-stream fallback yields an error event](448-openai-compat-stream-fallback-error-event.md) | fix / robustness | done — OpenAICompatibleProvider.stream's 3rd error path no longer throws out of the generator (415/432 contract-consistency; smoke:live-verified) |
+| 449 | [Retryable upstream failure → HTTP 503, not flat 500](449-api-retryable-upstream-503.md) | fix / robustness | done — 448 HTTP-boundary sibling; transient ModelProviderError now 503 UPSTREAM_UNAVAILABLE so clients can back off (mutation-proven) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
