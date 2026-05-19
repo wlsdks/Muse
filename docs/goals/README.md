@@ -88,6 +88,7 @@ delete an open row, never rewrite another goal's status.
 | 440 | [Reject impossible calendar due-dates instead of silent rollover](440-due-date-impossible-calendar-reject.md) | fix / robustness | done — `2026-02-30` no longer silently scheduled as Mar 2; tasks+reminders share the keystone fix (probe-demonstrated) |
 | 441 | [computeNextRunAt fails closed on blank/corrupt cron](441-scheduler-compute-next-run-fail-closed.md) | fix / safety | done — blank persisted cron no longer silently fires every minute; compute chokepoint re-asserts validate (336/337 sibling, probe-demonstrated) |
 | 442 | [Pin full Telegram MarkdownV2 reserved-char escaping contract](442-telegram-markdownv2-full-reserved-char-coverage.md) | test / delivery | done — all 18 reserved chars + over-escape + HTML ordering pinned (was 5/18; mutation-proven; silent-400 regression class) |
+| 443 | [Non-finite token count can't poison the token-volume ranking](443-token-cost-nonfinite-token-guard.md) | fix / safety | done — 428 sibling; finiteTokens guards the totalTokens sort key that is primary under Qwen-only/$0 (mutation-proven) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
@@ -151,6 +152,12 @@ Append one line when a discovery path is evaluated and deferred:
   kept separate so neither half is half-shipped.
   (RESOLVED 378 s5: createNotesInvestigator over the primary notes
   provider wired into tick-daemons; P0-b3 parent flipped.)
+- KyselyLatencyQuery vs InMemory divergence — iter 443 — deferred:
+  in-memory `computeDurationMs` clamps negative durations to 0 and
+  `matchesLatencyFilter` uses `startsWith`, but the Kysely SQL
+  passes negative `ended_at - started_at` through and uses `LIKE`
+  (metachars). Real sibling-asymmetry but Testcontainers/PG-gated
+  to verify; not unit-provable here. Take when a PG harness runs.
 - relative-time compound/decimal durations — iter 441 — deferred:
   `resolveRelativeTimePhrase` accepts "in half an hour" but rejects
   "in 1.5 hours" / "in 2 hours 30 minutes" (probe, iter 440). A

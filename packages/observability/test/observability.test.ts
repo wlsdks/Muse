@@ -754,6 +754,37 @@ describe("InMemoryTokenCostQuery", () => {
     const session = await query.bySession("bad");
     expect(session[0]!.estimatedCostUsd).toBe(0);
   });
+
+  it("a non-finite token count contributes 0 instead of poisoning the token-volume ranking", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    // Qwen-only / $0: cost is uniformly 0, so topExpensive ranks on
+    // the totalTokens tiebreak — a NaN there makes the comparator
+    // NaN and the ranking spec-undefined, the 428 failure mode on
+    // the sibling field.
+    await record(sink, { estimatedCostUsd: 0, recordedAt: "2026-05-07T10:00:00.000Z", runId: "huge", totalTokens: 9000 });
+    await record(sink, { estimatedCostUsd: 0, recordedAt: "2026-05-07T11:00:00.000Z", runId: "bad", totalTokens: Number.NaN });
+    await record(sink, { estimatedCostUsd: 0, recordedAt: "2026-05-07T12:00:00.000Z", runId: "small", totalTokens: 120 });
+
+    const query = new InMemoryTokenCostQuery(sink);
+    const win = { from: new Date("2026-05-07T00:00:00.000Z"), to: new Date("2026-05-08T00:00:00.000Z") };
+
+    const top = await query.topExpensive({ ...win, limit: 3 });
+    const badTop = top.find((r) => r.runId === "bad")!;
+    expect(badTop.totalTokens).toBe(0); // NaN → 0, not NaN
+    // Ranking is well-defined: highest token volume first, the
+    // sanitised bad run last.
+    expect(top.map((r) => r.runId)).toEqual(["huge", "small", "bad"]);
+
+    // daily token totals stay finite (9000 + 0 + 120), never NaN.
+    const daily = await query.daily(win);
+    expect(daily).toHaveLength(1);
+    expect(daily[0]!.totalTokens).toBe(9120);
+    expect(Number.isNaN(daily[0]!.totalTokens)).toBe(false);
+
+    // Per-session passthrough is sanitised too (mirrors the cost guard).
+    const session = await query.bySession("bad");
+    expect(session[0]!.totalTokens).toBe(0);
+  });
 });
 
 describe("SloAlertEvaluator", () => {

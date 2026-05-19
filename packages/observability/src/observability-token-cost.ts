@@ -33,6 +33,15 @@ function finiteCostUsd(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+// Same threat model as finiteCostUsd, for the token counts. Under
+// the Qwen-only / $0 mandate every estimatedCostUsd is 0, so the
+// topExpensive comparator falls through to the totalTokens
+// tiebreak — an unguarded NaN token row there yields a NaN
+// comparator and a spec-undefined ranking, not just a wrong total.
+function finiteTokens(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 export class InMemoryTokenUsageSink implements QueryableTokenUsageSink {
   readonly #events: TokenUsageRecord[] = [];
 
@@ -116,15 +125,15 @@ export class InMemoryTokenCostQuery implements TokenCostQuery {
       .list()
       .filter((event) => event.runId.startsWith(runId))
       .map((event) => ({
-        completionTokens: event.completionTokens,
+        completionTokens: finiteTokens(event.completionTokens),
         estimatedCostUsd: finiteCostUsd(event.estimatedCostUsd),
         model: event.model,
-        promptTokens: event.promptTokens,
+        promptTokens: finiteTokens(event.promptTokens),
         provider: event.provider,
         runId: event.runId,
         stepType: event.stepType ?? "act",
         time: event.recordedAt ?? new Date(0),
-        totalTokens: event.totalTokens
+        totalTokens: finiteTokens(event.totalTokens)
       }))
       .sort((a, b) => a.time.getTime() - b.time.getTime());
   }
@@ -147,12 +156,12 @@ export class InMemoryTokenCostQuery implements TokenCostQuery {
         totalTokens: 0
       };
       groups.set(key, {
-        completionTokens: existing.completionTokens + event.completionTokens,
+        completionTokens: existing.completionTokens + finiteTokens(event.completionTokens),
         day,
         model: event.model,
-        promptTokens: existing.promptTokens + event.promptTokens,
+        promptTokens: existing.promptTokens + finiteTokens(event.promptTokens),
         totalCostUsd: existing.totalCostUsd + finiteCostUsd(event.estimatedCostUsd),
-        totalTokens: existing.totalTokens + event.totalTokens
+        totalTokens: existing.totalTokens + finiteTokens(event.totalTokens)
       });
     }
     return [...groups.values()].sort((a, b) => {
@@ -177,7 +186,7 @@ export class InMemoryTokenCostQuery implements TokenCostQuery {
           runId: event.runId,
           time: at > existing.time ? at : existing.time,
           totalCostUsd: existing.totalCostUsd + finiteCostUsd(event.estimatedCostUsd),
-          totalTokens: existing.totalTokens + event.totalTokens
+          totalTokens: existing.totalTokens + finiteTokens(event.totalTokens)
         });
       } else {
         groups.set(event.runId, {
@@ -185,7 +194,7 @@ export class InMemoryTokenCostQuery implements TokenCostQuery {
           runId: event.runId,
           time: at,
           totalCostUsd: finiteCostUsd(event.estimatedCostUsd),
-          totalTokens: event.totalTokens
+          totalTokens: finiteTokens(event.totalTokens)
         });
       }
     }
