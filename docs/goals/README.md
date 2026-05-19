@@ -84,6 +84,7 @@ delete an open row, never rewrite another goal's status.
 | 436 | [Non-finite tool-loop limit can't disable the bound](436-runtime-limit-nan-guard.md) | fix / safety | done — NaN maxToolCalls/wallclock now falls back to default, not a disabled CLAUDE.md non-negotiable |
 | 437 | [Non-finite rate-limiter option can't self-DoS /api/chat](437-rate-limiter-nan-guard.md) | fix / safety | done — 436 sibling; NaN/Infinity capacity → safe default, not deny-all/unbounded |
 | 438 | [Pin time_add bad-base / non-numeric-offset robustness](438-time-add-robustness-coverage.md) | test / robustness | done — stringified/NaN tool args can't crash the agent's +Nh time math (was implicit) |
+| 439 | [Pin math_eval no-eval sandbox rejection branches](439-math-eval-sandbox-rejection-coverage.md) | test / security | done — trailing-chars keystone + unbalanced-parens + modulo-by-zero + 256-char off-by-one + non-string required guard (was implicit; mutation-proven) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —

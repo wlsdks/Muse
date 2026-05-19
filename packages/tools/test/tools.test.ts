@@ -980,6 +980,62 @@ describe("createMuseTools", () => {
     });
   });
 
+  it("math_eval rejects malformed input and bounds rather than silently mis-evaluating", async () => {
+    const tool = getTool("math_eval");
+
+    // The recursive-descent keystone: a fully-parsed prefix with
+    // unconsumed trailing input must be a hard error, NOT a silent
+    // `{ result: <prefix> }`. `toEqual` (exact) proves no `result` /
+    // `expression` key leaked — exactly what dropping the final
+    // cursor-at-end guard would produce.
+    for (const malformed of ["2 3", "1 + 2)", "1 2 3", "2 3 +"]) {
+      expect(await tool.execute({ expression: malformed }, { runId: "run-1" })).toEqual({
+        error: expect.stringContaining("trailing characters")
+      });
+    }
+
+    // An unclosed group is an error, not a result from the prefix.
+    for (const open of ["(1 + 2", "3 * (4", "((1)"]) {
+      expect(await tool.execute({ expression: open }, { runId: "run-1" })).toEqual({
+        error: expect.stringContaining("unbalanced parentheses")
+      });
+    }
+
+    // Modulo-by-zero is its own throw, distinct from the covered
+    // division-by-zero branch — including nested in a larger term.
+    for (const mod of ["7 % 0", "10 + 5 % 0", "(2 + 3) % (1 - 1)"]) {
+      expect(await tool.execute({ expression: mod }, { runId: "run-1" })).toEqual({
+        error: expect.stringContaining("modulo by zero")
+      });
+    }
+
+    // 256-char limit is `> 256`: 257 chars is rejected by the length
+    // guard (before the parser ever runs), exactly 256 still
+    // evaluates — pins the off-by-one in both directions.
+    expect(await tool.execute({ expression: "9".repeat(257) }, { runId: "run-1" })).toEqual({
+      error: expect.stringContaining("256 character limit")
+    });
+    const atLimit = await tool.execute({ expression: "9".repeat(256) }, { runId: "run-1" });
+    expect(atLimit).not.toHaveProperty("error");
+    expect(atLimit).toMatchObject({ expression: "9".repeat(256) });
+    expect(typeof (atLimit as { result: unknown }).result).toBe("number");
+
+    // Empty / whitespace-only / non-string all collapse to the same
+    // actionable required-error (the `typeof === "string"` guard:
+    // a non-string must not be String()-coerced into "42" → 42).
+    for (const empty of ["", "   ", "\t\n"]) {
+      expect(await tool.execute({ expression: empty }, { runId: "run-1" })).toEqual({
+        error: "expression is required"
+      });
+    }
+    expect(await tool.execute({ expression: 42 }, { runId: "run-1" })).toEqual({
+      error: "expression is required"
+    });
+    expect(await tool.execute({}, { runId: "run-1" })).toEqual({
+      error: "expression is required"
+    });
+  });
+
   it("json_query resolves dotted paths through objects and arrays", async () => {
     const tool = getTool("json_query");
     const document = {
