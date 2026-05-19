@@ -62,6 +62,7 @@ delete an open row, never rewrite another goal's status.
 | 414 | [Strict parseInteger env parsing](414-parseinteger-strict-env-parsing.md) | fix / safety | done — typo'd `MUSE_*=16k` falls back instead of silently becoming 16 |
 | 415 | [OpenAI Responses tool-arg object guard](415-openai-responses-toolarg-object-guard.md) | fix / consistency | done — Responses path now `{}`-guards non-object args like the chat+Ollama paths |
 | 416 | [Exemplar scoring keeps single-syllable Korean tokens](416-exemplar-korean-single-syllable-tokens.md) | fix / quality | done — Korean 1-syllable query nouns no longer dropped from few-shot scoring |
+| 417 | [Bare Korean time phrase resolves to today](417-bare-korean-time-phrase.md) | fix / consistency | done — `오후 5시`/`정오`/`자정` resolve like `5pm`/`noon`, not error |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —

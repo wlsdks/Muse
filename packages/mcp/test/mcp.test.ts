@@ -2527,6 +2527,35 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("오늘 오전 12시", ref)?.getHours()).toBe(0);
     });
 
+    it("resolves a bare Korean time with no day word → today at that time (symmetric with English bare time)", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday
+      const today = ref().getDate();
+
+      const pm5 = resolveRelativeTimePhrase("오후 5시", ref);
+      expect(pm5?.getDate()).toBe(today);
+      expect(pm5?.getHours()).toBe(17);
+      expect(pm5?.getMinutes()).toBe(0);
+
+      const noon = resolveRelativeTimePhrase("정오", ref);
+      expect(noon?.getDate()).toBe(today);
+      expect(noon?.getHours()).toBe(12);
+
+      const midnight = resolveRelativeTimePhrase("자정", ref);
+      expect(midnight?.getDate()).toBe(today);
+      expect(midnight?.getHours()).toBe(0);
+
+      expect(resolveRelativeTimePhrase("17시", ref)?.getHours()).toBe(17);
+
+      const am930 = resolveRelativeTimePhrase("오전 9시 30분", ref);
+      expect(am930?.getHours()).toBe(9);
+      expect(am930?.getMinutes()).toBe(30);
+
+      // Non-time Korean still falls through to undefined — the new
+      // bare-time branch must not become a catch-all false positive.
+      expect(resolveRelativeTimePhrase("아무거나", ref)).toBeUndefined();
+    });
+
     it("resolves the 반 (half-past) shorthand (goal 163)", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday

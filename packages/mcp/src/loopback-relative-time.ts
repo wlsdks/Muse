@@ -417,6 +417,16 @@ function resolveKoreanRelativePhrase(phrase: string, reference: Date): Date | un
   }
   const match = /^(오늘|내일|모레|글피)(?:\s+(.+))?$/u.exec(phrase);
   if (!match) {
+    // Bare Korean time with no day word ("오후 5시", "정오",
+    // "자정", "17시") → today at that time — the Korean
+    // counterpart of the English bare-time branch, so "오후 5시"
+    // resolves as readily as "5pm".
+    const bare = parseKoreanTimeOfDay(phrase.trim());
+    if (bare !== "invalid") {
+      const day = startOfDay(reference);
+      day.setHours(bare.hour, bare.minute, 0, 0);
+      return day;
+    }
     return undefined;
   }
   const offsetDays = KOREAN_DAY_OFFSET[match[1] ?? ""];
