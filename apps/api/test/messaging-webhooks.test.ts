@@ -96,6 +96,21 @@ describe("POST /api/messaging/webhooks/line", () => {
     expect(wrongSig.statusCode).toBe(401);
     expect(wrongSig.json()).toMatchObject({ code: "MESSAGING_WEBHOOK_BAD_SIGNATURE" });
 
+    // A wrong-LENGTH / non-base64 forged signature must still be a
+    // clean 401 — `timingSafeEqual` throws on unequal byte length,
+    // so without the length-guard this path would 500 (a DoS
+    // vector: an attacker probing with junk crashes the endpoint).
+    for (const junk of ["abc", "x".repeat(200), "not base64 at all"]) {
+      const badLen = await server.inject({
+        headers: { "content-type": "application/json", "x-line-signature": junk },
+        method: "POST",
+        payload: body,
+        url: "/api/messaging/webhooks/line"
+      });
+      expect(badLen.statusCode).toBe(401);
+      expect(badLen.json()).toMatchObject({ code: "MESSAGING_WEBHOOK_BAD_SIGNATURE" });
+    }
+
     // No file written.
     expect(existsSync(inboxFile)).toBe(false);
     await server.close();
