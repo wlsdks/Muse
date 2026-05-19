@@ -98,7 +98,12 @@ export function parseFeedBody(body: string): readonly FeedEntry[] {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
-    trimValues: true
+    trimValues: true,
+    // Real RSS/Atom titles routinely carry HTML entities
+    // (`&rsquo;` `&mdash;` `&hellip;` `&#8217;`); without this they
+    // reach `muse feeds` literally. sanitizeFeedText still strips
+    // any control char a decoded numeric entity could introduce.
+    htmlEntities: true
   });
   let doc: Record<string, unknown>;
   try {

@@ -96,3 +96,27 @@ describe("parseFeedBody — robustness", () => {
     expect(entry!.title).toBe("Hello & Co");
   });
 });
+
+describe("parseFeedBody — HTML-entity decoding", () => {
+  it("decodes HTML named + numeric entities in an RSS title", () => {
+    const [entry] = parseFeedBody(
+      `<rss version="2.0"><channel><item><title>Apple&#8217;s plan &amp; Google&rsquo;s reply &mdash; news&hellip;</title><guid>g1</guid><link>https://x/a</link></item></channel></rss>`
+    );
+    expect(entry!.title).toBe("Apple’s plan & Google’s reply — news…");
+  });
+
+  it("decodes entities in an Atom title and an &amp;-escaped link query", () => {
+    const [entry] = parseFeedBody(
+      `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>R&amp;D &mdash; go</title><id>i1</id><link rel="alternate" href="https://x/b?a=1&amp;b=2"/><updated>2026-05-20T00:00:00Z</updated></entry></feed>`
+    );
+    expect(entry!.title).toBe("R&D — go");
+    expect(entry!.link).toBe("https://x/b?a=1&b=2");
+  });
+
+  it("still strips a control char a decoded numeric entity introduces (terminal-safety boundary holds)", () => {
+    const [entry] = parseFeedBody(
+      `<rss version="2.0"><channel><item><title>Safe&#27;&#0;Title</title><guid>g3</guid></item></channel></rss>`
+    );
+    expect(entry!.title).toBe("SafeTitle");
+  });
+});

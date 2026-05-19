@@ -116,6 +116,7 @@ delete an open row, never rewrite another goal's status.
 | 468 | [chat-REPL slash typo gets a "did you mean" suggestion](468-chat-repl-slash-did-you-mean.md) | feat / cli-ergonomics | done — REPL parity with the top-level CLI's fuzzy hint; reuses the tested `closestCommandName`; no-match output byte-identical (mutation-proven; first direct `handleSlashCommand` coverage) |
 | 469 | [decideWebSearchPolicy strict-parses MAX_USES at runtime](469-websearch-policy-runtime-strict-maxuses.md) | fix / correctness | done — goal-463 runtime sibling; a typo'd `MUSE_WEB_SEARCH_MAX_USES=3x` flagged invalid by `muse doctor` is no longer silently honoured (as 3) by the runtime (mutation-proven) |
 | 470 | [muse auth rotate-jwt --grace-hours strict-parses its value](470-auth-grace-hours-strict-parse.md) | fix / safety | done — 414/444/463/469 sibling on a safety flag; `--grace-hours 2d`/`24x` no longer slips past the existing guard as its numeric prefix → no unintended JWT-secret grace window (mutation-proven; first direct `commands-auth` coverage) |
+| 471 | [muse feeds decodes HTML entities in RSS/Atom titles](471-feeds-html-entity-decoding.md) | fix / UX | done — `htmlEntities:true` on the feed parser; `&rsquo;`/`&#8217;`/`&mdash;`/`&hellip;` no longer shown literally in `muse feeds`; terminal-safety boundary preserved (mutation-proven) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
