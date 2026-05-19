@@ -72,6 +72,17 @@ export class OpenAIWhisperSttProvider implements SpeechToTextProvider {
     if (!request.mimeType) {
       throw new VoiceValidationError("MISSING_MIME_TYPE", "transcribe() requires mimeType");
     }
+    // Enforce the advertised `describe().supportedFormats` rather
+    // than POSTing an unknown container and getting a cryptic API
+    // 400 back. Strip any `; codecs=…` parameter before matching.
+    // Same gate the local Whisper.cpp adapter applies.
+    const baseMime = request.mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!SUPPORTED_FORMATS.includes(baseMime as (typeof SUPPORTED_FORMATS)[number])) {
+      throw new VoiceValidationError(
+        "UNSUPPORTED_FORMAT",
+        `unsupported audio format "${request.mimeType}"; supported: ${SUPPORTED_FORMATS.join(", ")}`
+      );
+    }
 
     const form = new FormData();
     const blob = new Blob([new Uint8Array(request.audio)], { type: request.mimeType });

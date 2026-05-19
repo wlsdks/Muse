@@ -55,6 +55,31 @@ describe("OpenAIWhisperSttProvider", () => {
     ).rejects.toBeInstanceOf(VoiceValidationError);
   });
 
+  it("rejects an unsupported audio format with an actionable error, before any fetch", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}"));
+    const provider = new OpenAIWhisperSttProvider({ apiKey, fetchImpl });
+    await expect(
+      provider.transcribe({ audio: new Uint8Array([1, 2, 3]), mimeType: "audio/x-m4a" })
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_FORMAT", name: "VoiceValidationError" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("accepts a supported mime that carries a ;codecs= parameter", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ text: "ok" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    const provider = new OpenAIWhisperSttProvider({ apiKey, fetchImpl });
+    const res = await provider.transcribe({
+      audio: new Uint8Array([1, 2, 3]),
+      mimeType: "audio/wav; codecs=1"
+    });
+    expect(res.text).toBe("ok");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("posts multipart form-data with the model and parses the response", async () => {
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       expect(init.method).toBe("POST");
