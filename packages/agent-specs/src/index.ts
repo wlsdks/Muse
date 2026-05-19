@@ -204,7 +204,14 @@ export function scoreAgentSpec(
     return undefined;
   }
 
-  const matchedKeywords = spec.keywords.filter((keyword) => normalizedText.includes(normalizeText(keyword)));
+  const matchedKeywords = spec.keywords.filter((keyword) => {
+    // An empty / whitespace keyword normalizes to "" and
+    // `text.includes("")` is always true — a single junk keyword
+    // (a store/legacy row the normalize path didn't sanitize)
+    // would otherwise make this spec match every task.
+    const needle = normalizeText(keyword);
+    return needle.length > 0 && normalizedText.includes(needle);
+  });
 
   if (matchedKeywords.length === 0) {
     return undefined;

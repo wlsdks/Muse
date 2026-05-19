@@ -121,6 +121,32 @@ describe("RuleBasedAgentSpecResolver", () => {
       matchedKeywords: ["rag"]
     });
   });
+
+  it("an empty keyword (store/legacy row) does not make a spec match every task", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    // The load path (toStringArray) keeps "" — unlike the normalize
+    // path's uniqueStrings — so this is the realistic vulnerable spec.
+    const spec = mapAgentSpecRow({
+      created_at: now,
+      description: "",
+      enabled: true,
+      id: "spec-junk",
+      independent_execution: true,
+      keywords: ["", "billing"],
+      mode: "react",
+      name: "support",
+      system_prompt: null,
+      tool_names: [],
+      updated_at: now
+    } as unknown as Parameters<typeof mapAgentSpecRow>[0]);
+
+    // Unrelated text: pre-fix the "" keyword matched everything.
+    expect(scoreAgentSpec(spec, "totally unrelated request")).toBeUndefined();
+    // A real keyword still matches; "" is NOT counted as a match.
+    expect(scoreAgentSpec(spec, "a billing question")).toMatchObject({
+      matchedKeywords: ["billing"]
+    });
+  });
 });
 
 describe("KyselyAgentSpecRegistry", () => {
