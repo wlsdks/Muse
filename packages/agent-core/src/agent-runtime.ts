@@ -151,6 +151,16 @@ export type {
   ToolRiskLevel
 } from "./agent-runtime-types.js";
 
+// A non-finite (NaN / Infinity) limit must fall back to the safe
+// default, not disable the bound. Preserves the prior semantics
+// (explicit 0 → 0, negative → 0, fractional truncates) and only
+// changes the NaN/Infinity → default behaviour.
+function clampRunLimit(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.trunc(value))
+    : fallback;
+}
+
 export class AgentRuntime {
   private readonly modelProvider?: ModelProvider;
   private readonly modelRegistry?: ModelProviderRegistry;
@@ -217,11 +227,14 @@ export class AgentRuntime {
             registry: options.toolRegistry
           })
         : undefined);
-    this.maxToolCalls = Math.max(0, options.maxToolCalls ?? 10);
     // CLAUDE.md non-negotiable: tool loops have explicit limits AND
-    // timeouts. Default 5 minutes — long enough for chained tool
-    // calls + model latency, short enough to bound a runaway loop.
-    this.maxRunWallclockMs = Math.max(0, options.maxRunWallclockMs ?? 300_000);
+    // timeouts (default cap 10, wallclock 5 min — long enough for
+    // chained calls + model latency, short enough to bound a
+    // runaway loop). `??` does NOT catch NaN/Infinity; a non-finite
+    // option would make `count >= NaN` / `elapsed >= NaN` always
+    // false and SILENTLY DISABLE the bound, so guard finiteness.
+    this.maxToolCalls = clampRunLimit(options.maxToolCalls, 10);
+    this.maxRunWallclockMs = clampRunLimit(options.maxRunWallclockMs, 300_000);
     this.maxToolOutputChars = Math.max(0, options.maxToolOutputChars ?? 0);
     if (options.contextReferenceStore) {
       this.contextReferenceStore = options.contextReferenceStore;

@@ -81,6 +81,7 @@ delete an open row, never rewrite another goal's status.
 | 433 | [Auto-extract dedupes veto/goal slots by id](433-auto-extract-slot-dedup.md) | fix / persona-safety | done — a re-emitted veto no longer eats the cap & drops a distinct one |
 | 434 | [Context-reference store eviction coverage](434-context-reference-store-eviction-coverage.md) | test / safety | done — TTL + oldest-first cap eviction now directly pinned (was implicit-only) |
 | 435 | [LINE webhook malformed-signature → clean-401 coverage](435-line-webhook-malformed-signature-coverage.md) | test / security | done — forged wrong-length sig now pinned to 401 (was the implicit DoS-guard) |
+| 436 | [Non-finite tool-loop limit can't disable the bound](436-runtime-limit-nan-guard.md) | fix / safety | done — NaN maxToolCalls/wallclock now falls back to default, not a disabled CLAUDE.md non-negotiable |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —

@@ -1137,6 +1137,54 @@ describe("AgentRuntime", () => {
     expect(result.response.output).toBe("Done.");
   });
 
+  it("a non-finite maxToolCalls falls back to the default bound instead of disabling the tool-loop limit", async () => {
+    const executeTool = vi.fn(async () => "ok");
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: { description: "Loops.", inputSchema: { type: "object" }, name: "loop_tool", risk: "read" },
+        execute: executeTool
+      }
+    ]);
+    // Always asks for another tool, but self-bounds at 30 turns so a
+    // REGRESSED (NaN ⇒ unbounded) build fails fast instead of hanging.
+    let turn = 0;
+    const provider: ModelProvider = {
+      id: "stub",
+      listModels: async () => [],
+      generate: async () => {
+        turn += 1;
+        if (turn > 30) {
+          return { id: "final", model: "test-model", output: "stopped by the safety net" };
+        }
+        return {
+          id: `t${turn}`,
+          model: "test-model",
+          output: "looping",
+          // Distinct args each turn so the runtime's dedup cache
+          // doesn't short-circuit execution — the tool-count cap
+          // must be the gate.
+          toolCalls: [{ arguments: { n: turn }, id: `tc-${turn}`, name: "loop_tool" }]
+        };
+      },
+      stream: async function* () { /* unused */ }
+    };
+    const runtime = createAgentRuntime({
+      maxRunWallclockMs: 60_000, // finite, large — isolate the tool-count gate
+      // pre-fix: Math.max(0,NaN)=NaN ⇒ `toolCallCount < NaN` is
+      // always false ⇒ tools are NEVER activated ⇒ the agent
+      // silently loses ALL tool-calling ability (0 executions).
+      maxToolCalls: Number.NaN,
+      modelProvider: provider,
+      toolRegistry
+    });
+
+    await runtime.run({ messages: [{ content: "go", role: "user" }], model: "provider/model" });
+
+    // NaN must fall back to the default cap of 10: tools work for
+    // exactly 10 rounds (pre-fix this was 0 — tools dead).
+    expect(executeTool).toHaveBeenCalledTimes(10);
+  });
+
   it("filters risky tools before exposing them to the model", async () => {
     const generated: ModelRequest[] = [];
     const toolRegistry = new ToolRegistry([
