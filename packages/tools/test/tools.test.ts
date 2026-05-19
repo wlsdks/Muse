@@ -886,6 +886,25 @@ describe("createMuseTools", () => {
     });
   });
 
+  it("time_add returns a clean error for an unparseable base and never throws on non-numeric offsets", async () => {
+    const tool = getTool("time_add");
+    // Unparseable base → structured {error}, not a thrown exception.
+    expect(await tool.execute({ base: "not-a-timestamp", hours: 2 }, { runId: "run-1" }))
+      .toMatchObject({ error: expect.stringContaining("ISO-8601") });
+    // Reasoning-off models routinely stringify numeric tool args
+    // ("2") or emit NaN/Infinity; these must coerce to 0, NOT make
+    // `new Date(base + NaN)` → Invalid Date → toISOString() throw.
+    const base = "2026-05-07T00:00:00.000Z";
+    expect(await tool.execute({ base, hours: "2", minutes: Number.NaN }, { runId: "run-1" }))
+      .toEqual({ iso: base, offsetMs: 0 });
+    expect(await tool.execute({ base, days: Number.POSITIVE_INFINITY }, { runId: "run-1" }))
+      .toEqual({ iso: base, offsetMs: 0 });
+    // A valid numeric field still applies even when a sibling field
+    // is garbage (partial coercion, not all-or-nothing).
+    expect(await tool.execute({ base, days: "junk", hours: 1 }, { runId: "run-1" }))
+      .toEqual({ iso: "2026-05-07T01:00:00.000Z", offsetMs: 3_600_000 });
+  });
+
   it("text_stats counts words, characters, and lines (treating whitespace-only as zero)", async () => {
     const tool = getTool("text_stats");
     const stats = await tool.execute({ text: "hello world\nthis has three lines\nand more words" }, { runId: "run-1" });
