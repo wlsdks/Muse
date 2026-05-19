@@ -3275,6 +3275,20 @@ describe("tasks provider abstraction", () => {
     expect(() => registry.require("ghost")).toThrow(TasksProviderError);
   });
 
+  it("the unknown-id TasksProviderRegistry error names the registered providers so a misconfigured tasks id is recoverable", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const join = await import("node:path").then((m) => m.join);
+
+    const empty = new TasksProviderRegistry();
+    expect(() => empty.require("local")).toThrow(/none registered/u);
+
+    const root = mkdtempSync(`${tmpdir}/muse-tasks-registry-hint-`);
+    const local = new LocalFileTasksProvider({ file: join(root, "tasks.json") });
+    const registry = new TasksProviderRegistry([local]);
+    expect(() => registry.require("locale")).toThrow(/registered: local/u);
+  });
+
   it("constructor rejects empty file path with TasksValidationError", () => {
     expect(() => new LocalFileTasksProvider({ file: "" })).toThrow(TasksValidationError);
     expect(() => new LocalFileTasksProvider({ file: "   " })).toThrow(TasksValidationError);
