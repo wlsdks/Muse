@@ -197,4 +197,15 @@ describe("boundary and cancellation helpers", () => {
     expect(big.length).toBe(DEFAULT_ERROR_BODY_CAP + 1); // cap + ellipsis
     expect(truncateErrorBody("short", 4)).toBe("shor…");
   });
+
+  it("truncateErrorBody never leaves a lone surrogate at the cut boundary", () => {
+    // "😀" is a surrogate pair (2 UTF-16 units). cap=3 cuts between
+    // its halves — the orphaned high surrogate must be dropped, not
+    // emitted as invalid UTF-8 into an error body / chat forward.
+    expect(truncateErrorBody("ab😀cd", 3)).toBe("ab…");
+    // No regression: a clean (non-astral) boundary is unchanged…
+    expect(truncateErrorBody("abcdef", 3)).toBe("abc…");
+    // …and an emoji fully inside the head is NOT over-trimmed.
+    expect(truncateErrorBody("😀xxxxx", 4)).toBe("😀xx…");
+  });
 });

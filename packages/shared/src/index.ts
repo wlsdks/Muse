@@ -185,7 +185,15 @@ export function truncateErrorBody(body: string | undefined, cap: number = DEFAUL
   if (trimmed.length <= cap) {
     return trimmed;
   }
-  return `${trimmed.slice(0, cap)}…`;
+  let head = trimmed.slice(0, cap);
+  // `slice` cuts on UTF-16 units; a boundary inside an astral char
+  // leaves a lone high surrogate — invalid UTF-8 a downstream JSON
+  // error body / Telegram-Discord forward can 400. Drop the orphan.
+  const last = head.charCodeAt(head.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) {
+    head = head.slice(0, -1);
+  }
+  return `${head}…`;
 }
 
 export function createCancellationToken(): CancellationToken {
