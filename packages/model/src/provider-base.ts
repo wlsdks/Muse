@@ -161,9 +161,23 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
 
     if (!response.body) {
-      const generated = await this.generate(request);
-      yield { text: generated.output, type: "text-delta" };
-      yield { response: generated, type: "done" };
+      try {
+        const generated = await this.generate(request);
+        yield { text: generated.output, type: "text-delta" };
+        yield { response: generated, type: "done" };
+      } catch (cause) {
+        // The non-stream fallback can itself fail (server died
+        // between attempts, retry endpoint 5xx). Surface it as the
+        // same error EVENT the other two stream error paths yield —
+        // never let a raw throw escape this generator and break a
+        // `for await` consumer expecting the event contract.
+        yield {
+          error: cause instanceof ModelProviderError
+            ? cause
+            : new ModelProviderError(this.id, cause instanceof Error ? cause.message : String(cause), true),
+          type: "error"
+        };
+      }
       return;
     }
 

@@ -552,6 +552,34 @@ describe("OpenAICompatibleProvider", () => {
       }
     ]);
   });
+
+  it("a failing no-body-stream fallback yields an error EVENT, never throws out of the generator", async () => {
+    let call = 0;
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://llm.example.test/v1",
+      defaultModel: "gpt-test",
+      fetch: async () => {
+        call += 1;
+        // 1st (stream) call: 200 but a null body → triggers the
+        // non-stream fallback. 2nd (generate fallback) call: 500.
+        return call === 1
+          ? new Response(null, { status: 200 })
+          : new Response("upstream boom", { status: 500 });
+      }
+    });
+
+    const events = [];
+    // Must NOT throw: the contract is errors arrive as events.
+    for await (const event of provider.stream({ messages: [], model: "gpt-test" })) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("error");
+    const err = (events[0] as { error: unknown }).error;
+    expect(err).toBeInstanceOf(ModelProviderError);
+    expect((err as ModelProviderError).retryable).toBe(true); // 500 → retryable
+  });
 });
 
 describe("provider adapters", () => {
