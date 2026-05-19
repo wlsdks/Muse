@@ -14,7 +14,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join as pathJoin } from "node:path";
 
-import { parseBoolean } from "./env-parsers.js";
+import { parseBoolean, parseInteger } from "./env-parsers.js";
 import {
   mergeModelKeysFromFile,
   resolveLocalCalendarFile,
@@ -124,8 +124,11 @@ export function readWebSearchEnvSnapshot(env: Readonly<Record<string, string | u
 
   const rawMax = env.MUSE_WEB_SEARCH_MAX_USES;
   if (rawMax !== undefined) {
-    const n = Number.parseInt(rawMax, 10);
-    if (Number.isFinite(n) && n > 0) {
+    // Strict parse, not Number.parseInt: a typo'd "5x" / unit-slip
+    // "30s" must not be reported as a valid env-configured value on
+    // the setup-status / `muse doctor` surface.
+    const n = parseInteger(rawMax, 0);
+    if (n > 0) {
       maxUses = n;
       source = "env";
     }

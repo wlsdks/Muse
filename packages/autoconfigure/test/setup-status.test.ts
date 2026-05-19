@@ -46,6 +46,24 @@ describe("readWebSearchEnvSnapshot", () => {
     });
   });
 
+  it("a lenient-prefix typo / unit-slip MUSE_WEB_SEARCH_MAX_USES is rejected, not reported as env-configured", () => {
+    // Number.parseInt("5x") === 5 — the 414/444 footgun. On the
+    // setup-status surface a typo must NOT show as a valid value.
+    for (const bad of ["5x", "30s", "12abc", "1_000", "0", "-3", " "]) {
+      expect(readWebSearchEnvSnapshot({ MUSE_WEB_SEARCH_MAX_USES: bad })).toEqual({
+        enabled: true,
+        maxUses: 5,
+        source: "default"
+      });
+    }
+    // No regression: a clean positive integer still configures it.
+    expect(readWebSearchEnvSnapshot({ MUSE_WEB_SEARCH_MAX_USES: "8" })).toEqual({
+      enabled: true,
+      maxUses: 8,
+      source: "env"
+    });
+  });
+
   it("OFF flag is case-insensitive (OFF / Off / off all disable)", () => {
     for (const value of ["OFF", "Off", "off"]) {
       expect(readWebSearchEnvSnapshot({ MUSE_WEB_SEARCH: value }).enabled).toBe(false);

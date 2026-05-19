@@ -108,6 +108,7 @@ delete an open row, never rewrite another goal's status.
 | 460 | [Direct fail-closed coverage for the autonomous-action consent gate](460-consent-store-failclosed-coverage.md) | test / security | done — 458-class; hasConsent exact-scope/no-broaden + corrupt→false + malformed-filtered pinned (was zero direct coverage; mutation-proven) |
 | 461 | [queryVetoes orders by parsed instant, not lexicographic ISO](461-veto-review-instant-order.md) | fix / correctness | done — 418 sibling; veto review surface no longer mis-orders across mixed-precision/offset timestamps (mutation-proven) |
 | 462 | [Direct coverage for the derived-agent-metrics fan-out](462-derived-agent-metrics-fanout-coverage.md) | test / observability | done — 458-class; SLO/drift feed + inner-forward fan-out pinned (was zero direct coverage; mutation-proven) |
+| 463 | [readWebSearchEnvSnapshot rejects a lenient-prefix MAX_USES typo](463-websearch-maxuses-strict-parse.md) | fix / robustness | done — 414/444 sibling; `MUSE_WEB_SEARCH_MAX_USES=5x` no longer shown as valid env-config on muse doctor (mutation-proven) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —
