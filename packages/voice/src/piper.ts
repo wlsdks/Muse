@@ -194,6 +194,12 @@ export function createPiperRunner(timeoutMs: number = DEFAULT_PIPER_TIMEOUT_MS):
       resolve({ exitCode, stderr });
     });
 
+    // A child that exits before consuming stdin (bad model,
+    // immediate crash) makes this write emit EPIPE on the stdin
+    // stream; an unhandled stream 'error' crashes the whole
+    // process. The real outcome is the exit code / timeout the
+    // close handler already reports, so absorb the write failure.
+    child.stdin?.on("error", () => undefined);
     child.stdin?.write(stdin);
     child.stdin?.end();
   });

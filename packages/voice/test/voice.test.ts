@@ -371,6 +371,20 @@ describe("PiperTtsProvider", () => {
     expect(result.exitCode).toBe(0);
   });
 
+  it("createPiperRunner survives a child that closes stdin before consuming it (no EPIPE crash)", async () => {
+    const runner = createPiperRunner(10_000);
+    // Child destroys its stdin then exits 3 after a tick; the 2 MB
+    // write can't drain into a closed pipe → EPIPE on child.stdin.
+    // Pre-fix that unhandled stream error crashes the process;
+    // post-fix the close handler still reports the real exit code.
+    const result = await runner(
+      process.execPath,
+      ["-e", "process.stdin.destroy(); setTimeout(() => process.exit(3), 30)"],
+      "x".repeat(2_000_000)
+    );
+    expect(result.exitCode).toBe(3);
+  });
+
   it("requires a modelPath", () => {
     expect(() => new PiperTtsProvider({ modelPath: "", runner: noopPiperRunner() })).toThrow(
       VoiceValidationError
