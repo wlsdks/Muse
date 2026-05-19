@@ -252,7 +252,12 @@ function unfoldIcs(ics: string): string {
 }
 
 function parseVEvent(rawIcs: string, providerId: string, fallbackId: string): CalendarEvent | undefined {
-  const ics = unfoldIcs(rawIcs);
+  const unfolded = unfoldIcs(rawIcs);
+  // Match properties within the VEVENT body only. A VCALENDAR for a
+  // TZID-qualified event carries a VTIMEZONE whose STANDARD/DAYLIGHT
+  // DTSTART (a DST-rule date) precedes the VEVENT — a whole-string
+  // first-match would read that as the event's start.
+  const ics = /BEGIN:VEVENT\r?\n([\s\S]*?)\r?\nEND:VEVENT/u.exec(unfolded)?.[1] ?? unfolded;
   const summary = matchIcs(ics, "SUMMARY");
   const dtstart = matchIcsLine(ics, "DTSTART");
   const dtend = matchIcsLine(ics, "DTEND");

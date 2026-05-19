@@ -78,6 +78,32 @@ describe("CalDAVCalendarProvider ICS time parsing", () => {
     expect(event?.endsAt.toISOString()).toBe("2026-05-17T15:00:00.000Z");
   });
 
+  it("ignores a VTIMEZONE DTSTART preceding the VEVENT (real-world TZID emission)", async () => {
+    // Real CalDAV servers inline the VTIMEZONE for a TZID-qualified
+    // event, before the VEVENT. Its DST-rule DTSTART must NOT be
+    // read as the event's start.
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "BEGIN:VTIMEZONE", "TZID:America/New_York",
+      "BEGIN:DAYLIGHT", "DTSTART:20070311T020000",
+      "TZOFFSETFROM:-0500", "TZOFFSETTO:-0400", "END:DAYLIGHT",
+      "BEGIN:STANDARD", "DTSTART:20071104T020000",
+      "TZOFFSETFROM:-0400", "TZOFFSETTO:-0500", "END:STANDARD",
+      "END:VTIMEZONE",
+      "BEGIN:VEVENT", "UID:tz-1", "SUMMARY:NY meeting",
+      "DTSTART;TZID=America/New_York:20260517T100000",
+      "DTEND;TZID=America/New_York:20260517T110000",
+      "END:VEVENT", "END:VCALENDAR"
+    ].join("\n");
+    const [event] = await providerReturning(ics).listEvents(range);
+    expect(event?.id).toBe("tz-1");
+    expect(event?.title).toBe("NY meeting");
+    // The event's real start (10:00 EDT == 14:00 UTC), NOT the
+    // 2007 DAYLIGHT-rule DTSTART from the VTIMEZONE.
+    expect(event?.startsAt.toISOString()).toBe("2026-05-17T14:00:00.000Z");
+    expect(event?.endsAt.toISOString()).toBe("2026-05-17T15:00:00.000Z");
+  });
+
   it("keeps an explicit Z (UTC) DTSTART and an all-day DATE unchanged", async () => {
     const zEvent = [
       "BEGIN:VEVENT", "UID:z-1", "SUMMARY:UTC call",
