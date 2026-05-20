@@ -15,7 +15,7 @@ import {
   resolveActivePersonaPreamble,
   writePersonaStore
 } from "./persona-store.js";
-import type { ProgramIO } from "./program.js";
+import { readPipedStdin, type ProgramIO } from "./program.js";
 
 export function registerPersonaCommand(program: Command, io: ProgramIO): void {
   const persona = program.command("persona").description("System-prompt persona templates");
@@ -50,9 +50,9 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
 
   persona
     .command("add")
-    .description("Register a custom persona (id + preamble text). Run `muse persona use <id>` to activate.")
+    .description("Register a custom persona (id + preamble text or piped stdin). Run `muse persona use <id>` to activate.")
     .argument("<id>", "Custom persona id (must not collide with a built-in)")
-    .argument("<preamble...>", "Preamble text the model prepends on every turn")
+    .argument("[preamble...]", "Preamble text the model prepends on every turn (omit to read from stdin)")
     .action(async (id: string, preambleParts: readonly string[]) => {
       const trimmedId = id.trim();
       if (trimmedId.length === 0) {
@@ -65,9 +65,17 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
         process.exitCode = 1;
         return;
       }
-      const preamble = preambleParts.join(" ").trim();
+      // Positional args win; fall back to piped stdin so a long
+      // multi-paragraph preamble can be `cat preamble.txt | muse
+      // persona add tony` instead of typed inline with shell
+      // escaping. Same idiom as `muse ask`.
+      let preamble = preambleParts.join(" ").trim();
       if (preamble.length === 0) {
-        io.stderr("muse persona add: <preamble> must not be empty\n");
+        const piped = await (io.readPipedStdin ?? readPipedStdin)();
+        preamble = piped.trim();
+      }
+      if (preamble.length === 0) {
+        io.stderr("muse persona add: <preamble> must not be empty (pass it as an argument or pipe via stdin: `cat preamble.txt | muse persona add <id>`)\n");
         process.exitCode = 1;
         return;
       }

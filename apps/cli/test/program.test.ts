@@ -5090,8 +5090,28 @@ describe("cli program", () => {
       process.exitCode = 0;
       await programEmpty.parseAsync(["node", "muse", "persona", "add", "blanky", "   "], { from: "node" });
       expect(outEmpty.join("")).toContain("<preamble> must not be empty");
+      expect(outEmpty.join(""), "the error message must hint about the stdin escape valve so long preambles aren't forced through positional-arg shell-escaping").toContain("pipe via stdin");
       expect(process.exitCode).toBe(1);
       expect((await readPersonaStore(personaFile)).custom["blanky"]).toBeUndefined();
+
+      // Stdin path — long preambles with newlines/quotes piped from a file.
+      const longPreamble = "Speak like JARVIS: dry, anticipatory, formal.\nKeep replies under 3 sentences.\nAddress as 'sir'.";
+      const ioStdin = {
+        ...captureOutput().io,
+        readPipedStdin: async () => longPreamble
+      };
+      const outStdin: string[] = [];
+      ioStdin.stdout = (m: string) => outStdin.push(m);
+      ioStdin.stderr = (m: string) => outStdin.push(m);
+      const programStdin = createProgram({ ...ioStdin, fetch: async () => { throw new Error("no fetch"); } });
+      process.exitCode = 0;
+      await programStdin.parseAsync(["node", "muse", "persona", "add", "long-jarvis"], { from: "node" });
+      expect(outStdin.join("")).toContain("Added custom persona long-jarvis");
+      expect(process.exitCode).toBe(0);
+      expect(
+        (await readPersonaStore(personaFile)).custom["long-jarvis"]?.preamble,
+        "stdin-piped preamble must round-trip verbatim including embedded newlines"
+      ).toBe(longPreamble);
     } finally {
       process.exitCode = prevExitCode;
       if (prev === undefined) delete process.env.MUSE_PERSONA_FILE;
