@@ -243,4 +243,21 @@ describe("sanitizeFollowupSummary (direct unit tests)", () => {
     const big = "x".repeat(500);
     expect(sanitizeFollowupSummary(big).length).toBe(160);
   });
+
+  it("drops a lone high surrogate when the 160-char cap lands inside a surrogate pair (goal-451/499 sibling)", async () => {
+    const { sanitizeFollowupSummary } = await import("../src/index.js");
+    // "x" * 159 + "😀" + filler — "😀" is a high+low surrogate pair
+    // at indices 159 and 160. slice(0, 160) keeps the high surrogate
+    // at index 159 as an orphan. The persisted summary must drop it
+    // so the Telegram / Slack / log routing emits valid UTF-8.
+    const big = "x".repeat(159) + "😀" + "y".repeat(50);
+    const result = sanitizeFollowupSummary(big);
+    // No lone high surrogate at the truncation boundary.
+    expect(result.charCodeAt(result.length - 1)).not.toSatisfy(
+      (c: number) => c >= 0xd800 && c <= 0xdbff
+    );
+    // The result is the 159 x's plus zero surrogates (the orphan
+    // got dropped). Length is 159.
+    expect(result).toBe("x".repeat(159));
+  });
 });

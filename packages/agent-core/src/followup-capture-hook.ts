@@ -109,7 +109,20 @@ const MAX_SUMMARY_CHARS = 160;
  */
 export function sanitizeFollowupSummary(raw: string): string {
   const stripped = raw.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/gu, "");
-  return stripped.slice(0, MAX_SUMMARY_CHARS);
+  if (stripped.length <= MAX_SUMMARY_CHARS) {
+    return stripped;
+  }
+  let head = stripped.slice(0, MAX_SUMMARY_CHARS);
+  // `slice` cuts on UTF-16 units; a boundary inside an astral
+  // char (emoji / supplementary-plane) leaves a lone high surrogate.
+  // The persisted summary is later routed to Telegram / Slack / log
+  // — invalid UTF-8 in those frames 400s the channel or replaces
+  // with U+FFFD. Drop the orphan.
+  const last = head.charCodeAt(head.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) {
+    head = head.slice(0, -1);
+  }
+  return head;
 }
 
 export function createFollowupCaptureHook(options: FollowupCaptureHookOptions): HookStage {
