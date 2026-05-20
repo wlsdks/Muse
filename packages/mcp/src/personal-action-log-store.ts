@@ -122,7 +122,7 @@ export async function queryActionLog(
     } else if (a.when !== b.when) {
       return b.when.localeCompare(a.when);
     }
-    return 0;
+    return b.id.localeCompare(a.id);
   });
 }
 

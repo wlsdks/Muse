@@ -65,6 +65,16 @@ describe("personal-action-log-store — P6-b1 reviewable autonomous-action log",
     expect(mine.map((e) => e.id)).toEqual(["new", "old"]);
   });
 
+  it("two entries sharing `when` are ordered by id desc — deterministic across reloads (tiebreaker)", async () => {
+    const file = join(tmpDir(), "action-log.json");
+    const sameWhen = "2026-05-19T12:00:00.000Z";
+    await appendActionLog(file, { id: "a", result: "performed", userId: "stark", what: "x", when: sameWhen, why: "r" });
+    await appendActionLog(file, { id: "c", result: "performed", userId: "stark", what: "x", when: sameWhen, why: "r" });
+    await appendActionLog(file, { id: "b", result: "performed", userId: "stark", what: "x", when: sameWhen, why: "r" });
+    const ids = (await queryActionLog(file, { userId: "stark" })).map((e) => e.id);
+    expect(ids, "ties on `when` resolve by id desc — deterministic regardless of insertion order").toEqual(["c", "b", "a"]);
+  });
+
   it("newest-first is by parsed instant, not lexicographic ISO (mixed precision / offset)", async () => {
     const file = join(tmpDir(), "action-log.json");
     // UTC instants: zlate (May20 01:00:01) > xmid (May20 00:00:00.500)
