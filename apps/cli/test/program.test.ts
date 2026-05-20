@@ -4987,10 +4987,10 @@ describe("cli program", () => {
 
   it("compareFeedEntriesNewestFirst is a consistent total order incl. undated (goal 181)", async () => {
     const { compareFeedEntriesNewestFirst } = await import("../src/feeds-store.js");
-    const newer = { publishedAt: "2026-05-15T12:00:00Z" };
-    const older = { publishedAt: "2026-05-10T12:00:00Z" };
-    const undatedA = { publishedAt: "" };
-    const undatedB = { publishedAt: "not a date" };
+    const newer = { id: "n", publishedAt: "2026-05-15T12:00:00Z" };
+    const older = { id: "o", publishedAt: "2026-05-10T12:00:00Z" };
+    const undatedA = { id: "ua", publishedAt: "" };
+    const undatedB = { id: "ub", publishedAt: "not a date" };
 
     // Newest-first among dated.
     expect(compareFeedEntriesNewestFirst(newer, older)).toBeLessThan(0);
@@ -5000,10 +5000,10 @@ describe("cli program", () => {
     expect(compareFeedEntriesNewestFirst(newer, undatedA)).toBeLessThan(0);
     expect(compareFeedEntriesNewestFirst(undatedA, newer)).toBeGreaterThan(0);
 
-    // Two undated entries compare EQUAL (the bug: was 1 both ways,
-    // a non-antisymmetric comparator).
-    expect(compareFeedEntriesNewestFirst(undatedA, undatedB)).toBe(0);
-    expect(compareFeedEntriesNewestFirst(undatedB, undatedA)).toBe(0);
+    // Two undated entries compare antisymmetrically (id desc tiebreaker):
+    // ub > ua lex → compare(undatedA, undatedB) > 0; compare(undatedB, undatedA) < 0.
+    expect(compareFeedEntriesNewestFirst(undatedA, undatedB)).toBeGreaterThan(0);
+    expect(compareFeedEntriesNewestFirst(undatedB, undatedA)).toBeLessThan(0);
 
     // Array.sort produces a stable, deterministic order.
     const sorted = [undatedA, older, undatedB, newer].sort(compareFeedEntriesNewestFirst);

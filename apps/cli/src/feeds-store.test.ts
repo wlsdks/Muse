@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseFeedBody } from "./feeds-store.js";
+import { compareFeedEntriesNewestFirst, parseFeedBody } from "./feeds-store.js";
 
 describe("parseFeedBody — RSS 2.0", () => {
   it("maps channel/item to uniform entries (guid > link > title for id)", () => {
@@ -118,5 +118,41 @@ describe("parseFeedBody — HTML-entity decoding", () => {
       `<rss version="2.0"><channel><item><title>Safe&#27;&#0;Title</title><guid>g3</guid></item></channel></rss>`
     );
     expect(entry!.title).toBe("SafeTitle");
+  });
+});
+
+describe("compareFeedEntriesNewestFirst — id tiebreaker for entries sharing publishedAt", () => {
+  it("ties on publishedAt resolve by id desc — deterministic regardless of input order", () => {
+    const sameTime = "2026-05-21T10:00:00Z";
+    const entries = [
+      { id: "z_first_in_array_but_lex_last", publishedAt: sameTime },
+      { id: "a_last_in_array_but_lex_first", publishedAt: sameTime },
+      { id: "m_middle", publishedAt: sameTime }
+    ];
+    const sorted = [...entries].sort(compareFeedEntriesNewestFirst);
+    expect(sorted.map((e) => e.id), "id desc puts lexicographically-larger first").toEqual([
+      "z_first_in_array_but_lex_last",
+      "m_middle",
+      "a_last_in_array_but_lex_first"
+    ]);
+  });
+
+  it("clean distinct timestamps sort newest-first as before (regression pin)", () => {
+    const entries = [
+      { id: "older", publishedAt: "2026-05-20T08:00:00Z" },
+      { id: "newer", publishedAt: "2026-05-20T09:00:00Z" }
+    ];
+    const sorted = [...entries].sort(compareFeedEntriesNewestFirst);
+    expect(sorted.map((e) => e.id)).toEqual(["newer", "older"]);
+  });
+
+  it("undated entries sink AFTER dated ones (regression pin); two undated resolve by id desc", () => {
+    const entries = [
+      { id: "a-undated", publishedAt: "not-a-date" },
+      { id: "c-dated", publishedAt: "2026-05-20T10:00:00Z" },
+      { id: "b-undated", publishedAt: "garbled" }
+    ];
+    const sorted = [...entries].sort(compareFeedEntriesNewestFirst);
+    expect(sorted.map((e) => e.id), "dated first, then two undated by id desc (b > a)").toEqual(["c-dated", "b-undated", "a-undated"]);
   });
 });

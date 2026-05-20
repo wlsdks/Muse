@@ -249,14 +249,7 @@ export function mergeFeedEntries(
   for (const entry of incoming) {
     if (entry.id) byId.set(entry.id, entry);  // incoming wins on republish
   }
-  const merged = [...byId.values()].sort((a, b) => {
-    const ta = Date.parse(a.publishedAt);
-    const tb = Date.parse(b.publishedAt);
-    if (!Number.isFinite(ta) && !Number.isFinite(tb)) return 0;
-    if (!Number.isFinite(ta)) return 1;
-    if (!Number.isFinite(tb)) return -1;
-    return tb - ta;
-  });
+  const merged = [...byId.values()].sort(compareFeedEntriesNewestFirst);
   const effectiveCap = Number.isFinite(cap) && cap > 0
     ? Math.trunc(cap)
     : DEFAULT_FEED_ENTRIES_CAP;
@@ -274,15 +267,15 @@ export function mergeFeedEntries(
  * drift again.
  */
 export function compareFeedEntriesNewestFirst(
-  a: { readonly publishedAt: string },
-  b: { readonly publishedAt: string }
+  a: { readonly publishedAt: string; readonly id: string },
+  b: { readonly publishedAt: string; readonly id: string }
 ): number {
   const ta = Date.parse(a.publishedAt);
   const tb = Date.parse(b.publishedAt);
-  if (!Number.isFinite(ta) && !Number.isFinite(tb)) return 0;
+  if (!Number.isFinite(ta) && !Number.isFinite(tb)) return b.id.localeCompare(a.id);
   if (!Number.isFinite(ta)) return 1;
   if (!Number.isFinite(tb)) return -1;
-  return tb - ta;
+  return tb - ta || b.id.localeCompare(a.id);
 }
 
 /**

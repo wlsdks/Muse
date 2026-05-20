@@ -258,7 +258,7 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
       const store = await readFeedsStore(defaultFeedsFile());
       const rolled = store.feeds.flatMap((feed) =>
         filterRecentFeedEntries(feed.entries, cutoff).map((entry) => ({
-          feedId: feed.id, feedName: feed.name,
+          id: entry.id, feedId: feed.id, feedName: feed.name,
           title: entry.title, link: entry.link,
           publishedAt: entry.publishedAt, summary: entry.summary
         }))
