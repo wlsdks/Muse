@@ -111,6 +111,14 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
         process.exitCode = 1;
         return;
       }
+      // Up-front scheme gate so `muse feeds add not-a-url` surfaces
+      // the actual contract violation instead of the generic
+      // `initial fetch failed: Invalid URL` from fetch()'s internals.
+      if (!/^(?:https?:\/\/|file:\/\/)/iu.test(trimmedUrl)) {
+        io.stderr(`muse feeds add: URL must start with http://, https://, or file:// (got '${trimmedUrl}')\n`);
+        process.exitCode = 1;
+        return;
+      }
       const file = defaultFeedsFile();
       const store = await readFeedsStore(file);
       const trimmedExplicit = options.id?.trim() ?? "";

@@ -227,6 +227,32 @@ describe("muse feeds add --id empty / whitespace fallback", () => {
     expect(stdout).toContain("(no feeds");
   });
 
+  it("rejects a URL with no valid scheme upfront — surfaces the contract (http(s):// or file://) instead of fetch()'s generic Invalid URL", async () => {
+    const store = seedEmptyStore();
+    // `not-a-url` — pre-fix this fell through to `loadFeedBody` and
+    // tripped `fetch()`'s internals with `initial fetch failed:
+    // Invalid URL`. Post-fix the upfront scheme gate names the
+    // actual problem.
+    const { stderr, exitCode } = await runFeedsCommand(["add", "not-a-url"], store);
+    expect(exitCode).toBe(1);
+    expect(
+      stderr,
+      "the error must name the http:// / file:// contract, not the downstream fetch failure"
+    ).toContain("URL must start with http://, https://, or file://");
+    expect(stderr).toContain("'not-a-url'");
+    expect(stderr, "fetch's generic error must not leak through anymore").not.toContain("initial fetch failed");
+
+    // Sibling: `ftp://` is also rejected — only the documented
+    // three schemes are supported.
+    const ftp = await runFeedsCommand(["add", "ftp://example.com/feed"], store);
+    expect(ftp.exitCode).toBe(1);
+    expect(ftp.stderr).toContain("URL must start with http://, https://, or file://");
+
+    // Store stays empty — the rejected URL doesn't get persisted.
+    const { stdout } = await runFeedsCommand(["list"], store);
+    expect(stdout).toContain("(no feeds");
+  });
+
   it("trims a padded URL before fetching + persisting so the store doesn't keep extra whitespace", async () => {
     const store = seedEmptyStore();
     const body = writeFeedXml();
