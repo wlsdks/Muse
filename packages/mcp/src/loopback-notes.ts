@@ -13,6 +13,7 @@ import type { JsonObject, JsonValue } from "@muse/shared";
 
 import { readString } from "./loopback-helpers.js";
 import type { LoopbackMcpServer } from "./loopback.js";
+import { sliceWithoutLoneSurrogate } from "./notes-providers-local.js";
 import type { ProactiveModelProviderLike } from "./proactive-notice-loop.js";
 
 /**
@@ -275,7 +276,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
                 matches.push({
                   line: index + 1,
                   path: rel,
-                  snippet: line.length > 240 ? `${line.slice(0, 240)}...` : line
+                  snippet: line.length > 240 ? `${sliceWithoutLoneSurrogate(line, 240)}...` : line
                 });
                 if (matches.length >= limit) {
                   break;

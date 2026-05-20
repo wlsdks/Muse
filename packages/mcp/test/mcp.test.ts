@@ -1249,6 +1249,24 @@ describe("muse.notes loopback server (filesystem-backed)", () => {
     expect(result.matches[0]?.snippet).toContain("BIRTHDAY");
   });
 
+  it("search snippet drops a lone trailing high surrogate when the cap straddles an emoji mid-pair", async () => {
+    const conn = createLoopbackMcpConnection(createNotesMcpServer({ notesDir: tmpRoot }));
+    const pre = "needle " + "x".repeat(232);
+    const grin = "😀";
+    const line = `${pre}${grin}rest`;
+    expect(pre.length).toBe(239);
+    await conn.callTool!("save", { content: line, path: "snippet.md" });
+    const result = await conn.callTool!("search", { query: "needle" }) as { matches: Array<{ snippet: string }> };
+    expect(result.matches).toHaveLength(1);
+    const snippet = result.matches[0]!.snippet;
+    expect(snippet.endsWith("...")).toBe(true);
+    const head = snippet.slice(0, snippet.length - 3);
+    for (let i = 0; i < head.length; i += 1) {
+      const c = head.charCodeAt(i);
+      expect(c >= 0xd800 && c <= 0xdfff, `loopback snippet index ${i.toString()} must not be a lone surrogate`).toBe(false);
+    }
+  });
+
   it("rejects path traversal attempts and absolute paths", async () => {
     const conn = createLoopbackMcpConnection(createNotesMcpServer({ notesDir: tmpRoot }));
     expect(await conn.callTool!("read", { path: "../etc/passwd" })).toEqual({
