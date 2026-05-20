@@ -207,7 +207,8 @@ export function registerAdminRunRoutes(
     let limit: number | undefined;
 
     if (limitRaw !== undefined) {
-      const parsed = Number.parseInt(limitRaw, 10);
+      const trimmed = limitRaw.trim();
+      const parsed = /^\d+$/u.test(trimmed) ? Number(trimmed) : Number.NaN;
       if (!Number.isInteger(parsed) || parsed < 0 || parsed > 1_000) {
         return reply.status(400).send({
           code: "INVALID_LIMIT",

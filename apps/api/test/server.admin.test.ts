@@ -683,4 +683,22 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(await historyStore.findRun("run-old")).toBeUndefined();
     expect(await historyStore.findRun("run-recent")).toBeTruthy();
   });
+
+  it("GET /api/admin/runs?limit=<typo> 400s with INVALID_LIMIT instead of silently slicing on the digit prefix", async () => {
+    const historyStore = new InMemoryAgentRunHistoryStore();
+    for (let i = 0; i < 3; i += 1) {
+      historyStore.createRun({ id: `r${i.toString()}`, input: "x", model: "m", provider: "p", userId: "u" });
+    }
+    const server = buildServer({ historyStore, logger: false });
+
+    const clean = await server.inject({ method: "GET", url: "/api/admin/runs?limit=2" });
+    expect(clean.statusCode).toBe(200);
+    expect(clean.json()).toMatchObject({ total: 2 });
+
+    for (const bad of ["10x", "5min", "10 runs", "1.5", "-3", "1e3", "abc"]) {
+      const reply = await server.inject({ method: "GET", url: `/api/admin/runs?limit=${encodeURIComponent(bad)}` });
+      expect(reply.statusCode, `${bad} must 400`).toBe(400);
+      expect(reply.json(), `${bad} should report INVALID_LIMIT`).toMatchObject({ code: "INVALID_LIMIT" });
+    }
+  });
 });
