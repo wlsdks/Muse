@@ -75,9 +75,15 @@ export function computeRoutine(rows: readonly ActivityRow[]) {
   const hourCounts = new Array(24).fill(0) as number[];
   const dowCounts = new Array(7).fill(0) as number[];
   const days = new Set<string>();
+  // Count only rows whose timestamp parsed — otherwise a malformed
+  // activity.jsonl line would inflate the average vs. daysObserved
+  // (which already skips it), making the displayed math
+  // `total / days = avg` arithmetically wrong.
+  let validSessions = 0;
   for (const row of rows) {
     const date = new Date(row.tsIso);
     if (!Number.isFinite(date.getTime())) continue;
+    validSessions += 1;
     const h = date.getHours();
     const d = date.getDay();
     hourCounts[h] = (hourCounts[h] ?? 0) + 1;
@@ -94,11 +100,11 @@ export function computeRoutine(rows: readonly ActivityRow[]) {
     .filter((entry) => entry.count > 0)
     .sort((a, b) => b.count - a.count);
   return {
-    totalSessions: rows.length,
+    totalSessions: validSessions,
     daysObserved: days.size,
     topHours,
     topDays: dowRanked.slice(0, 3).map((entry) => DAY_NAMES[entry.dow]),
-    sessionsPerDay: days.size > 0 ? Number((rows.length / days.size).toFixed(2)) : 0
+    sessionsPerDay: days.size > 0 ? Number((validSessions / days.size).toFixed(2)) : 0
   };
 }
 
