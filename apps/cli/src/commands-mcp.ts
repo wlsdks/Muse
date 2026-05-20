@@ -23,6 +23,7 @@ import {
 } from "@muse/autoconfigure";
 
 import { closestCommandName } from "./closest-command.js";
+import { firstNonEmpty } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 
 export interface McpHelpers {
@@ -479,14 +480,20 @@ interface McpPresetRecipe {
   readonly build: (options: McpUseOptions) => McpJsonEntry;
 }
 
-const MCP_PRESETS: Record<string, McpPresetRecipe> = {
+export const MCP_PRESETS: Record<string, McpPresetRecipe> = {
   filesystem: {
     defaultName: "filesystem",
-    build: (options): McpJsonEntry => ({
-      args: ["-y", "@modelcontextprotocol/server-filesystem", options.root ?? process.env.HOME ?? "/"],
-      command: "npx",
-      description: `Filesystem read/write rooted at ${options.root ?? "$HOME"}`
-    })
+    build: (options): McpJsonEntry => {
+      const root = firstNonEmpty(options.root, process.env.HOME);
+      if (!root) {
+        throw new Error("muse mcp use filesystem: --root <dir> is required (HOME is empty / unset, refusing to default to filesystem root)");
+      }
+      return {
+        args: ["-y", "@modelcontextprotocol/server-filesystem", root],
+        command: "npx",
+        description: `Filesystem read/write rooted at ${root}`
+      };
+    }
   },
   fetch: {
     defaultName: "fetch",
