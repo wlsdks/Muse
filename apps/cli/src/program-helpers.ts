@@ -25,6 +25,7 @@ import { isCancel, password, text } from "@clack/prompts";
 import { stripUntrustedTerminalChars, truncateErrorBody } from "@muse/shared";
 import type { Command } from "commander";
 
+import { closestCommandName } from "./closest-command.js";
 import { isRecord, readStoredToken } from "./credential-store.js";
 import { formatCitations } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
@@ -303,6 +304,8 @@ export async function writeConfigStore(io: ProgramIO, config: MuseCliConfig): Pr
   await chmod(filePath, 0o600);
 }
 
+const SUPPORTED_CONFIG_KEYS = ["apiUrl", "defaultModel"] as const;
+
 export function setConfigValue(config: MuseCliConfig, key: string, value: string): MuseCliConfig {
   const trimmed = value.trim();
 
@@ -318,7 +321,9 @@ export function setConfigValue(config: MuseCliConfig, key: string, value: string
     return { ...config, defaultModel: trimmed };
   }
 
-  throw new Error(`Unsupported config key: ${key}`);
+  const suggestion = closestCommandName(key, SUPPORTED_CONFIG_KEYS);
+  const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
+  throw new Error(`Unsupported config key '${key}' (expected one of: ${SUPPORTED_CONFIG_KEYS.join(", ")})${hint}`);
 }
 
 export function isNodeError(value: unknown): value is NodeJS.ErrnoException {

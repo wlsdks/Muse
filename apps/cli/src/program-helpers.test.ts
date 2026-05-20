@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { defaultConfigPath, firstNonEmpty } from "./program-helpers.js";
+import { defaultConfigPath, firstNonEmpty, setConfigValue } from "./program-helpers.js";
 
 describe("defaultConfigPath", () => {
   beforeEach(() => {
@@ -58,5 +58,25 @@ describe("firstNonEmpty (readApiOptions / token precedence-chain helper)", () =>
   it("returns undefined when every candidate is empty / whitespace / undefined", () => {
     expect(firstNonEmpty()).toBeUndefined();
     expect(firstNonEmpty("", "   ", undefined)).toBeUndefined();
+  });
+});
+
+describe("setConfigValue", () => {
+  it("accepts the two supported keys + trims the value", () => {
+    expect(setConfigValue({}, "apiUrl", "  http://localhost:3030  ")).toMatchObject({ apiUrl: "http://localhost:3030" });
+    expect(setConfigValue({}, "defaultModel", "  qwen3:8b  ")).toMatchObject({ defaultModel: "qwen3:8b" });
+  });
+
+  it("rejects an empty / whitespace-only value", () => {
+    expect(() => setConfigValue({}, "apiUrl", "   ")).toThrow(/Config value must not be empty/u);
+  });
+
+  it("rejects an unknown key with a `did you mean` hint for a near-miss typo", () => {
+    expect(() => setConfigValue({}, "apirurl", "x")).toThrow(/Unsupported config key 'apirurl'.*expected one of: apiUrl, defaultModel.*did you mean 'apiUrl'/u);
+    expect(() => setConfigValue({}, "deafultModel", "x")).toThrow(/did you mean 'defaultModel'/u);
+  });
+
+  it("rejects an unknown key WITHOUT a guess when nothing is close (no random suggestion)", () => {
+    expect(() => setConfigValue({}, "totallydifferent", "x")).toThrow(/Unsupported config key 'totallydifferent'.*expected one of: apiUrl, defaultModel\)$/u);
   });
 });
