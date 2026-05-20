@@ -53,7 +53,8 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
     .description("Register a custom persona (id + preamble text or piped stdin). Run `muse persona use <id>` to activate.")
     .argument("<id>", "Custom persona id (must not collide with a built-in)")
     .argument("[preamble...]", "Preamble text the model prepends on every turn (omit to read from stdin)")
-    .action(async (id: string, preambleParts: readonly string[]) => {
+    .option("--json", "Emit a structured payload instead of the human-readable confirmation")
+    .action(async (id: string, preambleParts: readonly string[], options: { readonly json?: boolean }) => {
       const trimmedId = id.trim();
       if (trimmedId.length === 0) {
         io.stderr("muse persona add: <id> must not be empty\n");
@@ -84,6 +85,11 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
       const replacing = Object.hasOwn(store.custom, trimmedId);
       const nextCustom: Record<string, { preamble: string }> = { ...store.custom, [trimmedId]: { preamble } };
       await writePersonaStore(file, { ...store, custom: nextCustom });
+      const action = replacing ? "updated" : "added";
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ action, id: trimmedId }, null, 2)}\n`);
+        return;
+      }
       io.stdout(`${replacing ? "Updated" : "Added"} custom persona ${trimmedId}\n`);
     });
 
@@ -122,7 +128,8 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
     .command("remove")
     .description("Delete a custom persona by id (built-ins cannot be removed)")
     .argument("<id>", "Custom persona id")
-    .action(async (id: string) => {
+    .option("--json", "Emit a structured payload instead of the human-readable confirmation")
+    .action(async (id: string, options: { readonly json?: boolean }) => {
       const trimmed = id.trim();
       if (trimmed.length === 0) {
         io.stderr("muse persona remove: <id> must not be empty\n");
@@ -151,6 +158,10 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
       const wasActive = store.activeId === trimmed;
       const nextActiveId = wasActive ? "default" : store.activeId;
       await writePersonaStore(file, { activeId: nextActiveId, custom: nextCustom });
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ id: trimmed, resetActive: wasActive, activeId: nextActiveId }, null, 2)}\n`);
+        return;
+      }
       io.stdout(`Removed custom persona ${trimmed}${wasActive ? " (active persona reset to default)" : ""}\n`);
     });
 

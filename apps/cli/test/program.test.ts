@@ -5179,6 +5179,57 @@ describe("cli program", () => {
     }
   });
 
+  it("muse persona add --json + remove --json emit { action, id } / { id, resetActive, activeId } envelopes", async () => {
+    const { writePersonaStore } = await import("../src/persona-store.js");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-persona-write-json-"));
+    const personaFile = path.join(root, "persona.json");
+    await writePersonaStore(personaFile, { activeId: "default", custom: {} });
+    const prev = process.env.MUSE_PERSONA_FILE;
+    process.env.MUSE_PERSONA_FILE = personaFile;
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      // First add — action: "added".
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "persona", "add", "tony", "Sardonic.", "--json"], { from: "node" });
+      const r1 = JSON.parse(out1.join("")) as { action: string; id: string };
+      expect(r1.action, "first add must report action: 'added'").toBe("added");
+      expect(r1.id).toBe("tony");
+      expect(out1.join(""), "json mode must NOT emit the human-readable 'Added custom persona' line").not.toContain("Added custom persona");
+
+      // Second add for the same id — action: "updated".
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "persona", "add", "tony", "Even more sardonic.", "--json"], { from: "node" });
+      const r2 = JSON.parse(out2.join("")) as { action: string };
+      expect(r2.action, "second add for the same id must report action: 'updated' so scripts can audit overwrites").toBe("updated");
+
+      // remove --json on inactive custom — resetActive: false.
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "persona", "remove", "tony", "--json"], { from: "node" });
+      const r3 = JSON.parse(out3.join("")) as { id: string; resetActive: boolean; activeId: string };
+      expect(r3).toEqual({ id: "tony", resetActive: false, activeId: "default" });
+
+      // remove --json on ACTIVE custom — resetActive: true.
+      await writePersonaStore(personaFile, {
+        activeId: "alfred",
+        custom: { "alfred": { preamble: "Formal." } }
+      });
+      const { io: io4, output: out4 } = captureOutput();
+      const program4 = createProgram({ ...io4, fetch: async () => { throw new Error("no fetch"); } });
+      await program4.parseAsync(["node", "muse", "persona", "remove", "alfred", "--json"], { from: "node" });
+      const r4 = JSON.parse(out4.join("")) as { id: string; resetActive: boolean; activeId: string };
+      expect(r4.resetActive, "removing the active persona must surface resetActive: true").toBe(true);
+      expect(r4.activeId, "envelope must echo the post-remove active id so scripts know the new state").toBe("default");
+    } finally {
+      process.exitCode = prevExitCode;
+      if (prev === undefined) delete process.env.MUSE_PERSONA_FILE;
+      else process.env.MUSE_PERSONA_FILE = prev;
+    }
+  });
+
   it("muse persona add <id> <preamble> registers a custom persona reachable by `use` / `show`", async () => {
     const { readPersonaStore } = await import("../src/persona-store.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-persona-add-"));
