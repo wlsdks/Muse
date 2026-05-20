@@ -18,6 +18,7 @@
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 
 import { redactSecretsInText } from "@muse/shared";
@@ -49,14 +50,20 @@ export interface ActivityEvent {
   readonly tsIso?: string;
 }
 
+function resolveHome(): string {
+  const envHome = process.env.HOME?.trim();
+  if (envHome && envHome.length > 0) return envHome;
+  const sysHome = homedir().trim();
+  if (sysHome.length > 0) return sysHome;
+  throw new Error("Cannot resolve home directory — HOME is empty and os.homedir() returned no value");
+}
+
 export function lastChatHistoryPath(): string {
-  const home = process.env.HOME ?? "~";
-  return path.join(home, ".muse", "last-chat.jsonl");
+  return path.join(resolveHome(), ".muse", "last-chat.jsonl");
 }
 
 export function activityLogPath(): string {
-  const home = process.env.HOME ?? "~";
-  return path.join(home, ".muse", "activity.jsonl");
+  return path.join(resolveHome(), ".muse", "activity.jsonl");
 }
 
 export async function readLastChatHistory(): Promise<readonly LastChatLine[]> {
