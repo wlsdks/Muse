@@ -446,7 +446,7 @@ export function suggestPatternHints(
     }
   }
   // Most-fired first (more evidence = higher confidence).
-  return candidates.sort((a, b) => b.firings - a.firings).slice(0, maxHints);
+  return candidates.sort((a, b) => b.firings - a.firings || a.patternId.localeCompare(b.patternId)).slice(0, maxHints);
 }
 
 /**

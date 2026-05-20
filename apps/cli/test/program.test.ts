@@ -4710,6 +4710,13 @@ describe("cli program", () => {
     ];
     expect(suggestPatternHints(both, now, { maxHints: 1 })).toHaveLength(1);
 
+    const reordered = [
+      ...Array.from({ length: 5 }, (_, i) => ({ patternId: "y", firedAtIso: `2026-05-10T09:0${i.toString()}:00Z` })),
+      ...Array.from({ length: 5 }, (_, i) => ({ patternId: "x", firedAtIso: `2026-05-10T09:0${i.toString()}:00Z` }))
+    ];
+    const tiedReordered = suggestPatternHints(reordered, now);
+    expect(tiedReordered.map((h) => h.patternId), "ties on firings resolve by patternId asc — independent of input insertion order").toEqual(["x", "y"]);
+
     // Malformed entries skipped silently.
     expect(suggestPatternHints([
       { patternId: 123 },
