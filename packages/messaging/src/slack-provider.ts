@@ -269,12 +269,19 @@ function pickNewestTs(messages: readonly SlackHistoryMessage[]): string | undefi
  * Slack `ts` is `<epoch_seconds>.<microseconds>` as a string.
  * Convert to ISO-8601 with millisecond precision; falls back to
  * the raw string when parsing fails (defensive — Slack has been
- * known to ship `0` or empty in pathological cases).
+ * known to ship `0` or empty in pathological cases). A finite
+ * but out-of-range seconds value (corrupt / hand-edited / >Date
+ * max) makes an Invalid Date whose toISOString() throws and
+ * would reject the whole fetchInbound batch.
  */
-function tsToIso(ts: string): string {
+export function tsToIso(ts: string): string {
   const seconds = Number.parseFloat(ts);
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return ts;
   }
-  return new Date(seconds * 1000).toISOString();
+  const date = new Date(seconds * 1000);
+  if (!Number.isFinite(date.getTime())) {
+    return ts;
+  }
+  return date.toISOString();
 }
