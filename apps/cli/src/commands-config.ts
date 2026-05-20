@@ -52,10 +52,15 @@ export function registerConfigCommands(program: Command, io: ProgramIO, helpers:
     .description("Set a CLI config value")
     .argument("<key>", "Config key: apiUrl or defaultModel")
     .argument("<value>", "Config value")
-    .action(async (key: string, value: string) => {
+    .option("--json", "Emit a structured payload instead of the human-readable confirmation")
+    .action(async (key: string, value: string, options: { readonly json?: boolean }) => {
       const current = await helpers.readConfigStore(io);
       const next = helpers.setConfigValue(current, key, value);
       await helpers.writeConfigStore(io, next);
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ key, value: value.trim() }, null, 2)}\n`);
+        return;
+      }
       io.stdout(`Set ${key}\n`);
     });
 }
