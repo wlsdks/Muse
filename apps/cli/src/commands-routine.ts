@@ -42,7 +42,8 @@ interface ActivityRow {
 }
 
 export function activityPath(): string {
-  return process.env.MUSE_ACTIVITY_FILE?.trim() ?? join(homedir(), ".muse", "activity.jsonl");
+  const raw = process.env.MUSE_ACTIVITY_FILE?.trim();
+  return raw && raw.length > 0 ? raw : join(homedir(), ".muse", "activity.jsonl");
 }
 
 export async function readActivity(file: string): Promise<readonly ActivityRow[]> {

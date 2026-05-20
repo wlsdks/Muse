@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { computeRoutine } from "./commands-routine.js";
+import { activityPath, computeRoutine } from "./commands-routine.js";
 
 const row = (tsIso: string, userId = "u", kind = "ask"): { tsIso: string; userId: string; kind: string } => ({
   kind,
@@ -61,5 +61,26 @@ describe("computeRoutine", () => {
     expect(s.totalSessions).toBe(3);
     expect(s.daysObserved).toBe(1);
     expect(s.sessionsPerDay).toBe(3);
+  });
+});
+
+describe("activityPath — empty MUSE_ACTIVITY_FILE= no longer shadows the default (goal-478/481/482/483 sibling)", () => {
+  beforeEach(() => {
+    vi.stubEnv("MUSE_ACTIVITY_FILE", "");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("treats an empty / whitespace-only env value as unset (falls back to ~/.muse/activity.jsonl)", () => {
+    vi.stubEnv("MUSE_ACTIVITY_FILE", "");
+    expect(activityPath()).toMatch(/\.muse[/\\]activity\.jsonl$/u);
+    vi.stubEnv("MUSE_ACTIVITY_FILE", "   ");
+    expect(activityPath()).toMatch(/\.muse[/\\]activity\.jsonl$/u);
+  });
+
+  it("uses the env value when it is a non-empty trimmed path", () => {
+    vi.stubEnv("MUSE_ACTIVITY_FILE", "  /tmp/custom-activity.jsonl  ");
+    expect(activityPath()).toBe("/tmp/custom-activity.jsonl");
   });
 });
