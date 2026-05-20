@@ -160,7 +160,9 @@ export function latencyDistribution(runs: readonly AgentRunRecord[]) {
 
     const latencyMs = run.completedAt.getTime() - run.startedAt.getTime();
 
-    if (latencyMs < 1_000) {
+    if (!Number.isFinite(latencyMs)) {
+      buckets.unknown += 1;
+    } else if (latencyMs < 1_000) {
       buckets["0-1s"] += 1;
     } else if (latencyMs < 5_000) {
       buckets["1-5s"] += 1;
