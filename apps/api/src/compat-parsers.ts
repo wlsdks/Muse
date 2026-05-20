@@ -125,8 +125,14 @@ export function readQueryStringSet(request: FastifyRequest, key: string): Set<st
 
 export function readQueryInteger(request: FastifyRequest, key: string, fallback: number): number {
   const raw = readQueryString(request, key);
-  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (!raw) return fallback;
+  const trimmed = raw.trim();
+  // Strict parse, not Number.parseInt: a typo'd `?limit=20x` /
+  // unit-slip `?days=7d` must reach the fallback, not silently
+  // become 20 / 7. Mirrors goal 463/469/470.
+  if (!/^[+-]?\d+$/u.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) ? parsed : fallback;
 }
 
 export function readQueryInstantMillis(request: FastifyRequest, key: string): number | undefined {
