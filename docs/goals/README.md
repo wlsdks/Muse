@@ -146,6 +146,7 @@ delete an open row, never rewrite another goal's status.
 | 498 | [direct coverage for inbound-thread-store (per-channel memory)](498-inbound-thread-store-direct-coverage.md) | test / safety | done — goal-492 parallel; the inbound reply loop's per-channel conversation memory now has tolerant-load / no-op-empty / merge / per-channel isolation / MAX_TURNS=12 FIFO bound / 0o600 coverage; slice clause mutation-proven (src byte-identical) |
 | 499 | [createMaxLengthResponseFilter drops a lone surrogate at the truncation boundary](499-max-length-response-filter-surrogate-safe.md) | fix / correctness | done — goal-451 sibling on the response-rewriting layer; an emoji at the cap no longer emits invalid UTF-8 to downstream JSON/SSE/messaging (mutation-proven) |
 | 500 | [sanitizeFollowupSummary drops a lone surrogate at the 160-char cap](500-followup-summary-surrogate-safe.md) | fix / correctness | done — third consumer of the goal-451/499 surrogate-cap class on persisted followup summaries routed to Telegram/Slack/log; mutation-proven |
+| 501 | [sanitizeUserMemoryValue drops a lone surrogate at MAX_USER_MEMORY_VALUE_CHARS](501-user-memory-value-surrogate-safe.md) | fix / correctness | done — fourth consumer of the goal-451/499/500 surrogate-cap class on the persona-expansion chokepoint (every turn re-injects user-memory values into the prompt); mutation-proven |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —

@@ -114,6 +114,24 @@ describe("sanitizeUserMemoryValue (direct unit tests)", () => {
     expect(sanitizeUserMemoryValue(big).length).toBe(MAX_USER_MEMORY_VALUE_CHARS);
   });
 
+  it("drops a lone high surrogate when the cap lands inside a surrogate pair (goal-451/499/500 sibling)", async () => {
+    const { sanitizeUserMemoryValue, MAX_USER_MEMORY_VALUE_CHARS } = await import("../src/index.js");
+    // The persona-expansion path re-injects this value into every
+    // prompt; a stray high surrogate at the boundary would corrupt
+    // the prompt and any downstream JSON/SSE/messaging echo.
+    const padding = "x".repeat(MAX_USER_MEMORY_VALUE_CHARS - 1);
+    const value = padding + "😀" + "yyyyyy";
+    const result = sanitizeUserMemoryValue(value);
+    // No lone high surrogate at the truncation boundary.
+    expect(result.charCodeAt(result.length - 1)).not.toSatisfy(
+      (c: number) => c >= 0xd800 && c <= 0xdbff
+    );
+    // The "😀"'s high surrogate sat at index MAX_USER_MEMORY_VALUE_CHARS-1
+    // (the last kept slot). With the drop, the result is just the
+    // padding — the entire pair is excluded.
+    expect(result).toBe(padding);
+  });
+
   it("passes plain ASCII + multi-byte Unicode through unchanged", async () => {
     const { sanitizeUserMemoryValue } = await import("../src/index.js");
     expect(sanitizeUserMemoryValue("간결한 한국어 응답을 선호함")).toBe("간결한 한국어 응답을 선호함");

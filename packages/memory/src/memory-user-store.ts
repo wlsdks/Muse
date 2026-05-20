@@ -56,7 +56,17 @@ export function sanitizeUserMemoryValue(raw: string): string {
   if (stripped.length <= MAX_USER_MEMORY_VALUE_CHARS) {
     return stripped;
   }
-  return stripped.slice(0, MAX_USER_MEMORY_VALUE_CHARS);
+  let head = stripped.slice(0, MAX_USER_MEMORY_VALUE_CHARS);
+  // `slice` cuts on UTF-16 units; a boundary inside an astral
+  // char (emoji / supplementary-plane) leaves a lone high surrogate.
+  // The persisted value is re-injected into every prompt via persona
+  // expansion — invalid UTF-8 there corrupts the prompt + downstream
+  // JSON/SSE/messaging that echoes the memory. Drop the orphan.
+  const last = head.charCodeAt(head.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) {
+    head = head.slice(0, -1);
+  }
+  return head;
 }
 
 export class InMemoryUserMemoryStore implements UserMemoryStore {
