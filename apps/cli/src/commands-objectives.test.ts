@@ -84,6 +84,44 @@ describe("muse objectives — CLI entry point to the delegated-autonomy chain", 
     expect((await run(file, ["list", "--user", "other"])).stdout).toBe("No objectives.\n");
   });
 
+  it("list --json emits a machine-readable envelope { objectives, status, total, user } — empty store returns total=0 + empty objectives (not the friendly stdout message)", async () => {
+    const empty = objFile();
+    const r1 = await run(empty, ["list", "--json"]);
+    expect(r1.exitCode).toBeUndefined();
+    expect(r1.stdout, "json mode must NOT emit the human-readable empty-state line").not.toContain("No objectives.");
+    const parsedEmpty = JSON.parse(r1.stdout) as { objectives: unknown[]; status: string; total: number; user: string };
+    expect(parsedEmpty.objectives).toEqual([]);
+    expect(parsedEmpty.total).toBe(0);
+    expect(parsedEmpty.status).toBe("active");
+    expect(parsedEmpty.user).toBe("local");
+
+    const file = objFile();
+    const added = await run(file, ["add", "watch the deploy", "--kind", "watch"]);
+    expect(added.exitCode).toBeUndefined();
+    const id = added.stdout.match(/(obj_[a-z0-9-]+)/u)?.[1];
+    expect(id).toMatch(/^obj_[a-z0-9-]+$/u);
+    const r2 = await run(file, ["list", "--json"]);
+    expect(r2.exitCode).toBeUndefined();
+    const parsed = JSON.parse(r2.stdout) as { objectives: Array<{ id: string; spec: string; kind: string; status: string }>; total: number; status: string; user: string };
+    expect(parsed.total).toBe(1);
+    expect(parsed.objectives[0]?.id).toBe(id);
+    expect(parsed.objectives[0]?.kind).toBe("watch");
+    expect(parsed.objectives[0]?.status).toBe("active");
+    expect(parsed.objectives[0]?.spec).toBe("watch the deploy");
+    expect(parsed.user).toBe("local");
+
+    // --status all under --json composes correctly: after cancel, status=all returns 1 cancelled, default (active) returns 0.
+    await run(file, ["cancel", id!]);
+    const r3a = await run(file, ["list", "--json"]);
+    const parsed3a = JSON.parse(r3a.stdout) as { total: number };
+    expect(parsed3a.total).toBe(0);
+    const r3b = await run(file, ["list", "--status", "all", "--json"]);
+    const parsed3b = JSON.parse(r3b.stdout) as { objectives: Array<{ status: string }>; total: number; status: string };
+    expect(parsed3b.total).toBe(1);
+    expect(parsed3b.status).toBe("all");
+    expect(parsed3b.objectives[0]?.status).toBe("cancelled");
+  });
+
   it("add and list resolve `--user '   '` to the same fallback bucket (no asymmetry that hides the just-added objective)", async () => {
     const file = objFile();
     await run(file, ["add", "trim test", "--user", "   "]);

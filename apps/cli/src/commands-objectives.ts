@@ -13,6 +13,7 @@ import {
   addObjective,
   patchObjective,
   readObjectives,
+  serializeObjective,
   type ObjectiveKind,
   type ObjectiveStatus
 } from "@muse/mcp";
@@ -75,13 +76,24 @@ export function registerObjectivesCommands(program: Command, io: ProgramIO): voi
     .description("List standing objectives")
     .option("--status <status>", `filter: ${STATUS_FILTERS.join(" | ")}`, "active")
     .option("--user <id>", "owner bucket", "local")
-    .action(async (options: { readonly status: string; readonly user: string }, command: Command) => {
+    .option("--json", "Print the raw payload instead of the formatted list")
+    .action(async (options: { readonly status: string; readonly user: string; readonly json?: boolean }, command: Command) => {
       try {
         assertOneOf(options.status, STATUS_FILTERS, "--status");
         const filter = options.status.trim().toLowerCase();
         const ownerBucket = options.user.trim() || "local";
         const all = (await readObjectives(objectivesFile())).filter((o) => o.userId === ownerBucket);
         const shown = filter === "all" ? all : all.filter((o) => o.status === (filter as ObjectiveStatus));
+        if (options.json) {
+          const payload = {
+            objectives: shown.map(serializeObjective),
+            status: filter,
+            total: shown.length,
+            user: ownerBucket
+          };
+          io.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+          return;
+        }
         if (shown.length === 0) {
           io.stdout("No objectives.\n");
           return;
