@@ -63,7 +63,7 @@ export function registerOrchestrateCommands(program: Command, io: ProgramIO, hel
         message,
         mode: options.mode,
         ...(options.model ? { model: options.model } : {}),
-        ...(workerIds ? { workerIds } : {}),
+        ...(workerIds && workerIds.length > 0 ? { workerIds } : {}),
         ...(maxWorkers !== undefined ? { maxWorkers } : {})
       }));
     });

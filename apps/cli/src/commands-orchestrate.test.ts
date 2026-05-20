@@ -49,4 +49,18 @@ describe("muse orchestrate run — mode validation", () => {
     await expect(h.run(["run", "hello", "--mode", "totallydifferent"]))
       .rejects.toThrow(/--mode must be 'sequential', 'parallel', or 'race' \(got 'totallydifferent'\)$/u);
   });
+
+  it("--workers with only separators / whitespace does NOT send workerIds: [] (which the API treats as `no specs match` → confusing 409)", async () => {
+    const h = harness();
+    await h.run(["run", "hello", "--workers", ",,  ,  "]);
+    expect(h.captured.requests).toHaveLength(1);
+    expect(h.captured.requests[0]!.body, "an effectively-empty --workers must be omitted from the body, not sent as workerIds: []").not.toHaveProperty("workerIds");
+  });
+
+  it("--workers with real ids passes them through as workerIds", async () => {
+    const h = harness();
+    await h.run(["run", "hello", "--workers", "  alpha , beta , "]);
+    expect(h.captured.requests).toHaveLength(1);
+    expect(h.captured.requests[0]!.body).toMatchObject({ workerIds: ["alpha", "beta"] });
+  });
 });
