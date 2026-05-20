@@ -45,7 +45,8 @@ export function registerActionsCommands(program: Command, io: ProgramIO): void {
     .action(async (options: { readonly user: string; readonly result: string; readonly limit: string }, command: Command) => {
       try {
         assertResult(options.result);
-        const limit = Number.parseInt(options.limit, 10);
+        const trimmedLimit = options.limit.trim();
+        const limit = /^\d+$/u.test(trimmedLimit) ? Number(trimmedLimit) : Number.NaN;
         if (!Number.isFinite(limit) || limit <= 0) {
           throw new Error(`--limit must be a positive integer (got '${options.limit}')`);
         }

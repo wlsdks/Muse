@@ -93,4 +93,14 @@ describe("muse actions — the P6 accountability read surface", () => {
     expect(r2.exitCode).toBe(1);
     expect(r2.stderr).toContain("--limit must be a positive integer");
   });
+
+  it("rejects a typo / unit-slipped --limit instead of silently accepting the digit prefix", async () => {
+    const f = logFile();
+    for (const bad of ["20x", "5min", "10 entries", "-3", "1.5"]) {
+      const r = await run(f, ["--limit", bad]);
+      expect(r.exitCode, `${bad} must fail`).toBe(1);
+      expect(r.stderr, `${bad} should mention the bad value`).toContain(`'${bad}'`);
+      expect(r.stderr).toContain("--limit must be a positive integer");
+    }
+  });
 });
