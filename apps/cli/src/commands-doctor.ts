@@ -143,6 +143,19 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
  * `resolveStatusWatchIntervalMs` so the two watch loops share
  * the same parser contract.
  */
+/**
+ * Path-from-env resolver matching the goal-478/481/482 empty-env-shadow
+ * convention: a shell that pre-clears `MUSE_HOME=` / `MUSE_MCP_CONFIG=`
+ * must NOT make the doctor stat the empty path and falsely report
+ * `~/.muse` / `mcp.json` as missing. Treat empty / whitespace-only
+ * env as "unset" and fall back to the documented default.
+ */
+export function resolveMuseEnvPath(raw: string | undefined, fallback: string): string {
+  if (typeof raw !== "string") return fallback;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
 export function resolveDoctorWatchIntervalMs(raw: string | undefined): number {
   const defaultMs = 5_000;
   if (!raw) return defaultMs;
@@ -192,7 +205,7 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   }
 
   // ~/.muse layout
-  const muse_home = process.env.MUSE_HOME ?? join(homedir(), ".muse");
+  const muse_home = resolveMuseEnvPath(process.env.MUSE_HOME, join(homedir(), ".muse"));
   try {
     const stat = await fs.stat(muse_home);
     if (!stat.isDirectory()) {
@@ -205,7 +218,7 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   }
 
   // mcp.json
-  const mcp_path = process.env.MUSE_MCP_CONFIG ?? join(muse_home, "mcp.json");
+  const mcp_path = resolveMuseEnvPath(process.env.MUSE_MCP_CONFIG, join(muse_home, "mcp.json"));
   try {
     const raw = await fs.readFile(mcp_path, "utf8");
     try {

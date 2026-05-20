@@ -4,6 +4,7 @@ import {
   embedModelCheck,
   findOllamaModelTag,
   parseNotesIndexEmbedModel,
+  resolveMuseEnvPath,
   type OllamaTagsEntry
 } from "./commands-doctor.js";
 
@@ -91,5 +92,24 @@ describe("embedModelCheck (goal 168)", () => {
     expect(v.status).toBe("warn");
     expect(v.detail).toContain("ollama pull nomic-embed-text");
     expect(v.detail).toContain("muse ask` unavailable");
+  });
+});
+
+describe("resolveMuseEnvPath (goal-478/481/482 sibling, doctor surface)", () => {
+  it("falls back to the documented default when env is unset", () => {
+    expect(resolveMuseEnvPath(undefined, "/home/u/.muse")).toBe("/home/u/.muse");
+  });
+
+  it("uses the env value when it is a non-empty trimmed path", () => {
+    expect(resolveMuseEnvPath("/custom/muse-home", "/home/u/.muse")).toBe("/custom/muse-home");
+  });
+
+  it("trims surrounding whitespace from the env path", () => {
+    expect(resolveMuseEnvPath("  /custom/muse-home  ", "/home/u/.muse")).toBe("/custom/muse-home");
+  });
+
+  it("treats an empty / whitespace-only env value as unset (the bug 482 fixed for userId, here for doctor paths)", () => {
+    expect(resolveMuseEnvPath("", "/home/u/.muse")).toBe("/home/u/.muse");
+    expect(resolveMuseEnvPath("   ", "/home/u/.muse")).toBe("/home/u/.muse");
   });
 });
