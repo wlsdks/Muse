@@ -50,7 +50,7 @@ export function registerActionsCommands(program: Command, io: ProgramIO): void {
         if (!Number.isFinite(limit) || limit <= 0) {
           throw new Error(`--limit must be a positive integer (got '${options.limit}')`);
         }
-        const user = options.user.trim();
+        const user = options.user.trim() || "local";
         const all = await queryActionLog(actionLogFile(), user === "all" ? {} : { userId: user });
         const resultFilter = options.result.trim().toLowerCase();
         const filtered = resultFilter === "all" ? all : all.filter((e) => e.result === resultFilter);

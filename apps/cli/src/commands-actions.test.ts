@@ -103,4 +103,14 @@ describe("muse actions — the P6 accountability read surface", () => {
       expect(r.stderr).toContain("--limit must be a positive integer");
     }
   });
+
+  it("--user '   ' falls back to the same 'local' bucket as the default — does NOT leak other buckets via the empty-string fallthrough on queryActionLog's truthy filter", async () => {
+    const file = logFile();
+    await appendActionLog(file, entry({ id: "local-1", userId: "local", what: "local entry" }));
+    await appendActionLog(file, entry({ id: "stark-1", userId: "stark", what: "stark entry" }));
+    const r = await run(file, ["--user", "   "]);
+    expect(r.exitCode).toBeUndefined();
+    expect(r.stdout, "whitespace --user must resolve to 'local' (matching the default), not leak other buckets").toContain("local entry");
+    expect(r.stdout).not.toContain("stark entry");
+  });
 });
