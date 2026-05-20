@@ -5039,6 +5039,71 @@ describe("cli program", () => {
     }
   });
 
+  it("muse persona remove <id> deletes the custom + resets activeId to default if it was active", async () => {
+    const { readPersonaStore, writePersonaStore } = await import("../src/persona-store.js");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-persona-remove-"));
+    const personaFile = path.join(root, "persona.json");
+    const prev = process.env.MUSE_PERSONA_FILE;
+    process.env.MUSE_PERSONA_FILE = personaFile;
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      await writePersonaStore(personaFile, {
+        activeId: "tony",
+        custom: {
+          "alfred": { preamble: "Formal, gentle." },
+          "tony": { preamble: "Sardonic, confident." }
+        }
+      });
+
+      const { io: ioRemove, output: outRemove } = captureOutput();
+      const programRemove = createProgram({ ...ioRemove, fetch: async () => { throw new Error("no fetch"); } });
+      await programRemove.parseAsync(["node", "muse", "persona", "remove", "tony"], { from: "node" });
+      const removeText = outRemove.join("");
+      expect(removeText).toContain("Removed custom persona tony");
+      expect(removeText, "removing the active custom must reset activeId so `muse persona show` doesn't keep pointing at a deleted id").toContain("(active persona reset to default)");
+      expect(process.exitCode).toBe(0);
+
+      const after = await readPersonaStore(personaFile);
+      expect(after.custom["tony"], "the removed custom must be gone from the store").toBeUndefined();
+      expect(after.custom["alfred"]?.preamble, "siblings must survive").toBe("Formal, gentle.");
+      expect(after.activeId).toBe("default");
+
+      const { io: ioInactive, output: outInactive } = captureOutput();
+      const programInactive = createProgram({ ...ioInactive, fetch: async () => { throw new Error("no fetch"); } });
+      process.exitCode = 0;
+      await programInactive.parseAsync(["node", "muse", "persona", "remove", "alfred"], { from: "node" });
+      const inactiveText = outInactive.join("");
+      expect(inactiveText).toContain("Removed custom persona alfred");
+      expect(inactiveText, "removing an INACTIVE custom must NOT report the active-reset message").not.toContain("active persona reset");
+      expect((await readPersonaStore(personaFile)).activeId, "inactive removal must leave activeId untouched").toBe("default");
+
+      const { io: ioBuiltin, output: outBuiltin } = captureOutput();
+      const programBuiltin = createProgram({ ...ioBuiltin, fetch: async () => { throw new Error("no fetch"); } });
+      process.exitCode = 0;
+      await programBuiltin.parseAsync(["node", "muse", "persona", "remove", "jarvis"], { from: "node" });
+      expect(outBuiltin.join("")).toContain("'jarvis' is a built-in");
+      expect(process.exitCode, "removing a built-in must reject — the built-ins are baked into the binary").toBe(1);
+
+      const { io: ioMissing, output: outMissing } = captureOutput();
+      const programMissing = createProgram({ ...ioMissing, fetch: async () => { throw new Error("no fetch"); } });
+      process.exitCode = 0;
+      await writePersonaStore(personaFile, {
+        activeId: "default",
+        custom: { "tony": { preamble: "Sardonic." } }
+      });
+      await programMissing.parseAsync(["node", "muse", "persona", "remove", "tonu"], { from: "node" });
+      const missingText = outMissing.join("");
+      expect(missingText).toContain("no custom persona with id 'tonu'");
+      expect(missingText, "did-you-mean hint must reach for the closest custom id").toContain("did you mean 'tony'?");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExitCode;
+      if (prev === undefined) delete process.env.MUSE_PERSONA_FILE;
+      else process.env.MUSE_PERSONA_FILE = prev;
+    }
+  });
+
   it("compareFeedEntriesNewestFirst is a consistent total order incl. undated (goal 181)", async () => {
     const { compareFeedEntriesNewestFirst } = await import("../src/feeds-store.js");
     const newer = { id: "n", publishedAt: "2026-05-15T12:00:00Z" };

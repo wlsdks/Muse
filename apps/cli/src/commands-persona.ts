@@ -105,6 +105,42 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
     });
 
   persona
+    .command("remove")
+    .description("Delete a custom persona by id (built-ins cannot be removed)")
+    .argument("<id>", "Custom persona id")
+    .action(async (id: string) => {
+      const trimmed = id.trim();
+      if (trimmed.length === 0) {
+        io.stderr("muse persona remove: <id> must not be empty\n");
+        process.exitCode = 1;
+        return;
+      }
+      if (isBuiltinPersonaId(trimmed)) {
+        io.stderr(`muse persona remove: '${trimmed}' is a built-in — built-ins cannot be removed (run \`muse persona list\` for the custom ids)\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const file = defaultPersonaFile();
+      const store = await readPersonaStore(file);
+      if (!Object.hasOwn(store.custom, trimmed)) {
+        const suggestion = closestCommandName(trimmed, Object.keys(store.custom));
+        io.stderr(`muse persona remove: no custom persona with id '${trimmed}'`);
+        if (suggestion) io.stderr(` — did you mean '${suggestion}'?`);
+        io.stderr(` (run \`muse persona list\` to see the custom ids)\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const nextCustom: Record<string, { preamble: string }> = {};
+      for (const [key, value] of Object.entries(store.custom)) {
+        if (key !== trimmed) nextCustom[key] = value;
+      }
+      const wasActive = store.activeId === trimmed;
+      const nextActiveId = wasActive ? "default" : store.activeId;
+      await writePersonaStore(file, { activeId: nextActiveId, custom: nextCustom });
+      io.stdout(`Removed custom persona ${trimmed}${wasActive ? " (active persona reset to default)" : ""}\n`);
+    });
+
+  persona
     .command("show")
     .description("Print the active persona's preamble")
     .option("--json", "Emit a structured payload")
