@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { aggregateActivitySignals } from "../src/pattern-signals.js";
+import { aggregateActivitySignals, resolveAggregatorHome } from "../src/pattern-signals.js";
 
 function seedFile(file: string, contents: string): void {
   writeFileSync(file, contents, "utf8");
@@ -124,5 +124,41 @@ describe("aggregateActivitySignals", () => {
 
     // Hidden dir contents never appear.
     expect(result.noteEdits.every((n) => !n.absPath.includes(".obsidian"))).toBe(true);
+  });
+});
+
+describe("resolveAggregatorHome — empty-env-shadow defence", () => {
+  it("prefers a non-empty explicit override", () => {
+    expect(resolveAggregatorHome("/explicit/home")).toBe("/explicit/home");
+    expect(resolveAggregatorHome("  /trimmed  ")).toBe("/trimmed");
+  });
+
+  it("falls through to process.env.HOME when the explicit override is undefined / empty / whitespace", () => {
+    const prev = process.env.HOME;
+    process.env.HOME = "/env/home";
+    try {
+      expect(resolveAggregatorHome(undefined)).toBe("/env/home");
+      expect(resolveAggregatorHome("")).toBe("/env/home");
+      expect(resolveAggregatorHome("   ")).toBe("/env/home");
+    } finally {
+      if (prev === undefined) delete process.env.HOME;
+      else process.env.HOME = prev;
+    }
+  });
+
+  it("falls through to os.homedir() when both explicit AND HOME are whitespace-only — does NOT leak '' or '~'", () => {
+    const prev = process.env.HOME;
+    process.env.HOME = "   ";
+    try {
+      const resolved = resolveAggregatorHome(undefined);
+      expect(resolved, "no leading whitespace; no bare '~'").not.toMatch(/^\s/u);
+      expect(resolved).not.toBe("~");
+      expect(resolved).not.toBe("");
+    } catch (cause) {
+      expect((cause as Error).message).toMatch(/Cannot resolve home directory/u);
+    } finally {
+      if (prev === undefined) delete process.env.HOME;
+      else process.env.HOME = prev;
+    }
   });
 });

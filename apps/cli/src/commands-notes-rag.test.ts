@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { cosine, isNotesIndexStale, parseRagBoundedInt } from "./commands-notes-rag.js";
+import { cosine, defaultIndexPath, isNotesIndexStale, parseRagBoundedInt } from "./commands-notes-rag.js";
 
 async function writeIndex(indexPath: string, files: { path: string; mtimeMs: number }[]): Promise<void> {
   const payload = {
@@ -104,5 +104,34 @@ describe("cosine — degenerate vectors and NaN values", () => {
   it("returns 0 (not NaN) when either vector contains a NaN — protects the RAG render and sort from `[NaN]` scores", () => {
     expect(cosine([Number.NaN, 1, 0], [1, 0, 0])).toBe(0);
     expect(cosine([1, 0, 0], [Number.NaN, 0, 0])).toBe(0);
+  });
+});
+
+describe("defaultIndexPath — empty-HOME fall-through (goal-547 sibling)", () => {
+  it("roots notes-index.json under HOME when HOME is set", () => {
+    const prev = process.env.HOME;
+    process.env.HOME = "/u/jinan";
+    try {
+      expect(defaultIndexPath()).toBe("/u/jinan/.muse/notes-index.json");
+    } finally {
+      if (prev === undefined) delete process.env.HOME;
+      else process.env.HOME = prev;
+    }
+  });
+
+  it("falls back to os.homedir() when HOME is whitespace-only — does NOT produce '   /.muse/notes-index.json' or bare relative", () => {
+    const prev = process.env.HOME;
+    process.env.HOME = "   ";
+    try {
+      const resolved = defaultIndexPath();
+      expect(resolved, "no leading whitespace in resolved path").not.toMatch(/^\s/u);
+      expect(resolved, "no bare relative .muse/").not.toMatch(/^\.muse\//u);
+      expect(resolved).toMatch(/\/.muse\/notes-index\.json$/u);
+    } catch (cause) {
+      expect((cause as Error).message).toMatch(/Cannot resolve home directory/u);
+    } finally {
+      if (prev === undefined) delete process.env.HOME;
+      else process.env.HOME = prev;
+    }
   });
 });

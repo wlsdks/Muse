@@ -25,6 +25,7 @@
  */
 
 import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 export interface ActivityEventSignal {
@@ -78,7 +79,7 @@ export interface AggregateActivitySignalsOptions {
 const DEFAULT_NOTES_WALK_MAX_ENTRIES = 5_000;
 
 export async function aggregateActivitySignals(options: AggregateActivitySignalsOptions = {}): Promise<PatternSignals> {
-  const home = options.homeDir ?? process.env.HOME ?? "~";
+  const home = resolveAggregatorHome(options.homeDir);
   const activityFile = options.activityFile ?? path.join(home, ".muse", "activity.jsonl");
   const tasksFile = options.tasksFile ?? path.join(home, ".muse", "tasks.json");
   const notesDir = options.notesDir ?? path.join(home, ".muse", "notes");
@@ -234,4 +235,14 @@ async function walkNotes(
     const pathFamily = segments.length > 1 ? segments[0]! : "";
     out.push({ absPath: full, mtimeMs, pathFamily });
   }
+}
+
+export function resolveAggregatorHome(explicit: string | undefined): string {
+  const explicitTrimmed = typeof explicit === "string" ? explicit.trim() : "";
+  if (explicitTrimmed.length > 0) return explicitTrimmed;
+  const envHome = process.env.HOME?.trim();
+  if (envHome && envHome.length > 0) return envHome;
+  const sysHome = homedir().trim();
+  if (sysHome.length > 0) return sysHome;
+  throw new Error("Cannot resolve home directory for activity aggregator — HOME is empty and os.homedir() returned no value");
 }

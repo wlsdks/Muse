@@ -17,6 +17,7 @@
  */
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join as pathJoin, resolve as pathResolve, sep as pathSep } from "node:path";
 
 import { resolveNotesDir } from "@muse/autoconfigure";
@@ -59,9 +60,12 @@ interface NotesIndex {
   readonly files: FileEntry[];
 }
 
-function defaultIndexPath(): string {
-  const home = process.env.HOME ?? "~";
-  return pathJoin(home, ".muse", "notes-index.json");
+export function defaultIndexPath(): string {
+  const envHome = process.env.HOME?.trim();
+  if (envHome && envHome.length > 0) return pathJoin(envHome, ".muse", "notes-index.json");
+  const sysHome = homedir().trim();
+  if (sysHome.length > 0) return pathJoin(sysHome, ".muse", "notes-index.json");
+  throw new Error("Cannot resolve home directory for notes-index.json — HOME is empty and os.homedir() returned no value");
 }
 
 async function embed(text: string, model: string): Promise<number[]> {
