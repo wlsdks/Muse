@@ -14,7 +14,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join as pathJoin } from "node:path";
 
-import { parseBoolean, parseInteger } from "./env-parsers.js";
+import { parseBoolean, parseBooleanTriState, parseInteger } from "./env-parsers.js";
 import {
   mergeModelKeysFromFile,
   resolveLocalCalendarFile,
@@ -113,11 +113,11 @@ export function readWebSearchEnvSnapshot(env: Readonly<Record<string, string | u
   let enabled = WEB_SEARCH_DEFAULTS.enabled;
   let maxUses = WEB_SEARCH_DEFAULTS.maxUses;
 
-  const flag = env.MUSE_WEB_SEARCH?.toLowerCase();
-  if (flag === "off") {
+  const flag = parseBooleanTriState(env.MUSE_WEB_SEARCH);
+  if (flag === false) {
     enabled = false;
     source = "env";
-  } else if (flag === "on") {
+  } else if (flag === true) {
     enabled = true;
     source = "env";
   }

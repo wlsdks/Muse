@@ -41,6 +41,25 @@ export function parseBoolean(value: string | undefined, fallback: boolean): bool
   return fallback;
 }
 
+/**
+ * Tri-state variant of `parseBoolean` for callers that need to
+ * distinguish "explicit env value" from "value unset / unrecognised":
+ *
+ *   - one of the 8 standard spellings → `true | false`
+ *   - undefined, blank, or unrecognised → `undefined`
+ *
+ * Used by setup-status's `readWebSearchEnvSnapshot` so the snapshot
+ * can flip `source: "default" | "env"` on any recognised spelling,
+ * not just literal "on" / "off".
+ */
+export function parseBooleanTriState(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  const normalised = value.trim().toLowerCase();
+  if (TRUTHY_ENV_VALUES.has(normalised)) return true;
+  if (FALSY_ENV_VALUES.has(normalised)) return false;
+  return undefined;
+}
+
 export function parseInteger(value: string | undefined, fallback: number): number {
   if (value === undefined) {
     return fallback;

@@ -69,6 +69,36 @@ describe("readWebSearchEnvSnapshot", () => {
       expect(readWebSearchEnvSnapshot({ MUSE_WEB_SEARCH: value }).enabled).toBe(false);
     }
   });
+
+  it("accepts every standard falsy spelling (false / 0 / no / off) as a kill switch", () => {
+    for (const value of ["false", "False", "FALSE", "0", "no", "NO", "off", "Off"]) {
+      expect(readWebSearchEnvSnapshot({ MUSE_WEB_SEARCH: value })).toEqual({
+        enabled: false,
+        maxUses: 5,
+        source: "env"
+      });
+    }
+  });
+
+  it("accepts every standard truthy spelling (true / 1 / yes / on) as an explicit enable", () => {
+    for (const value of ["true", "True", "TRUE", "1", "yes", "YES", "on", "On"]) {
+      expect(readWebSearchEnvSnapshot({ MUSE_WEB_SEARCH: value })).toEqual({
+        enabled: true,
+        maxUses: 5,
+        source: "env"
+      });
+    }
+  });
+
+  it("unrecognised MUSE_WEB_SEARCH spellings keep source=default — typo does not silently flip the snapshot", () => {
+    for (const value of ["enabled", "disabled", "y", "n", "  ", "xyz", "truue"]) {
+      expect(readWebSearchEnvSnapshot({ MUSE_WEB_SEARCH: value })).toEqual({
+        enabled: true,
+        maxUses: 5,
+        source: "default"
+      });
+    }
+  });
 });
 
 describe("readModelKeyState — provider key probing", () => {
