@@ -91,12 +91,23 @@ export function registerChatRoutes(server: FastifyInstance, options: ServerOptio
   });
 }
 
+// Strict parse, not Number.parseInt: a typo'd `60x` / unit-slip
+// `30s` env value must NOT silently become the numeric prefix and
+// install the wrong rate-limit capacity. Whole-token decimal int
+// only; everything else → fallback 60.
+export function parseChatRateLimitCapacity(raw: string | undefined, fallback = 60): number {
+  if (typeof raw !== "string") return fallback;
+  const trimmed = raw.trim();
+  if (!/^[+-]?\d+$/u.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function buildDefaultChatRateLimiter(): ChatRateLimiter | undefined {
   if (process.env.MUSE_RATE_LIMIT_CHAT_DISABLED === "true") {
     return undefined;
   }
-  const rawCapacity = Number.parseInt(process.env.MUSE_RATE_LIMIT_CHAT_PER_MINUTE ?? "", 10);
-  const capacity = Number.isFinite(rawCapacity) && rawCapacity > 0 ? rawCapacity : 60;
+  const capacity = parseChatRateLimitCapacity(process.env.MUSE_RATE_LIMIT_CHAT_PER_MINUTE);
   return new ChatRateLimiter({ capacity, windowMs: 60_000 });
 }
 
