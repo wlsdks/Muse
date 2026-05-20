@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import type { ScheduledJob } from "./index.js";
 import { SchedulerValidationError } from "./scheduler-errors.js";
 import {
   defaultRetryCount,
   defaultTimezone,
   computeNextRunAt,
   requireText,
+  resolveJobTimeout,
   validateCronExpression,
   validateExecutionTimeout,
   validateJobName,
@@ -143,5 +145,41 @@ describe("scheduler defaults", () => {
   });
   it("defaultRetryCount is 3", () => {
     expect(defaultRetryCount).toBe(3);
+  });
+});
+
+describe("resolveJobTimeout — defends against a corrupt persisted executionTimeoutMs", () => {
+  const baseJob = (overrides: Partial<ScheduledJob> = {}): ScheduledJob => ({
+    cronExpression: "* * * * *",
+    createdAt: new Date("2026-05-20T00:00:00Z"),
+    enabled: true,
+    id: "j-1",
+    jobType: "mcp_tool",
+    maxRetryCount: 3,
+    name: "j",
+    retryOnFailure: false,
+    tags: [],
+    timezone: "UTC",
+    toolArguments: {},
+    updatedAt: new Date("2026-05-20T00:00:00Z"),
+    ...overrides
+  });
+
+  it("returns the explicit executionTimeoutMs when it is a finite positive number", () => {
+    expect(resolveJobTimeout(baseJob({ executionTimeoutMs: 30_000 }), 60_000)).toBe(30_000);
+  });
+
+  it("falls back to the supplied fallback when executionTimeoutMs is undefined", () => {
+    expect(resolveJobTimeout(baseJob(), 60_000)).toBe(60_000);
+  });
+
+  it("falls back when executionTimeoutMs is NaN — `??` does NOT catch NaN, so a corrupt row would otherwise propagate", () => {
+    expect(resolveJobTimeout(baseJob({ executionTimeoutMs: Number.NaN }), 60_000)).toBe(60_000);
+  });
+
+  it("falls back when executionTimeoutMs is Infinity or negative or zero (non-positive)", () => {
+    expect(resolveJobTimeout(baseJob({ executionTimeoutMs: Number.POSITIVE_INFINITY }), 60_000)).toBe(60_000);
+    expect(resolveJobTimeout(baseJob({ executionTimeoutMs: -1 }), 60_000)).toBe(60_000);
+    expect(resolveJobTimeout(baseJob({ executionTimeoutMs: 0 }), 60_000)).toBe(60_000);
   });
 });
