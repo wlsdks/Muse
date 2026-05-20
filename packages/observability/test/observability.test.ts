@@ -711,6 +711,28 @@ describe("InMemoryTokenCostQuery", () => {
     ]);
   });
 
+  it("daily breaks same-day same-cost ties by model asc — Qwen-only setups with every cost=0 don't shuffle by event-arrival order", async () => {
+    const sink = new InMemoryTokenUsageSink();
+    // Three Qwen-only events on the same day, all at $0 cost.
+    // Recorded `b → a → c` so the Map insertion order is b, a, c.
+    // Pre-fix the cost comparator returned 0 and the dashboard rows
+    // shuffled accordingly.
+    await record(sink, { estimatedCostUsd: 0, model: "qwen-b", recordedAt: "2026-05-10T10:00:00.000Z" });
+    await record(sink, { estimatedCostUsd: 0, model: "qwen-a", recordedAt: "2026-05-10T11:00:00.000Z" });
+    await record(sink, { estimatedCostUsd: 0, model: "qwen-c", recordedAt: "2026-05-10T12:00:00.000Z" });
+
+    const query = new InMemoryTokenCostQuery(sink);
+    const rows = await query.daily({
+      from: new Date("2026-05-10T00:00:00.000Z"),
+      to: new Date("2026-05-11T00:00:00.000Z")
+    });
+
+    expect(
+      rows.map((row) => row.model),
+      "same-day rows tied on cost must sort model asc — independent of event-arrival / Map-insertion order"
+    ).toEqual(["qwen-a", "qwen-b", "qwen-c"]);
+  });
+
   it("returns the top-N most expensive runs in the window descending by cost", async () => {
     const sink = new InMemoryTokenUsageSink();
     await record(sink, { estimatedCostUsd: 0.10, recordedAt: "2026-05-07T10:00:00.000Z", runId: "cheap" });

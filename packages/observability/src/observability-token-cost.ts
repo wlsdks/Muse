@@ -182,7 +182,11 @@ export class InMemoryTokenCostQuery implements TokenCostQuery {
     }
     return [...groups.values()].sort((a, b) => {
       if (a.day === b.day) {
-        return b.totalCostUsd - a.totalCostUsd;
+        // Qwen-only / local-LLM setups have every cost == 0 so the
+        // cost comparator returns 0 too; without the model
+        // tiebreaker the dashboard's same-day model rows shuffle
+        // by Map insertion (= event arrival) order across reloads.
+        return b.totalCostUsd - a.totalCostUsd || a.model.localeCompare(b.model);
       }
       return a.day < b.day ? 1 : -1;
     });
