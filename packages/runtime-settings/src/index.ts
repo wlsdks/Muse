@@ -198,11 +198,14 @@ function parseFiniteNumber(value: string | undefined): number | undefined {
 }
 
 /**
- * Goal 127 — recognise the common admin spellings of true / false.
- * Returns `undefined` for anything unrecognised so `getBoolean`
- * can fall back to its caller-supplied default. Exported (via
- * `parseBooleanSetting`) so consumers wiring custom boolean-shaped
- * RuntimeSetting values share the same parser.
+ * Recognises the common admin spellings of true / false (case-
+ * insensitive, trimmed): `true / 1 / yes / on` → true,
+ * `false / 0 / no / off` → false, anything else → undefined.
+ *
+ * Exported so consumers wiring custom boolean-shaped RuntimeSetting
+ * values (or env-flag readers that need a tri-state distinguishing
+ * "unset" from "explicit value") share the same parser used
+ * internally by `RuntimeSettings.getBoolean`.
  */
 export function parseBooleanSetting(value: string | undefined): boolean | undefined {
   return parseBooleanValue(value);
@@ -217,35 +220,6 @@ function parseBooleanValue(value: string | undefined): boolean | undefined {
   if (TRUTHY_VALUES.has(normalised)) return true;
   if (FALSY_VALUES.has(normalised)) return false;
   return undefined;
-}
-
-export interface WebSearchRuntimeSettings {
-  readonly enabled: boolean;
-  readonly maxUses: number;
-}
-
-const DEFAULT_WEB_SEARCH: WebSearchRuntimeSettings = { enabled: true, maxUses: 5 };
-
-export async function readWebSearchSettings(
-  store: RuntimeSettingsStore,
-  env: Readonly<Record<string, string | undefined>>
-): Promise<WebSearchRuntimeSettings> {
-  const enabledRaw = await store.findValue("webSearch.enabled");
-  const maxRaw = await store.findValue("webSearch.maxUses");
-  let enabled = enabledRaw === undefined ? DEFAULT_WEB_SEARCH.enabled : enabledRaw === "true";
-  let maxUses = DEFAULT_WEB_SEARCH.maxUses;
-  if (maxRaw !== undefined) {
-    const n = Number.parseInt(maxRaw, 10);
-    if (Number.isFinite(n) && n > 0) maxUses = n;
-  }
-  const envFlag = env.MUSE_WEB_SEARCH?.toLowerCase();
-  if (envFlag === "off") enabled = false;
-  const envMax = env.MUSE_WEB_SEARCH_MAX_USES;
-  if (envMax !== undefined) {
-    const n = Number.parseInt(envMax, 10);
-    if (Number.isFinite(n) && n > 0) maxUses = n;
-  }
-  return { enabled, maxUses };
 }
 
 export { KyselyRuntimeSettingsStore } from "./kysely-store.js";
