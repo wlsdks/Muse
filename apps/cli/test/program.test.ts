@@ -4985,6 +4985,60 @@ describe("cli program", () => {
     }
   });
 
+  it("muse persona add <id> <preamble> registers a custom persona reachable by `use` / `show`", async () => {
+    const { readPersonaStore } = await import("../src/persona-store.js");
+    const root = await mkdtemp(path.join(tmpdir(), "muse-cli-persona-add-"));
+    const personaFile = path.join(root, "persona.json");
+    const prev = process.env.MUSE_PERSONA_FILE;
+    process.env.MUSE_PERSONA_FILE = personaFile;
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      const { io: ioAdd, output: outAdd } = captureOutput();
+      const programAdd = createProgram({ ...ioAdd, fetch: async () => { throw new Error("no fetch"); } });
+      await programAdd.parseAsync(
+        ["node", "muse", "persona", "add", "tony", "Sardonic,", "confident,", "Tony", "Stark."],
+        { from: "node" }
+      );
+      expect(outAdd.join("")).toContain("Added custom persona tony");
+      expect(process.exitCode).toBe(0);
+
+      const persisted = await readPersonaStore(personaFile);
+      expect(persisted.custom["tony"]?.preamble).toBe("Sardonic, confident, Tony Stark.");
+
+      const { io: ioReplace, output: outReplace } = captureOutput();
+      const programReplace = createProgram({ ...ioReplace, fetch: async () => { throw new Error("no fetch"); } });
+      await programReplace.parseAsync(
+        ["node", "muse", "persona", "add", "tony", "Even", "more", "sardonic."],
+        { from: "node" }
+      );
+      expect(outReplace.join(""), "second add for the same id is an explicit update, not a duplicate").toContain("Updated custom persona tony");
+      expect((await readPersonaStore(personaFile)).custom["tony"]?.preamble).toBe("Even more sardonic.");
+
+      const { io: ioCollide, output: outCollide } = captureOutput();
+      const programCollide = createProgram({ ...ioCollide, fetch: async () => { throw new Error("no fetch"); } });
+      process.exitCode = 0;
+      await programCollide.parseAsync(["node", "muse", "persona", "add", "jarvis", "Override", "JARVIS."], { from: "node" });
+      const collideText = outCollide.join("");
+      expect(collideText).toContain("'jarvis' is a built-in id");
+      expect(collideText).toContain("'jarvis-mine'");
+      expect(process.exitCode, "built-in collision must reject — overriding via `add` would shadow the built-in invisibly").toBe(1);
+      expect((await readPersonaStore(personaFile)).custom["jarvis"], "the built-in collision must not silently land in the store").toBeUndefined();
+
+      const { io: ioEmpty, output: outEmpty } = captureOutput();
+      const programEmpty = createProgram({ ...ioEmpty, fetch: async () => { throw new Error("no fetch"); } });
+      process.exitCode = 0;
+      await programEmpty.parseAsync(["node", "muse", "persona", "add", "blanky", "   "], { from: "node" });
+      expect(outEmpty.join("")).toContain("<preamble> must not be empty");
+      expect(process.exitCode).toBe(1);
+      expect((await readPersonaStore(personaFile)).custom["blanky"]).toBeUndefined();
+    } finally {
+      process.exitCode = prevExitCode;
+      if (prev === undefined) delete process.env.MUSE_PERSONA_FILE;
+      else process.env.MUSE_PERSONA_FILE = prev;
+    }
+  });
+
   it("compareFeedEntriesNewestFirst is a consistent total order incl. undated (goal 181)", async () => {
     const { compareFeedEntriesNewestFirst } = await import("../src/feeds-store.js");
     const newer = { id: "n", publishedAt: "2026-05-15T12:00:00Z" };

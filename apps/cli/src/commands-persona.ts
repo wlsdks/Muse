@@ -49,6 +49,37 @@ export function registerPersonaCommand(program: Command, io: ProgramIO): void {
     });
 
   persona
+    .command("add")
+    .description("Register a custom persona (id + preamble text). Run `muse persona use <id>` to activate.")
+    .argument("<id>", "Custom persona id (must not collide with a built-in)")
+    .argument("<preamble...>", "Preamble text the model prepends on every turn")
+    .action(async (id: string, preambleParts: readonly string[]) => {
+      const trimmedId = id.trim();
+      if (trimmedId.length === 0) {
+        io.stderr("muse persona add: <id> must not be empty\n");
+        process.exitCode = 1;
+        return;
+      }
+      if (isBuiltinPersonaId(trimmedId)) {
+        io.stderr(`muse persona add: '${trimmedId}' is a built-in id — pick a different id (e.g. '${trimmedId}-mine')\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const preamble = preambleParts.join(" ").trim();
+      if (preamble.length === 0) {
+        io.stderr("muse persona add: <preamble> must not be empty\n");
+        process.exitCode = 1;
+        return;
+      }
+      const file = defaultPersonaFile();
+      const store = await readPersonaStore(file);
+      const replacing = Object.hasOwn(store.custom, trimmedId);
+      const nextCustom: Record<string, { preamble: string }> = { ...store.custom, [trimmedId]: { preamble } };
+      await writePersonaStore(file, { ...store, custom: nextCustom });
+      io.stdout(`${replacing ? "Updated" : "Added"} custom persona ${trimmedId}\n`);
+    });
+
+  persona
     .command("use")
     .description("Flip the active persona by id (built-in or custom)")
     .argument("<id>", "Persona id")
