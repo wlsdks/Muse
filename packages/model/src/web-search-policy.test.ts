@@ -107,4 +107,39 @@ describe("decideWebSearchPolicy", () => {
     });
     expect(r.enabled).toBe(true);
   });
+
+  it("every standard falsy spelling on MUSE_WEB_SEARCH is a hard kill switch (overrides override=true)", () => {
+    for (const value of ["false", "False", "FALSE", "0", "no", "NO", "off", "Off"]) {
+      const r = decideWebSearchPolicy({
+        model: baseModel,
+        settings: { webSearch: { enabled: true } },
+        override: true,
+        env: { MUSE_WEB_SEARCH: value }
+      });
+      expect(r.enabled, `MUSE_WEB_SEARCH="${value}" must disable`).toBe(false);
+    }
+  });
+
+  it("truthy MUSE_WEB_SEARCH spellings (true / 1 / yes / on) are NOT a force-enable — override=false still wins", () => {
+    for (const value of ["true", "1", "yes", "on", "YES", "On"]) {
+      const r = decideWebSearchPolicy({
+        model: baseModel,
+        settings: { webSearch: { enabled: true } },
+        override: false,
+        env: { MUSE_WEB_SEARCH: value }
+      });
+      expect(r.enabled, `MUSE_WEB_SEARCH="${value}" must not override an explicit override:false`).toBe(false);
+    }
+  });
+
+  it("an unrecognised MUSE_WEB_SEARCH typo is not a kill switch (does not silently disable)", () => {
+    for (const value of ["enabled", "disabled", "y", "n", "xyz", "truue", "  "]) {
+      const r = decideWebSearchPolicy({
+        model: baseModel,
+        settings: { webSearch: { enabled: true } },
+        env: { MUSE_WEB_SEARCH: value }
+      });
+      expect(r.enabled, `MUSE_WEB_SEARCH="${value}" must not flip the policy`).toBe(true);
+    }
+  });
 });

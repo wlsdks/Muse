@@ -21,8 +21,14 @@ export function decideWebSearchPolicy(args: DecideWebSearchPolicyArgs): WebSearc
   const env = args.env ?? {};
   const settings = args.settings.webSearch ?? {};
 
-  const envFlag = env.MUSE_WEB_SEARCH?.toLowerCase();
-  if (envFlag === "off") {
+  // Any standard falsy spelling (false / 0 / no / off, case-
+  // insensitive, trimmed) is a hard kill switch — overrides
+  // `args.override === true` so an operator-set MUSE_WEB_SEARCH=false
+  // cannot be re-enabled by a per-call override. Truthy spellings
+  // are intentionally NOT a force-enable: that would clash with
+  // `args.override === false` and is unnecessary since the default
+  // is already enabled.
+  if (parseBooleanTriState(env.MUSE_WEB_SEARCH) === false) {
     return { enabled: false, maxUses: resolveMaxUses(env, settings) };
   }
 
@@ -61,4 +67,15 @@ function strictPositiveInt(raw: string): number | undefined {
   if (!/^[+-]?\d+$/u.test(trimmed)) return undefined;
   const parsed = Number(trimmed);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+const TRUTHY_BOOLEAN_VALUES: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
+const FALSY_BOOLEAN_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
+
+function parseBooleanTriState(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  const normalised = value.trim().toLowerCase();
+  if (TRUTHY_BOOLEAN_VALUES.has(normalised)) return true;
+  if (FALSY_BOOLEAN_VALUES.has(normalised)) return false;
+  return undefined;
 }
