@@ -5,6 +5,7 @@ import {
   isJsonObject as isJsonObjectFromInputUtils,
   isJsonValue as isJsonValueFromInputUtils,
   isRecord as isRecordFromInputUtils,
+  parseResponseLocales,
   parseRuntimeSettingType as parseStrict,
   readBoolean as readBooleanFromInputUtils,
   readJsonObject as readJsonObjectFromInputUtils,
@@ -68,5 +69,29 @@ describe("parseRuntimeSettingType — single shared implementation", () => {
     expect(parseStrict(123)).toBeUndefined();
     expect(parseStrict(undefined)).toBeUndefined();
     expect(parseStrict(null)).toBeUndefined();
+  });
+});
+
+describe("parseResponseLocales — MUSE_RESPONSE_LOCALES env parsing", () => {
+  it("returns the [ko, en] fallback for undefined / empty / whitespace-only input", () => {
+    expect(parseResponseLocales(undefined)).toEqual(["ko", "en"]);
+    expect(parseResponseLocales("")).toEqual(["ko", "en"]);
+    expect(parseResponseLocales("   ")).toEqual(["ko", "en"]);
+  });
+
+  it("accepts a comma-separated list of supported locales (case + whitespace insensitive)", () => {
+    expect(parseResponseLocales("ko")).toEqual(["ko"]);
+    expect(parseResponseLocales("ko,en")).toEqual(["ko", "en"]);
+    expect(parseResponseLocales("en,ko")).toEqual(["en", "ko"]);
+    expect(parseResponseLocales("  KO  ,  EN ")).toEqual(["ko", "en"]);
+  });
+
+  it("filters out unsupported locales and dedupes (preserving first-seen order)", () => {
+    expect(parseResponseLocales("ko,fr,en,de")).toEqual(["ko", "en"]);
+    expect(parseResponseLocales("ko,ko,en,EN")).toEqual(["ko", "en"]);
+  });
+
+  it("returns the fallback when EVERY parsed entry is unsupported (no silent empty list)", () => {
+    expect(parseResponseLocales("fr,de,ja")).toEqual(["ko", "en"]);
   });
 });
