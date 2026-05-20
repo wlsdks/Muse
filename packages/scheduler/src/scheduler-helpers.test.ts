@@ -6,6 +6,7 @@ import {
   defaultRetryCount,
   defaultTimezone,
   computeNextRunAt,
+  normalizeScheduledJobExecution,
   requireText,
   resolveJobTimeout,
   validateCronExpression,
@@ -181,5 +182,32 @@ describe("resolveJobTimeout — defends against a corrupt persisted executionTim
     expect(resolveJobTimeout(baseJob({ executionTimeoutMs: Number.POSITIVE_INFINITY }), 60_000)).toBe(60_000);
     expect(resolveJobTimeout(baseJob({ executionTimeoutMs: -1 }), 60_000)).toBe(60_000);
     expect(resolveJobTimeout(baseJob({ executionTimeoutMs: 0 }), 60_000)).toBe(60_000);
+  });
+});
+
+describe("normalizeScheduledJobExecution durationMs guard", () => {
+  const opts = { id: "exec_1", now: () => new Date("2026-05-20T12:00:00.000Z") };
+  const base = {
+    jobId: "job_1",
+    jobName: "midnight-sync",
+    status: "success" as const
+  };
+
+  it("preserves a clean finite durationMs", () => {
+    expect(normalizeScheduledJobExecution({ ...base, durationMs: 1234 }, opts).durationMs).toBe(1234);
+    expect(normalizeScheduledJobExecution({ ...base, durationMs: 0 }, opts).durationMs).toBe(0);
+  });
+
+  it("falls back to 0 when durationMs is undefined", () => {
+    expect(normalizeScheduledJobExecution({ ...base }, opts).durationMs).toBe(0);
+  });
+
+  it("falls back to 0 when durationMs is NaN — `??` does NOT catch NaN, so a corrupt subtraction (Invalid Date startedAt → now-startedAt = NaN) would otherwise persist NaN to the execution log", () => {
+    expect(normalizeScheduledJobExecution({ ...base, durationMs: Number.NaN }, opts).durationMs).toBe(0);
+  });
+
+  it("falls back to 0 when durationMs is Infinity / -Infinity (defensive against a runaway clock-skew calculation)", () => {
+    expect(normalizeScheduledJobExecution({ ...base, durationMs: Number.POSITIVE_INFINITY }, opts).durationMs).toBe(0);
+    expect(normalizeScheduledJobExecution({ ...base, durationMs: Number.NEGATIVE_INFINITY }, opts).durationMs).toBe(0);
   });
 });

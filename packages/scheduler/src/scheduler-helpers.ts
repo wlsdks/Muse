@@ -198,7 +198,7 @@ export function normalizeScheduledJobExecution(
   return {
     completedAt: input.completedAt ?? undefined,
     dryRun: input.dryRun ?? false,
-    durationMs: input.durationMs ?? 0,
+    durationMs: typeof input.durationMs === "number" && Number.isFinite(input.durationMs) ? input.durationMs : 0,
     id: input.id ?? options.id,
     jobId: input.jobId,
     jobName: input.jobName,
