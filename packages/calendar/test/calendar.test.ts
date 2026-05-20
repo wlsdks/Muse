@@ -210,6 +210,23 @@ describe("LocalCalendarProvider", () => {
     expect(events[0]).toMatchObject({ id: "cal_1", title: "Standup", tags: ["work"] });
   });
 
+  it("listEvents sorts by startsAt asc with id asc tiebreaker, independent of file-array insertion order", async () => {
+    const sameStart = "2026-05-15T09:00:00.000Z";
+    const sameEnd = "2026-05-15T10:00:00.000Z";
+    writeFileSync(join(dir, "calendar.json"), JSON.stringify({
+      events: [
+        { allDay: false, endsAt: sameEnd, id: "cal_b", startsAt: sameStart, title: "1:1" },
+        { allDay: false, endsAt: sameEnd, id: "cal_a", startsAt: sameStart, title: "All-hands" },
+        { allDay: false, endsAt: sameEnd, id: "cal_c", startsAt: sameStart, title: "Standup" }
+      ]
+    }));
+    const events = await provider.listEvents({ from: new Date(0), to: new Date("2027-01-01T00:00:00Z") });
+    expect(
+      events.map((e) => e.id),
+      "events sharing the same startsAt must come back in id asc order — independent of file-array insertion order"
+    ).toEqual(["cal_a", "cal_b", "cal_c"]);
+  });
+
   it("filters events outside the range", async () => {
     await provider.createEvent({
       endsAt: new Date("2026-05-15T11:00:00Z"),

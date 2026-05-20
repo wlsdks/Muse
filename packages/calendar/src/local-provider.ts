@@ -59,7 +59,9 @@ export class LocalCalendarProvider implements CalendarProvider {
     const events = await this.readAll();
     return events
       .filter((event) => event.endsAt.getTime() >= range.from.getTime() && event.startsAt.getTime() <= range.to.getTime())
-      .sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime());
+      .sort((left, right) =>
+        left.startsAt.getTime() - right.startsAt.getTime() || left.id.localeCompare(right.id)
+      );
   }
 
   async createEvent(input: CalendarEventInput): Promise<CalendarEvent> {
