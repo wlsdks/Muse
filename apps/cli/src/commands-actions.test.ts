@@ -104,6 +104,35 @@ describe("muse actions — the P6 accountability read surface", () => {
     }
   });
 
+  it("--json emits a machine-readable envelope { entries, result, total, user } — empty log returns total=0 + empty entries (not the friendly stdout message)", async () => {
+    const empty = logFile();
+    const r1 = await run(empty, ["--json"]);
+    expect(r1.exitCode).toBeUndefined();
+    expect(r1.stdout, "json mode must NOT emit the human-readable empty-state line").not.toContain("No recorded actions.");
+    const parsedEmpty = JSON.parse(r1.stdout) as { entries: unknown[]; result: string; total: number; user: string };
+    expect(parsedEmpty.entries).toEqual([]);
+    expect(parsedEmpty.total).toBe(0);
+    expect(parsedEmpty.result).toBe("all");
+    expect(parsedEmpty.user).toBe("local");
+
+    const file = logFile();
+    await appendActionLog(file, entry({ id: "old", when: "2026-05-19T10:00:00.000Z" }));
+    await appendActionLog(file, entry({ id: "new", when: "2026-05-19T14:00:00.000Z", why: "newer" }));
+    const r2 = await run(file, ["--json"]);
+    expect(r2.exitCode).toBeUndefined();
+    const parsed = JSON.parse(r2.stdout) as { entries: Array<{ id: string; why: string; objectiveId?: string }>; total: number; result: string; user: string };
+    expect(parsed.total).toBe(2);
+    expect(parsed.entries.map((e) => e.id), "entries come back newest-first via queryActionLog").toEqual(["new", "old"]);
+    expect(parsed.entries[0]?.why).toBe("newer");
+    expect(parsed.entries[0]?.objectiveId).toBe("obj_ship");
+
+    const r3 = await run(file, ["--json", "--limit", "1", "--result", "performed"]);
+    const parsed3 = JSON.parse(r3.stdout) as { entries: Array<{ id: string }>; total: number; result: string };
+    expect(parsed3.total).toBe(1);
+    expect(parsed3.result).toBe("performed");
+    expect(parsed3.entries[0]?.id).toBe("new");
+  });
+
   it("--user '   ' falls back to the same 'local' bucket as the default — does NOT leak other buckets via the empty-string fallthrough on queryActionLog's truthy filter", async () => {
     const file = logFile();
     await appendActionLog(file, entry({ id: "local-1", userId: "local", what: "local entry" }));

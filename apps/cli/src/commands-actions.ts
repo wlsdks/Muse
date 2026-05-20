@@ -8,7 +8,7 @@
  */
 
 import { resolveActionLogFile } from "@muse/autoconfigure";
-import { queryActionLog, type ActionLogEntry } from "@muse/mcp";
+import { queryActionLog, serializeActionLogEntry, type ActionLogEntry } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
@@ -42,7 +42,8 @@ export function registerActionsCommands(program: Command, io: ProgramIO): void {
     .option("--user <id>", "owner bucket (or 'all')", "local")
     .option("--result <result>", `filter: ${RESULT_FILTERS.join(" | ")}`, "all")
     .option("--limit <n>", "max entries, newest first", "20")
-    .action(async (options: { readonly user: string; readonly result: string; readonly limit: string }, command: Command) => {
+    .option("--json", "Print the raw payload instead of the formatted list")
+    .action(async (options: { readonly user: string; readonly result: string; readonly limit: string; readonly json?: boolean }, command: Command) => {
       try {
         assertResult(options.result);
         const trimmedLimit = options.limit.trim();
@@ -55,6 +56,16 @@ export function registerActionsCommands(program: Command, io: ProgramIO): void {
         const resultFilter = options.result.trim().toLowerCase();
         const filtered = resultFilter === "all" ? all : all.filter((e) => e.result === resultFilter);
         const shown = filtered.slice(0, limit);
+        if (options.json) {
+          const payload = {
+            entries: shown.map(serializeActionLogEntry),
+            result: resultFilter,
+            total: shown.length,
+            user
+          };
+          io.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+          return;
+        }
         if (shown.length === 0) {
           io.stdout("No recorded actions.\n");
           return;
