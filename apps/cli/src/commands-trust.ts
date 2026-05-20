@@ -176,11 +176,18 @@ export function registerTrustCommands(program: Command, io: ProgramIO): void {
       const key = options.user
         ? (options.persona ? `${options.user}@${options.persona}` : options.user)
         : defaultUserKey(options.persona);
+      // Peek pre-state so we can warn if grant is silently
+      // promoting a previously-BLOCKED tool to trusted. That's a
+      // security-relevant transition the user should see, not the
+      // bare "now N trusted" count which hides the source state.
+      const beforeFile = await readTrustFile(trustPath());
+      const wasBlocked = entryFor(beforeFile, key).blockedTools.includes(tool);
       const entry = await mutate(key, (e) => ({
         blockedTools: withoutValue(e.blockedTools, tool),
         trustedTools: uniqInsert(e.trustedTools, tool)
       }));
-      io.stdout(`Granted '${tool}' for ${key} (now ${entry.trustedTools.length.toString()} trusted)\n`);
+      const transition = wasBlocked ? " (previously BLOCKED — now moved to trusted)" : "";
+      io.stdout(`Granted '${tool}' for ${key} (now ${entry.trustedTools.length.toString()} trusted)${transition}\n`);
     });
 
   trust
@@ -223,11 +230,18 @@ export function registerTrustCommands(program: Command, io: ProgramIO): void {
       const key = options.user
         ? (options.persona ? `${options.user}@${options.persona}` : options.user)
         : defaultUserKey(options.persona);
+      // Peek pre-state so we can warn if block is silently demoting
+      // a previously-TRUSTED tool. Inverse of the grant transition;
+      // the user should see when their trust calibration is being
+      // overridden, not just see the new blocked count.
+      const beforeFile = await readTrustFile(trustPath());
+      const wasTrusted = entryFor(beforeFile, key).trustedTools.includes(tool);
       const entry = await mutate(key, (e) => ({
         blockedTools: uniqInsert(e.blockedTools, tool),
         trustedTools: withoutValue(e.trustedTools, tool)
       }));
-      io.stdout(`Blocked '${tool}' for ${key} (now ${entry.blockedTools.length.toString()} blocked)\n`);
+      const transition = wasTrusted ? " (previously TRUSTED — now moved to blocked)" : "";
+      io.stdout(`Blocked '${tool}' for ${key} (now ${entry.blockedTools.length.toString()} blocked)${transition}\n`);
     });
 
   trust

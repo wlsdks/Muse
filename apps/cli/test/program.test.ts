@@ -8290,6 +8290,67 @@ describe("cli program", () => {
       else process.env.MUSE_USER_ID = prevUser;
     }
   });
+
+  it("muse trust grant / block surfaces a transition warning when the tool was previously in the opposite list", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "muse-trust-transition-"));
+    const fsp = await import("node:fs/promises");
+    const trustFile = path.join(root, "trust.json");
+    await fsp.writeFile(trustFile, JSON.stringify({
+      version: 1,
+      users: {
+        stark: {
+          trustedTools: ["muse.tasks.add"],
+          blockedTools: ["shell.exec"]
+        }
+      }
+    }), "utf8");
+
+    const prevTrustFile = process.env.MUSE_TRUST_FILE;
+    const prevUser = process.env.MUSE_USER_ID;
+    process.env.MUSE_TRUST_FILE = trustFile;
+    process.env.MUSE_USER_ID = "stark";
+    try {
+      // Granting a previously-BLOCKED tool surfaces the transition.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
+      await program1.parseAsync(["node", "muse", "trust", "grant", "shell.exec"], { from: "node" });
+      const text1 = out1.join("");
+      expect(text1).toContain("Granted 'shell.exec'");
+      expect(
+        text1,
+        "grant of a previously-blocked tool must surface the transition — silent demotion of a security gate is the bug"
+      ).toContain("previously BLOCKED — now moved to trusted");
+
+      // Granting a fresh tool (not in either list) does NOT add the transition tail.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
+      await program2.parseAsync(["node", "muse", "trust", "grant", "muse.notes.read"], { from: "node" });
+      const text2 = out2.join("");
+      expect(text2).toContain("Granted 'muse.notes.read'");
+      expect(text2, "additive grant must NOT pretend there was a transition").not.toContain("previously");
+
+      // Blocking a previously-TRUSTED tool surfaces the inverse transition.
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
+      await program3.parseAsync(["node", "muse", "trust", "block", "muse.tasks.add"], { from: "node" });
+      const text3 = out3.join("");
+      expect(text3).toContain("Blocked 'muse.tasks.add'");
+      expect(text3).toContain("previously TRUSTED — now moved to blocked");
+
+      // Blocking a fresh tool (not in either list) — no transition tail.
+      const { io: io4, output: out4 } = captureOutput();
+      const program4 = createProgram({ ...io4, fetch: async () => { throw new Error("no fetch"); } });
+      await program4.parseAsync(["node", "muse", "trust", "block", "browser.fill_form"], { from: "node" });
+      const text4 = out4.join("");
+      expect(text4).toContain("Blocked 'browser.fill_form'");
+      expect(text4).not.toContain("previously");
+    } finally {
+      if (prevTrustFile === undefined) delete process.env.MUSE_TRUST_FILE;
+      else process.env.MUSE_TRUST_FILE = prevTrustFile;
+      if (prevUser === undefined) delete process.env.MUSE_USER_ID;
+      else process.env.MUSE_USER_ID = prevUser;
+    }
+  });
 });
 
 describe("uniqueCommandPrefix", () => {
