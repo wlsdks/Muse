@@ -109,6 +109,14 @@ export class LocalCalendarProvider implements CalendarProvider {
         : {})
     };
 
+    if (!(merged.startsAt instanceof Date) || Number.isNaN(merged.startsAt.getTime())) {
+      throw new CalendarValidationError("INVALID_START", "startsAt must be a valid Date");
+    }
+
+    if (!(merged.endsAt instanceof Date) || Number.isNaN(merged.endsAt.getTime())) {
+      throw new CalendarValidationError("INVALID_END", "endsAt must be a valid Date");
+    }
+
     if (merged.endsAt.getTime() < merged.startsAt.getTime()) {
       throw new CalendarValidationError("INVALID_TIME_RANGE", "endsAt must be at or after startsAt");
     }

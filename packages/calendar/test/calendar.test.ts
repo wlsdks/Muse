@@ -269,6 +269,32 @@ describe("LocalCalendarProvider", () => {
     await expect(provider.updateEvent("missing", { title: "x" })).rejects.toBeInstanceOf(CalendarProviderError);
   });
 
+  it("updateEvent rejects invalid Date inputs as CalendarValidationError — not the downstream RangeError from .toISOString()", async () => {
+    const created = await provider.createEvent({
+      endsAt: new Date("2026-05-15T11:00:00Z"),
+      startsAt: new Date("2026-05-15T10:00:00Z"),
+      title: "Movable"
+    });
+
+    // Invalid input.endsAt — pre-fix this silently passed the range check
+    // (NaN comparisons are false) then crashed downstream in writeAll's
+    // .toISOString() with a RangeError that callers couldn't catch as a
+    // CalendarValidationError.
+    await expect(provider.updateEvent(created.id, { endsAt: new Date("invalid") }))
+      .rejects.toBeInstanceOf(CalendarValidationError);
+    // Sibling: invalid input.startsAt.
+    await expect(provider.updateEvent(created.id, { startsAt: new Date("not-a-date") }))
+      .rejects.toBeInstanceOf(CalendarValidationError);
+
+    // Sanity: the create-time validation parity is intact — the same
+    // shape on createEvent already rejects the same way.
+    await expect(provider.createEvent({
+      endsAt: new Date("invalid"),
+      startsAt: new Date("2026-05-15T10:00:00Z"),
+      title: "Bad ends"
+    })).rejects.toBeInstanceOf(CalendarValidationError);
+  });
+
   it("survives a corrupt file by treating it as empty", async () => {
     const created = await provider.createEvent({
       endsAt: new Date("2026-05-15T11:00:00Z"),
