@@ -52,6 +52,24 @@ describe("api server: GET /api/today", () => {
     expect(body.notes).toEqual(expect.arrayContaining(["diary.md", "shopping.md"]));
   });
 
+  it("sorts open tasks createdAt desc with id-desc tiebreaker — deterministic across reload cycles when timestamps tie", async () => {
+    const tasksDir = mkdtempSync(join(tmpdir(), "muse-today-tasks-tie-"));
+    const tasksFile = join(tasksDir, "tasks.json");
+    const sameWhen = "2026-05-10T08:00:00Z";
+    writeFileSync(tasksFile, JSON.stringify({
+      tasks: [
+        { createdAt: sameWhen, id: "t-a", status: "open", title: "A" },
+        { createdAt: sameWhen, id: "t-c", status: "open", title: "C" },
+        { createdAt: sameWhen, id: "t-b", status: "open", title: "B" }
+      ]
+    }), "utf8");
+    const server = buildServer({ logger: false, tasksFile });
+    const reply = await server.inject({ method: "GET", url: "/api/today?lookaheadHours=2" });
+    expect(reply.statusCode).toBe(200);
+    const body = reply.json() as { tasks: { id: string }[] };
+    expect(body.tasks.map((t) => t.id), "ties on createdAt resolve by id desc — independent of file-array insertion order").toEqual(["t-c", "t-b", "t-a"]);
+  });
+
   it("clamps lookaheadHours to the [1, 168] range", async () => {
     const server = buildServer({ logger: false });
 

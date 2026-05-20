@@ -132,7 +132,7 @@ async function readDueReminders(
     return due <= horizon.getTime();
   });
   return surfaced
-    .sort((left, right) => left.dueAt.localeCompare(right.dueAt))
+    .sort((left, right) => left.dueAt.localeCompare(right.dueAt) || left.id.localeCompare(right.id))
     .map(serializeReminder);
 }
 
@@ -161,7 +161,7 @@ async function readDueFollowups(
     return when <= horizon.getTime();
   });
   return surfaced
-    .sort((left, right) => left.scheduledFor.localeCompare(right.scheduledFor))
+    .sort((left, right) => left.scheduledFor.localeCompare(right.scheduledFor) || left.id.localeCompare(right.id))
     .map(serializeFollowup);
 }
 
@@ -186,7 +186,9 @@ async function readOpenTasks(tasksFile: string | undefined): Promise<readonly Pe
   }
   return ((parsed as { tasks: unknown[] }).tasks as PersistedTaskRow[])
     .filter(isOpenPersistedTask)
-    .sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))
+    .sort((left, right) =>
+      (right.createdAt ?? "").localeCompare(left.createdAt ?? "") || right.id.localeCompare(left.id)
+    )
     .slice(0, MAX_TASKS);
 }
 
