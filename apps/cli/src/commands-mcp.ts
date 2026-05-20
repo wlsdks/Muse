@@ -382,7 +382,9 @@ function buildEntryFromOptions(name: string, options: ConfigAddOptions): McpJson
     };
   }
   if (transport !== "streamable" && transport !== "sse") {
-    throw new Error(`--transport must be 'stdio', 'streamable', or 'sse' (got '${transport}')`);
+    const suggestion = closestCommandName(transport, ["stdio", "streamable", "sse"]);
+    const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
+    throw new Error(`--transport must be 'stdio', 'streamable', or 'sse' (got '${transport}')${hint}`);
   }
   if (!options.url || options.url.trim().length === 0) {
     throw new Error(`${transport} entries require --url`);

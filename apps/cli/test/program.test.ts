@@ -1799,6 +1799,65 @@ describe("cli program", () => {
     }
   });
 
+  it("mcp config-add suggests the closest valid value on a --transport typo", async () => {
+    const tmp = await mkdtemp(path.join(tmpdir(), "muse-mcp-add-typo-"));
+    const target = path.join(tmp, "mcp.json");
+
+    const previous = process.env.MUSE_MCP_CONFIG;
+    process.env.MUSE_MCP_CONFIG = target;
+    try {
+      // `streamble` is one edit from `streamable`. Pre-fix the error
+      // listed the valid values but offered no actionable suggestion,
+      // asymmetric with --time / --status / --kind / --mode which
+      // already carry the closest-command convention.
+      const { io: io1, output: out1 } = captureOutput();
+      const program1 = createProgram(io1);
+      let exitError1: unknown;
+      try {
+        await program1.parseAsync(
+          ["node", "muse", "mcp", "config-add", "x", "--transport", "streamble", "--url", "https://e.test/mcp"],
+          { from: "node" }
+        );
+      } catch (err) {
+        exitError1 = err;
+      }
+      const text1 = out1.join("");
+      expect(text1).toContain("--transport must be 'stdio', 'streamable', or 'sse'");
+      expect(text1, "typo on streamable must surface the actionable suggestion").toContain("did you mean 'streamable'?");
+      expect(exitError1).toBeDefined();
+
+      // `sde` is one edit from `sse`; the suggestion should still fire.
+      const { io: io2, output: out2 } = captureOutput();
+      const program2 = createProgram(io2);
+      try {
+        await program2.parseAsync(
+          ["node", "muse", "mcp", "config-add", "y", "--transport", "sde", "--url", "https://e.test/mcp"],
+          { from: "node" }
+        );
+      } catch { /* expected */ }
+      expect(out2.join("")).toContain("did you mean 'sse'?");
+
+      // Unrelated input gets the listing only, NO false-positive suggestion.
+      const { io: io3, output: out3 } = captureOutput();
+      const program3 = createProgram(io3);
+      try {
+        await program3.parseAsync(
+          ["node", "muse", "mcp", "config-add", "z", "--transport", "totally-unrelated", "--url", "https://e.test/mcp"],
+          { from: "node" }
+        );
+      } catch { /* expected */ }
+      const text3 = out3.join("");
+      expect(text3).toContain("--transport must be 'stdio', 'streamable', or 'sse'");
+      expect(text3, "unrelated input must NOT pull in a misleading suggestion").not.toContain("did you mean");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.MUSE_MCP_CONFIG;
+      } else {
+        process.env.MUSE_MCP_CONFIG = previous;
+      }
+    }
+  });
+
   it("muse listen exits with a clear hint when sox is not installed", async () => {
     const { io, output } = captureOutput();
     const program = new Command();
