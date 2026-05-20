@@ -142,6 +142,7 @@ delete an open row, never rewrite another goal's status.
 | 494 | [muse chat --mode adds did-you-mean for typo](494-chat-agent-mode-typo-suggestion.md) | fix / cli-ergonomics | done — goal-493 sibling; `parseAgentMode` (`react`/`plan_execute`) now hints on a near-miss typo; first direct parseAgentMode coverage (mutation-proven) |
 | 495 | [defaultCredentialPath fails loud on empty HOME=](495-credential-path-empty-home-fail-loud.md) | fix / safety | done — goal-478/481/482/483/488 sibling on the **credentials store**; `HOME=""` no longer writes bearer tokens to `/.config/muse/credentials.json` at the filesystem root — throws with a clear actionable error instead (mutation-proven) |
 | 496 | [direct coverage for stripUntrustedTerminalChars](496-strip-untrusted-terminal-chars-direct-coverage.md) | test / safety | done — 458 class; cross-package terminal-safety sanitiser (every untrusted-text surface) now has C0/whitelist/DEL/C1/Unicode/idempotent coverage; DEL+C1 range mutation-proven (src byte-identical) |
+| 497 | [JARVIS greeting-strip now handles "Good morning, sir!"](497-greeting-strip-comma-addressee.md) | fix / persona | done — sibling-asymmetry; `goodTimeOfDayPattern` lacked the comma-addressee form that `leadingGreetingPattern` had, so the persona-undercutting preamble survived for honorific-addressed replies; first direct test (mutation-proven) |
 | …   | *self-generated outward via discovery — never ends*                     |                |                  |
 
 Closed infra (not loop work): 376 progress dashboard + tunnel —

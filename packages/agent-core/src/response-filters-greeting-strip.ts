@@ -95,7 +95,7 @@ export function createGreetingStripResponseFilter(): ResponseFilterStage {
 export function createEnglishGreetingStripResponseFilter(): ResponseFilterStage {
   const leadingGreetingPattern =
     /^\s*(?:Hi|Hello|Hey|Howdy|Greetings|Hiya)(?:\s+(?:there|all|everyone|team|folks|y'all))?(?:,\s*\w{1,20})?[!?.]\s+/iu;
-  const goodTimeOfDayPattern = /^\s*Good\s+(?:morning|afternoon|evening|day|night)(?:\s+\w{1,20})?[!?.]\s+/iu;
+  const goodTimeOfDayPattern = /^\s*Good\s+(?:morning|afternoon|evening|day|night)(?:[,，]?\s+\w{1,20})?[!?.]\s+/iu;
   const niceToMeetPattern = /^\s*(?:Nice|Pleased|Good|Glad)\s+to\s+(?:meet|see)\s+you[!?.]\s+/iu;
   // Only strip when the filler is immediately closed by punctuation +
   // whitespace + more content, so "Surely…", "Of course not.",
