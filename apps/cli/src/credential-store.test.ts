@@ -59,6 +59,74 @@ describe("defaultCredentialPath", () => {
   });
 });
 
+describe("readStoredToken graceful corruption recovery", () => {
+  let workdir: string;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(path.join(tmpdir(), "muse-cred-corrupt-"));
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { force: true, recursive: true });
+  });
+
+  it("degrades to `undefined` + a stderr warning when credentials.json is corrupted (0 bytes, malformed JSON, wrong shape) instead of throwing — auth-aware commands fall back to anonymous mode rather than crashing", async () => {
+    // Pre-fix: a 0-byte credentials.json (a crash that survived the
+    // atomic-write fix, a manual edit, disk corruption) made every
+    // `muse chat`, `muse auth status`, `muse today` call crash with
+    // `SyntaxError: Unexpected end of JSON input` (from JSON.parse("")).
+    // Read-path now degrades to anonymous mode + logs a one-line
+    // warning so the user can act on it.
+    const fsp = await import("node:fs/promises");
+    const credPath = path.join(workdir, "credentials.json");
+    const stderr: string[] = [];
+    const io: ProgramIO = {
+      configDir: workdir,
+      credentialKey: "test-credential-key-aaaaaaaaaaaaaa",
+      readPipedStdin: async () => "",
+      stderr: (m: string) => stderr.push(m),
+      stdout: () => undefined
+    };
+
+    // Plant a 0-byte file at the credentials path.
+    await fsp.mkdir(path.dirname(credPath), { recursive: true });
+    await fsp.writeFile(credPath, "", "utf8");
+
+    const result = await readStoredToken(io, "https://api.example.com");
+    expect(result, "corrupted credentials must NOT crash the call").toBeUndefined();
+    const stderrText = stderr.join("");
+    expect(stderrText).toContain("credentials store unreadable");
+    expect(stderrText).toContain("muse auth login");
+
+    // Same posture for malformed JSON.
+    stderr.length = 0;
+    await fsp.writeFile(credPath, "{not-json", "utf8");
+    expect(await readStoredToken(io, "https://api.example.com")).toBeUndefined();
+    expect(stderr.join("")).toContain("credentials store unreadable");
+
+    // Same posture for valid JSON with wrong shape.
+    stderr.length = 0;
+    await fsp.writeFile(credPath, `{"random":"junk"}`, "utf8");
+    expect(await readStoredToken(io, "https://api.example.com")).toBeUndefined();
+    expect(stderr.join("")).toContain("credentials store unreadable");
+  });
+
+  it("happy path: an ENOENT (file absent) returns undefined silently — the warning fires only on real corruption, not on the fresh-install no-creds case", async () => {
+    const stderr: string[] = [];
+    const io: ProgramIO = {
+      configDir: workdir,
+      credentialKey: "test-credential-key-aaaaaaaaaaaaaa",
+      readPipedStdin: async () => "",
+      stderr: (m: string) => stderr.push(m),
+      stdout: () => undefined
+    };
+    // No file at credentialPath(io). ENOENT path returns
+    // { tokens: {} } silently (no warning).
+    expect(await readStoredToken(io, "https://api.example.com")).toBeUndefined();
+    expect(stderr.join("")).toBe("");
+  });
+});
+
 describe("writeCredentialStore atomic write", () => {
   let workdir: string;
 

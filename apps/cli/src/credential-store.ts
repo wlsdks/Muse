@@ -58,7 +58,22 @@ export function credentialPath(io: ProgramIO): string {
 }
 
 export async function readStoredToken(io: ProgramIO, baseUrl: string): Promise<string | undefined> {
-  return (await readCredentialStore(io)).tokens[baseUrl]?.token;
+  try {
+    return (await readCredentialStore(io)).tokens[baseUrl]?.token;
+  } catch (error) {
+    // Corrupted / unreadable store on a READ path must degrade to
+    // "no credentials" — every auth-aware command else crashes
+    // with the raw error instead of falling back to anonymous mode.
+    // Write paths (writeStoredToken / deleteStoredToken) keep
+    // throwing so a silent overwrite can't clobber other-baseUrl
+    // tokens behind a corrupted file.
+    io.stderr(
+      `(warning: credentials store unreadable: ${
+        error instanceof Error ? error.message : String(error)
+      }; treating as no credentials. Re-login with \`muse auth login\` to write a fresh store.)\n`
+    );
+    return undefined;
+  }
 }
 
 export async function writeStoredToken(io: ProgramIO, baseUrl: string, token: string): Promise<void> {
