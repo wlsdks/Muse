@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AnthropicPromptCache,
+  DEFAULT_RESPONSE_CACHE_MAX_SIZE,
+  DEFAULT_RESPONSE_CACHE_TTL_MS,
   InMemoryCacheMetricsRecorder,
   InMemoryCacheStatsStore,
   InMemoryResponseCache,
@@ -66,6 +68,60 @@ describe("response caches", () => {
 
     now += 100;
     expect(cache.get("a")).toBeUndefined();
+  });
+
+  it("constructor finite-guards maxSize and ttlMs against NaN / Infinity (a corrupt option must not silently disable the bounded-cache contract)", () => {
+    // Pre-fix: `options.maxSize ?? defaultMaxSize` doesn't catch
+    // NaN/Infinity, then `Math.max(1, NaN)` is NaN. The
+    // `entries.size > NaN` eviction guard short-circuits (any
+    // comparison with NaN is false), so the cache grew without
+    // bound. Same threat model on `ttlMs: NaN` → `isExpired`
+    // returns false → entries never expire.
+
+    // maxSize: NaN must fall to the default (bounded growth).
+    const nanCache = new InMemoryResponseCache({ maxSize: Number.NaN, now: () => 1_000, ttlMs: 1_000_000 });
+    const overflow = DEFAULT_RESPONSE_CACHE_MAX_SIZE + 5;
+    for (let index = 0; index < overflow; index += 1) {
+      nanCache.put(`key-${index.toString()}`, {
+        cachedAt: 1_000,
+        content: `v${index.toString()}`,
+        metadata: {},
+        toolsUsed: []
+      });
+    }
+    expect(nanCache.size(),
+      `maxSize:NaN must fall to ${DEFAULT_RESPONSE_CACHE_MAX_SIZE.toString()} default — unbounded growth means the eviction loop short-circuited on NaN`
+    ).toBe(DEFAULT_RESPONSE_CACHE_MAX_SIZE);
+
+    // maxSize: Infinity must also fall to the default.
+    const infCache = new InMemoryResponseCache({ maxSize: Number.POSITIVE_INFINITY, now: () => 1_000, ttlMs: 1_000_000 });
+    for (let index = 0; index < overflow; index += 1) {
+      infCache.put(`key-${index.toString()}`, {
+        cachedAt: 1_000,
+        content: `v${index.toString()}`,
+        metadata: {},
+        toolsUsed: []
+      });
+    }
+    expect(infCache.size()).toBe(DEFAULT_RESPONSE_CACHE_MAX_SIZE);
+
+    // ttlMs: NaN must fall to the default — entries DO expire after
+    // crossing the documented default cap, instead of becoming
+    // permanent (the pre-fix `now() - cachedAt >= NaN` is always
+    // false → no entry ever expires).
+    let now = 1_000;
+    const nanTtlCache = new InMemoryResponseCache({ maxSize: 10, now: () => now, ttlMs: Number.NaN });
+    nanTtlCache.put("persist", { cachedAt: now, content: "fresh", metadata: {}, toolsUsed: [] });
+    expect(nanTtlCache.get("persist")?.content).toBe("fresh");
+    now += DEFAULT_RESPONSE_CACHE_TTL_MS + 1;
+    expect(nanTtlCache.get("persist"), "ttlMs:NaN must fall to the default → entry expires after the default cap").toBeUndefined();
+
+    // ttlMs: Infinity also falls to the default (same defect class).
+    now = 1_000;
+    const infTtlCache = new InMemoryResponseCache({ maxSize: 10, now: () => now, ttlMs: Number.POSITIVE_INFINITY });
+    infTtlCache.put("persist", { cachedAt: now, content: "fresh", metadata: {}, toolsUsed: [] });
+    now += DEFAULT_RESPONSE_CACHE_TTL_MS + 1;
+    expect(infTtlCache.get("persist")).toBeUndefined();
   });
 
   it("invalidates exact keys and glob-like patterns", () => {

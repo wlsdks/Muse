@@ -85,8 +85,10 @@ export interface PromptCache {
 export const cacheUnknownModel = "unknown";
 export const anonymousUserId = "anonymous";
 
-const defaultMaxSize = 1_000;
-const defaultTtlMs = 60 * 60 * 1_000;
+export const DEFAULT_RESPONSE_CACHE_MAX_SIZE = 1_000;
+export const DEFAULT_RESPONSE_CACHE_TTL_MS = 60 * 60 * 1_000;
+const defaultMaxSize = DEFAULT_RESPONSE_CACHE_MAX_SIZE;
+const defaultTtlMs = DEFAULT_RESPONSE_CACHE_TTL_MS;
 const identityMetadataKeys = [
   "requesterAccountId",
   "requesterEmail",
@@ -118,8 +120,15 @@ export class InMemoryResponseCache implements ResponseCache {
   private readonly entries = new Map<string, CachedResponse>();
 
   constructor(options: InMemoryResponseCacheOptions = {}) {
-    this.maxSize = Math.max(1, options.maxSize ?? defaultMaxSize);
-    this.ttlMs = Math.max(0, options.ttlMs ?? defaultTtlMs);
+    // `??` doesn't catch NaN / Infinity, and `Math.max(1, NaN) === NaN`
+    // / `Math.max(1, Infinity) === Infinity`. Both let the `entries.size
+    // > this.maxSize` eviction loop short-circuit (`X > NaN` and `X >
+    // Infinity` are both false), so a corrupt option silently disabled
+    // the bound — unbounded memory growth from a single typo'd
+    // configurator. Same defect class as the scheduler / token-cost
+    // finite guards.
+    this.maxSize = Math.max(1, finiteOrDefault(options.maxSize, defaultMaxSize));
+    this.ttlMs = Math.max(0, finiteOrDefault(options.ttlMs, defaultTtlMs));
     this.now = options.now ?? Date.now;
   }
 
@@ -451,6 +460,10 @@ export function resolveProvider(model: string): string {
   const normalized = trimmed.toLowerCase();
   const match = Object.entries(knownModelPrefixes()).find(([prefix]) => normalized.startsWith(prefix));
   return match?.[1] ?? cacheUnknownModel;
+}
+
+function finiteOrDefault(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function createPatternMatcher(pattern: string): (key: string) => boolean {
