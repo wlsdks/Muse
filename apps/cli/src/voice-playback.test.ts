@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { spawn } from "node:child_process";
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,7 +9,9 @@ import {
   AUDIO_FORMATS,
   AUDIO_PLAYER_TIMEOUT_MS,
   parseAudioFormat,
-  playAudioWithWatchdog
+  playAudioWithWatchdog,
+  synthesizeAndPlay,
+  type SpeakerShells
 } from "./voice-playback.js";
 
 interface FakeChild extends EventEmitter {
@@ -95,5 +99,51 @@ describe("playAudioWithWatchdog (shared --speak player watchdog)", () => {
     await vi.advanceTimersByTimeAsync(AUDIO_PLAYER_TIMEOUT_MS);
     child.emit("close", 0);
     await assertion;
+  });
+});
+
+describe("synthesizeAndPlay — `mkdtemp` cleanup so a long-running `muse listen` / `muse today --brief --speak` daemon can't leak an empty /tmp/muse-speak-XXXX directory on every TTS play (pre-fix only the file inside was unlinked; the directory itself stayed forever)", () => {
+  async function listMuseSpeakTmpDirs(): Promise<readonly string[]> {
+    try {
+      const entries = await readdir(tmpdir());
+      return entries.filter((name) => name.startsWith("muse-speak-")).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  const fakeTts = {
+    id: "fake-tts",
+    describe: () => ({
+      id: "fake-tts",
+      displayName: "Fake",
+      description: "",
+      local: true,
+      availableVoices: [],
+      supportedFormats: ["mp3" as const]
+    }),
+    synthesize: () => Promise.resolve({
+      audio: new Uint8Array([0x49, 0x44, 0x33]),
+      mimeType: "audio/mpeg",
+      format: "mp3" as const
+    })
+  };
+
+  it("removes the whole mkdtemp dir (not just the audio file) after a successful play, so the post-call tmp tree carries no new muse-speak-* entries", async () => {
+    const before = await listMuseSpeakTmpDirs();
+    const shells: SpeakerShells = { playAudio: () => Promise.resolve() };
+    await synthesizeAndPlay(fakeTts, { text: "hello" }, shells);
+    const after = await listMuseSpeakTmpDirs();
+    const leaked = after.filter((d) => !before.includes(d));
+    expect(leaked).toEqual([]);
+  });
+
+  it("removes the mkdtemp dir EVEN when playAudio throws — finally cleanup must not leak on the error path", async () => {
+    const before = await listMuseSpeakTmpDirs();
+    const shells: SpeakerShells = { playAudio: () => Promise.reject(new Error("player wedged")) };
+    await expect(synthesizeAndPlay(fakeTts, { text: "hello" }, shells)).rejects.toThrow("player wedged");
+    const after = await listMuseSpeakTmpDirs();
+    const leaked = after.filter((d) => !before.includes(d));
+    expect(leaked).toEqual([]);
   });
 });

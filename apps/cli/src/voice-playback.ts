@@ -10,7 +10,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
 import { platform } from "node:process";
@@ -44,13 +44,13 @@ export async function synthesizeAndPlay(
     ...(options.format ? { format: options.format } : {})
   });
   const dir = mkdtempSync(pathJoin(tmpdir(), "muse-speak-"));
-  const file = pathJoin(dir, `out.${synth.format}`);
-  writeFileSync(file, synth.audio);
   try {
+    const file = pathJoin(dir, `out.${synth.format}`);
+    writeFileSync(file, synth.audio);
     await shells.playAudio(file);
   } finally {
     try {
-      unlinkSync(file);
+      rmSync(dir, { recursive: true, force: true });
     } catch {
       // best-effort cleanup
     }
