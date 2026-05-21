@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -324,6 +324,33 @@ describe("LocalCalendarProvider", () => {
     require("node:fs").writeFileSync(file, "not json");
     const events = await provider.listEvents({ from: new Date(0), to: new Date(Date.now() + 86_400_000) });
     expect(events).toEqual([]);
+  });
+
+  it("persists the calendar file with mode 0o600 — events carry title / location / notes / attendees that are private user data", async () => {
+    // The credential-store sibling in this package already uses
+    // 0o600; the events store was the asymmetric outlier with the
+    // default umask (typically 0o644 = world-readable on a shared
+    // box). Pin the now-fixed posture so a future refactor can't
+    // silently un-do the user-only mode.
+    const file = join(dir, "calendar.json");
+    await provider.createEvent({
+      endsAt: new Date("2026-05-15T11:00:00Z"),
+      startsAt: new Date("2026-05-15T10:00:00Z"),
+      title: "Standup",
+      location: "Zoom",
+      notes: "Q2 planning"
+    });
+    const mode = statSync(file).mode & 0o777;
+    expect(mode, "local calendar events file must be user-only — title/location/notes are private").toBe(0o600);
+
+    // Subsequent updates must also produce a 0o600 file (the
+    // tmp+rename + chmod pair must hold across the update path).
+    await provider.createEvent({
+      endsAt: new Date("2026-05-16T11:00:00Z"),
+      startsAt: new Date("2026-05-16T10:00:00Z"),
+      title: "Followup"
+    });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   describe("updateEvent — create/update field-clear symmetry", () => {

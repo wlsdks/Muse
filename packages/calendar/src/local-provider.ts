@@ -202,8 +202,13 @@ export class LocalCalendarProvider implements CalendarProvider {
     const tmp = `${this.file}.tmp-${process.pid}-${Date.now()}`;
 
     await fs.mkdir(dirname(this.file), { recursive: true });
-    await fs.writeFile(tmp, payload, "utf8");
+    // 0o600: events carry title / location / notes / attendees that
+    // are private user data. The credential-store sibling in this
+    // package already uses 0o600 + chmod; default umask would
+    // otherwise leave the schedule world-readable on a shared box.
+    await fs.writeFile(tmp, payload, { encoding: "utf8", mode: 0o600 });
     await fs.rename(tmp, this.file);
+    await fs.chmod(this.file, 0o600).catch(() => undefined);
   }
 }
 
