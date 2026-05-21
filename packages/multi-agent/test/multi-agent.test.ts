@@ -29,6 +29,46 @@ async function withHangGuard<T>(p: Promise<T>, label: string): Promise<T> {
 }
 
 describe("SupervisorAgent", () => {
+  it("RuleBasedAgentWorker filters empty / whitespace-only keywords at construction — a stray blank no longer hijacks every dispatch with spurious confidence 1.0 (pre-fix `text.includes('')` was universally true so any blank in the keyword list scored full match against any input)", () => {
+    // Construct with a deliberately blank slip in the keyword list.
+    // Pre-fix: `text.includes("")` returns true universally, so
+    // every keyword would "match" → confidence = 4/4 = 1.0 against
+    // text with no real overlap. The supervisor would then route
+    // unrelated requests to this worker, hijacking dispatch.
+    const worker = new RuleBasedAgentWorker(
+      "calendar",
+      "Calendar worker",
+      ["calendar", "", "  ", "schedule"],
+      async (input) => createWorkerResult("calendar", "scheduled", input)
+    );
+
+    // Input has NO overlap with the real keywords ("calendar" /
+    // "schedule"). Confidence must be 0 — the blank slips must
+    // have been filtered out at construction.
+    const unrelated = worker.canHandle({
+      messages: [{ content: "tell me a joke about programming", role: "user" }],
+      model: "test"
+    });
+    expect(unrelated, "blank keywords must NOT hijack unrelated inputs with confidence 1.0").toBe(0);
+
+    // Real-keyword overlap still scores correctly: post-filter the
+    // keyword list is ["calendar", "schedule"], so an input
+    // containing "calendar" scores 1/2 = 0.5.
+    const partial = worker.canHandle({
+      messages: [{ content: "what's on my calendar today?", role: "user" }],
+      model: "test"
+    });
+    expect(partial).toBe(0.5);
+
+    // Both keywords matched → confidence 1.0 — pinning the
+    // happy path stays unchanged.
+    const full = worker.canHandle({
+      messages: [{ content: "schedule a meeting on my calendar", role: "user" }],
+      model: "test"
+    });
+    expect(full).toBe(1);
+  });
+
   it("selects the highest confidence worker", async () => {
     const research = new RuleBasedAgentWorker("research", "Research worker", ["research"], (input) =>
       createWorkerResult("research", "research answer", input)

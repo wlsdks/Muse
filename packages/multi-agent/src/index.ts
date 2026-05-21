@@ -132,7 +132,12 @@ export class RuleBasedAgentWorker implements AgentWorker {
     keywords: readonly string[],
     private readonly handler: (input: AgentRunInput) => Promise<AgentRunResult> | AgentRunResult
   ) {
-    this.keywords = keywords.map((keyword) => keyword.toLowerCase());
+    // Drop empty / whitespace-only keywords at construction. `text.includes("")`
+    // is universally true, so a single blank slip would otherwise score confidence
+    // > 0 against every input — silently inflating dispatch confidence.
+    this.keywords = keywords
+      .map((keyword) => keyword.toLowerCase().trim())
+      .filter((keyword) => keyword.length > 0);
   }
 
   canHandle(input: AgentRunInput): number {
