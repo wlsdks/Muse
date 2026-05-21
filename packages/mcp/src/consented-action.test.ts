@@ -88,6 +88,47 @@ describe("performConsentedAction — P5-b3 act-as-the-user under recorded consen
     });
   });
 
+  it("times out instead of hanging when the consented endpoint never responds — a hung upstream can't stall the standing-objective loop", async () => {
+    const consentFile = join(tmpDir(), "consents.json");
+    await recordConsent(consentFile, {
+      grantedAt: NOW.toISOString(),
+      id: "c1",
+      objectiveId: "obj_ship",
+      scope: "github:issues:write",
+      userId: "stark"
+    });
+
+    const start = Date.now();
+    const outcome = await performConsentedAction({
+      consentFile,
+      credential: "ghp-secret",
+      // Endpoint that ONLY resolves when its abort signal fires.
+      // Pre-fix the test hangs until vitest's test-level cap; post-fix
+      // the 50ms wall-clock aborts the fetch and the outcome surfaces.
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        return new Promise<Response>((_, reject) => {
+          const signal = init?.signal as AbortSignal | undefined;
+          if (signal) {
+            signal.addEventListener("abort", () => reject(new Error("aborted by signal")));
+          }
+        });
+      }) as unknown as typeof fetch,
+      objectiveId: "obj_ship",
+      request: { url: "https://api.github.test/repos/x/y/issues" },
+      scope: "github:issues:write",
+      timeoutMs: 50,
+      userId: "stark"
+    });
+    const elapsed = Date.now() - start;
+    expect(outcome.performed).toBe(false);
+    if (outcome.performed === false) {
+      expect(outcome.reason).toMatch(/timed out after 50ms/u);
+    }
+    // Generous bound; pre-fix the call hangs until vitest's 5_000ms
+    // test timeout (>2s easily).
+    expect(elapsed, `consented action must abort within the bounded window; took ${elapsed.toString()}ms`).toBeLessThan(2_000);
+  });
+
   it("scope is never broadened implicitly: consent for one scope does not authorise another", async () => {
     const consentFile = join(tmpDir(), "consents.json");
     await recordConsent(consentFile, {

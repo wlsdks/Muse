@@ -36,7 +36,18 @@ export interface PerformConsentedActionOptions {
    * ("don't do this again" wins). Absent ⇒ consent-only gating.
    */
   readonly vetoFile?: string;
+  /**
+   * Hard wall-clock cap on the HTTP call once consent has passed.
+   * Default 30_000ms. A consented endpoint that hangs (network
+   * partition, misbehaving upstream, sock leak) must not be able to
+   * stall the standing-objective loop indefinitely; on timeout the
+   * outcome is `{ performed: false, reason: "consented action timed
+   * out…" }` so the loop's next-tick cadence stays bounded.
+   */
+  readonly timeoutMs?: number;
 }
+
+const DEFAULT_CONSENTED_ACTION_TIMEOUT_MS = 30_000;
 
 export type ConsentedActionOutcome =
   | { readonly performed: false; readonly reason: string }
@@ -68,14 +79,28 @@ export async function performConsentedAction(
     return { performed: false, reason: `no recorded consent for scope ${options.scope}` };
   }
 
-  const response = await options.fetchImpl(options.request.url, {
-    body: options.request.body,
-    headers: {
-      authorization: `Bearer ${options.credential}`,
-      ...(options.request.body ? { "content-type": "application/json" } : {}),
-      ...options.request.headers
-    },
-    method: options.request.method ?? "POST"
-  });
+  const timeoutMs = options.timeoutMs ?? DEFAULT_CONSENTED_ACTION_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await options.fetchImpl(options.request.url, {
+      body: options.request.body,
+      headers: {
+        authorization: `Bearer ${options.credential}`,
+        ...(options.request.body ? { "content-type": "application/json" } : {}),
+        ...options.request.headers
+      },
+      method: options.request.method ?? "POST",
+      signal: controller.signal
+    });
+  } catch (cause) {
+    const aborted = controller.signal.aborted;
+    return aborted
+      ? { performed: false, reason: `consented action timed out after ${timeoutMs.toString()}ms` }
+      : { performed: false, reason: `consented action fetch failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+  } finally {
+    clearTimeout(timer);
+  }
   return { performed: true, status: response.status };
 }
