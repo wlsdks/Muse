@@ -141,7 +141,7 @@ export function resolveUserSkillsDir(env: MuseEnvironment): string {
 
 export function resolveWorkspaceSkillsDir(env: MuseEnvironment): string | undefined {
   const override = env.MUSE_WORKSPACE_SKILLS_DIR?.trim();
-  return override && override.length > 0 ? override : undefined;
+  return override && override.length > 0 ? expandLeadingTilde(override) : undefined;
 }
 
 export function resolveInboxInjectionCursorFile(env: MuseEnvironment, providerId: string): string {

@@ -58,6 +58,7 @@ import {
   resolveTelegramOffsetFile
 } from "../src/index.js";
 import { parseNonNegativeFloat, parsePositiveFloat, parseSloErrorRate } from "../src/env-parsers.js";
+import { resolveWorkspaceSkillsDir } from "../src/provider-paths.js";
 
 describe("autoconfigure", () => {
   it("assembles default runtime without auth when no secret is configured", async () => {
@@ -834,6 +835,17 @@ describe("autoconfigure", () => {
     expect(resolveDiscordInboxFile({}).endsWith("/.muse/discord-inbox.json")).toBe(true);
     expect(resolveSlackAfterFile({}).endsWith("/.muse/slack-after.json")).toBe(true);
     expect(resolveSlackInboxFile({}).endsWith("/.muse/slack-inbox.json")).toBe(true);
+  });
+
+  it("resolveWorkspaceSkillsDir expands a leading `~` like the sibling resolvers — sibling-parity so MUSE_WORKSPACE_SKILLS_DIR=~/work/skills doesn't land literally and make the user's workspace-skills directory invisible to FileSystemSkillLoader", () => {
+    const home = homedir();
+    expect(resolveWorkspaceSkillsDir({ MUSE_WORKSPACE_SKILLS_DIR: "~/work/skills" })).toBe(join(home, "work/skills"));
+    expect(resolveWorkspaceSkillsDir({ MUSE_WORKSPACE_SKILLS_DIR: "~" })).toBe(home);
+    expect(resolveWorkspaceSkillsDir({ MUSE_WORKSPACE_SKILLS_DIR: "/abs/skills" })).toBe("/abs/skills");
+    expect(resolveWorkspaceSkillsDir({ MUSE_WORKSPACE_SKILLS_DIR: "~bob/skills" })).toBe("~bob/skills");
+    expect(resolveWorkspaceSkillsDir({})).toBeUndefined();
+    expect(resolveWorkspaceSkillsDir({ MUSE_WORKSPACE_SKILLS_DIR: "" })).toBeUndefined();
+    expect(resolveWorkspaceSkillsDir({ MUSE_WORKSPACE_SKILLS_DIR: "   " })).toBeUndefined();
   });
 
   it("resolveDefaultModel honors MUSE_MODEL when explicitly set", () => {
