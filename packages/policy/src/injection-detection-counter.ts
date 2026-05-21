@@ -51,12 +51,23 @@ export class InMemoryInjectionDetectionCounter implements InjectionDetectionCoun
 
   bumpFrom(findings: readonly InjectionDetectionFinding[]): InjectionDetectionCounterSnapshot {
     if (findings.length === 0) return this.snapshot();
+    let appliedAny = false;
     for (const finding of findings) {
-      if (!finding.name || finding.count <= 0) continue;
+      // `count <= 0` returns false for NaN / Infinity (any comparison
+      // with NaN is false), so without the finite guard a buggy
+      // detector emitting NaN would poison the family bucket
+      // (`prev + NaN === NaN`) and every subsequent snapshot — the
+      // operator dashboard then shows `total: NaN` instead of "the
+      // injection counters fired N times." Same posture as the
+      // scheduler / token-cost finite-guards.
+      if (!finding.name || !Number.isFinite(finding.count) || finding.count <= 0) continue;
       const prev = this.counts.get(finding.name) ?? 0;
       this.counts.set(finding.name, prev + finding.count);
+      appliedAny = true;
     }
-    this.lastFiredAt = this.now().toISOString();
+    if (appliedAny) {
+      this.lastFiredAt = this.now().toISOString();
+    }
     return this.snapshot();
   }
 
