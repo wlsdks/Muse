@@ -284,7 +284,11 @@ export async function handleSlashCommand(
         io.stdout(dropped ? `(wiped all memory for ${ctx.userId})\n` : `(no memory to wipe)\n`);
         return;
       }
-      const k = arg;
+      const k = arg.trim();
+      if (k.length === 0) {
+        io.stdout(`(usage: /forget <key> | /forget --all)\n`);
+        return;
+      }
       if (!ctx.userMemory) {
         io.stdout(`(no memory for ${ctx.userId})\n`);
         return;

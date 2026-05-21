@@ -134,6 +134,55 @@ describe("handleSlashCommand /forget — wipe-all sentinel is case-insensitive (
     await handleSlashCommand("forget", "some-key", h.ctx, h.deps, h.io);
     expect(h.deleted, "a real key name must NOT be re-interpreted as the wipe sentinel").toEqual([]);
   });
+
+  it("/forget trims surrounding whitespace on the key before lookup, mirroring the /fact and /pref trim that's already there (pre-fix '  foo  ' silently missed the real 'foo' fact)", async () => {
+    // Seeded memory + tracked upsert log: pre-fix the untrimmed arg
+    // `"  foo  "` looked up `facts["  foo  "]` (undefined) and fell
+    // through to `(key '  foo  ' not in memory)`, never deleting
+    // the real fact. Post-fix trim hits the real key and the
+    // wipe + rebuild correctly skips it.
+    let factsInStore = new Map<string, string>([["foo", "bar"]]);
+    const upserted: Array<[string, string]> = [];
+    const deleted: string[] = [];
+    const base = harness();
+    const memoryStore: SlashDeps["memoryStore"] = {
+      async findByUserId() {
+        return {
+          facts: Object.fromEntries(factsInStore),
+          preferences: {},
+          recentTopics: []
+        };
+      },
+      async upsertFact(_userId, key, value) {
+        upserted.push([key, value]);
+        factsInStore.set(key, value);
+      },
+      async upsertPreference() { return undefined; },
+      async deleteByUserId(userId) {
+        deleted.push(userId);
+        factsInStore = new Map();
+        return true;
+      }
+    };
+    const ctx: SlashContext = {
+      ...base.ctx,
+      userMemory: { facts: { foo: "bar" }, preferences: {}, recentTopics: [] }
+    };
+    const deps: SlashDeps = { ...base.deps, memoryStore };
+
+    await handleSlashCommand("forget", "  foo  ", ctx, deps, base.io);
+
+    expect(base.text(), "post-fix the trim hits the real 'foo' fact").toContain("(forgot foo)");
+    expect(deleted, "the wipe-rebuild path must have fired").toEqual(["u"]);
+    expect(factsInStore.has("foo"), "the 'foo' fact must be gone after the rebuild skipped it").toBe(false);
+  });
+
+  it("/forget whitespace-only key shows usage instead of falling through to 'no memory' (pre-fix '   ' was treated as a key name)", async () => {
+    const h = memoryHarness();
+    await handleSlashCommand("forget", "   ", h.ctx, h.deps, h.io);
+    expect(h.text()).toContain("usage: /forget <key>");
+    expect(h.deleted, "whitespace-only must NOT trigger any delete").toEqual([]);
+  });
 });
 
 describe("handleSlashCommand /persona — sentinel matching is case-insensitive", () => {
