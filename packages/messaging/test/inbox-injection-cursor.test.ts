@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +31,21 @@ describe("inbox-injection-cursor", () => {
   it("write then read round-trips", async () => {
     await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T08:00:00.000Z" });
     expect(await readInboxInjectionCursor(cursorFile)).toEqual({ C1: "2026-05-11T08:00:00.000Z" });
+  });
+
+  it("persists the cursor file with mode 0o600 (parallel to telegram-offset / slack-after / discord-after / inbox-store — pre-fix this sidecar leaked per-user polling cadence on a shared box)", async () => {
+    // The cursor records the LAST timestamp each chat / channel was
+    // injected from per user; a world-readable file would reveal
+    // when the user is active in which channel — same shape concern
+    // goal 598 closed for the sibling sidecars. Both writes go
+    // through `writePersisted`, so testing one entry-point is
+    // sufficient to pin the chmod posture.
+    await writeInboxInjectionCursor(cursorFile, { C1: "2026-05-11T08:00:00.000Z" });
+    expect(statSync(cursorFile).mode & 0o777).toBe(0o600);
+    // advance() rewrites the file too — verify the mode survives
+    // the rename + the second writePersisted call.
+    await advanceInboxInjectionCursor(cursorFile, { C1: "2026-05-11T09:00:00.000Z" });
+    expect(statSync(cursorFile).mode & 0o777).toBe(0o600);
   });
 
   it("advance keeps newest ISO per source", async () => {

@@ -88,8 +88,9 @@ async function writePersisted(
   const payload: PersistedShapeV2 = { byUser, version: 2 };
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
+  await fs.chmod(file, 0o600).catch(() => undefined);
 }
 
 export async function readInboxInjectionCursor(
