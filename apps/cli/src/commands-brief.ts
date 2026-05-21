@@ -19,7 +19,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir, platform } from "node:os";
 import { join as pathJoin } from "node:path";
@@ -107,6 +107,26 @@ export async function playAudioFile(
   });
 }
 
+export async function playSynthesizedAudio(
+  audio: Uint8Array,
+  format: string,
+  options: {
+    readonly playerCommand?: string;
+    readonly playerSpawn?: typeof spawn;
+  } = {}
+): Promise<{ readonly dir: string }> {
+  const dir = mkdtempSync(pathJoin(tmpdir(), "muse-brief-speak-"));
+  try {
+    const audioFile = pathJoin(dir, `brief.${format}`);
+    writeFileSync(audioFile, audio);
+    const player = options.playerCommand ?? (platform() === "darwin" ? "afplay" : "aplay");
+    await playAudioFile(player, audioFile, options.playerSpawn);
+    return { dir };
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
+  }
+}
+
 async function speakAloud(io: ProgramIO, text: string): Promise<void> {
   if (text.length === 0) return;
   const registry = buildVoiceRegistry(process.env as Record<string, string | undefined>);
@@ -117,11 +137,7 @@ async function speakAloud(io: ProgramIO, text: string): Promise<void> {
   }
   try {
     const result = await tts.synthesize({ text });
-    const dir = mkdtempSync(pathJoin(tmpdir(), "muse-brief-speak-"));
-    const audioFile = pathJoin(dir, `brief.${result.format}`);
-    writeFileSync(audioFile, result.audio);
-    const player = platform() === "darwin" ? "afplay" : "aplay";
-    await playAudioFile(player, audioFile);
+    await playSynthesizedAudio(result.audio, result.format);
   } catch (cause) {
     io.stderr(`(speak failed: ${cause instanceof Error ? cause.message : String(cause)})\n`);
   }
