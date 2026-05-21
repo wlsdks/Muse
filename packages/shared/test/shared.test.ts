@@ -4,6 +4,7 @@ import {
   createRunId,
   DEFAULT_ERROR_BODY_CAP,
   formatBoundaryViolation,
+  formatErrorForTerminal,
   hmacSha256Hex,
   redactSecretsInText,
   sha256Hex,
@@ -230,5 +231,43 @@ describe("boundary and cancellation helpers", () => {
     expect(truncateErrorBody("abcdef", 3)).toBe("abc…");
     // …and an emoji fully inside the head is NOT over-trimmed.
     expect(truncateErrorBody("😀xxxxx", 4)).toBe("😀xx…");
+  });
+});
+
+describe("formatErrorForTerminal — single sanitizer for printing unknown errors to a terminal so a malicious upstream's ESC bytes in error.message can't clear the user's screen or inject fake-prompt styling", () => {
+  it("extracts message from an Error instance", () => {
+    expect(formatErrorForTerminal(new Error("boom"))).toBe("boom");
+  });
+
+  it("falls back to String(cause) for non-Error throwables (a thrown string, number, plain object)", () => {
+    expect(formatErrorForTerminal("plain string thrown")).toBe("plain string thrown");
+    expect(formatErrorForTerminal(42)).toBe("42");
+    expect(formatErrorForTerminal({ toString: () => "custom" })).toBe("custom");
+  });
+
+  it("strips ANSI escape / BEL / DEL / C1 control bytes from the message so a hostile upstream can't smuggle terminal commands into stderr", () => {
+    const hostile = new Error(`\x1b[2J\x1b]0;pwned\x07Recoverable: connection reset\x9b31mfake-red\x7f`);
+    const sanitised = formatErrorForTerminal(hostile);
+    expect(sanitised).toBe("[2J]0;pwnedRecoverable: connection reset31mfake-red");
+    expect(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/u.test(sanitised)).toBe(false);
+  });
+
+  it("preserves newlines and tabs (\\n / \\t) — only ESC / C0-other / DEL / C1 are stripped", () => {
+    expect(formatErrorForTerminal(new Error("line1\nline2\tindented"))).toBe("line1\nline2\tindented");
+  });
+
+  it("applies the default body cap so a huge upstream-supplied error message can't flood stderr", () => {
+    const long = "x".repeat(DEFAULT_ERROR_BODY_CAP + 50);
+    const out = formatErrorForTerminal(new Error(long));
+    expect(out.endsWith("…")).toBe(true);
+    expect(out.length).toBe(DEFAULT_ERROR_BODY_CAP + 1);
+  });
+
+  it("honours an explicit cap arg for callers that want a tighter / looser bound", () => {
+    expect(formatErrorForTerminal(new Error("abcdefghij"), 4)).toBe("abcd…");
+  });
+
+  it("returns the empty string for an Error whose message is empty (no spurious '…' / 'Error' string)", () => {
+    expect(formatErrorForTerminal(new Error(""))).toBe("");
   });
 });

@@ -16,7 +16,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { stripUntrustedTerminalChars } from "@muse/shared";
+import { formatErrorForTerminal, stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
@@ -149,7 +149,7 @@ async function refreshSingleFeed(record: FeedRecord, io: ProgramIO): Promise<Fee
     const entries = mergeFeedEntries(record.entries, incoming);
     return { ...record, lastFetchedAt: new Date().toISOString(), entries };
   } catch (cause) {
-    io.stderr(`  ${record.id}: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+    io.stderr(`  ${record.id}: ${formatErrorForTerminal(cause)}\n`);
     return record;
   }
 }
@@ -192,7 +192,7 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
         const body = await loadFeedBody(trimmedUrl);
         entries = parseFeedBody(body);
       } catch (cause) {
-        io.stderr(`muse feeds add: initial fetch failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        io.stderr(`muse feeds add: initial fetch failed: ${formatErrorForTerminal(cause)}\n`);
         process.exitCode = 1;
         return;
       }

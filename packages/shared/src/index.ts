@@ -177,6 +177,21 @@ export function redactSecretsInText(value: string): string {
   return scrubbed;
 }
 
+/**
+ * One-stop sanitizer for printing an unknown error to a terminal.
+ * Extracts the message (Error instance or String fallback), strips
+ * untrusted terminal control chars, and truncates with the default
+ * body cap. Use this anywhere an error from an external source
+ * (HTTP response, feed body, untrusted file, model output) reaches
+ * io.stderr / io.stdout — a raw `error.message` can carry ESC bytes
+ * a malicious upstream embedded to clear the user's screen or
+ * inject text that mimics a real prompt.
+ */
+export function formatErrorForTerminal(cause: unknown, cap: number = DEFAULT_ERROR_BODY_CAP): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return truncateErrorBody(stripUntrustedTerminalChars(message), cap);
+}
+
 export function truncateErrorBody(body: string | undefined, cap: number = DEFAULT_ERROR_BODY_CAP): string {
   if (!body) {
     return "";
