@@ -105,7 +105,17 @@ export function extractFollowupPromises(
   const seenMinute = new Set<number>();
   const slots = { ...DEFAULT_SLOTS, ...options.slotHours };
   const push = (promise: FollowupPromise): void => {
-    const minuteKey = Math.floor(promise.scheduledFor.getTime() / 60_000);
+    // `setHours(NaN, ...)` (e.g. from a corrupt slotHours config —
+    // NaN-poisoning via env / settings parse upstream) yields an
+    // Invalid Date. Downstream the followup-capture-hook calls
+    // `.toISOString()` on `scheduledFor`, which throws RangeError on
+    // an Invalid Date — that would crash the afterTurn hook on every
+    // run carrying a `tomorrow morning` phrase. Refuse to emit
+    // invalid promises so the hook contract stays "every promise has
+    // a serialisable scheduledFor."
+    const ts = promise.scheduledFor.getTime();
+    if (!Number.isFinite(ts)) return;
+    const minuteKey = Math.floor(ts / 60_000);
     if (seenMinute.has(minuteKey)) return;
     seenMinute.add(minuteKey);
     out.push(promise);

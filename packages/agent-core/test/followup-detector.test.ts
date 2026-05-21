@@ -64,6 +64,31 @@ describe("extractFollowupPromises — English `tomorrow` slot", () => {
     });
     expect(result[0]?.scheduledFor.getHours()).toBe(7);
   });
+
+  it("does NOT emit a promise when slotHours has a non-finite hour (NaN / Infinity from a corrupt env / settings parse) — Invalid Date would crash the followup-capture-hook's `.toISOString()` downstream", () => {
+    // setHours(NaN, ...) produces an Invalid Date; `.toISOString()`
+    // on that throws RangeError. The detector's contract is "every
+    // emitted FollowupPromise has a serialisable scheduledFor" so
+    // the afterTurn hook never blows up on a `tomorrow morning`
+    // phrase paired with a corrupt slot configuration.
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const result = extractFollowupPromises("see you tomorrow morning", {
+        now,
+        slotHours: { morning: bad }
+      });
+      expect(
+        result.every((promise) => Number.isFinite(promise.scheduledFor.getTime())),
+        `slotHours.morning=${bad.toString()}: must NOT emit a promise with an Invalid Date scheduledFor`
+      ).toBe(true);
+      // Specifically: the `tomorrow-slot` branch produced nothing (or
+      // the invalid promise was filtered) — no Invalid Date sneaks
+      // through.
+      expect(
+        result.filter((promise) => promise.kind === "tomorrow-slot"),
+        `slotHours.morning=${bad.toString()}: tomorrow-slot promises must be empty`
+      ).toHaveLength(0);
+    }
+  });
 });
 
 describe("extractFollowupPromises — English `at HH(:MM)? (am|pm)?`", () => {
