@@ -249,6 +249,46 @@ describe("ScheduledJobDispatcher", () => {
     expect(attempts).toBe(2);
   });
 
+  it("clamps the dispatch loop to maxRetryCountCeiling even when a legacy / hand-edited DB row carries an unbounded maxRetryCount — the create-time gate can't protect rows that predate it, so the runtime must defend itself against a retry-storm", async () => {
+    let attempts = 0;
+    const dispatcher = new ScheduledJobDispatcher({
+      agentExecutor: {
+        execute: () => {
+          attempts += 1;
+          throw new Error("always fails");
+        }
+      },
+      mcpInvoker: createUnusedMcpInvoker(),
+      retryDelayMs: 0,
+      sleep: async () => {}
+    });
+    // 1_000_000 bypasses validateRetryConfig (this is a raw row, not
+    // a create call) — pre-fix the loop would dispatch a million times.
+    const job = createAgentJob({ retryOnFailure: true, maxRetryCount: 1_000_000 });
+
+    await expect(dispatcher.runWithTimeoutAndRetry(job)).rejects.toThrow("always fails");
+    expect(attempts).toBe(100); // maxRetryCountCeiling
+  });
+
+  it("clamps a non-finite maxRetryCount to a single attempt so a corrupt row can't make the loop never run (NaN) or run forever (Infinity)", async () => {
+    let attempts = 0;
+    const dispatcher = new ScheduledJobDispatcher({
+      agentExecutor: {
+        execute: () => {
+          attempts += 1;
+          throw new Error("always fails");
+        }
+      },
+      mcpInvoker: createUnusedMcpInvoker(),
+      retryDelayMs: 0,
+      sleep: async () => {}
+    });
+    const job = createAgentJob({ retryOnFailure: true, maxRetryCount: Number.POSITIVE_INFINITY });
+
+    await expect(dispatcher.runWithTimeoutAndRetry(job)).rejects.toThrow("always fails");
+    expect(attempts).toBe(1); // non-finite → single attempt, never unbounded
+  });
+
   it("reports timeout failures with job context", async () => {
     const dispatcher = new ScheduledJobDispatcher({
       agentExecutor: {

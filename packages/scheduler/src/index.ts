@@ -9,6 +9,7 @@ import {
   defaultRetryCount,
   defaultTimezone,
   delay,
+  maxRetryCountCeiling,
   requireText,
   resolveJobTimeout,
   resolveTemplateJson,
@@ -319,7 +320,15 @@ export class ScheduledJobDispatcher {
   }
 
   private async runWithRetry(job: ScheduledJob): Promise<string> {
-    const attempts = job.retryOnFailure ? Math.max(1, job.maxRetryCount) : 1;
+    // Execution-layer clamp: the create/update gate
+    // (`validateRetryConfig`) bounds maxRetryCount to
+    // [1, maxRetryCountCeiling], but a legacy DB row (written before
+    // that gate existed) or a hand-edited row could still carry an
+    // unbounded / non-finite count. Defend the dispatch loop directly
+    // so a stale row can't become a retry-storm.
+    const attempts = job.retryOnFailure
+      ? Math.min(maxRetryCountCeiling, Math.max(1, Number.isFinite(job.maxRetryCount) ? Math.trunc(job.maxRetryCount) : 1))
+      : 1;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
