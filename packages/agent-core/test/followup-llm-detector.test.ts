@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { extractFollowupPromisesLlm } from "../src/followup-llm-detector.js";
+import {
+  LLM_FOLLOWUP_FUTURE_HORIZON_MS,
+  LLM_FOLLOWUP_PAST_TOLERANCE_MS,
+  extractFollowupPromisesLlm
+} from "../src/followup-llm-detector.js";
 import type { ModelProvider } from "@muse/model";
 
 function stubProvider(output: string | Error): ModelProvider {
@@ -47,7 +51,8 @@ describe("extractFollowupPromisesLlm", () => {
       "\n\nHope that helps!";
     const result = await extractFollowupPromisesLlm("placeholder turn", {
       model: "stub",
-      modelProvider: stubProvider(wrapped)
+      modelProvider: stubProvider(wrapped),
+      now: new Date("2026-05-13T13:00:00Z")
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.originalText).toBe("I'll check at 3pm");
@@ -58,7 +63,11 @@ describe("extractFollowupPromisesLlm", () => {
       { originalText: "ping at 3pm", scheduledForIso: "2026-05-13T15:00:00Z" },
       { originalText: "ping at three pm", scheduledForIso: "2026-05-13T15:00:30Z" }
     ]));
-    const result = await extractFollowupPromisesLlm("turn", { model: "stub", modelProvider: provider });
+    const result = await extractFollowupPromisesLlm("turn", {
+      model: "stub",
+      modelProvider: provider,
+      now: new Date("2026-05-13T13:00:00Z")
+    });
     expect(result).toHaveLength(1);
   });
 
@@ -94,6 +103,51 @@ describe("extractFollowupPromisesLlm", () => {
       ]))
     });
     expect(onUnparseableDate).toEqual([]);
+  });
+
+  it("drops a hallucinated past timestamp (more than the 5-min tolerance before anchor) so a confused model emitting yesterday's date doesn't fire a follow-up the daemon already missed", async () => {
+    const provider = stubProvider(JSON.stringify([
+      { originalText: "I will ping you yesterday", scheduledForIso: "2026-05-12T13:00:00Z" },
+      { originalText: "I will ping you in 10 min", scheduledForIso: "2026-05-13T13:10:00Z" }
+    ]));
+    const result = await extractFollowupPromisesLlm("turn", {
+      model: "stub",
+      modelProvider: provider,
+      now: new Date("2026-05-13T13:00:00Z")
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.originalText).toBe("I will ping you in 10 min");
+  });
+
+  it("drops a hallucinated far-future timestamp (beyond the 365-day horizon) so a confused model emitting year 9999 doesn't litter the store with a follow-up that never fires", async () => {
+    const provider = stubProvider(JSON.stringify([
+      { originalText: "annual review", scheduledForIso: "9999-12-31T23:59:59Z" },
+      { originalText: "next week's standup", scheduledForIso: "2026-05-20T10:00:00Z" }
+    ]));
+    const result = await extractFollowupPromisesLlm("turn", {
+      model: "stub",
+      modelProvider: provider,
+      now: new Date("2026-05-13T13:00:00Z")
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.originalText).toBe("next week's standup");
+  });
+
+  it("keeps a timestamp inside the 5-min past tolerance so an LLM that takes a few minutes to respond doesn't lose a fast-resolving promise", async () => {
+    const provider = stubProvider(JSON.stringify([
+      { originalText: "I'll ping in a moment", scheduledForIso: "2026-05-13T12:57:00Z" }
+    ]));
+    const result = await extractFollowupPromisesLlm("turn", {
+      model: "stub",
+      modelProvider: provider,
+      now: new Date("2026-05-13T13:00:00Z")
+    });
+    expect(result).toHaveLength(1);
+  });
+
+  it("exports sensible past-tolerance and future-horizon defaults so callers reading the constants align with the runtime check", () => {
+    expect(LLM_FOLLOWUP_PAST_TOLERANCE_MS).toBe(5 * 60_000);
+    expect(LLM_FOLLOWUP_FUTURE_HORIZON_MS).toBe(365 * 86_400_000);
   });
 
   it("includes the anchor time in the user message so relative phrases stay deterministic", async () => {

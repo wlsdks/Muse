@@ -62,6 +62,9 @@ Negative examples (DO NOT extract these):
   - "Let me check" → no time, drop
   - "as we discussed earlier" → past reference, drop`;
 
+export const LLM_FOLLOWUP_PAST_TOLERANCE_MS = 5 * 60_000;
+export const LLM_FOLLOWUP_FUTURE_HORIZON_MS = 365 * 86_400_000;
+
 export async function extractFollowupPromisesLlm(
   text: string,
   options: ExtractFollowupPromisesLlmOptions
@@ -94,7 +97,7 @@ export async function extractFollowupPromisesLlm(
   if (output.length === 0) {
     return [];
   }
-  return parseLlmDetectorOutput(output);
+  return parseLlmDetectorOutput(output, now);
 }
 
 interface RawLlmPromise {
@@ -103,7 +106,7 @@ interface RawLlmPromise {
   readonly kind?: unknown;
 }
 
-function parseLlmDetectorOutput(raw: string): readonly FollowupPromise[] {
+function parseLlmDetectorOutput(raw: string, now: Date): readonly FollowupPromise[] {
   const jsonBody = extractJsonArrayBody(raw);
   if (jsonBody === undefined) {
     return [];
@@ -117,6 +120,9 @@ function parseLlmDetectorOutput(raw: string): readonly FollowupPromise[] {
   if (!Array.isArray(parsed)) {
     return [];
   }
+  const nowMs = now.getTime();
+  const minScheduledMs = nowMs - LLM_FOLLOWUP_PAST_TOLERANCE_MS;
+  const maxScheduledMs = nowMs + LLM_FOLLOWUP_FUTURE_HORIZON_MS;
   const out: FollowupPromise[] = [];
   const seenMinutes = new Set<number>();
   for (const entry of parsed) {
@@ -125,12 +131,16 @@ function parseLlmDetectorOutput(raw: string): readonly FollowupPromise[] {
       continue;
     }
     const scheduledFor = new Date(candidate.scheduledForIso);
-    if (!Number.isFinite(scheduledFor.getTime())) {
+    const scheduledMs = scheduledFor.getTime();
+    if (!Number.isFinite(scheduledMs)) {
+      continue;
+    }
+    if (scheduledMs < minScheduledMs || scheduledMs > maxScheduledMs) {
       continue;
     }
     // Dedupe by minute, like the rule detector, so a model that
     // emits the same time twice doesn't double-fire.
-    const minuteKey = Math.floor(scheduledFor.getTime() / 60_000);
+    const minuteKey = Math.floor(scheduledMs / 60_000);
     if (seenMinutes.has(minuteKey)) continue;
     seenMinutes.add(minuteKey);
     out.push({
