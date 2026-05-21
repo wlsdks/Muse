@@ -52,7 +52,17 @@ export function decodeCheckpointMessages(encoded: readonly string[]): readonly M
       throw new ModelRoutingError("Unsupported checkpoint message encoding");
     }
 
-    const parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as unknown;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as unknown;
+    } catch {
+      // `Buffer.from(_, "base64")` is lenient and silently ignores non-
+      // base64 chars, so a corrupt payload yields garbled bytes that
+      // `JSON.parse` then rejects with a SyntaxError. Callers contract
+      // is "any bad checkpoint throws ModelRoutingError" — wrap the
+      // parse fault into that single error type.
+      throw new ModelRoutingError("Invalid checkpoint message payload");
+    }
 
     if (!isModelMessage(parsed) || parsed.role !== role) {
       throw new ModelRoutingError("Invalid checkpoint message payload");
