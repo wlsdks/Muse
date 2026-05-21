@@ -60,26 +60,80 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
   }
 
   /**
+   * Read the response body chunk-by-chunk, stopping as soon as the
+   * accumulated byte count exceeds `maxBodyBytes`. The naive shape
+   * `await response.text()` reads the ENTIRE body into a single
+   * string before the caller can slice it — a 1 GB response from an
+   * allowlisted host (operator trusts the host enough to allow it,
+   * but that's partial trust, not unbounded trust) would consume
+   * that much memory before the post-truncation `slice(0, cap)`
+   * trimmed it back. The reader-cancel path here stops the network
+   * read at the cap so the in-flight buffer never grows past it.
+   */
+  async function readBodyWithCap(
+    response: Response
+  ): Promise<{ readonly body: string; readonly truncated: boolean }> {
+    if (!response.body) {
+      return { body: "", truncated: false };
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let bytesRead = 0;
+    let bodyText = "";
+    let truncated = false;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const remaining = maxBodyBytes - bytesRead;
+        if (value.byteLength > remaining) {
+          const head = value.subarray(0, Math.max(0, remaining));
+          bodyText += decoder.decode(head);
+          truncated = true;
+          await reader.cancel();
+          break;
+        }
+        bodyText += decoder.decode(value, { stream: true });
+        bytesRead += value.byteLength;
+      }
+      if (!truncated) {
+        bodyText += decoder.decode();
+      }
+    } finally {
+      try { reader.releaseLock(); } catch { /* released by cancel or natural completion */ }
+    }
+    return { body: bodyText, truncated };
+  }
+
+  /**
    * Fetch with the timeoutMs hard cap covering BOTH the connect+headers
    * phase AND any optional body read. The pre-fix shape returned the
    * Response and cleared the timer immediately, leaving `response.text()`
    * un-bounded — a slow body (or a malicious-but-allowed host streaming
    * a never-ending body) could hang the agent indefinitely past the
    * documented timeout. Keeping the controller's signal active across
-   * the body read forces the abort to propagate to `response.text()`
+   * the body read forces the abort to propagate to the streamed read
    * via fetch's signal contract.
    */
   async function fetchWithOptionalBody(
     url: URL,
     init: RequestInit,
     readBody: boolean
-  ): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string | undefined }> {
+  ): Promise<{
+    readonly status: number;
+    readonly headers: Headers;
+    readonly body: string | undefined;
+    readonly truncated: boolean;
+  }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetchImpl(url.toString(), { ...init, signal: controller.signal });
-      const body = readBody ? await response.text() : undefined;
-      return { body, headers: response.headers, status: response.status };
+      if (!readBody) {
+        return { body: undefined, headers: response.headers, status: response.status, truncated: false };
+      }
+      const { body, truncated } = await readBodyWithCap(response);
+      return { body, headers: response.headers, status: response.status, truncated };
     } finally {
       clearTimeout(timer);
     }
@@ -120,14 +174,11 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
           }
           try {
             const result = await fetchWithOptionalBody(decision.url, { headers: requestHeaders, method: "GET" }, true);
-            const fullBody = result.body ?? "";
-            const truncated = fullBody.length > maxBodyBytes;
-            const body = truncated ? fullBody.slice(0, maxBodyBytes) : fullBody;
             return {
-              body,
+              body: result.body ?? "",
               headers: headersToObject(result.headers) as JsonValue,
               status: result.status,
-              truncated
+              truncated: result.truncated
             } satisfies JsonObject;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);

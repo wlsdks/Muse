@@ -1233,6 +1233,54 @@ describe("muse.fetch loopback server", () => {
     expect(result).toEqual({ error: "fetch failed: network down" });
   });
 
+  it("stream-reads the body and stops pulling chunks once the maxBodyBytes cap is reached (never buffers a 1 GB allowlisted response into memory)", async () => {
+    // Pre-fix `response.text()` reads the ENTIRE body into a single
+    // string before the get tool's slice trims it back to maxBodyBytes.
+    // A 1 GB response from an allowlisted-but-misbehaving host would
+    // consume that much memory just to be sliced down to 64KB after
+    // the fact. The streaming-cap fix uses ReadableStream's reader
+    // to stop pulling chunks the moment the cap is reached, so the
+    // in-flight buffer can never grow past maxBodyBytes.
+    //
+    // The mock emits 100 × 1KB chunks then closes — a finite, deterministic
+    // stream. Pre-fix: the get tool pulls ALL 100 chunks (chunksPulled ≈ 101
+    // including the final close-signaling pull). Post-fix: the reader is
+    // cancelled after the very first chunk (1024 bytes > 64-byte cap),
+    // so chunksPulled stays at 1.
+    let chunksPulled = 0;
+    const totalChunks = 100;
+    let emitted = 0;
+    const fakeFetch = (async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(streamController) {
+          chunksPulled += 1;
+          if (emitted >= totalChunks) {
+            streamController.close();
+            return;
+          }
+          emitted += 1;
+          streamController.enqueue(new TextEncoder().encode("x".repeat(1024)));
+        }
+      });
+      return new Response(stream, { status: 200, headers: { "content-type": "text/plain" } });
+    }) as unknown as typeof globalThis.fetch;
+    const server = createFetchMcpServer({
+      allowedHosts: ["bigbody.example.test"],
+      fetch: fakeFetch,
+      maxBodyBytes: 64
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("get", { url: "https://bigbody.example.test/" });
+    expect(result.truncated).toBe(true);
+    expect(result.body).toHaveLength(64);
+    // Cap is 64 bytes and the first chunk is 1024 bytes, so the reader's
+    // cancel() must trip on chunk 1. Pre-fix this would be ≥100.
+    expect(
+      chunksPulled,
+      `expected ≤2 chunk pulls (cap is 64 bytes, chunk is 1024); pulled ${chunksPulled.toString()}`
+    ).toBeLessThanOrEqual(2);
+  });
+
   it("timeoutMs bounds the body read too, not just the connect+headers phase (a slow body stream is aborted, the call doesn't hang past the cap)", async () => {
     // Pre-fix `callFetch` cleared the timer in its `finally` before
     // the caller's `response.text()` ran, so a body that streams
