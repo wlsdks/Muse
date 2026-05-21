@@ -231,7 +231,7 @@ surface. Recorded honestly with this backlog row.
   this; combining marks are valid UTF-16 individually and
   don't trigger the lone-surrogate check. Less common in
   attacker-controlled text than emoji.
-- **ZWJ sequences** (👨‍👩‍👧 = 5-7 code units joined by zero-
+- **ZWJ sequences** (👨U+200D👩U+200D👧 = 5-7 code units joined by zero-
   width joiners) can be split at a non-pair boundary, leaving
   a partial emoji that renders differently (e.g. just 👨 +
   ZWJ). The truncation is still well-formed UTF-16; only the

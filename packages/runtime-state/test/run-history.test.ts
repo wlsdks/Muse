@@ -84,6 +84,44 @@ describe("InMemoryAgentRunHistoryStore", () => {
     expect(store.updateToolCall({ id: "missing", status: "failed" })).toBeUndefined();
     expect(store.deleteRun("missing")).toBe(false);
   });
+
+  it("listRuns resolves same-createdAt ties by id ASC so pagination doesn't skip or duplicate rows across requests (pre-fix the comparator dropped to V8 stable-sort + Map-insertion order, which diverged from the Kysely path's `ORDER BY created_at DESC` non-deterministic tail)", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const store = new InMemoryAgentRunHistoryStore({
+      idFactory: ((): (prefix: string) => string => {
+        let i = 0;
+        const ids = ["run-c", "run-a", "run-b"];
+        return () => ids[i++] ?? "run-x";
+      })(),
+      now: () => now
+    });
+
+    store.createRun({ input: "first", model: "m", provider: "p" });
+    store.createRun({ input: "second", model: "m", provider: "p" });
+    store.createRun({ input: "third", model: "m", provider: "p" });
+
+    const ids = store.listRuns().map((r) => r.id);
+    expect(ids).toEqual(["run-a", "run-b", "run-c"]);
+  });
+
+  it("listRunsByUser also resolves same-createdAt ties by id ASC — per-user pagination stays deterministic", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const store = new InMemoryAgentRunHistoryStore({
+      idFactory: ((): (prefix: string) => string => {
+        let i = 0;
+        const ids = ["run-c", "run-a", "run-b"];
+        return () => ids[i++] ?? "run-x";
+      })(),
+      now: () => now
+    });
+
+    store.createRun({ input: "first", model: "m", provider: "p", userId: "u1" });
+    store.createRun({ input: "second", model: "m", provider: "p", userId: "u1" });
+    store.createRun({ input: "third", model: "m", provider: "p", userId: "u1" });
+
+    const ids = store.listRunsByUser("u1").map((r) => r.id);
+    expect(ids).toEqual(["run-a", "run-b", "run-c"]);
+  });
 });
 
 describe("Kysely run history mapping", () => {
@@ -201,6 +239,19 @@ describe("Kysely run history mapping", () => {
       result: "ok",
       status: "completed"
     });
+  });
+
+  it("compiles list queries with `id ASC` as the secondary order so same-`created_at` ties resolve identically to the InMemory comparator — Kysely <-> InMemory parity across all four list paths", () => {
+    const db = createPostgresBuilder();
+
+    const runsSql = db.selectFrom("agent_runs").selectAll().orderBy("created_at", "desc").orderBy("id", "asc").compile().sql;
+    expect(runsSql).toMatch(/order by "created_at" desc, "id" asc/u);
+
+    const messagesSql = db.selectFrom("conversation_messages").selectAll().where("run_id", "=", "run-1").orderBy("created_at", "asc").orderBy("id", "asc").compile().sql;
+    expect(messagesSql).toMatch(/order by "created_at" asc, "id" asc/u);
+
+    const toolCallsSql = db.selectFrom("tool_calls").selectAll().where("run_id", "=", "run-1").orderBy("created_at", "asc").orderBy("id", "asc").compile().sql;
+    expect(toolCallsSql).toMatch(/order by "created_at" asc, "id" asc/u);
   });
 
   it("creates partial update payloads without resetting existing nullable fields", () => {

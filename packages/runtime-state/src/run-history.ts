@@ -341,7 +341,8 @@ export class KyselyAgentRunHistoryStore implements AgentRunHistoryStore {
     let query = this.db
       .selectFrom("agent_runs")
       .selectAll()
-      .orderBy("created_at", "desc");
+      .orderBy("created_at", "desc")
+      .orderBy("id", "asc");
 
     if (options.limit !== undefined) {
       query = query.limit(Math.max(0, options.limit));
@@ -361,6 +362,7 @@ export class KyselyAgentRunHistoryStore implements AgentRunHistoryStore {
       .selectAll()
       .where("user_id", "=", userId)
       .orderBy("created_at", "desc")
+      .orderBy("id", "asc")
       .execute();
 
     return rows.map(mapAgentRunRow);
@@ -382,6 +384,7 @@ export class KyselyAgentRunHistoryStore implements AgentRunHistoryStore {
       .selectAll()
       .where("run_id", "=", runId)
       .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
       .execute();
 
     return rows.map(mapConversationMessageRow);
@@ -414,6 +417,7 @@ export class KyselyAgentRunHistoryStore implements AgentRunHistoryStore {
       .selectAll()
       .where("run_id", "=", runId)
       .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
       .execute();
 
     return rows.map(mapToolCallRow);
@@ -616,7 +620,7 @@ export function mapToolCallRow(row: ToolCallRow): ToolCallRecord {
 }
 
 function compareRunsNewestFirst(left: AgentRunRecord, right: AgentRunRecord): number {
-  return right.createdAt.getTime() - left.createdAt.getTime();
+  return right.createdAt.getTime() - left.createdAt.getTime() || left.id.localeCompare(right.id);
 }
 
 function compareMessages(left: ConversationMessageRecord, right: ConversationMessageRecord): number {
