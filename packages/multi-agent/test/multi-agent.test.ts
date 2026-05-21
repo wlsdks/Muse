@@ -69,6 +69,37 @@ describe("SupervisorAgent", () => {
     expect(full).toBe(1);
   });
 
+  it("RuleBasedAgentWorker dedupes keywords at construction — a duplicate keyword can't double-count in both numerator and denominator and inflate dispatch confidence beyond the operator's intent (e.g. pre-fix ['foo','foo','bar'] vs. text 'foo' scored 2/3 ≈ 0.67 instead of 1/2 = 0.5)", () => {
+    const worker = new RuleBasedAgentWorker(
+      "deduper",
+      "Dedup worker",
+      // Mix: duplicates, blanks, mixed case — all should collapse to ["foo", "bar"].
+      ["foo", "FOO", "foo", "  foo  ", "", "bar", "Bar"],
+      async (input) => createWorkerResult("deduper", "ok", input)
+    );
+
+    // Input contains "foo" only — should be 1 of 2 unique keywords.
+    const onlyFoo = worker.canHandle({
+      messages: [{ content: "let's talk about foo", role: "user" }],
+      model: "test"
+    });
+    expect(onlyFoo, "pre-fix would have been 4/5 or similar due to duplicates").toBe(0.5);
+
+    // Input contains both — confidence 1.0 with the deduped denominator of 2.
+    const both = worker.canHandle({
+      messages: [{ content: "foo and bar together", role: "user" }],
+      model: "test"
+    });
+    expect(both).toBe(1);
+
+    // Input matches neither — confidence 0.
+    const neither = worker.canHandle({
+      messages: [{ content: "completely unrelated text", role: "user" }],
+      model: "test"
+    });
+    expect(neither).toBe(0);
+  });
+
   it("selects the highest confidence worker", async () => {
     const research = new RuleBasedAgentWorker("research", "Research worker", ["research"], (input) =>
       createWorkerResult("research", "research answer", input)

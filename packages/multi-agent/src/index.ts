@@ -135,9 +135,14 @@ export class RuleBasedAgentWorker implements AgentWorker {
     // Drop empty / whitespace-only keywords at construction. `text.includes("")`
     // is universally true, so a single blank slip would otherwise score confidence
     // > 0 against every input — silently inflating dispatch confidence.
-    this.keywords = keywords
-      .map((keyword) => keyword.toLowerCase().trim())
-      .filter((keyword) => keyword.length > 0);
+    // Dedupe too — a duplicate keyword counts twice in the denominator AND the
+    // numerator (when matched), shifting the ratio away from the operator's
+    // intent (e.g. ["foo","foo","bar"] vs. text "foo" → 2/3 instead of 1/2).
+    this.keywords = [...new Set(
+      keywords
+        .map((keyword) => keyword.toLowerCase().trim())
+        .filter((keyword) => keyword.length > 0)
+    )];
   }
 
   canHandle(input: AgentRunInput): number {
