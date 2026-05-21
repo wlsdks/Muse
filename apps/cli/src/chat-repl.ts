@@ -671,7 +671,15 @@ export function readChatResponseText(value: unknown): string {
  */
 export function resolveReplHistoryCap(raw: string | undefined): number {
   if (!raw) return 2000;
-  const parsed = Number.parseInt(raw, 10);
+  const trimmed = raw.trim();
+  // Strict integer match: `Number.parseInt("100x", 10) === 100` silently
+  // accepts unit-slip / typo'd suffixes — a user typing `100x` would
+  // get a 100-entry cap instead of falling back to the documented
+  // default. The regex gate rejects anything that isn't a clean
+  // optional-sign + digits, matching the same pattern goals 463/469/470
+  // established for query-param strict-parse.
+  if (!/^[+-]?\d+$/u.test(trimmed)) return 2000;
+  const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed <= 0) return 2000;
   return parsed;
 }
