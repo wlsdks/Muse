@@ -824,6 +824,36 @@ describe("createMuseTools", () => {
     expect(emptyArray.summary).toBe("items: []");
   });
 
+  it("kv_summarize bounds recursion depth so a maliciously / accidentally deeply-nested tool result can't stack-overflow the agent process — emits a [deep] marker at the cap instead of recursing forever", async () => {
+    const tool = getTool("kv_summarize");
+
+    let chained: Record<string, unknown> = { leaf: "innermost" };
+    for (let i = 0; i < 100; i += 1) {
+      chained = { nested: chained };
+    }
+    const objResult = (await tool.execute({ data: chained }, { runId: "r" })) as { summary: string };
+    expect(objResult.summary).toMatch(/\[deep\]/u);
+    expect(objResult.summary).not.toContain("innermost");
+
+    let arrayChained: unknown = ["leaf"];
+    for (let i = 0; i < 100; i += 1) {
+      arrayChained = [arrayChained];
+    }
+    const arrResult = (await tool.execute({ data: { wrapper: arrayChained } }, { runId: "r" })) as { summary: string };
+    expect(arrResult.summary).toMatch(/\[deep\]/u);
+  });
+
+  it("kv_summarize keeps a sub-cap nested structure intact — no spurious [deep] markers on legitimately-shallow JSON", async () => {
+    const tool = getTool("kv_summarize");
+    let shallow: Record<string, unknown> = { leaf: "value" };
+    for (let i = 0; i < 10; i += 1) {
+      shallow = { nested: shallow };
+    }
+    const result = (await tool.execute({ data: shallow }, { runId: "r" })) as { summary: string };
+    expect(result.summary).not.toMatch(/\[deep\]/u);
+    expect(result.summary).toContain("leaf: value");
+  });
+
   it("regex_extract returns matches, captured-group preference, and validates flags + sizes", async () => {
     const tool = getTool("regex_extract");
 

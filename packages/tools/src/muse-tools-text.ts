@@ -181,6 +181,7 @@ export function createMarkdownTableTool(): MuseTool {
 }
 
 const KV_SUMMARIZE_MAX_LINES = 200;
+export const KV_SUMMARIZE_MAX_DEPTH = 32;
 const MARKDOWN_TABLE_MAX_ROWS = 200;
 
 function slugify(text: string, maxLength?: number): string {
@@ -199,7 +200,11 @@ function slugify(text: string, maxLength?: number): string {
   return truncated.length > 0 ? truncated : reduced.slice(0, maxLength);
 }
 
-function flattenIntoKv(value: JsonValue, prefix: string, emit: (line: string) => void): void {
+function flattenIntoKv(value: JsonValue, prefix: string, emit: (line: string) => void, depth: number = 0): void {
+  if (depth >= KV_SUMMARIZE_MAX_DEPTH) {
+    emit(`${prefix || "value"}: [deep]`);
+    return;
+  }
   if (value === null || value === undefined) {
     emit(`${prefix || "value"}: null`);
     return;
@@ -216,7 +221,7 @@ function flattenIntoKv(value: JsonValue, prefix: string, emit: (line: string) =>
     for (let index = 0; index < value.length; index += 1) {
       const child = value[index] ?? null;
       const nextPrefix = prefix.length > 0 ? `${prefix}.${index}` : String(index);
-      flattenIntoKv(child as JsonValue, nextPrefix, emit);
+      flattenIntoKv(child as JsonValue, nextPrefix, emit, depth + 1);
     }
     return;
   }
@@ -227,7 +232,7 @@ function flattenIntoKv(value: JsonValue, prefix: string, emit: (line: string) =>
   }
   for (const [key, child] of entries) {
     const nextPrefix = prefix.length > 0 ? `${prefix}.${key}` : key;
-    flattenIntoKv((child ?? null) as JsonValue, nextPrefix, emit);
+    flattenIntoKv((child ?? null) as JsonValue, nextPrefix, emit, depth + 1);
   }
 }
 
