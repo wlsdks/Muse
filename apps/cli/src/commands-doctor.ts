@@ -156,6 +156,23 @@ export function resolveMuseEnvPath(raw: string | undefined, fallback: string): s
   return trimmed.length > 0 ? trimmed : fallback;
 }
 
+export function classifyMcpServersField(parsed: unknown): {
+  readonly status: "ok" | "warn" | "fail";
+  readonly detail: string;
+} {
+  if (!isRecord(parsed)) {
+    return { detail: "mcp.json root must be a JSON object", status: "fail" };
+  }
+  if (parsed.servers === undefined) {
+    return { detail: "0 server(s) — no `servers` key in mcp.json", status: "warn" };
+  }
+  if (!Array.isArray(parsed.servers)) {
+    return { detail: `\`servers\` must be an array (got ${parsed.servers === null ? "null" : typeof parsed.servers})`, status: "fail" };
+  }
+  const count = parsed.servers.length;
+  return { detail: `${count.toString()} server(s) registered`, status: count > 0 ? "ok" : "warn" };
+}
+
 export function resolveDoctorWatchIntervalMs(raw: string | undefined): number {
   const defaultMs = 5_000;
   if (!raw) return defaultMs;
@@ -222,9 +239,8 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   try {
     const raw = await fs.readFile(mcp_path, "utf8");
     try {
-      const parsed = JSON.parse(raw) as { servers?: unknown };
-      const servers = Array.isArray(parsed.servers) ? parsed.servers.length : 0;
-      checks.push({ detail: `${servers.toString()} server(s) registered`, name: "mcp.json", status: "ok" });
+      const parsed = JSON.parse(raw) as unknown;
+      checks.push({ name: "mcp.json", ...classifyMcpServersField(parsed) });
     } catch {
       checks.push({ detail: `${mcp_path} exists but is not valid JSON`, name: "mcp.json", status: "fail" });
     }

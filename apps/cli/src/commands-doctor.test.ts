@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyMcpServersField,
   embedModelCheck,
   findOllamaModelTag,
   parseNotesIndexEmbedModel,
@@ -92,6 +93,47 @@ describe("embedModelCheck (goal 168)", () => {
     expect(v.status).toBe("warn");
     expect(v.detail).toContain("ollama pull nomic-embed-text");
     expect(v.detail).toContain("muse ask` unavailable");
+  });
+});
+
+describe("classifyMcpServersField — surface mcp.json shape problems instead of silently reporting 'ok with 0 servers'", () => {
+  it("returns 'ok' with the count when `servers` is a non-empty array", () => {
+    expect(classifyMcpServersField({ servers: [{ name: "x" }] }))
+      .toEqual({ detail: "1 server(s) registered", status: "ok" });
+    expect(classifyMcpServersField({ servers: [{ name: "x" }, { name: "y" }, { name: "z" }] }))
+      .toEqual({ detail: "3 server(s) registered", status: "ok" });
+  });
+
+  it("returns 'warn' when `servers` is an explicit empty array — file is well-formed, user just hasn't added any", () => {
+    expect(classifyMcpServersField({ servers: [] }))
+      .toEqual({ detail: "0 server(s) registered", status: "warn" });
+  });
+
+  it("returns 'warn' when the `servers` key is absent — pre-fix the doctor silently reported 'ok with 0 servers' instead of surfacing the missing key", () => {
+    expect(classifyMcpServersField({}))
+      .toMatchObject({ status: "warn", detail: expect.stringContaining("no `servers` key") });
+    expect(classifyMcpServersField({ otherSetting: "x" }))
+      .toMatchObject({ status: "warn" });
+  });
+
+  it("returns 'fail' when `servers` exists but is the wrong shape — pre-fix `{servers: {foo: 'bar'}}` silently reported 'ok with 0 servers', masking a misconfiguration that would break MCP at runtime", () => {
+    expect(classifyMcpServersField({ servers: { foo: "bar" } }))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("must be an array") });
+    expect(classifyMcpServersField({ servers: null }))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("null") });
+    expect(classifyMcpServersField({ servers: "stringy" }))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("string") });
+    expect(classifyMcpServersField({ servers: 42 }))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("number") });
+    expect(classifyMcpServersField({ servers: true }))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("boolean") });
+  });
+
+  it("returns 'fail' when the JSON root is not an object (top-level array, string, null, number)", () => {
+    expect(classifyMcpServersField(null)).toMatchObject({ status: "fail" });
+    expect(classifyMcpServersField([])).toMatchObject({ status: "fail" });
+    expect(classifyMcpServersField("not-an-object")).toMatchObject({ status: "fail" });
+    expect(classifyMcpServersField(42)).toMatchObject({ status: "fail" });
   });
 });
 
