@@ -112,13 +112,16 @@ interface HumanCalendarEvent {
   readonly providerId?: string;
 }
 
-export function formatCalendarEvents(payload: { events: readonly HumanCalendarEvent[]; total?: number }): string {
+export function formatCalendarEvents(
+  payload: { events: readonly HumanCalendarEvent[]; total?: number },
+  timeZone?: string
+): string {
   if (payload.events.length === 0) {
     return "Calendar: (no events in window)\n";
   }
   const groups = new Map<string, HumanCalendarEvent[]>();
   for (const event of payload.events) {
-    const day = event.startsAtIso.slice(0, 10);
+    const day = formatLocalDate(event.startsAtIso, timeZone);
     const bucket = groups.get(day);
     if (bucket) {
       bucket.push(event);
@@ -130,14 +133,29 @@ export function formatCalendarEvents(payload: { events: readonly HumanCalendarEv
   for (const [day, events] of groups) {
     lines.push(`${day}`);
     for (const event of events) {
-      const time = event.startsAtIso.slice(11, 16);
-      const end = event.endsAtIso ? `–${event.endsAtIso.slice(11, 16)}` : "";
+      const time = localClockOrEmpty(event.startsAtIso, timeZone);
+      const endTime = event.endsAtIso ? localClockOrEmpty(event.endsAtIso, timeZone) : "";
+      const end = endTime ? `–${endTime}` : "";
       const where = event.location ? `  @ ${event.location}` : "";
       const provider = event.providerId ? ` (${event.providerId})` : "";
       lines.push(`  ${time}${end}  ${event.title}${where}${provider}`);
     }
   }
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Local `HH:MM` for a timed ISO instant; empty for an all-day /
+ * date-only event (no time component) so the renderer shows just
+ * the title under its day, matching the prior `.slice(11,16)`
+ * empty-on-date-only behaviour but in the host (or supplied) zone.
+ */
+function localClockOrEmpty(iso: string, timeZone?: string): string {
+  if (!/T\d{2}:/u.test(iso)) {
+    return "";
+  }
+  const clock = formatLocalTime(iso, timeZone);
+  return /^\d{2}:\d{2}$/u.test(clock) ? clock : "";
 }
 
 interface HumanMemoryRecord {

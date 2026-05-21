@@ -1,12 +1,58 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBytes,
+  formatCalendarEvents,
   formatCitations,
   formatLocalDate,
   formatLocalDateTime,
   formatLocalTime,
   formatRelativeTime
 } from "./human-formatters.js";
+
+describe("formatCalendarEvents renders in the local timezone, not UTC", () => {
+  it("groups by LOCAL day and shows LOCAL start/end times — a 02:00Z event lands on the previous calendar day in America/Los_Angeles (UTC-7/8), not under its UTC date", () => {
+    const out = formatCalendarEvents({
+      events: [
+        {
+          id: "e1",
+          startsAtIso: "2026-05-20T02:00:00Z",
+          endsAtIso: "2026-05-20T03:00:00Z",
+          title: "Late call",
+          providerId: "gcal"
+        }
+      ]
+    }, "America/Los_Angeles");
+    // 02:00Z on 2026-05-20 == 19:00 PDT on 2026-05-19.
+    expect(out).toContain("2026-05-19");
+    expect(out).toContain("19:00–20:00  Late call (gcal)");
+    expect(out).not.toContain("2026-05-20");
+    expect(out).not.toContain("02:00");
+  });
+
+  it("shows the local clock with no end when endsAtIso is absent", () => {
+    const out = formatCalendarEvents({
+      events: [{ id: "e2", startsAtIso: "2026-05-20T16:30:00Z", title: "Standup" }]
+    }, "Asia/Seoul");
+    // 16:30Z == 01:30 KST next day (2026-05-21).
+    expect(out).toContain("2026-05-21");
+    expect(out).toContain("01:30  Standup");
+    expect(out).not.toContain("01:30–");
+  });
+
+  it("renders an all-day / date-only event with its date and no time slot (no UTC-time leakage)", () => {
+    const out = formatCalendarEvents({
+      events: [{ id: "e3", startsAtIso: "2026-05-20", title: "Holiday" }]
+    }, "America/Los_Angeles");
+    expect(out).toContain("2026-05-20");
+    expect(out).toContain("Holiday");
+    // No HH:MM clock for a date-only event.
+    expect(out).not.toMatch(/\d{2}:\d{2}/u);
+  });
+
+  it("returns the empty-window message for no events", () => {
+    expect(formatCalendarEvents({ events: [] })).toBe("Calendar: (no events in window)\n");
+  });
+});
 
 describe("formatCitations", () => {
   it("returns empty string when no citations", () => {
