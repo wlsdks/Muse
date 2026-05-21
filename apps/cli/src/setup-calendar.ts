@@ -15,7 +15,7 @@
  *   permission prompt.
  */
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir } from "node:os";
@@ -126,10 +126,12 @@ async function setupGoogle(store: FileCalendarCredentialStore, io: SetupCalendar
     return false;
   }
 
+  const pkce = generatePkcePair();
   const { code, redirectUri } = await runOAuthCallbackServer({
     authUrl: googleAuthUrl,
     clientId: clientId.trim(),
     io,
+    pkce,
     scope: googleScope
   });
 
@@ -137,6 +139,7 @@ async function setupGoogle(store: FileCalendarCredentialStore, io: SetupCalendar
     client_id: clientId.trim(),
     client_secret: clientSecret,
     code,
+    code_verifier: pkce.verifier,
     grant_type: "authorization_code",
     redirect_uri: redirectUri
   });
@@ -233,10 +236,23 @@ interface OAuthCallbackOptions {
   readonly clientId: string;
   readonly io: SetupCalendarIO;
   readonly scope: string;
+  readonly pkce?: PkcePair;
 }
 
 export function generateOAuthState(): string {
   return randomBytes(16).toString("hex");
+}
+
+export interface PkcePair {
+  readonly verifier: string;
+  readonly challenge: string;
+  readonly method: "S256";
+}
+
+export function generatePkcePair(): PkcePair {
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge, method: "S256" };
 }
 
 async function runOAuthCallbackServer(
@@ -297,7 +313,11 @@ async function runOAuthCallbackServer(
         redirect_uri: redirectUri,
         response_type: "code",
         scope: options.scope,
-        state
+        state,
+        ...(options.pkce ? {
+          code_challenge: options.pkce.challenge,
+          code_challenge_method: options.pkce.method
+        } : {})
       });
       const launchUrl = `${options.authUrl}?${params.toString()}`;
       options.io.stdout(`\nOpen this URL to authorize:\n  ${launchUrl}\n\nWaiting for callback on ${redirectUri} ...\n`);
