@@ -177,12 +177,12 @@ export class DefaultCircuitBreaker implements CircuitBreaker {
   }
 
   reset(): void {
-    this.currentState = "closed";
     this.consecutiveFailures = 0;
     this.successes = 0;
     this.halfOpenCalls = 0;
     this.lastFailure = undefined;
     this.openedAt = 0;
+    this.transition("closed");
   }
 
   metrics(): CircuitBreakerMetrics {

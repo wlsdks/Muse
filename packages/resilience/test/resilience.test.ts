@@ -88,6 +88,38 @@ describe("DefaultCircuitBreaker", () => {
 
     expect(transitions).toEqual(["mcp:search:closed->open", "mcp:search:open->half_open"]);
   });
+
+  it("reset() on an open breaker fires the state-change recorder so manual operator intervention is observable", async () => {
+    // Pre-fix `reset()` assigned `currentState = "closed"` directly,
+    // bypassing `transition()`. An operator clearing a tripped
+    // breaker through a manual call (admin endpoint, recovery
+    // script) would silently flip the state from "open" to
+    // "closed" — the metrics recorder, the dashboard, and any
+    // alerting wired off state-change events would all miss the
+    // intervention. Routing reset() through transition() closes
+    // that gap while staying a no-op if the breaker was already
+    // closed.
+    const transitions: string[] = [];
+    const breaker = new DefaultCircuitBreaker({
+      failureThreshold: 1,
+      metricsRecorder: {
+        recordCircuitBreakerStateChange: (name, from, to) => transitions.push(`${name}:${from}->${to}`)
+      },
+      name: "llm:openai",
+      resetTimeoutMs: 60_000
+    });
+
+    await expect(breaker.execute(() => Promise.reject(new Error("down")))).rejects.toThrow("down");
+    expect(transitions).toEqual(["llm:openai:closed->open"]);
+
+    breaker.reset();
+    expect(transitions).toEqual(["llm:openai:closed->open", "llm:openai:open->closed"]);
+
+    // A second reset on an already-closed breaker is a no-op — no
+    // metric is fired (transition()'s from===to early-return).
+    breaker.reset();
+    expect(transitions).toEqual(["llm:openai:closed->open", "llm:openai:open->closed"]);
+  });
 });
 
 describe("CircuitBreakerRegistry", () => {

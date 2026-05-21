@@ -9,10 +9,10 @@ frontmatter delimiter, followed by key/value lines, then a
 closing `---`."
 
 Pre-fix the first line was tested verbatim. A UTF-8 BOM byte
-(`﻿`) at position 0 — silently prepended by Windows Notepad,
+(`U+FEFF`) at position 0 — silently prepended by Windows Notepad,
 the default macOS TextEdit save flow under some encodings, and a
 handful of cross-platform editors when "encode with BOM" is on —
-sits before the `---`, so `lines[0] === "﻿---"`. The regex
+sits before the `---`, so `lines[0] === "U+FEFF---"`. The regex
 expects `^---` at position 0; the BOM at position 0 fails the
 anchor.
 
@@ -46,14 +46,14 @@ not memory-cap (604), not dedup-parity (605). Defect class is
   - One-line change; the rest of the function is unchanged.
 - `packages/skills/test/skill-parser.test.ts`:
   - One new test in the `parseSkillFile` describe. Writes a
-    SKILL.md whose contents are `﻿` + the existing
+    SKILL.md whose contents are `U+FEFF` + the existing
     `OPENCLAW_STYLE_SKILL` fixture. Asserts `parseSkillFile`
     returns the parsed skill with `name === "github"` and the
     nested `requires.bins === ["gh"]` — i.e. the entire
     OpenClaw frontmatter parses through cleanly.
   - The literal BOM byte is forbidden by the repo's byte-scan
     rule (`\x{feff}` is on the deny list), so the test uses the
-    `﻿` escape sequence in the template literal instead.
+    `U+FEFF` escape sequence in the template literal instead.
 
 ## Verify
 
@@ -68,7 +68,7 @@ not memory-cap (604), not dedup-parity (605). Defect class is
   passed, every workspace green); `pnpm lint` 0/0; `pnpm
   guard:core` clean; byte-scan clean on both touched files
   (the BOM in the test source is the escape sequence
-  `﻿`, not the raw byte); `git status` shows only the
+  `U+FEFF`, not the raw byte); `git status` shows only the
   three intended files (src, test, this goal doc).
 - No LLM request-response wire path touched; `smoke:live`
   does not apply. Skill ingestion isn't HTTP-exercised by
@@ -92,7 +92,7 @@ with this backlog row — not a false metric.
 
 ## Decisions
 
-- **`raw.charCodeAt(0) === 0xfeff`, not `raw.startsWith("﻿")`.**
+- **`raw.charCodeAt(0) === 0xfeff`, not `raw.startsWith("U+FEFF")`.**
   `charCodeAt` reads one code unit and compares it to an integer
   literal — no string allocation, no regex compile, no Intl
   surprises. The BOM is exactly one UTF-16 code unit (0xFEFF), so
@@ -122,7 +122,7 @@ with this backlog row — not a false metric.
   reproduces the pre-fix shape — that's the realistic regression
   a maintainer might introduce while "simplifying the
   function back to one line."
-- **Test uses the `﻿` escape, not the literal byte.** The
+- **Test uses the `U+FEFF` escape, not the literal byte.** The
   repo's verification step 9 includes a byte-scan that flags
   `\x{feff}` in source as forbidden (it's a real
   invisible-character hazard). The TypeScript escape sequence
@@ -134,7 +134,7 @@ with this backlog row — not a false metric.
 ## Remaining risks
 
 - **UTF-16 BOMs (FE FF / FF FE)** aren't handled. Those would
-  arrive as decoded `﻿` (or trigger a UTF-8 decode error)
+  arrive as decoded `U+FEFF` (or trigger a UTF-8 decode error)
   because `fs.readFile(..., "utf8")` is told to read the file as
   UTF-8. A SKILL.md genuinely saved as UTF-16 would fail
   upstream of this code anyway. Out of scope.
