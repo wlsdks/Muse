@@ -91,7 +91,14 @@ export class RuntimeSettings {
     private readonly store: RuntimeSettingsStore,
     options: RuntimeSettingsOptions = {}
   ) {
-    this.cacheTtlMs = options.cacheTtlMs ?? 30_000;
+    // `??` does NOT catch NaN / Infinity / 0 / negative. NaN poisons
+    // `now + NaN = NaN`; every later `expiresAt > now` is false →
+    // silent always-miss → store hit on every getValue. Infinity
+    // never expires → stale cache survives runtime-setting writes
+    // from sibling tools that bypass `this.set()`. Fail safe to the
+    // documented 30-second default.
+    const rawTtl = options.cacheTtlMs ?? 30_000;
+    this.cacheTtlMs = Number.isFinite(rawTtl) && rawTtl > 0 ? rawTtl : 30_000;
     this.now = options.now ?? (() => new Date());
   }
 

@@ -86,6 +86,38 @@ describe("RuntimeSettings", () => {
     await service.set({ key: "feature.flag", value: "paused" });
     await expect(service.getString("feature.flag", "off")).resolves.toBe("paused");
   });
+
+  it("falls back to the 30-second default when a non-finite / non-positive cacheTtlMs slips through (NaN from a corrupt config, Infinity from a 'cache forever' typo, 0 / negative from a zero-cache mistake) — the cache must NOT degenerate into always-miss (NaN) or never-expire (Infinity)", async () => {
+    const store = new InMemoryRuntimeSettingsStore();
+    store.upsert({ key: "feature.flag", value: "on" });
+
+    // NaN — pre-fix `now + NaN = NaN` made every `expiresAt > now`
+    // false, so the cache always missed. With the guard the default
+    // TTL applies and the lookup is cached normally; bumping the
+    // store value AFTER the first lookup must NOT be visible until
+    // the cache is explicitly refreshed.
+    const withNaN = new RuntimeSettings(store, { cacheTtlMs: Number.NaN });
+    await expect(withNaN.getString("feature.flag", "off")).resolves.toBe("on");
+    store.upsert({ key: "feature.flag", value: "off-but-cached" });
+    await expect(withNaN.getString("feature.flag", "off")).resolves.toBe("on");
+
+    // Infinity — pre-fix the cache entry never expired AND every
+    // `now + Infinity = Infinity` → every entry stuck forever.
+    // Post-fix it falls to the 30-second default and behaves
+    // identically to the NaN branch (cached, until refresh).
+    const withInfinity = new RuntimeSettings(store, { cacheTtlMs: Number.POSITIVE_INFINITY });
+    await expect(withInfinity.getString("k", "fallback")).resolves.toBe("fallback");
+
+    // 0 — `??` doesn't catch 0; pre-fix this disabled the cache
+    // entirely (every `0 > delta` is false → always-miss).
+    // Post-fix it falls to 30s default.
+    const withZero = new RuntimeSettings(store, { cacheTtlMs: 0 });
+    await expect(withZero.getString("k", "fallback")).resolves.toBe("fallback");
+
+    // Negative — same family, same fix.
+    const withNegative = new RuntimeSettings(store, { cacheTtlMs: -1 });
+    await expect(withNegative.getString("k", "fallback")).resolves.toBe("fallback");
+  });
 });
 
 describe("InMemoryRuntimeSettingsStore", () => {
