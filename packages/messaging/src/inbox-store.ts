@@ -64,13 +64,29 @@ export interface AppendInboundOptions {
 
 /**
  * Append a single inbound message to the persisted file, trimming
- * to `capacity` newest entries. Defensive against races at the
- * webhook layer: each call rewrites the whole file atomically.
+ * to `capacity` newest entries. Atomic tmp+rename for crash safety,
+ * AND per-file write serialization so two concurrent webhook
+ * invocations don't both read the same inbox snapshot and clobber
+ * each other's append at rename time.
  */
+const writeQueues = new Map<string, Promise<unknown>>();
+
 export async function appendInbound(
   file: string,
   message: InboundMessage,
   options: AppendInboundOptions = {}
+): Promise<void> {
+  const prior = writeQueues.get(file) ?? Promise.resolve();
+  const run = (): Promise<void> => doAppendInbound(file, message, options);
+  const next = prior.then(run, run);
+  writeQueues.set(file, next.catch(() => undefined));
+  return next;
+}
+
+async function doAppendInbound(
+  file: string,
+  message: InboundMessage,
+  options: AppendInboundOptions
 ): Promise<void> {
   const capacity = clampCapacity(options.capacity);
   const existing = await readPersistedRaw(file);
@@ -81,9 +97,6 @@ export async function appendInbound(
   const payload: PersistedShape = { inbox: trimmed, version: 1 };
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  // Inbound message bodies are user data — same 0600 posture as
-  // every other personal store so they aren't world/group
-  // readable on a shared box.
   await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
   await fs.chmod(file, 0o600).catch(() => undefined);

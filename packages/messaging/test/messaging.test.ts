@@ -1252,6 +1252,24 @@ describe("inbox-store", () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
+  it("appendInbound serializes concurrent writes so two simultaneous webhook invocations can't both read the same snapshot and clobber each other's append — every message lands, none lost to the read-modify-write race", async () => {
+    const root = mkdtempSync(join(tmpdir(), "muse-inbox-concurrent-"));
+    const file = join(root, "inbox.json");
+    const CONCURRENT = 20;
+    await Promise.all(
+      Array.from({ length: CONCURRENT }, (_, i) =>
+        appendInbound(file, makeMessage({ messageId: `concurrent-${i.toString()}`, text: `body ${i.toString()}` }))
+      )
+    );
+    const out = await readInbox(file);
+    expect(out).toHaveLength(CONCURRENT);
+    const ids = new Set(out.map((m) => m.messageId));
+    expect(ids.size).toBe(CONCURRENT);
+    for (let i = 0; i < CONCURRENT; i += 1) {
+      expect(ids.has(`concurrent-${i.toString()}`)).toBe(true);
+    }
+  });
+
   it("appendInbound trims to capacity dropping oldest", async () => {
     const root = mkdtempSync(join(tmpdir(), "muse-inbox-cap-"));
     const file = join(root, "inbox.json");
