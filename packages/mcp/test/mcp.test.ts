@@ -1232,6 +1232,41 @@ describe("muse.fetch loopback server", () => {
     const result = await connection.callTool!("get", { url: "https://api.example.test/" });
     expect(result).toEqual({ error: "fetch failed: network down" });
   });
+
+  it("timeoutMs bounds the body read too, not just the connect+headers phase (a slow body stream is aborted, the call doesn't hang past the cap)", async () => {
+    // Pre-fix `callFetch` cleared the timer in its `finally` before
+    // the caller's `response.text()` ran, so a body that streams
+    // slowly (or never closes) hung indefinitely past the documented
+    // timeoutMs. The mock returns a Response whose body is a stream
+    // that NEVER closes naturally — its only completion path is via
+    // the abort signal. With the fix, the timer fires within the
+    // timeoutMs window and aborts the controller, which propagates
+    // to the body read via fetch's signal contract.
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal;
+      const stream = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          signal.addEventListener("abort", () => {
+            streamController.error(new Error("aborted by signal"));
+          });
+        }
+      });
+      return new Response(stream, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    const server = createFetchMcpServer({
+      allowedHosts: ["slow.example.test"],
+      fetch: fakeFetch,
+      timeoutMs: 50
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const start = Date.now();
+    const result = await connection.callTool!("get", { url: "https://slow.example.test/" });
+    const elapsed = Date.now() - start;
+    expect(result.error, `expected an error for the timed-out body read, got: ${JSON.stringify(result)}`).toMatch(/fetch failed/iu);
+    // Generous bound: timeoutMs:50 + scheduling slop. Without the fix
+    // the test would hang until vitest's own 5_000ms test timeout.
+    expect(elapsed, `body read must abort within the bounded window; took ${elapsed.toString()}ms`).toBeLessThan(2_000);
+  });
 });
 
 describe("muse.notes loopback server (filesystem-backed)", () => {

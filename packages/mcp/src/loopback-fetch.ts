@@ -59,11 +59,27 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
     return { allowed: true, url: parsed };
   }
 
-  async function callFetch(url: URL, init: RequestInit): Promise<Response> {
+  /**
+   * Fetch with the timeoutMs hard cap covering BOTH the connect+headers
+   * phase AND any optional body read. The pre-fix shape returned the
+   * Response and cleared the timer immediately, leaving `response.text()`
+   * un-bounded — a slow body (or a malicious-but-allowed host streaming
+   * a never-ending body) could hang the agent indefinitely past the
+   * documented timeout. Keeping the controller's signal active across
+   * the body read forces the abort to propagate to `response.text()`
+   * via fetch's signal contract.
+   */
+  async function fetchWithOptionalBody(
+    url: URL,
+    init: RequestInit,
+    readBody: boolean
+  ): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string | undefined }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetchImpl(url.toString(), { ...init, signal: controller.signal });
+      const response = await fetchImpl(url.toString(), { ...init, signal: controller.signal });
+      const body = readBody ? await response.text() : undefined;
+      return { body, headers: response.headers, status: response.status };
     } finally {
       clearTimeout(timer);
     }
@@ -103,14 +119,14 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
             }
           }
           try {
-            const response = await callFetch(decision.url, { headers: requestHeaders, method: "GET" });
-            const fullBody = await response.text();
+            const result = await fetchWithOptionalBody(decision.url, { headers: requestHeaders, method: "GET" }, true);
+            const fullBody = result.body ?? "";
             const truncated = fullBody.length > maxBodyBytes;
             const body = truncated ? fullBody.slice(0, maxBodyBytes) : fullBody;
             return {
               body,
-              headers: headersToObject(response.headers) as JsonValue,
-              status: response.status,
+              headers: headersToObject(result.headers) as JsonValue,
+              status: result.status,
               truncated
             } satisfies JsonObject;
           } catch (error) {
@@ -146,10 +162,10 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
             return { error: decision.error };
           }
           try {
-            const response = await callFetch(decision.url, { method: "HEAD" });
+            const result = await fetchWithOptionalBody(decision.url, { method: "HEAD" }, false);
             return {
-              headers: headersToObject(response.headers) as JsonValue,
-              status: response.status
+              headers: headersToObject(result.headers) as JsonValue,
+              status: result.status
             } satisfies JsonObject;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
