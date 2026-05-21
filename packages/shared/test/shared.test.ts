@@ -143,6 +143,62 @@ describe("boundary and cancellation helpers", () => {
     expect(redactSecretsInText("")).toBe("");
   });
 
+  it("redactSecretsInText redacts PEM-encoded private keys (RSA / EC / OPENSSH / bare) as one unit so a key accidentally pasted into a note / tool output / chat message can't round-trip through Slack / Discord / Telegram / the proactive log", () => {
+    const rsaKey = [
+      "-----BEGIN RSA PRIVATE KEY-----",
+      "MIIEpAIBAAKCAQEA1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
+      "KLMNOPQRSTUVWXYZ0123456789+/abcdefghijklmnopqrstuvwxyzABCDEFGH",
+      "-----END RSA PRIVATE KEY-----"
+    ].join("\n");
+    const opensshKey = [
+      "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt",
+      "ZWQyNTUxOQAAACBabcDEfgHIjKlMnOpQrStUvWxYzAaBcDeFgHiJkLmNoPqRsT",
+      "-----END OPENSSH PRIVATE KEY-----"
+    ].join("\n");
+    const ecKey = [
+      "-----BEGIN EC PRIVATE KEY-----",
+      "MHcCAQEEIA1234567890abcdefghijklmnopqrstuvwxyzABCDEFG",
+      "-----END EC PRIVATE KEY-----"
+    ].join("\n");
+    const bareKey = [
+      "-----BEGIN PRIVATE KEY-----",
+      "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC",
+      "-----END PRIVATE KEY-----"
+    ].join("\n");
+
+    expect(redactSecretsInText(`prelude\n${rsaKey}\ntrailing`))
+      .toBe("prelude\n[redacted-private-key]\ntrailing");
+    expect(redactSecretsInText(opensshKey)).toBe("[redacted-private-key]");
+    expect(redactSecretsInText(ecKey)).toBe("[redacted-private-key]");
+    expect(redactSecretsInText(bareKey)).toBe("[redacted-private-key]");
+
+    const twoKeys = `${rsaKey}\nbetween two keys\n${ecKey}`;
+    const scrubbedTwoKeys = redactSecretsInText(twoKeys);
+    expect(scrubbedTwoKeys).toBe("[redacted-private-key]\nbetween two keys\n[redacted-private-key]");
+
+    // PEM block ordering: when the BEGIN..END frame wraps a body
+    // that looks like another secret shape (a JWT-prefixed line
+    // inside the base64 body), the private-key pattern must run
+    // FIRST so the whole frame becomes one [redacted-private-key]
+    // rather than getting nibbled into [redacted-jwt] + leftover.
+    const keyWithJwtShapedBody = [
+      "-----BEGIN RSA PRIVATE KEY-----",
+      "eyJabcdefghij.eyJklmnopqrst.uvwxyzABCDEFGHIJKLMNOP",
+      "-----END RSA PRIVATE KEY-----"
+    ].join("\n");
+    expect(redactSecretsInText(keyWithJwtShapedBody)).toBe("[redacted-private-key]");
+
+    // No false positive on plain English mentioning "private key"
+    // outside the PEM frame.
+    expect(redactSecretsInText("the user's private key is on their laptop"))
+      .toBe("the user's private key is on their laptop");
+    // No false positive on a public-key PEM frame (different
+    // marker, contains no sensitive material — runs intact).
+    expect(redactSecretsInText("-----BEGIN PUBLIC KEY-----\nMFkwEwYH\n-----END PUBLIC KEY-----"))
+      .toBe("-----BEGIN PUBLIC KEY-----\nMFkwEwYH\n-----END PUBLIC KEY-----");
+  });
+
   it("redactSecretsInText covers Stripe secret + GitLab PAT shapes (goal 107)", () => {
     // Build the Stripe shapes via concatenation so the source file
     // does NOT contain a contiguous prefix-plus-24-char literal —
