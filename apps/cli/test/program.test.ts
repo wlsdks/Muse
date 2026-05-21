@@ -3968,6 +3968,73 @@ describe("cli program", () => {
     }
   });
 
+  it("captureEndOfSessionEpisode gate accepts every standard truthy spelling (1 / yes / on / TRUE), not just the literal 'true' string", async () => {
+    // Pre-fix `(env.MUSE_EPISODIC_MEMORY_ENABLED ?? "").trim().toLowerCase()
+    // !== "true"` only matched the exact string "true". An operator
+    // writing the natural `MUSE_EPISODIC_MEMORY_ENABLED=1` or `=yes`
+    // in their shell rc — both of which `parseBoolean` from
+    // @muse/autoconfigure already accepts — silently got episodic
+    // memory disabled with no diagnostic. The gate now routes through
+    // parseBoolean so the env var matches the established boolean-
+    // spelling convention used by every other MUSE_*_ENABLED flag.
+    const root = await mkdtemp(path.join(tmpdir(), "muse-eos-spelling-"));
+    const prevHome = process.env.HOME;
+    const prevEnabled = process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    process.env.HOME = root;
+    try {
+      const { appendLastChatTurn, appendSessionBoundary } = await import("../src/chat-history.js");
+      await appendSessionBoundary({ tsIso: "2026-05-13T08:00:00.000Z", userId: "stark" });
+      await appendLastChatTurn({ message: "Plan Q3 memo", response: "Notion good" });
+
+      const { captureEndOfSessionEpisode } = await import("../src/chat-end-session.js");
+      const stubProvider = {
+        id: "stub",
+        listModels: async () => [],
+        generate: async () => ({
+          id: "stub-resp",
+          model: "stub",
+          output: "Discussed Q3 memo.\ntopics: Q3"
+        }),
+        stream: async function* () { /* not used */ }
+      } as unknown as Parameters<typeof captureEndOfSessionEpisode>[0]["modelProvider"];
+
+      for (const truthy of ["1", "yes", "on", "TRUE", "True"]) {
+        process.env.MUSE_EPISODIC_MEMORY_ENABLED = truthy;
+        const captured = await captureEndOfSessionEpisode({
+          model: "stub",
+          modelProvider: stubProvider,
+          now: () => new Date("2026-05-13T08:15:00.000Z"),
+          userId: "stark"
+        });
+        expect(
+          captured.status,
+          `expected the captureEndOfSessionEpisode gate to accept MUSE_EPISODIC_MEMORY_ENABLED=${JSON.stringify(truthy)}, got ${JSON.stringify(captured)}`
+        ).toBe("captured");
+      }
+
+      // Unknown spellings still produce a `skipped` (fail-safe), and
+      // the skip reason still names the env var so existing telemetry
+      // greps keep working.
+      for (const not of ["maybe", "perhaps", ""]) {
+        process.env.MUSE_EPISODIC_MEMORY_ENABLED = not;
+        const skipped = await captureEndOfSessionEpisode({
+          model: "stub",
+          modelProvider: stubProvider,
+          userId: "stark"
+        });
+        expect(skipped).toMatchObject({
+          reason: expect.stringContaining("MUSE_EPISODIC_MEMORY_ENABLED"),
+          status: "skipped"
+        });
+      }
+    } finally {
+      if (prevHome !== undefined) process.env.HOME = prevHome;
+      else delete process.env.HOME;
+      if (prevEnabled !== undefined) process.env.MUSE_EPISODIC_MEMORY_ENABLED = prevEnabled;
+      else delete process.env.MUSE_EPISODIC_MEMORY_ENABLED;
+    }
+  });
+
   it("captureEndOfSessionEpisode scrubs LLM-generated summary + topics before write (goal 109)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-eos-redact-"));
     const fsp = await import("node:fs/promises");

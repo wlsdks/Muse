@@ -38,7 +38,7 @@ import {
   vacuumEpisodes,
   type PersistedEpisode
 } from "@muse/mcp";
-import { resolveEpisodesFile } from "@muse/autoconfigure";
+import { parseBoolean, resolveEpisodesFile } from "@muse/autoconfigure";
 import { redactSecretsInText } from "@muse/shared";
 
 // Pull the ModelProvider shape from the summariser's own options so
@@ -88,8 +88,11 @@ const DEFAULT_MIN_TURN_LINES = 2;
 export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOptions): Promise<CaptureResult> {
   const readEnv = options.readEnv ?? (() => process.env);
   const env = readEnv();
-  if ((env.MUSE_EPISODIC_MEMORY_ENABLED ?? "").trim().toLowerCase() !== "true") {
-    return { reason: "MUSE_EPISODIC_MEMORY_ENABLED is not true", status: "skipped" };
+  if (!parseBoolean(env.MUSE_EPISODIC_MEMORY_ENABLED, false)) {
+    return {
+      reason: "MUSE_EPISODIC_MEMORY_ENABLED is not enabled (set to true/1/yes/on to opt in)",
+      status: "skipped"
+    };
   }
 
   const readLines = options.readLines ?? readLastChatHistory;
