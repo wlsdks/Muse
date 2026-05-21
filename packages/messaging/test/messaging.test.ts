@@ -357,6 +357,14 @@ describe("discord-after-store", () => {
     expect(await readDiscordAfter(file, "ch-b")).toBe("222");
     expect(await readDiscordAfter(file, "ch-missing")).toBeUndefined();
   });
+
+  it("writeDiscordAfter persists the file with mode 0o600 (the sidecar names every channel polled + last seen snowflake)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-disc-after-"));
+    const file = join(dir, "after.json");
+    await writeDiscordAfter(file, "ch-1", "1000000");
+    const mode = statSync(file).mode & 0o777;
+    expect(mode, "discord-after sidecar must be user-only, matching the credential store + inbound-thread-store convention").toBe(0o600);
+  });
 });
 
 describe("DiscordProvider.fetchInbound inbox-file branch", () => {
@@ -632,6 +640,14 @@ describe("slack-after-store", () => {
     expect(await readSlackAfter(file, "C-B")).toBe("1700000001.000200");
     expect(await readSlackAfter(file, "C-missing")).toBeUndefined();
   });
+
+  it("writeSlackAfter persists the file with mode 0o600 (the sidecar names every Slack channel polled + ts cursor)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-slack-after-"));
+    const file = join(dir, "after.json");
+    await writeSlackAfter(file, "C-1", "1700000000.000100");
+    const mode = statSync(file).mode & 0o777;
+    expect(mode, "slack-after sidecar must be user-only, matching the credential store + inbound-thread-store convention").toBe(0o600);
+  });
 });
 
 describe("SlackProvider.fetchInbound inbox-file branch", () => {
@@ -905,6 +921,14 @@ describe("telegram-offset-store", () => {
     const { promises: fs } = await import("node:fs");
     const entries = await fs.readdir(dir);
     expect(entries.filter((e) => e.includes(".tmp-"))).toEqual([]);
+  });
+
+  it("writeTelegramOffset persists the file with mode 0o600 (the sidecar reveals which bot updates this process has acknowledged)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tg-offset-"));
+    const file = join(dir, "offset.json");
+    await writeTelegramOffset(file, 42);
+    const mode = statSync(file).mode & 0o777;
+    expect(mode, "telegram offset sidecar must be user-only, matching the credential store + inbound-thread-store convention").toBe(0o600);
   });
 });
 

@@ -41,7 +41,10 @@ export async function writeDiscordAfter(file: string, channelId: string, after: 
   };
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  // 0o600: this sidecar names every channel the bot polls plus its
+  // last seen snowflake — same posture as the sibling
+  // `inbound-thread-store` and the messaging credential store.
+  await fs.writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
 }
 

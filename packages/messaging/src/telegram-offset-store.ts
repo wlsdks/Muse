@@ -51,6 +51,11 @@ export async function writeTelegramOffset(file: string, offset: number): Promise
   const payload: PersistedShape = { offset: Math.trunc(offset), version: 1 };
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  // 0o600: this sidecar reveals which Telegram bot updates this
+  // process has acknowledged. Sibling `inbound-thread-store` already
+  // uses user-only mode (its docstring calls it out as the convention)
+  // — default umask would leave this file world-readable on a shared
+  // box, leaking the user's polling cadence + chat ids.
+  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
 }
