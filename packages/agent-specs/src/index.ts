@@ -314,15 +314,21 @@ export function buildAgentCard(options: BuildAgentCardOptions = {}): AgentCard {
     });
   }
   const personas: AgentCapability[] = [];
+  const seenPersonas = new Set<string>();
   for (const spec of options.specs ?? []) {
     if (!spec) {
       continue;
     }
+    const name = `persona:${spec.name}`;
+    if (seenPersonas.has(name)) {
+      continue;
+    }
+    seenPersonas.add(name);
     personas.push({
       description: spec.description?.length ? spec.description : spec.name,
       inputSchema: null,
       kind: "persona",
-      name: `persona:${spec.name}`
+      name
     });
   }
   return {

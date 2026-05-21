@@ -315,6 +315,47 @@ describe("buildAgentCard (A2A)", () => {
     expect(card.capabilities[1]?.description).toBe("Plans complex changes");
   });
 
+  it("dedupes duplicate persona names — first occurrence wins, matching the tools dedup semantic", () => {
+    // A caller that merges specs from multiple sources (DB rows + a
+    // config file + a runtime override) can hand the builder two
+    // specs with the same name. Tools dedupe by name so a discovered
+    // AgentCard surfaces each capability once; pre-fix the persona
+    // path skipped that step and emitted `persona:calendar` twice
+    // when two `calendar` specs were passed.
+    const card = buildAgentCard({
+      specs: [
+        {
+          createdAt: new Date(0),
+          description: "primary calendar persona",
+          enabled: true,
+          id: "p1",
+          keywords: [],
+          mode: "react",
+          name: "calendar",
+          priority: 0,
+          toolNames: [],
+          updatedAt: new Date(0)
+        },
+        {
+          createdAt: new Date(0),
+          description: "duplicate calendar persona",
+          enabled: true,
+          id: "p2",
+          keywords: [],
+          mode: "react",
+          name: "calendar",
+          priority: 0,
+          toolNames: [],
+          updatedAt: new Date(0)
+        }
+      ]
+    });
+    const personas = card.capabilities.filter((capability) => capability.kind === "persona");
+    expect(personas).toHaveLength(1);
+    expect(personas[0]?.name).toBe("persona:calendar");
+    expect(personas[0]?.description).toBe("primary calendar persona");
+  });
+
   it("falls back to the spec name when description is empty", () => {
     const card = buildAgentCard({
       specs: [
