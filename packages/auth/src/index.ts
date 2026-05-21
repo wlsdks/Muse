@@ -100,8 +100,17 @@ export class PasswordHasher {
     }
 
     const expected = Buffer.from(hash, "base64url");
+    // Node's base64url decoder is lenient and silently drops invalid
+    // chars; a corrupt `hash` segment can decode to an empty (or
+    // wrong-length) Buffer, then `scryptSync(_, _, 0)` returns empty
+    // and `timingSafeEqual(empty, empty)` is true — password bypass
+    // with ANY input. Pin to the exact scrypt output length.
+    if (expected.length !== passwordKeyLength) {
+      return false;
+    }
+
     const actual = scryptSync(password, salt, expected.length);
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
+    return timingSafeEqual(actual, expected);
   }
 }
 

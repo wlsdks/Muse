@@ -42,6 +42,27 @@ describe("PasswordHasher", () => {
     expect(hasher.verify("muse", "")).toBe(false);
   });
 
+  it("rejects a passwordHash whose base64url segment decodes to an empty / wrong-length Buffer — pre-fix Node's lenient base64url decoder silently dropped invalid chars to a 0-byte expected, then scryptSync(_, _, 0) returned empty, then timingSafeEqual(empty, empty) was true → ANY password verified against `scrypt-v1:salt:???`", () => {
+    // Pure-invalid base64url segment — decodes to zero bytes.
+    expect(hasher.verify("anything", "scrypt-v1:salt:???")).toBe(false);
+    expect(hasher.verify("", "scrypt-v1:salt:???")).toBe(false);
+    expect(hasher.verify("muse-jarvis", "scrypt-v1:salt:!!!!")).toBe(false);
+
+    // Short but valid base64url — decodes to ~3 bytes, NOT the
+    // 64-byte scrypt output length. Pre-fix the comparator's
+    // `actual.length === expected.length` would have caught this
+    // (both 3), but the underlying scrypt(_, _, 3) result would
+    // never match the stored hash bytes. Post-fix the length-pin
+    // rejects it earlier with an explicit length-mismatch
+    // contract, not a coincidental scrypt-output-mismatch.
+    expect(hasher.verify("anything", "scrypt-v1:salt:abc")).toBe(false);
+
+    // A real, correct hash still verifies — fix doesn't regress
+    // the happy path.
+    const realHash = hasher.hashPassword("muse-jarvis");
+    expect(hasher.verify("muse-jarvis", realHash)).toBe(true);
+  });
+
   it("produces a different salt per call (so two hashes of the same password differ)", () => {
     const a = hasher.hashPassword("same");
     const b = hasher.hashPassword("same");
