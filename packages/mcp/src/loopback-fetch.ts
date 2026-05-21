@@ -128,7 +128,7 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetchImpl(url.toString(), { ...init, signal: controller.signal });
+      const response = await fetchImpl(url.toString(), { ...init, redirect: "error", signal: controller.signal });
       if (!readBody) {
         return { body: undefined, headers: response.headers, status: response.status, truncated: false };
       }
@@ -153,7 +153,7 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
     tools: [
       {
         description:
-          "GETs the URL and returns { status, headers, body, truncated }. URL must be http/https and the hostname must be in the configured allowlist. Body is truncated at maxBodyBytes (default 64KB).",
+          "GETs the URL and returns { status, headers, body, truncated }. URL must be http/https and the hostname must be in the configured allowlist. Body is truncated at maxBodyBytes (default 64KB). Redirects are NOT followed — a 3xx Location to a different host would otherwise bypass the allowlist; allowlist each hop explicitly if you need a redirect chain.",
         execute: async (args): Promise<JsonObject> => {
           const url = readString(args, "url");
           if (url === undefined) {

@@ -1219,6 +1219,28 @@ describe("muse.fetch loopback server", () => {
     expect((capturedInit?.headers as Record<string, string>).num).toBeUndefined();
   });
 
+  it("passes redirect=\"error\" to the underlying fetch impl so a 302 Location to a non-allowlisted host can't bypass the allowlist via auto-redirect — operators wanting redirect chains must allowlist each hop explicitly", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      capturedInit = init;
+      return new Response("ok", { headers: {}, status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    const server = createFetchMcpServer({ allowedHosts: ["api.example.test"], fetch: fakeFetch });
+    const connection = createLoopbackMcpConnection(server);
+    await connection.callTool!("get", { url: "https://api.example.test/redirect-source" });
+    expect(capturedInit?.redirect).toBe("error");
+  });
+
+  it("surfaces a redirect that the runtime fetch refuses (TypeError on follow=error) as a structured fetch-failed payload — the agent sees a clear error, not a silent fall-through to a bypassed host", async () => {
+    const fakeFetch = (async () => {
+      throw new TypeError("unexpected redirect");
+    }) as unknown as typeof globalThis.fetch;
+    const server = createFetchMcpServer({ allowedHosts: ["api.example.test"], fetch: fakeFetch });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("get", { url: "https://api.example.test/redirect-source" });
+    expect(result).toMatchObject({ error: expect.stringContaining("unexpected redirect") });
+  });
+
   it("muse.fetch#head returns status + headers without a body", async () => {
     const fakeFetch = (async () =>
       new Response("body should not be returned for HEAD", {
