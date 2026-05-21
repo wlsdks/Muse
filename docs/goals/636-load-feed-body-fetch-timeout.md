@@ -139,7 +139,7 @@ Solidly fresh against the recent window.
     the Error constructor.
   - `@muse/shared` byte-hygiene test caught a literal
     Zero-Width Joiner (U+200D) in goal 635's doc (the
-    `👨‍👩‍👧` family emoji again — same as goals 633 and 634
+    `👨U+200D👩U+200D👧` family emoji again — same as goals 633 and 634
     that surfaced it). Replaced with textual `U+200D`
     notation, same fix iters 606+ use.
 - `pnpm check` green: apps/api 261/261, apps/cli 1101/1101,

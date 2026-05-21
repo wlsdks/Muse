@@ -80,6 +80,9 @@ export function createCryptoMcpServer(options: BuiltinLoopbackOptions = {}): Loo
             if (mode === "encode") {
               return { mode, output: Buffer.from(text, "utf8").toString("base64") } satisfies JsonObject;
             }
+            if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(text) || text.length % 4 !== 0) {
+              return { error: "input is not a valid base64 string" };
+            }
             const decoded = Buffer.from(text, "base64").toString("utf8");
             return { mode, output: decoded } satisfies JsonObject;
           } catch (error) {

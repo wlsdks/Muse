@@ -976,6 +976,30 @@ describe("loopback MCP servers", () => {
     });
   });
 
+  it("muse.crypto#base64 decode rejects malformed input instead of silently returning garbled bytes (sibling-parity with the hex decode validation — pre-fix `Buffer.from('not-base64!', 'base64')` dropped invalid chars and returned a nonsense decoded string)", async () => {
+    const connection = createLoopbackMcpConnection(createCryptoMcpServer());
+    expect(await connection.callTool!("base64", { text: "not-base64!", mode: "decode" })).toEqual({
+      error: "input is not a valid base64 string"
+    });
+    expect(await connection.callTool!("base64", { text: "abc", mode: "decode" })).toEqual({
+      error: "input is not a valid base64 string"
+    });
+    expect(await connection.callTool!("base64", { text: "aGVsbG8 jarvis", mode: "decode" })).toEqual({
+      error: "input is not a valid base64 string"
+    });
+    expect(await connection.callTool!("base64", { text: "aGVsbG8=jarvis", mode: "decode" })).toEqual({
+      error: "input is not a valid base64 string"
+    });
+    expect(await connection.callTool!("base64", { text: "aGVsbG8gamFydmlz", mode: "decode" })).toEqual({
+      mode: "decode",
+      output: "hello jarvis"
+    });
+    expect(await connection.callTool!("base64", { text: "", mode: "decode" })).toEqual({
+      mode: "decode",
+      output: ""
+    });
+  });
+
   it("muse.crypto#hex encodes and decodes UTF-8 and rejects malformed input", async () => {
     const connection = createLoopbackMcpConnection(createCryptoMcpServer());
     expect(await connection.callTool!("hex", { text: "abc" })).toEqual({ mode: "encode", output: "616263" });
