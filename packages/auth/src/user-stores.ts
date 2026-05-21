@@ -230,6 +230,10 @@ function normalizeUserInput(input: UserInput): User {
     throw new AuthError("INVALID_USER", "User name must not be blank");
   }
 
+  if (!input.passwordHash.trim()) {
+    throw new AuthError("INVALID_USER", "User passwordHash must not be blank");
+  }
+
   return {
     createdAt: input.createdAt ?? new Date(),
     email,

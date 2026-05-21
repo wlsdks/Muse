@@ -70,6 +70,26 @@ describe("users and password auth", () => {
     expect(store.findByEmail("old@x.com")).toBeUndefined();
     expect(store.count()).toBe(1);
   });
+
+  it("rejects a blank passwordHash with INVALID_USER (parity with the existing email / name blank checks — pre-fix an empty hash silently created a user record with no credential)", () => {
+    // The sibling email / name fields already reject blank input via
+    // INVALID_USER; passwordHash quietly accepted "" / "   " and
+    // produced a User row whose authenticate() comparison would
+    // misbehave depending on the hash function. Reject at the
+    // normalize seam so the bad state never enters the store.
+    const store = new InMemoryUserStore();
+    for (const bad of ["", "   ", "\t\n"]) {
+      expect(
+        () => store.save({ email: "ok@x.com", name: "ok", passwordHash: bad }),
+        `expected INVALID_USER for passwordHash=${JSON.stringify(bad)}`
+      ).toThrow(/passwordHash must not be blank/u);
+    }
+    // The store stays empty: no half-created row from any rejected save.
+    expect(store.count()).toBe(0);
+    // A non-blank hash still saves cleanly.
+    const saved = store.save({ email: "ok@x.com", name: "ok", passwordHash: "v1:salt:hash" });
+    expect(saved.passwordHash).toBe("v1:salt:hash");
+  });
 });
 
 describe("Kysely auth mapping", () => {
