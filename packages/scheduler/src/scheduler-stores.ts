@@ -217,7 +217,7 @@ export class KyselyScheduledJobStore implements ScheduledJobStore {
   }
 
   async list(): Promise<readonly ScheduledJob[]> {
-    const rows = await this.db.selectFrom("scheduled_jobs").selectAll().orderBy("created_at", "asc").execute();
+    const rows = await buildScheduledJobListQuery(this.db).execute();
     return rows.map(mapScheduledJobRow);
   }
 
@@ -270,6 +270,22 @@ export class KyselyScheduledJobStore implements ScheduledJobStore {
       .where("id", "=", id)
       .execute();
   }
+}
+
+/**
+ * The list query lifted out as an exported helper so a unit test
+ * can introspect the compiled SQL without lifting a real Postgres.
+ * The InMemory store's `compareJobs` comparator sorts by createdAt
+ * ASC then name ASC; this query must produce the same ordering so
+ * a same-timestamp tie comes back in a deterministic, stable order
+ * across implementations (closes the in-memory/Kysely parity gap).
+ */
+export function buildScheduledJobListQuery(db: Kysely<MuseDatabase>) {
+  return db
+    .selectFrom("scheduled_jobs")
+    .selectAll()
+    .orderBy("created_at", "asc")
+    .orderBy("name", "asc");
 }
 
 export class KyselyScheduledJobExecutionStore implements ScheduledJobExecutionStore {

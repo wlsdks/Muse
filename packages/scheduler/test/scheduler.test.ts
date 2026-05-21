@@ -16,6 +16,7 @@ import {
   ScheduledMcpToolInvoker,
   SchedulerMessaging,
   SchedulerValidationError,
+  buildScheduledJobListQuery,
   computeNextRunAt,
   createSchedulerTools,
   createScheduledJobLockInsert,
@@ -30,6 +31,13 @@ import {
   type DistributedSchedulerLock,
   type ScheduledJob
 } from "../src/index.js";
+import {
+  DummyDriver,
+  Kysely as KyselyClient,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler
+} from "kysely";
 import type { Kysely } from "kysely";
 import type { MuseDatabase } from "@muse/db";
 
@@ -465,6 +473,28 @@ describe("Kysely mapping helpers", () => {
     expect(new KyselyScheduledJobStore(db)).toBeInstanceOf(KyselyScheduledJobStore);
     expect(new KyselyScheduledJobExecutionStore(db)).toBeInstanceOf(KyselyScheduledJobExecutionStore);
     expect(new KyselyDistributedSchedulerLock(db)).toBeInstanceOf(KyselyDistributedSchedulerLock);
+  });
+
+  it("buildScheduledJobListQuery emits ORDER BY created_at ASC, name ASC — same two-key sort as InMemory's compareJobs (in-memory/Kysely parity)", () => {
+    // The InMemory `list()` sorts via `compareJobs` (createdAt ASC,
+    // name ASC tiebreaker). The pre-fix Kysely path was `orderBy
+    // ("created_at", "asc")` only — same-timestamp ties came back in
+    // DB-natural-order (engine-dependent, undefined). The exported
+    // helper makes the SQL contract testable without a real Postgres.
+    const db = new KyselyClient<MuseDatabase>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () => new DummyDriver(),
+        createIntrospector: (innerDb) => new PostgresIntrospector(innerDb),
+        createQueryCompiler: () => new PostgresQueryCompiler()
+      }
+    });
+    const compiled = buildScheduledJobListQuery(db).compile();
+
+    // Both order-by clauses present, primary key first.
+    expect(compiled.sql, `compiled SQL: ${compiled.sql}`).toMatch(/order by "created_at" asc,\s*"name" asc/iu);
+    // Selects from the right table — sanity check on the query shape.
+    expect(compiled.sql).toContain('from "scheduled_jobs"');
   });
 
   it("constructs no-op distributed lock and execution recorder", async () => {

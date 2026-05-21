@@ -227,7 +227,8 @@ export {
   InMemoryScheduledJobExecutionStore,
   InMemoryScheduledJobStore,
   KyselyScheduledJobExecutionStore,
-  KyselyScheduledJobStore
+  KyselyScheduledJobStore,
+  buildScheduledJobListQuery
 } from "./scheduler-stores.js";
 
 export class ScheduledJobValidator {
