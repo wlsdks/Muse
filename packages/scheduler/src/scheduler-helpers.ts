@@ -35,6 +35,7 @@ type ScheduledJobExecutionRow = Selectable<ScheduledJobExecutionTable>;
 
 export const defaultTimezone = "UTC";
 export const defaultRetryCount = 3;
+export const maxRetryCountCeiling = 100;
 const minExecutionTimeoutMs = 1_000;
 const maxExecutionTimeoutMs = 3_600_000;
 
@@ -96,12 +97,16 @@ export function validateRetryConfig(retryOnFailure: boolean, maxRetryCount: numb
   if (!retryOnFailure) {
     return;
   }
-  // NaN < 1 / NaN > N both return false, so without the finite
+  // NaN < 1 / NaN > N both return false, so without the integer
   // guard a non-finite maxRetryCount slips past the bound check.
-  // `normalizeScheduledJob` catches NaN downstream, but the
-  // validate gate is the contract — accept ⟺ validate.
-  if (!Number.isFinite(maxRetryCount) || maxRetryCount < 1) {
-    throw new SchedulerValidationError("maxRetryCount must be at least 1 when retryOnFailure is enabled");
+  // The upper ceiling stops a `maxRetryCount: 1_000_000` config
+  // from turning `runWithRetry` into a retry-storm against the
+  // job's target (LLM / MCP tool / HTTP) — sibling of the
+  // executionTimeout's two-sided bound.
+  if (!Number.isInteger(maxRetryCount) || maxRetryCount < 1 || maxRetryCount > maxRetryCountCeiling) {
+    throw new SchedulerValidationError(
+      `maxRetryCount must be an integer between 1 and ${maxRetryCountCeiling.toString()} when retryOnFailure is enabled`
+    );
   }
 }
 

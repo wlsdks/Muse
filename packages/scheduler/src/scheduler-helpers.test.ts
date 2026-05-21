@@ -6,6 +6,7 @@ import {
   defaultRetryCount,
   defaultTimezone,
   computeNextRunAt,
+  maxRetryCountCeiling,
   normalizeScheduledJobExecution,
   requireText,
   resolveJobTimeout,
@@ -137,6 +138,21 @@ describe("validateRetryConfig", () => {
     expect(() => validateRetryConfig(true, Number.NaN), "NaN < 1 is false, so without the finite guard the gate would silently accept a non-finite retry count").toThrow(SchedulerValidationError);
     expect(() => validateRetryConfig(true, Number.POSITIVE_INFINITY)).toThrow(SchedulerValidationError);
     expect(() => validateRetryConfig(true, Number.NEGATIVE_INFINITY)).toThrow(SchedulerValidationError);
+  });
+  it("rejects a maxRetryCount above the ceiling so a `maxRetryCount: 1_000_000` config can't turn runWithRetry into a retry-storm against the job target", () => {
+    expect(() => validateRetryConfig(true, maxRetryCountCeiling)).not.toThrow();
+    expect(() => validateRetryConfig(true, maxRetryCountCeiling + 1)).toThrow(SchedulerValidationError);
+    expect(() => validateRetryConfig(true, 1_000_000)).toThrow(SchedulerValidationError);
+  });
+  it("rejects a non-integer maxRetryCount (a retry COUNT is a whole number) when retryOnFailure=true", () => {
+    expect(() => validateRetryConfig(true, 3.5)).toThrow(SchedulerValidationError);
+    expect(() => validateRetryConfig(true, 3)).not.toThrow();
+  });
+});
+
+describe("scheduler retry ceiling", () => {
+  it("maxRetryCountCeiling is 100 — generous for legitimate jobs, bounded against a retry bomb", () => {
+    expect(maxRetryCountCeiling).toBe(100);
   });
 });
 
