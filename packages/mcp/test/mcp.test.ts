@@ -7289,6 +7289,47 @@ describe("personal-episodes-store", () => {
     expect(keptIds, "lexicographically-larger ids win the tiebreaker → ep_b + ep_c kept, ep_a dropped").toEqual(["ep_b", "ep_c"]);
   });
 
+  it("vacuumEpisodes finite-guards maxEntries so a NaN / Infinity / 0 / negative caller-supplied cap falls back to the default instead of wiping the entire episodes file (NaN: Math.max(1, Math.trunc(NaN)) === NaN, slice(0, NaN) === [], writeEpisodes([]) DESTROYS the file)", async () => {
+    const { upsertEpisode, vacuumEpisodes, readEpisodes } = await import("../src/index.js");
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "muse-episodes-vacuum-guard-"));
+    const file = join(dir, "episodes.json");
+
+    for (let i = 0; i < 3; i += 1) {
+      await upsertEpisode(file, {
+        endedAt: `2026-05-12T22:${(15 + i).toString().padStart(2, "0")}:00Z`,
+        id: `ep_${i.toString()}`,
+        startedAt: "2026-05-12T22:00:00Z",
+        summary: `summary ${i.toString()}`,
+        userId: "stark"
+      });
+    }
+
+    // NaN — pre-fix this WIPED THE FILE. Post-fix: falls to the
+    // default cap (well above 3), so nothing is dropped.
+    await expect(vacuumEpisodes(file, Number.NaN)).resolves.toBe(0);
+    expect((await readEpisodes(file)).map((e) => e.id).sort()).toEqual(["ep_0", "ep_1", "ep_2"]);
+
+    // Infinity — pre-fix `cap === Infinity` skipped the work
+    // (slice(0, Infinity) returns the whole array, no episodes
+    // dropped — semantically OK but inconsistent with the
+    // "guard non-finite" contract). Post-fix: fallback applies.
+    await expect(vacuumEpisodes(file, Number.POSITIVE_INFINITY)).resolves.toBe(0);
+    expect((await readEpisodes(file)).map((e) => e.id).sort()).toEqual(["ep_0", "ep_1", "ep_2"]);
+
+    // 0 — `0 > 0` false → fallback. Pre-fix Math.max(1, 0) = 1
+    // would have kept only the newest; post-fix keeps all under
+    // the default 500 cap.
+    await expect(vacuumEpisodes(file, 0)).resolves.toBe(0);
+    expect((await readEpisodes(file)).map((e) => e.id).sort()).toEqual(["ep_0", "ep_1", "ep_2"]);
+
+    // Negative — same family.
+    await expect(vacuumEpisodes(file, -5)).resolves.toBe(0);
+    expect((await readEpisodes(file)).map((e) => e.id).sort()).toEqual(["ep_0", "ep_1", "ep_2"]);
+  });
+
   it("serialize emits topics only when present and non-empty", async () => {
     const { serializeEpisode } = await import("../src/index.js");
     const withTopics = serializeEpisode({

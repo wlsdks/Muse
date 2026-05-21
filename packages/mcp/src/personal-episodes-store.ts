@@ -138,7 +138,14 @@ export async function clearEpisodes(file: string): Promise<void> {
  * after upsert.
  */
 export async function vacuumEpisodes(file: string, maxEntries = DEFAULT_VACUUM_MAX_ENTRIES): Promise<number> {
-  const cap = Math.max(1, Math.trunc(maxEntries));
+  // NaN slips past `Math.max(1, Math.trunc(NaN)) === NaN`, then
+  // `existing.length <= NaN` is false, then `slice(0, NaN)` returns
+  // `[]`, then `writeEpisodes(file, [])` WIPES THE ENTIRE FILE.
+  // Fail safe to the documented default so a corrupt caller-supplied
+  // cap can't destroy user episode history silently.
+  const cap = Number.isFinite(maxEntries) && maxEntries > 0
+    ? Math.max(1, Math.trunc(maxEntries))
+    : DEFAULT_VACUUM_MAX_ENTRIES;
   const existing = await readEpisodes(file);
   if (existing.length <= cap) {
     return 0;
