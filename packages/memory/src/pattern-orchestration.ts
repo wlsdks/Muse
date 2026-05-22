@@ -64,9 +64,16 @@ export function selectFireablePatterns(
   fired: readonly CooldownRecordLike[],
   options: SelectFireablePatternsOptions = {}
 ): readonly PatternMatch[] {
-  const cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS;
-  const minConfidence = options.minConfidence ?? DEFAULT_MIN_CONFIDENCE;
-  const maxPerTick = Math.max(1, options.maxPerTick ?? DEFAULT_MAX_PER_TICK);
+  // `??` does NOT catch NaN/Infinity (from a typo'd
+  // MUSE_PROACTIVE_PATTERN_* env knob parsed via raw `Number(...)`).
+  // Unguarded: a NaN maxPerTick → `slice(0, NaN)` fires nothing; a NaN
+  // minConfidence → `confidence < NaN` is false so the floor vanishes
+  // and every weak pattern fires; a NaN cooldownMs → `< NaN` is false
+  // so cooldown never applies and patterns re-fire. Fall back to the
+  // default for any non-finite knob (same guard the context-ref store uses).
+  const cooldownMs = Number.isFinite(options.cooldownMs) ? options.cooldownMs! : DEFAULT_COOLDOWN_MS;
+  const minConfidence = Number.isFinite(options.minConfidence) ? options.minConfidence! : DEFAULT_MIN_CONFIDENCE;
+  const maxPerTick = Math.max(1, Number.isFinite(options.maxPerTick) ? Math.trunc(options.maxPerTick!) : DEFAULT_MAX_PER_TICK);
   const nowMs = now.getTime();
 
   const timeOfDay = detectTimeOfDayPatterns(now, signals, {

@@ -68,6 +68,20 @@ describe("selectFireablePatterns", () => {
     expect(selectFireablePatterns(now, signals, [], { minConfidence: 1.01 })).toHaveLength(0);
   });
 
+  it("finite-guards non-finite knobs (a typo'd env value becomes NaN — must not silently disable or spam)", () => {
+    const now = new Date(2026, 4, 12, 21, 30);
+    const signals = signalsWithStrongJournalTuesday();
+
+    // maxPerTick: NaN must fall to the default cap, NOT `slice(0, NaN)` → [].
+    expect(selectFireablePatterns(now, signals, [], { maxPerTick: Number.NaN })).toHaveLength(1);
+
+    // cooldownMs: NaN must fall to the 24h default so a pattern fired 1h
+    // ago stays on cooldown — NOT `nowMs - lastFired < NaN` (false) → re-fire.
+    const firedId = selectFireablePatterns(now, signals, [])[0]!.id;
+    const recent = [{ firedAtMs: now.getTime() - 60 * 60_000, patternId: firedId }];
+    expect(selectFireablePatterns(now, signals, recent, { cooldownMs: Number.NaN })).toHaveLength(0);
+  });
+
   it("excludes patterns outside the current weekday + band (currentSlotOnly is enforced)", () => {
     const signals = signalsWithStrongJournalTuesday();
     // "now" = Wednesday 21:30 — none of the Tuesday slots match.
