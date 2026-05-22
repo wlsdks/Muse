@@ -744,3 +744,18 @@ Append one line when a discovery path is evaluated and deferred:
   chain composes as one `muse ask --with-tools --actuators` user flow; no
   live LLM call (deterministic provider; HTTP-faked). No drift; no bullet
   reopened. **P0–P17 complete + audited.**
+- P18 audit — @muse/autoconfigure p18-seam.test.ts — PASS: P18 (web
+  control of the user's real logged-in Chrome) composes end-to-end. The
+  two bullets shipped separately — read-first perception (750/751) and
+  gated state-changing action (752) — so the audit proves they COMPOSE
+  in ONE web-control run through the whole real stack:
+  `createChromeDevToolsMcpServer` → `McpManager.toMuseTools()` →
+  `withChromeDevToolsRisk` → `ToolRegistry` → `createAgentRuntime` +
+  `toolApprovalGate`. In a single run the agent calls
+  `chrome-devtools.take_snapshot` (read → gate ALLOWS → reaches the
+  browser) then `chrome-devtools.fill_form` (re-stamped write →
+  gate DENIES → `callTool` NEVER fires); both risk classes hit the gate
+  in the same run. Piece-checks re-run green TOGETHER: @muse/mcp
+  chrome-devtools-mcp 9/9 + @muse/autoconfigure chrome-devtools-agent-run
+  / chrome-devtools-gated-action / p18-seam 5/5. No live LLM (deterministic
+  provider; transport-faked). No drift; no bullet reopened.
