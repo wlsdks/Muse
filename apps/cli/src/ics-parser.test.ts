@@ -72,6 +72,41 @@ describe("parseIcsEvents", () => {
     expect(ev?.location).toBe("Rm,5;x");
   });
 
+  it("honours a TZID IANA zone, converting wall-clock to the correct UTC instant (incl. DST)", () => {
+    // America/New_York: EST (UTC-5) in January, EDT (UTC-4) in July.
+    const [winter] = parseIcsEvents(
+      vevent(["SUMMARY:NY winter", "DTSTART;TZID=America/New_York:20260118T090000"])
+    );
+    expect(winter?.startsAt.toISOString()).toBe("2026-01-18T14:00:00.000Z");
+    const [summer] = parseIcsEvents(
+      vevent(["SUMMARY:NY summer", "DTSTART;TZID=America/New_York:20260718T090000"])
+    );
+    expect(summer?.startsAt.toISOString()).toBe("2026-07-18T13:00:00.000Z");
+    // Asia/Seoul: UTC+9, no DST.
+    const [seoul] = parseIcsEvents(
+      vevent(["SUMMARY:Seoul", "DTSTART;TZID=Asia/Seoul:20260315T090000"])
+    );
+    expect(seoul?.startsAt.toISOString()).toBe("2026-03-15T00:00:00.000Z");
+  });
+
+  it("accepts a quoted TZID and lets a Z suffix win over any TZID", () => {
+    const [quoted] = parseIcsEvents(
+      vevent(["SUMMARY:Q", `DTSTART;TZID="America/New_York":20260118T090000`])
+    );
+    expect(quoted?.startsAt.toISOString()).toBe("2026-01-18T14:00:00.000Z");
+    const [zWins] = parseIcsEvents(
+      vevent(["SUMMARY:Z", "DTSTART;TZID=America/New_York:20260118T090000Z"])
+    );
+    expect(zWins?.startsAt.toISOString()).toBe("2026-01-18T09:00:00.000Z");
+  });
+
+  it("falls back to the UTC reading for an unknown TZID rather than dropping the event", () => {
+    const [ev] = parseIcsEvents(
+      vevent(["SUMMARY:Bad zone", "DTSTART;TZID=Mars/Phobos:20260118T090000"])
+    );
+    expect(ev?.startsAt.toISOString()).toBe("2026-01-18T09:00:00.000Z");
+  });
+
   it("drops an impossible calendar date instead of silently rolling it over (goal-440 sibling)", () => {
     // Date.UTC(2026, 1, 30) rolls Feb 30 → Mar 2; an importer must
     // not put the event on the wrong day. Both forms must reject.

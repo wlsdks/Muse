@@ -37,7 +37,7 @@ export function parseIcsEvents(body: string): readonly ParsedIcsEvent[] {
   const unfolded = unfoldLines(body);
   const events: ParsedIcsEvent[] = [];
   let inEvent = false;
-  let buffer: Record<string, { value: string; isDate: boolean }> = {};
+  let buffer: Record<string, { value: string; isDate: boolean; tzid?: string }> = {};
 
   for (const line of unfolded) {
     if (line === "BEGIN:VEVENT") {
@@ -55,7 +55,7 @@ export function parseIcsEvents(body: string): readonly ParsedIcsEvent[] {
     if (!inEvent) continue;
     const split = splitContentLine(line);
     if (!split) continue;
-    buffer[split.key] = { value: split.value, isDate: split.isDate };
+    buffer[split.key] = { value: split.value, isDate: split.isDate, ...(split.tzid ? { tzid: split.tzid } : {}) };
   }
 
   return events.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
@@ -87,24 +87,29 @@ function unfoldLines(body: string): readonly string[] {
  * Returns `undefined` when the line isn't a key-value pair so
  * the caller can skip unrecognised lines.
  */
-function splitContentLine(line: string): { key: string; value: string; isDate: boolean } | undefined {
+function splitContentLine(line: string): { key: string; value: string; isDate: boolean; tzid?: string } | undefined {
   const colon = line.indexOf(":");
   if (colon < 0) return undefined;
   const head = line.slice(0, colon);
   const value = line.slice(colon + 1);
   const semi = head.indexOf(";");
   const key = (semi < 0 ? head : head.slice(0, semi)).toUpperCase();
-  const params = semi < 0 ? "" : head.slice(semi + 1).toUpperCase();
-  const isDate = /(?:^|;)VALUE=DATE(?:;|$)/u.test(params);
-  return { key, value, isDate };
+  // Params are matched case-insensitively, but the TZID *value* keeps its
+  // original case — IANA zone ids ("America/New_York") are case-sensitive
+  // for Intl. RFC 5545 allows the value to be quoted; strip the quotes.
+  const params = semi < 0 ? "" : head.slice(semi + 1);
+  const isDate = /(?:^|;)VALUE=DATE(?:;|$)/iu.test(params);
+  const tzMatch = /(?:^|;)TZID=("?)([^;]*)\1/iu.exec(params);
+  const tzid = tzMatch?.[2] ? tzMatch[2] : undefined;
+  return { isDate, key, value, ...(tzid ? { tzid } : {}) };
 }
 
-function finalizeEvent(buffer: Record<string, { value: string; isDate: boolean }>): ParsedIcsEvent | undefined {
+function finalizeEvent(buffer: Record<string, { value: string; isDate: boolean; tzid?: string }>): ParsedIcsEvent | undefined {
   const summary = buffer["SUMMARY"]?.value?.trim();
   const dtstart = buffer["DTSTART"];
   const dtend = buffer["DTEND"];
   if (!summary || !dtstart) return undefined;
-  const startsAt = parseIcsDateValue(dtstart.value, dtstart.isDate);
+  const startsAt = parseIcsDateValue(dtstart.value, dtstart.isDate, dtstart.tzid);
   if (!startsAt) return undefined;
   const allDay = dtstart.isDate;
   // End is optional in iCal (default = startsAt + 0). Make it
@@ -112,7 +117,7 @@ function finalizeEvent(buffer: Record<string, { value: string; isDate: boolean }
   // the local provider's listEvents range filter still finds them.
   let endsAt: Date | undefined;
   if (dtend) {
-    endsAt = parseIcsDateValue(dtend.value, dtend.isDate);
+    endsAt = parseIcsDateValue(dtend.value, dtend.isDate, dtend.tzid);
   }
   if (!endsAt) {
     endsAt = allDay
@@ -134,13 +139,12 @@ function finalizeEvent(buffer: Record<string, { value: string; isDate: boolean }
 /**
  * iCal dates come in two shapes:
  *   - `YYYYMMDD` (VALUE=DATE) — all-day, interpret as UTC midnight.
- *   - `YYYYMMDDTHHMMSS[Z]` — timed. Trailing `Z` = UTC, otherwise
- *     local. We can't honour VTIMEZONE without a real tz library
- *     so we treat unsuffixed times as UTC too; that round-trips
- *     cleanly back out via the LocalCalendarProvider, which is
- *     all the importer needs.
+ *   - `YYYYMMDDTHHMMSS[Z]` — timed. Trailing `Z` = UTC. A `TZID`
+ *     param naming an IANA zone (`America/New_York`) is converted to
+ *     the correct UTC instant via the built-in `Intl` (no tz library);
+ *     an unsuffixed value with no/unknown `TZID` falls back to UTC.
  */
-function parseIcsDateValue(raw: string, isDate: boolean): Date | undefined {
+function parseIcsDateValue(raw: string, isDate: boolean, tzid?: string): Date | undefined {
   const value = raw.trim();
   if (isDate || /^\d{8}$/u.test(value)) {
     if (!/^\d{8}$/u.test(value)) return undefined;
@@ -172,7 +176,52 @@ function parseIcsDateValue(raw: string, isDate: boolean): Date | undefined {
   ) {
     return undefined;
   }
+  // `Z` means UTC and wins over any TZID. An unsuffixed value with a
+  // known IANA TZID is the wall-clock time in that zone — convert it to
+  // the real UTC instant; an unknown zone falls back to the UTC reading.
+  if (m[7] !== "Z" && tzid) {
+    const zoned = zonedWallClockToUtc(year, month, day, hour, minute, second, tzid);
+    if (zoned) return zoned;
+  }
   return dt;
+}
+
+/**
+ * Convert a wall-clock time in an IANA zone to the UTC instant, using
+ * only the built-in `Intl` (no tz dependency). Two refinement passes so
+ * a time near a DST transition resolves to the correct side. Returns
+ * `undefined` for an unknown zone so the caller can fall back to UTC.
+ */
+function zonedWallClockToUtc(
+  year: number, month: number, day: number, hour: number, minute: number, second: number, timeZone: string
+): Date | undefined {
+  const base = Date.UTC(year, month - 1, day, hour, minute, second);
+  let utc = base;
+  for (let i = 0; i < 2; i += 1) {
+    const offset = tzOffsetMs(new Date(utc), timeZone);
+    if (offset === undefined) return undefined;
+    utc = base - offset;
+  }
+  return new Date(utc);
+}
+
+/**
+ * Offset (ms) of `timeZone` at `instant`: how far the zone's wall clock
+ * leads UTC. `undefined` when the zone id is not a valid IANA name.
+ */
+function tzOffsetMs(instant: Date, timeZone: string): number | undefined {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      day: "2-digit", hour: "2-digit", hourCycle: "h23", minute: "2-digit",
+      month: "2-digit", second: "2-digit", timeZone, year: "numeric"
+    }).formatToParts(instant);
+  } catch {
+    return undefined;
+  }
+  const get = (type: string): number => Number.parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return asUtc - instant.getTime();
 }
 
 // Single left-to-right pass: an escaped backslash must be consumed
