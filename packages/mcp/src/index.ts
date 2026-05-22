@@ -414,6 +414,12 @@ export {
   type ContactResolution
 } from "./personal-contacts-store.js";
 export {
+  GmailEmailProvider,
+  summarizeInbox,
+  type EmailProvider,
+  type EmailSummary
+} from "./email-provider.js";
+export {
   createMessagingObjectiveActuator,
   createModelObjectiveEvaluator,
   parseObjectiveVerdict,

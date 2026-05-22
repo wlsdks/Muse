@@ -446,7 +446,12 @@ send is draft-first and gated.
   provider (IMAP/SMTP or Gmail API) behind the abstraction;
   needs-reply items feed the P8 situational briefing. Check: a
   contract-faithful HTTP-faked inbox → the agent summarises it / it
-  surfaces in the briefing (integration).
+  surfaces in the briefing (integration). (goal 694 delivered the
+  read/triage/summarise half: `EmailProvider` + `GmailEmailProvider`
+  (Gmail REST, Bearer token, no SDK/dep) + `summarizeInbox` +
+  `muse inbox` (read-only), contract-faithful Gmail-HTTP-faked
+  integration test. STILL OPEN to flip: wire needs-reply items into
+  the P8 situational briefing — reuses the weather→briefing pattern.)
 - [ ] Send / reply obeys `outbound-safety.md` — a message to a third
   party is never sent without the user confirming the exact drafted
   content; recipient resolved or the agent asks; fail-closed; sent

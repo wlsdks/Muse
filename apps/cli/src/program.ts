@@ -108,6 +108,7 @@ import { registerAgentNoticesCommands } from "./commands-agent-notices.js";
 import { registerWebhookCommand } from "./commands-webhook.js";
 import { registerActionsCommands } from "./commands-actions.js";
 import { registerContactsCommands } from "./commands-contacts.js";
+import { registerInboxCommand } from "./commands-inbox.js";
 import { registerObjectivesCommands } from "./commands-objectives.js";
 import { registerSpecsCommands } from "./commands-specs.js";
 import { registerTasksCommands } from "./commands-tasks.js";
@@ -513,6 +514,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerObjectivesCommands(program, io);
   registerActionsCommands(program, io);
   registerContactsCommands(program, io);
+  registerInboxCommand(program, io);
   registerRunsCommands(program, io, { apiRequest, writeOutput });
   registerDoctorCommand(program, io, { apiRequest, writeOutput });
   registerCostCommands(program, io, { apiRequest, writeOutput });
