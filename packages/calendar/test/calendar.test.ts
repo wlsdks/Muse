@@ -49,6 +49,27 @@ describe("MacOsCalendarProvider osascript spawn timeout", () => {
       provider.listEvents({ from: new Date(0), to: new Date(Date.now() + 86_400_000) })
     ).resolves.toEqual([]);
   });
+
+  it("parses the all-day flag from the osascript output (was hardcoded false)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-osascript-allday-"));
+    const bin = join(dir, "fake-osascript");
+    // Emit two tab-delimited records: a timed event (allday "false")
+    // and an all-day event (allday "true"), matching the list query's
+    // `id \t start \t end \t title \t loc \t allday` shape.
+    const lines = [
+      "evt-timed\t2026-05-20T09:00:00Z\t2026-05-20T10:00:00Z\tStandup\t\tfalse",
+      "evt-allday\t2026-05-21T00:00:00Z\t2026-05-22T00:00:00Z\tConference\tHall A\ttrue"
+    ].join("\\n");
+    writeFileSync(bin, `#!${process.execPath}\nprocess.stdout.write("${lines}\\n");\nprocess.exit(0);\n`);
+    chmodSync(bin, 0o755);
+    const provider = new MacOsCalendarProvider({ osascriptPath: bin, timeoutMs: 10_000 });
+    const events = await provider.listEvents({ from: new Date(0), to: new Date("2027-01-01T00:00:00Z") });
+    expect(events.map((e) => ({ allDay: e.allDay, id: e.id }))).toEqual([
+      { allDay: false, id: "evt-timed" },
+      { allDay: true, id: "evt-allday" }
+    ]);
+    expect(events.find((e) => e.id === "evt-allday")?.location).toBe("Hall A");
+  });
 });
 
 describe("CalDAVCalendarProvider ICS time parsing", () => {

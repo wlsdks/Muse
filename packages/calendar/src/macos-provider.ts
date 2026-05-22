@@ -87,7 +87,7 @@ export class MacOsCalendarProvider implements CalendarProvider {
             set evtStart to (start date of evt)
             set evtEnd to (end date of evt)
             set evtLoc to (location of evt as string)
-            set output to output & evtId & tab & (evtStart as «class isot» as string) & tab & (evtEnd as «class isot» as string) & tab & evtTitle & tab & evtLoc & linefeed
+            set output to output & evtId & tab & (evtStart as «class isot» as string) & tab & (evtEnd as «class isot» as string) & tab & evtTitle & tab & evtLoc & tab & (allday event of evt as string) & linefeed
           end repeat
         end repeat
       end tell
@@ -246,7 +246,7 @@ function parseListOutput(output: string, providerId: string): readonly CalendarE
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .flatMap((line): readonly CalendarEvent[] => {
-      const [id, startIso, endIso, title, location] = line.split("\t");
+      const [id, startIso, endIso, title, location, allDayRaw] = line.split("\t");
       if (!id || !title || !startIso || !endIso) {
         return [];
       }
@@ -258,7 +258,9 @@ function parseListOutput(output: string, providerId: string): readonly CalendarE
       }
 
       return [{
-        allDay: false,
+        // AppleScript renders `allday event of evt` as "true"/"false";
+        // a missing 6th field (legacy output) reads as not-all-day.
+        allDay: allDayRaw?.trim() === "true",
         endsAt,
         id,
         providerId,
