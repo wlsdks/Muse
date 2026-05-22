@@ -679,3 +679,18 @@ Append one line when a discovery path is evaluated and deferred:
   guessed address); unknown → not-found. The never-guess rule holds
   live. No drift; no bullet reopened. No new seam test (the resolver's
   piece-checks + the existing p11 consumption seam cover it).
+- P14 audit — @muse/cli commands-notes-rag.test.ts + scripts/
+  smoke-live-llm.mjs "muse ask grounds an answer in a real PDF" — PASS:
+  P14 (PDF/document grounding) composes both deterministically and
+  live. Piece-check re-run green: `@muse/cli` commands-notes-rag 16/16
+  (`extractDocumentText` pdf-parse extraction (rejects raw-byte
+  structure) + `reindexNotes` PDF ingest with the PDF chunk ranked
+  above a decoy via a deterministic embedder). END-TO-END live flow
+  re-run this audit: `smoke:live` "muse ask grounds an answer in a real
+  PDF and excludes a decoy (P14)" PASS — a real PDF reindexed via the
+  real local nomic-embed-text, `muse ask` via real qwen3:8b answers
+  grounded in the PDF's figure with the PDF top-ranked and the decoy
+  excluded. The whole extract → reindex → retrieve(decoy-excluded) →
+  grounded-answer chain works. No drift; no bullet reopened. No new
+  seam test (the deterministic retrieval check + the live grounded
+  answer already compose the chain end-to-end).
