@@ -1,5 +1,6 @@
-import type { KnowledgeChunk } from "@muse/agent-core";
+import { rankKnowledgeChunks, renderKnowledgeMatches, type KnowledgeChunk } from "@muse/agent-core";
 import type { NotesProvider } from "@muse/mcp";
+import type { MuseTool } from "@muse/tools";
 
 /**
  * Assemble a multi-document knowledge corpus from the user's LIVE
@@ -63,4 +64,49 @@ export async function assembleKnowledgeCorpus(
   }
 
   return chunks;
+}
+
+export interface NotesKnowledgeSearchToolOptions {
+  readonly notesProvider: NotesProvider;
+  readonly embed: (text: string) => Promise<readonly number[]>;
+  readonly topK?: number;
+  readonly maxNotes?: number;
+  readonly maxCharsPerNote?: number;
+  readonly extraChunks?: readonly KnowledgeChunk[];
+}
+
+/**
+ * A read-only `knowledge_search` tool wired over the user's LIVE notes
+ * store: each call re-assembles the corpus (so a note added since the
+ * last query is searchable) then ranks + renders with source labels.
+ * This is what makes the P20 knowledge engine reachable from a real
+ * `muse ask --with-tools` run.
+ */
+export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchToolOptions): MuseTool {
+  return {
+    definition: {
+      description: "Search the user's personal notes (and ingested documents) for relevant passages. Returns each passage labelled with its [source] — cite the source you use.",
+      inputSchema: {
+        properties: { query: { type: "string" } },
+        required: ["query"],
+        type: "object"
+      },
+      name: "knowledge_search",
+      risk: "read"
+    },
+    execute: async (args) => {
+      const query = typeof (args as { query?: unknown }).query === "string" ? (args as { query: string }).query : "";
+      const corpus = await assembleKnowledgeCorpus({
+        notesProvider: options.notesProvider,
+        ...(options.extraChunks ? { extraChunks: options.extraChunks } : {}),
+        ...(options.maxNotes !== undefined ? { maxNotes: options.maxNotes } : {}),
+        ...(options.maxCharsPerNote !== undefined ? { maxCharsPerNote: options.maxCharsPerNote } : {})
+      });
+      const matches = await rankKnowledgeChunks(query, corpus, {
+        embed: options.embed,
+        ...(options.topK !== undefined ? { topK: options.topK } : {})
+      });
+      return renderKnowledgeMatches(matches);
+    }
+  };
 }

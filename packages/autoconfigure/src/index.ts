@@ -128,6 +128,8 @@ import { createResponseFilters } from "./response-filters.js";
 import { createMessagingPollDispatchers } from "./messaging-poll-dispatchers.js";
 import { createSkillRuntime } from "./skills-runtime.js";
 import { buildLoopbackTools } from "./loopback-tools.js";
+import { createOllamaEmbedder } from "./context-engineering-builders.js";
+import { createNotesKnowledgeSearchTool } from "./knowledge-corpus.js";
 
 import {
   buildActiveContextProvider,
@@ -531,6 +533,18 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const statusLoopbackTools = loopback.status;
   const schedulerHandle: { current: DynamicScheduler | undefined } = { current: undefined };
 
+  // P20 knowledge: expose `knowledge_search` over the user's live
+  // notes when opted in. Off by default — it embeds the corpus per
+  // query (local Ollama), so it stays opt-in like episodic embedding.
+  const knowledgeSearchTools: MuseTool[] = (() => {
+    const notesProvider = notesRegistry?.primary();
+    if (!parseBoolean(env.MUSE_KNOWLEDGE_SEARCH_ENABLED, false) || !notesProvider) {
+      return [];
+    }
+    const embedModel = env.MUSE_KNOWLEDGE_SEARCH_EMBED_MODEL?.trim() || "nomic-embed-text";
+    return [createNotesKnowledgeSearchTool({ embed: createOllamaEmbedder(embedModel), notesProvider })];
+  })();
+
   const { skillRegistryPromise, skillTools } = createSkillRuntime(env);
 
   const toolRegistry = new DynamicToolRegistry([
@@ -552,6 +566,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => statusLoopbackTools,
     () => runnerTools,
     () => skillTools,
+    () => knowledgeSearchTools,
     () => options.extraTools ?? [],
     () => mcp.manager.toMuseTools(),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
@@ -742,7 +757,9 @@ export { createApiServerOptions } from "./api-server-options.js";
 
 export {
   assembleKnowledgeCorpus,
-  type AssembleKnowledgeCorpusOptions
+  createNotesKnowledgeSearchTool,
+  type AssembleKnowledgeCorpusOptions,
+  type NotesKnowledgeSearchToolOptions
 } from "./knowledge-corpus.js";
 
 export function requireEnv(env: MuseEnvironment, key: string): string {

@@ -197,7 +197,7 @@ export function buildInboxContextProvider(env: MuseEnvironment): InboxContextPro
 // StoreBacked provider treats a thrown embedder as fail-open and
 // degrades that resolve to Jaccard, so recall never breaks if Ollama
 // is down or the model isn't pulled.
-function createOllamaEmbedder(model: string): (text: string) => Promise<readonly number[]> {
+export function createOllamaEmbedder(model: string): (text: string) => Promise<readonly number[]> {
   // `??` keeps "" (empty is not nullish); a shell that pre-clears
   // OLLAMA_BASE_URL= would otherwise leave `base` empty and every
   // /api/embeddings call would hit a malformed relative URL — and
