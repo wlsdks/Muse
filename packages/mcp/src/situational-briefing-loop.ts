@@ -19,6 +19,7 @@ import type { MessagingProviderRegistry } from "@muse/messaging";
 import { sendWithRetry } from "./messaging-retry.js";
 import { readObjectives } from "./personal-objectives-store.js";
 import { composeSituationalBriefing, type BriefingImminent } from "./situational-briefing.js";
+import { resolveWeatherLine, type WeatherProvider } from "./weather.js";
 
 const DEFAULT_WINDOW_MS = 4 * 60 * 60_000;
 
@@ -33,6 +34,14 @@ export interface RunDueSituationalBriefingOptions {
   /** Suppress a re-brief within this window of the last one. Default 4h. */
   readonly windowMs?: number;
   readonly now?: () => Date;
+  /**
+   * Optional weather grounding. When both are set AND the briefing
+   * already has something to say, the current weather for
+   * `weatherLocation` is fetched and added as a supplementary line.
+   * Fail-soft: a lookup error omits the line, never breaks the brief.
+   */
+  readonly weatherProvider?: WeatherProvider;
+  readonly weatherLocation?: string;
 }
 
 export interface RunDueSituationalBriefingSummary {
@@ -74,7 +83,20 @@ export async function runDueSituationalBriefing(
   const nowDate = now();
 
   const objectives = await readObjectives(options.objectivesFile);
-  const text = composeSituationalBriefing({ imminent: options.imminent, now: nowDate, objectives });
+  const hasContent = options.imminent.length > 0
+    || objectives.some((o) => o.status === "active" || o.status === "escalated");
+  // Only sense weather when there is already something to brief — it is
+  // supplementary context, never a trigger, so an empty tick costs no
+  // HTTP call.
+  const weather = hasContent && options.weatherProvider && options.weatherLocation
+    ? await resolveWeatherLine(options.weatherProvider, options.weatherLocation)
+    : undefined;
+  const text = composeSituationalBriefing({
+    imminent: options.imminent,
+    now: nowDate,
+    objectives,
+    ...(weather ? { weather } : {})
+  });
   if (!text) {
     return { delivered: 0, reason: "nothing-to-say" };
   }

@@ -16,7 +16,8 @@
 
 import {
   runDueSituationalBriefing,
-  type BriefingImminent
+  type BriefingImminent,
+  type WeatherProvider
 } from "@muse/mcp";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
@@ -36,6 +37,12 @@ export interface SituationalBriefingTickOptions {
    * still goes out).
    */
   readonly imminentProvider?: (now: Date) => Promise<readonly BriefingImminent[]>;
+  /**
+   * Optional weather grounding: when both are set, a non-empty briefing
+   * gains a current-weather line for `weatherLocation`. Fail-soft.
+   */
+  readonly weatherProvider?: WeatherProvider;
+  readonly weatherLocation?: string;
   readonly windowMs?: number;
   readonly intervalMs?: number;
   readonly logger?: (message: string) => void;
@@ -85,6 +92,9 @@ export function startSituationalBriefingTick(
         objectivesFile: options.objectivesFile,
         providerId: options.providerId,
         sidecarFile: options.sidecarFile,
+        ...(options.weatherProvider && options.weatherLocation
+          ? { weatherLocation: options.weatherLocation, weatherProvider: options.weatherProvider }
+          : {}),
         ...(options.windowMs !== undefined ? { windowMs: options.windowMs } : {})
       });
       if (summary.delivered > 0) {

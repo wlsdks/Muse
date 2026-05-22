@@ -30,6 +30,7 @@ import {
   createNotesInvestigator,
   deriveBriefingImminent,
   deriveCalendarBriefingImminent,
+  OpenMeteoWeatherProvider,
   type BriefingImminent
 } from "@muse/mcp";
 import { startFollowupTick } from "./followup-tick.js";
@@ -244,6 +245,10 @@ export function startSituationalBriefingDaemonIfConfigured(
           return out;
         }
       : undefined;
+  const weatherLocation = env.MUSE_WEATHER_LOCATION?.trim();
+  const weatherOpt = weatherLocation && weatherLocation.length > 0
+    ? { weatherLocation, weatherProvider: new OpenMeteoWeatherProvider() }
+    : {};
   const briefingHandle = startSituationalBriefingTick({
     destination: briefingDestination,
     errorLogger: (message) => server.log.warn(message),
@@ -255,6 +260,7 @@ export function startSituationalBriefingDaemonIfConfigured(
     ...(briefingQuietHours ? { quietHours: briefingQuietHours } : {}),
     registry: options.messaging,
     sidecarFile: options.briefingSidecarFile,
+    ...weatherOpt,
     ...(windowMsRaw !== undefined ? { windowMs: windowMsRaw } : {})
   });
   server.addHook("onClose", async () => {

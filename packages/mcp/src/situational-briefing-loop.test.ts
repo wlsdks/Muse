@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { addObjective, type StandingObjective } from "./personal-objectives-store.js";
 import { runDueSituationalBriefing } from "./situational-briefing-loop.js";
 import type { BriefingImminent } from "./situational-briefing.js";
+import { OpenMeteoWeatherProvider } from "./weather.js";
 
 function fakeJsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -100,6 +101,63 @@ describe("runDueSituationalBriefing — P8-b2 contract-faithful real-channel del
     });
     expect(summary).toEqual({ delivered: 0, reason: "nothing-to-say" });
     expect(posts).toHaveLength(0);
+  });
+
+  it("grounds the briefing with a seeded location's (HTTP-faked) forecast", async () => {
+    const { objectivesFile, sidecarFile } = fixtures();
+    await addObjective(objectivesFile, objective());
+    const posts: { url: string; body: string }[] = [];
+    // Real OpenMeteoWeatherProvider, only the HTTP boundary faked.
+    const weatherProvider = new OpenMeteoWeatherProvider((async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("geocoding-api.open-meteo.com")) {
+        return fakeJsonResponse({ results: [{ country: "South Korea", latitude: 37.566, longitude: 126.978, name: "Seoul", timezone: "Asia/Seoul" }] });
+      }
+      return fakeJsonResponse({ current: { temperature_2m: 22, weather_code: 3 } });
+    }) as unknown as typeof globalThis.fetch);
+
+    const summary = await runDueSituationalBriefing({
+      destination: "555",
+      imminent,
+      messagingRegistry: new MessagingProviderRegistry([telegram(posts)]),
+      now: () => NOW,
+      objectivesFile,
+      providerId: "telegram",
+      sidecarFile,
+      weatherLocation: "Seoul",
+      weatherProvider
+    });
+    expect(summary).toEqual({ delivered: 1 });
+    const body = JSON.parse(posts[0]!.body) as { text: string };
+    expect(body.text).toContain("Weather: Seoul, South Korea: overcast, 22°C");
+    // Still carries the imminent item — weather is supplementary.
+    expect(body.text).toContain("in 15 min: Q3 review");
+  });
+
+  it("does NOT fire on weather alone — weather is supplementary, never a trigger", async () => {
+    const { objectivesFile, sidecarFile } = fixtures();
+    await addObjective(objectivesFile, objective({ status: "done" }));
+    const posts: { url: string; body: string }[] = [];
+    let weatherFetched = false;
+    const weatherProvider = new OpenMeteoWeatherProvider((async () => {
+      weatherFetched = true;
+      return fakeJsonResponse({ results: [] });
+    }) as unknown as typeof globalThis.fetch);
+    const summary = await runDueSituationalBriefing({
+      destination: "555",
+      imminent: [],
+      messagingRegistry: new MessagingProviderRegistry([telegram(posts)]),
+      now: () => NOW,
+      objectivesFile,
+      providerId: "telegram",
+      sidecarFile,
+      weatherLocation: "Seoul",
+      weatherProvider
+    });
+    expect(summary).toEqual({ delivered: 0, reason: "nothing-to-say" });
+    expect(posts).toHaveLength(0);
+    // No content ⇒ no wasted weather HTTP call.
+    expect(weatherFetched).toBe(false);
   });
 
   it("re-briefs once the situation-window has elapsed", async () => {

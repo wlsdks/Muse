@@ -25,6 +25,13 @@ export interface SituationalBriefingInput {
   readonly now: Date;
   readonly imminent: readonly BriefingImminent[];
   readonly objectives: readonly StandingObjective[];
+  /**
+   * Optional pre-resolved current-weather line. Supplementary context
+   * only — it rides an otherwise-non-empty briefing ("leave early,
+   * rain at 3") and NEVER triggers a briefing on its own (a JARVIS
+   * doesn't ping "it's sunny" with nothing else to say).
+   */
+  readonly weather?: string;
 }
 
 function clean(value: string): string {
@@ -54,6 +61,11 @@ export function composeSituationalBriefing(input: SituationalBriefingInput): str
   }
 
   const lines: string[] = ["[Briefing]"];
+
+  const weather = input.weather ? clean(input.weather) : "";
+  if (weather.length > 0) {
+    lines.push(`Weather: ${weather}`);
+  }
 
   if (upcoming.length > 0) {
     lines.push("Upcoming:");

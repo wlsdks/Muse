@@ -393,6 +393,15 @@ export {
   type RunDueSituationalBriefingSummary
 } from "./situational-briefing-loop.js";
 export {
+  describeWeatherCode,
+  formatWeather,
+  OpenMeteoWeatherProvider,
+  resolveWeatherLine,
+  type CurrentWeather,
+  type GeocodedLocation,
+  type WeatherProvider
+} from "./weather.js";
+export {
   createMessagingObjectiveActuator,
   createModelObjectiveEvaluator,
   parseObjectiveVerdict,
