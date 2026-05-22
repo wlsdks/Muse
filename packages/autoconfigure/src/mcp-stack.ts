@@ -4,7 +4,8 @@ import {
   McpSecurityPolicyProvider,
   type McpSecurityPolicyStore,
   type McpServerInput,
-  type McpServerStore
+  type McpServerStore,
+  type McpTransportConnector
 } from "@muse/mcp";
 import type { MuseDatabase } from "@muse/db";
 import type { Kysely } from "kysely";
@@ -36,7 +37,11 @@ export interface McpStack {
  *
  * The five outputs map 1:1 onto `MuseRuntimeAssembly.mcp.*`.
  */
-export function assembleMcpStack(env: MuseEnvironment, db: Kysely<MuseDatabase> | undefined): McpStack {
+export function assembleMcpStack(
+  env: MuseEnvironment,
+  db: Kysely<MuseDatabase> | undefined,
+  connectorOverride?: McpTransportConnector
+): McpStack {
   const serverStore = createMcpServerStore(db, env);
   const externalServerInputs = loadExternalMcpConfig(env);
   const initialPolicy = {
@@ -48,7 +53,7 @@ export function assembleMcpStack(env: MuseEnvironment, db: Kysely<MuseDatabase> 
   const securityPolicyProvider = new McpSecurityPolicyProvider(securityPolicyStore, initialPolicy);
   const allowPrivateAddresses = parseBoolean(env.MUSE_MCP_ALLOW_PRIVATE_ADDRESSES, false);
   const manager = new McpManager(serverStore, {
-    connector: new DefaultMcpTransportConnector({
+    connector: connectorOverride ?? new DefaultMcpTransportConnector({
       allowPrivateAddresses,
       clientRoots: parseCsv(env.MUSE_MCP_CLIENT_ROOTS),
       requestTimeoutMs: parseInteger(env.MUSE_MCP_REQUEST_TIMEOUT_MS, 15_000)

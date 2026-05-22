@@ -44,8 +44,10 @@ import {
   createLoopbackMcpMuseTools,
   queryContacts,
   upsertFollowup,
+  withChromeDevToolsRisk,
   type LoopbackMcpServer,
   type McpManager,
+  type McpTransportConnector,
   type McpSecurityPolicyProvider,
   type McpSecurityPolicyStore,
   type McpServerInput,
@@ -353,6 +355,8 @@ export interface ApiServerAssemblyOptions {
    * shared, headless assembly because their gate is interactive.
    */
   readonly extraTools?: readonly MuseTool[];
+  /** Override the MCP transport connector (test-only — inject a contract-faithful fake). */
+  readonly mcpConnector?: McpTransportConnector;
 }
 
 export class ConfigurationError extends Error {
@@ -462,7 +466,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const userMemoryStore = createUserMemoryStore(db, env);
   const sessionTagStore = createSessionTagStore(db);
   const defaultModel = resolveDefaultModel(env);
-  const mcp = assembleMcpStack(env, db);
+  const mcp = assembleMcpStack(env, db, options.mcpConnector);
   const runnerTools = createRunnerTools(env);
   const museTools = parseBoolean(env.MUSE_TOOLS_ENABLED, true) ? createMuseTools() : [];
   const loopbackMcpTools = createLoopbackMcpToolsFromEnv(env);
@@ -578,7 +582,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => skillTools,
     () => knowledgeSearchTools,
     () => options.extraTools ?? [],
-    () => mcp.manager.toMuseTools(),
+    () => withChromeDevToolsRisk(mcp.manager.toMuseTools()),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
   ]);
   const runtimeHooks = [
