@@ -275,7 +275,9 @@ export { normaliseTimeRange } from "./loopback-search.js";
 
 export {
   CHROME_DEVTOOLS_MCP_SERVER_NAME,
+  chromeDevToolsToolRisk,
   createChromeDevToolsMcpServer,
+  withChromeDevToolsRisk,
   type ChromeDevToolsMcpOptions
 } from "./chrome-devtools-mcp.js";
 

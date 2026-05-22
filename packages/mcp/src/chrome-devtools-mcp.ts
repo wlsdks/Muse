@@ -1,3 +1,5 @@
+import type { MuseTool, ToolRisk } from "@muse/tools";
+
 import type { McpServerInput } from "./index.js";
 
 /**
@@ -47,4 +49,65 @@ export function createChromeDevToolsMcpServer(options: ChromeDevToolsMcpOptions 
     name: CHROME_DEVTOOLS_MCP_SERVER_NAME,
     transportType: "stdio"
   };
+}
+
+// Pure observation — safe to run without approval.
+const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "take_snapshot",
+  "take_screenshot",
+  "list_pages",
+  "list_console_messages",
+  "get_console_message",
+  "list_network_requests",
+  "get_network_request",
+  "wait_for",
+  "performance_analyze_insight"
+]);
+
+// Arbitrary-code / file / dialog surface — the highest-blast-radius
+// actions in the user's logged-in session.
+const EXECUTE_TOOLS: ReadonlySet<string> = new Set([
+  "evaluate_script",
+  "upload_file",
+  "handle_dialog"
+]);
+
+/**
+ * Risk for a Chrome DevTools MCP tool, by bare tool name. We do NOT
+ * trust the external server's MCP annotations here: it drives the
+ * user's REAL logged-in browser, so the default is fail-close — any
+ * tool that isn't a known pure-observation call (click / fill /
+ * submit / navigate / and anything unrecognised) is treated as
+ * state-changing and must clear the approval gate before it runs.
+ */
+export function chromeDevToolsToolRisk(toolName: string): ToolRisk {
+  if (READ_ONLY_TOOLS.has(toolName)) {
+    return "read";
+  }
+  if (EXECUTE_TOOLS.has(toolName)) {
+    return "execute";
+  }
+  return "write";
+}
+
+/**
+ * Re-stamp the risk of Chrome DevTools MCP tools projected by
+ * `McpManager.toMuseTools()` using {@link chromeDevToolsToolRisk}, so
+ * the AgentRuntime's `toolApprovalGate` fires fail-close on a
+ * state-changing browser action (the external server's "read"
+ * default would otherwise let a `fill_form` / `click` through
+ * ungated). Non-Chrome tools pass through untouched.
+ */
+export function withChromeDevToolsRisk(tools: readonly MuseTool[]): MuseTool[] {
+  const prefix = `${CHROME_DEVTOOLS_MCP_SERVER_NAME}.`;
+  return tools.map((tool) => {
+    if (!tool.definition.name.startsWith(prefix)) {
+      return tool;
+    }
+    const risk = chromeDevToolsToolRisk(tool.definition.name.slice(prefix.length));
+    if (risk === tool.definition.risk) {
+      return tool;
+    }
+    return { ...tool, definition: { ...tool.definition, risk } };
+  });
 }

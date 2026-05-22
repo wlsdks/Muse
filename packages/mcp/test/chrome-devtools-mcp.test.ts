@@ -4,12 +4,15 @@ import {
   CHROME_DEVTOOLS_MCP_SERVER_NAME,
   InMemoryMcpServerStore,
   McpManager,
+  chromeDevToolsToolRisk,
   createChromeDevToolsMcpServer,
+  withChromeDevToolsRisk,
   validateMcpServer,
   normalizeMcpSecurityPolicy,
   McpSecurityPolicyProvider,
   type McpConnection
 } from "../src/index.js";
+import type { MuseTool } from "@muse/tools";
 
 describe("createChromeDevToolsMcpServer", () => {
   it("builds a stdio npx connector attaching to the user's real Chrome on the default debugging port", () => {
@@ -49,6 +52,47 @@ describe("createChromeDevToolsMcpServer", () => {
       policy
     );
     expect(result.valid).toBe(true);
+  });
+});
+
+describe("chromeDevToolsToolRisk — fail-close risk classification", () => {
+  it("classifies pure-observation tools as read", () => {
+    for (const name of ["take_snapshot", "take_screenshot", "list_pages", "get_network_request", "wait_for"]) {
+      expect(chromeDevToolsToolRisk(name), name).toBe("read");
+    }
+  });
+
+  it("classifies arbitrary-code / file / dialog tools as execute", () => {
+    for (const name of ["evaluate_script", "upload_file", "handle_dialog"]) {
+      expect(chromeDevToolsToolRisk(name), name).toBe("execute");
+    }
+  });
+
+  it("classifies state-changing tools as write, and defaults UNKNOWN tools to write (fail-close)", () => {
+    for (const name of ["click", "fill", "fill_form", "navigate_page", "press_key", "some_future_tool"]) {
+      expect(chromeDevToolsToolRisk(name), name).toBe("write");
+    }
+  });
+});
+
+describe("withChromeDevToolsRisk", () => {
+  const tool = (name: string, risk: "read" | "write" | "execute"): MuseTool => ({
+    definition: { description: name, inputSchema: {}, name, risk },
+    execute: async () => "ok"
+  });
+
+  it("re-stamps chrome-devtools tools by classifier and leaves other tools untouched", () => {
+    const out = withChromeDevToolsRisk([
+      tool("chrome-devtools.fill_form", "read"),
+      tool("chrome-devtools.take_snapshot", "read"),
+      tool("chrome-devtools.evaluate_script", "read"),
+      tool("notes.search", "read")
+    ]);
+    const byName = new Map(out.map((entry) => [entry.definition.name, entry.definition.risk]));
+    expect(byName.get("chrome-devtools.fill_form")).toBe("write");
+    expect(byName.get("chrome-devtools.take_snapshot")).toBe("read");
+    expect(byName.get("chrome-devtools.evaluate_script")).toBe("execute");
+    expect(byName.get("notes.search")).toBe("read");
   });
 });
 

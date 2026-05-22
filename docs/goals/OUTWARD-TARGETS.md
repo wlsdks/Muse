@@ -661,11 +661,14 @@ allowlist. Read / perceive first; acting is gated.
   + 751 (agent-RUN end-to-end: `AgentRuntime.run()` invokes the
   projected tool and grounds its answer in the live snapshot;
   mutation-proven against the real forward path).
-- [ ] A state-changing web action (fill + submit a form) under the
+- [x] A state-changing web action (fill + submit a form) under the
   user's session is approval-gated + draft-first per
   `outbound-safety.md` — deny / timeout / ambiguous-target produces
   NO external effect (contract-faithful fake). Banking / payments
-  stay out of scope.
+  stay out of scope. — 752 (`chromeDevToolsToolRisk` fail-close
+  classifier + `withChromeDevToolsRisk`; e2e AgentRuntime run: a
+  denied / throwing gate → the projected `fill_form` never calls the
+  browser; read perception stays ungated; mutation-proven).
 
 **P19 — Daily-hardening of the one-of-each actuators.** Each
 actuator (email, web action, contacts, weather/location, smart-home)
