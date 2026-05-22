@@ -2,7 +2,7 @@ import { truncateErrorBody } from "@muse/shared";
 
 import { MessagingProviderError } from "./errors.js";
 import { readInbox } from "./inbox-store.js";
-import { clampInboundLimit, clampOutboundText, tryParseJson } from "./provider-helpers.js";
+import { clampInboundLimit, clampOutboundText, fetchWithTimeout, tryParseJson } from "./provider-helpers.js";
 import type {
   InboundFetchOptions,
   InboundMessage,
@@ -28,6 +28,8 @@ export interface LineProviderOptions {
    * keeps surfacing a clean error.
    */
   readonly inboxFile?: string;
+  /** Per-request wall-clock timeout (ms). Default 30s. */
+  readonly timeoutMs?: number;
 }
 
 const DEFAULT_BASE_URL = "https://api.line.me";
@@ -51,6 +53,7 @@ export class LineProvider implements MessagingProvider {
   private readonly baseUrl: string;
   private readonly nowFn: () => Date;
   private readonly inboxFile: string | undefined;
+  private readonly timeoutMs: number | undefined;
 
   constructor(options: LineProviderOptions) {
     this.token = options.token;
@@ -58,6 +61,7 @@ export class LineProvider implements MessagingProvider {
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.nowFn = options.now ?? (() => new Date());
     this.inboxFile = options.inboxFile;
+    this.timeoutMs = options.timeoutMs;
   }
 
   describe(): MessagingProviderInfo {
@@ -98,7 +102,7 @@ export class LineProvider implements MessagingProvider {
     // Telegram / Discord send path).
     const outboundText = clampOutboundText(message.text);
     validateOutboundMessage({ ...message, text: outboundText });
-    const response = await this.fetchImpl(`${this.baseUrl}/v2/bot/message/push`, {
+    const response = await fetchWithTimeout(this.fetchImpl, `${this.baseUrl}/v2/bot/message/push`, {
       body: JSON.stringify({
         messages: [{ text: outboundText, type: "text" }],
         to: message.destination
@@ -108,7 +112,7 @@ export class LineProvider implements MessagingProvider {
         "content-type": "application/json"
       },
       method: "POST"
-    });
+    }, this.timeoutMs);
     if (!response.ok) {
       const text = await response.text();
       const parsed = tryParseJson<LineErrorResponse>(text);

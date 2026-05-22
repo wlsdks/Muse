@@ -812,6 +812,16 @@ describe("LineProvider", () => {
       .rejects.toMatchObject({ status: 401 });
   });
 
+  it("times out a stalled push so a wedged LINE API connection can't hang the send path (timeoutMs threaded into fetchWithTimeout) — completes the messaging-provider timeout sweep", async () => {
+    const neverResolves: typeof globalThis.fetch = (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = (init as { signal?: AbortSignal } | undefined)?.signal;
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    const provider = new LineProvider({ fetch: neverResolves, timeoutMs: 10, token: "ch-token" });
+    await expect(provider.send({ destination: "U-1", text: "hi" })).rejects.toThrow(/timed out after 10ms/u);
+  });
+
   it("bounds a huge upstream error body in the thrown message (parity with Telegram/Discord)", async () => {
     const provider = new LineProvider({
       fetch: async () => new Response("X".repeat(5000), { status: 502 }),
