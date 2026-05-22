@@ -11,7 +11,8 @@
 import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { performHomeActionWithApproval } from "./smart-home.js";
+import { performHomeActionWithApproval, readHomeAssistantState } from "./smart-home.js";
+import type { RetryOptions } from "./http-retry.js";
 import type { WebActionApprovalGate } from "./web-action.js";
 
 export interface HomeActionToolDeps {
@@ -68,6 +69,51 @@ export function createHomeActionTool(deps: HomeActionToolDeps): MuseTool {
       return outcome.performed
         ? { performed: true, status: outcome.status }
         : { detail: outcome.detail, performed: false, reason: outcome.reason };
+    }
+  };
+}
+
+export interface HomeStateToolDeps {
+  readonly baseUrl: string;
+  readonly token: string;
+  readonly fetchImpl?: typeof fetch;
+  readonly retryOptions?: RetryOptions;
+}
+
+export function createHomeStateTool(deps: HomeStateToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "Read the current state of a Home Assistant entity, e.g. is 'lock.front_door' locked, or the temperature of 'sensor.living_room'. Read-only — never changes anything.",
+      domain: "system",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          entity: { description: "Target entity_id, e.g. 'lock.front_door' or 'sensor.living_room_temperature'.", type: "string" }
+        },
+        required: ["entity"],
+        type: "object"
+      },
+      keywords: ["home", "smart-home", "state", "status", "temperature", "lock", "sensor", "homeassistant"],
+      name: "home_state",
+      risk: "read"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const entityId = typeof args["entity"] === "string" ? args["entity"].trim() : "";
+      if (entityId.length === 0) {
+        return { found: false, reason: "entity is required (e.g. lock.front_door)" };
+      }
+      const state = await readHomeAssistantState({
+        baseUrl: deps.baseUrl,
+        entityId,
+        token: deps.token,
+        ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+        ...(deps.retryOptions ? { retryOptions: deps.retryOptions } : {})
+      });
+      if (state === undefined) {
+        return { entity: entityId, found: false, reason: "no state returned (unknown entity or Home Assistant unreachable)" };
+      }
+      return { attributes: state.attributes as JsonObject, entity: state.entityId, found: true, state: state.state };
     }
   };
 }

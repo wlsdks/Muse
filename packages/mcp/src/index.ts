@@ -482,12 +482,17 @@ export {
 export {
   buildHomeAssistantServiceCall,
   performHomeActionWithApproval,
+  readHomeAssistantState,
   type HomeAssistantServiceCall,
+  type HomeState,
+  type HomeStateQuery,
   type PerformHomeActionWithApprovalOptions
 } from "./smart-home.js";
 export {
   createHomeActionTool,
-  type HomeActionToolDeps
+  createHomeStateTool,
+  type HomeActionToolDeps,
+  type HomeStateToolDeps
 } from "./smart-home-tool.js";
 export {
   runActuatorByName,

@@ -7,7 +7,7 @@
  */
 
 import { resolveActionLogFile } from "@muse/autoconfigure";
-import { performHomeActionWithApproval, type WebActionApprovalGate } from "@muse/mcp";
+import { performHomeActionWithApproval, readHomeAssistantState, type WebActionApprovalGate } from "@muse/mcp";
 import { confirm, isCancel } from "@clack/prompts";
 import type { Command } from "commander";
 
@@ -88,5 +88,32 @@ export function registerHomeCommands(program: Command, io: ProgramIO, deps: Home
       }
       io.stderr(`Not performed (${outcome.reason}): ${outcome.detail}\n`);
       process.exitCode = 1;
+    });
+
+  home
+    .command("state")
+    .description("Read a Home Assistant entity's current state (read-only, e.g. is the front door locked)")
+    .argument("<entity>", "Target entity_id, e.g. 'lock.front_door'")
+    .action(async (entityId: string) => {
+      const baseUrl = deps.baseUrl ?? process.env.MUSE_HOMEASSISTANT_URL?.trim();
+      const token = deps.token ?? process.env.MUSE_HOMEASSISTANT_TOKEN?.trim();
+      if (!baseUrl || !token) {
+        io.stderr("muse home: set MUSE_HOMEASSISTANT_URL and MUSE_HOMEASSISTANT_TOKEN (a Home Assistant long-lived access token).\n");
+        process.exitCode = 1;
+        return;
+      }
+      const state = await readHomeAssistantState({
+        baseUrl,
+        entityId,
+        token,
+        ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {})
+      });
+      if (state === undefined) {
+        io.stderr(`muse home: no state for '${entityId}' (unknown entity or Home Assistant unreachable).\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const friendly = typeof state.attributes["friendly_name"] === "string" ? ` (${state.attributes["friendly_name"] as string})` : "";
+      io.stdout(`${state.entityId}${friendly}: ${state.state}\n`);
     });
 }

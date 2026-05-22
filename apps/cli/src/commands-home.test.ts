@@ -65,3 +65,29 @@ describe("muse home call — surface", () => {
     expect(r.exitCode).toBe(1);
   });
 });
+
+function stateFetch(status: number, body: string): { fetchImpl: typeof fetch; calls: string[] } {
+  const calls: string[] = [];
+  const fetchImpl = (async (url: string | URL) => {
+    calls.push(String(url));
+    return new Response(body, { status });
+  }) as unknown as typeof fetch;
+  return { calls, fetchImpl };
+}
+
+describe("muse home state — read-only surface", () => {
+  it("GETs the entity state and prints it with the friendly name", async () => {
+    const { fetchImpl, calls } = stateFetch(200, JSON.stringify({ attributes: { friendly_name: "Front Door" }, entity_id: "lock.front_door", state: "locked" }));
+    const r = await run(["state", "lock.front_door"], { fetchImpl });
+    expect(calls[0]).toBe("http://ha.local:8123/api/states/lock.front_door");
+    expect(r.output).toContain("lock.front_door (Front Door): locked");
+    expect(r.exitCode).toBeUndefined();
+  });
+
+  it("an unknown entity (404) reports no state and exits 1, never throwing", async () => {
+    const { fetchImpl } = stateFetch(404, "Not found");
+    const r = await run(["state", "lock.nope"], { fetchImpl });
+    expect(r.output).toContain("no state for 'lock.nope'");
+    expect(r.exitCode).toBe(1);
+  });
+});

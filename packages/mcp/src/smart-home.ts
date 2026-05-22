@@ -11,6 +11,7 @@
  * a lifestyle actuator and are out of scope.
  */
 
+import { fetchWithRetry, type RetryOptions } from "./http-retry.js";
 import { performWebActionWithApproval, type WebActionApprovalGate, type WebActionOutcome, type WebActionRequest } from "./web-action.js";
 
 export interface HomeAssistantServiceCall {
@@ -44,6 +45,64 @@ export function buildHomeAssistantServiceCall(
     },
     summary: `Home Assistant: ${call.domain}.${call.service}${call.entityId ? ` (${call.entityId})` : ""}`
   };
+}
+
+export interface HomeStateQuery {
+  readonly baseUrl: string;
+  readonly token: string;
+  readonly entityId: string;
+  readonly fetchImpl?: typeof globalThis.fetch;
+  readonly retryOptions?: RetryOptions;
+}
+
+export interface HomeState {
+  readonly entityId: string;
+  readonly state: string;
+  readonly attributes: Record<string, unknown>;
+}
+
+/**
+ * Read a Home Assistant entity's current state (GET `/api/states/<id>`)
+ * so Muse can answer "is the front door locked?" / "living-room
+ * temperature?". A read is non-state-changing and idempotent, so it's
+ * retry-hardened against transient 429/5xx (unlike the write path,
+ * which must stay single-shot). Returns `undefined` — never throws —
+ * on a permanent failure or a malformed body, so the caller degrades
+ * gracefully instead of crashing the turn.
+ */
+export async function readHomeAssistantState(query: HomeStateQuery): Promise<HomeState | undefined> {
+  const base = query.baseUrl.replace(/\/+$/u, "");
+  const url = `${base}/api/states/${encodeURIComponent(query.entityId)}`;
+  const fetchImpl = query.fetchImpl ?? globalThis.fetch;
+  let response: Response;
+  try {
+    response = await fetchWithRetry(fetchImpl, url, {
+      ...(query.retryOptions ?? {}),
+      init: { headers: { authorization: `Bearer ${query.token}` } }
+    });
+  } catch {
+    return undefined;
+  }
+  if (!response.ok) {
+    return undefined;
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return undefined;
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return undefined;
+  }
+  const obj = body as Record<string, unknown>;
+  if (typeof obj.state !== "string") {
+    return undefined;
+  }
+  const attributes = obj.attributes && typeof obj.attributes === "object" && !Array.isArray(obj.attributes)
+    ? obj.attributes as Record<string, unknown>
+    : {};
+  return { attributes, entityId: query.entityId, state: obj.state };
 }
 
 export interface PerformHomeActionWithApprovalOptions extends HomeAssistantServiceCall {
