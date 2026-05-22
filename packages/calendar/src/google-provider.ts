@@ -1,4 +1,4 @@
-import { CalendarProviderError } from "./errors.js";
+import { CalendarProviderError, isRetryableCalendarStatus } from "./errors.js";
 import type {
   CalendarEvent,
   CalendarEventInput,
@@ -9,12 +9,22 @@ import type {
   CredentialRequirement
 } from "./types.js";
 
+export interface GoogleCalendarRetryOptions {
+  /** Extra attempts after the first, for idempotent GET reads only. Default 2. */
+  readonly retries?: number;
+  /** First backoff in ms; doubles each retry. Default 250. */
+  readonly baseDelayMs?: number;
+  /** Injectable delay so tests don't wait on real timers. */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
 export interface GoogleCalendarProviderOptions {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly refreshToken: string;
   readonly calendarId?: string;
   readonly fetchImpl?: typeof fetch;
+  readonly retry?: GoogleCalendarRetryOptions;
 }
 
 interface GoogleEventPayload {
@@ -50,8 +60,11 @@ const credentialRequirements: readonly CredentialRequirement[] = [
  */
 export class GoogleCalendarProvider implements CalendarProvider {
   readonly id = "gcal";
-  private readonly options: Required<Omit<GoogleCalendarProviderOptions, "fetchImpl">>;
+  private readonly options: Required<Omit<GoogleCalendarProviderOptions, "fetchImpl" | "retry">>;
   private readonly fetchImpl: typeof fetch;
+  private readonly retries: number;
+  private readonly baseDelayMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
   private accessToken?: { readonly value: string; readonly expiresAt: number };
 
   constructor(options: GoogleCalendarProviderOptions) {
@@ -62,6 +75,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
       refreshToken: options.refreshToken
     };
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.retries = Number.isFinite(options.retry?.retries) ? Math.max(0, Math.trunc(options.retry!.retries!)) : 2;
+    this.baseDelayMs = Number.isFinite(options.retry?.baseDelayMs) ? Math.max(0, options.retry!.baseDelayMs!) : 250;
+    this.sleep = options.retry?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   }
 
   describe(): CalendarProviderInfo {
@@ -155,33 +171,53 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   private async request<T>(path: string, init: { readonly method: string; readonly body?: string }): Promise<T> {
-    const accessToken = await this.acquireAccessToken();
-    const response = await this.fetchImpl(`${apiBase}${path}`, {
-      body: init.body,
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${accessToken}`,
-        ...(init.body ? { "content-type": "application/json" } : {})
-      },
-      method: init.method
-    });
+    // Retry transient 429/5xx (and network rejects) for the idempotent
+    // GET read so a flaky moment doesn't drop the calendar from the
+    // briefing. Writes (POST/PATCH/DELETE) are NEVER retried — a retried
+    // mutation could double-create / double-delete an event.
+    const maxRetries = init.method === "GET" ? this.retries : 0;
+    for (let attempt = 0; ; attempt += 1) {
+      const accessToken = await this.acquireAccessToken();
+      let response: Response;
+      try {
+        response = await this.fetchImpl(`${apiBase}${path}`, {
+          body: init.body,
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${accessToken}`,
+            ...(init.body ? { "content-type": "application/json" } : {})
+          },
+          method: init.method
+        });
+      } catch (cause) {
+        if (attempt < maxRetries) {
+          await this.sleep(this.baseDelayMs * 2 ** attempt);
+          continue;
+        }
+        throw cause;
+      }
 
-    if (response.status === 204) {
-      return undefined as T;
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
+      if (!response.ok) {
+        if (attempt < maxRetries && isRetryableCalendarStatus(response.status)) {
+          await this.sleep(this.baseDelayMs * 2 ** attempt);
+          continue;
+        }
+        const text = await response.text().catch(() => "");
+        throw new CalendarProviderError(
+          this.id,
+          `HTTP_${response.status}`,
+          `Google Calendar request failed: ${response.status} ${text}`.slice(0, 500),
+          undefined,
+          response.status
+        );
+      }
+
+      return await response.json() as T;
     }
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new CalendarProviderError(
-        this.id,
-        `HTTP_${response.status}`,
-        `Google Calendar request failed: ${response.status} ${text}`.slice(0, 500),
-        undefined,
-        response.status
-      );
-    }
-
-    return await response.json() as T;
   }
 
   private async acquireAccessToken(): Promise<string> {

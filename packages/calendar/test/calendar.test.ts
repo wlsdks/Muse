@@ -218,6 +218,48 @@ describe("GoogleCalendarProvider READ — toEvent parses timed vs all-day events
   });
 });
 
+describe("GoogleCalendarProvider READ — retry-with-backoff for transient failures (P19)", () => {
+  const range = { from: new Date("2026-05-01T00:00:00Z"), to: new Date("2026-06-01T00:00:00Z") };
+  const noWait = { baseDelayMs: 0, sleep: async () => {} };
+
+  function provider(events: Array<{ status: number; body: string }>, onCall: (url: string) => void = () => {}) {
+    let i = 0;
+    return new GoogleCalendarProvider({
+      clientId: "cid",
+      clientSecret: "csecret",
+      fetchImpl: (async (url: string) => {
+        if (String(url) === "https://oauth2.googleapis.com/token") {
+          return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), { status: 200 });
+        }
+        onCall(String(url));
+        const r = events[Math.min(i++, events.length - 1)]!;
+        return new Response(r.body, { status: r.status });
+      }) as unknown as typeof fetch,
+      refreshToken: "rtok",
+      retry: noWait
+    });
+  }
+
+  it("recovers from a transient 503 on the events read (instead of dropping the calendar)", async () => {
+    let apiCalls = 0;
+    const events = await provider(
+      [{ body: "", status: 503 }, { body: JSON.stringify({ items: [{ end: { dateTime: "2026-05-18T10:00:00Z" }, id: "g1", start: { dateTime: "2026-05-18T09:00:00Z" }, summary: "Standup" }] }), status: 200 }],
+      (url) => { if (url.includes("/calendars/")) apiCalls += 1; }
+    ).listEvents(range);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.title).toBe("Standup");
+    expect(apiCalls).toBe(2); // retried once after the 503
+  });
+
+  it("a permanent 403 fails fast (no retry) — a non-retryable status is not hammered", async () => {
+    let apiCalls = 0;
+    await expect(
+      provider([{ body: "forbidden", status: 403 }], (url) => { if (url.includes("/calendars/")) apiCalls += 1; }).listEvents(range)
+    ).rejects.toThrow();
+    expect(apiCalls).toBe(1);
+  });
+});
+
 describe("LocalCalendarProvider", () => {
   let dir: string;
   let provider: LocalCalendarProvider;
