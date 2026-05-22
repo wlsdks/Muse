@@ -540,6 +540,28 @@ access, payments and money movement are OUT OF SCOPE — never built
   DENY/absent ⇒ NO call. Contract-faithful + mutation-proven. Local
   REST, no SDK/dep. Banking/payments out of scope.)
 
+**P17 — Conversational actuation (loop-authored 2026-05-22; the
+agent USES the actuators).** P11–P16 exist as CLI surfaces + gated
+primitives, but the AGENT can't yet invoke them mid-conversation:
+"email Bob the Q3 summary" / "turn off the lights" don't reach
+`sendEmailWithApproval` / `performWebActionWithApproval` /
+`performHomeActionWithApproval` from a chat/ask turn. The north-star
+gap is exactly this — a companion that ACTS when addressed, not a set
+of commands the user types. Every actuated tool stays fail-closed per
+`outbound-safety.md`: the existing `toolApprovalGate` / channel-approval
+seam IS the gate; absent confirm ⇒ no effect; recipient resolved via
+`resolveContact`, never guessed; action-logged. (`@muse/tools` is
+zero-IO, so these are MCP-bridged / runtime-registered tools, not the
+ambient bundle.)
+- [ ] The agent invokes ONE gated actuator (email send) as a tool
+  inside an agent run: a turn asking to email a known contact drafts
+  the message, the recipient resolves via `resolveContact`, the
+  fail-closed approval gate fires, and only on confirm does the
+  (HTTP-faked) send go — deny / timeout / ambiguous-recipient ⇒ NO
+  send. Check: an agent run with the tool registered → tool-call →
+  gate → confirm fires / absent ⇒ no external effect (integration,
+  contract-faithful, never a fake registry).
+
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is
 impossible by construction.

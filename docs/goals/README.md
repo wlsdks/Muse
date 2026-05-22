@@ -710,3 +710,18 @@ Append one line when a discovery path is evaluated and deferred:
   effect) IS the contract-faithful HTTP-fake check — no live external
   POST (that would violate the local/free + safety stance). No drift;
   no bullet reopened. No new seam test (both layers already compose).
+- P16 audit — @muse/mcp smart-home.test.ts + @muse/cli
+  commands-home.test.ts — PASS: P16 (opt-in Home Assistant lifestyle
+  actuator) composes; every service call is fail-closed gated.
+  Piece-checks re-run green TOGETHER: `@muse/mcp` smart-home 4/4
+  (`buildHomeAssistantServiceCall` URL+entity_id body+Bearer+data-merge;
+  `performHomeActionWithApproval` CONFIRM → one real HA service POST +
+  `performed` log, DENY → 0 calls), `@muse/cli` commands-home 3/3
+  (`muse home call` confirm → done; deny → no call, exit 1; malformed
+  `domain.service` → no call). The HA request builder → the shared
+  `performWebActionWithApproval` gate → CLI surface chain composes; no
+  live external HA call (real device + safety + local-only — the
+  contract-faithful recording-fetch IS the named check). No drift; no
+  bullet reopened. **P11–P16 (the human-authored actuator-breadth map)
+  is now ALL delivered + audited; P0–P16 complete + audited.** The loop
+  extended the map (P17 — conversational actuation) per OUTWARD-TARGETS.
