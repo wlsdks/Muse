@@ -759,3 +759,15 @@ Append one line when a discovery path is evaluated and deferred:
   chrome-devtools-mcp 9/9 + @muse/autoconfigure chrome-devtools-agent-run
   / chrome-devtools-gated-action / p18-seam 5/5. No live LLM (deterministic
   provider; transport-faked). No drift; no bullet reopened.
+- P19 audit — @muse/mcp p19-seam.test.ts — PASS: P19 (daily-harden the
+  one-of-each actuators) composes with its real consumer. 753 added
+  retry-with-backoff to the weather provider; the seam proves it
+  COMPOSES with `resolveWeatherLine` (the proactive-briefing path) —
+  a transient 503 on geocoding now yields a weather line instead of
+  the briefing silently dropping it, and the WITHOUT-retry case
+  (`retries: 0`) returns `undefined` (the exact gap 753 closed), so
+  the retry is load-bearing not cosmetic. Piece-check re-run green
+  TOGETHER: p19-seam + weather-retry 10/10. Contract-faithful fake
+  fetch; no live LLM. No drift; no bullet reopened. (P19's bullet is
+  "one actuator"; further actuators — email/contacts/smart-home — are
+  follow-on hardening slices, not reopened scope.)
