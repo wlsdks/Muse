@@ -673,11 +673,16 @@ allowlist. Read / perceive first; acting is gated.
 **P19 — Daily-hardening of the one-of-each actuators.** Each
 actuator (email, web action, contacts, weather/location, smart-home)
 was proven ONCE; a JARVIS you depend on survives real-world failure.
-- [ ] One actuator detects + recovers from a real failure mode
+- [x] One actuator detects + recovers from a real failure mode
   (rate-limit / transient 5xx / retry-with-backoff / malformed
   response) instead of crashing the run or silently dropping —
   proven by a contract-faithful fake exercising that exact path.
-  (Repeat per actuator as separate slices.)
+  (Repeat per actuator as separate slices.) — 753 (weather:
+  `isRetriableStatus` + `fetchWithRetry` retry-with-backoff for
+  429/5xx/network-reject; geocode + forecast recover from a transient
+  503/502 instead of crashing the briefing; contract-faithful fake
+  fetch, mutation-proven). Next actuators (email/web/contacts/
+  smart-home) are follow-on slices.
 
 **P20 — Deepen the thin axes (Perception + Knowledge).**
 - [ ] Continuous perception: an ambient signal (active window /
