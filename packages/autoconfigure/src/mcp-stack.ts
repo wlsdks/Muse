@@ -1,4 +1,6 @@
 import {
+  CHROME_DEVTOOLS_MCP_SERVER_NAME,
+  createChromeDevToolsMcpServer,
   DefaultMcpTransportConnector,
   McpManager,
   McpSecurityPolicyProvider,
@@ -43,7 +45,21 @@ export function assembleMcpStack(
   connectorOverride?: McpTransportConnector
 ): McpStack {
   const serverStore = createMcpServerStore(db, env);
-  const externalServerInputs = loadExternalMcpConfig(env);
+  const externalServerInputs = [...loadExternalMcpConfig(env)];
+  // Turnkey P18: MUSE_CHROME_DEVTOOLS_ENABLED auto-registers the
+  // Chrome DevTools MCP preset (auto-connect) so the user need not
+  // hand-write the npx command + --browser-url in mcp.json. Skipped
+  // if they already declared `chrome-devtools` themselves.
+  if (
+    parseBoolean(env.MUSE_CHROME_DEVTOOLS_ENABLED, false)
+    && !externalServerInputs.some((server) => server.name === CHROME_DEVTOOLS_MCP_SERVER_NAME)
+  ) {
+    const browserUrl = env.MUSE_CHROME_DEVTOOLS_BROWSER_URL?.trim();
+    externalServerInputs.push(createChromeDevToolsMcpServer({
+      autoConnect: true,
+      ...(browserUrl && browserUrl.length > 0 ? { browserUrl } : {})
+    }));
+  }
   const initialPolicy = {
     allowedServerNames: parseCsv(env.MUSE_MCP_ALLOWED_SERVERS),
     allowedStdioCommands: parseCsv(env.MUSE_MCP_ALLOWED_STDIO_COMMANDS),
