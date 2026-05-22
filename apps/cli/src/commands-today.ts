@@ -23,6 +23,7 @@ import {
 } from "@muse/autoconfigure";
 import { LocalCalendarProvider } from "@muse/calendar";
 import {
+  compareRemindersByDueAt,
   compareTasksByDueDate,
   readFollowups,
   readReminders,
@@ -387,7 +388,7 @@ async function composeLocalBriefing(lookaheadHours: number): Promise<TodayBriefi
   };
 }
 
-async function readDueReminders(
+export async function readDueReminders(
   file: string,
   horizon: Date
 ): Promise<readonly { id: string; text: string; dueAt: string }[]> {
@@ -403,9 +404,13 @@ async function readDueReminders(
       }
       return due <= horizon.getTime();
     })
-    .sort((left, right) =>
-      left.dueAt.localeCompare(right.dueAt) || left.id.localeCompare(right.id)
-    )
+    // Sort by parsed instant, not raw ISO: a lexicographic compare
+    // mis-orders mixed-precision / timezone-offset dueAt strings (a
+    // hand-edited reminders.json or import need not be canonical), so
+    // `muse today` could list a later reminder as more imminent. Reuse
+    // the store's canonical comparator (same order as `muse reminders`).
+    .slice()
+    .sort(compareRemindersByDueAt)
     .map((reminder) => {
       const serialized = serializeReminder(reminder);
       return { dueAt: String(serialized.dueAt), id: String(serialized.id), text: String(serialized.text) };

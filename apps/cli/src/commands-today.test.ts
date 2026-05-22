@@ -1,6 +1,11 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { writeReminders, type PersistedReminder } from "@muse/mcp";
 import { describe, expect, it } from "vitest";
 
-import { formatEvents, parseLookaheadHours } from "./commands-today.js";
+import { formatEvents, parseLookaheadHours, readDueReminders } from "./commands-today.js";
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -58,3 +63,25 @@ describe("parseLookaheadHours", () => {
     expect(() => parseLookaheadHours("1O")).toThrow(/got '1O'/u);
   });
 });
+
+describe("readDueReminders ordering — by parsed instant, not lexicographic dueAt", () => {
+  function file(): string {
+    return join(mkdtempSync(join(tmpdir(), "muse-today-rem-")), "reminders.json");
+  }
+  function reminder(overrides: Partial<PersistedReminder>): PersistedReminder {
+    return { createdAt: "2026-05-22T00:00:00.000Z", dueAt: "2026-05-22T12:00:00.000Z", id: "r", status: "pending", text: "x", ...overrides };
+  }
+
+  it("orders a timezone-offset dueAt by its real instant (a lexicographic sort would invert it)", async () => {
+    const f = file();
+    // a: 2026-05-22T23:00:00-05:00 == 2026-05-23T04:00:00Z (LATER instant)
+    // b: 2026-05-23T01:00:00Z (EARLIER instant)
+    // Lexicographically "2026-05-22T23…" < "2026-05-23T01…" → a would sort first; by instant b is first.
+    await writeReminders(f, [
+      reminder({ dueAt: "2026-05-22T23:00:00-05:00", id: "a", text: "later" }),
+      reminder({ dueAt: "2026-05-23T01:00:00Z", id: "b", text: "earlier" })
+    ]);
+    const due = await readDueReminders(f, new Date("2026-06-01T00:00:00Z"));
+    expect(due.map((r) => r.id)).toEqual(["b", "a"]);
+  });
+})
