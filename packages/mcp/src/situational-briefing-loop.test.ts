@@ -134,6 +134,33 @@ describe("runDueSituationalBriefing — P8-b2 contract-faithful real-channel del
     expect(body.text).toContain("in 15 min: Q3 review");
   });
 
+  it("grounds the briefing with unread inbox items from the email provider (P11)", async () => {
+    const { objectivesFile, sidecarFile } = fixtures();
+    await addObjective(objectivesFile, objective());
+    const posts: { url: string; body: string }[] = [];
+    const emailProvider = {
+      listRecent: async () => [
+        { from: "Alice <a@x.com>", id: "m1", snippet: "draft", subject: "Q3 plan", unread: true },
+        { from: "Bob <b@y.com>", id: "m2", snippet: "noon", subject: "lunch", unread: false }
+      ]
+    };
+    const summary = await runDueSituationalBriefing({
+      destination: "555",
+      emailProvider,
+      imminent,
+      messagingRegistry: new MessagingProviderRegistry([telegram(posts)]),
+      now: () => NOW,
+      objectivesFile,
+      providerId: "telegram",
+      sidecarFile
+    });
+    expect(summary).toEqual({ delivered: 1 });
+    const body = JSON.parse(posts[0]!.body) as { text: string };
+    expect(body.text).toContain("Inbox: 1 unread — “Q3 plan” (Alice)");
+    expect(body.text).toContain("in 15 min: Q3 review"); // still carries imminent
+    expect(body.text).not.toContain("lunch"); // read message excluded
+  });
+
   it("does NOT fire on weather alone — weather is supplementary, never a trigger", async () => {
     const { objectivesFile, sidecarFile } = fixtures();
     await addObjective(objectivesFile, objective({ status: "done" }));

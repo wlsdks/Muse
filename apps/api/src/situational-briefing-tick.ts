@@ -17,6 +17,7 @@
 import {
   runDueSituationalBriefing,
   type BriefingImminent,
+  type EmailProvider,
   type WeatherProvider
 } from "@muse/mcp";
 import type { MessagingProviderRegistry } from "@muse/messaging";
@@ -43,6 +44,8 @@ export interface SituationalBriefingTickOptions {
    */
   readonly weatherProvider?: WeatherProvider;
   readonly weatherLocation?: string;
+  /** Optional inbox grounding: a non-empty briefing gains an unread digest. */
+  readonly emailProvider?: EmailProvider;
   readonly windowMs?: number;
   readonly intervalMs?: number;
   readonly logger?: (message: string) => void;
@@ -95,6 +98,7 @@ export function startSituationalBriefingTick(
         ...(options.weatherProvider && options.weatherLocation
           ? { weatherLocation: options.weatherLocation, weatherProvider: options.weatherProvider }
           : {}),
+        ...(options.emailProvider ? { emailProvider: options.emailProvider } : {}),
         ...(options.windowMs !== undefined ? { windowMs: options.windowMs } : {})
       });
       if (summary.delivered > 0) {

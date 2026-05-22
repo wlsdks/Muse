@@ -94,3 +94,26 @@ export function summarizeInbox(messages: readonly EmailSummary[]): string {
   const subjects = unread.slice(0, 5).map((m) => `“${m.subject || "(no subject)"}” — ${m.from || "(unknown)"}`);
   return `${head}. Unread:\n${subjects.map((s) => `  - ${s}`).join("\n")}`;
 }
+
+/**
+ * Compact one-line unread digest for the proactive briefing, or
+ * `undefined` when nothing is unread (so the briefing stays quiet
+ * about a clean inbox). Names a few unread subjects so the brief is
+ * actionable ("reply to X"), not just a count.
+ */
+export function unreadBriefingLine(messages: readonly EmailSummary[]): string | undefined {
+  const unread = messages.filter((m) => m.unread);
+  if (unread.length === 0) {
+    return undefined;
+  }
+  const named = unread.slice(0, 3).map((m) => `“${m.subject || "(no subject)"}” (${senderName(m.from)})`);
+  const more = unread.length > named.length ? `, +${(unread.length - named.length).toString()} more` : "";
+  return `${unread.length.toString()} unread — ${named.join(", ")}${more}`;
+}
+
+// "Alice <a@x.com>" → "Alice"; "bob@y.com" → "bob@y.com".
+function senderName(from: string): string {
+  const match = /^\s*"?([^"<]*?)"?\s*</u.exec(from);
+  const name = match?.[1]?.trim();
+  return name && name.length > 0 ? name : (from.trim() || "unknown");
+}

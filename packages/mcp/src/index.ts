@@ -416,6 +416,7 @@ export {
 export {
   GmailEmailProvider,
   summarizeInbox,
+  unreadBriefingLine,
   type EmailProvider,
   type EmailSummary
 } from "./email-provider.js";

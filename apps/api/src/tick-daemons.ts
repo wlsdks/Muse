@@ -30,6 +30,7 @@ import {
   createNotesInvestigator,
   deriveBriefingImminent,
   deriveCalendarBriefingImminent,
+  GmailEmailProvider,
   OpenMeteoWeatherProvider,
   type BriefingImminent
 } from "@muse/mcp";
@@ -249,6 +250,10 @@ export function startSituationalBriefingDaemonIfConfigured(
   const weatherOpt = weatherLocation && weatherLocation.length > 0
     ? { weatherLocation, weatherProvider: new OpenMeteoWeatherProvider() }
     : {};
+  const gmailToken = env.MUSE_GMAIL_TOKEN?.trim();
+  const emailOpt = gmailToken && gmailToken.length > 0
+    ? { emailProvider: new GmailEmailProvider(gmailToken) }
+    : {};
   const briefingHandle = startSituationalBriefingTick({
     destination: briefingDestination,
     errorLogger: (message) => server.log.warn(message),
@@ -261,6 +266,7 @@ export function startSituationalBriefingDaemonIfConfigured(
     registry: options.messaging,
     sidecarFile: options.briefingSidecarFile,
     ...weatherOpt,
+    ...emailOpt,
     ...(windowMsRaw !== undefined ? { windowMs: windowMsRaw } : {})
   });
   server.addHook("onClose", async () => {

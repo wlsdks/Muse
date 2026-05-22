@@ -32,6 +32,12 @@ export interface SituationalBriefingInput {
    * doesn't ping "it's sunny" with nothing else to say).
    */
   readonly weather?: string;
+  /**
+   * Optional pre-resolved unread-inbox line ("3 unread — …").
+   * Supplementary, same posture as `weather`: it rides an
+   * otherwise-non-empty briefing and never triggers one alone.
+   */
+  readonly inbox?: string;
 }
 
 function clean(value: string): string {
@@ -65,6 +71,11 @@ export function composeSituationalBriefing(input: SituationalBriefingInput): str
   const weather = input.weather ? clean(input.weather) : "";
   if (weather.length > 0) {
     lines.push(`Weather: ${weather}`);
+  }
+
+  const inbox = input.inbox ? clean(input.inbox) : "";
+  if (inbox.length > 0) {
+    lines.push(`Inbox: ${inbox}`);
   }
 
   if (upcoming.length > 0) {

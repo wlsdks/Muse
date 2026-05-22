@@ -442,16 +442,17 @@ not just the happy path.**
 
 **P11 — Email (the single biggest missing surface).** Read-first;
 send is draft-first and gated.
-- [ ] Read / triage / summarise the inbox (read-only) via an email
+- [x] Read / triage / summarise the inbox (read-only) via an email
   provider (IMAP/SMTP or Gmail API) behind the abstraction;
   needs-reply items feed the P8 situational briefing. Check: a
   contract-faithful HTTP-faked inbox → the agent summarises it / it
-  surfaces in the briefing (integration). (goal 694 delivered the
-  read/triage/summarise half: `EmailProvider` + `GmailEmailProvider`
-  (Gmail REST, Bearer token, no SDK/dep) + `summarizeInbox` +
-  `muse inbox` (read-only), contract-faithful Gmail-HTTP-faked
-  integration test. STILL OPEN to flip: wire needs-reply items into
-  the P8 situational briefing — reuses the weather→briefing pattern.)
+  surfaces in the briefing (integration). — 694 + 695 (694:
+  `EmailProvider` + `GmailEmailProvider` (Gmail REST, Bearer, no
+  SDK/dep) + `summarizeInbox` + `muse inbox`; 695: `unreadBriefingLine`
+  + the proactive briefing daemon grounds a non-empty brief with an
+  unread-inbox digest (contract-faithful over the real TelegramProvider,
+  `MUSE_GMAIL_TOKEN`-gated, supplementary — never triggers a brief
+  alone). A guided OAuth token flow remains for live use.)
 - [ ] Send / reply obeys `outbound-safety.md` — a message to a third
   party is never sent without the user confirming the exact drafted
   content; recipient resolved or the agent asks; fail-closed; sent

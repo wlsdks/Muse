@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { GmailEmailProvider, summarizeInbox, type EmailSummary } from "./email-provider.js";
+import { GmailEmailProvider, summarizeInbox, unreadBriefingLine, type EmailSummary } from "./email-provider.js";
 
 // Contract-faithful Gmail REST fake: routes messages.list vs
 // messages.get/{id}, asserts the Bearer header, returns Gmail-shaped
@@ -96,5 +96,24 @@ describe("summarizeInbox", () => {
   it("says all-read when nothing is unread, and empty when empty", () => {
     expect(summarizeInbox([msg({ unread: false })])).toBe("1 message, 0 unread.");
     expect(summarizeInbox([])).toBe("Inbox empty.");
+  });
+});
+
+describe("unreadBriefingLine", () => {
+  const msg = (over: Partial<EmailSummary>): EmailSummary => ({ from: "x@y", id: "i", snippet: "", subject: "s", unread: false, ...over });
+
+  it("returns undefined when nothing is unread (briefing stays quiet about a clean inbox)", () => {
+    expect(unreadBriefingLine([msg({ unread: false })])).toBeUndefined();
+    expect(unreadBriefingLine([])).toBeUndefined();
+  });
+
+  it("names up to 3 unread subjects with sender display-names and a +N more tail", () => {
+    const line = unreadBriefingLine([
+      msg({ id: "1", from: "Alice <a@x.com>", subject: "Q3 plan", unread: true }),
+      msg({ id: "2", from: "Bob <b@y.com>", subject: "invoice", unread: true }),
+      msg({ id: "3", from: "carol@z.com", subject: "review", unread: true }),
+      msg({ id: "4", from: "Dave <d@w.com>", subject: "ping", unread: true })
+    ]);
+    expect(line).toBe("4 unread — “Q3 plan” (Alice), “invoice” (Bob), “review” (carol@z.com), +1 more");
   });
 });

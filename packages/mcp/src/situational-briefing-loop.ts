@@ -19,6 +19,7 @@ import type { MessagingProviderRegistry } from "@muse/messaging";
 import { sendWithRetry } from "./messaging-retry.js";
 import { readObjectives } from "./personal-objectives-store.js";
 import { composeSituationalBriefing, type BriefingImminent } from "./situational-briefing.js";
+import { unreadBriefingLine, type EmailProvider } from "./email-provider.js";
 import { resolveWeatherLine, type WeatherProvider } from "./weather.js";
 
 const DEFAULT_WINDOW_MS = 4 * 60 * 60_000;
@@ -42,6 +43,13 @@ export interface RunDueSituationalBriefingOptions {
    */
   readonly weatherProvider?: WeatherProvider;
   readonly weatherLocation?: string;
+  /**
+   * Optional inbox grounding. When set AND the briefing already has
+   * something to say, recent inbox messages are fetched and an
+   * unread digest is added as a supplementary line. Fail-soft.
+   */
+  readonly emailProvider?: EmailProvider;
+  readonly emailLimit?: number;
 }
 
 export interface RunDueSituationalBriefingSummary {
@@ -73,6 +81,14 @@ async function writeLastFiredAt(file: string, iso: string): Promise<void> {
   await fs.chmod(file, 0o600).catch(() => undefined);
 }
 
+async function resolveInboxLine(provider: EmailProvider, limit?: number): Promise<string | undefined> {
+  try {
+    return unreadBriefingLine(await provider.listRecent(limit && limit > 0 ? limit : 10));
+  } catch {
+    return undefined;
+  }
+}
+
 export async function runDueSituationalBriefing(
   options: RunDueSituationalBriefingOptions
 ): Promise<RunDueSituationalBriefingSummary> {
@@ -91,11 +107,17 @@ export async function runDueSituationalBriefing(
   const weather = hasContent && options.weatherProvider && options.weatherLocation
     ? await resolveWeatherLine(options.weatherProvider, options.weatherLocation)
     : undefined;
+  // Same posture as weather: only sense the inbox when there is
+  // already something to brief; a lookup error omits the line.
+  const inbox = hasContent && options.emailProvider
+    ? await resolveInboxLine(options.emailProvider, options.emailLimit)
+    : undefined;
   const text = composeSituationalBriefing({
     imminent: options.imminent,
     now: nowDate,
     objectives,
-    ...(weather ? { weather } : {})
+    ...(weather ? { weather } : {}),
+    ...(inbox ? { inbox } : {})
   });
   if (!text) {
     return { delivered: 0, reason: "nothing-to-say" };
