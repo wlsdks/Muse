@@ -69,6 +69,23 @@ describe("decideWebSearchPolicy", () => {
     ).toBe(9);
   });
 
+  it("a settings.maxUses that is non-finite / non-integer falls through to the default — the env path rejects these via strictPositiveInt, the settings path must match", () => {
+    for (const bad of [Number.POSITIVE_INFINITY, Number.NaN, 3.5, 0, -1]) {
+      expect(
+        decideWebSearchPolicy({
+          model: baseModel,
+          settings: { webSearch: { maxUses: bad } },
+          env: {}
+        }).maxUses,
+        `settings.maxUses=${String(bad)} must not be accepted as a search budget`
+      ).toBe(5);
+    }
+    // A legitimate positive integer is still honoured.
+    expect(
+      decideWebSearchPolicy({ model: baseModel, settings: { webSearch: { maxUses: 7 } }, env: {} }).maxUses
+    ).toBe(7);
+  });
+
   it("MUSE_WEB_SEARCH_MAX_USES that is not a positive integer falls through", () => {
     expect(
       decideWebSearchPolicy({

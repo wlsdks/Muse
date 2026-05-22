@@ -52,7 +52,11 @@ function resolveMaxUses(
     const n = strictPositiveInt(envRaw);
     if (n !== undefined) return n;
   }
-  if (typeof settings.maxUses === "number" && settings.maxUses > 0) {
+  // Match the env path's strictness: a settings `maxUses` of
+  // Infinity (unbounded search budget) or a non-integer (3.5)
+  // would otherwise slip past a bare `> 0` check, where the env
+  // path rejects the same shapes via strictPositiveInt.
+  if (typeof settings.maxUses === "number" && Number.isInteger(settings.maxUses) && settings.maxUses > 0) {
     return settings.maxUses;
   }
   return DEFAULT_MAX_USES;
