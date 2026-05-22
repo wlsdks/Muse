@@ -542,7 +542,12 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       return [];
     }
     const embedModel = env.MUSE_KNOWLEDGE_SEARCH_EMBED_MODEL?.trim() || "nomic-embed-text";
-    return [createNotesKnowledgeSearchTool({ embed: createOllamaEmbedder(embedModel), notesProvider })];
+    const tasksProvider = tasksRegistry?.primary();
+    return [createNotesKnowledgeSearchTool({
+      embed: createOllamaEmbedder(embedModel),
+      notesProvider,
+      ...(tasksProvider ? { tasksProvider } : {})
+    })];
   })();
 
   const { skillRegistryPromise, skillTools } = createSkillRuntime(env);

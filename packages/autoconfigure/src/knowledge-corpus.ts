@@ -1,5 +1,5 @@
 import { chunkText, rankKnowledgeChunks, renderKnowledgeMatches, type KnowledgeChunk } from "@muse/agent-core";
-import type { NotesProvider } from "@muse/mcp";
+import type { NotesProvider, TasksProvider } from "@muse/mcp";
 import type { MuseTool } from "@muse/tools";
 
 /**
@@ -20,6 +20,8 @@ import type { MuseTool } from "@muse/tools";
  */
 export interface AssembleKnowledgeCorpusOptions {
   readonly notesProvider?: NotesProvider;
+  /** Open tasks become corpus chunks sourced `task/<id>` — the user's todos hold key facts. */
+  readonly tasksProvider?: TasksProvider;
   readonly extraChunks?: readonly KnowledgeChunk[];
   /** Cap notes pulled into the corpus. Default 200. */
   readonly maxNotes?: number;
@@ -65,6 +67,22 @@ export async function assembleKnowledgeCorpus(
     }
   }
 
+  if (options.tasksProvider) {
+    let tasks: readonly { readonly id: string; readonly title: string; readonly notes?: string }[];
+    try {
+      tasks = await options.tasksProvider.list("open");
+    } catch {
+      tasks = [];
+    }
+    for (const task of tasks) {
+      const text = task.notes && task.notes.trim().length > 0 ? `${task.title}\n\n${task.notes}` : task.title;
+      if (text.trim().length === 0) {
+        continue;
+      }
+      chunks.push({ source: `task/${task.id}`, text: text.length > maxChars ? text.slice(0, maxChars) : text });
+    }
+  }
+
   if (options.extraChunks?.length) {
     chunks.push(...options.extraChunks);
   }
@@ -73,7 +91,8 @@ export async function assembleKnowledgeCorpus(
 }
 
 export interface NotesKnowledgeSearchToolOptions {
-  readonly notesProvider: NotesProvider;
+  readonly notesProvider?: NotesProvider;
+  readonly tasksProvider?: TasksProvider;
   readonly embed: (text: string) => Promise<readonly number[]>;
   readonly topK?: number;
   readonly maxNotes?: number;
@@ -103,7 +122,8 @@ export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchTool
     execute: async (args) => {
       const query = typeof (args as { query?: unknown }).query === "string" ? (args as { query: string }).query : "";
       const corpus = await assembleKnowledgeCorpus({
-        notesProvider: options.notesProvider,
+        ...(options.notesProvider ? { notesProvider: options.notesProvider } : {}),
+        ...(options.tasksProvider ? { tasksProvider: options.tasksProvider } : {}),
         ...(options.extraChunks ? { extraChunks: options.extraChunks } : {}),
         ...(options.maxNotes !== undefined ? { maxNotes: options.maxNotes } : {}),
         ...(options.maxCharsPerNote !== undefined ? { maxCharsPerNote: options.maxCharsPerNote } : {})
