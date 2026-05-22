@@ -93,6 +93,16 @@ api.stderr.on("data", (chunk) => {
 const checks = [];
 let failures = 0;
 
+// Thrown by a check that is not applicable to the active provider (e.g.
+// native web_search on local Ollama, which has no such capability).
+// A skip is NOT a failure and NOT a misleading pass — it keeps
+// `smoke:live` exit-0 on the local-Ollama-only loop PC so the regression
+// sweep can still trust a clean run.
+class SmokeSkip extends Error {}
+function skip(reason) {
+  throw new SmokeSkip(reason);
+}
+
 function record(name, fn) {
   return Promise.resolve()
     .then(fn)
@@ -100,6 +110,10 @@ function record(name, fn) {
       checks.push({ name, status: "ok" });
     })
     .catch((error) => {
+      if (error instanceof SmokeSkip) {
+        checks.push({ name, reason: error.message, status: "skip" });
+        return;
+      }
       failures += 1;
       checks.push({ error: error instanceof Error ? error.message : String(error), name, status: "fail" });
     });
@@ -252,6 +266,14 @@ try {
   });
 
   await record("POST /api/chat — native web_search returns citations", async () => {
+    // Native web_search is a cloud-provider capability (Gemini/OpenAI/
+    // Anthropic grounding tools). Local Ollama has none, and smoke:live
+    // is local-Ollama-only by policy — so this check is inapplicable
+    // here and skips rather than failing (which would mask real
+    // regressions in the rest of the suite).
+    if (!["anthropic", "gemini", "openai"].includes(provider.providerId)) {
+      skip(`native web_search requires a cloud provider; smoke:live is local-Ollama-only (provider=${provider.providerId})`);
+    }
     const response = await fetch(`${baseUrl}/api/chat`, {
       body: JSON.stringify({
         message: "What's today's top tech news? Use web search to answer.",
@@ -431,11 +453,14 @@ try {
   for (const check of checks) {
     if (check.status === "ok") {
       console.log(`PASS  ${check.name}`);
+    } else if (check.status === "skip") {
+      console.log(`SKIP  ${check.name}: ${check.reason ?? "(not applicable)"}`);
     } else {
       console.error(`FAIL  ${check.name}: ${check.error ?? "(unknown)"}`);
     }
   }
-  console.log(`---\n${checks.filter((c) => c.status === "ok").length} passed, ${failures} failed`);
+  const skipped = checks.filter((c) => c.status === "skip").length;
+  console.log(`---\n${checks.filter((c) => c.status === "ok").length} passed, ${failures} failed, ${skipped} skipped`);
 
   if (failures > 0 && apiOutput.trim().length > 0) {
     console.error("--- api output ---");
