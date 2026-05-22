@@ -648,3 +648,18 @@ Append one line when a discovery path is evaluated and deferred:
   `resolveContact` + the fail-closed `sendEmailWithApproval` gate). No
   drift; no bullet reopened. P11 (email read + briefing + gated send)
   is genuinely delivered end-to-end.
+- P12 audit — @muse/cli weather.test.ts + @muse/mcp
+  situational-briefing-loop.test.ts "grounds … forecast" + LIVE
+  `muse weather` — PASS: P12's two surfaces compose. Piece-checks
+  re-run green TOGETHER: `@muse/mcp` 15/15 (weather provider /
+  describeWeatherCode / formatWeather / resolveWeatherLine + the
+  briefing weather-grounding test), `@muse/cli` 2/2 (`muse weather`
+  answer reflects the HTTP-faked forecast). Seams: (1) WeatherProvider
+  → `muse weather` answer; (2) OpenMeteoWeatherProvider → the proactive
+  briefing weather line (real provider, faked fetch, over a real
+  TelegramProvider) — both already compose. END-TO-END live flow re-run
+  this audit: `muse weather Seoul` against the real free Open-Meteo API
+  → "clear sky, 27°C · feels 26°C · humidity 38% · wind 6 km/h"; "San
+  Francisco" → "fog 10C" — the real geocode → forecast → format chain
+  works. No drift; no bullet reopened. No new seam test (both surfaces
+  already compose; a redundant test would be inward churn).
