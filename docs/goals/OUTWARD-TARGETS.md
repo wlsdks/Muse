@@ -620,17 +620,17 @@ ambient bundle.)
   substrate) + 729 (`approvePendingApproval`: confirm→runs+clears /
   deny→stays / unknown/expired→not-found / non-actuator→no-tool;
   replay-guard mutation-proven).
-- [ ] REMOTE surface, in-CHAT auto-completion: an inbound channel REPLY
+- [x] REMOTE surface, in-CHAT auto-completion (opt-in): with
+  `MUSE_INBOUND_AUTO_APPROVE=true`, an inbound channel REPLY
   ("yes"/"approve") to the draft-bearing prompt re-runs the pending tool
-  WITHOUT leaving the chat — so the whole loop happens in Telegram/chat.
-  PARTIAL (730): the inbound runner now DETECTS an approval reply
-  (`isApprovalReply`) + finds the scoped pending action and ACKs it with
-  the `muse approvals approve <id>` command (bridging to the CLI
-  completion) — but does NOT yet auto-execute in-chat. The remaining
-  work is re-executing the gated tool server-side on the reply, which
-  needs the actuator orchestration registered in the API agent runtime
-  (today only `muse ask --actuators` / the CLI registers it). Stays `[ ]`
-  until a reply genuinely fires the tool end-to-end.
+  in-chat and reports the result — the whole loop happens in
+  Telegram/chat, no CLI. Default OFF (completion stays on the deliberate
+  `muse approvals approve` CLI confirm); only ONE un-expired pending
+  auto-runs (multiple → ambiguous, lists ids); the reply is the explicit
+  confirm of the already-shown draft (outbound-safety), cleared on
+  success (replay-guard). — 731 (`runActuatorByName` @muse/mcp shared
+  dispatcher + `handleInboundApprovalReply` autoRun branch + server wire;
+  mutation-proven single-pending guard). Detection + bridge from 730.
 
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is

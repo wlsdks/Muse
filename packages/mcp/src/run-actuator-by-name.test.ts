@@ -1,0 +1,97 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import type { JsonObject } from "@muse/shared";
+import { describe, expect, it } from "vitest";
+
+import type { Contact } from "./personal-contacts-store.js";
+import { runActuatorByName, type RunActuatorByNameDeps } from "./run-actuator-by-name.js";
+
+function recordingFetch(): { fetchImpl: typeof fetch; calls: string[] } {
+  const calls: string[] = [];
+  const fetchImpl = (async (url: string | URL) => {
+    calls.push(String(url));
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  return { calls, fetchImpl };
+}
+
+function logFile(): string {
+  return join(mkdtempSync(join(tmpdir(), "muse-run-actuator-")), "action-log.json");
+}
+
+const approveEmail = () => ({ approved: true });
+const approveWeb = () => ({ approved: true });
+const denyWeb = () => ({ approved: false, reason: "declined" });
+
+function deps(overrides: Partial<RunActuatorByNameDeps> & { fetchImpl: typeof fetch }): RunActuatorByNameDeps {
+  return {
+    actionLogFile: logFile(),
+    emailApprovalGate: approveEmail,
+    userId: "stark",
+    webApprovalGate: approveWeb,
+    ...overrides
+  };
+}
+
+describe("runActuatorByName", () => {
+  it("web_action: approve → one request fires, ran:true", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const result = await runActuatorByName("web_action", { summary: "Book", url: "http://x.test/book" } as JsonObject, deps({ fetchImpl }));
+    expect(result).toEqual({ ran: true });
+    expect(calls).toEqual(["http://x.test/book"]);
+  });
+
+  it("web_action: deny → no request, ran:false declined", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const result = await runActuatorByName("web_action", { summary: "Book", url: "http://x.test/book" } as JsonObject, deps({ fetchImpl, webApprovalGate: denyWeb }));
+    expect(result.ran).toBe(false);
+    expect((result as { reason: string }).reason).toBe("declined");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("home_action: approve → one HA service POST fires", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const result = await runActuatorByName(
+      "home_action",
+      { entity: "light.living_room", service: "light.turn_off" } as JsonObject,
+      deps({ fetchImpl, homeAssistantBaseUrl: "http://ha.local:8123", homeAssistantToken: "tok" })
+    );
+    expect(result).toEqual({ ran: true });
+    expect(calls).toEqual(["http://ha.local:8123/api/services/light/turn_off"]);
+  });
+
+  it("email_send: approve → real Gmail send (HTTP-faked), ran:true; resolves the recipient via contacts", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const contacts: readonly Contact[] = [{ id: "c1", name: "Bob", email: "bob@example.com" }];
+    const result = await runActuatorByName(
+      "email_send",
+      { body: "hi", subject: "Q3", to: "Bob" } as JsonObject,
+      deps({ contacts: () => contacts, fetchImpl, gmailToken: "gtok" })
+    );
+    expect(result).toEqual({ ran: true });
+    expect(calls.some((u) => u.includes("/messages/send"))).toBe(true);
+  });
+
+  it("email_send without a gmail token / contacts → unavailable (no fire)", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const result = await runActuatorByName("email_send", { body: "x", subject: "x", to: "Bob" } as JsonObject, deps({ fetchImpl }));
+    expect(result).toMatchObject({ ran: false, reason: "unavailable" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("home_action without HA config → unavailable (no fire)", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const result = await runActuatorByName("home_action", { service: "light.turn_off" } as JsonObject, deps({ fetchImpl }));
+    expect(result).toMatchObject({ ran: false, reason: "unavailable" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("an unknown tool name → unknown-tool (no fire)", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const result = await runActuatorByName("muse.notes.save", {} as JsonObject, deps({ fetchImpl }));
+    expect(result).toMatchObject({ ran: false, reason: "unknown-tool" });
+    expect(calls).toHaveLength(0);
+  });
+});

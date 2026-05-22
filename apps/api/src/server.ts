@@ -3,7 +3,9 @@ import {
   RuleBasedAgentSpecResolver
 } from "@muse/agent-specs";
 import { extractBearerToken } from "@muse/auth";
-import { parseBoolean, resolveActionLogFile, resolvePendingApprovalsFile } from "@muse/autoconfigure";
+import { parseBoolean, resolveActionLogFile, resolveContactsFile, resolvePendingApprovalsFile } from "@muse/autoconfigure";
+import { queryContacts, runActuatorByName } from "@muse/mcp";
+import type { JsonObject } from "@muse/shared";
 import { InMemoryRuntimeSettingsStore, RuntimeSettings } from "@muse/runtime-settings";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAdminRoutes } from "./admin-routes.js";
@@ -393,7 +395,26 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           pendingFile: resolvePendingApprovalsFile(env),
           providerId,
           source,
-          text: latestUserText
+          text: latestUserText,
+          // Opt-in (default off): an inbound "yes" re-runs the pending
+          // tool in-chat. The reply is the explicit confirm of the draft
+          // the gate already posted, so the re-run uses an auto-approve
+          // gate. Off by default, so completion stays on the deliberate
+          // CLI confirm unless the user turns this on.
+          ...(parseBoolean(env.MUSE_INBOUND_AUTO_APPROVE, false)
+            ? {
+                autoRun: (entry) => runActuatorByName(entry.tool, entry.arguments as JsonObject, {
+                  actionLogFile: resolveActionLogFile(env),
+                  contacts: () => queryContacts(resolveContactsFile(env)),
+                  emailApprovalGate: () => ({ approved: true }),
+                  ...(env.MUSE_GMAIL_TOKEN?.trim() ? { gmailToken: env.MUSE_GMAIL_TOKEN.trim() } : {}),
+                  ...(env.MUSE_HOMEASSISTANT_URL?.trim() ? { homeAssistantBaseUrl: env.MUSE_HOMEASSISTANT_URL.trim() } : {}),
+                  ...(env.MUSE_HOMEASSISTANT_TOKEN?.trim() ? { homeAssistantToken: env.MUSE_HOMEASSISTANT_TOKEN.trim() } : {}),
+                  userId: `${providerId}:${source}`,
+                  webApprovalGate: () => ({ approved: true })
+                })
+              }
+            : {})
         });
         if (approvalAck !== undefined) {
           return approvalAck;

@@ -456,6 +456,11 @@ export {
   type HomeActionToolDeps
 } from "./smart-home-tool.js";
 export {
+  runActuatorByName,
+  type RunActuatorByNameDeps,
+  type RunActuatorResult
+} from "./run-actuator-by-name.js";
+export {
   createMessagingObjectiveActuator,
   createModelObjectiveEvaluator,
   parseObjectiveVerdict,
