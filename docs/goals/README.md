@@ -771,3 +771,19 @@ Append one line when a discovery path is evaluated and deferred:
   fetch; no live LLM. No drift; no bullet reopened. (P19's bullet is
   "one actuator"; further actuators — email/contacts/smart-home — are
   follow-on hardening slices, not reopened scope.)
+- P20 audit — @muse/autoconfigure p20-seam.test.ts — PASS: P20's two
+  bullets — Knowledge (multi-doc RAG with citation, 754/755) and
+  Perception (ambient signal → proactive notice, 756) — both deliver
+  in one realistic assistant setup without interference. The seam runs
+  ONE scenario: a `createAgentRuntime` with `knowledge_search` over a
+  LIVE temp-dir notes corpus answers grounded AND cites
+  `notes/health.md`, then `runAmbientNoticeTick` fires a proactive
+  notice through a real `ProactiveNoticeSink` from a simulated
+  active-window signal. Piece-checks re-run green TOGETHER: @muse/mcp
+  ambient-notice-loop 6/6, @muse/agent-core knowledge-recall-agent
+  5/5, @muse/autoconfigure knowledge-corpus-live + p20-seam 5/5. Also
+  the 10th-iteration regression sweep: full `pnpm check` green across
+  all 26 workspace suites (the unit/integration CAPABILITIES checks);
+  smoke:live deferred — no request/response path changed since the
+  retarget, so no live round-trip to re-run. No drift; no bullet
+  reopened. **P18–P20 complete + audited.**
