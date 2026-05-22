@@ -21,6 +21,7 @@ import { registerRemindersRoutes } from "./reminders-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
 import { createFileBackedActivityTracker, createInMemoryActivityTracker } from "./proactive-tick.js";
 import {
+  startAmbientDaemonIfConfigured,
   startFollowupDaemonIfConfigured,
   startPatternDaemonIfConfigured,
   startObjectivesDaemonIfConfigured,
@@ -336,6 +337,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   startPatternDaemonIfConfigured(env, server, options);
   startSituationalBriefingDaemonIfConfigured(env, server, options);
   startObjectivesDaemonIfConfigured(env, server, options);
+  startAmbientDaemonIfConfigured(env, server, options);
 
   // Optional Phase 2.a.3 daemon: poll Telegram every
   // MUSE_TELEGRAM_POLL_INTERVAL_MS (default 30s) and persist each

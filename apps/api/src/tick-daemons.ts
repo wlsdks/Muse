@@ -30,10 +30,13 @@ import {
   createNotesInvestigator,
   deriveBriefingImminent,
   deriveCalendarBriefingImminent,
+  FileAmbientSignalSource,
   GmailEmailProvider,
   OpenMeteoWeatherProvider,
+  parseAmbientNoticeRules,
   type BriefingImminent
 } from "@muse/mcp";
+import { startAmbientTick } from "./ambient-tick.js";
 import { startFollowupTick } from "./followup-tick.js";
 import { startObjectivesTick } from "./objectives-tick.js";
 import { startPatternTick } from "./pattern-tick.js";
@@ -364,6 +367,61 @@ export function startPatternDaemonIfConfigured(
   server.addHook("onClose", async () => {
     patternHandle.stop();
   });
+}
+
+/**
+ * P20 perception daemon. Off by default; activates when
+ * `MUSE_AMBIENT_ENABLED=true`, a messaging provider + destination are
+ * set + registered, and `MUSE_AMBIENT_RULES` parses to ≥1 rule. Reads
+ * the ambient signal from `MUSE_AMBIENT_FILE` (default
+ * `~/.muse/ambient.json`) each tick and edge-fires proactive notices.
+ */
+export function startAmbientDaemonIfConfigured(
+  env: NodeJS.ProcessEnv,
+  server: FastifyInstance,
+  options: ServerOptions
+): void {
+  const enabled = parseBoolean(env.MUSE_AMBIENT_ENABLED, false);
+  const providerId = env.MUSE_AMBIENT_PROVIDER?.trim();
+  const destination = env.MUSE_AMBIENT_DESTINATION?.trim();
+  const rules = parseAmbientNoticeRules(env.MUSE_AMBIENT_RULES ?? "");
+  if (
+    !enabled
+    || !providerId || providerId.length === 0
+    || !destination || destination.length === 0
+    || rules.length === 0
+    || !options.messaging
+    || !options.messaging.has(providerId)
+  ) {
+    return;
+  }
+  const file = resolveAmbientSignalFile(env);
+  const tickMsRaw = env.MUSE_AMBIENT_TICK_MS ? Number(env.MUSE_AMBIENT_TICK_MS) : undefined;
+  const quietHours = parseQuietHours(env.MUSE_AMBIENT_QUIET_HOURS) ?? parseQuietHours(env.MUSE_REMINDER_QUIET_HOURS);
+  const handle = startAmbientTick({
+    destination,
+    errorLogger: (message) => server.log.warn(message),
+    logger: (message) => server.log.info(message),
+    providerId,
+    registry: options.messaging,
+    rules,
+    source: new FileAmbientSignalSource(file),
+    ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
+    ...(quietHours ? { quietHours } : {})
+  });
+  server.addHook("onClose", async () => {
+    handle.stop();
+  });
+}
+
+export function resolveAmbientSignalFile(env: NodeJS.ProcessEnv): string {
+  const overridden = env.MUSE_AMBIENT_FILE?.trim();
+  if (overridden && overridden.length > 0) return overridden;
+  const envHome = process.env.HOME?.trim();
+  if (envHome && envHome.length > 0) return `${envHome}/.muse/ambient.json`;
+  const sysHome = homedir().trim();
+  if (sysHome.length > 0) return `${sysHome}/.muse/ambient.json`;
+  throw new Error("Cannot resolve home directory for ambient signal file — set MUSE_AMBIENT_FILE or HOME (refusing to default to filesystem root)");
 }
 
 export function resolveProactiveSidecarFile(env: NodeJS.ProcessEnv): string {
