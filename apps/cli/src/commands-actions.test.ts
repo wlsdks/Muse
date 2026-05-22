@@ -61,6 +61,24 @@ describe("muse actions — the P6 accountability read surface", () => {
     expect((await run(logFile(), [])).stdout).toBe("No recorded actions.\n");
   });
 
+  it("empty default bucket but entries under another bucket → points at --user all (so channel-triggered actions aren't invisible)", async () => {
+    const file = logFile();
+    await appendActionLog(file, entry({ id: "tg", result: "refused", userId: "telegram:42", what: "blocked email_send" }));
+    const r = await run(file, []); // default --user local, which has nothing
+    expect(r.stdout).toContain("No recorded actions for 'local'");
+    expect(r.stdout).toContain("telegram:42");
+    expect(r.stdout).toContain("--user all");
+    // and --user all surfaces it
+    expect((await run(file, ["--user", "all"])).stdout).toContain("blocked email_send");
+  });
+
+  it("does NOT mis-suggest --user all when the bucket has entries but a --result filter empties the view", async () => {
+    const file = logFile();
+    await appendActionLog(file, entry({ id: "p", result: "performed", userId: "local" }));
+    const r = await run(file, ["--result", "refused"]); // local has a performed entry, just none refused
+    expect(r.stdout).toBe("No recorded actions.\n");
+  });
+
   it("--result filters and --user scopes (default 'local'); 'all' shows every bucket", async () => {
     const file = logFile();
     await appendActionLog(file, entry({ id: "p", result: "performed", userId: "local" }));

@@ -67,7 +67,22 @@ export function registerActionsCommands(program: Command, io: ProgramIO): void {
           return;
         }
         if (shown.length === 0) {
-          io.stdout("No recorded actions.\n");
+          // Channel-triggered actions (e.g. a refused remote tool) land
+          // under a `provider:source` bucket, not the default `local`,
+          // so a plain `muse actions` would look empty while entries
+          // exist elsewhere. Point the user at `--user all` rather than
+          // imply nothing happened.
+          let suffix = "";
+          if (user !== "all" && all.length === 0) {
+            const others = await queryActionLog(actionLogFile(), {});
+            const otherBuckets = [...new Set(others.map((e) => e.userId))].filter((u) => u !== user);
+            if (otherBuckets.length > 0) {
+              suffix =
+                ` for '${user}' — ${others.length.toString()} under other bucket(s) ` +
+                `(${otherBuckets.slice(0, 3).join(", ")}${otherBuckets.length > 3 ? ", …" : ""}); try \`--user all\``;
+            }
+          }
+          io.stdout(`No recorded actions${suffix}.\n`);
           return;
         }
         for (const e of shown) {
