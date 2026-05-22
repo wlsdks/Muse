@@ -417,6 +417,75 @@ not multi-tenant fair-share.
   --tiered` explicit surface AND the `smoke:live` two-tier round-trip /
   low-capacity collapse on the live surface.)
 
+**P11–P16 — Actuator breadth (human-authored 2026-05-22).** The
+cognition layer (memory / anticipation / consent / correction /
+briefing) is strong; the real-world *hands* are thin — only
+calendar / tasks / notes / messaging. Each target below adds one
+provider behind the existing model-neutral abstraction (the way
+calendar did), so no new runtime is needed. **Every bullet that
+sends to a third party or performs a state-changing external action
+MUST obey [`outbound-safety.md`](../../.claude/rules/outbound-safety.md)
+— draft-first, fail-closed approval gate, resolved-not-guessed
+recipient, action-logged; its acceptance check proves the
+deny/timeout/ambiguous/no-consent path produces NO external effect,
+not just the happy path.**
+
+**P11 — Email (the single biggest missing surface).** Read-first;
+send is draft-first and gated.
+- [ ] Read / triage / summarise the inbox (read-only) via an email
+  provider (IMAP/SMTP or Gmail API) behind the abstraction;
+  needs-reply items feed the P8 situational briefing. Check: a
+  contract-faithful HTTP-faked inbox → the agent summarises it / it
+  surfaces in the briefing (integration).
+- [ ] Send / reply obeys `outbound-safety.md` — a message to a third
+  party is never sent without the user confirming the exact drafted
+  content; recipient resolved or the agent asks; fail-closed; sent
+  content action-logged. Check: send attempt → approval prompt
+  carrying the draft → only on explicit confirm does the HTTP-faked
+  send fire; deny / timeout / ambiguous-recipient ⇒ no send
+  (integration, contract-faithful, never a fake registry).
+
+**P12 — Real-world context: weather + location (read-only).** Cheap
+grounding for anticipation.
+- [ ] A weather/location provider grounds answers and the proactive
+  briefing ("rain at 3pm — leave early"). Check: seeded location →
+  the briefing/answer reflects the real (HTTP-faked) forecast
+  (integration).
+
+**P13 — Contacts / people graph.** A JARVIS knows who people are;
+also the recipient-resolution backbone for P11/P15 outbound safety.
+- [ ] A contacts provider resolves a name → identifier (email /
+  handle) so "email Bob" resolves unambiguously, and an
+  ambiguous/unknown person triggers a clarifying question instead of
+  a guessed recipient. Check: known contact resolves; ambiguous →
+  clarify, never a guessed address (integration).
+
+**P14 — Document understanding (PDF / office, beyond markdown
+notes).**
+- [ ] The agent ingests a real PDF/office document and answers
+  grounded questions / summarises it, citing the source. Check: a
+  real document → a grounded answer citing it; a decoy excluded
+  (integration).
+
+**P15 — Web actions beyond search (gated).** Search exists; ACTING
+on the web (forms, bookings) does not — execute-tier, governed by
+`outbound-safety.md`.
+- [ ] An agentic web action (submit / book) is approval-gated +
+  consent-recorded and never autonomous; absent consent ⇒ blocked,
+  fail-closed. Check: action → approval/consent gate → only on
+  confirm does it proceed; absent ⇒ no external effect (integration).
+
+**P16 — Lifestyle actuators (opt-in umbrella, lower priority).**
+Smart-home / music / health-data — each behind the same
+provider+consent pattern; any state-changing or outbound action is
+gated per `outbound-safety.md`. **Banking / financial-account
+access, payments and money movement are OUT OF SCOPE — never built
+(see `outbound-safety.md`).** Split per-actuator when picked.
+- [ ] One opt-in lifestyle provider (e.g. smart-home or music) lands
+  end-to-end with every state-changing action approval-gated; absent
+  approval ⇒ no effect. Check: a state-changing action → gate → only
+  on confirm does it fire (integration).
+
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is
 impossible by construction.

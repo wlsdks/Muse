@@ -37,6 +37,7 @@ These commands are the ground truth. If any fails, stop and triage.
 - Tool output is untrusted. Tool loops have explicit limits and timeouts.
 - Risky local execution flows through `crates/runner`.
 - Server, CLI, and any future surface share the same `agent-core` runtime.
+- Outbound to a third party (send email/message, submit/book, post) is fail-close & draft-first per [`outbound-safety.md`](.claude/rules/outbound-safety.md) — never an autonomous send.
 - Tests are the only form of verification. **`smoke:broad` (diagnostic) is the start, not the finish — `smoke:live` is what proves a real-LLM round-trip still works.**
 
 ## Don't
@@ -46,6 +47,7 @@ These commands are the ground truth. If any fails, stop and triage.
 - Don't commit live Jira / Confluence / Bitbucket / Slack-workspace credentials.
 - Don't bloat this file past 100 lines — add to `.claude/rules/<topic>.md` instead.
 - Don't accept "passes diagnostic smoke" as proof — run `smoke:live` for any change in the request/response path.
+- Don't connect to bank / brokerage accounts or move money — financial-account access is permanently out of scope (`outbound-safety.md`).
 
 ## Domain rules
 
@@ -56,6 +58,7 @@ For depth, read the matching file under `.claude/rules/`:
 - [`testing.md`](.claude/rules/testing.md) — verification gates and the narrowest-useful-test rule.
 - [`commits.md`](.claude/rules/commits.md) — Conventional Commits + push policy + after-correction protocol.
 - [`code-style.md`](.claude/rules/code-style.md) — ESLint gate, naming, comment policy, dead-import rule.
+- [`outbound-safety.md`](.claude/rules/outbound-safety.md) — fail-close gate for any send/act toward a third party; banking out of scope.
 
 ## Cross-session memory
 
