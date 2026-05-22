@@ -31,7 +31,10 @@ export function formatCurrentTime(now: Date, timezone?: string): FormattedTime {
   const tz = resolveTimezone(timezone);
   const formatter = new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
-    hour12: false,
+    // h23, not hour12:false — the latter maps to the h24 cycle and
+    // renders midnight as "24", so localHour would be 24 not 0 and
+    // isWorkingHours would misjudge an hour-0 range at midnight.
+    hourCycle: "h23",
     timeZone: tz,
     weekday: "long"
   });

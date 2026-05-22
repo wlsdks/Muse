@@ -32,6 +32,14 @@ describe("formatCurrentTime", () => {
     // 08:30 UTC = 17:30 Seoul
     expect(result.localHour).toBe(17);
   });
+
+  it("reports midnight as localHour 0, not 24 (h23, not the hour12:false h24 quirk)", () => {
+    const utcMidnight = new Date("2026-05-11T00:00:00.000Z");
+    expect(formatCurrentTime(utcMidnight, "UTC").localHour).toBe(0);
+    // 15:00 UTC == 00:00 next day in Asia/Seoul (UTC+9) — still 0, not 24.
+    const seoulMidnight = new Date("2026-05-11T15:00:00.000Z");
+    expect(formatCurrentTime(seoulMidnight, "Asia/Seoul").localHour).toBe(0);
+  });
 });
 
 describe("isWorkingHours", () => {
@@ -48,6 +56,11 @@ describe("isWorkingHours", () => {
   it("handles wraparound windows (night shift)", () => {
     const earlyMorning = new Date("2026-05-11T02:00:00.000Z");
     expect(isWorkingHours(earlyMorning, { end: 6, start: 22 }, "UTC")).toBe(true);
+  });
+
+  it("counts midnight as inside a window that starts at hour 0 (the h24 '24' quirk wrongly excluded it)", () => {
+    const midnight = new Date("2026-05-11T00:00:00.000Z");
+    expect(isWorkingHours(midnight, { end: 8, start: 0 }, "UTC")).toBe(true);
   });
 });
 
