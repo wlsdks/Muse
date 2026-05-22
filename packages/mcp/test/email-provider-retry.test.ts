@@ -1,0 +1,55 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { GmailEmailProvider } from "../src/email-provider.js";
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200 });
+}
+function status(code: number): Response {
+  return new Response("", { status: code });
+}
+
+const listOk = () => json({ messages: [{ id: "m1" }] });
+const msgOk = () => json({ labelIds: ["INBOX", "UNREAD"], payload: { headers: [{ name: "From", value: "a@b.com" }, { name: "Subject", value: "Hello" }] }, snippet: "hi there" });
+
+function sequenceFetch(factories: Array<() => Response>) {
+  let index = 0;
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    const factory = factories[Math.min(index, factories.length - 1)]!;
+    index += 1;
+    return factory();
+  }) as unknown as typeof globalThis.fetch;
+  return { calls: () => calls, fetchImpl };
+}
+
+const noWait = { baseDelayMs: 0, sleep: async () => {} };
+
+describe("GmailEmailProvider — read path is retry-hardened", () => {
+  it("listRecent recovers from a transient 503 on the inbox read", async () => {
+    // 503 on the list call, then the list 200, then the message detail 200.
+    const { calls, fetchImpl } = sequenceFetch([() => status(503), listOk, msgOk]);
+    const provider = new GmailEmailProvider("token", fetchImpl, noWait);
+    const messages = await provider.listRecent(5);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.subject).toBe("Hello");
+    expect(calls()).toBe(3); // 503 + list retry + message detail
+  });
+
+  it("still surfaces a clear error once read retries are exhausted", async () => {
+    const { calls, fetchImpl } = sequenceFetch([() => status(503)]);
+    const provider = new GmailEmailProvider("token", fetchImpl, noWait);
+    await expect(provider.listRecent(5)).rejects.toThrow("Gmail API 503");
+    expect(calls()).toBe(3);
+  });
+});
+
+describe("GmailEmailProvider — sendEmail is NEVER retried (no double-send)", () => {
+  it("a transient 503 on send throws immediately, fetch called exactly once", async () => {
+    const fetchImpl = vi.fn(async () => status(503)) as unknown as typeof globalThis.fetch;
+    const provider = new GmailEmailProvider("token", fetchImpl, noWait);
+    await expect(provider.sendEmail("a@b.com", "Subj", "Body")).rejects.toThrow("Gmail send failed (503)");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});

@@ -12,6 +12,8 @@
  * briefing daemon (needs-reply surfacing) can reuse it.
  */
 
+import { fetchWithRetry, type RetryOptions } from "./http-retry.js";
+
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 export interface EmailSummary {
@@ -46,7 +48,8 @@ function header(headers: ReadonlyArray<Record<string, unknown>>, name: string): 
 export class GmailEmailProvider implements EmailProvider, EmailSender {
   constructor(
     private readonly accessToken: string,
-    private readonly fetchImpl: typeof globalThis.fetch = globalThis.fetch
+    private readonly fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+    private readonly retryOptions: RetryOptions = {}
   ) {}
 
   async sendEmail(to: string, subject: string, body: string): Promise<void> {
@@ -72,7 +75,13 @@ export class GmailEmailProvider implements EmailProvider, EmailSender {
   }
 
   private async get(url: string): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(url, { headers: { authorization: `Bearer ${this.accessToken}` } });
+    // Reads are idempotent → retry transient 429/5xx so inbox triage
+    // survives a Gmail blip. sendEmail deliberately does NOT retry
+    // (a retried send could deliver the message twice).
+    const response = await fetchWithRetry(this.fetchImpl, url, {
+      ...this.retryOptions,
+      init: { headers: { authorization: `Bearer ${this.accessToken}` } }
+    });
     if (response.status === 401 || response.status === 403) {
       throw new Error(`Gmail auth rejected (${response.status.toString()}) — the access token is missing, expired, or lacks gmail.readonly scope`);
     }
