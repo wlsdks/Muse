@@ -63,7 +63,7 @@ export type {
   OutboundReceipt
 } from "./types.js";
 
-export { TelegramProvider, escapeForTelegramParseMode, type TelegramProviderOptions } from "./telegram-provider.js";
+export { TelegramProvider, clampForTelegram, escapeForTelegramParseMode, type TelegramProviderOptions } from "./telegram-provider.js";
 export { DiscordProvider, type DiscordProviderOptions } from "./discord-provider.js";
 export { SlackProvider, escapeSlackText, type SlackProviderOptions } from "./slack-provider.js";
 export { LineProvider, type LineProviderOptions } from "./line-provider.js";

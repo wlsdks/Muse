@@ -10,6 +10,7 @@ import {
   MessagingValidationError,
   SlackProvider,
   TelegramProvider,
+  clampForTelegram,
   escapeForTelegramParseMode,
   escapeSlackText,
   readDiscordAfter,
@@ -144,6 +145,29 @@ describe("TelegramProvider", () => {
     expect(escapeForTelegramParseMode("a.b-c (d)!", undefined)).toBe("a.b-c (d)!");
     // Backslash itself is escaped under MarkdownV2 (it is the escape char).
     expect(escapeForTelegramParseMode("path\\to", "MarkdownV2")).toBe("path\\\\to");
+  });
+
+  it("clampForTelegram keeps the ESCAPED text within Telegram's 4096 limit (escaping expands the body)", () => {
+    // Plain text: the limit applies to the body directly.
+    expect(clampForTelegram("a".repeat(5000), undefined).length).toBeLessThanOrEqual(4096);
+
+    // MarkdownV2: a near-limit body of all-special chars roughly doubles
+    // when escaped. clamp-then-escape (the bug) would send ~8000 chars
+    // and Telegram 400s the whole message; clampForTelegram truncates the
+    // SOURCE so the escaped form fits.
+    const dense = "_".repeat(4000); // each "_" → "\_" (2 chars) when escaped
+    const mdEscaped = escapeForTelegramParseMode(clampForTelegram(dense, "MarkdownV2"), "MarkdownV2");
+    expect(mdEscaped.length).toBeLessThanOrEqual(4096);
+    // No dangling half-escape: every backslash is paired with the char it escapes.
+    expect(mdEscaped.endsWith("\\")).toBe(false);
+
+    // HTML: "&" expands 5x ("&amp;"); the escaped result must still fit.
+    const amps = "&".repeat(2000);
+    const htmlEscaped = escapeForTelegramParseMode(clampForTelegram(amps, "HTML"), "HTML");
+    expect(htmlEscaped.length).toBeLessThanOrEqual(4096);
+
+    // A body that fits once escaped is passed through unchanged (no needless truncation).
+    expect(clampForTelegram("hello *world*", "MarkdownV2")).toBe("hello *world*");
   });
 
   it("escapeForTelegramParseMode escapes every Telegram MarkdownV2 reserved char and leaves the rest alone", () => {

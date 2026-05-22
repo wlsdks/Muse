@@ -178,10 +178,11 @@ export class TelegramProvider implements MessagingProvider {
   }
 
   async send(message: OutboundMessage): Promise<OutboundReceipt> {
-    // Truncate to Telegram's 4096-char hard limit so a long brief
-    // / answer is delivered (truncated) instead of dropped whole
-    // by validateOutboundMessage's length throw.
-    const outboundText = clampOutboundText(message.text);
+    // Clamp the SOURCE so the ESCAPED text Telegram receives stays
+    // within its 4096 limit — escaping (MarkdownV2 \-escapes / HTML
+    // entities) expands the body, so a plain clamp-then-escape could
+    // still overflow and get the whole message rejected (400).
+    const outboundText = clampForTelegram(message.text, this.parseMode);
     validateOutboundMessage({ ...message, text: outboundText });
     const response = await fetchWithTimeout(this.fetchImpl, `${this.baseUrl}/bot${this.token}/sendMessage`, {
       body: JSON.stringify({
@@ -234,6 +235,32 @@ export function escapeForTelegramParseMode(
     return text.replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;");
   }
   return text;
+}
+
+const TELEGRAM_MAX_TEXT = 4096;
+
+/**
+ * Clamp the SOURCE text so the escaped form Telegram receives never
+ * exceeds its 4096-char limit. Plain text → the limit applies
+ * directly. With a parse_mode, escaping expands the body (MarkdownV2
+ * `\`-escapes a special char → 2x; HTML `&`→`&amp;` → up to 5x), so a
+ * body that fits unescaped can still 400 once escaped. When the full
+ * escaped form already fits we send it whole; otherwise we truncate
+ * the source by the worst-case expansion factor so the escaped result
+ * — truncation marker and all — stays within the limit. Truncating the
+ * UNescaped source (then escaping) keeps the marker valid and can't
+ * leave a dangling half-escape, since the cut lands on a real char
+ * boundary before any `\`/entity is added.
+ */
+export function clampForTelegram(text: string, mode: "MarkdownV2" | "HTML" | undefined): string {
+  if (!mode) {
+    return clampOutboundText(text, TELEGRAM_MAX_TEXT);
+  }
+  if (escapeForTelegramParseMode(text, mode).length <= TELEGRAM_MAX_TEXT) {
+    return text;
+  }
+  const worstCaseFactor = mode === "HTML" ? 5 : 2;
+  return clampOutboundText(text, Math.floor(TELEGRAM_MAX_TEXT / worstCaseFactor));
 }
 
 // Re-export so callers don't have to depend on the validate module.
