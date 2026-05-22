@@ -1053,6 +1053,18 @@ describe("createMuseTools", () => {
     });
   });
 
+  it("text_stats counts user-perceived characters (graphemes), not UTF-16 code units", async () => {
+    const tool = getTool("text_stats");
+    // "a👍b🇰🇷c": 5 graphemes, but 6 code points and 9 UTF-16 code units —
+    // the emoji is a surrogate pair and the flag is two regional
+    // indicators clustering into one grapheme.
+    expect(await tool.execute({ text: "a👍b🇰🇷c" }, { runId: "run-1" })).toEqual({
+      characters: 5,
+      lines: 1,
+      words: 1
+    });
+  });
+
   it("math_eval evaluates arithmetic with operator precedence and parentheses", async () => {
     const tool = getTool("math_eval");
     expect(await tool.execute({ expression: "2 + 3 * 4" }, { runId: "run-1" })).toEqual({

@@ -16,7 +16,7 @@ export function createTextStatsTool(): MuseTool {
   return {
     definition: {
       description:
-        "Returns word, character, and line counts for a string. Whitespace-only inputs return zero counts across all dimensions.",
+        "Returns word, character (user-perceived / grapheme), and line counts for a string. Whitespace-only inputs return zero counts across all dimensions.",
       inputSchema: {
         additionalProperties: false,
         properties: { text: { type: "string" } },
@@ -36,7 +36,7 @@ export function createTextStatsTool(): MuseTool {
       const words = text.trim().split(/\s+/u).filter((segment) => segment.length > 0);
       const lines = text.split(/\r?\n/u).length;
       return {
-        characters: text.length,
+        characters: countGraphemes(text),
         lines,
         words: words.length
       } satisfies JsonObject;
@@ -183,6 +183,20 @@ export function createMarkdownTableTool(): MuseTool {
 const KV_SUMMARIZE_MAX_LINES = 200;
 export const KV_SUMMARIZE_MAX_DEPTH = 32;
 const MARKDOWN_TABLE_MAX_ROWS = 200;
+
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+// Count user-perceived characters, not UTF-16 code units: one emoji,
+// flag, or combining/Hangul-jamo sequence is a single character to the
+// user but 2+ code units, so `text.length` over-counts. Intl.Segmenter
+// is built in (no dependency) and handles grapheme clusters per UAX#29.
+function countGraphemes(text: string): number {
+  let count = 0;
+  for (const _segment of graphemeSegmenter.segment(text)) {
+    count += 1;
+  }
+  return count;
+}
 
 function slugify(text: string, maxLength?: number): string {
   const trimmed = text.normalize("NFKD").replace(/[̀-ͯ]/gu, "");
