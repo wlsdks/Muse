@@ -49,6 +49,7 @@ import {
 
 export {
   resolveActionLogFile,
+  resolvePendingApprovalsFile,
   resolveBriefingSidecarFile,
   resolveContactsFile,
   resolveCredentialsFile,

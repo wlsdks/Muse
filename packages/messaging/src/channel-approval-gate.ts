@@ -70,6 +70,8 @@ export interface ChannelApprovalRefusal {
   readonly tool: string;
   readonly risk: "write" | "execute";
   readonly draft: string;
+  /** The tool's arguments — kept so a later approval can re-run it. */
+  readonly arguments: Record<string, unknown>;
   readonly userId?: string;
 }
 
@@ -98,7 +100,7 @@ export function createChannelApprovalGate(options: {
     const draft = summarizeToolDraft(toolCall.name, toolCall.arguments);
     if (options.recordRefusal) {
       try {
-        await options.recordRefusal({ draft, risk, tool: toolCall.name, ...(userId ? { userId } : {}) });
+        await options.recordRefusal({ arguments: toolCall.arguments ?? {}, draft, risk, tool: toolCall.name, ...(userId ? { userId } : {}) });
       } catch {
         // Recording the refusal must never change the fail-closed
         // decision — a wedged disk can't let a risky tool through.

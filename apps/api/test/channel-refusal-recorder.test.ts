@@ -21,7 +21,7 @@ describe("createChannelRefusalRecorder", () => {
       source: "42"
     });
 
-    await record({ draft: 'to bob@example.com, subject "Q3"', risk: "execute", tool: "email_send", userId: "telegram:42" });
+    await record({ arguments: { subject: "Q3", to: "bob@example.com" }, draft: 'to bob@example.com, subject "Q3"', risk: "execute", tool: "email_send", userId: "telegram:42" });
 
     const entries = await readActionLog(file);
     expect(entries).toHaveLength(1);
@@ -37,7 +37,7 @@ describe("createChannelRefusalRecorder", () => {
   it("falls back to providerId:source as the userId when the refusal omits one", async () => {
     const file = logFile();
     const record = createChannelRefusalRecorder({ actionLogFile: file, providerId: "discord", source: "chan-9" });
-    await record({ draft: "POST http://x.test/book", risk: "execute", tool: "web_action" });
+    await record({ arguments: { url: "http://x.test/book" }, draft: "POST http://x.test/book", risk: "execute", tool: "web_action" });
     const entries = await readActionLog(file);
     expect(entries[0]!.userId).toBe("discord:chan-9");
   });
@@ -45,7 +45,7 @@ describe("createChannelRefusalRecorder", () => {
   it("delegates to the injected append fn with the resolved file", async () => {
     const append = vi.fn(async () => {});
     const record = createChannelRefusalRecorder({ actionLogFile: "/tmp/x.json", appendActionLog: append, providerId: "telegram", source: "1" });
-    await record({ draft: "", risk: "write", tool: "muse.notes.save" });
+    await record({ arguments: {}, draft: "", risk: "write", tool: "muse.notes.save" });
     expect(append).toHaveBeenCalledTimes(1);
     expect(append.mock.calls[0]![0]).toBe("/tmp/x.json");
     expect(append.mock.calls[0]![1]).toMatchObject({ result: "refused", what: 'Muse wanted to run "muse.notes.save" (write)' });

@@ -107,6 +107,7 @@ import { registerWatchFolderCommand } from "./commands-watch-folder.js";
 import { registerAgentNoticesCommands } from "./commands-agent-notices.js";
 import { registerWebhookCommand } from "./commands-webhook.js";
 import { registerActionsCommands } from "./commands-actions.js";
+import { registerApprovalsCommands } from "./commands-approvals.js";
 import { registerContactsCommands } from "./commands-contacts.js";
 import { registerEmailCommands } from "./commands-email.js";
 import { registerHomeCommands } from "./commands-home.js";
@@ -516,6 +517,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerTasksCommands(program, io, { apiRequest, writeOutput });
   registerObjectivesCommands(program, io);
   registerActionsCommands(program, io);
+  registerApprovalsCommands(program, io);
   registerContactsCommands(program, io);
   registerInboxCommand(program, io);
   registerEmailCommands(program, io);

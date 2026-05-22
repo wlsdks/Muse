@@ -176,6 +176,7 @@ export {
   resolveModelKeysFile,
   resolveNotesDir,
   resolveActionLogFile,
+  resolvePendingApprovalsFile,
   resolveObjectivesFile,
   resolveRemindersFile,
   resolveDiscordAfterFile,

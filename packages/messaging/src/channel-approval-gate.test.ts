@@ -65,6 +65,7 @@ describe("createChannelApprovalGate", () => {
     await gate(gateInput("email_send", "execute", { body: "secret", subject: "Q3", to: "bob@example.com" }));
     expect(recordRefusal).toHaveBeenCalledTimes(1);
     expect(recordRefusal.mock.calls[0]![0]).toEqual({
+      arguments: { body: "secret", subject: "Q3", to: "bob@example.com" },
       draft: 'to bob@example.com, subject "Q3"',
       risk: "execute",
       tool: "email_send",

@@ -37,6 +37,15 @@ export {
 } from "./channel-approval-gate.js";
 
 export {
+  clearPendingApproval,
+  filterUnexpired,
+  listPendingApprovals,
+  readPendingApprovals,
+  recordPendingApproval,
+  type PendingApproval
+} from "./pending-approval-store.js";
+
+export {
   FileMessagingCredentialStore,
   type MessagingCredentialStore,
   type MessagingCredentials

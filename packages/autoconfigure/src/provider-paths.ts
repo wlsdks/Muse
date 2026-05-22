@@ -99,6 +99,10 @@ export function resolveActionLogFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_ACTION_LOG_FILE", "action-log.json");
 }
 
+export function resolvePendingApprovalsFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_PENDING_APPROVALS_FILE", "pending-approvals.json");
+}
+
 export function resolveEpisodesFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_EPISODES_FILE", "episodes.json");
 }
