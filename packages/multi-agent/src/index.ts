@@ -14,6 +14,15 @@ export type {
   OrchestrationHistorySummary
 } from "./orchestration-history.js";
 export { InMemoryOrchestrationHistoryStore } from "./orchestration-history.js";
+export type {
+  ModelTier,
+  PlanTieredRunArgs,
+  TierModels,
+  TieredAssignment,
+  TieredRunPlan,
+  TieredTask
+} from "./tiering.js";
+export { classifyTier, planTieredRun } from "./tiering.js";
 
 export interface AgentWorker {
   readonly id: string;

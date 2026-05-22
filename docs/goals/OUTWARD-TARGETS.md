@@ -393,14 +393,18 @@ not multi-tenant fair-share.
   override applied by the orchestrator dispatch via
   `withSelectedWorker`; absent ⇒ byte-identical. `models.json`
   tier→model resolution + CLI/`muse ask` wiring stay s2+/s4+.)
-- [ ] A deterministic tier classifier routes simple lookups to the
+- [x] A deterministic tier classifier routes simple lookups to the
   fast model and reasoning to the high-capability model, defaulting
   to heavy when unsure (never silently downgrade reasoning), AND a
   capacity probe collapses the run to the single high-capability
   model (sequential) when the host cannot hold both at once
   (fail-open to single-heavy on probe error). Check: labelled tasks
   route to the expected tier; a faked low-capacity host collapses
-  to one model (integration). — 680 s2+s3
+  to one model (integration). — 680 s2+s3 (goal 682:
+  `classifyTier` reasoning-first/default-heavy + `planTieredRun`
+  capacity collapse + fail-open in `@muse/multi-agent/tiering.ts`;
+  `muse ask` auto / `muse orchestrate --tiered` surface wiring + the
+  live two-tier round-trip stay s4+s5.)
 - [ ] Tiering is exercised end-to-end on the user surface — auto in
   the `muse ask`/REPL path (off by default behind a flag until
   proven not to degrade a plain ask) AND explicit via
