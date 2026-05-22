@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { extractFollowupPromises } from "../src/followup-detector.js";
+import { RULE_FOLLOWUP_FUTURE_HORIZON_MS, extractFollowupPromises } from "../src/followup-detector.js";
 
 const now = new Date("2026-05-13T10:00:00.000Z");
+
+describe("extractFollowupPromises — future-horizon sanity bound", () => {
+  it("drops a promise scheduled beyond the 365-day horizon (`in 9999 days` would queue a follow-up ~27 years out that never meaningfully fires) — parity with the LLM detector's bound (goal 650)", () => {
+    expect(extractFollowupPromises("ping me in 9999 days", { now })).toHaveLength(0);
+    // 366 days is just past the horizon → dropped.
+    expect(extractFollowupPromises("remind me in 366 days", { now })).toHaveLength(0);
+  });
+
+  it("keeps a promise inside the horizon (a few hundred days out is a legitimate long-range reminder)", () => {
+    const result = extractFollowupPromises("circle back in 300 days", { now });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.scheduledFor.getTime() - now.getTime()).toBe(300 * 86_400_000);
+  });
+
+  it("exports a 365-day horizon constant matching the LLM detector", () => {
+    expect(RULE_FOLLOWUP_FUTURE_HORIZON_MS).toBe(365 * 86_400_000);
+  });
+});
 
 describe("extractFollowupPromises — English relative", () => {
   it("matches `in N minutes`", () => {

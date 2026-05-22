@@ -79,6 +79,8 @@ const DEFAULT_SLOTS: Record<"morning" | "afternoon" | "evening" | "night", numbe
   night: 21
 };
 
+export const RULE_FOLLOWUP_FUTURE_HORIZON_MS = 365 * 86_400_000;
+
 const KOREAN_SLOTS: Record<string, "morning" | "afternoon" | "evening" | "night"> = {
   "아침": "morning",
   "오전": "morning",
@@ -115,6 +117,11 @@ export function extractFollowupPromises(
     // a serialisable scheduledFor."
     const ts = promise.scheduledFor.getTime();
     if (!Number.isFinite(ts)) return;
+    // Sanity-bound the horizon: a regex like `in 9999 days` would
+    // otherwise queue a follow-up ~27 years out that never
+    // meaningfully fires. Parity with the LLM detector's
+    // LLM_FOLLOWUP_FUTURE_HORIZON_MS (goal 650).
+    if (ts > options.now.getTime() + RULE_FOLLOWUP_FUTURE_HORIZON_MS) return;
     const minuteKey = Math.floor(ts / 60_000);
     if (seenMinute.has(minuteKey)) return;
     seenMinute.add(minuteKey);
