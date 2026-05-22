@@ -370,6 +370,41 @@ server autonomously drives the loop.
     `{unmet}`, logically-impossible → `{unmeetable,reason}` — it
     genuinely decides. Live-verified.
 
+**P10 — Tiered local-model orchestration (human-authored
+2026-05-22; see goal 680).** The multi-agent engine
+(`@muse/multi-agent`: sequential/parallel/race, `SupervisorAgent`,
+LLM-backed `RuntimeAgentWorker`), the `muse orchestrate run` CLI
+and `POST /api/multi-agent/orchestrate` all EXIST and pass
+`smoke:broad` — but every worker in a run shares ONE model
+(`AgentSpec` has no model field; dispatch takes a single
+`input.model`), so a fast model can't take a lookup while a
+high-capability model takes the reasoning. The outward gap: real
+model-tiering on the user's local Ollama — auto in the ask path and
+explicit via `muse orchestrate`, capacity-aware, and `smoke:live`
+proven (today it is diagnostic-only). Single-user / local-Ollama is
+the design point — arbitration is one machine's model residency,
+not multi-tenant fair-share.
+- [ ] A worker can run a model distinct from the run default
+  (per-worker model / `tier: fast|heavy` on the dispatch path,
+  resolved via `~/.muse/models.json`); absent ⇒ today's
+  single-model behaviour byte-identical. Check: one orchestration
+  run whose workers demonstrably executed on different local models
+  (integration). — 680 s1
+- [ ] A deterministic tier classifier routes simple lookups to the
+  fast model and reasoning to the high-capability model, defaulting
+  to heavy when unsure (never silently downgrade reasoning), AND a
+  capacity probe collapses the run to the single high-capability
+  model (sequential) when the host cannot hold both at once
+  (fail-open to single-heavy on probe error). Check: labelled tasks
+  route to the expected tier; a faked low-capacity host collapses
+  to one model (integration). — 680 s2+s3
+- [ ] Tiering is exercised end-to-end on the user surface — auto in
+  the `muse ask`/REPL path (off by default behind a flag until
+  proven not to degrade a plain ask) AND explicit via
+  `muse orchestrate --tiered` — proven by a `smoke:live` round-trip
+  whose workers ran on two distinct local Qwen tiers and whose
+  low-capacity path collapsed to one. — 680 s4+s5
+
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is
 impossible by construction.
