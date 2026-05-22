@@ -1,5 +1,10 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { writeReminders, type PersistedReminder } from "@muse/mcp";
 import { Command } from "commander";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { registerRemindCommands, resolveLocalReminderId, type RemindCommandHelpers } from "./commands-remind.js";
 
@@ -60,6 +65,33 @@ describe("muse remind add — pre-dispatch <when> validation", () => {
     expect(r.error).toBeDefined();
     expect(r.error).toContain("relative phrase");
     expect(r.apiCalls).toHaveLength(0);
+  });
+});
+
+describe("muse remind list --local — ordering by parsed instant, not lexicographic dueAt", () => {
+  const prevEnv = process.env.MUSE_REMINDERS_FILE;
+  afterEach(() => {
+    if (prevEnv === undefined) delete process.env.MUSE_REMINDERS_FILE;
+    else process.env.MUSE_REMINDERS_FILE = prevEnv;
+  });
+  function reminder(overrides: Partial<PersistedReminder>): PersistedReminder {
+    return { createdAt: "2026-05-22T00:00:00.000Z", dueAt: "2026-05-22T12:00:00.000Z", id: "r", status: "pending", text: "x", ...overrides };
+  }
+
+  it("lists a timezone-offset dueAt in real-instant order (a lexicographic sort would invert it)", async () => {
+    const f = join(mkdtempSync(join(tmpdir(), "muse-remind-list-")), "reminders.json");
+    // a: 2026-05-22T23:00:00-05:00 == 2026-05-23T04:00:00Z (LATER instant)
+    // b: 2026-05-23T01:00:00Z (EARLIER instant)
+    // Lexicographically "2026-05-22T23…" < "2026-05-23T01…" → a sorts first; by instant b is first.
+    await writeReminders(f, [
+      reminder({ dueAt: "2026-05-22T23:00:00-05:00", id: "a", text: "later" }),
+      reminder({ dueAt: "2026-05-23T01:00:00Z", id: "b", text: "earlier" })
+    ]);
+    process.env.MUSE_REMINDERS_FILE = f;
+    const r = await runRemind(["list", "--local", "--json"]);
+    expect(r.error).toBeUndefined();
+    const payload = JSON.parse(r.stdout) as { reminders: { id: string }[] };
+    expect(payload.reminders.map((entry) => entry.id)).toEqual(["b", "a"]);
   });
 });
 
