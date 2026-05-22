@@ -32,6 +32,7 @@ import {
   deriveBriefingImminent,
   deriveCalendarBriefingImminent,
   FileAmbientSignalSource,
+  MacOsActiveWindowSource,
   GmailEmailProvider,
   LocalDirNotesProvider,
   LocalFileTasksProvider,
@@ -432,10 +433,14 @@ export function startAmbientDaemonIfConfigured(
   ) {
     return;
   }
-  const file = resolveAmbientSignalFile(env);
   const tickMsRaw = env.MUSE_AMBIENT_TICK_MS ? Number(env.MUSE_AMBIENT_TICK_MS) : undefined;
   const quietHours = parseQuietHours(env.MUSE_AMBIENT_QUIET_HOURS) ?? parseQuietHours(env.MUSE_REMINDER_QUIET_HOURS);
   const enrich = buildKnowledgeEnricherIfEnabled(env, options);
+  // Live macOS active-window perception (no helper writing the file)
+  // when opted in on darwin; otherwise the file source.
+  const source = env.MUSE_AMBIENT_SOURCE?.trim() === "macos" && process.platform === "darwin"
+    ? new MacOsActiveWindowSource()
+    : new FileAmbientSignalSource(resolveAmbientSignalFile(env));
   const handle = startAmbientTick({
     destination,
     errorLogger: (message) => server.log.warn(message),
@@ -443,7 +448,7 @@ export function startAmbientDaemonIfConfigured(
     providerId,
     registry: options.messaging,
     rules,
-    source: new FileAmbientSignalSource(file),
+    source,
     ...(enrich ? { enrich } : {}),
     ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
     ...(quietHours ? { quietHours } : {})

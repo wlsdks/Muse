@@ -311,6 +311,11 @@ export {
   type RunAmbientNoticeTickOptions,
   type RunAmbientNoticeTickSummary
 } from "./ambient-notice-loop.js";
+export {
+  MacOsActiveWindowSource,
+  parseActiveWindowSignal,
+  type MacOsActiveWindowSourceOptions
+} from "./macos-ambient-source.js";
 
 // Notes provider abstraction. LocalDir, Apple Notes (osascript), and
 // Notion (api.notion.com) are all real adapters. The `muse.notes-multi`
