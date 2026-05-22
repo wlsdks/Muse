@@ -569,16 +569,20 @@ ambient bundle.)
   tool-call → CONFIRM fires one real Gmail send (Bearer, HTTP faked) /
   DENY / ambiguous-recipient ⇒ NO send. Mutation-proven. Wiring the
   gate to a live channel/CLI confirm in production is a follow-up.)
-- [ ] The OTHER state-changing actuators (web action, smart-home) are
+- [x] The OTHER state-changing actuators (web action, smart-home) are
   likewise gated agent tools, so the agent can act on them mid-turn
   under the same fail-closed gate. Check: an agent run → tool-call →
   gate → confirm fires / absent ⇒ no external effect (integration).
-  — 707 partial (`createWebActionTool` (@muse/mcp): a `web_action`
-  execute-risk tool reusing `performWebActionWithApproval`; apps/api
-  p17-web-action-tool-agent-seam.test.ts drives a REAL agent run —
-  CONFIRM fires one recorded request / DENY ⇒ NO request,
-  mutation-proven. STILL OPEN: `createHomeActionTool` (smart-home) the
-  same way.)
+  — 707 + 708 (`createWebActionTool` reusing
+  `performWebActionWithApproval` + `createHomeActionTool` reusing
+  `performHomeActionWithApproval`, both `execute`-risk MuseTools in
+  @muse/mcp. apps/api p17-{web-action,home-action}-tool-agent-seam
+  tests drive REAL `createAgentRuntime` runs — the model emits a
+  `web_action` / `home_action` tool-call → CONFIRM fires one recorded
+  request / HA service POST / DENY ⇒ NO external effect.
+  Mutation-proven. All three actuators (email, web, smart-home) are now
+  gated agent tools; wiring them into a live agent surface with a real
+  channel/CLI confirm gate is the next P17 step.)
 
 The loop extends this map itself when all are delivered or its
 judgement finds a stronger outward direction. "Nothing to do" is

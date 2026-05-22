@@ -1,0 +1,65 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { createHomeActionTool } from "./smart-home-tool.js";
+import type { WebActionApprovalGate } from "./web-action.js";
+import { readActionLog } from "./personal-action-log-store.js";
+
+function recordingFetch(): { fetchImpl: typeof fetch; calls: { url: string; body?: string }[] } {
+  const calls: { url: string; body?: string }[] = [];
+  const fetchImpl = (async (url: string | URL, init?: { body?: string }) => {
+    calls.push({ body: init?.body, url: String(url) });
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  return { calls, fetchImpl };
+}
+
+const approve: WebActionApprovalGate = () => ({ approved: true });
+const deny: WebActionApprovalGate = () => ({ approved: false, reason: "declined" });
+
+function logFile(): string {
+  return join(mkdtempSync(join(tmpdir(), "muse-home-tool-")), "action-log.json");
+}
+
+const ctx = { runId: "run-1", userId: "stark" };
+function deps(gate: WebActionApprovalGate, fetchImpl: typeof fetch, actionLogFile = logFile()) {
+  return { actionLogFile, approvalGate: gate, baseUrl: "http://ha.local:8123", fetchImpl, token: "tok", userId: "stark" };
+}
+
+describe("createHomeActionTool", () => {
+  it("exposes an execute-risk home_action tool requiring service", () => {
+    const { fetchImpl } = recordingFetch();
+    const tool = createHomeActionTool(deps(approve, fetchImpl));
+    expect(tool.definition.name).toBe("home_action");
+    expect(tool.definition.risk).toBe("execute");
+    expect(tool.definition.inputSchema.required).toEqual(["service"]);
+  });
+
+  it("CONFIRM: calls the HA service with the entity_id body, logged performed", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const actionLogFile = logFile();
+    const tool = createHomeActionTool(deps(approve, fetchImpl, actionLogFile));
+    const out = await tool.execute({ entity: "light.living_room", service: "light.turn_off" }, ctx);
+    expect(out).toEqual({ performed: true, status: 200 });
+    expect(calls[0]?.url).toBe("http://ha.local:8123/api/services/light/turn_off");
+    expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({ entity_id: "light.living_room" });
+    expect((await readActionLog(actionLogFile))[0]).toMatchObject({ result: "performed" });
+  });
+
+  it("DENY: no service call fires", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const out = await createHomeActionTool(deps(deny, fetchImpl)).execute({ entity: "light.living_room", service: "light.turn_off" }, ctx);
+    expect(out).toMatchObject({ performed: false, reason: "denied" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects a malformed service id (not domain.service) without firing", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const out = await createHomeActionTool(deps(approve, fetchImpl)).execute({ service: "turnoff" }, ctx) as Record<string, unknown>;
+    expect(out.performed).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+});

@@ -1,0 +1,73 @@
+/**
+ * P17 conversational actuation: expose the gated Home Assistant
+ * smart-home control as an AGENT tool so Muse can act on "turn off the
+ * living-room lights" mid-turn — not only via `muse home call`.
+ * Execution routes through the proven fail-closed
+ * `performHomeActionWithApproval` (approval gate, action-logged), so
+ * the agent path inherits the SAME guarantee: deny / absent confirm ⇒
+ * no service call. Opt-in via the host base URL + long-lived token.
+ */
+
+import type { JsonObject } from "@muse/shared";
+import type { MuseTool } from "@muse/tools";
+
+import { performHomeActionWithApproval } from "./smart-home.js";
+import type { WebActionApprovalGate } from "./web-action.js";
+
+export interface HomeActionToolDeps {
+  readonly baseUrl: string;
+  readonly token: string;
+  readonly fetchImpl: typeof fetch;
+  readonly approvalGate: WebActionApprovalGate;
+  readonly actionLogFile: string;
+  readonly userId: string;
+}
+
+export function createHomeActionTool(deps: HomeActionToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "Call a Home Assistant service to control a smart-home device (e.g. 'light.turn_off' on 'light.living_room'). The user must confirm the exact action before it fires; absent confirmation nothing happens. Not for payments.",
+      domain: "system",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          data: { description: "Extra service data (object), merged into the call body.", type: "object" },
+          entity: { description: "Target entity_id, e.g. 'light.living_room'.", type: "string" },
+          service: { description: "Service id as '<domain>.<service>', e.g. 'light.turn_off'.", type: "string" }
+        },
+        required: ["service"],
+        type: "object"
+      },
+      keywords: ["home", "smart-home", "light", "lock", "device", "homeassistant"],
+      name: "home_action",
+      risk: "execute"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const service = typeof args["service"] === "string" ? args["service"].trim() : "";
+      const dot = service.indexOf(".");
+      if (dot <= 0 || dot === service.length - 1) {
+        return { performed: false, reason: `service must be '<domain>.<service>' (e.g. light.turn_off), got '${service}'` };
+      }
+      const entityId = typeof args["entity"] === "string" ? args["entity"].trim() : undefined;
+      const data = args["data"] && typeof args["data"] === "object" && !Array.isArray(args["data"])
+        ? args["data"] as Record<string, unknown>
+        : undefined;
+      const outcome = await performHomeActionWithApproval({
+        actionLogFile: deps.actionLogFile,
+        approvalGate: deps.approvalGate,
+        baseUrl: deps.baseUrl,
+        domain: service.slice(0, dot),
+        fetchImpl: deps.fetchImpl,
+        service: service.slice(dot + 1),
+        token: deps.token,
+        userId: deps.userId,
+        ...(entityId ? { entityId } : {}),
+        ...(data ? { data } : {})
+      });
+      return outcome.performed
+        ? { performed: true, status: outcome.status }
+        : { detail: outcome.detail, performed: false, reason: outcome.reason };
+    }
+  };
+}

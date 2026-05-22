@@ -452,6 +452,10 @@ export {
   type PerformHomeActionWithApprovalOptions
 } from "./smart-home.js";
 export {
+  createHomeActionTool,
+  type HomeActionToolDeps
+} from "./smart-home-tool.js";
+export {
   createMessagingObjectiveActuator,
   createModelObjectiveEvaluator,
   parseObjectiveVerdict,
