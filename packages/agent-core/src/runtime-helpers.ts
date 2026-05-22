@@ -441,13 +441,27 @@ export function appendSystemSection(
       return message;
     }
 
-    const withoutPrevious = message.content
-      .split(marker)[0]
-      ?.trimEnd();
-
     return {
       ...message,
-      content: [withoutPrevious, content].filter(Boolean).join("\n\n")
+      content: [stripSystemSection(message.content, marker), content].filter(Boolean).join("\n\n")
     };
   });
+}
+
+const MUSE_SECTION_MARKER = /<!--\s*muse:[\w-]+\s*-->/u;
+
+// Remove just THIS marker's block (from its marker up to the next
+// muse-section marker or end), preserving every other section. A naive
+// `split(marker)[0]` kept only the text BEFORE the marker, silently
+// dropping any sections that were appended AFTER it.
+function stripSystemSection(content: string, marker: string): string {
+  const start = content.indexOf(marker);
+  if (start < 0) {
+    return content.trimEnd();
+  }
+  const before = content.slice(0, start);
+  const after = content.slice(start + marker.length);
+  const nextRel = after.search(MUSE_SECTION_MARKER);
+  const rest = nextRel < 0 ? "" : after.slice(nextRel);
+  return [before.trimEnd(), rest.trim()].filter(Boolean).join("\n\n");
 }

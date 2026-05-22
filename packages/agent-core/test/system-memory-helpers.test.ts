@@ -94,6 +94,25 @@ describe("appendSystemSection", () => {
     const result = appendSystemSection([], "a body");
     expect(result[0]?.content).toContain("<!-- muse:context -->");
   });
+
+  it("re-applying an EARLIER section preserves the other sections appended after it", () => {
+    let messages: readonly { content: string; role: string }[] = [{ content: "BASE", role: "system" }];
+    messages = appendSystemSection(messages, "active body", "active-context");
+    messages = appendSystemSection(messages, "inbox body", "inbox-context");
+    // Re-apply the first-injected section (its marker now sits BEFORE inbox's).
+    messages = appendSystemSection(messages, "active body v2", "active-context");
+    const system = messages[0]?.content ?? "";
+    expect(system).toContain("BASE");
+    expect(system).toContain("active body v2");
+    expect(system).not.toContain("active body v2\n\nactive body"); // old copy gone
+    expect(system).not.toContain("<!-- muse:active-context -->\nactive body\n"); // v1 block gone
+    // The unrelated section that came AFTER must survive the re-apply.
+    expect(system).toContain("<!-- muse:inbox-context -->");
+    expect(system).toContain("inbox body");
+    // Each marker appears exactly once.
+    expect((system.match(/muse:active-context/gu) ?? []).length).toBe(1);
+    expect((system.match(/muse:inbox-context/gu) ?? []).length).toBe(1);
+  });
 });
 
 describe("buildPersonaSnapshot", () => {
