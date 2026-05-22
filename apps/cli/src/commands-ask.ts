@@ -33,7 +33,7 @@ import { readReminders, readTasks, type PersistedReminder, type PersistedTask } 
 import { classifyTier, type ModelTier } from "@muse/multi-agent";
 import type { Command } from "commander";
 
-import { isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
+import { cosine, isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
 import { embed } from "./embed.js";
 import { resolvePersona } from "./program-helpers.js";
 import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
@@ -128,19 +128,6 @@ function defaultUserKey(user: string | undefined, persona: string | undefined): 
   const base = resolveDefaultUserKey({ override: user });
   const resolved = resolvePersona(persona);
   return resolved ? `${base}@${resolved}` : base;
-}
-
-function cosine(a: readonly number[], b: readonly number[]): number {
-  if (a.length !== b.length) return 0;
-  let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    dot += a[i]! * b[i]!;
-    na += a[i]! * a[i]!;
-    nb += b[i]! * b[i]!;
-  }
-  if (na === 0 || nb === 0) return 0;
-  const result = dot / Math.sqrt(na * nb);
-  return Number.isFinite(result) ? result : 0;
 }
 
 /**
