@@ -38,9 +38,11 @@ import {
   OpenMeteoWeatherProvider,
   parseAmbientNoticeRules,
   queryContacts,
+  webWatchesFromConfig,
   type BriefingImminent
 } from "@muse/mcp";
 import { startAmbientTick } from "./ambient-tick.js";
+import { startWebWatchTick } from "./web-watch-tick.js";
 import { startFollowupTick } from "./followup-tick.js";
 import { startObjectivesTick } from "./objectives-tick.js";
 import { startPatternTick } from "./pattern-tick.js";
@@ -442,6 +444,42 @@ export function startAmbientDaemonIfConfigured(
     rules,
     source: new FileAmbientSignalSource(file),
     ...(enrich ? { enrich } : {}),
+    ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
+    ...(quietHours ? { quietHours } : {})
+  });
+  server.addHook("onClose", async () => {
+    handle.stop();
+  });
+}
+
+export function startWebWatchDaemonIfConfigured(
+  env: NodeJS.ProcessEnv,
+  server: FastifyInstance,
+  options: ServerOptions
+): void {
+  const enabled = parseBoolean(env.MUSE_WEB_WATCH_ENABLED, false);
+  const providerId = env.MUSE_WEB_WATCH_PROVIDER?.trim();
+  const destination = env.MUSE_WEB_WATCH_DESTINATION?.trim();
+  const watches = webWatchesFromConfig(env.MUSE_WEB_WATCH_CONFIG ?? "");
+  if (
+    !enabled
+    || !providerId || providerId.length === 0
+    || !destination || destination.length === 0
+    || watches.length === 0
+    || !options.messaging
+    || !options.messaging.has(providerId)
+  ) {
+    return;
+  }
+  const tickMsRaw = env.MUSE_WEB_WATCH_TICK_MS ? Number(env.MUSE_WEB_WATCH_TICK_MS) : undefined;
+  const quietHours = parseQuietHours(env.MUSE_WEB_WATCH_QUIET_HOURS) ?? parseQuietHours(env.MUSE_REMINDER_QUIET_HOURS);
+  const handle = startWebWatchTick({
+    destination,
+    errorLogger: (message) => server.log.warn(message),
+    logger: (message) => server.log.info(message),
+    providerId,
+    registry: options.messaging,
+    watches,
     ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
     ...(quietHours ? { quietHours } : {})
   });
