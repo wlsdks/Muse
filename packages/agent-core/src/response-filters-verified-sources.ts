@@ -99,7 +99,7 @@ function uniqueVerifiedSources(sources: readonly VerifiedSource[]): readonly Ver
   return [...byUrl.values()];
 }
 
-function isCasualPromptText(prompt: string): boolean {
+export function isCasualPromptText(prompt: string): boolean {
   const cleaned = prompt
     .replace(/^\s*\[[^\]]+\]\s*/u, "")
     .replace(/^\s*\[SYSTEM_META\][^\n]*\n?/gmu, "")
@@ -109,7 +109,12 @@ function isCasualPromptText(prompt: string): boolean {
     return true;
   }
 
-  return /^(안녕|고마워|감사|thanks?|thank you|응|ㅇㅇ|네|넵|오키|좋아|하이)\b/i.test(cleaned) ||
+  // `\b` is an ASCII word boundary — it never matches after a Korean
+  // (non-`\w`) character, so the Hangul greetings here all failed to
+  // match. A Unicode-aware negative lookahead (no letter/number
+  // follows) is the real "whole-token" boundary: matches "안녕" / "네"
+  // / "thanks" but not "네이버" / "thanksgiving".
+  return /^(안녕|고마워|감사|thanks?|thank you|응|ㅇㅇ|네|넵|오키|좋아|하이)(?![\p{L}\p{N}])/iu.test(cleaned) ||
     /(고맙|감사|반가워|수고|파이팅|화이팅|먹고\s*싶|전해줘|말해줘)/i.test(cleaned);
 }
 
