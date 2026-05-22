@@ -14,6 +14,7 @@ import { readProactiveHistory } from "@muse/mcp";
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
+import { parseHistoryLimit } from "./server-input-utils.js";
 import type { ServerOptions } from "./server.js";
 
 interface ProactiveRoutesGate {
@@ -27,10 +28,7 @@ export function registerProactiveRoutes(server: FastifyInstance, gate: Proactive
       return reply;
     }
     const query = (request.query as { readonly limit?: string } | undefined) ?? {};
-    const limitRaw = query.limit ? Number(query.limit) : undefined;
-    const limit = limitRaw !== undefined && Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(500, Math.trunc(limitRaw)))
-      : undefined;
+    const limit = parseHistoryLimit(query.limit, 500);
     const entries = await readProactiveHistory(gate.proactiveHistoryFile, limit);
     return { entries, total: entries.length };
   });

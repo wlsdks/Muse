@@ -30,6 +30,7 @@ import {
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
+import { parseHistoryLimit } from "./server-input-utils.js";
 import type { ServerOptions } from "./server.js";
 
 interface RemindersRoutesGate {
@@ -176,10 +177,7 @@ export function registerRemindersRoutes(server: FastifyInstance, gate: Reminders
         return reply;
       }
       const query = (request.query as { readonly limit?: string } | undefined) ?? {};
-      const limitRaw = query.limit ? Number(query.limit) : undefined;
-      const limit = limitRaw !== undefined && Number.isFinite(limitRaw)
-        ? Math.max(1, Math.min(500, Math.trunc(limitRaw)))
-        : undefined;
+      const limit = parseHistoryLimit(query.limit, 500);
       const entries = await readReminderHistory(historyFile, limit);
       return { entries, total: entries.length };
     });

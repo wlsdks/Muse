@@ -135,6 +135,32 @@ export function parseRuntimeSettingType(value: unknown): RuntimeSettingType | un
     : undefined;
 }
 
+const STRICT_INT_RE = /^\d+$/u;
+
+/**
+ * Strict `?limit=` parse for history endpoints. Returns `undefined`
+ * (→ the store falls back to its own default) when the param is
+ * absent OR not a plain positive decimal integer — a lenient
+ * `Number("9.5" | "0x10" | "1e3")` would otherwise silently honor
+ * the truncated / hex / scientific interpretation instead of
+ * rejecting the typo. A valid value is clamped to `max`. Mirrors
+ * the scheduler-routes strict-parse posture (goal 463 / 643).
+ */
+export function parseHistoryLimit(raw: string | undefined, max: number): number | undefined {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  if (!STRICT_INT_RE.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return Math.min(max, parsed);
+}
+
 export function parseResponseLocales(raw: string | undefined): readonly string[] {
   const fallback = ["ko", "en"];
   if (typeof raw !== "string" || raw.trim().length === 0) {
