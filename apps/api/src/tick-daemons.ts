@@ -18,7 +18,8 @@
 
 import { homedir } from "node:os";
 
-import { parseBoolean } from "@muse/autoconfigure";
+import { createKnowledgeEnricher, createOllamaEmbedder, parseBoolean, resolveContactsFile } from "@muse/autoconfigure";
+import { createCachingEmbedder } from "@muse/agent-core";
 import type { FastifyInstance } from "fastify";
 
 import type { ServerOptions } from "./server.js";
@@ -32,8 +33,11 @@ import {
   deriveCalendarBriefingImminent,
   FileAmbientSignalSource,
   GmailEmailProvider,
+  LocalDirNotesProvider,
+  LocalFileTasksProvider,
   OpenMeteoWeatherProvider,
   parseAmbientNoticeRules,
+  queryContacts,
   type BriefingImminent
 } from "@muse/mcp";
 import { startAmbientTick } from "./ambient-tick.js";
@@ -257,6 +261,17 @@ export function startSituationalBriefingDaemonIfConfigured(
   const emailOpt = gmailToken && gmailToken.length > 0
     ? { emailProvider: new GmailEmailProvider(gmailToken) }
     : {};
+  const relatedOpt = parseBoolean(env.MUSE_BRIEFING_RELATED_KNOWLEDGE_ENABLED, false)
+    ? {
+        relatedKnowledge: createKnowledgeEnricher({
+          embed: createCachingEmbedder(createOllamaEmbedder(env.MUSE_KNOWLEDGE_SEARCH_EMBED_MODEL?.trim() || "nomic-embed-text")),
+          ...(options.notesDir ? { notesProvider: new LocalDirNotesProvider({ notesDir: options.notesDir }) } : {}),
+          ...(options.tasksFile ? { tasksProvider: new LocalFileTasksProvider({ file: options.tasksFile }) } : {}),
+          ...(briefingCalendar ? { calendarSource: briefingCalendar } : {}),
+          contactsSource: { list: () => queryContacts(resolveContactsFile(env)) }
+        })
+      }
+    : {};
   const briefingHandle = startSituationalBriefingTick({
     destination: briefingDestination,
     errorLogger: (message) => server.log.warn(message),
@@ -270,6 +285,7 @@ export function startSituationalBriefingDaemonIfConfigured(
     sidecarFile: options.briefingSidecarFile,
     ...weatherOpt,
     ...emailOpt,
+    ...relatedOpt,
     ...(windowMsRaw !== undefined ? { windowMs: windowMsRaw } : {})
   });
   server.addHook("onClose", async () => {

@@ -46,6 +46,8 @@ export interface SituationalBriefingTickOptions {
   readonly weatherLocation?: string;
   /** Optional inbox grounding: a non-empty briefing gains an unread digest. */
   readonly emailProvider?: EmailProvider;
+  /** Optional knowledge enricher: a non-empty briefing gains a related-note line for the top imminent item. */
+  readonly relatedKnowledge?: (query: string) => Promise<string | undefined> | string | undefined;
   readonly windowMs?: number;
   readonly intervalMs?: number;
   readonly logger?: (message: string) => void;
@@ -99,6 +101,7 @@ export function startSituationalBriefingTick(
           ? { weatherLocation: options.weatherLocation, weatherProvider: options.weatherProvider }
           : {}),
         ...(options.emailProvider ? { emailProvider: options.emailProvider } : {}),
+        ...(options.relatedKnowledge ? { relatedKnowledge: options.relatedKnowledge } : {}),
         ...(options.windowMs !== undefined ? { windowMs: options.windowMs } : {})
       });
       if (summary.delivered > 0) {

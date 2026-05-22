@@ -769,10 +769,14 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
 
 export { createApiServerOptions } from "./api-server-options.js";
 
+export { createOllamaEmbedder } from "./context-engineering-builders.js";
+
 export {
   assembleKnowledgeCorpus,
+  createKnowledgeEnricher,
   createNotesKnowledgeSearchTool,
   type AssembleKnowledgeCorpusOptions,
+  type KnowledgeEnricherOptions,
   type NotesKnowledgeSearchToolOptions
 } from "./knowledge-corpus.js";
 

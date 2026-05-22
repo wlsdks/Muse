@@ -175,6 +175,45 @@ export async function assembleKnowledgeCorpus(
   return chunks;
 }
 
+export interface KnowledgeEnricherOptions {
+  readonly notesProvider?: NotesProvider;
+  readonly tasksProvider?: TasksProvider;
+  readonly calendarSource?: CalendarEventSource;
+  readonly contactsSource?: ContactsSource;
+  readonly embed: (text: string) => Promise<readonly number[]>;
+  /** Minimum similarity for a "related" hit. Default 0.2 — surfaced unasked, so keep it relevant. */
+  readonly minScore?: number;
+}
+
+/**
+ * Builds a `relatedKnowledge` enricher for the situational briefing:
+ * given a query (the top imminent item's title) it returns ONE compact
+ * `[source] text` line for the best-matching corpus chunk, or
+ * `undefined` if nothing is relevant. Reuses the unified corpus +
+ * cosine ranking so the brief surfaces a note/task/event/contact the
+ * user already has that bears on what's next.
+ */
+export function createKnowledgeEnricher(options: KnowledgeEnricherOptions): (query: string) => Promise<string | undefined> {
+  return async (query: string) => {
+    if (query.trim().length === 0) {
+      return undefined;
+    }
+    const corpus = await assembleKnowledgeCorpus({
+      ...(options.notesProvider ? { notesProvider: options.notesProvider } : {}),
+      ...(options.tasksProvider ? { tasksProvider: options.tasksProvider } : {}),
+      ...(options.calendarSource ? { calendarSource: options.calendarSource } : {}),
+      ...(options.contactsSource ? { contactsSource: options.contactsSource } : {})
+    });
+    const matches = await rankKnowledgeChunks(query, corpus, {
+      embed: options.embed,
+      topK: 1,
+      ...(options.minScore !== undefined ? { minScore: options.minScore } : { minScore: 0.2 })
+    });
+    const top = matches[0];
+    return top ? `[${top.source}] ${top.text.replace(/\s+/gu, " ").trim()}` : undefined;
+  };
+}
+
 export interface NotesKnowledgeSearchToolOptions {
   readonly notesProvider?: NotesProvider;
   readonly tasksProvider?: TasksProvider;
