@@ -194,6 +194,51 @@ export interface RunAmbientNoticeTickSummary {
  * (a rule fires once until its id is cleared — no per-tick spam).
  * Fail-soft: a source that throws yields no notices.
  */
+export interface AmbientNoticeRunner {
+  /** One perception tick: deliver notices for newly-matched rules. */
+  tick(): Promise<RunAmbientNoticeTickSummary>;
+}
+
+/**
+ * A stateful ambient runner for a CONTINUOUS daemon. Edge-triggered:
+ * a rule fires when its condition first matches and does NOT re-fire
+ * while the condition keeps matching (no per-tick spam); it RE-ARMS
+ * once the condition clears, so a recurring context (the daily
+ * standup window reappearing) notifies again. This is the correct
+ * dedupe for a long-running tick — fire-once-forever
+ * (`runAmbientNoticeTick` with a persisted set) would never re-notify.
+ * Fail-soft: a throwing source yields no notices.
+ */
+export function createAmbientNoticeRunner(options: {
+  readonly source: AmbientSignalSource;
+  readonly rules: readonly AmbientNoticeRule[];
+  readonly sink: ProactiveNoticeSink;
+}): AmbientNoticeRunner {
+  let lastMatchedIds = new Set<string>();
+  return {
+    async tick(): Promise<RunAmbientNoticeTickSummary> {
+      let signal: AmbientSignal | undefined;
+      try {
+        signal = await options.source.snapshot();
+      } catch {
+        signal = undefined;
+      }
+      const matched = deriveAmbientNotices(signal, options.rules);
+      const matchedIds = new Set(matched.map((notice) => notice.ruleId));
+      const newlyFired: string[] = [];
+      for (const notice of matched) {
+        if (lastMatchedIds.has(notice.ruleId)) {
+          continue;
+        }
+        await options.sink.deliver({ kind: notice.kind, text: notice.text, title: notice.title });
+        newlyFired.push(notice.ruleId);
+      }
+      lastMatchedIds = matchedIds;
+      return { delivered: newlyFired.length, firedRuleIds: [...matchedIds] };
+    }
+  };
+}
+
 export async function runAmbientNoticeTick(
   options: RunAmbientNoticeTickOptions
 ): Promise<RunAmbientNoticeTickSummary> {

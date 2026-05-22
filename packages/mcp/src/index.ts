@@ -282,11 +282,13 @@ export {
 } from "./chrome-devtools-mcp.js";
 
 export {
+  createAmbientNoticeRunner,
   deriveAmbientNotices,
   FileAmbientSignalSource,
   parseAmbientNoticeRules,
   runAmbientNoticeTick,
   type AmbientNotice,
+  type AmbientNoticeRunner,
   type AmbientNoticeRule,
   type AmbientSignal,
   type AmbientSignalSource,
