@@ -310,6 +310,26 @@ describe("muse calendar delete — cancel a local event by id", () => {
     expect(e.endsAt.getTime() - e.startsAt.getTime()).toBe(30 * 60_000);
   });
 
+  it("show renders an event's full details incl notes; unknown id exits 1", async () => {
+    const file = process.env.MUSE_CALENDAR_FILE!;
+    const created = await new LocalCalendarProvider({ file }).createEvent({
+      endsAt: new Date("2026-05-30T16:00:00"), location: "Room 4", notes: "bring the Q3 deck",
+      startsAt: new Date("2026-05-30T15:00:00"), title: "Review"
+    });
+    const r = await run(["show", created.id.slice(0, 8)]);
+    expect(r.error).toBeUndefined();
+    expect(r.out).toContain("Review");
+    expect(r.out).toContain("@ Room 4");
+    expect(r.out).toContain("bring the Q3 deck");
+
+    const prevExit = process.exitCode;
+    process.exitCode = 0;
+    const miss = await run(["show", "no-such-id"]);
+    expect(miss.out).toContain("no event matches id");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = prevExit;
+  });
+
   it("edit with no fields errors and an unknown id exits 1", async () => {
     const file = process.env.MUSE_CALENDAR_FILE!;
     const created = await new LocalCalendarProvider({ file }).createEvent({

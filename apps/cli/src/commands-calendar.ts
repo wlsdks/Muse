@@ -470,6 +470,50 @@ export function registerCalendarCommands(program: Command, io: ProgramIO, helper
     return { from: now, to: end };
   });
 
+  calendar
+    .command("show")
+    .description("Show one event's full details (incl. notes) by id — the [id] from `muse calendar events`")
+    .argument("<id>", "Event id — the short [id] from the listing, or a full id")
+    .option("--json", "Print the raw event as JSON")
+    .action(async (idArg: string, options: { readonly json?: boolean }) => {
+      const target = idArg.trim();
+      if (target.length === 0) {
+        throw new Error("muse calendar show: an event id is required");
+      }
+      const resolved = resolveEventIdMatch(await listLocalEventsWide(localCalendarProvider()), target);
+      if (resolved.kind !== "match") {
+        io.stderr(resolved.kind === "ambiguous"
+          ? `muse calendar show: '${target}' is ambiguous (${resolved.count.toString()} events) — use a longer id\n`
+          : `muse calendar show: no event matches id '${target}'\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const e = resolved.event;
+      if (options.json) {
+        helpers.writeOutput(io, {
+          endsAtIso: e.endsAt.toISOString(), id: e.id, startsAtIso: e.startsAt.toISOString(), title: e.title,
+          ...(e.location ? { location: e.location } : {}),
+          ...(e.notes ? { notes: e.notes } : {}),
+          ...(e.tags && e.tags.length > 0 ? { tags: e.tags } : {})
+        });
+        return;
+      }
+      const lines = [
+        `${e.title}`,
+        `  ${e.startsAt.toISOString()} → ${e.endsAt.toISOString()}`
+      ];
+      if (e.location) {
+        lines.push(`  @ ${e.location}`);
+      }
+      if (e.tags && e.tags.length > 0) {
+        lines.push(`  #${e.tags.join(" #")}`);
+      }
+      if (e.notes && e.notes.trim().length > 0) {
+        lines.push("", e.notes.trim());
+      }
+      io.stdout(`${lines.join("\n")}\n`);
+    });
+
   // Idempotent by (title, startsAt) — re-running the same import
   // doesn't duplicate. --allow-duplicates bypasses the dedupe.
   calendar
