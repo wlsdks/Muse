@@ -465,7 +465,7 @@ export function startAmbientDaemonIfConfigured(
   // Live macOS active-window perception (no helper writing the file)
   // when opted in on darwin; otherwise the file source.
   const source = env.MUSE_AMBIENT_SOURCE?.trim() === "macos" && process.platform === "darwin"
-    ? new MacOsActiveWindowSource()
+    ? new MacOsActiveWindowSource({ includeClipboard: parseBoolean(env.MUSE_AMBIENT_CLIPBOARD, false) })
     : new FileAmbientSignalSource(resolveAmbientSignalFile(env));
   const handle = startAmbientTick({
     destination,

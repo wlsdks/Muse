@@ -53,15 +53,36 @@ export interface MacOsActiveWindowSourceOptions {
   readonly osascriptPath?: string;
   /** Hard wall-clock cap for the spawn. Default 3000ms. */
   readonly timeoutMs?: number;
+  /**
+   * Also capture the clipboard text (via `pbpaste`) into the signal's
+   * `clipboard` field, so an ambient rule can react to what the user
+   * just copied. OFF by default — the clipboard is sensitive, so this
+   * is strictly opt-in.
+   */
+  readonly includeClipboard?: boolean;
+  /** Injectable clipboard reader (returns text, or undefined on failure). Default spawns `pbpaste`. */
+  readonly readClipboard?: () => Promise<string | undefined>;
+  /** Cap the captured clipboard length so a huge paste can't flood the signal. Default 2000. */
+  readonly maxClipboardChars?: number;
+  readonly pbpastePath?: string;
 }
 
 export class MacOsActiveWindowSource implements AmbientSignalSource {
   private readonly run: (script: string) => Promise<string | undefined>;
+  private readonly includeClipboard: boolean;
+  private readonly readClipboard: () => Promise<string | undefined>;
+  private readonly maxClipboardChars: number;
 
   constructor(options: MacOsActiveWindowSourceOptions = {}) {
     const osascriptPath = options.osascriptPath ?? "/usr/bin/osascript";
     const timeoutMs = options.timeoutMs ?? 3_000;
     this.run = options.run ?? ((script) => defaultOsascriptRun(osascriptPath, script, timeoutMs));
+    this.includeClipboard = options.includeClipboard ?? false;
+    const pbpastePath = options.pbpastePath ?? "/usr/bin/pbpaste";
+    this.readClipboard = options.readClipboard ?? (() => defaultPbpasteRun(pbpastePath, timeoutMs));
+    this.maxClipboardChars = Number.isFinite(options.maxClipboardChars)
+      ? Math.max(1, Math.trunc(options.maxClipboardChars as number))
+      : 2_000;
   }
 
   async snapshot(): Promise<AmbientSignal | undefined> {
@@ -69,15 +90,39 @@ export class MacOsActiveWindowSource implements AmbientSignalSource {
     try {
       stdout = await this.run(ACTIVE_WINDOW_SCRIPT);
     } catch {
-      return undefined;
+      stdout = undefined;
     }
-    return parseActiveWindowSignal(stdout);
+    const base = parseActiveWindowSignal(stdout);
+    if (!this.includeClipboard) {
+      return base;
+    }
+    let clipboardRaw: string | undefined;
+    try {
+      clipboardRaw = await this.readClipboard();
+    } catch {
+      clipboardRaw = undefined;
+    }
+    const clipboard = clipboardRaw?.trim().slice(0, this.maxClipboardChars);
+    if (!clipboard || clipboard.length === 0) {
+      return base;
+    }
+    // Clipboard rides the window signal; with no frontmost app it still
+    // forms a signal on its own so a clipboard-keyed rule can fire.
+    return { ...(base ?? {}), clipboard };
   }
 }
 
 function defaultOsascriptRun(osascriptPath: string, script: string, timeoutMs: number): Promise<string | undefined> {
   return new Promise<string | undefined>((resolve) => {
     execFile(osascriptPath, ["-e", script], { timeout: timeoutMs }, (error, stdout) => {
+      resolve(error ? undefined : stdout);
+    });
+  });
+}
+
+function defaultPbpasteRun(pbpastePath: string, timeoutMs: number): Promise<string | undefined> {
+  return new Promise<string | undefined>((resolve) => {
+    execFile(pbpastePath, [], { timeout: timeoutMs }, (error, stdout) => {
       resolve(error ? undefined : stdout);
     });
   });
