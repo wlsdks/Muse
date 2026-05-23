@@ -60,6 +60,17 @@ export interface EmailMessageSource {
   listRecent(limit: number): Promise<readonly EmailMessageLike[]> | readonly EmailMessageLike[];
 }
 
+export interface ReminderLike {
+  readonly id: string;
+  readonly text: string;
+  readonly dueAt?: string;
+}
+
+export interface RemindersSource {
+  /** Pending reminders only — fired/cancelled ones aren't live context. */
+  list(): Promise<readonly ReminderLike[]> | readonly ReminderLike[];
+}
+
 export interface AssembleKnowledgeCorpusOptions {
   readonly notesProvider?: NotesProvider;
   /** Open tasks become corpus chunks sourced `task/<id>` — the user's todos hold key facts. */
@@ -70,6 +81,8 @@ export interface AssembleKnowledgeCorpusOptions {
   readonly contactsSource?: ContactsSource;
   /** Recent emails become corpus chunks sourced `email/<id>` — "what did X mail me about Y". */
   readonly emailSource?: EmailMessageSource;
+  /** Pending reminders become corpus chunks sourced `reminder/<text>` — "the dentist reminder". */
+  readonly remindersSource?: RemindersSource;
   readonly extraChunks?: readonly KnowledgeChunk[];
   /** Cap notes pulled into the corpus. Default 200. */
   readonly maxNotes?: number;
@@ -215,6 +228,22 @@ export async function assembleKnowledgeCorpus(
     }
   }
 
+  if (options.remindersSource) {
+    let reminders: readonly ReminderLike[];
+    try {
+      reminders = await options.remindersSource.list();
+    } catch {
+      reminders = [];
+    }
+    for (const reminder of reminders) {
+      const text = reminder.dueAt ? `${reminder.text} (due ${reminder.dueAt})` : reminder.text;
+      if (text.trim().length === 0) {
+        continue;
+      }
+      chunks.push({ source: labelSource("reminder", reminder.text, reminder.id), text: text.length > maxChars ? text.slice(0, maxChars) : text });
+    }
+  }
+
   if (options.extraChunks?.length) {
     chunks.push(...options.extraChunks);
   }
@@ -277,6 +306,7 @@ export interface NotesKnowledgeSearchToolOptions {
   readonly calendarSource?: CalendarEventSource;
   readonly contactsSource?: ContactsSource;
   readonly emailSource?: EmailMessageSource;
+  readonly remindersSource?: RemindersSource;
   readonly embed: (text: string) => Promise<readonly number[]>;
   readonly topK?: number;
   readonly maxNotes?: number;
@@ -318,6 +348,7 @@ export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchTool
         ...(options.calendarSource ? { calendarSource: options.calendarSource } : {}),
         ...(options.contactsSource ? { contactsSource: options.contactsSource } : {}),
         ...(options.emailSource ? { emailSource: options.emailSource } : {}),
+        ...(options.remindersSource ? { remindersSource: options.remindersSource } : {}),
         ...(options.extraChunks ? { extraChunks: options.extraChunks } : {}),
         ...(options.maxNotes !== undefined ? { maxNotes: options.maxNotes } : {}),
         ...(options.maxCharsPerNote !== undefined ? { maxCharsPerNote: options.maxCharsPerNote } : {}),

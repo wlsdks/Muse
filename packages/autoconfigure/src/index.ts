@@ -55,6 +55,7 @@ import {
   createWeatherTool,
   GmailEmailProvider,
   queryContacts,
+  readReminders,
   upsertFollowup,
   withChromeDevToolsRisk,
   type LoopbackMcpServer,
@@ -570,7 +571,12 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       ...(tasksProvider ? { tasksProvider } : {}),
       ...(calendarRegistry ? { calendarSource: calendarRegistry } : {}),
       ...(emailSource ? { emailSource } : {}),
-      contactsSource: { list: () => queryContacts(resolveContactsFile(env)) }
+      contactsSource: { list: () => queryContacts(resolveContactsFile(env)) },
+      remindersSource: {
+        list: async () => (await readReminders(resolveRemindersFile(env)))
+          .filter((reminder) => reminder.status === "pending")
+          .map((reminder) => ({ dueAt: reminder.dueAt, id: reminder.id, text: reminder.text }))
+      }
     })];
   })();
 
