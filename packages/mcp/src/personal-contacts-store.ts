@@ -216,9 +216,19 @@ export function serializeContact(contact: Contact): JsonObject {
   };
 }
 
+function stripLeadingAt(value: string): string {
+  return value.replace(/^@/u, "");
+}
+
 function matchesExact(contact: Contact, q: string): boolean {
   return contact.name.toLowerCase() === q
-    || (contact.aliases?.some((alias) => alias.toLowerCase() === q) ?? false);
+    || (contact.aliases?.some((alias) => alias.toLowerCase() === q) ?? false)
+    // A full email address / handle is an unambiguous identifier — "email
+    // bob@acme.com" / "who is @bobby?" must resolve the matching contact,
+    // not fall through to unknown. Handle compares with a leading "@"
+    // stripped on both sides so "@bobby" and "bobby" are the same.
+    || contact.email?.toLowerCase() === q
+    || (contact.handle !== undefined && stripLeadingAt(contact.handle.toLowerCase()) === stripLeadingAt(q));
 }
 
 function matchesPartial(contact: Contact, q: string): boolean {
