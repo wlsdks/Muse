@@ -6,6 +6,7 @@
 
 import type { Command } from "commander";
 
+import { parseBoundedInt } from "./commands-ask.js";
 import type { ProgramIO } from "./program.js";
 
 export interface RunsCommandHelpers {
@@ -42,7 +43,8 @@ export function registerRunsCommands(program: Command, io: ProgramIO, helpers: R
     .description("List recent agent runs (newest first)")
     .option("--limit <n>", "Max runs to return (default 20, max 1000)")
     .action(async (options: { readonly limit?: string }, command: Command) => {
-      const path = options.limit ? `/api/admin/runs?limit=${encodeURIComponent(options.limit)}` : "/api/admin/runs";
+      const limit = options.limit === undefined ? undefined : parseBoundedInt(options.limit, "--limit", 1, 1000, 20);
+      const path = limit !== undefined ? `/api/admin/runs?limit=${limit.toString()}` : "/api/admin/runs";
       helpers.writeOutput(io, await helpers.apiRequest(io, command, path));
     });
 

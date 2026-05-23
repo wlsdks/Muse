@@ -71,3 +71,28 @@ describe("muse runs delete — guards the bulk --before against a malformed time
     expect(h.requests[0]!.path).toBe("/api/admin/runs/run_abc");
   });
 });
+
+describe("muse runs list — validates --limit instead of forwarding it raw", () => {
+  it("rejects a non-numeric --limit WITHOUT issuing the request (enforces the documented bound client-side)", async () => {
+    const h = harness();
+    await expect(h.run(["list", "--limit", "abc"])).rejects.toThrow(/--limit must be an integer in \[1, 1000\]/u);
+    expect(h.requests).toHaveLength(0);
+  });
+
+  it("clamps an over-max --limit to 1000 (the value the help promises)", async () => {
+    const h = harness();
+    await h.run(["list", "--limit", "999999"]);
+    expect(h.requests).toHaveLength(1);
+    expect(h.requests[0]!.path).toBe("/api/admin/runs?limit=1000");
+  });
+
+  it("forwards a valid --limit and omits the query entirely when unset", async () => {
+    const valid = harness();
+    await valid.run(["list", "--limit", "5"]);
+    expect(valid.requests[0]!.path).toBe("/api/admin/runs?limit=5");
+
+    const none = harness();
+    await none.run(["list"]);
+    expect(none.requests[0]!.path).toBe("/api/admin/runs");
+  });
+});

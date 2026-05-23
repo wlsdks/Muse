@@ -6,6 +6,7 @@
 
 import type { Command } from "commander";
 
+import { parseBoundedInt } from "./commands-ask.js";
 import type { ProgramIO } from "./program.js";
 
 export interface DebugCommandHelpers {
@@ -25,10 +26,11 @@ export function registerDebugCommands(program: Command, io: ProgramIO, helpers: 
   debug
     .command("replay")
     .description("List recent failed-run replay captures")
-    .option("--limit <n>", "Max captures to return (default 50)")
+    .option("--limit <n>", "Max captures to return (default 50, max 1000)")
     .action(async (options: { readonly limit?: string }, command: Command) => {
-      const path = options.limit
-        ? `/api/admin/debug/replay?limit=${encodeURIComponent(options.limit)}`
+      const limit = options.limit === undefined ? undefined : parseBoundedInt(options.limit, "--limit", 1, 1000, 50);
+      const path = limit !== undefined
+        ? `/api/admin/debug/replay?limit=${limit.toString()}`
         : "/api/admin/debug/replay";
       helpers.writeOutput(io, await helpers.apiRequest(io, command, path));
     });
