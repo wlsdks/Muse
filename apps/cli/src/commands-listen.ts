@@ -228,11 +228,22 @@ export function registerListenCommand(program: Command, io: ProgramIO, helpers: 
         return;
       }
       io.stdout(`Captured ${audio.byteLength} bytes; transcribing...\n`);
-      const stt = await providers.stt.transcribe({
-        audio: new Uint8Array(audio),
-        mimeType: "audio/wav",
-        ...(options.lang ? { language: options.lang } : {})
-      });
+      let stt;
+      try {
+        stt = await providers.stt.transcribe({
+          audio: new Uint8Array(audio),
+          mimeType: "audio/wav",
+          ...(options.lang ? { language: options.lang } : {})
+        });
+      } catch (cause) {
+        // A failed transcribe (missing whisper model, corrupt audio, a
+        // backend hiccup) must end with the same clean one-line error +
+        // exit as the sox / empty-capture failures above — not a raw
+        // unhandled throw out of the action.
+        io.stderr(`transcription failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        command.error("transcription failed", { exitCode: 1 });
+        return;
+      }
       await runVoiceTurn(stt.text);
     });
 }

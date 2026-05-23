@@ -130,6 +130,45 @@ describe("muse listen — full mic→STT→agent→TTS round-trip (P4-b2)", () =
   });
 });
 
+describe("muse listen (push-to-talk) — a failed transcribe ends cleanly, not as a raw unhandled throw", () => {
+  it("surfaces 'transcription failed' + exits without calling the agent when STT throws", async () => {
+    const WAV = Buffer.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3]);
+    function fakeRec(): ChildProcess {
+      const rec = new EventEmitter() as EventEmitter & { stdout: EventEmitter; kill: (s?: string) => void };
+      rec.stdout = new EventEmitter();
+      rec.kill = () => { rec.stdout.emit("data", WAV); rec.emit("close"); };
+      return rec as unknown as ChildProcess;
+    }
+
+    const stderrChunks: string[] = [];
+    const io = { stderr: (m: string) => stderrChunks.push(m), stdout: () => {} };
+    let chatCalled = false;
+    const ttsProvider = {
+      describe: () => ({ description: "", displayName: "t", id: "t", local: true, supportedFormats: ["mp3"] }),
+      id: "t",
+      synthesize: async () => ({ audio: new Uint8Array([1]), format: "mp3" })
+    } as unknown as TextToSpeechProvider;
+
+    const helpers: ListenHelpers = {
+      apiRequest: async () => { chatCalled = true; return { content: "should not reach here" }; },
+      buildVoiceProviders: () => ({ stt: stt(async () => { throw new Error("whisper model not found"); }), tts: ttsProvider }),
+      shells: {
+        playAudio: async () => {},
+        spawnRec: () => fakeRec(),
+        waitForEnter: async () => {},
+        which: (bin: string) => (bin === "sox" ? "/usr/bin/sox" : undefined)
+      }
+    };
+
+    const program = new Command();
+    program.exitOverride();
+    registerListenCommand(program, io, helpers);
+    await expect(program.parseAsync(["node", "muse", "listen"])).rejects.toThrow();
+    expect(stderrChunks.join("")).toContain("transcription failed: whisper model not found");
+    expect(chatCalled, "a failed transcribe must NOT reach the agent /api/chat").toBe(false);
+  });
+});
+
 describe("muse listen --wake — a transient STT failure on the follow-up prompt resumes the session, never breaks it", () => {
   it("routes the follow-up transcription through safeTranscribe (an STT 5xx resumes listening, not crash)", async () => {
     const WAV = Buffer.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3]);
