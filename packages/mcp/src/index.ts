@@ -456,10 +456,12 @@ export {
   readContacts,
   removeContact,
   resolveContact,
+  resolveUpcomingBirthdays,
   serializeContact,
   writeContacts,
   type Contact,
-  type ContactResolution
+  type ContactResolution,
+  type UpcomingBirthday
 } from "./personal-contacts-store.js";
 export {
   GmailEmailProvider,

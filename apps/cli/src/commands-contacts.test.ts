@@ -75,4 +75,28 @@ describe("muse contacts — people graph + recipient resolution", () => {
     expect(r.stderr).toContain("provide at least one of --email / --handle");
     expect(r.exitCode).toBe(1);
   });
+
+  it("add --birthday persists through the store and `birthdays` lists it", async () => {
+    const file = contactsFile();
+    const add = await run(file, ["add", "Sarah", "--email", "s@x.com", "--birthday", "12-25"]);
+    expect(add.exitCode).toBeUndefined();
+    // It round-trips the real store (no in-memory shortcut).
+    const list = await run(file, ["birthdays", "--within", "400"]);
+    expect(list.stdout).toContain("🎂 Sarah");
+    expect(list.stdout).toContain("12-25");
+  });
+
+  it("add rejects a malformed --birthday", async () => {
+    const file = contactsFile();
+    const r = await run(file, ["add", "Sarah", "--email", "s@x.com", "--birthday", "Dec 25"]);
+    expect(r.stderr).toContain("--birthday must be MM-DD or YYYY-MM-DD");
+    expect(r.exitCode).toBe(1);
+  });
+
+  it("birthdays reports none when no contact has a birthday", async () => {
+    const file = contactsFile();
+    await run(file, ["add", "Bob", "--email", "b@x.com"]);
+    const r = await run(file, ["birthdays"]);
+    expect(r.stdout).toContain("No birthdays in the next 30 days");
+  });
 });

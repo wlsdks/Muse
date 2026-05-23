@@ -10,7 +10,7 @@
  */
 
 import { resolveContactsFile } from "@muse/autoconfigure";
-import { addContact, contactIdentifier, queryContacts, resolveContact, type Contact } from "@muse/mcp";
+import { addContact, contactIdentifier, queryContacts, resolveContact, resolveUpcomingBirthdays, type Contact } from "@muse/mcp";
 import { createRunId } from "@muse/shared";
 import type { Command } from "commander";
 
@@ -30,7 +30,10 @@ interface AddOptions {
   readonly email?: string;
   readonly handle?: string;
   readonly alias?: readonly string[];
+  readonly birthday?: string;
 }
+
+const BIRTHDAY_RE = /^(?:\d{4}-)?(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/u;
 
 export function registerContactsCommands(program: Command, io: ProgramIO): void {
   const contacts = program.command("contacts").description("Manage and resolve your people graph (~/.muse/contacts.json)");
@@ -42,15 +45,22 @@ export function registerContactsCommands(program: Command, io: ProgramIO): void 
     .option("--email <email>", "Email address")
     .option("--handle <handle>", "Chat handle (e.g. @alice)")
     .option("--alias <alias...>", "Alternate names this contact resolves from")
+    .option("--birthday <date>", "Birthday as MM-DD or YYYY-MM-DD (for `muse contacts birthdays`)")
     .action(async (nameParts: readonly string[], options: AddOptions) => {
       const name = nameParts.join(" ").trim();
       if (name.length === 0) {
-        io.stderr("usage: muse contacts add <name> [--email <e>] [--handle <h>] [--alias <a...>]\n");
+        io.stderr("usage: muse contacts add <name> [--email <e>] [--handle <h>] [--alias <a...>] [--birthday <MM-DD>]\n");
         process.exitCode = 1;
         return;
       }
       if (!options.email && !options.handle) {
         io.stderr("muse contacts add: provide at least one of --email / --handle so the contact can be resolved to a recipient.\n");
+        process.exitCode = 1;
+        return;
+      }
+      const birthday = options.birthday?.trim();
+      if (birthday !== undefined && birthday.length > 0 && !BIRTHDAY_RE.test(birthday)) {
+        io.stderr(`muse contacts add: --birthday must be MM-DD or YYYY-MM-DD (got '${birthday}')\n`);
         process.exitCode = 1;
         return;
       }
@@ -60,10 +70,29 @@ export function registerContactsCommands(program: Command, io: ProgramIO): void 
         name,
         ...(options.email ? { email: options.email.trim() } : {}),
         ...(options.handle ? { handle: options.handle.trim() } : {}),
-        ...(aliases.length > 0 ? { aliases } : {})
+        ...(aliases.length > 0 ? { aliases } : {}),
+        ...(birthday && birthday.length > 0 ? { birthday } : {})
       };
       await addContact(contactsFile(), contact);
       io.stdout(`Added ${describeContact(contact)}\n`);
+    });
+
+  contacts
+    .command("birthdays")
+    .description("Upcoming birthdays, soonest first")
+    .option("--within <days>", "Look-ahead window in days (default 30)")
+    .action(async (options: { within?: string }) => {
+      const withinRaw = options.within !== undefined ? Number(options.within) : undefined;
+      const within = withinRaw !== undefined && Number.isFinite(withinRaw) ? withinRaw : 30;
+      const upcoming = resolveUpcomingBirthdays(await queryContacts(contactsFile()), { withinDays: within });
+      if (upcoming.length === 0) {
+        io.stdout(`No birthdays in the next ${within.toString()} days. Set one with \`muse contacts add <name> --email <e> --birthday MM-DD\`.\n`);
+        return;
+      }
+      for (const { contact, daysUntil, date } of upcoming) {
+        const when = daysUntil === 0 ? "today" : daysUntil === 1 ? "tomorrow" : `in ${daysUntil.toString()} days`;
+        io.stdout(`🎂 ${contact.name} — ${when} (${date})\n`);
+      }
     });
 
   contacts

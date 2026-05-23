@@ -10,6 +10,7 @@ import {
   queryContacts,
   removeContact,
   resolveContact,
+  resolveUpcomingBirthdays,
   type Contact
 } from "./personal-contacts-store.js";
 
@@ -78,5 +79,33 @@ describe("resolveContact — recipient resolution backbone", () => {
   it("reports UNKNOWN for no match and for an empty query", () => {
     expect(resolveContact([bob, alice], "carol").status).toBe("unknown");
     expect(resolveContact([bob, alice], "   ").status).toBe("unknown");
+  });
+});
+
+describe("resolveUpcomingBirthdays", () => {
+  const now = new Date(2026, 4, 20); // May 20 2026
+  const people: Contact[] = [
+    { birthday: "05-22", id: "a", name: "Ann" },        // in 2 days
+    { birthday: "1990-05-20", id: "t", name: "Tom" },   // today (year ignored)
+    { birthday: "12-25", id: "x", name: "Xander" },     // far off
+    { id: "n", name: "NoBday" },                          // skipped
+    { birthday: "garbage", id: "g", name: "Garbled" }     // skipped
+  ];
+
+  it("lists upcoming birthdays within the window, soonest first, year-agnostic", () => {
+    const up = resolveUpcomingBirthdays(people, { now, withinDays: 30 });
+    expect(up.map((u) => u.contact.name)).toEqual(["Tom", "Ann"]);
+    expect(up[0]).toMatchObject({ date: "05-20", daysUntil: 0 });
+    expect(up[1]).toMatchObject({ date: "05-22", daysUntil: 2 });
+  });
+
+  it("wraps a date already past this year to next year (not negative)", () => {
+    const up = resolveUpcomingBirthdays([{ birthday: "01-01", id: "j", name: "Jan" }], { now, withinDays: 400 });
+    expect(up[0]!.daysUntil).toBeGreaterThan(0);
+  });
+
+  it("excludes birthdays beyond the window and skips missing/malformed dates", () => {
+    const up = resolveUpcomingBirthdays(people, { now, withinDays: 7 });
+    expect(up.map((u) => u.contact.name)).toEqual(["Tom", "Ann"]); // Xander (Dec) excluded; NoBday/Garbled skipped
   });
 });

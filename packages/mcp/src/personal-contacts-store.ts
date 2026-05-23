@@ -25,6 +25,63 @@ export interface Contact {
   readonly email?: string;
   readonly handle?: string;
   readonly aliases?: readonly string[];
+  /** Birthday as `MM-DD` or `YYYY-MM-DD`. Year (if given) is ignored for the recurring reminder. */
+  readonly birthday?: string;
+}
+
+export interface UpcomingBirthday {
+  readonly contact: Contact;
+  /** Normalised `MM-DD`. */
+  readonly date: string;
+  readonly daysUntil: number;
+}
+
+function parseBirthdayMonthDay(raw: string | undefined): { month: number; day: number } | undefined {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const match = /^(?:\d{4}-)?(\d{2})-(\d{2})$/u.exec(raw.trim());
+  if (!match) {
+    return undefined;
+  }
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return undefined;
+  }
+  return { day, month };
+}
+
+/**
+ * Upcoming birthdays within `withinDays` (default 30), soonest first.
+ * The next occurrence is computed from `now` with a year-wrap (a date
+ * already past this year rolls to next year); a contact with no /
+ * malformed `birthday` is skipped.
+ */
+export function resolveUpcomingBirthdays(
+  contacts: readonly Contact[],
+  options: { readonly now?: Date; readonly withinDays?: number } = {}
+): UpcomingBirthday[] {
+  const now = options.now ?? new Date();
+  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays as number)) : 30;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const out: UpcomingBirthday[] = [];
+  for (const contact of contacts) {
+    const md = parseBirthdayMonthDay(contact.birthday);
+    if (!md) {
+      continue;
+    }
+    let next = new Date(today.getFullYear(), md.month - 1, md.day);
+    if (next.getTime() < today.getTime()) {
+      next = new Date(today.getFullYear() + 1, md.month - 1, md.day);
+    }
+    const daysUntil = Math.round((next.getTime() - today.getTime()) / 86_400_000);
+    if (daysUntil <= withinDays) {
+      out.push({ contact, date: `${pad(md.month)}-${pad(md.day)}`, daysUntil });
+    }
+  }
+  return out.sort((a, b) => a.daysUntil - b.daysUntil || a.contact.name.localeCompare(b.contact.name));
 }
 
 export type ContactResolution =
@@ -137,7 +194,8 @@ export function serializeContact(contact: Contact): JsonObject {
     name: contact.name,
     ...(contact.email ? { email: contact.email } : {}),
     ...(contact.handle ? { handle: contact.handle } : {}),
-    ...(contact.aliases && contact.aliases.length > 0 ? { aliases: [...contact.aliases] } : {})
+    ...(contact.aliases && contact.aliases.length > 0 ? { aliases: [...contact.aliases] } : {}),
+    ...(contact.birthday ? { birthday: contact.birthday } : {})
   };
 }
 
