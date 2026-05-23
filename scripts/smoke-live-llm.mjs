@@ -169,6 +169,30 @@ try {
       `expected weekday in content (proves the tool result was fed back), got "${body.content}"`);
   });
 
+  await record("POST /api/chat — NATURAL one-shot tool selection (no explicit 'call X' instruction)", async () => {
+    // The human's priority: the local model must pick the RIGHT tool in
+    // ONE shot from a natural request, not only when told which tool to
+    // call. A bare "what day is it in Seoul?" should select time_now on
+    // its own. A failure here is the exact one-shot-selection defect to
+    // fix (tighten the tool description / shrink the exposed set), not a
+    // harness bug.
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      body: JSON.stringify({
+        message: "What day of the week is it right now in Seoul (Asia/Seoul)? Answer with just the weekday.",
+        runId: "live-tool-natural"
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST"
+    });
+    const body = await response.json();
+    assert(response.status === 200, `expected 200, got ${response.status}: ${JSON.stringify(body)}`);
+    assert(body.success === true, `expected success, got ${JSON.stringify(body)}`);
+    assert(Array.isArray(body.toolsUsed) && body.toolsUsed.includes("time_now"),
+      `NATURAL selection failed — expected the model to pick time_now unprompted, got toolsUsed=${JSON.stringify(body.toolsUsed)} content="${body.content}"`);
+    assert(/Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/iu.test(body.content ?? ""),
+      `expected a weekday in the answer, got "${body.content}"`);
+  });
+
   await record("POST /api/chat/stream — tool_start + tool_end SSE events fire on a tool-using prompt", async () => {
     const response = await fetch(`${baseUrl}/api/chat/stream`, {
       body: JSON.stringify({
