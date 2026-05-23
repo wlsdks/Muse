@@ -46,4 +46,50 @@ describe("muse weather command", () => {
     expect(process.exitCode).toBe(1);
     process.exitCode = prevExit;
   });
+
+  it("no location → uses MUSE_WEATHER_LOCATION (the user's home)", async () => {
+    const prev = process.env.MUSE_WEATHER_LOCATION;
+    process.env.MUSE_WEATHER_LOCATION = "Seoul";
+    try {
+      const fetchImpl = fakeFetch({
+        geocode: { results: [{ country: "South Korea", latitude: 37.566, longitude: 126.978, name: "Seoul", timezone: "Asia/Seoul" }] },
+        forecast: { current: { temperature_2m: 22, weather_code: 3 } }
+      });
+      const { output, run: done } = run([], fetchImpl);
+      await done;
+      expect(output.join("")).toContain("Seoul, South Korea: overcast, 22°C");
+    } finally {
+      if (prev === undefined) delete process.env.MUSE_WEATHER_LOCATION;
+      else process.env.MUSE_WEATHER_LOCATION = prev;
+    }
+  });
+
+  it("no location and no home configured → usage error, exit 1", async () => {
+    const prev = process.env.MUSE_WEATHER_LOCATION;
+    const prevExit = process.exitCode;
+    delete process.env.MUSE_WEATHER_LOCATION;
+    try {
+      const { output, run: done } = run([], fakeFetch({}));
+      await done;
+      expect(output.join("")).toContain("set MUSE_WEATHER_LOCATION");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      if (prev !== undefined) process.env.MUSE_WEATHER_LOCATION = prev;
+      process.exitCode = prevExit;
+    }
+  });
+
+  it("appends a rain heads-up when the hourly forecast crosses the threshold", async () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const t = new Date(now.getTime() + 2 * 3_600_000);
+    const localHour = `${t.getFullYear().toString()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:00`;
+    const fetchImpl = fakeFetch({
+      geocode: { results: [{ country: "South Korea", latitude: 37.566, longitude: 126.978, name: "Seoul", timezone: "Asia/Seoul" }] },
+      forecast: { current: { temperature_2m: 22, weather_code: 3 }, hourly: { precipitation_probability: [80], time: [localHour], weather_code: [63] } }
+    });
+    const { output, run: done } = run(["Seoul"], fetchImpl);
+    await done;
+    expect(output.join("")).toContain("rain likely");
+  });
 });

@@ -5,7 +5,7 @@
  * briefing daemon can reuse it; this file is just the CLI surface.
  */
 
-import { OpenMeteoWeatherProvider, formatWeather, type GeocodedLocation, type CurrentWeather, type WeatherProvider } from "@muse/mcp";
+import { OpenMeteoWeatherProvider, formatRainHeadsUp, formatWeather, type GeocodedLocation, type CurrentWeather, type WeatherProvider } from "@muse/mcp";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
@@ -17,13 +17,13 @@ interface WeatherOptions {
 export function registerWeatherCommand(program: Command, io: ProgramIO, provider?: WeatherProvider): void {
   program
     .command("weather")
-    .description("Show current weather for a place (Open-Meteo, free, no key)")
-    .argument("<location...>", "Place name, e.g. 'Seoul' or 'San Francisco'")
+    .description("Show current weather + rain heads-up for a place (Open-Meteo, free, no key). Omit the place for your configured home (MUSE_WEATHER_LOCATION).")
+    .argument("[location...]", "Place name, e.g. 'Seoul' or 'San Francisco' (default: MUSE_WEATHER_LOCATION)")
     .option("--json", "Emit the resolved location + current conditions as JSON")
     .action(async (locationParts: readonly string[], options: WeatherOptions) => {
-      const query = locationParts.join(" ").trim();
+      const query = locationParts.join(" ").trim() || (process.env.MUSE_WEATHER_LOCATION?.trim() ?? "");
       if (query.length === 0) {
-        io.stderr("usage: muse weather <location>\n");
+        io.stderr("usage: muse weather <location>  (or set MUSE_WEATHER_LOCATION for your home)\n");
         process.exitCode = 1;
         return;
       }
@@ -53,6 +53,17 @@ export function registerWeatherCommand(program: Command, io: ProgramIO, provider
         io.stdout(`${JSON.stringify({ current, location }, null, 2)}\n`);
         return;
       }
-      io.stdout(`${formatWeather(location, current)}\n`);
+      let line = formatWeather(location, current);
+      if (weather.rainOutlook) {
+        try {
+          const outlook = await weather.rainOutlook(location);
+          if (outlook) {
+            line += ` — ${formatRainHeadsUp(outlook)}`;
+          }
+        } catch {
+          // a forecast blip just omits the heads-up — keep the base line
+        }
+      }
+      io.stdout(`${line}\n`);
     });
 }
