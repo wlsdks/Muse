@@ -56,7 +56,15 @@ export function parseOsascriptGlance(raw: string): GlanceSnapshot {
   };
 }
 
-const OSASCRIPT_SOURCE = `
+/**
+ * Capturing the selection needs a Cmd+C, which overwrites the user's
+ * clipboard. We snapshot the existing clipboard text first and restore
+ * it afterwards so a `muse glance` never silently destroys what the
+ * user had copied. (Non-text clipboard content — an image / file — is
+ * an AppleScript limitation and isn't preserved; text, the common
+ * case, is.) Exported so a contract test can pin the save/restore.
+ */
+export const OSASCRIPT_SOURCE = `
 tell application "System Events"
   set frontApp to name of first application process whose frontmost is true
   set frontWindow to "missing value"
@@ -64,11 +72,18 @@ tell application "System Events"
     set frontWindow to name of front window of first application process whose frontmost is true
   end try
 end tell
+set savedClipboard to "missing value"
+try
+  set savedClipboard to (the clipboard as text)
+end try
 set selectedText to "missing value"
 try
   tell application "System Events" to keystroke "c" using {command down}
   delay 0.05
   set selectedText to (the clipboard as text)
+end try
+try
+  if savedClipboard is not "missing value" then set the clipboard to savedClipboard
 end try
 return frontApp & linefeed & frontWindow & linefeed & selectedText
 `;

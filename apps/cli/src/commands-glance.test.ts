@@ -3,7 +3,21 @@ import type { spawn } from "node:child_process";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseOsascriptGlance, runOsascript } from "./commands-glance.js";
+import { OSASCRIPT_SOURCE, parseOsascriptGlance, runOsascript } from "./commands-glance.js";
+
+describe("OSASCRIPT_SOURCE — selection capture must not destroy the user's clipboard", () => {
+  it("saves the clipboard BEFORE the Cmd+C and restores it AFTER", () => {
+    const save = OSASCRIPT_SOURCE.indexOf("set savedClipboard to (the clipboard as text)");
+    const copy = OSASCRIPT_SOURCE.indexOf('keystroke "c" using {command down}');
+    const restore = OSASCRIPT_SOURCE.indexOf("set the clipboard to savedClipboard");
+    expect(save).toBeGreaterThanOrEqual(0);
+    expect(copy).toBeGreaterThanOrEqual(0);
+    expect(restore).toBeGreaterThanOrEqual(0);
+    // Snapshot the user's clipboard before the copy, put it back after.
+    expect(save).toBeLessThan(copy);
+    expect(restore).toBeGreaterThan(copy);
+  });
+});
 
 describe("parseOsascriptGlance", () => {
   it("splits app / window / selected from three lines", () => {
