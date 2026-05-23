@@ -59,23 +59,39 @@ describe("extractCurrentSessionTurns", () => {
 });
 
 describe("redactSecrets", () => {
-  it("scrubs OpenAI / GitHub / Google / Anthropic secret shapes", () => {
+  it("scrubs OpenAI / GitHub / Google-API / Anthropic / Google-OAuth secret shapes", () => {
     const input = [
-      "OpenAI: sk-abc123XYZ_DEF-456",
-      "Anthropic: sk-ant-api03-XYZ.shortKey",
-      "GitHub: ghp_ABCDEF1234567890abc",
-      "Google: AIzaSyA1B2C3D4E5F6G7H8I9J0KLMNO",
+      "OpenAI: sk-proj-abcdefghijklmnopqrstuvwxyz",
+      "Anthropic: sk-ant-api03-abcdefghijklmnopqrst",
+      "GitHub: ghp_ABCDEF1234567890abcdefghijklmnopqr",
+      "Google: AIzaSyABCDEF1234567890abcdef1234567890ABCDE",
       "OAuth token: ya29.A0AbCdEfGhIjKlMnOpQrStUvWxYz",
       "Innocent text stays put"
     ].join(" | ");
     const redacted = redactSecrets(input);
-    expect(redacted).not.toContain("sk-abc");
+    expect(redacted).not.toContain("sk-proj-abc");
     expect(redacted).not.toContain("sk-ant-api03");
     expect(redacted).not.toContain("ghp_ABCDEF");
     expect(redacted).not.toContain("AIzaSy");
     expect(redacted).not.toContain("ya29.A0");
     expect(redacted).toContain("Innocent text stays put");
-    expect(redacted).toContain("<redacted-secret>");
+    expect(redacted).toContain("[redacted-");
+  });
+
+  it("now also scrubs credential families the old local 3-pattern subset missed (the input-transcript gap)", () => {
+    // A DB connection URI with an inline password — sent to the
+    // summariser model verbatim before this fix.
+    expect(redactSecrets("db: postgres://admin:s3cretP@ss@db.internal:5432/muse"))
+      .toContain("[redacted-connection-uri]");
+    // AWS access key.
+    expect(redactSecrets("aws AKIAIOSFODNN7EXAMPLE here"))
+      .toContain("[redacted-aws-access-key]");
+    // Slack bot token.
+    expect(redactSecrets("slack xoxb-12345-67890-AbCdEf"))
+      .toContain("[redacted-slack-bot-token]");
+    // JWT bearer.
+    expect(redactSecrets("bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"))
+      .toContain("[redacted-jwt]");
   });
 
   it("leaves text without secret shapes unchanged", () => {
@@ -192,11 +208,11 @@ describe("summariseSession", () => {
       model: "spy",
       modelProvider: provider,
       turns: [
-        { role: "user", content: "My OpenAI key is sk-leak1234567890ABCDEF" },
+        { role: "user", content: "My OpenAI key is sk-leak1234567890ABCDEFGH" },
         { role: "assistant", content: "Got it" }
       ]
     });
     expect(seenUserMessage).not.toContain("sk-leak");
-    expect(seenUserMessage).toContain("<redacted-secret>");
+    expect(seenUserMessage).toContain("[redacted-openai-key]");
   });
 });

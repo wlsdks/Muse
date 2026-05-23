@@ -20,8 +20,9 @@
  *     model glitch never leaves a half-formed episode behind.
  *
  * Secret scrubbing happens here, before the transcript leaves the
- * machine — the regex matches the patterns the design doc's
- * failure-modes section calls out (`sk-`, `gh[pso]_`, `ya29.`).
+ * machine — via the canonical `@muse/shared` redactor so the input
+ * sent to the model is scrubbed with the same credential families as
+ * every other outbound surface, not a weaker local subset.
  *
  * REPL exit wiring (read files → extract → summarise → upsert →
  * vacuum) lives in the next iter; this file is intentionally
@@ -33,6 +34,7 @@ import type {
   ModelProvider,
   ModelRequest
 } from "@muse/model";
+import { redactSecretsInText } from "@muse/shared";
 
 export interface SessionTurnLine {
   readonly role: "user" | "assistant";
@@ -83,21 +85,17 @@ export function extractCurrentSessionTurns(
   };
 }
 
-const SECRET_PATTERNS: readonly RegExp[] = [
-  /\b(?:sk-|gh[pso]_|ya29\.)[A-Za-z0-9_./-]{6,}\b/gu,
-  // Anthropic + Google API key shapes commonly leaked in chat.
-  /\bsk-ant-[A-Za-z0-9_-]{6,}\b/gu,
-  /\bAIza[0-9A-Za-z_-]{20,}\b/gu
-];
-
-const SECRET_PLACEHOLDER = "<redacted-secret>";
-
+/**
+ * Scrub credential shapes from a transcript before it is sent to the
+ * summariser model. Delegates to the canonical `@muse/shared`
+ * redactor — a single source of truth covering private keys,
+ * connection URIs, AWS / Google / Slack / Stripe / GitLab keys, JWTs,
+ * and Telegram / Discord / Google-OAuth tokens. The prior local
+ * implementation here only matched three prefixes, so a pasted DB URI
+ * or bot token reached the model unredacted; this closes that gap.
+ */
 export function redactSecrets(text: string): string {
-  let out = text;
-  for (const pattern of SECRET_PATTERNS) {
-    out = out.replace(pattern, SECRET_PLACEHOLDER);
-  }
-  return out;
+  return redactSecretsInText(text);
 }
 
 export interface SessionSummary {

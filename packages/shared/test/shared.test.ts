@@ -114,6 +114,9 @@ describe("boundary and cancellation helpers", () => {
     // Google API key.
     expect(redactSecretsInText("key=AIzaSyABCDEF1234567890abcdef1234567890ABCDE"))
       .toContain("[redacted-google-api-key]");
+    // Google OAuth access token (`ya29.` bearer).
+    expect(redactSecretsInText("Authorization: Bearer ya29.A0AbCdEfGhIjKlMnOpQrStUvWxYz"))
+      .toContain("[redacted-google-oauth-token]");
     // Slack bot token.
     expect(redactSecretsInText("token=xoxb-12345-67890-AbCdEf"))
       .toContain("[redacted-slack-bot-token]");

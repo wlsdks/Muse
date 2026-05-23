@@ -147,6 +147,10 @@ const SECRET_PATTERNS: ReadonlyArray<{ readonly name: string; readonly regex: Re
   { name: "github-pat", regex: /\bgithub_pat_[A-Za-z0-9_]{30,}\b/gu },
   { name: "aws-access-key", regex: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/gu },
   { name: "google-api-key", regex: /\bAIza[0-9A-Za-z_-]{35,}/gu },
+  // Google OAuth 2.0 access token — `ya29.` + a long entropy body.
+  // A real bearer credential (Gmail / Calendar / Drive scopes) that
+  // can land in a pasted curl command or chat message.
+  { name: "google-oauth-token", regex: /\bya29\.[A-Za-z0-9_-]{20,}/gu },
   { name: "slack-bot-token", regex: /xox[abprs]-[A-Za-z0-9-]{10,}/gu },
   // Publishable pk_* keys are deliberately NOT redacted — they
   // ship in client code by design.
