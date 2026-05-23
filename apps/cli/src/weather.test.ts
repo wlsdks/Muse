@@ -79,6 +79,37 @@ describe("muse weather command", () => {
     }
   });
 
+  it("--days N prints the multi-day daily forecast (HTTP-faked daily block)", async () => {
+    const fetchImpl = fakeFetch({
+      geocode: { results: [{ country: "South Korea", latitude: 37.566, longitude: 126.978, name: "Seoul", timezone: "Asia/Seoul" }] },
+      forecast: {
+        daily: {
+          precipitation_probability_max: [5, 80],
+          temperature_2m_max: [24, 19],
+          temperature_2m_min: [15, 13],
+          time: ["2026-05-25", "2026-05-26"],
+          weather_code: [0, 61]
+        }
+      }
+    });
+    const { output, run: done } = run(["Seoul", "--days", "2"], fetchImpl);
+    await done;
+    const text = output.join("");
+    expect(text).toContain("Seoul, South Korea — forecast:");
+    expect(text).toContain("2026-05-25: clear sky, 15–24°C, rain 5%");
+    expect(text).toContain("2026-05-26: slight rain, 13–19°C, rain 80%");
+  });
+
+  it("--days with a non-numeric value → usage error, exit 1", async () => {
+    const prevExit = process.exitCode;
+    const fetchImpl = fakeFetch({ geocode: { results: [{ latitude: 37.566, longitude: 126.978, name: "Seoul" }] } });
+    const { output, run: done } = run(["Seoul", "--days", "lots"], fetchImpl);
+    await done;
+    expect(output.join("")).toContain("--days must be a positive number");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = prevExit;
+  });
+
   it("appends a rain heads-up when the hourly forecast crosses the threshold", async () => {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
