@@ -454,6 +454,10 @@ export {
   type WeatherToolDeps
 } from "./weather-tool.js";
 export {
+  createContactsFindTool,
+  type ContactsFindToolDeps
+} from "./contacts-tool.js";
+export {
   addContact,
   contactIdentifier,
   formatBirthdayBriefLine,

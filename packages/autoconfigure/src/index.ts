@@ -41,6 +41,7 @@ import {
   incrementFollowupLlmBudget,
   isFollowupLlmBudgetExhausted,
   readFollowupLlmBudget,
+  createContactsFindTool,
   createEmailReadTool,
   createHomeEntitiesTool,
   createHomeStateTool,
@@ -614,6 +615,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => homeReadTools,
     () => emailReadTools,
     () => [createWeatherTool()],
+    () => [createContactsFindTool({ contacts: () => queryContacts(resolveContactsFile(env)) })],
     () => options.extraTools ?? [],
     () => withChromeDevToolsRisk(mcp.manager.toMuseTools()),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
