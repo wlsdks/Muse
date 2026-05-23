@@ -148,6 +148,7 @@ function isMatchableKeyword(keyword: unknown): keyword is string {
 
 export const DEFAULT_DOMAIN_KEYWORDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   calendar: ["calendar", "schedule", "meeting", "event", "캘린더", "일정", "회의"],
+  home: ["home", "light", "lights", "lamp", "door", "lock", "locked", "unlock", "unlocked", "garage", "thermostat", "sensor", "device", "devices", "smart home", "조명", "불", "문", "잠금", "온도", "센서"],
   messaging: ["slack", "discord", "telegram", "line", "메시지", "채널", "dm", "message"],
   notes: ["note", "memo", "wiki", "doc", "노트", "메모", "문서", "위키"],
   system: ["설정", "config", "setting", "version", "버전"],

@@ -29,7 +29,7 @@ export function createHomeActionTool(deps: HomeActionToolDeps): MuseTool {
     definition: {
       description:
         "Call a Home Assistant service to control a smart-home device (e.g. 'light.turn_off' on 'light.living_room'). The user must confirm the exact action before it fires; absent confirmation nothing happens. Not for payments.",
-      domain: "system",
+      domain: "home",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -85,7 +85,7 @@ export function createHomeStateTool(deps: HomeStateToolDeps): MuseTool {
     definition: {
       description:
         "Read the current state of a Home Assistant entity, e.g. is 'lock.front_door' locked, or the temperature of 'sensor.living_room'. Read-only — never changes anything.",
-      domain: "system",
+      domain: "home",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -123,7 +123,7 @@ export function createHomeEntitiesTool(deps: HomeStateToolDeps): MuseTool {
     definition: {
       description:
         "List the user's Home Assistant entities (id + current state) so you can discover what devices exist and find the exact entity_id to read with home_state or control with home_action. Read-only. Optionally filter to one domain like 'light' or 'lock'.",
-      domain: "system",
+      domain: "home",
       inputSchema: {
         additionalProperties: false,
         properties: {
