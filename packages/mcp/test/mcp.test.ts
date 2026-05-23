@@ -8084,12 +8084,17 @@ describe("muse.status loopback server", () => {
       ]
     }), "utf8");
 
+    const sessionLockFile = join(dir, "session-lock.json");
+    const dndUntil = new Date(Date.now() + 2 * 60 * 60_000).toISOString();
+    writeFileSync(sessionLockFile, JSON.stringify({ until: dndUntil, reason: "deep work" }), "utf8");
+
     const connection = createLoopbackMcpConnection(createStatusMcpServer({
       episodesFile,
       followupsFile,
       objectivesFile,
       patternsFiredFile,
       remindersFile,
+      sessionLockFile,
       tasksFile,
       userMemoryFile
     }));
@@ -8097,6 +8102,7 @@ describe("muse.status loopback server", () => {
       reminders: { pending: number; fired: number; overdue: number; total: number; next_due_at?: string; next_text?: string };
       followups: { scheduled: number; fired: number; cancelled: number; total: number; next_scheduled_for?: string };
       objectives: { active: number; escalated: number; done: number; cancelled: number; total: number; escalated_sample?: string | null };
+      session: { dnd: boolean; until: string | null };
       episodes: { total: number; last_summary?: string };
       patterns: { total: number; last_fired_at?: string };
     };
@@ -8112,6 +8118,10 @@ describe("muse.status loopback server", () => {
     // rhodey's active objective filtered out by userId; escalated spec surfaced.
     expect(snap.objectives).toMatchObject({ active: 1, escalated: 1, done: 1, cancelled: 0, total: 3 });
     expect(snap.objectives.escalated_sample).toBe("ship Q3 memo — blocked on sign-off");
+
+    // Active DND lock surfaced so the agent knows notices are paused.
+    expect(snap.session.dnd).toBe(true);
+    expect(snap.session.until).toBe(dndUntil);
 
     // rhodey's episode filtered out.
     expect(snap.episodes.total).toBe(1);

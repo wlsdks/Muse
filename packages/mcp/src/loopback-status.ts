@@ -23,6 +23,7 @@ import { readFollowups } from "./personal-followups-store.js";
 import { readObjectives } from "./personal-objectives-store.js";
 import { readProactiveHistory } from "./personal-proactive-history-store.js";
 import { readReminders } from "./personal-reminders-store.js";
+import { readSessionLock } from "./proactive-notice-loop.js";
 import {
   summariseEpisodesRows,
   summariseFollowupsRows,
@@ -48,6 +49,8 @@ export interface StatusMcpServerOptions {
   readonly followupsFile?: string;
   /** Override path for ~/.muse/objectives.json. */
   readonly objectivesFile?: string;
+  /** Override path for ~/.muse/session-lock.json. */
+  readonly sessionLockFile?: string;
   /** Override path for ~/.muse/episodes.json. */
   readonly episodesFile?: string;
   /** Override path for ~/.muse/patterns-fired.json. */
@@ -104,6 +107,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
   const remindersFile = options.remindersFile ?? homeMuse("reminders.json");
   const followupsFile = options.followupsFile ?? homeMuse("followups.json");
   const objectivesFile = options.objectivesFile ?? homeMuse("objectives.json");
+  const sessionLockFile = options.sessionLockFile ?? homeMuse("session-lock.json");
   const episodesFile = options.episodesFile ?? homeMuse("episodes.json");
   const patternsFiredFile = options.patternsFiredFile ?? homeMuse("patterns-fired.json");
 
@@ -112,8 +116,9 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
       "Return a JARVIS-style snapshot of what Muse knows about the given user: " +
       "persona summary (counts of facts/prefs/vetoes/goals + last-update), current model, " +
       "open tasks (with the next 5 due-in-24h), standing objectives (active/escalated/done " +
-      "counts + the first escalated objective needing the user), last proactive notice, " +
-      "notification-log path + size, and the per-user trust list (trusted/blocked tool counts). " +
+      "counts + the first escalated objective needing the user), Do-Not-Disturb state " +
+      "(session.dnd + until — proactive notices are paused while active), last proactive " +
+      "notice, notification-log path + size, and the per-user trust list (trusted/blocked tool counts). " +
       "Pure file IO; sub-100ms. Use this when the external agent needs to reason about " +
       "the user's current state — what they're working on, what's queued, what Muse just notified them about.",
     execute: async (args: Record<string, unknown>): Promise<JsonObject> => {
@@ -169,6 +174,11 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
       const remindersSummary = summariseRemindersRows(reminders, now);
       const followupsSummary = summariseFollowupsRows(followups, userId);
       const objectivesSummary = summariseObjectivesRows(objectives, userId);
+      // Do-Not-Disturb: the proactive loop skips firing while a session
+      // lock holds, so an agent reasoning about the user's state (or
+      // whether to surface something) must see it. Active → `until`
+      // string; expired/missing/corrupt → undefined.
+      const sessionLockUntil = await readSessionLock(sessionLockFile, new Date(now)).catch(() => undefined);
       const episodesRows = (episodesDoc as { episodes?: readonly unknown[] } | undefined)?.episodes ?? [];
       const episodesSummary = summariseEpisodesRows(episodesRows, userId);
       const patternsRows = (patternsDoc as { fired?: readonly unknown[] } | undefined)?.fired ?? [];
@@ -195,6 +205,10 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           escalated: objectivesSummary.escalated,
           escalated_sample: objectivesSummary.escalatedSample ?? null,
           total: objectivesSummary.total
+        } as unknown as JsonValue,
+        session: {
+          dnd: sessionLockUntil !== undefined,
+          until: sessionLockUntil ?? null
         } as unknown as JsonValue,
         patterns: {
           last_fired_at: patternsSummary.lastFiredAtIso ?? null,
