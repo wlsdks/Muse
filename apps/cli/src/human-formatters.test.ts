@@ -6,8 +6,21 @@ import {
   formatLocalDate,
   formatLocalDateTime,
   formatLocalTime,
-  formatRelativeTime
+  formatRelativeTime,
+  formatTaskList
 } from "./human-formatters.js";
+
+describe("formatTaskList — surfaces the urgent flag", () => {
+  it("marks an urgent task with ⚠ and leaves a normal task unmarked", () => {
+    const out = formatTaskList({ status: "open", tasks: [
+      { id: "t1", title: "Pay rent", urgent: true },
+      { id: "t2", title: "Water plants" }
+    ], total: 2 });
+    expect(out).toContain("⚠ Pay rent");
+    expect(out).toMatch(/Water plants(?! )/u); // no ⚠ before a normal task
+    expect(out).not.toContain("⚠ Water plants");
+  });
+});
 
 describe("formatCalendarEvents renders in the local timezone, not UTC", () => {
   it("groups by LOCAL day and shows LOCAL start/end times — a 02:00Z event lands on the previous calendar day in America/Los_Angeles (UTC-7/8), not under its UTC date", () => {

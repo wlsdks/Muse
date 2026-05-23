@@ -17,6 +17,7 @@ interface HumanTaskRow {
   readonly dueAt?: string;
   readonly completedAt?: string;
   readonly tags?: readonly string[];
+  readonly urgent?: boolean;
 }
 
 export function formatTaskList(payload: { tasks: readonly HumanTaskRow[]; status?: string; total?: number }): string {
@@ -215,10 +216,11 @@ function normalizeKeyValue(
 
 function formatTaskRow(task: HumanTaskRow): string {
   const idTag = `[${shortId(task.id)}]`;
+  const urgentBadge = task.urgent ? "⚠ " : "";
   const statusBadge = task.status === "done" ? " (done)" : "";
   const dueLabel = task.dueAt ? `  due ${shortDateTime(task.dueAt)}` : "";
   const tagsLabel = task.tags && task.tags.length > 0 ? `  #${task.tags.join(" #")}` : "";
-  return `  - ${idTag} ${task.title}${statusBadge}${dueLabel}${tagsLabel}`;
+  return `  - ${idTag} ${urgentBadge}${task.title}${statusBadge}${dueLabel}${tagsLabel}`;
 }
 
 function shortId(id: string): string {
