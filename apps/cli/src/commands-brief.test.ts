@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, playAudioFile, playSynthesizedAudio } from "./commands-brief.js";
+import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, isOutsideActiveHours, playAudioFile, playSynthesizedAudio } from "./commands-brief.js";
 
 interface FakeChild extends EventEmitter {
   kill: (signal?: string) => boolean;
@@ -21,6 +21,32 @@ function makeFakeSpawn(): { spawnFn: typeof spawn; child: FakeChild } {
   const spawnFn = (() => child) as unknown as typeof spawn;
   return { child, spawnFn };
 }
+
+describe("isOutsideActiveHours — the active-window band honours midnight wraparound", () => {
+  it("returns false (inside) within ±2 hours on the 24h circle, across midnight", () => {
+    // Early-bird active 1-3am, checking in at 23:00 → 2 circular hours before start → inside.
+    expect(isOutsideActiveHours([1, 2, 3], 23)).toBe(false);
+    // Night-owl active 21-23, checking in at 00:00 → 1 circular hour past → inside.
+    expect(isOutsideActiveHours([21, 22, 23], 0)).toBe(false);
+    // Same-day band still works.
+    expect(isOutsideActiveHours([9, 10, 11], 12)).toBe(false);
+  });
+
+  it("returns true (outside) when no active hour is within ±2 circular hours", () => {
+    expect(isOutsideActiveHours([9, 10, 11], 15)).toBe(true);
+    // Early-bird [1,2,3] at 22:00 is 3 circular hours before start → outside.
+    expect(isOutsideActiveHours([1, 2, 3], 22)).toBe(true);
+  });
+
+  it("treats the ±2 boundary as inside and just past it as outside (circular)", () => {
+    expect(isOutsideActiveHours([23], 1)).toBe(false); // circular dist 2 → inside
+    expect(isOutsideActiveHours([23], 2)).toBe(true); // circular dist 3 → outside
+  });
+
+  it("an empty active-hours list is never 'outside' (no routine learned yet)", () => {
+    expect(isOutsideActiveHours([], 3)).toBe(false);
+  });
+});
 
 describe("playAudioFile (muse brief --speak player watchdog)", () => {
   afterEach(() => {

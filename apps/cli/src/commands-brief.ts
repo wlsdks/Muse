@@ -154,6 +154,23 @@ async function loadTasks(): Promise<readonly PersistedTask[]> {
   }
 }
 
+/**
+ * Is `hour` (0-23) outside the user's typical active window? Each
+ * `activeHours` entry defines a ±`tolerance` band measured on the
+ * 24-hour CIRCLE, so a routine that straddles midnight is honoured —
+ * an early-bird whose active hours are [1,2,3] checking in at 23:00 is
+ * two circular hours before their start, i.e. INSIDE, not "up late".
+ * A linear `abs(h - hour)` would wrongly flag that. Empty activeHours
+ * → never outside (no routine learned yet).
+ */
+export function isOutsideActiveHours(activeHours: readonly number[], hour: number, tolerance = 2): boolean {
+  if (activeHours.length === 0) return false;
+  return !activeHours.some((h) => {
+    const d = Math.abs(h - hour);
+    return Math.min(d, 24 - d) <= tolerance;
+  });
+}
+
 export function registerBriefCommand(program: Command, io: ProgramIO): void {
   program
     .command("brief")
@@ -188,8 +205,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       const routineHours = routineHoursRaw
         ? routineHoursRaw.split(",").map((h) => Number.parseInt(h.trim(), 10)).filter((h) => Number.isInteger(h))
         : [];
-      const isOutsideRoutine = routineHours.length > 0
-        && !routineHours.some((h) => Math.abs(h - hour) <= 2);
+      const isOutsideRoutine = isOutsideActiveHours(routineHours, hour);
       const greetingHint = hour < 5 ? "very late night / early hours"
         : hour < 12 ? "morning"
         : hour < 17 ? "afternoon"
