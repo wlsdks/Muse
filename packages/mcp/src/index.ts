@@ -479,6 +479,7 @@ export {
 } from "./personal-contacts-store.js";
 export {
   extractPlainTextBody,
+  GmailAuthError,
   GmailEmailProvider,
   summarizeInbox,
   unreadBriefingLine,

@@ -84,6 +84,14 @@ function header(headers: ReadonlyArray<Record<string, unknown>>, name: string): 
   return match && typeof match.value === "string" ? match.value : "";
 }
 
+/**
+ * A permanent Gmail credential failure (401/403) — token missing,
+ * expired, or lacking scope. Distinct from a transient blip so the
+ * inbox read can skip a single flaky message yet still surface a real
+ * auth problem instead of silently returning a partial list.
+ */
+export class GmailAuthError extends Error {}
+
 export class GmailEmailProvider implements EmailProvider, EmailSender, EmailReader {
   constructor(
     private readonly accessToken: string,
@@ -122,7 +130,7 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
       init: { headers: { authorization: `Bearer ${this.accessToken}` } }
     });
     if (response.status === 401 || response.status === 403) {
-      throw new Error(`Gmail auth rejected (${response.status.toString()}) — the access token is missing, expired, or lacks gmail.readonly scope`);
+      throw new GmailAuthError(`Gmail auth rejected (${response.status.toString()}) — the access token is missing, expired, or lacks gmail.readonly scope`);
     }
     if (!response.ok) {
       throw new Error(`Gmail API ${response.status.toString()}`);
@@ -139,7 +147,18 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
     const out: EmailSummary[] = [];
     for (const id of ids) {
       const params = "format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date";
-      const msg = await this.get(`${GMAIL_BASE}/messages/${encodeURIComponent(id)}?${params}`);
+      let msg: Record<string, unknown>;
+      try {
+        msg = await this.get(`${GMAIL_BASE}/messages/${encodeURIComponent(id)}?${params}`);
+      } catch (cause) {
+        // A bad credential is permanent and affects every message — surface it.
+        // A single message's transient failure / malformed body must NOT drop
+        // the whole batch: skip it and return the inbox we could read.
+        if (cause instanceof GmailAuthError) {
+          throw cause;
+        }
+        continue;
+      }
       const payload = (msg.payload ?? {}) as { headers?: ReadonlyArray<Record<string, unknown>> };
       const headers = Array.isArray(payload.headers) ? payload.headers : [];
       const labelIds = Array.isArray(msg.labelIds) ? msg.labelIds : [];

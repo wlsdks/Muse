@@ -681,7 +681,10 @@ was proven ONCE; a JARVIS you depend on survives real-world failure.
   `isRetriableStatus` + `fetchWithRetry` retry-with-backoff for
   429/5xx/network-reject; geocode + forecast recover from a transient
   503/502 instead of crashing the briefing; contract-faithful fake
-  fetch, mutation-proven). Next actuators (email/web/contacts/
+  fetch, mutation-proven). + 824 (email: `listRecent` skips a single
+  message whose fetch fails transiently / returns a malformed 200 body
+  instead of dropping the whole inbox; a permanent `GmailAuthError`
+  still propagates; mutation-proven). Next actuators (web/contacts/
   smart-home) are follow-on slices.
 
 **P20 — Deepen the thin axes (Perception + Knowledge).**

@@ -43,6 +43,48 @@ describe("GmailEmailProvider — read path is retry-hardened", () => {
     await expect(provider.listRecent(5)).rejects.toThrow("Gmail API 503");
     expect(calls()).toBe(3);
   });
+
+  it("a single message's malformed body does NOT drop the whole inbox", async () => {
+    // List has 3 ids; message #2 returns a 200 with a garbage (non-JSON)
+    // body — the kind of HTML error interstitial Gmail/proxies occasionally
+    // serve. The other two messages must still come back.
+    const msg = (subject: string) =>
+      json({ labelIds: ["INBOX"], payload: { headers: [{ name: "Subject", value: subject }] }, snippet: "" });
+    const garbage = () => new Response("<html>Service Unavailable</html>", { status: 200 });
+    const fetchImpl = (async (url: string) => {
+      if (url.includes("/messages?")) return json({ messages: [{ id: "m1" }, { id: "m2" }, { id: "m3" }] });
+      if (url.includes("m2")) return garbage();
+      return msg(url.includes("m1") ? "First" : "Third");
+    }) as unknown as typeof globalThis.fetch;
+    const provider = new GmailEmailProvider("token", fetchImpl, noWait);
+    const messages = await provider.listRecent(5);
+    expect(messages.map((m) => m.subject)).toEqual(["First", "Third"]);
+  });
+
+  it("a single message's retry-exhausted 5xx is skipped, the rest survive", async () => {
+    const msg = (subject: string) =>
+      json({ labelIds: ["INBOX"], payload: { headers: [{ name: "Subject", value: subject }] }, snippet: "" });
+    const fetchImpl = (async (url: string) => {
+      if (url.includes("/messages?")) return json({ messages: [{ id: "m1" }, { id: "m2" }] });
+      if (url.includes("m2")) return status(500);
+      return msg("First");
+    }) as unknown as typeof globalThis.fetch;
+    const provider = new GmailEmailProvider("token", fetchImpl, noWait);
+    const messages = await provider.listRecent(5);
+    expect(messages.map((m) => m.subject)).toEqual(["First"]);
+  });
+
+  it("a 401 mid-batch is propagated (a permanent credential failure is never hidden as a partial list)", async () => {
+    const msg = (subject: string) =>
+      json({ labelIds: ["INBOX"], payload: { headers: [{ name: "Subject", value: subject }] }, snippet: "" });
+    const fetchImpl = (async (url: string) => {
+      if (url.includes("/messages?")) return json({ messages: [{ id: "m1" }, { id: "m2" }] });
+      if (url.includes("m2")) return status(401);
+      return msg("First");
+    }) as unknown as typeof globalThis.fetch;
+    const provider = new GmailEmailProvider("token", fetchImpl, noWait);
+    await expect(provider.listRecent(5)).rejects.toThrow("Gmail auth rejected");
+  });
 });
 
 describe("GmailEmailProvider — sendEmail is NEVER retried (no double-send)", () => {
