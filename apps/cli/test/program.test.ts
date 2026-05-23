@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import { Command } from "commander";
 import { createProgram, defaultConfigPath, uniqueCommandPrefix } from "../src/program.js";
 import { registerListenCommand, type ListenShells } from "../src/commands-listen.js";
+import { formatNoticeStamp } from "../src/commands-agent-notices.js";
 import { formatLocalDateTime } from "../src/human-formatters.js";
 import { appendChatTurn } from "../src/tui.js";
 
@@ -2617,7 +2618,9 @@ describe("cli program", () => {
       expect(requests[0]?.url).toBe("http://api.test/api/agent-notices/stream?userId=stark");
       const combined = output.join("");
       expect(combined).toContain("(listening for agent-notices on user 'stark'");
-      expect(combined).toContain("[14:55]");
+      // Stamp renders in the local zone (helper-derived so the assertion
+      // is tz-agnostic — the producer's "14:55Z" is shown as local time).
+      expect(combined).toContain(`[${formatNoticeStamp("2026-05-13T14:55:00Z")}]`);
       expect(combined).toContain("[calendar]");
       expect(combined).toContain("Standup in 5 — want the agenda?");
     } finally {

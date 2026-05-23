@@ -43,6 +43,21 @@ function resolveUserId(explicit: string | undefined): string {
   return explicit ?? envValue("MUSE_USER_ID") ?? envValue("USER") ?? "default";
 }
 
+/**
+ * Render a notice's `generatedAt` as a local `HH:MM` stamp. The
+ * producer stamps UTC (`toISOString`), so a raw `slice(11,16)` showed
+ * the wrong hour to every non-UTC user; parse + format in the local
+ * zone instead. A missing / unparseable value yields `??:??` rather
+ * than a garbled substring. `timeZone` is injectable for tests.
+ */
+export function formatNoticeStamp(generatedAt: string | undefined, timeZone?: string): string {
+  if (!generatedAt) return "??:??";
+  const ms = Date.parse(generatedAt);
+  if (!Number.isFinite(ms)) return "??:??";
+  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+  return new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", hour12: false, minute: "2-digit", timeZone: tz });
+}
+
 export function registerAgentNoticesCommands(
   program: Command,
   io: ProgramIO,
@@ -98,7 +113,7 @@ export function registerAgentNoticesCommands(
                 readonly generatedAt?: string;
                 readonly sourceId?: string;
               };
-              const stamp = parsed.generatedAt ? parsed.generatedAt.slice(11, 16) : "??:??";
+              const stamp = formatNoticeStamp(parsed.generatedAt);
               const kind = parsed.kind ?? "agent";
               io.stdout(`[${stamp}] [${kind}] ${parsed.text ?? "(empty)"}\n`);
             } catch {
