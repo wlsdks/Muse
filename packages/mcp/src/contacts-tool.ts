@@ -20,7 +20,7 @@ export function createContactsFindTool(deps: ContactsFindToolDeps): MuseTool {
   return {
     definition: {
       description:
-        "Look up one of the user's contacts by name or alias and return their email / handle. Use when you need a person's contact details or to confirm who someone is. An ambiguous name returns the candidate names (never a guess); an unknown name returns found:false. Read-only.",
+        "Look up one of the user's contacts by name or alias and return their email / handle / birthday. Use when you need a person's contact details, their birthday, or to confirm who someone is. An ambiguous name returns the candidate names (never a guess); an unknown name returns found:false. Read-only.",
       domain: "messaging",
       inputSchema: {
         additionalProperties: false,
@@ -30,7 +30,7 @@ export function createContactsFindTool(deps: ContactsFindToolDeps): MuseTool {
         required: ["name"],
         type: "object"
       },
-      keywords: ["contact", "email", "address", "who", "person", "handle"],
+      keywords: ["contact", "email", "address", "who", "person", "handle", "birthday"],
       name: "find_contact",
       risk: "read"
     },
@@ -46,7 +46,8 @@ export function createContactsFindTool(deps: ContactsFindToolDeps): MuseTool {
           found: true,
           name: c.name,
           ...(c.email ? { email: c.email } : {}),
-          ...(c.handle ? { handle: c.handle } : {})
+          ...(c.handle ? { handle: c.handle } : {}),
+          ...(c.birthday ? { birthday: c.birthday } : {})
         };
       }
       if (resolution.status === "ambiguous") {
