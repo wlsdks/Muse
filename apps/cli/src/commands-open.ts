@@ -11,7 +11,7 @@
  *
  * Probe order:
  *   reminders → followups → objectives → episodes → patterns-fired →
- *   proactive-history → tasks
+ *   proactive-history → tasks → jobs
  *
  * Pure-read; no LLM, no model invocation. Goal 012.
  */
@@ -29,6 +29,7 @@ import {
 } from "@muse/mcp";
 import type { Command } from "commander";
 
+import { findJobsByIdPrefix } from "./commands-jobs.js";
 import type { ProgramIO } from "./program.js";
 
 interface OpenOptions {
@@ -42,7 +43,7 @@ interface OpenOptions {
 }
 
 interface Hit {
-  readonly kind: "reminder" | "followup" | "objective" | "episode" | "pattern" | "proactive" | "task";
+  readonly kind: "reminder" | "followup" | "objective" | "episode" | "pattern" | "proactive" | "task" | "job";
   readonly id: string;
   readonly record: Record<string, unknown>;
 }
@@ -101,6 +102,11 @@ async function scanAll(prefix: string): Promise<readonly Hit[]> {
   // Tasks
   for (const t of await readTasks(envOr("MUSE_TASKS_FILE", "tasks.json")).catch(() => [])) {
     if (t.id.startsWith(prefix)) hits.push({ kind: "task", id: t.id, record: t as unknown as Record<string, unknown> });
+  }
+
+  // Jobs (background-task records — `muse job run` → ~/.muse/jobs/<id>.jsonl)
+  for (const j of await findJobsByIdPrefix(prefix).catch(() => [])) {
+    hits.push({ kind: "job", id: j.id, record: j.record });
   }
 
   return hits;

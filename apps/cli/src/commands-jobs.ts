@@ -181,6 +181,25 @@ function jobSummary(events: readonly JobEvent[]): {
   return { error, finalText, finishedAt, prompt, startedAt, status };
 }
 
+/**
+ * Find background jobs whose id starts with `prefix`, each paired with
+ * a summary record (status / prompt / timings). Lets the generic
+ * `muse open <id>` lookup reach into the jobs store without owning any
+ * jobs-file knowledge — all of that (dir layout, jsonl parsing,
+ * status derivation) stays here, the single source of truth.
+ */
+export async function findJobsByIdPrefix(
+  prefix: string
+): Promise<readonly { readonly id: string; readonly record: Record<string, unknown> }[]> {
+  const out: { id: string; record: Record<string, unknown> }[] = [];
+  for (const id of listKnownJobIds()) {
+    if (!id.startsWith(prefix)) continue;
+    const summary = jobSummary(await readJobLines(jobPath(id)));
+    out.push({ id, record: { ...summary } as unknown as Record<string, unknown> });
+  }
+  return out;
+}
+
 export function registerJobCommands(program: Command, io: ProgramIO): void {
   const job = program.command("job").description("Background long-running agent tasks");
 
