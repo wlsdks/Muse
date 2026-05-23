@@ -4942,6 +4942,24 @@ describe("cli program", () => {
     expect(detectInlineImageSupport({} as NodeJS.ProcessEnv)).toBe(false);
   });
 
+  it("wrapForTmux wraps the OSC-1337 sequence in the tmux passthrough so it isn't swallowed inside tmux", async () => {
+    const { buildIterm2InlineImageSequence, wrapForTmux } = await import("../src/commands-show.js");
+    const seq = buildIterm2InlineImageSequence({ imageBytes: Buffer.from([0x89, 0x50]), name: "x.png" });
+
+    // Outside tmux: byte-for-byte unchanged.
+    expect(wrapForTmux(seq, false)).toBe(seq);
+
+    // Inside tmux: ESC P tmux ; <doubled-ESC payload> ESC \
+    const wrapped = wrapForTmux(seq, true);
+    expect(wrapped.startsWith("\x1bPtmux;")).toBe(true);
+    expect(wrapped.endsWith("\x1b\\")).toBe(true);
+    // Every inner ESC must be doubled so tmux forwards it verbatim.
+    expect(wrapped.includes("\x1b\x1b]1337")).toBe(true);
+    // Unwrapping (strip envelope, halve the ESCs) recovers the original.
+    const inner = wrapped.slice("\x1bPtmux;".length, -2).replace(/\x1b\x1b/gu, "\x1b");
+    expect(inner).toBe(seq);
+  });
+
   it("muse show rejects a 0-byte file with a clear error instead of emitting an empty inline sequence", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-show-empty-"));
     const fsp = await import("node:fs/promises");

@@ -74,6 +74,21 @@ export function buildIterm2InlineImageSequence(args: {
   return `\x1b]1337;File=inline=1;name=${b64Name}:${b64Image}\x07`;
 }
 
+/**
+ * Wrap a terminal escape sequence in the tmux passthrough envelope
+ * when running inside tmux. tmux intercepts and DISCARDS a raw
+ * OSC-1337 inline-image sequence, so a `muse show` inside tmux (which
+ * commonly forwards `TERM_PROGRAM=iTerm.app`, making us think inline
+ * is supported) renders nothing. The passthrough — `ESC P tmux ; …
+ * ESC \` with every inner ESC doubled — tells tmux to forward the
+ * bytes verbatim to the outer terminal (requires `allow-passthrough`,
+ * default on in tmux ≥ 3.5). Outside tmux the sequence is unchanged.
+ */
+export function wrapForTmux(sequence: string, inTmux: boolean): string {
+  if (!inTmux) return sequence;
+  return `\x1bPtmux;${sequence.replace(/\x1b/gu, "\x1b\x1b")}\x1b\\`;
+}
+
 async function externalOpen(path: string): Promise<number> {
   const command = process.platform === "darwin"
     ? "open"
@@ -112,10 +127,13 @@ export function registerShowCommand(program: Command, io: ProgramIO): void {
       }
       const inlineCapable = detectInlineImageSupport(process.env);
       if (inlineCapable || options.inlineOnly) {
-        const sequence = buildIterm2InlineImageSequence({
-          imageBytes,
-          name: options.name ?? basename(filePath)
-        });
+        const sequence = wrapForTmux(
+          buildIterm2InlineImageSequence({
+            imageBytes,
+            name: options.name ?? basename(filePath)
+          }),
+          Boolean(process.env.TMUX)
+        );
         io.stdout(`${sequence}\n`);
         if (!inlineCapable && options.inlineOnly) {
           io.stderr("(terminal does not advertise inline image support — emitted bytes anyway because --inline-only is set)\n");
