@@ -96,7 +96,8 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
       {
         description:
           "List entries inside the notes directory (or `subdir` relative to it). " +
-          "Returns up to `maxListEntries` items with `name`, `isDirectory`, and `sizeBytes` for files. " +
+          "Returns up to `maxListEntries` items with `name`, `isDirectory`, `sizeBytes` (files), and `modifiedAtIso`. " +
+          "Pass `sort: 'recent'` to order newest-modified first — answers 'what did I note recently / my latest notes'. " +
           "Hidden entries (dotfiles) are skipped. Non-recursive — pass deeper subdirs explicitly.",
         execute: async (args): Promise<JsonObject> => {
           const subdirInput = readString(args, "subdir");
@@ -111,40 +112,50 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           } catch (error) {
             return { error: `cannot list directory: ${error instanceof Error ? error.message : String(error)}` };
           }
-          const entries: JsonObject[] = [];
+          const collected: Array<{ row: JsonObject; mtimeMs: number }> = [];
           for (const entry of dirents) {
             if (entry.name.startsWith(".")) {
               continue;
             }
-            if (entries.length >= maxListEntries) {
-              break;
-            }
             const isDirectory = entry.isDirectory();
             const childAbs = nodePathResolve(safe.absolute, entry.name);
             let sizeBytes: number | undefined;
-            if (!isDirectory) {
-              try {
-                const stat = await nodeStat(childAbs);
+            let modifiedAtIso: string | undefined;
+            let mtimeMs = 0;
+            try {
+              const stat = await nodeStat(childAbs);
+              mtimeMs = stat.mtimeMs;
+              modifiedAtIso = new Date(stat.mtimeMs).toISOString();
+              if (!isDirectory) {
                 sizeBytes = stat.size;
-              } catch {
-                sizeBytes = undefined;
               }
+            } catch {
+              modifiedAtIso = undefined;
             }
-            entries.push({
-              isDirectory,
-              name: entry.name,
-              ...(sizeBytes !== undefined ? { sizeBytes } : {})
+            collected.push({
+              mtimeMs,
+              row: {
+                isDirectory,
+                name: entry.name,
+                ...(sizeBytes !== undefined ? { sizeBytes } : {}),
+                ...(modifiedAtIso ? { modifiedAtIso } : {})
+              }
             });
           }
+          if (readString(args, "sort") === "recent") {
+            collected.sort((a, b) => b.mtimeMs - a.mtimeMs);
+          }
+          const truncated = collected.length > maxListEntries;
           return {
             dir: safe.relative,
-            entries: entries as JsonValue,
-            truncated: entries.length >= maxListEntries
+            entries: collected.slice(0, maxListEntries).map((item) => item.row) as JsonValue,
+            truncated
           } satisfies JsonObject;
         },
         inputSchema: {
           additionalProperties: false,
           properties: {
+            sort: { description: "Order: omit for directory order, or 'recent' for newest-modified first (answers 'my recent notes').", enum: ["recent"], type: "string" },
             subdir: { description: "Subdirectory relative to the notes root. Defaults to the root.", type: "string" }
           },
           type: "object"
