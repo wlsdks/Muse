@@ -90,6 +90,19 @@ function finiteOr(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+/**
+ * Build a citation `source` label: the stable type prefix (kept so the
+ * enricher's `excludeSourcePrefixes` still matches) plus a HUMAN-readable
+ * name (subject / title / contact name) instead of an opaque id, so a
+ * cited "[email/Your statement]" tells the user which item it came from.
+ * Whitespace-collapsed + length-capped; falls back to the id when the
+ * label is empty.
+ */
+function labelSource(prefix: string, label: string | undefined, fallbackId: string): string {
+  const clean = (label ?? "").replace(/\s+/gu, " ").trim().slice(0, 60);
+  return `${prefix}/${clean.length > 0 ? clean : fallbackId}`;
+}
+
 export async function assembleKnowledgeCorpus(
   options: AssembleKnowledgeCorpusOptions
 ): Promise<KnowledgeChunk[]> {
@@ -136,7 +149,7 @@ export async function assembleKnowledgeCorpus(
       if (text.trim().length === 0) {
         continue;
       }
-      chunks.push({ source: `task/${task.id}`, text: text.length > maxChars ? text.slice(0, maxChars) : text });
+      chunks.push({ source: labelSource("task", task.title, task.id), text: text.length > maxChars ? text.slice(0, maxChars) : text });
     }
   }
 
@@ -160,7 +173,7 @@ export async function assembleKnowledgeCorpus(
       if (text.trim().length === 0) {
         continue;
       }
-      chunks.push({ source: `event/${event.id}`, text: text.length > maxChars ? text.slice(0, maxChars) : text });
+      chunks.push({ source: labelSource("event", event.title, event.id), text: text.length > maxChars ? text.slice(0, maxChars) : text });
     }
   }
 
@@ -180,7 +193,7 @@ export async function assembleKnowledgeCorpus(
       if (text.length === 0) {
         continue;
       }
-      chunks.push({ source: `contact/${contact.id}`, text });
+      chunks.push({ source: labelSource("contact", contact.name, contact.id), text });
     }
   }
 
@@ -198,7 +211,7 @@ export async function assembleKnowledgeCorpus(
       if (text.length === 0) {
         continue;
       }
-      chunks.push({ source: `email/${email.id}`, text: text.length > maxChars ? text.slice(0, maxChars) : text });
+      chunks.push({ source: labelSource("email", email.subject || email.from, email.id), text: text.length > maxChars ? text.slice(0, maxChars) : text });
     }
   }
 

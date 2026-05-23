@@ -29,7 +29,7 @@ describe("assembleKnowledgeCorpus — contacts as a corpus source", () => {
   it("emits each contact as a contact/<id> chunk with name + email + aliases", async () => {
     await addContact(file, { aliases: ["Bobby"], email: "bob@acme.com", id: "c1", name: "Bob Acme" });
     const corpus = await assembleKnowledgeCorpus({ contactsSource: source });
-    const chunk = corpus.find((c) => c.source === "contact/c1");
+    const chunk = corpus.find((c) => c.source === "contact/Bob Acme");
     expect(chunk).toBeDefined();
     expect(chunk!.text).toContain("Bob Acme");
     expect(chunk!.text).toContain("bob@acme.com");
@@ -42,7 +42,7 @@ describe("knowledge_search spans contacts — finds + cites a person", () => {
     await addContact(file, { email: "bob@acme.com", id: "c1", name: "Bob Acme" });
     const tool = createNotesKnowledgeSearchTool({ contactsSource: source, embed });
     const result = String(await tool.execute({ query: "what's bob acme's email?" }, { runId: "r1" }));
-    expect(result).toContain("[contact/c1]");
+    expect(result).toContain("[contact/Bob Acme]");
     expect(result).toContain("bob@acme.com");
   });
 });

@@ -32,8 +32,8 @@ describe("assembleKnowledgeCorpus — tasks as a corpus source", () => {
 
     const corpus = await assembleKnowledgeCorpus({ tasksProvider: provider });
     const bySource = new Map(corpus.map((chunk) => [chunk.source, chunk.text]));
-    expect(bySource.get("task/t1")).toContain("due Friday");
-    expect(bySource.has("task/t2")).toBe(false); // done task excluded
+    expect(bySource.get("task/Acme contract")).toContain("due Friday");
+    expect(bySource.has("task/Renew domain")).toBe(false); // done task excluded
   });
 });
 
@@ -42,7 +42,7 @@ describe("knowledge_search spans tasks — finds + cites a task fact", () => {
     await provider.add({ notes: "The Acme contract is due Friday.", title: "Acme contract" }); // t1
     const tool = createNotesKnowledgeSearchTool({ embed, tasksProvider: provider });
     const result = String(await tool.execute({ query: "when is the acme contract due?" }, { runId: "r1" }));
-    expect(result).toContain("[task/t1]");
+    expect(result).toContain("[task/Acme contract]");
     expect(result).toContain("due Friday");
   });
 });

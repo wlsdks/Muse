@@ -30,7 +30,7 @@ describe("assembleKnowledgeCorpus — calendar as a windowed corpus source", () 
     ]);
     const corpus = await assembleKnowledgeCorpus({ calendarSource: source, now: () => NOW });
     const sources = corpus.map((chunk) => chunk.source);
-    expect(sources).toEqual(["event/ev1"]);
+    expect(sources).toEqual(["event/Acme strategy meeting"]);
     expect(corpus[0]!.text).toContain("Acme strategy meeting");
     expect(corpus[0]!.text).toContain("renewal");
   });
@@ -43,7 +43,7 @@ describe("knowledge_search spans the calendar — finds + cites an event", () =>
     ]);
     const tool = createNotesKnowledgeSearchTool({ calendarSource: source, embed });
     const result = String(await tool.execute({ query: "what's the acme renewal meeting about?" }, { runId: "r1" }));
-    expect(result).toContain("[event/evX]");
+    expect(result).toContain("[event/Acme strategy meeting]");
     expect(result).toContain("Acme strategy meeting");
   });
 });

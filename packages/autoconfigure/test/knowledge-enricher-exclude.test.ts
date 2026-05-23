@@ -35,7 +35,7 @@ describe("createKnowledgeEnricher — excludeSourcePrefixes avoids echoing the i
       embed,
       notesProvider: new LocalDirNotesProvider({ notesDir })
     });
-    expect(await enrich("Acme strategy meeting")).toContain("[event/ev1]");
+    expect(await enrich("Acme strategy meeting")).toContain("[event/Acme strategy meeting]");
   });
 
   it("WITH excludeSourcePrefixes:[event/] it surfaces the NOTE instead — genuine context, no echo", async () => {
