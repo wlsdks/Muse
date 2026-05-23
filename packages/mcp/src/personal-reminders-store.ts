@@ -27,6 +27,8 @@ export interface ReminderVia {
   readonly destination: string;
 }
 
+export type ReminderRecurrence = "daily" | "weekly";
+
 export interface PersistedReminder {
   readonly id: string;
   readonly text: string;
@@ -34,6 +36,13 @@ export interface PersistedReminder {
   readonly createdAt: string;
   readonly status: "pending" | "fired";
   readonly firedAt?: string;
+  /**
+   * When set, firing re-arms the reminder to its next occurrence
+   * (dueAt + 1 day / 7 days, advanced past the fire time) and keeps it
+   * pending instead of marking it fired — so "remind me every Monday"
+   * keeps recurring. Fixed-interval (not calendar/DST-aware).
+   */
+  readonly recurrence?: ReminderRecurrence;
   /**
    * Phase C of docs/design/reminder-firing.md. Optional per-reminder
    * routing override — when set, the firing loop ignores its
@@ -98,6 +107,7 @@ export function serializeReminder(reminder: PersistedReminder): JsonObject {
     id: reminder.id,
     status: reminder.status,
     text: reminder.text,
+    ...(reminder.recurrence ? { recurrence: reminder.recurrence } : {}),
     ...(reminder.firedAt ? { firedAt: reminder.firedAt } : {}),
     ...(reminder.via
       ? { via: { destination: reminder.via.destination, providerId: reminder.via.providerId } }
@@ -156,6 +166,25 @@ export function parseReminderVia(raw: unknown): ReminderVia | Error | undefined 
  * set) on success or `undefined` when no reminder matches `id`,
  * letting the caller surface its own 404.
  */
+/**
+ * The next due timestamp for a recurring reminder: advance `dueAt` by
+ * the recurrence period (1 / 7 days) to the first instant strictly
+ * after `from` (the fire time), skipping any missed occurrences so a
+ * reminder fired late — or after the daemon was off — re-arms to the
+ * upcoming slot, not a backlog. Fixed-interval (not DST/calendar
+ * aware). Returns `dueAt` unchanged if either timestamp is unparseable.
+ */
+export function nextReminderOccurrence(dueAt: string, recurrence: ReminderRecurrence, from: string): string {
+  const periodMs = recurrence === "weekly" ? 7 * 86_400_000 : 86_400_000;
+  const due = Date.parse(dueAt);
+  const fromMs = Date.parse(from);
+  if (!Number.isFinite(due) || !Number.isFinite(fromMs)) {
+    return dueAt;
+  }
+  const periods = Math.max(1, Math.ceil((fromMs - due + 1) / periodMs));
+  return new Date(due + periods * periodMs).toISOString();
+}
+
 export function fireReminder(
   reminders: readonly PersistedReminder[],
   id: string,
@@ -165,13 +194,15 @@ export function fireReminder(
   if (index < 0) {
     return undefined;
   }
-  const fired: PersistedReminder = {
-    ...reminders[index]!,
-    firedAt,
-    status: "fired"
-  };
+  const current = reminders[index]!;
+  // A recurring reminder re-arms to its next occurrence and stays
+  // pending; a one-shot flips to fired. Delivery already happened in
+  // the caller — this only advances the schedule.
+  const updated: PersistedReminder = current.recurrence
+    ? { ...current, dueAt: nextReminderOccurrence(current.dueAt, current.recurrence, firedAt), status: "pending" }
+    : { ...current, firedAt, status: "fired" };
   const next = [...reminders];
-  next[index] = fired;
+  next[index] = updated;
   return next;
 }
 
@@ -244,6 +275,11 @@ function isPersistedReminder(value: unknown): value is PersistedReminder {
     return false;
   }
   if (candidate.firedAt !== undefined && typeof candidate.firedAt !== "string") {
+    return false;
+  }
+  if (candidate.recurrence !== undefined
+    && candidate.recurrence !== "daily"
+    && candidate.recurrence !== "weekly") {
     return false;
   }
   if (candidate.via !== undefined) {

@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { writeReminders, type PersistedReminder } from "@muse/mcp";
+import { readReminders, writeReminders, type PersistedReminder } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -65,6 +65,36 @@ describe("muse remind add — pre-dispatch <when> validation", () => {
     expect(r.error).toBeDefined();
     expect(r.error).toContain("relative phrase");
     expect(r.apiCalls).toHaveLength(0);
+  });
+});
+
+describe("muse remind add --repeat — recurring reminders", () => {
+  const prevEnv = process.env.MUSE_REMINDERS_FILE;
+  afterEach(() => {
+    if (prevEnv === undefined) delete process.env.MUSE_REMINDERS_FILE;
+    else process.env.MUSE_REMINDERS_FILE = prevEnv;
+  });
+
+  it("remote mode sends recurrence in the POST body", async () => {
+    const r = await runRemind(["2026-12-25T09:00:00Z", "standup", "--repeat", "weekly"]);
+    expect(r.error).toBeUndefined();
+    expect(r.apiCalls[0]!.body).toMatchObject({ recurrence: "weekly" });
+  });
+
+  it("rejects an invalid --repeat value (no reminder created)", async () => {
+    const r = await runRemind(["2026-12-25T09:00:00Z", "standup", "--repeat", "hourly"]);
+    expect(r.error).toContain("--repeat must be 'daily' or 'weekly'");
+    expect(r.apiCalls).toHaveLength(0);
+  });
+
+  it("local mode persists recurrence into the real store", async () => {
+    const f = join(mkdtempSync(join(tmpdir(), "muse-rem-rep-")), "reminders.json");
+    process.env.MUSE_REMINDERS_FILE = f;
+    const r = await runRemind(["--local", "2026-12-25T09:00:00Z", "water the plants", "--repeat", "daily"]);
+    expect(r.error).toBeUndefined();
+    const stored = await readReminders(f);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ recurrence: "daily", status: "pending", text: "water the plants" });
   });
 });
 

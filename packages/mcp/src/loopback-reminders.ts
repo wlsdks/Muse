@@ -15,7 +15,8 @@ import {
   readReminderStatusFilter,
   serializeReminder,
   writeReminders,
-  type PersistedReminder
+  type PersistedReminder,
+  type ReminderRecurrence
 } from "./personal-reminders-store.js";
 
 /**
@@ -109,12 +110,13 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
       ...historyTool,
       {
         description:
-          "Add a one-shot reminder. `text` is the reminder body. `dueAt` accepts either an ISO-8601 timestamp " +
+          "Add a reminder (one-shot, or recurring with `recurrence`). `text` is the reminder body. `dueAt` accepts either an ISO-8601 timestamp " +
           "OR a relative phrase. English: 'tomorrow', 'tomorrow 6pm', 'today at 14:30', 'in 3 hours', 'in 2 days', " +
           "'next Monday', 'next Monday at 9am'. Korean: '내일', '내일 오후 6시', '30분 후', '3일 뒤', " +
           "'다음 주 월요일', '다음 주 월요일 오후 3시 반'. The server resolves the phrase against the current local time, " +
           "so pass the user's natural-language input directly (in their own language). Reminders surface in `muse today` once dueAt " +
           "has passed. " +
+          "Optional `recurrence`: 'daily' or 'weekly' makes it repeat (re-arms to the next occurrence each time it fires) — use for 'every day' / 'every Monday'; omit for a one-time reminder. " +
           "Optional `via: { providerId, destination }` overrides the firing daemon's default route per reminder " +
           "(\"send THIS one to Slack channel C123 instead of the user's usual Telegram\").",
         execute: async (args): Promise<JsonObject> => {
@@ -130,6 +132,11 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           if (parsed instanceof Error) {
             return { error: parsed.message };
           }
+          const recurrenceRaw = readString(args, "recurrence")?.trim();
+          if (recurrenceRaw !== undefined && recurrenceRaw !== "daily" && recurrenceRaw !== "weekly") {
+            return { error: "recurrence must be 'daily' or 'weekly'" };
+          }
+          const recurrence = recurrenceRaw as ReminderRecurrence | undefined;
           const viaResult = parseReminderVia(args["via"]);
           if (viaResult instanceof Error) {
             return { error: viaResult.message };
@@ -142,6 +149,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
             id: idFactory(),
             status: "pending",
             text,
+            ...(recurrence ? { recurrence } : {}),
             ...(via ? { via } : {})
           };
           try {
@@ -156,6 +164,11 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           properties: {
             dueAt: {
               description: "ISO-8601 timestamp or relative phrase — English ('tomorrow 6pm', 'in 3 hours', 'next Monday') or Korean ('내일 오후 6시', '3일 뒤', '다음 주 월요일').",
+              type: "string"
+            },
+            recurrence: {
+              description: "Optional repeat cadence: 'daily' or 'weekly'. Omit for a one-time reminder. e.g. 'every Monday' → 'weekly'.",
+              enum: ["daily", "weekly"],
               type: "string"
             },
             text: { description: "Reminder body shown back to the user when due.", type: "string" },

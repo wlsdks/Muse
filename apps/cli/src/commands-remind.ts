@@ -30,7 +30,8 @@ import {
   serializeReminder,
   writeReminders,
   type PersistedReminder,
-  type ReminderHistoryEntry
+  type ReminderHistoryEntry,
+  type ReminderRecurrence
 } from "@muse/mcp";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import type { Command } from "commander";
@@ -91,6 +92,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
     .argument("<text...>", "Reminder text (joined by spaces)")
     .option("--local", "Write directly to the local reminders file instead of the API")
     .option("--json", "Print the raw response instead of a short confirmation")
+    .option("--repeat <cadence>", "Repeat the reminder: 'daily' or 'weekly' (re-arms each time it fires). Omit for one-time.")
     .option(
       "--via-provider <id>",
       "Per-reminder routing override — provider id (telegram | discord | slack | line). Both --via flags must be set together."
@@ -99,13 +101,18 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
     .action(async (
       when: string,
       textParts: readonly string[],
-      options: SharedOptions & { readonly viaProvider?: string; readonly viaDestination?: string },
+      options: SharedOptions & { readonly repeat?: string; readonly viaProvider?: string; readonly viaDestination?: string },
       command
     ) => {
       const text = textParts.join(" ").trim();
       if (text.length === 0) {
         throw new Error("text is required");
       }
+      const repeat = options.repeat?.trim();
+      if (repeat !== undefined && repeat !== "daily" && repeat !== "weekly") {
+        throw new Error("--repeat must be 'daily' or 'weekly'");
+      }
+      const recurrence = repeat as ReminderRecurrence | undefined;
       const viaProvider = options.viaProvider?.trim();
       const viaDestination = options.viaDestination?.trim();
       if ((viaProvider && !viaDestination) || (!viaProvider && viaDestination)) {
@@ -133,6 +140,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
           id: `rem_${randomUUID()}`,
           status: "pending",
           text,
+          ...(recurrence ? { recurrence } : {}),
           ...(via ? { via } : {})
         };
         const file = localRemindersFile();
@@ -141,6 +149,9 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
         payload = serializeReminder(created);
       } else {
         const body: Record<string, unknown> = { dueAt: when, text };
+        if (recurrence) {
+          body.recurrence = recurrence;
+        }
         if (via) {
           body.via = via;
         }
@@ -153,7 +164,8 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       const id = String(payload.id ?? "");
       const dueAt = String(payload.dueAt ?? "");
       const viaSuffix = via ? ` → ${via.providerId}:${via.destination}` : "";
-      io.stdout(`Added [${id.slice(0, 12)}] ${text} — due ${shortDateTime(dueAt)}${viaSuffix}\n`);
+      const repeatSuffix = recurrence ? ` (repeats ${recurrence})` : "";
+      io.stdout(`Added [${id.slice(0, 12)}] ${text} — due ${shortDateTime(dueAt)}${repeatSuffix}${viaSuffix}\n`);
     });
 
   remind

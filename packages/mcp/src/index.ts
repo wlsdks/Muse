@@ -654,6 +654,7 @@ export {
   compareRemindersByDueAt,
   filterReminders,
   fireReminder,
+  nextReminderOccurrence,
   parseReminderDueAt,
   parseReminderVia,
   readReminders,
@@ -661,6 +662,7 @@ export {
   serializeReminder,
   writeReminders,
   type PersistedReminder,
+  type ReminderRecurrence,
   type ReminderStatusFilter,
   type ReminderVia
 } from "./personal-reminders-store.js";

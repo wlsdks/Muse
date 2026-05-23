@@ -25,7 +25,8 @@ import {
   readReminderStatusFilter,
   serializeReminder,
   writeReminders,
-  type PersistedReminder
+  type PersistedReminder,
+  type ReminderRecurrence
 } from "@muse/mcp";
 import type { FastifyInstance } from "fastify";
 
@@ -66,6 +67,7 @@ export function registerRemindersRoutes(server: FastifyInstance, gate: Reminders
       readonly text?: unknown;
       readonly dueAt?: unknown;
       readonly via?: unknown;
+      readonly recurrence?: unknown;
     } | null;
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (text.length === 0) {
@@ -79,6 +81,10 @@ export function registerRemindersRoutes(server: FastifyInstance, gate: Reminders
     if (parsed instanceof Error) {
       return reply.status(400).send({ code: "INVALID_REMINDER_DUE_AT", message: parsed.message });
     }
+    if (body?.recurrence !== undefined && body.recurrence !== "daily" && body.recurrence !== "weekly") {
+      return reply.status(400).send({ code: "INVALID_REMINDER_RECURRENCE", message: "recurrence must be 'daily' or 'weekly'" });
+    }
+    const recurrence = body?.recurrence as ReminderRecurrence | undefined;
     const viaResult = parseReminderVia(body?.via);
     if (viaResult instanceof Error) {
       return reply.status(400).send({ code: "INVALID_REMINDER_VIA", message: viaResult.message });
@@ -91,6 +97,7 @@ export function registerRemindersRoutes(server: FastifyInstance, gate: Reminders
       id: `rem_${randomUUID()}`,
       status: "pending",
       text,
+      ...(recurrence ? { recurrence } : {}),
       ...(via ? { via } : {})
     };
     await writeReminders(remindersFile, [...reminders, created]);
