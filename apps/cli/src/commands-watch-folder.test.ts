@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractDueHint, resolveInboxDueAt } from "./commands-watch-folder.js";
+import { buildInboxNotice, extractDueHint, resolveInboxDueAt } from "./commands-watch-folder.js";
 
 const FIXED_NOW = (): Date => new Date("2026-05-18T09:00:00Z");
 
@@ -32,6 +32,42 @@ describe("extractDueHint (watch-folder --as-task due parsing)", () => {
     expect(extractDueHint("due:")).toBeUndefined();
     expect(extractDueHint("just some notes\nno hint here")).toBeUndefined();
     expect(extractDueHint("")).toBeUndefined();
+  });
+});
+
+describe("buildInboxNotice — text preview vs binary blob (no mojibake notices)", () => {
+  it("previews a text file's first non-empty line", () => {
+    const buf = Buffer.from("\n\n  Pay the electricity bill\nsecond line\n", "utf8");
+    const notice = buildInboxNotice("bill.txt", buf, 10_240);
+    expect(notice.binary).toBe(false);
+    expect(notice.title).toBe("bill");
+    expect(notice.text).toBe("📥 bill: Pay the electricity bill");
+    expect(notice.body).toContain("Pay the electricity bill");
+  });
+
+  it("treats a PNG (or any blob with NUL bytes) as binary — clean filename+size line, empty body", () => {
+    // PNG magic + a NUL byte → isLikelyBinary.
+    const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02]);
+    const notice = buildInboxNotice("photo.png", buf, 10_240);
+    expect(notice.binary).toBe(true);
+    expect(notice.title).toBe("photo");
+    expect(notice.text).toBe("📎 photo: png file (11 bytes) — binary, no text preview");
+    // Critical: no garbage spills into the body (task notes / due-hint parsing).
+    expect(notice.body).toBe("");
+  });
+
+  it("an extensionless binary still gets a sane label", () => {
+    const buf = Buffer.from([0x00, 0x00, 0xff, 0xfe, 0x00]);
+    const notice = buildInboxNotice("blob", buf, 10_240);
+    expect(notice.binary).toBe(true);
+    expect(notice.text).toContain("blob: binary file");
+  });
+
+  it("truncates the preview to maxPreviewBytes for a large text file", () => {
+    const big = "A".repeat(50_000);
+    const notice = buildInboxNotice("big.log", Buffer.from(big, "utf8"), 1_024);
+    expect(notice.binary).toBe(false);
+    expect(notice.body.length).toBe(1_024);
   });
 });
 

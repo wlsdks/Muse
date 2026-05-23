@@ -8,8 +8,10 @@
  * the watched directory.
  *
  * On each new file:
- *   1. Read the file (text only, max 10 KB — bigger payloads are
- *      truncated). Binary blobs are ignored.
+ *   1. Read the file (text preview, max 10 KB — bigger payloads are
+ *      truncated). A binary blob (image / PDF / archive) is surfaced
+ *      as a clean "name (N bytes)" line instead of garbled bytes, and
+ *      contributes no body.
  *   2. Send a notice via the configured messaging provider with:
  *        title    = filename (sans extension)
  *        body     = first non-empty line, or "(empty)"
@@ -37,6 +39,7 @@ import { appendProactiveHistory, parseTaskDueAt, readTasks, writeTasks, type Per
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
+import { isLikelyBinary } from "./commands-read.js";
 import type { ProgramIO } from "./program.js";
 
 const MAX_PREVIEW_BYTES = 10 * 1024;
@@ -78,6 +81,48 @@ export interface InboxDueResolution {
    * silently degrade to the default lead with no feedback.
    */
   readonly unparsedHint?: string;
+}
+
+export interface InboxNotice {
+  readonly title: string;
+  /** True when the dropped file is binary (image/PDF/archive). */
+  readonly binary: boolean;
+  /** The messaging notice text. */
+  readonly text: string;
+  /**
+   * UTF-8 body for due-hint parsing + task notes. Empty for a binary
+   * file — so a dropped photo never spills mojibake into a task's
+   * notes or gets mis-parsed for a fake `due:` line.
+   */
+  readonly body: string;
+}
+
+/**
+ * Build the inbox notice for a dropped file. A binary blob (image,
+ * PDF, archive) becomes a clean "📎 name: <ext> file (N bytes)" line
+ * instead of a notice full of garbled bytes, and contributes no body
+ * — the documented "binary blobs are ignored" behaviour that the
+ * UTF-8-everything read path silently dropped.
+ */
+export function buildInboxNotice(filename: string, buffer: Buffer, maxPreviewBytes: number): InboxNotice {
+  const title = basename(filename, extname(filename));
+  if (isLikelyBinary(buffer)) {
+    const ext = extname(filename).replace(/^\./u, "") || "binary";
+    return {
+      binary: true,
+      body: "",
+      text: `📎 ${title}: ${ext} file (${buffer.length.toString()} bytes) — binary, no text preview`,
+      title
+    };
+  }
+  const body = buffer.subarray(0, maxPreviewBytes).toString("utf8");
+  const firstLine = body.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "(empty)";
+  return {
+    binary: false,
+    body,
+    text: `📥 ${title}: ${firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine}`,
+    title
+  };
 }
 
 export function resolveInboxDueAt(
@@ -180,18 +225,16 @@ export function registerWatchFolderCommand(program: Command, io: ProgramIO): voi
           }
           if (!stats.isFile()) return;
 
-          let raw = "";
+          let notice: InboxNotice;
           try {
             const buffer = await readFile(full);
-            raw = buffer.subarray(0, MAX_PREVIEW_BYTES).toString("utf8");
+            notice = buildInboxNotice(filename, buffer, MAX_PREVIEW_BYTES);
           } catch (cause) {
             io.stderr(`Failed to read ${filename}: ${cause instanceof Error ? cause.message : String(cause)}\n`);
             return;
           }
 
-          const firstLine = raw.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "(empty)";
-          const title = basename(filename, extname(filename));
-          const text = `📥 ${title}: ${firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine}`;
+          const { body: raw, text, title } = notice;
 
           await registry.send(provider, { destination, text });
 
