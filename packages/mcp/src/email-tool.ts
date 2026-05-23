@@ -96,7 +96,7 @@ export function createEmailReadTool(deps: EmailReadToolDeps): MuseTool {
         },
         type: "object"
       },
-      keywords: ["email", "inbox", "unread", "mail", "messages", "read"],
+      keywords: ["email", "emails", "inbox", "unread", "mail", "mails", "messages", "read", "이메일", "메일"],
       name: "email_recent",
       risk: "read"
     },
@@ -145,7 +145,7 @@ export function createEmailReadMessageTool(deps: EmailReadMessageToolDeps): Muse
         required: ["id"],
         type: "object"
       },
-      keywords: ["email", "read", "open", "full", "message", "body"],
+      keywords: ["email", "emails", "read", "open", "full", "message", "body", "이메일", "메일"],
       name: "read_email",
       risk: "read"
     },

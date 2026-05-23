@@ -38,7 +38,7 @@ export function createWeatherTool(deps: WeatherToolDeps = {}): MuseTool {
         ...(defaultLocation && defaultLocation.length > 0 ? {} : { required: ["location"] }),
         type: "object"
       },
-      keywords: ["weather", "temperature", "rain", "forecast", "umbrella"],
+      keywords: ["weather", "temperature", "rain", "raining", "forecast", "umbrella", "sunny", "cloudy", "snow", "snowing", "humid", "windy", "날씨", "비", "기온"],
       name: "weather",
       risk: "read"
     },
