@@ -28,19 +28,23 @@ export function createHomeActionTool(deps: HomeActionToolDeps): MuseTool {
   return {
     definition: {
       description:
-        "Call a Home Assistant service to control a smart-home device (e.g. 'light.turn_off' on 'light.living_room'). The user must confirm the exact action before it fires; absent confirmation nothing happens. Not for payments.",
+        "Call a Home Assistant service to control a smart-home device, OR activate a scene / run a script (a 'routine'). "
+        + "Examples: turn a light off — service 'light.turn_off', entity 'light.living_room'; "
+        + "activate a scene ('movie mode') — service 'scene.turn_on', entity 'scene.movie_mode'; "
+        + "run a routine ('good night') — service 'script.turn_on', entity 'script.good_night'. "
+        + "The user must confirm the exact action before it fires; absent confirmation nothing happens. Not for payments.",
       domain: "home",
       inputSchema: {
         additionalProperties: false,
         properties: {
           data: { description: "Extra service data (object), merged into the call body.", type: "object" },
-          entity: { description: "Target entity_id, e.g. 'light.living_room'.", type: "string" },
-          service: { description: "Service id as '<domain>.<service>', e.g. 'light.turn_off'.", type: "string" }
+          entity: { description: "Target entity_id, e.g. 'light.living_room', 'scene.movie_mode', or 'script.good_night'.", type: "string" },
+          service: { description: "Service id as '<domain>.<service>', e.g. 'light.turn_off', 'scene.turn_on', 'script.turn_on'.", type: "string" }
         },
         required: ["service"],
         type: "object"
       },
-      keywords: ["home", "smart-home", "light", "lock", "device", "homeassistant"],
+      keywords: ["home", "smart-home", "light", "lock", "device", "homeassistant", "scene", "scenes", "script", "routine", "activate"],
       name: "home_action",
       risk: "execute"
     },

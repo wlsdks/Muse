@@ -32,6 +32,11 @@ describe("home tools surface for NATURAL home prompts (one-shot selection)", () 
     expect(surfaced("what smart-home devices do I have?")).toContain("home_entities");
   });
 
+  it("a scene / routine prompt surfaces home_action (scene.turn_on / script.turn_on)", () => {
+    expect(surfaced("activate the bedtime scene")).toContain("home_action");
+    expect(surfaced("run my good night routine")).toContain("home_action");
+  });
+
   it("an unrelated prompt surfaces NONE of the home tools (small exposed set)", () => {
     expect(surfaced("what is 2 + 2?")).toEqual([]);
     expect(surfaced("summarize this article about economics")).toEqual([]);
