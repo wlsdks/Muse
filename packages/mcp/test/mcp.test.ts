@@ -2206,6 +2206,33 @@ describe("muse.tasks loopback server", () => {
     expect(noMatches).toMatchObject({ total: 0 });
   });
 
+  it("update reschedules / renames / toggles urgent on an existing task (parity with `muse tasks edit`)", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const dir = mkdtempSync(`${tmpdir}/muse-tasks-update-`);
+    let counter = 0;
+    const idFactory = () => `task_${++counter}`;
+    const connection = createLoopbackMcpConnection(createTasksMcpServer({ file: `${dir}/tasks.json`, idFactory }));
+
+    await connection.callTool!("add", { title: "Dentist", dueAt: "2030-01-01T09:00:00Z", urgent: true });
+
+    // Reschedule + rename + clear urgent in one call.
+    const updated = await connection.callTool!("update", {
+      id: "task_1", title: "Dentist (rescheduled)", dueAt: "2030-02-02T09:00:00Z", urgent: false
+    });
+    expect(updated).toMatchObject({ task: { id: "task_1", title: "Dentist (rescheduled)", dueAt: "2030-02-02T09:00:00.000Z" } });
+    expect((updated.task as { urgent?: boolean }).urgent).toBeUndefined();
+
+    // 'none' clears the due date; the change persists to the store.
+    await connection.callTool!("update", { id: "task_1", dueAt: "none" });
+    const all = await connection.callTool!("list", { status: "all" }) as { tasks: { id: string; dueAt?: string }[] };
+    expect(all.tasks.find((t) => t.id === "task_1")?.dueAt).toBeUndefined();
+
+    // Guards: unknown id, and no-fields-to-change.
+    expect(await connection.callTool!("update", { id: "task_404", title: "x" })).toMatchObject({ error: expect.stringContaining("not found") });
+    expect(await connection.callTool!("update", { id: "task_1" })).toMatchObject({ error: expect.stringContaining("at least one") });
+  });
+
   it("add accepts urgent:true and round-trips it through list (CRUD parity with `muse tasks add --urgent`)", async () => {
     const { mkdtempSync } = await import("node:fs");
     const tmpdir = await import("node:os").then((m) => m.tmpdir());
