@@ -6076,12 +6076,14 @@ describe("cli program", () => {
     const fromHttp = await loadImageAsBase64("https://example.test/x.png", stubFetch);
     expect(fromHttp).toBe(Buffer.from(pngBytes).toString("base64"));
 
-    // Local file path.
+    // Local file path — must carry real image magic bytes (a PNG header
+    // here); loadImageAsBase64 now rejects a non-image local file.
     const fsp = await import("node:fs/promises");
     const root = await mkdtemp(path.join(tmpdir(), "muse-vision-test-"));
     const file = path.join(root, "img.png");
-    await fsp.writeFile(file, Buffer.from("hello"));
-    expect(await loadImageAsBase64(file)).toBe(Buffer.from("hello").toString("base64"));
+    const localPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    await fsp.writeFile(file, localPng);
+    expect(await loadImageAsBase64(file)).toBe(localPng.toString("base64"));
 
     // buildOllamaVisionBody shape.
     const body = buildOllamaVisionBody({ model: "m", prompt: "p", imageBase64: "QkFTRTY0" });

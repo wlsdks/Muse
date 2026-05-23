@@ -9,6 +9,7 @@ import {
   buildOllamaVisionBody,
   formatOllamaVisionFailure,
   loadImageAsBase64,
+  looksLikeImage,
   resolveVisionModel
 } from "./commands-vision.js";
 
@@ -89,11 +90,35 @@ describe("loadImageAsBase64 — http(s) URLs", () => {
   });
 });
 
+describe("looksLikeImage — magic-byte recognition", () => {
+  it("accepts PNG/JPEG/GIF/BMP/WebP/HEIC magic", () => {
+    expect(looksLikeImage(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]))).toBe(true); // PNG
+    expect(looksLikeImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe(true); // JPEG
+    expect(looksLikeImage(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))).toBe(true); // GIF89a
+    expect(looksLikeImage(Buffer.from([0x42, 0x4d, 0x00]))).toBe(true); // BMP
+    expect(looksLikeImage(Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]))).toBe(true); // WEBP
+    expect(looksLikeImage(Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]))).toBe(true); // ftyp heic
+  });
+
+  it("rejects text / PDF / empty bytes", () => {
+    expect(looksLikeImage(Buffer.from("hello, this is a note\n", "utf8"))).toBe(false);
+    expect(looksLikeImage(Buffer.from("%PDF-1.7\n", "utf8"))).toBe(false);
+    expect(looksLikeImage(Buffer.from([]))).toBe(false);
+  });
+});
+
 describe("loadImageAsBase64 — local path", () => {
-  it("reads and base64-encodes a local file", async () => {
+  it("reads and base64-encodes a local image file (JPEG magic)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "muse-vision-"));
     const file = join(dir, "img.bin");
     writeFileSync(file, Buffer.from([0xff, 0xd8, 0xff]));
     expect(await loadImageAsBase64(file)).toBe(Buffer.from([0xff, 0xd8, 0xff]).toString("base64"));
+  });
+
+  it("rejects a local non-image file (e.g. a text/PDF) instead of feeding garbage to the vision model", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-vision-txt-"));
+    const file = join(dir, "notes.txt");
+    writeFileSync(file, "just some notes, definitely not an image");
+    await expect(loadImageAsBase64(file)).rejects.toThrow(/doesn't look like an image/u);
   });
 });

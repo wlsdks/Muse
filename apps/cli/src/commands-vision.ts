@@ -51,10 +51,37 @@ export function resolveVisionModel(explicit: string | undefined, env: NodeJS.Pro
 }
 
 /**
- * Goal 087 — load the image into a base64 string Ollama accepts.
- * Path / URL / data-URL all reduce to "raw bytes → base64". Pure
- * (no global fetch capture) so a unit test can drive each branch
- * with an injected `fetchImpl`.
+ * Recognise common raster/HEIF image bytes by magic number: PNG, JPEG,
+ * GIF, BMP, WebP (RIFF…WEBP), and the ISO-BMFF `ftyp` family
+ * (HEIC/AVIF). Used to reject a local file that isn't an image before
+ * it's base64-encoded and fed to the vision model as "image bytes" —
+ * the local-path counterpart to the data-URL base64 check and the URL
+ * content-type check. Pure (bytes in, boolean out).
+ */
+export function looksLikeImage(buffer: Buffer): boolean {
+  const startsWith = (...bytes: number[]): boolean =>
+    buffer.length >= bytes.length && bytes.every((b, i) => buffer[i] === b);
+  if (startsWith(0x89, 0x50, 0x4e, 0x47)) return true; // PNG
+  if (startsWith(0xff, 0xd8, 0xff)) return true; // JPEG
+  if (startsWith(0x47, 0x49, 0x46, 0x38)) return true; // GIF8
+  if (startsWith(0x42, 0x4d)) return true; // BMP
+  // WebP: "RIFF" .... "WEBP"
+  if (buffer.length >= 12 && startsWith(0x52, 0x49, 0x46, 0x46)
+    && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+    return true;
+  }
+  // ISO-BMFF (HEIC / AVIF): bytes 4-7 are 'ftyp'.
+  if (buffer.length >= 12 && buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Load the image into a base64 string Ollama accepts. Path / URL /
+ * data-URL all reduce to "raw bytes → base64". Pure (no global fetch
+ * capture) so a unit test can drive each branch with an injected
+ * `fetchImpl`.
  */
 export async function loadImageAsBase64(
   source: string,
@@ -107,6 +134,11 @@ export async function loadImageAsBase64(
   }
   // Local path.
   const buf = await readFile(trimmed);
+  if (!looksLikeImage(buf)) {
+    throw new Error(
+      `'${trimmed}' doesn't look like an image (PNG/JPEG/GIF/WebP/BMP/HEIC) — muse vision needs image bytes, not a text/PDF/other file`
+    );
+  }
   return buf.toString("base64");
 }
 
