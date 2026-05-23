@@ -25,6 +25,7 @@ import {
   readReminders,
   summariseEpisodesRows,
   summariseFollowupsRows,
+  summariseObjectivesRows,
   summarisePatternsFiredRows,
   summariseRemindersRows
 } from "@muse/mcp";
@@ -125,51 +126,6 @@ function defaultFollowupsFile(): string {
 
 function defaultObjectivesFile(): string {
   return envValue("MUSE_OBJECTIVES_FILE") ?? join(homedir(), ".muse", "objectives.json");
-}
-
-interface ObjectivesSummary {
-  readonly total: number;
-  readonly active: number;
-  readonly escalated: number;
-  readonly done: number;
-  readonly cancelled: number;
-  /** The first escalated objective's spec — the needs-you signal worth surfacing. */
-  readonly escalatedSample?: string;
-}
-
-/**
- * Summarise standing objectives for the dashboard. `escalated` is the
- * high-value signal — a delegated objective that hit a wall and needs
- * the user — so its spec is surfaced. User-scoped like the other
- * dashboard stores.
- */
-function summariseObjectivesRows(
-  rows: readonly { readonly userId?: string; readonly status?: string; readonly spec?: string }[],
-  userId: string
-): ObjectivesSummary {
-  let total = 0;
-  let active = 0;
-  let escalated = 0;
-  let done = 0;
-  let cancelled = 0;
-  let escalatedSample: string | undefined;
-  for (const row of rows) {
-    if (typeof row.userId !== "string" || row.userId !== userId) continue;
-    total += 1;
-    if (row.status === "active") {
-      active += 1;
-    } else if (row.status === "escalated") {
-      escalated += 1;
-      if (escalatedSample === undefined && typeof row.spec === "string" && row.spec.length > 0) {
-        escalatedSample = row.spec;
-      }
-    } else if (row.status === "done") {
-      done += 1;
-    } else if (row.status === "cancelled") {
-      cancelled += 1;
-    }
-  }
-  return { active, cancelled, done, escalated, total, ...(escalatedSample ? { escalatedSample } : {}) };
 }
 
 function defaultEpisodesFile(): string {

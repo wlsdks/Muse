@@ -800,10 +800,12 @@ export {
 export {
   summariseEpisodesRows,
   summariseFollowupsRows,
+  summariseObjectivesRows,
   summarisePatternsFiredRows,
   summariseRemindersRows,
   type EpisodesSummary,
   type FollowupsSummary,
+  type ObjectivesSummary,
   type PatternsFiredSummary,
   type RemindersSummary
 } from "./personal-status-summary.js";

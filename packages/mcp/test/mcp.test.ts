@@ -8043,6 +8043,7 @@ describe("muse.status loopback server", () => {
     const tasksFile = join(dir, "tasks.json");
     const remindersFile = join(dir, "reminders.json");
     const followupsFile = join(dir, "followups.json");
+    const objectivesFile = join(dir, "objectives.json");
     const episodesFile = join(dir, "episodes.json");
     const patternsFiredFile = join(dir, "patterns-fired.json");
 
@@ -8074,10 +8075,19 @@ describe("muse.status loopback server", () => {
     writeFileSync(patternsFiredFile, JSON.stringify({
       fired: [{ patternId: "pat_walk", firedAtMs: 1_800_000_000_000, suggestion: "morning walk" }]
     }), "utf8");
+    writeFileSync(objectivesFile, JSON.stringify({
+      objectives: [
+        { id: "obj_a", userId: "stark", createdAt: past, spec: "watch the build until green", kind: "until", status: "active" },
+        { id: "obj_b", userId: "stark", createdAt: past, spec: "ship Q3 memo — blocked on sign-off", kind: "until", status: "escalated" },
+        { id: "obj_done", userId: "stark", createdAt: past, spec: "old done", kind: "notify", status: "done" },
+        { id: "obj_other", userId: "rhodey", createdAt: past, spec: "other user", kind: "until", status: "active" }
+      ]
+    }), "utf8");
 
     const connection = createLoopbackMcpConnection(createStatusMcpServer({
       episodesFile,
       followupsFile,
+      objectivesFile,
       patternsFiredFile,
       remindersFile,
       tasksFile,
@@ -8086,6 +8096,7 @@ describe("muse.status loopback server", () => {
     const snap = await connection.callTool!("snapshot", { user_id: "stark" }) as {
       reminders: { pending: number; fired: number; overdue: number; total: number; next_due_at?: string; next_text?: string };
       followups: { scheduled: number; fired: number; cancelled: number; total: number; next_scheduled_for?: string };
+      objectives: { active: number; escalated: number; done: number; cancelled: number; total: number; escalated_sample?: string | null };
       episodes: { total: number; last_summary?: string };
       patterns: { total: number; last_fired_at?: string };
     };
@@ -8097,6 +8108,10 @@ describe("muse.status loopback server", () => {
     // rhodey's scheduled followup is filtered out by userId.
     expect(snap.followups).toMatchObject({ scheduled: 1, fired: 1, cancelled: 0, total: 2 });
     expect(snap.followups.next_scheduled_for).toBe("2030-01-01T09:00:00Z");
+
+    // rhodey's active objective filtered out by userId; escalated spec surfaced.
+    expect(snap.objectives).toMatchObject({ active: 1, escalated: 1, done: 1, cancelled: 0, total: 3 });
+    expect(snap.objectives.escalated_sample).toBe("ship Q3 memo — blocked on sign-off");
 
     // rhodey's episode filtered out.
     expect(snap.episodes.total).toBe(1);
