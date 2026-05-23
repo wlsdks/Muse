@@ -688,6 +688,11 @@ was proven ONCE; a JARVIS you depend on survives real-world failure.
   `fetchWithRetry` — weather/email/smart-home/feeds reads — now bounds
   each attempt with a timeout, so a host that accepts but never
   responds is aborted + retried instead of hanging the turn forever;
+  mutation-proven). + 901 (the shared `fetchWithRetry` now honours a
+  server `Retry-After` header on 429/503 — waits the interval the host
+  actually asked for instead of its own 250ms backoff, clamped to
+  `maxRetryAfterMs` so an hour-long value can't freeze the turn;
+  `parseRetryAfterMs` RFC-7231 delta-seconds | HTTP-date, junk-rejecting;
   mutation-proven). Next actuators (web/contacts) are follow-on slices.
 
 **P20 — Deepen the thin axes (Perception + Knowledge).**

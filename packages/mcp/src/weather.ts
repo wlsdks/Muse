@@ -9,7 +9,7 @@
 
 import { fetchWithRetry, type RetryOptions } from "./http-retry.js";
 
-export { fetchWithRetry, isRetriableStatus, type RetryOptions } from "./http-retry.js";
+export { fetchWithRetry, isRetriableStatus, parseRetryAfterMs, type RetryOptions } from "./http-retry.js";
 
 const GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";

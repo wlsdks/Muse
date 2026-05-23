@@ -463,6 +463,7 @@ export {
 export {
   fetchWithRetry,
   isRetriableStatus,
+  parseRetryAfterMs,
   type RetryOptions
 } from "./http-retry.js";
 export {

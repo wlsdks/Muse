@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { OpenMeteoWeatherProvider, fetchWithRetry, isRetriableStatus } from "../src/weather.js";
+import { OpenMeteoWeatherProvider, fetchWithRetry, isRetriableStatus, parseRetryAfterMs } from "../src/weather.js";
 
 function geocodeOk(): Response {
   return new Response(JSON.stringify({ results: [{ country: "KR", latitude: 37.57, longitude: 126.98, name: "Seoul" }] }), { status: 200 });
@@ -10,6 +10,9 @@ function forecastOk(): Response {
 }
 function status(code: number): Response {
   return new Response("", { status: code });
+}
+function rateLimited(retryAfter: string): Response {
+  return new Response("", { status: 429, headers: { "retry-after": retryAfter } });
 }
 
 function sequenceFetch(factories: Array<() => Response>) {
@@ -33,6 +36,24 @@ describe("isRetriableStatus", () => {
     }
     for (const s of [200, 301, 400, 404, 418, 600]) {
       expect(isRetriableStatus(s), `${s}`).toBe(false);
+    }
+  });
+});
+
+describe("parseRetryAfterMs", () => {
+  const now = Date.parse("2026-05-24T00:00:00Z");
+  it("parses delta-seconds to ms", () => {
+    expect(parseRetryAfterMs("0", now)).toBe(0);
+    expect(parseRetryAfterMs("30", now)).toBe(30_000);
+    expect(parseRetryAfterMs("  120 ", now)).toBe(120_000);
+  });
+  it("parses an HTTP-date relative to now, clamping a past date to 0", () => {
+    expect(parseRetryAfterMs("2026-05-24T00:00:10Z", now)).toBe(10_000);
+    expect(parseRetryAfterMs("2026-05-23T23:59:00Z", now)).toBe(0);
+  });
+  it("rejects junk / decimal / negative / empty / missing → undefined", () => {
+    for (const h of ["soon", "3.5", "-5", "", "   ", null, undefined]) {
+      expect(parseRetryAfterMs(h, now), JSON.stringify(h)).toBeUndefined();
     }
   });
 });
@@ -84,6 +105,39 @@ describe("fetchWithRetry", () => {
     const response = await fetchWithRetry(fetchImpl, "https://x.test", { baseDelayMs: 0, sleep: async () => {}, timeoutMs: 5 });
     expect(response.status).toBe(200);
     expect(calls).toBe(2); // hung attempt aborted + retried; the retry succeeds
+  });
+
+  it("honours a server Retry-After (delta-seconds) instead of its own backoff", async () => {
+    const slept: number[] = [];
+    const { fetchImpl } = sequenceFetch([() => rateLimited("3"), geocodeOk]);
+    const response = await fetchWithRetry(fetchImpl, "https://x.test", {
+      baseDelayMs: 250,
+      sleep: async (ms) => { slept.push(ms); }
+    });
+    expect(response.status).toBe(200);
+    expect(slept).toEqual([3000]); // 3s from the header, NOT the 250ms backoff
+  });
+
+  it("clamps an absurd Retry-After to maxRetryAfterMs so a turn can't freeze", async () => {
+    const slept: number[] = [];
+    const { fetchImpl } = sequenceFetch([() => rateLimited("3600"), geocodeOk]);
+    const response = await fetchWithRetry(fetchImpl, "https://x.test", {
+      baseDelayMs: 0,
+      maxRetryAfterMs: 5000,
+      sleep: async (ms) => { slept.push(ms); }
+    });
+    expect(response.status).toBe(200);
+    expect(slept).toEqual([5000]); // 3600s clamped down to the 5s cap
+  });
+
+  it("falls back to backoff when Retry-After is junk", async () => {
+    const slept: number[] = [];
+    const { fetchImpl } = sequenceFetch([() => rateLimited("soon-ish"), geocodeOk]);
+    await fetchWithRetry(fetchImpl, "https://x.test", {
+      baseDelayMs: 250,
+      sleep: async (ms) => { slept.push(ms); }
+    });
+    expect(slept).toEqual([250]); // unparseable header → exponential backoff
   });
 
   it("rethrows the timeout error when every attempt hangs (bounded, never infinite)", async () => {

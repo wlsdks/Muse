@@ -23,6 +23,36 @@ export interface RetryOptions {
    * Default 15000. `0` disables the cap.
    */
   readonly timeoutMs?: number;
+  /**
+   * Upper bound on a server-supplied `Retry-After` wait. A rate-limited
+   * host may answer `Retry-After: 3600` (an hour) — honouring that
+   * verbatim would freeze the agent turn, so the wait is clamped to
+   * this. Beyond it we still wait the cap then make the final attempt.
+   * Default 30000. `0` ignores `Retry-After` entirely (pure backoff).
+   */
+  readonly maxRetryAfterMs?: number;
+}
+
+/**
+ * Parse an HTTP `Retry-After` header into a wait in ms, per RFC 7231:
+ * either delta-seconds (a non-negative integer) or an HTTP-date. A
+ * decimal, negative, or junk value is rejected (→ `undefined`, caller
+ * falls back to its own backoff). A past date clamps to 0.
+ */
+export function parseRetryAfterMs(header: string | null | undefined, nowMs: number): number | undefined {
+  if (header === null || header === undefined) return undefined;
+  const trimmed = header.trim();
+  if (trimmed.length === 0) return undefined;
+  if (/^\d+$/u.test(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+  }
+  // Only attempt a date parse when the value carries a clock component
+  // — every valid HTTP-date / ISO timestamp does. This stops the famously
+  // lenient `Date.parse` from coercing junk like "3.5" into a stray date.
+  if (!trimmed.includes(":")) return undefined;
+  const dateMs = Date.parse(trimmed);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - nowMs) : undefined;
 }
 
 /**
@@ -49,9 +79,11 @@ export async function fetchWithRetry(
   const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(0, options.baseDelayMs as number) : 250;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const timeoutMs = Number.isFinite(options.timeoutMs) ? Math.max(0, options.timeoutMs as number) : 15_000;
+  const maxRetryAfterMs = Number.isFinite(options.maxRetryAfterMs) ? Math.max(0, options.maxRetryAfterMs as number) : 30_000;
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    let retryAfterMs: number | undefined;
     const controller = timeoutMs > 0 ? new AbortController() : undefined;
     const externalSignal = options.init?.signal ?? undefined;
     let onExternalAbort: (() => void) | undefined;
@@ -72,6 +104,9 @@ export async function fetchWithRetry(
       if (response.ok || !isRetriableStatus(response.status) || attempt === retries) {
         return response;
       }
+      if (maxRetryAfterMs > 0) {
+        retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"), Date.now());
+      }
     } catch (cause) {
       lastError = cause;
       if (attempt === retries) {
@@ -81,7 +116,8 @@ export async function fetchWithRetry(
       if (timer) clearTimeout(timer);
       if (externalSignal && onExternalAbort) externalSignal.removeEventListener("abort", onExternalAbort);
     }
-    await sleep(baseDelayMs * 2 ** attempt);
+    const backoffMs = baseDelayMs * 2 ** attempt;
+    await sleep(retryAfterMs !== undefined ? Math.min(retryAfterMs, maxRetryAfterMs) : backoffMs);
   }
   throw lastError ?? new Error("fetchWithRetry: retries exhausted");
 }
