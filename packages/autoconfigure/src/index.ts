@@ -41,6 +41,8 @@ import {
   incrementFollowupLlmBudget,
   isFollowupLlmBudgetExhausted,
   readFollowupLlmBudget,
+  createHomeEntitiesTool,
+  createHomeStateTool,
   createLoopbackMcpMuseTools,
   GmailEmailProvider,
   queryContacts,
@@ -563,6 +565,21 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     })];
   })();
 
+  // Smart-home READ tools (home_state / home_entities) — perception, no
+  // approval gate (unlike the gated home_action write). Opt-in via the
+  // Home Assistant base URL + long-lived token.
+  const homeReadTools: MuseTool[] = (() => {
+    const haUrl = env.MUSE_HOMEASSISTANT_URL?.trim();
+    const haToken = env.MUSE_HOMEASSISTANT_TOKEN?.trim();
+    if (!haUrl || !haToken) {
+      return [];
+    }
+    return [
+      createHomeStateTool({ baseUrl: haUrl, token: haToken }),
+      createHomeEntitiesTool({ baseUrl: haUrl, token: haToken })
+    ];
+  })();
+
   const { skillRegistryPromise, skillTools } = createSkillRuntime(env);
 
   const toolRegistry = new DynamicToolRegistry([
@@ -585,6 +602,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => runnerTools,
     () => skillTools,
     () => knowledgeSearchTools,
+    () => homeReadTools,
     () => options.extraTools ?? [],
     () => withChromeDevToolsRisk(mcp.manager.toMuseTools()),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []
