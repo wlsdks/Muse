@@ -89,8 +89,8 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
         inputSchema: {
           additionalProperties: false,
           properties: {
-            folder: { type: "string" },
-            providerId: { type: "string" }
+            folder: { description: "Filter to a folder / notebook, e.g. 'journal' (default: all folders).", type: "string" },
+            providerId: { description: "Notes provider id (default: all registered providers).", type: "string" }
           },
           type: "object"
         },
@@ -118,8 +118,8 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
         inputSchema: {
           additionalProperties: false,
           properties: {
-            id: { type: "string" },
-            providerId: { type: "string" }
+            id: { description: "The note's id, from `list` or `search`.", type: "string" },
+            providerId: { description: "Notes provider id the note belongs to.", type: "string" }
           },
           required: ["providerId", "id"],
           type: "object"
@@ -164,9 +164,9 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
         inputSchema: {
           additionalProperties: false,
           properties: {
-            limit: { type: "number" },
-            providerId: { type: "string" },
-            query: { type: "string" }
+            limit: { description: "Max results to return (1–100, default 20).", type: "number" },
+            providerId: { description: "Notes provider id (default: search all providers).", type: "string" },
+            query: { description: "Text to find in note titles/bodies, e.g. 'Q3 launch plan'.", type: "string" }
           },
           required: ["query"],
           type: "object"
@@ -211,12 +211,12 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
         inputSchema: {
           additionalProperties: false,
           properties: {
-            body: { type: "string" },
-            folder: { type: "string" },
-            id: { type: "string" },
-            overwrite: { type: "boolean" },
-            providerId: { type: "string" },
-            title: { type: "string" }
+            body: { description: "Note content (markdown).", type: "string" },
+            folder: { description: "Folder / notebook to save into, e.g. 'journal'.", type: "string" },
+            id: { description: "Existing note id to update; omit to create a new note.", type: "string" },
+            overwrite: { description: "True to replace an existing note's body instead of erroring.", type: "boolean" },
+            providerId: { description: "Notes provider id (default: the primary provider).", type: "string" },
+            title: { description: "Note title, e.g. 'Meeting notes 2026-05-23'.", type: "string" }
           },
           required: ["providerId", "title", "body"],
           type: "object"
@@ -247,9 +247,9 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
         inputSchema: {
           additionalProperties: false,
           properties: {
-            body: { type: "string" },
-            id: { type: "string" },
-            providerId: { type: "string" }
+            body: { description: "Text to append to the note's existing content.", type: "string" },
+            id: { description: "The note's id, from `list` or `search`.", type: "string" },
+            providerId: { description: "Notes provider id the note belongs to.", type: "string" }
           },
           required: ["providerId", "id", "body"],
           type: "object"
