@@ -13,8 +13,11 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 
-import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveNotesDir } from "@muse/autoconfigure";
+import { LocalDirNotesProvider } from "@muse/mcp";
+import { redactSecretsInText } from "@muse/shared";
 import type { Command } from "commander";
 
 import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
@@ -25,6 +28,39 @@ interface ReadOptions {
   readonly ask?: string;
   readonly model?: string;
   readonly json?: boolean;
+  readonly saveToNotes?: string;
+}
+
+/**
+ * Markdown note body for an ingested document — the extracted text
+ * (secret-scrubbed, since a note is long-lived and may sync to a
+ * third-party store) under a source header. Saving this makes the
+ * document searchable via `knowledge_search` (which spans notes).
+ */
+export function buildDocumentNoteBody(sourcePath: string, text: string, pageCount: number): { title: string; body: string } {
+  const title = `Document — ${basename(sourcePath)}`;
+  const body = [
+    `# ${title}`,
+    "",
+    `Source: ${sourcePath} (${pageCount.toString()} page${pageCount === 1 ? "" : "s"})`,
+    "",
+    redactSecretsInText(text),
+    ""
+  ].join("\n");
+  return { body, title };
+}
+
+/** Persist an ingested document's text as a markdown note (overwrite by id). */
+export async function saveDocumentToNotes(
+  notesDir: string,
+  noteId: string,
+  sourcePath: string,
+  text: string,
+  pageCount: number
+): Promise<void> {
+  const { title, body } = buildDocumentNoteBody(sourcePath, text, pageCount);
+  const provider = new LocalDirNotesProvider({ notesDir });
+  await provider.save({ body, id: noteId, overwrite: true, title: title.slice(0, 120) });
 }
 
 interface PdfParsed {
@@ -76,6 +112,7 @@ export function registerReadCommand(program: Command, io: ProgramIO): void {
     .option("--ask <question>", "Stream an LLM answer grounded in the PDF text")
     .option("--model <id>", "Model override for --ask (defaults to MUSE_MODEL)")
     .option("--json", "Emit a structured payload instead of plain text")
+    .option("--save-to-notes <id>", "Save the extracted text as a note (relative to MUSE_NOTES_DIR) so knowledge_search can find it")
     .action(async (filePath: string, options: ReadOptions) => {
       let buffer: Buffer;
       try {
@@ -94,6 +131,21 @@ export function registerReadCommand(program: Command, io: ProgramIO): void {
         return;
       }
       const text = (parsed.text ?? "").trim();
+
+      if (options.saveToNotes && options.saveToNotes.trim().length > 0) {
+        if (text.length === 0) {
+          io.stderr("muse read: no text extracted — nothing to save to notes.\n");
+        } else {
+          const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+          try {
+            await saveDocumentToNotes(notesDir, options.saveToNotes.trim(), filePath, text, parsed.pageCount);
+            io.stderr(`(saved ${parsed.pageCount.toString()}-page document to ${options.saveToNotes.trim()} in ${notesDir} — now searchable via knowledge_search)\n`);
+          } catch (cause) {
+            io.stderr(`(failed to save document to notes: ${cause instanceof Error ? cause.message : String(cause)})\n`);
+            process.exitCode = 1;
+          }
+        }
+      }
 
       if (!options.ask) {
         if (options.json) {
