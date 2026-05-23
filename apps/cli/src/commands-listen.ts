@@ -158,19 +158,24 @@ export function registerListenCommand(program: Command, io: ProgramIO, helpers: 
             let prompt = scan.residual ?? "";
             if (prompt.length === 0) {
               io.stdout(`Wake detected. Listening for prompt (${clipSeconds.toString()}s)...\n`);
+              let followAudio: Buffer;
               try {
-                const followAudio = await captureWavForSeconds(shells, clipSeconds);
-                if (followAudio.byteLength === 0) continue;
-                const followStt = await providers.stt.transcribe({
-                  audio: new Uint8Array(followAudio),
-                  mimeType: "audio/wav",
-                  ...(options.lang ? { language: options.lang } : {})
-                });
-                prompt = followStt.text.trim();
+                followAudio = await captureWavForSeconds(shells, clipSeconds);
               } catch (cause) {
                 io.stderr(`sox error during prompt capture: ${cause instanceof Error ? cause.message : String(cause)}\n`);
                 break;
               }
+              if (followAudio.byteLength === 0) continue;
+              // Same resilience contract as the wake-clip transcription:
+              // a transient STT failure resumes listening, never breaks
+              // the session (a mic/sox failure above still does).
+              const followText = await safeTranscribe(providers.stt, {
+                audio: new Uint8Array(followAudio),
+                mimeType: "audio/wav",
+                ...(options.lang ? { language: options.lang } : {})
+              }, io);
+              if (followText === undefined || followText.length === 0) continue;
+              prompt = followText;
             }
             if (prompt.length === 0) {
               io.stderr("Empty prompt after wake; resuming listen.\n");

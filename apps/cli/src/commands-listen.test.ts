@@ -129,3 +129,72 @@ describe("muse listen — full mic→STT→agent→TTS round-trip (P4-b2)", () =
     expect(stdoutChunks.join("")).toContain("Muse: It is sunny in Seoul.");
   });
 });
+
+describe("muse listen --wake — a transient STT failure on the follow-up prompt resumes the session, never breaks it", () => {
+  it("routes the follow-up transcription through safeTranscribe (an STT 5xx resumes listening, not crash)", async () => {
+    const WAV = Buffer.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3]);
+
+    function fakeRec(): ChildProcess {
+      const rec = new EventEmitter() as EventEmitter & { stdout: EventEmitter; kill: (s?: string) => void };
+      rec.stdout = new EventEmitter();
+      rec.kill = () => {};
+      // Self-close on next tick so captureWavForSeconds resolves
+      // without waiting on its real per-clip timer.
+      setImmediate(() => { rec.stdout.emit("data", WAV); rec.emit("close"); });
+      return rec as unknown as ChildProcess;
+    }
+
+    let recCalls = 0;
+    let sttCalls = 0;
+    const stderrChunks: string[] = [];
+    const io = { stderr: (m: string) => stderrChunks.push(m), stdout: () => {} };
+
+    const sttProvider = {
+      describe: () => ({ description: "", displayName: "s", id: "s", local: true, supportedFormats: ["audio/wav"] }),
+      id: "s",
+      transcribe: async () => {
+        sttCalls += 1;
+        if (sttCalls === 1) return { text: "hey muse" };           // wake fires, no residual → follow-up capture
+        if (sttCalls === 2) throw new Error("stt 503 transient");  // follow-up STT blip
+        return { text: "unused" };
+      }
+    } as unknown as SpeechToTextProvider;
+
+    const ttsProvider = {
+      describe: () => ({ description: "", displayName: "t", id: "t", local: true, supportedFormats: ["mp3"] }),
+      id: "t",
+      synthesize: async () => ({ audio: new Uint8Array([1]), format: "mp3" })
+    } as unknown as TextToSpeechProvider;
+
+    const helpers: ListenHelpers = {
+      apiRequest: async () => ({ content: "unused" }),
+      buildVoiceProviders: () => ({ stt: sttProvider, tts: ttsProvider }),
+      shells: {
+        playAudio: async () => {},
+        spawnRec: () => {
+          recCalls += 1;
+          // The 3rd capture is the next ambient clip AFTER the follow-up
+          // failure — reached ONLY if that failure resumed the loop (the
+          // fix). Throwing here ends the test cleanly.
+          if (recCalls >= 3) throw new Error("sox device gone");
+          return fakeRec();
+        },
+        waitForEnter: async () => {},
+        which: (bin: string) => (bin === "sox" ? "/usr/bin/sox" : undefined)
+      }
+    };
+
+    const program = new Command();
+    registerListenCommand(program, io, helpers);
+    await program.parseAsync(["node", "muse", "listen", "--wake", "hey muse", "--clip-seconds", "2"]);
+
+    const stderr = stderrChunks.join("");
+    // The follow-up STT failure ran through safeTranscribe (resilient),
+    // not the old catch that mislabeled it and broke the session.
+    expect(stderr).toContain("transcription failed (resuming listen)");
+    expect(stderr).not.toContain("sox error during prompt capture");
+    // The loop RESUMED: it captured a third ambient clip after the
+    // failure. recCalls === 2 would mean the session broke.
+    expect(recCalls).toBe(3);
+  });
+});
