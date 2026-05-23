@@ -33,9 +33,26 @@ export interface CurrentWeather {
   readonly timezone?: string;
 }
 
+export interface RainOutlook {
+  /** ISO local time of the next notable-rain hour. */
+  readonly atIso: string;
+  readonly condition: string;
+  readonly probabilityPct?: number;
+}
+
+export interface RainOutlookOptions {
+  readonly now?: () => Date;
+  /** Only look this many hours ahead. Default 12. */
+  readonly withinHours?: number;
+  /** Minimum precipitation probability to flag. Default 50. */
+  readonly minProbabilityPct?: number;
+}
+
 export interface WeatherProvider {
   geocode(query: string): Promise<GeocodedLocation | undefined>;
   currentWeather(location: GeocodedLocation): Promise<CurrentWeather>;
+  /** Next notable-rain hour within the horizon, or undefined if dry. Optional. */
+  rainOutlook?(location: GeocodedLocation, options?: RainOutlookOptions): Promise<RainOutlook | undefined>;
 }
 
 // WMO weather interpretation codes (open-meteo `weather_code`). Only the
@@ -148,6 +165,54 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
       windSpeedKmh: numberOrUndefined(current.wind_speed_10m)
     };
   }
+
+  async rainOutlook(location: GeocodedLocation, options: RainOutlookOptions = {}): Promise<RainOutlook | undefined> {
+    const now = (options.now ?? (() => new Date()))();
+    const withinHours = Number.isFinite(options.withinHours) ? Math.max(1, options.withinHours as number) : 12;
+    const minProb = Number.isFinite(options.minProbabilityPct) ? (options.minProbabilityPct as number) : 50;
+    const params = new URLSearchParams({
+      forecast_days: "2",
+      hourly: "precipitation_probability,weather_code",
+      latitude: location.latitude.toString(),
+      longitude: location.longitude.toString(),
+      timezone: location.timezone ?? "auto"
+    });
+    const response = await fetchWithRetry(this.fetchImpl, `${FORECAST_URL}?${params.toString()}`, this.retryOptions);
+    if (!response.ok) {
+      throw new Error(`forecast failed (${response.status.toString()})`);
+    }
+    const body = await response.json() as { hourly?: { time?: unknown[]; precipitation_probability?: unknown[]; weather_code?: unknown[] } };
+    const times = body.hourly?.time ?? [];
+    const probs = body.hourly?.precipitation_probability ?? [];
+    const codes = body.hourly?.weather_code ?? [];
+    const horizon = now.getTime() + withinHours * 3_600_000;
+    for (let i = 0; i < times.length; i += 1) {
+      const time = times[i];
+      if (typeof time !== "string") {
+        continue;
+      }
+      const at = Date.parse(time);
+      if (!Number.isFinite(at) || at < now.getTime() || at > horizon) {
+        continue;
+      }
+      const prob = numberOrUndefined(probs[i]);
+      if (prob !== undefined && prob >= minProb) {
+        const code = numberOrUndefined(codes[i]) ?? 0;
+        return { atIso: time, condition: describeWeatherCode(code), probabilityPct: prob };
+      }
+    }
+    return undefined;
+  }
+}
+
+/**
+ * One-line rain heads-up for a briefing — "rain likely ~15:00 (moderate
+ * rain, 70%)". The time is the HH:MM of the outlook's local ISO hour.
+ */
+export function formatRainHeadsUp(outlook: RainOutlook): string {
+  const hhmm = /T(\d{2}:\d{2})/u.exec(outlook.atIso)?.[1] ?? outlook.atIso;
+  const pct = outlook.probabilityPct !== undefined ? `, ${outlook.probabilityPct.toString()}%` : "";
+  return `rain likely ~${hhmm} (${outlook.condition}${pct})`;
 }
 
 /**
@@ -165,7 +230,18 @@ export async function resolveWeatherLine(
     if (!location) {
       return undefined;
     }
-    return formatWeather(location, await provider.currentWeather(location));
+    const line = formatWeather(location, await provider.currentWeather(location));
+    if (provider.rainOutlook) {
+      try {
+        const outlook = await provider.rainOutlook(location);
+        if (outlook) {
+          return `${line} — ${formatRainHeadsUp(outlook)}`;
+        }
+      } catch {
+        // keep the base current-weather line — a forecast blip never drops it
+      }
+    }
+    return line;
   } catch {
     return undefined;
   }
