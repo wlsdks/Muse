@@ -15,6 +15,7 @@ import { readFile } from "node:fs/promises";
 
 import { resolveLocalCalendarFile } from "@muse/autoconfigure";
 import { LocalCalendarProvider } from "@muse/calendar";
+import { computeAvailability, type AvailabilityEventLike, type AvailabilityResult } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { formatCalendarEvents, formatProvidersList } from "./human-formatters.js";
@@ -65,6 +66,39 @@ export function maxOfNumbers(values: readonly number[]): number {
 function localCalendarProvider(): LocalCalendarProvider {
   const file = resolveLocalCalendarFile(process.env as Record<string, string | undefined>);
   return new LocalCalendarProvider({ file });
+}
+
+function pad2(n: number): string {
+  return n.toString().padStart(2, "0");
+}
+function hhmm(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+/** Map an API/local event payload row to the availability engine's shape (skips rows with an unparseable time). */
+export function eventsToAvailability(rows: ReadonlyArray<Record<string, unknown>>): AvailabilityEventLike[] {
+  return rows.flatMap((row): AvailabilityEventLike[] => {
+    const startsAt = typeof row.startsAtIso === "string" ? new Date(row.startsAtIso) : undefined;
+    const endsAt = typeof row.endsAtIso === "string" ? new Date(row.endsAtIso) : undefined;
+    if (!startsAt || !endsAt || Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      return [];
+    }
+    return [{ allDay: row.allDay === true, endsAt, startsAt, title: typeof row.title === "string" ? row.title : "(busy)" }];
+  });
+}
+
+/** Human free/busy summary for `muse calendar free`. */
+export function formatAvailability(result: AvailabilityResult, window: { readonly from: Date; readonly to: Date }): string {
+  if (result.fullyFree) {
+    return `Free all of ${hhmm(window.from)}–${hhmm(window.to)}.`;
+  }
+  const busy = result.busy
+    .map((block) => `${hhmm(block.startsAt)}–${hhmm(block.endsAt)} ${block.titles.join(", ")}`)
+    .join("; ");
+  const free = result.free.length > 0
+    ? result.free.map((slot) => `${hhmm(slot.startsAt)}–${hhmm(slot.endsAt)}`).join(", ")
+    : "none";
+  return `Busy: ${busy}\nFree: ${free}`;
 }
 
 export function registerCalendarCommands(program: Command, io: ProgramIO, helpers: CalendarCommandHelpers): void {
@@ -155,6 +189,58 @@ export function registerCalendarCommands(program: Command, io: ProgramIO, helper
         return;
       }
       io.stdout(formatCalendarEvents(payload as unknown as Parameters<typeof formatCalendarEvents>[0]));
+    });
+
+  calendar
+    .command("free")
+    .description("Show free/busy in a window — 'am I free?' / find a gap. Defaults: now → +8 hours.")
+    .option("--from <iso>", "ISO 8601 window start (default: now)")
+    .option("--to <iso>", "ISO 8601 window end (default: from + 8 hours)")
+    .option("--min-minutes <n>", "Only show free gaps at least this many minutes long")
+    .option("--provider <id>", "Specific provider id (default: all)")
+    .option("--local", "Read directly from the local calendar file instead of the API")
+    .option("--json", "Print the raw availability result instead of the formatted summary")
+    .action(async (
+      options: { readonly from?: string; readonly to?: string; readonly minMinutes?: string; readonly provider?: string } & SharedOptions,
+      command
+    ) => {
+      if (
+        (options.from && Number.isNaN(new Date(options.from).getTime())) ||
+        (options.to && Number.isNaN(new Date(options.to).getTime()))
+      ) {
+        throw new Error("--from / --to must be ISO 8601 timestamps");
+      }
+      const minMinutes = options.minMinutes !== undefined ? Number(options.minMinutes) : undefined;
+      if (minMinutes !== undefined && !Number.isFinite(minMinutes)) {
+        throw new Error("--min-minutes must be a number");
+      }
+      const from = options.from ? new Date(options.from) : new Date();
+      const to = options.to ? new Date(options.to) : new Date(from.getTime() + 8 * 3_600_000);
+      let rows: Array<Record<string, unknown>>;
+      if (options.local) {
+        const raw = await localCalendarProvider().listEvents({ from, to });
+        rows = raw.map((event) => ({
+          allDay: event.allDay,
+          endsAtIso: event.endsAt.toISOString(),
+          startsAtIso: event.startsAt.toISOString(),
+          title: event.title
+        }));
+      } else {
+        const params = new URLSearchParams({ fromIso: from.toISOString(), toIso: to.toISOString() });
+        if (options.provider) params.set("providerId", options.provider);
+        const payload = (await helpers.apiRequest(io, command, `/api/calendar/events?${params.toString()}`)) as { events?: Array<Record<string, unknown>> };
+        rows = Array.isArray(payload.events) ? payload.events : [];
+      }
+      const result = computeAvailability(eventsToAvailability(rows), { from, to }, minMinutes !== undefined ? { minFreeMinutes: minMinutes } : {});
+      if (options.json) {
+        helpers.writeOutput(io, {
+          busy: result.busy.map((b) => ({ endsAtIso: b.endsAt.toISOString(), startsAtIso: b.startsAt.toISOString(), titles: b.titles })),
+          free: result.free.map((s) => ({ endsAtIso: s.endsAt.toISOString(), startsAtIso: s.startsAt.toISOString() })),
+          fullyFree: result.fullyFree
+        });
+        return;
+      }
+      io.stdout(formatAvailability(result, { from, to }));
     });
 
   const registerQuickRange = (name: string, description: string, computeRange: () => { from: Date; to: Date }): void => {
