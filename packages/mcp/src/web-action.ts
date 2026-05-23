@@ -15,6 +15,8 @@
  * movement. This primitive must not be used for those.
  */
 
+import { redactSecretsInText } from "@muse/shared";
+
 import { appendActionLog } from "./personal-action-log-store.js";
 
 export interface WebActionRequest {
@@ -59,13 +61,21 @@ export async function performWebActionWithApproval(
 ): Promise<WebActionOutcome> {
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? (() => `act_${Date.now().toString()}_${Math.random().toString(36).slice(2, 8)}`);
+  // The request body IS the exact content of a state-changing web
+  // action (the form / JSON being submitted), so the reviewable action
+  // log must record it (outbound-safety rule 4). Secret-scrubbed (the
+  // log is long-lived and may sync) and length-capped to bound size.
+  const body = options.request.body;
+  const bodyNote = typeof body === "string" && body.length > 0
+    ? ` body: ${redactSecretsInText(body).slice(0, 500)}`
+    : "";
   const log = (result: "performed" | "refused" | "failed", detail: string): Promise<void> =>
     appendActionLog(options.actionLogFile, {
       detail,
       id: idFactory(),
       result,
       userId: options.userId,
-      what: `web action: ${options.summary} (${options.request.method ?? "POST"} ${options.request.url})`,
+      what: `web action: ${options.summary} (${options.request.method ?? "POST"} ${options.request.url})${bodyNote}`,
       when: now().toISOString(),
       why: result === "refused" ? "web action refused (not confirmed)" : "user-approved web action"
     });

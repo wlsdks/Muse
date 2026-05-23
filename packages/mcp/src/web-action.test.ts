@@ -71,6 +71,38 @@ describe("performWebActionWithApproval — outbound-safety contract", () => {
     expect((await readActionLog(actionLogFile))[0]).toMatchObject({ result: "refused" });
   });
 
+  it("records the submitted body in the action log (outbound-safety rule 4 — the exact content), for performed AND refused", async () => {
+    const performedLog = logFile();
+    await performWebActionWithApproval({
+      actionLogFile: performedLog, approvalGate: approve, fetchImpl: recordingFetch(200).fetchImpl,
+      request: { body: JSON.stringify({ time: "19:00" }), method: "POST", url: "https://book.test/reserve" },
+      summary: "Book a table, 7pm", userId: "stark"
+    });
+    expect((await readActionLog(performedLog))[0]!.what).toContain('body: {"time":"19:00"}');
+
+    const refusedLog = logFile();
+    await performWebActionWithApproval({
+      actionLogFile: refusedLog, approvalGate: deny, fetchImpl: recordingFetch().fetchImpl,
+      request: { body: JSON.stringify({ time: "19:00" }), method: "POST", url: "https://book.test/reserve" },
+      summary: "Book a table", userId: "stark"
+    });
+    // What WOULD have been submitted is recorded on the refusal too.
+    expect((await readActionLog(refusedLog))[0]!.what).toContain('body: {"time":"19:00"}');
+  });
+
+  it("scrubs secrets out of the logged body (the action log is long-lived / may sync)", async () => {
+    const secret = `123456:${"A".repeat(35)}`; // telegram-bot-token shaped
+    const actionLogFile = logFile();
+    await performWebActionWithApproval({
+      actionLogFile, approvalGate: approve, fetchImpl: recordingFetch(200).fetchImpl,
+      request: { body: `token=${secret}`, method: "POST", url: "https://hook.test/post" },
+      summary: "Post update", userId: "stark"
+    });
+    const what = (await readActionLog(actionLogFile))[0]!.what;
+    expect(what).not.toContain(secret);
+    expect(what).toContain("[redacted-telegram-bot-token]");
+  });
+
   it("TIMEOUT / gate error: fail-closed — no HTTP fires", async () => {
     const { fetchImpl, calls } = recordingFetch();
     const outcome = await performWebActionWithApproval({
