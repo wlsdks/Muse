@@ -8,7 +8,8 @@
  * flow is a future slice; for now the user supplies the token.
  */
 
-import { GmailEmailProvider, summarizeInbox, type EmailProvider } from "@muse/mcp";
+import { resolveContactsFile } from "@muse/autoconfigure";
+import { extractEmailAddress, GmailEmailProvider, queryContacts, summarizeInbox, type EmailProvider, type EmailSummary } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { parseBoundedInt } from "./commands-ask.js";
@@ -19,7 +20,39 @@ interface InboxOptions {
   readonly json?: boolean;
 }
 
-export function registerInboxCommand(program: Command, io: ProgramIO, provider?: EmailProvider): void {
+/** One inbox listing line: `●` unread, trailing `★` when the sender is a known contact. */
+export function formatInboxLine(message: EmailSummary, known: boolean): string {
+  const mark = message.unread ? "●" : " ";
+  const star = known ? " ★" : "";
+  return `${mark} ${message.from || "(unknown)"} — ${message.subject || "(no subject)"}${star}`;
+}
+
+/**
+ * Build a "is this sender a known contact?" predicate from the contacts
+ * graph (matched by the sender's email address). Fail-soft: an
+ * unreadable / absent contacts file yields a predicate that's always
+ * false (no `★`, listing unchanged), never throws.
+ */
+export async function buildInboxKnownSender(env: Record<string, string | undefined>): Promise<(from: string) => boolean> {
+  let known = new Set<string>();
+  try {
+    const contacts = await queryContacts(resolveContactsFile(env));
+    known = new Set(contacts.flatMap((c) => (c.email ? [c.email.toLowerCase()] : [])));
+  } catch {
+    known = new Set();
+  }
+  return (from: string) => {
+    const email = extractEmailAddress(from);
+    return email !== undefined && known.has(email);
+  };
+}
+
+export function registerInboxCommand(
+  program: Command,
+  io: ProgramIO,
+  provider?: EmailProvider,
+  isKnownSender?: (from: string) => boolean
+): void {
   program
     .command("inbox")
     .description("Read + triage your Gmail inbox (read-only; needs MUSE_GMAIL_TOKEN)")
@@ -49,10 +82,10 @@ export function registerInboxCommand(program: Command, io: ProgramIO, provider?:
         io.stdout(`${JSON.stringify(messages, null, 2)}\n`);
         return;
       }
+      const known = isKnownSender ?? await buildInboxKnownSender(process.env as Record<string, string | undefined>);
       io.stdout(`${summarizeInbox(messages)}\n`);
       for (const message of messages) {
-        const mark = message.unread ? "●" : " ";
-        io.stdout(`${mark} ${message.from || "(unknown)"} — ${message.subject || "(no subject)"}\n`);
+        io.stdout(`${formatInboxLine(message, known(message.from))}\n`);
       }
     });
 }
