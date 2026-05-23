@@ -42,7 +42,7 @@ export const DEFAULT_EXPORT_FILES: readonly string[] = [
   "credentials.json",
   "models.json",
   "calendar-credentials.json",
-  "messaging-credentials.json",
+  "messaging.json",
   "tasks.json",
   "reminders.json",
   "reminder-history.json",
@@ -56,7 +56,7 @@ export const DEFAULT_EXPORT_FILES: readonly string[] = [
   "objectives.json",
   "vetoes.json",
   "persona.json",
-  "calendar-local.json",
+  "calendar.json",
   "line-inbox.json",
   "telegram-inbox.json",
   "discord-inbox.json",
@@ -129,7 +129,7 @@ export function buildExportReadme(
 /**
  * Pre-create the intermediate cleartext tarball at owner-only
  * perms. The encrypt path tars secrets (credentials.json,
- * messaging-credentials.json, …) to this temp before encrypting;
+ * messaging.json, …) to this temp before encrypting;
  * `tar -f` truncates an existing file *without* resetting its
  * mode, so reserving it 0o600 first means the cleartext bundle is
  * never world-readable on a multi-user host for the encrypt

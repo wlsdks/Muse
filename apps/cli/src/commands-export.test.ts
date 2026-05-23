@@ -30,4 +30,25 @@ describe("muse export — bundles every user-data store, not just some", () => {
       expect(DEFAULT_EXPORT_FILES).toContain(f);
     }
   });
+
+  it("bundles the canonical local-calendar + messaging-credentials filenames the code actually writes", async () => {
+    dir = mkdtempSync(join(tmpdir(), "muse-export-cal-"));
+    const museDir = join(dir, ".muse");
+    mkdirSync(museDir, { recursive: true });
+    // The real stores: muse calendar add → calendar.json;
+    // messaging credentials → messaging.json (NOT calendar-local.json /
+    // messaging-credentials.json, which nothing ever writes).
+    writeFileSync(join(museDir, "calendar.json"), "{}", "utf8");
+    writeFileSync(join(museDir, "messaging.json"), "{}", "utf8");
+    const out = await buildMuseExport({ museDir, notesDir: join(museDir, "notes"), outputPath: join(dir, "backup.tar.gz") });
+    expect(out.files).toContain("calendar.json");
+    expect(out.files).toContain("messaging.json");
+  });
+
+  it("no longer lists the phantom store names that nothing writes (catalog rot)", () => {
+    expect(DEFAULT_EXPORT_FILES).not.toContain("calendar-local.json");
+    expect(DEFAULT_EXPORT_FILES).not.toContain("messaging-credentials.json");
+    expect(DEFAULT_EXPORT_FILES).toContain("calendar.json");
+    expect(DEFAULT_EXPORT_FILES).toContain("messaging.json");
+  });
 });
