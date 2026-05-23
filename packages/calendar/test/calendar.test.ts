@@ -175,6 +175,44 @@ describe("CalDAVCalendarProvider ICS time parsing", () => {
   });
 });
 
+describe("CalDAVCalendarProvider READ — retry-with-backoff for transient failures (P19)", () => {
+  const range = { from: new Date("2026-01-01T00:00:00Z"), to: new Date("2027-01-01T00:00:00Z") };
+  const eventsXml =
+    `<?xml version="1.0"?><D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
+    `<D:response><D:href>/dav/evt.ics</D:href><D:propstat><D:prop><C:calendar-data>` +
+    ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:r1", "SUMMARY:Standup", "DTSTART:20260518T090000Z", "DTEND:20260518T093000Z", "END:VEVENT", "END:VCALENDAR"].join("\n") +
+    `</C:calendar-data></D:prop></D:propstat></D:response></D:multistatus>`;
+
+  function provider(responses: Array<{ status: number; body: string }>, onCall: () => void = () => {}) {
+    let i = 0;
+    return new CalDAVCalendarProvider({
+      fetchImpl: (async () => {
+        onCall();
+        const r = responses[Math.min(i++, responses.length - 1)]!;
+        return new Response(r.body, { status: r.status });
+      }) as unknown as typeof fetch,
+      password: "p",
+      retry: { baseDelayMs: 0, sleep: async () => {} },
+      url: "https://cal.test/dav/",
+      username: "u"
+    });
+  }
+
+  it("recovers from a transient 503 on the REPORT read instead of dropping the calendar", async () => {
+    let calls = 0;
+    const events = await provider([{ body: "", status: 503 }, { body: eventsXml, status: 200 }], () => { calls += 1; }).listEvents(range);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.title).toBe("Standup");
+    expect(calls).toBe(2);
+  });
+
+  it("a permanent 401 (bad app-password) fails fast — no retry", async () => {
+    let calls = 0;
+    await expect(provider([{ body: "unauthorized", status: 401 }], () => { calls += 1; }).listEvents(range)).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+});
+
 describe("GoogleCalendarProvider READ — toEvent parses timed vs all-day events (contract-faithful HTTP fake)", () => {
   function providerReturning(items: unknown[]): GoogleCalendarProvider {
     return new GoogleCalendarProvider({

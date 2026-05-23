@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
-import { CalendarProviderError } from "./errors.js";
+import { CalendarProviderError, isRetryableCalendarStatus } from "./errors.js";
 import type {
   CalendarEvent,
   CalendarEventInput,
@@ -12,11 +12,21 @@ import type {
   CredentialRequirement
 } from "./types.js";
 
+export interface CalDAVRetryOptions {
+  /** Extra attempts after the first, for the idempotent events read only. Default 2. */
+  readonly retries?: number;
+  /** First backoff in ms; doubles each retry. Default 250. */
+  readonly baseDelayMs?: number;
+  /** Injectable delay so tests don't wait on real timers. */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
 export interface CalDAVCalendarProviderOptions {
   readonly url: string;
   readonly username: string;
   readonly password: string;
   readonly fetchImpl?: typeof fetch;
+  readonly retry?: CalDAVRetryOptions;
 }
 
 const credentialRequirements: readonly CredentialRequirement[] = [
@@ -54,11 +64,17 @@ export class CalDAVCalendarProvider implements CalendarProvider {
   private readonly url: string;
   private readonly authHeader: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly retries: number;
+  private readonly baseDelayMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(options: CalDAVCalendarProviderOptions) {
     this.url = options.url.endsWith("/") ? options.url : `${options.url}/`;
     this.authHeader = `Basic ${Buffer.from(`${options.username}:${options.password}`).toString("base64")}`;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.retries = Number.isFinite(options.retry?.retries) ? Math.max(0, Math.trunc(options.retry!.retries!)) : 2;
+    this.baseDelayMs = Number.isFinite(options.retry?.baseDelayMs) ? Math.max(0, options.retry!.baseDelayMs!) : 250;
+    this.sleep = options.retry?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   }
 
   describe(): CalendarProviderInfo {
@@ -73,18 +89,37 @@ export class CalDAVCalendarProvider implements CalendarProvider {
 
   async listEvents(range: CalendarRange): Promise<readonly CalendarEvent[]> {
     const body = renderCalendarQueryReport(range);
-    const response = await this.fetchImpl(this.url, {
-      body,
-      headers: this.headers({ depth: "1", contentType: 'application/xml; charset="utf-8"' }),
-      method: "REPORT"
-    });
+    // Retry transient 429/5xx (and network rejects) on the idempotent
+    // REPORT read so a flaky moment doesn't drop the calendar from the
+    // briefing. Writes (PUT/DELETE) are never retried — a retried
+    // mutation could double-create / double-delete an event.
+    for (let attempt = 0; ; attempt += 1) {
+      let response: Response;
+      try {
+        response = await this.fetchImpl(this.url, {
+          body,
+          headers: this.headers({ depth: "1", contentType: 'application/xml; charset="utf-8"' }),
+          method: "REPORT"
+        });
+      } catch (cause) {
+        if (attempt < this.retries) {
+          await this.sleep(this.baseDelayMs * 2 ** attempt);
+          continue;
+        }
+        throw cause;
+      }
 
-    if (!response.ok) {
-      throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response), undefined, response.status);
+      if (!response.ok) {
+        if (attempt < this.retries && isRetryableCalendarStatus(response.status)) {
+          await this.sleep(this.baseDelayMs * 2 ** attempt);
+          continue;
+        }
+        throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response), undefined, response.status);
+      }
+
+      const xml = await response.text();
+      return parseCalendarQueryResponse(xml, this.id, this.url);
     }
-
-    const xml = await response.text();
-    return parseCalendarQueryResponse(xml, this.id, this.url);
   }
 
   async createEvent(input: CalendarEventInput): Promise<CalendarEvent> {
