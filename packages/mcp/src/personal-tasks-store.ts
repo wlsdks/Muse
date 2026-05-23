@@ -114,6 +114,48 @@ export function readTaskStatusFilter(value: string | undefined): TaskStatusFilte
 }
 
 /**
+ * One-line briefing fragment for OPEN tasks due within `withinDays`
+ * (default 1 — today + tomorrow), overdue ones included and listed
+ * first: "Buy milk (overdue); Call mom (today); Pay rent (tomorrow)".
+ * Returns `undefined` when nothing is due in the window so the brief
+ * stays quiet. A task with no / unparseable `dueAt` is skipped.
+ */
+export function resolveTasksDueLine(
+  tasks: readonly PersistedTask[],
+  options: { readonly now?: Date; readonly withinDays?: number } = {}
+): string | undefined {
+  const now = options.now ?? new Date();
+  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays as number)) : 1;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const due: { task: PersistedTask; dayDiff: number }[] = [];
+  for (const task of tasks) {
+    if (task.status !== "open" || !task.dueAt) {
+      continue;
+    }
+    const ms = Date.parse(task.dueAt);
+    if (!Number.isFinite(ms)) {
+      continue;
+    }
+    const d = new Date(ms);
+    const dayDiff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - today.getTime()) / 86_400_000);
+    if (dayDiff > withinDays) {
+      continue;
+    }
+    due.push({ dayDiff, task });
+  }
+  if (due.length === 0) {
+    return undefined;
+  }
+  due.sort((a, b) => a.dayDiff - b.dayDiff || a.task.title.localeCompare(b.task.title));
+  return due
+    .map(({ task, dayDiff }) => {
+      const when = dayDiff < 0 ? "overdue" : dayDiff === 0 ? "today" : dayDiff === 1 ? "tomorrow" : `in ${dayDiff.toString()} days`;
+      return `${task.title} (${when})`;
+    })
+    .join("; ");
+}
+
+/**
  * Resolve a user-supplied dueAt string. Accepts an ISO-8601 timestamp
  * starting with `YYYY-MM-DD…` or one of the relative phrases the MCP
  * tool advertises ("tomorrow at 6pm", "in 3 hours", "next Monday").

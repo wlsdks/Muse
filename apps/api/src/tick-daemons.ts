@@ -39,7 +39,9 @@ import {
   OpenMeteoWeatherProvider,
   homeWatchesFromConfig,
   parseHomeAlertChecks,
+  readTasks,
   resolveHomeAlertLine,
+  resolveTasksDueLine,
   parseAmbientNoticeRules,
   formatBirthdayBriefLine,
   queryContacts,
@@ -310,6 +312,11 @@ export function startSituationalBriefingDaemonIfConfigured(
     birthdayLine: async () =>
       formatBirthdayBriefLine(resolveUpcomingBirthdays(await queryContacts(resolveContactsFile(env)), { withinDays: birthdayDays }))
   };
+  const taskDueDaysRaw = env.MUSE_BRIEFING_TASK_DUE_DAYS ? Number(env.MUSE_BRIEFING_TASK_DUE_DAYS) : undefined;
+  const taskDueDays = Number.isFinite(taskDueDaysRaw) ? (taskDueDaysRaw as number) : 1;
+  const tasksDueOpt = tasksFile
+    ? { tasksDueLine: async () => resolveTasksDueLine(await readTasks(tasksFile), { withinDays: taskDueDays }) }
+    : {};
   const briefingHandle = startSituationalBriefingTick({
     destination: briefingDestination,
     errorLogger: (message) => server.log.warn(message),
@@ -326,6 +333,7 @@ export function startSituationalBriefingDaemonIfConfigured(
     ...relatedOpt,
     ...homeAlertOpt,
     ...birthdayOpt,
+    ...tasksDueOpt,
     ...(windowMsRaw !== undefined ? { windowMs: windowMsRaw } : {})
   });
   server.addHook("onClose", async () => {

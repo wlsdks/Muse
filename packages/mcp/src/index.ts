@@ -347,6 +347,7 @@ export {
   parseTaskDueAt,
   readTasks,
   readTaskStatusFilter,
+  resolveTasksDueLine,
   serializeTask,
   writeTasks,
   type PersistedTask,

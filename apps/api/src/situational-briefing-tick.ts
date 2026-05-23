@@ -52,6 +52,8 @@ export interface SituationalBriefingTickOptions {
   readonly homeAlert?: () => Promise<string | undefined> | string | undefined;
   /** Optional upcoming-birthdays resolver: a non-empty briefing gains a "Sarah today; Bob in 3 days" line. */
   readonly birthdayLine?: () => Promise<string | undefined> | string | undefined;
+  /** Optional due-tasks resolver: a non-empty briefing gains a "Buy milk (overdue); Pay rent (today)" line. */
+  readonly tasksDueLine?: () => Promise<string | undefined> | string | undefined;
   readonly windowMs?: number;
   readonly intervalMs?: number;
   readonly logger?: (message: string) => void;
@@ -108,6 +110,7 @@ export function startSituationalBriefingTick(
         ...(options.relatedKnowledge ? { relatedKnowledge: options.relatedKnowledge } : {}),
         ...(options.homeAlert ? { homeAlert: options.homeAlert } : {}),
         ...(options.birthdayLine ? { birthdayLine: options.birthdayLine } : {}),
+        ...(options.tasksDueLine ? { tasksDueLine: options.tasksDueLine } : {}),
         ...(options.windowMs !== undefined ? { windowMs: options.windowMs } : {})
       });
       if (summary.delivered > 0) {

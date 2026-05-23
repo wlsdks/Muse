@@ -59,6 +59,11 @@ export interface SituationalBriefingInput {
    * an otherwise-non-empty briefing and never triggers one alone.
    */
   readonly birthdays?: string;
+  /**
+   * Optional pre-resolved due-tasks line ("Buy milk (overdue); Pay rent
+   * (today)"). Supplementary, same posture as the others.
+   */
+  readonly tasksDue?: string;
 }
 
 function clean(value: string): string {
@@ -107,6 +112,11 @@ export function composeSituationalBriefing(input: SituationalBriefingInput): str
   const birthdays = input.birthdays ? clean(input.birthdays) : "";
   if (birthdays.length > 0) {
     lines.push(`Birthdays: ${birthdays}`);
+  }
+
+  const tasksDue = input.tasksDue ? clean(input.tasksDue) : "";
+  if (tasksDue.length > 0) {
+    lines.push(`Due: ${tasksDue}`);
   }
 
   if (upcoming.length > 0) {

@@ -71,6 +71,11 @@ export interface RunDueSituationalBriefingOptions {
    * empty / thrown lookup omits the line.
    */
   readonly birthdayLine?: () => Promise<string | undefined> | string | undefined;
+  /**
+   * Optional due-tasks resolver. When set AND the briefing has content,
+   * surfaces a "Buy milk (overdue); Pay rent (today)" line. Fail-soft.
+   */
+  readonly tasksDueLine?: () => Promise<string | undefined> | string | undefined;
 }
 
 export interface RunDueSituationalBriefingSummary {
@@ -171,6 +176,9 @@ export async function runDueSituationalBriefing(
   const birthdays = hasContent && options.birthdayLine
     ? await resolveLineSafely(options.birthdayLine)
     : undefined;
+  const tasksDue = hasContent && options.tasksDueLine
+    ? await resolveLineSafely(options.tasksDueLine)
+    : undefined;
   const text = composeSituationalBriefing({
     imminent: options.imminent,
     now: nowDate,
@@ -179,7 +187,8 @@ export async function runDueSituationalBriefing(
     ...(inbox ? { inbox } : {}),
     ...(related ? { related } : {}),
     ...(home ? { home } : {}),
-    ...(birthdays ? { birthdays } : {})
+    ...(birthdays ? { birthdays } : {}),
+    ...(tasksDue ? { tasksDue } : {})
   });
   if (!text) {
     return { delivered: 0, reason: "nothing-to-say" };
