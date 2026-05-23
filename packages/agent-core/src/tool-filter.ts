@@ -147,12 +147,12 @@ function isMatchableKeyword(keyword: unknown): keyword is string {
 }
 
 export const DEFAULT_DOMAIN_KEYWORDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  calendar: ["calendar", "schedule", "meeting", "event", "캘린더", "일정", "회의"],
+  calendar: ["calendar", "schedule", "meeting", "meetings", "event", "events", "appointment", "appointments", "agenda", "캘린더", "일정", "회의", "약속"],
   home: ["home", "light", "lights", "lamp", "door", "lock", "locked", "unlock", "unlocked", "garage", "thermostat", "sensor", "device", "devices", "smart home", "조명", "불", "문", "잠금", "온도", "센서"],
-  messaging: ["slack", "discord", "telegram", "line", "메시지", "채널", "dm", "message"],
-  notes: ["note", "memo", "wiki", "doc", "노트", "메모", "문서", "위키"],
+  messaging: ["slack", "discord", "telegram", "line", "메시지", "채널", "dm", "message", "messages"],
+  notes: ["note", "notes", "memo", "memos", "wiki", "doc", "docs", "document", "노트", "메모", "문서", "위키"],
   system: ["설정", "config", "setting", "version", "버전"],
-  tasks: ["task", "todo", "reminder", "할일", "태스크", "리마인더"]
+  tasks: ["task", "tasks", "todo", "todos", "reminder", "reminders", "할일", "태스크", "리마인더"]
 });
 
 /**
