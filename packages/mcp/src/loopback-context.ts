@@ -79,8 +79,8 @@ export function createContextReferenceMcpServer(
           inputSchema: {
             additionalProperties: false,
             properties: {
-              sessionId: { type: "string" },
-              userId: { type: "string" }
+              sessionId: { description: "Session id to resolve the active context for (default: the current session).", type: "string" },
+              userId: { description: "User id whose active context to resolve (default: the current user).", type: "string" }
             },
             type: "object"
           },
@@ -121,7 +121,7 @@ export function createContextReferenceMcpServer(
         inputSchema: {
           additionalProperties: false,
           properties: {
-            ref: { type: "string" }
+            ref: { description: "Reference id from a truncated tool output's `ref=<id>` marker.", type: "string" }
           },
           required: ["ref"],
           type: "object"

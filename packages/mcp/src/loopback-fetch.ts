@@ -190,9 +190,10 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
           properties: {
             headers: {
               additionalProperties: { type: "string" },
+              description: "Optional request headers, e.g. { \"Authorization\": \"Bearer …\" }.",
               type: "object"
             },
-            url: { type: "string" }
+            url: { description: "Absolute http(s) URL to fetch, e.g. 'https://example.com/page' (host must be allowlisted).", type: "string" }
           },
           required: ["url"],
           type: "object"
@@ -225,7 +226,7 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
         },
         inputSchema: {
           additionalProperties: false,
-          properties: { url: { type: "string" } },
+          properties: { url: { description: "Absolute http(s) URL to check, e.g. 'https://example.com' (host must be allowlisted).", type: "string" } },
           required: ["url"],
           type: "object"
         },
