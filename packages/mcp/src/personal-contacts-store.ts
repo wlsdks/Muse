@@ -134,9 +134,10 @@ export async function readContacts(file: string): Promise<readonly Contact[]> {
     await quarantineCorruptStore(file);
     return [];
   }
-  return (parsed as { contacts: unknown[] }).contacts.flatMap((entry): readonly Contact[] =>
-    isContact(entry) ? [entry] : []
-  );
+  return (parsed as { contacts: unknown[] }).contacts.flatMap((entry): readonly Contact[] => {
+    const contact = coerceContact(entry);
+    return contact ? [contact] : [];
+  });
 }
 
 export async function writeContacts(file: string, contacts: readonly Contact[]): Promise<void> {
@@ -259,10 +260,41 @@ function matchesPartial(contact: Contact, q: string): boolean {
     || (contact.aliases?.some((alias) => alias.toLowerCase().includes(q)) ?? false);
 }
 
-function isContact(value: unknown): value is Contact {
+/**
+ * Read-boundary coercion for one raw store entry. `id` + `name` are
+ * mandatory strings (a missing one drops the whole entry, same as
+ * before). Every OPTIONAL field is kept ONLY when it is the declared
+ * string type — a hand-edited / externally-synced `contacts.json` that
+ * writes `phone: 14155550101` (a number) or a non-string email would
+ * otherwise survive the tolerant read and later crash `resolveContact`
+ * (`phoneMatches`/`stripLeadingAt` call string methods), taking down
+ * resolution for EVERY contact, not just the malformed one. Dropping the
+ * bad field (not the whole contact) keeps the most data while
+ * guaranteeing the returned `Contact` matches its type.
+ */
+function coerceContact(value: unknown): Contact | undefined {
   if (!value || typeof value !== "object") {
-    return false;
+    return undefined;
   }
-  const c = value as Contact;
-  return typeof c.id === "string" && typeof c.name === "string";
+  const c = value as Record<string, unknown>;
+  if (typeof c.id !== "string" || typeof c.name !== "string") {
+    return undefined;
+  }
+  const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+  const aliases = Array.isArray(c.aliases)
+    ? c.aliases.filter((a): a is string => typeof a === "string")
+    : undefined;
+  const email = str(c.email);
+  const handle = str(c.handle);
+  const phone = str(c.phone);
+  const birthday = str(c.birthday);
+  return {
+    id: c.id,
+    name: c.name,
+    ...(email !== undefined ? { email } : {}),
+    ...(handle !== undefined ? { handle } : {}),
+    ...(phone !== undefined ? { phone } : {}),
+    ...(aliases && aliases.length > 0 ? { aliases } : {}),
+    ...(birthday !== undefined ? { birthday } : {})
+  };
 }

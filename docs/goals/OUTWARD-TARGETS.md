@@ -703,8 +703,14 @@ was proven ONCE; a JARVIS you depend on survives real-world failure.
   on the idempotent GET retries-with-backoff (Retry-After honoured)
   instead of dropping the search on one blip; the state-changing
   web-action POST still deliberately never retries; real `tool.execute`
-  vs a contract-faithful sequenced fake, mutation-proven). Next actuator
-  (contacts) is a follow-on slice.
+  vs a contract-faithful sequenced fake, mutation-proven). + 924
+  (contacts: the tolerant read now coerces a wrong-typed field from a
+  hand-edited / synced `contacts.json` — a numeric `phone` previously
+  survived `id`+`name`-only validation then crashed `resolveContact`
+  (`.replace` on a number) for the WHOLE store; `coerceContact` drops
+  the bad field, keeps the contact, mutation-proven). The
+  email/web/weather/smart-home/contacts actuators are now each hardened
+  against their primary real-world failure mode.
 
 **P20 — Deepen the thin axes (Perception + Knowledge).**
 - [x] Continuous perception: an ambient signal (active window /
