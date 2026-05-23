@@ -1,7 +1,63 @@
-import { Command } from "commander";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { registerTasksCommands, resolveLocalTaskId, type TasksCommandHelpers } from "./commands-tasks.js";
+import { writeTasks, type PersistedTask } from "@muse/mcp";
+import { Command } from "commander";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { filterTasksBySearch, registerTasksCommands, resolveLocalTaskId, type TasksCommandHelpers } from "./commands-tasks.js";
+
+describe("filterTasksBySearch — find a task by title or notes (case-insensitive)", () => {
+  const tasks = [
+    { notes: "ring the office", title: "Call dentist" },
+    { title: "Buy milk" },
+    { notes: "Dr. Smith", title: "Schedule checkup" }
+  ];
+  it("matches the title", () => {
+    expect(filterTasksBySearch(tasks, "dentist").map((t) => t.title)).toEqual(["Call dentist"]);
+  });
+  it("matches the notes (case-insensitive)", () => {
+    expect(filterTasksBySearch(tasks, "OFFICE").map((t) => t.title)).toEqual(["Call dentist"]);
+  });
+  it("returns all on an empty query, none on a no-match", () => {
+    expect(filterTasksBySearch(tasks, "  ")).toHaveLength(3);
+    expect(filterTasksBySearch(tasks, "zzz")).toHaveLength(0);
+  });
+});
+
+describe("muse tasks list --local --search — filters the real store", () => {
+  const prev = process.env.MUSE_TASKS_FILE;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.MUSE_TASKS_FILE;
+    else process.env.MUSE_TASKS_FILE = prev;
+  });
+
+  it("returns only the matching task via --json", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-tasks-search-")), "tasks.json");
+    process.env.MUSE_TASKS_FILE = file;
+    const now = new Date().toISOString();
+    const seed: PersistedTask[] = [
+      { createdAt: now, id: "t1", status: "open", title: "Call dentist" },
+      { createdAt: now, id: "t2", status: "open", title: "Buy milk" }
+    ];
+    await writeTasks(file, seed);
+
+    const out: string[] = [];
+    const io = { stderr: () => {}, stdout: (m: string) => out.push(m) };
+    const helpers: TasksCommandHelpers = {
+      apiRequest: async () => { throw new Error("apiRequest must not be called in --local mode"); },
+      writeOutput: (_io, value) => out.push(JSON.stringify(value))
+    };
+    const program = new Command();
+    program.exitOverride();
+    registerTasksCommands(program, io, helpers);
+    await program.parseAsync(["node", "muse", "tasks", "list", "--local", "--search", "dentist", "--json"]);
+    const payload = JSON.parse(out.join("")) as { tasks: { title: string }[]; total: number };
+    expect(payload.total).toBe(1);
+    expect(payload.tasks.map((t) => t.title)).toEqual(["Call dentist"]);
+  });
+});
 
 interface ApiCall {
   readonly path: string;

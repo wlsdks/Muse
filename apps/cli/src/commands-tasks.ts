@@ -96,9 +96,10 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .command("list")
     .description("List tasks newest-first, filter by status (--local skips the API)")
     .option("--status <status>", "Status filter: open (default), done, or all", "open")
+    .option("--search <text>", "Only tasks whose title or notes contains this text (case-insensitive)")
     .option("--local", "Read directly from the local tasks file instead of the API")
     .option("--json", "Print the raw API response instead of the formatted list")
-    .action(async (options: { readonly status: string } & SharedOptions, command) => {
+    .action(async (options: { readonly status: string; readonly search?: string } & SharedOptions, command) => {
       // Throws before dispatch so a typo'd --status doesn't return
       // a silently-wrong "open" list.
       assertTaskStatusInput(options.status);
@@ -114,6 +115,11 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       } else {
         const path = `/api/tasks?status=${encodeURIComponent(options.status)}`;
         payload = (await helpers.apiRequest(io, command, path)) as typeof payload;
+      }
+      const query = options.search?.trim();
+      if (query) {
+        const matched = filterTasksBySearch(payload.tasks, query);
+        payload = { ...payload, tasks: matched, total: matched.length };
       }
       if (options.json) {
         helpers.writeOutput(io, payload);
@@ -378,6 +384,27 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
  * renderers print (e.g. `task_0810976`). When the input is shorter
  * than a full id and not unique, refuse to guess.
  */
+/**
+ * Filter listed tasks to those whose title or notes contains `query`
+ * (case-insensitive) — `muse tasks list --search`. Operates on the
+ * serialized task records (title / notes are the searchable text), so
+ * it works the same for the local file and the API payload.
+ */
+export function filterTasksBySearch<T extends { readonly title?: unknown; readonly notes?: unknown }>(
+  tasks: readonly T[],
+  query: string
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (q.length === 0) {
+    return [...tasks];
+  }
+  return tasks.filter((task) => {
+    const title = typeof task.title === "string" ? task.title.toLowerCase() : "";
+    const notes = typeof task.notes === "string" ? task.notes.toLowerCase() : "";
+    return title.includes(q) || notes.includes(q);
+  });
+}
+
 export function resolveLocalTaskId(input: string, all: readonly PersistedTask[]): string {
   const exact = all.find((task) => task.id === input);
   if (exact) return exact.id;
