@@ -9,7 +9,8 @@
  * (config / auth / chat / TUI).
  */
 
-import { collectSetupStatusJson, type SetupStatusSnapshot } from "@muse/autoconfigure";
+import { collectSetupStatusJson, resolveFollowupsFile, type SetupStatusSnapshot } from "@muse/autoconfigure";
+import { readFollowups } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { runCalendarSetup } from "./setup-calendar.js";
@@ -108,12 +109,12 @@ export function registerSchedulerCommands(program: Command, io: ProgramIO, helpe
 
   scheduler
     .command("next")
-    .description("Show what's scheduled to fire next: scheduler jobs + pending reminders, soonest first")
+    .description("Show what's scheduled to fire next: scheduler jobs + pending reminders + scheduled followups, soonest first")
     .option("--limit <n>", "How many entries to surface (default 5)")
     .option("--json", "Emit structured JSON instead of the formatted preview")
     .action(async (options: { readonly limit?: string; readonly json?: boolean }, command) => {
       const limit = Math.max(1, Math.min(50, Number.parseInt(options.limit ?? "5", 10) || 5));
-      const [jobs, reminders] = await Promise.all([
+      const [jobs, reminders, followups] = await Promise.all([
         apiRequest(io, command, "/api/scheduler/jobs")
           .then((value) => Array.isArray((value as { jobs?: unknown[] }).jobs)
             ? ((value as { jobs: SchedulerJobRow[] }).jobs)
@@ -121,7 +122,13 @@ export function registerSchedulerCommands(program: Command, io: ProgramIO, helpe
           .catch(() => [] as SchedulerJobRow[]),
         apiRequest(io, command, "/api/reminders?status=pending")
           .then((value) => ((value as { reminders?: PendingReminderRow[] }).reminders) ?? [])
-          .catch(() => [] as PendingReminderRow[])
+          .catch(() => [] as PendingReminderRow[]),
+        // Followups are a local-only store (no REST surface) but fire
+        // at `scheduledFor` exactly like a reminder, so a "what's next"
+        // that omits them hides self-queued promises ("I'll check in
+        // 30 min"). Read locally; fail-soft to none.
+        readFollowups(resolveFollowupsFile(process.env as Record<string, string | undefined>))
+          .catch(() => [])
       ]);
       const merged: PreviewEntry[] = [];
       for (const job of jobs) {
@@ -137,6 +144,14 @@ export function registerSchedulerCommands(program: Command, io: ProgramIO, helpe
           when: rem.dueAt,
           kind: "reminder",
           label: rem.text ?? "(no text)"
+        });
+      }
+      for (const followup of followups) {
+        if (followup.status !== "scheduled") continue;
+        merged.push({
+          when: followup.scheduledFor,
+          kind: "followup",
+          label: followup.summary || "(no summary)"
         });
       }
       const upcoming = merged
@@ -174,7 +189,7 @@ interface PendingReminderRow {
 
 export interface PreviewEntry {
   readonly when?: string;
-  readonly kind: "job" | "reminder";
+  readonly kind: "job" | "reminder" | "followup";
   readonly label: string;
 }
 

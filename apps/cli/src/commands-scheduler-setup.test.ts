@@ -1,7 +1,13 @@
-import type { SetupStatusSnapshot } from "@muse/autoconfigure";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { comparePreviewEntriesByWhen, formatSetupStatusLines, type PreviewEntry } from "./commands-scheduler-setup.js";
+import type { SetupStatusSnapshot } from "@muse/autoconfigure";
+import { Command } from "commander";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { comparePreviewEntriesByWhen, formatSetupStatusLines, registerSchedulerCommands, type PreviewEntry } from "./commands-scheduler-setup.js";
+import type { ProgramIO } from "./program.js";
 
 const entry = (when: string, label: string, kind: PreviewEntry["kind"] = "reminder"): PreviewEntry =>
   ({ kind, label, when });
@@ -29,6 +35,50 @@ describe("comparePreviewEntriesByWhen — `muse scheduler next` orders by instan
     const x = entry("not-a-date", "x");
     const y = entry("also-bad", "y");
     expect([x, y].sort(comparePreviewEntriesByWhen)).toHaveLength(2);
+  });
+
+  it("interleaves a followup among jobs + reminders by instant", () => {
+    const job = entry("2026-05-23T10:00:00Z", "digest", "job");
+    const fu = entry("2026-05-23T08:00:00Z", "check the deploy", "followup");
+    const rem = entry("2026-05-23T09:00:00Z", "buy milk");
+    expect([job, rem, fu].sort(comparePreviewEntriesByWhen).map((e) => `${e.kind}:${e.label}`))
+      .toEqual(["followup:check the deploy", "reminder:buy milk", "job:digest"]);
+  });
+});
+
+describe("muse scheduler next — scheduled followups appear alongside jobs + reminders", () => {
+  const prevFollowups = process.env.MUSE_FOLLOWUPS_FILE;
+  afterEach(() => {
+    if (prevFollowups === undefined) delete process.env.MUSE_FOLLOWUPS_FILE;
+    else process.env.MUSE_FOLLOWUPS_FILE = prevFollowups;
+  });
+
+  it("includes a `scheduled` followup and excludes a `cancelled` one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-sched-fu-"));
+    const file = join(dir, "followups.json");
+    writeFileSync(file, `${JSON.stringify({ followups: [
+      { id: "fu_1", userId: "local", scheduledFor: "2026-05-23T08:00:00Z", createdAt: "2026-05-23T07:00:00Z", summary: "check the deploy", status: "scheduled" },
+      { id: "fu_2", userId: "local", scheduledFor: "2026-05-23T08:30:00Z", createdAt: "2026-05-23T07:00:00Z", summary: "cancelled promise", status: "cancelled" }
+    ] })}\n`, "utf8");
+    process.env.MUSE_FOLLOWUPS_FILE = file;
+
+    const outputs: unknown[] = [];
+    const io = { stderr: () => {}, stdout: () => {} } as unknown as ProgramIO;
+    const helpers = {
+      // No scheduler/reminder API in the test → empty, so only the
+      // followups exercise the new merge path.
+      apiRequest: async () => ({}),
+      writeOutput: (_io: ProgramIO, value: unknown) => { outputs.push(value); }
+    };
+    const program = new Command();
+    program.exitOverride();
+    registerSchedulerCommands(program, io, helpers);
+    await program.parseAsync(["node", "muse", "scheduler", "next", "--json"], { from: "node" });
+
+    const payload = outputs[0] as { entries: Array<{ kind: string; label: string }>; total: number };
+    const followupEntries = payload.entries.filter((e) => e.kind === "followup");
+    expect(followupEntries.map((e) => e.label)).toEqual(["check the deploy"]);
+    expect(payload.entries.some((e) => e.label === "cancelled promise")).toBe(false);
   });
 });
 
