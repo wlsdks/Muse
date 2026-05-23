@@ -136,14 +136,14 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
         inputSchema: {
           additionalProperties: false,
           properties: {
-            allDay: { type: "boolean" },
-            endsAtIso: { type: "string" },
-            location: { type: "string" },
-            notes: { type: "string" },
-            providerId: { type: "string" },
-            startsAtIso: { type: "string" },
-            tags: { items: { type: "string" }, type: "array" },
-            title: { type: "string" }
+            allDay: { description: "True for an all-day event (no specific time).", type: "boolean" },
+            endsAtIso: { description: "End time — ISO-8601 or a relative phrase; defaults to start + 60 min.", type: "string" },
+            location: { description: "Where the event is, e.g. 'Room 4' or an address.", type: "string" },
+            notes: { description: "Free-text notes / agenda for the event.", type: "string" },
+            providerId: { description: "Calendar provider id (default: the primary provider).", type: "string" },
+            startsAtIso: { description: "Start time — ISO-8601 OR a natural phrase like 'tomorrow 3pm' / '내일 오후 3시'.", type: "string" },
+            tags: { description: "Optional labels for the event.", items: { type: "string" }, type: "array" },
+            title: { description: "Event title, e.g. 'Dentist appointment'.", type: "string" }
           },
           required: ["title", "startsAtIso"],
           type: "object"
@@ -179,14 +179,14 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
         inputSchema: {
           additionalProperties: false,
           properties: {
-            allDay: { type: "boolean" },
-            endsAtIso: { type: "string" },
-            id: { type: "string" },
-            location: { type: "string" },
-            notes: { type: "string" },
-            providerId: { type: "string" },
-            startsAtIso: { type: "string" },
-            title: { type: "string" }
+            allDay: { description: "Set true/false to change the all-day flag (only if changing it).", type: "boolean" },
+            endsAtIso: { description: "New end time — ISO-8601 or a relative phrase (only if changing it).", type: "string" },
+            id: { description: "The event's id, from `list`.", type: "string" },
+            location: { description: "New location (only if changing it).", type: "string" },
+            notes: { description: "New notes (only if changing it).", type: "string" },
+            providerId: { description: "Calendar provider id the event belongs to.", type: "string" },
+            startsAtIso: { description: "New start time — ISO-8601 or a relative phrase (only if changing it).", type: "string" },
+            title: { description: "New title (only if changing it).", type: "string" }
           },
           required: ["providerId", "id"],
           type: "object"
@@ -213,8 +213,8 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
         inputSchema: {
           additionalProperties: false,
           properties: {
-            id: { type: "string" },
-            providerId: { type: "string" }
+            id: { description: "The event's id to delete, from `list`.", type: "string" },
+            providerId: { description: "Calendar provider id the event belongs to.", type: "string" }
           },
           required: ["providerId", "id"],
           type: "object"
