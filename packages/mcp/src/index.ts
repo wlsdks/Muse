@@ -74,6 +74,15 @@ export interface McpRemoteTool {
    * fall back to the heuristic as before.
    */
   readonly domain?: string;
+  /**
+   * Relevance keywords forwarded to `MuseToolDefinition.keywords` so
+   * DefaultToolFilter surfaces this specific tool when the prompt
+   * mentions one of them — letting a loopback tool be selectable for
+   * vocabulary its domain heuristic misses (e.g. availability for "am
+   * I free?"). Per-tool, so a generic word only exposes THIS tool, not
+   * the whole domain.
+   */
+  readonly keywords?: readonly string[];
 }
 
 export interface McpConnection {
@@ -219,6 +228,7 @@ export function createMcpMuseTool(serverName: string, tool: McpRemoteTool, conne
     definition: {
       description: tool.description,
       ...(tool.domain ? { domain: tool.domain } : {}),
+      ...(tool.keywords && tool.keywords.length > 0 ? { keywords: tool.keywords } : {}),
       inputSchema: tool.inputSchema ?? {},
       name: `${serverName}.${tool.name}`,
       risk: tool.risk ?? "read"

@@ -143,6 +143,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           type: "object"
         },
         domain: "calendar",
+        keywords: ["free", "busy", "available", "availability", "gap", "slot", "한가"],
         name: "availability",
         risk: "read"
       },

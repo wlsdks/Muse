@@ -72,6 +72,7 @@ export function createLoopbackMcpMuseTools(server: LoopbackMcpServer): readonly 
       {
         description: tool.description,
         ...(tool.domain ? { domain: tool.domain } : {}),
+        ...(tool.keywords && tool.keywords.length > 0 ? { keywords: tool.keywords } : {}),
         inputSchema: tool.inputSchema ?? {},
         name: tool.name,
         ...(tool.risk ? { risk: tool.risk } : {})
