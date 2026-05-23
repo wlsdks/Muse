@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_FEED_FETCH_TIMEOUT_MS, DEFAULT_FEED_MAX_BODY_BYTES, formatFeedEntryLines, loadFeedBody, registerFeedsCommand, slugifyUrl } from "./commands-feeds.js";
+import { DEFAULT_FEED_FETCH_TIMEOUT_MS, DEFAULT_FEED_MAX_BODY_BYTES, formatFeedEntryLines, loadFeedBody, parseFeedSearchLimit, registerFeedsCommand, searchFeedEntries, slugifyUrl, type FeedSearchHit } from "./commands-feeds.js";
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -433,5 +433,116 @@ describe("loadFeedBody — body size cap so a hostile / runaway RSS server can't
 
   it("exports a sensible 5-MB default so callers that don't pass maxBodyBytes still inherit the cap", () => {
     expect(DEFAULT_FEED_MAX_BODY_BYTES).toBe(5 * 1024 * 1024);
+  });
+});
+
+function feedWith(id: string, entries: ReadonlyArray<{ id: string; title: string; summary?: string; publishedAt?: string }>) {
+  return {
+    id,
+    url: `https://example.com/${id}.xml`,
+    name: id,
+    lastFetchedAt: "2026-05-15T00:00:00Z",
+    entries: entries.map((e) => ({
+      id: e.id,
+      title: e.title,
+      link: `https://x.example/${e.id}`,
+      publishedAt: e.publishedAt ?? "2026-05-20T00:00:00Z",
+      summary: e.summary ?? ""
+    }))
+  };
+}
+
+function seedArchive(feeds: ReturnType<typeof feedWith>[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "muse-feeds-search-"));
+  const file = join(dir, "feeds.json");
+  writeFileSync(file, JSON.stringify({ version: 1, feeds }), "utf8");
+  return file;
+}
+
+describe("searchFeedEntries — substring search across the cached archive, newest-first", () => {
+  const FEEDS = [
+    feedWith("tech", [
+      { id: "t1", title: "Rust 2.0 released", publishedAt: "2026-05-21T00:00:00Z" },
+      { id: "t2", title: "GPU prices fall", summary: "great deal on a graphics card", publishedAt: "2026-05-19T00:00:00Z" }
+    ]),
+    feedWith("news", [
+      { id: "n1", title: "Local election results", publishedAt: "2026-05-22T00:00:00Z" },
+      { id: "n2", title: "Weather warning", summary: "RUST belt storms incoming", publishedAt: "2026-05-18T00:00:00Z" }
+    ])
+  ];
+
+  it("matches title OR summary, case-insensitively, across all feeds", () => {
+    const hits = searchFeedEntries(FEEDS, "rust", 20);
+    const ids = hits.map((h) => h.id);
+    expect(ids).toContain("t1"); // title "Rust 2.0"
+    expect(ids).toContain("n2"); // summary "RUST belt"
+    expect(ids).not.toContain("t2");
+  });
+
+  it("orders newest-first by publishedAt", () => {
+    const hits = searchFeedEntries(FEEDS, "e", 20); // broad match
+    const dates = hits.map((h) => h.publishedAt);
+    const sorted = [...dates].sort((a, b) => b.localeCompare(a));
+    expect(dates).toEqual(sorted);
+  });
+
+  it("clamps to the limit and returns [] for an empty query", () => {
+    expect(searchFeedEntries(FEEDS, "e", 1)).toHaveLength(1);
+    expect(searchFeedEntries(FEEDS, "   ", 20)).toEqual([]);
+  });
+
+  it("returns a FeedSearchHit carrying feedId + feedName for the listing", () => {
+    const hits = searchFeedEntries(FEEDS, "Rust 2.0", 20);
+    const hit = hits[0] as FeedSearchHit;
+    expect(hit.feedId).toBe("tech");
+    expect(hit.feedName).toBe("tech");
+  });
+});
+
+describe("parseFeedSearchLimit", () => {
+  it("defaults when absent, clamps to cap, rejects a unit-slip / non-positive", () => {
+    expect(parseFeedSearchLimit(undefined, 20, 100)).toBe(20);
+    expect(parseFeedSearchLimit("500", 20, 100)).toBe(100);
+    expect(parseFeedSearchLimit("3", 20, 100)).toBe(3);
+    expect(() => parseFeedSearchLimit("20x", 20, 100)).toThrow(/positive number/u);
+    expect(() => parseFeedSearchLimit("0", 20, 100)).toThrow(/positive number/u);
+  });
+});
+
+describe("muse feeds search — end-to-end over a seeded archive", () => {
+  it("lists matching entries (the archive search `today` can't do), newest-first", async () => {
+    const file = seedArchive([
+      feedWith("tech", [{ id: "t1", title: "Rust 2.0 released", publishedAt: "2026-05-21T00:00:00Z" }]),
+      feedWith("news", [{ id: "n2", title: "Weather", summary: "RUST belt storms", publishedAt: "2026-05-18T00:00:00Z" }])
+    ]);
+    const { stdout, exitCode } = await runFeedsCommand(["search", "rust"], file);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Rust 2.0 released");
+    expect(stdout).toContain("[news]");
+    // newest first: tech (05-21) before news (05-18)
+    expect(stdout.indexOf("Rust 2.0")).toBeLessThan(stdout.indexOf("[news]"));
+  });
+
+  it("prints a clear empty-state when nothing matches", async () => {
+    const file = seedArchive([feedWith("tech", [{ id: "t1", title: "Rust 2.0" }])]);
+    const { stdout } = await runFeedsCommand(["search", "nonexistentterm"], file);
+    expect(stdout).toContain('no cached feed entries match "nonexistentterm"');
+  });
+
+  it("--json emits a structured payload", async () => {
+    const file = seedArchive([feedWith("tech", [{ id: "t1", title: "Rust 2.0" }])]);
+    const { stdout } = await runFeedsCommand(["search", "rust", "--json"], file);
+    const payload = JSON.parse(stdout) as { query: string; total: number; entries: FeedSearchHit[] };
+    expect(payload.query).toBe("rust");
+    expect(payload.total).toBe(1);
+    expect(payload.entries[0]!.feedId).toBe("tech");
+  });
+
+  it("requires a query and rejects a bad --limit", async () => {
+    const file = seedArchive([feedWith("tech", [{ id: "t1", title: "Rust 2.0" }])]);
+    const empty = await runFeedsCommand(["search", "   "], file);
+    expect(empty.exitCode).toBe(1);
+    expect(empty.stderr).toContain("query is required");
+    await expect(runFeedsCommand(["search", "rust", "--limit", "5x"], file)).rejects.toThrow(/positive number/u);
   });
 });

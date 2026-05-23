@@ -161,6 +161,65 @@ export function formatFeedEntryLines(entry: {
   return lines;
 }
 
+export interface FeedSearchHit {
+  readonly id: string;
+  readonly feedId: string;
+  readonly feedName: string;
+  readonly title: string;
+  readonly link: string;
+  readonly publishedAt: string;
+  readonly summary: string;
+}
+
+/**
+ * Case-insensitive substring search across every cached feed entry's
+ * title + summary, newest-first, capped at `limit`. Pure (no IO) so a
+ * unit test pins matching + ordering. `muse feeds today` only reaches a
+ * recent time-window; this searches the whole on-disk archive (up to
+ * DEFAULT_FEED_ENTRIES_CAP per feed) so "that article about X I saw last
+ * week" is findable.
+ */
+export function searchFeedEntries(
+  feeds: readonly FeedRecord[],
+  query: string,
+  limit: number
+): readonly FeedSearchHit[] {
+  const needle = query.trim().toLowerCase();
+  if (needle.length === 0) {
+    return [];
+  }
+  const hits = feeds.flatMap((feed) =>
+    feed.entries
+      .filter((entry) => entry.title.toLowerCase().includes(needle) || entry.summary.toLowerCase().includes(needle))
+      .map((entry) => ({
+        feedId: feed.id,
+        feedName: feed.name,
+        id: entry.id,
+        link: entry.link,
+        publishedAt: entry.publishedAt,
+        summary: entry.summary,
+        title: entry.title
+      }))
+  );
+  return [...hits].sort(compareFeedEntriesNewestFirst).slice(0, Math.max(1, limit));
+}
+
+/**
+ * Strict `--limit` parse for `muse feeds search`: absent → fallback; a
+ * non-numeric / unit-slip ('20x') / non-positive value rejects rather
+ * than silently defaulting; a genuine number truncates + clamps to cap.
+ */
+export function parseFeedSearchLimit(raw: string | undefined, fallback: number, cap: number): number {
+  if (raw === undefined || raw.trim().length === 0) {
+    return fallback;
+  }
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`--limit must be a positive number (got '${raw}')`);
+  }
+  return Math.min(cap, Math.trunc(parsed));
+}
+
 async function refreshSingleFeed(record: FeedRecord, io: ProgramIO): Promise<{ readonly record: FeedRecord; readonly ok: boolean }> {
   try {
     const body = await loadFeedBody(record.url);
@@ -375,6 +434,35 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
       }
       for (const entry of rolled) {
         for (const line of formatFeedEntryLines(entry)) io.stdout(`${line}\n`);
+      }
+    });
+
+  feeds
+    .command("search")
+    .description("Search the whole cached feed archive by keyword (title + summary), newest-first")
+    .argument("<query...>", "Keyword(s) to match (joined by spaces; case-insensitive substring)")
+    .option("--limit <n>", "Max matches (default 20, cap 100)")
+    .option("--json", "Emit a structured payload")
+    .action(async (queryParts: readonly string[], options: { readonly limit?: string; readonly json?: boolean }) => {
+      const query = queryParts.join(" ").trim();
+      if (query.length === 0) {
+        io.stderr("muse feeds search: query is required\n");
+        process.exitCode = 1;
+        return;
+      }
+      const limit = parseFeedSearchLimit(options.limit, 20, 100);
+      const store = await readFeedsStore(defaultFeedsFile());
+      const hits = searchFeedEntries(store.feeds, query, limit);
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ entries: hits, query, total: hits.length }, null, 2)}\n`);
+        return;
+      }
+      if (hits.length === 0) {
+        io.stdout(`(no cached feed entries match "${query}" — try a different keyword or run \`muse feeds refresh\`)\n`);
+        return;
+      }
+      for (const hit of hits) {
+        for (const line of formatFeedEntryLines(hit)) io.stdout(`${line}\n`);
       }
     });
 }
