@@ -44,6 +44,7 @@ import {
   createHomeEntitiesTool,
   createHomeStateTool,
   createLoopbackMcpMuseTools,
+  createWeatherTool,
   GmailEmailProvider,
   queryContacts,
   upsertFollowup,
@@ -603,6 +604,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => skillTools,
     () => knowledgeSearchTools,
     () => homeReadTools,
+    () => [createWeatherTool()],
     () => options.extraTools ?? [],
     () => withChromeDevToolsRisk(mcp.manager.toMuseTools()),
     () => schedulerHandle.current ? createSchedulerTools(schedulerHandle.current) : []

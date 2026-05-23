@@ -450,6 +450,10 @@ export {
   type WeatherProvider
 } from "./weather.js";
 export {
+  createWeatherTool,
+  type WeatherToolDeps
+} from "./weather-tool.js";
+export {
   addContact,
   contactIdentifier,
   formatBirthdayBriefLine,
