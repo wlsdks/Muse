@@ -57,6 +57,7 @@ import {
   GmailEmailProvider,
   queryContacts,
   readFollowups,
+  readObjectives,
   readReminders,
   upsertFollowup,
   withChromeDevToolsRisk,
@@ -172,6 +173,7 @@ import {
   resolveFollowupLlmBudgetFile,
   resolveFollowupsFile,
   resolveNotesDir,
+  resolveObjectivesFile,
   resolvePatternsFiredFile,
   resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
@@ -585,6 +587,11 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         list: async () => (await readFollowups(resolveFollowupsFile(env)))
           .filter((followup) => followup.status === "scheduled")
           .map((followup) => ({ id: followup.id, summary: followup.summary }))
+      },
+      objectivesSource: {
+        list: async () => (await readObjectives(resolveObjectivesFile(env)))
+          .filter((objective) => objective.status === "active" || objective.status === "escalated")
+          .map((objective) => ({ id: objective.id, spec: objective.spec }))
       },
       feedsSource: {
         recentEntries: (limit) => readFeedKnowledgeEntries(resolveFeedsFile(env), limit)

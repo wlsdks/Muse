@@ -82,6 +82,16 @@ export interface FollowupsSource {
   list(): Promise<readonly FollowupLike[]> | readonly FollowupLike[];
 }
 
+export interface ObjectiveLike {
+  readonly id: string;
+  readonly spec: string;
+}
+
+export interface ObjectivesSource {
+  /** Live standing objectives only (active / escalated) — done/cancelled ones aren't live intent. */
+  list(): Promise<readonly ObjectiveLike[]> | readonly ObjectiveLike[];
+}
+
 export interface FeedEntryLike {
   readonly id: string;
   readonly title: string;
@@ -110,6 +120,8 @@ export interface AssembleKnowledgeCorpusOptions {
   readonly remindersSource?: RemindersSource;
   /** Scheduled followups become corpus chunks sourced `followup/<summary>` — the agent's own "check on X". */
   readonly followupsSource?: FollowupsSource;
+  /** Live standing objectives become corpus chunks sourced `objective/<spec>` — "what am I working toward re: X". */
+  readonly objectivesSource?: ObjectivesSource;
   /** Recent watched RSS/Atom feed entries become corpus chunks sourced `feed/<title>` — "any news about X?". */
   readonly feedsSource?: FeedsKnowledgeSource;
   readonly extraChunks?: readonly KnowledgeChunk[];
@@ -292,6 +304,22 @@ export async function assembleKnowledgeCorpus(
     }
   }
 
+  if (options.objectivesSource) {
+    let objectives: readonly ObjectiveLike[];
+    try {
+      objectives = await options.objectivesSource.list();
+    } catch {
+      objectives = [];
+    }
+    for (const objective of objectives) {
+      if (objective.spec.trim().length === 0) {
+        continue;
+      }
+      const text = objective.spec.length > maxChars ? objective.spec.slice(0, maxChars) : objective.spec;
+      chunks.push({ source: labelSource("objective", objective.spec, objective.id), text });
+    }
+  }
+
   if (options.feedsSource) {
     const maxFeedEntries = Math.max(1, Math.trunc(finiteOr(options.maxFeedEntries, 50)));
     let entries: readonly FeedEntryLike[];
@@ -375,6 +403,7 @@ export interface NotesKnowledgeSearchToolOptions {
   readonly emailSource?: EmailMessageSource;
   readonly remindersSource?: RemindersSource;
   readonly followupsSource?: FollowupsSource;
+  readonly objectivesSource?: ObjectivesSource;
   readonly feedsSource?: FeedsKnowledgeSource;
   readonly embed: (text: string) => Promise<readonly number[]>;
   readonly topK?: number;
@@ -395,7 +424,7 @@ export interface NotesKnowledgeSearchToolOptions {
 export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchToolOptions): MuseTool {
   return {
     definition: {
-      description: "Search everything the user has saved or subscribed to — their notes, ingested documents, tasks, calendar, contacts, recent emails, reminders, follow-ups, and the news/RSS feeds they watch — and return matching passages, each labelled with its [source] (cite the source you use). Use when the user asks what they know, have saved, or have heard about something, including 'any news about X' from their feeds. Do not use to open a NEW web page, or for general world facts the user never saved — answer those yourself.",
+      description: "Search everything the user has saved or subscribed to — their notes, ingested documents, tasks, calendar, contacts, recent emails, reminders, follow-ups, standing objectives, and the news/RSS feeds they watch — and return matching passages, each labelled with its [source] (cite the source you use). Use when the user asks what they know, have saved, or have heard about something, including 'any news about X' from their feeds. Do not use to open a NEW web page, or for general world facts the user never saved — answer those yourself.",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -420,6 +449,7 @@ export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchTool
         ...(options.emailSource ? { emailSource: options.emailSource } : {}),
         ...(options.remindersSource ? { remindersSource: options.remindersSource } : {}),
         ...(options.followupsSource ? { followupsSource: options.followupsSource } : {}),
+        ...(options.objectivesSource ? { objectivesSource: options.objectivesSource } : {}),
         ...(options.feedsSource ? { feedsSource: options.feedsSource } : {}),
         ...(options.extraChunks ? { extraChunks: options.extraChunks } : {}),
         ...(options.maxNotes !== undefined ? { maxNotes: options.maxNotes } : {}),
