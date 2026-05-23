@@ -68,6 +68,32 @@ describe("fetchWithRetry", () => {
     await expect(fetchWithRetry(fetchImpl, "https://x.test", noWait)).rejects.toThrow("ECONNRESET");
     expect(calls).toBe(3); // first + 2 retries
   });
+
+  it("aborts a hung attempt after timeoutMs and retries (host accepts but never responds)", async () => {
+    let calls = 0;
+    const fetchImpl = ((_url: string, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1) {
+        // Hang: settle ONLY when the per-attempt timeout aborts us.
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal!.reason ?? new Error("aborted")), { once: true });
+        });
+      }
+      return Promise.resolve(geocodeOk());
+    }) as unknown as typeof globalThis.fetch;
+    const response = await fetchWithRetry(fetchImpl, "https://x.test", { baseDelayMs: 0, sleep: async () => {}, timeoutMs: 5 });
+    expect(response.status).toBe(200);
+    expect(calls).toBe(2); // hung attempt aborted + retried; the retry succeeds
+  });
+
+  it("rethrows the timeout error when every attempt hangs (bounded, never infinite)", async () => {
+    const fetchImpl = ((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal!.reason ?? new Error("aborted")), { once: true });
+    })) as unknown as typeof globalThis.fetch;
+    await expect(
+      fetchWithRetry(fetchImpl, "https://x.test", { retries: 1, baseDelayMs: 0, sleep: async () => {}, timeoutMs: 5 })
+    ).rejects.toThrow(/timed out after 5ms/u);
+  });
 });
 
 describe("OpenMeteoWeatherProvider — transient-failure hardening (P19)", () => {

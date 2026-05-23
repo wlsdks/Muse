@@ -684,8 +684,11 @@ was proven ONCE; a JARVIS you depend on survives real-world failure.
   fetch, mutation-proven). + 824 (email: `listRecent` skips a single
   message whose fetch fails transiently / returns a malformed 200 body
   instead of dropping the whole inbox; a permanent `GmailAuthError`
-  still propagates; mutation-proven). Next actuators (web/contacts/
-  smart-home) are follow-on slices.
+  still propagates; mutation-proven). + 883 (the shared
+  `fetchWithRetry` — weather/email/smart-home/feeds reads — now bounds
+  each attempt with a timeout, so a host that accepts but never
+  responds is aborted + retried instead of hanging the turn forever;
+  mutation-proven). Next actuators (web/contacts) are follow-on slices.
 
 **P20 — Deepen the thin axes (Perception + Knowledge).**
 - [x] Continuous perception: an ambient signal (active window /
