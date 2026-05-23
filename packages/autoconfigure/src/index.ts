@@ -44,7 +44,9 @@ import {
   addContact,
   createContactsAddTool,
   createContactsFindTool,
+  createContactsRemoveTool,
   createEmailReadMessageTool,
+  removeContact,
   createEmailReadTool,
   createHomeEntitiesTool,
   createHomeStateTool,
@@ -624,7 +626,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => [createWeatherTool(env.MUSE_WEATHER_LOCATION?.trim() ? { defaultLocation: env.MUSE_WEATHER_LOCATION.trim() } : {})],
     () => [
       createContactsFindTool({ contacts: () => queryContacts(resolveContactsFile(env)) }),
-      createContactsAddTool({ save: (contact) => addContact(resolveContactsFile(env), contact) })
+      createContactsAddTool({ save: (contact) => addContact(resolveContactsFile(env), contact) }),
+      createContactsRemoveTool({ contacts: () => queryContacts(resolveContactsFile(env)), remove: (id) => removeContact(resolveContactsFile(env), id) })
     ],
     () => options.extraTools ?? [],
     () => withChromeDevToolsRisk(mcp.manager.toMuseTools()),

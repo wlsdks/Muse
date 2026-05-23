@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createContactsAddTool, createContactsFindTool, type Contact } from "../src/index.js";
+import { createContactsAddTool, createContactsFindTool, createContactsRemoveTool, type Contact } from "../src/index.js";
 
 const PEOPLE: Contact[] = [
   { birthday: "12-25", email: "bob@acme.com", id: "c1", name: "Bob Acme" },
@@ -60,5 +60,41 @@ describe("createContactsAddTool — capture a person", () => {
     const { saved, tool } = addTool();
     expect(await tool.execute({ birthday: "Dec 25", email: "x@y.com", name: "X" })).toMatchObject({ added: false });
     expect(saved).toHaveLength(0);
+  });
+});
+
+describe("createContactsRemoveTool — delete a person (fail-close)", () => {
+  function removeTool(people: Contact[] = PEOPLE) {
+    const removed: string[] = [];
+    const present = [...people];
+    return {
+      removed,
+      tool: createContactsRemoveTool({
+        contacts: () => present,
+        remove: async (id) => { removed.push(id); return present.some((c) => c.id === id); }
+      })
+    };
+  }
+
+  it("is risk:write and removes an exactly-resolved contact by id", async () => {
+    const { removed, tool } = removeTool();
+    expect(tool.definition.risk).toBe("write");
+    expect(await tool.execute({ name: "Bob Acme" })).toMatchObject({ name: "Bob Acme", removed: true });
+    expect(removed).toEqual(["c1"]);
+  });
+
+  it("an ambiguous name returns candidates and removes NOTHING (never a guess)", async () => {
+    const { removed, tool } = removeTool();
+    const out = await tool.execute({ name: "Bobby" }) as { removed: boolean; ambiguous?: boolean; candidates?: string[] };
+    expect(out.removed).toBe(false);
+    expect(out.ambiguous).toBe(true);
+    expect(removed).toHaveLength(0);
+  });
+
+  it("an unknown / empty name removes nothing", async () => {
+    const { removed, tool } = removeTool();
+    expect(await tool.execute({ name: "Carol" })).toMatchObject({ removed: false });
+    expect(await tool.execute({ name: " " })).toMatchObject({ removed: false });
+    expect(removed).toHaveLength(0);
   });
 });

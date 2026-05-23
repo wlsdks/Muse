@@ -113,3 +113,44 @@ export function createContactsAddTool(deps: ContactsAddToolDeps): MuseTool {
     }
   };
 }
+
+export interface ContactsRemoveToolDeps {
+  readonly contacts: () => Promise<readonly Contact[]> | readonly Contact[];
+  readonly remove: (id: string) => Promise<boolean>;
+}
+
+export function createContactsRemoveTool(deps: ContactsRemoveToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "Remove a person from the user's contacts by name or alias. Use when the user asks to delete / forget a contact. An ambiguous name returns the candidate names (never removes a guess); an unknown name returns removed:false. A local store write.",
+      domain: "messaging",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          name: { description: "Contact name or alias to remove, e.g. 'Bob' or 'Jane Doe'.", type: "string" }
+        },
+        required: ["name"],
+        type: "object"
+      },
+      keywords: ["contact", "remove", "delete", "forget", "person"],
+      name: "remove_contact",
+      risk: "write"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const name = typeof args["name"] === "string" ? args["name"].trim() : "";
+      if (name.length === 0) {
+        return { removed: false, reason: "name is required" };
+      }
+      const resolution = resolveContact(await Promise.resolve(deps.contacts()), name);
+      if (resolution.status === "ambiguous") {
+        return { ambiguous: true, candidates: resolution.matches.map((m) => m.name), removed: false };
+      }
+      if (resolution.status !== "resolved") {
+        return { removed: false };
+      }
+      const ok = await deps.remove(resolution.contact.id);
+      return ok ? { name: resolution.contact.name, removed: true } : { removed: false };
+    }
+  };
+}

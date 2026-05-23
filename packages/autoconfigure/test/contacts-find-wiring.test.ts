@@ -14,4 +14,10 @@ describe("createMuseRuntimeAssembly — find_contact reachability", () => {
     expect(tool).toBeDefined();
     expect(tool!.definition.risk).toBe("write");
   });
+
+  it("exposes the `remove_contact` write tool over the local store", () => {
+    const tool = createMuseRuntimeAssembly({ env: {} }).toolRegistry.get("remove_contact");
+    expect(tool).toBeDefined();
+    expect(tool!.definition.risk).toBe("write");
+  });
 });

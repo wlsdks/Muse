@@ -457,8 +457,10 @@ export {
 export {
   createContactsAddTool,
   createContactsFindTool,
+  createContactsRemoveTool,
   type ContactsAddToolDeps,
-  type ContactsFindToolDeps
+  type ContactsFindToolDeps,
+  type ContactsRemoveToolDeps
 } from "./contacts-tool.js";
 export {
   addContact,
