@@ -99,6 +99,9 @@ export function MuseChatApp(props: {
   const [exiting, setExiting] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [activeAgent, setActiveAgent] = useState<AgentDef | undefined>(undefined);
+  const [ctrlCArmed, setCtrlCArmed] = useState(false);
+  const [histPos, setHistPos] = useState(-1);
+  const inputHistoryRef = useRef<string[]>([]);
   const historyRef = useRef<ChatTurnMessage[]>([...props.history]);
 
   // Clean teardown: re-render once with the cursor released and the input
@@ -227,8 +230,20 @@ export function MuseChatApp(props: {
   const slashSel = slashMenu.length > 0 ? Math.min(slashIndex, slashMenu.length - 1) : 0;
 
   useInput((rawInput: string, key: InkKeyEvent) => {
+    // Ctrl-C: two presses to quit (even mid-stream). First press clears the
+    // line and arms; the next quits. Detect both legacy (\x03) and the kitty
+    // protocol form. exitOnCtrlC is off so Ink doesn't pre-empt this.
+    const isCtrlC = key.ctrl && (rawInput === "c" || rawInput === "");
+    if (isCtrlC) {
+      if (ctrlCArmed || exiting) { setExiting(true); return; }
+      setCtrlCArmed(true);
+      setInputState(emptyInput);
+      setSlashIndex(0);
+      return;
+    }
     if (busy || exiting) return;
-    if (key.ctrl && rawInput === "c") { setExiting(true); return; }
+    if (ctrlCArmed) setCtrlCArmed(false); // any other key disarms
+
     // When the slash menu is open, ↑/↓ move the selection and Tab completes
     // the highlighted command instead of editing text.
     if (slashMenu.length > 0) {
@@ -241,9 +256,27 @@ export function MuseChatApp(props: {
         return;
       }
     }
+    // ↑/↓ recall previous inputs (single-line only — multiline uses them to
+    // move the cursor, handled by reduceInput below).
+    if ((key.upArrow || key.downArrow) && !inputState.value.includes("\n") && inputHistoryRef.current.length > 0) {
+      const hist = inputHistoryRef.current;
+      const next = key.upArrow ? Math.min(histPos + 1, hist.length - 1) : histPos - 1;
+      if (next < 0) {
+        setHistPos(-1);
+        setInputState(emptyInput);
+      } else {
+        const recalled = hist[hist.length - 1 - next] ?? "";
+        setHistPos(next);
+        setInputState({ cursor: [...recalled].length, value: recalled });
+      }
+      return;
+    }
+
     const result = reduceInput(inputState, rawInput, key);
     if (result.submit) {
       const value = inputState.value;
+      if (value.trim().length > 0) inputHistoryRef.current.push(value);
+      setHistPos(-1);
       setInputState(emptyInput);
       setSlashIndex(0);
       void submit(value);
@@ -310,7 +343,7 @@ export function MuseChatApp(props: {
           : h(Text, null, ln)))),
     // Slash-command menu: ↑/↓ select, Tab completes, Enter runs.
     slashMenu.length > 0
-      ? h(Box, { flexDirection: "column", paddingLeft: 2 },
+      ? h(Box, { flexDirection: "column", marginTop: 1, paddingLeft: 2 },
           ...slashMenu.map((command, i) => {
             const on = i === slashSel;
             return h(Box, { key: command.cmd },
@@ -319,7 +352,11 @@ export function MuseChatApp(props: {
           }),
           h(Text, { dimColor: true }, "  ↑↓ 선택 · Tab 자동완성 · ⏎ 실행"))
       : null,
-    h(Text, { dimColor: true }, "⏎ 전송 · shift+⏎ 줄바꿈 · /help · ctrl-c 종료"),
+    // Breathing room above the hint, plus the two-press ctrl-c affordance.
+    h(Box, { marginTop: 1 },
+      ctrlCArmed
+        ? h(Text, { color: "yellow" }, "한 번 더 ctrl-c 를 누르면 종료돼요")
+        : h(Text, { dimColor: true }, "⏎ 전송 · shift+⏎ 줄바꿈 · /help · ctrl-c×2 종료")),
     // HUD: persistent status — model, proactive (speaks-first) mode, skills.
     h(Box, null,
       h(Text, { color: "magenta" }, "♪ "),
@@ -429,6 +466,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     skillsPrompt,
     stream
   }), {
+    exitOnCtrlC: false,
     kittyKeyboard: { flags: ["disambiguateEscapeCodes"], mode: "enabled" }
   });
   await instance.waitUntilExit();
