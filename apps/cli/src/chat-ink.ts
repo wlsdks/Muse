@@ -11,13 +11,14 @@
 
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { Box, Static, Text, render, useApp, useCursor, useInput } from "ink";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { appendLastChatTurn, readLastChatHistory } from "./chat-history.js";
 import {
   buildTurnMessages,
   cursorCoords,
   emptyInput,
+  matchSlashCommands,
   parseSlashCommand,
   reduceInput,
   type ChatTurnMessage,
@@ -30,6 +31,12 @@ import { resolvePersona } from "./program-helpers.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 
 const h = React.createElement;
+
+const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[] = [
+  { cmd: "help", desc: "명령어 도움말 보기" },
+  { cmd: "clear", desc: "대화 화면 지우기" },
+  { cmd: "exit", desc: "Muse 종료 (ctrl-c)" }
+];
 
 // Box geometry: left border (1) + paddingX (1) + the "› " prompt (2).
 // The input text — and therefore the cursor — starts at this column.
@@ -60,7 +67,15 @@ export function MuseChatApp(props: {
   const [inputState, setInputState] = useState<InputState>(emptyInput);
   const [streaming, setStreaming] = useState("");
   const [busy, setBusy] = useState(false);
+  const [exiting, setExiting] = useState(false);
   const historyRef = useRef<ChatTurnMessage[]>([...props.history]);
+
+  // Clean teardown: re-render once with the cursor released and the input
+  // box removed (so Ink's final frame leaves the cursor at the bottom and
+  // no stray `› ` lingers under the shell prompt), THEN exit.
+  useEffect(() => {
+    if (exiting) app.exit();
+  }, [exiting, app]);
 
   const submit = useCallback(async (raw: string) => {
     const message = raw.trim();
@@ -68,7 +83,7 @@ export function MuseChatApp(props: {
 
     const slash = parseSlashCommand(message);
     if (slash) {
-      if (slash.cmd === "exit" || slash.cmd === "quit") { app.exit(); return; }
+      if (slash.cmd === "exit" || slash.cmd === "quit") { setExiting(true); return; }
       if (slash.cmd === "clear") { setTurns([]); return; }
       if (slash.cmd === "help") {
         setTurns((prev) => [...prev, { role: "system", text: "commands: /help · /clear · /exit (ctrl-c). 그냥 입력하면 대화합니다." }]);
@@ -106,8 +121,8 @@ export function MuseChatApp(props: {
   }, [app, props]);
 
   useInput((rawInput: string, key: InkKeyEvent) => {
-    if (busy) return;
-    if (key.ctrl && rawInput === "c") { app.exit(); return; }
+    if (busy || exiting) return;
+    if (key.ctrl && rawInput === "c") { setExiting(true); return; }
     const result = reduceInput(inputState, rawInput, key);
     if (result.submit) {
       const value = inputState.value;
@@ -125,28 +140,38 @@ export function MuseChatApp(props: {
   // post-commit useEffect would lag a frame and reset the cursor. Idle: the
   // box is the first dynamic block, input row at y=1. Busy: hide it.
   const caret = cursorCoords(inputState);
-  setCursorPosition(busy ? undefined : { x: INPUT_COL_OFFSET + caret.col, y: 1 + caret.line });
+  setCursorPosition(busy || exiting ? undefined : { x: INPUT_COL_OFFSET + caret.col, y: 1 + caret.line });
+
+  const transcript = h(Static, {
+    children: (item: unknown, index: number) => {
+      if (index === 0) return h(Text, { key: "banner" }, props.banner);
+      const turn = item as DisplayTurn;
+      if (turn.role === "user") {
+        // The user's message stays as a snapshot — the same `› ` prompt
+        // they typed it into (codex / claude style), not a "you:" label.
+        return h(Box, { key: index, marginBottom: 1, marginTop: 1 },
+          h(Text, { color: "cyan" }, "› "),
+          h(Text, { color: "cyan" }, turn.text));
+      }
+      // Assistant + system answers sit indented from the left wall.
+      return h(Box, { key: index, marginBottom: 1, paddingLeft: 2 },
+        h(Text, { dimColor: turn.role === "system" }, turn.text));
+    },
+    items: [props.banner, ...turns]
+  });
+
+  // Teardown frame: leave only the transcript so the input box and its
+  // in-box cursor don't collide with the shell prompt after exit.
+  if (exiting) {
+    return h(Box, { flexDirection: "column" }, transcript);
+  }
 
   const placeholder = "무엇이든 물어보세요";
   const lines = inputState.value.length > 0 ? inputState.value.split("\n") : [""];
+  const slashMatches = matchSlashCommands(inputState.value, SLASH_COMMANDS);
+
   return h(Box, { flexDirection: "column" },
-    h(Static, {
-      children: (item: unknown, index: number) => {
-        if (index === 0) return h(Text, { key: "banner" }, props.banner);
-        const turn = item as DisplayTurn;
-        if (turn.role === "user") {
-          // The user's message stays as a snapshot — the same `› ` prompt
-          // they typed it into (codex / claude style), not a "you:" label.
-          return h(Box, { key: index, marginBottom: 1, marginTop: 1 },
-            h(Text, { color: "cyan" }, "› "),
-            h(Text, { color: "cyan" }, turn.text));
-        }
-        // Assistant + system answers sit indented from the left wall.
-        return h(Box, { key: index, marginBottom: 1, paddingLeft: 2 },
-          h(Text, { dimColor: turn.role === "system" }, turn.text));
-      },
-      items: [props.banner, ...turns]
-    }),
+    transcript,
     // While replying, show the streaming answer ABOVE the box, indented.
     busy
       ? h(Box, { marginBottom: 1, paddingLeft: 2 },
@@ -160,6 +185,13 @@ export function MuseChatApp(props: {
         inputState.value.length === 0
           ? h(Text, { dimColor: true }, placeholder)
           : h(Text, null, ln)))),
+    // Slash-command menu: typing `/` lists the matching commands.
+    slashMatches.length > 0
+      ? h(Box, { flexDirection: "column", paddingLeft: 2 },
+          ...slashMatches.map((command) => h(Box, { key: command.cmd },
+            h(Text, { color: "cyan" }, `/${command.cmd}`),
+            h(Text, { dimColor: true }, `  — ${command.desc}`))))
+      : null,
     h(Text, { dimColor: true }, "⏎ 전송 · shift+⏎ 줄바꿈 · /help · ctrl-c 종료")
   );
 }

@@ -5,6 +5,7 @@ import {
   cursorCoords,
   displayWidth,
   emptyInput,
+  matchSlashCommands,
   parseSlashCommand,
   reduceInput,
   type InputState
@@ -72,6 +73,19 @@ describe("buildTurnMessages", () => {
     const out = buildTurnMessages("sys", [{ content: "hi", role: "user" }], "q");
     expect(out[0]).toEqual({ content: "sys", role: "system" });
     expect(out[out.length - 1]).toEqual({ content: "q", role: "user" });
+  });
+});
+
+describe("matchSlashCommands", () => {
+  const cmds = [{ cmd: "help", desc: "h" }, { cmd: "clear", desc: "c" }, { cmd: "exit", desc: "e" }];
+  it("returns nothing for non-slash input", () => {
+    expect(matchSlashCommands("hello", cmds)).toEqual([]);
+  });
+  it("lists all on a bare slash and narrows by prefix", () => {
+    expect(matchSlashCommands("/", cmds)).toHaveLength(3);
+    expect(matchSlashCommands("/cl", cmds).map((c) => c.cmd)).toEqual(["clear"]);
+    expect(matchSlashCommands("/e", cmds).map((c) => c.cmd)).toEqual(["exit"]);
+    expect(matchSlashCommands("/zzz", cmds)).toEqual([]);
   });
 });
 

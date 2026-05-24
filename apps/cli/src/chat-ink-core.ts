@@ -213,6 +213,22 @@ export function buildTurnMessages(
   ];
 }
 
+export interface SlashCommand {
+  readonly cmd: string;
+  readonly desc: string;
+}
+
+/**
+ * Slash commands whose name matches what the user has typed so far.
+ * Empty unless the input begins with `/`; `/` alone lists everything,
+ * `/cl` narrows to `clear`, etc. Drives the autocomplete menu.
+ */
+export function matchSlashCommands(value: string, commands: readonly SlashCommand[]): readonly SlashCommand[] {
+  if (!value.startsWith("/")) return [];
+  const query = (value.slice(1).toLowerCase().split(/\s+/u)[0] ?? "");
+  return commands.filter((command) => command.cmd.startsWith(query));
+}
+
 export interface ParsedSlash {
   readonly cmd: string;
   readonly arg: string;
