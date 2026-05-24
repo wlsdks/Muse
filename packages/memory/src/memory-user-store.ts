@@ -88,6 +88,17 @@ export class InMemoryUserMemoryStore implements UserMemoryStore {
     return this.memories.delete(userId);
   }
 
+  forget(userId: string, key: string): boolean {
+    const existing = this.memories.get(userId);
+    if (!existing || (!(key in existing.facts) && !(key in existing.preferences))) {
+      return false;
+    }
+    const { [key]: _f, ...facts } = existing.facts;
+    const { [key]: _p, ...preferences } = existing.preferences;
+    this.memories.set(userId, { ...existing, facts, preferences, updatedAt: new Date() });
+    return true;
+  }
+
   /**
    * typed-slot upsert. Replace-by-id semantics within
    * the slot's `kind` — a new preference with the same `id` overwrites

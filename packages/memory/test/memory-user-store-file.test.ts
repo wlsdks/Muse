@@ -30,6 +30,23 @@ describe("FileUserMemoryStore", () => {
     expect(memory?.recentTopics).toEqual([]);
   });
 
+  it("forget removes one fact/preference key, leaves the rest, and reports whether it hit", async () => {
+    const { file, store } = await newStore();
+    await store.upsertFact("stark", "name", "Stark");
+    await store.upsertFact("stark", "city", "Seoul");
+    await store.upsertPreference("stark", "night_owl", "true");
+
+    expect(await store.forget("stark", "city")).toBe(true);
+    expect(await store.forget("stark", "night_owl")).toBe(true);
+    expect(await store.forget("stark", "missing")).toBe(false);
+    expect(await store.forget("nobody", "name")).toBe(false);
+
+    const reread = new FileUserMemoryStore({ file });
+    const memory = await reread.findByUserId("stark");
+    expect(memory?.facts).toEqual({ name: "Stark" });
+    expect(memory?.preferences).toEqual({});
+  });
+
   it("multi-user isolation — facts for one userId don't leak to another", async () => {
     const { store } = await newStore();
     await store.upsertFact("stark", "name", "Stark");

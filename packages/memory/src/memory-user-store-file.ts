@@ -118,6 +118,19 @@ export class FileUserMemoryStore implements UserMemoryStore {
   // The file store only owns the legacy facts + preferences shape,
   // which is enough for the JARVIS daily-driver path.
 
+  async forget(userId: string, key: string): Promise<boolean> {
+    const existing = await this.findByUserId(userId);
+    if (!existing || (!(key in existing.facts) && !(key in existing.preferences))) {
+      return false;
+    }
+    await this.patch(userId, (current) => {
+      const { [key]: _f, ...facts } = current.facts;
+      const { [key]: _p, ...preferences } = current.preferences;
+      return { ...current, facts, preferences };
+    });
+    return true;
+  }
+
   async deleteByUserId(userId: string): Promise<boolean> {
     return this.serializeWrite(async () => {
       const data = await this.read();

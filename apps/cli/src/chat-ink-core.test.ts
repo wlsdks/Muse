@@ -8,7 +8,9 @@ import {
   emptyInput,
   extractAttachmentPaths,
   friendlyError,
+  buildRecap,
   chatToolApprovalGate,
+  formatMemoryView,
   matchAgentNames,
   matchModelNames,
   parseInlineSpans,
@@ -224,5 +226,39 @@ describe("chatToolApprovalGate", () => {
       "outbound|email_send|to: a@b.c · subject: Hi",
       "tool|tasks_add|title: Buy milk"
     ]);
+  });
+});
+
+describe("formatMemoryView", () => {
+  it("renders facts, preferences, and topics; offers /forget", () => {
+    const out = formatMemoryView({
+      facts: { name: "Stark", city: "Seoul" },
+      preferences: { reply_style: "concise" },
+      recentTopics: ["approval gate", "IME"]
+    });
+    expect(out).toContain("What I remember about you:");
+    expect(out).toContain("    name: Stark");
+    expect(out).toContain("    reply_style: concise");
+    expect(out).toContain("Recent topics: approval gate, IME");
+    expect(out).toContain("/forget");
+  });
+  it("gives an empty-state line when nothing is stored", () => {
+    expect(formatMemoryView(undefined)).toMatch(/haven't remembered anything/);
+    expect(formatMemoryView({ facts: {}, preferences: {}, recentTopics: [] })).toMatch(/haven't remembered/);
+  });
+});
+
+describe("buildRecap", () => {
+  it("composes episode summary with open-commitment counts", () => {
+    expect(buildRecap({ lastEpisode: "Shipped the approval gate", pendingTasks: 2, pendingFollowups: 1 }))
+      .toBe("Where we left off: Shipped the approval gate · 2 tasks, 1 follow-up waiting");
+    expect(buildRecap({ pendingTasks: 1 })).toBe("Where we left off: 1 task waiting");
+  });
+  it("returns empty string for a brand-new relationship", () => {
+    expect(buildRecap({})).toBe("");
+    expect(buildRecap({ pendingTasks: 0, pendingFollowups: 0 })).toBe("");
+  });
+  it("clips a very long episode summary", () => {
+    expect(buildRecap({ lastEpisode: "x".repeat(200) })).toMatch(/^Where we left off: x{80}…$/u);
   });
 });

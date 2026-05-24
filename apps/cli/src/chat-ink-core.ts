@@ -421,3 +421,56 @@ export function chatToolApprovalGate(
     return { allowed: false, reason: `user declined the ${kind === "outbound" ? "outbound action" : "tool call"}` };
   };
 }
+
+export interface MemorySnapshot {
+  readonly facts: Readonly<Record<string, string>>;
+  readonly preferences: Readonly<Record<string, string>>;
+  readonly recentTopics: readonly string[];
+}
+
+/**
+ * Render `/memory` — what Muse remembers about the user — as indented
+ * lines. Returns an empty-state line when nothing is stored yet so the
+ * command always answers. UI strings are English (open-source surface).
+ */
+export function formatMemoryView(memory: MemorySnapshot | undefined): string {
+  const factKeys = memory ? Object.keys(memory.facts) : [];
+  const prefKeys = memory ? Object.keys(memory.preferences) : [];
+  const topics = memory?.recentTopics ?? [];
+  if (factKeys.length === 0 && prefKeys.length === 0 && topics.length === 0) {
+    return "I haven't remembered anything about you yet.";
+  }
+  const lines: string[] = ["What I remember about you:"];
+  if (factKeys.length > 0) {
+    lines.push("  Facts:");
+    for (const key of factKeys) lines.push(`    ${key}: ${memory!.facts[key]}`);
+  }
+  if (prefKeys.length > 0) {
+    lines.push("  Preferences:");
+    for (const key of prefKeys) lines.push(`    ${key}: ${memory!.preferences[key]}`);
+  }
+  if (topics.length > 0) lines.push(`  Recent topics: ${topics.join(", ")}`);
+  lines.push("Type /forget <key> to drop one.");
+  return lines.join("\n");
+}
+
+/**
+ * The one-line "where we left off" recap shown when a continuous session
+ * resumes. Composes the most recent episode summary with the count of
+ * still-open commitments. Returns `""` when there is nothing to recap so
+ * the caller renders no line (a brand-new relationship stays clean).
+ */
+export function buildRecap(input: {
+  readonly lastEpisode?: string;
+  readonly pendingTasks?: number;
+  readonly pendingFollowups?: number;
+}): string {
+  const parts: string[] = [];
+  const summary = input.lastEpisode?.replace(/\s+/gu, " ").trim();
+  if (summary) parts.push(summary.length > 80 ? `${summary.slice(0, 80)}…` : summary);
+  const open: string[] = [];
+  if ((input.pendingTasks ?? 0) > 0) open.push(`${input.pendingTasks} task${input.pendingTasks === 1 ? "" : "s"}`);
+  if ((input.pendingFollowups ?? 0) > 0) open.push(`${input.pendingFollowups} follow-up${input.pendingFollowups === 1 ? "" : "s"}`);
+  if (open.length > 0) parts.push(`${open.join(", ")} waiting`);
+  return parts.length > 0 ? `Where we left off: ${parts.join(" · ")}` : "";
+}

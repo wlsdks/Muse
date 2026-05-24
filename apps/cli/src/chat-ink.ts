@@ -9,7 +9,8 @@
  * Render-free logic lives in `chat-ink-core.ts` and is unit-tested.
  */
 
-import { createMuseRuntimeAssembly, resolveFollowupsFile, resolveRemindersFile } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveEpisodesFile, resolveFollowupsFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { readEpisodes, readFollowups, readTasks } from "@muse/mcp";
 import { loadSkillsFromDirectory, type Skill } from "@muse/skills";
 import { Box, Static, Text, render, useApp, useCursor, useInput } from "ink";
 import { spawn } from "node:child_process";
@@ -20,12 +21,14 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { appendLastChatTurn, clearLastChatHistory, readLastChatHistory } from "./chat-history.js";
 import {
+  buildRecap,
   buildTurnMessages,
   chatHelp,
   chatToolApprovalGate,
   cursorCoords,
   emptyInput,
   extractAttachmentPaths,
+  formatMemoryView,
   friendlyError,
   matchAgentNames,
   matchModelNames,
@@ -36,7 +39,8 @@ import {
   reduceInput,
   type ChatTurnMessage,
   type InkKeyEvent,
-  type InputState
+  type InputState,
+  type MemorySnapshot
 } from "./chat-ink-core.js";
 import { renderMuseBanner } from "./muse-banner.js";
 import { loadAgents, resolveAgentsDir, type AgentDef } from "./commands-agents.js";
@@ -56,16 +60,18 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "agents", desc: "list defined agents" },
   { cmd: "agent", desc: "switch agent — /agent <name> (default to clear)" },
   { cmd: "skills", desc: "list installed skills + how to add" },
-  { cmd: "tools", desc: "toggle tools (read + local writes; outbound stays off)" },
+  { cmd: "tools", desc: "toggle tools (reads run; writes/actions ask first)" },
+  { cmd: "memory", desc: "show what Muse remembers about you" },
+  { cmd: "forget", desc: "forget one thing — /forget <key>" },
   { cmd: "save", desc: "save the last reply to a note file" },
   { cmd: "copy", desc: "copy the last reply to the clipboard" },
   { cmd: "cost", desc: "show this session's token usage" },
   { cmd: "exit", desc: "quit Muse (ctrl-c)" }
 ];
 
-// Third-party-outbound actuators stay blocked in chat until an in-chat
-// approval UX exists — outbound-safety: never an autonomous send. Read tools
-// and local writes (notes/tasks/calendar) are allowed when tools are on.
+// Third-party-outbound actuators: in chat these reach the fail-closed
+// approval gate, which flags them louder ("Outbound action") and never sends
+// without the user's explicit y — outbound-safety: never an autonomous send.
 const OUTBOUND_ACTUATORS: readonly string[] = [
   "email_send", "web_action", "home_action", "smart_home", "muse.messaging.send", "objective.act"
 ];
@@ -140,10 +146,15 @@ export function MuseChatApp(props: {
   readonly onCommit: (user: string, assistant: string) => void;
   readonly onReset: () => void;
   readonly proactiveCheck?: () => Promise<readonly ProactiveItem[]>;
+  readonly memorySnapshot: () => Promise<MemorySnapshot | undefined>;
+  readonly forgetMemory: (key: string) => Promise<boolean>;
+  readonly recap: string;
 }): React.ReactElement {
   const app = useApp();
   const { setCursorPosition } = useCursor();
-  const [turns, setTurns] = useState<readonly DisplayTurn[]>([]);
+  const [turns, setTurns] = useState<readonly DisplayTurn[]>(
+    props.recap ? [{ role: "system", text: props.recap }] : []
+  );
   const [inputState, setInputState] = useState<InputState>(emptyInput);
   const [streaming, setStreaming] = useState("");
   const [busy, setBusy] = useState(false);
@@ -297,6 +308,17 @@ export function MuseChatApp(props: {
         note(sessionTokens > 0 ? `This session: ${formatTokens(sessionTokens)} tokens (local model = $0).` : "No tokens used yet this session.");
         return;
       }
+      if (slash.cmd === "memory") {
+        note(formatMemoryView(await props.memorySnapshot()));
+        return;
+      }
+      if (slash.cmd === "forget") {
+        const key = slash.arg.trim();
+        if (key.length === 0) { note("Tell me what to forget — /forget <key> (see /memory for the keys)."); return; }
+        const ok = await props.forgetMemory(key);
+        note(ok ? `✓ Forgot "${key}".` : `Nothing remembered under "${key}" — check /memory for the exact key.`);
+        return;
+      }
       if (slash.cmd === "help") {
         note(chatHelp(slash.arg, SLASH_COMMANDS.map((c) => c.cmd)));
         return;
@@ -378,7 +400,7 @@ export function MuseChatApp(props: {
     // Ctrl-C: two presses to quit (even mid-stream). First press clears the
     // line and arms; the next quits. Detect both legacy (\x03) and the kitty
     // protocol form. exitOnCtrlC is off so Ink doesn't pre-empt this.
-    const isCtrlC = key.ctrl && (rawInput === "c" || rawInput === "");
+    const isCtrlC = key.ctrl && (rawInput === "c" || rawInput === "\x03");
     if (isCtrlC) {
       if (ctrlCArmed || exiting) { setExiting(true); return; }
       setCtrlCArmed(true);
@@ -692,6 +714,36 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     void clearLastChatHistory().catch(() => undefined);
   };
 
+  // Memory transparency/control surfaced inside the chat: /memory reads what
+  // Muse knows, /forget drops one key. Re-read on each call so /forget's effect
+  // shows immediately.
+  const memorySnapshot = async (): Promise<MemorySnapshot | undefined> => {
+    if (!memoryStore) return undefined;
+    const m = await Promise.resolve(memoryStore.findByUserId(userId));
+    return m ? { facts: m.facts, preferences: m.preferences, recentTopics: m.recentTopics } : undefined;
+  };
+  const forgetMemory = async (key: string): Promise<boolean> =>
+    memoryStore?.forget ? Promise.resolve(memoryStore.forget(userId, key)) : false;
+
+  // Launch recap — "where we left off": the most recent episode summary plus
+  // open-commitment counts. Only when resuming a continuous session; fail-soft
+  // to no recap if any store is missing/unreadable.
+  const recap = continueHistory
+    ? await (async (): Promise<string> => {
+        const [episodes, tasks, followups] = await Promise.all([
+          readEpisodes(resolveEpisodesFile(process.env)).catch(() => []),
+          readTasks(resolveTasksFile(process.env)).catch(() => []),
+          readFollowups(resolveFollowupsFile(process.env)).catch(() => [])
+        ]);
+        const latest = [...episodes].sort((a, b) => a.endedAt.localeCompare(b.endedAt)).at(-1);
+        return buildRecap({
+          ...(latest ? { lastEpisode: latest.summary } : {}),
+          pendingTasks: tasks.filter((t) => t.status === "open").length,
+          pendingFollowups: followups.filter((f) => f.status === "scheduled").length
+        });
+      })().catch(() => "")
+    : "";
+
   // Skills: each is a `~/.muse/skills/<name>/SKILL.md` (claude-style). Their
   // instructions are injected into the system prompt so the local model can
   // follow the relevant one. Add a skill = drop a folder there.
@@ -752,7 +804,10 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     skillsDir,
     skillsPrompt,
     stream,
-    streamWithTools
+    streamWithTools,
+    memorySnapshot,
+    forgetMemory,
+    recap
   }), {
     exitOnCtrlC: false,
     kittyKeyboard: { flags: ["disambiguateEscapeCodes"], mode: "enabled" }

@@ -23,7 +23,7 @@ export default tseslint.config(
       "**/.muse/**",
       "**/playwright-report/**",
       "**/test-results/**",
-      "scripts/**",
+      "**/scripts/**",
       "apps/web/**"
     ]
   },

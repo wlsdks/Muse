@@ -301,6 +301,16 @@ export interface UserMemoryStore {
   upsertPreference(userId: string, key: string, value: string): Awaitable<UserMemory>;
   deleteByUserId(userId: string): Awaitable<boolean>;
   /**
+   * Remove a single remembered key from `facts` and/or `preferences`
+   * (whichever holds it), leaving the rest of the user's memory intact.
+   * Returns whether anything was removed. Optional: stores that don't
+   * implement it (e.g. legacy Kysely) signal "forget unsupported" by
+   * leaving it undefined, and callers feature-detect — same pattern as
+   * `upsertUserModelSlot`. This backs the in-chat `/forget` control so a
+   * personal assistant can be told to drop one thing without wiping all.
+   */
+  forget?(userId: string, key: string): Awaitable<boolean>;
+  /**
    * Optional typed-slot upsert. When the store implements it, callers
    * can write structured `UserModel` slots; replace-by-id semantics
    * (slot.id is the key within the slot's `kind`). Stores that return
