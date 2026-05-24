@@ -35,9 +35,9 @@ function envValue(key: string): string | undefined {
 }
 
 /**
- * Goal 103 — extend the goal-097 persona precedence to `muse memory`.
- * The on-disk store keys multi-persona slots as `<user>@<persona>`
- * (see chat-repl.ts header); without honouring the slot here, a
+ * Extend the persona precedence to `muse memory`.
+ * The on-disk store keys multi-persona slots as `<user>@<persona>`;
+ * without honouring the slot here, a
  * user with `MUSE_PERSONA=work` couldn't `muse memory show` /
  * `set` against their work slot — the command silently read /
  * wrote the bare `<user>` record instead.
@@ -217,12 +217,11 @@ export function registerMemoryCommands(program: Command, io: ProgramIO, helpers:
 }
 
 /**
- * Goal 119 — accept singular / plural forms for both kinds and
+ * Accept singular / plural forms for both kinds and
  * surface a closest-match hint on typos. Previously a user typing
  * `muse memory set preferene name Stark` got a flat "kind must be
  * 'fact' or 'preference'" — no clue which of the four valid forms
- * they were closest to. Pairs with the goals 099 / 100 / 114 / 118
- * typo-suggestion line.
+ * they were closest to.
  */
 export const MEMORY_KIND_FORMS = ["fact", "facts", "preference", "preferences"] as const;
 
@@ -240,7 +239,7 @@ export function parseKindSegment(kind: string): "facts" | "preferences" {
 }
 
 /**
- * Goal 051 — shape of the diff returned by `computeMemoryDiff`.
+ * Shape of the diff returned by `computeMemoryDiff`.
  * Each slot kind (facts / preferences) gets three buckets so a
  * dashboard or commit-style message can render "added 2, changed
  * 1, removed 0" without re-walking the data.
@@ -263,7 +262,7 @@ interface MemorySnapshotLike {
 }
 
 /**
- * Goal 051 — pure diff over the two map-shaped memory slots. The
+ * Pure diff over the two map-shaped memory slots. The
  * caller is responsible for loading + parsing the JSON; this
  * function only takes plain objects so tests can drive it with
  * fixtures and the CLI can read from either a file or an API

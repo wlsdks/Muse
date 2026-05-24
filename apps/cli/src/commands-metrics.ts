@@ -1,7 +1,7 @@
 /**
  * `muse metrics show` — pretty-print the observability snapshot.
  *
- * Goal 077 — wraps `/api/admin/muse/snapshot` (already exposed
+ * Wraps `/api/admin/muse/snapshot` (already exposed
  * by the API server) and renders an at-a-glance view of the
  * SLO / drift / token-cost / budget counters that the runtime
  * tracks. JSON pass-through is available for jq pipelines.
@@ -40,7 +40,7 @@ export function registerMetricsCommands(program: Command, io: ProgramIO, helpers
 }
 
 /**
- * Goal 077 — pure formatter for the snapshot payload. Exported
+ * Pure formatter for the snapshot payload. Exported
  * so the unit test can drive it with a fixture instead of
  * standing up the API server. The renderer is intentionally
  * defensive: unknown / missing fields render as `(none)` rather

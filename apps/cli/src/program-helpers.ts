@@ -168,8 +168,8 @@ export async function apiRequest(
  * (a stray Next.js dev or another local app) instead of the Muse
  * API, in which case the upstream returns a multi-kilobyte HTML
  * 404 page. Dumping the raw HTML into the terminal hid the actual
- * problem. The Muse API itself defaults to port 3030 (was 3000
- * before goal 001 — moved to avoid the canonical Next.js port).
+ * problem. The Muse API itself defaults to port 3030 (moved off
+ * 3000 to avoid the canonical Next.js port).
  */
 export function formatApiErrorResponse(
   response: { readonly status: number; readonly statusText: string; readonly headers: { get(name: string): string | null } },
@@ -187,7 +187,7 @@ export function formatApiErrorResponse(
   const trimmed = body.trim();
   // The Muse API error envelope is a JSON object carrying a
   // human-readable `errorMessage` (already credential-scrubbed
-  // server-side, goal 145) plus an `errorCode`. Surfacing those
+  // server-side) plus an `errorCode`. Surfacing those
   // beats dumping `{"blockReason":null,"content":null,…}`
   // truncated mid-object into the user's terminal.
   const structured = extractApiErrorEnvelope(trimmed);

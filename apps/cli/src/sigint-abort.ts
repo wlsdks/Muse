@@ -1,5 +1,5 @@
 /**
- * Goal 067 — shared scaffold for Ctrl-C friendliness in long-
+ * Shared scaffold for Ctrl-C friendliness in long-
  * running CLI commands. Pattern:
  *
  *   await withSigintAbort(async (signal) => {

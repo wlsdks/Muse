@@ -1,7 +1,7 @@
 /**
  * `muse session` — focus / DND controls for the JARVIS daemons.
  *
- * Goal 052 — proactive notices are great, but only when the user
+ * Proactive notices are great, but only when the user
  * wants them. `muse session lock --hours N [--reason "deep work"]`
  * writes `~/.muse/session-lock.json` with a future `until`
  * timestamp; the proactive notice loop reads the marker on every
@@ -42,12 +42,7 @@ function defaultSessionLockFile(): string {
 }
 
 /**
- * Goal 052 — parse `--hours N` / `--minutes N` into a future
- * millisecond timestamp. The two args sum (so `--hours 1 --minutes 30`
- * = 90 minutes). Default 1 hour. Negative / non-finite → throws.
- */
-/**
- * Goal 141 — format a minute count the way a human reads a
+ * Format a minute count the way a human reads a
  * duration: `5m` → `"5 min"`, `60m` → `"1h"`, `90m` → `"1h 30m"`,
  * `0m` → `"<1 min"` (so a near-expired lock doesn't display as
  * `"0 min"`). Pure helper so the unit test pins every branch.
@@ -177,8 +172,8 @@ export function registerSessionCommands(program: Command, io: ProgramIO): void {
       const minsRemaining = Math.round(minsRemainingFloat);
       if (options.json) {
         // JSON shape unchanged for downstream consumers — humans
-        // get the goal-141 formatted string, scripts get the raw
-        // integer in minutesRemaining.
+        // get the formatted string, scripts get the raw integer in
+        // minutesRemaining.
         io.stdout(`${JSON.stringify({ active: true, file, minutesRemaining: minsRemaining, until }, null, 2)}\n`);
         return;
       }

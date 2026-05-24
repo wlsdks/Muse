@@ -83,7 +83,7 @@ export function registerTracesCommands(program: Command, io: ProgramIO, helpers:
 }
 
 /**
- * Goal 076 — parse `--interval <seconds>` into milliseconds.
+ * Parse `--interval <seconds>` into milliseconds.
  * Default 2s, clamped to [1, 60]. Exported for direct test
  * coverage of the boundary behavior.
  */
@@ -96,7 +96,7 @@ export function resolveTraceTailIntervalMs(raw: string | undefined): number {
 }
 
 /**
- * Goal 076 — parse `--limit <n>` for the per-tick fetch.
+ * Parse `--limit <n>` for the per-tick fetch.
  * Default 20, clamped to [1, 200]. Exported for tests.
  */
 export function resolveTraceTailLimit(raw: string | undefined): number {
@@ -107,7 +107,7 @@ export function resolveTraceTailLimit(raw: string | undefined): number {
 }
 
 /**
- * Goal 076 — coerce the `/api/admin/traces` payload into an
+ * Coerce the `/api/admin/traces` payload into an
  * array of trace events regardless of whether the server wraps
  * them under `{ events: [...] }` or returns the array directly.
  * Exported for test coverage.

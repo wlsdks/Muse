@@ -1,7 +1,7 @@
 /**
  * `muse glance` — frontmost app + window title + selected text.
  *
- * Goal 089 — first ambient-screen awareness for Muse. macOS-only
+ * First ambient-screen awareness for Muse. macOS-only
  * (mirrors `MacosNotificationProvider` posture). Pure
  * shell-out to `osascript`; the only failure mode is "user hasn't
  * granted Accessibility permission to the terminal", in which
@@ -27,7 +27,7 @@ export interface GlanceSnapshot {
 }
 
 /**
- * Goal 089 — turn osascript's newline-delimited output into a
+ * Turn osascript's newline-delimited output into a
  * `{ app, window, selected }` triple. Pure so the unit test can
  * pin every corner without touching the real shell.
  *

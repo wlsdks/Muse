@@ -57,17 +57,17 @@ interface AskOptions {
   readonly actuators?: boolean;
   readonly tiered?: boolean;
   /**
-   * Goal 047 — clamps the answer to notes + local-memory grounding
-   * only. Disables native web_search on every provider path and,
-   * when `--with-tools` is also set, allowlists the agent runtime
-   * to muse.notes / muse.notes-multi / muse.context only.
+   * Clamps the answer to notes + local-memory grounding only.
+   * Disables native web_search on every provider path and, when
+   * `--with-tools` is also set, allowlists the agent runtime to
+   * muse.notes / muse.notes-multi / muse.context only.
    */
   readonly notesOnly?: boolean;
 }
 
 /**
- * Goal 047 — the allowlist consumed via `metadata.allowedToolNames`
- * when `muse ask --notes-only` runs in `--with-tools` mode. Notes +
+ * The allowlist consumed via `metadata.allowedToolNames` when
+ * `muse ask --notes-only` runs in `--with-tools` mode. Notes +
  * notes-multi cover both inline and registry-aware paths; context
  * is the persona / memory accessor so the model can still reach
  * for "what did the user tell me about X". Web/fetch tools and
@@ -134,8 +134,7 @@ function defaultUserKey(user: string | undefined, persona: string | undefined): 
  * Absent flag → fallback. A genuine number is truncated and
  * clamped to [min, max]. A non-numeric / out-of-low-bound value
  * (unit slip like `5x`, `abc`, `0`) rejects with a clear
- * message instead of silently using the default — the
- * strict-numeric line (goals 143 / 144 / 155 / 177).
+ * message instead of silently using the default.
  */
 export function parseBoundedInt(
   raw: string | undefined,
@@ -167,9 +166,9 @@ export interface AskStreamResult {
 
 /**
  * Drain the chat-only fast-path model stream. A provider `error`
- * event (Ollama not running, model not pulled — goal 176's
- * actionable hint, a 5xx) must surface, not be silently dropped
- * while the command prints a blank answer and exits 0.
+ * event (Ollama not running, model not pulled with an actionable
+ * hint, a 5xx) must surface, not be silently dropped while the
+ * command prints a blank answer and exits 0.
  */
 export async function consumeAskStream(
   events: AsyncIterable<AskStreamEvent>,

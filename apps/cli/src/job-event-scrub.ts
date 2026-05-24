@@ -1,9 +1,9 @@
 /**
- * Goal 116 — credential hygiene for `~/.muse/jobs/<id>.jsonl`.
+ * Credential hygiene for `~/.muse/jobs/<id>.jsonl`.
  *
  * `muse job run` persists user `prompt` + LLM `text` verbatim to
  * a per-job JSONL log. Same long-lived-on-disk + replay-into-model
- * concern goal 108 closed for `~/.muse/last-chat.jsonl`. This
+ * concern as `~/.muse/last-chat.jsonl`. This
  * helper sits between the job worker and the file write so an
  * `sk-`/`ghp-`/etc. in either the user's prompt or the model's
  * output never reaches disk verbatim.

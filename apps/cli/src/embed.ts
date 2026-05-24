@@ -1,8 +1,8 @@
 /**
- * Goal 090 — shared embedding helper. Both `commands-notes-rag.ts`
- * and the new episode-index pipeline (goal 090) + cross-store
- * recall (goal 091) hit the same Ollama `/api/embeddings` endpoint
- * with the same body shape; one source of truth.
+ * Shared embedding helper. The notes-RAG path, the episode-index
+ * pipeline, and cross-store recall all hit the same Ollama
+ * `/api/embeddings` endpoint with the same body shape; one source
+ * of truth.
  *
  * No new dep — wraps Node's global `fetch`. `resolveOllamaUrl`
  * stays the single env-aware base-URL resolver.
@@ -22,8 +22,8 @@ export interface EmbedOptions {
    * load can wedge a request for minutes; without this every RAG
    * caller (`muse ask`, `muse notes reindex`, `muse recall`, the
    * episode-index pipeline) hangs the CLI indefinitely. Default 30s,
-   * same posture goal 636 set for the RSS feed loader. Non-finite
-   * / non-positive values fall back to the default.
+   * same posture as the RSS feed loader. Non-finite / non-positive
+   * values fall back to the default.
    */
   readonly timeoutMs?: number;
 }
@@ -71,7 +71,7 @@ export async function embed(text: string, model: string, options: EmbedOptions =
  * Pure cosine similarity over two equal-length number arrays.
  * Returns 0 on length mismatch / zero-norm vectors instead of
  * throwing so a callsite can rank a list without per-pair
- * exception handling. Exported so goal 091 reuses the same
+ * exception handling. Exported so recall reuses the same
  * implementation the notes-RAG path already trusts.
  */
 export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {

@@ -564,7 +564,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 }
 
 /**
- * Goal 099 — flatten the root program's `.commands` array into
+ * Flatten the root program's `.commands` array into
  * a deduped list of names (skips hidden / `*` placeholder
  * entries). Used by the unknown-subcommand fallback to ground
  * the "Did you mean …" suggestion.

@@ -1,5 +1,5 @@
 /**
- * Goal 150 — accept a unique prefix of a job id wherever the CLI
+ * Accept a unique prefix of a job id wherever the CLI
  * asks for one. Job ids look like
  * `job_2026-05-15T15-12-30_a1b2c3d4` — the 8-char UUID tail makes
  * full copy-paste from `muse job list` tedious; matching `git

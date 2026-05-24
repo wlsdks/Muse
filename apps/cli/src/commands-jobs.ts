@@ -36,7 +36,7 @@ import { firstNonEmpty, resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 
 /**
- * Goal 151 — accepted values for `muse job list --status`.
+ * Accepted values for `muse job list --status`.
  * Mirrors `jobSummary().status` plus `"all"` (the default,
  * meaning no filter). Kept as a readonly tuple so commander
  * + the fuzzy-suggest hint share a single source of truth.
@@ -45,7 +45,7 @@ export const JOB_STATUS_FILTER_VALUES = ["all", "running", "done", "error", "unk
 export type JobStatusFilter = (typeof JOB_STATUS_FILTER_VALUES)[number];
 
 /**
- * Goal 151 — case-insensitive validation. Returns `"all"` when
+ * Case-insensitive validation. Returns `"all"` when
  * the user omitted the flag, `"invalid"` when it's not a
  * known value (caller renders the typo hint), otherwise the
  * normalised filter to compare against `jobSummary().status`.
@@ -81,7 +81,7 @@ function jobPath(id: string): string {
 }
 
 /**
- * Goal 150 — list known job ids by reading the jobs dir.
+ * List known job ids by reading the jobs dir.
  * Returns [] when the dir doesn't exist yet (fresh install /
  * never ran `muse job run`).
  */
@@ -94,7 +94,7 @@ function listKnownJobIds(): readonly string[] {
 }
 
 /**
- * Goal 150 — resolve a user-supplied job id (full or unique prefix)
+ * Resolve a user-supplied job id (full or unique prefix)
  * to a concrete id, or render the right "not found / ambiguous"
  * error and set the exit code. Centralises the resolution UX so
  * `muse job status` and `muse job tail` behave identically.

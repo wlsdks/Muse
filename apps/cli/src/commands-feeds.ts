@@ -1,5 +1,5 @@
 /**
- * `muse feeds` — RSS / Atom ingest (goal 092).
+ * `muse feeds` — RSS / Atom ingest.
  *
  *   muse feeds add <url> [--id <alias>] [--name <name>]
  *   muse feeds list [--json]
@@ -36,7 +36,7 @@ import {
 import type { ProgramIO } from "./program.js";
 
 /**
- * Goal 092 — fetch the feed body. Supports `file://` so the
+ * Fetch the feed body. Supports `file://` so the
  * dogfood can plant a fixture and exercise the parser without
  * network. Exported for direct test coverage.
  */

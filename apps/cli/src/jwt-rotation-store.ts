@@ -1,5 +1,5 @@
 /**
- * Goal 082 — file-backed JWT secret rotation state.
+ * File-backed JWT secret rotation state.
  *
  * Shape of `~/.muse/auth-secrets.json`:
  *
@@ -136,7 +136,7 @@ export function rotateJwtState(args: {
 
 /**
  * Atomic write — tmp + rename + 0o600 mode chmod. Same pattern as
- * the other personal-store writers (goal 035).
+ * the other personal-store writers.
  */
 export async function writeJwtRotationState(file: string, state: JwtRotationState): Promise<void> {
   const payload = `${JSON.stringify(state, null, 2)}\n`;

@@ -35,13 +35,13 @@ import {
 import type { ProgramIO } from "./program.js";
 
 /**
- * Goal 125 — CLI-side strict validation for `muse tasks list
+ * CLI-side strict validation for `muse tasks list
  * --status <value>`. The shared `readTaskStatusFilter` is
  * deliberately lenient (it silently falls back to `"open"` so
  * the MCP tool tolerates an LLM that omits / mistypes the
  * field). On the CLI a typo is a real user error — surface it
- * with the same closest-match hint goals 099 / 100 / 118 / 119 /
- * 124 use elsewhere instead of pretending the filter worked.
+ * with the same closest-match hint used elsewhere instead of
+ * pretending the filter worked.
  */
 const TASK_STATUS_VALUES = ["open", "done", "all"] as const;
 

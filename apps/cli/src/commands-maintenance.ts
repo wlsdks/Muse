@@ -1,14 +1,13 @@
 /**
- * Goal 080 — `muse maintenance compact` rotates the archive
- * sidecars goal 079 produces (`proactive-history.json.1`,
- * `.2`, …) into `~/.muse/archive/<basename>.<n>.<iso>.json.gz`
- * so disk usage stays bounded over time without losing audit
- * data.
+ * `muse maintenance compact` rotates the rotated archive
+ * sidecars (`proactive-history.json.1`, `.2`, …) into
+ * `~/.muse/archive/<basename>.<n>.<iso>.json.gz` so disk usage
+ * stays bounded over time without losing audit data.
  *
  * Scope:
  *   - Walks the `~/.muse/` directory for `*.json.<n>` siblings
- *     of well-known stores (`proactive-history`, in 079;
- *     extensible by env).
+ *     of well-known stores (`proactive-history`; extensible by
+ *     env).
  *   - Optional `--keep-days N` filter — only files older than
  *     N days are compacted (default: compact every numbered
  *     archive, regardless of age).
@@ -32,11 +31,10 @@ import { activityPath } from "./commands-routine.js";
 import type { ProgramIO } from "./program.js";
 
 /**
- * Goal 080 — store basenames whose `<name>.json.<n>` rotations
- * the compaction sweep recognizes. Starts narrow (only the goal
- * 079 producer) so the sweep doesn't accidentally consume
- * unrelated files an operator dropped in `~/.muse/`. Future
- * goals that add rotating sidecars append here.
+ * Store basenames whose `<name>.json.<n>` rotations the compaction
+ * sweep recognizes. Starts narrow so the sweep doesn't accidentally
+ * consume unrelated files an operator dropped in `~/.muse/`. New
+ * rotating sidecars append here.
  *
  * Exported for direct test coverage.
  */

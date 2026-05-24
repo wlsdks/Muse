@@ -1,10 +1,10 @@
 /**
- * `muse actions` — review the reviewable autonomous-action log
- * (P6 accountability). The objectives daemon (goal 405) appends a
- * rationale-bearing entry for every autonomous action; P6-b1's
- * promise is that this is "queryable by the user" — this is that
- * read surface. Local mode over the shared `~/.muse/action-log.json`
- * the daemon writes, so no API server is required.
+ * `muse actions` — review the reviewable autonomous-action log.
+ * The objectives daemon appends a rationale-bearing entry for
+ * every autonomous action; this is the read surface that makes
+ * it queryable by the user. Local mode over the shared
+ * `~/.muse/action-log.json` the daemon writes, so no API server
+ * is required.
  */
 
 import { resolveActionLogFile } from "@muse/autoconfigure";

@@ -1,5 +1,5 @@
 /**
- * Goal 061 — tiny ANSI helper for the TTY-aware coloured output
+ * Tiny ANSI helper for the TTY-aware coloured output
  * on `muse today` and friends. Avoids a chalk / picocolors dep —
  * the surface we need is small (red / yellow / green / bold) and
  * a hand-rolled wrapper keeps the helper auditable.

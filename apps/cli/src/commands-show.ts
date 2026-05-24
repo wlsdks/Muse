@@ -1,6 +1,6 @@
 /**
  * `muse show <image>` — inline terminal image render via the
- * iTerm2 inline-image protocol (goal 096).
+ * iTerm2 inline-image protocol.
  *
  * Spec: https://iterm2.com/documentation-images.html
  * Honored by iTerm2, WezTerm, Tabby. The escape sequence is
@@ -27,11 +27,11 @@ interface ShowOptions {
 }
 
 /**
- * Goal 096 — detect inline-image support from the terminal env.
+ * Detect inline-image support from the terminal env.
  * Pure so the unit test pins each branch without process-env
  * mutation gymnastics.
  *
- * Goal 142 — recognise Ghostty (`TERM_PROGRAM=ghostty`) and the
+ * Recognise Ghostty (`TERM_PROGRAM=ghostty`) and the
  * VS Code integrated terminal (`TERM_PROGRAM=vscode`); both ship
  * the iTerm2 inline-image protocol natively (Ghostty since v1.0,
  * VS Code since 1.93). Without the recognition, `muse show`
@@ -57,7 +57,7 @@ export function detectInlineImageSupport(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
- * Goal 096 — build the iTerm2 inline-image escape sequence.
+ * Build the iTerm2 inline-image escape sequence.
  * Pure (bytes in, bytes out) so the test can pin the shape
  * without writing to stdout. Format:
  *

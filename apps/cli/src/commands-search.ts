@@ -23,11 +23,10 @@ import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
 /**
- * Goal 133 — accepted `--time` spellings, surfaced via
- * `normaliseTimeRange` in @muse/mcp. Kept here as a typed literal
- * so the CLI's typo-suggestion hint covers every form the
- * normaliser knows about (the user-friendly canonical + each
- * shortcut alias).
+ * Accepted `--time` spellings, surfaced via `normaliseTimeRange`
+ * in @muse/mcp. Kept here as a typed literal so the CLI's
+ * typo-suggestion hint covers every form the normaliser knows
+ * about (the user-friendly canonical + each shortcut alias).
  */
 const TIME_RANGE_FORMS = [
   "today", "day", "24h",
@@ -37,7 +36,7 @@ const TIME_RANGE_FORMS = [
 ] as const;
 
 // Re-exported so existing call-sites + tests that imported it from
-// here keep working. The canonical home is `@muse/shared` (goal 003).
+// here keep working. The canonical home is `@muse/shared`.
 export { stripUntrustedTerminalChars };
 
 interface SearchOptions {
@@ -48,10 +47,10 @@ interface SearchOptions {
   readonly toNotes?: string;
   readonly overwrite?: boolean;
   /**
-   * Goal 055 — date-range hint forwarded to the backend.
-   * Accepted: today | day | week | month | year. The MCP server
-   * normalises the value before passing it to SearXNG (`time_range=`)
-   * or DuckDuckGo (`df=`).
+   * Date-range hint forwarded to the backend. Accepted: today |
+   * day | week | month | year. The MCP server normalises the value
+   * before passing it to SearXNG (`time_range=`) or DuckDuckGo
+   * (`df=`).
    */
   readonly time?: string;
 }

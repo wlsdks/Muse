@@ -1,8 +1,8 @@
 /**
  * `muse import <tar> [--dry-run] [--force]` — restore a backup
- * produced by `muse export` (goal 048) into `~/.muse/`.
+ * produced by `muse export` into `~/.muse/`.
  *
- * Goal 049 — refuses to overwrite an existing file unless `--force`
+ * Refuses to overwrite an existing file unless `--force`
  * is set. `--dry-run` prints the plan without touching disk.
  *
  * Shells out to system `tar` (same dep posture as
@@ -25,7 +25,7 @@ interface ImportOptions {
   readonly force?: boolean;
   readonly dryRun?: boolean;
   /**
-   * Goal 081 — explicit decrypt mode. Even without the flag the
+   * Explicit decrypt mode. Even without the flag the
    * importer auto-detects an encrypted bundle by reading the
    * magic header, so the flag is opt-in only for the case where
    * the operator wants the prompt forced (e.g. a CI passphrase
@@ -35,7 +35,7 @@ interface ImportOptions {
 }
 
 /**
- * Goal 081 — when the importer detects an encrypted bundle (or
+ * When the importer detects an encrypted bundle (or
  * `--decrypt` is set), decrypt the bytes to a temp file and
  * return that path so the rest of the pipeline keeps working
  * unchanged. Caller is responsible for unlinking the temp.

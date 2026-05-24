@@ -2,7 +2,7 @@
  * `muse export [--output <path>]` — backup every ~/.muse JSON
  * store + the notes directory into a single timestamped tar.gz.
  *
- * Goal 048 — useful for laptop migration and "before the upgrade"
+ * Useful for laptop migration and "before the upgrade"
  * snapshots. The archive layout mirrors `~/.muse/` so restore is a
  * single `tar -xzf` into the new home. A `README.md` listed inside
  * the tarball names every captured file + the restore command.
@@ -25,7 +25,7 @@ interface ExportOptions {
   readonly output?: string;
   readonly include?: string;
   /**
-   * Goal 081 — wrap the bundle with AES-256-GCM. Passphrase comes
+   * Wrap the bundle with AES-256-GCM. Passphrase comes
    * from `MUSE_EXPORT_PASSPHRASE` env when set; the CLI falls
    * back to stdin (with an interactive prompt) otherwise. Output
    * filename gets `.enc` suffix when encrypted.
@@ -34,7 +34,7 @@ interface ExportOptions {
 }
 
 /**
- * Goal 048 — files we consider "user state". Path is relative to
+ * Files we consider "user state". Path is relative to
  * `~/.muse/`. The notes directory is handled separately because
  * it's a tree, not a single file.
  */
@@ -183,7 +183,7 @@ async function collectSources(museDir: string, notesDir: string): Promise<Collec
  * was bundled. Splitting it out keeps the registration thin and
  * the assertion surface narrow.
  *
- * Goal 081 — when `passphrase` is set, the tar is built to a temp
+ * When `passphrase` is set, the tar is built to a temp
  * path, then encrypted in one pass and written to `outputPath`.
  * The temp tarball is unlinked even if encryption throws so we
  * never leave a cleartext shadow next to the encrypted bundle.
@@ -278,7 +278,7 @@ export async function buildMuseExport(args: {
 }
 
 /**
- * Goal 081 — when `--encrypt` is set we need a passphrase. Prefer
+ * When `--encrypt` is set we need a passphrase. Prefer
  * the env so headless / CI flows work without a TTY; fall back to
  * an interactive `@clack/prompts` password input. Exported so the
  * test suite can patch `passphraseFromEnv` directly instead of

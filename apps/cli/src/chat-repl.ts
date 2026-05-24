@@ -182,7 +182,7 @@ export function parseAgentMode(value: string | undefined): AgentMode | undefined
 }
 
 /**
- * Episodic-memory step 4 — resolve the N most-recent prior-session
+ * Resolve the N most-recent prior-session
  * episodes for the given userId and shape them for the persona
  * block. Caller invokes once per REPL boot; the result feeds
  * `buildMusePersona`'s new `episodes` field.
@@ -213,13 +213,13 @@ export function readChatResponseText(value: unknown): string {
 }
 
 /**
- * Goal 034 — resolve the REPL in-memory history cap from an env
+ * Resolve the REPL in-memory history cap from an env
  * string. Default 2000 entries (1000 user/assistant pairs). Bad /
  * non-positive values fall back to the default so a typoed env
  * doesn't accidentally disable bounding.
  */
 /**
- * Goal 072 — wire process-level SIGTERM + SIGINT to a single
+ * Wire process-level SIGTERM + SIGINT to a single
  * graceful-exit callback. Returns a teardown function that
  * removes both listeners (call from the REPL's `finally` block
  * so the next REPL instance installs fresh listeners). Exported

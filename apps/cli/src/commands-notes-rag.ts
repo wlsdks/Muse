@@ -58,7 +58,7 @@ interface FileEntry {
 }
 
 /**
- * Goal 074 — schema version for `~/.muse/notes-index.json`.
+ * Schema version for `~/.muse/notes-index.json`.
  * Bumped when fields are renamed / removed or the embedding
  * layout changes. `loadIndex` treats a mismatch as "stale" so
  * the next `reindexNotes` rebuilds from scratch instead of
@@ -201,7 +201,7 @@ async function loadIndex(path: string): Promise<NotesIndex | undefined> {
 }
 
 /**
- * Goal 074 — pure validator for the on-disk `notes-index.json`.
+ * Pure validator for the on-disk `notes-index.json`.
  * Exported so the auto-stale check + tests share the same
  * predicate (no risk of the loader accepting a shape the
  * stale-check rejects).

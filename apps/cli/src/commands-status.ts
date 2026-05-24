@@ -44,7 +44,7 @@ import type { ProgramIO } from "./program.js";
 import { readTrust } from "./commands-trust.js";
 
 /**
- * Goal 064 — version marker for the `muse status --json` payload.
+ * Version marker for the `muse status --json` payload.
  * Bumped when fields are renamed or removed; additive changes
  * keep the existing value. Exported so jq pipelines + downstream
  * scripts (and the test suite) can pin the contract.
@@ -55,7 +55,7 @@ interface StatusOptions {
   readonly user?: string;
   readonly json?: boolean;
   /**
-   * Goal 046 — when set, redraws the status snapshot on a fixed
+   * When set, redraws the status snapshot on a fixed
    * cadence until Ctrl-C. `--json` short-circuits this (a watch
    * loop emitting JSON every tick is a stream consumer's job, not
    * status's) so the option is silently ignored when both are set.
@@ -64,7 +64,7 @@ interface StatusOptions {
   /** Seconds between renders in --watch mode. Defaults to 5. */
   readonly interval?: string;
   /**
-   * Goal 095 — surface "you usually do X around this hour"
+   * Surface "you usually do X around this hour"
    * hints derived from patterns-fired. Silent when fewer than
    * 3 firings per pattern or when no pattern matches the
    * current hour.
@@ -150,7 +150,7 @@ function defaultSessionLockFile(): string {
 }
 
 /**
- * Goal 078 — optional path to a sidecar JSON the observability
+ * Optional path to a sidecar JSON the observability
  * snapshotter (or an operator's cron) writes daily-cost totals
  * into. Default `~/.muse/token-cost-today.json` so an off-the-
  * shelf write lands where `muse status` looks. Shape:
@@ -167,10 +167,10 @@ function defaultNotesIndexFile(): string {
 }
 
 /**
- * Offline RAG readiness for the dashboard glance. Goals
- * 164/167/168 made the embed model a first-class health
- * concern; `muse status` should show whether semantic recall
- * over notes is actually wired without needing a network probe
+ * Offline RAG readiness for the dashboard glance. The embed
+ * model is a first-class health concern; `muse status` should
+ * show whether semantic recall over notes is actually wired
+ * without needing a network probe
  * — just whether the notes index exists and which embed model
  * built it. Pure file read (same cost profile as the daily-cost
  * sidecar); exported for direct test coverage.
@@ -201,7 +201,7 @@ interface TokenCostTodayShape {
 }
 
 /**
- * Goal 078 — read the daily-cost sidecar. Tolerant: any read /
+ * Read the daily-cost sidecar. Tolerant: any read /
  * parse / shape failure returns `{ available: false }` so the
  * status renderer prints a clear "(no cost data)" instead of
  * crashing. Exported for direct test coverage.
@@ -378,7 +378,7 @@ async function collectStatus(userId: string) {
 }
 
 /**
- * Goal 095 — anticipatory hint generator. Groups firings by
+ * Anticipatory hint generator. Groups firings by
  * `patternId`, computes the median firing hour of day (UTC), and
  * emits "you usually <pattern> around this hour" when the
  * current hour is within ±1 of the median. Cap at 3.
@@ -393,7 +393,7 @@ export interface PatternSuggestion {
 }
 
 /**
- * Goal 095 — formatted renderer for the `--suggestions` flag.
+ * Formatted renderer for the `--suggestions` flag.
  * Silent when there are no hits so a fresh install with empty
  * patterns-fired doesn't show a useless "Suggestions (0):"
  * line.
@@ -541,7 +541,7 @@ function summariseProviders() {
 }
 
 /**
- * Goal 046 — parse `--interval <n>` (seconds) for `muse status --watch`.
+ * Parse `--interval <n>` (seconds) for `muse status --watch`.
  * Default 5s, clamped to [1, 3600] so a bad input can't lock the
  * loop into a single tick or starve the terminal with sub-second
  * refreshes. Exported for direct test coverage of the boundary

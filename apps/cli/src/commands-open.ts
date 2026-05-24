@@ -13,7 +13,7 @@
  *   reminders → followups → objectives → episodes → patterns-fired →
  *   proactive-history → tasks → jobs
  *
- * Pure-read; no LLM, no model invocation. Goal 012.
+ * Pure-read; no LLM, no model invocation.
  */
 
 import { promises as fs } from "node:fs";
@@ -35,8 +35,8 @@ import type { ProgramIO } from "./program.js";
 interface OpenOptions {
   readonly json?: boolean;
   /**
-   * Goal 056 — emit ONLY the raw record JSON (no kind header,
-   * no `{ kind, record: ... }` envelope, no formatted lines).
+   * Emit ONLY the raw record JSON (no kind header, no
+   * `{ kind, record: ... }` envelope, no formatted lines).
    * Designed for `muse open <id> --raw | jq` pipelines.
    */
   readonly raw?: boolean;

@@ -41,11 +41,10 @@ import { formatLocalDateTime as shortDateTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 
 /**
- * Goal 137 — CLI-side strict validation for `muse remind list
- * --status <value>`. Pairs with goal 125 (`muse tasks list
- * --status`): the shared `readReminderStatusFilter` is
- * deliberately lenient (LLM tool path), but the CLI surface
- * should surface typos with the closest-match hint.
+ * CLI-side strict validation for `muse remind list --status
+ * <value>`. The shared `readReminderStatusFilter` is deliberately
+ * lenient (LLM tool path), but the CLI surface should surface
+ * typos with the closest-match hint.
  */
 const REMIND_STATUS_VALUES = ["pending", "fired", "all", "due"] as const;
 

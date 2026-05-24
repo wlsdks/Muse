@@ -1,7 +1,7 @@
 /**
  * `muse read <pdf>` — local document understanding via pdf-parse.
  *
- * Goal 088 — Muse can ingest a PDF in one of two shapes:
+ * Muse can ingest a PDF in one of two shapes:
  *   - default        : print extracted text to stdout
  *   - `--ask "..."`  : prepend the extracted text to a system
  *                      prompt and stream a reply via the
@@ -69,9 +69,9 @@ interface PdfParsed {
 }
 
 /**
- * Goal 088 — pdf-parse v2 exposes a `PDFParse` class. Build,
- * extract text, normalise to a tiny `{ text, pageCount }` subset
- * the CLI cares about. Exported only for testing.
+ * pdf-parse v2 exposes a `PDFParse` class. Build, extract text,
+ * normalise to a tiny `{ text, pageCount }` subset the CLI cares
+ * about. Exported only for testing.
  */
 export async function parsePdfBuffer(buffer: Buffer): Promise<PdfParsed> {
   const mod = await import("pdf-parse") as unknown as {
@@ -114,9 +114,9 @@ export async function extractDocumentText(filePath: string, buffer: Buffer): Pro
 }
 
 /**
- * Goal 088 — system prompt the `--ask` path uses. Pure so a test
- * can assert it stays grounded ("answer FROM the document, say
- * so if it's not in there").
+ * System prompt the `--ask` path uses. Pure so a test can assert
+ * it stays grounded ("answer FROM the document, say so if it's not
+ * in there").
  */
 export function buildReadAskSystemPrompt(documentText: string): string {
   return [

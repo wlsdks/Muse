@@ -100,7 +100,7 @@ function withoutValue(list: readonly string[], value: string): string[] {
 }
 
 /**
- * Goal 053 — split each tool name on the first '.' and group by
+ * Split each tool name on the first '.' and group by
  * the prefix so the user sees "I trust 3 tools from notion + 1
  * from gcal" instead of a flat alphabetised list. A tool name
  * without a dot lands in an `(unscoped)` bucket so it stays

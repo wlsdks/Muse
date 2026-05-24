@@ -1,5 +1,5 @@
 /**
- * Goal 090 — episode semantic index.
+ * Episode semantic index.
  *
  * Mirrors the `notes-index.json` pipeline: a flat
  * `~/.muse/episodes-index.json` carrying each `PersistedEpisode`'s
@@ -12,7 +12,7 @@
  *
  * Incremental: an existing entry with matching id + same summary
  * text + same model is reused (no re-embed). `version` mismatch
- * → full rebuild (mirrors goal 074).
+ * → full rebuild.
  */
 
 import { promises as fs } from "node:fs";
@@ -101,7 +101,7 @@ export interface ReindexEpisodesSummary {
 }
 
 /**
- * Goal 090 — pure reindex loop. Caller injects:
+ * Pure reindex loop. Caller injects:
  *   - `episodes`           the source rows
  *   - `embedFn(text)`      the embedding HTTP call
  *   - `previous`           the prior index (or undefined)

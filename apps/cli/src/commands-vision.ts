@@ -2,8 +2,7 @@
  * `muse vision <image>` — local image description via Ollama
  * vision models (`llama3.2-vision`, `llava`, ...).
  *
- * Goal 087 — first JARVIS-class sensory input for Muse. The
- * model lives on the user's machine; the only HTTP call is
+ * The model lives on the user's machine; the only HTTP call is
  * `POST <ollamaUrl>/api/generate` with the image as a single
  * base64 entry in the `images` array. No new dep, no cloud
  * round-trip.
@@ -34,7 +33,7 @@ const DEFAULT_VISION_MODEL = "llama3.2-vision:latest";
 const DEFAULT_PROMPT = "Describe this image in 2-3 sentences. Note any notable text, objects, or context.";
 
 /**
- * Goal 087 — pick the model the user expects:
+ * Pick the model the user expects:
  *   1. explicit `--model`
  *   2. `MUSE_VISION_MODEL` env
  *   3. `llama3.2-vision:latest` default
@@ -142,11 +141,6 @@ export async function loadImageAsBase64(
   return buf.toString("base64");
 }
 
-/**
- * Goal 087 — build the JSON body Ollama's `/api/generate`
- * expects. Exported so tests can verify the shape without
- * round-tripping through the CLI runner.
- */
 /**
  * Format Ollama's failure response for the user. 404 specifically
  * means "the model isn't installed" — surface the exact

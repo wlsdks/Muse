@@ -150,8 +150,8 @@ function formatBytes(bytes: number | undefined): string {
 }
 
 /**
- * Goal 105 — JARVIS-style pre-flight check. Compare available
- * machine RAM against the chosen preset's stated minimum and
+ * JARVIS-style pre-flight check. Compare available machine RAM
+ * against the chosen preset's stated minimum and
  * return a one-liner the action can print before writing config
  * (or pulling a 17 GB model onto an 8 GB laptop).
  *
@@ -265,7 +265,7 @@ export function registerSetupLocalCommand(
       // The chat model alone leaves `muse ask` / `muse recall`
       // (notes RAG) broken — they need a separate embedding model.
       // Surface it proactively at setup instead of letting the user
-      // discover it only when ask silently degrades (goal 164).
+      // discover it only when ask silently degrades.
       if (!isEmbedModelPulled(installedNames)) {
         io.stdout(`\n  RAG note: notes/recall grounding needs an embedding model — not pulled.\n`);
         io.stdout(`    ollama pull ${DEFAULT_EMBED_MODEL}\n`);

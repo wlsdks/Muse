@@ -138,14 +138,14 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
 }
 
 /**
- * Goal 068 — parse `--interval <n>` for `muse doctor --watch`.
+ * Parse `--interval <n>` for `muse doctor --watch`.
  * Default 5s, clamped to [1, 3600]. Exported for direct test
  * coverage of the boundary behavior. Mirrors
  * `resolveStatusWatchIntervalMs` so the two watch loops share
  * the same parser contract.
  */
 /**
- * Path-from-env resolver matching the goal-478/481/482 empty-env-shadow
+ * Path-from-env resolver matching the empty-env-shadow
  * convention: a shell that pre-clears `MUSE_HOME=` / `MUSE_MCP_CONFIG=`
  * must NOT make the doctor stat the empty path and falsely report
  * `~/.muse` / `mcp.json` as missing. Treat empty / whitespace-only
@@ -523,7 +523,7 @@ function formatLocalDoctor(report: LocalDoctorReport): string {
 }
 
 /**
- * Goal 101 — shape of the `/api/tags` model entry we rely on for
+ * Shape of the `/api/tags` model entry we rely on for
  * the model-pulled check. Real Ollama responses also carry
  * `digest`, `modified_at`, and a `details` block; we only need
  * `name` (the full tag, e.g. `qwen3.5:9b-q4_K_M`) and `size` (for
@@ -543,7 +543,7 @@ function isOllamaTagsEntry(value: unknown): value is OllamaTagsEntry {
 }
 
 /**
- * Goal 101 — match `configuredTag` against an Ollama `/api/tags`
+ * Match `configuredTag` against an Ollama `/api/tags`
  * response. Ollama serialises model identities two ways:
  *   - `name: "qwen3.5:9b-q4_K_M"` for an explicit tag
  *   - `name: "qwen3.5:latest"` when the user pulled `qwen3.5`
@@ -592,7 +592,7 @@ export function embedModelCheck(
 }
 
 /**
- * Goal 102 — pure parser pulled out for direct testing. Returns
+ * Pure parser pulled out for direct testing. Returns
  * the recorded embed model name (or the documented default,
  * `nomic-embed-text`, when the file exists but doesn't carry one)
  * when notes RAG is in use on this host; `undefined` when no

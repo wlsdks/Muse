@@ -1,11 +1,11 @@
 /**
  * `muse recall <query>` — cross-store semantic search.
  *
- * Goal 091 — embeds the query once, then cosine-searches the
+ * Embeds the query once, then cosine-searches the
  * union of every semantic index Muse has on disk:
  *
- *   - notes-index.json     (existing, built by `muse notes reindex`)
- *   - episodes-index.json  (goal 090, built by `muse episode reindex`)
+ *   - notes-index.json     (built by `muse notes reindex`)
+ *   - episodes-index.json  (built by `muse episode reindex`)
  *
  * Each hit carries `{ source, ref, score, snippet }` so the
  * caller knows which store + entity it came from. Top-K (default
@@ -71,7 +71,7 @@ async function loadNotesIndex(file: string): Promise<NotesIndexShape | undefined
 }
 
 /**
- * Goal 091 — pure ranker. Given an already-embedded query vector
+ * Pure ranker. Given an already-embedded query vector
  * and both indices' candidate rows, return the top-K hits across
  * the union. Exported so a unit test can drive every branch
  * without touching Ollama or filesystem.
@@ -112,8 +112,7 @@ export function rankRecallCandidates(args: {
 
 // Absent → default 5. A genuine number is truncated + clamped
 // to the 50 cap; a non-numeric / non-positive value (unit slip
-// like `10x`, `abc`, `0`) rejects instead of silently using 5
-// — the strict-numeric line (goals 143/144/155/177/178).
+// like `10x`, `abc`, `0`) rejects instead of silently using 5.
 /**
  * Drop indexed note files that no longer exist on disk. The
  * notes-index is a pre-built cache (`muse notes reindex`); a note
@@ -154,7 +153,7 @@ export function clampLimit(raw: string | undefined): number {
 }
 
 /**
- * Goal 157 — accepted values for `muse recall --source`. Single
+ * Accepted values for `muse recall --source`. Single
  * source of truth for both the validator and the fuzzy-suggest
  * hint. `all` is the default + acts as the no-restriction value.
  */
@@ -166,11 +165,10 @@ export type RecallSourceResolution =
   | { readonly kind: "invalid"; readonly input: string };
 
 /**
- * Goal 157 — case-insensitive validator. Pre-iter an unknown
- * `--source` silently fell back to `"all"`, masking typos like
+ * Case-insensitive validator. An unknown `--source` used to
+ * silently fall back to `"all"`, masking typos like
  * `--source note` (singular). Now the caller can surface a
- * fuzzy-suggest hint via the goal-099 helper instead of running
- * the wrong scope.
+ * fuzzy-suggest hint instead of running the wrong scope.
  */
 export function resolveSource(raw: string | undefined): RecallSourceResolution {
   if (raw === undefined) return { kind: "ok", source: "all" };
@@ -183,7 +181,7 @@ export function resolveSource(raw: string | undefined): RecallSourceResolution {
 }
 
 /**
- * Goal 091 — test-only escape hatch: when
+ * Test-only escape hatch: when
  * `MUSE_RECALL_TEST_QUERY_EMBEDDING` is set (CSV of numbers),
  * skip the live embed call and use that vector instead. Lets
  * the dogfood seed a fixture index and assert ranking without

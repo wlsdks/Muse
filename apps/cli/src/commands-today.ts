@@ -305,9 +305,9 @@ async function renderBrief(
   // path keeps the system role separate via agentRuntime.run.
   const remoteMessage = buildTodayBriefUserMessage(briefing);
 
-  // Goal 170 — the morning brief should speak in the active
-  // persona's voice (JARVIS / casual / …), same as `muse chat`
-  // since goal 158. Empty (default persona) → unchanged request.
+  // The morning brief should speak in the active persona's voice
+  // (JARVIS / casual / …), same as `muse chat`. Empty (default
+  // persona) → unchanged request.
   const personaPreamble = (await loadActivePersonaPreamble().catch(() => "")).trim();
 
   if (local) {
@@ -657,7 +657,7 @@ function briefingNow(briefing: TodayBriefing): Date {
 
 /**
  * Current-weather line for `muse today` — keyed on MUSE_WEATHER_LOCATION
- * (the user's home, goal 813). Fetched by the CLI itself (Open-Meteo, no
+ * (the user's home). Fetched by the CLI itself (Open-Meteo, no
  * key) so it shows in BOTH local and remote modes without a server
  * change. Fail-soft: no location configured, or a lookup failure, →
  * undefined (no weather line), never breaks the briefing.

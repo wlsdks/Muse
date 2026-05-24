@@ -43,7 +43,7 @@ interface HistoryOptions {
   readonly limit?: string;
   readonly json?: boolean;
   /**
-   * Goal 050 — substring or regex pattern applied to `entry.summary`.
+   * Substring or regex pattern applied to `entry.summary`.
    * Case-insensitive by default unless `--case-sensitive` is set.
    * A bare string searches as a substring; if the value can be
    * compiled as a regex (no flag conflicts), it's used as one.
@@ -68,11 +68,11 @@ export function parseLimit(raw: string | undefined, fallback: number, cap: numbe
 }
 
 /**
- * Goal 063 — kind → ASCII glyph for the formatted feed, so a quick
- * scroll can pick out reminders vs episodes vs patterns at a
- * glance. Kept ASCII-only (no emoji) per CLAUDE.md; the glyphs
- * stay readable in every terminal (vt100, headless CI, etc.) and
- * never widen the column.
+ * Kind → ASCII glyph for the formatted feed, so a quick scroll can
+ * pick out reminders vs episodes vs patterns at a glance. Kept
+ * ASCII-only (no emoji) per CLAUDE.md; the glyphs stay readable in
+ * every terminal (vt100, headless CI, etc.) and never widen the
+ * column.
  *
  * Exported so tests can pin the contract and downstream UI can
  * reuse the same mapping when it wants its own scanning glyphs.
@@ -86,9 +86,9 @@ export const HISTORY_KIND_ICONS: Readonly<Record<string, string>> = Object.freez
 });
 
 /**
- * Goal 050 — compile `--grep <pattern>` into a `RegExp` we can apply
- * to `entry.summary`. The pattern is tried as a regex first; if
- * that throws (unbalanced metacharacters etc.), we fall back to a
+ * Compile `--grep <pattern>` into a `RegExp` we can apply to
+ * `entry.summary`. The pattern is tried as a regex first; if that
+ * throws (unbalanced metacharacters etc.), we fall back to a
  * literal substring search by escaping the value. Exported for
  * direct unit-test coverage of the boundary cases.
  */

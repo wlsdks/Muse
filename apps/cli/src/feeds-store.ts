@@ -221,7 +221,7 @@ function sanitizeFeedText(value: string | undefined): string {
 }
 
 /**
- * Goal 115 — default cap on entries retained per feed. Large
+ * Default cap on entries retained per feed. Large
  * feeds (NYT homepage, github-events firehose) can publish 100+
  * items per fetch; keeping every historical entry would bloat
  * `~/.muse/feeds.json` without serving ambient-awareness needs.
@@ -232,7 +232,7 @@ function sanitizeFeedText(value: string | undefined): string {
 export const DEFAULT_FEED_ENTRIES_CAP = 200;
 
 /**
- * Goal 115 — merge `incoming` (latest fetch) into `previous` (the
+ * Merge `incoming` (latest fetch) into `previous` (the
  * on-disk archive). Old entries that have rolled off the feed's
  * server-side window survive locally — RSS / Atom servers typically
  * expose only the most recent N items, so without a merge the local
@@ -289,7 +289,7 @@ export function compareFeedEntriesNewestFirst(
 }
 
 /**
- * Goal 092 — pure filter: drop entries whose `publishedAt` is
+ * Pure filter: drop entries whose `publishedAt` is
  * older than `cutoff`. Entries missing or with an unparseable
  * date are kept (no false-negative filtering on RSS feeds that
  * omit pubDate). Exported for direct unit-test coverage.

@@ -1,5 +1,5 @@
 /**
- * Goal 081 — passphrase-driven AES-256-GCM encryption used by
+ * Passphrase-driven AES-256-GCM encryption used by
  * `muse export --encrypt` / `muse import --decrypt`.
  *
  * Layout (all values big-endian / network order where applicable):

@@ -1,5 +1,5 @@
 /**
- * Goal 099 — Levenshtein-based closest-match for unknown CLI
+ * Levenshtein-based closest-match for unknown CLI
  * subcommand names. Lets `muse statu` answer with
  * "Did you mean 'status'?" instead of the commander default
  * "too many arguments" error that hid the typo.
