@@ -22,6 +22,7 @@ import { appendLastChatTurn, clearLastChatHistory, readLastChatHistory } from ".
 import {
   buildTurnMessages,
   chatHelp,
+  chatToolApprovalGate,
   cursorCoords,
   emptyInput,
   extractAttachmentPaths,
@@ -132,7 +133,7 @@ export function MuseChatApp(props: {
   readonly skillsPrompt: string;
   readonly personaPrompt: () => string | undefined;
   readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
-  readonly streamWithTools: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
+  readonly streamWithTools: (messages: readonly ChatTurnMessage[], model: string, requestApproval: (toolName: string, detail: string, kind: "outbound" | "tool") => Promise<boolean>) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly readFile: (relativePath: string) => Promise<string | undefined>;
   readonly saveText: (text: string) => Promise<string | undefined>;
   readonly copyToClipboard: (text: string) => Promise<boolean>;
@@ -158,7 +159,15 @@ export function MuseChatApp(props: {
   const [histPos, setHistPos] = useState(-1);
   const [sessionTokens, setSessionTokens] = useState(0);
   const [spinTick, setSpinTick] = useState(0);
+  const [pendingApproval, setPendingApproval] = useState<{ readonly name: string; readonly detail: string; readonly kind: "outbound" | "tool"; readonly resolve: (ok: boolean) => void } | undefined>(undefined);
   const inputHistoryRef = useRef<string[]>([]);
+
+  // Tool-action approval: the gate (in streamWithTools) calls this for any
+  // write/execute tool, which surfaces a y/n prompt and resolves when the user
+  // answers. The detail line shows the exact arguments so the user confirms the
+  // content, not just the tool name (outbound-safety.md rule 1).
+  const requestApproval = useCallback((name: string, detail: string, kind: "outbound" | "tool"): Promise<boolean> =>
+    new Promise<boolean>((resolve) => setPendingApproval({ detail, kind, name, resolve })), []);
 
   // Animate a spinner while a reply is in flight (until the first token).
   useEffect(() => {
@@ -321,9 +330,11 @@ export function MuseChatApp(props: {
     const messages = buildTurnMessages(system, historyRef.current, message + attachmentBlock);
     let accumulated = "";
     let turnTokens = 0;
-    const streamer = toolsOn ? props.streamWithTools : props.stream;
+    const iter = toolsOn
+      ? props.streamWithTools(messages, currentModel, requestApproval)
+      : props.stream(messages, currentModel);
     try {
-      for await (const event of streamer(messages, currentModel)) {
+      for await (const event of iter) {
         if (interruptRef.current) { accumulated += accumulated.length > 0 ? " …(interrupted)" : "(interrupted)"; break; }
         if (event.type === "error") {
           const err = event.error;
@@ -352,7 +363,7 @@ export function MuseChatApp(props: {
     setBusy(false);
     if (!accumulated.startsWith("⚠") && accumulated !== "(interrupted)") lastAnswerRef.current = accumulated;
     props.onCommit(message, accumulated);
-  }, [app, props, activeAgent, currentModel, sessionTokens, toolsOn]);
+  }, [app, props, activeAgent, currentModel, sessionTokens, toolsOn, requestApproval]);
 
   const slashMenu = matchSlashCommands(inputState.value, SLASH_COMMANDS);
   const agentMenu = slashMenu.length === 0 ? matchAgentNames(inputState.value, props.agents.map((a) => a.name)) : [];
@@ -373,6 +384,14 @@ export function MuseChatApp(props: {
       setCtrlCArmed(true);
       setInputState(emptyInput);
       setSlashIndex(0);
+      return;
+    }
+    // An outbound action is awaiting confirmation: y approves, anything else
+    // (n / Esc / Enter) denies. Fail-closed — only an explicit y sends.
+    if (pendingApproval) {
+      const approved = rawInput === "y" || rawInput === "Y";
+      pendingApproval.resolve(approved);
+      setPendingApproval(undefined);
       return;
     }
     // Esc while replying interrupts the stream (UI stops consuming it).
@@ -482,6 +501,15 @@ export function MuseChatApp(props: {
           streaming.length > 0
             ? h(Text, null, streaming)
             : h(Text, { color: "cyan" }, `${"⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[spinTick % 10]} thinking…`))
+      : null,
+    // Tool action awaiting confirmation — show the exact content, fail-closed.
+    pendingApproval
+      ? h(Box, { borderColor: "yellow", borderStyle: "round", flexDirection: "column", marginBottom: 1, paddingX: 1 },
+          h(Text, { bold: true, color: "yellow" },
+            `⚠ ${pendingApproval.kind === "outbound" ? "Outbound action" : "Tool action"} — ${pendingApproval.name}`),
+          h(Text, null, pendingApproval.detail),
+          h(Text, { dimColor: true },
+            `${pendingApproval.kind === "outbound" ? "Send this?" : "Run this?"}  y = approve  ·  any other key = cancel`))
       : null,
     // The input BOX. When idle it is the first dynamic block, so its
     // content row is y=1 — where useCursor placed the real cursor.
@@ -598,12 +626,22 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   // fire. Outbound actuators stay forbidden (no autonomous third-party send);
   // read tools + local writes run. Falls back to plain stream if no runtime.
   const agentRuntime = assembly.agentRuntime;
-  const streamWithTools = (messages: readonly ChatTurnMessage[], useModel: string): ChatStream => {
+  const streamWithTools = (
+    messages: readonly ChatTurnMessage[],
+    useModel: string,
+    requestApproval: (toolName: string, detail: string, kind: "outbound" | "tool") => Promise<boolean>
+  ): ChatStream => {
     if (!agentRuntime) return stream(messages, useModel);
     return agentRuntime.stream({
       messages: messages as { role: "system" | "user" | "assistant"; content: string }[],
-      metadata: { forbiddenToolNames: [...OUTBOUND_ACTUATORS] },
-      model: useModel
+      // `localMode` exposes execute-risk tools (email/web/home actuators, shell)
+      // to the chat model; the fail-closed gate below is what keeps them safe —
+      // every write/execute call must be confirmed by the user with its content
+      // shown, reads run silently, and a denial / gate error blocks the call
+      // (runtime fail-close). This is the in-chat "act" path per outbound-safety.md.
+      metadata: { localMode: true },
+      model: useModel,
+      toolApprovalGate: chatToolApprovalGate(OUTBOUND_ACTUATORS, requestApproval)
     }) as ChatStream;
   };
 

@@ -371,3 +371,53 @@ export function parseSlashCommand(line: string): ParsedSlash | undefined {
   const [cmd, ...rest] = trimmed.slice(1).split(/\s+/u);
   return { arg: rest.join(" ").trim(), cmd: (cmd ?? "").toLowerCase() };
 }
+
+/**
+ * One-line, human-readable preview of a tool call's arguments, for the
+ * outbound-action approval prompt — the user must see WHAT is being sent
+ * (recipient, subject, body) before confirming, per outbound-safety.md.
+ * Long values are clipped so the prompt stays one screen line.
+ */
+export function summarizeToolArgs(args: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const [key, raw] of Object.entries(args)) {
+    if (raw === undefined || raw === null || raw === "") continue;
+    const value = typeof raw === "string" ? raw : JSON.stringify(raw);
+    const clipped = value.length > 60 ? `${value.slice(0, 60)}…` : value;
+    parts.push(`${key}: ${clipped.replace(/\s+/gu, " ")}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : "(no arguments)";
+}
+
+export type ApprovalKind = "outbound" | "tool";
+export interface ApprovalGateCall {
+  readonly toolCall: { readonly name: string; readonly arguments: Record<string, unknown> };
+  readonly risk: "read" | "write" | "execute";
+}
+export interface ApprovalGateDecision {
+  readonly allowed: boolean;
+  readonly reason?: string;
+}
+
+/**
+ * Build the fail-closed approval gate for the chat tool loop. A `read` tool
+ * runs silently. Any `write`/`execute` tool — local write, shell, or an
+ * outbound actuator — must be confirmed by the user via `ask(name, content,
+ * kind)`, which shows the exact arguments before anything happens; only an
+ * explicit approval (`true`) lets it through. A denial / cancel / timeout
+ * blocks it with a reason, so a state-changing call never proceeds on the
+ * gate's own judgement (outbound-safety.md rules 1 & 2). `kind` is `outbound`
+ * for the third-party actuators so the prompt can flag them louder.
+ */
+export function chatToolApprovalGate(
+  outbound: readonly string[],
+  ask: (name: string, detail: string, kind: ApprovalKind) => Promise<boolean>
+): (input: ApprovalGateCall) => Promise<ApprovalGateDecision> {
+  return async ({ toolCall, risk }) => {
+    if (risk === "read") return { allowed: true };
+    const kind: ApprovalKind = outbound.includes(toolCall.name) ? "outbound" : "tool";
+    const approved = await ask(toolCall.name, summarizeToolArgs(toolCall.arguments), kind);
+    if (approved) return { allowed: true };
+    return { allowed: false, reason: `user declined the ${kind === "outbound" ? "outbound action" : "tool call"}` };
+  };
+}

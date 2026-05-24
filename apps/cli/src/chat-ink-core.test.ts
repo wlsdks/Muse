@@ -8,6 +8,7 @@ import {
   emptyInput,
   extractAttachmentPaths,
   friendlyError,
+  chatToolApprovalGate,
   matchAgentNames,
   matchModelNames,
   parseInlineSpans,
@@ -15,6 +16,7 @@ import {
   matchSlashCommands,
   parseSlashCommand,
   reduceInput,
+  summarizeToolArgs,
   type InputState
 } from "./chat-ink-core.js";
 
@@ -179,5 +181,48 @@ describe("parseSlashCommand", () => {
   it("parses commands and ignores chat", () => {
     expect(parseSlashCommand("/clear")).toEqual({ arg: "", cmd: "clear" });
     expect(parseSlashCommand("hello")).toBeUndefined();
+  });
+});
+
+describe("summarizeToolArgs", () => {
+  it("renders a one-line content preview, skips empties, clips long values", () => {
+    expect(summarizeToolArgs({ to: "bob@x.com", subject: "Hi" })).toBe("to: bob@x.com · subject: Hi");
+    expect(summarizeToolArgs({ to: "bob@x.com", cc: "", note: null })).toBe("to: bob@x.com");
+    expect(summarizeToolArgs({})).toBe("(no arguments)");
+    expect(summarizeToolArgs({ body: "x".repeat(100) })).toMatch(/^body: x{60}…$/u);
+    expect(summarizeToolArgs({ body: "line1\n  line2" })).toBe("body: line1 line2");
+  });
+});
+
+describe("chatToolApprovalGate", () => {
+  const outbound = ["email_send", "web_action"];
+
+  it("auto-approves a read tool without asking", async () => {
+    let asked = false;
+    const gate = chatToolApprovalGate(outbound, async () => { asked = true; return true; });
+    const d = await gate({ risk: "read", toolCall: { name: "notes_search", arguments: {} } });
+    expect(d).toEqual({ allowed: true });
+    expect(asked).toBe(false);
+  });
+
+  it("blocks a write/execute tool when the user declines (fail-closed)", async () => {
+    const gate = chatToolApprovalGate(outbound, async () => false);
+    const email = await gate({ risk: "execute", toolCall: { name: "email_send", arguments: { to: "a@b.c" } } });
+    expect(email).toEqual({ allowed: false, reason: "user declined the outbound action" });
+    const note = await gate({ risk: "write", toolCall: { name: "notes_add", arguments: { text: "x" } } });
+    expect(note).toEqual({ allowed: false, reason: "user declined the tool call" });
+  });
+
+  it("lets an action through only on explicit approval, tagging outbound vs tool and showing content", async () => {
+    const seen: string[] = [];
+    const gate = chatToolApprovalGate(outbound, async (name, detail, kind) => { seen.push(`${kind}|${name}|${detail}`); return true; });
+    const a = await gate({ risk: "execute", toolCall: { name: "email_send", arguments: { to: "a@b.c", subject: "Hi" } } });
+    const b = await gate({ risk: "write", toolCall: { name: "tasks_add", arguments: { title: "Buy milk" } } });
+    expect(a).toEqual({ allowed: true });
+    expect(b).toEqual({ allowed: true });
+    expect(seen).toEqual([
+      "outbound|email_send|to: a@b.c · subject: Hi",
+      "tool|tasks_add|title: Buy milk"
+    ]);
   });
 });
