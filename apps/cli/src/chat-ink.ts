@@ -16,11 +16,13 @@ import React, { useCallback, useRef, useState } from "react";
 import { appendLastChatTurn, readLastChatHistory } from "./chat-history.js";
 import {
   buildTurnMessages,
-  displayWidth,
-  editInputBuffer,
+  cursorCoords,
+  emptyInput,
   parseSlashCommand,
+  reduceInput,
   type ChatTurnMessage,
-  type InkKeyEvent
+  type InkKeyEvent,
+  type InputState
 } from "./chat-ink-core.js";
 import { renderMuseBanner } from "./muse-banner.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
@@ -55,7 +57,7 @@ export function MuseChatApp(props: {
   const app = useApp();
   const { setCursorPosition } = useCursor();
   const [turns, setTurns] = useState<readonly DisplayTurn[]>([]);
-  const [input, setInput] = useState("");
+  const [inputState, setInputState] = useState<InputState>(emptyInput);
   const [streaming, setStreaming] = useState("");
   const [busy, setBusy] = useState(false);
   const historyRef = useRef<ChatTurnMessage[]>([...props.history]);
@@ -106,9 +108,14 @@ export function MuseChatApp(props: {
   useInput((rawInput: string, key: InkKeyEvent) => {
     if (busy) return;
     if (key.ctrl && rawInput === "c") { app.exit(); return; }
-    if (key.escape) { app.exit(); return; }
-    if (key.return) { const line = input; setInput(""); void submit(line); return; }
-    setInput((buf) => editInputBuffer(buf, rawInput, key));
+    const result = reduceInput(inputState, rawInput, key);
+    if (result.submit) {
+      const value = inputState.value;
+      setInputState(emptyInput);
+      void submit(value);
+      return;
+    }
+    setInputState(result.state);
   });
 
   // Place the REAL terminal cursor at the input column INSIDE the box so a
@@ -117,9 +124,11 @@ export function MuseChatApp(props: {
   // it in a ref and applies it during commit via useInsertionEffect, so a
   // post-commit useEffect would lag a frame and reset the cursor. Idle: the
   // box is the first dynamic block, input row at y=1. Busy: hide it.
-  setCursorPosition(busy ? undefined : { x: INPUT_COL_OFFSET + displayWidth(input), y: 1 });
+  const caret = cursorCoords(inputState);
+  setCursorPosition(busy ? undefined : { x: INPUT_COL_OFFSET + caret.col, y: 1 + caret.line });
 
   const placeholder = "무엇이든 물어보세요";
+  const lines = inputState.value.length > 0 ? inputState.value.split("\n") : [""];
   return h(Box, { flexDirection: "column" },
     h(Static, {
       children: (item: unknown, index: number) => {
@@ -141,10 +150,13 @@ export function MuseChatApp(props: {
       : null,
     // The input BOX. When idle it is the first dynamic block, so its
     // content row is y=1 — where useCursor placed the real cursor.
-    h(Box, { borderColor: busy ? "gray" : "cyan", borderStyle: "round", paddingX: 1 },
-      h(Text, { color: "cyan" }, "› "),
-      input.length > 0 ? h(Text, null, input) : h(Text, { dimColor: true }, placeholder)),
-    h(Text, { dimColor: true }, "⏎ 전송 · /help · ctrl-c 종료")
+    h(Box, { borderColor: busy ? "gray" : "cyan", borderStyle: "round", flexDirection: "column", paddingX: 1 },
+      ...lines.map((ln, i) => h(Box, { key: i },
+        h(Text, { color: "cyan" }, i === 0 ? "› " : "  "),
+        inputState.value.length === 0
+          ? h(Text, { dimColor: true }, placeholder)
+          : h(Text, null, ln)))),
+    h(Text, { dimColor: true }, "⏎ 전송 · shift+⏎ 줄바꿈 · /help · ctrl-c 종료")
   );
 }
 
