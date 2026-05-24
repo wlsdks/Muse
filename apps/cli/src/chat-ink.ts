@@ -12,7 +12,8 @@
 import { createMuseRuntimeAssembly, resolveFollowupsFile, resolveRemindersFile } from "@muse/autoconfigure";
 import { loadSkillsFromDirectory, type Skill } from "@muse/skills";
 import { Box, Static, Text, render, useApp, useCursor, useInput } from "ink";
-import { readFile as fsReadFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, readFile as fsReadFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -54,6 +55,8 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "agent", desc: "switch agent — /agent <name> (default to clear)" },
   { cmd: "skills", desc: "list installed skills + how to add" },
   { cmd: "tools", desc: "toggle tools (read + local writes; outbound stays off)" },
+  { cmd: "save", desc: "save the last reply to a note file" },
+  { cmd: "copy", desc: "copy the last reply to the clipboard" },
   { cmd: "cost", desc: "show this session's token usage" },
   { cmd: "exit", desc: "quit Muse (ctrl-c)" }
 ];
@@ -130,6 +133,8 @@ export function MuseChatApp(props: {
   readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly streamWithTools: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly readFile: (relativePath: string) => Promise<string | undefined>;
+  readonly saveText: (text: string) => Promise<string | undefined>;
+  readonly copyToClipboard: (text: string) => Promise<boolean>;
   readonly onCommit: (user: string, assistant: string) => void;
   readonly onReset: () => void;
   readonly proactiveCheck?: () => Promise<readonly ProactiveItem[]>;
@@ -147,6 +152,7 @@ export function MuseChatApp(props: {
   const [toolsOn, setToolsOn] = useState(false);
   const [ctrlCArmed, setCtrlCArmed] = useState(false);
   const interruptRef = useRef(false);
+  const lastAnswerRef = useRef("");
   const [commandNotice, setCommandNotice] = useState<string | undefined>(undefined);
   const [histPos, setHistPos] = useState(-1);
   const [sessionTokens, setSessionTokens] = useState(0);
@@ -265,6 +271,18 @@ export function MuseChatApp(props: {
           : "Tools OFF — plain chat (faster).");
         return;
       }
+      if (slash.cmd === "save" || slash.cmd === "copy") {
+        const answer = lastAnswerRef.current.trim();
+        if (answer.length === 0) { note("Nothing to save yet — ask something first."); return; }
+        if (slash.cmd === "save") {
+          const path = await props.saveText(answer);
+          note(path ? `Saved the last reply to ${path}` : "Couldn't save the reply.");
+        } else {
+          const ok = await props.copyToClipboard(answer);
+          note(ok ? "Copied the last reply to the clipboard." : "Clipboard not available on this system.");
+        }
+        return;
+      }
       if (slash.cmd === "cost") {
         note(sessionTokens > 0 ? `This session: ${formatTokens(sessionTokens)} tokens (local model = $0).` : "No tokens used yet this session.");
         return;
@@ -331,6 +349,7 @@ export function MuseChatApp(props: {
     setTurns((prev) => [...prev, { role: "assistant", text: accumulated }]);
     setStreaming("");
     setBusy(false);
+    if (!accumulated.startsWith("⚠") && accumulated !== "(interrupted)") lastAnswerRef.current = accumulated;
     props.onCommit(message, accumulated);
   }, [app, props, activeAgent, currentModel, sessionTokens, toolsOn]);
 
@@ -599,6 +618,34 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     }
   };
 
+  // /save → write the reply to ~/.muse/chat-saves/<ts>.md
+  const saveText = async (text: string): Promise<string | undefined> => {
+    try {
+      const dir = join(homedir(), ".muse", "chat-saves");
+      await mkdir(dir, { recursive: true });
+      const file = join(dir, `${new Date().toISOString().replace(/[:.]/gu, "-")}.md`);
+      await writeFile(file, `${text}\n`, "utf8");
+      return file;
+    } catch {
+      return undefined;
+    }
+  };
+  // /copy → pipe the reply to the platform clipboard tool.
+  const copyToClipboard = (text: string): Promise<boolean> => {
+    const cmd = process.platform === "darwin" ? "pbcopy" : process.platform === "win32" ? "clip" : "xclip";
+    const args = process.platform === "linux" ? ["-selection", "clipboard"] : [];
+    return new Promise<boolean>((resolve) => {
+      try {
+        const proc = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] });
+        proc.on("error", () => resolve(false));
+        proc.on("close", (code) => resolve(code === 0));
+        proc.stdin.end(text);
+      } catch {
+        resolve(false);
+      }
+    });
+  };
+
   const onCommit = (user: string, assistant: string): void => {
     void appendLastChatTurn({ message: user, response: assistant }).catch(() => undefined);
   };
@@ -659,6 +706,8 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     personaPrompt,
     proactiveCheck,
     readFile,
+    saveText,
+    copyToClipboard,
     proactiveOn,
     skills: skillInfos,
     skillsDir,
