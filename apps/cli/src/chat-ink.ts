@@ -131,12 +131,23 @@ export function MuseChatApp(props: {
           h(Text, null, streaming.length > 0 ? streaming : "…"))
       : null,
     notice ? h(Box, { marginBottom: 1 }, h(Text, { dimColor: true }, notice)) : null,
-    h(Box, { borderColor: busy ? "gray" : "cyan", borderStyle: "round", paddingX: 1 },
-      h(Text, null, "› "),
-      h(Text, null, input),
-      h(Text, { color: "cyan" }, "▌"),
-      input.length === 0 ? h(Text, { dimColor: true }, ` ${placeholder}`) : null),
-    h(Text, { dimColor: true }, "⏎ 전송 · /help · ctrl-c 종료")
+    // Everything that is NOT the input goes ABOVE it: the live terminal
+    // cursor rests at the end of the LAST rendered line, and a CJK IME
+    // composes its in-progress syllable exactly there. Keeping the input
+    // line last therefore makes Korean compose inside the prompt (the
+    // claude-style layout) instead of leaking below a bottom border.
+    input.length === 0 && !busy
+      ? h(Box, null, h(Text, { dimColor: true }, placeholder))
+      : null,
+    h(Text, { dimColor: true }, "⏎ 전송 · /help · ctrl-c 종료"),
+    h(Box, {
+      borderBottom: false,
+      borderColor: busy ? "gray" : "cyan",
+      borderLeft: false,
+      borderRight: false,
+      borderStyle: "round",
+      width: "100%"
+    }, h(Text, { color: "cyan" }, "› "), h(Text, null, input))
   );
 }
 
