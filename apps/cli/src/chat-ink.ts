@@ -24,6 +24,7 @@ import {
   emptyInput,
   extractAttachmentPaths,
   matchAgentNames,
+  matchModelNames,
   matchSlashCommands,
   parseSlashCommand,
   reduceInput,
@@ -83,6 +84,7 @@ export function MuseChatApp(props: {
   readonly history: readonly ChatTurnMessage[];
   readonly agents: readonly AgentDef[];
   readonly model: string;
+  readonly models: readonly string[];
   readonly proactiveOn: boolean;
   readonly skills: readonly SkillInfo[];
   readonly skillsDir: string;
@@ -264,9 +266,12 @@ export function MuseChatApp(props: {
 
   const slashMenu = matchSlashCommands(inputState.value, SLASH_COMMANDS);
   const agentMenu = slashMenu.length === 0 ? matchAgentNames(inputState.value, props.agents.map((a) => a.name)) : [];
-  const menuLen = slashMenu.length > 0 ? slashMenu.length : agentMenu.length;
+  const modelMenu = slashMenu.length === 0 && agentMenu.length === 0 ? matchModelNames(inputState.value, props.models) : [];
+  // The active arg-picker (after `/agent ` or `/model `) and its kind.
+  const argKind: "agent" | "model" | undefined = agentMenu.length > 0 ? "agent" : modelMenu.length > 0 ? "model" : undefined;
+  const argItems = agentMenu.length > 0 ? agentMenu : modelMenu;
+  const menuLen = slashMenu.length > 0 ? slashMenu.length : argItems.length;
   const menuSel = menuLen > 0 ? Math.min(slashIndex, menuLen - 1) : 0;
-  const slashSel = menuSel;
 
   useInput((rawInput: string, key: InkKeyEvent) => {
     // Ctrl-C: two presses to quit (even mid-stream). First press clears the
@@ -285,28 +290,23 @@ export function MuseChatApp(props: {
     if (busy || exiting) return;
     if (ctrlCArmed) setCtrlCArmed(false); // any other key disarms
 
-    // When a picker (slash commands, or agent names after `/agent `) is open,
+    // When a picker is open (slash commands, or names after `/agent `/`/model `),
     // ↑/↓ move the selection, Tab completes, Enter runs the highlighted item.
     if (menuLen > 0) {
       if (key.upArrow) { setSlashIndex(Math.max(0, menuSel - 1)); return; }
       if (key.downArrow) { setSlashIndex(Math.min(menuLen - 1, menuSel + 1)); return; }
       const selectedCmd = slashMenu.length > 0 ? (slashMenu[menuSel]?.cmd ?? "") : "";
-      const selectedAgent = slashMenu.length === 0 ? (agentMenu[menuSel] ?? "") : "";
-      if (key.tab) {
-        const completed = slashMenu.length > 0 ? `/${selectedCmd} ` : `/agent ${selectedAgent}`;
+      const selectedArg = argItems[menuSel] ?? "";
+      // Commands that need an argument complete to `/cmd ` so the arg picker opens.
+      const needsArg = selectedCmd === "agent" || selectedCmd === "model";
+      if (key.tab || (key.return && slashMenu.length > 0 && needsArg)) {
+        const completed = slashMenu.length > 0 ? `/${selectedCmd} ` : `/${argKind} ${selectedArg}`;
         setInputState({ cursor: [...completed].length, value: completed });
         setSlashIndex(0);
         return;
       }
       if (key.return) {
-        // Run the highlighted item. `/agent` needs a name, so complete it
-        // instead of running (so the agent-name picker opens next).
-        if (slashMenu.length > 0 && selectedCmd === "agent") {
-          setInputState({ cursor: 7, value: "/agent " });
-          setSlashIndex(0);
-          return;
-        }
-        const toRun = slashMenu.length > 0 ? `/${selectedCmd}` : `/agent ${selectedAgent}`;
+        const toRun = slashMenu.length > 0 ? `/${selectedCmd}` : `/${argKind} ${selectedArg}`;
         setInputState(emptyInput);
         setSlashIndex(0);
         void submit(toRun);
@@ -402,7 +402,7 @@ export function MuseChatApp(props: {
     slashMenu.length > 0
       ? h(Box, { flexDirection: "column", marginTop: 1, paddingLeft: 2 },
           ...slashMenu.map((command, i) => {
-            const on = i === slashSel;
+            const on = i === menuSel;
             return h(Box, { key: command.cmd },
               h(Text, { color: on ? "cyan" : "gray" }, `${on ? "▸ " : "  "}/${command.cmd}`),
               h(Text, { dimColor: !on }, `  — ${command.desc}`));
@@ -418,6 +418,17 @@ export function MuseChatApp(props: {
             return h(Box, { key: name },
               h(Text, { color: on ? "yellow" : "gray" }, `${on ? "▸ " : "  "}${name}`),
               h(Text, { dimColor: !on }, def ? `  — ${def.description}` : ""));
+          }),
+          h(Text, { dimColor: true }, "  ↑↓ select · Tab complete · ⏎ switch"))
+      : null,
+    // Model picker while typing `/model <partial>`.
+    modelMenu.length > 0
+      ? h(Box, { flexDirection: "column", marginTop: 1, paddingLeft: 2 },
+          ...modelMenu.slice(0, 8).map((name, i) => {
+            const on = i === menuSel;
+            return h(Box, { key: name },
+              h(Text, { color: on ? "cyan" : "gray" }, `${on ? "▸ " : "  "}${name}`),
+              name === currentModel ? h(Text, { color: "green" }, "  ✓ current") : null);
           }),
           h(Text, { dimColor: true }, "  ↑↓ select · Tab complete · ⏎ switch"))
       : null,
@@ -512,6 +523,11 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   // switches the active one in chat; its body becomes the system prompt.
   const agents = await loadAgents(resolveAgentsDir(process.env)).catch(() => [] as readonly AgentDef[]);
 
+  // Models the provider can serve (for the `/model` picker). Always include
+  // the current one even if listing fails or omits it.
+  const modelInfos = await provider.listModels().catch(() => []);
+  const models = [...new Set([model, ...modelInfos.map((m) => `${m.providerId}/${m.modelId}`)])];
+
   // Just the art + tagline — the model and status live in the bottom HUD.
   const banner = renderMuseBanner().replace(/^\n+|\n+$/gu, "");
   // Enable the kitty keyboard protocol so the terminal disambiguates
@@ -542,6 +558,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     banner,
     history,
     model,
+    models,
     onCommit,
     onReset,
     personaPrompt,

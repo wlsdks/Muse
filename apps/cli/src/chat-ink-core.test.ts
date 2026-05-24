@@ -7,6 +7,7 @@ import {
   emptyInput,
   extractAttachmentPaths,
   matchAgentNames,
+  matchModelNames,
   matchSlashCommands,
   parseSlashCommand,
   reduceInput,
@@ -101,6 +102,17 @@ describe("extractAttachmentPaths", () => {
     expect(extractAttachmentPaths("@a.md again @a.md")).toEqual(["a.md"]);
     expect(extractAttachmentPaths("no files here")).toEqual([]);
     expect(extractAttachmentPaths("@/abs/path/file.log please")).toEqual(["/abs/path/file.log"]);
+  });
+});
+
+describe("matchModelNames", () => {
+  const models = ["ollama/qwen3:8b", "ollama/qwen3.6:35b-a3b", "ollama/nomic-embed-text"];
+  it("completes after '/model ' by substring, ignores otherwise", () => {
+    expect(matchModelNames("/model", models)).toEqual([]);
+    expect(matchModelNames("/model ", models)).toEqual(models);
+    expect(matchModelNames("/model 35", models)).toEqual(["ollama/qwen3.6:35b-a3b"]);
+    expect(matchModelNames("/model qwen3", models)).toEqual(["ollama/qwen3:8b", "ollama/qwen3.6:35b-a3b"]);
+    expect(matchModelNames("hi", models)).toEqual([]);
   });
 });
 

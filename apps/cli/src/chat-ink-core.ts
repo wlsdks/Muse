@@ -254,6 +254,14 @@ export function extractAttachmentPaths(message: string): string[] {
   return out;
 }
 
+/** Model completions while typing `/model <partial>` (substring match). */
+export function matchModelNames(value: string, names: readonly string[]): readonly string[] {
+  const match = /^\/model\s+(.*)$/u.exec(value);
+  if (!match) return [];
+  const partial = (match[1] ?? "").toLowerCase();
+  return names.filter((name) => name.toLowerCase().includes(partial));
+}
+
 export interface ParsedSlash {
   readonly cmd: string;
   readonly arg: string;
