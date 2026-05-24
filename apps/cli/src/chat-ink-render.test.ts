@@ -15,11 +15,11 @@ function makeProps(overrides: Record<string, unknown> = {}): Parameters<typeof M
   return {
     banner: "MUSE",
     history: [],
-    agents: [],
+    agents: [{ name: "researcher", description: "researches things", prompt: "You research." }],
     model: "ollama/qwen3:8b",
-    models: ["ollama/qwen3:8b"],
+    models: ["ollama/qwen3:8b", "ollama/qwen3.6:35b-a3b"],
     proactiveOn: false,
-    skills: [],
+    skills: [{ name: "summarize", description: "summarize text" }],
     skillsDir: "/tmp/skills",
     skillsPrompt: "",
     personaPrompt: () => undefined,
@@ -124,5 +124,81 @@ describe("MuseChatApp render — slash command echo + output", () => {
     unmount();
     expect(frame).toContain("good morning");
     expect(frame).toContain("Today (next 24h)");
+  });
+});
+
+describe("MuseChatApp render — every slash command responds", () => {
+  // Each entry: type the input, Enter, then assert the frame contains every
+  // listed substring (echo of what was typed + the command's own output).
+  const cases: ReadonlyArray<{ readonly input: string; readonly contains: readonly string[] }> = [
+    { input: "/help", contains: ["› /help", "Commands:", "/today"] },
+    { input: "/help cost", contains: ["session"] }, // desc fallback for a topic-less command
+    { input: "/model ollama/qwen3.6:35b-a3b", contains: ["Switched model to ollama/qwen3.6:35b-a3b"] },
+    { input: "/agents", contains: ["› /agents", "researcher"] },
+    { input: "/agent researcher", contains: ["Switched to 'researcher'"] },
+    { input: "/agent default", contains: ["Back to the default Muse"] },
+    { input: "/skills", contains: ["› /skills", "summarize"] },
+    { input: "/tools", contains: ["› /tools", "Tools ON"] },
+    { input: "/today", contains: ["› /today", "Today (next 24h)"] },
+    { input: "/job research X", contains: ["› /job research X", "Started background job job_test"] },
+    { input: "/jobs", contains: ["› /jobs", "No background jobs yet"] },
+    { input: "/memory", contains: ["› /memory", "What I remember about you", "user_name: jinan"] },
+    { input: "/remember city=Seoul", contains: ["✓ Remembered city: Seoul"] },
+    { input: "/pref reply_style=concise", contains: ["✓ Preference reply_style: concise"] },
+    { input: "/recall budget", contains: ["› /recall budget", "no hits"] },
+    { input: "/forget city", contains: ["✓ Forgot \"city\"."] },
+    { input: "/forget --all", contains: ["Wiped everything"] },
+    { input: "/trust", contains: ["› /trust", "Trusted tools (0)"] },
+    { input: "/persona", contains: ["› /persona", "persona"] },
+    { input: "/history", contains: ["› /history", "turns in this conversation"] },
+    { input: "/cost", contains: ["› /cost", "No tokens used yet"] },
+    { input: "/save", contains: ["Nothing to save yet"] },
+    { input: "/copy", contains: ["Nothing to save yet"] },
+    { input: "/bogus", contains: ["Unknown command: /bogus"] }
+  ];
+
+  for (const c of cases) {
+    it(`${c.input} → ${c.contains[0] ?? ""}`, async () => {
+      const { stdin, lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps()));
+      await tick();
+      stdin.write(c.input); await tick(); stdin.write("\r"); await tick(140);
+      const frame = lastFrame() ?? "";
+      unmount();
+      for (const needle of c.contains) expect(frame, `"${c.input}" frame missing: ${needle}`).toContain(needle);
+    });
+  }
+});
+
+describe("MuseChatApp render — plain chat + editing", () => {
+  it("a plain message streams an assistant reply into the transcript", async () => {
+    async function* reply(): AsyncGenerator<{ type: string; text?: string }> {
+      yield { type: "text-delta", text: "Hello " };
+      yield { type: "text-delta", text: "there." };
+      yield { type: "done" };
+    }
+    let committed: { user: string; assistant: string } | undefined;
+    const { stdin, lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
+      stream: () => reply(),
+      onCommit: (user: string, assistant: string) => { committed = { user, assistant }; }
+    })));
+    await tick();
+    stdin.write("hi muse"); await tick(); stdin.write("\r"); await tick(160);
+    const frame = lastFrame() ?? "";
+    unmount();
+    expect(frame).toContain("› hi muse");
+    expect(frame).toContain("Hello there.");
+    expect(committed).toEqual({ assistant: "Hello there.", user: "hi muse" });
+  });
+
+  it("/new acknowledges a fresh conversation (clears in-memory context)", async () => {
+    // Note: <Static> scrollback can't be un-printed in a real terminal, so /new
+    // clears historyRef + turns state (future context) — the observable signal
+    // is the acknowledgement line.
+    const { stdin, lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps()));
+    await tick();
+    stdin.write("/new"); await tick(); stdin.write("\r"); await tick(120);
+    const frame = lastFrame() ?? "";
+    unmount();
+    expect(frame).toContain("Started a new conversation");
   });
 });
