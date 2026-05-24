@@ -550,9 +550,21 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   program.argument("[unknown_subcommand]");
   program.allowExcessArguments(true);
   program.usage("[options] [command]");
-  program.action((unknownSubcommand?: string) => {
+  program.action(async (unknownSubcommand?: string) => {
     const attempted = typeof unknownSubcommand === "string" ? unknownSubcommand.trim() : "";
     if (attempted.length === 0) {
+      // Like `claude`: a bare `muse` in an interactive terminal drops
+      // straight into the chat REPL. Piped / non-TTY invocations keep the
+      // help banner so scripts and `muse | cat` stay predictable.
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        const cliConfig = await readConfigStore(io);
+        await runChatRepl(io, {
+          continueHistory: true,
+          disableTools: true,
+          model: cliConfig.defaultModel
+        });
+        return;
+      }
       program.outputHelp();
       return;
     }
