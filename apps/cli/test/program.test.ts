@@ -859,7 +859,7 @@ describe("cli program", () => {
           generatedAt: "2026-05-10T08:00:00Z",
           lookaheadHours: 12,
           notes: ["diary.md", "shopping.md"],
-          tasks: [{ id: "task_123abc", title: "Write iter summary" }]
+          tasks: [{ dueAt: "2026-05-10T14:00:00Z", id: "task_123abc", title: "Write iter summary" }]
         }));
       }
     });
@@ -2457,7 +2457,7 @@ describe("cli program", () => {
       // Seed one task — empty-state hints should NOT appear.
       const seedIo = captureOutput();
       const seed = createProgram({ ...seedIo.io, fetch: async () => { throw new Error("local"); } });
-      await seed.parseAsync(["node", "muse", "tasks", "add", "Send memo", "--local"], { from: "node" });
+      await seed.parseAsync(["node", "muse", "tasks", "add", "Send memo", "--due", "in 2 hours", "--local"], { from: "node" });
 
       const { io, output } = captureOutput();
       const program = createProgram({ ...io, fetch: async () => { throw new Error("local"); } });
@@ -2481,7 +2481,7 @@ describe("cli program", () => {
     try {
       const { io: io1 } = captureOutput();
       const seed = createProgram({ ...io1, fetch: async () => { throw new Error("fetch in --local"); } });
-      await seed.parseAsync(["node", "muse", "tasks", "add", "Pick", "up", "milk", "--local"], { from: "node" });
+      await seed.parseAsync(["node", "muse", "tasks", "add", "Pick", "up", "milk", "--due", "in 2 hours", "--local"], { from: "node" });
       await seed.parseAsync(
         ["node", "muse", "notes", "save", "weekly/plan.md", "milestones", "for", "next", "week", "--local"],
         { from: "node" }
