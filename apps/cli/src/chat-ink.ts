@@ -9,7 +9,7 @@
  * Render-free logic lives in `chat-ink-core.ts` and is unit-tested.
  */
 
-import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveFollowupsFile, resolveRemindersFile } from "@muse/autoconfigure";
 import { loadSkillsFromDirectory, type Skill } from "@muse/skills";
 import { Box, Static, Text, render, useApp, useCursor, useInput } from "ink";
 import { homedir } from "node:os";
@@ -29,6 +29,8 @@ import {
   type InputState
 } from "./chat-ink-core.js";
 import { renderMuseBanner } from "./muse-banner.js";
+import { readDueFollowups, readDueReminders } from "./commands-today.js";
+import { imminentItems, pickUnseen, proactiveNoticeText, relativeWhen, type ProactiveItem } from "./chat-proactive.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { resolvePersona } from "./program-helpers.js";
 import { resolveDefaultUserKey } from "./user-id.js";
@@ -48,6 +50,11 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
 // The input text — and therefore the cursor — starts at this column.
 const INPUT_COL_OFFSET = 4;
 
+// Proactive ("speaks-first") cadence: how far ahead to look, and how often
+// to poll while the chat is idle.
+const PROACTIVE_LEAD_MS = 60 * 60_000;
+const PROACTIVE_POLL_MS = 45_000;
+
 export interface RunChatInkOptions {
   readonly model?: string;
   readonly continueHistory?: boolean;
@@ -56,7 +63,7 @@ export interface RunChatInkOptions {
 }
 
 interface DisplayTurn {
-  readonly role: "user" | "assistant" | "system";
+  readonly role: "user" | "assistant" | "system" | "proactive";
   readonly text: string;
 }
 
@@ -77,6 +84,7 @@ export function MuseChatApp(props: {
   readonly stream: (messages: readonly ChatTurnMessage[]) => AsyncIterable<{ type: string; text?: string; error?: unknown }>;
   readonly onCommit: (user: string, assistant: string) => void;
   readonly onReset: () => void;
+  readonly proactiveCheck?: () => Promise<readonly ProactiveItem[]>;
 }): React.ReactElement {
   const app = useApp();
   const { setCursorPosition } = useCursor();
@@ -94,6 +102,33 @@ export function MuseChatApp(props: {
   useEffect(() => {
     if (exiting) app.exit();
   }, [exiting, app]);
+
+  // Speaks-first: while idle, poll for imminent reminders / follow-ups and
+  // raise each (once) in the transcript so Muse opens the conversation.
+  const seenRef = useRef<Set<string>>(new Set());
+  const idleRef = useRef(true);
+  idleRef.current = !busy && !exiting;
+  useEffect(() => {
+    const check = props.proactiveCheck;
+    if (!check) return undefined;
+    let active = true;
+    const tick = async (): Promise<void> => {
+      if (!idleRef.current) return;
+      const items = await check().catch(() => [] as readonly ProactiveItem[]);
+      if (!active) return;
+      const now = Date.now();
+      const unseen = pickUnseen(imminentItems(items, now, PROACTIVE_LEAD_MS), seenRef.current);
+      if (unseen.length === 0) return;
+      for (const item of unseen) seenRef.current.add(item.id);
+      setTurns((prev) => [
+        ...prev,
+        ...unseen.map((item) => ({ role: "proactive" as const, text: proactiveNoticeText(item, relativeWhen(item.dueAt, now)) }))
+      ]);
+    };
+    const first = setTimeout(() => { void tick(); }, 1500);
+    const timer = setInterval(() => { void tick(); }, PROACTIVE_POLL_MS);
+    return () => { active = false; clearTimeout(first); clearInterval(timer); };
+  }, [props]);
 
   const submit = useCallback(async (raw: string) => {
     const message = raw.trim();
@@ -204,6 +239,11 @@ export function MuseChatApp(props: {
         return h(Box, { key: index, marginBottom: 1, marginTop: 1 },
           h(Text, { color: "cyan" }, "› "),
           h(Text, { color: "cyan" }, turn.text));
+      }
+      if (turn.role === "proactive") {
+        // Muse opening the conversation — stands out from normal answers.
+        return h(Box, { key: index, marginBottom: 1, marginTop: 1, paddingLeft: 2 },
+          h(Text, { bold: true, color: "magenta" }, turn.text));
       }
       // Assistant + system answers sit indented from the left wall.
       return h(Box, { key: index, marginBottom: 1, paddingLeft: 2 },
@@ -319,6 +359,23 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   // bare CR, indistinguishable from Enter. Supporting terminals (Ghostty/
   // cmux, iTerm2, kitty, WezTerm) opt in; others ignore the sequence.
   const proactiveOn = Boolean(process.env.MUSE_PROACTIVE_PROVIDER?.trim() && process.env.MUSE_PROACTIVE_DESTINATION?.trim());
+
+  // Speaks-first source: imminent reminders + follow-ups from the local
+  // stores. (Messenger push already runs via the proactive daemon; this
+  // surfaces the same items inside the live chat.)
+  const remindersFile = resolveRemindersFile(process.env);
+  const followupsFile = resolveFollowupsFile(process.env);
+  const proactiveCheck = async (): Promise<readonly ProactiveItem[]> => {
+    const horizon = new Date(Date.now() + PROACTIVE_LEAD_MS);
+    const [reminders, followups] = await Promise.all([
+      readDueReminders(remindersFile, horizon).catch(() => []),
+      readDueFollowups(followupsFile, horizon).catch(() => [])
+    ]);
+    return [
+      ...reminders.map((r) => ({ dueAt: r.dueAt, id: r.id, text: r.text })),
+      ...followups.map((f) => ({ dueAt: f.scheduledFor, id: f.id, text: f.summary }))
+    ];
+  };
   const instance = render(h(MuseChatApp, {
     banner,
     history,
@@ -326,6 +383,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     onCommit,
     onReset,
     personaPrompt,
+    proactiveCheck,
     proactiveOn,
     skills: skillInfos,
     skillsDir,

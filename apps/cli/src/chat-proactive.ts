@@ -1,0 +1,55 @@
+/**
+ * Pure helpers for the chat's "speaks-first" (proactive) surfacing — the
+ * chat polls for imminent reminders / follow-ups and Muse raises them in
+ * the transcript unprompted. Store reading is injected; this module only
+ * decides what is imminent, what is new, and how to phrase it.
+ */
+
+export interface ProactiveItem {
+  readonly id: string;
+  readonly text: string;
+  readonly dueAt?: string;
+}
+
+/**
+ * Items due inside the lead window — from a short grace before `now`
+ * (so a just-passed reminder still fires once) to `now + leadMs`. Undated
+ * items never count.
+ */
+export function imminentItems(
+  items: readonly ProactiveItem[],
+  nowMs: number,
+  leadMs: number,
+  graceMs = 120_000
+): ProactiveItem[] {
+  return items.filter((item) => {
+    if (!item.dueAt) return false;
+    const due = Date.parse(item.dueAt);
+    return Number.isFinite(due) && due >= nowMs - graceMs && due <= nowMs + leadMs;
+  });
+}
+
+/** Items whose id hasn't been surfaced yet this session. */
+export function pickUnseen(items: readonly ProactiveItem[], seen: ReadonlySet<string>): ProactiveItem[] {
+  return items.filter((item) => !seen.has(item.id));
+}
+
+/** A short Korean relative-time label for an upcoming/just-passed due time. */
+export function relativeWhen(dueAtIso: string | undefined, nowMs: number): string {
+  if (!dueAtIso) return "";
+  const due = Date.parse(dueAtIso);
+  if (!Number.isFinite(due)) return "";
+  const diffMin = Math.round((due - nowMs) / 60_000);
+  if (diffMin <= 0 && diffMin > -5) return "지금";
+  if (diffMin < 0) return "지났어요";
+  if (diffMin < 60) return `${diffMin}분 후`;
+  const hours = Math.round(diffMin / 60);
+  if (hours < 24) return `${hours}시간 후`;
+  return `${Math.round(hours / 24)}일 후`;
+}
+
+/** The line Muse speaks when it raises an item first. */
+export function proactiveNoticeText(item: ProactiveItem, whenLabel: string): string {
+  const when = whenLabel.length > 0 ? ` (${whenLabel})` : "";
+  return `📌 ${item.text}${when} — 미리 챙길까요?`;
+}
