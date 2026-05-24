@@ -32,6 +32,7 @@ function makeProps(overrides: Record<string, unknown> = {}): Parameters<typeof M
     onReset: () => undefined,
     memorySnapshot: async () => ({ facts: { user_name: "jinan" }, preferences: {}, recentTopics: [] }),
     forgetMemory: async () => true,
+    rememberFact: async () => true,
     recallSearch: async () => "no hits",
     todayBrief: async () => "Today (next 24h)\nTasks: (none open)",
     startJob: () => "job_test",
@@ -80,6 +81,20 @@ describe("MuseChatApp render — slash command echo + output", () => {
     stdin.write("y"); await tick(150); // approve
     unmount();
     expect(decision).toBe(true);
+  });
+
+  it("/remember teaches a fact (echo + confirmation), closing the memory loop", async () => {
+    let saved: { key: string; value: string } | undefined;
+    const { stdin, lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
+      rememberFact: async (key: string, value: string) => { saved = { key, value }; return true; }
+    })));
+    await tick();
+    stdin.write("/remember city=Seoul"); await tick(); stdin.write("\r"); await tick(120);
+    const frame = lastFrame() ?? "";
+    unmount();
+    expect(frame).toContain("› /remember city=Seoul");
+    expect(frame).toContain("✓ Remembered city: Seoul");
+    expect(saved).toEqual({ key: "city", value: "Seoul" });
   });
 
   it("renders the launch brief as an opening turn when recap is set", async () => {

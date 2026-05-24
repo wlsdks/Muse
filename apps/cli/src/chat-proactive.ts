@@ -5,6 +5,8 @@
  * decides what is imminent, what is new, and how to phrase it.
  */
 
+import { stripUntrustedTerminalChars } from "@muse/shared";
+
 export interface ProactiveItem {
   readonly id: string;
   readonly text: string;
@@ -51,7 +53,7 @@ export function relativeWhen(dueAtIso: string | undefined, nowMs: number): strin
 /** The line Muse speaks when it raises an item first. */
 export function proactiveNoticeText(item: ProactiveItem, whenLabel: string): string {
   const when = whenLabel.length > 0 ? ` (${whenLabel})` : "";
-  return `📌 ${item.text}${when} — want a hand?`;
+  return `📌 ${stripUntrustedTerminalChars(item.text)}${when} — want a hand?`;
 }
 
 export interface JobDoneInput {
@@ -64,9 +66,9 @@ export interface JobDoneInput {
 
 /** The line Muse speaks unprompted when a background job finishes. */
 export function jobDoneNoticeText(job: JobDoneInput): string {
-  const label = (job.prompt ?? job.id).replace(/\s+/gu, " ").trim().slice(0, 50);
+  const label = stripUntrustedTerminalChars(job.prompt ?? job.id).replace(/\s+/gu, " ").trim().slice(0, 50);
   if (job.status === "error") return `✗ Background job failed: ${label}`;
-  const result = job.finalText ? ` — ${job.finalText.replace(/\s+/gu, " ").trim().slice(0, 80)}` : "";
+  const result = job.finalText ? ` — ${stripUntrustedTerminalChars(job.finalText).replace(/\s+/gu, " ").trim().slice(0, 80)}` : "";
   return `✓ Background job done: ${label}${result}`;
 }
 

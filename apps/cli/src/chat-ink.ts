@@ -38,6 +38,7 @@ import {
   matchSlashCommands,
   parseInlineSpans,
   parseMarkdownBlocks,
+  parseRememberArg,
   parseSlashCommand,
   reduceInput,
   type ChatTurnMessage,
@@ -71,6 +72,7 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "job", desc: "run a long task in the background — /job <prompt>" },
   { cmd: "jobs", desc: "show recent background jobs + status" },
   { cmd: "memory", desc: "show what Muse remembers about you" },
+  { cmd: "remember", desc: "teach a fact — /remember <key>=<value>" },
   { cmd: "recall", desc: "search past notes + episodes — /recall <query>" },
   { cmd: "forget", desc: "forget one thing — /forget <key>" },
   { cmd: "save", desc: "save the last reply to a note file" },
@@ -160,6 +162,7 @@ export function MuseChatApp(props: {
   readonly recapRole?: "system" | "command";
   readonly memorySnapshot: () => Promise<MemorySnapshot | undefined>;
   readonly forgetMemory: (key: string) => Promise<boolean>;
+  readonly rememberFact: (key: string, value: string) => Promise<boolean>;
   readonly recallSearch: (query: string) => Promise<string>;
   readonly todayBrief: () => Promise<string>;
   readonly startJob: (prompt: string) => string;
@@ -260,8 +263,16 @@ export function MuseChatApp(props: {
       if (slash.cmd === "exit" || slash.cmd === "quit") { setExiting(true); return; }
       if (slash.cmd === "clear") { setTurns([]); return; }
       if (slash.cmd === "new") {
+        // A clean break: clear the model context AND every per-session ref, so
+        // proactive dedup, tool exposure, input history, and the last reply
+        // don't leak into the "new" conversation.
         historyRef.current = [];
         setTurns([]);
+        seenRef.current = new Set();
+        inputHistoryRef.current = [];
+        lastAnswerRef.current = "";
+        setToolsOn(false);
+        setHistPos(-1);
         props.onReset();
         setCommandNotice("Started a new conversation — earlier context cleared.");
         return;
@@ -344,6 +355,13 @@ export function MuseChatApp(props: {
         note(formatMemoryView(await props.memorySnapshot()));
         return;
       }
+      if (slash.cmd === "remember") {
+        const parsed = parseRememberArg(slash.arg);
+        if (!parsed) { note("Tell me what to remember — /remember <key>=<value> (e.g. /remember city=Seoul)."); return; }
+        const ok = await props.rememberFact(parsed.key, parsed.value);
+        note(ok ? `✓ Remembered ${parsed.key}: ${parsed.value}` : "Couldn't save that — memory isn't available.");
+        return;
+      }
       if (slash.cmd === "recall") {
         progress("Searching memory…");
         note(await props.recallSearch(slash.arg));
@@ -371,7 +389,7 @@ export function MuseChatApp(props: {
         return;
       }
       if (slash.cmd === "help") {
-        note(chatHelp(slash.arg, SLASH_COMMANDS.map((c) => c.cmd)));
+        note(chatHelp(slash.arg, SLASH_COMMANDS));
         return;
       }
       note(`Unknown command: /${slash.cmd}`);
@@ -686,8 +704,16 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   const personaSlot = resolvePersona(options.persona);
   const userId = personaSlot && personaSlot.length > 0 ? `${baseUser}@${personaSlot}` : baseUser;
   const memoryStore = assembly.userMemoryStore;
-  const userMemory = memoryStore ? await Promise.resolve(memoryStore.findByUserId(userId)) : undefined;
-  const personaPrompt = (): string | undefined => (userMemory ? buildMusePersona(userMemory, userId) : undefined);
+  // Mutable holder so /forget and /remember take effect on the NEXT turn's
+  // persona — otherwise the system prompt keeps injecting a fact the user just
+  // dropped (what /memory shows would diverge from what's actually injected).
+  const memoryHolder: { current: Awaited<ReturnType<NonNullable<typeof memoryStore>["findByUserId"]>> | undefined } = {
+    current: memoryStore ? await Promise.resolve(memoryStore.findByUserId(userId)) : undefined
+  };
+  const refreshMemory = async (): Promise<void> => {
+    if (memoryStore) memoryHolder.current = await Promise.resolve(memoryStore.findByUserId(userId));
+  };
+  const personaPrompt = (): string | undefined => (memoryHolder.current ? buildMusePersona(memoryHolder.current, userId) : undefined);
 
   const seedLines = continueHistory ? await readLastChatHistory().catch(() => []) : [];
   const history: ChatTurnMessage[] = seedLines
@@ -771,15 +797,38 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   };
 
   // Memory transparency/control surfaced inside the chat: /memory reads what
-  // Muse knows, /forget drops one key. Re-read on each call so /forget's effect
-  // shows immediately.
+  // Muse knows, /remember teaches a fact, /forget drops one key. All re-read
+  // from the store + refresh the persona holder so the change is reflected both
+  // in /memory AND in the next turn's injected system prompt. Fail-soft.
   const memorySnapshot = async (): Promise<MemorySnapshot | undefined> => {
     if (!memoryStore) return undefined;
-    const m = await Promise.resolve(memoryStore.findByUserId(userId));
-    return m ? { facts: m.facts, preferences: m.preferences, recentTopics: m.recentTopics } : undefined;
+    try {
+      const m = await Promise.resolve(memoryStore.findByUserId(userId));
+      return m ? { facts: m.facts, preferences: m.preferences, recentTopics: m.recentTopics } : undefined;
+    } catch {
+      return undefined;
+    }
   };
-  const forgetMemory = async (key: string): Promise<boolean> =>
-    memoryStore?.forget ? Promise.resolve(memoryStore.forget(userId, key)) : false;
+  const forgetMemory = async (key: string): Promise<boolean> => {
+    if (!memoryStore?.forget) return false;
+    try {
+      const removed = await Promise.resolve(memoryStore.forget(userId, key));
+      if (removed) await refreshMemory();
+      return removed;
+    } catch {
+      return false;
+    }
+  };
+  const rememberFact = async (key: string, value: string): Promise<boolean> => {
+    if (!memoryStore) return false;
+    try {
+      await Promise.resolve(memoryStore.upsertFact(userId, key, value));
+      await refreshMemory();
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   // /recall — semantic search across the notes + episode indices. Reuses the
   // same pipeline as `muse recall`; fail-soft to a hint when Ollama is down or
@@ -810,15 +859,19 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     ...(personaSlot ? { persona: personaSlot } : {})
   }).id;
   const jobsOverview = async (): Promise<readonly JobListItem[]> => {
-    const summaries = await Promise.all(listRecentJobIds(8).map((id) => readJobSummary(id)));
-    return summaries
-      .filter((s): s is NonNullable<typeof s> => Boolean(s))
-      .map((s) => ({
-        id: s.id,
-        status: s.status,
-        ...(s.prompt ? { prompt: s.prompt } : {}),
-        ...(s.finalText ? { finalText: s.finalText } : {})
-      }));
+    try {
+      const summaries = await Promise.all(listRecentJobIds(8).map((id) => readJobSummary(id)));
+      return summaries
+        .filter((s): s is NonNullable<typeof s> => Boolean(s))
+        .map((s) => ({
+          id: s.id,
+          status: s.status,
+          ...(s.prompt ? { prompt: s.prompt } : {}),
+          ...(s.finalText ? { finalText: s.finalText } : {})
+        }));
+    } catch {
+      return [];
+    }
   };
   // Muse speaks up when a job started this session finishes. `chatStartedIso`
   // stops jobs that completed before launch from announcing on the first poll.
@@ -938,6 +991,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     streamWithTools,
     memorySnapshot,
     forgetMemory,
+    rememberFact,
     recallSearch,
     todayBrief,
     startJob,

@@ -5,6 +5,8 @@
  * all unit-testable without an Ink render.
  */
 
+import { stripUntrustedTerminalChars } from "@muse/shared";
+
 export interface InkKeyEvent {
   readonly backspace?: boolean;
   readonly delete?: boolean;
@@ -247,13 +249,33 @@ const HELP_TOPICS: Readonly<Record<string, string>> = {
 };
 
 /** In-chat help: a command index, or a detailed blurb for one topic. */
-export function chatHelp(topic: string, commandNames: readonly string[]): string {
+export function chatHelp(topic: string, commands: readonly { readonly cmd: string; readonly desc: string }[]): string {
   const t = topic.trim().toLowerCase();
   if (t.length === 0) {
-    return `Commands: ${commandNames.map((c) => `/${c}`).join(" · ")}\n` +
-      `Tips: @file to attach · ↑↓ for history · /help <topic> — ${Object.keys(HELP_TOPICS).join(", ")}`;
+    return `Commands: ${commands.map((c) => `/${c.cmd}`).join(" · ")}\n` +
+      `Tips: @file to attach · ↑↓ for history · /help <topic> for any command`;
   }
-  return HELP_TOPICS[t] ?? `No help for '${t}'. Topics: ${Object.keys(HELP_TOPICS).join(", ")}`;
+  if (HELP_TOPICS[t]) return HELP_TOPICS[t] as string;
+  // Fall back to the command's own one-line description so `/help <cmd>`
+  // always answers, even for commands without a dedicated topic blurb.
+  const command = commands.find((c) => c.cmd === t);
+  if (command) return `/${command.cmd} — ${command.desc}`;
+  return `No help for '${t}'. Try /help for the command list.`;
+}
+
+/**
+ * Parse `/remember` input into a key/value to store as a fact. Accepts
+ * `key=value` or `key: value`; the key is normalised to a snake_case slug so
+ * it round-trips with `/forget <key>` and shows tidily in `/memory`. Returns
+ * undefined when there's no usable key+value.
+ */
+export function parseRememberArg(arg: string): { key: string; value: string } | undefined {
+  const match = /^\s*([^=:]+?)\s*[=:]\s*(.+)$/u.exec(arg);
+  if (!match) return undefined;
+  const key = (match[1] ?? "").trim().toLowerCase().replace(/\s+/gu, "_").replace(/[^a-z0-9_]/gu, "");
+  const value = (match[2] ?? "").trim();
+  if (key.length === 0 || value.length === 0) return undefined;
+  return { key, value };
 }
 
 export interface MarkdownBlock {
@@ -382,7 +404,7 @@ export function summarizeToolArgs(args: Record<string, unknown>): string {
   const parts: string[] = [];
   for (const [key, raw] of Object.entries(args)) {
     if (raw === undefined || raw === null || raw === "") continue;
-    const value = typeof raw === "string" ? raw : JSON.stringify(raw);
+    const value = stripUntrustedTerminalChars(typeof raw === "string" ? raw : JSON.stringify(raw));
     const clipped = value.length > 60 ? `${value.slice(0, 60)}…` : value;
     parts.push(`${key}: ${clipped.replace(/\s+/gu, " ")}`);
   }
@@ -491,8 +513,8 @@ export function formatRecallHits(query: string, hits: readonly RecallHitView[]):
   if (hits.length === 0) return `No memories matched "${query}". Try \`muse notes reindex\` / \`muse episode reindex\`.`;
   const lines: string[] = [`Recall for "${query}":`];
   for (const hit of hits) {
-    lines.push(`  [${hit.source}] ${hit.ref} (${hit.score.toFixed(2)})`);
-    lines.push(`    ${hit.snippet.replace(/\s+/gu, " ").trim().slice(0, 140)}`);
+    lines.push(`  [${hit.source}] ${stripUntrustedTerminalChars(hit.ref)} (${hit.score.toFixed(2)})`);
+    lines.push(`    ${stripUntrustedTerminalChars(hit.snippet).replace(/\s+/gu, " ").trim().slice(0, 140)}`);
   }
   return lines.join("\n");
 }
@@ -515,10 +537,10 @@ export function formatJobsList(jobs: readonly JobListItem[]): string {
     status === "done" ? "✓" : status === "error" ? "✗" : status === "running" ? "⏳" : "·";
   const lines: string[] = ["Background jobs:"];
   for (const job of jobs) {
-    const label = (job.prompt ?? "").replace(/\s+/gu, " ").trim().slice(0, 50) || job.id;
+    const label = stripUntrustedTerminalChars(job.prompt ?? "").replace(/\s+/gu, " ").trim().slice(0, 50) || job.id;
     lines.push(`  ${glyph(job.status)} ${job.id.slice(0, 24)} — ${label} (${job.status})`);
     if (job.status === "done" && job.finalText) {
-      lines.push(`      → ${job.finalText.replace(/\s+/gu, " ").trim().slice(0, 80)}`);
+      lines.push(`      → ${stripUntrustedTerminalChars(job.finalText).replace(/\s+/gu, " ").trim().slice(0, 80)}`);
     }
   }
   return lines.join("\n");

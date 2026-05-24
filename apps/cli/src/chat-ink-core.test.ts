@@ -18,6 +18,7 @@ import {
   matchModelNames,
   parseInlineSpans,
   parseMarkdownBlocks,
+  parseRememberArg,
   matchSlashCommands,
   parseSlashCommand,
   reduceInput,
@@ -117,13 +118,43 @@ describe("extractAttachmentPaths", () => {
 });
 
 describe("chatHelp", () => {
+  const cmds = [{ cmd: "help", desc: "show command help" }, { cmd: "tools", desc: "toggle tools" }, { cmd: "cost", desc: "show this session's token usage" }];
   it("lists commands with no topic, gives a blurb for a known topic, errors for unknown", () => {
-    const idx = chatHelp("", ["help", "tools", "exit"]);
+    const idx = chatHelp("", cmds);
     expect(idx).toContain("/help");
     expect(idx).toContain("/tools");
-    expect(chatHelp("tools", [])).toContain("run tools in chat");
-    expect(chatHelp("file", [])).toContain("@file");
-    expect(chatHelp("nope", [])).toMatch(/No help for 'nope'/);
+    expect(chatHelp("tools", cmds)).toContain("run tools in chat"); // dedicated topic
+    expect(chatHelp("file", cmds)).toContain("@file");
+    expect(chatHelp("nope", cmds)).toMatch(/No help for 'nope'/);
+  });
+  it("falls back to a command's description when there's no dedicated topic", () => {
+    expect(chatHelp("cost", cmds)).toBe("/cost — show this session's token usage");
+  });
+});
+
+describe("parseRememberArg", () => {
+  it("parses key=value and key: value, slugifying the key", () => {
+    expect(parseRememberArg("city=Seoul")).toEqual({ key: "city", value: "Seoul" });
+    expect(parseRememberArg("reply style: concise")).toEqual({ key: "reply_style", value: "concise" });
+    expect(parseRememberArg("  Home Town = Busan ")).toEqual({ key: "home_town", value: "Busan" });
+  });
+  it("rejects input without a usable key+value", () => {
+    expect(parseRememberArg("just text")).toBeUndefined();
+    expect(parseRememberArg("=novalue")).toBeUndefined();
+    expect(parseRememberArg("key=")).toBeUndefined();
+  });
+});
+
+describe("summarizeToolArgs / format* strip terminal-control bytes from untrusted content", () => {
+  const ESC = String.fromCharCode(27);
+  it("summarizeToolArgs strips the ESC control byte from an attacker-controlled arg", () => {
+    const out = summarizeToolArgs({ subject: `${ESC}[2JHi` });
+    expect(out).not.toContain(ESC);
+    expect(out).toContain("Hi");
+  });
+  it("formatRecallHits + formatJobsList strip ESC from snippets/prompts", () => {
+    expect(formatRecallHits("q", [{ source: "notes", ref: "n1", score: 0.5, snippet: `${ESC}]0;xhello` }])).not.toContain(ESC);
+    expect(formatJobsList([{ id: "j1", status: "done", prompt: `${ESC}[2Kgo`, finalText: `${ESC}[1mout` }])).not.toContain(ESC);
   });
 });
 
