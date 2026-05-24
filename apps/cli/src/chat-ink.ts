@@ -43,6 +43,7 @@ import {
   parseRememberArg,
   parseSlashCommand,
   reduceInput,
+  resolveForgetKey,
   type ChatTurnMessage,
   type InkKeyEvent,
   type InputState,
@@ -426,8 +427,13 @@ export function MuseChatApp(props: {
           note(wiped ? "✓ Wiped everything I remembered about you." : "Nothing to wipe.");
           return;
         }
-        const ok = await props.forgetMemory(key);
-        note(ok ? `✓ Forgot "${key}".` : `Nothing remembered under "${key}" — check /memory for the exact key.`);
+        const snap = await props.memorySnapshot();
+        const keys = snap ? [...Object.keys(snap.facts), ...Object.keys(snap.preferences)] : [];
+        const resolved = resolveForgetKey(keys, key);
+        if (resolved.kind === "none") { note(`Nothing remembered matching "${key}" — check /memory for the keys.`); return; }
+        if (resolved.kind === "ambiguous") { note(`"${key}" matches ${resolved.matches.length}: ${resolved.matches.join(", ")}. Be more specific.`); return; }
+        const ok = await props.forgetMemory(resolved.key);
+        note(ok ? `✓ Forgot "${resolved.key}".` : `Nothing remembered under "${resolved.key}".`);
         return;
       }
       if (slash.cmd === "help") {

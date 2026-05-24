@@ -24,6 +24,7 @@ import {
   matchSlashCommands,
   parseSlashCommand,
   reduceInput,
+  resolveForgetKey,
   summarizeToolArgs,
   type InputState
 } from "./chat-ink-core.js";
@@ -355,5 +356,24 @@ describe("greetingName", () => {
     expect(greetingName({ city: "Seoul" })).toBeUndefined();
     expect(greetingName({})).toBeUndefined();
     expect(greetingName(undefined)).toBeUndefined();
+  });
+});
+
+describe("resolveForgetKey", () => {
+  const keys = ["user_name", "city", "reply_style", "work_city"];
+  it("prefers an exact key", () => {
+    expect(resolveForgetKey(keys, "city")).toEqual({ key: "city", kind: "exact" });
+  });
+  it("unique substring → that key", () => {
+    expect(resolveForgetKey(keys, "name")).toEqual({ key: "user_name", kind: "unique" });
+    expect(resolveForgetKey(keys, "style")).toEqual({ key: "reply_style", kind: "unique" });
+  });
+  it("multiple substring matches → ambiguous (never guesses)", () => {
+    const r = resolveForgetKey(["city", "work_city"], "cITy");
+    expect(r.kind).toBe("ambiguous");
+    if (r.kind === "ambiguous") expect(r.matches).toEqual(["city", "work_city"]);
+  });
+  it("no match → none", () => {
+    expect(resolveForgetKey(keys, "weather")).toEqual({ kind: "none" });
   });
 });

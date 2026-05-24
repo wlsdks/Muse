@@ -126,6 +126,29 @@ describe("MuseChatApp render — slash command echo + output", () => {
     expect(frame).toContain("✓ Updated city: Seoul → Busan");
   });
 
+  it("/forget resolves a substring key and reports ambiguity safely", async () => {
+    const forgotten: string[] = [];
+    const props = makeProps({
+      memorySnapshot: async () => ({ facts: { user_name: "jinan", city: "Seoul", work_city: "Busan" }, preferences: {}, recentTopics: [] }),
+      forgetMemory: async (k: string) => { forgotten.push(k); return true; }
+    });
+    // unique substring "name" → user_name
+    const a = render(React.createElement(MuseChatApp, props));
+    await tick(); a.stdin.write("/forget name"); await tick(); a.stdin.write("\r"); await tick(140);
+    expect(a.lastFrame() ?? "").toContain('✓ Forgot "user_name".');
+    a.unmount();
+    expect(forgotten).toEqual(["user_name"]);
+    // ambiguous "cit" → matches city + work_city, no exact → asks, forgets nothing
+    forgotten.length = 0;
+    const b = render(React.createElement(MuseChatApp, props));
+    await tick(); b.stdin.write("/forget cit"); await tick(); b.stdin.write("\r"); await tick(140);
+    const fb = b.lastFrame() ?? "";
+    b.unmount();
+    expect(fb).toContain("matches 2");
+    expect(fb).toContain("Be more specific");
+    expect(forgotten).toEqual([]);
+  });
+
   it("renders the launch brief as an opening turn when recap is set", async () => {
     const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
       recap: "♪ good morning\n\nToday (next 24h)",
@@ -158,7 +181,7 @@ describe("MuseChatApp render — every slash command responds", () => {
     { input: "/remember city=Seoul", contains: ["✓ Remembered city: Seoul"] },
     { input: "/pref reply_style=concise", contains: ["✓ Preference reply_style: concise"] },
     { input: "/recall budget", contains: ["› /recall budget", "no hits"] },
-    { input: "/forget city", contains: ["✓ Forgot \"city\"."] },
+    { input: "/forget user_name", contains: ["✓ Forgot \"user_name\"."] },
     { input: "/forget --all", contains: ["Wiped everything"] },
     { input: "/trust", contains: ["› /trust", "Trusted tools (0)"] },
     { input: "/persona", contains: ["› /persona", "persona"] },

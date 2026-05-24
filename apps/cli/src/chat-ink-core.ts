@@ -577,3 +577,26 @@ export function greetingName(facts: Readonly<Record<string, string>> | undefined
   const first = stripUntrustedTerminalChars(raw).replace(/\s+/gu, " ").trim().split(" ")[0] ?? "";
   return first.length > 0 ? first.slice(0, 40) : undefined;
 }
+
+export type ForgetResolution =
+  | { readonly kind: "exact"; readonly key: string }
+  | { readonly kind: "unique"; readonly key: string }
+  | { readonly kind: "ambiguous"; readonly matches: readonly string[] }
+  | { readonly kind: "none" };
+
+/**
+ * Resolve a `/forget <query>` against the known memory keys. Prefers an exact
+ * key; otherwise a case-insensitive substring match — unique → that key, many
+ * → ambiguous (the caller asks the user to be specific), none → not found. Lets
+ * the user forget "city" without typing the exact stored key, while staying
+ * safe (never guesses among several).
+ */
+export function resolveForgetKey(keys: readonly string[], query: string): ForgetResolution {
+  const q = query.trim();
+  if (keys.includes(q)) return { key: q, kind: "exact" };
+  const lower = q.toLowerCase();
+  const matches = keys.filter((k) => k.toLowerCase().includes(lower));
+  if (matches.length === 1) return { key: matches[0] as string, kind: "unique" };
+  if (matches.length > 1) return { kind: "ambiguous", matches };
+  return { kind: "none" };
+}
