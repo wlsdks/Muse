@@ -31,6 +31,7 @@ import {
   parseRoutineUpdateMs,
   readLastChatHistory
 } from "./chat-history.js";
+import { renderMuseBanner } from "./muse-banner.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
 import { handleSlashCommand, type SlashContext, type SlashDeps } from "./chat-repl-slash.js";
@@ -306,17 +307,20 @@ export async function runChatRepl(
     }
   }
 
-  io.stdout("\n");
-  io.stdout("Muse REPL — type /help for commands, /exit to quit.\n");
-  io.stdout(`  user: ${userId}, model: ${currentModel ?? assembly.defaultModel ?? "(default)"}, tools: ${toolsDisabled ? "off" : "on"}, history: ${history.length.toString()} turns\n`);
+  const statusLine = `user: ${userId} · model: ${currentModel ?? assembly.defaultModel ?? "(default)"} · tools: ${toolsDisabled ? "off" : "on"} · history: ${history.length.toString()} turns`;
+  let rememberedLine: string | undefined;
   if (userMemory) {
     const factCount = Object.keys(userMemory.facts).length;
     const prefCount = Object.keys(userMemory.preferences).length;
     if (factCount + prefCount > 0) {
-      io.stdout(`  remembered: ${factCount.toString()} fact(s), ${prefCount.toString()} pref(s) (type /whoami)\n`);
+      rememberedLine = `remembered: ${factCount.toString()} fact(s), ${prefCount.toString()} pref(s) · /whoami`;
     }
   }
-  io.stdout("\n");
+  io.stdout(renderMuseBanner({
+    status: statusLine,
+    ...(rememberedLine ? { subStatus: rememberedLine } : {}),
+    hint: "/help for commands · /exit to quit"
+  }));
 
   let active = true;
   const onSigint = (): void => {
