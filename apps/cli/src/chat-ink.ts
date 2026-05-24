@@ -12,8 +12,9 @@
 import { createMuseRuntimeAssembly, resolveFollowupsFile, resolveRemindersFile } from "@muse/autoconfigure";
 import { loadSkillsFromDirectory, type Skill } from "@muse/skills";
 import { Box, Static, Text, render, useApp, useCursor, useInput } from "ink";
+import { readFile as fsReadFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { appendLastChatTurn, clearLastChatHistory, readLastChatHistory } from "./chat-history.js";
@@ -21,6 +22,7 @@ import {
   buildTurnMessages,
   cursorCoords,
   emptyInput,
+  extractAttachmentPaths,
   matchAgentNames,
   matchSlashCommands,
   parseSlashCommand,
@@ -86,7 +88,8 @@ export function MuseChatApp(props: {
   readonly skillsDir: string;
   readonly skillsPrompt: string;
   readonly personaPrompt: () => string | undefined;
-  readonly stream: (messages: readonly ChatTurnMessage[]) => AsyncIterable<{ type: string; text?: string; error?: unknown }>;
+  readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown }>;
+  readonly readFile: (relativePath: string) => Promise<string | undefined>;
   readonly onCommit: (user: string, assistant: string) => void;
   readonly onReset: () => void;
   readonly proactiveCheck?: () => Promise<readonly ProactiveItem[]>;
@@ -100,7 +103,9 @@ export function MuseChatApp(props: {
   const [exiting, setExiting] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [activeAgent, setActiveAgent] = useState<AgentDef | undefined>(undefined);
+  const [currentModel, setCurrentModel] = useState(props.model);
   const [ctrlCArmed, setCtrlCArmed] = useState(false);
+  const interruptRef = useRef(false);
   const [commandNotice, setCommandNotice] = useState<string | undefined>(undefined);
   const [histPos, setHistPos] = useState(-1);
   const inputHistoryRef = useRef<string[]>([]);
@@ -159,7 +164,16 @@ export function MuseChatApp(props: {
         note("Started a new conversation — earlier context cleared.");
         return;
       }
-      if (slash.cmd === "model") { note(`Current model: ${props.model}`); return; }
+      if (slash.cmd === "model") {
+        const target = slash.arg.trim();
+        if (target.length === 0) {
+          note(`Current model: ${currentModel}. Switch this session with /model <name> (e.g. ollama/qwen3.6:35b-a3b).`);
+        } else {
+          setCurrentModel(target);
+          note(`Switched model to ${target} for this session.`);
+        }
+        return;
+      }
       if (slash.cmd === "agents") {
         if (props.agents.length === 0) {
           note("No agents yet. Create one with `muse agents add <name>`, then switch with `/agent <name>`.");
@@ -204,13 +218,30 @@ export function MuseChatApp(props: {
     setTurns((prev) => [...prev, { role: "user", text: message }]);
     setBusy(true);
     setStreaming("");
+    interruptRef.current = false;
+
+    // `@path` attachments: read referenced files and prepend their contents
+    // so the model can answer about them. Missing/oversize files fail soft.
+    const attachmentPaths = extractAttachmentPaths(message);
+    let attachmentBlock = "";
+    for (const rel of attachmentPaths) {
+      try {
+        const body = await props.readFile(rel);
+        if (body !== undefined) attachmentBlock += `\n\n[Attached file: ${rel}]\n${body}`;
+      } catch { /* skip unreadable attachment */ }
+    }
+    if (attachmentPaths.length > 0) {
+      setCommandNotice(`Attached: ${attachmentPaths.join(", ")}`);
+    }
+
     const base = props.personaPrompt() ?? formatCurrentContextLine();
     const agentPrefix = activeAgent ? `${activeAgent.prompt}\n\n` : "";
     const system = agentPrefix + base + props.skillsPrompt;
-    const messages = buildTurnMessages(system, historyRef.current, message);
+    const messages = buildTurnMessages(system, historyRef.current, message + attachmentBlock);
     let accumulated = "";
     try {
-      for await (const event of props.stream(messages)) {
+      for await (const event of props.stream(messages, currentModel)) {
+        if (interruptRef.current) { accumulated += accumulated.length > 0 ? " …(interrupted)" : "(interrupted)"; break; }
         if (event.type === "error") {
           const err = event.error;
           throw err instanceof Error ? err : new Error(typeof err === "string" ? err : "model stream failed");
@@ -229,7 +260,7 @@ export function MuseChatApp(props: {
     setStreaming("");
     setBusy(false);
     props.onCommit(message, accumulated);
-  }, [app, props, activeAgent]);
+  }, [app, props, activeAgent, currentModel]);
 
   const slashMenu = matchSlashCommands(inputState.value, SLASH_COMMANDS);
   const agentMenu = slashMenu.length === 0 ? matchAgentNames(inputState.value, props.agents.map((a) => a.name)) : [];
@@ -249,6 +280,8 @@ export function MuseChatApp(props: {
       setSlashIndex(0);
       return;
     }
+    // Esc while replying interrupts the stream (UI stops consuming it).
+    if (busy && key.escape) { interruptRef.current = true; return; }
     if (busy || exiting) return;
     if (ctrlCArmed) setCtrlCArmed(false); // any other key disarms
 
@@ -397,11 +430,13 @@ export function MuseChatApp(props: {
     h(Box, { marginTop: 1 },
       ctrlCArmed
         ? h(Text, { color: "yellow" }, "Press ctrl-c again to quit")
-        : h(Text, { dimColor: true }, "⏎ send · shift+⏎ newline · /help · ctrl-c×2 quit")),
+        : busy
+          ? h(Text, { dimColor: true }, "esc to stop · ctrl-c×2 quit")
+          : h(Text, { dimColor: true }, "⏎ send · shift+⏎ newline · @file · /help · ctrl-c×2 quit")),
     // HUD: persistent status — model, proactive (speaks-first) mode, skills.
     h(Box, null,
       h(Text, { color: "magenta" }, "♪ "),
-      h(Text, { color: "cyan" }, props.model),
+      h(Text, { color: "cyan" }, currentModel),
       h(Text, { dimColor: true }, "  ·  proactive "),
       h(Text, { color: props.proactiveOn ? "green" : "gray" }, props.proactiveOn ? "on" : "off"),
       h(Text, { dimColor: true }, `  ·  agent `),
@@ -443,8 +478,20 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     .slice(-20);
 
   const provider = assembly.modelProvider;
-  const stream = (messages: readonly ChatTurnMessage[]): AsyncIterable<{ type: string; text?: string; error?: unknown }> =>
-    provider.stream({ messages: messages as { role: "system" | "user" | "assistant"; content: string }[], model });
+  const stream = (messages: readonly ChatTurnMessage[], useModel: string): AsyncIterable<{ type: string; text?: string; error?: unknown }> =>
+    provider.stream({ messages: messages as { role: "system" | "user" | "assistant"; content: string }[], model: useModel });
+
+  // `@path` attachments: read relative to the launch directory, fail-soft,
+  // capped so a huge file can't blow the context window.
+  const readFile = async (relativePath: string): Promise<string | undefined> => {
+    try {
+      const abs = isAbsolute(relativePath) ? relativePath : join(process.cwd(), relativePath);
+      const body = await fsReadFile(abs, "utf8");
+      return body.length > 8000 ? `${body.slice(0, 8000)}\n…(truncated)` : body;
+    } catch {
+      return undefined;
+    }
+  };
 
   const onCommit = (user: string, assistant: string): void => {
     void appendLastChatTurn({ message: user, response: assistant }).catch(() => undefined);
@@ -499,6 +546,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     onReset,
     personaPrompt,
     proactiveCheck,
+    readFile,
     proactiveOn,
     skills: skillInfos,
     skillsDir,

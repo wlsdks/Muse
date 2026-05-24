@@ -5,6 +5,7 @@ import {
   cursorCoords,
   displayWidth,
   emptyInput,
+  extractAttachmentPaths,
   matchAgentNames,
   matchSlashCommands,
   parseSlashCommand,
@@ -91,6 +92,15 @@ describe("matchSlashCommands", () => {
   it("closes (no matches) once a space follows the command", () => {
     expect(matchSlashCommands("/clear ", cmds)).toEqual([]);
     expect(matchSlashCommands("/model gpt", cmds)).toEqual([]);
+  });
+});
+
+describe("extractAttachmentPaths", () => {
+  it("pulls @paths (deduped, in order), ignores plain text and emails", () => {
+    expect(extractAttachmentPaths("summarize @notes/plan.md and @./todo.txt")).toEqual(["notes/plan.md", "./todo.txt"]);
+    expect(extractAttachmentPaths("@a.md again @a.md")).toEqual(["a.md"]);
+    expect(extractAttachmentPaths("no files here")).toEqual([]);
+    expect(extractAttachmentPaths("@/abs/path/file.log please")).toEqual(["/abs/path/file.log"]);
   });
 });
 

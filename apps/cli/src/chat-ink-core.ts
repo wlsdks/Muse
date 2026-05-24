@@ -240,6 +240,20 @@ export function matchAgentNames(value: string, names: readonly string[]): readon
   return names.filter((name) => name.toLowerCase().startsWith(partial));
 }
 
+/**
+ * File paths referenced with `@path` in a message (claude/codex style),
+ * so their contents can be attached to the turn. Returns each `@token`'s
+ * path, de-duplicated, in order.
+ */
+export function extractAttachmentPaths(message: string): string[] {
+  const out: string[] = [];
+  for (const match of message.matchAll(/(?:^|\s)@([^\s]+)/gu)) {
+    const path = match[1];
+    if (path && !out.includes(path)) out.push(path);
+  }
+  return out;
+}
+
 export interface ParsedSlash {
   readonly cmd: string;
   readonly arg: string;
