@@ -253,16 +253,30 @@ export function MuseChatApp(props: {
     if (ctrlCArmed) setCtrlCArmed(false); // any other key disarms
 
     // When a picker (slash commands, or agent names after `/agent `) is open,
-    // ↑/↓ move the selection and Tab completes the highlighted item.
+    // ↑/↓ move the selection, Tab completes, Enter runs the highlighted item.
     if (menuLen > 0) {
       if (key.upArrow) { setSlashIndex(Math.max(0, menuSel - 1)); return; }
       if (key.downArrow) { setSlashIndex(Math.min(menuLen - 1, menuSel + 1)); return; }
+      const selectedCmd = slashMenu.length > 0 ? (slashMenu[menuSel]?.cmd ?? "") : "";
+      const selectedAgent = slashMenu.length === 0 ? (agentMenu[menuSel] ?? "") : "";
       if (key.tab) {
-        const completed = slashMenu.length > 0
-          ? `/${slashMenu[menuSel]?.cmd ?? ""} `
-          : `/agent ${agentMenu[menuSel] ?? ""}`;
+        const completed = slashMenu.length > 0 ? `/${selectedCmd} ` : `/agent ${selectedAgent}`;
         setInputState({ cursor: [...completed].length, value: completed });
         setSlashIndex(0);
+        return;
+      }
+      if (key.return) {
+        // Run the highlighted item. `/agent` needs a name, so complete it
+        // instead of running (so the agent-name picker opens next).
+        if (slashMenu.length > 0 && selectedCmd === "agent") {
+          setInputState({ cursor: 7, value: "/agent " });
+          setSlashIndex(0);
+          return;
+        }
+        const toRun = slashMenu.length > 0 ? `/${selectedCmd}` : `/agent ${selectedAgent}`;
+        setInputState(emptyInput);
+        setSlashIndex(0);
+        void submit(toRun);
         return;
       }
     }
@@ -306,7 +320,7 @@ export function MuseChatApp(props: {
 
   const transcript = h(Static, {
     children: (item: unknown, index: number) => {
-      if (index === 0) return h(Text, { key: "banner" }, props.banner);
+      if (index === 0) return h(Box, { key: "banner", marginBottom: 1 }, h(Text, null, props.banner));
       const turn = item as DisplayTurn;
       if (turn.role === "user") {
         // The user's message stays as a snapshot — the same `› ` prompt
