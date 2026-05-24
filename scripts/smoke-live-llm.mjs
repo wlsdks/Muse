@@ -119,6 +119,23 @@ function record(name, fn) {
     });
 }
 
+async function chatJson(message, runId) {
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    body: JSON.stringify({ message, runId }),
+    headers: { "content-type": "application/json" },
+    method: "POST"
+  });
+  const body = await response.json();
+  assert(response.status === 200, `expected 200, got ${response.status}: ${JSON.stringify(body)}`);
+  return body;
+}
+
+function assertSelected(body, toolName) {
+  assert(body.success === true, `expected success, got ${JSON.stringify(body)}`);
+  assert(Array.isArray(body.toolsUsed) && body.toolsUsed.includes(toolName),
+    `NATURAL selection failed — expected the model to pick '${toolName}' unprompted, got toolsUsed=${JSON.stringify(body.toolsUsed)} content="${body.content}"`);
+}
+
 try {
   await waitForHealth(`${baseUrl}/health`, 30_000);
 
@@ -389,6 +406,52 @@ try {
     assert(response.status === 200, `expected 200, got ${response.status}: ${JSON.stringify(body)}`);
     assert(Array.isArray(body.toolsUsed) && body.toolsUsed.includes("muse.calendar.add"),
       `expected toolsUsed to include muse.calendar.add, got ${JSON.stringify(body.toolsUsed)} content="${body.content}"`);
+  });
+
+  await record("world_time (live) — NATURAL selection from 'what time in Tokyo?'", async () => {
+    const body = await chatJson("What time is it right now in Tokyo?", "live-natural-worldtime");
+    assertSelected(body, "world_time");
+  });
+
+  await record("muse.calendar.availability (live) — NATURAL selection from 'am I free?'", async () => {
+    const body = await chatJson("Am I free tomorrow afternoon?", "live-natural-availability");
+    assertSelected(body, "muse.calendar.availability");
+  });
+
+  await record("muse.tasks.list (live) — NATURAL selection from 'what's due today?'", async () => {
+    const body = await chatJson("What tasks do I have due today?", "live-natural-taskslist");
+    assertSelected(body, "muse.tasks.list");
+  });
+
+  await record("muse.tasks.update (live) — NATURAL reschedule selects update, not add", async () => {
+    // Depends on the earlier muse.tasks.add case having created
+    // "Buy birthday card" — a reschedule of an EXISTING task must pick
+    // `update`, the exact add-vs-update ambiguity the tool names guard.
+    const body = await chatJson(
+      "Reschedule the 'Buy birthday card' task to 2099-03-15.",
+      "live-natural-tasksupdate"
+    );
+    assertSelected(body, "muse.tasks.update");
+  });
+
+  await record("muse.tasks.add urgent (live) — NATURAL 'urgent task' both selects add AND sets urgent", async () => {
+    const body = await chatJson("Add an urgent task: call the dentist back ASAP.", "live-natural-urgent");
+    assertSelected(body, "muse.tasks.add");
+    const listed = await (await fetch(`${baseUrl}/api/tasks`)).json();
+    const tasks = Array.isArray(listed) ? listed : (listed.tasks ?? []);
+    const dentist = tasks.find((task) => /dentist/iu.test(task.title ?? ""));
+    assert(dentist && dentist.urgent === true,
+      `expected the dentist task stored with urgent=true, got ${JSON.stringify(dentist)}`);
+  });
+
+  await record("muse.notes.delete (live) — NATURAL selection from 'delete the note about …'", async () => {
+    const body = await chatJson("Delete the note about the garage door, I don't need it anymore.", "live-natural-notesdelete");
+    assertSelected(body, "muse.notes.delete");
+  });
+
+  await record("muse.reminders.add (live) — NATURAL selection from a recurring 'remind me every morning'", async () => {
+    const body = await chatJson("Remind me every morning at 8am to take my vitamins.", "live-natural-reminder");
+    assertSelected(body, "muse.reminders.add");
   });
 
   await record("POST /api/multi-agent/orchestrate (live, sequential)", async () => {
