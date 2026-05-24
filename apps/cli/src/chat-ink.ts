@@ -53,8 +53,16 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "agents", desc: "list defined agents" },
   { cmd: "agent", desc: "switch agent — /agent <name> (default to clear)" },
   { cmd: "skills", desc: "list installed skills + how to add" },
+  { cmd: "tools", desc: "toggle tools (read + local writes; outbound stays off)" },
   { cmd: "cost", desc: "show this session's token usage" },
   { cmd: "exit", desc: "quit Muse (ctrl-c)" }
+];
+
+// Third-party-outbound actuators stay blocked in chat until an in-chat
+// approval UX exists — outbound-safety: never an autonomous send. Read tools
+// and local writes (notes/tasks/calendar) are allowed when tools are on.
+const OUTBOUND_ACTUATORS: readonly string[] = [
+  "email_send", "web_action", "home_action", "smart_home", "muse.messaging.send", "objective.act"
 ];
 
 function formatTokens(n: number): string {
@@ -119,7 +127,8 @@ export function MuseChatApp(props: {
   readonly skillsDir: string;
   readonly skillsPrompt: string;
   readonly personaPrompt: () => string | undefined;
-  readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
+  readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
+  readonly streamWithTools: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly readFile: (relativePath: string) => Promise<string | undefined>;
   readonly onCommit: (user: string, assistant: string) => void;
   readonly onReset: () => void;
@@ -135,6 +144,7 @@ export function MuseChatApp(props: {
   const [slashIndex, setSlashIndex] = useState(0);
   const [activeAgent, setActiveAgent] = useState<AgentDef | undefined>(undefined);
   const [currentModel, setCurrentModel] = useState(props.model);
+  const [toolsOn, setToolsOn] = useState(false);
   const [ctrlCArmed, setCtrlCArmed] = useState(false);
   const interruptRef = useRef(false);
   const [commandNotice, setCommandNotice] = useState<string | undefined>(undefined);
@@ -247,6 +257,14 @@ export function MuseChatApp(props: {
         }
         return;
       }
+      if (slash.cmd === "tools") {
+        const next = !toolsOn;
+        setToolsOn(next);
+        note(next
+          ? "Tools ON — read + local writes (notes/tasks/calendar). Outbound (email/web/home) stays blocked for safety."
+          : "Tools OFF — plain chat (faster).");
+        return;
+      }
       if (slash.cmd === "cost") {
         note(sessionTokens > 0 ? `This session: ${formatTokens(sessionTokens)} tokens (local model = $0).` : "No tokens used yet this session.");
         return;
@@ -284,12 +302,16 @@ export function MuseChatApp(props: {
     const messages = buildTurnMessages(system, historyRef.current, message + attachmentBlock);
     let accumulated = "";
     let turnTokens = 0;
+    const streamer = toolsOn ? props.streamWithTools : props.stream;
     try {
-      for await (const event of props.stream(messages, currentModel)) {
+      for await (const event of streamer(messages, currentModel)) {
         if (interruptRef.current) { accumulated += accumulated.length > 0 ? " …(interrupted)" : "(interrupted)"; break; }
         if (event.type === "error") {
           const err = event.error;
           throw err instanceof Error ? err : new Error(typeof err === "string" ? err : "model stream failed");
+        }
+        if (event.type === "tool-call-started" && typeof event.name === "string" && accumulated.length === 0) {
+          setStreaming(`🔧 using ${event.name}…`);
         }
         if (event.type === "text-delta" && typeof event.text === "string") {
           accumulated += event.text;
@@ -310,7 +332,7 @@ export function MuseChatApp(props: {
     setStreaming("");
     setBusy(false);
     props.onCommit(message, accumulated);
-  }, [app, props, activeAgent, currentModel, sessionTokens]);
+  }, [app, props, activeAgent, currentModel, sessionTokens, toolsOn]);
 
   const slashMenu = matchSlashCommands(inputState.value, SLASH_COMMANDS);
   const agentMenu = slashMenu.length === 0 ? matchAgentNames(inputState.value, props.agents.map((a) => a.name)) : [];
@@ -503,6 +525,8 @@ export function MuseChatApp(props: {
       h(Text, { color: props.proactiveOn ? "green" : "gray" }, props.proactiveOn ? "on" : "off"),
       h(Text, { dimColor: true }, `  ·  agent `),
       h(Text, { color: activeAgent ? "yellow" : "gray" }, activeAgent ? activeAgent.name : "default"),
+      h(Text, { dimColor: true }, "  ·  tools "),
+      h(Text, { color: toolsOn ? "green" : "gray" }, toolsOn ? "on" : "off"),
       h(Text, { dimColor: true }, `  ·  skills ${props.skills.length.toString()}`),
       sessionTokens > 0 ? h(Text, { dimColor: true }, `  ·  ${formatTokens(sessionTokens)} tok`) : null)
   );
@@ -546,8 +570,22 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     .slice(-20);
 
   const provider = assembly.modelProvider;
-  const stream = (messages: readonly ChatTurnMessage[], useModel: string): AsyncIterable<{ type: string; text?: string; error?: unknown; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }> =>
+  type ChatStream = AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
+  const stream = (messages: readonly ChatTurnMessage[], useModel: string): ChatStream =>
     provider.stream({ messages: messages as { role: "system" | "user" | "assistant"; content: string }[], model: useModel });
+
+  // Tools-on path: route through the agent runtime so the tool loop + guards
+  // fire. Outbound actuators stay forbidden (no autonomous third-party send);
+  // read tools + local writes run. Falls back to plain stream if no runtime.
+  const agentRuntime = assembly.agentRuntime;
+  const streamWithTools = (messages: readonly ChatTurnMessage[], useModel: string): ChatStream => {
+    if (!agentRuntime) return stream(messages, useModel);
+    return agentRuntime.stream({
+      messages: messages as { role: "system" | "user" | "assistant"; content: string }[],
+      metadata: { forbiddenToolNames: [...OUTBOUND_ACTUATORS] },
+      model: useModel
+    }) as ChatStream;
+  };
 
   // `@path` attachments: read relative to the launch directory, fail-soft,
   // capped so a huge file can't blow the context window.
@@ -625,7 +663,8 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     skills: skillInfos,
     skillsDir,
     skillsPrompt,
-    stream
+    stream,
+    streamWithTools
   }), {
     exitOnCtrlC: false,
     kittyKeyboard: { flags: ["disambiguateEscapeCodes"], mode: "enabled" }
