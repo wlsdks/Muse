@@ -10,6 +10,7 @@ import {
   friendlyError,
   buildRecap,
   chatToolApprovalGate,
+  formatJobsList,
   formatMemoryView,
   formatRecallHits,
   matchAgentNames,
@@ -275,5 +276,20 @@ describe("formatRecallHits", () => {
   });
   it("gives an empty-state hint when nothing matched", () => {
     expect(formatRecallHits("xyz", [])).toMatch(/No memories matched "xyz"/);
+  });
+});
+
+describe("formatJobsList", () => {
+  it("renders a status glyph, prompt, and a result preview for done jobs", () => {
+    const out = formatJobsList([
+      { id: "job_2026-05-24_abc", status: "done", prompt: "research X", finalText: "found  three\nthings" },
+      { id: "job_2026-05-24_def", status: "running", prompt: "long task" }
+    ]);
+    expect(out).toContain("✓ job_2026-05-24_abc — research X (done)");
+    expect(out).toContain("      → found three things");
+    expect(out).toContain("⏳ job_2026-05-24_def — long task (running)");
+  });
+  it("empty-state line when no jobs", () => {
+    expect(formatJobsList([])).toMatch(/No background jobs yet/);
   });
 });

@@ -28,6 +28,7 @@ import {
   cursorCoords,
   emptyInput,
   extractAttachmentPaths,
+  formatJobsList,
   formatMemoryView,
   formatRecallHits,
   friendlyError,
@@ -41,11 +42,13 @@ import {
   type ChatTurnMessage,
   type InkKeyEvent,
   type InputState,
+  type JobListItem,
   type MemorySnapshot
 } from "./chat-ink-core.js";
 import { renderMuseBanner } from "./muse-banner.js";
 import { loadAgents, resolveAgentsDir, type AgentDef } from "./commands-agents.js";
 import { searchRecall } from "./commands-recall.js";
+import { listRecentJobIds, readJobSummary, startBackgroundJob } from "./commands-jobs.js";
 import { readDueFollowups, readDueReminders } from "./commands-today.js";
 import { imminentItems, pickUnseen, proactiveNoticeText, relativeWhen, type ProactiveItem } from "./chat-proactive.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
@@ -63,6 +66,8 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "agent", desc: "switch agent — /agent <name> (default to clear)" },
   { cmd: "skills", desc: "list installed skills + how to add" },
   { cmd: "tools", desc: "toggle tools (reads run; writes/actions ask first)" },
+  { cmd: "job", desc: "run a long task in the background — /job <prompt>" },
+  { cmd: "jobs", desc: "show recent background jobs + status" },
   { cmd: "memory", desc: "show what Muse remembers about you" },
   { cmd: "recall", desc: "search past notes + episodes — /recall <query>" },
   { cmd: "forget", desc: "forget one thing — /forget <key>" },
@@ -152,6 +157,8 @@ export function MuseChatApp(props: {
   readonly memorySnapshot: () => Promise<MemorySnapshot | undefined>;
   readonly forgetMemory: (key: string) => Promise<boolean>;
   readonly recallSearch: (query: string) => Promise<string>;
+  readonly startJob: (prompt: string) => string;
+  readonly jobsOverview: () => Promise<readonly JobListItem[]>;
   readonly recap: string;
 }): React.ReactElement {
   const app = useApp();
@@ -319,6 +326,18 @@ export function MuseChatApp(props: {
       if (slash.cmd === "recall") {
         note("Searching memory…");
         note(await props.recallSearch(slash.arg));
+        return;
+      }
+      if (slash.cmd === "job") {
+        const prompt = slash.arg.trim();
+        if (prompt.length === 0) { note("What should I run in the background? — /job <prompt>"); return; }
+        const id = props.startJob(prompt);
+        note(`Started background job ${id} — keep chatting; check it with /jobs.`);
+        return;
+      }
+      if (slash.cmd === "jobs") {
+        note("Checking jobs…");
+        note(formatJobsList(await props.jobsOverview()));
         return;
       }
       if (slash.cmd === "forget") {
@@ -751,6 +770,24 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     }
   };
 
+  // /job — fire off a long-running task in a detached worker (same machinery
+  // as `muse job run`) so the user keeps chatting; /jobs reads recent statuses.
+  const startJob = (prompt: string): string => startBackgroundJob(prompt, {
+    ...(options.userId ? { user: options.userId } : {}),
+    ...(personaSlot ? { persona: personaSlot } : {})
+  }).id;
+  const jobsOverview = async (): Promise<readonly JobListItem[]> => {
+    const summaries = await Promise.all(listRecentJobIds(8).map((id) => readJobSummary(id)));
+    return summaries
+      .filter((s): s is NonNullable<typeof s> => Boolean(s))
+      .map((s) => ({
+        id: s.id,
+        status: s.status,
+        ...(s.prompt ? { prompt: s.prompt } : {}),
+        ...(s.finalText ? { finalText: s.finalText } : {})
+      }));
+  };
+
   // Launch recap — "where we left off": the most recent episode summary plus
   // open-commitment counts. Only when resuming a continuous session; fail-soft
   // to no recap if any store is missing/unreadable.
@@ -834,6 +871,8 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     memorySnapshot,
     forgetMemory,
     recallSearch,
+    startJob,
+    jobsOverview,
     recap
   }), {
     exitOnCtrlC: false,

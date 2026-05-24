@@ -496,3 +496,30 @@ export function formatRecallHits(query: string, hits: readonly RecallHitView[]):
   }
   return lines.join("\n");
 }
+
+export interface JobListItem {
+  readonly id: string;
+  readonly status: string;
+  readonly prompt?: string;
+  readonly finalText?: string;
+}
+
+/**
+ * Render `/jobs` — recent background jobs with a status glyph, the prompt
+ * that started each, and (when done) a one-line result preview. Empty-state
+ * line when none have been started so the command always answers.
+ */
+export function formatJobsList(jobs: readonly JobListItem[]): string {
+  if (jobs.length === 0) return "No background jobs yet. Start one with /job <prompt>.";
+  const glyph = (status: string): string =>
+    status === "done" ? "✓" : status === "error" ? "✗" : status === "running" ? "⏳" : "·";
+  const lines: string[] = ["Background jobs:"];
+  for (const job of jobs) {
+    const label = (job.prompt ?? "").replace(/\s+/gu, " ").trim().slice(0, 50) || job.id;
+    lines.push(`  ${glyph(job.status)} ${job.id.slice(0, 24)} — ${label} (${job.status})`);
+    if (job.status === "done" && job.finalText) {
+      lines.push(`      → ${job.finalText.replace(/\s+/gu, " ").trim().slice(0, 80)}`);
+    }
+  }
+  return lines.join("\n");
+}

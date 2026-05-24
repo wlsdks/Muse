@@ -200,6 +200,69 @@ export async function findJobsByIdPrefix(
   return out;
 }
 
+export interface JobSummaryView {
+  readonly status: "running" | "done" | "error" | "unknown";
+  readonly startedAt?: string;
+  readonly finishedAt?: string;
+  readonly prompt?: string;
+  readonly finalText?: string;
+  readonly error?: string;
+}
+
+export interface JobRunOptions {
+  readonly model?: string;
+  readonly user?: string;
+  readonly persona?: string;
+  readonly tools?: boolean;
+}
+
+/** Compute the id + log file + worker argv for a job run (shared by the CLI
+ * `job run` and the in-chat `/job`, so id format and flags stay identical). */
+function buildJobInvocation(prompt: string, opts: JobRunOptions): { id: string; file: string; argv: string[] } {
+  const id = `job_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}_${randomUUID().slice(0, 8)}`;
+  mkdirSync(jobsDir(), { recursive: true });
+  const file = jobPath(id);
+  const resolvedPersona = resolvePersona(opts.persona);
+  const argv = [
+    `--job-id=${id}`,
+    `--job-file=${file}`,
+    `--job-prompt=${prompt}`,
+    ...(opts.model ? [`--job-model=${opts.model}`] : []),
+    ...(opts.user ? [`--job-user=${opts.user}`] : []),
+    ...(resolvedPersona ? [`--job-persona=${resolvedPersona}`] : []),
+    ...(opts.tools === false ? ["--job-no-tools"] : [])
+  ];
+  return { argv, file, id };
+}
+
+/**
+ * Spawn a detached background-job worker for `prompt` and return its id + log
+ * file immediately — the worker streams events to ~/.muse/jobs/<id>.jsonl on
+ * its own; the caller does not wait. Used by `muse job run` and `/job` in chat.
+ */
+export function startBackgroundJob(prompt: string, opts: JobRunOptions = {}): { id: string; file: string } {
+  const { id, file, argv } = buildJobInvocation(prompt, opts);
+  const child = spawn(process.execPath, [pathJoin(here, "job-worker.js"), ...argv], {
+    detached: true,
+    env: { ...process.env },
+    stdio: "ignore"
+  });
+  child.unref();
+  return { file, id };
+}
+
+/** Latest status snapshot for a job id, or undefined when it has no events yet. */
+export async function readJobSummary(id: string): Promise<(JobSummaryView & { id: string; events: number }) | undefined> {
+  const events = await readJobLines(jobPath(id));
+  if (events.length === 0) return undefined;
+  return { events: events.length, id, ...jobSummary(events) };
+}
+
+/** Recent job ids, newest first (the id embeds an ISO timestamp → lexical desc = recency). */
+export function listRecentJobIds(limit = 5): readonly string[] {
+  return [...listKnownJobIds()].sort((a, b) => b.localeCompare(a)).slice(0, Math.max(1, limit));
+}
+
 export function registerJobCommands(program: Command, io: ProgramIO): void {
   const job = program.command("job").description("Background long-running agent tasks");
 
@@ -228,38 +291,18 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
         process.exitCode = 1;
         return;
       }
-      const id = `job_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}_${randomUUID().slice(0, 8)}`;
-      const dir = jobsDir();
-      mkdirSync(dir, { recursive: true });
-      const file = jobPath(id);
-
-      const env = { ...process.env };
-      const resolvedPersona = resolvePersona(options.persona);
-      const argv = [
-        `--job-id=${id}`,
-        `--job-file=${file}`,
-        `--job-prompt=${prompt}`,
-        ...(options.model ? [`--job-model=${options.model}`] : []),
-        ...(options.user ? [`--job-user=${options.user}`] : []),
-        ...(resolvedPersona ? [`--job-persona=${resolvedPersona}`] : []),
-        ...(options.tools === false ? ["--job-no-tools"] : [])
-      ];
-      const workerPath = pathJoin(here, "job-worker.js");
+      const runOpts: JobRunOptions = { model: options.model, user: options.user, persona: options.persona, tools: options.tools };
 
       if (options.background === false) {
         // Inline mode — spawn but stream stdout/stderr through.
-        const child = spawn(process.execPath, [workerPath, ...argv], { stdio: "inherit" });
+        const { file, argv } = buildJobInvocation(prompt, runOpts);
+        const child = spawn(process.execPath, [pathJoin(here, "job-worker.js"), ...argv], { stdio: "inherit" });
         await new Promise<void>((resolve) => child.on("close", () => resolve()));
         io.stdout(`\nDone. Job log: ${file}\n`);
         return;
       }
 
-      const child = spawn(process.execPath, [workerPath, ...argv], {
-        detached: true,
-        env,
-        stdio: "ignore"
-      });
-      child.unref();
+      const { id, file } = startBackgroundJob(prompt, runOpts);
       io.stdout(`Started ${id}\n  log: ${file}\n  status: muse job status ${id}\n`);
     });
 
