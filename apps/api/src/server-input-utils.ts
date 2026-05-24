@@ -144,7 +144,7 @@ const STRICT_INT_RE = /^\d+$/u;
  * `Number("9.5" | "0x10" | "1e3")` would otherwise silently honor
  * the truncated / hex / scientific interpretation instead of
  * rejecting the typo. A valid value is clamped to `max`. Mirrors
- * the scheduler-routes strict-parse posture (goal 463 / 643).
+ * the scheduler-routes strict-parse posture.
  */
 export function parseHistoryLimit(raw: string | undefined, max: number): number | undefined {
   if (typeof raw !== "string") {

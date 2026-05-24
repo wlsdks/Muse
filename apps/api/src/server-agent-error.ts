@@ -98,7 +98,7 @@ function isRetryableUpstreamError(error: unknown): boolean {
  * underlying fetch error) so an operator sees the actual upstream error
  * message instead of the generic retry-exhausted wrapper.
  *
- * Goal 145 — upstream provider error bodies sometimes echo the
+ * Upstream provider error bodies sometimes echo the
  * request payload, which itself may carry a credential (a 401
  * from OpenAI quoting back the partial `Authorization: Bearer sk-…`
  * header in its diagnostic message has been observed in the wild).

@@ -1,8 +1,7 @@
 /**
  * `/api/notes/*` routes — REST surface for the personal notes file
- * store. Round 110's `muse tasks` and round 109's `muse calendar`
- * left notes as agent-only because there was no REST CRUD surface.
- * This iter closes that gap.
+ * store, the REST counterpart to the `muse tasks` and `muse calendar`
+ * stores.
  *
  * Backed by the existing `createNotesMcpServer({ notesDir })` so the
  * REST surface is byte-identical to the MCP tool surface and shares

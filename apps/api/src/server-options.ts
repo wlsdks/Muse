@@ -1,6 +1,6 @@
 /**
  * Type-only module — `ServerOptions` + nested types consumed by
- * `buildServer` in `server.ts`. Lifted (goal 045) to give the
+ * `buildServer` in `server.ts`. Lifted out to give the
  * `server.ts` registrations room to breathe; the runtime stays
  * over there.
  */
@@ -33,7 +33,7 @@ export interface ServerOptions {
   readonly cors?: CorsOptions;
   /**
    * Optional injection point for the chat-route per-IP rate
-   * limiter (goal 031). Tests pass a deterministic ChatRateLimiter
+   * limiter. Tests pass a deterministic ChatRateLimiter
    * with a small capacity + injected clock. Production callers
    * leave this unset and the default 60-req/min limiter is built
    * inside `registerChatRoutes` (or skipped when
@@ -120,7 +120,7 @@ export interface ServerOptions {
    */
   readonly proactiveHistoryFile?: string;
   /**
-   * Goal 052 — path to the session-lock marker (default
+   * Path to the session-lock marker (default
    * `~/.muse/session-lock.json`). When set, the proactive tick
    * daemon reads it every cycle; an active lock skips firing and
    * surfaces a "skipped (locked until X)" log line instead of a
@@ -193,7 +193,7 @@ export interface ServerOptions {
    */
   readonly slackInboxFile?: string;
   /**
-   * Goal 085 — when set, `GET /api/admin/security/injection-counts`
+   * When set, `GET /api/admin/security/injection-counts`
    * exposes the snapshot for the ops dashboard. The guard layer
    * is responsible for bumping the counter on every firing
    * pattern; this option just routes the read.

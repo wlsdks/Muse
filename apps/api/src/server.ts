@@ -376,7 +376,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     }
   }
 
-  // Optional conversational reply daemon (goal 377): answer
+  // Optional conversational reply daemon: answer
   // not-yet-handled inbox messages by running the full agent and
   // replying on the originating channel — "the chat IS a Muse
   // session". Reuses the telegram inbox the poll daemon fills.

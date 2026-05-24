@@ -92,7 +92,7 @@ export interface ProactiveTickOptions {
   readonly agentInitiatedNoticeBroker?: AgentInitiatedNoticeBroker;
   readonly agentInitiatedNoticeUserId?: string;
   /**
-   * Goal 052 — `~/.muse/session-lock.json` path. Read on every
+   * `~/.muse/session-lock.json` path. Read on every
    * tick by `runDueProactiveNotices`; when the marker is active,
    * the tick reports `sessionLockedUntil` and skips firing.
    */

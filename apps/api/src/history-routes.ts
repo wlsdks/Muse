@@ -11,8 +11,6 @@
  *   - `limit` (optional, default 20, cap 200)
  *
  * Auth: `requireAuthenticated` (same posture as `/api/today`).
- *
- * Goal 014.
  */
 
 import {

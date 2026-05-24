@@ -1,5 +1,5 @@
 /**
- * Conversational reply daemon (goal 377 slice 2). Each tick reads
+ * Conversational reply daemon. Each tick reads
  * the inbox file the poll/webhook ingestion daemons populate, runs
  * the full agent on every not-yet-answered inbound message, and
  * sends the agent's reply back to the originating channel — so a

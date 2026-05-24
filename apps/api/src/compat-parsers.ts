@@ -15,8 +15,8 @@ export type CompatBody = Record<string, unknown>;
 
 // Re-exported so the compat-* sibling modules can keep importing
 // `isRecord` / `isJsonValue` from this hub without import-site edits.
-// The truth lives in `./server-input-utils.js` (round 122 canonical
-// home for shape-inspection helpers across the API package).
+// The truth lives in `./server-input-utils.js`, the canonical
+// home for shape-inspection helpers across the API package.
 export { isJsonValue, isRecord };
 
 export function toBody(value: unknown): CompatBody {
@@ -134,7 +134,7 @@ export function readQueryInteger(request: FastifyRequest, key: string, fallback:
   const trimmed = raw.trim();
   // Strict parse, not Number.parseInt: a typo'd `?limit=20x` /
   // unit-slip `?days=7d` must reach the fallback, not silently
-  // become 20 / 7. Mirrors goal 463/469/470.
+  // become 20 / 7.
   if (!/^[+-]?\d+$/u.test(trimmed)) return fallback;
   const parsed = Number(trimmed);
   return Number.isInteger(parsed) ? parsed : fallback;

@@ -431,7 +431,7 @@ function parseScheduledJobType(value: unknown): ScheduledJobType | undefined {
 
 // `Number.parseInt` is lenient — `parseInt("100x") === 100`, so a
 // typo'd `?limit=100x` / unit-slip `?offset=7d` silently returned
-// the leading digits instead of the fallback. Mirrors goal 625's
+// the leading digits instead of the fallback. Mirrors the
 // strict-parse posture on the CLI side: require the WHOLE trimmed
 // token to be a plain decimal integer.
 const STRICT_INT_RE = /^[+-]?\d+$/u;

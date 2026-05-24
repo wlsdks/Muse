@@ -1,5 +1,5 @@
 /**
- * Per-IP token bucket for the chat endpoints (goal 031).
+ * Per-IP token bucket for the chat endpoints.
  *
  * Basic DoS hardening: a scripted abuser pointed at a running
  * muse-api dev server could burn the user's provider quota in
@@ -112,7 +112,7 @@ export class ChatRateLimiter {
 /**
  * Extract a client identifier from a Fastify request.
  *
- * Goal 084 — when the request carries an authenticated identity
+ * When the request carries an authenticated identity
  * (i.e. `attachAuthIdentity` wrote `request.auth.userId` during
  * the `onRequest` hook), key on that so two users sharing a
  * corporate egress IP each get independent buckets. Anonymous
