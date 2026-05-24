@@ -54,7 +54,7 @@ import { searchRecall } from "./commands-recall.js";
 import { readTrust } from "./commands-trust.js";
 import { listRecentJobIds, readJobSummary, startBackgroundJob } from "./commands-jobs.js";
 import { buildLocalTodayText, parseLookaheadHours, readDueFollowups, readDueReminders } from "./commands-today.js";
-import { imminentItems, jobCompletionItems, pickUnseen, proactiveNoticeText, relativeWhen, type ProactiveItem } from "./chat-proactive.js";
+import { dueTaskItems, imminentItems, jobCompletionItems, pickUnseen, proactiveNoticeText, relativeWhen, type ProactiveItem } from "./chat-proactive.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { resolvePersona } from "./program-helpers.js";
 import { resolveDefaultUserKey } from "./user-id.js";
@@ -1050,13 +1050,15 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   const followupsFile = resolveFollowupsFile(process.env);
   const proactiveCheck = async (): Promise<readonly ProactiveItem[]> => {
     const horizon = new Date(Date.now() + PROACTIVE_LEAD_MS);
-    const [reminders, followups] = await Promise.all([
+    const [reminders, followups, tasks] = await Promise.all([
       readDueReminders(remindersFile, horizon).catch(() => []),
-      readDueFollowups(followupsFile, horizon).catch(() => [])
+      readDueFollowups(followupsFile, horizon).catch(() => []),
+      readTasks(resolveTasksFile(process.env)).catch(() => [])
     ]);
     return [
       ...reminders.map((r) => ({ dueAt: r.dueAt, id: r.id, text: r.text })),
-      ...followups.map((f) => ({ dueAt: f.scheduledFor, id: f.id, text: f.summary }))
+      ...followups.map((f) => ({ dueAt: f.scheduledFor, id: f.id, text: f.summary })),
+      ...dueTaskItems(tasks, horizon.getTime())
     ];
   };
   const instance = render(h(MuseChatApp, {

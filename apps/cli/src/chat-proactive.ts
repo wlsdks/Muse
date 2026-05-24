@@ -56,6 +56,25 @@ export function proactiveNoticeText(item: ProactiveItem, whenLabel: string): str
   return `📌 ${stripUntrustedTerminalChars(item.text)}${when} — want a hand?`;
 }
 
+export interface DueTaskInput {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly dueAt?: string;
+}
+
+/**
+ * Open tasks whose due time is at or before `horizonMs`, as proactive items —
+ * so Muse can nudge "Task due: pay rent" the way it already surfaces reminders.
+ * Done tasks and undated ones never qualify; the caller's `imminentItems`
+ * window then bounds how early/late they fire (same path as reminders).
+ */
+export function dueTaskItems(tasks: readonly DueTaskInput[], horizonMs: number): ProactiveItem[] {
+  return tasks
+    .filter((task) => task.status === "open" && task.dueAt !== undefined && Number.isFinite(Date.parse(task.dueAt)) && Date.parse(task.dueAt) <= horizonMs)
+    .map((task) => ({ id: `task:${task.id}`, text: `Task due: ${task.title}`, ...(task.dueAt ? { dueAt: task.dueAt } : {}) }));
+}
+
 export interface JobDoneInput {
   readonly id: string;
   readonly status: string;

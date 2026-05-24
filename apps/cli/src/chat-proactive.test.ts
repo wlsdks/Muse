@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { imminentItems, jobCompletionItems, jobDoneNoticeText, pickUnseen, proactiveNoticeText, relativeWhen } from "./chat-proactive.js";
+import { dueTaskItems, imminentItems, jobCompletionItems, jobDoneNoticeText, pickUnseen, proactiveNoticeText, relativeWhen } from "./chat-proactive.js";
 
 const now = Date.UTC(2026, 4, 24, 12, 0, 0);
 const iso = (minFromNow: number): string => new Date(now + minFromNow * 60_000).toISOString();
@@ -62,5 +62,21 @@ describe("jobCompletionItems", () => {
     ], since);
     expect(items.map((i) => i.id)).toEqual(["job:fresh"]);
     expect(items[0]?.text).toBe("✓ Background job done: fresh — ok");
+  });
+});
+
+describe("dueTaskItems", () => {
+  const horizon = Date.UTC(2026, 4, 25, 12, 0, 0);
+  const iso = (minFromHorizon: number): string => new Date(horizon + minFromHorizon * 60_000).toISOString();
+  it("keeps open tasks due at/before the horizon, as task: proactive items", () => {
+    const items = dueTaskItems([
+      { id: "t1", title: "pay rent", status: "open", dueAt: iso(-30) },
+      { id: "t2", title: "future", status: "open", dueAt: iso(120) },
+      { id: "t3", title: "done one", status: "done", dueAt: iso(-10) },
+      { id: "t4", title: "no date", status: "open" }
+    ], horizon);
+    expect(items.map((i) => i.id)).toEqual(["task:t1"]);
+    expect(items[0]?.text).toBe("Task due: pay rent");
+    expect(items[0]?.dueAt).toBe(iso(-30));
   });
 });
