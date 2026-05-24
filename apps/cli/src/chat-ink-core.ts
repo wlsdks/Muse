@@ -213,6 +213,30 @@ export function buildTurnMessages(
   ];
 }
 
+/**
+ * Map a raw model/stream error to a short, actionable hint. Unknown
+ * errors pass through unchanged so no information is lost.
+ */
+export function friendlyError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (/econnrefused|fetch failed|enotfound|socket hang|network|connect/u.test(m)) {
+    return "model unreachable — is the model server running? (e.g. `ollama serve`)";
+  }
+  if (/not found|404|no such model|unknown model/u.test(m)) {
+    return "model not found — check /model, or pull it (e.g. `ollama pull <model>`)";
+  }
+  if (/\b401\b|\b403\b|unauthor|api key|invalid key/u.test(m)) {
+    return "auth failed — check the provider key (run `muse setup model`)";
+  }
+  if (/\b429\b|rate.?limit|too many requests/u.test(m)) {
+    return "rate limited — wait a moment, then try again";
+  }
+  if (/timeout|timed out|etimedout/u.test(m)) {
+    return "request timed out — try again, or switch to a faster model (/model)";
+  }
+  return raw;
+}
+
 export interface SlashCommand {
   readonly cmd: string;
   readonly desc: string;

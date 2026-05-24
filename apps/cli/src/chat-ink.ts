@@ -23,6 +23,7 @@ import {
   cursorCoords,
   emptyInput,
   extractAttachmentPaths,
+  friendlyError,
   matchAgentNames,
   matchModelNames,
   matchSlashCommands,
@@ -50,8 +51,13 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "agents", desc: "list defined agents" },
   { cmd: "agent", desc: "switch agent — /agent <name> (default to clear)" },
   { cmd: "skills", desc: "list installed skills + how to add" },
+  { cmd: "cost", desc: "show this session's token usage" },
   { cmd: "exit", desc: "quit Muse (ctrl-c)" }
 ];
+
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
+}
 
 // Box geometry: left border (1) + paddingX (1) + the "› " prompt (2).
 // The input text — and therefore the cursor — starts at this column.
@@ -90,7 +96,7 @@ export function MuseChatApp(props: {
   readonly skillsDir: string;
   readonly skillsPrompt: string;
   readonly personaPrompt: () => string | undefined;
-  readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown }>;
+  readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly readFile: (relativePath: string) => Promise<string | undefined>;
   readonly onCommit: (user: string, assistant: string) => void;
   readonly onReset: () => void;
@@ -110,7 +116,16 @@ export function MuseChatApp(props: {
   const interruptRef = useRef(false);
   const [commandNotice, setCommandNotice] = useState<string | undefined>(undefined);
   const [histPos, setHistPos] = useState(-1);
+  const [sessionTokens, setSessionTokens] = useState(0);
+  const [spinTick, setSpinTick] = useState(0);
   const inputHistoryRef = useRef<string[]>([]);
+
+  // Animate a spinner while a reply is in flight (until the first token).
+  useEffect(() => {
+    if (!busy) return undefined;
+    const timer = setInterval(() => setSpinTick((t) => t + 1), 120);
+    return () => clearInterval(timer);
+  }, [busy]);
   const historyRef = useRef<ChatTurnMessage[]>([...props.history]);
 
   // Clean teardown: re-render once with the cursor released and the input
@@ -209,6 +224,10 @@ export function MuseChatApp(props: {
         }
         return;
       }
+      if (slash.cmd === "cost") {
+        note(sessionTokens > 0 ? `This session: ${formatTokens(sessionTokens)} tokens (local model = $0).` : "No tokens used yet this session.");
+        return;
+      }
       if (slash.cmd === "help") {
         note("Commands: " + SLASH_COMMANDS.map((c) => `/${c.cmd}`).join(" · ") + " · just type to chat.");
         return;
@@ -241,6 +260,7 @@ export function MuseChatApp(props: {
     const system = agentPrefix + base + props.skillsPrompt;
     const messages = buildTurnMessages(system, historyRef.current, message + attachmentBlock);
     let accumulated = "";
+    let turnTokens = 0;
     try {
       for await (const event of props.stream(messages, currentModel)) {
         if (interruptRef.current) { accumulated += accumulated.length > 0 ? " …(interrupted)" : "(interrupted)"; break; }
@@ -252,17 +272,22 @@ export function MuseChatApp(props: {
           accumulated += event.text;
           setStreaming(accumulated);
         }
+        if (event.type === "done") {
+          const u = event.response?.usage;
+          turnTokens = (u?.inputTokens ?? 0) + (u?.outputTokens ?? 0) + (u?.reasoningTokens ?? 0);
+        }
       }
     } catch (error) {
-      accumulated = `⚠ ${error instanceof Error ? error.message : String(error)}`;
+      accumulated = `⚠ ${friendlyError(error instanceof Error ? error.message : String(error))}`;
     }
+    if (turnTokens > 0) setSessionTokens((t) => t + turnTokens);
     historyRef.current.push({ content: message, role: "user" });
     historyRef.current.push({ content: accumulated, role: "assistant" });
     setTurns((prev) => [...prev, { role: "assistant", text: accumulated }]);
     setStreaming("");
     setBusy(false);
     props.onCommit(message, accumulated);
-  }, [app, props, activeAgent, currentModel]);
+  }, [app, props, activeAgent, currentModel, sessionTokens]);
 
   const slashMenu = matchSlashCommands(inputState.value, SLASH_COMMANDS);
   const agentMenu = slashMenu.length === 0 ? matchAgentNames(inputState.value, props.agents.map((a) => a.name)) : [];
@@ -388,7 +413,9 @@ export function MuseChatApp(props: {
     // While replying, show the streaming answer ABOVE the box, indented.
     busy
       ? h(Box, { marginBottom: 1, paddingLeft: 2 },
-          h(Text, null, streaming.length > 0 ? streaming : "…"))
+          streaming.length > 0
+            ? h(Text, null, streaming)
+            : h(Text, { color: "cyan" }, `${"⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[spinTick % 10]} thinking…`))
       : null,
     // The input BOX. When idle it is the first dynamic block, so its
     // content row is y=1 — where useCursor placed the real cursor.
@@ -452,7 +479,8 @@ export function MuseChatApp(props: {
       h(Text, { color: props.proactiveOn ? "green" : "gray" }, props.proactiveOn ? "on" : "off"),
       h(Text, { dimColor: true }, `  ·  agent `),
       h(Text, { color: activeAgent ? "yellow" : "gray" }, activeAgent ? activeAgent.name : "default"),
-      h(Text, { dimColor: true }, `  ·  skills ${props.skills.length.toString()}`))
+      h(Text, { dimColor: true }, `  ·  skills ${props.skills.length.toString()}`),
+      sessionTokens > 0 ? h(Text, { dimColor: true }, `  ·  ${formatTokens(sessionTokens)} tok`) : null)
   );
 }
 
@@ -489,7 +517,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     .slice(-20);
 
   const provider = assembly.modelProvider;
-  const stream = (messages: readonly ChatTurnMessage[], useModel: string): AsyncIterable<{ type: string; text?: string; error?: unknown }> =>
+  const stream = (messages: readonly ChatTurnMessage[], useModel: string): AsyncIterable<{ type: string; text?: string; error?: unknown; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }> =>
     provider.stream({ messages: messages as { role: "system" | "user" | "assistant"; content: string }[], model: useModel });
 
   // `@path` attachments: read relative to the launch directory, fail-soft,

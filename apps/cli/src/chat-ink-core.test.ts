@@ -6,6 +6,7 @@ import {
   displayWidth,
   emptyInput,
   extractAttachmentPaths,
+  friendlyError,
   matchAgentNames,
   matchModelNames,
   matchSlashCommands,
@@ -102,6 +103,17 @@ describe("extractAttachmentPaths", () => {
     expect(extractAttachmentPaths("@a.md again @a.md")).toEqual(["a.md"]);
     expect(extractAttachmentPaths("no files here")).toEqual([]);
     expect(extractAttachmentPaths("@/abs/path/file.log please")).toEqual(["/abs/path/file.log"]);
+  });
+});
+
+describe("friendlyError", () => {
+  it("maps common failures to actionable hints, passes through the rest", () => {
+    expect(friendlyError("fetch failed: ECONNREFUSED 127.0.0.1:11434")).toMatch(/ollama serve/);
+    expect(friendlyError("model 'x' not found (404)")).toMatch(/pull it/);
+    expect(friendlyError("401 Unauthorized")).toMatch(/setup model/);
+    expect(friendlyError("429 rate limit exceeded")).toMatch(/rate limited/);
+    expect(friendlyError("request timed out")).toMatch(/timed out/);
+    expect(friendlyError("some weird thing")).toBe("some weird thing");
   });
 });
 
