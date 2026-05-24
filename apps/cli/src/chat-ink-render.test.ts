@@ -149,6 +149,18 @@ describe("MuseChatApp render — slash command echo + output", () => {
     expect(forgotten).toEqual([]);
   });
 
+  it("↑ recalls a prior-session input from the seeded history", async () => {
+    const { stdin, lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
+      inputHistorySeed: ["what's due today?"]
+    })));
+    await tick();
+    stdin.write("\u001B[A"); // up arrow
+    await tick(80);
+    const frame = lastFrame() ?? "";
+    unmount();
+    expect(frame).toContain("what's due today?");
+  });
+
   it("renders the launch brief as an opening turn when recap is set", async () => {
     const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
       recap: "♪ good morning\n\nToday (next 24h)",

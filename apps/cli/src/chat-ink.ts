@@ -54,6 +54,7 @@ import { renderMuseBanner } from "./muse-banner.js";
 import { loadAgents, resolveAgentsDir, type AgentDef } from "./commands-agents.js";
 import { searchRecall } from "./commands-recall.js";
 import { readTrust } from "./commands-trust.js";
+import { appendInputHistory, loadInputHistory } from "./chat-input-history.js";
 import { listRecentJobIds, readJobSummary, startBackgroundJob } from "./commands-jobs.js";
 import { buildLocalTodayText, parseLookaheadHours, readDueFollowups, readDueReminders } from "./commands-today.js";
 import { dueTaskItems, imminentItems, jobCompletionItems, pickUnseen, proactiveNoticeText, relativeWhen, type ProactiveItem } from "./chat-proactive.js";
@@ -168,6 +169,8 @@ export function MuseChatApp(props: {
   readonly proactiveCheck?: () => Promise<readonly ProactiveItem[]>;
   readonly jobCompletions?: () => Promise<readonly ProactiveItem[]>;
   readonly recapRole?: "system" | "command";
+  readonly inputHistorySeed?: readonly string[];
+  readonly onInput?: (value: string) => void;
   readonly memorySnapshot: () => Promise<MemorySnapshot | undefined>;
   readonly forgetMemory: (key: string) => Promise<boolean>;
   readonly rememberFact: (key: string, value: string) => Promise<boolean>;
@@ -202,7 +205,7 @@ export function MuseChatApp(props: {
   const [sessionTokens, setSessionTokens] = useState(0);
   const [spinTick, setSpinTick] = useState(0);
   const [pendingApproval, setPendingApproval] = useState<{ readonly name: string; readonly detail: string; readonly kind: "outbound" | "tool"; readonly resolve: (ok: boolean) => void } | undefined>(undefined);
-  const inputHistoryRef = useRef<string[]>([]);
+  const inputHistoryRef = useRef<string[]>([...(props.inputHistorySeed ?? [])]);
 
   // Tool-action approval: the gate (in streamWithTools) calls this for any
   // write/execute tool, which surfaces a y/n prompt and resolves when the user
@@ -580,7 +583,10 @@ export function MuseChatApp(props: {
     const result = reduceInput(inputState, rawInput, key);
     if (result.submit) {
       const value = inputState.value;
-      if (value.trim().length > 0) inputHistoryRef.current.push(value);
+      if (value.trim().length > 0) {
+        inputHistoryRef.current.push(value);
+        props.onInput?.(value);
+      }
       setHistPos(-1);
       setInputState(emptyInput);
       setSlashIndex(0);
@@ -786,6 +792,9 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     .filter((l) => l.role === "user" || l.role === "assistant")
     .map((l) => ({ content: l.content, role: l.role as "user" | "assistant" }))
     .slice(-20);
+
+  // Shell-style ↑/↓ input history across sessions.
+  const inputHistorySeed = await loadInputHistory().catch(() => [] as string[]);
 
   // Mark the session start: an activity event (routine learning) + a boundary
   // sentinel in last-chat.jsonl. The boundary tells the end-of-session episode
@@ -1105,7 +1114,9 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     jobsOverview,
     jobCompletions,
     recap,
-    recapRole
+    recapRole,
+    inputHistorySeed,
+    onInput: (value: string) => { void appendInputHistory(value); }
   }), {
     exitOnCtrlC: false,
     kittyKeyboard: { flags: ["disambiguateEscapeCodes"], mode: "enabled" }
