@@ -311,7 +311,11 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     return absoluteDate;
   }
 
-  const dayPattern = /^(today|tomorrow|next\s+([a-z]+)|([a-z]+))(?:\s+(?:at\s+)?(.+))?$/u;
+  // "this friday" is as common as "next friday"; treat both as the next
+  // occurrence of that weekday (you can't schedule a past one). Without "this"
+  // here it was mis-parsed as a bare weekday "this" → unresolved, so the model's
+  // natural "add a meeting this friday at 3pm" failed at calendar.add.
+  const dayPattern = /^(today|tomorrow|(?:next|this)\s+([a-z]+)|([a-z]+))(?:\s+(?:at\s+)?(.+))?$/u;
   const dayMatch = dayPattern.exec(trimmed);
   if (!dayMatch) {
     return undefined;

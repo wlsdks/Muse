@@ -2462,6 +2462,18 @@ describe("muse.tasks loopback server", () => {
   });
 
   describe("resolveRelativeTimePhrase", () => {
+    it("resolves 'this <weekday>' like 'next <weekday>' (the model emits 'this friday')", async () => {
+      const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
+      const now = () => new Date("2026-05-25T12:00:00+09:00"); // a Monday
+      // "this friday at 3pm" was mis-parsed ("this" as a weekday) → undefined,
+      // so the model's natural calendar prompt failed at calendar.add.
+      const thisFri = resolveRelativeTimePhrase("this friday at 3pm", now);
+      const nextFri = resolveRelativeTimePhrase("next friday at 3pm", now);
+      expect(thisFri).toBeInstanceOf(Date);
+      expect(thisFri?.toISOString()).toBe(nextFri?.toISOString());
+      expect(resolveRelativeTimePhrase("this friday", now)).toBeInstanceOf(Date);
+    });
+
     it("parses 'in N <unit>' offsets", async () => {
       const { resolveRelativeTimePhrase } = await import("../src/loopback-relative-time.js");
       const fixed = new Date("2026-05-10T12:00:00Z");
