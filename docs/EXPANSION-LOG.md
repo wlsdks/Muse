@@ -34,6 +34,7 @@
 | 17 | `6d8f6a39` | retain superseded fact values + show in /memory (temporal depth) | memory depth | unit (store + view) |
 | 18 | `bd3b3ad0` | surface fact's prior in persona so the model recalls it | memory depth · model-path | **live qwen3:8b PASS + neg control** |
 | 19 | `92649588` | /memory reflects recurring cross-session threads (deterministic) | memory depth · reflection | unit (rank + render) |
+| 20 | `2d28d155` | /reflect — grounded LLM synthesis across sessions (fenced vs hallucination) | memory depth · model-path | **live qwen3:8b 3/3 (EN+KO+neg)** |
 
 ## Failures → learnings
 
@@ -137,5 +138,9 @@
   DETERMINISTIC cut — recurring cross-session threads in /memory, no LLM. NEXT
   for synthesis: feed those threads to the persona so the model proactively
   references them, OR an LLM "insight" pass — both gated by a fast qwen battery.)
+  (slice 20: shipped the LLM "insight" pass as /reflect — the negative case
+  PASSED, qwen3:8b stays empty on unrelated one-offs, so the fence holds. NEXT:
+  surface a reflection PROACTIVELY at session open when a thread is unresolved,
+  not just on demand — reuse the speaks-first system, keep it once-per-day.)
 - Performance: persona/context size as memory grows.
 - CLI ergonomics + proactive smartness (not noisier).
