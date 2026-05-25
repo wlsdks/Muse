@@ -55,6 +55,7 @@ const cases = [
   // question the small model answers directly rather than a search command).
   { prompt: "search my past sessions for what I said about the budget", expect: "episode" },
   { prompt: "check my inbox", expect: "messaging" },
+  { prompt: "summarize this page https://example.com/post", expect: "web.read" },
   { prompt: "hello there!", expect: "" },
   { prompt: "고마워 ㅎㅎ", expect: "" }
 ];

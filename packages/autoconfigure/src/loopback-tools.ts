@@ -27,7 +27,8 @@ import {
   createRemindersMcpServer,
   createStatusMcpServer,
   createTasksMcpServer,
-  createTasksRegistryMcpServer
+  createTasksRegistryMcpServer,
+  createWebReadMcpServer
 } from "@muse/mcp";
 import type { NotesProviderRegistry, TasksProviderRegistry } from "@muse/mcp";
 import type { CalendarProviderRegistry } from "@muse/calendar";
@@ -81,6 +82,7 @@ export interface LoopbackToolsBundle {
   readonly patterns: readonly MuseTool[];
   readonly history: readonly MuseTool[];
   readonly status: readonly MuseTool[];
+  readonly webRead: readonly MuseTool[];
 }
 
 export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle {
@@ -207,6 +209,13 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
     })
   );
 
+  // Readable web-page reader — `muse.web.read`. Default-on perception so
+  // "summarize this URL" works without a running Chrome or a per-host
+  // fetch allowlist; SSRF-guarded to public hosts inside the server.
+  const webRead = parseBoolean(env.MUSE_WEB_READ_ENABLED, true)
+    ? createLoopbackMcpMuseTools(createWebReadMcpServer())
+    : [];
+
   return {
     calendar,
     episodes,
@@ -220,6 +229,7 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
     reminders,
     status,
     tasks,
-    tasksRegistry
+    tasksRegistry,
+    webRead
   };
 }

@@ -40,7 +40,9 @@ const cases = [
   ["mark the report task done", "muse.tasks.complete"],
   ["오늘 마감인 일", "muse.tasks.list"], ["what's due today", "muse.tasks.list"],
   ["what did we discuss last session", "muse.episode"], ["지난 세션 뭐였지", "muse.episode"],
-  ["check my inbox", "muse.messaging.inbox"], ["받은 메일 확인", "muse.messaging.inbox"]
+  ["check my inbox", "muse.messaging.inbox"], ["받은 메일 확인", "muse.messaging.inbox"],
+  ["summarize https://example.com/post", "muse.web.read"], ["이 기사 읽어줘 https://example.com/article", "muse.web.read"],
+  ["what does https://example.com/page say", "muse.web.read"]
 ];
 
 let fail = 0;
