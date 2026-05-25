@@ -826,3 +826,19 @@ homonyms are the #1 wrong-selection cause).
 keywords: the poem drew no tool, the umbrella question resolved to weather, and
 the "remind"-worded math question correctly chose calculate. The reliability
 gate now exercises happy-path, negatives, and the three named failure modes.
+
+### Round 10 — eval:tools now gates Muse's REAL built-in tools
+
+Extended the harness with a second scenario, "real-tools", that instantiates
+Muse's actual @muse/tools definitions (math_eval, slugify, text_stats,
+hash_text, and the confusable time_now/time_diff pair) and asserts the model
+selects the right PRODUCTION tool per prompt — tool-calling.md's deliverable
+bar ("a tool the model can't reliably call is not delivered"), now checked
+against the shipping tool names/descriptions, not just synthetic ones. The
+scenario skips cleanly if @muse/tools isn't built. `pnpm eval:tools` builds
+both @muse/model and @muse/tools.
+
+**Result (qwen3:8b): 18/18 (100%)** — synthetic 12/12 + real-tools 6/6. The
+real tools are one-shot selectable, including the time_now-vs-time_diff
+disambiguation that tool-calling.md flags as the #1 wrong-selection risk. No
+tool-design defect found; the production tool surface is verified selectable.
