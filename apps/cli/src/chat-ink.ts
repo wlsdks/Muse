@@ -42,13 +42,15 @@ import {
   parseMarkdownBlocks,
   parseRememberArg,
   parseSlashCommand,
+  recurringEpisodeThreads,
   reduceInput,
   resolveForgetKey,
   type ChatTurnMessage,
   type InkKeyEvent,
   type InputState,
   type JobListItem,
-  type MemorySnapshot
+  type MemorySnapshot,
+  type RecurringThread
 } from "./chat-ink-core.js";
 import { renderMuseBanner } from "./muse-banner.js";
 import { loadAgents, resolveAgentsDir, type AgentDef } from "./commands-agents.js";
@@ -174,6 +176,7 @@ export function MuseChatApp(props: {
   readonly inputHistorySeed?: readonly string[];
   readonly onInput?: (value: string) => void;
   readonly episodeInfo?: { readonly count: number; readonly lastAt?: string };
+  readonly recurringThreads?: readonly RecurringThread[];
   readonly memorySnapshot: () => Promise<MemorySnapshot | undefined>;
   readonly forgetMemory: (key: string) => Promise<boolean>;
   readonly rememberFact: (key: string, value: string) => Promise<boolean>;
@@ -371,7 +374,7 @@ export function MuseChatApp(props: {
         return;
       }
       if (slash.cmd === "memory") {
-        note(formatMemoryView(await props.memorySnapshot(), props.episodeInfo));
+        note(formatMemoryView(await props.memorySnapshot(), props.episodeInfo, props.recurringThreads));
         return;
       }
       if (slash.cmd === "remember") {
@@ -779,6 +782,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   // ride into the system prompt so Muse recalls past sessions, not just the
   // last-chat tail. Best-effort (missing/corrupt episodes file → none).
   const personaEpisodes = await loadPersonaEpisodes(userId).catch(() => []);
+  const recurringThreads = recurringEpisodeThreads(personaEpisodes);
   const personaPrompt = (): string | undefined =>
     memoryHolder.current ? buildMusePersona({ ...memoryHolder.current, episodes: personaEpisodes }, userId) : undefined;
 
@@ -1169,7 +1173,8 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     recapRole,
     inputHistorySeed,
     onInput: (value: string) => { void appendInputHistory(value); },
-    ...(personaEpisodes.length > 0 ? { episodeInfo: { count: personaEpisodes.length, ...(personaEpisodes[0]?.endedAt ? { lastAt: personaEpisodes[0].endedAt } : {}) } } : {})
+    ...(personaEpisodes.length > 0 ? { episodeInfo: { count: personaEpisodes.length, ...(personaEpisodes[0]?.endedAt ? { lastAt: personaEpisodes[0].endedAt } : {}) } } : {}),
+    ...(recurringThreads.length > 0 ? { recurringThreads } : {})
   }), {
     exitOnCtrlC: false,
     kittyKeyboard: { flags: ["disambiguateEscapeCodes"], mode: "enabled" }

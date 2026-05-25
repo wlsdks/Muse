@@ -451,6 +451,46 @@ export interface MemorySnapshot {
   readonly factHistory?: readonly { readonly key: string; readonly previousValue: string; readonly replacedAt: string }[];
 }
 
+export interface RecurringThread {
+  readonly topic: string;
+  readonly sessions: number;
+}
+
+/**
+ * Reflection over episodic memory: topics the user has returned to across
+ * MULTIPLE distinct sessions, ranked by how many sessions touched them. A
+ * deterministic "hindsight" aggregate (no LLM synthesis) — surfaces the
+ * threads a JARVIS would notice ("you keep coming back to the Q3 budget").
+ * A topic counts once per episode (intra-episode repeats don't inflate it);
+ * grouping is case-insensitive but the first-seen display form is kept.
+ */
+export function recurringEpisodeThreads(
+  episodes: readonly { readonly topics?: readonly string[] }[],
+  opts: { readonly minSessions?: number; readonly max?: number } = {}
+): RecurringThread[] {
+  const minSessions = opts.minSessions ?? 2;
+  const max = opts.max ?? 3;
+  const counts = new Map<string, { display: string; sessions: number }>();
+  for (const episode of episodes) {
+    const seen = new Set<string>();
+    for (const raw of episode.topics ?? []) {
+      const topic = raw.trim();
+      if (topic.length === 0) continue;
+      const norm = topic.toLowerCase();
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      const entry = counts.get(norm);
+      if (entry) entry.sessions += 1;
+      else counts.set(norm, { display: topic, sessions: 1 });
+    }
+  }
+  return [...counts.values()]
+    .filter((entry) => entry.sessions >= minSessions)
+    .sort((a, b) => b.sessions - a.sessions || a.display.localeCompare(b.display))
+    .slice(0, max)
+    .map((entry) => ({ topic: entry.display, sessions: entry.sessions }));
+}
+
 /** The most-recent prior value for `key` from the supersession log, or undefined. */
 export function latestPriorValue(
   factHistory: MemorySnapshot["factHistory"],
@@ -471,13 +511,15 @@ export function latestPriorValue(
  */
 export function formatMemoryView(
   memory: MemorySnapshot | undefined,
-  episodes?: { readonly count: number; readonly lastAt?: string }
+  episodes?: { readonly count: number; readonly lastAt?: string },
+  recurringThreads?: readonly RecurringThread[]
 ): string {
   const factKeys = memory ? Object.keys(memory.facts) : [];
   const prefKeys = memory ? Object.keys(memory.preferences) : [];
   const topics = memory?.recentTopics ?? [];
   const epCount = episodes?.count ?? 0;
-  if (factKeys.length === 0 && prefKeys.length === 0 && topics.length === 0 && epCount === 0) {
+  const threads = recurringThreads ?? [];
+  if (factKeys.length === 0 && prefKeys.length === 0 && topics.length === 0 && epCount === 0 && threads.length === 0) {
     return "I haven't remembered anything about you yet.";
   }
   const lines: string[] = ["What I remember about you:"];
@@ -496,6 +538,10 @@ export function formatMemoryView(
     for (const key of prefKeys) lines.push(`    ${key}: ${memory!.preferences[key]}`);
   }
   if (topics.length > 0) lines.push(`  Recent topics: ${topics.join(", ")}`);
+  if (threads.length > 0) {
+    const phrased = threads.map((t) => `${stripUntrustedTerminalChars(t.topic)} (${t.sessions} sessions)`);
+    lines.push(`  Threads you keep returning to: ${phrased.join(", ")}`);
+  }
   if (epCount > 0) {
     const when = episodes?.lastAt ? ` (most recent ${episodes.lastAt.slice(0, 10)})` : "";
     lines.push(`  Past sessions remembered: ${epCount}${when} — search them with /recall`);

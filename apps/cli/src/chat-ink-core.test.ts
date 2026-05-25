@@ -13,6 +13,7 @@ import {
   firstOpenToday,
   formatJobsList,
   formatMemoryView,
+  recurringEpisodeThreads,
   formatRecallHits,
   formatTrust,
   greetingName,
@@ -304,6 +305,59 @@ describe("formatMemoryView", () => {
     });
     expect(out).toContain("    job: pilot (was engineer until 2026-05-20)");
     expect(out).not.toContain("student");
+  });
+});
+
+describe("recurringEpisodeThreads", () => {
+  it("ranks topics by the number of distinct sessions that touched them (≥2)", () => {
+    const threads = recurringEpisodeThreads([
+      { topics: ["Q3 budget", "Notion"] },
+      { topics: ["Q3 budget"] },
+      { topics: ["Notion", "vacation"] },
+      { topics: ["Q3 budget"] }
+    ]);
+    expect(threads).toEqual([
+      { topic: "Q3 budget", sessions: 3 },
+      { topic: "Notion", sessions: 2 }
+    ]);
+  });
+  it("counts a topic once per episode even if repeated, and is case-insensitive", () => {
+    const threads = recurringEpisodeThreads([
+      { topics: ["Budget", "budget", "BUDGET"] },
+      { topics: ["budget"] }
+    ]);
+    expect(threads).toEqual([{ topic: "Budget", sessions: 2 }]);
+  });
+  it("returns nothing when no topic recurs across sessions", () => {
+    expect(recurringEpisodeThreads([{ topics: ["a"] }, { topics: ["b"] }])).toEqual([]);
+    expect(recurringEpisodeThreads([])).toEqual([]);
+  });
+  it("caps to the top N threads", () => {
+    const episodes = [
+      { topics: ["a", "b", "c", "d"] },
+      { topics: ["a", "b", "c", "d"] }
+    ];
+    expect(recurringEpisodeThreads(episodes, { max: 2 })).toHaveLength(2);
+  });
+});
+
+describe("formatMemoryView — recurring threads (reflection)", () => {
+  it("renders the threads-you-keep-returning-to line", () => {
+    const out = formatMemoryView(
+      { facts: { name: "Jinan" }, preferences: {}, recentTopics: [] },
+      undefined,
+      [{ topic: "Q3 budget", sessions: 3 }, { topic: "Notion", sessions: 2 }]
+    );
+    expect(out).toContain("Threads you keep returning to: Q3 budget (3 sessions), Notion (2 sessions)");
+  });
+  it("shows the reflection even when facts/prefs/topics are empty", () => {
+    const out = formatMemoryView(
+      { facts: {}, preferences: {}, recentTopics: [] },
+      undefined,
+      [{ topic: "Q3 budget", sessions: 2 }]
+    );
+    expect(out).not.toMatch(/haven't remembered/);
+    expect(out).toContain("Q3 budget (2 sessions)");
   });
 });
 
