@@ -55,7 +55,14 @@ export async function writeFollowupLlmBudget(file: string, record: FollowupLlmBu
   const payload = `${JSON.stringify(record, null, 2)}\n`;
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, payload, "utf8");
+  // fsync before rename, matching the other personal stores.
+  const handle = await fs.open(tmp, "w", 0o600);
+  try {
+    await handle.writeFile(payload, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   await fs.rename(tmp, file);
 }
 

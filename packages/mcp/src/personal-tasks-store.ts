@@ -89,7 +89,16 @@ export async function writeTasks(file: string, tasks: readonly PersistedTask[]):
   const payload = `${JSON.stringify({ tasks }, null, 2)}\n`;
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
   await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, payload, { encoding: "utf8", mode: 0o600 });
+  // fsync before rename so a power-loss/crash can't commit a rename over a
+  // not-yet-flushed (0-byte/partial) tmp file — matches the followups /
+  // objectives / contacts / action-log stores.
+  const handle = await fs.open(tmp, "w", 0o600);
+  try {
+    await handle.writeFile(payload, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   await fs.rename(tmp, file);
   await fs.chmod(file, 0o600).catch(() => undefined);
 }

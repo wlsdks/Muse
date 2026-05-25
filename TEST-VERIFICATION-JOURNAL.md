@@ -1006,3 +1006,20 @@ pointer ✓ · final full certification ✓. LLM-as-judge intentionally deferred
   already tested), NOT by the model declining. Removed two mis-framed
   expectNoTool golden cases (selection ≠ param-completeness) and documented the
   layered defense inline. eval:tools back to 24/24.
+
+---
+
+## Round 14 — close P1 follow-ups (finding-016 migration + fsync consistency)
+
+- **finding 016 migration (the safe one):** `MUSE_FOLLOWUP_LLM_BUDGET_PER_DAY`
+  now uses `parseNonNegativeInteger`, so an explicit `=0` disables LLM
+  followups (verified: `isFollowupLlmBudgetExhausted` treats `cap <= 0` as
+  exhausted) instead of silently keeping the default 20. NOT migrated:
+  `MUSE_CACHE_TTL_MS` (0 = never-expire vs disable is ambiguous → unsafe) and
+  `MUSE_MCP_RECONNECT_MAX_ATTEMPTS` (downstream `positiveInteger` re-normalizes
+  0 → migrating the env parse alone has no effect). Per-setting judgment.
+- **fsync consistency:** `personal-tasks`, `personal-reminders`, and
+  `personal-followup-llm-budget` stores now `fsync` before rename (open →
+  writeFile → sync → close → rename), matching followups/objectives/contacts/
+  action-log — closing the power-loss window where a rename could commit a
+  not-yet-flushed tmp file. autoconfigure 262 / mcp 799 passed; lint clean.

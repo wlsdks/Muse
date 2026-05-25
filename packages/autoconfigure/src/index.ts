@@ -143,6 +143,7 @@ import {
   parseCsv,
   parseInteger,
   parseNonNegativeFloat,
+  parseNonNegativeInteger,
   parsePositiveFloat,
   parseSloErrorRate
 } from "./env-parsers.js";
@@ -699,7 +700,10 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
           ? {
               additionalDetector: createBudgetedLlmDetector({
                 budgetFile: resolveFollowupLlmBudgetFile(env),
-                cap: parseInteger(env.MUSE_FOLLOWUP_LLM_BUDGET_PER_DAY, 20),
+                // Non-negative: an explicit 0 means "disable LLM followups"
+                // (isFollowupLlmBudgetExhausted treats cap<=0 as exhausted).
+                // parseInteger rejected 0 → silently kept the default 20.
+                cap: parseNonNegativeInteger(env.MUSE_FOLLOWUP_LLM_BUDGET_PER_DAY, 20),
                 model: env.MUSE_FOLLOWUP_LLM_MODEL ?? defaultModel,
                 modelProvider
               })
