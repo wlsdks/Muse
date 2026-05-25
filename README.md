@@ -249,8 +249,8 @@ Or via env vars (`MUSE_CALENDAR_PROVIDERS=local,gcal`,
 Tests are the only form of verification. The repo ships these gates:
 
 ```bash
-pnpm check                                      # build + test for every workspace (~789 tests)
-pnpm smoke:broad                                # 42 HTTP endpoints, diagnostic provider
+pnpm check                                      # build + test for every workspace (~4,460 tests)
+pnpm smoke:broad                                # 51 HTTP endpoints, diagnostic provider
 pnpm smoke:live                                 # real LLM round-trip — LOCAL OLLAMA QWEN ONLY (auto-skips if Ollama is unreachable)
 ```
 
