@@ -825,7 +825,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
       // every write/execute call must be confirmed by the user with its content
       // shown, reads run silently, and a denial / gate error blocks the call
       // (runtime fail-close). This is the in-chat "act" path per outbound-safety.md.
-      metadata: { localMode: true },
+      metadata: { localMode: true, userId },
       model: useModel,
       toolApprovalGate: chatToolApprovalGate(OUTBOUND_ACTUATORS, requestApproval)
     }) as ChatStream;

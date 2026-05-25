@@ -413,6 +413,11 @@ try {
     assertSelected(body, "world_time");
   });
 
+  await record("remember_fact (live) — NATURAL selection from 'remember my dentist is Dr. Kim'", async () => {
+    const body = await chatJson("Please remember that my dentist is Dr. Kim.", "live-natural-rememberfact");
+    assertSelected(body, "remember_fact");
+  });
+
   await record("muse.calendar.availability (live) — NATURAL selection from 'am I free?'", async () => {
     const body = await chatJson("Am I free tomorrow afternoon?", "live-natural-availability");
     assertSelected(body, "muse.calendar.availability");

@@ -52,6 +52,7 @@ import {
   createHomeEntitiesTool,
   createHomeStateTool,
   createLoopbackMcpMuseTools,
+  createRememberFactTool,
   createWeatherTool,
   createWorldTimeTool,
   GmailEmailProvider,
@@ -655,6 +656,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     () => emailReadTools,
     () => [createWeatherTool(env.MUSE_WEATHER_LOCATION?.trim() ? { defaultLocation: env.MUSE_WEATHER_LOCATION.trim() } : {})],
     () => [createWorldTimeTool()],
+    () => [createRememberFactTool({ store: userMemoryStore })],
     () => [
       createContactsFindTool({ contacts: () => queryContacts(resolveContactsFile(env)) }),
       createContactsAddTool({ save: (contact) => addContact(resolveContactsFile(env), contact) }),

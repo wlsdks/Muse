@@ -491,6 +491,7 @@ export {
   resolveTimezone,
   type WorldTimeToolDeps
 } from "./world-time.js";
+export { createRememberFactTool, type RememberFactStore } from "./remember-fact-tool.js";
 export {
   createContactsAddTool,
   createContactsFindTool,
