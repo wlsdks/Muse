@@ -41,6 +41,10 @@ export interface AgentSpecInput {
  */
 export const DEFAULT_AGENT_SPECS: readonly AgentSpecInput[] = [
   {
+    // Fixed createdAt earlier than the Critic so the sequential pipeline
+    // runs Generalist (answer) before Critic (refine) — orchestration
+    // auto-selection orders by creation time.
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
     description: "Default general-purpose worker: answers the request directly and completely.",
     enabled: true,
     id: "default-generalist",
@@ -55,6 +59,7 @@ export const DEFAULT_AGENT_SPECS: readonly AgentSpecInput[] = [
     toolNames: []
   },
   {
+    createdAt: new Date("2026-01-01T00:00:01.000Z"),
     description: "Default reviewer worker: checks the prior answer for errors and gaps and sharpens it.",
     enabled: true,
     id: "default-critic",

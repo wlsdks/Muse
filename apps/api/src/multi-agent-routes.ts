@@ -146,7 +146,7 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     const requestedIds = parsed.value.workerIds;
     const selected = requestedIds
       ? allSpecs.filter((spec) => requestedIds.includes(spec.name))
-      : allSpecs;
+      : orderWorkersForPipeline(allSpecs);
 
     if (selected.length === 0) {
       return reply.status(409).send({
@@ -238,7 +238,7 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     const requestedIds = parsed.value.workerIds;
     const selected = requestedIds
       ? allSpecs.filter((spec) => requestedIds.includes(spec.name))
-      : allSpecs;
+      : orderWorkersForPipeline(allSpecs);
 
     if (selected.length === 0) {
       return reply.status(409).send({
@@ -448,6 +448,18 @@ export async function buildTieredOrchestration(
     collapsedToHeavy: plan.collapsedToHeavy,
     workers: specs.map((spec) => createSpecWorker(spec, runtime, modelByName.get(spec.name)))
   };
+}
+
+/**
+ * Order auto-selected workers (no explicit workerIds) for the sequential
+ * pipeline by creation time, not the registry's alphabetical display sort —
+ * so the first-seeded worker runs first (e.g. the default Generalist before
+ * the Critic, rather than "Critic" winning on name alone). Name breaks ties.
+ */
+export function orderWorkersForPipeline(specs: readonly AgentSpec[]): readonly AgentSpec[] {
+  return [...specs].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.name.localeCompare(b.name)
+  );
 }
 
 function createSpecWorker(spec: AgentSpec, runtime: AgentRuntime, model?: string): AgentWorker {

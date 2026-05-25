@@ -14,6 +14,14 @@ describe("DEFAULT_AGENT_SPECS", () => {
     }
   });
 
+  it("orders Generalist before Critic by createdAt so the sequential pipeline answers then refines", () => {
+    const generalist = DEFAULT_AGENT_SPECS.find((s) => s.id === "default-generalist");
+    const critic = DEFAULT_AGENT_SPECS.find((s) => s.id === "default-critic");
+    expect(generalist?.createdAt).toBeInstanceOf(Date);
+    expect(critic?.createdAt).toBeInstanceOf(Date);
+    expect(generalist!.createdAt!.getTime()).toBeLessThan(critic!.createdAt!.getTime());
+  });
+
   it("seeds an InMemoryAgentSpecRegistry so orchestration has enabled workers", async () => {
     const registry = new InMemoryAgentSpecRegistry(DEFAULT_AGENT_SPECS);
     expect((await registry.listEnabled()).length).toBe(2);
