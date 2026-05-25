@@ -35,11 +35,31 @@ import type { Command } from "commander";
 
 import { cosine, isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
 import { embed } from "./embed.js";
+import { defaultEpisodeIndexFile, loadEpisodeIndex } from "./episode-index.js";
 import { resolvePersona } from "./program-helpers.js";
 import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
 import type { ProgramIO } from "./program.js";
 import { withSigintAbort } from "./sigint-abort.js";
 import { resolveDefaultUserKey } from "./user-id.js";
+
+/**
+ * SB-1: rank past-session episode summaries against the query so `muse ask`
+ * grounds on the user's own history, not just notes. Pure + cosine-based;
+ * caller supplies the already-embedded query vector. Top-K, descending score.
+ */
+export function rankEpisodeHits(
+  queryVec: readonly number[],
+  episodes: ReadonlyArray<{ readonly id: string; readonly summary: string; readonly embedding: readonly number[] }>,
+  topK: number
+): Array<{ id: string; summary: string; score: number }> {
+  if (topK <= 0) {
+    return [];
+  }
+  return episodes
+    .map((ep) => ({ id: ep.id, score: cosine(queryVec, ep.embedding), summary: ep.summary }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+}
 
 interface AskOptions {
   readonly user?: string;
@@ -350,12 +370,13 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // from tasks + calendar + memory + general knowledge.
       let scored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
       let notesUnavailable = false;
+      let queryVec: number[] | undefined;
       try {
-        const queryEmbedding = await embed(query, embedModel);
+        queryVec = await embed(query, embedModel);
         scored = index.files.flatMap((f) => f.chunks.map((chunk) => ({
           chunk,
           file: f.path,
-          score: cosine(queryEmbedding, chunk.embedding)
+          score: cosine(queryVec!, chunk.embedding)
         })))
           .sort((a, b) => b.score - a.score)
           .slice(0, topK);
@@ -368,6 +389,27 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           `\`ollama pull ${embedModel}\` (and ensure Ollama is running).)\n`
         );
       }
+
+      // SB-1 (second brain): also ground on past-session episode summaries
+      // so `muse ask "what did I decide about X?"` reaches your prior
+      // conversations, not just notes. Same embed model only (a cross-model
+      // cosine is meaningless); optional + fail-soft.
+      let episodeHits: Array<{ id: string; summary: string; score: number }> = [];
+      if (queryVec) {
+        try {
+          const epIndex = await loadEpisodeIndex(defaultEpisodeIndexFile());
+          if (epIndex && epIndex.model === embedModel && epIndex.entries.length > 0) {
+            episodeHits = rankEpisodeHits(queryVec, epIndex.entries, topK);
+          }
+        } catch {
+          // episodes index missing / unreadable — grounding still works
+        }
+      }
+      const episodeBlock = episodeHits.length === 0
+        ? "(no relevant past sessions)"
+        : episodeHits
+          .map((e, i) => `<<session ${(i + 1).toString()} — ${e.id} (score ${e.score.toFixed(3)})>>\n${e.summary}\n<<end>>`)
+          .join("\n\n");
 
       // Build assembly + chat-only fast path. `--actuators` (only
       // meaningful with --with-tools) injects the gated state-changing
@@ -525,7 +567,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         formatCurrentContextLine(),
         "",
         "You are Muse, the user's JARVIS-style personal AI conductor.",
-        "Answer the user's question USING ONLY the notes, open tasks, upcoming events, and pending reminders provided below as context.",
+        "Answer the user's question USING ONLY the notes, open tasks, upcoming events, pending reminders, and past session summaries provided below as context.",
         "If none of the provided context contains enough information, say so directly — do not invent facts.",
         "Reply in the user's preferred language (from persona prefs).",
         "Keep it concise — 2–4 sentences unless the question explicitly needs more.",
@@ -539,6 +581,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         "  - for tasks:     [task: Q3 budget memo]",
         "  - for events:    [event: Standup]",
         "  - for reminders: [reminder: pick up milk]",
+        "  - for past sessions: [session: reviewed the API contract]",
         "Use only the filename (not the full path or score) when citing a note.",
         "",
         "=== USER NOTES (top relevant chunks) ===",
@@ -555,7 +598,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         "",
         "=== PENDING REMINDERS (sorted by due date) ===",
         reminderBlock,
-        "=== END REMINDERS ==="
+        "=== END REMINDERS ===",
+        "",
+        "=== PAST SESSION SUMMARIES (your prior conversations) ===",
+        episodeBlock,
+        "=== END PAST SESSIONS ==="
       ].join("\n");
 
       // Show citation header before streaming the answer so the user
@@ -572,6 +619,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       }
       if (pendingReminders.length > 0) {
         groundedParts.push(`${pendingReminders.length.toString()} pending reminder(s)`);
+      }
+      if (episodeHits.length > 0) {
+        groundedParts.push(`${episodeHits.length.toString()} past session(s)`);
       }
       // Grounding diagnostic goes to stderr so `muse ask "?" > answer.txt`
       // and `| jq` style pipelines get a clean stdout. Same convention
