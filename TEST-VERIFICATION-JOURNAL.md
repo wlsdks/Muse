@@ -632,3 +632,36 @@ encryption, schema `required` preservation. Recurring classes extended:
 "crash/duplicate reaches an external boundary" — the credential re-login
 crash and the duplicate-function-name both surface at a boundary
 (filesystem recovery / provider request) the happy path never exercises.
+
+---
+
+## Round 4 — no new defects; four areas verified SOLID
+
+Probed four fresh surfaces; all are well-built and already hardened. No fix.
+
+- **API route input validation (apps/api, Fastify)** — bodies validated at
+  the boundary via ParseResult/type-guard helpers (`parseScheduledJobInput`,
+  `parseOrchestrateBody`, `parseAgentRunInput`); query ints parsed with a
+  strict `STRICT_INT_RE` and `Number.isFinite` guards; malformed/empty bodies
+  return 400 (smoke:broad asserts "rejects empty body"). Fastify catches a
+  thrown handler and returns 500 without crashing the process or leaking a
+  stack.
+- **Calendar credential store** — `save(providerId, …)` stores providerId as
+  a JSON **object key**, not a path (no traversal), on a **null-prototype**
+  object (no `__proto__`/`toString` prototype pollution). Atomic tmp+rename,
+  0o600.
+- **InMemoryResponseCache (packages/cache)** — proper LRU (get() delete+re-set
+  promotes; evictOverflow drops the oldest), `>=` TTL boundary, and explicit
+  NaN/Infinity finite guards on maxSize/ttlMs (the code comment notes this is
+  the "same defect class as the scheduler / token-cost finite guards" — a
+  prior systematic sweep). `createPatternMatcher` escapes literals and uses
+  only `.*` (no ReDoS, no crash on a `[`-bearing pattern).
+- **Multipart parser (server-multipart-sse.ts)** — boundary used as a literal
+  `split` (no regex injection), all header regexes linear (no ReDoS), body
+  bounded by Fastify's bodyLimit.
+
+**Signal:** rounds 1–3 found 9 real defects; round 4's targeted surfaces are
+mature and pre-hardened. Diminishing returns on bug-hunting the
+runtime/boundary core — the high-value defect classes (untrusted-text
+parsing, unbounded recursion/regex, asymmetric sanitisation, crash-on-corrupt,
+streaming flush, duplicate-at-boundary, recovery-path crash) have been swept.
