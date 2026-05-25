@@ -132,8 +132,14 @@ export class CalendarProviderRegistry {
   }
 
   private requireOrPrimary(providerId: string | undefined): CalendarProvider {
-    if (providerId) {
-      return this.require(providerId);
+    const trimmed = providerId?.trim();
+    // A local model with no provider list often invents a sentinel like
+    // "default"/"primary" to mean "my main calendar". Treat those (and blank)
+    // as "use primary" so a valid create doesn't fail on a hallucinated id;
+    // a concrete unknown id (e.g. "google" when only "local" exists) still
+    // errors rather than silently writing to the wrong calendar.
+    if (trimmed && trimmed.toLowerCase() !== "default" && trimmed.toLowerCase() !== "primary") {
+      return this.require(trimmed);
     }
 
     const primary = this.primary();

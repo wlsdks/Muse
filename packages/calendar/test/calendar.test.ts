@@ -791,6 +791,43 @@ describe("isRetryableCalendarStatus (goal 135)", () => {
   });
 });
 
+describe("CalendarProviderRegistry.createEvent — model-fabricated providerId sentinel", () => {
+  let dir: string;
+  let registry: CalendarProviderRegistry;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "muse-cal-reg-"));
+    registry = new CalendarProviderRegistry([
+      new LocalCalendarProvider({ file: join(dir, "calendar.json"), idFactory: counter() })
+    ]);
+  });
+
+  afterEach(() => {
+    rmSync(dir, { force: true, recursive: true });
+  });
+
+  const input = { allDay: false, endsAt: new Date("2026-06-01T16:00:00Z"), startsAt: new Date("2026-06-01T15:00:00Z"), title: "Meeting with Sam" };
+
+  it("routes a fabricated 'default' providerId to the primary provider instead of throwing", async () => {
+    const created = await registry.createEvent("default", input);
+    expect(created.title).toBe("Meeting with Sam");
+  });
+
+  it("also accepts 'primary' and whitespace as the sentinel", async () => {
+    await expect(registry.createEvent("primary", input)).resolves.toBeDefined();
+    await expect(registry.createEvent("  ", input)).resolves.toBeDefined();
+  });
+
+  it("still errors on a concrete unknown id rather than silently misrouting", () => {
+    expect(() => registry.createEvent("google", input)).toThrow(/not registered/);
+  });
+
+  it("still targets a real registered id exactly", async () => {
+    const created = await registry.createEvent("local", input);
+    expect(created.title).toBe("Meeting with Sam");
+  });
+});
+
 function counter(): () => string {
   let i = 0;
   return () => `cal_${++i}`;
