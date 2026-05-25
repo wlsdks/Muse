@@ -549,3 +549,46 @@ multi-agent orchestration, DB query builders, the casual-lure/anchored
 regexes. Recurring classes extended: unbounded-recursion now also covers
 *quadratic regex* (008) and *crash-on-corrupt-load* (009 — every store but
 user-memory already degraded; the odd one out was the bug).
+
+---
+
+## Round 3 (new areas, on branch verification-round-3)
+
+### Finding 011 — re-login couldn't recover after the per-host credential key changed (FIXED)
+
+**Where:** `apps/cli/src/credential-store.ts`.
+The CLI credential store is AES-256-GCM with a scrypt key from
+`MUSE_CREDENTIAL_KEY` or a per-host fallback (`username+homedir+hostname`).
+`readStoredToken` already degrades gracefully on an unreadable store and
+prints *"Re-login with `muse auth login` to write a fresh store."* — BUT
+`writeStoredToken`/`deleteStoredToken` read-before-write through
+`readCredentialStore`, which rethrew on decrypt failure. So when the
+per-host key changed (hostname change, machine migration), the advertised
+recovery itself **crashed** ("Unsupported state or unable to authenticate
+data"): read degraded, but re-login and logout threw on the same
+undecryptable read. The user was stuck short of manually deleting the file.
+
+Reproduced: write with key A → read with key B = undefined (good) →
+write with key B = **CRASH**.
+
+**Fix:** `readCredentialStore(io, { startFreshIfUnreadable })`. Genuine fs
+errors still throw on every path; a *content-unreadable* store (corrupt
+JSON / bad format / failed GCM decrypt) returns empty **only for the write
+path** — there are no recoverable tokens behind an undecryptable file, so
+"start fresh" can't clobber anything, and re-login/logout now recover. A
+VALID store is read normally, so other baseUrls' tokens are still
+preserved (no-clobber). New tests: re-login recovers, logout no-crash,
+valid-store no-clobber. apps/cli 1114 passed; lint clean.
+
+### Round-3 verified SOLID (no fix)
+- **Scheduler concurrency** — distributed lock (in-memory Map / Postgres
+  upsert-where-expired) prevents concurrent re-fire; no missed-tick
+  stampede (next run recomputed from `now`); reminder firing persists
+  per-delivery (send→mark→write) so a crash can't re-deliver an
+  already-sent reminder, and the residual window is a deliberate
+  at-least-once choice for a user's-own-channel (low-risk) reminder.
+- **JWT (`packages/auth`)** — `verifyJwt` uses `timingSafeEqual`, pins
+  `alg === "HS256"` (rejects alg:none / confusion), verifies the HMAC
+  before trusting the header, and checks `exp`. Textbook-correct.
+- **Credential encryption** — AES-256-GCM (authenticated), scrypt-derived
+  key, random salt+IV per write, 0o600, atomic tmp+rename. Sound.

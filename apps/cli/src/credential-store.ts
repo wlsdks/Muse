@@ -77,7 +77,7 @@ export async function readStoredToken(io: ProgramIO, baseUrl: string): Promise<s
 }
 
 export async function writeStoredToken(io: ProgramIO, baseUrl: string, token: string): Promise<void> {
-  const store = await readCredentialStore(io);
+  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
   await writeCredentialStore(io, {
     tokens: {
       ...store.tokens,
@@ -90,14 +90,28 @@ export async function writeStoredToken(io: ProgramIO, baseUrl: string, token: st
 }
 
 export async function deleteStoredToken(io: ProgramIO, baseUrl: string): Promise<void> {
-  const store = await readCredentialStore(io);
+  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
   const { [baseUrl]: _removed, ...tokens } = store.tokens;
   await writeCredentialStore(io, { tokens });
 }
 
-async function readCredentialStore(io: ProgramIO): Promise<CredentialStore> {
+async function readCredentialStore(
+  io: ProgramIO,
+  options: { readonly startFreshIfUnreadable?: boolean } = {}
+): Promise<CredentialStore> {
+  let raw: string;
   try {
-    const raw = await readFile(credentialPath(io), "utf8");
+    raw = await readFile(credentialPath(io), "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { tokens: {} };
+    }
+    // A genuine filesystem error (permissions, etc.) is not a "content
+    // unreadable" condition — surface it on every path.
+    throw error;
+  }
+
+  try {
     const file = JSON.parse(raw) as unknown;
     if (!isEncryptedCredentialFile(file)) {
       throw new Error("Invalid Muse credential store format");
@@ -111,10 +125,16 @@ async function readCredentialStore(io: ProgramIO): Promise<CredentialStore> {
 
     return store;
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
+    // Content can't be interpreted (corrupt JSON, bad format, or — the
+    // common one — the per-host fallback key changed because the hostname
+    // changed, so AES-GCM auth fails). On a WRITE the existing ciphertext
+    // is unrecoverable anyway, so there are no tokens left to preserve:
+    // start fresh so `muse auth login` can actually recover (the warning
+    // on the read path promises exactly this). Reads still rethrow → their
+    // own catch degrades to "no credentials".
+    if (options.startFreshIfUnreadable) {
       return { tokens: {} };
     }
-
     throw error;
   }
 }

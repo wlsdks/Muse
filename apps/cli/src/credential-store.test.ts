@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { defaultCredentialPath, readStoredToken, writeStoredToken } from "./credential-store.js";
+import { defaultCredentialPath, deleteStoredToken, readStoredToken, writeStoredToken } from "./credential-store.js";
 import type { ProgramIO } from "./program.js";
 
 const writeFileCalls: Array<{ path: string }> = [];
@@ -175,5 +175,49 @@ describe("writeCredentialStore atomic write", () => {
     const finalContent = await readFile(credPath, "utf8");
     expect(finalContent.length, "the final file must be non-empty").toBeGreaterThan(0);
     expect(finalContent, "the encrypted body must not leak the plaintext token").not.toContain("second-token");
+  });
+});
+
+describe("credential store — re-login recovers after the per-host key changes", () => {
+  let workdir: string;
+  const io = (credentialKey: string): ProgramIO => ({
+    configDir: workdir,
+    credentialKey,
+    readPipedStdin: async () => "",
+    stderr: () => undefined,
+    stdout: () => undefined
+  });
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(path.join(tmpdir(), "muse-cred-relogin-"));
+  });
+  afterEach(async () => {
+    await rm(workdir, { force: true, recursive: true });
+  });
+
+  it("writeStoredToken starts fresh when the existing store can't be decrypted (hostname/key changed)", async () => {
+    // Key A writes a token; the per-host fallback key then changes (e.g. the
+    // hostname changed), so the existing ciphertext no longer decrypts.
+    await writeStoredToken(io("key-A-aaaaaaaaaaaaaaaaaaaaaaaa"), "https://api", "tok-A");
+    const changed = io("key-B-bbbbbbbbbbbbbbbbbbbbbbbb");
+
+    // Read degrades (anonymous), and — the bug this fixes — re-login must
+    // RECOVER rather than crash on the undecryptable read-before-write.
+    expect(await readStoredToken(changed, "https://api")).toBeUndefined();
+    await expect(writeStoredToken(changed, "https://api", "tok-B")).resolves.toBeUndefined();
+    expect(await readStoredToken(changed, "https://api")).toBe("tok-B");
+  });
+
+  it("deleteStoredToken (logout) does not crash on an undecryptable store", async () => {
+    await writeStoredToken(io("key-A-aaaaaaaaaaaaaaaaaaaaaaaa"), "https://api", "tok-A");
+    await expect(deleteStoredToken(io("key-B-bbbbbbbbbbbbbbbbbbbbbbbb"), "https://api")).resolves.toBeUndefined();
+  });
+
+  it("a VALID store is never clobbered — other baseUrls survive a write", async () => {
+    const valid = io("key-same-cccccccccccccccccccccccc");
+    await writeStoredToken(valid, "https://a", "ta");
+    await writeStoredToken(valid, "https://b", "tb");
+    expect(await readStoredToken(valid, "https://a")).toBe("ta");
+    expect(await readStoredToken(valid, "https://b")).toBe("tb");
   });
 });
