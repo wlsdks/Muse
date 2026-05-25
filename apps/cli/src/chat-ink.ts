@@ -58,6 +58,7 @@ import { searchRecall } from "./commands-recall.js";
 import { readTrust } from "./commands-trust.js";
 import { appendInputHistory, loadInputHistory } from "./chat-input-history.js";
 import { extractMemoryFromTurn, formatLearnedSummary, shouldAutoExtract, type AutoMemoryProvider } from "./chat-auto-memory.js";
+import { formatReflection, synthesizeReflection, type ReflectionProvider } from "./chat-reflection.js";
 import { listRecentJobIds, readJobSummary, startBackgroundJob } from "./commands-jobs.js";
 import { buildLocalTodayText, parseLookaheadHours, readDueFollowups, readDueReminders } from "./commands-today.js";
 import { dueTaskItems, groupProactiveNotice, imminentItems, jobCompletionItems, pickUnseen, type ProactiveItem } from "./chat-proactive.js";
@@ -83,6 +84,7 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "remember", desc: "teach a fact — /remember <key>=<value>" },
   { cmd: "pref", desc: "set a preference — /pref <key>=<value>" },
   { cmd: "recall", desc: "search past notes + episodes — /recall <query>" },
+  { cmd: "reflect", desc: "reflect on patterns across your past sessions" },
   { cmd: "forget", desc: "forget one thing — /forget <key> (or --all)" },
   { cmd: "trust", desc: "show this user's trusted + blocked tools" },
   { cmd: "persona", desc: "show the active persona slot" },
@@ -177,6 +179,7 @@ export function MuseChatApp(props: {
   readonly onInput?: (value: string) => void;
   readonly episodeInfo?: { readonly count: number; readonly lastAt?: string };
   readonly recurringThreads?: readonly RecurringThread[];
+  readonly reflect?: () => Promise<string>;
   readonly memorySnapshot: () => Promise<MemorySnapshot | undefined>;
   readonly forgetMemory: (key: string) => Promise<boolean>;
   readonly rememberFact: (key: string, value: string) => Promise<boolean>;
@@ -375,6 +378,12 @@ export function MuseChatApp(props: {
       }
       if (slash.cmd === "memory") {
         note(formatMemoryView(await props.memorySnapshot(), props.episodeInfo, props.recurringThreads));
+        return;
+      }
+      if (slash.cmd === "reflect") {
+        if (!props.reflect) { note("Reflection needs the local model — start Muse with tools/model enabled."); return; }
+        note("🪞 reflecting on your past sessions…");
+        note(await props.reflect());
         return;
       }
       if (slash.cmd === "remember") {
@@ -1011,6 +1020,21 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     }
   };
 
+  // /reflect — cross-session synthesis: read this user's episodes and ask the
+  // local model for ONE grounded observation (fenced against hallucination).
+  const reflect = async (): Promise<string> => {
+    try {
+      const all = await readEpisodes(resolveEpisodesFile(process.env)).catch(() => []);
+      const mine = all.filter((episode) => episode.userId === userId);
+      const insight = await synthesizeReflection({
+        episodes: mine, model, provider: provider as unknown as ReflectionProvider
+      });
+      return formatReflection(insight);
+    } catch {
+      return formatReflection("");
+    }
+  };
+
   // /today — the morning briefing composed locally (tasks/events/weather/
   // headlines/reminders) so the small model never chains four tool calls.
   const todayBrief = (): Promise<string> =>
@@ -1165,6 +1189,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     trustInfo,
     ...(personaSlot ? { persona: personaSlot } : {}),
     recallSearch,
+    reflect,
     todayBrief,
     startJob,
     jobsOverview,
