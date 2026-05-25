@@ -31,6 +31,45 @@ export interface AgentSpecInput {
   readonly updatedAt?: Date;
 }
 
+/**
+ * Two enabled workers seeded into a fresh in-memory registry so
+ * `orchestrate` works out of the box instead of failing with
+ * `NoAgentWorkerError`. `keywords: []` is deliberate: it keeps them
+ * OUT of single-agent routing (`scoreAgentSpec` returns undefined for
+ * an empty-keyword spec), so they act purely as orchestration workers.
+ * No tools — pure reasoning keeps local-model tool-selection clean.
+ */
+export const DEFAULT_AGENT_SPECS: readonly AgentSpecInput[] = [
+  {
+    description: "Default general-purpose worker: answers the request directly and completely.",
+    enabled: true,
+    id: "default-generalist",
+    independentExecution: true,
+    keywords: [],
+    mode: "standard",
+    name: "Generalist",
+    systemPrompt:
+      "You are a capable generalist assistant. Answer the user's request directly, "
+      + "completely, and concisely. Do not defer or ask for clarification unless the "
+      + "request is genuinely ambiguous.",
+    toolNames: []
+  },
+  {
+    description: "Default reviewer worker: checks the prior answer for errors and gaps and sharpens it.",
+    enabled: true,
+    id: "default-critic",
+    independentExecution: true,
+    keywords: [],
+    mode: "standard",
+    name: "Critic",
+    systemPrompt:
+      "You are a critical reviewer. Examine the prior answer for factual errors, missing "
+      + "steps, and overclaims. Produce a corrected, sharper version — keep what is right, "
+      + "fix what is wrong, and state any remaining uncertainty.",
+    toolNames: []
+  }
+];
+
 export interface AgentSpecRegistry {
   list(): Awaitable<readonly AgentSpec[]>;
   listEnabled(): Awaitable<readonly AgentSpec[]>;

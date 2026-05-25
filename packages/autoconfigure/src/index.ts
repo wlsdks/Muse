@@ -12,6 +12,7 @@ import {
   type HookStage
 } from "@muse/agent-core";
 import {
+  DEFAULT_AGENT_SPECS,
   InMemoryAgentSpecRegistry,
   KyselyAgentSpecRegistry,
   RuleBasedAgentSpecResolver,
@@ -434,7 +435,14 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const env = mergeModelKeysFromFile(options.env ?? process.env);
   const db = options.db;
   const authService = createAuthService(env, db);
-  const agentSpecRegistry = db ? new KyselyAgentSpecRegistry(db) : new InMemoryAgentSpecRegistry();
+  // Seed default orchestration workers into a fresh in-memory registry so
+  // `orchestrate` works out of the box (empty registry → NoAgentWorkerError).
+  // DB-backed deployments are operator-managed — not auto-seeded. Opt out with
+  // MUSE_MULTI_AGENT_DEFAULT_WORKERS=false (preserves the empty→409 path).
+  const seedDefaultWorkers = parseBoolean(env.MUSE_MULTI_AGENT_DEFAULT_WORKERS, true);
+  const agentSpecRegistry = db
+    ? new KyselyAgentSpecRegistry(db)
+    : new InMemoryAgentSpecRegistry(seedDefaultWorkers ? DEFAULT_AGENT_SPECS : []);
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
   const historyStore = createHistoryStore(db);
   const hookTraceStore = createHookTraceStore(db, env);
