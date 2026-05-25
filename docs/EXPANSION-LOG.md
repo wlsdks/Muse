@@ -25,6 +25,7 @@
 | 8 | `7afb8135` | fast tool-selection verifier + build journal | tooling | self-test PASS |
 | 9 | `2506d4a0` | background auto-memory (learn facts without "remember") | memory · model-path | unit + **fast qwen3:8b extraction** |
 | 10 | `37a84e61` | show auto-learned facts in chat (trust + undo) | memory · CLI | unit + render |
+| 11 | `cda18f85` | auto-memory ignores questions/tasks + patterns doc | memory · hardening | **9/9 live battery** |
 
 ## Failures → learnings
 
