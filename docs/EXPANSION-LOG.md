@@ -55,6 +55,22 @@
 | 37 | `7901bd53` | memory-injection defense (defang) + abstention directive | security · model-path | unit + **live qwen 2/2 (no-HACK + abstain)** |
 | 38 | `86158905` | canonicalize memory keys → variants consolidate (dedup) | memory · reliability | unit (store) + pnpm check |
 | 39 | `a394eb35` | local-first robustness audit (no cloud keys) | local-first · audit | **audit PASS (fully local)** |
+| 40 | `910a81ec` | guided hint on tool-execution failure (deterministic repair) | reliability · model-path | unit (classify + executor) |
+| 41 | `3ee75e94` | hybrid keyword+vector recall ranking | knowledge · retrieval | unit (lexical flips order) |
+| 42 | `eecc53a2` | local eval harness — one scored suite (pnpm eval) | quality infra | **baseline 6/6 live qwen** |
+| 43 | `b8b6034e` | cooperative run interrupt via AbortSignal | runtime pattern | unit (aborted → no model/tool) |
+| 44 | `bc5736ee` | rehydrate re-runnable input from checkpoint (durable resume) | runtime pattern | unit (round-trip) |
+
+### 10-item evaluated backlog — DELIVERED (slices 36-44)
+
+The capability+paper-grounded backlog (set with 진안) shipped end to end:
+plan-execute structured output (36), memory-injection defense + abstention (37),
+memory-key dedup (38), local-first audit (39), tool-error repair hint (40),
+hybrid recall (41), eval harness (42), run interrupt (43), durable-resume
+primitive (44). Each verified (unit / live qwen / pnpm check); `pnpm eval`
+baseline 6/6 on qwen3:8b. Lower-value items (durable-resume auto-wiring,
+in-flight-fetch abort) intentionally left as the rehydration/boundary primitive
++ a follow-on note rather than over-built.
 
 ### Modern direction: native structured output (constrained decoding) — epic in progress
 
