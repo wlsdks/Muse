@@ -293,6 +293,11 @@ export class AppleNotesProvider implements NotesProvider {
         });
       });
 
+      // A failed spawn (e.g. missing osascript) destroys stdin; writing to it
+      // then emits an EPIPE/ERR_STREAM_DESTROYED with no listener → an
+      // unhandled error that fails the whole test run. Swallow it here — the
+      // real failure is already surfaced via the child 'error'/'close' handlers.
+      child.stdin.on("error", () => { /* surfaced via child 'error'/'close' */ });
       child.stdin.write(script);
       child.stdin.end();
     });

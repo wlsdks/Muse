@@ -287,6 +287,10 @@ export class AppleRemindersProvider implements TasksProvider {
         });
       });
 
+      // A failed spawn destroys stdin; writing then emits an unhandled
+      // EPIPE/ERR_STREAM_DESTROYED. Swallow it — the real failure is surfaced
+      // via the child 'error'/'close' handlers.
+      child.stdin.on("error", () => { /* surfaced via child 'error'/'close' */ });
       child.stdin.write(script);
       child.stdin.end();
     });
