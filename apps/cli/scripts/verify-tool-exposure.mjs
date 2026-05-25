@@ -1,0 +1,51 @@
+/**
+ * Deterministic tool-EXPOSURE regression guard (no model, ~3s). For each
+ * domain×intent×language prompt, assert the matching tool is exposed after the
+ * real pipeline (planForContext relevance + mutation gate → DefaultToolFilter
+ * domain gate). Locks in the eval-surfaced keyword/vocab fixes (slices 45-50)
+ * so they can't regress. Exposure only — selection by the model is the live
+ * battery's job (verify-tool-battery.mjs).
+ *
+ *   node apps/cli/scripts/verify-tool-exposure.mjs
+ *
+ * Exit 0 if every prompt reaches its tool, 1 otherwise.
+ */
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+process.env.HOME = mkdtempSync(path.join(os.tmpdir(), "muse-tx-"));
+process.env.MUSE_DEFAULT_MODEL = "ollama/qwen3:8b";
+process.env.MUSE_HOMEASSISTANT_URL = "http://x";
+process.env.MUSE_HOMEASSISTANT_TOKEN = "t";
+
+const { createMuseRuntimeAssembly } = await import("@muse/autoconfigure");
+const { createWorkspaceToolRoutingPlan } = await import("@muse/tools");
+const { DefaultToolFilter } = await import("@muse/agent-core");
+
+const tools = createMuseRuntimeAssembly().toolRegistry.list();
+const tf = new DefaultToolFilter();
+const exposed = (p) => tf.filter(createWorkspaceToolRoutingPlan(tools, { prompt: p, localMode: true }).tools, { userMessage: p }).map((t) => t.definition.name);
+
+const cases = [
+  ["show my notes", "muse.notes.list"], ["내 노트 보여줘", "muse.notes.list"],
+  ["search my notes for ramen", "muse.notes.search"], ["노트에서 라멘 검색", "muse.notes.search"],
+  ["save a note: buy milk", "muse.notes.save"], ["메모 저장: 우유", "muse.notes.save"],
+  ["what's on my calendar today", "muse.calendar.list"], ["오늘 일정 뭐 있어", "muse.calendar.list"],
+  ["add a meeting friday 3pm", "muse.calendar.add"], ["금요일 3시 회의 추가", "muse.calendar.add"],
+  ["what reminders do I have", "muse.reminders"], ["내 리마인더 목록", "muse.reminders"],
+  ["remind me to call mom", "muse.reminders.add"], ["엄마한테 전화 리마인드", "muse.reminders.add"],
+  ["show my tasks", "muse.tasks.list"], ["할 일 목록", "muse.tasks.list"],
+  ["add a task buy milk", "muse.tasks.add"], ["할 일 추가: 우유 사기", "muse.tasks.add"],
+  ["mark the report task done", "muse.tasks.complete"],
+  ["what did we discuss last session", "muse.episode"], ["지난 세션 뭐였지", "muse.episode"],
+  ["check my inbox", "muse.messaging.inbox"], ["받은 메일 확인", "muse.messaging.inbox"]
+];
+
+let fail = 0;
+for (const [p, want] of cases) {
+  const ok = exposed(p).some((n) => n.startsWith(want));
+  if (!ok) { fail += 1; console.log(`FAIL — "${p}" → ${want} NOT exposed`); }
+}
+console.log(fail === 0 ? `\nALL PASS (${cases.length}) — every domain×intent×lang prompt reaches its tool` : `\n${fail}/${cases.length} FAILED`);
+process.exit(fail === 0 ? 0 : 1);

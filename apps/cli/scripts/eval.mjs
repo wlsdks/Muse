@@ -20,6 +20,7 @@ const fast = process.env.MUSE_EVAL_FAST === "1";
 const CHECKS = [
   { name: "local-first (no cloud keys)", script: "verify-local-first.mjs", args: [], tier: "fast" },
   { name: "efficiency audit (tool/skill/history)", script: "verify-efficiency-audit.mjs", args: [], tier: "fast" },
+  { name: "tool exposure (23 domain×intent×lang)", script: "verify-tool-exposure.mjs", args: [], tier: "fast" },
   { name: "tool selection (remember_fact)", script: "verify-tool-selection.mjs", args: ["remember my dentist is Dr. Kim", "remember_fact"], tier: "live" },
   { name: "structured output (schema-valid JSON)", script: "verify-structured-output.mjs", args: [], tier: "live" },
   { name: "memory safety + abstention", script: "verify-memory-safety.mjs", args: [], tier: "live" },
