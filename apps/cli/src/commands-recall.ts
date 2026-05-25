@@ -76,32 +76,53 @@ async function loadNotesIndex(file: string): Promise<NotesIndexShape | undefined
  * the union. Exported so a unit test can drive every branch
  * without touching Ollama or filesystem.
  */
+/** Weight of the lexical (keyword-overlap) signal relative to vector cosine in
+ * the hybrid score. Small so semantics dominate but an exact keyword hit breaks
+ * ties / surfaces a lexically-obvious match the embedding under-ranks. */
+const RECALL_LEX_WEIGHT = 0.2;
+
+function recallContentTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of text.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (t.length >= 3) out.add(t);
+  }
+  return out;
+}
+
+function lexicalOverlap(queryTokens: ReadonlySet<string>, text: string): number {
+  if (queryTokens.size === 0) return 0;
+  const docTokens = recallContentTokens(text);
+  let hit = 0;
+  for (const q of queryTokens) if (docTokens.has(q)) hit += 1;
+  return hit / queryTokens.size;
+}
+
+/**
+ * Hybrid ranker: vector cosine + a lexical keyword-overlap boost (when
+ * `queryText` is given). Pure cosine when it isn't (back-compat). The lexical
+ * term rescues a lexically-obvious hit the embedding under-ranks and breaks
+ * near-ties toward an exact term match.
+ */
 export function rankRecallCandidates(args: {
   readonly queryVec: readonly number[];
+  readonly queryText?: string;
   readonly noteChunks: ReadonlyArray<{ path: string; text: string; embedding: readonly number[] }>;
   readonly episodeEntries: ReadonlyArray<{ id: string; summary: string; embedding: readonly number[] }>;
   readonly limit: number;
   readonly source: "notes" | "episodes" | "all";
 }): readonly RecallHit[] {
+  const queryTokens = recallContentTokens(args.queryText ?? "");
+  const combined = (vec: readonly number[], text: string): number =>
+    cosineSimilarity(args.queryVec, vec) + RECALL_LEX_WEIGHT * lexicalOverlap(queryTokens, text);
   const hits: RecallHit[] = [];
   if (args.source !== "episodes") {
     for (const chunk of args.noteChunks) {
-      hits.push({
-        source: "notes",
-        ref: chunk.path,
-        score: cosineSimilarity(args.queryVec, chunk.embedding),
-        snippet: chunk.text.slice(0, 200)
-      });
+      hits.push({ source: "notes", ref: chunk.path, score: combined(chunk.embedding, chunk.text), snippet: chunk.text.slice(0, 200) });
     }
   }
   if (args.source !== "notes") {
     for (const ep of args.episodeEntries) {
-      hits.push({
-        source: "episodes",
-        ref: ep.id,
-        score: cosineSimilarity(args.queryVec, ep.embedding),
-        snippet: ep.summary.slice(0, 200)
-      });
+      hits.push({ source: "episodes", ref: ep.id, score: combined(ep.embedding, ep.summary), snippet: ep.summary.slice(0, 200) });
     }
   }
   return hits
@@ -259,7 +280,7 @@ export async function searchRecall(opts: {
     episodeEntries = filterLiveEpisodeEntries(episodeEntries, liveIds);
   }
 
-  return rankRecallCandidates({ queryVec, noteChunks, episodeEntries, limit, source });
+  return rankRecallCandidates({ queryVec, queryText: query, noteChunks, episodeEntries, limit, source });
 }
 
 export function registerRecallCommand(program: Command, io: ProgramIO): void {

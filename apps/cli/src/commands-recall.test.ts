@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { RECALL_SOURCE_VALUES, clampLimit, filterLiveEpisodeEntries, filterLiveNoteIndexFiles, resolveSource } from "./commands-recall.js";
+import { RECALL_SOURCE_VALUES, clampLimit, filterLiveEpisodeEntries, filterLiveNoteIndexFiles, rankRecallCandidates, resolveSource } from "./commands-recall.js";
+
+describe("rankRecallCandidates — hybrid keyword+vector", () => {
+  const notes = [
+    { path: "a.md", text: "general planning notes about the team offsite", embedding: [1, 0.3] },
+    { path: "b.md", text: "the quarterly budget spreadsheet review", embedding: [1, 0.6] }
+  ];
+  const base = { episodeEntries: [], limit: 5, noteChunks: notes, queryVec: [1, 0], source: "notes" as const };
+
+  it("vector-only ranks the higher-cosine note first", () => {
+    expect(rankRecallCandidates(base)[0]?.ref).toBe("a.md");
+  });
+  it("the lexical boost surfaces an exact keyword match the embedding under-ranks", () => {
+    expect(rankRecallCandidates({ ...base, queryText: "quarterly budget" })[0]?.ref).toBe("b.md");
+  });
+});
 
 describe("filterLiveEpisodeEntries — a removed episode never resurfaces in recall", () => {
   const entries = [{ id: "ep_a" }, { id: "ep_b" }, { id: "ep_c" }];
