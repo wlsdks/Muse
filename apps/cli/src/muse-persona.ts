@@ -26,6 +26,14 @@ interface JarvisPersonaMemory {
    * `buildMusePersona` synchronous and pure: this file does no I/O.
    */
   readonly episodes?: readonly EpisodicPersonaHint[];
+  /**
+   * Superseded fact values (newest last). Surfaced inline as
+   * "(previously X)" so the model can answer "didn't I used to …?"
+   * without a separate query. Only the most-recent prior per key is
+   * rendered, and only the value (no date) — temporal depth for the
+   * model at minimal prompt cost; the dated history lives in /memory.
+   */
+  readonly factHistory?: readonly { readonly key: string; readonly previousValue: string }[];
 }
 
 /**
@@ -125,9 +133,15 @@ export function buildMusePersona(
   lines.push("");
   lines.push(formatCurrentContextLine(options.now));
   if (facts.length > 0) {
+    const priorByKey = latestPriorByKey(memory.factHistory);
     lines.push("");
     lines.push("Facts the user has shared:");
-    for (const [key, value] of factsShown) lines.push(`  - ${key}: ${value}`);
+    for (const [key, value] of factsShown) {
+      const prior = priorByKey.get(key);
+      lines.push(prior !== undefined && prior !== value
+        ? `  - ${key}: ${value} (previously ${prior})`
+        : `  - ${key}: ${value}`);
+    }
     if (factsDropped > 0) lines.push(`  - …(+${factsDropped} older facts not shown)`);
   }
   if (plainPrefs.length > 0) {
@@ -187,6 +201,15 @@ function formatEpisodeDate(iso: string): string {
     return iso.slice(0, 10);
   }
   return iso;
+}
+
+function latestPriorByKey(
+  factHistory: JarvisPersonaMemory["factHistory"]
+): Map<string, string> {
+  const out = new Map<string, string>();
+  // Walk oldest→newest so the freshest supersession for each key wins.
+  for (const entry of factHistory ?? []) out.set(entry.key, entry.previousValue);
+  return out;
 }
 
 function dedupeNonEmpty(values: readonly string[]): string[] {

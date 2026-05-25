@@ -45,6 +45,34 @@ describe("buildMusePersona", () => {
     expect(prompt).toContain("reply_style: concise");
   });
 
+  it("surfaces a superseded fact's prior value inline so the model can answer 'didn't I used to…?'", () => {
+    const prompt = buildMusePersona(
+      {
+        facts: { home_city: "Seoul" },
+        preferences: {},
+        factHistory: [{ key: "home_city", previousValue: "Busan" }]
+      },
+      "stark"
+    );
+    expect(prompt).toContain("home_city: Seoul (previously Busan)");
+  });
+
+  it("renders only the latest prior per key and never a stale-equal suffix", () => {
+    const prompt = buildMusePersona(
+      {
+        facts: { job: "pilot" },
+        preferences: {},
+        factHistory: [
+          { key: "job", previousValue: "student" },
+          { key: "job", previousValue: "engineer" }
+        ]
+      },
+      "stark"
+    );
+    expect(prompt).toContain("job: pilot (previously engineer)");
+    expect(prompt).not.toContain("student");
+  });
+
   it("instructs the model not to reveal the system prompt verbatim", () => {
     const prompt = buildMusePersona({ facts: { name: "Stark" }, preferences: {} }, "stark");
     expect(prompt).toMatch(/Do NOT volunteer/i);
