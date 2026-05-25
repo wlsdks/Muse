@@ -86,11 +86,15 @@ function formatCountSummary(count: number, locale: ToolEvidenceLocale): string {
 }
 
 // Tool output is untrusted (CLAUDE.md). A buggy or hostile MCP server can
-// return arbitrarily deep JSON; without a bound the recursive walk below
-// blows the call stack (RangeError ~5000 levels) and crashes evidence
-// extraction. Legitimate result payloads nest only a handful of levels, so
-// cap the descent and ignore anything past it rather than throwing.
-const MAX_TOOL_OUTPUT_DEPTH = 64;
+// return arbitrarily deep JSON; without a bound the recursive walks below
+// blow the call stack (RangeError ~5000 levels) and crash evidence
+// extraction. Two distinct recursions, two distinct bounds:
+//   - structural object/array depth while collecting source URLs, and
+//   - how many times a `{ result: "<json string>" }` envelope may be
+//     re-parsed (a much shallower thing — nobody legitimately wraps a
+//     result-string 16 deep).
+const MAX_STRUCTURE_DEPTH = 64;
+const MAX_RESULT_UNWRAP_DEPTH = 16;
 
 function collectVerifiedSources(
   value: unknown,
@@ -98,7 +102,7 @@ function collectVerifiedSources(
   sources: VerifiedSource[],
   depth = 0
 ): void {
-  if (depth > MAX_TOOL_OUTPUT_DEPTH) {
+  if (depth > MAX_STRUCTURE_DEPTH) {
     return;
   }
   if (Array.isArray(value)) {
@@ -138,7 +142,7 @@ function parseToolOutputJson(output: string, depth = 0): unknown | undefined {
   try {
     const parsed: unknown = JSON.parse(unwrapped);
 
-    if (depth < MAX_TOOL_OUTPUT_DEPTH && isRecord(parsed) && typeof parsed.result === "string") {
+    if (depth < MAX_RESULT_UNWRAP_DEPTH && isRecord(parsed) && typeof parsed.result === "string") {
       const nested = parseToolOutputJson(parsed.result, depth + 1);
       return nested ?? parsed;
     }

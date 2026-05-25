@@ -26,7 +26,16 @@ describe("detectUnderspecifiedRequest — Korean contentless imperatives", () =>
       "진행해줘",
       "정리해줘",
       "그거 해줘!",
-      "해줘."
+      "해줘.",
+      // newly-covered bare/`-해` variants (review nit)
+      "보내",
+      "지워",
+      "바꿔",
+      "전송해",
+      "변경해",
+      "완료해",
+      "수정해",
+      "그거 옮겨"
     ]) {
       expect(detectUnderspecifiedRequest(t).ambiguous, t).toBe(true);
     }

@@ -27,7 +27,7 @@ const CONTENTLESS_IMPERATIVE =
 // noun before the verb and is intentionally NOT matched. `?` is excluded
 // from the terminator for the same reason as English ("해줘?" is a question).
 const CONTENTLESS_IMPERATIVE_KO =
-  /^(?:(?:그거|이거|그것|이것|저거|저것|그걸|이걸|그거를|이거를|그것을|이것을)\s*)?(?:해줘|해라|해|처리해줘|처리해|진행해줘|진행해|보내줘|전송해줘|취소해줘|취소해|지워줘|삭제해줘|삭제해|바꿔줘|변경해줘|옮겨줘|정리해줘|정리해|끝내줘|마무리해줘|마무리해|완료해줘|고쳐줘|수정해줘)[.!]*$/u;
+  /^(?:(?:그거|이거|그것|이것|저거|저것|그걸|이걸|그거를|이거를|그것을|이것을)\s*)?(?:해줘|해라|해|처리해줘|처리해|진행해줘|진행해|보내줘|보내|전송해줘|전송해|취소해줘|취소해|지워줘|지워|삭제해줘|삭제해|바꿔줘|바꿔|변경해줘|변경해|옮겨줘|옮겨|정리해줘|정리해|끝내줘|끝내|마무리해줘|마무리해|완료해줘|완료해|고쳐줘|고쳐|수정해줘|수정해)[.!]*$/u;
 
 export function detectUnderspecifiedRequest(text: string): { readonly ambiguous: boolean; readonly reason?: string } {
   const trimmed = text.trim().toLowerCase();

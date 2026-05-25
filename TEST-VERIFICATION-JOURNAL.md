@@ -516,3 +516,36 @@ quarantine present; non-object payload → empty. memory 195 passed; lint clean.
   action-log DO fsync. tmp+rename is already crash-safe for process death;
   the missing fsync only widens a power-loss/fs-crash window. Minor
   consistency gap, documented for a future sweep.
+
+### Finding 010 — review LOW nits closed; multi-agent + DB verified solid
+- **clarify-directive (Korean):** completed the contentless-imperative verb
+  set — added bare/`-해` variants (보내/지워/바꿔/전송해/변경해/완료해/수정해/옮겨)
+  alongside the `-해줘` forms already present. Still high-precision
+  (anchored, object-bearing requests like "이메일 보내줘" unaffected).
+- **tool-output-evidence:** split the overloaded `MAX_TOOL_OUTPUT_DEPTH`
+  into `MAX_STRUCTURE_DEPTH` (64, object/array walk) and
+  `MAX_RESULT_UNWRAP_DEPTH` (16, `{result:"<json>"}` re-parse) — two
+  semantically different recursions now have intentional, separate bounds.
+
+**Verified SOLID this round (no fix needed):**
+- **Multi-agent orchestration** — parallel isolates a throwing worker
+  (per-worker try/catch, Promise.all never rejects on a worker fault);
+  race resolves on first success (synchronous `resolved` flag → no double
+  resolve), returns NoAgentWorkerError when all fail, and does NOT hang
+  when the bus publish rejects. All these failure modes already have
+  dedicated tests; race losers run to completion in the background by
+  design.
+- **DB query builders** — the paginated `listRuns` (limit+offset) orders
+  by `created_at DESC, id ASC` (stable unique tiebreak); raw `sql\`\``
+  fragments parameterise their substitutions (injection-safe). Minor,
+  not-fixed: a few limit-only top-N queries lack a tiebreak (harmless
+  without offset), and the observability LIKE filter doesn't escape `%`/`_`
+  in its prefix (over-broad match, not injection).
+
+## Round 2 closing summary
+3 more real fixes (007 timezone = verified/deferred; 008 ReDoS; 009 corrupt
+user-memory) + nits (010), across 4 commits. Areas confirmed solid:
+multi-agent orchestration, DB query builders, the casual-lure/anchored
+regexes. Recurring classes extended: unbounded-recursion now also covers
+*quadratic regex* (008) and *crash-on-corrupt-load* (009 — every store but
+user-memory already degraded; the odd one out was the bug).
