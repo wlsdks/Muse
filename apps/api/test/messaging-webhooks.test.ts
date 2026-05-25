@@ -162,6 +162,10 @@ describe("POST /api/messaging/webhooks/line", () => {
 });
 
 describe("buildServer LINE webhook gating", () => {
+  // Unlike the sibling tests (which register only the lightweight
+  // lineWebhookPlugin), this one builds the FULL app via buildServer to verify
+  // its conditional route wiring — heavy enough to exceed the 5s default under
+  // full-suite parallel load (observed flake). Give it a realistic timeout.
   it("does not register the route when MUSE_LINE_CHANNEL_SECRET is unset", async () => {
     // buildServer reads process.env directly; ensure the secret is absent.
     const prev = process.env.MUSE_LINE_CHANNEL_SECRET;
@@ -175,5 +179,5 @@ describe("buildServer LINE webhook gating", () => {
     } finally {
       if (prev !== undefined) { process.env.MUSE_LINE_CHANNEL_SECRET = prev; }
     }
-  });
+  }, 20_000);
 });

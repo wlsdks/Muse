@@ -1062,3 +1062,20 @@ contention class — fast when idle, robust under the full-suite load — so the
 whole file is now flake-resistant, not just the one case that happened to fail.
 Mid-flow setup ticks (e.g. enabling /tools before typing) are left as-is.
 Isolated 36/36 ×2; full sweep green (apps/cli 1158, 26 pkgs / 4568, lint 0/0).
+
+## Round 17 — finding 019: empirical stress surfaced an apps/api flake (fixed)
+
+Rather than mass-convert the 13 test files that use real sleeps (no demonstrated
+flake → would be churn), I STRESS-tested the real-sleep-heavy packages (api,
+multi-agent, mcp) repeatedly. apps/api flaked ~1-in-5:
+`messaging-webhooks.test.ts > "does not register the route when
+MUSE_LINE_CHANNEL_SECRET is unset"` timed out at 5005ms. Root cause: unlike its
+sibling tests (which register only the lightweight lineWebhookPlugin), this one
+builds the FULL app via `buildServer` to verify conditional route wiring —
+heavy enough to exceed the 5s default under full-suite parallel contention (not
+a logic bug, not a real sleep).
+
+**Fix:** a realistic 20s timeout on that single test (it legitimately builds
+the whole app). apps/api 325 passed ×3; lint clean. Method note: empirical
+stress (not blanket conversion) found the real flake and avoided churning the
+12 other real-sleep files that never flaked.
