@@ -111,6 +111,25 @@ export function appendFactHistory(
   return [...(existing ?? []), ...additions].slice(-MAX_FACT_HISTORY_ENTRIES);
 }
 
+/**
+ * Canonicalize a memory key so casing/spacing variants of the same concept
+ * collapse to ONE entry instead of fragmenting ("Home City" / "homeCity" /
+ * "home_city" → "home_city"). Deterministic consolidation (the safe half of
+ * the dedup story; semantic dedup would need the model). Unicode letters are
+ * kept (Korean keys survive); empty result falls back to the original.
+ */
+export function normalizeMemoryKey(key: string): string {
+  const normalized = key
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+    .toLowerCase()
+    .replace(/[\s-]+/gu, "_")
+    .replace(/[^\p{L}\p{N}_]/gu, "")
+    .replace(/_+/gu, "_")
+    .replace(/^_+|_+$/gu, "");
+  return normalized.length > 0 ? normalized : key.trim();
+}
+
 export function mergeRecordTouchLast(
   existing: Readonly<Record<string, string>>,
   patch: Readonly<Record<string, string>>

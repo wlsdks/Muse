@@ -81,6 +81,19 @@ describe("FileUserMemoryStore", () => {
     expect(memory?.factHistory).toBeUndefined();
   });
 
+  it("normalizes fact keys so casing/spacing variants consolidate into one entry", async () => {
+    const { file, store } = await newStore();
+    await store.upsertFact("stark", "Home City", "Busan");
+    await store.upsertFact("stark", "homeCity", "Seoul"); // same concept, different surface form
+    const reread = new FileUserMemoryStore({ file });
+    const memory = await reread.findByUserId("stark");
+    expect(Object.keys(memory?.facts ?? {})).toEqual(["home_city"]); // one entry, not two
+    expect(memory?.facts.home_city).toBe("Seoul");
+    // forget resolves a typed variant to the canonical key
+    expect(await reread.forget("stark", "Home City")).toBe(true);
+    expect((await reread.findByUserId("stark"))?.facts.home_city).toBeUndefined();
+  });
+
   it("multi-user isolation — facts for one userId don't leak to another", async () => {
     const { store } = await newStore();
     await store.upsertFact("stark", "name", "Stark");

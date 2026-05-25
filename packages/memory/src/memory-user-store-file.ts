@@ -26,7 +26,7 @@ import {
   type UserMemoryStore,
   type UserModel
 } from "./index.js";
-import { appendFactHistory, collectFactSupersessions, mergeRecordTouchLast, sanitizeUserMemoryValue } from "./memory-user-store.js";
+import { appendFactHistory, collectFactSupersessions, mergeRecordTouchLast, normalizeMemoryKey, sanitizeUserMemoryValue } from "./memory-user-store.js";
 
 export interface FileUserMemoryStoreOptions {
   /**
@@ -105,7 +105,8 @@ export class FileUserMemoryStore implements UserMemoryStore {
     return entry ? storedToMemory(entry) : undefined;
   }
 
-  async upsertFact(userId: string, key: string, value: string): Promise<UserMemory> {
+  async upsertFact(userId: string, rawKey: string, value: string): Promise<UserMemory> {
+    const key = normalizeMemoryKey(rawKey);
     const safe = sanitizeUserMemoryValue(value);
     return this.patch(userId, (existing) => {
       const factHistory = appendFactHistory(
@@ -120,7 +121,8 @@ export class FileUserMemoryStore implements UserMemoryStore {
     });
   }
 
-  async upsertPreference(userId: string, key: string, value: string): Promise<UserMemory> {
+  async upsertPreference(userId: string, rawKey: string, value: string): Promise<UserMemory> {
+    const key = normalizeMemoryKey(rawKey);
     const safe = sanitizeUserMemoryValue(value);
     return this.patch(userId, (existing) => ({
       ...existing,
@@ -133,9 +135,13 @@ export class FileUserMemoryStore implements UserMemoryStore {
   // The file store only owns the legacy facts + preferences shape,
   // which is enough for the JARVIS daily-driver path.
 
-  async forget(userId: string, key: string): Promise<boolean> {
+  async forget(userId: string, rawKey: string): Promise<boolean> {
     const existing = await this.findByUserId(userId);
-    if (!existing || (!(key in existing.facts) && !(key in existing.preferences))) {
+    if (!existing) return false;
+    // Exact stored key first; else the normalized form, so "Home City" can
+    // forget the canonicalized "home_city" entry written by upsertFact.
+    const key = (rawKey in existing.facts || rawKey in existing.preferences) ? rawKey : normalizeMemoryKey(rawKey);
+    if (!(key in existing.facts) && !(key in existing.preferences)) {
       return false;
     }
     await this.patch(userId, (current) => {
