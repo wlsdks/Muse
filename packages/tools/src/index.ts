@@ -680,7 +680,28 @@ const workspaceHints = [
   "endpoint",
   "schema",
   "엔드포인트",
-  "스키마"
+  "스키마",
+  // Personal-assistant write targets (post-pivot).
+  "task",
+  "tasks",
+  "todo",
+  "to-do",
+  "reminder",
+  "note",
+  "notes",
+  "event",
+  "meeting",
+  "appointment",
+  "calendar",
+  "할 일",
+  "할일",
+  "태스크",
+  "노트",
+  "메모",
+  "일정",
+  "약속",
+  "회의",
+  "리마인더"
 ] as const;
 
 const mutationPatterns = [
@@ -697,7 +718,17 @@ const mutationPatterns = [
   /\bdelete\b/u,
   /\bremove\b/u,
   /\bconvert\b/u,
-  /\bwrite\b/u
+  /\bwrite\b/u,
+  // Personal-assistant write verbs (the gate's vocab was enterprise-only after
+  // the personal pivot, so "add a task" / "set a reminder" never registered).
+  /\badd\b/u,
+  /\bset\b/u,
+  /\bschedule\b/u,
+  /\bremind\b/u,
+  /\bsnooze\b/u,
+  /\bcomplete\b/u,
+  /\bmark\b/u,
+  /\bsave\b/u
 ] as const;
 
 const koreanMutationHints = [
@@ -764,7 +795,27 @@ const mutationTargetHints = [
   "스펙",
   "카탈로그",
   "엔드포인트",
-  "스키마"
+  "스키마",
+  // Personal-assistant write targets (post-pivot).
+  "task",
+  "tasks",
+  "todo",
+  "to-do",
+  "reminder",
+  "note",
+  "notes",
+  "event",
+  "meeting",
+  "appointment",
+  "할 일",
+  "할일",
+  "태스크",
+  "노트",
+  "메모",
+  "일정",
+  "약속",
+  "회의",
+  "리마인더"
 ] as const;
 
 const mutationTargetPatterns = [/\bpr\b/u] as const;

@@ -182,13 +182,29 @@ describe("tool utilities", () => {
     // Generic terms (issue/이슈, repo, PR, project, document) still match.
     expect(isWorkspaceMutationPrompt("Please assign issue MUSE-1 to example-user.")).toBe(true);
     expect(isWorkspaceMutationPrompt("Summarize the latest note.")).toBe(false);
-    expect(isWorkspaceMutationPrompt("Please assign this task to example-user.")).toBe(false);
+    // Post personal-pivot, a "task" IS a write target — "assign this task"
+    // expresses intent to modify it, so the write tool is exposed (still
+    // approval-gated before execution).
+    expect(isWorkspaceMutationPrompt("Please assign this task to example-user.")).toBe(true);
     expect(isWorkspaceMutationPrompt("Show unassigned issues.")).toBe(false);
     // Formatting-context keywords (마크다운으로 / json으로 / 테이블로 …) suppress
     // an otherwise-mutating prompt: "이 페이지를 마크다운으로 정리해" reads as "render
     // the existing page as markdown", not "modify the workspace".
     expect(isWorkspaceMutationPrompt("이 페이지를 마크다운으로 정리해줘")).toBe(false);
     expect(isWorkspaceMutationPrompt("PR에 코멘트해줘")).toBe(true);
+  });
+
+  it("recognises personal-assistant write intents (post-pivot: add task / set reminder / 할 일 추가)", () => {
+    // The mutation-intent vocab was enterprise-only (issue/ticket/PR), so the
+    // personal write tools (tasks.add, reminders.add) were blocked. These now
+    // register so the model can reach them; a read or target-less prompt does not.
+    expect(isWorkspaceMutationPrompt("add a task to buy milk")).toBe(true);
+    expect(isWorkspaceMutationPrompt("set a reminder for 6pm")).toBe(true);
+    expect(isWorkspaceMutationPrompt("schedule a meeting tomorrow")).toBe(true);
+    expect(isWorkspaceMutationPrompt("할 일 추가해줘")).toBe(true);
+    expect(isWorkspaceMutationPrompt("show my tasks")).toBe(false);     // read, not write
+    expect(isWorkspaceMutationPrompt("change the topic please")).toBe(false); // mutation verb but no target
+    expect(isWorkspaceMutationPrompt("what's the weather?")).toBe(false);
   });
 
   it("validates tool descriptions and dependencies before model exposure", () => {
