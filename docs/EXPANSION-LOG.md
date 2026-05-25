@@ -32,6 +32,7 @@
 | 15 | `736db083` | re-confirmed facts move to tail so persona cap keeps them | memory · performance | unit (key-order) |
 | 16 | `091b67d6` | pin mcp stdio fixture cwd (resolves SDK; closes the "Connection closed" 3) | hardening | mcp 792 green |
 | 17 | `6d8f6a39` | retain superseded fact values + show in /memory (temporal depth) | memory depth | unit (store + view) |
+| 18 | `bd3b3ad0` | surface fact's prior in persona so the model recalls it | memory depth · model-path | **live qwen3:8b PASS + neg control** |
 
 ## Failures → learnings
 
@@ -126,9 +127,11 @@
 ## Open / next experiments
 
 - Memory depth (2026 research, local-fit): ~~temporal validity on facts~~
-  (slice 17: superseded values retained + shown in /memory; deterministic, no
-  qwen round-trip). NEXT: surface the latest supersession to the persona so the
-  model itself can reference "you moved from X to Y" — gated by smoke:live so it
-  doesn't bloat the prompt or mislead qwen. Then reflection/synthesis recall.
+  (slice 17: superseded values retained + shown in /memory). ~~surface the
+  latest supersession to the persona~~ (slice 18: live qwen3:8b answers the
+  prior + negative control proves no hallucination). NEXT: reflection/synthesis
+  recall — derive a higher-level insight across facts/episodes at recall time.
+  Risk: synthesis on a small local model is shaky; prototype with a fast qwen
+  battery first and keep it deterministic where possible.
 - Performance: persona/context size as memory grows.
 - CLI ergonomics + proactive smartness (not noisier).
