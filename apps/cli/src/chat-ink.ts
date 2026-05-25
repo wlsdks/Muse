@@ -58,7 +58,7 @@ import { appendInputHistory, loadInputHistory } from "./chat-input-history.js";
 import { extractMemoryFromTurn, formatLearnedSummary, shouldAutoExtract, type AutoMemoryProvider } from "./chat-auto-memory.js";
 import { listRecentJobIds, readJobSummary, startBackgroundJob } from "./commands-jobs.js";
 import { buildLocalTodayText, parseLookaheadHours, readDueFollowups, readDueReminders } from "./commands-today.js";
-import { dueTaskItems, imminentItems, jobCompletionItems, pickUnseen, proactiveNoticeText, relativeWhen, type ProactiveItem } from "./chat-proactive.js";
+import { dueTaskItems, groupProactiveNotice, imminentItems, jobCompletionItems, pickUnseen, type ProactiveItem } from "./chat-proactive.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { resolvePersona } from "./program-helpers.js";
 import { resolveDefaultUserKey } from "./user-id.js";
@@ -254,9 +254,10 @@ export function MuseChatApp(props: {
       const unseenJobs = pickUnseen(completed, seenRef.current);
       if (unseen.length === 0 && unseenJobs.length === 0) return;
       for (const item of [...unseen, ...unseenJobs]) seenRef.current.add(item.id);
+      const grouped = groupProactiveNotice(unseen, now);
       setTurns((prev) => [
         ...prev,
-        ...unseen.map((item) => ({ role: "proactive" as const, text: proactiveNoticeText(item, relativeWhen(item.dueAt, now)) })),
+        ...(grouped ? [{ role: "proactive" as const, text: grouped }] : []),
         ...unseenJobs.map((item) => ({ role: "proactive" as const, text: item.text }))
       ]);
     };

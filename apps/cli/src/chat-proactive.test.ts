@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dueTaskItems, imminentItems, jobCompletionItems, jobDoneNoticeText, pickUnseen, proactiveNoticeText, relativeWhen } from "./chat-proactive.js";
+import { dueTaskItems, groupProactiveNotice, imminentItems, jobCompletionItems, jobDoneNoticeText, pickUnseen, proactiveNoticeText, relativeWhen } from "./chat-proactive.js";
 
 const now = Date.UTC(2026, 4, 24, 12, 0, 0);
 const iso = (minFromNow: number): string => new Date(now + minFromNow * 60_000).toISOString();
@@ -78,5 +78,22 @@ describe("dueTaskItems", () => {
     expect(items.map((i) => i.id)).toEqual(["task:t1"]);
     expect(items[0]?.text).toBe("Task due: pay rent");
     expect(items[0]?.dueAt).toBe(iso(-30));
+  });
+});
+
+describe("groupProactiveNotice", () => {
+  const now = Date.UTC(2026, 4, 25, 12, 0, 0);
+  const iso = (m: number): string => new Date(now + m * 60_000).toISOString();
+  it("empty → '', one item → the single line", () => {
+    expect(groupProactiveNotice([], now)).toBe("");
+    expect(groupProactiveNotice([{ id: "1", text: "Dentist", dueAt: iso(30) }], now)).toBe("📌 Dentist (in 30m) — want a hand?");
+  });
+  it("≥2 items → one grouped line, not a wall", () => {
+    const out = groupProactiveNotice([
+      { id: "1", text: "Dentist", dueAt: iso(30) },
+      { id: "2", text: "Pay rent", dueAt: iso(-1) },
+      { id: "3", text: "Standup" }
+    ], now);
+    expect(out).toBe("📌 3 things need you: Dentist (in 30m); Pay rent (now); Standup — want a hand?");
   });
 });

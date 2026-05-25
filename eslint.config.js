@@ -18,6 +18,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/.claude/worktrees/**",
       "**/node_modules/**",
       "**/coverage/**",
       "**/.muse/**",

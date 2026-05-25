@@ -56,6 +56,21 @@ export function proactiveNoticeText(item: ProactiveItem, whenLabel: string): str
   return `📌 ${stripUntrustedTerminalChars(item.text)}${when} — want a hand?`;
 }
 
+/**
+ * One notice for a batch of imminent items, so a quiet moment with several due
+ * things speaks ONCE, not in a wall of 📌 lines (speaks-first, not noisy).
+ * 0 → "" (caller skips); 1 → the normal single line; ≥2 → a grouped line.
+ */
+export function groupProactiveNotice(items: readonly ProactiveItem[], nowMs: number): string {
+  if (items.length === 0) return "";
+  if (items.length === 1) return proactiveNoticeText(items[0] as ProactiveItem, relativeWhen(items[0]?.dueAt, nowMs));
+  const parts = items.map((item) => {
+    const when = relativeWhen(item.dueAt, nowMs);
+    return `${stripUntrustedTerminalChars(item.text)}${when ? ` (${when})` : ""}`;
+  });
+  return `📌 ${items.length} things need you: ${parts.join("; ")} — want a hand?`;
+}
+
 export interface DueTaskInput {
   readonly id: string;
   readonly title: string;

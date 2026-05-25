@@ -172,6 +172,22 @@ describe("MuseChatApp render — slash command echo + output", () => {
     expect(frame).toContain("📝 remembered: home_city = Busan");
   });
 
+  it("groups several due items into ONE proactive notice (not a wall)", async () => {
+    const due = new Date().toISOString();
+    const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
+      proactiveCheck: async () => [
+        { id: "r1", text: "Dentist", dueAt: due },
+        { id: "r2", text: "Pay rent", dueAt: due }
+      ]
+    })));
+    await tick(1900); // let the idle proactive tick fire (first at ~1500ms)
+    const frame = lastFrame() ?? "";
+    unmount();
+    expect(frame).toContain("📌 2 things need you:");
+    expect(frame).toContain("Dentist");
+    expect(frame).toContain("Pay rent");
+  });
+
   it("renders the launch brief as an opening turn when recap is set", async () => {
     const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
       recap: "♪ good morning\n\nToday (next 24h)",
