@@ -263,6 +263,58 @@ export async function* parseOpenAIResponsesStream(
   let finalId = "";
   let finalModel = requestedModel;
 
+  async function* handleChunk(chunk: string): AsyncGenerator<ModelEvent> {
+    const dataLine = chunk.split("\n").find((l) => l.startsWith("data:"))?.slice(5).trim();
+    if (!dataLine || dataLine === "[DONE]") return;
+    let evt: {
+      type?: string;
+      item?: { type?: string; call_id?: string; name?: string; arguments?: string };
+      delta?: string;
+      annotation?: { type?: string; url?: string; title?: string };
+      response?: {
+        id?: string;
+        model?: string;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+    };
+    try { evt = JSON.parse(dataLine); } catch { return; }
+    if (evt.type === "response.output_item.added" && evt.item?.type === "web_search_call" && !toolStarted) {
+      toolStarted = true;
+      yield { type: "tool-call-started", name: "web_search" };
+    } else if (evt.type === "response.output_item.done" && evt.item?.type === "web_search_call") {
+      yield { type: "tool-call-finished", name: "web_search" };
+    } else if (evt.type === "response.output_item.done" && evt.item?.type === "function_call") {
+      // Completed function tool call — emit the full tool-call event once arguments are finalised
+      const item = evt.item;
+      if (typeof item.name === "string" && typeof item.call_id === "string") {
+        const toolCall: ModelToolCall = {
+          id: item.call_id,
+          name: item.name,
+          arguments: parseToolArguments(item.arguments)
+        };
+        toolCalls.push(toolCall);
+        yield { type: "tool-call", toolCall };
+      }
+    } else if (evt.type === "response.output_text.delta" && typeof evt.delta === "string") {
+      textBuf += evt.delta;
+      yield { type: "text-delta", text: evt.delta };
+    } else if (evt.type === "response.output_text.annotation.added" && evt.annotation?.type === "url_citation") {
+      const a = evt.annotation;
+      if (typeof a.url === "string" && typeof a.title === "string") {
+        citations.push({ url: a.url, title: a.title, providerRaw: a });
+      }
+    } else if (evt.type === "response.completed" && evt.response) {
+      finalId = evt.response.id ?? "";
+      finalModel = evt.response.model ?? requestedModel;
+      if (evt.response.usage) {
+        finalUsage = {
+          inputTokens: evt.response.usage.input_tokens ?? 0,
+          outputTokens: evt.response.usage.output_tokens ?? 0
+        };
+      }
+    }
+  }
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -271,57 +323,15 @@ export async function* parseOpenAIResponsesStream(
     while ((nl = buf.indexOf("\n\n")) >= 0) {
       const chunk = buf.slice(0, nl);
       buf = buf.slice(nl + 2);
-      const dataLine = chunk.split("\n").find((l) => l.startsWith("data:"))?.slice(5).trim();
-      if (!dataLine || dataLine === "[DONE]") continue;
-      let evt: {
-        type?: string;
-        item?: { type?: string; call_id?: string; name?: string; arguments?: string };
-        delta?: string;
-        annotation?: { type?: string; url?: string; title?: string };
-        response?: {
-          id?: string;
-          model?: string;
-          usage?: { input_tokens?: number; output_tokens?: number };
-        };
-      };
-      try { evt = JSON.parse(dataLine); } catch { continue; }
-      if (evt.type === "response.output_item.added" && evt.item?.type === "web_search_call" && !toolStarted) {
-        toolStarted = true;
-        yield { type: "tool-call-started", name: "web_search" };
-      } else if (evt.type === "response.output_item.done" && evt.item?.type === "web_search_call") {
-        yield { type: "tool-call-finished", name: "web_search" };
-      } else if (evt.type === "response.output_item.done" && evt.item?.type === "function_call") {
-        // Completed function tool call — emit the full tool-call event once arguments are finalised
-        const item = evt.item;
-        if (typeof item.name === "string" && typeof item.call_id === "string") {
-          const toolCall: ModelToolCall = {
-            id: item.call_id,
-            name: item.name,
-            arguments: parseToolArguments(item.arguments)
-          };
-          toolCalls.push(toolCall);
-          yield { type: "tool-call", toolCall };
-        }
-      } else if (evt.type === "response.output_text.delta" && typeof evt.delta === "string") {
-        textBuf += evt.delta;
-        yield { type: "text-delta", text: evt.delta };
-      } else if (evt.type === "response.output_text.annotation.added" && evt.annotation?.type === "url_citation") {
-        const a = evt.annotation;
-        if (typeof a.url === "string" && typeof a.title === "string") {
-          citations.push({ url: a.url, title: a.title, providerRaw: a });
-        }
-      } else if (evt.type === "response.completed" && evt.response) {
-        finalId = evt.response.id ?? "";
-        finalModel = evt.response.model ?? requestedModel;
-        if (evt.response.usage) {
-          finalUsage = {
-            inputTokens: evt.response.usage.input_tokens ?? 0,
-            outputTokens: evt.response.usage.output_tokens ?? 0
-          };
-        }
-      }
+      yield* handleChunk(chunk);
     }
   }
+
+  // A compliant server ends each event with `\n\n`, but an OpenAI-compatible
+  // backend may close right after the final event. Flush the decoder and
+  // process the trailing buffer so the last delta / tool-call isn't dropped.
+  buf += dec.decode();
+  if (buf.length > 0) yield* handleChunk(buf);
 
   if (citations.length > 0) yield { type: "citations", items: citations };
   yield {
@@ -351,6 +361,51 @@ export async function* parseOpenAIStream(
   let responseId = `${providerId}-stream`;
   let model = requestedModel;
   const streamedToolCalls = new Map<number, MutableOpenAIStreamToolCall>();
+  let errored = false;
+
+  async function* handleEvent(event: string): AsyncGenerator<ModelEvent> {
+    const data = readSseData(event);
+
+    if (!data || data === "[DONE]") {
+      return;
+    }
+
+    const parsed = parseJson(data);
+
+    if (!isRecord(parsed)) {
+      return;
+    }
+
+    // A streaming error chunk (`{"error": {...}}`) emitted after the
+    // 200 — OpenRouter / vLLM / OpenAI surface mid-generation failures
+    // this way — would otherwise be read as a delta-less chunk and
+    // silently dropped, ending the stream with a truncated/empty
+    // answer and no error. Surface it and stop (mirrors the native
+    // Ollama stream's mid-stream error handling).
+    const streamError = readOpenAIStreamError(parsed);
+    if (streamError !== undefined) {
+      yield { error: new ModelProviderError(providerId, streamError, true), type: "error" };
+      errored = true;
+      return;
+    }
+
+    responseId = typeof parsed.id === "string" ? parsed.id : responseId;
+    model = typeof parsed.model === "string" ? parsed.model : model;
+
+    const delta = readOpenAIStreamDelta(parsed);
+
+    if (delta.length > 0) {
+      output += delta;
+      const emit = stripThink(delta);
+      if (emit.length > 0) {
+        yield { text: emit, type: "text-delta" };
+      }
+    }
+
+    for (const toolCall of readOpenAIStreamToolCallDeltas(parsed)) {
+      mergeOpenAIStreamToolCall(streamedToolCalls, toolCall);
+    }
+  }
 
   while (true) {
     const { done, value } = await reader.read();
@@ -364,47 +419,19 @@ export async function* parseOpenAIStream(
     buffer = events.pop() ?? "";
 
     for (const event of events) {
-      const data = readSseData(event);
-
-      if (!data || data === "[DONE]") {
-        continue;
-      }
-
-      const parsed = parseJson(data);
-
-      if (!isRecord(parsed)) {
-        continue;
-      }
-
-      // A streaming error chunk (`{"error": {...}}`) emitted after the
-      // 200 — OpenRouter / vLLM / OpenAI surface mid-generation failures
-      // this way — would otherwise be read as a delta-less chunk and
-      // silently dropped, ending the stream with a truncated/empty
-      // answer and no error. Surface it and stop (mirrors the native
-      // Ollama stream's mid-stream error handling).
-      const streamError = readOpenAIStreamError(parsed);
-      if (streamError !== undefined) {
-        yield { error: new ModelProviderError(providerId, streamError, true), type: "error" };
-        return;
-      }
-
-      responseId = typeof parsed.id === "string" ? parsed.id : responseId;
-      model = typeof parsed.model === "string" ? parsed.model : model;
-
-      const delta = readOpenAIStreamDelta(parsed);
-
-      if (delta.length > 0) {
-        output += delta;
-        const emit = stripThink(delta);
-        if (emit.length > 0) {
-          yield { text: emit, type: "text-delta" };
-        }
-      }
-
-      for (const toolCall of readOpenAIStreamToolCallDeltas(parsed)) {
-        mergeOpenAIStreamToolCall(streamedToolCalls, toolCall);
-      }
+      yield* handleEvent(event);
+      if (errored) return;
     }
+  }
+
+  // A compliant server ends with `[DONE]\n\n`, but OpenAI-compatible local
+  // backends (LM Studio, llama.cpp, …) may close the stream right after the
+  // last event with no trailing blank line. Flush the decoder and process
+  // the remaining buffer so that final delta / tool-call isn't dropped.
+  buffer += decoder.decode();
+  if (buffer.length > 0) {
+    yield* handleEvent(buffer);
+    if (errored) return;
   }
 
   const toolCalls = materializeOpenAIStreamToolCalls(streamedToolCalls);

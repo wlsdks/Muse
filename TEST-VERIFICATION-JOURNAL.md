@@ -341,3 +341,48 @@ A sanitiser that cleans one direction of a symmetric invariant almost
 always needs the other direction too. "We remove orphan results" should
 have immediately prompted "what removes orphan calls?" — the asymmetry
 itself was the smell.
+
+---
+
+## Finding 006 — OpenAI SSE parsers dropped the final event when it lacked a trailing blank line
+
+**Severity:** medium (truncated final answer / dropped final tool-call on
+OpenAI-compatible local backends — the human-directed focus is local
+models)
+**Where:** `packages/model/src/provider-openai.ts` — `parseOpenAIStream`
+and `parseOpenAIResponsesStream`.
+
+### How it was observed
+Mapped all adapters' SSE parsing, then probed the buffering empirically by
+feeding `ReadableStream`s with adversarial chunking. Both OpenAI parsers
+only process events terminated by `\n\n` (kept the remainder in `buffer`)
+and never processed that remainder after the read loop ended:
+
+| input | before fix | want |
+|-------|-----------|------|
+| Chat: final delta with no trailing `\n\n` | `Hello` (lost " world") | `Hello world` |
+| Responses: final delta with no trailing `\n\n` | `Hi` (lost " there") | `Hi there` |
+| Chat: JSON split across chunks | `Hello` ✓ | `Hello` |
+
+A compliant server ends with `[DONE]\n\n`, so OpenAI proper is unaffected;
+but `OpenAICompatibleProvider` targets LM Studio / llama.cpp / custom
+local servers that may close the socket right after the last event — and
+then the final delta (or a final tool-call delta) was silently lost.
+
+### Fix
+Extracted each parser's per-event body into an inner generator and call it
+both inside the read loop AND once on the flushed trailing buffer
+(`buffer += decoder.decode()` then process if non-empty) — mirroring the
+Ollama NDJSON parser, which already drained its final line.
+
+### Verified
+New suite `sse-trailing-event.test.ts` (4 cases incl. the clean
+`[DONE]\n\n` path and the cross-chunk split, to guard against a spurious
+extra event). Full model suite 137 passed (+4; existing provider-wire SSE
+test intact); lint clean.
+
+### Pattern learned
+A streaming parser that emits on a delimiter must always flush whatever is
+buffered when the source ends — "the last record may not be terminated" is
+true for SSE, NDJSON, CSV, and line protocols alike. Test the no-final-
+delimiter case explicitly; the happy path hides it.
