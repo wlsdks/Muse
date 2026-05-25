@@ -27,6 +27,7 @@
 | 10 | `37a84e61` | show auto-learned facts in chat (trust + undo) | memory · CLI | unit + render |
 | 11 | `cda18f85` | auto-memory ignores questions/tasks + patterns doc | memory · hardening | **9/9 live battery** |
 | 12 | `76452c1c` | bound persona size (cap facts/prefs) | performance | unit (persona cap) |
+| 13 | `32a5211f` | group simultaneous proactive notices (not noisy) | proactive | unit + render |
 
 ## Failures → learnings
 
