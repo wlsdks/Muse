@@ -131,22 +131,35 @@ The demo exercises chat with cross-turn memory, a credential-free
 proactive notice, the setup diagnostic, and the Codex / Claude
 Desktop MCP bridge in one narrated run.
 
+The full command surface (`muse --help`):
+
+![muse --help command catalog](docs/images/cli-help.png)
+
 ### Daily-driver flows
 
 ```bash
-# JARVIS REPL — continuous conversation, token streaming, persona-aware:
-muse repl --user stark
+# JARVIS REPL — continuous conversation, token streaming, persona-aware.
+# The interactive REPL is `chat --local`; type /help to list slash commands:
+muse chat --local --user me
 
 # Stdin piping for ad-hoc summarisation:
 cat note.md | muse chat --local --no-tools --model ollama/qwen2.5:7b-instruct "한 단락으로 요약"
 
 # Real-time proactive daemon (Ctrl-C to stop). Notices are
 # personalised — they address you by name in your preferred language:
-muse proactive watch --user stark --interval 60
+muse proactive watch --user me --interval 60
 
 # At-a-glance dashboard — model, persona, imminent tasks, last notice:
-muse status --user stark
+muse status --user me
 ```
+
+`muse status` and `muse today` render entirely from your local stores —
+no API key required (they fall back to a local briefing when the API
+server isn't running):
+
+| `muse today` | `muse status` |
+| --- | --- |
+| ![muse today briefing](docs/images/cli-today.png) | ![muse status dashboard](docs/images/cli-status.png) |
 
 ### What "JARVIS" means in Muse
 
@@ -154,9 +167,10 @@ Muse keeps a persistent personal model at `~/.muse/user-memory.json`
 keyed by `--user <id>`. Every REPL turn the model sees:
 
 - Your **facts** (`name`, `city`, `role`, …) — auto-extracted from
-  chat or set manually with `/fact key=value`
+  chat, taught in the REPL with `/remember …`, or set directly with
+  `muse memory set fact <key> <value>` (no-LLM path)
 - Your **preferences** (`language`, `reply_style`, …) — same auto-
-  extract path, slash command `/pref key=value`
+  extract path, REPL slash command `/pref key=value`
 - Your **vetoes** (`no_coffee`, `no_email_after_9pm`, …) — things
   Muse must never suggest. Recognised when you state a hard rule.
 - Your **goals** — active objectives Muse can steer toward
@@ -167,10 +181,10 @@ notification "Send Q3 memo due in 5 min" gets translated through
 your prefs and lands as **"Q3 예산 메모를 금융팀에 보내야 합니다. 지금
 작성 시작할까요?"** — same daemon, same model, no extra work.
 
-This is the **openclaw differentiator**: openclaw wraps another
-AI for one call. Muse remembers you, learns from natural
-conversation, and uses what it learns to shape every future
-turn AND every proactive notice.
+That is the differentiator: Muse doesn't just wrap a model for a
+single call — it remembers you, learns from natural conversation,
+and uses what it learns to shape every future turn AND every
+proactive notice.
 
 ### Cloud + API server (BYOK)
 
