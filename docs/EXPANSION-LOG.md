@@ -24,6 +24,7 @@
 | 7 | `8e111ebf` | `remember_fact` agent tool (NL memory) | memory · model-path | unit + **fast qwen3:8b selection** |
 | 8 | `7afb8135` | fast tool-selection verifier + build journal | tooling | self-test PASS |
 | 9 | `2506d4a0` | background auto-memory (learn facts without "remember") | memory · model-path | unit + **fast qwen3:8b extraction** |
+| 10 | `37a84e61` | show auto-learned facts in chat (trust + undo) | memory · CLI | unit + render |
 
 ## Failures → learnings
 
