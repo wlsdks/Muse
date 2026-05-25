@@ -1041,6 +1041,32 @@ describe("AgentRuntime", () => {
     expect(executeTool).toHaveBeenCalledOnce();
   });
 
+  it("an aborted signal stops the run at the loop boundary — no model call, no tool", async () => {
+    const executeTool = vi.fn(() => ({ ok: true }));
+    const toolRegistry = new ToolRegistry([
+      { definition: { description: "x", inputSchema: { type: "object" }, name: "do_thing", risk: "read" }, execute: executeTool }
+    ]);
+    const generate = vi.fn(async (request: { model: string }) => ({ id: "r", model: request.model, output: "should not be reached" }));
+    const runtime = createAgentRuntime({
+      maxToolCalls: 3,
+      modelProvider: { id: "p", generate, async listModels() { return []; }, async *stream() { /* unused */ } },
+      toolRegistry
+    });
+    const controller = new AbortController();
+    controller.abort(); // already aborted before the run starts
+
+    const result = await runtime.run({
+      messages: [{ content: "do the thing", role: "user" }],
+      model: "provider/model",
+      runId: "run-aborted",
+      signal: controller.signal
+    });
+
+    expect(result.response.output).toBe("(run interrupted)");
+    expect(generate).not.toHaveBeenCalled(); // stopped before the first model call
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it("toolApprovalGate can block an execute-risk call before the executor runs", async () => {
     const executeTool = vi.fn(() => ({ ok: true }));
     const gateCalls: { name: string; risk: string }[] = [];

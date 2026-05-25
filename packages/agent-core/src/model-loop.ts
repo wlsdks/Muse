@@ -101,6 +101,20 @@ export type ModelLoopStreamEvent =
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "citations" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "error" }>);
 
+function interruptedExecution(
+  request: ModelRequest,
+  intermediateMessages: ModelMessage[],
+  toolResults: ExecutedToolResult[],
+  toolsUsed: readonly string[]
+): ModelLoopExecution {
+  return {
+    finalResponse: { id: "interrupted", model: request.model, output: "(run interrupted)" },
+    intermediateMessages,
+    toolResults,
+    toolsUsed: [...new Set(toolsUsed)]
+  };
+}
+
 export async function executeModelLoop(
   runner: ModelLoopRunner,
   context: AgentRunContext,
@@ -118,6 +132,11 @@ export async function executeModelLoop(
     : undefined;
 
   while (true) {
+    // Cooperative interrupt: a caller-aborted signal stops the loop cleanly
+    // here — before any further model call or tool — and returns what we have.
+    if (context.input.signal?.aborted) {
+      return interruptedExecution(request, intermediateMessages, toolResults, toolsUsed);
+    }
     // Wall-clock deadline cuts the loop short BEFORE the next model
     // call — disables tools for the final synthesis turn so the
     // model returns a clean response instead of asking for another
@@ -221,6 +240,9 @@ export async function* executeStreamingModelLoop(
     : undefined;
 
   while (true) {
+    if (context.input.signal?.aborted) {
+      return interruptedExecution(request, intermediateMessages, toolResults, toolsUsed);
+    }
     const wallclockExceeded = deadlineMs !== undefined && Date.now() > deadlineMs;
     const activeTools = (!wallclockExceeded && toolCallCount < runner.maxToolCalls) ? request.tools : [];
     const turnStream = streamModelTurn(runner, context, provider, {

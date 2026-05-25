@@ -32,6 +32,13 @@ export interface AgentRunInput {
    * for risky tools without changing the global gate.
    */
   readonly toolApprovalGate?: ToolApprovalGate;
+  /**
+   * Cooperative cancellation. When the caller aborts this signal mid-run, the
+   * tool loop stops cleanly at the next iteration boundary — no further model
+   * call or tool execution — and returns what it has. Lets a surface (the CLI)
+   * interrupt a long agent turn without a half-applied tool.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface AgentRunContext {
