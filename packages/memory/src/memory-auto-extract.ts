@@ -271,6 +271,30 @@ function latestUserMessage(context: AgentRunContextView): string | undefined {
   return undefined;
 }
 
+/**
+ * JSON Schema for the extraction output (native structured output where the
+ * provider supports it → guaranteed shape; extractJsonObject stays the fallback
+ * otherwise). Matches the {facts,preferences,vetoes,goals} contract the prompt
+ * already demands. Empty maps/arrays mean "nothing new to record".
+ */
+const AUTO_EXTRACT_SCHEMA = {
+  type: "object",
+  properties: {
+    facts: { type: "object", additionalProperties: { type: "string" } },
+    preferences: { type: "object", additionalProperties: { type: "string" } },
+    vetoes: {
+      type: "array",
+      items: { type: "object", properties: { id: { type: "string" }, value: { type: "string" }, scope: { type: "string" } }, required: ["id", "value"] }
+    },
+    goals: {
+      type: "array",
+      items: { type: "object", properties: { id: { type: "string" }, value: { type: "string" } }, required: ["id", "value"] }
+    }
+  },
+  required: ["facts", "preferences", "vetoes", "goals"],
+  additionalProperties: false
+};
+
 async function runExtraction(
   modelProvider: ModelProvider,
   model: string,
@@ -288,6 +312,7 @@ async function runExtraction(
       }
     ],
     model,
+    responseFormat: AUTO_EXTRACT_SCHEMA,
     temperature: 0
   });
 

@@ -31,6 +31,27 @@ describe("auto-extract value sanitisation at store boundary", () => {
     };
   }
 
+  it("requests native structured output (responseFormat JSON Schema) so the model is constrained, not parse-and-hoped", async () => {
+    const captured: { responseFormat?: Record<string, unknown> } = {};
+    const provider = {
+      id: "diagnostic",
+      async generate(request: { responseFormat?: Record<string, unknown> }) {
+        captured.responseFormat = request.responseFormat;
+        return { id: "r", model: "diagnostic/smoke", output: JSON.stringify({ facts: {}, preferences: {}, vetoes: [], goals: [] }) };
+      },
+      async listModels() { return []; },
+      async *stream() { /* unused */ }
+    };
+    const hook = createUserMemoryAutoExtractHook({ model: "diagnostic/smoke", modelProvider: provider, store: new InMemoryUserMemoryStore() });
+    await hook.afterComplete!(
+      { input: { messages: [{ content: "I live in Busan", role: "user" }], metadata: { userId: "stark" } }, runId: "r" },
+      { id: "r", model: "diagnostic/smoke", output: "noted." }
+    );
+    expect(captured.responseFormat).toBeDefined();
+    const props = (captured.responseFormat as { properties?: Record<string, unknown> }).properties ?? {};
+    expect(Object.keys(props).sort()).toEqual(["facts", "goals", "preferences", "vetoes"]);
+  });
+
   it("collapses newlines in extracted fact values before they hit the store", async () => {
     const store = new InMemoryUserMemoryStore();
     const hook = createUserMemoryAutoExtractHook({
