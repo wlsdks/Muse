@@ -19,12 +19,22 @@ import type { AgentRunContext, AgentRunInput } from "./types.js";
 const CONTENTLESS_IMPERATIVE =
   /^(?:please\s+)?(?:just\s+)?(?:do|handle|fix|finish|send|update|change|cancel|delete|remove|move|reschedule|sort|deal\s+with|take\s+care\s+of|make)\s+(?:it|that|this|them|those|the\s+thing)[.!]*$|^(?:go\s+ahead|just\s+do\s+it|make\s+it\s+happen|sort\s+it\s+out|take\s+care\s+of\s+it|handle\s+it|do\s+the\s+needful)[.!]*$/u;
 
+// Muse's user operates in Korean, so the same contentless-imperative
+// safeguard must fire on "보내줘" / "그거 해줘". High-precision like the
+// English form: an optional contentless referent (그거/이거/그것/저거…)
+// followed by a bare action verb in casual imperative form, with nothing
+// else — a sentence that names a real object (e.g. "이메일 보내줘") has a
+// noun before the verb and is intentionally NOT matched. `?` is excluded
+// from the terminator for the same reason as English ("해줘?" is a question).
+const CONTENTLESS_IMPERATIVE_KO =
+  /^(?:(?:그거|이거|그것|이것|저거|저것|그걸|이걸|그거를|이거를|그것을|이것을)\s*)?(?:해줘|해라|해|처리해줘|처리해|진행해줘|진행해|보내줘|전송해줘|취소해줘|취소해|지워줘|삭제해줘|삭제해|바꿔줘|변경해줘|옮겨줘|정리해줘|정리해|끝내줘|마무리해줘|마무리해|완료해줘|고쳐줘|수정해줘)[.!]*$/u;
+
 export function detectUnderspecifiedRequest(text: string): { readonly ambiguous: boolean; readonly reason?: string } {
   const trimmed = text.trim().toLowerCase();
   if (trimmed.length === 0 || trimmed.length > 40) {
     return { ambiguous: false };
   }
-  if (CONTENTLESS_IMPERATIVE.test(trimmed)) {
+  if (CONTENTLESS_IMPERATIVE.test(trimmed) || CONTENTLESS_IMPERATIVE_KO.test(trimmed)) {
     return { ambiguous: true, reason: "action with no clear object or referent" };
   }
   return { ambiguous: false };

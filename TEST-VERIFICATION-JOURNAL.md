@@ -248,3 +248,44 @@ Every recursive descent over input you don't fully control needs a depth
 bound; over an *object graph* (not a freshly-parsed JSON tree) it also
 needs cycle detection. "It's just a schema / just tool output" is exactly
 where the unbounded assumption hides.
+
+---
+
+## Finding 004 — the clarify-directive safeguard was English-only, but the user speaks Korean
+
+**Severity:** medium (a named outbound-safety safeguard layer silent for
+the user's primary language; the send itself is still gated by
+draft-first + approval + recipient resolution, so this is a defense-layer
++ UX gap, not an open send path)
+**Where:** `packages/agent-core/src/clarify-directive.ts` —
+`detectUnderspecifiedRequest`.
+
+### How it was observed
+Mapping the fail-close gates (all of which have solid deny/timeout
+tests), I noticed `detectUnderspecifiedRequest` matched only an
+ENGLISH imperative regex. Muse is this user's personal JARVIS and the
+user operates in Korean (`devqamain`; whole session in 한국어). A
+contentless Korean command — "보내줘" (send it), "그거 해줘" (do that),
+"처리해줘" (handle it) — returned `ambiguous: false`, so the
+clarify-directive (named in `outbound-safety.md` rule 3 as the guard
+against best-guess actions) never fired and the agent could guess
+instead of asking.
+
+### Fix
+Add a high-precision Korean regex mirroring the English one: an optional
+contentless referent (그거/이거/그것/저거…) + a bare casual-imperative verb
+(해줘/보내줘/처리해줘/취소해줘…), anchored so a sentence naming a real
+object ("이메일 보내줘") is NOT matched, and `?` excluded from the
+terminator ("해줘?" is a question). English behaviour is unchanged.
+
+### Verified
+New suite `clarify-directive-korean.test.ts` (6 cases: bare Korean
+imperatives flagged; object-bearing & question-marked Korean NOT flagged;
+English unchanged). Existing English clarify tests still green; agent-core
+699 passed (+6); tsc + lint clean.
+
+### Pattern learned
+A safeguard validated only in the codebase's default language is half a
+safeguard. For a single-user assistant, "what language does the actual
+user type in?" is part of the threat model — checked against the user
+profile, not the test fixtures.
