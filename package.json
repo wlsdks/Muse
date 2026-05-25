@@ -31,6 +31,7 @@
     "smoke:broad": "node scripts/smoke-broad-http.mjs",
     "smoke:cli": "pnpm --filter @muse/cli build && node scripts/smoke-cli.mjs",
     "smoke:diagnostic": "node scripts/smoke-diagnostic-runtime.mjs",
+    "eval": "node apps/cli/scripts/eval.mjs",
     "smoke:live": "node scripts/smoke-live-llm.mjs",
     "smoke:live:all": "node scripts/smoke-live-all-providers.mjs",
     "eval:tools": "pnpm --filter @muse/model build && pnpm --filter @muse/tools build && node scripts/eval-tool-selection.mjs",
