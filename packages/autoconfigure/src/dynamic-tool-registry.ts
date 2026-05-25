@@ -22,7 +22,13 @@ export class DynamicToolRegistry extends ToolRegistry {
   }
 
   override list(): readonly MuseTool[] {
-    return [...super.list(), ...this.dynamicTools()];
+    const builtin = super.list();
+    const builtinNames = new Set(builtin.map((tool) => tool.definition.name));
+    // `get()` resolves a colliding name to the built-in, so `list()` must
+    // agree: drop a dynamic tool whose name shadows a built-in. Otherwise the
+    // name appears TWICE in the projected tool list, and most providers
+    // (OpenAI/Anthropic) reject duplicate function names outright.
+    return [...builtin, ...this.dynamicTools().filter((tool) => !builtinNames.has(tool.definition.name))];
   }
 
   private dynamicTools(): readonly MuseTool[] {

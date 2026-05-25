@@ -592,3 +592,43 @@ valid-store no-clobber. apps/cli 1114 passed; lint clean.
   before trusting the header, and checks `exp`. Textbook-correct.
 - **Credential encryption** — AES-256-GCM (authenticated), scrypt-derived
   key, random salt+IV per write, 0o600, atomic tmp+rename. Sound.
+
+### Finding 012 — duplicate tool name reaches the model on a built-in/dynamic collision (FIXED)
+
+**Where:** `packages/autoconfigure/src/dynamic-tool-registry.ts` — `list()`.
+`list()` returned `[...super.list(), ...dynamicTools()]`. `dynamicTools()`
+dedupes WITHIN dynamic sources, but there was no dedup ACROSS the built-in
+set and the dynamic set. So when a dynamic MCP source exposes a tool whose
+name collides with a built-in (realistic on a multi-MCP machine), the name
+appeared twice in the projected tool list. OpenAI/Anthropic reject duplicate
+function names → the whole request 400s. Worse, `get(name)` already resolved
+a collision to the built-in, so `list()` and `get()` disagreed.
+
+Reproduced: built-in `web_search` + dynamic `web_search` →
+`planForContext().tools` = `[home_state, web_search, web_search]`.
+
+**Fix:** `list()` drops a dynamic tool whose name shadows a built-in
+(built-in wins, matching `get()`); non-colliding dynamic tools are kept.
+New test file `dynamic-tool-registry.test.ts` (3 cases). autoconfigure 259
+passed; lint clean.
+
+### Round-3 tool-projection verified SOLID (not fixed)
+- **`required` survives sanitizers** — the Gemini sanitizer's strip-set does
+  not include `required`; OpenAI gets the raw schema. Tool-call args stay
+  required-bearing.
+- **Casual-prompt eager-invocation guard is description-based by design**
+  (tool-calling.md rule 4) — `isCasualPromptText` gates response filtering,
+  not tool projection; suppression relies on each tool's "use when / not
+  when" line, as documented.
+- **Exposure cap (`maxTools`)** — `planForContext` applies the caller's
+  `maxTools` (sorted by relevance first) but has no hard built-in cap;
+  capping is a caller policy (the server path may legitimately want all
+  tools), so not changed — noted as a config concern, not a bug.
+
+## Round 3 closing summary
+2 real fixes (011 credential re-login recovery; 012 duplicate-tool-name on
+collision) + areas verified solid: scheduler concurrency, JWT, credential
+encryption, schema `required` preservation. Recurring classes extended:
+"crash/duplicate reaches an external boundary" — the credential re-login
+crash and the duplicate-function-name both surface at a boundary
+(filesystem recovery / provider request) the happy path never exercises.
