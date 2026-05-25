@@ -29,11 +29,15 @@ build, and your data stays local by default. Under the hood:
   never a vendor SDK directly.
 - **Tool & MCP first.** Tools are first-class — read, write, or
   execute — with explicit risk levels, approval gates, and
-  deterministic loop limits. Eight built-in loopback servers
-  (`muse.time`, `muse.text`, `muse.math`, `muse.json`, `muse.url`,
-  `muse.crypto`, `muse.diff`, `muse.regex`) plus the personal trio
-  (`muse.notes`, `muse.tasks`, `muse.calendar`) ship in-process;
-  external servers connect over stdio / SSE / streamable-HTTP.
+  deterministic loop limits. ~23 in-process `muse.*` servers ship
+  built-in: eight pure-utility ones (`muse.time`, `muse.text`,
+  `muse.math`, `muse.json`, `muse.url`, `muse.crypto`, `muse.diff`,
+  `muse.regex`) plus the personal-domain set (`muse.notes`,
+  `muse.tasks`, `muse.calendar`, `muse.reminders`, `muse.episode`,
+  `muse.history`, `muse.status`, `muse.search`, `muse.fetch`,
+  `muse.fs`, `muse.pattern`, `muse.proactive`, `muse.followup`,
+  `muse.messaging`, `muse.context`); external servers connect over
+  stdio / SSE / streamable-HTTP.
 - **Personal-domain primitives.** Markdown notes, calendar events
   across 4 providers (Local file, Google Calendar, CalDAV, macOS
   Calendar.app), and a todo list — all stored locally by default,
@@ -46,6 +50,31 @@ build, and your data stays local by default. Under the hood:
   fail-open, and security lives in code (not in prompt instructions).
   Tool output is untrusted until sanitised. Risky local execution
   flows through a separate Rust runner (`crates/runner`).
+
+## What Muse will not do (boundaries)
+
+These are deliberate product boundaries, enforced in code — not TODOs:
+
+- **No money movement.** Muse never connects to bank / brokerage
+  accounts, initiates payments, or moves money. The blast radius is
+  irreversible for a single-user assistant; this is a permanent
+  boundary, not a deferral (see
+  [`outbound-safety.md`](.claude/rules/outbound-safety.md)).
+- **No autonomous third-party sends.** Anything that transmits to
+  another person (email, chat, message, web form / booking) is
+  **draft-first and you confirm the exact content** before it leaves.
+  The approval gate is fail-closed: deny / timeout / ambiguous
+  recipient ⇒ nothing is sent. *(Known gap: the `muse.messaging.send`
+  MCP tool path is not yet on this gate — see
+  [`docs/audit/2026-05-25-feature-usecase-audit.md`](docs/audit/2026-05-25-feature-usecase-audit.md)
+  F-1; treat it as unsafe for autonomous use until fixed.)*
+- **Single user, single environment.** No multi-tenant accounts, no
+  shared workspace, no RBAC. Identity is your local `$USER`.
+- **Vision input is provider-limited.** Image attachments are
+  serialized only on the OpenAI Chat-Completions path,
+  OpenAI-compatible / OpenRouter, and Gemini. They are **not** sent on
+  Anthropic (capability declared but unwired) or local Ollama, and not
+  on the OpenAI Responses path. See the vision matrix in the audit doc.
 
 ## Architecture at a glance
 
@@ -102,22 +131,35 @@ The demo exercises chat with cross-turn memory, a credential-free
 proactive notice, the setup diagnostic, and the Codex / Claude
 Desktop MCP bridge in one narrated run.
 
+The full command surface (`muse --help`):
+
+![muse --help command catalog](docs/images/cli-help.png)
+
 ### Daily-driver flows
 
 ```bash
-# JARVIS REPL — continuous conversation, token streaming, persona-aware:
-muse repl --user stark
+# JARVIS REPL — continuous conversation, token streaming, persona-aware.
+# The interactive REPL is `chat --local`; type /help to list slash commands:
+muse chat --local --user me
 
 # Stdin piping for ad-hoc summarisation:
 cat note.md | muse chat --local --no-tools --model ollama/qwen2.5:7b-instruct "한 단락으로 요약"
 
 # Real-time proactive daemon (Ctrl-C to stop). Notices are
 # personalised — they address you by name in your preferred language:
-muse proactive watch --user stark --interval 60
+muse proactive watch --user me --interval 60
 
 # At-a-glance dashboard — model, persona, imminent tasks, last notice:
-muse status --user stark
+muse status --user me
 ```
+
+`muse status` and `muse today` render entirely from your local stores —
+no API key required (they fall back to a local briefing when the API
+server isn't running):
+
+| `muse today` | `muse status` |
+| --- | --- |
+| ![muse today briefing](docs/images/cli-today.png) | ![muse status dashboard](docs/images/cli-status.png) |
 
 ### What "JARVIS" means in Muse
 
@@ -125,9 +167,10 @@ Muse keeps a persistent personal model at `~/.muse/user-memory.json`
 keyed by `--user <id>`. Every REPL turn the model sees:
 
 - Your **facts** (`name`, `city`, `role`, …) — auto-extracted from
-  chat or set manually with `/fact key=value`
+  chat, taught in the REPL with `/remember …`, or set directly with
+  `muse memory set fact <key> <value>` (no-LLM path)
 - Your **preferences** (`language`, `reply_style`, …) — same auto-
-  extract path, slash command `/pref key=value`
+  extract path, REPL slash command `/pref key=value`
 - Your **vetoes** (`no_coffee`, `no_email_after_9pm`, …) — things
   Muse must never suggest. Recognised when you state a hard rule.
 - Your **goals** — active objectives Muse can steer toward
@@ -138,10 +181,10 @@ notification "Send Q3 memo due in 5 min" gets translated through
 your prefs and lands as **"Q3 예산 메모를 금융팀에 보내야 합니다. 지금
 작성 시작할까요?"** — same daemon, same model, no extra work.
 
-This is the **openclaw differentiator**: openclaw wraps another
-AI for one call. Muse remembers you, learns from natural
-conversation, and uses what it learns to shape every future
-turn AND every proactive notice.
+That is the differentiator: Muse doesn't just wrap a model for a
+single call — it remembers you, learns from natural conversation,
+and uses what it learns to shape every future turn AND every
+proactive notice.
 
 ### Cloud + API server (BYOK)
 
@@ -207,15 +250,19 @@ Tests are the only form of verification. The repo ships these gates:
 ```bash
 pnpm check                                      # build + test for every workspace (~789 tests)
 pnpm smoke:broad                                # 42 HTTP endpoints, diagnostic provider
-pnpm smoke:live                                 # 12 HTTP endpoints, real LLM (auto-skips without key)
+pnpm smoke:live                                 # real LLM round-trip — LOCAL OLLAMA QWEN ONLY (auto-skips if Ollama is unreachable)
 ```
 
-`smoke:live` runs against the first available `*_API_KEY`
-(`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) and
-asserts the model→tool→model loop end-to-end across direct chat,
-streaming SSE, plan-execute, input guards, multi-agent
-orchestration, `muse.notes.search`, `muse.tasks.add`, and
-`muse.calendar.add`.
+`smoke:live` (`scripts/smoke-live-llm.mjs`) is **local Ollama Qwen only
+by deliberate policy** — it probes `${OLLAMA_BASE_URL:-http://localhost:11434}`,
+picks a Qwen model (or `MUSE_SMOKE_LIVE_MODEL`), and asserts the
+model→tool→model loop end-to-end across direct chat, streaming SSE,
+plan-execute, input guards, multi-agent orchestration,
+`muse.notes.search`, `muse.tasks.add`, and `muse.calendar.add`. Cloud
+provider keys are intentionally never consulted; it skips only when local
+Ollama is unreachable. (A separate, unwired
+`scripts/smoke-live-all-providers.mjs` exists for ad-hoc cloud-key probing
+and is **not** what `pnpm smoke:live` runs.)
 
 ## Provider configuration
 
