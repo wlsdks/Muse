@@ -42,6 +42,7 @@ import { createRunId } from "@muse/shared";
 import {
   ToolExecutor,
   ToolRegistry,
+  coerceToolArguments,
   toModelTool,
   validateRequiredToolArguments,
   type ToolExecutionResult,
@@ -784,12 +785,14 @@ export class AgentRuntime {
       }
     }
 
-    // Deterministic arg validation (tool-calling.md): a missing required
-    // argument would crash/misbehave in execute(). Return the missing list so
-    // the model re-calls correctly (bounded by maxToolCalls) — never execute
-    // with bad args.
+    // Deterministic arg repair + validation (tool-calling.md): first losslessly
+    // coerce a right-value/wrong-type arg to the schema's type ("5" → 5), then
+    // check required. A missing required arg returns the missing list so the
+    // model re-calls correctly (bounded by maxToolCalls) — never execute with
+    // bad args.
     const exposed = activeTools.find((tool) => tool.name === toolCall.name);
-    const argCheck = validateRequiredToolArguments(exposed?.inputSchema, toolCall.arguments);
+    const coercedArguments = coerceToolArguments(exposed?.inputSchema, toolCall.arguments);
+    const argCheck = validateRequiredToolArguments(exposed?.inputSchema, coercedArguments);
     if (!argCheck.ok) {
       const executed = blockedToolResult(
         toolCall,
@@ -806,7 +809,7 @@ export class AgentRuntime {
     }
 
     const result = await this.toolExecutor.execute({
-      arguments: toolCall.arguments,
+      arguments: coercedArguments,
       context: {
         runId: context.runId,
         userId: metadataString(context.input.metadata, "userId")

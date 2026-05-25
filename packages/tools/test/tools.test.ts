@@ -6,6 +6,7 @@ import {
   createMuseTools,
   createRustRunnerTool,
   createDefaultToolExposurePolicy,
+  coerceToolArguments,
   createWorkspaceToolRoutingPlan,
   validateRequiredToolArguments,
   attachReadStreamErrorAbsorber,
@@ -277,6 +278,26 @@ describe("tool utilities", () => {
       code: "irrelevant_to_prompt",
       toolName: "post_slack_message"
     }));
+  });
+
+  it("coerceToolArguments losslessly fixes right-value/wrong-type args, leaves ambiguous untouched", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        count: { type: "integer" }, ratio: { type: "number" }, on: { type: "boolean" }, label: { type: "string" }, raw: {}
+      }
+    };
+    // numeric string → number/integer; "true"/"false" → boolean; number/bool → string
+    expect(coerceToolArguments(schema, { count: "5", ratio: "3.14", on: "true", label: 42 })).toEqual({ count: 5, ratio: 3.14, on: true, label: "42" });
+    expect(coerceToolArguments(schema, { on: "FALSE" })).toEqual({ on: false });
+    // ambiguous / lossy / non-matching → untouched
+    expect(coerceToolArguments(schema, { count: "abc" })).toEqual({ count: "abc" });
+    expect(coerceToolArguments(schema, { count: "5.5" })).toEqual({ count: "5.5" }); // not an integer
+    expect(coerceToolArguments(schema, { on: "yes" })).toEqual({ on: "yes" });
+    expect(coerceToolArguments(schema, { raw: "7" })).toEqual({ raw: "7" }); // no declared type
+    expect(coerceToolArguments(schema, { label: { a: 1 } })).toEqual({ label: { a: 1 } }); // object not stringified
+    // no object schema → passthrough
+    expect(coerceToolArguments(undefined, { x: "1" })).toEqual({ x: "1" });
   });
 
   it("validateRequiredToolArguments flags missing required args, passes complete/extra/no-schema", () => {

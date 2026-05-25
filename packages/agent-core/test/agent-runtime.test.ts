@@ -988,6 +988,33 @@ describe("AgentRuntime", () => {
     expect(String(blocked?.result.output)).toContain("service");
   });
 
+  it("losslessly coerces a right-value/wrong-type arg before execute (string \"5\" → number 5)", async () => {
+    const seen: { args?: Record<string, unknown> } = {};
+    const executeTool = vi.fn((args: Record<string, unknown>) => { seen.args = args; return { ok: true }; });
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: {
+          description: "Set a counter.",
+          inputSchema: { type: "object", properties: { count: { type: "integer" } }, required: ["count"] },
+          name: "set_count",
+          risk: "read"
+        },
+        execute: executeTool
+      }
+    ]);
+    const runtime = createAgentRuntime({
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        { id: "tool", model: "test-model", output: "Setting.", toolCalls: [{ arguments: { count: "5" }, id: "tc-1", name: "set_count" }] },
+        { id: "final", model: "test-model", output: "Done." }
+      ]),
+      toolRegistry
+    });
+    await runtime.run({ messages: [{ content: "set it to five", role: "user" }], model: "provider/model", runId: "run-coerce" });
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(seen.args?.count).toBe(5); // number, not the string "5"
+  });
+
   it("executes normally when all required arguments are present", async () => {
     const executeTool = vi.fn(() => ({ ok: true }));
     const toolRegistry = new ToolRegistry([
