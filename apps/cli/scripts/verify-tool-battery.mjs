@@ -48,6 +48,13 @@ const cases = [
   { prompt: "부산 날씨 어때?", expect: "weather" },
   { prompt: "lock the front door", expect: "home" },
   { prompt: "내 할 일 목록 보여줘", expect: "task" },
+  { prompt: "add a task to buy milk", expect: "task" },
+  { prompt: "save a note: meeting moved to friday", expect: "note" },
+  { prompt: "add a meeting friday at 3pm", expect: "calendar" },
+  // Explicit recall-search intent (a vague "what did we discuss?" reads as a
+  // question the small model answers directly rather than a search command).
+  { prompt: "search my past sessions for what I said about the budget", expect: "episode" },
+  { prompt: "check my inbox", expect: "messaging" },
   { prompt: "hello there!", expect: "" },
   { prompt: "고마워 ㅎㅎ", expect: "" }
 ];

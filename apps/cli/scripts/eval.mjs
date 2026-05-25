@@ -24,7 +24,8 @@ const CHECKS = [
   { name: "tool selection (remember_fact)", script: "verify-tool-selection.mjs", args: ["remember my dentist is Dr. Kim", "remember_fact"], tier: "live" },
   { name: "structured output (schema-valid JSON)", script: "verify-structured-output.mjs", args: [], tier: "live" },
   { name: "memory safety + abstention", script: "verify-memory-safety.mjs", args: [], tier: "live" },
-  { name: "reflection synthesis (grounded + neg)", script: "verify-reflection.mjs", args: [], tier: "live" }
+  { name: "reflection synthesis (grounded + neg)", script: "verify-reflection.mjs", args: [], tier: "live" },
+  { name: "tool battery (domains × EN/KO × casual)", script: "verify-tool-battery.mjs", args: [], tier: "live" }
 ];
 
 function run(check) {
