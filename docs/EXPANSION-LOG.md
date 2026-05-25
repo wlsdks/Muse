@@ -63,6 +63,8 @@
 | 45 | `55e828dd` | close eval-surfaced task keyword gaps (KO 할 일 / EN to-do) + diverse tool battery | quality · eval-driven | unit + **battery found it** |
 | 46 | `d754d700` | fix tasks `list` tool keywords (list-intent, not only due) → model selects it | quality · eval-driven | **live qwen picks tasks.list** + unit |
 | 47 | `5c5e29b0` | mutation-intent vocab covers personal writes (add task / set reminder) | quality · eval-driven | **live qwen picks tasks.add** + unit |
+| 48 | `fa76a4e0` | reach notes/reminders write tools (KO 저장해, verb 'remind') | quality · eval-driven | unit + deterministic exposure |
+| 49 | `7a485b99` | swallow stdin EPIPE on failed osascript spawn (Apple flake) | verification integrity | pnpm check exit-0 (was false-red) |
 
 ### 10-item evaluated backlog — DELIVERED (slices 36-44)
 
