@@ -30,6 +30,8 @@
 | 13 | `32a5211f` | group simultaneous proactive notices (not noisy) | proactive | unit + render |
 | 14 | `cfc4dd31` | exclude stale dist test copies from vitest (verification integrity) | hardening | **844→0 dist dupes, 3× green** |
 | 15 | `736db083` | re-confirmed facts move to tail so persona cap keeps them | memory · performance | unit (key-order) |
+| 16 | `091b67d6` | pin mcp stdio fixture cwd (resolves SDK; closes the "Connection closed" 3) | hardening | mcp 792 green |
+| 17 | `6d8f6a39` | retain superseded fact values + show in /memory (temporal depth) | memory depth | unit (store + view) |
 
 ## Failures → learnings
 
@@ -123,7 +125,10 @@
 
 ## Open / next experiments
 
-- Memory depth (2026 research, local-fit): reflection/synthesis recall, temporal
-  validity on facts. Prototype small, verify fast.
+- Memory depth (2026 research, local-fit): ~~temporal validity on facts~~
+  (slice 17: superseded values retained + shown in /memory; deterministic, no
+  qwen round-trip). NEXT: surface the latest supersession to the persona so the
+  model itself can reference "you moved from X to Y" — gated by smoke:live so it
+  doesn't bloat the prompt or mislead qwen. Then reflection/synthesis recall.
 - Performance: persona/context size as memory grows.
 - CLI ergonomics + proactive smartness (not noisier).
