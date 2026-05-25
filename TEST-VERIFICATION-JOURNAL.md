@@ -665,3 +665,39 @@ mature and pre-hardened. Diminishing returns on bug-hunting the
 runtime/boundary core — the high-value defect classes (untrusted-text
 parsing, unbounded recursion/regex, asymmetric sanitisation, crash-on-corrupt,
 streaming flush, duplicate-at-boundary, recovery-path crash) have been swept.
+
+---
+
+## Round 5 — web settings audit (apps/web)
+
+User concern: every setting is done in the web; none may be MISSING, and none
+may be "무늬만" (renders but doesn't actually work). Installed Playwright,
+ran the web suite (27 unit + 2 e2e green), and audited the settings surface.
+
+### Finding 013 — webSearch.maxUses was backend-honored but had no web control (FIXED)
+
+The backend reads exactly two runtime-settings keys
+(`server-helpers.ts` `applyWebSearchPolicy`): `webSearch.enabled` and
+`webSearch.maxUses`. The web's SetupPanel exposed only the `enabled` toggle —
+so `maxUses` was a real, runtime-honored setting with **no way to set it from
+the web** (the user's "missing setting" case). Added a maxUses number input to
+SetupPanel (mirrors the proven enabled-toggle wiring: PUT
+`/api/admin/settings/webSearch.maxUses` with `type:"number"`, commit on blur,
+positive-integer guard, disabled when search is off). New tests in
+`setup-panel.test.tsx` (4 cases: both controls render, reflects persisted
+value, defaults to 5, disabled when off). web 31 unit + 2 e2e green; typecheck
+clean.
+
+### Web verified SOLID (no "무늬만" settings)
+- **`webSearch.enabled` is genuinely honored end-to-end** (not decorative):
+  SetupPanel checkbox → PUT → runtime-settings persist → `applyWebSearchPolicy`
+  reads it via `getBoolean` → `buildModelRequestWithWebSearch` gates the tool
+  on the chat path. Traced the full read side, not just the write.
+- **No decorative controls / no dead endpoints** — every settings control in
+  setup/calendar/voice/reminders/messaging/tasks/notes panels has a handler
+  that calls a concrete `/api/...` path, and every such path has a live
+  backend route (audited the panel→api-client→route chain).
+- **Calendar credential PUT** stores providerId as a null-prototype object key
+  (no path traversal / proto-pollution), atomic write, 0o600.
+- Minor non-setting gap (not fixed): `GET /api/proactive/history` (read-only
+  diagnostic log) has no web view — a missing VIEW, not a missing setting.

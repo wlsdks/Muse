@@ -78,7 +78,15 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
     retry: false
   });
 
+  const webSearchMaxUsesSetting = useQuery({
+    queryFn: () =>
+      client.get<RuntimeSettingResponse>("/api/admin/settings/webSearch.maxUses").catch(() => ({ key: "webSearch.maxUses", value: "5" })),
+    queryKey: ["setting-webSearch.maxUses"],
+    retry: false
+  });
+
   const [webSearchFeedback, setWebSearchFeedback] = useState<string>("");
+  const [maxUsesDraft, setMaxUsesDraft] = useState<string | undefined>(undefined);
 
   const updateWebSearch = useMutation({
     mutationFn: (enabled: boolean) =>
@@ -93,6 +101,22 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
     onSuccess: async (_data, enabled) => {
       setWebSearchFeedback(enabled ? "Web search enabled" : "Web search disabled");
       await webSearchSetting.refetch();
+    }
+  });
+
+  const updateWebSearchMaxUses = useMutation({
+    mutationFn: (value: number) =>
+      client.put<RuntimeSettingResponse>("/api/admin/settings/webSearch.maxUses", {
+        category: "webSearch",
+        type: "number",
+        value: value.toString()
+      }),
+    onError: (error) => {
+      setWebSearchFeedback(error instanceof Error ? error.message : "Failed to save");
+    },
+    onSuccess: async (_data, value) => {
+      setWebSearchFeedback(`Web search max uses set to ${value.toString()}`);
+      await webSearchMaxUsesSetting.refetch();
     }
   });
 
@@ -162,6 +186,17 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
   const todoCount = sections.filter((entry) => entry.status === "todo").length;
 
   const webSearchEnabled = webSearchSetting.data?.value !== "false";
+  const maxUsesValue = maxUsesDraft ?? webSearchMaxUsesSetting.data?.value ?? "5";
+
+  const commitMaxUses = (): void => {
+    const parsed = Number(maxUsesDraft);
+    // Only persist a sane positive integer; otherwise revert the draft to
+    // the last-saved value (clearing the draft re-syncs to the query data).
+    if (maxUsesDraft !== undefined && Number.isInteger(parsed) && parsed >= 1) {
+      updateWebSearchMaxUses.mutate(parsed);
+    }
+    setMaxUsesDraft(undefined);
+  };
 
   return (
     <section className="tool-surface compact" aria-label="Setup">
@@ -203,6 +238,18 @@ export function SetupPanel({ client }: { readonly client: ApiClient }) {
             }}
           />
           <span>Web search</span>
+        </label>
+        <label className="setup-toggle-label">
+          <span>Max uses</span>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={maxUsesValue}
+            disabled={!webSearchEnabled || updateWebSearchMaxUses.isPending}
+            onChange={(event) => { setMaxUsesDraft(event.target.value); }}
+            onBlur={commitMaxUses}
+          />
         </label>
         {webSearchFeedback ? (
           <span style={{ fontSize: "0.78em", color: "var(--muted, #888)" }}>{webSearchFeedback}</span>
