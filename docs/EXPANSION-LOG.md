@@ -49,6 +49,7 @@
 | 31 | `810e396a` | add missing "memory" domain keywords → episode/pattern tools reachable | reliability · model-path | unit + **live qwen selects episode.search** |
 | 32 | `545ebb3e` | ModelRequest.responseFormat → native structured output (Ollama `format`) | reliability · model-path | unit + **live qwen schema-valid JSON** |
 | 33 | `c644ce9c` | reflection uses native structured output (guaranteed JSON) | reliability · model-path | unit + **live battery 3/3** |
+| 34 | `1d902216` | auto-memory extraction uses native structured output | reliability · model-path | unit + **live battery 9/9** |
 
 ### Modern direction: native structured output (constrained decoding) — epic in progress
 
@@ -59,8 +60,17 @@ structured output — `structuredOutput` was a DECLARED-but-unwired capability;
 every JSON path emitted free text + parse-and-hoped (extractJsonObject). Slice 32
 wired ModelRequest.responseFormat → Ollama native `format` (JSON Schema =
 constrained decoding, guaranteed-valid JSON); slice 33 adopted it in reflection.
-NEXT: OpenAI response_format + Anthropic parser fallback + a shared
-requestStructuredJson seam so every JSON call site is guaranteed-or-validated.
+Slice 34 adopted it in auto-memory too (both daily-driver JSON paths now
+guaranteed on Ollama). NEXT (lower priority — cloud, fallback already safe):
+OpenAI Responses `text.format` json_schema; Anthropic stays parser+validator.
+
+### Internal runtime optimizations already in place (inventory, for reference)
+prompt-budget + step-budget (bound prompt/steps), tool-call-deduplicator,
+circuit breaker (model-invocation), Anthropic prompt caching (cache_control),
+token trimming (context-transforms + memory-token-trim, importance/temporal),
+tool relevance + domain filter (26/31), skill-fragment + history window (27/28),
+tool-output cap (8k), retry/fallback (retryable classification). NOT done:
+parallel tool execution (sequential by design — small model, one-tool-per-turn).
 
 ### Efficiency audit correction + a real bug it surfaced (slice 31)
 
