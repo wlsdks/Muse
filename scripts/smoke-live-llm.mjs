@@ -652,11 +652,8 @@ async function ollamaHasModel(needle) {
 }
 
 // Among the local Ollama models, choose which one smoke:live drives. An
-// explicit MUSE_SMOKE_LIVE_MODEL wins. Otherwise prefer the SMALLEST qwen by
-// parameter count (e.g. "qwen3:8b" → 8, "qwen3.6:35b-a3b" → 35) so the live
-// gate actually COMPLETES on modest hardware instead of stalling on a 30B+
-// cold load — the reason smoke:live kept timing out. Unparsable size loses to
-// any sized model. Falls back to the first model when no qwen is present.
+// explicit MUSE_SMOKE_LIVE_MODEL wins. Unparsable size loses to any sized
+// model. Falls back to the first model when no qwen is present.
 export function qwenParamSize(name) {
   const tag = name.includes(":") ? name.slice(name.indexOf(":") + 1) : name;
   const match = tag.match(/(\d+(?:\.\d+)?)b/i);
@@ -682,6 +679,24 @@ export function chooseHeavyTier(fastModel, qwens, overrideHeavy) {
   return heavy;
 }
 
+// Tool selection is the POINT of this gate (see tool-calling.md). A sub-7B
+// qwen fails the NATURAL one-shot selection checks on capability, not on a
+// code defect — picking the absolute smallest model therefore manufactured
+// false reds and let real regressions hide behind "it's just the tiny model".
+// So prefer the SMALLEST qwen that is actually tool-calling capable
+// (>= floor) yet still small enough to cold-load inside the window
+// (< ceil). Only when none qualify do we fall back to the absolute smallest,
+// and pickProvider then prints a caveat that selection results are advisory.
+// MUSE_SMOKE_LIVE_MIN_PARAMS tunes the floor (default 7, the documented
+// qwen target tier). Declared as a hoisted FUNCTION (not a module const) so
+// it is callable during top-level evaluation, where pickProvider →
+// selectSmokeLiveModel runs before this point in the file — the same TDZ
+// hazard chooseHeavyTier is inlined to dodge. The ceiling (20B cold-loads
+// past the window) is a literal in selectSmokeLiveModel for the same reason.
+export function smokeLiveMinParams() {
+  return Number.parseFloat(process.env.MUSE_SMOKE_LIVE_MIN_PARAMS ?? "7");
+}
+
 export function selectSmokeLiveModel(names, override) {
   if (override) {
     return override;
@@ -690,7 +705,14 @@ export function selectSmokeLiveModel(names, override) {
   if (qwens.length === 0) {
     return names[0];
   }
-  return [...qwens].sort((a, b) => qwenParamSize(a) - qwenParamSize(b) || a.localeCompare(b))[0];
+  const bySize = [...qwens].sort(
+    (a, b) => qwenParamSize(a) - qwenParamSize(b) || a.localeCompare(b)
+  );
+  const floor = smokeLiveMinParams();
+  const toolCapable = bySize.filter(
+    (n) => qwenParamSize(n) >= floor && qwenParamSize(n) < 20
+  );
+  return toolCapable[0] ?? bySize[0];
 }
 
 async function pickProvider() {
@@ -705,6 +727,13 @@ async function pickProvider() {
       const body = await res.json();
       const names = (body?.models ?? []).map((m) => m?.name).filter(Boolean);
       const name = selectSmokeLiveModel(names, process.env.MUSE_SMOKE_LIVE_MODEL);
+      if (name && !process.env.MUSE_SMOKE_LIVE_MODEL && qwenParamSize(name) < smokeLiveMinParams()) {
+        console.log(
+          `smoke:live — WARNING: only sub-${smokeLiveMinParams()}B qwen available (${name}); ` +
+            "NATURAL tool-selection results are ADVISORY (capability-limited, not code defects). " +
+            "Install a >=7B qwen (e.g. qwen2.5:7b-instruct) for a meaningful tool-selection gate."
+        );
+      }
       if (name) {
         return {
           apiKey: undefined,

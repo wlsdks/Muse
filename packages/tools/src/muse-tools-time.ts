@@ -20,8 +20,9 @@ export function createTimeNowTool(now: () => Date): MuseTool {
   return {
     definition: {
       description:
-        "Returns the current time as ISO-8601 UTC, epoch milliseconds, day-of-week, and the resolved IANA timezone. " +
-        "Useful for stamping events, reasoning about deadlines, and answering 'what time is it' style questions without a network call.",
+        "Returns the CURRENT wall-clock instant right now: ISO-8601 UTC, epoch milliseconds, the current day-of-week (e.g. 'Tuesday'), and the resolved IANA timezone. " +
+        "Use when the user asks what the time, date, or day-of-week IS RIGHT NOW or today (e.g. 'what time is it', 'what day is it today in Seoul', \"what's today's date\"). " +
+        "Do NOT use to find the date of a FUTURE named weekday ('when is next Monday') — that is next_weekday.",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -33,7 +34,7 @@ export function createTimeNowTool(now: () => Date): MuseTool {
         type: "object"
       },
       domain: "core",
-      keywords: ["time", "clock", "now", "date"],
+      keywords: ["time", "clock", "now", "date", "day", "weekday", "today"],
       name: "time_now",
       risk: "read"
     },
@@ -189,10 +190,12 @@ export function createNextWeekdayTool(now: () => Date): MuseTool {
   return {
     definition: {
       description:
-        "Resolves a weekday name (e.g. 'Monday' / 'mon' / 'TUES') to the next ISO date on which it falls. " +
+        "Requires a specific NAMED weekday in the request (e.g. 'Monday', 'this coming Friday'). " +
+        "Do NOT call this for 'what day is it (right now / today)' or any CURRENT date/time question — that is time_now. " +
+        "If the user did not name a weekday, this is the WRONG tool. " +
+        "When a weekday IS named, resolves it to the ISO date of its next UPCOMING occurrence (always strictly future, never today) so the agent can stamp reminders or schedules without inline math — e.g. 'when is next Monday', 'the date of this coming Friday'. " +
         "Optional `reference` (ISO-8601) pins the comparison point; otherwise the current clock is used. " +
-        "If the reference is itself that weekday, returns the occurrence one week later (always a strict 'next'). " +
-        "Returns `{ iso, weekday }` (UTC date stripped of time-of-day) so the agent can stamp reminders or compose schedules without inline math.",
+        "If the reference is itself that weekday, returns the occurrence one week later. Returns `{ iso, weekday }` (UTC date stripped of time-of-day).",
       inputSchema: {
         additionalProperties: false,
         properties: {
