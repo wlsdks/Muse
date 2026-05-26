@@ -9,6 +9,7 @@ import { I18nProvider, useI18n } from "../i18n/index.js";
 import { ActivityView } from "../views/Activity.js";
 import { CalendarView } from "../views/Calendar.js";
 import { ChatView } from "../views/Chat.js";
+import { DashboardView } from "../views/Dashboard.js";
 import { NotesView } from "../views/Notes.js";
 import { RemindersView } from "../views/Reminders.js";
 import { SettingsView } from "../views/Settings.js";
@@ -27,7 +28,17 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1, staleTime: 10_000 } }
 });
 
-type ViewId = "today" | "chat" | "tasks" | "calendar" | "reminders" | "notes" | "activity" | "tools" | "settings";
+type ViewId =
+  | "today"
+  | "chat"
+  | "tasks"
+  | "calendar"
+  | "reminders"
+  | "notes"
+  | "activity"
+  | "dashboard"
+  | "tools"
+  | "settings";
 type GroupKey = "group.workspace" | "group.knowledge" | "group.system";
 
 interface NavEntry {
@@ -47,6 +58,7 @@ const NAV: readonly NavEntry[] = [
   { Component: RemindersView, group: "group.workspace", icon: Icon.bell, id: "reminders", key: "r", labelKey: "nav.reminders" },
   { Component: NotesView, group: "group.knowledge", icon: Icon.note, id: "notes", key: "n", labelKey: "nav.notes" },
   { Component: ActivityView, group: "group.knowledge", icon: Icon.activity, id: "activity", key: "a", labelKey: "nav.activity" },
+  { Component: DashboardView, group: "group.system", icon: Icon.chart, id: "dashboard", key: "d", labelKey: "nav.dashboard" },
   { Component: ToolsView, group: "group.system", icon: Icon.tool, id: "tools", key: "o", labelKey: "nav.tools" },
   { Component: SettingsView, group: "group.system", icon: Icon.settings, id: "settings", key: "s", labelKey: "nav.settings" }
 ];
@@ -179,11 +191,13 @@ function Console() {
           <span className="mono subtle">{apiUrl.replace(/^https?:\/\//, "")}</span>
         </header>
         <section className="content">
-          {view === "settings" ? (
-            <SettingsView client={client} apiUrl={apiUrl} token={token} onSave={updateConnection} />
-          ) : (
-            <ActiveComponent client={client} />
-          )}
+          <div className="view" key={view}>
+            {view === "settings" ? (
+              <SettingsView client={client} apiUrl={apiUrl} token={token} onSave={updateConnection} />
+            ) : (
+              <ActiveComponent client={client} />
+            )}
+          </div>
         </section>
       </main>
 

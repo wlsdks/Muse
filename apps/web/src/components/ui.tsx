@@ -192,5 +192,6 @@ export const Icon = {
         <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
       </>
     ),
-  volume: (p: IconProps) => base(p, <path d="M4 9v6h4l5 4V5L8 9zM16 9a3 3 0 0 1 0 6M18.5 7a6 6 0 0 1 0 10" />)
+  volume: (p: IconProps) => base(p, <path d="M4 9v6h4l5 4V5L8 9zM16 9a3 3 0 0 1 0 6M18.5 7a6 6 0 0 1 0 10" />),
+  chart: (p: IconProps) => base(p, <path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3" />)
 };

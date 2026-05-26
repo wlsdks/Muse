@@ -276,9 +276,87 @@ button {
   overflow-y: auto;
   padding: var(--s-lg);
 }
+.view {
+  height: 100%;
+  animation: viewIn 0.16s ease;
+}
+@keyframes viewIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
 .content-narrow {
   max-width: 920px;
   margin: 0 auto;
+}
+
+/* ── Dashboard bar chart ─────────────────────────────────── */
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-sm);
+  height: 160px;
+  padding-top: var(--s-sm);
+}
+.bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 6px;
+}
+.bar {
+  width: 100%;
+  max-width: 36px;
+  background: linear-gradient(180deg, var(--primary-hover), var(--primary));
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
+  min-height: 4px;
+  transition: height 0.3s ease;
+}
+.bar-label {
+  font-size: 11px;
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Responsive: collapse sidebar to an icon rail ────────── */
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 56px 1fr;
+  }
+  .sidebar {
+    padding: var(--s-sm) var(--s-xs);
+  }
+  .brand-name,
+  .brand-sub,
+  .nav-group-label,
+  .nav-item span,
+  .nav-badge,
+  .lang-toggle {
+    display: none;
+  }
+  .brand {
+    justify-content: center;
+    padding: var(--s-xs) 0 var(--s-md);
+  }
+  .nav-item {
+    justify-content: center;
+    padding: 9px 0;
+  }
+  .sidebar-foot {
+    justify-content: center;
+  }
+  .cmd-trigger span {
+    display: none;
+  }
+  .topbar .mono.subtle {
+    display: none;
+  }
 }
 
 /* ── Cards & layout primitives ───────────────────────────── */
@@ -288,6 +366,10 @@ button {
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
   padding: var(--s-lg);
+  transition: border-color 0.14s ease;
+}
+.card:hover {
+  border-color: var(--hairline-strong);
 }
 .card.lifted {
   background: var(--surface-2);

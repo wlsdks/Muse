@@ -20,6 +20,7 @@ const en = {
   "nav.reminders": "Reminders",
   "nav.notes": "Notes",
   "nav.activity": "Activity",
+  "nav.dashboard": "Dashboard",
   "nav.tools": "Tools",
   "nav.settings": "Settings",
 
@@ -120,7 +121,17 @@ const en = {
   "cmd.empty": "No matching commands.",
   "cmd.navigate": "Go to",
 
-  "notice.title": "Muse"
+  "notice.title": "Muse",
+
+  "dash.title": "Dashboard",
+  "dash.subtitle": "Token cost, tool reliability, and latency over the last 7 days.",
+  "dash.totalTokens": "Total tokens (7d)",
+  "dash.totalCost": "Est. cost (7d)",
+  "dash.toolAccuracy": "Tool accuracy",
+  "dash.tokensPerDay": "Tokens per day",
+  "dash.latency": "Run latency",
+  "dash.samples": "Samples",
+  "dash.topTools": "Most-used tools"
 } as const;
 
 export type StringKey = keyof typeof en;
@@ -140,6 +151,7 @@ const ko: Strings = {
   "nav.reminders": "리마인더",
   "nav.notes": "노트",
   "nav.activity": "활동",
+  "nav.dashboard": "대시보드",
   "nav.tools": "도구",
   "nav.settings": "설정",
 
@@ -240,7 +252,17 @@ const ko: Strings = {
   "cmd.empty": "일치하는 명령이 없습니다.",
   "cmd.navigate": "이동",
 
-  "notice.title": "Muse"
+  "notice.title": "Muse",
+
+  "dash.title": "대시보드",
+  "dash.subtitle": "최근 7일간 토큰 비용·도구 신뢰도·레이턴시.",
+  "dash.totalTokens": "총 토큰 (7일)",
+  "dash.totalCost": "예상 비용 (7일)",
+  "dash.toolAccuracy": "도구 정확도",
+  "dash.tokensPerDay": "일별 토큰",
+  "dash.latency": "실행 레이턴시",
+  "dash.samples": "표본 수",
+  "dash.topTools": "많이 쓴 도구"
 };
 
 export const DICTIONARIES: Record<Lang, Strings> = { en, ko };
