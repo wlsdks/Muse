@@ -112,6 +112,13 @@ export interface StoredEpisode {
   readonly narrative: string;
   readonly createdAtIso?: string;
   readonly userId?: string;
+  /**
+   * Write-time importance (1–10, Generative-Agents style). A bounded
+   * additive boost so that among equally relevant + recent memories the
+   * more important one ranks higher. Undefined ⇒ no boost (conservative:
+   * legacy episodes are never penalised).
+   */
+  readonly importance?: number;
 }
 
 export interface InMemoryEpisodicRecallProviderOptions {
@@ -152,6 +159,13 @@ export interface InMemoryEpisodicRecallProviderOptions {
    */
   readonly recencyHalfLifeDays?: number;
   /**
+   * Importance boost weight (max addition for a maximally important
+   * episode). Default 0.15 — same magnitude as recency, so importance
+   * is a tie-breaker among relevant memories, never strong enough to
+   * surface an irrelevant one. Set to 0 to disable.
+   */
+  readonly importanceWeight?: number;
+  /**
    * Injectable clock; defaults to `Date.now()`. Test-only.
    */
   readonly now?: () => number;
@@ -179,6 +193,7 @@ export class InMemoryEpisodicRecallProvider implements EpisodicRecallProvider {
   private readonly maxQueryChars: number;
   private readonly recencyWeight: number;
   private readonly recencyHalfLifeDays: number;
+  private readonly importanceWeight: number;
   private readonly now: () => number;
 
   constructor(options: InMemoryEpisodicRecallProviderOptions = {}) {
@@ -189,6 +204,7 @@ export class InMemoryEpisodicRecallProvider implements EpisodicRecallProvider {
     this.maxQueryChars = Math.max(64, finiteOr(options.maxQueryChars, 4_096));
     this.recencyWeight = Math.max(0, finiteOr(options.recencyWeight, DEFAULT_RECENCY_WEIGHT));
     this.recencyHalfLifeDays = Math.max(0.01, finiteOr(options.recencyHalfLifeDays, DEFAULT_RECENCY_HALF_LIFE_DAYS));
+    this.importanceWeight = Math.max(0, finiteOr(options.importanceWeight, DEFAULT_IMPORTANCE_WEIGHT));
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -217,11 +233,12 @@ export class InMemoryEpisodicRecallProvider implements EpisodicRecallProvider {
         continue;
       }
       const recencyBoost = computeRecencyBoost(episode.createdAtIso, nowMs, this.recencyWeight, this.recencyHalfLifeDays);
+      const importanceBoost = computeImportanceBoost(episode.importance, this.importanceWeight);
       scored.push({
         createdAtIso: episode.createdAtIso,
         narrative: episode.narrative,
         sessionId: episode.sessionId,
-        similarity: baseSim + recencyBoost
+        similarity: baseSim + recencyBoost + importanceBoost
       });
     }
     scored.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
@@ -270,6 +287,7 @@ export interface EmbeddingEpisodicRecallProviderOptions {
   readonly maxQueryChars?: number;
   readonly recencyWeight?: number;
   readonly recencyHalfLifeDays?: number;
+  readonly importanceWeight?: number;
   readonly now?: () => number;
 }
 
@@ -292,6 +310,7 @@ export class EmbeddingEpisodicRecallProvider implements EpisodicRecallProvider {
   private readonly maxQueryChars: number;
   private readonly recencyWeight: number;
   private readonly recencyHalfLifeDays: number;
+  private readonly importanceWeight: number;
   private readonly now: () => number;
 
   constructor(options: EmbeddingEpisodicRecallProviderOptions) {
@@ -303,6 +322,7 @@ export class EmbeddingEpisodicRecallProvider implements EpisodicRecallProvider {
     this.maxQueryChars = Math.max(64, finiteOr(options.maxQueryChars, 4_096));
     this.recencyWeight = Math.max(0, finiteOr(options.recencyWeight, DEFAULT_RECENCY_WEIGHT));
     this.recencyHalfLifeDays = Math.max(0.01, finiteOr(options.recencyHalfLifeDays, DEFAULT_RECENCY_HALF_LIFE_DAYS));
+    this.importanceWeight = Math.max(0, finiteOr(options.importanceWeight, DEFAULT_IMPORTANCE_WEIGHT));
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -330,11 +350,12 @@ export class EmbeddingEpisodicRecallProvider implements EpisodicRecallProvider {
         continue;
       }
       const recencyBoost = computeRecencyBoost(episode.createdAtIso, nowMs, this.recencyWeight, this.recencyHalfLifeDays);
+      const importanceBoost = computeImportanceBoost(episode.importance, this.importanceWeight);
       scored.push({
         createdAtIso: episode.createdAtIso,
         narrative: episode.narrative,
         sessionId: episode.sessionId,
-        similarity: baseSim + recencyBoost
+        similarity: baseSim + recencyBoost + importanceBoost
       });
     }
     scored.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
@@ -384,6 +405,25 @@ const TOKEN_NON_WORD_RE = /[^a-z0-9가-힯一-鿿぀-ゟ゠-ヿ]+/u;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_RECENCY_WEIGHT = 0.15;
 const DEFAULT_RECENCY_HALF_LIFE_DAYS = 14;
+const DEFAULT_IMPORTANCE_WEIGHT = 0.15;
+
+/**
+ * Importance boost (Generative Agents, arXiv 2304.03442). Returns an
+ * additive contribution `weight * clamp(importance, 1, 10) / 10`, so a
+ * maximally important episode adds `weight` and a minimally important one
+ * adds `weight / 10`. Returns 0 when importance is undefined / non-finite
+ * or the weight is 0 — so an episode with no score is never penalised and
+ * the feature is byte-identical to the pre-importance ranker when unset.
+ * Added AFTER the `minScore` gate (which guards baseSim only), exactly
+ * like the recency boost.
+ */
+export function computeImportanceBoost(importance: number | undefined, weight: number): number {
+  if (weight <= 0 || importance === undefined || !Number.isFinite(importance)) {
+    return 0;
+  }
+  const clamped = Math.min(10, Math.max(1, importance));
+  return weight * (clamped / 10);
+}
 
 /**
  * recency boost. Returns an additive contribution to the
@@ -502,6 +542,8 @@ export interface StoreBackedEpisodicRecallProviderOptions {
   readonly recencyWeight?: number;
   /** Recency half-life in days. */
   readonly recencyHalfLifeDays?: number;
+  /** Importance boost weight. See `InMemoryEpisodicRecallProviderOptions`. */
+  readonly importanceWeight?: number;
   /** Injectable clock (test only). */
   readonly now?: () => number;
   /**
@@ -534,6 +576,7 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
   private readonly maxQueryChars: number;
   private readonly recencyWeight: number;
   private readonly recencyHalfLifeDays: number;
+  private readonly importanceWeight: number;
   private readonly now: () => number;
   private readonly embed?: (text: string) => Promise<readonly number[]>;
 
@@ -547,6 +590,7 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
     this.maxQueryChars = Math.max(64, finiteOr(options.maxQueryChars, 4_096));
     this.recencyWeight = Math.max(0, finiteOr(options.recencyWeight, DEFAULT_RECENCY_WEIGHT));
     this.recencyHalfLifeDays = Math.max(0.01, finiteOr(options.recencyHalfLifeDays, DEFAULT_RECENCY_HALF_LIFE_DAYS));
+    this.importanceWeight = Math.max(0, finiteOr(options.importanceWeight, DEFAULT_IMPORTANCE_WEIGHT));
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -559,7 +603,7 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
     if (queryTokens.size === 0) {
       return undefined;
     }
-    let summaries: ReadonlyArray<{ readonly sessionId: string; readonly narrative: string; readonly createdAt?: Date; readonly userId?: string }>;
+    let summaries: ReadonlyArray<{ readonly sessionId: string; readonly narrative: string; readonly createdAt?: Date; readonly userId?: string; readonly importance?: number }>;
     try {
       summaries = await this.store.listAll({ limit: this.maxFetched, userId });
     } catch {
@@ -596,11 +640,12 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
       }
       const createdAtIso = summary.createdAt?.toISOString();
       const recencyBoost = computeRecencyBoost(createdAtIso, nowMs, this.recencyWeight, this.recencyHalfLifeDays);
+      const importanceBoost = computeImportanceBoost(summary.importance, this.importanceWeight);
       scored.push({
         createdAtIso,
         narrative: summary.narrative,
         sessionId: summary.sessionId,
-        similarity: baseSim + recencyBoost
+        similarity: baseSim + recencyBoost + importanceBoost
       });
     }
     scored.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));

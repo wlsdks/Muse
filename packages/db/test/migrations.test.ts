@@ -5,8 +5,17 @@ describe("db migrations", () => {
   it("keeps migration names stable and sorted", () => {
     expect(migrationNames()).toEqual([
       "0001_runtime_state",
-      "0002_conversation_summaries_user_id"
+      "0002_conversation_summaries_user_id",
+      "0003_conversation_summaries_importance"
     ]);
+  });
+
+  it("adds the conversation_summaries importance column", () => {
+    const importanceMigration = migrations.find(
+      (migration) => migration.name === "0003_conversation_summaries_importance"
+    );
+    expect(importanceMigration?.up).toContain("ADD COLUMN IF NOT EXISTS importance");
+    expect(importanceMigration?.down).toContain("DROP COLUMN IF EXISTS importance");
   });
 
   it("creates core runtime state tables", () => {

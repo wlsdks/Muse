@@ -43,6 +43,14 @@ interface RequiredConversationSummary {
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly userId?: string;
+  readonly importance?: number;
+}
+
+function normalizeImportance(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(10, Math.max(1, Math.trunc(value)));
 }
 
 const DEFAULT_LIST_LIMIT = 200;
@@ -163,7 +171,8 @@ export function buildConversationSummaryUpsertQuery(
       narrative: row.narrative,
       summarized_up_to: row.summarized_up_to,
       updated_at: row.updated_at,
-      user_id: row.user_id ?? null
+      user_id: row.user_id ?? null,
+      importance: row.importance ?? null
     }))
     .returningAll();
 }
@@ -185,7 +194,8 @@ export function createConversationSummaryInsert(
     session_id: normalized.sessionId,
     summarized_up_to: normalized.summarizedUpToIndex,
     updated_at: normalized.updatedAt,
-    user_id: normalized.userId ?? null
+    user_id: normalized.userId ?? null,
+    importance: normalized.importance ?? null
   };
 }
 
@@ -197,7 +207,8 @@ export function mapConversationSummaryRow(row: ConversationSummaryRow): Conversa
     sessionId: row.session_id,
     summarizedUpToIndex: row.summarized_up_to,
     updatedAt: dateValue(row.updated_at),
-    userId: typeof row.user_id === "string" ? row.user_id : undefined
+    userId: typeof row.user_id === "string" ? row.user_id : undefined,
+    importance: typeof row.importance === "number" ? row.importance : undefined
   };
 }
 
@@ -212,7 +223,8 @@ function normalizeConversationSummary(
     sessionId: summary.sessionId,
     summarizedUpToIndex: Math.max(0, Math.trunc(summary.summarizedUpToIndex)),
     updatedAt: options.updatedAt,
-    userId: summary.userId && summary.userId.trim().length > 0 ? summary.userId.trim() : undefined
+    userId: summary.userId && summary.userId.trim().length > 0 ? summary.userId.trim() : undefined,
+    importance: normalizeImportance(summary.importance)
   };
 }
 

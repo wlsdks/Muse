@@ -194,6 +194,14 @@ export interface ConversationSummary {
    * legacy rows that pre-date the 0002 migration leave it undefined.
    */
   readonly userId?: string;
+  /**
+   * Write-time importance (1–10, Generative-Agents style) assigned by the
+   * episodic summariser. Episodic recall folds a bounded boost from it so
+   * more important sessions rank higher among equally relevant + recent
+   * ones. Optional — rows that pre-date the 0003 migration leave it
+   * undefined (recall applies no importance boost for them).
+   */
+  readonly importance?: number;
 }
 
 export interface ConversationSummaryListOptions {

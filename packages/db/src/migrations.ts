@@ -416,6 +416,17 @@ export const migrations: readonly SqlMigration[] = [
         ON conversation_summaries(user_id)
         WHERE user_id IS NOT NULL;
     `
+  },
+  {
+    down: `
+      ALTER TABLE IF EXISTS conversation_summaries
+        DROP COLUMN IF EXISTS importance;
+    `,
+    name: "0003_conversation_summaries_importance",
+    up: `
+      ALTER TABLE conversation_summaries
+        ADD COLUMN IF NOT EXISTS importance SMALLINT;
+    `
   }
 ];
 

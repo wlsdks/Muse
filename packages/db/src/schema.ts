@@ -65,6 +65,11 @@ export interface ConversationSummaryTable {
    * before the 0002 migration stay readable.
    */
   readonly user_id: ColumnType<string | null, string | null | undefined, string | null>;
+  /**
+   * Write-time importance (1–10) for episodic-recall ranking. Nullable so
+   * legacy rows written before the 0003 migration stay readable.
+   */
+  readonly importance: ColumnType<number | null, number | null | undefined, number | null>;
 }
 
 export interface AgentRunTable {
