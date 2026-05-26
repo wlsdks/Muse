@@ -627,6 +627,32 @@ button {
   padding: var(--s-xl) var(--s-md);
 }
 
+.note-row {
+  border-radius: var(--r-sm);
+}
+.note-row.active {
+  background: var(--surface-2);
+}
+.note-open {
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+}
+.note-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  margin: 0;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
 .spinner {
   width: 16px;
   height: 16px;

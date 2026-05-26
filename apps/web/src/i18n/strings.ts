@@ -82,6 +82,11 @@ const en = {
   "notes.results": "Search results",
   "notes.reader": "Reader",
   "notes.selectNote": "Select a note to read it.",
+  "notes.new": "New note",
+  "notes.edit": "Edit",
+  "notes.save": "Save",
+  "notes.namePlaceholder": "note-name.md",
+  "notes.bodyPlaceholder": "Write in Markdown…",
 
   "activity.title": "Activity",
   "activity.recentRuns": "Recent runs",
@@ -213,6 +218,11 @@ const ko: Strings = {
   "notes.results": "검색 결과",
   "notes.reader": "뷰어",
   "notes.selectNote": "읽을 노트를 선택하세요.",
+  "notes.new": "새 노트",
+  "notes.edit": "편집",
+  "notes.save": "저장",
+  "notes.namePlaceholder": "노트-이름.md",
+  "notes.bodyPlaceholder": "마크다운으로 작성…",
 
   "activity.title": "활동",
   "activity.recentRuns": "최근 실행",
