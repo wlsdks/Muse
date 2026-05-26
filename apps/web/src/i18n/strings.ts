@@ -107,7 +107,13 @@ const en = {
   "chat.askSub": "It can check your tasks, calendar, notes, the web, and more.",
   "chat.placeholder": "Message Muse…  (Enter to send, Shift+Enter for newline)",
   "chat.calling": "calling {tool}…",
-  "chat.clear": "Clear conversation"
+  "chat.clear": "Clear conversation",
+
+  "cmd.search": "Search…",
+  "cmd.open": "Open command palette (⌘K)",
+  "cmd.placeholder": "Jump to a view or run a command…",
+  "cmd.empty": "No matching commands.",
+  "cmd.navigate": "Go to"
 } as const;
 
 export type StringKey = keyof typeof en;
@@ -214,7 +220,13 @@ const ko: Strings = {
   "chat.askSub": "할 일, 캘린더, 노트, 웹 등을 확인할 수 있어요.",
   "chat.placeholder": "Muse에게 메시지…  (Enter 전송, Shift+Enter 줄바꿈)",
   "chat.calling": "{tool} 호출 중…",
-  "chat.clear": "대화 지우기"
+  "chat.clear": "대화 지우기",
+
+  "cmd.search": "검색…",
+  "cmd.open": "명령 팔레트 열기 (⌘K)",
+  "cmd.placeholder": "화면으로 이동하거나 명령 실행…",
+  "cmd.empty": "일치하는 명령이 없습니다.",
+  "cmd.navigate": "이동"
 };
 
 export const DICTIONARIES: Record<Lang, Strings> = { en, ko };
