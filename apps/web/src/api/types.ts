@@ -147,3 +147,32 @@ export interface ModelsResponse {
   readonly models?: readonly ModelInfo[];
   readonly active?: string;
 }
+
+export interface TokenCostDailyRow {
+  readonly day: string;
+  readonly model?: string;
+  readonly promptTokens?: number;
+  readonly completionTokens?: number;
+  readonly totalTokens?: number;
+  readonly totalCostUsd?: number;
+}
+
+export interface ToolByName {
+  readonly tool: string;
+  readonly server?: string;
+  readonly outcome?: string;
+  readonly count: number;
+}
+export interface ToolStatsResponse {
+  readonly total?: number;
+  readonly accuracy?: number;
+  readonly byOutcome?: Record<string, number>;
+  readonly byTool?: readonly ToolByName[];
+}
+
+export interface LatencySummary {
+  readonly count?: number;
+  readonly p50Ms?: number;
+  readonly p95Ms?: number;
+  readonly p99Ms?: number;
+}

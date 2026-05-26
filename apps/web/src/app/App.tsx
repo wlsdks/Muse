@@ -1,20 +1,25 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { createApiClient } from "../api/client.js";
+import { CommandPalette } from "../components/CommandPalette.js";
+import { NoticeToaster } from "../components/NoticeToaster.js";
 import { Badge, Icon } from "../components/ui.js";
 import { I18nProvider, useI18n } from "../i18n/index.js";
 import { ActivityView } from "../views/Activity.js";
 import { CalendarView } from "../views/Calendar.js";
 import { ChatView } from "../views/Chat.js";
+import { DashboardView } from "../views/Dashboard.js";
 import { NotesView } from "../views/Notes.js";
 import { RemindersView } from "../views/Reminders.js";
 import { SettingsView } from "../views/Settings.js";
 import { TasksView } from "../views/Tasks.js";
 import { TodayView } from "../views/Today.js";
 import { ToolsView } from "../views/Tools.js";
+import { useShortcuts } from "./useShortcuts.js";
 
 import type { ApiClient } from "../api/client.js";
+import type { Command } from "../components/CommandPalette.js";
 import type { HealthResponse, TasksResponse } from "../api/types.js";
 import type { Lang, StringKey } from "../i18n/index.js";
 import type { ComponentType } from "react";
@@ -23,27 +28,39 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1, staleTime: 10_000 } }
 });
 
-type ViewId = "today" | "chat" | "tasks" | "calendar" | "reminders" | "notes" | "activity" | "tools" | "settings";
+type ViewId =
+  | "today"
+  | "chat"
+  | "tasks"
+  | "calendar"
+  | "reminders"
+  | "notes"
+  | "activity"
+  | "dashboard"
+  | "tools"
+  | "settings";
 type GroupKey = "group.workspace" | "group.knowledge" | "group.system";
 
 interface NavEntry {
   readonly id: ViewId;
   readonly labelKey: StringKey;
+  readonly key: string;
   readonly icon: ComponentType<{ className?: string }>;
   readonly group: GroupKey;
   readonly Component: ComponentType<{ client: ApiClient }>;
 }
 
 const NAV: readonly NavEntry[] = [
-  { Component: TodayView, group: "group.workspace", icon: Icon.home, id: "today", labelKey: "nav.today" },
-  { Component: ChatView, group: "group.workspace", icon: Icon.chat, id: "chat", labelKey: "nav.chat" },
-  { Component: TasksView, group: "group.workspace", icon: Icon.task, id: "tasks", labelKey: "nav.tasks" },
-  { Component: CalendarView, group: "group.workspace", icon: Icon.calendar, id: "calendar", labelKey: "nav.calendar" },
-  { Component: RemindersView, group: "group.workspace", icon: Icon.bell, id: "reminders", labelKey: "nav.reminders" },
-  { Component: NotesView, group: "group.knowledge", icon: Icon.note, id: "notes", labelKey: "nav.notes" },
-  { Component: ActivityView, group: "group.knowledge", icon: Icon.activity, id: "activity", labelKey: "nav.activity" },
-  { Component: ToolsView, group: "group.system", icon: Icon.tool, id: "tools", labelKey: "nav.tools" },
-  { Component: SettingsView, group: "group.system", icon: Icon.settings, id: "settings", labelKey: "nav.settings" }
+  { Component: TodayView, group: "group.workspace", icon: Icon.home, id: "today", key: "t", labelKey: "nav.today" },
+  { Component: ChatView, group: "group.workspace", icon: Icon.chat, id: "chat", key: "c", labelKey: "nav.chat" },
+  { Component: TasksView, group: "group.workspace", icon: Icon.task, id: "tasks", key: "k", labelKey: "nav.tasks" },
+  { Component: CalendarView, group: "group.workspace", icon: Icon.calendar, id: "calendar", key: "l", labelKey: "nav.calendar" },
+  { Component: RemindersView, group: "group.workspace", icon: Icon.bell, id: "reminders", key: "r", labelKey: "nav.reminders" },
+  { Component: NotesView, group: "group.knowledge", icon: Icon.note, id: "notes", key: "n", labelKey: "nav.notes" },
+  { Component: ActivityView, group: "group.knowledge", icon: Icon.activity, id: "activity", key: "a", labelKey: "nav.activity" },
+  { Component: DashboardView, group: "group.system", icon: Icon.chart, id: "dashboard", key: "d", labelKey: "nav.dashboard" },
+  { Component: ToolsView, group: "group.system", icon: Icon.tool, id: "tools", key: "o", labelKey: "nav.tools" },
+  { Component: SettingsView, group: "group.system", icon: Icon.settings, id: "settings", key: "s", labelKey: "nav.settings" }
 ];
 
 const GROUPS: readonly GroupKey[] = ["group.workspace", "group.knowledge", "group.system"];
@@ -71,6 +88,7 @@ function Console() {
   const [apiUrl, setApiUrl] = useState(() => readSetting("muse.apiUrl", "http://127.0.0.1:3030"));
   const [token, setToken] = useState(() => readSetting("muse.token", ""));
   const [view, setView] = useState<ViewId>("today");
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const client = useMemo(() => createApiClient(apiUrl, token), [apiUrl, token]);
 
@@ -86,6 +104,26 @@ function Console() {
 
   const active: NavEntry = NAV.find((n) => n.id === view) ?? NAV[0]!;
   const ActiveComponent = active.Component;
+
+  const onLeader = useCallback((key: string) => {
+    const target = NAV.find((n) => n.key === key);
+    if (target) {
+      setView(target.id);
+    }
+  }, []);
+  useShortcuts({ onLeader, onTogglePalette: () => setPaletteOpen((p) => !p) });
+
+  const commands = useMemo<readonly Command[]>(
+    () =>
+      NAV.map((n) => ({
+        group: t("cmd.navigate"),
+        hint: `G ${n.key.toUpperCase()}`,
+        id: n.id,
+        run: () => setView(n.id),
+        title: t(n.labelKey)
+      })),
+    [t]
+  );
 
   const updateConnection = (url: string, tok: string) => {
     setApiUrl(url);
@@ -146,16 +184,25 @@ function Console() {
         <header className="topbar">
           <h2>{t(active.labelKey)}</h2>
           <span className="spacer" />
+          <button className="cmd-trigger" onClick={() => setPaletteOpen(true)} title={t("cmd.open")}>
+            <span>{t("cmd.search")}</span>
+            <kbd>⌘K</kbd>
+          </button>
           <span className="mono subtle">{apiUrl.replace(/^https?:\/\//, "")}</span>
         </header>
         <section className="content">
-          {view === "settings" ? (
-            <SettingsView client={client} apiUrl={apiUrl} token={token} onSave={updateConnection} />
-          ) : (
-            <ActiveComponent client={client} />
-          )}
+          <div className="view" key={view}>
+            {view === "settings" ? (
+              <SettingsView client={client} apiUrl={apiUrl} token={token} onSave={updateConnection} />
+            ) : (
+              <ActiveComponent client={client} />
+            )}
+          </div>
         </section>
       </main>
+
+      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+      <NoticeToaster client={client} token={token} userId="me" />
     </div>
   );
 }

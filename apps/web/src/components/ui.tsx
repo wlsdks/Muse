@@ -183,5 +183,15 @@ export const Icon = {
   check: (p: IconProps) => base({ className: p.className }, <path d="M5 12l5 5L20 7" />),
   send: (p: IconProps) => base(p, <path d="M4 12l16-8-6 16-3-6-7-2z" />),
   plus: (p: IconProps) => base(p, <path d="M12 5v14M5 12h14" />),
-  trash: (p: IconProps) => base(p, <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14" />)
+  trash: (p: IconProps) => base(p, <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14" />),
+  mic: (p: IconProps) =>
+    base(
+      p,
+      <>
+        <rect x="9" y="3" width="6" height="11" rx="3" />
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+      </>
+    ),
+  volume: (p: IconProps) => base(p, <path d="M4 9v6h4l5 4V5L8 9zM16 9a3 3 0 0 1 0 6M18.5 7a6 6 0 0 1 0 10" />),
+  chart: (p: IconProps) => base(p, <path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3" />)
 };

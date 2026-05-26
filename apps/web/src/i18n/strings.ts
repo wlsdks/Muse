@@ -20,6 +20,7 @@ const en = {
   "nav.reminders": "Reminders",
   "nav.notes": "Notes",
   "nav.activity": "Activity",
+  "nav.dashboard": "Dashboard",
   "nav.tools": "Tools",
   "nav.settings": "Settings",
 
@@ -107,7 +108,30 @@ const en = {
   "chat.askSub": "It can check your tasks, calendar, notes, the web, and more.",
   "chat.placeholder": "Message Muse…  (Enter to send, Shift+Enter for newline)",
   "chat.calling": "calling {tool}…",
-  "chat.clear": "Clear conversation"
+  "chat.clear": "Clear conversation",
+  "chat.mic": "Voice input",
+  "chat.micStop": "Stop recording",
+  "chat.transcribing": "Transcribing…",
+  "chat.speak": "Play reply",
+  "chat.autospeak": "Auto-speak replies",
+
+  "cmd.search": "Search…",
+  "cmd.open": "Open command palette (⌘K)",
+  "cmd.placeholder": "Jump to a view or run a command…",
+  "cmd.empty": "No matching commands.",
+  "cmd.navigate": "Go to",
+
+  "notice.title": "Muse",
+
+  "dash.title": "Dashboard",
+  "dash.subtitle": "Token cost, tool reliability, and latency over the last 7 days.",
+  "dash.totalTokens": "Total tokens (7d)",
+  "dash.totalCost": "Est. cost (7d)",
+  "dash.toolAccuracy": "Tool accuracy",
+  "dash.tokensPerDay": "Tokens per day",
+  "dash.latency": "Run latency",
+  "dash.samples": "Samples",
+  "dash.topTools": "Most-used tools"
 } as const;
 
 export type StringKey = keyof typeof en;
@@ -127,6 +151,7 @@ const ko: Strings = {
   "nav.reminders": "리마인더",
   "nav.notes": "노트",
   "nav.activity": "활동",
+  "nav.dashboard": "대시보드",
   "nav.tools": "도구",
   "nav.settings": "설정",
 
@@ -214,7 +239,30 @@ const ko: Strings = {
   "chat.askSub": "할 일, 캘린더, 노트, 웹 등을 확인할 수 있어요.",
   "chat.placeholder": "Muse에게 메시지…  (Enter 전송, Shift+Enter 줄바꿈)",
   "chat.calling": "{tool} 호출 중…",
-  "chat.clear": "대화 지우기"
+  "chat.clear": "대화 지우기",
+  "chat.mic": "음성 입력",
+  "chat.micStop": "녹음 정지",
+  "chat.transcribing": "받아쓰는 중…",
+  "chat.speak": "음성 재생",
+  "chat.autospeak": "답변 자동 음성",
+
+  "cmd.search": "검색…",
+  "cmd.open": "명령 팔레트 열기 (⌘K)",
+  "cmd.placeholder": "화면으로 이동하거나 명령 실행…",
+  "cmd.empty": "일치하는 명령이 없습니다.",
+  "cmd.navigate": "이동",
+
+  "notice.title": "Muse",
+
+  "dash.title": "대시보드",
+  "dash.subtitle": "최근 7일간 토큰 비용·도구 신뢰도·레이턴시.",
+  "dash.totalTokens": "총 토큰 (7일)",
+  "dash.totalCost": "예상 비용 (7일)",
+  "dash.toolAccuracy": "도구 정확도",
+  "dash.tokensPerDay": "일별 토큰",
+  "dash.latency": "실행 레이턴시",
+  "dash.samples": "표본 수",
+  "dash.topTools": "많이 쓴 도구"
 };
 
 export const DICTIONARIES: Record<Lang, Strings> = { en, ko };
