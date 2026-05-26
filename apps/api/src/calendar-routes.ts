@@ -84,6 +84,74 @@ export function registerCalendarRoutes(server: FastifyInstance, gate: CalendarRo
     }
   });
 
+  // Writing to the user's OWN calendar is a state change but not an
+  // outbound-to-human action (outbound-safety.md), so the user's
+  // explicit create/delete is allowed directly here.
+  server.post("/api/calendar/events", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
+      return reply;
+    }
+    const body = (request.body as {
+      title?: string;
+      startsAtIso?: string;
+      endsAtIso?: string;
+      allDay?: boolean;
+      location?: string;
+      notes?: string;
+      providerId?: string;
+    } | undefined) ?? {};
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const startsAt = body.startsAtIso ? new Date(body.startsAtIso) : new Date(NaN);
+    const endsAt = body.endsAtIso ? new Date(body.endsAtIso) : new Date(NaN);
+    if (title.length === 0) {
+      return reply.status(400).send({ code: "INVALID_EVENT", message: "title is required" });
+    }
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      return reply.status(400).send({ code: "INVALID_EVENT", message: "startsAtIso and endsAtIso must be parseable ISO timestamps" });
+    }
+    try {
+      const event = await gate.registry.createEvent(body.providerId, {
+        endsAt,
+        startsAt,
+        title,
+        ...(typeof body.allDay === "boolean" ? { allDay: body.allDay } : {}),
+        ...(typeof body.location === "string" && body.location.trim() ? { location: body.location.trim() } : {}),
+        ...(typeof body.notes === "string" && body.notes.trim() ? { notes: body.notes.trim() } : {})
+      });
+      return reply.status(201).send({
+        allDay: event.allDay,
+        endsAtIso: event.endsAt.toISOString(),
+        id: event.id,
+        location: event.location ?? null,
+        notes: event.notes ?? null,
+        providerId: event.providerId,
+        startsAtIso: event.startsAt.toISOString(),
+        tags: event.tags ?? [],
+        title: event.title,
+        url: event.url ?? null
+      });
+    } catch (error) {
+      return reply.status(502).send({ code: "CALENDAR_CREATE_FAILED", message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  server.delete("/api/calendar/events/:id", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
+      return reply;
+    }
+    const { id } = request.params as { readonly id: string };
+    const providerId = (request.query as { providerId?: string } | undefined)?.providerId?.trim();
+    if (!providerId) {
+      return reply.status(400).send({ code: "PROVIDER_REQUIRED", message: "providerId query parameter is required to delete an event" });
+    }
+    try {
+      await gate.registry.deleteEvent(providerId, id);
+      return reply.status(204).send();
+    } catch (error) {
+      return reply.status(502).send({ code: "CALENDAR_DELETE_FAILED", message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   if (!gate.credentialStore) {
     return;
   }

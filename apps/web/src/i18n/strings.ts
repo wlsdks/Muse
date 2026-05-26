@@ -69,6 +69,10 @@ const en = {
   "calendar.today": "Today",
   "calendar.tomorrow": "Tomorrow",
   "calendar.allDay": "All day",
+  "calendar.new": "New event",
+  "calendar.eventTitle": "Title",
+  "calendar.start": "Start",
+  "calendar.end": "End",
 
   "reminders.title": "Reminders",
   "reminders.new": "New reminder",
@@ -218,6 +222,10 @@ const ko: Strings = {
   "calendar.today": "오늘",
   "calendar.tomorrow": "내일",
   "calendar.allDay": "종일",
+  "calendar.new": "새 일정",
+  "calendar.eventTitle": "제목",
+  "calendar.start": "시작",
+  "calendar.end": "종료",
 
   "reminders.title": "리마인더",
   "reminders.new": "새 리마인더",

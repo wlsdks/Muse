@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
-import { AsyncBlock, Badge, Card } from "../components/ui.js";
+import { AsyncBlock, Badge, Button, Card, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 
 import type { ApiClient } from "../api/client.js";
@@ -18,25 +19,72 @@ function dayLabel(iso: string, t: Translate, locale: string): string {
 
 export function CalendarView({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+
   const events = useQuery({
     queryFn: () => client.get<CalendarEventsResponse>("/api/calendar/events"),
     queryKey: ["calendar", client.baseUrl]
+  });
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ["calendar"] });
+
+  const add = useMutation({
+    mutationFn: (body: { title: string; start: string; end: string }) =>
+      client.post("/api/calendar/events", {
+        endsAtIso: new Date(body.end).toISOString(),
+        startsAtIso: new Date(body.start).toISOString(),
+        title: body.title
+      }),
+    onSuccess: () => {
+      setTitle("");
+      setStart("");
+      setEnd("");
+      invalidate();
+    }
+  });
+  const remove = useMutation({
+    mutationFn: (ev: { id: string; providerId: string }) =>
+      client.del(`/api/calendar/events/${encodeURIComponent(ev.id)}?providerId=${encodeURIComponent(ev.providerId)}`),
+    onSuccess: invalidate
   });
 
   const list = [...(events.data?.events ?? [])].sort(
     (a, b) => new Date(a.startsAtIso).getTime() - new Date(b.startsAtIso).getTime()
   );
-
   const byDay = new Map<string, typeof list>();
   for (const e of list) {
     const k = dayLabel(e.startsAtIso, t, locale);
     byDay.set(k, [...(byDay.get(k) ?? []), e]);
   }
 
+  const canAdd = title.trim().length > 0 && start.length > 0 && end.length > 0;
+
   return (
     <div className="content-narrow">
       <p className="eyebrow">{t("group.workspace")}</p>
       <h1 className="page-title">{t("calendar.title")}</h1>
+
+      <Card title={t("calendar.new")} className="lifted">
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 200px 200px auto", alignItems: "end" }}>
+          <div>
+            <label className="field-label">{t("calendar.eventTitle")}</label>
+            <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Standup" />
+          </div>
+          <div>
+            <label className="field-label">{t("calendar.start")}</label>
+            <input className="input" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+          </div>
+          <div>
+            <label className="field-label">{t("calendar.end")}</label>
+            <input className="input" type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </div>
+          <Button variant="primary" disabled={!canAdd || add.isPending} onClick={() => add.mutate({ end, start, title: title.trim() })}>
+            <Icon.plus className="nav-icon" /> {t("common.add")}
+          </Button>
+        </div>
+      </Card>
 
       <div style={{ marginTop: 16 }}>
         <AsyncBlock loading={events.isLoading} error={events.error} empty={list.length === 0}>
@@ -55,6 +103,9 @@ export function CalendarView({ client }: { client: ApiClient }) {
                       </div>
                     </div>
                     {e.tags.length > 0 && <Badge dot={false}>{e.tags[0]}</Badge>}
+                    <Button variant="ghost" size="sm" title={t("common.delete")} onClick={() => remove.mutate({ id: e.id, providerId: e.providerId })}>
+                      <Icon.trash className="nav-icon" />
+                    </Button>
                   </div>
                 ))}
               </Card>
