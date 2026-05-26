@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { createApiClient } from "../api/client.js";
 import { CommandPalette } from "../components/CommandPalette.js";
+import { NoticeToaster } from "../components/NoticeToaster.js";
 import { Badge, Icon } from "../components/ui.js";
 import { I18nProvider, useI18n } from "../i18n/index.js";
 import { ActivityView } from "../views/Activity.js";
@@ -187,6 +188,7 @@ function Console() {
       </main>
 
       <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+      <NoticeToaster client={client} token={token} userId="me" />
     </div>
   );
 }
