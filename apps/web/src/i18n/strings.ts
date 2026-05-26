@@ -108,6 +108,11 @@ const en = {
   "chat.placeholder": "Message Muse…  (Enter to send, Shift+Enter for newline)",
   "chat.calling": "calling {tool}…",
   "chat.clear": "Clear conversation",
+  "chat.mic": "Voice input",
+  "chat.micStop": "Stop recording",
+  "chat.transcribing": "Transcribing…",
+  "chat.speak": "Play reply",
+  "chat.autospeak": "Auto-speak replies",
 
   "cmd.search": "Search…",
   "cmd.open": "Open command palette (⌘K)",
@@ -221,6 +226,11 @@ const ko: Strings = {
   "chat.placeholder": "Muse에게 메시지…  (Enter 전송, Shift+Enter 줄바꿈)",
   "chat.calling": "{tool} 호출 중…",
   "chat.clear": "대화 지우기",
+  "chat.mic": "음성 입력",
+  "chat.micStop": "녹음 정지",
+  "chat.transcribing": "받아쓰는 중…",
+  "chat.speak": "음성 재생",
+  "chat.autospeak": "답변 자동 음성",
 
   "cmd.search": "검색…",
   "cmd.open": "명령 팔레트 열기 (⌘K)",

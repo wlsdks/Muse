@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ChatResponse, Citation } from "./types.js";
 
@@ -9,6 +9,18 @@ export interface ChatTurn {
   tools?: readonly string[];
 }
 
+const STORE_KEY = "muse.chat.transcript";
+
+function loadTranscript(): readonly ChatTurn[] {
+  try {
+    const raw = window.localStorage.getItem(STORE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as ChatTurn[]) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Streaming chat against `POST /api/chat` (SSE). Parses the server's
  * `delta` / `message` / `tool_call` / `tool_start` / `tool_end` /
@@ -17,16 +29,29 @@ export interface ChatTurn {
  * Keeps a running transcript so the UI renders a real conversation.
  */
 export function useChatStream(baseUrl: string, token: string) {
-  const [turns, setTurns] = useState<readonly ChatTurn[]>([]);
+  const [turns, setTurns] = useState<readonly ChatTurn[]>(() => loadTranscript());
   const [pending, setPending] = useState(false);
   const [activeTool, setActiveTool] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const draftRef = useRef<ChatTurn | null>(null);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORE_KEY, JSON.stringify(turns.slice(-50)));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [turns]);
+
   const reset = useCallback(() => {
     setTurns([]);
     setError(null);
     setActiveTool("");
+    try {
+      window.localStorage.removeItem(STORE_KEY);
+    } catch {
+      /* storage unavailable */
+    }
   }, []);
 
   const send = useCallback(

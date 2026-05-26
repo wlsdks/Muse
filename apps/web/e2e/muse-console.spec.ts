@@ -28,7 +28,7 @@ test("console renders Today, navigates to Chat, and round-trips a message", asyn
   await page.route("**/api/chat", async (route) => {
     expect(route.request().method()).toBe("POST");
     expect(route.request().postDataJSON()).toMatchObject({ message: "what is due today" });
-    await route.fulfill(ok({ content: "You have 1 task due: Ship the rebuild.", runId: "run-1" }));
+    await route.fulfill(ok({ content: "You have **1 task** due: Ship the rebuild.", runId: "run-1" }));
   });
 
   await page.goto("/");
@@ -41,5 +41,6 @@ test("console renders Today, navigates to Chat, and round-trips a message", asyn
   await page.getByPlaceholder(/Message Muse/).fill("what is due today");
   await page.getByTitle("Send").click();
 
-  await expect(page.getByText("You have 1 task due: Ship the rebuild.")).toBeVisible();
+  await expect(page.locator(".msg.assistant strong", { hasText: "1 task" })).toBeVisible();
+  await expect(page.getByText("due: Ship the rebuild.")).toBeVisible();
 });
