@@ -196,5 +196,13 @@ export const Icon = {
   chart: (p: IconProps) => base(p, <path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3" />),
   shield: (p: IconProps) => base(p, <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" />),
   brain: (p: IconProps) =>
-    base(p, <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5 3 3 0 0 0 2 4 3 3 0 0 0 5 1V4a2 2 0 0 0-3 0M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5 3 3 0 0 1-2 4 3 3 0 0 1-5 1" />)
+    base(p, <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5 3 3 0 0 0 2 4 3 3 0 0 0 5 1V4a2 2 0 0 0-3 0M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5 3 3 0 0 1-2 4 3 3 0 0 1-5 1" />),
+  mail: (p: IconProps) =>
+    base(
+      p,
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 7l9 6 9-6" />
+      </>
+    )
 };

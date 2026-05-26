@@ -12,6 +12,7 @@ import { AutonomyView } from "../views/Autonomy.js";
 import { ChatView } from "../views/Chat.js";
 import { DashboardView } from "../views/Dashboard.js";
 import { MemoryView } from "../views/Memory.js";
+import { MessagingView } from "../views/Messaging.js";
 import { NotesView } from "../views/Notes.js";
 import { RemindersView } from "../views/Reminders.js";
 import { SettingsView } from "../views/Settings.js";
@@ -36,6 +37,7 @@ type ViewId =
   | "tasks"
   | "calendar"
   | "reminders"
+  | "messaging"
   | "notes"
   | "memory"
   | "activity"
@@ -60,6 +62,7 @@ const NAV: readonly NavEntry[] = [
   { Component: TasksView, group: "group.workspace", icon: Icon.task, id: "tasks", key: "k", labelKey: "nav.tasks" },
   { Component: CalendarView, group: "group.workspace", icon: Icon.calendar, id: "calendar", key: "l", labelKey: "nav.calendar" },
   { Component: RemindersView, group: "group.workspace", icon: Icon.bell, id: "reminders", key: "r", labelKey: "nav.reminders" },
+  { Component: MessagingView, group: "group.workspace", icon: Icon.mail, id: "messaging", key: "i", labelKey: "nav.messaging" },
   { Component: NotesView, group: "group.knowledge", icon: Icon.note, id: "notes", key: "n", labelKey: "nav.notes" },
   { Component: MemoryView, group: "group.knowledge", icon: Icon.brain, id: "memory", key: "m", labelKey: "nav.memory" },
   { Component: ActivityView, group: "group.knowledge", icon: Icon.activity, id: "activity", key: "a", labelKey: "nav.activity" },

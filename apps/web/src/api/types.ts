@@ -235,3 +235,24 @@ export interface UserMemoryResponse {
   readonly recentTopics?: readonly string[];
   readonly updatedAt?: string;
 }
+
+export interface MessagingProvider {
+  readonly id: string;
+  readonly displayName: string;
+  readonly description?: string;
+  readonly local?: boolean;
+}
+export interface MessagingProvidersResponse {
+  readonly providers: readonly MessagingProvider[];
+}
+export interface InboundMessage {
+  readonly id?: string;
+  readonly from?: string;
+  readonly text?: string;
+  readonly receivedAt?: string;
+}
+export interface InboxResponse {
+  readonly inbound: readonly InboundMessage[];
+  readonly providerId: string;
+  readonly total: number;
+}

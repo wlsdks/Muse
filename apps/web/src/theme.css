@@ -291,6 +291,47 @@ button {
   margin: 0 auto;
 }
 
+/* ── Draft-first send confirm ────────────────────────────── */
+
+.confirm-send {
+  border: 1px solid var(--primary-focus);
+  border-radius: var(--r-md);
+  padding: var(--s-md);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-1));
+}
+.confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--primary-hover);
+  margin-bottom: 6px;
+}
+.confirm-detail {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.confirm-label {
+  color: var(--ink-tertiary);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  margin-right: 6px;
+}
+.confirm-text {
+  margin-top: 4px;
+  padding: var(--s-sm);
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+}
+
 /* ── Tabs ────────────────────────────────────────────────── */
 
 .tabs {
