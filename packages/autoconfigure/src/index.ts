@@ -218,7 +218,8 @@ export {
   resolveSlackInboxFile,
   resolveTasksFile,
   resolveTelegramInboxFile,
-  resolveTelegramOffsetFile
+  resolveTelegramOffsetFile,
+  resolveVetoesFile
 } from "./personal-providers.js";
 import {
   createConversationSummaryStore,

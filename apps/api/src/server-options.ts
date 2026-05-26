@@ -153,6 +153,15 @@ export interface ServerOptions {
    */
   readonly actionLogFile?: string;
   /**
+   * Path to the contacts store (default ~/.muse/contacts.json) and the
+   * learned-avoidance veto store (default ~/.muse/vetoes.json). Read by
+   * the accountability routes so the web can surface the same records
+   * the CLI reads. Both fall back to the conventional resolver path
+   * when unset.
+   */
+  readonly contactsFile?: string;
+  readonly vetoesFile?: string;
+  /**
    * Path to the pattern-detection cooldown sidecar (default
    * ~/.muse/patterns-fired.json). When set alongside
    * MUSE_PROACTIVE_PATTERN_ENABLED=true + provider/destination

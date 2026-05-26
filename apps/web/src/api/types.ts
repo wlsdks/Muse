@@ -176,3 +176,55 @@ export interface LatencySummary {
   readonly p95Ms?: number;
   readonly p99Ms?: number;
 }
+
+export interface ObjectiveRow {
+  readonly id: string;
+  readonly spec: string;
+  readonly kind: string;
+  readonly status: string;
+  readonly createdAt: string;
+  readonly lastEvaluatedAt?: string;
+  readonly resolution?: string;
+}
+export interface ObjectivesResponse {
+  readonly objectives: readonly ObjectiveRow[];
+  readonly total: number;
+}
+
+export interface ActionRow {
+  readonly id: string;
+  readonly when: string;
+  readonly what: string;
+  readonly why: string;
+  readonly result: "performed" | "refused" | "failed" | string;
+  readonly objectiveId?: string;
+  readonly detail?: string;
+}
+export interface ActionsResponse {
+  readonly actions: readonly ActionRow[];
+  readonly total: number;
+}
+
+export interface ContactRow {
+  readonly id: string;
+  readonly name: string;
+  readonly email?: string;
+  readonly handle?: string;
+  readonly phone?: string;
+}
+export interface ContactsResponse {
+  readonly contacts: readonly ContactRow[];
+  readonly total: number;
+}
+
+export interface VetoRow {
+  readonly id: string;
+  readonly objectiveId: string;
+  readonly scope: string;
+  readonly vetoedAt: string;
+  readonly reason?: string;
+}
+export interface VetoesResponse {
+  readonly vetoes: readonly VetoRow[];
+  readonly total: number;
+}

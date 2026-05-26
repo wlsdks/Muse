@@ -3,7 +3,14 @@ import {
   RuleBasedAgentSpecResolver
 } from "@muse/agent-specs";
 import { extractBearerToken } from "@muse/auth";
-import { parseBoolean, resolveActionLogFile, resolveContactsFile, resolvePendingApprovalsFile } from "@muse/autoconfigure";
+import {
+  parseBoolean,
+  resolveActionLogFile,
+  resolveContactsFile,
+  resolveObjectivesFile,
+  resolvePendingApprovalsFile,
+  resolveVetoesFile
+} from "@muse/autoconfigure";
 import { queryContacts, runActuatorByName } from "@muse/mcp";
 import type { JsonObject } from "@muse/shared";
 import { InMemoryRuntimeSettingsStore, RuntimeSettings } from "@muse/runtime-settings";
@@ -41,6 +48,7 @@ import { createChannelRefusalRecorder } from "./channel-refusal-recorder.js";
 import { handleInboundApprovalReply } from "./inbound-approval-handler.js";
 import { DiscordProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
 import { registerSchedulerRoutes } from "./scheduler-routes.js";
+import { registerAccountabilityRoutes } from "./accountability-routes.js";
 import { registerActiveContextRoutes } from "./active-context-routes.js";
 import { registerAgentNoticesRoutes } from "./agent-notices-routes.js";
 import { registerSetupRoutes } from "./setup-routes.js";
@@ -292,6 +300,18 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     ...(options.followupsFile ? { followupsFile: options.followupsFile } : {}),
     ...(options.patternsFiredFile ? { patternsFiredFile: options.patternsFiredFile } : {}),
     ...(options.episodesFile ? { episodesFile: options.episodesFile } : {})
+  });
+
+  // Read-only accountability / autonomy surface (objectives, action
+  // log, contacts, vetoes). Paths fall back to the conventional
+  // ~/.muse resolvers so this works without explicit option wiring,
+  // matching what the CLI reads.
+  registerAccountabilityRoutes(server, {
+    authService,
+    actionLogFile: options.actionLogFile ?? resolveActionLogFile(process.env),
+    contactsFile: options.contactsFile ?? resolveContactsFile(process.env),
+    objectivesFile: options.objectivesFile ?? resolveObjectivesFile(process.env),
+    vetoesFile: options.vetoesFile ?? resolveVetoesFile(process.env)
   });
 
   // Optional Phase B daemon: every MUSE_REMINDER_TICK_MS (default

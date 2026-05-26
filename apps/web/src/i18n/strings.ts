@@ -20,6 +20,7 @@ const en = {
   "nav.reminders": "Reminders",
   "nav.notes": "Notes",
   "nav.activity": "Activity",
+  "nav.autonomy": "Autonomy",
   "nav.dashboard": "Dashboard",
   "nav.tools": "Tools",
   "nav.settings": "Settings",
@@ -128,6 +129,18 @@ const en = {
 
   "notice.title": "Muse",
 
+  "auto.subtitle": "What Muse does on its own — and the trail it leaves.",
+  "auto.tab.actions": "Action log",
+  "auto.tab.objectives": "Objectives",
+  "auto.tab.contacts": "Contacts",
+  "auto.tab.vetoes": "Avoidances",
+  "auto.addContact": "Add contact",
+  "auto.name": "Name",
+  "auto.email": "Email",
+  "auto.phone": "Phone",
+  "auto.objNote": "Standing goals Muse keeps re-evaluating until resolved.",
+  "auto.vetoNote": "Triggers you vetoed — Muse no longer auto-acts on these.",
+
   "dash.title": "Dashboard",
   "dash.subtitle": "Token cost, tool reliability, and latency over the last 7 days.",
   "dash.totalTokens": "Total tokens (7d)",
@@ -156,6 +169,7 @@ const ko: Strings = {
   "nav.reminders": "리마인더",
   "nav.notes": "노트",
   "nav.activity": "활동",
+  "nav.autonomy": "자율성",
   "nav.dashboard": "대시보드",
   "nav.tools": "도구",
   "nav.settings": "설정",
@@ -263,6 +277,18 @@ const ko: Strings = {
   "cmd.navigate": "이동",
 
   "notice.title": "Muse",
+
+  "auto.subtitle": "Muse가 스스로 하는 일과 그 기록.",
+  "auto.tab.actions": "액션 로그",
+  "auto.tab.objectives": "목표",
+  "auto.tab.contacts": "연락처",
+  "auto.tab.vetoes": "회피",
+  "auto.addContact": "연락처 추가",
+  "auto.name": "이름",
+  "auto.email": "이메일",
+  "auto.phone": "전화",
+  "auto.objNote": "해결될 때까지 Muse가 계속 재평가하는 상시 목표.",
+  "auto.vetoNote": "거부한 트리거 — Muse가 더 이상 자동 실행하지 않습니다.",
 
   "dash.title": "대시보드",
   "dash.subtitle": "최근 7일간 토큰 비용·도구 신뢰도·레이턴시.",

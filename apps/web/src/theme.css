@@ -291,6 +291,36 @@ button {
   margin: 0 auto;
 }
 
+/* ── Tabs ────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  padding: 3px;
+  width: fit-content;
+}
+.tab {
+  border: none;
+  background: transparent;
+  color: var(--ink-subtle);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tab:hover {
+  color: var(--ink-muted);
+}
+.tab.active {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
 /* ── Dashboard bar chart ─────────────────────────────────── */
 
 .bars {
