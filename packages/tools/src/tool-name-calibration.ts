@@ -10,7 +10,7 @@ export function normalizeToolName(raw: string): string {
   if (typeof raw !== "string") return "";
   let s = raw.trim().toLowerCase();
   s = s.replace(/^[`'"]+|[`'"]+$/g, "").trim();
-  s = s.replace(/[\s-]+/g, "_");
+  s = s.replace(/[\s.-]+/g, "_");
   s = s.replace(/[^a-z0-9_]/g, "");
   s = s.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
   return /^[a-z][a-z0-9_]*$/.test(s) ? s : "";

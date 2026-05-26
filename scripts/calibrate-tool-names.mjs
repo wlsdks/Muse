@@ -118,6 +118,13 @@ async function main() {
     const peakedness = await probeName(provider, def.description);
     const baselineRate = await selectionRate(provider, tools, target.goldenPrompts, target.name);
 
+    // Sibling baselines don't change across candidates — measure once per target.
+    const siblingBaselines = new Map();
+    for (const sib of underTest) {
+      if (sib.name === target.name) continue;
+      siblingBaselines.set(sib.name, await selectionRate(provider, tools, sib.goldenPrompts, sib.name));
+    }
+
     const candidateNames = peakedness.map((p) => p.name).filter((n) => n !== target.name).slice(0, TOP_K);
     const candidates = [];
     for (const name of candidateNames) {
@@ -129,9 +136,8 @@ async function main() {
         rate = await selectionRate(provider, renamed, target.goldenPrompts, name);
         for (const sib of underTest) {
           if (sib.name === target.name) continue;
-          const sibBefore = await selectionRate(provider, tools, sib.goldenPrompts, sib.name);
           const sibAfter = await selectionRate(provider, renamed, sib.goldenPrompts, sib.name);
-          if (sibAfter < sibBefore) { siblingRegression = true; break; }
+          if (sibAfter < (siblingBaselines.get(sib.name) ?? 0)) { siblingRegression = true; break; }
         }
       }
       candidates.push({ name, rate, siblingRegression, collidesWithSibling });

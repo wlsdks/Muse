@@ -24,6 +24,10 @@ describe("normalizeToolName", () => {
     expect(normalizeToolName("__time__now__")).toBe("time_now");
   });
 
+  it("treats a dotted name as snake_case", () => {
+    expect(normalizeToolName("time.now")).toBe("time_now");
+  });
+
   it("returns empty string for unusable input", () => {
     expect(normalizeToolName("")).toBe("");
     expect(normalizeToolName("123abc")).toBe("");
