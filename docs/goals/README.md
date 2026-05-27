@@ -679,3 +679,8 @@ Append one line when a discovery path is evaluated and deferred:
   ("📨 @me: 📋 P29 audit echo due in 5 min") alongside the tick
   summary, clean exit. Foreground observability composes; no drift, no
   bullet reopened.
+- P30 audit — cbdec3aa — PASS: P30 check re-run green (commands-daemon
+  39/39) AND exercised through the BUILT CLI — `muse daemon --status`
+  printed the readiness lines plus a "sources:" block with the resolved
+  config/tasks/reminders/objectives paths (rooted at the run's HOME).
+  Debuggability composes; no drift, no bullet reopened.
