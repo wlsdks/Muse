@@ -1,6 +1,40 @@
+import { Readable } from "node:stream";
+
 import { describe, expect, it } from "vitest";
 
-import { dailyInboxNotePath, formatCaptureLine, selectConnections } from "./commands-note.js";
+import { dailyInboxNotePath, formatCaptureLine, readAllStdin, selectConnections } from "./commands-note.js";
+
+describe("readAllStdin — SB-2: capture a thought piped through stdin (clipboard / pipe)", () => {
+  it("concatenates string chunks from a pipe", async () => {
+    expect(await readAllStdin(Readable.from(["buy milk ", "after the dentist"]))).toBe("buy milk after the dentist");
+  });
+
+  it("concatenates Buffer chunks (binary-safe)", async () => {
+    expect(await readAllStdin(Readable.from([Buffer.from("a"), Buffer.from("b")]))).toBe("ab");
+  });
+
+  it("preserves newlines (formatCaptureLine collapses them later)", async () => {
+    expect(await readAllStdin(Readable.from(["line one\nline two"]))).toBe("line one\nline two");
+  });
+
+  it("an empty pipe yields '' (caller then reports nothing to capture)", async () => {
+    expect(await readAllStdin(Readable.from([]))).toBe("");
+  });
+
+  it("is fail-soft: a stream that errors mid-read yields '' rather than throwing into capture", async () => {
+    const boom = Readable.from((async function* () {
+      yield "partial";
+      throw new Error("stream broke");
+    })());
+    expect(await readAllStdin(boom)).toBe("");
+  });
+
+  it("a piped clipboard snippet round-trips into a single capture bullet", () => {
+    // The end-to-end shape: stdin text → formatCaptureLine collapses to one bullet.
+    const piped = "  remember:\n  the Acme renewal is due Friday  ";
+    expect(formatCaptureLine(piped, new Date("2026-05-27T14:05:00"))).toBe("- 14:05 remember: the Acme renewal is due Friday");
+  });
+});
 
 describe("selectConnections — SB-3: proactively connect a fresh capture to past knowledge", () => {
   const hits = [

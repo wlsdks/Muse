@@ -33,6 +33,25 @@ export function formatCaptureLine(text: string, now: Date): string {
   return `- ${pad(now.getHours())}:${pad(now.getMinutes())} ${text.replace(/\s+/gu, " ").trim()}`;
 }
 
+/**
+ * Read all of a piped stdin into a string so a thought can be captured from a
+ * pipe with zero ceremony — `pbpaste | muse note` (clipboard), `echo … | muse
+ * note`, or any command's output into the second brain. Fail-soft: an empty or
+ * errored stream resolves to `""` (the caller then reports "nothing to
+ * capture" rather than crashing).
+ */
+export async function readAllStdin(stream: NodeJS.ReadableStream): Promise<string> {
+  const chunks: Buffer[] = [];
+  try {
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    }
+  } catch {
+    return "";
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 function notesIndexPath(): string {
   return join(homedir(), ".muse", "notes-index.json");
 }
@@ -80,13 +99,18 @@ async function findConnections(captureText: string, embedModel: string): Promise
 export function registerNoteCommand(program: Command, io: ProgramIO): void {
   program
     .command("note")
-    .description("Frictionless capture: append a one-line thought to today's inbox note and auto-index it")
-    .argument("<text...>", "The thought to capture, e.g. `muse note buy milk after the dentist`")
+    .description("Frictionless capture: append a one-line thought to today's inbox note and auto-index it (pass text or pipe via stdin, e.g. `pbpaste | muse note`)")
+    .argument("[text...]", "The thought to capture, e.g. `muse note buy milk after the dentist` — omit to read from a stdin pipe")
     .option("--embed-model <tag>", "Embedding model for the auto-index", "nomic-embed-text")
     .action(async (parts: string[], options: { readonly embedModel?: string }) => {
-      const text = parts.join(" ").trim();
+      const argText = parts.join(" ").trim();
+      // No inline text → read a piped stdin (clipboard/pipe capture). A TTY
+      // with no args is just an empty invocation, not a pipe to wait on.
+      const text = argText.length > 0
+        ? argText
+        : (process.stdin.isTTY ? "" : (await readAllStdin(process.stdin)).trim());
       if (text.length === 0) {
-        io.stderr("muse note: nothing to capture\n");
+        io.stderr("muse note: nothing to capture (pass text or pipe it via stdin)\n");
         process.exitCode = 1;
         return;
       }
