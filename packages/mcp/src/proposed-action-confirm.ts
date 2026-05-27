@@ -7,7 +7,7 @@
  */
 
 import { appendActionLog } from "./personal-action-log-store.js";
-import { patchProposedActionStatus, readProposedActions } from "./personal-proposed-action-store.js";
+import { isProposalActionable, patchProposedActionStatus, readProposedActions } from "./personal-proposed-action-store.js";
 
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
@@ -37,6 +37,10 @@ export async function confirmProposedAction(options: ConfirmProposedActionOption
   }
   if (proposal.status !== "pending") {
     return { executed: false, reason: `already ${proposal.status}` };
+  }
+  if (!isProposalActionable(proposal, now())) {
+    // Past its expiry — outbound-safety: a timed-out approval never sends.
+    return { executed: false, reason: "expired" };
   }
   const whenIso = now().toISOString();
   try {

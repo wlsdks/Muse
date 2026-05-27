@@ -6,7 +6,7 @@ import { MessagingProviderRegistry, type MessagingProvider, type OutboundMessage
 import { describe, expect, it } from "vitest";
 
 import { queryActionLog } from "../src/personal-action-log-store.js";
-import { proposeMessageAction, readProposedActions } from "../src/personal-proposed-action-store.js";
+import { isProposalActionable, proposeMessageAction, readProposedActions } from "../src/personal-proposed-action-store.js";
 import { confirmProposedAction, declineProposedAction } from "../src/proposed-action-confirm.js";
 
 function capturing(sent: OutboundMessage[]): MessagingProvider {
@@ -82,6 +82,27 @@ describe("proposed actions — draft-first, confirm-to-execute (outbound-safety)
     const after = await confirmProposedAction({ actionLogFile, file, id: proposal.id, registry });
     expect(after).toMatchObject({ executed: false });
     expect(sent).toHaveLength(0);
+  });
+
+  it("an expired proposal is inert: not actionable, and confirm refuses without sending", async () => {
+    const { actionLogFile, file } = paths();
+    // ttl 1ms + a now() in the past → already expired by the time we confirm.
+    const proposal = await proposeMessageAction(file, { ...draft, now: () => new Date(Date.now() - 60_000), ttlMs: 1 });
+    expect(isProposalActionable(proposal, new Date())).toBe(false);
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturing(sent)]);
+
+    const res = await confirmProposedAction({ actionLogFile, file, id: proposal.id, registry });
+    expect(res).toMatchObject({ executed: false, reason: "expired" });
+    expect(sent).toHaveLength(0);
+    expect((await readProposedActions(file))[0]!.status).toBe("pending"); // unchanged, just inert
+  });
+
+  it("a fresh proposal is actionable within its TTL", async () => {
+    const { file } = paths();
+    const proposal = await proposeMessageAction(file, draft);
+    expect(typeof proposal.expiresAt).toBe("string");
+    expect(isProposalActionable(proposal, new Date())).toBe(true);
   });
 
   it("a send failure leaves the proposal pending (retryable) and logs failed", async () => {

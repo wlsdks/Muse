@@ -87,8 +87,14 @@ JARVIS frontier — "acting" — done strictly per `outbound-safety.md`.
   it when `MUSE_OBJECTIVES_PROPOSE` is set (default off → unchanged
   auto-send). Proven: `muse daemon --once` with propose-mode + a met
   objective creates a pending proposed action and sends NOTHING —
-  `apps/cli/src/commands-daemon.test.ts`. **P31 complete: the full
+  `apps/cli/src/commands-daemon.test.ts`. **The full
   perceive→propose→confirm→act loop, with no autonomous send.**
+- [x] **P31-3 Proposals expire (timeout → no send).** Each proposal
+  carries an `expiresAt` (default 24h); past it it's inert —
+  `isProposalActionable` is false, `muse propose list` omits it, and
+  `confirm` refuses `"expired"` without sending. Closes
+  outbound-safety's "approval times out → the action does not happen"
+  for the propose flow — `packages/mcp/test/proposed-action.test.ts`.
 
 ## Delivered — P30 (make the daemon debuggable)
 

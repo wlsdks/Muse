@@ -10,7 +10,7 @@
  */
 
 import { buildMessagingRegistry, resolveActionLogFile } from "@muse/autoconfigure";
-import { confirmProposedAction, declineProposedAction, readProposedActions } from "@muse/mcp";
+import { confirmProposedAction, declineProposedAction, isProposalActionable, readProposedActions } from "@muse/mcp";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -43,7 +43,8 @@ export function registerProposeCommands(program: Command, io: ProgramIO, helpers
     .description("List proposed actions awaiting your confirmation")
     .action(async () => {
       const file = resolveProposedActionsFile(env());
-      const pending = (await readProposedActions(file)).filter((p) => p.status === "pending");
+      const nowAt = new Date();
+      const pending = (await readProposedActions(file)).filter((p) => isProposalActionable(p, nowAt));
       if (pending.length === 0) {
         io.stdout("No proposed actions awaiting confirmation.\n");
         return;

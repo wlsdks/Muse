@@ -415,6 +415,7 @@ export {
   type StandingObjective
 } from "./personal-objectives-store.js";
 export {
+  isProposalActionable,
   patchProposedActionStatus,
   proposeMessageAction,
   readProposedActions,

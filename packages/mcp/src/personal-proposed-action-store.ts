@@ -34,8 +34,28 @@ export interface ProposedAction {
   readonly destination: string;
   readonly text: string;
   readonly status: ProposedActionStatus;
+  /**
+   * ISO timestamp after which the proposal may no longer be confirmed
+   * — outbound-safety's "approval times out → the action does not
+   * happen". Absent = no expiry (back-compatible with older entries).
+   */
+  readonly expiresAt?: string;
   /** ISO timestamp the proposal was executed / declined. */
   readonly resolvedAt?: string;
+}
+
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A proposal is actionable only while it is still `pending` AND not yet
+ * past its `expiresAt`. An expired proposal is inert — it can neither
+ * be listed as awaiting confirmation nor executed.
+ */
+export function isProposalActionable(proposal: ProposedAction, now: Date): boolean {
+  if (proposal.status !== "pending") return false;
+  if (proposal.expiresAt === undefined) return true;
+  const expiry = Date.parse(proposal.expiresAt);
+  return Number.isNaN(expiry) || now.getTime() <= expiry;
 }
 
 function isProposedAction(value: unknown): value is ProposedAction {
@@ -112,14 +132,20 @@ export async function proposeMessageAction(
     readonly providerId: string;
     readonly destination: string;
     readonly text: string;
+    readonly ttlMs?: number;
     readonly now?: () => Date;
   }
 ): Promise<ProposedAction> {
   const now = input.now ?? (() => new Date());
-  const createdAt = now().toISOString();
+  const at = now();
+  const createdAt = at.toISOString();
+  const ttlMs = typeof input.ttlMs === "number" && Number.isFinite(input.ttlMs) && input.ttlMs > 0
+    ? input.ttlMs
+    : DEFAULT_TTL_MS;
   const proposal: ProposedAction = {
     createdAt,
     destination: input.destination,
+    expiresAt: new Date(at.getTime() + ttlMs).toISOString(),
     id: `prop_${Date.parse(createdAt).toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     kind: "message",
     providerId: input.providerId,
