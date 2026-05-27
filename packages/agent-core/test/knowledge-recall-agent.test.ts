@@ -72,7 +72,9 @@ describe("rankKnowledgeChunks", () => {
     const plain = await rankKnowledgeChunks("x y z", corpus, { embed: termEmbed, topK: 2 });
     expect(plain.map((m) => m.source)).toEqual(["dupeA.md", "dupeB.md"]);
 
-    const diverse = await rankKnowledgeChunks("x y z", corpus, { diversify: true, embed: termEmbed, mmrLambda: 0.5, topK: 2 });
+    // No explicit mmrLambda → pins the default (0.5), which live
+    // measurement showed is needed to drop a real near-duplicate.
+    const diverse = await rankKnowledgeChunks("x y z", corpus, { diversify: true, embed: termEmbed, topK: 2 });
     expect(diverse.map((m) => m.source)).toContain("distinct.md");
     expect(diverse.map((m) => m.source)).not.toContain("dupeB.md");
   });

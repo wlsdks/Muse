@@ -616,3 +616,9 @@ Append one line when a discovery path is evaluated and deferred:
   recalled the exact-token chunk AND ranked it first under
   nomic-embed-text + hybrid RRF. Engine (P23-1) + corpus wiring (P23-2)
   compose; no drift, no bullet reopened.
+- MMR live paraphrase-dedup reliability — iter 10a05881..HEAD —
+  deferred: live nomic-embed jitter flips the thin MMR margin
+  run-to-run, so real-paraphrase dedup is not reliably deterministic;
+  MMR kept as a best-effort diversity nudge (deterministic on exact
+  duplicates). Reliable paraphrase-dedup would need a cosine-threshold
+  near-dup collapse, not MMR — not pursued (low value vs. complexity).
