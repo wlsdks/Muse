@@ -237,3 +237,77 @@ describe("muse listen --wake — a transient STT failure on the follow-up prompt
     expect(recCalls).toBe(3);
   });
 });
+
+describe("muse listen --wake — the core wake-word contract", () => {
+  const WAV = Buffer.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3]);
+  function fakeRec(): ChildProcess {
+    const rec = new EventEmitter() as EventEmitter & { stdout: EventEmitter; kill: (s?: string) => void };
+    rec.stdout = new EventEmitter();
+    rec.kill = () => {};
+    setImmediate(() => { rec.stdout.emit("data", WAV); rec.emit("close"); });
+    return rec as unknown as ChildProcess;
+  }
+  const ttsProvider = {
+    describe: () => ({ description: "", displayName: "t", id: "t", local: true, supportedFormats: ["mp3"] }),
+    id: "t",
+    synthesize: async () => ({ audio: new Uint8Array([1]), format: "mp3" })
+  } as unknown as TextToSpeechProvider;
+
+  it("sends the RESIDUAL (not the wake word) to the agent when the phrase is spoken inline", async () => {
+    let recCalls = 0;
+    let sttCalls = 0;
+    const seen: { message?: unknown } = {};
+    const io = { stderr: () => {}, stdout: () => {} };
+    const sttProvider = {
+      describe: () => ({ description: "", displayName: "s", id: "s", local: true, supportedFormats: ["audio/wav"] }),
+      id: "s",
+      transcribe: async () => { sttCalls += 1; return { text: "muse what time is it" }; }
+    } as unknown as SpeechToTextProvider;
+    const helpers: ListenHelpers = {
+      apiRequest: async (_io, _cmd, _path, body) => { seen.message = (body ?? {}).message; return { content: "It's 3pm." }; },
+      buildVoiceProviders: () => ({ stt: sttProvider, tts: ttsProvider }),
+      shells: {
+        playAudio: async () => {},
+        // capture#1 = the wake clip; the 2nd capture throws to end the loop
+        // cleanly after the single wake turn.
+        spawnRec: () => { recCalls += 1; if (recCalls >= 2) throw new Error("stop"); return fakeRec(); },
+        waitForEnter: async () => {},
+        which: (bin: string) => (bin === "sox" ? "/usr/bin/sox" : undefined)
+      }
+    };
+    const program = new Command();
+    registerListenCommand(program, io, helpers);
+    await program.parseAsync(["node", "muse", "listen", "--wake", "muse", "--clip-seconds", "2"]);
+    // Residual reached the agent — the wake word itself is stripped.
+    expect(seen.message).toBe("what time is it");
+    // No follow-up clip was needed (the residual was inline) → exactly one STT.
+    expect(sttCalls).toBe(1);
+  });
+
+  it("ignores an utterance that does NOT contain the wake phrase — the agent is never called", async () => {
+    let recCalls = 0;
+    let chatCalled = false;
+    const io = { stderr: () => {}, stdout: () => {} };
+    const sttProvider = {
+      describe: () => ({ description: "", displayName: "s", id: "s", local: true, supportedFormats: ["audio/wav"] }),
+      id: "s",
+      transcribe: async () => ({ text: "what time is it" })  // no wake phrase
+    } as unknown as SpeechToTextProvider;
+    const helpers: ListenHelpers = {
+      apiRequest: async () => { chatCalled = true; return { content: "should not reach" }; },
+      buildVoiceProviders: () => ({ stt: sttProvider, tts: ttsProvider }),
+      shells: {
+        playAudio: async () => {},
+        // capture#1 = the non-wake clip (ignored → loop continues); capture#2
+        // throws to end the loop.
+        spawnRec: () => { recCalls += 1; if (recCalls >= 2) throw new Error("stop"); return fakeRec(); },
+        waitForEnter: async () => {},
+        which: (bin: string) => (bin === "sox" ? "/usr/bin/sox" : undefined)
+      }
+    };
+    const program = new Command();
+    registerListenCommand(program, io, helpers);
+    await program.parseAsync(["node", "muse", "listen", "--wake", "muse", "--clip-seconds", "2"]);
+    expect(chatCalled, "an unaddressed utterance must never reach the agent").toBe(false);
+  });
+});
