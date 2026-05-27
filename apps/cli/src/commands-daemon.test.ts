@@ -60,6 +60,7 @@ async function runDaemon(
 function tmpEnv(): NodeJS.ProcessEnv {
   const dir = mkdtempSync(join(tmpdir(), "muse-daemon-"));
   return {
+    MUSE_AMBIENT_FILE: join(dir, "ambient.json"),
     MUSE_FOLLOWUPS_FILE: join(dir, "followups.json"),
     MUSE_PROACTIVE_HISTORY_FILE: join(dir, "history.json"),
     MUSE_PROACTIVE_SIDECAR_FILE: join(dir, "fired.json"),
@@ -122,6 +123,35 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(res.stdout).toMatch(/followup: fired 1\/1 due/);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain("Q3 memo");
+  });
+
+  it("--once delivers a matching AMBIENT rule through the same launcher + sink", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_AMBIENT_RULES: JSON.stringify([
+      { id: "focus_slack", title: "Heads up", message: "You're in Slack", match: { app: "Slack" } }
+    ]) };
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    writeFileSync(env.MUSE_AMBIENT_FILE!, JSON.stringify({ app: "Slack", window: "general" }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toMatch(/ambient: delivered 1/);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("You're in Slack");
+  });
+
+  it("ambient tick is skipped when no rules are configured (hermetic default)", async () => {
+    const env = tmpEnv();
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.stdout).toContain("ambient: skipped (no rules)");
+    expect(sent).toHaveLength(0);
   });
 
   it("an unknown provider fails closed — exits non-zero and sends nothing", async () => {

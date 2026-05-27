@@ -80,8 +80,13 @@ prove startup→delivery end-to-end. Pick the highest undone bullet.
   DUE followup is synthesized + delivered to a contract-faithful sink
   (proactive-only cases stay hermetic; followups skip cleanly when no
   model resolves) — see `apps/cli/src/commands-daemon.test.ts`.
-- [ ] **P22-1c remaining ticks + SIGINT smoke.** Fold the objectives,
-  ambient, and web-watch ticks into the same `muse daemon` process,
+- [x] **P22-1c ambient tick folded into the launcher.** `muse daemon
+  --once` now also runs the rule-based ambient perception tick; a
+  matching ambient rule delivers a notice to a contract-faithful sink
+  (skipped cleanly when no `MUSE_AMBIENT_RULES` configured) — see
+  `apps/cli/src/commands-daemon.test.ts`.
+- [ ] **P22-1d objectives + web-watch ticks + SIGINT smoke.** Fold the
+  objectives and web-watch ticks into the same `muse daemon` process,
   and prove the foreground loop stops cleanly. Check: CLI smoke — each
   ENABLED tick fires once against a contract-faithful sink, a DISABLED
   tick is skipped, SIGINT exits 0.

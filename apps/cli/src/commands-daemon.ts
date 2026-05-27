@@ -21,7 +21,14 @@ import {
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { MessagingProviderRegistry } from "@muse/messaging";
-import { runDueFollowups, runDueProactiveNotices } from "@muse/mcp";
+import {
+  createAmbientNoticeRunner,
+  FileAmbientSignalSource,
+  parseAmbientNoticeRules,
+  runDueFollowups,
+  runDueProactiveNotices,
+  type AmbientNoticeRunner
+} from "@muse/mcp";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -112,6 +119,36 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const followupsFile = resolveFollowupsFile(e);
       const followupModel = await (helpers.resolveFollowupModel ?? defaultFollowupModel)(e);
 
+      // Ambient perception is rule-based (no model). Active only when
+      // MUSE_AMBIENT_RULES is configured; otherwise the tick is skipped.
+      const ambientRaw = e.MUSE_AMBIENT_RULES?.trim();
+      let ambientRunner: AmbientNoticeRunner | undefined;
+      if (ambientRaw) {
+        let ambientRules: ReturnType<typeof parseAmbientNoticeRules>;
+        try {
+          ambientRules = parseAmbientNoticeRules(ambientRaw);
+        } catch {
+          ambientRules = [];
+        }
+        if (ambientRules.length > 0) {
+          const ambientFile = e.MUSE_AMBIENT_FILE?.trim()?.length
+            ? e.MUSE_AMBIENT_FILE.trim()
+            : join(homedir(), ".muse", "ambient.json");
+          ambientRunner = createAmbientNoticeRunner({
+            rules: ambientRules,
+            sink: {
+              deliver: async (notice) => {
+                await messagingRegistry.send(provider, {
+                  destination,
+                  text: `${notice.title}: ${notice.text}`
+                });
+              }
+            },
+            source: new FileAmbientSignalSource(ambientFile)
+          });
+        }
+      }
+
       const proactiveTick = async (): Promise<void> => {
         const summary = await runDueProactiveNotices({
           ...(calendarRegistry.list().length > 0 ? { calendarRegistry } : {}),
@@ -158,9 +195,19 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout("\n");
       };
 
+      const ambientTick = async (): Promise<void> => {
+        if (!ambientRunner) {
+          io.stdout(`[${new Date().toISOString()}] ambient: skipped (no rules)\n`);
+          return;
+        }
+        const summary = await ambientRunner.tick();
+        io.stdout(`[${new Date().toISOString()}] ambient: delivered ${summary.delivered.toString()}\n`);
+      };
+
       const runTick = async (): Promise<void> => {
         await proactiveTick();
         await followupTick();
+        await ambientTick();
       };
 
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);
