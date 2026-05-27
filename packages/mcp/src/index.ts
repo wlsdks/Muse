@@ -415,6 +415,22 @@ export {
   type StandingObjective
 } from "./personal-objectives-store.js";
 export {
+  patchProposedActionStatus,
+  proposeMessageAction,
+  readProposedActions,
+  writeProposedActions,
+  type ProposedAction,
+  type ProposedActionKind,
+  type ProposedActionStatus
+} from "./personal-proposed-action-store.js";
+export {
+  confirmProposedAction,
+  declineProposedAction,
+  type ConfirmOutcome,
+  type ConfirmProposedActionOptions,
+  type DeclineProposedActionOptions
+} from "./proposed-action-confirm.js";
+export {
   runDueObjectives,
   type ObjectiveEvaluation,
   type RunDueObjectivesOptions,

@@ -64,9 +64,34 @@ turn; never half-shipped.
 
 ## Active target
 
-**P30 — Make the daemon debuggable.** When a tick "isn't firing," the
-user needs to see WHY — which files it reads, what's enabled — without
-reading source.
+**P31 — Muse acts on the world (gated, draft-first).** Close the
+perceive→propose→confirm→act loop: an autonomous trigger PROPOSES a
+state-changing action; nothing leaves until the user confirms it. The
+JARVIS frontier — "acting" — done strictly per `outbound-safety.md`.
+
+- [x] **P31-1 Proposed-action confirm-to-execute (engine + `muse
+  propose`).** A `proposed-action` store + `proposeMessageAction`
+  (persists `pending`, sends NOTHING) + `confirmProposedAction`
+  (executes once, replay-guarded on status, logs `performed`) +
+  `declineProposedAction` (`declined` + logs `refused`), surfaced as
+  `muse propose list | approve <id> | decline <id>`. A send failure
+  leaves it `pending` (retryable, logged `failed`). Proven by
+  contract-faithful smokes: `packages/mcp/test/proposed-action.test.ts`
+  (propose→pending+no send; approve→1 send+executed+performed log;
+  re-approve→no double-send; decline→no send+refused; failure→pending)
+  and `apps/cli/src/commands-propose.test.ts` (list/approve/decline
+  surface). No autonomous send anywhere.
+- [ ] **P31-2 Producer: the daemon proposes.** Wire a daemon/objective
+  trigger to call `proposeMessageAction` when it detects something
+  actionable (e.g. a calendar conflict → propose a reschedule note), so
+  proposals actually arrive for the user to confirm. Check: a daemon
+  tick over a contract-faithful fixture creates a pending proposal
+  (and still sends nothing until confirmed).
+
+## Delivered — P30 (make the daemon debuggable)
+
+`muse daemon --status` reports resolved source paths + launchd
+autostart state. Audited PASS (README ledger, `P30 audit`).
 
 - [x] **P30-1 `muse daemon --status` shows the resolved source paths.**
   Beyond the per-tick enabled/disabled lines, `--status` now prints the
