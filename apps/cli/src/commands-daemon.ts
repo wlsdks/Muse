@@ -29,6 +29,7 @@ import {
   createMessagingObjectiveActuator,
   createModelObjectiveEvaluator,
   createWebWatchRunner,
+  deriveBriefingImminent,
   FileAmbientSignalSource,
   homeWatchesFromConfig,
   MacOsActiveWindowSource,
@@ -37,6 +38,7 @@ import {
   runDueObjectives,
   runDueProactiveNotices,
   runDueReminders,
+  runDueSituationalBriefing,
   webWatchesFromConfig,
   CHROME_DEVTOOLS_MCP_SERVER_NAME,
   type AmbientNoticeRunner,
@@ -415,6 +417,10 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         }
       };
 
+      // Shared knowledge enricher (ambient "Related" line + briefing
+      // related-note) — resolved once, reused by both ticks.
+      const knowledgeEnrich = helpers.knowledgeEnrich ?? await defaultKnowledgeEnrich(e);
+
       // Ambient perception is rule-based (no model). Active only when
       // MUSE_AMBIENT_RULES is configured; otherwise the tick is skipped.
       const ambientRaw = e.MUSE_AMBIENT_RULES?.trim();
@@ -445,12 +451,11 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
               : join(homedir(), ".muse", "ambient.json");
             ambientSource = new FileAmbientSignalSource(ambientFile);
           }
-          const enrich = helpers.knowledgeEnrich ?? await defaultKnowledgeEnrich(e);
           ambientRunner = createAmbientNoticeRunner({
             rules: ambientRules,
             sink: noticeSink,
             source: ambientSource,
-            ...(enrich ? { enrich } : {})
+            ...(knowledgeEnrich ? { enrich: knowledgeEnrich } : {})
           });
         }
       }
@@ -507,6 +512,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  web-watch:  ${webWatchRunner ? "enabled" : "disabled (set MUSE_WEB_WATCH_CONFIG)"}\n`);
         io.stdout(`  home-watch: ${homeWatchRunner ? "enabled" : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
+        io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
         return;
       }
 
@@ -623,6 +629,34 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`[${new Date().toISOString()}] home-watch: delivered ${summary.delivered.toString()}\n`);
       };
 
+      // Situational briefing — a periodic digest (objective status +
+      // imminent tasks + a related note), self-deduped by its sidecar
+      // (default 4h window). Opt-in via MUSE_BRIEFING_ENABLED.
+      const briefingTick = async (): Promise<void> => {
+        if (!parseBoolean(e.MUSE_BRIEFING_ENABLED, false)) {
+          io.stdout(`[${new Date().toISOString()}] briefing: skipped (set MUSE_BRIEFING_ENABLED)\n`);
+          return;
+        }
+        const now = new Date();
+        let imminent: Awaited<ReturnType<typeof deriveBriefingImminent>> = [];
+        try {
+          imminent = await deriveBriefingImminent(tasksFile, { leadMinutes, now });
+        } catch { /* fail-soft — brief objective status only */ }
+        const summary = await runDueSituationalBriefing({
+          destination,
+          imminent,
+          messagingRegistry,
+          now: () => now,
+          objectivesFile,
+          providerId: provider,
+          sidecarFile: e.MUSE_BRIEFING_SIDECAR_FILE?.trim()?.length
+            ? e.MUSE_BRIEFING_SIDECAR_FILE.trim()
+            : join(homedir(), ".muse", "briefing-fired.json"),
+          ...(knowledgeEnrich ? { relatedKnowledge: knowledgeEnrich } : {})
+        });
+        io.stdout(`[${now.toISOString()}] briefing: ${summary.delivered > 0 ? "delivered" : "quiet (deduped or nothing to say)"}\n`);
+      };
+
       const runTick = async (): Promise<void> => {
         await proactiveTick();
         await remindersTick();
@@ -631,6 +665,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await webWatchTick();
         await objectivesTick();
         await homeWatchTick();
+        await briefingTick();
       };
 
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);

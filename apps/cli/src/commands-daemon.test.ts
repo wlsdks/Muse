@@ -76,6 +76,7 @@ function tmpEnv(): NodeJS.ProcessEnv {
   const dir = mkdtempSync(join(tmpdir(), "muse-daemon-"));
   return {
     MUSE_AMBIENT_FILE: join(dir, "ambient.json"),
+    MUSE_BRIEFING_SIDECAR_FILE: join(dir, "briefing-fired.json"),
     MUSE_DAEMON_CONFIG_FILE: join(dir, "daemon.json"),
     MUSE_FOLLOWUPS_FILE: join(dir, "followups.json"),
     MUSE_OBJECTIVES_FILE: join(dir, "objectives.json"),
@@ -507,6 +508,35 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     if (process.platform === "darwin") {
       expect(() => execFileSync("plutil", ["-lint", plistFile], { encoding: "utf8" })).not.toThrow();
     }
+  });
+
+  it("--once delivers a situational briefing when MUSE_BRIEFING_ENABLED and something is imminent", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_BRIEFING_ENABLED: "true" };
+    const dueSoon = new Date(Date.now() + 5 * 60_000).toISOString();
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({
+      tasks: [{ id: "t1", title: "Submit the Q3 report", status: "open", dueAt: dueSoon, createdAt: "2026-01-01T00:00:00Z" }]
+    }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toMatch(/briefing: delivered/);
+    // proactive notice + the briefing digest both went out
+    expect(sent.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("briefing tick is skipped when MUSE_BRIEFING_ENABLED is unset (hermetic default)", async () => {
+    const env = tmpEnv();
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.stdout).toContain("briefing: skipped");
+    expect(sent).toHaveLength(0);
   });
 
   it("an unknown provider fails closed — exits non-zero and sends nothing", async () => {

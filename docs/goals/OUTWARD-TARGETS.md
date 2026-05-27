@@ -64,10 +64,31 @@ turn; never half-shipped.
 
 ## Active target
 
-**P26 — Widen the daemon's perception reach.** `muse daemon` runs the
-proactive/followup/ambient/web-watch/objectives ticks; bring the
-remaining proven perception sources into the same one-process launcher
-so the user's resident Muse perceives more of their world.
+**P27 — The daily briefing runs in the resident daemon.** The
+situational briefing (objective status + imminent tasks + a related
+note) was an `apps/api`-only daemon; bring it into `muse daemon` so the
+user's resident Muse delivers the digest too — the flagship "here's
+your day" JARVIS moment.
+
+- [x] **P27-1 Briefing tick in the launcher.** `muse daemon` runs the
+  situational briefing (opt-in `MUSE_BRIEFING_ENABLED`), composing
+  `runDueSituationalBriefing` over objectives + tasks-derived imminent
+  (`deriveBriefingImminent`) + the shared knowledge enricher, self-
+  deduped by its sidecar (default 4h window). Proven by a
+  contract-faithful CLI smoke (an imminent task ⇒ a brief delivered;
+  skipped without the flag) and surfaced in `--status` — see
+  `apps/cli/src/commands-daemon.test.ts`. No model required — the brief
+  composes deterministically from structured data.
+- [ ] **P27-2 Briefing covers calendar + birthdays.** Extend the
+  daemon brief's imminent to calendar events (`deriveCalendarBriefingImminent`)
+  and add the birthday line from contacts, matching the apps/api brief.
+  Check: a calendar event + an upcoming birthday appear in the brief.
+
+## Delivered — P26 (widen the daemon's perception reach)
+
+Brought home-watch (HA entity states, read-only) + the due-reminders
+tick into `muse daemon` — 7 ticks in one process. Audited PASS
+(README ledger, `P26 audit`).
 
 - [x] **P26-1 Home Assistant entity-state watch in the launcher.** The
   daemon runs a read-only home-watch tick (HA entity states via
