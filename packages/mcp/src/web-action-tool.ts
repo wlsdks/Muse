@@ -25,7 +25,7 @@ export function createWebActionTool(deps: WebActionToolDeps): MuseTool {
   return {
     definition: {
       description:
-        "Perform a state-changing web request (submit a form, book) to a third party. The user must confirm the exact action before anything is sent; absent confirmation nothing fires. Not for payments or money movement.",
+        "Perform a state-changing action on a web page on the user's behalf — submit a form, post a comment or reply, RSVP, reserve or book, apply or sign up. Use when the user asks to DO something on a website that changes state there (e.g. 'post a comment on the thread', 'RSVP yes', 'reserve a table'). The user must confirm the exact action before anything is sent; absent confirmation nothing fires. Do not use to READ a page, and not for payments or money movement.",
       domain: "system",
       inputSchema: {
         additionalProperties: false,
