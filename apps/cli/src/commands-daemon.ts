@@ -36,6 +36,7 @@ import {
   runDueProactiveNotices,
   webWatchesFromConfig,
   type AmbientNoticeRunner,
+  type ChromeSnapshotConnection,
   type ProactiveNoticeSink,
   type WebWatchRunner
 } from "@muse/mcp";
@@ -70,6 +71,12 @@ export interface DaemonHelpers {
   readonly fetchImpl?: typeof globalThis.fetch;
   /** Test seam — inject the osascript runner for the macOS ambient source. */
   readonly ambientMacosRun?: (script: string) => Promise<string | undefined>;
+  /**
+   * Chrome DevTools MCP connection for `source:"chrome"` web-watches.
+   * Without one, chrome-source watches are skipped (fail-soft) and the
+   * daemon stays up. Tests inject a contract-faithful fake.
+   */
+  readonly chromeConnection?: ChromeSnapshotConnection;
 }
 
 // Followups REQUIRE a model to synthesize their message. The real
@@ -256,10 +263,10 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const webWatchRaw = e.MUSE_WEB_WATCH_CONFIG?.trim();
       let webWatchRunner: WebWatchRunner | undefined;
       if (webWatchRaw) {
-        const watches = webWatchesFromConfig(
-          webWatchRaw,
-          helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {}
-        );
+        const watches = webWatchesFromConfig(webWatchRaw, {
+          ...(helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {}),
+          ...(helpers.chromeConnection ? { chromeConnection: helpers.chromeConnection } : {})
+        });
         if (watches.length > 0) {
           webWatchRunner = createWebWatchRunner({ sink: noticeSink, watches });
         }

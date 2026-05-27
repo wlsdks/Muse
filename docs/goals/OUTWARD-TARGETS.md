@@ -109,12 +109,17 @@ prove startup→delivery end-to-end. Pick the highest undone bullet.
   osascript signal (`"Slack\ngeneral"`) drives exactly one notice on a
   matching rule through the real sink — see
   `apps/cli/src/commands-daemon.test.ts`.
-- [ ] **P22-3 Chrome connects at daemon startup + threads into
-  chrome-source web-watches** (the P21 follow-on). Check:
-  integration — daemon startup establishes the Chrome DevTools MCP
-  connection (contract-faithful fake), a `source:"chrome"` watch
-  reuses it and edge-fires; if Chrome is unavailable the daemon
-  stays up and the watch fails-soft (no crash).
+- [x] **P22-3a chrome-source web-watch threading.** `muse daemon`
+  threads a `ChromeSnapshotConnection` into `webWatchesFromConfig`, so
+  a `source:"chrome"` watch reuses it and edge-fires; with NO
+  connection the chrome watch is skipped fail-soft and the daemon
+  stays up. Proven by a contract-faithful fake connection — see
+  `apps/cli/src/commands-daemon.test.ts`.
+- [ ] **P22-3b real Chrome connection at daemon startup.** Build the
+  Chrome DevTools MCP connection from the MCP stack (McpManager) at
+  `muse daemon` startup when enabled, so chrome-source watches work in
+  production (not just under an injected fake). Check: integration —
+  startup connect best-effort; Chrome-unavailable stays fail-soft.
 - [ ] **P22-4 One-shot config UX.** `muse daemon init` / `muse
   daemon status` write + validate the daemon config (provider,
   destination, ambient rules, watches) to the config path, removing

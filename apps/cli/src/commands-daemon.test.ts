@@ -31,7 +31,7 @@ function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonH
 
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"] }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"] }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -46,6 +46,7 @@ async function runDaemon(
       env: () => opts.env,
       ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
       ...(opts.ambientMacosRun ? { ambientMacosRun: opts.ambientMacosRun } : {}),
+      ...(opts.chromeConnection ? { chromeConnection: opts.chromeConnection } : {}),
       // Default: followup tick disabled (no model) so proactive cases stay hermetic.
       resolveFollowupModel: opts.resolveFollowupModel ?? (async () => undefined)
     });
@@ -192,6 +193,41 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(res.stdout).toMatch(/web-watch: delivered 1/);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain("sold out");
+  });
+
+  it("--once drives a source:chrome web-watch through an injected Chrome connection", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_WEB_WATCH_CONFIG: JSON.stringify([
+      { id: "w1", url: "https://orders.example/123", title: "Order", message: "Your order shipped", source: "chrome", rule: { appears: "SHIPPED" } }
+    ]) };
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+    // Contract-faithful Chrome DevTools MCP: navigate_page then take_snapshot returns the page text.
+    const chromeConnection: NonNullable<DaemonHelpers["chromeConnection"]> = {
+      callTool: async (toolName) => (toolName === "take_snapshot" ? "Order status: SHIPPED" : undefined)
+    };
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { chromeConnection, env, registry });
+
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toMatch(/web-watch: delivered 1/);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("order shipped");
+  });
+
+  it("a source:chrome watch with NO Chrome connection is skipped (fail-soft) — daemon stays up", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_WEB_WATCH_CONFIG: JSON.stringify([
+      { id: "w1", url: "https://orders.example/123", title: "Order", message: "Your order shipped", source: "chrome", rule: { appears: "SHIPPED" } }
+    ]) };
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toContain("web-watch: skipped (no config)");
+    expect(sent).toHaveLength(0);
   });
 
   it("web-watch tick is skipped when no config is set (hermetic default)", async () => {
