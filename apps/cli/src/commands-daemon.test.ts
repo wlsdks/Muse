@@ -2,11 +2,12 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Command } from "commander";
 import { MessagingProviderRegistry, type MessagingProvider, type OutboundMessage, type OutboundReceipt } from "@muse/messaging";
+import { writeFollowups } from "@muse/mcp";
+import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { registerDaemonCommands } from "./commands-daemon.js";
+import { registerDaemonCommands, type DaemonHelpers } from "./commands-daemon.js";
 
 function capturingProvider(sent: OutboundMessage[]): MessagingProvider {
   return {
@@ -19,9 +20,18 @@ function capturingProvider(sent: OutboundMessage[]): MessagingProvider {
   };
 }
 
+// A model that synthesizes a fixed followup message — the real
+// runtime assembly is never built, so the smoke is hermetic.
+function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonHelpers["resolveFollowupModel"]>>>> {
+  return {
+    model: "test-model",
+    modelProvider: { generate: async () => ({ output: "Quick check on the Q3 memo — any blockers?" }) } as never
+  };
+}
+
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"] }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -33,7 +43,9 @@ async function runDaemon(
     program.exitOverride();
     registerDaemonCommands(program, io, {
       buildMessagingRegistry: () => opts.registry,
-      env: () => opts.env
+      env: () => opts.env,
+      // Default: followup tick disabled (no model) so proactive cases stay hermetic.
+      resolveFollowupModel: opts.resolveFollowupModel ?? (async () => undefined)
     });
     await program.parseAsync(["node", "muse", "daemon", ...args]);
     exitCode = process.exitCode === undefined ? undefined : Number(process.exitCode);
@@ -48,13 +60,14 @@ async function runDaemon(
 function tmpEnv(): NodeJS.ProcessEnv {
   const dir = mkdtempSync(join(tmpdir(), "muse-daemon-"));
   return {
+    MUSE_FOLLOWUPS_FILE: join(dir, "followups.json"),
     MUSE_PROACTIVE_HISTORY_FILE: join(dir, "history.json"),
     MUSE_PROACTIVE_SIDECAR_FILE: join(dir, "fired.json"),
     MUSE_TASKS_FILE: join(dir, "tasks.json")
   };
 }
 
-describe("muse daemon — one-process launcher fires a real proactive tick", () => {
+describe("muse daemon — one-process launcher fires real ticks", () => {
   it("--once delivers an imminent task to the contract-faithful messaging sink", async () => {
     const env = tmpEnv();
     const dueSoon = new Date(Date.now() + 5 * 60_000).toISOString();
@@ -69,6 +82,7 @@ describe("muse daemon — one-process launcher fires a real proactive tick", () 
     expect(res.exitCode).toBeUndefined();
     expect(res.stdout).toContain("daemon --once complete");
     expect(res.stdout).toMatch(/proactive: fired 1\/1 imminent/);
+    expect(res.stdout).toContain("followup: skipped");
     expect(sent).toHaveLength(1);
     expect(sent[0]!.destination).toBe("555");
     expect(sent[0]!.text).toContain("Ship the memo");
@@ -88,6 +102,26 @@ describe("muse daemon — one-process launcher fires a real proactive tick", () 
     expect(res.exitCode).toBeUndefined();
     expect(res.stdout).toMatch(/proactive: fired 0\/0 imminent/);
     expect(sent).toHaveLength(0);
+  });
+
+  it("--once also fires a DUE followup through the same launcher + sink", async () => {
+    const env = tmpEnv();
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    await writeFollowups(env.MUSE_FOLLOWUPS_FILE!, [
+      { createdAt: "2026-01-01T00:00:00Z", id: "fu1", scheduledFor: "2026-01-02T00:00:00Z", status: "scheduled", summary: "Check the Q3 memo", userId: "stark" }
+    ]);
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(
+      ["--once", "--provider", "telegram", "--destination", "555"],
+      { env, registry, resolveFollowupModel: async () => fakeFollowupModel() }
+    );
+
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toMatch(/followup: fired 1\/1 due/);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("Q3 memo");
   });
 
   it("an unknown provider fails closed — exits non-zero and sends nothing", async () => {

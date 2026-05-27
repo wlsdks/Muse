@@ -16,17 +16,23 @@ import type { Command } from "commander";
 import {
   buildCalendarRegistry,
   buildMessagingRegistry,
+  resolveFollowupsFile,
   resolveProactiveHistoryFile,
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { MessagingProviderRegistry } from "@muse/messaging";
-import { runDueProactiveNotices } from "@muse/mcp";
+import { runDueFollowups, runDueProactiveNotices } from "@muse/mcp";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { closestCommandName } from "./closest-command.js";
 import { parseBoundedFlag } from "./commands-proactive.js";
 import type { ProgramIO } from "./program.js";
+
+type FollowupModel = {
+  readonly modelProvider: Parameters<typeof runDueFollowups>[0]["modelProvider"];
+  readonly model: string;
+};
 
 export interface DaemonHelpers {
   /** Test seam — defaults to `process.env`. */
@@ -37,6 +43,29 @@ export interface DaemonHelpers {
    * a capturing fake provider.
    */
   readonly buildMessagingRegistry?: (env: NodeJS.ProcessEnv) => MessagingProviderRegistry;
+  /**
+   * Test seam — fully resolve the model the followup tick synthesizes
+   * with, instead of building the runtime assembly (which reads the
+   * real env). Tests inject a fake model or `undefined` (skip).
+   */
+  readonly resolveFollowupModel?: (env: NodeJS.ProcessEnv) => Promise<FollowupModel | undefined>;
+}
+
+// Followups REQUIRE a model to synthesize their message. The real
+// daemon builds it from the runtime assembly (best-effort — if the
+// model can't be resolved, the followup tick is skipped, not fatal).
+async function defaultFollowupModel(_env: NodeJS.ProcessEnv): Promise<FollowupModel | undefined> {
+  try {
+    const { createMuseRuntimeAssembly } = await import("@muse/autoconfigure");
+    const assembly = createMuseRuntimeAssembly();
+    if (assembly.modelProvider && assembly.defaultModel) {
+      return {
+        model: assembly.defaultModel,
+        modelProvider: assembly.modelProvider as unknown as FollowupModel["modelProvider"]
+      };
+    }
+  } catch { /* fail-soft — followup tick skipped when no model */ }
+  return undefined;
 }
 
 export function registerDaemonCommands(program: Command, io: ProgramIO, helpers: DaemonHelpers = {}): void {
@@ -80,6 +109,8 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const sidecarFile = e.MUSE_PROACTIVE_SIDECAR_FILE?.trim()?.length
         ? e.MUSE_PROACTIVE_SIDECAR_FILE.trim()
         : join(homedir(), ".muse", "proactive-fired.json");
+      const followupsFile = resolveFollowupsFile(e);
+      const followupModel = await (helpers.resolveFollowupModel ?? defaultFollowupModel)(e);
 
       const proactiveTick = async (): Promise<void> => {
         const summary = await runDueProactiveNotices({
@@ -103,10 +134,39 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout("\n");
       };
 
+      const followupTick = async (): Promise<void> => {
+        if (!followupModel) {
+          io.stdout(`[${new Date().toISOString()}] followup: skipped (no model resolved)\n`);
+          return;
+        }
+        const summary = await runDueFollowups({
+          destination,
+          file: followupsFile,
+          model: followupModel.model,
+          modelProvider: followupModel.modelProvider,
+          providerId: provider,
+          registry: messagingRegistry
+        });
+        const tag = `[${new Date().toISOString()}]`;
+        io.stdout(`${tag} followup: fired ${summary.delivered.toString()}/${summary.due.toString()} due`);
+        if (summary.errors.length > 0) {
+          io.stdout(`, ${summary.errors.length.toString()} error(s)`);
+          for (const error of summary.errors) {
+            io.stdout(`\n  ! ${error}`);
+          }
+        }
+        io.stdout("\n");
+      };
+
+      const runTick = async (): Promise<void> => {
+        await proactiveTick();
+        await followupTick();
+      };
+
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);
 
       if (options.once) {
-        await proactiveTick();
+        await runTick();
         io.stdout("daemon --once complete\n");
         return;
       }
@@ -124,7 +184,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       io.stdout(`  running every ${interval.toString()} s — ctrl-c to stop\n`);
       while (!stopped) {
         try {
-          await proactiveTick();
+          await runTick();
         } catch (cause) {
           io.stderr(`tick error: ${cause instanceof Error ? cause.message : String(cause)}\n`);
         }

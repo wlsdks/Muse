@@ -75,11 +75,16 @@ prove startup→delivery end-to-end. Pick the highest undone bullet.
   task is delivered to a capturing messaging sink, a quiet tick sends
   nothing, an unknown provider fails closed (no send) — see
   `apps/cli/src/commands-daemon.test.ts`.
-- [ ] **P22-1b full multi-tick launcher.** The same `muse daemon`
-  process runs the remaining ticks (followup · objectives · ambient ·
-  web-watch) on a shared interval with SIGINT clean shutdown. Check:
-  CLI smoke — each ENABLED tick fires once against a contract-faithful
-  sink, a DISABLED tick is skipped, SIGINT stops the loop cleanly.
+- [x] **P22-1b followup tick folded into the launcher.** `muse daemon
+  --once` now runs the proactive AND followup ticks in one process; a
+  DUE followup is synthesized + delivered to a contract-faithful sink
+  (proactive-only cases stay hermetic; followups skip cleanly when no
+  model resolves) — see `apps/cli/src/commands-daemon.test.ts`.
+- [ ] **P22-1c remaining ticks + SIGINT smoke.** Fold the objectives,
+  ambient, and web-watch ticks into the same `muse daemon` process,
+  and prove the foreground loop stops cleanly. Check: CLI smoke — each
+  ENABLED tick fires once against a contract-faithful sink, a DISABLED
+  tick is skipped, SIGINT exits 0.
 - [ ] **P22-2 macOS active-window perception feeds the running
   daemon.** Wire `MacOsActiveWindowSource` into the launcher so a
   real OS signal drives a proactive notice on a tick. Check:
