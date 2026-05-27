@@ -540,6 +540,14 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  home-watch: ${homeWatchRunner ? "enabled" : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
+        // The resolved source paths — the first thing to check when a
+        // tick "isn't firing": is it reading the file you think it is?
+        io.stdout(`sources:\n`);
+        io.stdout(`  config:     ${configFile}\n`);
+        io.stdout(`  tasks:      ${tasksFile}\n`);
+        io.stdout(`  reminders:  ${remindersFile}\n`);
+        io.stdout(`  followups:  ${followupsFile}\n`);
+        io.stdout(`  objectives: ${objectivesFile}\n`);
         return;
       }
 

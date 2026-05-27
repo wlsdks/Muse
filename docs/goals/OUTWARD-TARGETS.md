@@ -64,9 +64,21 @@ turn; never half-shipped.
 
 ## Active target
 
-**P29 — Watch the resident daemon work.** A user running `muse daemon`
-in the foreground should see what it's doing, not just trust the
-channel — Presence/observability for the always-on process.
+**P30 — Make the daemon debuggable.** When a tick "isn't firing," the
+user needs to see WHY — which files it reads, what's enabled — without
+reading source.
+
+- [x] **P30-1 `muse daemon --status` shows the resolved source paths.**
+  Beyond the per-tick enabled/disabled lines, `--status` now prints the
+  resolved config/tasks/reminders/followups/objectives file paths — the
+  first thing to check when a tick reads a different file than the user
+  thinks. Proven: `--status` output contains the resolved task /
+  reminder / objective paths — see `apps/cli/src/commands-daemon.test.ts`.
+
+## Delivered — P29 (watch the resident daemon work)
+
+`muse daemon --print` echoes every delivered notice to stdout for
+foreground observability. Audited PASS (README ledger, `P29 audit`).
 
 - [x] **P29-1 `muse daemon --print` echoes deliveries to stdout.** A
   send-also-prints Proxy over the messaging registry echoes every

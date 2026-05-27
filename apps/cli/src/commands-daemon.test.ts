@@ -385,6 +385,20 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("--status reports the resolved source paths (debuggability)", async () => {
+    const env = tmpEnv();
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.stdout).toContain("sources:");
+    expect(res.stdout).toContain(env.MUSE_TASKS_FILE!);
+    expect(res.stdout).toContain(env.MUSE_REMINDERS_FILE!);
+    expect(res.stdout).toContain(env.MUSE_OBJECTIVES_FILE!);
+    expect(sent).toHaveLength(0);
+  });
+
   it("--status reports each tick enabled when its config is present", async () => {
     const env: NodeJS.ProcessEnv = { ...tmpEnv(),
       MUSE_AMBIENT_RULES: JSON.stringify([{ id: "r", title: "t", message: "m", match: { app: "X" } }]),
