@@ -64,10 +64,24 @@ turn; never half-shipped.
 
 ## Active target
 
-**P25 — Ambient context fusion (Perception × Knowledge).** When Muse
-notices what the user is looking at (ambient tick), enrich the notice
-with what the user ALREADY wrote about it — the JARVIS move of
-volunteering relevant context unasked.
+**P26 — Widen the daemon's perception reach.** `muse daemon` runs the
+proactive/followup/ambient/web-watch/objectives ticks; bring the
+remaining proven perception sources into the same one-process launcher
+so the user's resident Muse perceives more of their world.
+
+- [x] **P26-1 Home Assistant entity-state watch in the launcher.** The
+  daemon runs a read-only home-watch tick (HA entity states via
+  `homeWatchesFromConfig`, same `createWebWatchRunner` + sink), active
+  with `MUSE_HOME_WATCH_CONFIG` + HA creds. A watched entity reaching a
+  rule state (e.g. door "unlocked") fires a notice; never acts on the
+  home (outbound-safety). Proven by a contract-faithful CLI smoke (a HA
+  `/api/states` snapshot fires the notice; skipped without config) and
+  surfaced in `--status` — `apps/cli/src/commands-daemon.test.ts`.
+
+## Delivered — P25 (ambient context fusion: Perception × Knowledge)
+
+Ambient notices carry a "Related:" line from the user's real notes
+about the active window. Audited PASS (README ledger, `P25 audit`).
 
 - [x] **P25-1 Ambient notices carry a "Related:" line.** The daemon's
   ambient runner accepts a knowledge enricher; a fired ambient notice

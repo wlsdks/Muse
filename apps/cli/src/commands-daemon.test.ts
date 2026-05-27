@@ -263,6 +263,40 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("--once fires a HOME-WATCH on a Home Assistant entity state through the same launcher + sink", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(),
+      MUSE_HOME_WATCH_CONFIG: JSON.stringify([
+        { id: "door", entityId: "lock.front_door", title: "Door", message: "the front door is unlocked", rule: { appears: "unlocked" } }
+      ]),
+      MUSE_HOMEASSISTANT_URL: "http://ha.local:8123",
+      MUSE_HOMEASSISTANT_TOKEN: "ha-token"
+    };
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    // Contract-faithful HA REST: GET /api/states/<entity> → { state }.
+    const fetchImpl = (async () => new Response(JSON.stringify({ entity_id: "lock.front_door", state: "unlocked" }), { status: 200 })) as unknown as typeof globalThis.fetch;
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, fetchImpl, registry });
+
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toMatch(/home-watch: delivered 1/);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("the front door is unlocked");
+  });
+
+  it("home-watch tick is skipped when no config / HA creds are set (hermetic default)", async () => {
+    const env = tmpEnv();
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.stdout).toContain("home-watch: skipped (no config)");
+    expect(sent).toHaveLength(0);
+  });
+
   it("web-watch tick is skipped when no config is set (hermetic default)", async () => {
     const env = tmpEnv();
     writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");

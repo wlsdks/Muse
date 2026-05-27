@@ -29,6 +29,7 @@ import {
   createModelObjectiveEvaluator,
   createWebWatchRunner,
   FileAmbientSignalSource,
+  homeWatchesFromConfig,
   MacOsActiveWindowSource,
   parseAmbientNoticeRules,
   runDueFollowups,
@@ -466,6 +467,24 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         }
       }
 
+      // Home-watch: read-only Home Assistant entity-state polling (e.g.
+      // "front door unlocked"). Active only with config + HA creds; a
+      // firing watch never acts on the home (outbound-safety).
+      const homeWatchRaw = e.MUSE_HOME_WATCH_CONFIG?.trim();
+      const haBaseUrl = e.MUSE_HOMEASSISTANT_URL?.trim();
+      const haToken = e.MUSE_HOMEASSISTANT_TOKEN?.trim();
+      let homeWatchRunner: WebWatchRunner | undefined;
+      if (homeWatchRaw && haBaseUrl && haToken) {
+        const homeWatches = homeWatchesFromConfig(homeWatchRaw, {
+          baseUrl: haBaseUrl,
+          token: haToken,
+          ...(helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {})
+        });
+        if (homeWatches.length > 0) {
+          homeWatchRunner = createWebWatchRunner({ sink: noticeSink, watches: homeWatches });
+        }
+      }
+
       // Standing objectives re-evaluate via the model and notify on the
       // same channel when met. Needs a model — skipped without one.
       const objectivesFile = resolveObjectivesFile(e);
@@ -482,6 +501,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  followup:   ${followupModel ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  ambient:    ${ambientRunner ? "enabled" : "disabled (set MUSE_AMBIENT_RULES)"}\n`);
         io.stdout(`  web-watch:  ${webWatchRunner ? "enabled" : "disabled (set MUSE_WEB_WATCH_CONFIG)"}\n`);
+        io.stdout(`  home-watch: ${homeWatchRunner ? "enabled" : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
         return;
       }
@@ -572,12 +592,22 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout("\n");
       };
 
+      const homeWatchTick = async (): Promise<void> => {
+        if (!homeWatchRunner) {
+          io.stdout(`[${new Date().toISOString()}] home-watch: skipped (no config)\n`);
+          return;
+        }
+        const summary = await homeWatchRunner.tick();
+        io.stdout(`[${new Date().toISOString()}] home-watch: delivered ${summary.delivered.toString()}\n`);
+      };
+
       const runTick = async (): Promise<void> => {
         await proactiveTick();
         await followupTick();
         await ambientTick();
         await webWatchTick();
         await objectivesTick();
+        await homeWatchTick();
       };
 
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);
