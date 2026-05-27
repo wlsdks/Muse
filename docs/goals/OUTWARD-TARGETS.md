@@ -75,11 +75,14 @@ volunteering relevant context unasked.
   window/app. Proven by a contract-faithful CLI smoke: an injected
   enricher's line rides the delivered ambient notice; absent → plain
   notice — `apps/cli/src/commands-daemon.test.ts`.
-- [ ] **P25-2 Real enricher from the user's corpus.** Build the
-  enricher at daemon startup from `createKnowledgeEnricher` (notes +
-  Ollama embed, hybrid+MMR) so the Related line is the user's real
-  notes, not just an injected fake. Check: live — an ambient fire
-  surfaces a real note about the active window.
+- [x] **P25-2 Real enricher from the user's corpus.** The daemon builds
+  the ambient enricher best-effort at startup from
+  `createKnowledgeEnricher` (notes dir + local Ollama embed,
+  hybrid+MMR) when `MUSE_BRIEFING_RELATED_KNOWLEDGE_ENABLED`; fail-soft
+  to plain notices otherwise. Live-verified: over a temp notes dir,
+  `enrich("Q3 budget memo")` returned the real `notes/q3-budget.md`
+  line (not the parking decoy) — the daemon's exact builder. Seam +
+  default-off tested in `apps/cli/src/commands-daemon.test.ts`.
 
 ## Delivered — P24 (Knowledge grounding quality: MMR)
 

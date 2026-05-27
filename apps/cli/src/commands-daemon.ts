@@ -293,6 +293,26 @@ async function defaultChromeConnection(env: NodeJS.ProcessEnv): Promise<ChromeSn
   }
 }
 
+// Best-effort real ambient enricher: when
+// MUSE_BRIEFING_RELATED_KNOWLEDGE_ENABLED, build createKnowledgeEnricher
+// over the user's notes dir + a local Ollama embedder (hybrid+MMR
+// retrieval), so an ambient notice's "Related" line is a real note.
+// Any failure (no Ollama, no notes) → undefined → plain notices.
+async function defaultKnowledgeEnrich(env: NodeJS.ProcessEnv): Promise<((query: string) => Promise<string | undefined>) | undefined> {
+  if (!parseBoolean(env.MUSE_BRIEFING_RELATED_KNOWLEDGE_ENABLED, false)) return undefined;
+  try {
+    const { createKnowledgeEnricher, createOllamaEmbedder, resolveNotesDir } = await import("@muse/autoconfigure");
+    const { LocalDirNotesProvider } = await import("@muse/mcp");
+    const notesDir = resolveNotesDir(env as unknown as Parameters<typeof resolveNotesDir>[0]);
+    return createKnowledgeEnricher({
+      embed: createOllamaEmbedder(env.MUSE_KNOWLEDGE_SEARCH_EMBED_MODEL?.trim() ?? "nomic-embed-text"),
+      notesProvider: new LocalDirNotesProvider({ notesDir })
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveLaunchAgentFile(env: NodeJS.ProcessEnv): string {
   const explicit = env.MUSE_DAEMON_PLIST_FILE?.trim();
   if (explicit && explicit.length > 0) return explicit;
@@ -421,11 +441,12 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
               : join(homedir(), ".muse", "ambient.json");
             ambientSource = new FileAmbientSignalSource(ambientFile);
           }
+          const enrich = helpers.knowledgeEnrich ?? await defaultKnowledgeEnrich(e);
           ambientRunner = createAmbientNoticeRunner({
             rules: ambientRules,
             sink: noticeSink,
             source: ambientSource,
-            ...(helpers.knowledgeEnrich ? { enrich: helpers.knowledgeEnrich } : {})
+            ...(enrich ? { enrich } : {})
           });
         }
       }
