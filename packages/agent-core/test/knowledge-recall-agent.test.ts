@@ -34,6 +34,27 @@ describe("createKnowledgeSearchTool — definition meets the one-shot tool-calli
 });
 
 describe("rankKnowledgeChunks", () => {
+  it("hybrid RRF recalls an exact-keyword chunk that pure cosine drops (Cormack et al. 2009)", async () => {
+    // embed vocab has the semantic term "alpha" but NOT the rare token
+    // "e2099" — so the exact-keyword chunk has zero cosine and pure
+    // cosine never returns it; lexical overlap + RRF must recall it.
+    const vocab = ["alpha", "beta", "gamma"];
+    const termEmbed = async (text: string): Promise<readonly number[]> => {
+      const lower = text.toLowerCase();
+      return vocab.map((term) => (lower.includes(term) ? 1 : 0));
+    };
+    const corpus: readonly KnowledgeChunk[] = [
+      { source: "decoy.md", text: "alpha beta gamma overview" },
+      { source: "answer.md", text: "ticket E2099 resolution steps" }
+    ];
+
+    const cosineOnly = await rankKnowledgeChunks("alpha E2099", corpus, { embed: termEmbed, topK: 5 });
+    expect(cosineOnly.map((m) => m.source)).not.toContain("answer.md");
+
+    const hybrid = await rankKnowledgeChunks("alpha E2099", corpus, { embed: termEmbed, hybrid: true, topK: 5 });
+    expect(hybrid.map((m) => m.source)).toContain("answer.md");
+  });
+
   it("ranks multi-source chunks by similarity, keeps the source, drops sub-threshold passages", async () => {
     const matches = await rankKnowledgeChunks("allergic to peanuts", CORPUS, { embed });
     expect(matches.map((m) => m.source)).toEqual(["notes/health.md", "notes/old.md"]);

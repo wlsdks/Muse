@@ -64,9 +64,28 @@ turn; never half-shipped.
 
 ## Active target
 
-**P22 — The daemon runs for real on this Mac.** Compose the
-proven-once pieces into one launchable, observable process and
-prove startup→delivery end-to-end. Pick the highest undone bullet.
+**P23 — Deepen Knowledge retrieval.** Beyond single-vector cosine
+RAG, make recall robust to exact rare tokens (names, IDs, error
+codes) while staying local + deterministic.
+
+- [x] **P23-1 Hybrid (RRF) knowledge retrieval.** `rankKnowledgeChunks`
+  gains an opt-in `hybrid` path fusing the cosine ranking with a
+  lexical keyword-overlap ranking via Reciprocal Rank Fusion (Cormack,
+  Clarke & Büttcher, SIGIR 2009); `knowledge_search` now uses it, so an
+  exact rare token the embedding misses is still recalled. Proven: a
+  corpus whose exact-keyword chunk has zero cosine is dropped by pure
+  cosine but recalled by hybrid — `packages/agent-core/test/knowledge-recall-agent.test.ts`.
+  No new dep, deterministic, local.
+- [ ] **P23-2 Hybrid in the corpus-search callers.** Route the
+  `knowledge-corpus.ts` search paths (`muse` knowledge surfaces beyond
+  the agent tool) through the hybrid ranker too. Check: a corpus-search
+  smoke recalls an exact-keyword chunk pure cosine drops.
+
+## Delivered — P22 (the daemon runs for real on this Mac)
+
+Composed the proven-once pieces into one launchable, observable
+process and proved startup→delivery end-to-end. Audited PASS
+(README ledger, `P22 audit`).
 
 - [x] **P22-1a `muse daemon --once` proactive seam.** A user-facing
   CLI command launches the proactive tick in one process and returns
