@@ -145,6 +145,7 @@ import { buildLoopbackTools } from "./loopback-tools.js";
 import { createOllamaEmbedder } from "./context-engineering-builders.js";
 import { readEpisodeKnowledgeEntries } from "./episodes-knowledge-source.js";
 import { readFeedKnowledgeEntries } from "./feeds-knowledge-source.js";
+import { createUserMemoryKnowledgeSource } from "./user-memory-knowledge-source.js";
 import { createNotesKnowledgeSearchTool } from "./knowledge-corpus.js";
 
 import {
@@ -605,7 +606,8 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       },
       episodesSource: {
         recentEpisodes: (limit) => readEpisodeKnowledgeEntries(episodesFile, env.MUSE_USER_ID ?? "user", limit)
-      }
+      },
+      userMemorySource: createUserMemoryKnowledgeSource(userMemoryStore, env.MUSE_USER_ID ?? "user")
     })];
   })();
 
