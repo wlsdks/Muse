@@ -650,3 +650,12 @@ Append one line when a discovery path is evaluated and deferred:
   runtime key). Full sweep then green across all workspaces (agent-core
   721, mcp 837, cli 1317, api 327, autoconfigure 283, shared 30, … 0
   fail), lint 0/0. The sweep did its job.
+- P26 audit — afa5327e — PASS: P26 check re-run green (commands-daemon
+  32/32) AND exercised end-to-end through the BUILT CLI — one
+  `muse daemon --once` ran all SEVEN ticks; the three configured
+  (proactive, reminders, ambient) each fired and delivered to the log
+  sink ("📋 P26 audit task due in 5 min", "P26 audit reminder",
+  "Heads up: You are in Slack"), while web-watch/objectives/home-watch/
+  followup correctly skipped (no config/model), clean exit. The new
+  reminders + home-watch ticks compose with the rest; no drift, no
+  bullet reopened.
