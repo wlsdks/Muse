@@ -40,8 +40,9 @@ import {
   type ProactiveNoticeSink,
   type WebWatchRunner
 } from "@muse/mcp";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { closestCommandName } from "./closest-command.js";
 import { parseBoundedFlag } from "./commands-proactive.js";
@@ -165,6 +166,43 @@ export async function runDaemonLoop(opts: {
   return ticks;
 }
 
+interface DaemonConfig {
+  readonly provider?: string;
+  readonly destination?: string;
+}
+
+function resolveDaemonConfigFile(env: NodeJS.ProcessEnv): string {
+  const explicit = env.MUSE_DAEMON_CONFIG_FILE?.trim();
+  if (explicit && explicit.length > 0) return explicit;
+  const home = env.HOME?.trim()?.length ? env.HOME.trim() : homedir();
+  return join(home, ".config", "muse", "daemon.json");
+}
+
+// Tolerant: a missing / malformed config file yields no defaults
+// (the daemon still runs from flags + env), never throws.
+function readDaemonConfig(file: string): DaemonConfig {
+  let raw: string;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const config: { provider?: string; destination?: string } = {};
+    if (typeof parsed.provider === "string") config.provider = parsed.provider;
+    if (typeof parsed.destination === "string") config.destination = parsed.destination;
+    return config;
+  } catch {
+    return {};
+  }
+}
+
+function writeDaemonConfig(file: string, config: DaemonConfig): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
 export function registerDaemonCommands(program: Command, io: ProgramIO, helpers: DaemonHelpers = {}): void {
   const env = () => helpers.env?.() ?? process.env;
   const makeMessaging = helpers.buildMessagingRegistry ?? ((e: NodeJS.ProcessEnv) => buildMessagingRegistry(e));
@@ -174,6 +212,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
     .description("Run Muse's background daemon (proactive notices) in one process. --once runs a single tick and exits.")
     .option("--once", "Run exactly one tick of each enabled daemon, then exit")
     .option("--status", "Print which daemon ticks are enabled for the current config, then exit")
+    .option("--init", "Write the resolved provider + destination to the daemon config file, then exit")
     .option("--interval <seconds>", "Tick interval in seconds (default 60)", "60")
     .option("--lead-minutes <minutes>", "Imminent-window lead in minutes (default 10)", "10")
     .option("--provider <id>", "Messaging provider id (default MUSE_PROACTIVE_PROVIDER, else 'log')")
@@ -181,6 +220,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
     .action(async (options: {
       readonly once?: boolean;
       readonly status?: boolean;
+      readonly init?: boolean;
       readonly interval: string;
       readonly leadMinutes: string;
       readonly provider?: string;
@@ -189,8 +229,19 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const e = env();
       const interval = parseBoundedFlag(options.interval, "--interval", 5, 86_400, 60);
       const leadMinutes = parseBoundedFlag(options.leadMinutes, "--lead-minutes", 1, 1_440, 10);
-      const provider = (options.provider ?? e.MUSE_PROACTIVE_PROVIDER ?? "log").trim();
-      const destination = (options.destination ?? e.MUSE_PROACTIVE_DESTINATION ?? "@me").trim();
+      // Precedence: flag > env > config file > hardcoded default. The
+      // config file (muse daemon --init) lets the user persist
+      // provider/destination once instead of exporting env vars.
+      const configFile = resolveDaemonConfigFile(e);
+      const fileConfig = readDaemonConfig(configFile);
+      const provider = (options.provider ?? e.MUSE_PROACTIVE_PROVIDER ?? fileConfig.provider ?? "log").trim();
+      const destination = (options.destination ?? e.MUSE_PROACTIVE_DESTINATION ?? fileConfig.destination ?? "@me").trim();
+
+      if (options.init) {
+        writeDaemonConfig(configFile, { destination, provider });
+        io.stdout(`muse daemon config written to ${configFile}\n  provider=${provider}, destination=${destination}\n`);
+        return;
+      }
 
       const messagingRegistry = makeMessaging(e);
       if (!messagingRegistry.has(provider)) {

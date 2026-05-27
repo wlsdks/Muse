@@ -64,6 +64,7 @@ function tmpEnv(): NodeJS.ProcessEnv {
   const dir = mkdtempSync(join(tmpdir(), "muse-daemon-"));
   return {
     MUSE_AMBIENT_FILE: join(dir, "ambient.json"),
+    MUSE_DAEMON_CONFIG_FILE: join(dir, "daemon.json"),
     MUSE_FOLLOWUPS_FILE: join(dir, "followups.json"),
     MUSE_OBJECTIVES_FILE: join(dir, "objectives.json"),
     MUSE_PROACTIVE_HISTORY_FILE: join(dir, "history.json"),
@@ -312,6 +313,30 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(res.stdout).toContain("web-watch:  enabled");
     expect(res.stdout).toContain("objectives: enabled");
     expect(sent).toHaveLength(0);
+  });
+
+  it("--init persists provider+destination so a later run reads them from the config file (no flag/env)", async () => {
+    const env = tmpEnv();
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const init = await runDaemon(["--init", "--provider", "telegram", "--destination", "555"], { env, registry });
+    expect(init.exitCode).toBeUndefined();
+    expect(init.stdout).toContain("config written");
+    expect(init.stdout).toMatch(/provider=telegram, destination=555/);
+
+    // Second run carries NO --provider/--destination and the env has no
+    // MUSE_PROACTIVE_* — provider/destination must come from the config file.
+    const dueSoon = new Date(Date.now() + 5 * 60_000).toISOString();
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({
+      tasks: [{ id: "t1", title: "Config-routed memo", status: "open", dueAt: dueSoon, createdAt: "2026-01-01T00:00:00Z" }]
+    }), "utf8");
+
+    const res = await runDaemon(["--once"], { env, registry });
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toMatch(/provider=telegram, destination=555/);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.destination).toBe("555");
   });
 
   it("an unknown provider fails closed — exits non-zero and sends nothing", async () => {

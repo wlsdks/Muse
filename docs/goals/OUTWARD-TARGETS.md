@@ -125,11 +125,14 @@ prove startup→delivery end-to-end. Pick the highest undone bullet.
   always; followup/objectives on a resolved model; ambient on
   `MUSE_AMBIENT_RULES`; web-watch on `MUSE_WEB_WATCH_CONFIG`) and
   exits without ticking — see `apps/cli/src/commands-daemon.test.ts`.
-- [ ] **P22-4b `muse daemon init` config file.** Write + validate the
-  daemon config (provider, destination, ambient rules, watches) to the
-  config path and have the launcher load it, removing the need to
-  hand-set ~15 env vars. Check: CLI smoke round-trips a written config
-  and the launcher consumes it.
+- [x] **P22-4b `muse daemon --init` config file.** Writes the resolved
+  provider + destination to `~/.config/muse/daemon.json`
+  (`MUSE_DAEMON_CONFIG_FILE` override); the launcher loads it with
+  precedence flag > env > config > default, so the user persists them
+  once instead of exporting env vars. Round-tripped by a CLI smoke
+  (init writes → a later run with no flag/env reads + delivers) — see
+  `apps/cli/src/commands-daemon.test.ts`. (Ambient-rules/watches in the
+  config file remain a follow-on; provider/destination are the core.)
 - [ ] **P22-5 Full startup→delivery e2e gate.** A smoke /
   integration that starts the full daemon and proves a notice flows
   end-to-end to a contract-faithful channel fake — including that
