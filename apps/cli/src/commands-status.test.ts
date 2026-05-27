@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readRagStatus } from "./commands-status.js";
+import { readRagStatus, readTokenCostToday, resolveStatusWatchIntervalMs, suggestPatternHints } from "./commands-status.js";
 
 function tmpFile(name: string, contents: string): string {
   const dir = mkdtempSync(join(tmpdir(), "muse-status-"));
@@ -31,5 +31,98 @@ describe("readRagStatus", () => {
   it("omits the embed model when it's blank/missing but still counts files", async () => {
     const p = tmpFile("no-model.json", JSON.stringify({ model: "   ", files: [{ path: "a.md" }] }));
     expect(await readRagStatus(p)).toEqual({ files: 1, indexed: true });
+  });
+});
+
+describe("readTokenCostToday", () => {
+  it("reports unavailable when the cost file is missing", async () => {
+    expect(await readTokenCostToday(join(tmpdir(), "no-such-muse-cost.json"))).toEqual({ available: false });
+  });
+
+  it("reports available and spreads the persisted shape when present", async () => {
+    const p = tmpFile("cost.json", JSON.stringify({ totalUsd: 0.42, byModel: { "ollama/qwen3:8b": 0 } }));
+    expect(await readTokenCostToday(p)).toEqual({ available: true, totalUsd: 0.42, byModel: { "ollama/qwen3:8b": 0 } });
+  });
+
+  it("reports unavailable when the file holds a non-object scalar", async () => {
+    const p = tmpFile("scalar-cost.json", "42");
+    expect(await readTokenCostToday(p)).toEqual({ available: false });
+  });
+});
+
+describe("resolveStatusWatchIntervalMs", () => {
+  it("defaults to 5s when the raw value is absent", () => {
+    expect(resolveStatusWatchIntervalMs(undefined)).toBe(5_000);
+  });
+
+  it("defaults to 5s on a non-numeric or non-positive value", () => {
+    expect(resolveStatusWatchIntervalMs("abc")).toBe(5_000);
+    expect(resolveStatusWatchIntervalMs("0")).toBe(5_000);
+    expect(resolveStatusWatchIntervalMs("-5")).toBe(5_000);
+  });
+
+  it("converts seconds to ms and clamps to [1s, 3600s]", () => {
+    expect(resolveStatusWatchIntervalMs("1")).toBe(1_000);
+    expect(resolveStatusWatchIntervalMs("2.5")).toBe(2_500);
+    expect(resolveStatusWatchIntervalMs("3600")).toBe(3_600_000);
+    expect(resolveStatusWatchIntervalMs("99999")).toBe(3_600_000); // clamped to the 1h ceiling
+  });
+});
+
+describe("suggestPatternHints", () => {
+  // Build N firings of one pattern, each at the given UTC hour.
+  const firedAt = (patternId: string, ...hoursUtc: number[]) =>
+    hoursUtc.map((h, i) => ({ firedAtIso: `2026-05-20T${h.toString().padStart(2, "0")}:0${i % 6}:00Z`, patternId }));
+  const now = new Date("2026-05-27T00:15:00Z"); // UTC hour 0
+
+  it("returns nothing for an empty history", () => {
+    expect(suggestPatternHints([], now)).toEqual([]);
+  });
+
+  it("requires at least minFirings (default 3) before suggesting", () => {
+    expect(suggestPatternHints(firedAt("p", 0, 0), now)).toEqual([]); // only 2 firings
+  });
+
+  it("suggests a pattern whose habitual hour is within ±1 of now", () => {
+    expect(suggestPatternHints(firedAt("standup", 0, 0, 0), now)).toEqual([
+      { patternId: "standup", medianHourUtc: 0, firings: 3 }
+    ]);
+  });
+
+  it("excludes a pattern whose habitual hour is outside the ±1 window", () => {
+    expect(suggestPatternHints(firedAt("lunch", 12, 12, 12), now)).toEqual([]);
+  });
+
+  it("uses a CIRCULAR median so a midnight-straddling habit is matched (naive numeric median would miss it)", () => {
+    // hours {22,23,0,1,2}: circular medoid is 0 (within ±1 of now); a plain
+    // numeric median would be 2 and fall outside the window.
+    expect(suggestPatternHints(firedAt("night-owl", 22, 23, 0, 1, 2), now)).toEqual([
+      { patternId: "night-owl", medianHourUtc: 0, firings: 5 }
+    ]);
+  });
+
+  it("matches across the midnight boundary (median 23, now 0 → delta 1)", () => {
+    expect(suggestPatternHints(firedAt("wind-down", 23, 23, 23), now)).toEqual([
+      { patternId: "wind-down", medianHourUtc: 23, firings: 3 }
+    ]);
+  });
+
+  it("skips malformed entries without crashing", () => {
+    const fired = [
+      null,
+      "nope",
+      { patternId: 123, firedAtIso: "2026-05-20T00:00:00Z" }, // wrong-typed id
+      { patternId: "x", firedAtIso: "not-a-date" }, // unparseable
+      { patternId: "x" }, // missing firedAtIso
+      ...firedAt("real", 0, 0, 0)
+    ];
+    expect(suggestPatternHints(fired, now)).toEqual([{ patternId: "real", medianHourUtc: 0, firings: 3 }]);
+  });
+
+  it("orders most-fired first and honours maxHints", () => {
+    const fired = [...firedAt("a", 0, 0, 0), ...firedAt("b", 0, 0, 0, 0, 0)];
+    expect(suggestPatternHints(fired, now, { maxHints: 1 })).toEqual([
+      { patternId: "b", medianHourUtc: 0, firings: 5 }
+    ]);
   });
 });
