@@ -146,6 +146,7 @@ import { createOllamaEmbedder } from "./context-engineering-builders.js";
 import { readEpisodeKnowledgeEntries } from "./episodes-knowledge-source.js";
 import { readFeedKnowledgeEntries } from "./feeds-knowledge-source.js";
 import { createUserMemoryKnowledgeSource } from "./user-memory-knowledge-source.js";
+import { resolveDefaultUserId } from "./user-id.js";
 import { createNotesKnowledgeSearchTool } from "./knowledge-corpus.js";
 
 import {
@@ -605,9 +606,9 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         recentEntries: (limit) => readFeedKnowledgeEntries(resolveFeedsFile(env), limit)
       },
       episodesSource: {
-        recentEpisodes: (limit) => readEpisodeKnowledgeEntries(episodesFile, env.MUSE_USER_ID ?? "user", limit)
+        recentEpisodes: (limit) => readEpisodeKnowledgeEntries(episodesFile, resolveDefaultUserId(env), limit)
       },
-      userMemorySource: createUserMemoryKnowledgeSource(userMemoryStore, env.MUSE_USER_ID ?? "user")
+      userMemorySource: createUserMemoryKnowledgeSource(userMemoryStore, resolveDefaultUserId(env))
     })];
   })();
 
@@ -879,6 +880,7 @@ export {
 } from "./knowledge-corpus.js";
 
 export { readFeedKnowledgeEntries } from "./feeds-knowledge-source.js";
+export { resolveDefaultUserId } from "./user-id.js";
 
 export { resolveFeedsFile } from "./personal-providers.js";
 

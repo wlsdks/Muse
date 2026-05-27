@@ -1,3 +1,5 @@
+import { resolveDefaultUserId } from "@muse/autoconfigure";
+
 /**
  * Resolves the default user id the CLI's user-scoped surfaces
  * (trust / approval / ask / chat / proactive) operate on.
@@ -20,10 +22,11 @@ export function resolveDefaultUserKey(opts: {
   readonly env?: Readonly<Record<string, string | undefined>>;
 } = {}): string {
   const env = opts.env ?? (process.env as Readonly<Record<string, string | undefined>>);
-  for (const candidate of [opts.override, env.MUSE_USER_ID, env.USER]) {
-    if (typeof candidate !== "string") continue;
-    const trimmed = candidate.trim();
-    if (trimmed.length > 0) return trimmed;
+  const override = opts.override?.trim();
+  if (override && override.length > 0) {
+    return override;
   }
-  return "default";
+  // Env base (MUSE_USER_ID ?? USER ?? "default") is shared with the runtime
+  // assembly so the bucket a fact is written under matches what recall reads.
+  return resolveDefaultUserId(env);
 }
