@@ -96,6 +96,32 @@ export async function saveEpisodeIndex(file: string, index: EpisodeIndex): Promi
   await fs.chmod(file, 0o600).catch(() => undefined);
 }
 
+/**
+ * Whether the episode index needs a rebuild before grounding: missing
+ * index, a different embed model (cross-model cosine is meaningless), or
+ * any source episode that is new or whose summary changed since the index
+ * was built. Deleted episodes do NOT force a rebuild — they're dropped at
+ * query time by the live-id filter. Pure; drives `muse ask`'s auto-refresh
+ * so past sessions stay groundable without a manual `muse episode reindex`.
+ */
+export function episodeIndexStale(
+  index: EpisodeIndex | undefined,
+  episodes: readonly PersistedEpisode[],
+  model: string
+): boolean {
+  if (!index || index.model !== model) {
+    return true;
+  }
+  const summaryById = new Map(index.entries.map((entry) => [entry.id, entry.summary]));
+  for (const episode of episodes) {
+    const indexed = summaryById.get(episode.id);
+    if (indexed === undefined || indexed !== episode.summary) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface ReindexEpisodesSummary {
   readonly embedded: number;
   readonly skipped: number;

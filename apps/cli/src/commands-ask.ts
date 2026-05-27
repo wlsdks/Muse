@@ -37,7 +37,7 @@ import type { Command } from "commander";
 import { cosine, isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
 import { filterLiveEpisodeEntries, filterLiveNoteIndexFiles } from "./commands-recall.js";
 import { embed } from "./embed.js";
-import { defaultEpisodeIndexFile, loadEpisodeIndex } from "./episode-index.js";
+import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpisodeIndex, saveEpisodeIndex } from "./episode-index.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
 import { resolvePersona } from "./program-helpers.js";
 import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
@@ -424,6 +424,33 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           `Answering without notes context. To restore RAG grounding: ` +
           `\`ollama pull ${embedModel}\` (and ensure Ollama is running).)\n`
         );
+      }
+
+      // Auto-refresh the episode index (mirrors the notes auto-reindex above)
+      // so past sessions stay groundable without a manual `muse episode
+      // reindex` — incremental (only new/changed summaries re-embed), gated by
+      // --no-auto-reindex, fail-soft. Without this the episode grounding below
+      // silently saw a stale/empty index for anyone who hadn't reindexed.
+      if (options.autoReindex !== false && queryVec) {
+        try {
+          const sourceEpisodes = await readEpisodes(resolveEpisodesFile(process.env as Record<string, string | undefined>));
+          const prevIndex = await loadEpisodeIndex(defaultEpisodeIndexFile());
+          if (episodeIndexStale(prevIndex, sourceEpisodes, embedModel)) {
+            const built = await buildEpisodeIndex({
+              embedFn: (text) => embed(text, embedModel),
+              episodes: sourceEpisodes,
+              model: embedModel,
+              nowIso: new Date().toISOString(),
+              previous: prevIndex
+            });
+            await saveEpisodeIndex(defaultEpisodeIndexFile(), built.index);
+            if (built.embedded > 0) {
+              io.stderr(`(auto-refreshed episode index: ${built.embedded.toString()} embedded, ${built.skipped.toString()} cached)\n`);
+            }
+          }
+        } catch {
+          // episode-index refresh failed — grounding still works on whatever index exists
+        }
       }
 
       // SB-1 (second brain): also ground on past-session episode summaries

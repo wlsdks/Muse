@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildEpisodeIndex, EPISODE_INDEX_SCHEMA_VERSION, loadEpisodeIndex, type EpisodeIndex } from "./episode-index.js";
+import { buildEpisodeIndex, EPISODE_INDEX_SCHEMA_VERSION, episodeIndexStale, loadEpisodeIndex, type EpisodeIndex } from "./episode-index.js";
 
 const ep = (id: string, summary: string) => ({
   id, userId: "u", startedAt: "2026-05-25T10:00:00Z", endedAt: "2026-05-25T10:30:00Z", summary
@@ -15,6 +15,39 @@ function countingEmbed() {
 }
 const NOW = "2026-05-26T00:00:00Z";
 const prevIndex = (entries: EpisodeIndex["entries"]): EpisodeIndex => ({ builtAtIso: "x", entries, model: "m", version: EPISODE_INDEX_SCHEMA_VERSION });
+
+describe("episodeIndexStale — drives muse ask's episode auto-refresh", () => {
+  const withEmbedding = (id: string, summary: string) => ({ ...ep(id, summary), embedding: [1, 0, 0] });
+
+  it("is stale when no index exists yet", () => {
+    expect(episodeIndexStale(undefined, [ep("e1", "a")], "m")).toBe(true);
+  });
+
+  it("is stale when the embed model differs (cross-model cosine is meaningless)", () => {
+    const index = prevIndex([withEmbedding("e1", "a")]);
+    expect(episodeIndexStale(index, [ep("e1", "a")], "other-model")).toBe(true);
+  });
+
+  it("is stale when a source episode is not yet in the index", () => {
+    const index = prevIndex([withEmbedding("e1", "a")]);
+    expect(episodeIndexStale(index, [ep("e1", "a"), ep("e2", "new session")], "m")).toBe(true);
+  });
+
+  it("is stale when an episode's summary changed since indexing (re-scored / edited)", () => {
+    const index = prevIndex([withEmbedding("e1", "old summary")]);
+    expect(episodeIndexStale(index, [ep("e1", "new summary")], "m")).toBe(true);
+  });
+
+  it("is fresh when every source episode is present with an unchanged summary", () => {
+    const index = prevIndex([withEmbedding("e1", "a"), withEmbedding("e2", "b")]);
+    expect(episodeIndexStale(index, [ep("e1", "a"), ep("e2", "b")], "m")).toBe(false);
+  });
+
+  it("a deleted episode does NOT force a rebuild (dropped at query time, not here)", () => {
+    const index = prevIndex([withEmbedding("e1", "a"), withEmbedding("gone", "deleted")]);
+    expect(episodeIndexStale(index, [ep("e1", "a")], "m")).toBe(false);
+  });
+});
 
 describe("buildEpisodeIndex", () => {
   it("drops an episode deleted from source — the index holds only current episodes (no orphan)", async () => {
