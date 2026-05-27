@@ -640,3 +640,13 @@ Append one line when a discovery path is evaluated and deferred:
   The Q3 budget memo is due Friday …" — the full chain (ambient
   perception → real hybrid+MMR enricher → the right real note →
   enriched notice) composes. No drift, no bullet reopened.
+- regression sweep (20th feat-iter) — iter d5aeb747..HEAD — REPAIRED
+  then PASS: `pnpm check` caught a real regression — a raw NUL byte
+  (0x00) in `packages/agent-core/src/knowledge-recall.ts:165` (the
+  hybrid-path key separator introduced with P23-1), which compiled +
+  worked but violates goal-227 byte hygiene (no raw control bytes in
+  tracked source); the shared package test flagged it. Fixed by
+  writing the separator as the escaped backslash-u-0000 form (identical
+  runtime key). Full sweep then green across all workspaces (agent-core
+  721, mcp 837, cli 1317, api 327, autoconfigure 283, shared 30, … 0
+  fail), lint 0/0. The sweep did its job.
