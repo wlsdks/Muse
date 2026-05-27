@@ -659,3 +659,11 @@ Append one line when a discovery path is evaluated and deferred:
   followup correctly skipped (no config/model), clean exit. The new
   reminders + home-watch ticks compose with the rest; no drift, no
   bullet reopened.
+- P27 audit — 14935389 — PASS: P27 check re-run green (commands-daemon
+  36/36) AND exercised end-to-end through the BUILT CLI — one
+  `muse daemon --once` (MUSE_BRIEFING_ENABLED, with a due task + an
+  active objective + a contact whose birthday is today) delivered ONE
+  brief composing the imminent task ("- in 5 min: Submit the Q3
+  report") and the objective status ("- watch the deploy until green")
+  in a single digest. Birthday (P27-2) and calendar (P27-3) inclusion
+  are each pinned by their slice smoke. No drift, no bullet reopened.
