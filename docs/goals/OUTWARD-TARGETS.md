@@ -96,10 +96,12 @@ prove startup→delivery end-to-end. Pick the highest undone bullet.
   objectives) run in one process. A MET objective notifies via a
   contract-faithful sink (skipped cleanly when no model) — see
   `apps/cli/src/commands-daemon.test.ts`.
-- [ ] **P22-1f SIGINT clean-shutdown smoke.** Prove the `muse daemon`
-  foreground loop stops cleanly on a stop signal (runs N ticks then
-  exits 0, no orphaned timer). Check: CLI smoke over an injectable
-  sleep + stop seam. This closes P22-1 (the launcher).
+- [x] **P22-1f SIGINT clean-shutdown smoke.** The `muse daemon`
+  foreground loop now stops cleanly on SIGINT/SIGTERM via
+  `DaemonStopSignal` (interruptible sleep — ctrl-c exits at once, no
+  waiting out the interval; survives a throwing tick; no `process.exit`)
+  — `runDaemonLoop` suite in `apps/cli/src/commands-daemon.test.ts`.
+  **P22-1 (the launcher) is complete: all five ticks + clean shutdown.**
 - [ ] **P22-2 macOS active-window perception feeds the running
   daemon.** Wire `MacOsActiveWindowSource` into the launcher so a
   real OS signal drives a proactive notice on a tick. Check:

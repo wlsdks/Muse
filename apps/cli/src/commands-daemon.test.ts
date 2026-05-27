@@ -7,7 +7,7 @@ import { writeFollowups, writeObjectives } from "@muse/mcp";
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { registerDaemonCommands, type DaemonHelpers } from "./commands-daemon.js";
+import { DaemonStopSignal, registerDaemonCommands, runDaemonLoop, type DaemonHelpers } from "./commands-daemon.js";
 
 function capturingProvider(sent: OutboundMessage[]): MessagingProvider {
   return {
@@ -232,5 +232,52 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(res.exitCode).toBe(1);
     expect(res.stderr).toContain("is not registered");
     expect(sent).toHaveLength(0);
+  });
+});
+
+describe("runDaemonLoop — foreground loop shuts down cleanly on a stop signal", () => {
+  it("runs ticks until the signal stops, then returns the tick count (no hang, no process.exit)", async () => {
+    const signal = new DaemonStopSignal();
+    let ticks = 0;
+    let sleeps = 0;
+    const ran = await runDaemonLoop({
+      intervalMs: 1000,
+      signal,
+      sleep: async () => { sleeps += 1; if (sleeps >= 2) signal.stop(); },
+      tick: async () => { ticks += 1; }
+    });
+    expect(ran).toBe(2);
+    expect(ticks).toBe(2);
+  });
+
+  it("a throwing tick is reported but does NOT stop the loop (unattended daemon survives)", async () => {
+    const signal = new DaemonStopSignal();
+    const errors: unknown[] = [];
+    let ticks = 0;
+    await runDaemonLoop({
+      intervalMs: 1000,
+      onError: (e) => errors.push(e),
+      signal,
+      sleep: async () => { signal.stop(); },
+      tick: async () => { ticks += 1; throw new Error("tick boom"); }
+    });
+    expect(ticks).toBe(1);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("an already-stopped signal runs zero ticks", async () => {
+    const signal = new DaemonStopSignal();
+    signal.stop();
+    const ran = await runDaemonLoop({ intervalMs: 1000, signal, sleep: async () => undefined, tick: async () => undefined });
+    expect(ran).toBe(0);
+  });
+
+  it("the interruptible sleep resolves immediately when stopped instead of waiting out the interval", async () => {
+    const signal = new DaemonStopSignal();
+    const started = Date.now();
+    const pending = signal.sleep(60_000);
+    signal.stop();
+    await pending;
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 });
