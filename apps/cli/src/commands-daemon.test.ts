@@ -31,7 +31,7 @@ function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonH
 
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"] }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -44,6 +44,7 @@ async function runDaemon(
     registerDaemonCommands(program, io, {
       buildMessagingRegistry: () => opts.registry,
       env: () => opts.env,
+      ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
       // Default: followup tick disabled (no model) so proactive cases stay hermetic.
       resolveFollowupModel: opts.resolveFollowupModel ?? (async () => undefined)
     });
@@ -151,6 +152,35 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
 
     expect(res.stdout).toContain("ambient: skipped (no rules)");
+    expect(sent).toHaveLength(0);
+  });
+
+  it("--once fires a WEB-WATCH trigger through the same launcher + sink", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_WEB_WATCH_CONFIG: JSON.stringify([
+      { id: "w1", url: "https://shop.example/item", title: "Stock", message: "The item is sold out", rule: { appears: "SOLD OUT" } }
+    ]) };
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    const fetchImpl = (async () => new Response("Status: SOLD OUT", { status: 200 })) as unknown as typeof globalThis.fetch;
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, fetchImpl, registry });
+
+    expect(res.exitCode).toBeUndefined();
+    expect(res.stdout).toMatch(/web-watch: delivered 1/);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("sold out");
+  });
+
+  it("web-watch tick is skipped when no config is set (hermetic default)", async () => {
+    const env = tmpEnv();
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.stdout).toContain("web-watch: skipped (no config)");
     expect(sent).toHaveLength(0);
   });
 

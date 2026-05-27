@@ -23,11 +23,15 @@ import {
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import {
   createAmbientNoticeRunner,
+  createWebWatchRunner,
   FileAmbientSignalSource,
   parseAmbientNoticeRules,
   runDueFollowups,
   runDueProactiveNotices,
-  type AmbientNoticeRunner
+  webWatchesFromConfig,
+  type AmbientNoticeRunner,
+  type ProactiveNoticeSink,
+  type WebWatchRunner
 } from "@muse/mcp";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -56,6 +60,8 @@ export interface DaemonHelpers {
    * real env). Tests inject a fake model or `undefined` (skip).
    */
   readonly resolveFollowupModel?: (env: NodeJS.ProcessEnv) => Promise<FollowupModel | undefined>;
+  /** Test seam — inject the fetch the web-watch tick snapshots with. */
+  readonly fetchImpl?: typeof globalThis.fetch;
 }
 
 // Followups REQUIRE a model to synthesize their message. The real
@@ -119,6 +125,17 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const followupsFile = resolveFollowupsFile(e);
       const followupModel = await (helpers.resolveFollowupModel ?? defaultFollowupModel)(e);
 
+      // Shared sink: every perception tick (ambient, web-watch) routes
+      // its notice to the same messaging destination as proactive.
+      const noticeSink: ProactiveNoticeSink = {
+        deliver: async (notice) => {
+          await messagingRegistry.send(provider, {
+            destination,
+            text: `${notice.title}: ${notice.text}`
+          });
+        }
+      };
+
       // Ambient perception is rule-based (no model). Active only when
       // MUSE_AMBIENT_RULES is configured; otherwise the tick is skipped.
       const ambientRaw = e.MUSE_AMBIENT_RULES?.trim();
@@ -136,16 +153,23 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
             : join(homedir(), ".muse", "ambient.json");
           ambientRunner = createAmbientNoticeRunner({
             rules: ambientRules,
-            sink: {
-              deliver: async (notice) => {
-                await messagingRegistry.send(provider, {
-                  destination,
-                  text: `${notice.title}: ${notice.text}`
-                });
-              }
-            },
+            sink: noticeSink,
             source: new FileAmbientSignalSource(ambientFile)
           });
+        }
+      }
+
+      // Web-watch is read-only page polling. Active only when
+      // MUSE_WEB_WATCH_CONFIG is configured; otherwise the tick is skipped.
+      const webWatchRaw = e.MUSE_WEB_WATCH_CONFIG?.trim();
+      let webWatchRunner: WebWatchRunner | undefined;
+      if (webWatchRaw) {
+        const watches = webWatchesFromConfig(
+          webWatchRaw,
+          helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {}
+        );
+        if (watches.length > 0) {
+          webWatchRunner = createWebWatchRunner({ sink: noticeSink, watches });
         }
       }
 
@@ -204,10 +228,20 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`[${new Date().toISOString()}] ambient: delivered ${summary.delivered.toString()}\n`);
       };
 
+      const webWatchTick = async (): Promise<void> => {
+        if (!webWatchRunner) {
+          io.stdout(`[${new Date().toISOString()}] web-watch: skipped (no config)\n`);
+          return;
+        }
+        const summary = await webWatchRunner.tick();
+        io.stdout(`[${new Date().toISOString()}] web-watch: delivered ${summary.delivered.toString()}\n`);
+      };
+
       const runTick = async (): Promise<void> => {
         await proactiveTick();
         await followupTick();
         await ambientTick();
+        await webWatchTick();
       };
 
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);

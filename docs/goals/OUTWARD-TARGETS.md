@@ -85,11 +85,16 @@ prove startup→delivery end-to-end. Pick the highest undone bullet.
   matching ambient rule delivers a notice to a contract-faithful sink
   (skipped cleanly when no `MUSE_AMBIENT_RULES` configured) — see
   `apps/cli/src/commands-daemon.test.ts`.
-- [ ] **P22-1d objectives + web-watch ticks + SIGINT smoke.** Fold the
-  objectives and web-watch ticks into the same `muse daemon` process,
-  and prove the foreground loop stops cleanly. Check: CLI smoke — each
-  ENABLED tick fires once against a contract-faithful sink, a DISABLED
-  tick is skipped, SIGINT exits 0.
+- [x] **P22-1d web-watch tick folded into the launcher.** `muse daemon
+  --once` now also runs read-only web-watch polling; an "appears"
+  trigger over an injected fetch delivers a notice to a
+  contract-faithful sink (skipped cleanly when no
+  `MUSE_WEB_WATCH_CONFIG`) — see `apps/cli/src/commands-daemon.test.ts`.
+- [ ] **P22-1e objectives tick + SIGINT clean-shutdown smoke.** Fold
+  the objectives evaluation tick into the same `muse daemon` process,
+  and prove the foreground loop stops cleanly on a stop signal. Check:
+  CLI smoke — an objectives tick fires against a contract-faithful
+  sink; the foreground loop runs N ticks then exits 0 on stop.
 - [ ] **P22-2 macOS active-window perception feeds the running
   daemon.** Wire `MacOsActiveWindowSource` into the launcher so a
   real OS signal drives a proactive notice on a tick. Check:
