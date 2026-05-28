@@ -1,8 +1,10 @@
 import {
   AnthropicProvider,
+  classifyProviderLocality,
   DiagnosticModelProvider,
   GeminiProvider,
   knownModelPrefixes,
+  LocalOnlyViolationError,
   OllamaProvider,
   OpenAICompatibleProvider,
   OpenAIProvider,
@@ -11,7 +13,7 @@ import {
   type ModelProvider
 } from "@muse/model";
 
-import { parseCsv, parseInteger, parseOptionalString } from "./env-parsers.js";
+import { parseBoolean, parseCsv, parseInteger, parseOptionalString } from "./env-parsers.js";
 import type { MuseEnvironment } from "./index.js";
 
 /**
@@ -106,6 +108,20 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
     ?? (baseUrl ? "openai-compatible" : providerIdFromPrefix(defaultModel))
     ?? "openai-compatible";
   const models = parseCsv(env.MUSE_MODEL_LIST) ?? [parseModelName(defaultModel).modelId];
+
+  // Local-only / no-cloud-egress: fail CLOSED (and loud) before any
+  // cloud provider is instantiated. Silently disabling the runtime would
+  // hide the privacy violation the user asked to be protected from.
+  if (parseBoolean(env.MUSE_LOCAL_ONLY, false)) {
+    const effectiveBaseUrl = providerId === "ollama"
+      ? (baseUrl ?? normalizeOllamaBaseUrl(env.OLLAMA_BASE_URL))
+      : OPENAI_COMPAT_PRESETS[providerId]
+        ? (baseUrl ?? OPENAI_COMPAT_PRESETS[providerId].baseUrl)
+        : baseUrl;
+    if (classifyProviderLocality(providerId, effectiveBaseUrl) !== "local") {
+      throw new LocalOnlyViolationError(providerId, effectiveBaseUrl);
+    }
+  }
 
   switch (providerId) {
     case "diagnostic":
