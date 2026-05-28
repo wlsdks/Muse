@@ -193,6 +193,29 @@ function labelSource(prefix: string, label: string | undefined, fallbackId: stri
   return `${prefix}/${clean.length > 0 ? clean : fallbackId}`;
 }
 
+/**
+ * Drop exact-duplicate passages (same trimmed text), keeping the FIRST
+ * source. `read`-ingest-to-notes and PDF RAG can put the identical
+ * passage in a note AND an ingested doc, and boilerplate recurs across
+ * daily notes — without this the model sees the same text twice (wasting
+ * the small local context), cites it twice, and it's embedded twice.
+ * Deterministic EXACT match (whitespace-collapsed); near-duplicates are
+ * left to MMR at rank time. Empty passages are dropped too.
+ */
+export function dedupeKnowledgeChunks(chunks: readonly KnowledgeChunk[]): KnowledgeChunk[] {
+  const seen = new Set<string>();
+  const out: KnowledgeChunk[] = [];
+  for (const chunk of chunks) {
+    const key = chunk.text.replace(/\s+/gu, " ").trim();
+    if (key.length === 0 || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(chunk);
+  }
+  return out;
+}
+
 export async function assembleKnowledgeCorpus(
   options: AssembleKnowledgeCorpusOptions
 ): Promise<KnowledgeChunk[]> {
@@ -415,7 +438,7 @@ export async function assembleKnowledgeCorpus(
     chunks.push(...options.extraChunks);
   }
 
-  return chunks;
+  return dedupeKnowledgeChunks(chunks);
 }
 
 export interface KnowledgeEnricherOptions {
