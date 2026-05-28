@@ -248,11 +248,13 @@ import {
 export {
   collectSetupStatusJson,
   countNotes,
+  evaluateLocalOnlyPosture,
   readMcpEntryCount,
   readMessagingProviderState,
   readModelKeyState,
   readTaskCount,
   statBytes,
+  type LocalOnlyStatusSnapshot,
   type SetupStatusSnapshot
 } from "./setup-status.js";
 

@@ -89,6 +89,7 @@ function baseSnap(): SetupStatusSnapshot {
       credentials: { file: "/c/credentials.json", status: "info" },
       local: { file: "/c/calendar.json", status: "info" }
     },
+    localOnly: { detail: "off (no cloud credentials configured)", enabled: false, status: "ok" },
     mcp: { externalServerCount: 0, file: "/c/mcp.json", status: "info" },
     messaging: { providers: [], status: "info" },
     model: { keysFile: "/c/models.json", providerKeys: [], status: "ok" },
