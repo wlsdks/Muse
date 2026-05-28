@@ -65,3 +65,6 @@ Thumbs.db
 
 # Claude Code session state (rules / commands / agents are checked in)
 .claude/scheduled_tasks.lock
+
+# self-eval fitness log — local trend, rebuildable; not committed (avoids parallel-loop churn)
+docs/self-eval-scoreboard.json

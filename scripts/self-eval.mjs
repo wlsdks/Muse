@@ -1,0 +1,167 @@
+#!/usr/bin/env node
+// Self-eval scoreboard — the loop's measurable fitness signal.
+//
+// The autonomous capability loop ships features and verifies each one,
+// but it had no AGGREGATED, persisted signal of whether the system as a
+// whole is improving or regressing over time. This runs the deterministic
+// gates, records a timestamped entry to docs/self-eval-scoreboard.json,
+// and FAILS CLOSED (exit 1) when a gate that previously passed now fails
+// or a tracked count drops — so "regression-first" becomes mechanical, not
+// a thing the loop has to remember. Zero deps; the script IS the check.
+//
+//   node scripts/self-eval.mjs           # quick: lint + capabilities drift + counts
+//   node scripts/self-eval.mjs --full    # also runs the whole test suite
+//
+// Pure helpers (detectRegressions / summarize / parsers) are exported and
+// unit-tested via `node --test scripts/self-eval.test.mjs`.
+
+import { execSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const ROOT = process.cwd();
+const SCOREBOARD = join(ROOT, "docs/self-eval-scoreboard.json");
+const SOURCE_ROOTS = ["packages", "apps"];
+const MAX_HISTORY = 50;
+
+// ---------------------------------------------------------------------------
+// Pure helpers (no IO) — exported for node:test.
+// ---------------------------------------------------------------------------
+
+/** Count distinct `*.test.ts(x)` basenames in a flat file-name list. */
+export function countTestFileNames(names) {
+  return new Set(names.filter((n) => /\.test\.tsx?$/u.test(n))).size;
+}
+
+/**
+ * Count CAPABILITIES.md lines that cite a real proof (a `*.test.ts(x)` file
+ * or a `scripts/*.mjs`). A dropping count means the loop's success metric
+ * shrank — a regression worth surfacing.
+ */
+export function countVerifiedCapabilityLines(capabilitiesText) {
+  let n = 0;
+  for (const line of capabilitiesText.split("\n")) {
+    if (/\b[\w.-]+\.test\.tsx?\b/u.test(line) || /\bscripts\/[\w.-]+\.mjs\b/u.test(line)) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/**
+ * Regressions between the previous scoreboard entry and the current one: a
+ * boolean gate that went pass→fail, or a numeric gate whose value dropped.
+ * No previous entry ⇒ nothing to regress against.
+ */
+export function detectRegressions(prev, curr) {
+  const out = [];
+  if (!prev || !prev.gates) {
+    return out;
+  }
+  for (const [name, c] of Object.entries(curr.gates)) {
+    const p = prev.gates[name];
+    if (!p) {
+      continue;
+    }
+    if (p.status === "pass" && c.status === "fail") {
+      out.push(`${name}: pass→fail`);
+    }
+    if (typeof p.value === "number" && typeof c.value === "number" && c.value < p.value) {
+      out.push(`${name}: ${String(p.value)}→${String(c.value)}`);
+    }
+  }
+  return out;
+}
+
+/** One-line human summary of an entry plus any regressions. */
+export function summarize(entry, regressions) {
+  const parts = Object.entries(entry.gates).map(([name, g]) =>
+    g.value !== undefined ? `${name}=${String(g.value)}` : `${name}:${g.status}`);
+  const head = regressions.length > 0 ? `REGRESSION (${String(regressions.length)})` : "ok";
+  return `[self-eval ${head}] ${parts.join("  ")}${regressions.length > 0 ? ` — ${regressions.join("; ")}` : ""}`;
+}
+
+// ---------------------------------------------------------------------------
+// IO
+// ---------------------------------------------------------------------------
+
+function gateExit(command) {
+  try {
+    execSync(command, { cwd: ROOT, stdio: "ignore" });
+    return { status: "pass" };
+  } catch {
+    return { status: "fail" };
+  }
+}
+
+function walkTestNames(dir, acc) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name === "dist") {
+      continue;
+    }
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkTestNames(full, acc);
+    } else {
+      acc.push(entry.name);
+    }
+  }
+  return acc;
+}
+
+function countTestFiles() {
+  const names = [];
+  for (const root of SOURCE_ROOTS) {
+    const p = join(ROOT, root);
+    if (existsSync(p)) {
+      walkTestNames(p, names);
+    }
+  }
+  return countTestFileNames(names);
+}
+
+function readScoreboard() {
+  if (!existsSync(SCOREBOARD)) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(SCOREBOARD, "utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function main() {
+  const full = process.argv.includes("--full");
+  const gates = {};
+
+  gates.lint = gateExit("pnpm -s lint");
+  gates.capabilities = gateExit("pnpm -s check:capabilities");
+  gates.testFiles = { status: "pass", value: countTestFiles() };
+  const capText = existsSync(join(ROOT, "docs/goals/CAPABILITIES.md"))
+    ? readFileSync(join(ROOT, "docs/goals/CAPABILITIES.md"), "utf8")
+    : "";
+  gates.verifiedCapabilities = { status: "pass", value: countVerifiedCapabilityLines(capText) };
+  if (full) {
+    gates.tests = gateExit("pnpm -s -r test");
+  }
+
+  const entry = { at: new Date().toISOString(), gates };
+  const history = readScoreboard();
+  const prev = history[history.length - 1];
+  const regressions = detectRegressions(prev, entry);
+
+  const next = [...history, entry].slice(-MAX_HISTORY);
+  writeFileSync(SCOREBOARD, `${JSON.stringify(next, null, 2)}\n`);
+
+  console.log(summarize(entry, regressions));
+
+  const anyFail = Object.values(gates).some((g) => g.status === "fail");
+  process.exitCode = anyFail || regressions.length > 0 ? 1 : 0;
+}
+
+// Only run main() when executed directly, not when imported by the test.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}
