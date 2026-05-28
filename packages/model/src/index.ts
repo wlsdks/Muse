@@ -420,3 +420,10 @@ export {
   type WebSearchPolicy,
   type WebSearchSettings
 } from "./web-search-policy.js";
+
+export {
+  classifyProviderLocality,
+  isLoopbackUrl,
+  LocalOnlyViolationError,
+  type ProviderLocality
+} from "./local-only-policy.js";
