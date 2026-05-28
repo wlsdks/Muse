@@ -9,7 +9,7 @@
  * Render-free logic lives in `chat-ink-core.ts` and is unit-tested.
  */
 
-import { createMuseRuntimeAssembly, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, parseBoolean, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
 import { LocalCalendarProvider } from "@muse/calendar";
 import { readEpisodes, readFollowups, readTasks } from "@muse/mcp";
 import { loadSkillsFromDirectory, type Skill } from "@muse/skills";
@@ -1237,6 +1237,18 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
       modelProvider: assembly.modelProvider as Parameters<typeof captureEndOfSessionEpisode>[0]["modelProvider"],
       userId
     }).catch(() => undefined);
+
+    // End-of-session auto-distillation: turn any correction the user made this
+    // session into a generalised [Learned Strategies] entry (ReasoningBank,
+    // arXiv 2509.25140). Opt-in + fail-soft so a flaky model never blocks exit.
+    if (parseBoolean(process.env.MUSE_PLAYBOOK_DISTILL_ENABLED, false)) {
+      const { distillSessionCorrections } = await import("./chat-distill-corrections.js");
+      await distillSessionCorrections({
+        model,
+        modelProvider: assembly.modelProvider as Parameters<typeof distillSessionCorrections>[0]["modelProvider"],
+        userId
+      }).catch(() => undefined);
+    }
   }
 }
 

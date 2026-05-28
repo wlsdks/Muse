@@ -8,10 +8,11 @@
 
 import { randomUUID } from "node:crypto";
 
-import { resolvePlaybookFile } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolvePlaybookFile } from "@muse/autoconfigure";
 import { queryPlaybook, recordPlaybookStrategy, removePlaybookStrategy } from "@muse/mcp";
 import type { Command } from "commander";
 
+import { distillSessionCorrections } from "./chat-distill-corrections.js";
 import type { ProgramIO } from "./program.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 
@@ -78,5 +79,33 @@ export function registerPlaybookCommands(program: Command, io: ProgramIO): void 
       }
       await removePlaybookStrategy(playbookFile(), match.id);
       io.stdout(`Removed strategy [${match.id.slice(0, 12)}]\n`);
+    });
+
+  playbook
+    .command("distill")
+    .description("Learn strategies from corrections you made in your last chat session (ReasoningBank)")
+    .option("--user <id>", "User identity (default $MUSE_USER_ID or $USER)")
+    .option("--model <id>", "Model to distill with (default the configured model)")
+    .action(async (options: { readonly user?: string; readonly model?: string }) => {
+      const userId = resolveDefaultUserKey({ override: options.user });
+      const assembly = createMuseRuntimeAssembly();
+      const model = options.model ?? assembly.defaultModel;
+      if (!assembly.modelProvider || !model) {
+        io.stdout("distill needs a model provider — run `muse setup` or set MUSE_MODEL\n");
+        return;
+      }
+      const result = await distillSessionCorrections({
+        model,
+        modelProvider: assembly.modelProvider as Parameters<typeof distillSessionCorrections>[0]["modelProvider"],
+        userId
+      });
+      if (result.status === "recorded") {
+        io.stdout(`Learned ${result.strategies.length.toString()} strateg${result.strategies.length === 1 ? "y" : "ies"} from your last session:\n`);
+        for (const strategy of result.strategies) {
+          io.stdout(`  - ${strategy.text}${strategy.tag ? ` (${strategy.tag})` : ""}\n`);
+        }
+        return;
+      }
+      io.stdout(`(nothing learned: ${result.reason})\n`);
     });
 }

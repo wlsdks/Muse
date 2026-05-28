@@ -6,6 +6,7 @@ import {
   createAgentRuntime,
   rankPlaybookStrategies,
   renderPlaybookSection,
+  strategyTextSimilarity,
   type PlaybookProvider,
   type PlaybookStrategy
 } from "../src/index.js";
@@ -159,5 +160,20 @@ describe("rankPlaybookStrategies — relevance-ranked top-K (ReasoningBank arXiv
     const out = rankPlaybookStrategies(bank, "샘에게 이메일 답장 작성해줘", { topK: 1 });
     expect(out).toHaveLength(1);
     expect(out[0].tag).toBe("email");
+  });
+});
+
+describe("strategyTextSimilarity — dedup signal for distilled strategies (ReasoningBank 2509.25140)", () => {
+  it("scores near-paraphrases higher than unrelated strategies", () => {
+    const a = "when asked to summarise, use bullet points not prose";
+    const b = "when summarising, prefer bullet points over prose";
+    const c = "always reply in Korean";
+    expect(strategyTextSimilarity(a, b)).toBeGreaterThan(strategyTextSimilarity(a, c));
+    expect(strategyTextSimilarity(a, a)).toBeGreaterThanOrEqual(0.99);
+  });
+
+  it("is 0 when either side is empty", () => {
+    expect(strategyTextSimilarity("", "anything here")).toBe(0);
+    expect(strategyTextSimilarity("anything here", "")).toBe(0);
   });
 });

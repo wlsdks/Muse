@@ -110,6 +110,27 @@ function rankOverlap(query: ReadonlySet<string>, tokens: ReadonlySet<string>): n
   return shared;
 }
 
+/**
+ * Token-overlap (Jaccard) similarity between two strategy texts, CJK-aware via
+ * the same tokeniser. Used to dedupe an auto-distilled strategy against the
+ * existing bank so repeated corrections don't fill the playbook with
+ * paraphrases of one lesson (ReasoningBank, arXiv 2509.25140).
+ */
+export function strategyTextSimilarity(a: string, b: string): number {
+  const ta = rankTokens(a);
+  const tb = rankTokens(b);
+  if (ta.size === 0 || tb.size === 0) {
+    return 0;
+  }
+  let intersection = 0;
+  for (const token of ta) {
+    if (tb.has(token)) {
+      intersection += 1;
+    }
+  }
+  return intersection / (ta.size + tb.size - intersection);
+}
+
 function scoreStrategy(strategy: PlaybookStrategy, query: ReadonlySet<string>): number {
   if (query.size === 0) {
     return 0;

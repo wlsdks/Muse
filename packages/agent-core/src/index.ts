@@ -81,8 +81,15 @@ export {
 export type { AmbientSnapshot, AmbientSnapshotProvider } from "./ambient-context.js";
 export { applyVetoAvoidance, renderVetoAvoidanceSection } from "./veto-avoidance.js";
 export type { LearnedVeto, VetoAvoidanceProvider } from "./veto-avoidance.js";
-export { applyPlaybook, rankPlaybookStrategies, renderPlaybookSection } from "./playbook.js";
+export { applyPlaybook, rankPlaybookStrategies, renderPlaybookSection, strategyTextSimilarity } from "./playbook.js";
 export type { PlaybookStrategy, PlaybookProvider, RankPlaybookOptions } from "./playbook.js";
+export { detectCorrections, distillStrategyFromCorrection } from "./correction-distiller.js";
+export type {
+  CorrectionExchange,
+  DetectCorrectionsOptions,
+  DistilledStrategy,
+  DistillStrategyOptions
+} from "./correction-distiller.js";
 
 export {
   cosineSimilarity,

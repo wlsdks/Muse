@@ -176,6 +176,45 @@ query — the paper's "retrieved, not dumped" claim, made observable.
 - Lost-in-the-Middle edge-loading of the directive list (the list is
   ≤ topK short; best-first ordering is enough — no edge-load).
 
+## Slice 2 — correction-driven auto-distillation (delivered)
+
+Populate the playbook automatically from sessions where the user
+CORRECTED the assistant. Outcome signal is the RELIABLE one — an
+explicit correction — never an LLM self-judgement of success/failure
+(a small local model is an unreliable self-verifier, arXiv 2404.17140).
+
+- **Detector** (`detectCorrections`, agent-core, pure, EN+KO): a user
+  turn matching a conservative correction pattern that FOLLOWS an
+  assistant turn → `{request?, priorAnswer, correction}`. Precision
+  over recall (a false positive writes junk into the bank); bare
+  "wrong"/"instead" excluded.
+- **Distiller** (`distillStrategyFromCorrection`, agent-core, LLM,
+  fail-soft — mirrors `summariseSession`): the exchange → one
+  generalised `strategy:` (+ optional `tag:`). Secrets redacted before
+  the transcript leaves the machine. Undefined on any error/empty.
+- **Dedup** (`strategyTextSimilarity`, agent-core): Jaccard token
+  overlap (CJK-aware) ≥ 0.6 against the existing bank (and
+  already-recorded-this-run) drops the candidate, so repeated
+  corrections don't fill the bank with paraphrases. This also makes
+  re-running idempotent — no provenance field needed.
+- **Orchestrator** (`distillSessionCorrections`, cli, fail-soft —
+  mirrors `captureEndOfSessionEpisode`): read last session → detect →
+  distill → dedup → `recordPlaybookStrategy` into the SAME
+  `~/.muse/playbook.json`. Caps exchanges per session (default 2).
+- **Triggers (both):** auto at REPL exit, gated by
+  `MUSE_PLAYBOOK_DISTILL_ENABLED` (default off, like episodic memory);
+  and the manual `muse playbook distill`.
+
+Provenance (`source: manual|distilled`) was DEFERRED — not needed for
+the capability and dedup already guarantees idempotency (YAGNI).
+
+Verification: `correction-distiller.test.ts` (detector EN+KO, false-
+positive guard, no-prior-assistant, cap; distiller parse/omit-tag/
+fail-soft); `playbook.test.ts` (similarity); `chat-distill-corrections.test.ts`
+(records from a corrected session, skips no-correction, dedups, skips
+no-userId); `commands-playbook.test.ts` (distill subcommand). Live:
+real qwen3:8b distills a parseable strategy from a sample correction.
+
 ## CAPABILITIES.md line (on delivery)
 
 `- [Presence] The learned-strategy playbook injects only the
