@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildNoteLinkGraph, extractWikiLinks, noteLinkKey, noteLinkView, resolveNoteId } from "./notes-links.js";
+import { auditNoteGraph, buildNoteLinkGraph, extractWikiLinks, noteLinkKey, noteLinkView, resolveNoteId } from "./notes-links.js";
 
 describe("extractWikiLinks", () => {
   it("pulls [[targets]], stripping |alias and #section, deduped order-preserving", () => {
@@ -52,5 +52,34 @@ describe("buildNoteLinkGraph + noteLinkView — backlinks", () => {
     expect(resolveNoteId(graph, "a.md")).toBe("a.md");
     expect(resolveNoteId(graph, "A")).toBe("a.md"); // stem, case-insensitive
     expect(resolveNoteId(graph, "missing")).toBeUndefined();
+  });
+});
+
+describe("auditNoteGraph — orphans + broken links (Zettelkasten hygiene)", () => {
+  it("flags orphans (no links in or out) and broken links (unresolved targets)", () => {
+    const graph = buildNoteLinkGraph([
+      { id: "a.md", body: "links to [[b]] and [[ghost]]" }, // ghost is broken
+      { id: "b.md", body: "links back to [[a]]" },
+      { id: "lonely.md", body: "an island with no links" } // orphan
+    ]);
+    const audit = auditNoteGraph(graph);
+    expect(audit.orphans).toEqual(["lonely.md"]);
+    expect(audit.brokenLinks).toEqual([{ source: "a.md", target: "ghost" }]);
+  });
+
+  it("a fully-connected corpus has no orphans or broken links", () => {
+    const graph = buildNoteLinkGraph([
+      { id: "a.md", body: "[[b]]" },
+      { id: "b.md", body: "[[a]]" }
+    ]);
+    expect(auditNoteGraph(graph)).toEqual({ brokenLinks: [], orphans: [] });
+  });
+
+  it("a note that is only linked TO (no outbound) is NOT an orphan", () => {
+    const graph = buildNoteLinkGraph([
+      { id: "hub.md", body: "[[leaf]]" },
+      { id: "leaf.md", body: "no outbound links" }
+    ]);
+    expect(auditNoteGraph(graph).orphans).toEqual([]); // leaf has a backlink
   });
 });
