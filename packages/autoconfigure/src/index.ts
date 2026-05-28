@@ -219,7 +219,8 @@ export {
   resolveTelegramOffsetFile,
   resolveVetoesFile,
   resolvePlaybookFile,
-  resolvePlanCacheFile
+  resolvePlanCacheFile,
+  resolveAuthoredSkillsDir
 } from "./personal-providers.js";
 import {
   createConversationSummaryStore,

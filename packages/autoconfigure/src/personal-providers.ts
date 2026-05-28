@@ -41,6 +41,7 @@ import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
 import { readCredentialsSync, stringField } from "./provider-utils.js";
 
 import {
+  resolveAuthoredSkillsDir,
   resolveModelKeysFile,
   resolveUserSkillsDir,
   resolveWorkspaceSkillsDir
@@ -48,6 +49,7 @@ import {
 
 export {
   resolveActionLogFile,
+  resolveAuthoredSkillsDir,
   resolvePendingApprovalsFile,
   resolveBriefingSidecarFile,
   resolveContactsFile,
@@ -225,7 +227,8 @@ export async function buildSkillRegistry(env: MuseEnvironment): Promise<SkillReg
   if (env.MUSE_SKILLS_ENABLED?.trim().toLowerCase() === "false") {
     return undefined;
   }
-  const roots: { path: string; source: "user" | "workspace" }[] = [
+  const roots: { path: string; source: "user" | "workspace" | "authored" }[] = [
+    { path: resolveAuthoredSkillsDir(env), source: "authored" }, // FIRST = lowest precedence
     { path: resolveUserSkillsDir(env), source: "user" }
   ];
   const workspace = resolveWorkspaceSkillsDir(env);
