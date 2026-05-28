@@ -27,7 +27,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { renderPlaybookSection, reorderForLongContext, selectByMmr } from "@muse/agent-core";
+import { rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -313,6 +313,25 @@ export interface AskStreamResult {
  */
 export function composeChatSystemContent(systemPrompt: string, playbookSection: string | undefined): string {
   return playbookSection && playbookSection.trim().length > 0 ? `${playbookSection}\n\n${systemPrompt}` : systemPrompt;
+}
+
+/**
+ * ReasoningBank (arXiv 2509.25140): rank the playbook entries by relevance to
+ * the current question and render only the top-K as `[Learned Strategies]`,
+ * instead of dumping the whole bank at the small local model. Deterministic;
+ * empty bank ⇒ undefined (no block).
+ */
+export function selectPlaybookSection(
+  entries: readonly { readonly text: string; readonly tag?: string }[],
+  queryText: string,
+  topK?: number
+): string | undefined {
+  const ranked = rankPlaybookStrategies(
+    entries.map((entry) => (entry.tag ? { tag: entry.tag, text: entry.text } : { text: entry.text })),
+    queryText,
+    topK === undefined ? undefined : { topK }
+  );
+  return renderPlaybookSection(ranked);
 }
 
 /**
@@ -751,9 +770,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       try {
         const { queryPlaybook } = await import("@muse/mcp");
         const { resolvePlaybookFile } = await import("@muse/autoconfigure");
-        playbookSection = renderPlaybookSection(
-          (await queryPlaybook(resolvePlaybookFile(process.env as Record<string, string | undefined>), userKey))
-            .map((entry) => ({ tag: entry.tag, text: entry.text }))
+        const envTopK = Number(process.env.MUSE_PLAYBOOK_INJECT_TOPK);
+        playbookSection = selectPlaybookSection(
+          await queryPlaybook(resolvePlaybookFile(process.env as Record<string, string | undefined>), userKey),
+          query,
+          Number.isFinite(envTopK) && envTopK >= 1 ? envTopK : undefined
         );
       } catch {
         playbookSection = undefined;

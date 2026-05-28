@@ -45,6 +45,138 @@ export function renderPlaybookSection(strategies: readonly PlaybookStrategy[]): 
 }
 
 /**
+ * ReasoningBank (arXiv 2509.25140): a self-evolving agent retrieves only the
+ * reasoning memory RELEVANT to the current task instead of dumping the whole
+ * bank. Here it ranks the playbook's strategies against the current turn and
+ * keeps the top-K, so as auto-distillation grows the bank the small local
+ * model still sees a tight, on-topic directive block (`tool-calling.md`).
+ *
+ * Deterministic: token-overlap (CJK-aware, stopword-filtered) between the
+ * query and each strategy's text + tag (a tag mention is weighted as a strong
+ * signal). No embeddings, no LLM, no new dep — the scorer is the swap-point
+ * for an embedding ranker later. When the bank is at or below `topK` the SET
+ * is unchanged (today's inject-all), only ordered most-relevant-first.
+ */
+export interface RankPlaybookOptions {
+  /** Max strategies to keep. Default 6 — bounds the injected directive block. */
+  readonly topK?: number;
+  /** A strategy must exceed this overlap score to qualify on relevance. Default 0. */
+  readonly minScore?: number;
+}
+
+const DEFAULT_RANK_TOPK = 6;
+
+// Whole-word ASCII function words add noise to overlap scoring (a decoy
+// sharing only "the"/"to" would falsely rank). CJK bigrams are not filtered.
+const RANK_STOPWORDS = new Set<string>([
+  "a", "an", "the", "is", "are", "was", "were", "be", "been", "am", "to", "of",
+  "in", "on", "for", "and", "or", "my", "your", "our", "what", "who", "how",
+  "do", "does", "did", "you", "it", "its", "this", "that", "with", "at", "by",
+  "as", "me", "we", "i", "if", "so", "no", "not", "from", "about", "into",
+  "than", "please", "the"
+]);
+
+// Hangul / Han / Kana are word chars; everything else splits. Mirrors the
+// CJK-aware tokenisation episodic-recall uses so Korean strategies match.
+const RANK_NON_WORD_RE = /[^a-z0-9가-힯一-鿿぀-ゟ゠-ヿ]+/u;
+const RANK_CJK_RE = /[가-힯一-鿿぀-ゟ゠-ヿ]/u;
+
+function rankTokens(value: string): Set<string> {
+  const tokens = new Set<string>();
+  for (const raw of value.toLowerCase().split(RANK_NON_WORD_RE)) {
+    if (raw.length < 2) {
+      continue;
+    }
+    if (RANK_CJK_RE.test(raw)) {
+      // CJK has no word spaces; emit char bigrams so a paraphrase still
+      // overlaps ("이메일은" shares "이메"/"메일" with "이메일").
+      for (let index = 0; index < raw.length - 1; index += 1) {
+        tokens.add(raw.slice(index, index + 2));
+      }
+    } else if (!RANK_STOPWORDS.has(raw)) {
+      tokens.add(raw);
+    }
+  }
+  return tokens;
+}
+
+function rankOverlap(query: ReadonlySet<string>, tokens: ReadonlySet<string>): number {
+  let shared = 0;
+  for (const token of tokens) {
+    if (query.has(token)) {
+      shared += 1;
+    }
+  }
+  return shared;
+}
+
+function scoreStrategy(strategy: PlaybookStrategy, query: ReadonlySet<string>): number {
+  if (query.size === 0) {
+    return 0;
+  }
+  const textScore = rankOverlap(query, rankTokens(strategy.text));
+  const tagScore = strategy.tag ? rankOverlap(query, rankTokens(strategy.tag)) : 0;
+  return textScore + 2 * tagScore;
+}
+
+function byScoreDescThenIndexAsc(
+  a: { readonly score: number; readonly index: number },
+  b: { readonly score: number; readonly index: number }
+): number {
+  return b.score - a.score || a.index - b.index;
+}
+
+function finiteOr(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+export function rankPlaybookStrategies(
+  strategies: readonly PlaybookStrategy[],
+  queryText: string,
+  options?: RankPlaybookOptions
+): readonly PlaybookStrategy[] {
+  const topK = Math.max(1, Math.trunc(finiteOr(options?.topK, DEFAULT_RANK_TOPK)));
+  const minScore = finiteOr(options?.minScore, 0);
+  const query = rankTokens(queryText);
+  // Input is oldest→newest insertion order, so `index` doubles as a recency
+  // proxy (higher = more recent) for the floor below.
+  const scored = strategies.map((strategy, index) => ({
+    index,
+    score: scoreStrategy(strategy, query),
+    strategy
+  }));
+
+  if (strategies.length <= topK) {
+    return [...scored].sort(byScoreDescThenIndexAsc).map((s) => s.strategy);
+  }
+
+  const selected = scored.filter((s) => s.score > minScore).sort(byScoreDescThenIndexAsc).slice(0, topK);
+  if (selected.length < topK) {
+    // Recency floor: a non-empty bank must never inject zero strategies, so
+    // top up with the most-recent strategies that didn't clear minScore.
+    const chosen = new Set(selected.map((s) => s.index));
+    const recentFirst = scored.filter((s) => !chosen.has(s.index)).sort((a, b) => b.index - a.index);
+    for (const candidate of recentFirst) {
+      if (selected.length >= topK) {
+        break;
+      }
+      selected.push(candidate);
+    }
+  }
+  return [...selected].sort(byScoreDescThenIndexAsc).map((s) => s.strategy);
+}
+
+function latestUserText(messages: readonly { readonly role: string; readonly content: string }[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message && message.role === "user" && typeof message.content === "string") {
+      return message.content;
+    }
+  }
+  return "";
+}
+
+/**
  * Inject the user's learned strategies as a `[Learned Strategies]` system
  * block so the agent applies what past corrections taught (ACE's evolving
  * playbook). Conservative + opt-out-safe: no provider, no `metadata.userId`,
@@ -68,7 +200,10 @@ export async function applyPlaybook(
   } catch {
     return context.input;
   }
-  const rendered = renderPlaybookSection(strategies);
+  // ReasoningBank (arXiv 2509.25140): inject only the strategies relevant to
+  // this turn, ranked by the latest user message — not the whole bank.
+  const ranked = rankPlaybookStrategies(strategies, latestUserText(context.input.messages));
+  const rendered = renderPlaybookSection(ranked);
   if (!rendered) {
     return context.input;
   }

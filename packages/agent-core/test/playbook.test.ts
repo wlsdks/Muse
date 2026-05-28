@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyPlaybook,
   createAgentRuntime,
+  rankPlaybookStrategies,
   renderPlaybookSection,
-  type PlaybookProvider
+  type PlaybookProvider,
+  type PlaybookStrategy
 } from "../src/index.js";
 
 function ctx(messages: { role: "user" | "assistant" | "system"; content: string }[], userId?: string) {
@@ -42,6 +44,22 @@ describe("applyPlaybook — conservative, fail-open gating (ACE arXiv 2510.04618
     expect(system?.content).toContain("[Learned Strategies]");
     expect(system?.content).toContain("next business day");
     expect(out.metadata?.playbookApplied).toBe(true);
+  });
+
+  it("ranks injected strategies by relevance to the latest user message (ReasoningBank 2509.25140)", async () => {
+    const provider: PlaybookProvider = {
+      listStrategies: async () => [
+        { tag: "scheduling", text: "when rescheduling, default to the next business day" },
+        { tag: "email", text: "keep work emails under 4 sentences" }
+      ]
+    };
+    const out = await applyPlaybook(ctx([{ content: "help me draft an email to Sam", role: "user" }], "stark"), provider);
+    const system = out.messages.find((m) => m.role === "system")?.content ?? "";
+    const emailAt = system.indexOf("under 4 sentences");
+    const schedAt = system.indexOf("next business day");
+    expect(emailAt).toBeGreaterThanOrEqual(0);
+    expect(schedAt).toBeGreaterThanOrEqual(0);
+    expect(emailAt).toBeLessThan(schedAt); // the email-relevant strategy is listed first
   });
 
   it("renderPlaybookSection collapses an injection-bearing strategy + drops empties", () => {
@@ -85,5 +103,61 @@ describe("playbook wired into the live agent-runtime pipeline (ACE 2510.04618)",
     const hasSystem = (sinkB.request?.messages ?? []).filter((m) => m.role === "system").map((m) => m.content).join("\n");
     expect(hasSystem).toContain("[Learned Strategies]");
     expect(hasSystem).toContain("under 4 sentences");
+  });
+});
+
+describe("rankPlaybookStrategies — relevance-ranked top-K (ReasoningBank arXiv 2509.25140)", () => {
+  const mk = (text: string, tag?: string): PlaybookStrategy => (tag ? { tag, text } : { text });
+
+  it("returns the whole bank, most-relevant first, when it is at or below topK", () => {
+    const bank = [
+      mk("when rescheduling, default to the next business day", "scheduling"),
+      mk("keep work emails under 4 sentences", "email")
+    ];
+    const out = rankPlaybookStrategies(bank, "please draft an email to Sam", { topK: 6 });
+    expect(out).toHaveLength(2);
+    expect(out[0].text).toContain("emails"); // email strategy is most relevant
+  });
+
+  it("drops the least-relevant strategies when the bank exceeds topK", () => {
+    const bank = [
+      mk("keep work emails under 4 sentences", "email"),
+      mk("when rescheduling, default to the next business day", "scheduling"),
+      mk("summarise meeting notes as bullet points", "notes")
+    ];
+    const out = rankPlaybookStrategies(bank, "push it to next week on a business day", { topK: 1 });
+    expect(out).toHaveLength(1);
+    expect(out[0].tag).toBe("scheduling");
+  });
+
+  it("recency floor: a zero-overlap query over a bank larger than topK returns the most-recent topK", () => {
+    const bank = [
+      mk("oldest strategy about gardening"),
+      mk("middle strategy about cooking"),
+      mk("newest strategy about cycling")
+    ];
+    const out = rankPlaybookStrategies(bank, "quantum chromodynamics lattice", { topK: 2 });
+    const texts = out.map((s) => s.text);
+    expect(out).toHaveLength(2);
+    expect(texts).toContain("newest strategy about cycling");
+    expect(texts).toContain("middle strategy about cooking");
+    expect(texts).not.toContain("oldest strategy about gardening");
+  });
+
+  it("an empty query is stable and never throws (recency top-K)", () => {
+    const bank = [mk("keep replies terse"), mk("use metric units"), mk("cite sources inline")];
+    const out = rankPlaybookStrategies(bank, "", { topK: 2 });
+    expect(out).toHaveLength(2);
+  });
+
+  it("matches Korean (CJK-aware) strategies by content overlap", () => {
+    const bank = [
+      mk("이메일은 네 문장 이내로 작성한다", "email"),
+      mk("회의는 항상 다음 영업일로 미룬다", "scheduling"),
+      mk("메모는 불릿으로 요약한다", "notes")
+    ];
+    const out = rankPlaybookStrategies(bank, "샘에게 이메일 답장 작성해줘", { topK: 1 });
+    expect(out).toHaveLength(1);
+    expect(out[0].tag).toBe("email");
   });
 });
