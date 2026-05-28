@@ -35,7 +35,8 @@ import { classifyTier, type ModelTier } from "@muse/multi-agent";
 import type { Command } from "commander";
 
 import { cosine, isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
-import { filterLiveEpisodeEntries, filterLiveNoteIndexFiles } from "./commands-recall.js";
+import { filterLiveEpisodeEntries, filterLiveNoteIndexFiles, type RecallHit } from "./commands-recall.js";
+import { formatConnectionsSection } from "./commands-today.js";
 import { embed } from "./embed.js";
 import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpisodeIndex, saveEpisodeIndex } from "./episode-index.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
@@ -109,6 +110,7 @@ interface AskOptions {
   readonly withTools?: boolean;
   readonly actuators?: boolean;
   readonly tiered?: boolean;
+  readonly connect?: boolean;
   /**
    * Clamps the answer to notes + local-memory grounding only.
    * Disables native web_search on every provider path and, when
@@ -153,6 +155,33 @@ export function routeAskTierModel(
   const tier = classifyTier(query);
   const models = resolveAskTierModels(defaultModel, env);
   return { model: tier === "fast" ? models.fast : models.heavy, tier };
+}
+
+/**
+ * SB-3 proactive connection for `muse ask --connect`: turn the grounding
+ * the answer already computed (top note chunks + past-session episodes)
+ * into a readable "💡 Related in your brain" footer — provenance the user
+ * can scan and trust, consistent with `muse today --connect`. Pure: reuses
+ * the already-ranked hits (no extra search), keeps only those at/above the
+ * relevance floor, ranks across both sources, and caps the list. Same
+ * RecallHit shape + formatter as today, so the surfaces stay consistent.
+ */
+export function buildAskConnections(params: {
+  readonly notes: ReadonlyArray<{ readonly file: string; readonly score: number; readonly text: string }>;
+  readonly episodes: ReadonlyArray<{ readonly id: string; readonly score: number; readonly summary: string }>;
+  readonly minScore?: number;
+  readonly limit?: number;
+}): RecallHit[] {
+  const floor = params.minScore ?? 0.5;
+  const limit = Math.max(1, params.limit ?? 4);
+  const hits: RecallHit[] = [
+    ...params.notes.map((n) => ({ ref: n.file, score: n.score, snippet: n.text, source: "notes" as const })),
+    ...params.episodes.map((e) => ({ ref: e.id, score: e.score, snippet: e.summary, source: "episodes" as const }))
+  ];
+  return hits
+    .filter((h) => Number.isFinite(h.score) && h.score >= floor)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 interface IndexChunk {
@@ -314,6 +343,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--notes-only",
       "Clamp grounding to local notes + memory only — disables native web_search on every provider path and, when combined with --with-tools, allowlists the agent runtime to muse.notes / muse.notes-multi / muse.context only."
+    )
+    .option(
+      "--connect",
+      "After the answer, surface a '💡 Related in your brain' footer of the strongest related notes / past sessions (second-brain connection, same as `muse today --connect`). Off by default; ignored with --json."
     )
     .option(
       "--tiered",
@@ -856,6 +889,18 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         io.stdout(`${JSON.stringify(payload, null, 2)}\n`);
       } else {
         io.stdout("\n");
+        // SB-3: a readable second-brain provenance footer the user can
+        // scan — reuses the grounding already ranked this turn (no extra
+        // search), only the strongest hits, shared formatter with `today`.
+        if (options.connect) {
+          const section = formatConnectionsSection(buildAskConnections({
+            episodes: episodeHits,
+            notes: scored.map((r) => ({ file: r.file, score: r.score, text: r.chunk.text }))
+          }));
+          if (section.length > 0) {
+            io.stdout(section);
+          }
+        }
       }
     });
 }
