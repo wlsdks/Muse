@@ -35,6 +35,7 @@ import { readEpisodes, readReminders, readTasks, type PersistedReminder, type Pe
 import { classifyTier, type ModelTier } from "@muse/multi-agent";
 import type { Command } from "commander";
 
+import { readCorrections, renderCorrectionsBlock, resolveCorrectionsFile } from "./commands-feedback.js";
 import { cosine, isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
 import { filterLiveEpisodeEntries, filterLiveNoteIndexFiles, type RecallHit } from "./commands-recall.js";
 import { formatConnectionsSection } from "./commands-today.js";
@@ -732,9 +733,20 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           .map((r, i) => `<<reminder ${(i + 1).toString()} — ${r.id} (due ${r.dueAt})>>\n${r.text}\n<<end>>`)
           .join("\n\n");
 
+      // Phase 2 (runtime self-tuning): inject the user's recorded
+      // corrections as a high-priority directive so past feedback shapes
+      // this answer (Reflexion). Fail-soft; absent file ⇒ no block.
+      let correctionsBlock: string | undefined;
+      try {
+        correctionsBlock = renderCorrectionsBlock(await readCorrections(resolveCorrectionsFile(process.env as Record<string, string | undefined>)));
+      } catch {
+        correctionsBlock = undefined;
+      }
+
       const systemPrompt = [
         ...(personaTemplatePreamble.length > 0 ? [personaTemplatePreamble, ""] : []),
         ...(personaPrompt ? [personaPrompt, ""] : []),
+        ...(correctionsBlock ? [correctionsBlock, ""] : []),
         // Date/time line is ALWAYS present, even with no persona —
         // questions like "anything due today?" / "is the dentist
         // tomorrow?" require the model to know `now`, regardless of
