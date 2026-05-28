@@ -345,6 +345,14 @@ export function formatSetupStatusLines(snap: SetupStatusSnapshot): string[] {
     pushNext(snap.model.nextStep);
   }
 
+  // local-only / no-cloud-egress posture (warn/fail map onto the
+  // renderer's info/todo vocabulary; the detail carries the real message)
+  push(
+    snap.localOnly.status === "ok" ? "ok" : snap.localOnly.status === "warn" ? "info" : "todo",
+    "local-only",
+    snap.localOnly.detail
+  );
+
   // mcp
   if (snap.mcp.status === "ok") {
     push("ok", "mcp", `${snap.mcp.externalServerCount.toString()} external server(s) in ${snap.mcp.file}`);

@@ -24,6 +24,7 @@ import {
   type MuseEnvironment
 } from "./index.js";
 import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
+import { createModelProvider } from "./autoconfigure-model-provider.js";
 
 export interface SetupStatusSnapshot {
   readonly model: {
@@ -95,6 +96,41 @@ export interface SetupStatusSnapshot {
     readonly nextStep?: string;
   };
   readonly actuators: ActuatorReadinessSnapshot;
+  readonly localOnly: LocalOnlyStatusSnapshot;
+}
+
+/**
+ * Local-only / no-cloud-egress posture (MUSE_LOCAL_ONLY). The single
+ * source of truth shared by `muse doctor` and `muse setup status` so the
+ * two surfaces can never disagree about whether the privacy guarantee is
+ * in force. `fail` previews the runtime's own boot refusal (local-only on
+ * but a cloud model configured); `warn` flags that egress is possible
+ * because local-only is off while a cloud credential is present.
+ */
+export interface LocalOnlyStatusSnapshot {
+  readonly enabled: boolean;
+  readonly status: "ok" | "warn" | "fail";
+  readonly detail: string;
+}
+
+const CLOUD_CREDENTIAL_ENV_KEYS = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"] as const;
+
+export function evaluateLocalOnlyPosture(env: Readonly<Record<string, string | undefined>>): LocalOnlyStatusSnapshot {
+  const enabled = parseBoolean(env.MUSE_LOCAL_ONLY, false);
+  if (enabled) {
+    try {
+      // Runs the SAME fail-close the runtime does at boot, so the report
+      // and the actual startup outcome can never diverge.
+      createModelProvider(env);
+      return { detail: "🔒 on — cloud LLM + voice egress blocked (fail-closed to local)", enabled, status: "ok" };
+    } catch (cause) {
+      return { detail: cause instanceof Error ? cause.message : "cloud provider selected under local-only", enabled, status: "fail" };
+    }
+  }
+  const cloudKey = CLOUD_CREDENTIAL_ENV_KEYS.find((k) => (env[k] ?? "").trim().length > 0);
+  return cloudKey
+    ? { detail: `off — cloud egress possible (${cloudKey} set); set MUSE_LOCAL_ONLY=true to enforce`, enabled, status: "warn" }
+    : { detail: "off (no cloud credentials configured)", enabled, status: "ok" };
 }
 
 export interface WebSearchEnvSnapshot {
@@ -292,6 +328,7 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
   const calendarLocalStatus = calendarBytes !== undefined ? "ok" : "info";
   const credentialsStatus = credentialsBytes !== undefined ? "ok" : "info";
   return {
+    localOnly: evaluateLocalOnlyPosture(env),
     calendar: {
       credentials: {
         file: credentialsFile,
