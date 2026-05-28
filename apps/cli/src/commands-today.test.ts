@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { writeFollowups, writeReminders, type PersistedFollowup, type PersistedReminder } from "@muse/mcp";
 import { describe, expect, it } from "vitest";
 
-import { formatConnectionsSection, formatEvents, formatHeadlines, formatRevisitSection, formatTasks, formatTodayBrief, formatTodayConflicts, formatWeatherLine, parseLookaheadHours, pickConnectionQuery, readDueFollowups, readDueReminders, relativeDueTag, resolveTodayFeedHeadlines, resolveTodayWeatherLine } from "./commands-today.js";
+import { formatConnectionsSection, formatEvents, formatHeadlines, formatRevisitSection, formatStaleTasksSection, formatTasks, formatTodayBrief, formatTodayConflicts, formatWeatherLine, parseLookaheadHours, pickConnectionQuery, readDueFollowups, readDueReminders, relativeDueTag, resolveTodayFeedHeadlines, resolveTodayWeatherLine, selectStaleTasks } from "./commands-today.js";
 
 const ESC = String.fromCharCode(27);
 
@@ -33,6 +33,48 @@ describe("formatConnectionsSection — render the proactive 'Related in your bra
     expect(out).toContain("Related in your brain");
     expect(out).toContain("ssl.md");
     expect(out).toContain("[episodes]");
+  });
+});
+
+describe("selectStaleTasks — GTD nudge for open + undated tasks that rotted", () => {
+  const NOW = Date.parse("2026-05-28T00:00:00Z");
+  const daysAgo = (n: number): string => new Date(NOW - n * 86_400_000).toISOString();
+  const task = (id: string, title: string, status: string, createdAt: string, dueAt?: string) =>
+    ({ id, title, status, createdAt, ...(dueAt ? { dueAt } : {}) });
+
+  it("picks open + undated tasks older than the threshold, oldest first", () => {
+    const stale = selectStaleTasks([
+      task("1", "fresh", "open", daysAgo(3)),
+      task("2", "old undated", "open", daysAgo(40)),
+      task("3", "older undated", "open", daysAgo(90))
+    ], NOW);
+    expect(stale.map((t) => t.title)).toEqual(["older undated", "old undated"]);
+  });
+
+  it("excludes dated tasks (today's due view already shows them) and done tasks", () => {
+    const stale = selectStaleTasks([
+      task("1", "old but dated", "open", daysAgo(40), "2026-06-01T00:00:00Z"),
+      task("2", "old but done", "done", daysAgo(40)),
+      task("3", "genuinely stale", "open", daysAgo(40))
+    ], NOW);
+    expect(stale.map((t) => t.title)).toEqual(["genuinely stale"]);
+  });
+
+  it("skips unparseable createdAt and caps the list at 5", () => {
+    expect(selectStaleTasks([task("x", "bad", "open", "not-a-date")], NOW)).toEqual([]);
+    const many = Array.from({ length: 9 }, (_v, i) => task(String(i), `t${i.toString()}`, "open", daysAgo(20 + i)));
+    expect(selectStaleTasks(many, NOW)).toHaveLength(5);
+  });
+});
+
+describe("formatStaleTasksSection — proactive GTD nudge block in today", () => {
+  it("is empty when none are stale", () => {
+    expect(formatStaleTasksSection([])).toBe("");
+  });
+  it("renders the age + title", () => {
+    const out = formatStaleTasksSection([{ id: "1", title: "renew the domain", ageDays: 42.7 }]);
+    expect(out).toContain("Open a while — still relevant?");
+    expect(out).toContain("[42d] renew the domain");
   });
 });
 

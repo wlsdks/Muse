@@ -210,12 +210,25 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         }
       }
 
+      // Proactive GTD nudge: open + undated tasks that have rotted past the
+      // staleness threshold — today's due-based view never resurfaces them.
+      // CLI-side, default-on, silent when none, skipped under --json, fail-soft.
+      let staleTasksSection = "";
+      if (!options.json) {
+        try {
+          const all = await readTasks(resolveTasksFile(process.env as Record<string, string | undefined>));
+          staleTasksSection = formatStaleTasksSection(selectStaleTasks(all, Date.now()));
+        } catch {
+          // unreadable tasks file must not fail the brief
+        }
+      }
+
       if (options.brief) {
         const prose = await renderBrief(io, command, helpers, briefing, usedLocal, options.model);
         if (options.json) {
           helpers.writeOutput(io, { ...briefing, brief: prose });
         } else {
-          io.stdout(`${prose.trim()}\n${connectionsSection}${revisitSection}`);
+          io.stdout(`${prose.trim()}\n${connectionsSection}${revisitSection}${staleTasksSection}`);
         }
         if (options.speak) {
           await speakPlain(io, helpers.shells, prose, options.audioVoice, parseAudioFormat(options.audioFormat));
@@ -259,7 +272,7 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         return;
       }
 
-      io.stdout(`${formatTodayBrief(briefing, usedLocal)}${connectionsSection}${revisitSection}`);
+      io.stdout(`${formatTodayBrief(briefing, usedLocal)}${connectionsSection}${revisitSection}${staleTasksSection}`);
     });
 }
 
@@ -315,6 +328,53 @@ export function formatRevisitSection(due: readonly { readonly path: string; read
   }
   const lines = due.map((d) => `  [${d.intervalDays.toString()}d] ${d.path.split("/").pop() ?? d.path}`);
   return `\n📒 Worth revisiting (spaced review):\n${lines.join("\n")}\n`;
+}
+
+const STALE_TASK_DAYS = 14;
+const STALE_TASK_MAX = 5;
+
+export interface StaleTask {
+  readonly id: string;
+  readonly title: string;
+  readonly ageDays: number;
+}
+
+/**
+ * Open + UNDATED tasks older than `thresholdDays` (by createdAt), oldest
+ * first, capped — a GTD review nudge (Allen 2001, "Getting Things Done")
+ * for "stuff" that silently rots. DATED tasks are excluded: today's
+ * imminent view already surfaces those, so this is complementary, not a
+ * double-listing. Unparseable createdAt is skipped.
+ */
+export function selectStaleTasks(
+  tasks: readonly { readonly id: string; readonly title: string; readonly status: string; readonly createdAt: string; readonly dueAt?: string }[],
+  nowMs: number,
+  thresholdDays: number = STALE_TASK_DAYS
+): StaleTask[] {
+  const threshold = Number.isFinite(thresholdDays) && thresholdDays > 0 ? thresholdDays : STALE_TASK_DAYS;
+  return tasks
+    .flatMap((task) => {
+      if (task.status !== "open" || task.dueAt !== undefined) {
+        return [];
+      }
+      const created = Date.parse(task.createdAt);
+      if (!Number.isFinite(created)) {
+        return [];
+      }
+      const ageDays = (nowMs - created) / 86_400_000;
+      return ageDays >= threshold ? [{ ageDays, id: task.id, title: task.title }] : [];
+    })
+    .sort((a, b) => b.ageDays - a.ageDays)
+    .slice(0, STALE_TASK_MAX);
+}
+
+/** Render the proactive "Open a while — still relevant?" nudge (empty when none). */
+export function formatStaleTasksSection(stale: readonly StaleTask[]): string {
+  if (stale.length === 0) {
+    return "";
+  }
+  const lines = stale.map((task) => `  [${Math.floor(task.ageDays).toString()}d] ${task.title}`);
+  return `\n🗂 Open a while — still relevant?\n${lines.join("\n")}\n`;
 }
 
 /** Render the proactive "Related in your brain" block (empty when no hits). */
