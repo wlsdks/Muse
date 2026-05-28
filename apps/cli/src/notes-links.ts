@@ -87,6 +87,38 @@ export function noteLinkView(graph: NoteLinkGraph, noteId: string): NoteLinkView
   return { backlinks, outbound };
 }
 
+export interface NoteGraphAudit {
+  /** Note ids with no inbound AND no outbound links — disconnected islands. */
+  readonly orphans: readonly string[];
+  /** Outbound `[[targets]]` that resolve to no note in the corpus. */
+  readonly brokenLinks: readonly { readonly source: string; readonly target: string }[];
+}
+
+/**
+ * Corpus-wide link-graph health (Zettelkasten hygiene): orphan notes (no
+ * links in or out — knowledge that's fallen off the graph) and broken
+ * links (a `[[target]]` pointing at a note that doesn't exist). Both
+ * sorted for stable output.
+ */
+export function auditNoteGraph(graph: NoteLinkGraph): NoteGraphAudit {
+  const orphans: string[] = [];
+  const brokenLinks: { source: string; target: string }[] = [];
+  for (const [id, targets] of graph.outbound) {
+    const inboundCount = (graph.backlinks.get(noteLinkKey(id)) ?? []).length;
+    if (targets.length === 0 && inboundCount === 0) {
+      orphans.push(id);
+    }
+    for (const target of targets) {
+      if (!graph.keyToId.has(target.toLowerCase())) {
+        brokenLinks.push({ source: id, target });
+      }
+    }
+  }
+  orphans.sort((a, b) => a.localeCompare(b));
+  brokenLinks.sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+  return { brokenLinks, orphans };
+}
+
 /** Resolve a user query (exact id or a name/stem) to a note id present in the graph. */
 export function resolveNoteId(graph: NoteLinkGraph, query: string): string | undefined {
   const trimmed = query.trim();

@@ -430,6 +430,22 @@ export function parseRagBoundedInt(
   return Math.min(max, Math.trunc(parsed));
 }
 
+/** Read every note body via the local provider and build the wiki-link graph. Shared by `notes links` + `notes graph`. */
+async function loadNoteLinkGraph(dir: string): Promise<import("./notes-links.js").NoteLinkGraph> {
+  const { LocalDirNotesProvider } = await import("@muse/mcp");
+  const { buildNoteLinkGraph } = await import("./notes-links.js");
+  const provider = new LocalDirNotesProvider({ notesDir: dir });
+  const entries = await provider.list();
+  const docs: { id: string; body: string }[] = [];
+  for (const entry of entries) {
+    const read = await provider.read(entry.id);
+    if (read?.body) {
+      docs.push({ body: read.body, id: entry.id });
+    }
+  }
+  return buildNoteLinkGraph(docs);
+}
+
 export function registerNotesRagCommands(program: Command, io: ProgramIO): void {
   // `notes` is registered upstream by commands-notes.ts (the API-wrapping
   // surface). Find it instead of recreating so reindex/search land
@@ -570,19 +586,9 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
     .option("--dir <path>", "Notes directory (default MUSE_NOTES_DIR or ~/.muse/notes)")
     .option("--json", "Print JSON instead of formatted text")
     .action(async (query: string, options: { readonly dir?: string; readonly json?: boolean }) => {
-      const { LocalDirNotesProvider } = await import("@muse/mcp");
-      const { buildNoteLinkGraph, noteLinkView, resolveNoteId } = await import("./notes-links.js");
+      const { noteLinkView, resolveNoteId } = await import("./notes-links.js");
       const dir = options.dir ?? resolveNotesDir(process.env as Record<string, string | undefined>);
-      const provider = new LocalDirNotesProvider({ notesDir: dir });
-      const entries = await provider.list();
-      const docs: { id: string; body: string }[] = [];
-      for (const entry of entries) {
-        const read = await provider.read(entry.id);
-        if (read?.body) {
-          docs.push({ body: read.body, id: entry.id });
-        }
-      }
-      const graph = buildNoteLinkGraph(docs);
+      const graph = await loadNoteLinkGraph(dir);
       const noteId = resolveNoteId(graph, query);
       if (!noteId) {
         io.stderr(`No note matching '${query}' in ${dir}.\n`);
@@ -607,6 +613,38 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
       } else {
         for (const source of view.backlinks) {
           io.stdout(`  ← ${source}\n`);
+        }
+      }
+    });
+
+  notes
+    .command("graph")
+    .description("Audit the note link graph — orphan notes (no [[links]] in or out) and broken links (targets that don't resolve). Zettelkasten hygiene. Read-only, deterministic.")
+    .option("--dir <path>", "Notes directory (default MUSE_NOTES_DIR or ~/.muse/notes)")
+    .option("--json", "Print JSON instead of formatted text")
+    .action(async (options: { readonly dir?: string; readonly json?: boolean }) => {
+      const { auditNoteGraph } = await import("./notes-links.js");
+      const dir = options.dir ?? resolveNotesDir(process.env as Record<string, string | undefined>);
+      const audit = auditNoteGraph(await loadNoteLinkGraph(dir));
+      if (options.json) {
+        io.stdout(`${JSON.stringify(audit, null, 2)}\n`);
+        return;
+      }
+      io.stdout(`Note graph audit (${dir}):\n`);
+      if (audit.brokenLinks.length === 0) {
+        io.stdout("  ✓ no broken links\n");
+      } else {
+        io.stdout(`  ⚠ ${audit.brokenLinks.length.toString()} broken link(s):\n`);
+        for (const broken of audit.brokenLinks) {
+          io.stdout(`    ${broken.source} → [[${broken.target}]] (unresolved)\n`);
+        }
+      }
+      if (audit.orphans.length === 0) {
+        io.stdout("  ✓ no orphan notes\n");
+      } else {
+        io.stdout(`  ⚠ ${audit.orphans.length.toString()} orphan note(s) (no links in or out):\n`);
+        for (const orphan of audit.orphans) {
+          io.stdout(`    ${orphan}\n`);
         }
       }
     });
