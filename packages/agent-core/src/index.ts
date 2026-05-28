@@ -91,8 +91,8 @@ export type {
   DistillStrategyOptions
 } from "./correction-distiller.js";
 
-export { detectSkillCandidates } from "./skill-review.js";
-export type { SkillReviewSignal, SkillDraft, DetectSkillCandidatesOptions } from "./skill-review.js";
+export { detectSkillCandidates, draftSkillFromSignal } from "./skill-review.js";
+export type { SkillReviewSignal, SkillDraft, DetectSkillCandidatesOptions, DraftSkillOptions } from "./skill-review.js";
 
 export {
   cosineSimilarity,
