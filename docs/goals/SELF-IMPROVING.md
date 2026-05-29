@@ -94,9 +94,14 @@ Building blocks already in the tree (reuse, don't rebuild): `commitment-detector
   similarity-patch one of them. Live battery `verify-skill-merge.mjs` on
   qwen3:8b: 3 related summarise-* skills → coherent umbrella (positive);
   unrelated skills → NONE, no force-merge (negative). — done 2026-05-29
-- [ ] **1b — Consolidate playbook strategies.** Same for near-duplicate learned
-  `[Learned Strategies]` — merge/generalise, dedup. Useful-check: redundant
-  strategies collapse; distinct ones stay.
+- [x] **1b — Consolidate playbook strategies.** `muse playbook consolidate`
+  (preview by default, `--apply`): clusters learned strategies by
+  strategyTextSimilarity, a local-Qwen `mergePlaybookStrategies` folds each
+  redundant cluster into one general strategy (or NONE for distinct ones), then
+  records the merged + removes the originals. Reuses the pure
+  `clusterByTextSimilarity`. Live battery `verify-playbook-merge.mjs` on
+  qwen3:8b: redundant summarise strategies → one merged (positive); distinct
+  strategies → NONE, never collapsed (negative). — done 2026-05-29
 - [ ] **1c — Idle/session-end trigger + dry-run + rollback.** Wire the curator
   to run idle-gated (or at session end behind a flag), with a dry-run preview
   and archive-restore. Useful-check: dry-run shows the plan and mutates nothing;

@@ -8,8 +8,9 @@
 
 import { randomUUID } from "node:crypto";
 
+import { clusterByTextSimilarity, mergePlaybookStrategies, strategyTextSimilarity } from "@muse/agent-core";
 import { createMuseRuntimeAssembly, resolvePlaybookFile } from "@muse/autoconfigure";
-import { queryPlaybook, recordPlaybookStrategy, removePlaybookStrategy } from "@muse/mcp";
+import { queryPlaybook, recordPlaybookStrategy, removePlaybookStrategy, type PlaybookEntry } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { distillSessionCorrections } from "./chat-distill-corrections.js";
@@ -79,6 +80,58 @@ export function registerPlaybookCommands(program: Command, io: ProgramIO): void 
       }
       await removePlaybookStrategy(playbookFile(), match.id);
       io.stdout(`Removed strategy [${match.id.slice(0, 12)}]\n`);
+    });
+
+  playbook
+    .command("consolidate")
+    .description("Merge near-duplicate learned strategies into one (preview by default; --apply to do it)")
+    .option("--threshold <n>", "Strategy similarity to cluster (0..1, default 0.6)")
+    .option("--apply", "Actually merge (default: dry-run preview)")
+    .option("--user <id>", "User identity (default $MUSE_USER_ID or $USER)")
+    .option("--model <id>", "Model to merge with (default the configured model)")
+    .action(async (options: { readonly threshold?: string; readonly apply?: boolean; readonly user?: string; readonly model?: string }) => {
+      const threshold = options.threshold === undefined ? 0.6 : Number(options.threshold);
+      if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1) {
+        throw new Error("--threshold must be a number in (0, 1]");
+      }
+      const userId = resolveDefaultUserKey({ override: options.user });
+      const assembly = createMuseRuntimeAssembly();
+      const model = options.model ?? assembly.defaultModel;
+      if (!assembly.modelProvider || !model) {
+        io.stdout("consolidate needs a model provider — run `muse setup` or set MUSE_MODEL.\n");
+        return;
+      }
+      const entries = await queryPlaybook(playbookFile(), userId);
+      const clusters = clusterByTextSimilarity(entries, (e: PlaybookEntry) => e.text, strategyTextSimilarity, threshold).filter((c) => c.length >= 2);
+      if (clusters.length === 0) {
+        io.stdout("No near-duplicate strategies to consolidate.\n");
+        return;
+      }
+      let merged = 0;
+      for (const cluster of clusters) {
+        const mergedText = await mergePlaybookStrategies(
+          cluster.map((e) => e.text),
+          { model, modelProvider: assembly.modelProvider as Parameters<typeof mergePlaybookStrategies>[1]["modelProvider"] }
+        );
+        if (!mergedText) continue; // genuinely distinct — leave them
+        merged += 1;
+        if (options.apply) {
+          await recordPlaybookStrategy(playbookFile(), {
+            id: `pb_${randomUUID()}`,
+            userId,
+            text: mergedText,
+            ...(cluster[0]!.tag ? { tag: cluster[0]!.tag } : {}),
+            createdAt: new Date().toISOString()
+          });
+          for (const e of cluster) await removePlaybookStrategy(playbookFile(), e.id);
+        }
+        io.stdout(`  ${options.apply ? "merged" : "would merge"} ${cluster.length.toString()} → "${mergedText}"\n`);
+      }
+      if (merged === 0) {
+        io.stdout("Clusters found but none cohered into a merge.\n");
+        return;
+      }
+      if (!options.apply) io.stdout("\nRun with --apply to merge (originals removed, merged strategy recorded).\n");
     });
 
   playbook
