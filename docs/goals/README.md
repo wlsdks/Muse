@@ -716,6 +716,10 @@ Append one line when a discovery path is evaluated and deferred:
   proposed-action stores already hardened (randomUUID tmp + per-file
   mutation queue). Likely the recall-hit store needs the same atomic-append
   fix; a future iteration should reproduce under load and harden it.
+  RESOLVED — the recall-hits store had BOTH the tmp-rename crash and the
+  last-writer-wins read-modify-write; fixed with randomUUID tmp + a per-file
+  mutation queue (recall-hits-store.test.ts +3 concurrency tests, full check
+  green). The flake's root cause is gone.
 - qwen3:8b eager web_action on booking MUSINGS — iter (eval:tools negative
   traps) — finding: a booking *musing* with no concrete page ("I should
   really book a table somewhere this weekend." / "이번 주말엔 어디 예약 하고

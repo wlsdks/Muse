@@ -216,6 +216,13 @@ the generic layers below because they test what makes Muse an *agent*.
     status patches applied + 12 concurrent proposes preserved. **The outbound-
     safety + audit critical trio is now concurrency-safe: pending-approval,
     action-log, proposed-action.**
+  - [x] Store-audit slice 4 — recall-hits store (the recall-hit-recording flake
+    seen earlier under parallel full-check load): had BOTH the `${pid}-${Date.now()}`
+    tmp-rename crash AND the last-writer-wins read-modify-write (its own comment
+    admitted "concurrent writers can clobber"). Fixed with randomUUID tmp + a
+    per-file mutation queue: 25 same-key concurrent recalls now total 25 hits
+    (was 1), 25 distinct keys all preserved, per-file isolated, 0 crash.
+    recall-hits-store.test.ts +3, full `pnpm check` green. Closes the flake.
   - [ ] Remaining (LOWER stakes — flag as a deliberate shared-helper effort, not
     per-store churn): the non-critical read-modify-write stores (objectives /
     episodes / playbook / reminders / tasks / proactive-history / belief-

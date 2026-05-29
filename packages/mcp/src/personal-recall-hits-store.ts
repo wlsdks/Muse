@@ -15,6 +15,7 @@
  * reimplemented for Muse, no code copied. See THIRD_PARTY_NOTICES.md.
  */
 
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
@@ -71,18 +72,28 @@ export async function writeRecallHits(file: string, records: readonly RecallHitR
     ? [...records].sort((a, b) => b.lastHitMs - a.lastHitMs).slice(0, MAX_RECALL_HIT_ENTRIES)
     : records;
   const payload = `${JSON.stringify({ hits: trimmed }, null, 2)}\n`;
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
+  // randomUUID (not pid+Date.now()): two same-ms concurrent writers picked an
+  // identical tmp name, so the slower rename hit ENOENT (the file was already
+  // renamed away) and crashed the recall path. Uniqueness here + the per-file
+  // queue below makes concurrent recall recording crash-free and lossless.
+  const tmp = `${file}.tmp-${process.pid.toString()}-${randomUUID()}`;
   await fs.mkdir(dirname(file), { recursive: true });
   await fs.writeFile(tmp, payload, "utf8");
   await fs.rename(tmp, file);
 }
 
+// Two recalls firing close together (parallel episodic lookups, a daemon tick
+// overlapping a chat turn) each run read→increment→write; without serialisation
+// the later write is built on a STALE read and silently drops the earlier hit's
+// increment — exactly the lost-write seen under parallel test load. Serialise
+// the whole read-modify-write per file (same posture as action-log /
+// pending-approval).
+const recordQueues = new Map<string, Promise<unknown>>();
+
 /**
- * Read → increment-each → write. `sessionIds` may repeat across calls; each
- * call bumps the count by the number of distinct ids passed (a single recall
- * surfacing the same session once = one hit). The append-only-ish shape means
- * concurrent writers can clobber; the recall path is effectively single-writer
- * per user, so we accept that for simplicity (same trade as patterns-fired).
+ * Read → increment-each → write, serialised per file. `entries` may repeat
+ * across calls; each call bumps the count by the number of distinct ids passed
+ * (a single recall surfacing the same session once = one hit).
  */
 export async function recordRecallHits(file: string, entries: readonly RecallHitInput[], atMs: number): Promise<void> {
   const byInputKey = new Map<string, RecallHitInput>();
@@ -92,19 +103,25 @@ export async function recordRecallHits(file: string, entries: readonly RecallHit
     byInputKey.set(key, entry); // de-dupe within a single recall; latest summary wins
   }
   if (byInputKey.size === 0) return;
-  const existing = await readRecallHits(file);
-  const byKey = new Map(existing.map((record) => [record.key, record]));
-  for (const [key, input] of byInputKey) {
-    const prior = byKey.get(key);
-    const summary = input.summary?.replace(/\s+/gu, " ").trim().slice(0, MAX_SUMMARY_CHARS) || prior?.summary;
-    byKey.set(key, {
-      hits: (prior?.hits ?? 0) + 1,
-      key,
-      lastHitMs: atMs,
-      ...(summary ? { summary } : {})
-    });
-  }
-  await writeRecallHits(file, [...byKey.values()]);
+  const prior = recordQueues.get(file) ?? Promise.resolve();
+  const op = async (): Promise<void> => {
+    const existing = await readRecallHits(file);
+    const byKey = new Map(existing.map((record) => [record.key, record]));
+    for (const [key, input] of byInputKey) {
+      const priorRecord = byKey.get(key);
+      const summary = input.summary?.replace(/\s+/gu, " ").trim().slice(0, MAX_SUMMARY_CHARS) || priorRecord?.summary;
+      byKey.set(key, {
+        hits: (priorRecord?.hits ?? 0) + 1,
+        key,
+        lastHitMs: atMs,
+        ...(summary ? { summary } : {})
+      });
+    }
+    await writeRecallHits(file, [...byKey.values()]);
+  };
+  const next = prior.then(op, op);
+  recordQueues.set(file, next.then(() => undefined, () => undefined));
+  return next;
 }
 
 function isRecallHitRecord(value: unknown): value is RecallHitRecord {
