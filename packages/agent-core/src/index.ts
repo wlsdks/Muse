@@ -90,6 +90,8 @@ export type { LearnedVeto, VetoAvoidanceProvider } from "./veto-avoidance.js";
 export { applyPlaybook, rankPlaybookStrategies, renderPlaybookSection, strategyTextSimilarity } from "./playbook.js";
 export type { PlaybookStrategy, PlaybookProvider, RankPlaybookOptions } from "./playbook.js";
 export { detectCorrections, distillStrategyFromCorrection } from "./correction-distiller.js";
+export { synthesizePatternSuggestion, type PatternSuggestionInput, type SynthesizePatternSuggestionOptions } from "./pattern-suggestion.js";
+export { inferPreferenceFromCorrection, parseInferredPreference, type InferredPreference, type InferPreferenceOptions } from "./preference-inference.js";
 export type {
   CorrectionExchange,
   DetectCorrectionsOptions,
@@ -98,6 +100,8 @@ export type {
 } from "./correction-distiller.js";
 
 export { detectSkillCandidates, draftSkillFromSignal } from "./skill-review.js";
+export { mergeSkillsIntoUmbrella, type MergeSkillsOptions } from "./skill-merge.js";
+export { clusterByTextSimilarity, mergePlaybookStrategies, type MergePlaybookOptions } from "./playbook-merge.js";
 export type { SkillReviewSignal, SkillDraft, DetectSkillCandidatesOptions, DraftSkillOptions } from "./skill-review.js";
 
 export {

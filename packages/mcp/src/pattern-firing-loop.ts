@@ -35,7 +35,7 @@ import {
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
 import { sendWithRetry } from "./messaging-retry.js";
-import { isPatternOnCooldown, readPatternsFired, recordPatternFired } from "./personal-patterns-fired-store.js";
+import { isPatternDismissed, isPatternOnCooldown, readPatternsFired, recordPatternFired } from "./personal-patterns-fired-store.js";
 import type { AgentInitiatedNoticeBrokerLike } from "./proactive-notice-loop.js";
 
 export interface RunDuePatternNoticesOptions {
@@ -49,6 +49,14 @@ export interface RunDuePatternNoticesOptions {
   /** Forwarded to `selectFireablePatterns`. Default cooldown 24h, min-confidence 0.7. */
   readonly select?: SelectFireablePatternsOptions;
   readonly now?: () => Date;
+  /**
+   * Optional LLM synthesis of the suggestion text (the deferred "Phase D
+   * synthesis"). Given the fireable match, return a composed suggestion or
+   * undefined to keep the detector's verbatim `match.suggestion`. Kept as a
+   * callback so this loop stays free of any model dependency — the daemon
+   * supplies one backed by `synthesizePatternSuggestion`.
+   */
+  readonly composeSuggestion?: (match: PatternMatch) => Promise<string | undefined>;
   /**
    * Phase D fan-out. Both must be set for the broker leg to fire;
    * the messaging-send leg always runs.
@@ -88,13 +96,26 @@ export async function runDuePatternNotices(options: RunDuePatternNoticesOptions)
   const cooldownMs = options.select?.cooldownMs ?? 24 * 60 * 60_000;
 
   for (const match of fireable) {
+    // Learned avoidance: a dismissed pattern never re-fires (stronger than the
+    // time-bounded cooldown — the user said "stop suggesting this").
+    if (isPatternDismissed(firedRecords, match.id)) {
+      continue;
+    }
     if (isPatternOnCooldown(firedRecords, match.id, now().getTime(), cooldownMs)) {
       continue;
     }
     try {
+      // Composed (LLM) suggestion when a composer is supplied; else the
+      // detector's verbatim text. Composition is fail-soft (undefined →
+      // fallback) so a model glitch never drops the suggestion.
+      let text = match.suggestion;
+      if (options.composeSuggestion) {
+        const composed = await options.composeSuggestion(match).catch(() => undefined);
+        if (composed && composed.trim().length > 0) text = composed.trim();
+      }
       await sendWithRetry(options.registry, options.providerId, {
         destination: options.destination,
-        text: match.suggestion
+        text
       });
       await recordPatternFired(options.patternsFiredFile, match.id, now().getTime());
       delivered += 1;
@@ -105,7 +126,7 @@ export async function runDuePatternNotices(options: RunDuePatternNoticesOptions)
             generatedAt: now().toISOString(),
             kind: "pattern",
             sourceId: match.id,
-            text: match.suggestion
+            text
           });
         } catch (cause) {
           errors.push(`${match.id} broker: ${errorMessage(cause)}`);

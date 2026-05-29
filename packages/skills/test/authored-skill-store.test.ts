@@ -269,3 +269,60 @@ describe("AuthoredSkillStore — curate", () => {
     expect(await storeCurate.listAuthored()).toHaveLength(1);
   });
 });
+
+describe("AuthoredSkillStore — consolidate (umbrella merge, archive-never-delete)", () => {
+  async function seedCluster(dir: string): Promise<AuthoredSkillStore> {
+    const store = new AuthoredSkillStore({ dir });
+    await store.writeOrPatch({ name: "summarise-email", description: "Use when summarising an email thread", body: "read; 3 bullets" });
+    await store.writeOrPatch({ name: "summarise-doc", description: "Use when summarising a document", body: "skim; bullets" });
+    await store.writeOrPatch({ name: "summarise-notes", description: "Use when summarising meeting notes", body: "scan; bullets" });
+    await store.writeOrPatch({ name: "book-flight", description: "Use when booking a flight ticket", body: "search; confirm" });
+    return store;
+  }
+
+  it("merges a cohering cluster into an umbrella and archives the originals; leaves the odd one out", async () => {
+    const dir = tmpDir();
+    const store = await seedCluster(dir);
+    const merge = async (cluster: readonly { name: string }[]) =>
+      cluster.every((s) => s.name.startsWith("summarise"))
+        ? { name: "summarise", description: "Use when summarising any content", body: "## Steps\n1. read 2. bullets" }
+        : undefined;
+    const plan = await store.consolidate(merge, { threshold: 0.4 });
+    expect(plan.some((p) => p.umbrella === "summarise")).toBe(true);
+
+    const live = (await store.listAuthored()).map((s) => s.name).sort();
+    expect(live).toContain("summarise");
+    expect(live).toContain("book-flight");
+    expect(live).not.toContain("summarise-email"); // archived, not live
+    const { readdir } = await import("node:fs/promises");
+    const archived = await readdir(join(dir, ".archive")).catch(() => [] as string[]);
+    expect(archived).toContain("summarise-email"); // archived, not deleted
+  });
+
+  it("dry-run reports the plan and mutates nothing", async () => {
+    const dir = tmpDir();
+    const store = await seedCluster(dir);
+    const before = (await store.listAuthored()).map((s) => s.name).sort();
+    const plan = await store.consolidate(async () => ({ name: "summarise", description: "Use when summarising", body: "x" }), { threshold: 0.4, dryRun: true });
+    expect(plan.length).toBeGreaterThan(0);
+    expect((await store.listAuthored()).map((s) => s.name).sort()).toEqual(before); // unchanged
+  });
+});
+
+describe("AuthoredSkillStore — restore (curate/consolidate rollback)", () => {
+  it("restores an archived skill to active; refuses for a non-archived name", async () => {
+    const dir = tmpDir();
+    let t = 0;
+    const store = new AuthoredSkillStore({ dir, maxSkills: 1, now: () => new Date(1_700_000_000_000 + (t += 1000)) });
+    await store.writeOrPatch({ name: "one", description: "alpha topic", body: "1" });
+    await store.writeOrPatch({ name: "two", description: "beta topic", body: "2" }); // cap → "one" archived
+    expect(await store.listArchived()).toContain("one");
+    expect((await store.listAuthored()).map((s) => s.name)).not.toContain("one");
+
+    expect(await store.restore("one")).toBe(true);
+    expect((await store.listAuthored()).map((s) => s.name)).toContain("one");
+    expect(await store.listArchived()).not.toContain("one");
+
+    expect(await store.restore("never-archived")).toBe(false);
+  });
+});

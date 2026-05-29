@@ -14,6 +14,27 @@ describe("renderUserMemorySection", () => {
     ).toBeUndefined();
   });
 
+  it("renders the typed user model into the always-on section, even when facts/preferences are empty", () => {
+    const block = renderUserMemorySection(
+      {
+        facts: {},
+        preferences: {},
+        userId: "alice",
+        userModel: {
+          goals: [],
+          preferences: [{ category: "format", id: "p1", kind: "preference" as const, updatedAt: new Date("2026-01-01T00:00:00Z"), value: "prefers bullet points" }],
+          schedule: [],
+          vetoes: [{ id: "v1", kind: "veto" as const, scope: "food", updatedAt: new Date("2026-01-01T00:00:00Z"), value: "no eggs" }]
+        }
+      },
+      5
+    );
+    expect(block).toBeDefined();
+    expect(block).toContain("Typed model:");
+    expect(block).toContain("bullet points");
+    expect(block).toContain("no eggs");
+  });
+
   it("renders facts and preferences as bullet lists capped by maxEntries", () => {
     const block = renderUserMemorySection(
       {

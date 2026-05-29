@@ -8007,8 +8007,8 @@ describe("cli program", () => {
       const { io: io3, output: out3 } = captureOutput();
       const program3 = createProgram({ ...io3, fetch: async () => { throw new Error("no fetch"); } });
       await program3.parseAsync(["node", "muse", "pattern", "reset", "--yes", "--json"], { from: "node" });
-      const result = JSON.parse(out3.join("")) as { cleared: boolean; removed: number };
-      expect(result).toEqual({ cleared: true, removed: 3 });
+      const result = JSON.parse(out3.join("")) as { cleared: boolean; removed: number; keptDismissals: number };
+      expect(result).toEqual({ cleared: true, keptDismissals: 0, removed: 3 });
       const after = JSON.parse(await fsp.readFile(firedFile, "utf8")) as { fired: unknown[] };
       expect(after.fired).toEqual([]);
     } finally {

@@ -25,6 +25,7 @@ import {
   type PatternMatch
 } from "@muse/memory";
 import {
+  dismissPattern,
   readPatternsFired,
   writePatternsFired,
   type PatternFiredRecord
@@ -107,12 +108,53 @@ export function registerPatternCommands(program: Command, io: ProgramIO): void {
       }
       const file = localPatternsFiredFile();
       const before = await readPatternsFired(file);
-      await writePatternsFired(file, []);
+      // Preserve dismissals — they're learned avoidance ("stop suggesting
+      // this"), not a time-bounded cooldown, so a cooldown reset must not
+      // resurrect a pattern the user explicitly silenced.
+      const kept = before.filter((record) => record.dismissed === true);
+      await writePatternsFired(file, kept);
       if (options.json) {
-        io.stdout(`${JSON.stringify({ cleared: true, removed: before.length }, null, 2)}\n`);
+        io.stdout(`${JSON.stringify({ cleared: true, keptDismissals: kept.length, removed: before.length - kept.length }, null, 2)}\n`);
         return;
       }
-      io.stdout(`Cleared ${before.length.toString()} cooldown record(s)\n`);
+      io.stdout(`Cleared ${(before.length - kept.length).toString()} cooldown record(s)${kept.length > 0 ? `, kept ${kept.length.toString()} dismissal(s)` : ""}\n`);
+    });
+
+  pattern
+    .command("dismiss")
+    .description("Stop Muse from suggesting a pattern again (learned avoidance — survives `reset`)")
+    .argument("<id>", "Pattern id from `muse pattern list` / `fired`")
+    .option("--json", "Print { dismissed, id } on success")
+    .action(async (id: string, options: SharedOptions) => {
+      const trimmed = id.trim();
+      if (trimmed.length === 0) {
+        throw new Error("dismiss needs a pattern id (see `muse pattern list`)");
+      }
+      await dismissPattern(localPatternsFiredFile(), trimmed, Date.now());
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ dismissed: true, id: trimmed }, null, 2)}\n`);
+        return;
+      }
+      io.stdout(`Dismissed pattern ${trimmed} — Muse won't suggest it again.\n`);
+    });
+
+  pattern
+    .command("dismissed")
+    .description("List patterns you've dismissed (Muse won't suggest these)")
+    .option("--json", "Print the raw payload")
+    .action(async (options: SharedOptions) => {
+      const records = await readPatternsFired(localPatternsFiredFile());
+      const dismissed = records.filter((record) => record.dismissed === true);
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ dismissed, total: dismissed.length }, null, 2)}\n`);
+        return;
+      }
+      if (dismissed.length === 0) {
+        io.stdout("No dismissed patterns.\n");
+        return;
+      }
+      io.stdout(`Dismissed patterns (${dismissed.length.toString()}):\n`);
+      for (const record of dismissed) io.stdout(`  • ${record.patternId}\n`);
     });
 }
 

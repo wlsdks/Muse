@@ -323,7 +323,12 @@ export function renderUserMemorySection(memory: UserMemorySnapshot, maxEntries: 
   const lines: string[] = [];
   const factEntries = Object.entries(memory.facts).slice(0, maxEntries);
   const preferenceEntries = Object.entries(memory.preferences).slice(0, maxEntries);
-  if (factEntries.length === 0 && preferenceEntries.length === 0 && (memory.recentTopics?.length ?? 0) === 0) {
+  // The typed user model (preferences/schedule/vetoes/goals) was only rendered
+  // into the COMPACTION snapshot (buildPersonaSnapshot) — invisible on a normal
+  // turn. Surface it here too so the always-on persona section actually uses
+  // it, not just after a trim.
+  const typed = memory.userModel ? composeUserModelSnapshotFn(memory.userModel, { maxPerKind: maxEntries }) : undefined;
+  if (factEntries.length === 0 && preferenceEntries.length === 0 && (memory.recentTopics?.length ?? 0) === 0 && !typed) {
     return undefined;
   }
   lines.push("[User Memory]");
@@ -339,6 +344,9 @@ export function renderUserMemorySection(memory: UserMemorySnapshot, maxEntries: 
     for (const [key, value] of preferenceEntries) {
       lines.push(`- ${key}: ${value}`);
     }
+  }
+  if (typed) {
+    lines.push(`Typed model: ${typed}`);
   }
   if (memory.recentTopics && memory.recentTopics.length > 0) {
     lines.push(`Recent topics: ${memory.recentTopics.slice(0, maxEntries).join(", ")}`);
