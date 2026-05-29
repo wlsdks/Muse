@@ -299,6 +299,7 @@ export { createWebReadMcpServer, type WebReadMcpServerOptions } from "./loopback
 export { extractReadableText, type ReadableResult } from "./web-readable.js";
 export { assertPublicHttpUrl, isPrivateAddress, isPrivateIPv4, isPrivateIPv6, type HostLookup, type UrlGuardResult } from "./web-url-guard.js";
 export { fetchReadableUrl, type FetchReadableUrlOptions, type FetchReadableUrlResult } from "./fetch-readable-url.js";
+export { gateProactiveNoticeSink, isQuietHour, parseQuietHours, type QuietHourRange } from "./quiet-hours.js";
 
 export {
   CHROME_DEVTOOLS_MCP_SERVER_NAME,
