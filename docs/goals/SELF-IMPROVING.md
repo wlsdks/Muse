@@ -32,12 +32,15 @@ Building blocks already in the tree (reuse, don't rebuild): `commitment-detector
   delivers a check-in for a real commitment + dedup/cap/not-due/quiet-hours all
   hold (positive+negative proven deterministically). FOLLOW-UP (3a-auto): wire
   session-end auto-scan so it speaks first without a manual `scan`. — done 2026-05-29
-- [ ] **3b — Behavior → proactive suggestion.** From recurring signals
-  (tasks/episodes/activity patterns) generate a concrete suggestion
-  ("월요일마다 X 하시던데 먼저 해둘까요?") — one local-Qwen synthesis, draft-first
-  (never auto-acts), surfaced in daemon/chat, cooldown'd so it never nags.
-  Useful-check (live, positive+negative): a genuine weekly pattern → a grounded
-  suggestion; noise / no pattern → silent (no fabricated nag).
+- [x] **3b — Behavior → proactive suggestion.** The pattern engine
+  (`runDuePatternNotices`, was DORMANT — not wired to the daemon) now fires via
+  a daemon `patternTick`, and each fireable pattern's suggestion is
+  LLM-synthesized into a warm grounded offer (`synthesizePatternSuggestion`,
+  the deferred "Phase D synthesis") with fail-soft fallback to the detector's
+  verbatim text; quiet-hours-gated, cooldown'd, draft-first (offer, never
+  auto-acts). Live battery `verify-pattern-suggestion.mjs` on qwen3:8b: strong
+  weekly + time-of-day patterns → grounded offers naming the real recurring
+  thing (positive); thin facts → NONE, no fabricated nag (negative). — done 2026-05-29
 - [ ] **3c — Suggestion acceptance loop.** The user can accept/dismiss a
   suggestion; a dismissal feeds learned-avoidance so the same suggestion
   doesn't recur (reuse veto-avoidance). Useful-check: dismiss once → not

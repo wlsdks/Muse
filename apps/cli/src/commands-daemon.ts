@@ -20,10 +20,13 @@ import {
   resolveContactsFile,
   resolveFollowupsFile,
   resolveObjectivesFile,
+  resolvePatternsFiredFile,
   resolveProactiveHistoryFile,
   resolveRemindersFile,
   resolveTasksFile
 } from "@muse/autoconfigure";
+import { synthesizePatternSuggestion } from "@muse/agent-core";
+import type { PatternMatch } from "@muse/memory";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import {
   createAmbientNoticeRunner,
@@ -36,6 +39,7 @@ import {
   FileAmbientSignalSource,
   formatBirthdayBriefLine,
   gateProactiveNoticeSink,
+  isQuietHour,
   homeWatchesFromConfig,
   parseQuietHours,
   MacOsActiveWindowSource,
@@ -45,6 +49,7 @@ import {
   runDueCheckins,
   runDueFollowups,
   runDueObjectives,
+  runDuePatternNotices,
   runDueProactiveNotices,
   runDueReminders,
   runDueSituationalBriefing,
@@ -663,6 +668,42 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout("\n");
       };
 
+      const renderPatternFacts = (match: PatternMatch): string =>
+        match.category === "weekly-task"
+          ? `weekly recurring task on ${match.bucket.weekday}; recent: ${match.relatedTitles.slice(0, 3).join("; ")}; ${match.bucket.matches.toString()}× over ${match.bucket.distinctWeeks.toString()} weeks`
+          : `recurring action: ${match.bucket.weekday} ${match.bucket.hourBand}, area "${match.bucket.pathFamily}"; ${match.bucket.matches.toString()}× over ${match.bucket.distinctDays.toString()} days`;
+
+      const patternTick = async (): Promise<void> => {
+        if (quietHours && isQuietHour(new Date().getHours(), quietHours)) {
+          io.stdout(`[${new Date().toISOString()}] pattern: held (quiet hours)\n`);
+          return;
+        }
+        const summary = await runDuePatternNotices({
+          destination,
+          patternsFiredFile: resolvePatternsFiredFile(e),
+          providerId: provider,
+          registry: messagingRegistry,
+          ...(followupModel
+            ? {
+                composeSuggestion: (match: PatternMatch): Promise<string | undefined> =>
+                  synthesizePatternSuggestion(
+                    {
+                      category: match.category,
+                      confidence: match.confidence,
+                      fallbackSuggestion: match.suggestion,
+                      groundedFacts: renderPatternFacts(match)
+                    },
+                    {
+                      model: followupModel.model,
+                      modelProvider: followupModel.modelProvider as Parameters<typeof synthesizePatternSuggestion>[1]["modelProvider"]
+                    }
+                  )
+              }
+            : {})
+        });
+        io.stdout(`[${new Date().toISOString()}] pattern: delivered ${summary.delivered.toString()}/${summary.fireable.toString()} fireable\n`);
+      };
+
       const ambientTick = async (): Promise<void> => {
         if (!ambientRunner) {
           io.stdout(`[${new Date().toISOString()}] ambient: skipped (no rules)\n`);
@@ -760,6 +801,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await remindersTick();
         await followupTick();
         await checkinsTick();
+        await patternTick();
         await ambientTick();
         await webWatchTick();
         await objectivesTick();
