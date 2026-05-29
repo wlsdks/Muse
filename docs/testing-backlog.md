@@ -289,8 +289,16 @@ the generic layers below because they test what makes Muse an *agent*.
     canonicalised loopback (integer/hex/octal IPv4 → 127.x) IS still recognised;
     cloud-id stays cloud even with a localhost URL; never throws on a 250-input
     generated junk corpus. local-only-policy.test.ts +4 (model 293).
-  - [ ] Remaining: fuzz the other external-input validators (runner command
-    request, web-search-policy, JSON-repair, gemini-live-protocol).
+  - [x] parseRunnerCommandRequest — the run_command arg gate that turns
+    untrusted model tool-args into the request driving risky LOCAL execution
+    (crates/runner boundary). Fuzz proves: for any JsonObject it EITHER throws a
+    typed ToolRegistryError OR returns a well-typed request (command non-empty
+    trimmed string; args all-strings; cwd non-empty string; env all-string
+    values; byte/timeout caps positive integers) — never a raw crash; a hostile
+    __proto__/constructor key never pollutes Object.prototype; mixed-type
+    args/env are filtered to string entries (no coercion). tools.test.ts +3.
+  - [ ] Remaining: fuzz the other external-input validators (web-search-policy,
+    JSON-repair, gemini-live-protocol).
 
 ---
 
