@@ -106,8 +106,13 @@ the generic layers below because they test what makes Muse an *agent*.
     (plan-generated → executing → result → synthesis-started → text-delta → done)
     + plan adherence + terminal world state; run() asserts the same goal +
     a persisted `completed` run record. agent-run-plan-execute-e2e.test.ts (1016).
-  - [ ] Remaining: the default tool-loop (react) path e2e + a guard-block-mid-run
-    and a tool-error-recovery variant, blocking AND streaming.
+  - [x] react tool-loop through AgentRuntime.stream() with a REAL fs-mutating
+    tool: the happy path streams tool-call → tool-result → text-delta → done and
+    persists the note (terminal world state); TOOL-ERROR RECOVERY — a throwing
+    tool surfaces a tool-result, the model synthesises a graceful answer, the run
+    completes (not crash) and NOTHING is mutated. agent-run-react-stream-e2e.test.ts.
+  - [ ] Remaining: a guard-block-MID-RUN variant (a tool-exposure / approval gate
+    denying a call inside the streaming loop, asserting the surfaced events).
 - [x] **Approval-gate round-trip e2e.** A risky tool refused → pending-approval
   recorded → inbound "yes" reply → `runActuatorByName` re-runs through the
   fail-closed gate → action logged. Plus the deny / timeout / ambiguous-recipient
