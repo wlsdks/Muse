@@ -134,8 +134,21 @@ of agent test is worth the most*.
   over-claim → HOLD): 4/4 (100%) @ REPEAT=2, each pre-probed STABLE 3/3.
   - [ ] Remaining: wire the trial in front of the real distill/recall-promotion
     path so an actual promotion consults it (still report-only / advisory).
-- **H. CI gating** — make the eval batteries a real gate (extend `self-eval`)
-  so a tool-selection / task-completion regression fails the run, not just logs.
+- [x] **H. CI gating** — DONE: `scripts/eval-agent.mjs` + `eval:agent` npm
+  script run ALL harness-based batteries (eval-tool-selection / eval-judge /
+  eval-adversarial / eval-shadow-trial = 58 live cases) as ONE gate and exit 1
+  if ANY regresses (mirrors `eval:self-improving`). Batteries spawned as
+  children so one failure can't abort the rest; LOCAL-OLLAMA-ONLY, each skips
+  cleanly when Ollama is down. Verified live: 4/4 batteries green. Registered in
+  `.claude/rules/testing.md`.
+
+> **Status: agent-eval gaps A–H all delivered.** The harness
+> (`eval-harness.mjs`: runEvalSuite + toolScorers + combineScorers + llmJudge +
+> runShadowTrial) backs five live batteries gated by `eval:agent`, plus the
+> deterministic terminal-state + trajectory vitest suites. Remaining is
+> DEEPENING (noted per gap): wire the shadow-trial in front of the real
+> promotion path; assembly-level plan_execute trajectory; value-plausibility arg
+> grading; mutation-testing baseline (P1, lockfile-gated).
 
 ## The harness (`scripts/eval-harness.mjs`)
 
