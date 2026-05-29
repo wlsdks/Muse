@@ -260,6 +260,66 @@ export function recurringThemes(
     .map((entry) => ({ topic: entry.display, count: entry.count, lastSeen: entry.lastSeen }));
 }
 
+export interface EpisodeConsolidation {
+  /** Id of the episode kept (higher importance, then more recent). */
+  readonly kept: string;
+  /** Id of the near-duplicate to archive. */
+  readonly archived: string;
+  /** 0..1 summary similarity that paired them. */
+  readonly similarity: number;
+}
+
+function summaryJaccard(a: string, b: string): number {
+  const toks = (t: string): Set<string> =>
+    new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((x) => x.length >= 3));
+  const sa = toks(a);
+  const sb = toks(b);
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let inter = 0;
+  for (const x of sa) if (sb.has(x)) inter += 1;
+  return inter / (sa.size + sb.size - inter);
+}
+
+/**
+ * Plan a memory consolidation: pair episodes whose summaries are near-
+ * duplicates (similarity >= threshold) and, for each pair, keep the higher-
+ * importance episode (ties broken by recency) and mark the other for
+ * archival. An id already marked archived is never paired again, so a cluster
+ * of N dupes collapses to one keeper. Pure: returns the plan, mutates
+ * nothing — the caller decides whether to apply it. A high default threshold
+ * (0.85) means only genuinely redundant memories pair, not merely related ones.
+ *
+ * Concept adapted from OpenClaw's sleep/"dreaming" memory consolidation (MIT)
+ * — deterministic reimplementation for Muse, no code copied. See THIRD_PARTY_NOTICES.md.
+ */
+export function planEpisodeConsolidation(
+  episodes: readonly PersistedEpisode[],
+  options: { readonly threshold?: number; readonly similarity?: (a: string, b: string) => number } = {}
+): readonly EpisodeConsolidation[] {
+  const threshold = typeof options.threshold === "number" && options.threshold > 0 ? options.threshold : 0.85;
+  const sim = options.similarity ?? summaryJaccard;
+  const archived = new Set<string>();
+  const plan: EpisodeConsolidation[] = [];
+  for (let i = 0; i < episodes.length; i += 1) {
+    const a = episodes[i]!;
+    if (archived.has(a.id)) continue;
+    for (let j = i + 1; j < episodes.length; j += 1) {
+      const b = episodes[j]!;
+      if (archived.has(b.id)) continue;
+      const score = sim(a.summary, b.summary);
+      if (score < threshold) continue;
+      const keepA =
+        (a.importance ?? 0) > (b.importance ?? 0)
+        || ((a.importance ?? 0) === (b.importance ?? 0) && a.endedAt >= b.endedAt);
+      const keep = keepA ? a : b;
+      const drop = keepA ? b : a;
+      archived.add(drop.id);
+      plan.push({ archived: drop.id, kept: keep.id, similarity: Math.round(score * 100) / 100 });
+    }
+  }
+  return plan;
+}
+
 export async function vacuumEpisodes(file: string, maxEntries = DEFAULT_VACUUM_MAX_ENTRIES, nowMs: number = Date.now()): Promise<number> {
   // NaN slips past `Math.max(1, Math.trunc(NaN)) === NaN`, then
   // `existing.length <= NaN` is false, then `slice(0, NaN)` returns

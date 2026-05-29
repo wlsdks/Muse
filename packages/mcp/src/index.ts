@@ -692,6 +692,7 @@ export { createNotesInvestigator } from "./notes-investigator.js";
 export {
   clearEpisodes,
   computeEpisodeRetention,
+  planEpisodeConsolidation,
   readEpisodes,
   recurringThemes,
   removeEpisode,
@@ -700,6 +701,7 @@ export {
   upsertEpisode,
   vacuumEpisodes,
   writeEpisodes,
+  type EpisodeConsolidation,
   type EpisodeRetentionOptions,
   type EpisodeTheme,
   type PersistedEpisode
