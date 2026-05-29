@@ -22,7 +22,11 @@ export function createTextUtilsMcpServer(): LoopbackMcpServer {
           }
           const words = text.trim().split(/\s+/u).filter((segment) => segment.length > 0).length;
           const lines = text.split(/\r?\n/u).length;
-          return { characters: text.length, lines, words } satisfies JsonObject;
+          // Count Unicode code points, not UTF-16 units, so an astral
+          // char (emoji) is one character — consistent with #reverse,
+          // which iterates `[...text]` code-point-aware.
+          const characters = [...text].length;
+          return { characters, lines, words } satisfies JsonObject;
         },
         inputSchema: {
           additionalProperties: false,
