@@ -231,11 +231,18 @@ the generic layers below because they test what makes Muse an *agent*.
     standing objective is an intent the daemon never acts on): addObjective +
     patchObjective now serialised, 20 concurrent registrations all preserved
     (was last-writer-wins), 20 concurrent patches all applied, 0 crash.
-  - [ ] Remaining: migrate the other ~16 read-modify-write stores
+  - [x] Migration 2 — personal-consent-store (outbound-safety rule 5: a standing
+    objective acts toward a third party ONLY with recorded scoped consent). Was
+    pid+Date.now tmp + an unserialised recordConsent read-modify-write; now
+    atomicWriteFile + withFileMutationQueue. 20 concurrent distinct grants all
+    preserved (was last-writer-wins → 1) + each still individually checkable by
+    the fail-closed gate, 15 concurrent re-grants of one id converge to a single
+    record. +2 tests.
+  - [ ] Remaining: migrate the other ~15 read-modify-write stores
     (reminders / tasks / followups / playbook / episodes / proactive-history /
-    veto / consent / contacts / patterns-fired / plan-cache / …) onto the shared
-    helper — now a cheap one-each adoption. inbound dedup + single-flight daemon
-    race tests also open.
+    veto / contacts / patterns-fired / plan-cache / …) onto the shared helper —
+    a cheap one-each adoption (veto is the next safety-relevant one). inbound
+    dedup + single-flight daemon race tests also open.
 
 ## P5 — surface & contract
 
