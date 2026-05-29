@@ -91,8 +91,16 @@ of agent test is worth the most*.
     isolation) AND that an invalid call (missing value / non-alnum key) mutates
     NOTHING — the τ-bench no-partial-side-effect property on a production tool.
     packages/mcp/test/remember-fact-terminal-state.test.ts (6 tests).
-  - [ ] Remaining: a steerable diagnostic so the FULL assembly drives a mutating
-    tool end-to-end (today the diagnostic only plans the read-only time_now).
+  - [x] Steerable diagnostic + FULL plan-execute assembly over a mutating tool:
+    a `DIAGNOSTIC_PLAN=[…]` directive (trailing segment of the user prompt) makes
+    `renderDiagnosticOutput` emit an arbitrary plan VERBATIM in planning mode
+    (inert otherwise; malformed/bad-shape falls through to the legacy time_now
+    plan) — diagnostic-wire.test.ts (8 cases). plan-execute-terminal-state.test.ts
+    then drives `executePlanExecuteLoop` with the REAL DiagnosticModelProvider
+    generating the plan + a REAL ToolExecutor running a real fs-mutating tool, and
+    asserts WORLD STATE: goal accomplished (note persisted), multi-step in plan
+    order, PLAN_ALL_STEPS_FAILED + no mutation on tool failure, and an unavailable
+    tool rejected by validatePlan with no mutation. agent-core 1002 pass.
 - **C. Trajectory / step assertions on multi-step runs** — assert the ordered
   spans of a plan_execute / tool-loop run (plan generated → tool called →
   synthesis), incl. adherence + step-efficiency (no redundant calls).

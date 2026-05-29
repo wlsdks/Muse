@@ -707,3 +707,12 @@ Append one line when a discovery path is evaluated and deferred:
   3 regression sweeps PASS (one repaired a raw-NUL byte). Every target
   audited end-to-end against the built CLI + real Ollama. Loop stopped
   here per the ~7h instruction; resume with `/loop 10m <iteration>`.
+- @muse/autoconfigure recall-hit-recording flake — iter (gap-B steerable
+  diagnostic) — deferred: `recall-hit-recording.test.ts > records a hit
+  (with narrative)` fails intermittently ONLY under full-`pnpm check`
+  parallel load (`expected [] to deeply equal ['sess-a','sess-b']` — the
+  recall-hit fs store read [] back), and PASSES in isolation + on re-run.
+  Same lost-write signature as the pending-approval / action-log /
+  proposed-action stores already hardened (randomUUID tmp + per-file
+  mutation queue). Likely the recall-hit store needs the same atomic-append
+  fix; a future iteration should reproduce under load and harden it.
