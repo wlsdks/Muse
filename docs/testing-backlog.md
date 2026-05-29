@@ -285,8 +285,15 @@ the generic layers below because they test what makes Muse an *agent*.
     prompt into a POST body and rejects an all-whitespace prompt (no request
     fires); unknown subcommand + missing <name> are parse errors.
     commands-specs.test.ts +6 (cli 1509).
-  - [ ] Remaining: commands-persona / voice / tools-admin (same
-    inject-fake-helpers harness).
+  - [x] `muse voice` (providers + the rich tts path): providers → GET
+    /api/voice/providers; tts shapes the POST body from the joined+trimmed text +
+    options (voice/provider keys only when given), calls the injectable io.fetch,
+    writes the BINARY audio response to --out (asserted on a tmp file) and prints
+    the byte/format/provider line; an all-whitespace text is rejected before any
+    fetch; a non-ok API status surfaces as an error with nothing written; missing
+    required --out is a parse error. commands-voice.test.ts +6 (cli 1515).
+  - [ ] Remaining: commands-persona / tools-admin (same inject-fake-helpers
+    harness; persona uses stdin/files so needs a tmp-dir harness).
 - [~] **Config / schema validation fuzz.** Zod (or comparable) config + external-
   input validators against adversarial inputs (wrong types, extra keys, unicode,
   huge values) — assert they reject cleanly, never throw raw.
