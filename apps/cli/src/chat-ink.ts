@@ -1319,6 +1319,18 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
         process.stderr.write(`📌 Check-in scheduled: ${c.question}\n`);
       }
     }
+
+    // End-of-session preference auto-infer: learn stable preferences from the
+    // corrections the user made this session and fold them into the typed user
+    // model — so Muse learns WITHOUT a manual `muse user model infer`.
+    // Opt-in + fail-soft. LLM path (local model); never fabricates (NONE-aware).
+    if (parseBoolean(process.env.MUSE_PREFERENCE_AUTOINFER_ENABLED, false)) {
+      const { inferSessionPreferences } = await import("./commands-user.js");
+      const result = await inferSessionPreferences().catch(() => ({ added: [] as readonly string[], status: "no-model" as const }));
+      for (const p of result.added) {
+        process.stderr.write(`🧠 Learned preference: ${p}\n`);
+      }
+    }
   }
 }
 
