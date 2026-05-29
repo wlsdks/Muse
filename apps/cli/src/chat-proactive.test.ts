@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calendarEventItems, dueTaskItems, groupProactiveNotice, imminentItems, jobCompletionItems, jobDoneNoticeText, pickUnseen, proactiveNoticeText, relativeWhen } from "./chat-proactive.js";
+import { calendarEventItems, checkinItems, dueTaskItems, groupProactiveNotice, imminentItems, jobCompletionItems, jobDoneNoticeText, patternSuggestionItems, pickUnseen, proactiveNoticeText, relativeWhen } from "./chat-proactive.js";
 
 const now = Date.UTC(2026, 4, 24, 12, 0, 0);
 const iso = (minFromNow: number): string => new Date(now + minFromNow * 60_000).toISOString();
@@ -154,5 +154,30 @@ describe("groupProactiveNotice", () => {
       { id: "3", text: "Standup" }
     ], now);
     expect(out).toBe("📌 3 things need you: Dentist (in 30m); Pay rent (now); Standup — want a hand?");
+  });
+});
+
+describe("checkinItems", () => {
+  it("surfaces only scheduled, already-due check-ins (verbatim question, namespaced id)", () => {
+    const items = checkinItems([
+      { id: "a", question: "Following up — you mentioned you'd \"email Bob\". How did it go?", dueAtIso: iso(-60), status: "scheduled" },
+      { id: "b", question: "future one", dueAtIso: iso(60), status: "scheduled" }, // not due yet
+      { id: "c", question: "already delivered", dueAtIso: iso(-120), status: "fired" }, // daemon owns it
+      { id: "d", question: "bad date", dueAtIso: "not-a-date", status: "scheduled" }
+    ], now);
+    expect(items).toEqual([
+      { dueAt: iso(-60), id: "checkin:a", text: "📌 Following up — you mentioned you'd \"email Bob\". How did it go?" }
+    ]);
+  });
+});
+
+describe("patternSuggestionItems", () => {
+  it("maps fireable matches to undated, namespaced nudges (verbatim suggestion)", () => {
+    expect(patternSuggestionItems([
+      { id: "p1", suggestion: "월요일마다 보고서 만드시던데, 지금 초안 잡아둘까요?" }
+    ])).toEqual([
+      { id: "pattern:p1", text: "💡 월요일마다 보고서 만드시던데, 지금 초안 잡아둘까요?" }
+    ]);
+    expect(patternSuggestionItems([])).toEqual([]);
   });
 });

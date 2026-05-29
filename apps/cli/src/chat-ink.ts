@@ -9,9 +9,10 @@
  * Render-free logic lives in `chat-ink-core.ts` and is unit-tested.
  */
 
-import { createMuseRuntimeAssembly, parseBoolean, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, parseBoolean, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolvePatternsFiredFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
 import { LocalCalendarProvider } from "@muse/calendar";
-import { readEpisodes, readFollowups, readTasks } from "@muse/mcp";
+import { readCheckins, readEpisodes, readFollowups, readPatternsFired, readTasks } from "@muse/mcp";
+import { aggregateActivitySignals, selectFireablePatterns } from "@muse/memory";
 import { AuthoredSkillStore, loadSkillsFromDirectory, type Skill } from "@muse/skills";
 import { buildSkillsPrompt } from "./chat-skills.js";
 import { selectPersonaEpisodes } from "./episode-selection.js";
@@ -68,7 +69,8 @@ import { extractMemoryFromTurn, formatLearnedSummary, shouldAutoExtract, type Au
 import { formatReflection, synthesizeReflection, type ReflectionProvider } from "./chat-reflection.js";
 import { listRecentJobIds, readJobSummary, startBackgroundJob } from "./commands-jobs.js";
 import { buildLocalTodayText, parseLookaheadHours, readDueFollowups, readDueReminders } from "./commands-today.js";
-import { calendarEventItems, dueTaskItems, groupProactiveNotice, imminentItems, jobCompletionItems, pickUnseen, type ProactiveItem } from "./chat-proactive.js";
+import { calendarEventItems, checkinItems, dueTaskItems, groupProactiveNotice, imminentItems, jobCompletionItems, patternSuggestionItems, pickUnseen, type ProactiveItem } from "./chat-proactive.js";
+import { checkinsFile } from "./commands-checkins.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { resolvePersona } from "./program-helpers.js";
 import { resolveDefaultUserKey } from "./user-id.js";
@@ -182,6 +184,8 @@ export function MuseChatApp(props: {
   readonly onReset: () => void;
   readonly proactiveCheck?: () => Promise<readonly ProactiveItem[]>;
   readonly jobCompletions?: () => Promise<readonly ProactiveItem[]>;
+  /** Non-windowed nudges (due check-ins + fireable pattern suggestions), each surfaced once verbatim. */
+  readonly proactiveNudges?: () => Promise<readonly ProactiveItem[]>;
   readonly recapRole?: "system" | "command";
   readonly inputHistorySeed?: readonly string[];
   readonly onInput?: (value: string) => void;
@@ -254,7 +258,8 @@ export function MuseChatApp(props: {
   useEffect(() => {
     const check = props.proactiveCheck;
     const jobsDone = props.jobCompletions;
-    if (!check && !jobsDone) return undefined;
+    const nudge = props.proactiveNudges;
+    if (!check && !jobsDone && !nudge) return undefined;
     let active = true;
     const tick = async (): Promise<void> => {
       if (!idleRef.current) return;
@@ -263,16 +268,23 @@ export function MuseChatApp(props: {
       // Background jobs that finished since the chat opened are surfaced once
       // each (their own pre-phrased line), not via the reminder time-window.
       const completed = jobsDone ? await jobsDone().catch(() => [] as readonly ProactiveItem[]) : [];
+      // Due check-ins + fireable pattern suggestions — already-phrased nudges
+      // the daemon would push to the channel; surface them in-chat once each,
+      // verbatim (not the imminent time-window — a check-in due hours ago and an
+      // undated pattern still belong here).
+      const nudges = nudge ? await nudge().catch(() => [] as readonly ProactiveItem[]) : [];
       if (!active) return;
       const unseen = pickUnseen(imminentItems(items, now, PROACTIVE_LEAD_MS), seenRef.current);
       const unseenJobs = pickUnseen(completed, seenRef.current);
-      if (unseen.length === 0 && unseenJobs.length === 0) return;
-      for (const item of [...unseen, ...unseenJobs]) seenRef.current.add(item.id);
+      const unseenNudges = pickUnseen(nudges, seenRef.current);
+      if (unseen.length === 0 && unseenJobs.length === 0 && unseenNudges.length === 0) return;
+      for (const item of [...unseen, ...unseenJobs, ...unseenNudges]) seenRef.current.add(item.id);
       const grouped = groupProactiveNotice(unseen, now);
       setTurns((prev) => [
         ...prev,
         ...(grouped ? [{ role: "proactive" as const, text: grouped }] : []),
-        ...unseenJobs.map((item) => ({ role: "proactive" as const, text: item.text }))
+        ...unseenJobs.map((item) => ({ role: "proactive" as const, text: item.text })),
+        ...unseenNudges.map((item) => ({ role: "proactive" as const, text: item.text }))
       ]);
     };
     const first = setTimeout(() => { void tick(); }, 1500);
@@ -1199,6 +1211,31 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
       )
     ];
   };
+
+  // Non-windowed proactive nudges surfaced IN-CHAT (P-N3): the same due
+  // check-ins the daemon would push to the channel, plus fireable behaviour
+  // patterns, so a user living in `muse` chat sees them too. Read-only — the
+  // daemon owns delivery state, so a check-in it already fired (status flipped)
+  // and a pattern within its fired-cooldown never re-surface here. Pattern
+  // surfacing rides the existing opt-in (`MUSE_PROACTIVE_PATTERN_ENABLED`) so
+  // the per-poll notes walk only runs for users who asked for patterns;
+  // check-ins (a cheap one-file read) always surface. Best-effort.
+  const checkinsStore = checkinsFile(process.env);
+  const patternsInChat = parseBoolean(process.env.MUSE_PROACTIVE_PATTERN_ENABLED, false);
+  const proactiveNudges = async (): Promise<readonly ProactiveItem[]> => {
+    const now = Date.now();
+    const checkins = await readCheckins(checkinsStore).catch(() => []);
+    const items: ProactiveItem[] = [...checkinItems(checkins, now)];
+    if (patternsInChat) {
+      try {
+        const signals = await aggregateActivitySignals({ now: () => now });
+        const fired = await readPatternsFired(resolvePatternsFiredFile(process.env));
+        const fireable = selectFireablePatterns(new Date(now), signals, fired);
+        items.push(...patternSuggestionItems(fireable.map((m) => ({ id: m.id, suggestion: m.suggestion }))));
+      } catch { /* fail-soft — a signal/IO glitch never breaks the chat poll */ }
+    }
+    return items;
+  };
   const instance = render(h(MuseChatApp, {
     agents,
     banner,
@@ -1210,6 +1247,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     onReset,
     personaPrompt,
     proactiveCheck,
+    proactiveNudges,
     readFile,
     saveText,
     copyToClipboard,
