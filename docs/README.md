@@ -26,7 +26,7 @@ Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처
 
 ## 더 깊이 — 설계 노트
 
-[`design/`](design/) 폴더에는 개별 기능의 설계 노트가 한 주제당 한 파일로 들어 있습니다(현재 작업/진행 중 설계 포함):
+[`design/`](design/) 폴더에는 개별 기능의 설계 노트가 한 주제당 한 파일로 들어 있습니다. 대부분은 **이미 출시된 기능의 설계 근거(왜 그렇게 만들었나)** 기록이고, [background-review-engine](design/background-review-engine.md)이 현재 진행 중인 설계입니다. 기능의 "무엇"은 위 제품 문서를, "왜"는 여기를 보세요:
 
 - 기억·인지: [episodic-memory](design/episodic-memory.md), [proactive-surfacing](design/proactive-surfacing.md), [pattern-detection](design/pattern-detection.md), [context-engineering-roadmap](design/context-engineering-roadmap.md)
 - 능동·후속: [agent-self-followup](design/agent-self-followup.md), [reminder-firing](design/reminder-firing.md), [background-review-engine](design/background-review-engine.md)
