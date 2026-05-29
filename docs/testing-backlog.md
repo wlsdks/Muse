@@ -264,9 +264,18 @@ the generic layers below because they test what makes Muse an *agent*.
   - [ ] Remaining: the Ollama Hermes
     tool-call wire body (buildNativeChatBody) is already shape-asserted in
     adapter-ollama.test.ts — DONE — adapter-ollama.test.ts pins the exact native /api/chat body for a tool-using request.
-- [ ] **CLI command-parser + run-path smoke.** The untested commander
+- [~] **CLI command-parser + run-path smoke.** The untested commander
   registrations (commands-analytics/cost/latency/persona/voice/specs/tools-admin)
   — parse args + assert the action wiring via the CLI smoke harness.
+  - [x] `muse cost` (the richest path-builder of the group): parses daily/top/for
+    and asserts the EXACT /api/admin/token-cost/* path the parser routes to —
+    query-string assembly from --days/--limit (both/either/neither), and
+    encodeURIComponent on the run id so a hostile `for "evil&admin=1 x"` can't
+    inject extra query params (percent-encoded, not smuggled). Also: apiRequest
+    result is handed to writeOutput; unknown subcommand + missing required arg
+    are parse errors. commands-cost.test.ts +7 (cli 1496). Fake helpers, no network.
+  - [ ] Remaining: commands-analytics / latency / persona / voice / specs /
+    tools-admin (same inject-fake-helpers harness).
 - [~] **Config / schema validation fuzz.** Zod (or comparable) config + external-
   input validators against adversarial inputs (wrong types, extra keys, unicode,
   huge values) — assert they reject cleanly, never throw raw.
