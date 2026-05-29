@@ -99,7 +99,7 @@ the generic layers below because they test what makes Muse an *agent*.
   call → tool result → synth, blocking AND streaming, asserting the whole chain
   (only ~6 e2e files today; expand the matrix: plan_execute, react, tool-error
   recovery, guard-block mid-run).
-- [~] **Approval-gate round-trip e2e.** A risky tool refused → pending-approval
+- [x] **Approval-gate round-trip e2e.** A risky tool refused → pending-approval
   recorded → inbound "yes" reply → `runActuatorByName` re-runs through the
   fail-closed gate → action logged. Plus the deny / timeout / ambiguous-recipient
   paths produce NO external effect (outbound-safety acceptance, contract-faithful
@@ -111,10 +111,14 @@ the generic layers below because they test what makes Muse an *agent*.
     email_send ambiguous recipient→no send, `refused` — each asserted by READING
     the action log (not just the HTTP effect). run-actuator-by-name.test.ts +5
     (mcp 1064). Contract-faithful HTTP fake.
-  - [ ] Remaining: the chat-inbound half — a refusal RECORDS a pending-approval,
-    and an inbound "yes" reply resolves it and triggers the re-run (the
-    createChannelApprovalGate→pending-approval-store→auto-completion wiring), as
-    one end-to-end flow.
+  - [x] The chat-inbound half, composed end-to-end: the FOUR real seams wired
+    together (createChannelApprovalGate refuses+records → pending-approval store →
+    handleInboundApprovalReply on a "yes" → runActuatorByName re-run). A risky
+    web_action is refused & recorded (+ a notice via a REAL registry +
+    LogMessagingProvider), an inbound "yes" re-runs it for real (fetch fired once,
+    logged `performed`) and clears it; a READ tool sails through unrecorded; a
+    "yes" from a DIFFERENT source does not re-run (channel scope holds across the
+    recorder→handler seam). approval-round-trip-e2e.test.ts (api 489).
 - [~] **Route integration (boot the server).** The `apps/api/src/*-routes.ts`
   groups are registered but unexercised by direct tests (notes/tasks/reminders/
   messaging/voice/proactive/active-context/accountability/session/admin-*). Boot
