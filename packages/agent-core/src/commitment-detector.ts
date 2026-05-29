@@ -42,17 +42,22 @@ interface Rule {
   readonly confidence: "high" | "low";
 }
 
-// Each pattern is global + anchored on a first-person obligation and
-// stops at the first clause terminator (., !, ?, newline, or end) so a
-// multi-clause turn yields one commitment per clause, not the whole turn.
+// Each pattern is global + anchored on a first-person obligation and stops
+// at the first clause terminator (captured as group 2 for the EN rules, so a
+// trailing "?" can be recognised as a question). KO rules end on the verb
+// stem and carry no terminator group.
 const RULES: readonly Rule[] = [
-  { re: /\bI\s+need\s+to\s+([^.!?\n]{2,120}?)\s*(?:[.!?\n]|$)/giu, kind: "need-to", confidence: "high" },
-  { re: /\bI(?:'ve|\s+have)?\s+got\s+to\s+([^.!?\n]{2,120}?)\s*(?:[.!?\n]|$)/giu, kind: "have-to", confidence: "high" },
-  { re: /\bI\s+have\s+to\s+([^.!?\n]{2,120}?)\s*(?:[.!?\n]|$)/giu, kind: "have-to", confidence: "high" },
-  { re: /\bI\s+should\s+([^.!?\n]{2,120}?)\s*(?:[.!?\n]|$)/giu, kind: "should", confidence: "low" },
+  { re: /\bI\s+need\s+to\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "need-to", confidence: "high" },
+  { re: /\bI(?:'ve|\s+have)?\s+got\s+to\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "have-to", confidence: "high" },
+  { re: /\bI\s+have\s+to\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "have-to", confidence: "high" },
+  { re: /\bI\s+should\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "should", confidence: "low" },
   { re: /([^.!?\n]{2,60}?)\s*해야\s*(?:해|돼|겠어|겠다|지)/gu, kind: "ko-haeya", confidence: "high" },
   { re: /([^.!?\n]{2,60}?)\s*하기로\s*했(?:어|다|지)/gu, kind: "ko-plan", confidence: "low" }
 ];
+
+// Auxiliary that, placed right before "I", makes the clause an inverted
+// question ("Do I need to…?", "Should I…?") rather than a commitment.
+const INTERROGATIVE_PREFIX = /\b(?:do|does|did|should|would|will|can|could|may)\s*$/iu;
 
 export function detectUserCommitments(
   userTurns: readonly string[],
@@ -67,6 +72,11 @@ export function detectUserCommitments(
       for (const match of turn.matchAll(rule.re)) {
         const text = (match[1] ?? "").trim().replace(/\s+/gu, " ");
         if (text.length < 2) continue;
+        // A clause that ENDS in "?" or is an inverted question ("Do I need
+        // to…?") is a question, not a commitment — skip it.
+        if (match[2] === "?") continue;
+        const before = turn.slice(Math.max(0, (match.index ?? 0) - 12), match.index ?? 0);
+        if (INTERROGATIVE_PREFIX.test(before)) continue;
         const key = `${rule.kind}:${text.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);

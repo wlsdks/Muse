@@ -36,6 +36,14 @@ describe("detectUserCommitments — rule-only, conservative (EN + KO)", () => {
     expect(detectUserCommitments(["I love this", "what time is it?", "그건 별로야"])).toEqual([]);
   });
 
+  it("does NOT mistake a question for a commitment", () => {
+    expect(detectUserCommitments(["Do I need to call the dentist?"])).toEqual([]);
+    expect(detectUserCommitments(["Why do I have to do this?"])).toEqual([]);
+    expect(detectUserCommitments(["I need to call the dentist?"])).toEqual([]);
+    // the same words as a plain statement still fire
+    expect(detectUserCommitments(["I need to call the dentist"])).toHaveLength(1);
+  });
+
   it("dedupes the same commitment and caps the count", () => {
     const dup = detectUserCommitments(["I need to water the plants", "I need to water the plants"]);
     expect(dup).toHaveLength(1);
