@@ -43,4 +43,36 @@ describe("recall-hits store", () => {
     await recordRecallHits(file, [{ key: "s1" }], 2_000);
     expect((await readRecallHits(file))[0]).toMatchObject({ hits: 2, summary: "original" });
   });
+
+  // Concurrency (backlog P1/P4 + the recall-hit-recording flake seen under
+  // parallel full-check load): two recalls firing close together each run
+  // read→increment→write. Before the per-file mutation queue + randomUUID tmp,
+  // the later write was built on a stale read and silently dropped the earlier
+  // increment (lost hits), and same-ms tmp names collided into an ENOENT
+  // rename crash. These assert lossless, crash-free concurrent recording.
+  describe("concurrent recording", () => {
+    it("preserves every increment when N recalls hit the SAME key concurrently (no lost writes)", async () => {
+      await Promise.all(Array.from({ length: 25 }, () => recordRecallHits(file, [{ key: "sess-a" }], 1_000)));
+      const hits = await readRecallHits(file);
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toMatchObject({ key: "sess-a", hits: 25 }); // not last-writer-wins (would be 1)
+    });
+
+    it("preserves every DISTINCT key under concurrent recalls (no clobber, no crash)", async () => {
+      await Promise.all(Array.from({ length: 25 }, (_unused, i) => recordRecallHits(file, [{ key: `s${i.toString()}` }], 1_000)));
+      const hits = await readRecallHits(file);
+      expect(hits).toHaveLength(25);
+      expect(hits.every((r) => r.hits === 1)).toBe(true);
+    });
+
+    it("isolates per-file: concurrent recording to two files never cross-contaminates", async () => {
+      const fileB = join(dir, "recall-hits-b.json");
+      await Promise.all([
+        ...Array.from({ length: 10 }, () => recordRecallHits(file, [{ key: "a" }], 1_000)),
+        ...Array.from({ length: 10 }, () => recordRecallHits(fileB, [{ key: "b" }], 1_000)),
+      ]);
+      expect((await readRecallHits(file))).toEqual([{ key: "a", hits: 10, lastHitMs: 1_000 }]);
+      expect((await readRecallHits(fileB))).toEqual([{ key: "b", hits: 10, lastHitMs: 1_000 }]);
+    });
+  });
 });

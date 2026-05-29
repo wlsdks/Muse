@@ -216,13 +216,39 @@ the generic layers below because they test what makes Muse an *agent*.
     status patches applied + 12 concurrent proposes preserved. **The outbound-
     safety + audit critical trio is now concurrency-safe: pending-approval,
     action-log, proposed-action.**
-  - [ ] Remaining (LOWER stakes — flag as a deliberate shared-helper effort, not
-    per-store churn): the non-critical read-modify-write stores (objectives /
-    episodes / playbook / reminders / tasks / proactive-history / belief-
-    provenance, etc.) share the latent race; cursor/offset stores only risk the
-    tmp-collision crash, not loss. Best done as ONE shared atomic-append helper
-    (server-only util) migrated across stores, not N copy-paste fixes. inbound
-    dedup + single-flight daemon race tests also open.
+  - [x] Store-audit slice 4 — recall-hits store (the recall-hit-recording flake
+    seen earlier under parallel full-check load): had BOTH the `${pid}-${Date.now()}`
+    tmp-rename crash AND the last-writer-wins read-modify-write (its own comment
+    admitted "concurrent writers can clobber"). Fixed with randomUUID tmp + a
+    per-file mutation queue: 25 same-key concurrent recalls now total 25 hits
+    (was 1), 25 distinct keys all preserved, per-file isolated, 0 crash.
+    recall-hits-store.test.ts +3, full `pnpm check` green. Closes the flake.
+  - [x] Shared helper extracted (the recommended approach, not N copy-paste
+    fixes): `atomic-file-store.ts` — `atomicWriteFile` (randomUUID tmp + fsync +
+    rename + 0o600) and `withFileMutationQueue` (per-file read-modify-write
+    serialisation, parallel across files, error doesn't wedge). 8 direct unit
+    tests. First migration: personal-objectives-store (user-facing — a lost
+    standing objective is an intent the daemon never acts on): addObjective +
+    patchObjective now serialised, 20 concurrent registrations all preserved
+    (was last-writer-wins), 20 concurrent patches all applied, 0 crash.
+  - [x] Migration 2 — personal-consent-store (outbound-safety rule 5: a standing
+    objective acts toward a third party ONLY with recorded scoped consent). Was
+    pid+Date.now tmp + an unserialised recordConsent read-modify-write; now
+    atomicWriteFile + withFileMutationQueue. 20 concurrent distinct grants all
+    preserved (was last-writer-wins → 1) + each still individually checkable by
+    the fail-closed gate, 15 concurrent re-grants of one id converge to a single
+    record. +2 tests.
+  - [x] Migration 3 — personal-veto-store (outbound-safety reversibility: a
+    learned-avoidance the agent must not forget). recordVeto + removeVeto now
+    serialised + atomicWriteFile: 20 concurrent distinct vetoes all preserved
+    (still avoidance-checkable), 10 concurrent removes drop exactly the targeted
+    ones. +2 tests. **The outbound-safety store trio consent+veto+the
+    audit/approval stores is now concurrency-safe.**
+  - [ ] Remaining: migrate the other ~14 read-modify-write stores
+    (reminders / tasks / followups / playbook / episodes / proactive-history /
+    contacts / patterns-fired / plan-cache / …) onto the shared helper —
+    a cheap one-each adoption. inbound dedup + single-flight daemon race tests
+    also open.
 
 ## P5 — surface & contract
 

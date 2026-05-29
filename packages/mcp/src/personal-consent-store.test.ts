@@ -90,4 +90,27 @@ describe("personal-consent-store — fail-closed autonomous-action gate", () => 
     await recordConsent(file, consent({ id: "c2", objectiveId: "obj_two" }));
     expect((await readConsents(file)).map((c) => c.id).sort()).toEqual(["c1", "c2"]);
   });
+
+  // Concurrency (shared atomic-file helper migration): recordConsent is a
+  // read-modify-write. A dropped grant is outbound-safety-relevant (rule 5: a
+  // standing objective acts toward a third party ONLY with recorded scoped
+  // consent — a silently-lost grant wrongly refuses a legitimate action, and a
+  // racing write could corrupt the set the fail-closed check reads).
+  describe("concurrent grants", () => {
+    it("preserves EVERY distinct consent granted concurrently (no last-writer-wins loss)", async () => {
+      const file = tmpFile();
+      await Promise.all(Array.from({ length: 20 }, (_unused, i) =>
+        recordConsent(file, consent({ id: `c${i.toString()}`, objectiveId: `obj_${i.toString()}` }))));
+      const all = await readConsents(file);
+      expect(all).toHaveLength(20);
+      // every grant remains individually checkable (the fail-closed gate sees them all)
+      expect(await hasConsent(file, { objectiveId: "obj_7", scope: "github:issues:write", userId: "stark" })).toBe(true);
+    });
+
+    it("re-granting the same id concurrently converges to a single record (idempotent under races)", async () => {
+      const file = tmpFile();
+      await Promise.all(Array.from({ length: 15 }, () => recordConsent(file, consent({ id: "c1" }))));
+      expect(await readConsents(file)).toHaveLength(1);
+    });
+  });
 });

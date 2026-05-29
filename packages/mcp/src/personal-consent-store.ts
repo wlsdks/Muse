@@ -15,9 +15,10 @@
  */
 
 import { promises as fs } from "node:fs";
-import { dirname } from "node:path";
 
 import type { JsonObject } from "@muse/shared";
+
+import { atomicWriteFile, withFileMutationQueue } from "./atomic-file-store.js";
 
 export interface ScopedConsent {
   readonly id: string;
@@ -69,18 +70,9 @@ export async function readConsents(file: string): Promise<readonly ScopedConsent
 }
 
 export async function writeConsents(file: string, consents: readonly ScopedConsent[]): Promise<void> {
-  const payload = `${JSON.stringify({ consents }, null, 2)}\n`;
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-  await fs.mkdir(dirname(file), { recursive: true });
-  const handle = await fs.open(tmp, "w", 0o600);
-  try {
-    await handle.writeFile(payload, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  // Atomic, fsync'd, owner-only write via the shared primitive (randomUUID tmp →
+  // no same-ms rename-collision crash).
+  await atomicWriteFile(file, `${JSON.stringify({ consents }, null, 2)}\n`);
 }
 
 /**
@@ -89,9 +81,17 @@ export async function writeConsents(file: string, consents: readonly ScopedConse
  * duplicating).
  */
 export async function recordConsent(file: string, consent: ScopedConsent): Promise<void> {
-  const existing = await readConsents(file);
-  const filtered = existing.filter((entry) => entry.id !== consent.id);
-  await writeConsents(file, [...filtered, consent]);
+  // Serialise the read-modify-write: two concurrent grants must not each read
+  // the same snapshot and clobber one another. A lost consent record is
+  // outbound-safety-relevant (rule 5: standing objectives need RECORDED scoped
+  // consent before acting toward a third party — a silently-dropped grant means
+  // a later legitimate action is wrongly refused, or a concurrent write corrupts
+  // the set the fail-closed check reads).
+  await withFileMutationQueue(file, async () => {
+    const existing = await readConsents(file);
+    const filtered = existing.filter((entry) => entry.id !== consent.id);
+    await writeConsents(file, [...filtered, consent]);
+  });
 }
 
 /**
