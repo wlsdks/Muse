@@ -73,9 +73,15 @@ Building blocks already in the tree (reuse, don't rebuild): `commitment-detector
   HARDENING: the live negative case caught the model fabricating "prefers
   accurate information"; added a deterministic vacuous-trait guard
   (accuracy/correctness cluster + required category) so it can't. — done 2026-05-29
-- [ ] **2c — UserModel surfaced + correctable.** `muse user model` (show) +
-  the persona uses it; the user can correct/forget an inferred trait. Useful-check:
-  correct an inferred trait → it updates, doesn't reappear.
+- [x] **2c — UserModel surfaced + correctable + actually USED.** Show =
+  `muse user model list`; correct/forget = `muse user model remove <id>` (2a).
+  The KEY fix: the typed model was only rendered into the COMPACTION snapshot
+  (buildPersonaSnapshot) — invisible on a normal turn, so ② was nearly inert.
+  Wired it into `renderUserMemorySection` (the always-on `[User Memory]` system
+  section context-transforms injects every turn), incl. the empty-check so a
+  model with ONLY typed slots still emits. Useful: a typed model now appears in
+  the live persona every turn (proven); remove → it's gone next render. P1 ②
+  epic complete. — done 2026-05-29
 
 ## P2 — ① Consolidating Curator (the deferred Approach C)
 
