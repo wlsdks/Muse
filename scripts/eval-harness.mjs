@@ -155,6 +155,44 @@ export function llmJudge(provider, model) {
   };
 }
 
+/**
+ * OpenClaw-style promotion SHADOW TRIAL (report-only). Before a candidate
+ * memory / distilled strategy is promoted to the live store, compare a BASELINE
+ * answer (no memory) with a CANDIDATE answer (allowed to use the memory) for a
+ * probe question and emit a structured verdict — PROMOTE only if the candidate
+ * is more helpful AND the memory introduces no false/unsafe claim, else HOLD.
+ *
+ * REPORT-ONLY BY CONSTRUCTION: takes no store handle and returns a report
+ * object; it never writes anywhere — the caller decides whether to act on it,
+ * exactly like OpenClaw keeps the dream report separate from live MEMORY.md.
+ *
+ * @returns {Promise<{verdict:"PROMOTE"|"HOLD"|"?", reason:string, risk:string}>}
+ */
+export async function runShadowTrial(provider, model, input) {
+  const system =
+    "You review a CANDIDATE memory before it is promoted to long-term store. Compare the BASELINE answer (no memory) "
+    + "with the CANDIDATE answer (allowed to use the memory) for the PROBE question. Reply with EXACTLY three lines:\n"
+    + "VERDICT: PROMOTE or HOLD\nREASON: <one short line>\nRISK: <one short line, or 'none'>\n"
+    + "PROMOTE only if the candidate answer is more helpful AND the memory introduces no false or unsafe claim. Otherwise HOLD.";
+  const user = `PROBE: ${input.probe}\n\nBASELINE: ${input.baseline}\n\nCANDIDATE MEMORY: ${input.memory}\nCANDIDATE ANSWER: ${input.candidate}`;
+  const response = await provider.generate({ maxOutputTokens: 160, messages: [{ content: system, role: "system" }, { content: user, role: "user" }], model, temperature: 0 });
+  const text = (response.output ?? "").trim();
+  const verdict = /verdict:\s*promote/iu.test(text) ? "PROMOTE" : /verdict:\s*hold/iu.test(text) ? "HOLD" : "?";
+  const reason = /reason:\s*(.+)/iu.exec(text)?.[1]?.trim() ?? "";
+  const risk = /risk:\s*(.+)/iu.exec(text)?.[1]?.trim() ?? "";
+  return { reason, risk, verdict };
+}
+
+/** Scorer wrapping a shadow trial: passes when the verdict matches the case's expectVerdict. */
+export function shadowTrialScorer(provider, model) {
+  return async (_observed, testCase) => {
+    const report = await runShadowTrial(provider, model, testCase);
+    return report.verdict === testCase.expectVerdict
+      ? { ok: true, detail: `${report.verdict} — ${report.reason}` }
+      : { ok: false, detail: `got ${report.verdict}, expected ${testCase.expectVerdict} — ${report.reason}` };
+  };
+}
+
 /** AND a list of `{ok,detail}` scorers; first failure's detail wins, else the last detail. */
 export function combineScorers(...fns) {
   return async (observed, testCase, scenario) => {

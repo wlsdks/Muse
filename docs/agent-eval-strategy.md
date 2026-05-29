@@ -124,9 +124,16 @@ of agent test is worth the most*.
   (`draftSkillFromSignal`, `mergeSkillsIntoUmbrella`) so an over-limit draft is
   rejected (null/undefined), never recorded — mirrors hermes' skill/tool-desc
   size gate. 11 tests + full `pnpm check` green (6118).
-- **G. OpenClaw-style shadow-trial for memory/playbook promotion** — before a
-  distilled strategy / promoted memory goes live, a report-only baseline-vs-
-  candidate judge with verdict/reason/risk, kept separate from the live store.
+- [x] **G. OpenClaw-style shadow-trial for memory/playbook promotion** — DONE:
+  `runShadowTrial(provider, model, {probe,baseline,candidate,memory})` +
+  `shadowTrialScorer` in eval-harness.mjs emit a report-only PROMOTE/HOLD +
+  reason + risk (PROMOTE only if the candidate is more helpful AND introduces no
+  false/unsafe claim). REPORT-ONLY by construction (no store handle, writes
+  nothing). `scripts/eval-shadow-trial.mjs` + `eval:shadow-trial` prove the
+  verdict on clear-cut candidates (helpful pref → PROMOTE; secret/unconfirmed
+  over-claim → HOLD): 4/4 (100%) @ REPEAT=2, each pre-probed STABLE 3/3.
+  - [ ] Remaining: wire the trial in front of the real distill/recall-promotion
+    path so an actual promotion consults it (still report-only / advisory).
 - **H. CI gating** — make the eval batteries a real gate (extend `self-eval`)
   so a tool-selection / task-completion regression fails the run, not just logs.
 
