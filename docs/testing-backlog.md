@@ -342,8 +342,15 @@ the generic layers below because they test what makes Muse an *agent*.
     malformed budget (Infinity/NaN/float/0/neg/garbage) can't leak an
     unbounded/NaN allowance; a falsy MUSE_WEB_SEARCH (any case/whitespace) is an
     ABSOLUTE kill switch that override=true cannot re-enable. web-search-policy.test.ts +2.
-  - [ ] Remaining: fuzz the other external-input validators (JSON-repair /
-    extractJsonArray, gemini-live-protocol).
+  - [x] json-array-scan (extractFirstJsonArray / iterateJsonArrayCandidates) —
+    the scanner that pulls a JSON array out of UNTRUSTED local-model plan/detector
+    text. Property fuzz over a ~307-input LCG corpus (stray brackets, `]`-in-string,
+    escapes, markdown `- [x]`, citations, prose, emoji): never throws; anything
+    surfaced is a JSON-array SUBSTRING of the input; each iterate candidate's
+    `.value` equals `JSON.parse(.text)`; extractFirst is exactly the first
+    candidate (or null). json-array-scan.test.ts +2.
+  - [ ] Remaining: fuzz gemini-live-protocol (the last named external-input
+    validator).
 
 ---
 
