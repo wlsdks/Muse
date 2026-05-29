@@ -264,9 +264,11 @@ the generic layers below because they test what makes Muse an *agent*.
   - [ ] Remaining: the Ollama Hermes
     tool-call wire body (buildNativeChatBody) is already shape-asserted in
     adapter-ollama.test.ts — DONE — adapter-ollama.test.ts pins the exact native /api/chat body for a tool-using request.
-- [~] **CLI command-parser + run-path smoke.** The untested commander
+- [x] **CLI command-parser + run-path smoke.** The untested commander
   registrations (commands-analytics/cost/latency/persona/voice/specs/tools-admin)
-  — parse args + assert the action wiring via the CLI smoke harness.
+  — parse args + assert the action wiring via the CLI smoke harness. ALL SEVEN
+  now covered (cost/latency/analytics/specs/voice/tools via inject-fake-helpers;
+  persona via MUSE_PERSONA_FILE + injected stdin round-trip).
   - [x] `muse cost` (the richest path-builder of the group): parses daily/top/for
     and asserts the EXACT /api/admin/token-cost/* path the parser routes to —
     query-string assembly from --days/--limit (both/either/neither), and
@@ -296,8 +298,13 @@ the generic layers below because they test what makes Muse an *agent*.
     ranking): each subcommand routes to its fixed /api/admin/tools|tool-calls
     path and hands the result to writeOutput; unknown subcommand is a parse
     error. commands-tools-admin.test.ts +5 (cli 1520).
-  - [ ] Remaining: commands-persona only (it reads preamble from stdin/files, so
-    it needs a stdin + tmp-dir harness rather than the fake-apiRequest one).
+  - [x] `muse persona` (add/use/remove/show round-trip on a real store file via
+    MUSE_PERSONA_FILE + injected readPipedStdin): add persists an inline or
+    piped-stdin preamble; built-in-id collision + empty preamble are rejected
+    (nothing written); use flips activeId + suggests on an unknown id; remove
+    deletes a custom + resets active→default when it was active, and refuses a
+    built-in; show returns the active/previewed preamble. commands-persona.test.ts
+    +7 (cli 1527). **The CLI command-parser sweep is complete.**
 - [~] **Config / schema validation fuzz.** Zod (or comparable) config + external-
   input validators against adversarial inputs (wrong types, extra keys, unicode,
   huge values) — assert they reject cleanly, never throw raw.
