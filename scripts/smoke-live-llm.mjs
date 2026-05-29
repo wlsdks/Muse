@@ -104,18 +104,25 @@ function skip(reason) {
 }
 
 function record(name, fn) {
+  // Each check is a real (slow) local-LLM round-trip; stream the result the
+  // moment it resolves so the operator sees progress instead of a multi-minute
+  // silence that reads as a hang (and so a bounded run captures partial work).
   return Promise.resolve()
     .then(fn)
     .then(() => {
       checks.push({ name, status: "ok" });
+      console.log(`PASS  ${name}`);
     })
     .catch((error) => {
       if (error instanceof SmokeSkip) {
         checks.push({ name, reason: error.message, status: "skip" });
+        console.log(`SKIP  ${name}: ${error.message}`);
         return;
       }
       failures += 1;
-      checks.push({ error: error instanceof Error ? error.message : String(error), name, status: "fail" });
+      const message = error instanceof Error ? error.message : String(error);
+      checks.push({ error: message, name, status: "fail" });
+      console.error(`FAIL  ${name}: ${message}`);
     });
 }
 
@@ -578,12 +585,12 @@ try {
   failures += 1;
   checks.push({ error: error instanceof Error ? error.message : String(error), name: "bootstrap", status: "fail" });
 } finally {
-  for (const check of checks) {
-    if (check.status === "ok") {
-      console.log(`PASS  ${check.name}`);
-    } else if (check.status === "skip") {
-      console.log(`SKIP  ${check.name}: ${check.reason ?? "(not applicable)"}`);
-    } else {
+  // Per-check PASS/SKIP/FAIL lines already streamed from record() as each
+  // round-trip resolved; here we only emit the final tally (+ a FAIL recap).
+  const failed = checks.filter((c) => c.status === "fail");
+  if (failed.length > 0) {
+    console.error("--- failures ---");
+    for (const check of failed) {
       console.error(`FAIL  ${check.name}: ${check.error ?? "(unknown)"}`);
     }
   }
