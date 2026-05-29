@@ -57,7 +57,7 @@ the generic layers below because they test what makes Muse an *agent*.
   file the surviving-mutant hotspots as follow-up. NOTE: adds a devDep + config —
   needs human OK for the lockfile change before committing tooling; until then,
   do it as a throwaway local measurement and record the score here.
-- [~] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
+- [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
   fallback policy, circuit-breaker open, and that a partial stream surfaces an
@@ -72,9 +72,20 @@ the generic layers below because they test what makes Muse an *agent*.
     throws persists a FAILED run record (handleRunError), fires the onError
     hook with the Error, and rethrows — never silently completes/swallows.
     (agent-runtime.test.ts, run-level composition.)
-  - [ ] Remaining: the same run() path under a 429/503/timeout/malformed
-    provider exercising retry → fallback → circuit-breaker open, and a streaming
-    mid-stream `{error}` surfaced as an error event end-to-end.
+  - [x] `invokeModel` (the run() model-call seam) failure-injection: proves the
+    real CLASSIFICATION (4xx fails fast — 1 attempt, no retry budget burned;
+    429/503 + unknown/malformed-JSON errors are retried, via
+    isRetryableProviderError + ModelProviderError.retryable) AND the COMPOSITION —
+    persistent 503 exhausts retries → fallback strategy rescues; each
+    exhausted-retry invocation is ONE breaker failure so the breaker opens and the
+    next call short-circuits WITHOUT touching the provider. model-invocation.test.ts
+    +5 (1011 pass). Pre-verified attempt/short-circuit counts via dist.
+  - [x] Streaming mid-stream `{error}`: executeStreamingModelLoop SURFACES the
+    error as an error event to the consumer (after the partial text-deltas it had
+    already yielded — no silent truncation) AND records it on the tracing span
+    (setError), THEN throws the same error instance — never reaching a false
+    `done`. execute-streaming-model-loop.test.ts +3 (1014 pass). Pre-verified via
+    dist that the error event is yielded before the throw.
 - [x] **Tool-loop limits & runaway guards.** maxToolCalls, maxRunWallclockMs,
   maxToolOutputChars, tool-output recursion — exercise each cap end-to-end with a
   fake tool that tries to exceed it; assert the loop stops deterministically.

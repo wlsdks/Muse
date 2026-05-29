@@ -91,8 +91,16 @@ of agent test is worth the most*.
     isolation) AND that an invalid call (missing value / non-alnum key) mutates
     NOTHING — the τ-bench no-partial-side-effect property on a production tool.
     packages/mcp/test/remember-fact-terminal-state.test.ts (6 tests).
-  - [ ] Remaining: a steerable diagnostic so the FULL assembly drives a mutating
-    tool end-to-end (today the diagnostic only plans the read-only time_now).
+  - [x] Steerable diagnostic + FULL plan-execute assembly over a mutating tool:
+    a `DIAGNOSTIC_PLAN=[…]` directive (trailing segment of the user prompt) makes
+    `renderDiagnosticOutput` emit an arbitrary plan VERBATIM in planning mode
+    (inert otherwise; malformed/bad-shape falls through to the legacy time_now
+    plan) — diagnostic-wire.test.ts (8 cases). plan-execute-terminal-state.test.ts
+    then drives `executePlanExecuteLoop` with the REAL DiagnosticModelProvider
+    generating the plan + a REAL ToolExecutor running a real fs-mutating tool, and
+    asserts WORLD STATE: goal accomplished (note persisted), multi-step in plan
+    order, PLAN_ALL_STEPS_FAILED + no mutation on tool failure, and an unavailable
+    tool rejected by validatePlan with no mutation. agent-core 1002 pass.
 - **C. Trajectory / step assertions on multi-step runs** — assert the ordered
   spans of a plan_execute / tool-loop run (plan generated → tool called →
   synthesis), incl. adherence + step-efficiency (no redundant calls).
@@ -101,9 +109,15 @@ of agent test is worth the most*.
     (toolsUsed + intermediateMessages role sequence + toolResults order); the
     loop runs exactly the requested tools once each in order (no redundant/
     dropped calls); a direct answer takes the zero-tool trajectory. 8→11 tests.
-  - [ ] Remaining: trajectory of the real plan_execute path through the
-    assembly (plan_generated → tool → synthesis_started → done events), and a
-    step-efficiency check that penalises a redundant re-call of the same tool.
+  - [x] Real plan_execute assembly trajectory + step-efficiency: drains
+    `streamPlanExecute` with the REAL DiagnosticModelProvider (steered) + REAL
+    ToolExecutor and asserts the ORDERED span sequence (plan-generated →
+    per-step executing/result → synthesis-started), plan ADHERENCE (the
+    plan-generated event's tools == executed, in order), a mixed-outcome run
+    (success then fail) marking the right result span unsuccessful yet still
+    synthesising, the empty-plan direct-answer trajectory (no step spans), and a
+    DeepEval-style StepEfficiency metric that flags a redundant re-call of the
+    same (tool, args) — plan-execute-trajectory.test.ts, agent-core 1006 pass.
 - [x] **D. LLM-as-judge (GEval-style) harness** — DONE: `llmJudge(provider,
   model)` added to `eval-harness.mjs` — the subjective-quality scorer tier
   (strict single-word PASS/FAIL verdict, temp 0, suite `repeat` for stability;

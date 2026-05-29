@@ -77,16 +77,28 @@ export function estimateDiagnosticTokens(content: string): number {
  * system messages lets smoke tests exercise plan-execute without a real LLM:
  *
  *   - planning prompts (built by `buildPlanningSystemPrompt`) → emit a JSON
- *     plan. If `time_now` is listed in `[Available Tools]` the diagnostic
- *     emits a one-step plan calling it (so the smoke can assert the
- *     plan_step_executing + plan_step_result events); otherwise it emits an
- *     empty plan that falls through to the direct-answer synthesis path.
+ *     plan. Resolution order:
+ *       1. an explicit STEERING DIRECTIVE in the user prompt
+ *          (`DIAGNOSTIC_PLAN=[{tool,args,description}, …]` as the trailing
+ *          segment) → emit exactly those steps. This lets a terminal-state /
+ *          trajectory eval drive the FULL plan-execute assembly against an
+ *          arbitrary (incl. state-mutating) tool deterministically, with no
+ *          real LLM. The steps are emitted verbatim so the assembly's own
+ *          `validatePlan` still runs (an unavailable tool is rejected there,
+ *          not silently dropped here).
+ *       2. else if `time_now` is listed in `[Available Tools]` → a one-step
+ *          plan calling it (the legacy smoke:broad behaviour).
+ *       3. else an empty plan that falls through to direct-answer synthesis.
  *
  * Anything else falls through to the legacy "Diagnostic response: …" shape.
  */
 export function renderDiagnosticOutput(messages: readonly { readonly role: string; readonly content: string }[], userPrompt: string): string {
   const systemPrompt = messages.find((message) => message.role === "system")?.content ?? "";
   if (isDiagnosticPlanningPrompt(systemPrompt)) {
+    const steered = extractDiagnosticPlanDirective(userPrompt);
+    if (steered !== null) {
+      return JSON.stringify(steered);
+    }
     if (planningPromptListsTool(systemPrompt, "time_now")) {
       return JSON.stringify([
         { args: {}, description: "Diagnostic plan-execute step (time_now)", tool: "time_now" }
@@ -95,6 +107,43 @@ export function renderDiagnosticOutput(messages: readonly { readonly role: strin
     return "[]";
   }
   return `Diagnostic response: ${userPrompt}`.trimEnd();
+}
+
+const DIAGNOSTIC_PLAN_DIRECTIVE = "DIAGNOSTIC_PLAN=";
+
+interface DiagnosticPlanStep {
+  readonly tool: string;
+  readonly args: Record<string, unknown>;
+  readonly description: string;
+}
+
+function isDiagnosticPlanStep(value: unknown): value is DiagnosticPlanStep {
+  if (!value || typeof value !== "object") return false;
+  const step = value as Partial<DiagnosticPlanStep>;
+  return typeof step.tool === "string" && step.tool.length > 0
+    && typeof step.description === "string"
+    && !!step.args && typeof step.args === "object" && !Array.isArray(step.args);
+}
+
+/**
+ * Parses a steering directive from the trailing segment of the user prompt.
+ * Returns the directed steps, or null when no well-formed directive is present
+ * (so the caller falls through to the default planning behaviour). The JSON
+ * array must be the LAST segment after the `DIAGNOSTIC_PLAN=` marker.
+ */
+function extractDiagnosticPlanDirective(userPrompt: string): readonly DiagnosticPlanStep[] | null {
+  const at = userPrompt.lastIndexOf(DIAGNOSTIC_PLAN_DIRECTIVE);
+  if (at < 0) return null;
+  const raw = userPrompt.slice(at + DIAGNOSTIC_PLAN_DIRECTIVE.length).trim();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every(isDiagnosticPlanStep)) {
+      return parsed as readonly DiagnosticPlanStep[];
+    }
+  } catch {
+    // not a well-formed directive — fall through to default planning
+  }
+  return null;
 }
 
 function isDiagnosticPlanningPrompt(systemPrompt: string): boolean {
