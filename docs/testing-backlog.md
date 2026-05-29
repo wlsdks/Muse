@@ -95,7 +95,7 @@ the generic layers below because they test what makes Muse an *agent*.
 
 ## P2 — end-to-end flows (compose the pieces, not the units)
 
-- [~] **Full agent run e2e (diagnostic provider).** message → model loop → tool
+- [x] **Full agent run e2e (diagnostic provider).** message → model loop → tool
   call → tool result → synth, blocking AND streaming, asserting the whole chain
   (only ~6 e2e files today; expand the matrix: plan_execute, react, tool-error
   recovery, guard-block mid-run).
@@ -111,8 +111,12 @@ the generic layers below because they test what makes Muse an *agent*.
     persists the note (terminal world state); TOOL-ERROR RECOVERY — a throwing
     tool surfaces a tool-result, the model synthesises a graceful answer, the run
     completes (not crash) and NOTHING is mutated. agent-run-react-stream-e2e.test.ts.
-  - [ ] Remaining: a guard-block-MID-RUN variant (a tool-exposure / approval gate
-    denying a call inside the streaming loop, asserting the surfaced events).
+  - [x] guard-block MID-RUN (streaming): a toolApprovalGate denial inside the
+    loop blocks an execute-risk tool — the gate is consulted, the block is
+    surfaced as a tool-result (not a crash), the model synthesises a "can't
+    without approval" answer, the run completes, and the gated tool NEVER ran
+    (no side effect). agent-run-react-stream-e2e.test.ts. The full-agent-run
+    matrix (plan_execute / react / tool-error recovery / guard-block) is closed.
 - [x] **Approval-gate round-trip e2e.** A risky tool refused → pending-approval
   recorded → inbound "yes" reply → `runActuatorByName` re-runs through the
   fail-closed gate → action logged. Plus the deny / timeout / ambiguous-recipient
@@ -142,19 +146,36 @@ the generic layers below because they test what makes Muse an *agent*.
     (POST persists, GET reflects, DELETE removes, 400 no-name). Most groups
     (notes/tasks/reminders/active-context/voice/today/setup/admin/chat) already
     have server.*.test.ts; remaining untested: the *-compat (Spring-compat) routes.
+  - [x] admin-session-compat route group (server.admin-session-compat.test.ts):
+    /api/admin/sessions/overview (status tally), the paginated list (limit/offset/
+    total echo + items), session detail (+ empty tags), DELETE 204→404 (re-delete)
+    + 404 unknown, tag POST 400 no-label. (auth-compat, session-compat, agent-compat,
+    user-memory-compat, mcp-compat access-policy already covered by their server.*
+    tests.) Remaining compat: admin-{analytics,observability,platform}-compat
+    (ops/dashboard surfaces — lower outward value per the personal pivot).
 
 ## P3 — live LLM verification (Ollama up on this PC — USE it)
 
-- [ ] **`eval:tools:nl` baseline.** Never run by the loop. Run it, record the
-  score, add cases for any weak natural-language selection.
-- [ ] **`eval:self-improving` baseline.** The 4 LLM batteries (pattern-suggestion,
-  preference-inference, skill/playbook merge). Never run by the loop. Run, record,
-  shore up regressions.
+- [x] **`eval:tools:nl` baseline.** Run on qwen3:8b (this iter): native 7/7
+  (100%) AND NL-protocol 7/7 (100%) across the time-tool confusable set — the
+  text/Hermes tool protocol selects as reliably as native here, no weak NL spot
+  to shore up. Baseline recorded; re-run after touching the NL tool protocol.
+- [x] **`eval:self-improving` baseline.** Run on qwen3:8b (this iter): 8/8 live
+  batteries GREEN — pattern-suggestion (③), preference-inference (②), skill-merge
+  + playbook-merge (①), background-review + background-review-e2e (① engine),
+  cited-recall (★ wedge), proactive-recall-gate (★ north star). No regression to
+  shore up; this is the live-green baseline the loop had never captured.
 - [ ] **`smoke:live` full completion.** Now that it streams (commit `6fd24d36`),
   run it to the end once with a generous timeout; confirm the slow tail
   (multi-agent orchestrate + CLI knowledge) is green, and append the result.
-- [ ] **`eval:tools` set growth.** Extend the actuator + time confusable sets and
+- [~] **`eval:tools` set growth.** Extend the actuator + time confusable sets and
   add more KO/adversarial cases (each pre-verified STABLE 3/3 before landing).
+  - [x] 5 negative eager-invocation traps on the STATE-CHANGING/perception
+    actuator set (a false positive there acts/searches unbidden — the worst
+    failure): KO smart-home comment, EN gratitude for a past booking, KO inbox
+    venting, EN weather small-talk, KO weather-app-UI comment → all NO tool. The
+    actuator scenario filter now keeps expectNoTool cases. eval:tools 44/44 (100%)
+    @ REPEAT=2 on qwen3:8b; each pre-verified STABLE 3/3.
 
 ## P4 — generative & data-layer
 
