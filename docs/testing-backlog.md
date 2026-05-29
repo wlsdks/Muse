@@ -28,13 +28,20 @@ happy-path-only assertion (per `outbound-safety.md`).
   file the surviving-mutant hotspots as follow-up. NOTE: adds a devDep + config —
   needs human OK for the lockfile change before committing tooling; until then,
   do it as a throwaway local measurement and record the score here.
-- [ ] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
+- [~] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
   fallback policy, circuit-breaker open, and that a partial stream surfaces an
   error event (not a silent truncation). The "hardening" half of the human's
   directive. (Adapter-level retryable flags are already unit-tested; this is the
   *loop* composing them.)
+  - [x] `executeModelLoop` throw-propagation (`b…` this commit): first-turn
+    throw rejects; a later-turn throw rejects after the requested tool already
+    ran; an unexpected `executeToolCall` throw propagates (NOT captured as a
+    status:"error" tool result). 5→8 tests in execute-model-loop.test.ts.
+  - [ ] Remaining: `AgentRuntime.run` end-to-end under a 429/503/timeout/
+    malformed provider (retry → fallback → circuit-breaker open) and a
+    streaming mid-stream `{error}` surfaced as an error event.
 - [ ] **Tool-loop limits & runaway guards.** maxToolCalls, maxRunWallclockMs,
   maxToolOutputChars, tool-output recursion — exercise each cap end-to-end with a
   fake tool that tries to exceed it; assert the loop stops deterministically.

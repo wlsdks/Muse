@@ -90,4 +90,50 @@ describe("executeModelLoop", () => {
     expect(result.finalResponse.id).toBe("interrupted");
     expect(result.finalResponse.output).toBe("(run interrupted)");
   });
+
+  // Failure-injection: the loop composes invoke + tool-exec; these lock how an
+  // UNEXPECTED throw from either propagates (the run wrapper turns it into a
+  // failed run; here we assert the loop itself rejects and doesn't swallow it).
+  describe("failure injection", () => {
+    const throwingGenerate = (over: Partial<ModelLoopRunner>): ModelLoopRunner =>
+      ({
+        executeToolCall: async (_ctx, toolCall): Promise<ExecutedToolResult> => ({
+          result: { id: toolCall.id, name: toolCall.name, output: "ran", status: "ok" },
+          toolCall,
+        }),
+        maxToolCalls: 5,
+        ...over,
+      }) as unknown as ModelLoopRunner;
+
+    it("rejects when the first model turn throws (no retry/fallback at the loop layer)", async () => {
+      const loop = throwingGenerate({ generateWithTracing: async () => { throw new Error("model down turn1"); } });
+      await expect(executeModelLoop(loop, context(), provider, request())).rejects.toThrow("model down turn1");
+    });
+
+    it("rejects when a later model turn throws — after the requested tool already ran", async () => {
+      let turn = 0;
+      const ran: string[] = [];
+      const loop = throwingGenerate({
+        executeToolCall: async (_ctx, toolCall): Promise<ExecutedToolResult> => {
+          ran.push(toolCall.name);
+          return { result: { id: toolCall.id, name: toolCall.name, output: "ran", status: "ok" }, toolCall };
+        },
+        generateWithTracing: async () => {
+          if (turn++ === 0) return resp("calling", [call("t1", "echo")]);
+          throw new Error("model down turn2");
+        },
+      });
+      await expect(executeModelLoop(loop, context(), provider, request())).rejects.toThrow("model down turn2");
+      expect(ran).toEqual(["echo"]);
+    });
+
+    it("propagates an unexpected throw from executeToolCall (not captured as a tool-error result)", async () => {
+      let turn = 0;
+      const loop = throwingGenerate({
+        executeToolCall: async () => { throw new Error("tool exploded"); },
+        generateWithTracing: async () => (turn++ === 0 ? resp("calling", [call("t1", "echo")]) : resp("final")),
+      });
+      await expect(executeModelLoop(loop, context(), provider, request())).rejects.toThrow("tool exploded");
+    });
+  });
 });
