@@ -68,9 +68,13 @@ the generic layers below because they test what makes Muse an *agent*.
     throw rejects; a later-turn throw rejects after the requested tool already
     ran; an unexpected `executeToolCall` throw propagates (NOT captured as a
     status:"error" tool result). 5→8 tests in execute-model-loop.test.ts.
-  - [ ] Remaining: `AgentRuntime.run` end-to-end under a 429/503/timeout/
-    malformed provider (retry → fallback → circuit-breaker open) and a
-    streaming mid-stream `{error}` surfaced as an error event.
+  - [x] `AgentRuntime.run` end-to-end failure: a provider whose generate()
+    throws persists a FAILED run record (handleRunError), fires the onError
+    hook with the Error, and rethrows — never silently completes/swallows.
+    (agent-runtime.test.ts, run-level composition.)
+  - [ ] Remaining: the same run() path under a 429/503/timeout/malformed
+    provider exercising retry → fallback → circuit-breaker open, and a streaming
+    mid-stream `{error}` surfaced as an error event end-to-end.
 - [ ] **Tool-loop limits & runaway guards.** maxToolCalls, maxRunWallclockMs,
   maxToolOutputChars, tool-output recursion — exercise each cap end-to-end with a
   fake tool that tries to exceed it; assert the loop stops deterministically.
