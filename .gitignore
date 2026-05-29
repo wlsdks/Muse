@@ -72,3 +72,6 @@ docs/self-eval-scoreboard.json
 # local code-intelligence index + parallel-loop worktrees (never commit)
 .codegraph/
 .claude/worktrees/
+
+# Regenerated each test-hardening loop iteration; machine-local dashboard data.
+docs/test-report.json
