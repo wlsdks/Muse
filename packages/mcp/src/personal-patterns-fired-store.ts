@@ -22,6 +22,12 @@ import { dirname } from "node:path";
 export interface PatternFiredRecord {
   readonly patternId: string;
   readonly firedAtMs: number;
+  /**
+   * When true, this is a DISMISSAL — the user told Muse to stop suggesting
+   * this pattern. Dismissed patterns never fire again (learned avoidance),
+   * distinct from the time-bounded cooldown a normal fire records.
+   */
+  readonly dismissed?: boolean;
 }
 
 const MAX_FIRED_ENTRIES = 2_000;
@@ -69,6 +75,21 @@ export async function writePatternsFired(file: string, records: readonly Pattern
 export async function recordPatternFired(file: string, patternId: string, firedAtMs: number): Promise<void> {
   const existing = await readPatternsFired(file);
   await writePatternsFired(file, [...existing, { firedAtMs, patternId }]);
+}
+
+/**
+ * Record a DISMISSAL — the user asked Muse to stop suggesting this pattern.
+ * Appended like a fired record but flagged `dismissed`, so it suppresses the
+ * pattern permanently (learned avoidance), surviving a cooldown `reset`.
+ */
+export async function dismissPattern(file: string, patternId: string, atMs: number): Promise<void> {
+  const existing = await readPatternsFired(file);
+  await writePatternsFired(file, [...existing, { dismissed: true, firedAtMs: atMs, patternId }]);
+}
+
+/** True when any record for this pattern is a dismissal. */
+export function isPatternDismissed(records: readonly PatternFiredRecord[], patternId: string): boolean {
+  return records.some((record) => record.patternId === patternId && record.dismissed === true);
 }
 
 /**

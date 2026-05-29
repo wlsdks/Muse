@@ -41,10 +41,13 @@ Building blocks already in the tree (reuse, don't rebuild): `commitment-detector
   auto-acts). Live battery `verify-pattern-suggestion.mjs` on qwen3:8b: strong
   weekly + time-of-day patterns → grounded offers naming the real recurring
   thing (positive); thin facts → NONE, no fabricated nag (negative). — done 2026-05-29
-- [ ] **3c — Suggestion acceptance loop.** The user can accept/dismiss a
-  suggestion; a dismissal feeds learned-avoidance so the same suggestion
-  doesn't recur (reuse veto-avoidance). Useful-check: dismiss once → not
-  re-surfaced.
+- [x] **3c — Suggestion dismissal → learned avoidance.** `muse pattern dismiss
+  <id>` records a dismissal in the patterns-fired store (flag `dismissed`);
+  `runDuePatternNotices` skips dismissed patterns forever, and a cooldown
+  `reset` now PRESERVES dismissals (learned avoidance, not a timed cooldown).
+  `muse pattern dismissed` lists them. Useful: a fired pattern, once dismissed,
+  stays silent even with the cooldown cleared (proven). (Accept = acting on the
+  offer is normal use; the named requirement was dismissal→no-recur.) — done 2026-05-29
 
 ## P1 — ② Know the user better (typed USER MODEL + inferred preferences)
 

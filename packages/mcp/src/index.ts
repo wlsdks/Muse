@@ -681,6 +681,8 @@ export {
 // per detector-assigned pattern id so a fired suggestion does not
 // re-spam the user within MUSE_PROACTIVE_PATTERN_COOLDOWN_MS.
 export {
+  dismissPattern,
+  isPatternDismissed,
   isPatternOnCooldown,
   readPatternsFired,
   recordPatternFired,

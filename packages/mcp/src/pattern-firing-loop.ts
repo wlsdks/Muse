@@ -35,7 +35,7 @@ import {
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
 import { sendWithRetry } from "./messaging-retry.js";
-import { isPatternOnCooldown, readPatternsFired, recordPatternFired } from "./personal-patterns-fired-store.js";
+import { isPatternDismissed, isPatternOnCooldown, readPatternsFired, recordPatternFired } from "./personal-patterns-fired-store.js";
 import type { AgentInitiatedNoticeBrokerLike } from "./proactive-notice-loop.js";
 
 export interface RunDuePatternNoticesOptions {
@@ -96,6 +96,11 @@ export async function runDuePatternNotices(options: RunDuePatternNoticesOptions)
   const cooldownMs = options.select?.cooldownMs ?? 24 * 60 * 60_000;
 
   for (const match of fireable) {
+    // Learned avoidance: a dismissed pattern never re-fires (stronger than the
+    // time-bounded cooldown — the user said "stop suggesting this").
+    if (isPatternDismissed(firedRecords, match.id)) {
+      continue;
+    }
     if (isPatternOnCooldown(firedRecords, match.id, now().getTime(), cooldownMs)) {
       continue;
     }
