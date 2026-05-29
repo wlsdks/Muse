@@ -267,9 +267,45 @@ the generic layers below because they test what makes Muse an *agent*.
 - [ ] **CLI command-parser + run-path smoke.** The untested commander
   registrations (commands-analytics/cost/latency/persona/voice/specs/tools-admin)
   — parse args + assert the action wiring via the CLI smoke harness.
-- [ ] **Config / schema validation fuzz.** Zod (or comparable) config + external-
+- [~] **Config / schema validation fuzz.** Zod (or comparable) config + external-
   input validators against adversarial inputs (wrong types, extra keys, unicode,
   huge values) — assert they reject cleanly, never throw raw.
+  - [x] env-parsers property fuzz (the boot-time external-input validators; the
+    repo had ZERO property tests): a deterministic-LCG adversarial corpus
+    (unicode / control chars / huge & precision-losing ints / hex·octal·sci
+    notation / trailing garbage / very long strings) asserts the module's hard
+    invariants over the whole space — NO parser ever throws; booleans stay
+    boolean; int parsers return fallback-or-(safe-int satisfying >0/≥0); float
+    parsers return fallback-or-(finite, in-range); csv/optional-string stay
+    non-empty-trimmed-or-undefined; trailing-garbage/hex/unit-suffix tokens map
+    to fallback (never silently coerced). env-parsers.test.ts +8 (autoconfigure
+    436). (Confirmed int-vs-float precision contract differs by design.)
+  - [x] isLoopbackUrl / classifyProviderLocality — the local-only EGRESS
+    boundary (a misclassification = silent cloud egress the user asked to be
+    protected from). Adversarial corpus proves the one-directional security
+    invariant: string-appearance tricks (credentials/userinfo `localhost@evil.com`,
+    subdomain `127.0.0.1.evil.com`, loopback token in path/query/fragment) are
+    NEVER local; LAN/public/integer-IP-to-public hosts are NOT loopback; yet
+    canonicalised loopback (integer/hex/octal IPv4 → 127.x) IS still recognised;
+    cloud-id stays cloud even with a localhost URL; never throws on a 250-input
+    generated junk corpus. local-only-policy.test.ts +4 (model 293).
+  - [x] parseRunnerCommandRequest — the run_command arg gate that turns
+    untrusted model tool-args into the request driving risky LOCAL execution
+    (crates/runner boundary). Fuzz proves: for any JsonObject it EITHER throws a
+    typed ToolRegistryError OR returns a well-typed request (command non-empty
+    trimmed string; args all-strings; cwd non-empty string; env all-string
+    values; byte/timeout caps positive integers) — never a raw crash; a hostile
+    __proto__/constructor key never pollutes Object.prototype; mixed-type
+    args/env are filtered to string entries (no coercion). tools.test.ts +3.
+  - [x] decideWebSearchPolicy — the env+settings gate for whether web search
+    (egress) is allowed + its use budget. Combinatorial fuzz (settings × override
+    × env spelling × adversarial maxUses, ~13k combos) proves: never throws;
+    output is ALWAYS { enabled: boolean, maxUses: positive integer } so a
+    malformed budget (Infinity/NaN/float/0/neg/garbage) can't leak an
+    unbounded/NaN allowance; a falsy MUSE_WEB_SEARCH (any case/whitespace) is an
+    ABSOLUTE kill switch that override=true cannot re-enable. web-search-policy.test.ts +2.
+  - [ ] Remaining: fuzz the other external-input validators (JSON-repair /
+    extractJsonArray, gemini-live-protocol).
 
 ---
 

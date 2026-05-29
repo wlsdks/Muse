@@ -158,3 +158,118 @@ describe("parseOptionalString", () => {
     expect(parseOptionalString("  hi  ")).toBe("hi");
   });
 });
+
+// Property-based fuzz (backlog P4/P5 — zero property tests before this). The
+// env parsers each carry a hard contract: "None throws — invalid input maps to
+// the fallback, so a typo'd MUSE_* var won't abort runtime boot." Example tests
+// pin specific known cases; this asserts the INVARIANTS hold over a large
+// generated adversarial corpus (unicode, control chars, huge/precision-losing
+// ints, hex/octal/sci notation, trailing garbage, very long strings). No new
+// dep — a deterministic LCG keeps the corpus reproducible (no Math.random flake).
+describe("env-parsers — property fuzz (never-throws + always-valid-or-fallback)", () => {
+  const adversarialCorpus = (): string[] => {
+    const seeds = [
+      "", " ", "\t", "\n", "  \r\n ", "true", "FALSE", "Treu", "yes", "off", "1", "0", "00", "+0", "-0",
+      "7", "7x", "x7", "60s", "16k", "0.5", "0.5x", ".5", "5.", "1e3", "1E-3", "0x10", "0o17", "0b101",
+      "1_000", "9007199254740993", "99999999999999999999", "-5", "+12", "3.14", "Infinity", "-Infinity",
+      "NaN", "1.5e", "e5", ",", "a,b,c", " a , , b ", "   spaced   ", "null", "undefined", "{}", "[]",
+      "🙂", "한국어", "\u0000", "\u202e", "1\u00a0000", "  -0.0  ", "1.0000000000000002", "2", "1000000",
+      ".", "+.", "-.e", "1.2.3", "0.", "1e999", "-1e999", "  12  ", "0.999999", "1.000001", "0.5\n",
+    ];
+    // Deterministic LCG to weave seeds into longer adversarial tokens.
+    let state = 0x12345678;
+    const rand = (n: number): number => { state = (state * 1103515245 + 12345) & 0x7fffffff; return state % n; };
+    const generated: string[] = [];
+    for (let i = 0; i < 240; i += 1) {
+      const a = seeds[rand(seeds.length)]!;
+      const b = seeds[rand(seeds.length)]!;
+      const join = ["", " ", ",", ".", "x", "\t", "-", "e"][rand(8)]!;
+      generated.push(rand(3) === 0 ? a.repeat(1 + rand(50)) : `${a}${join}${b}`);
+    }
+    return [...seeds, ...generated];
+  };
+  const CORPUS = adversarialCorpus();
+  const FB_INT = 7;
+  const FB_FLOAT = 0.25;
+
+  it("no parser ever throws on any corpus input (or undefined)", () => {
+    for (const input of [...CORPUS, undefined]) {
+      expect(() => {
+        parseBoolean(input, true);
+        parseBooleanTriState(input);
+        parseInteger(input, FB_INT);
+        parseNonNegativeInteger(input, FB_INT);
+        parsePositiveFloat(input, FB_FLOAT);
+        parseNonNegativeFloat(input, FB_FLOAT);
+        parseSloErrorRate(input, FB_FLOAT);
+        parseCsv(input);
+        parseOptionalString(input);
+      }).not.toThrow();
+    }
+  });
+
+  it("boolean parsers return only boolean | (undefined for tri-state)", () => {
+    for (const input of CORPUS) {
+      expect(typeof parseBoolean(input, true)).toBe("boolean");
+      const tri = parseBooleanTriState(input);
+      expect(tri === undefined || typeof tri === "boolean").toBe(true);
+    }
+  });
+
+  it("integer parsers return the fallback OR a safe integer satisfying the predicate", () => {
+    for (const input of CORPUS) {
+      const pos = parseInteger(input, FB_INT);
+      expect(pos === FB_INT || (Number.isSafeInteger(pos) && pos > 0)).toBe(true);
+      const nonNeg = parseNonNegativeInteger(input, FB_INT);
+      expect(nonNeg === FB_INT || (Number.isSafeInteger(nonNeg) && nonNeg >= 0)).toBe(true);
+    }
+  });
+
+  it("float parsers return the fallback OR a finite number in range", () => {
+    for (const input of CORPUS) {
+      const pos = parsePositiveFloat(input, FB_FLOAT);
+      expect(pos === FB_FLOAT || (Number.isFinite(pos) && pos > 0)).toBe(true);
+      const nonNeg = parseNonNegativeFloat(input, FB_FLOAT);
+      expect(nonNeg === FB_FLOAT || (Number.isFinite(nonNeg) && nonNeg >= 0)).toBe(true);
+      const slo = parseSloErrorRate(input, FB_FLOAT);
+      expect(slo === FB_FLOAT || (Number.isFinite(slo) && slo >= 0 && slo <= 1)).toBe(true);
+    }
+  });
+
+  it("parseCsv returns undefined OR a non-empty list of non-empty trimmed strings", () => {
+    for (const input of CORPUS) {
+      const out = parseCsv(input);
+      if (out !== undefined) {
+        expect(out.length).toBeGreaterThan(0);
+        expect(out.every((s) => s.length > 0 && s === s.trim())).toBe(true);
+      }
+    }
+  });
+
+  it("parseOptionalString returns undefined OR a non-empty trimmed string", () => {
+    for (const input of CORPUS) {
+      const out = parseOptionalString(input);
+      if (out !== undefined) {
+        expect(out.length).toBeGreaterThan(0);
+        expect(out).toBe(out.trim());
+      }
+    }
+  });
+
+  // A direct regression guard for the bugs the parser comments document:
+  // lenient Number coercion silently accepting trailing garbage / hex / unit
+  // suffixes. These MUST map to the fallback, never a silently-wrong value.
+  it("never silently coerces trailing-garbage / hex / unit-suffixed tokens (both int and float → fallback)", () => {
+    for (const trap of ["60x", "16k", "0x10", "0o17", "0b101", "60s", "0.5x", "1_000"]) {
+      expect(parseInteger(trap, FB_INT)).toBe(FB_INT);
+      expect(parsePositiveFloat(trap, FB_FLOAT)).toBe(FB_FLOAT);
+    }
+  });
+
+  it("parseInteger rejects a precision-losing big int (isSafeInteger guard) — fallback, not a silently-wrong value", () => {
+    // The FLOAT parsers legitimately accept this with precision loss (it's a
+    // float); only the INTEGER parsers must reject the unsafe magnitude.
+    expect(parseInteger("9007199254740993", FB_INT)).toBe(FB_INT);
+    expect(parseNonNegativeInteger("9007199254740993", FB_INT)).toBe(FB_INT);
+  });
+});

@@ -1380,3 +1380,56 @@ describe("createMuseTools", () => {
     });
   });
 });
+
+// Property fuzz (backlog P5 config-fuzz) for the run_command argument gate.
+// parseRunnerCommandRequest turns UNTRUSTED model tool-args into the request
+// that drives risky local execution (the crates/runner boundary), so the
+// invariant is: for ANY JsonObject it EITHER throws a typed ToolRegistryError
+// (expected validation failure) OR returns a request whose fields are
+// well-typed (command a non-empty trimmed string; args all-strings; cwd
+// non-empty string; env all-string values; byte/timeout caps positive integers)
+// — NEVER a raw crash, and never pollutes Object.prototype via a hostile key.
+describe("parseRunnerCommandRequest — adversarial arg fuzz", () => {
+  const bases: Record<string, unknown>[] = [
+    {}, { command: "" }, { command: "   " }, { command: 42 }, { command: null }, { command: ["ls"] },
+    { command: {} }, { command: true }, { command: "ls" }, { command: "  trimmed  " },
+    { command: "ls", args: "notarray" }, { command: "ls", args: [1, "ok", null, {}, "two"] }, { command: "ls", args: [] },
+    { command: "ls", env: [1, 2] }, { command: "ls", env: { A: "1", B: 2, C: null, D: "ok" } }, { command: "ls", env: "x" },
+    { command: "ls", cwd: "  " }, { command: "ls", cwd: 5 }, { command: "ls", cwd: "/tmp" },
+    { command: "ls", maxOutputBytes: -5 }, { command: "ls", maxOutputBytes: 3.5 }, { command: "ls", maxOutputBytes: "100" },
+    { command: "ls", maxOutputBytes: Number.NaN }, { command: "ls", maxOutputBytes: Infinity }, { command: "ls", maxOutputBytes: 0 },
+    { command: "ls", timeoutMs: Number.NaN }, { command: "ls", timeoutMs: Infinity }, { command: "ls", timeoutMs: 1 },
+    JSON.parse('{"command":"ls","__proto__":{"polluted":true}}') as Record<string, unknown>,
+    JSON.parse('{"command":"ls","constructor":{"x":1}}') as Record<string, unknown>,
+  ];
+
+  it("either throws a typed ToolRegistryError or returns a well-typed request — never a raw crash", () => {
+    for (const input of bases) {
+      let threw: unknown;
+      let result: ReturnType<typeof parseRunnerCommandRequest> | undefined;
+      try { result = parseRunnerCommandRequest(input as never); } catch (error) { threw = error; }
+      if (threw !== undefined) {
+        expect(threw, JSON.stringify(input)).toBeInstanceOf(ToolRegistryError); // typed, not a raw TypeError
+        continue;
+      }
+      const r = result!;
+      expect(typeof r.command === "string" && r.command.length > 0 && r.command === r.command.trim(), JSON.stringify(input)).toBe(true);
+      expect(r.args === undefined || r.args.every((a) => typeof a === "string"), JSON.stringify(input)).toBe(true);
+      expect(r.cwd === undefined || (typeof r.cwd === "string" && r.cwd.trim().length > 0), JSON.stringify(input)).toBe(true);
+      expect(r.env === undefined || Object.values(r.env).every((v) => typeof v === "string"), JSON.stringify(input)).toBe(true);
+      expect(r.maxOutputBytes === undefined || (Number.isInteger(r.maxOutputBytes) && r.maxOutputBytes > 0), JSON.stringify(input)).toBe(true);
+      expect(r.timeoutMs === undefined || (Number.isInteger(r.timeoutMs) && r.timeoutMs > 0), JSON.stringify(input)).toBe(true);
+    }
+  });
+
+  it("a hostile __proto__ / constructor key in the args does NOT pollute Object.prototype", () => {
+    parseRunnerCommandRequest(JSON.parse('{"command":"ls","__proto__":{"polluted":true}}'));
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("filters mixed-type args/env to only the string entries (no coercion, no drop-to-crash)", () => {
+    const r = parseRunnerCommandRequest({ command: "deploy", args: ["--flag", 1, null, "value", true], env: { OK: "1", BAD: 2 } } as never);
+    expect(r.args).toEqual(["--flag", "value"]);
+    expect(r.env).toEqual({ OK: "1" });
+  });
+});

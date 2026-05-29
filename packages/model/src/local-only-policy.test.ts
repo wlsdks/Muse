@@ -75,3 +75,75 @@ describe("LocalOnlyViolationError", () => {
     expect(err).toBeInstanceOf(Error);
   });
 });
+
+// Adversarial / fuzz for the egress boundary (backlog P5 config-fuzz). This is
+// the fail-close gate that decides whether traffic may leave the machine under
+// local-only, so the load-bearing SECURITY invariant is one-directional: a host
+// that is NOT genuinely loopback must NEVER classify as local (a false
+// "local" = silent cloud egress the user asked to be protected from). A false
+// NEGATIVE (real loopback seen as cloud) is mere over-refusal — fail-closed,
+// safe. The classifier keys off URL.hostname, so it must be immune to
+// string-appearance tricks (credentials/userinfo/subdomain/path) yet still
+// recognise canonicalised loopback (integer/hex IPv4 that resolves to 127.x).
+describe("isLoopbackUrl — egress-bypass adversarial corpus", () => {
+  // "localhost" / "127.0.0.1" appears in the string but the REAL host is off-box.
+  const bypasses = [
+    "http://localhost@evil.com",
+    "http://127.0.0.1@evil.com",
+    "http://localhost:pass@evil.com/v1",
+    "http://user@localhost.evil.com",
+    "http://evil.com#localhost",
+    "http://evil.com/localhost",
+    "http://evil.com?h=localhost",
+    "http://evil.com:80/127.0.0.1",
+    "http://127.0.0.1.evil.com",
+    "http://localhost.attacker.net",
+    "https://api.openai.com/v1#127.0.0.1",
+  ];
+
+  it("never classifies a string-trick non-loopback host as loopback (no silent egress)", () => {
+    for (const url of bypasses) {
+      expect(isLoopbackUrl(url), url).toBe(false);
+      // and the classifier downstream refuses it as cloud
+      expect(classifyProviderLocality("openai-compatible", url), url).toBe("cloud");
+    }
+  });
+
+  it("off-box / LAN / public hosts (incl. integer-IP forms that canonicalise to public) are NOT loopback", () => {
+    for (const url of [
+      "http://3232235521", // → 192.168.0.1 (LAN — off-box egress per architecture.md)
+      "http://0x08080808", // → 8.8.8.8 (public)
+      "http://192.168.1.50:11434",
+      "http://10.0.0.9:8000",
+      "http://172.16.4.4:1234",
+      "https://api.groq.com/openai/v1",
+    ]) {
+      expect(isLoopbackUrl(url), url).toBe(false);
+    }
+  });
+
+  it("still RECOGNISES canonicalised loopback (integer/hex/octal IPv4 → 127.x) — not fooled the other way", () => {
+    for (const url of ["http://2130706433", "http://0x7f000001", "http://017700000001", "http://2130706434"]) {
+      expect(isLoopbackUrl(url), url).toBe(true); // WHATWG URL canonicalises these to 127.0.0.x
+    }
+  });
+
+  it("never throws on a generated junk/adversarial corpus, and a 'localhost'-substring host placed off-host is never local", () => {
+    // Deterministic LCG: weave loopback tokens into NON-host positions.
+    let state = 0x6f6f6f;
+    const rand = (n: number): number => { state = (state * 1103515245 + 12345) & 0x7fffffff; return state % n; };
+    const tokens = ["localhost", "127.0.0.1", "::1", "evil.com", "@", "/", "#", "?x=", ".", ":8080", "好", "\u0000", " "];
+    for (let i = 0; i < 250; i += 1) {
+      const url = Array.from({ length: 1 + rand(6) }, () => tokens[rand(tokens.length)]).join("");
+      expect(() => isLoopbackUrl(url)).not.toThrow();
+      // If it parses to an off-box host, it must not be local — but we can only
+      // assert the strong direction for the curated bypasses above; here we just
+      // require no-throw + that a clearly-off-host placement isn't local.
+      expect(() => classifyProviderLocality("openai-compatible", url)).not.toThrow();
+    }
+    // Targeted: a loopback token in userinfo/path/fragment with an off-box host is never local.
+    for (const url of ["http://localhost@10.0.0.1", "http://10.0.0.1/localhost", "http://10.0.0.1#127.0.0.1"]) {
+      expect(isLoopbackUrl(url), url).toBe(false);
+    }
+  });
+});
