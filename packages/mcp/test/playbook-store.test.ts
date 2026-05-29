@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type PlaybookEntry, readPlaybook, removePlaybookStrategy, writePlaybook } from "../src/personal-playbook-store.js";
+import { MAX_PLAYBOOK_ENTRIES, type PlaybookEntry, readPlaybook, recordPlaybookStrategy, removePlaybookStrategy, writePlaybook } from "../src/personal-playbook-store.js";
 
 const entry = (id: string, tag?: string): PlaybookEntry => ({
   id,
@@ -69,5 +69,34 @@ describe("removePlaybookStrategy", () => {
   it("reports false on an empty / missing store", async () => {
     const file = freshFile();
     await expect(removePlaybookStrategy(file, "anything")).resolves.toBe(false);
+  });
+});
+
+// Concurrency (shared atomic-file helper migration): recordPlaybookStrategy /
+// removePlaybookStrategy are read-modify-write, and the record path applies a
+// FIFO cap. A lost strategy is a self-improvement the agent forgets; before the
+// per-file mutation queue, concurrent records clobbered one another and could
+// mis-apply the cap to a stale snapshot.
+describe("concurrent playbook mutation", () => {
+  it("preserves EVERY distinct strategy recorded concurrently (no last-writer-wins loss)", async () => {
+    const file = freshFile();
+    await Promise.all(Array.from({ length: 20 }, (_unused, i) => recordPlaybookStrategy(file, entry(`p${i.toString()}`))));
+    const all = await readPlaybook(file);
+    expect(all).toHaveLength(20);
+    expect(new Set(all.map((e) => e.id)).size).toBe(20);
+  });
+
+  it("applies the FIFO cap to the real merged set under concurrent over-cap records", async () => {
+    const file = freshFile();
+    const over = MAX_PLAYBOOK_ENTRIES + 30;
+    await Promise.all(Array.from({ length: over }, (_unused, i) => recordPlaybookStrategy(file, entry(`q${i.toString()}`))));
+    expect(await readPlaybook(file)).toHaveLength(MAX_PLAYBOOK_ENTRIES); // not over-cap, not lost-to-stale
+  });
+
+  it("concurrent removes drop exactly the targeted strategies, leaving the rest", async () => {
+    const file = freshFile();
+    await Promise.all(Array.from({ length: 20 }, (_unused, i) => recordPlaybookStrategy(file, entry(`p${i.toString()}`))));
+    await Promise.all(Array.from({ length: 10 }, (_unused, i) => removePlaybookStrategy(file, `p${i.toString()}`)));
+    expect(await readPlaybook(file)).toHaveLength(10);
   });
 });

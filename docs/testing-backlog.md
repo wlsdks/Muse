@@ -249,11 +249,16 @@ the generic layers below because they test what makes Muse an *agent*.
     upsert / markFired / cancel / snooze all wrapped in withFileMutationQueue. 20
     concurrent distinct upserts all preserved (was last-writer-wins), 20
     concurrent markFired all applied, 0 crash. +2 tests.
-  - [ ] Remaining: migrate the other ~13 read-modify-write stores
-    (reminders / tasks / playbook / episodes / proactive-history /
-    contacts / patterns-fired / plan-cache / …) onto the shared helper —
-    a cheap one-each adoption. inbound dedup + single-flight daemon race tests
-    also open.
+  - [x] Migration 5 — personal-playbook-store (self-improving: a lost learned
+    strategy is a self-improvement the agent forgets; OpenClaw skill-workshop).
+    record/remove now serialised + atomicWriteFile: 20 concurrent distinct
+    records all preserved, the FIFO cap (100) applies to the REAL merged set under
+    130 concurrent over-cap records (not a stale snapshot), 10 concurrent removes
+    drop exactly the targeted ones. +3 tests.
+  - [ ] Remaining: migrate the other ~12 read-modify-write stores
+    (reminders / tasks / episodes / proactive-history / contacts /
+    patterns-fired / plan-cache / …) onto the shared helper — a cheap one-each
+    adoption. inbound dedup + single-flight daemon race tests also open.
 
 ## P5 — surface & contract
 
