@@ -146,6 +146,13 @@ the generic layers below because they test what makes Muse an *agent*.
     (POST persists, GET reflects, DELETE removes, 400 no-name). Most groups
     (notes/tasks/reminders/active-context/voice/today/setup/admin/chat) already
     have server.*.test.ts; remaining untested: the *-compat (Spring-compat) routes.
+  - [x] admin-session-compat route group (server.admin-session-compat.test.ts):
+    /api/admin/sessions/overview (status tally), the paginated list (limit/offset/
+    total echo + items), session detail (+ empty tags), DELETE 204→404 (re-delete)
+    + 404 unknown, tag POST 400 no-label. (auth-compat, session-compat, agent-compat,
+    user-memory-compat, mcp-compat access-policy already covered by their server.*
+    tests.) Remaining compat: admin-{analytics,observability,platform}-compat
+    (ops/dashboard surfaces — lower outward value per the personal pivot).
 
 ## P3 — live LLM verification (Ollama up on this PC — USE it)
 
