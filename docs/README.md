@@ -1,3 +1,11 @@
+---
+title: Muse 문서 안내 (인덱스)
+audience: [기획자, 개발자, AI 에이전트]
+purpose: Muse 문서 집합의 단일 진입점 — 어떤 문서가 무엇을 담는지
+updated: 2026-05-29
+related: [SYSTEM-MAP.md, FEATURES.md, strategy/identity.md]
+---
+
 # Muse 문서 안내
 
 Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처음이라면 **[SYSTEM-MAP](SYSTEM-MAP.md)** 한 장만 봐도 전체 윤곽이 잡힙니다.
