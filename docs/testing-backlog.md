@@ -166,7 +166,8 @@ the generic layers below because they test what makes Muse an *agent*.
     prompt that shapes Qwen's plan output) pinned via toMatchInlineSnapshot +
     structural invariants. planning-prompt-snapshot.test.ts. (Was 0 snapshot
     tests in the repo.)
-  - [ ] Remaining: buildSystemPrompt (persona) snapshot; the Ollama Hermes
+  - [x] buildSystemPrompt section-assembly snapshot (system-prompt-snapshot.test.ts): base → Response Format → cache boundary → memory/retrieved/tool sections, order + boundary placement pinned.
+  - [ ] Remaining: the Ollama Hermes
     tool-call wire body (buildNativeChatBody) is already shape-asserted in
     adapter-ollama.test.ts — DONE — adapter-ollama.test.ts pins the exact native /api/chat body for a tool-using request.
 - [ ] **CLI command-parser + run-path smoke.** The untested commander
