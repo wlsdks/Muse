@@ -267,9 +267,21 @@ the generic layers below because they test what makes Muse an *agent*.
 - [ ] **CLI command-parser + run-path smoke.** The untested commander
   registrations (commands-analytics/cost/latency/persona/voice/specs/tools-admin)
   — parse args + assert the action wiring via the CLI smoke harness.
-- [ ] **Config / schema validation fuzz.** Zod (or comparable) config + external-
+- [~] **Config / schema validation fuzz.** Zod (or comparable) config + external-
   input validators against adversarial inputs (wrong types, extra keys, unicode,
   huge values) — assert they reject cleanly, never throw raw.
+  - [x] env-parsers property fuzz (the boot-time external-input validators; the
+    repo had ZERO property tests): a deterministic-LCG adversarial corpus
+    (unicode / control chars / huge & precision-losing ints / hex·octal·sci
+    notation / trailing garbage / very long strings) asserts the module's hard
+    invariants over the whole space — NO parser ever throws; booleans stay
+    boolean; int parsers return fallback-or-(safe-int satisfying >0/≥0); float
+    parsers return fallback-or-(finite, in-range); csv/optional-string stay
+    non-empty-trimmed-or-undefined; trailing-garbage/hex/unit-suffix tokens map
+    to fallback (never silently coerced). env-parsers.test.ts +8 (autoconfigure
+    436). (Confirmed int-vs-float precision contract differs by design.)
+  - [ ] Remaining: fuzz the other external-input validators (runner command
+    request, web-search-policy, isLoopbackUrl, JSON-repair, gemini-live-protocol).
 
 ---
 
