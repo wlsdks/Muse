@@ -244,8 +244,13 @@ the generic layers below because they test what makes Muse an *agent*.
     (still avoidance-checkable), 10 concurrent removes drop exactly the targeted
     ones. +2 tests. **The outbound-safety store trio consent+veto+the
     audit/approval stores is now concurrency-safe.**
-  - [ ] Remaining: migrate the other ~14 read-modify-write stores
-    (reminders / tasks / followups / playbook / episodes / proactive-history /
+  - [x] Migration 4 — personal-followups-store (user-facing: a lost followup is
+    a proactive nudge the user never receives). writeFollowups → atomicWriteFile;
+    upsert / markFired / cancel / snooze all wrapped in withFileMutationQueue. 20
+    concurrent distinct upserts all preserved (was last-writer-wins), 20
+    concurrent markFired all applied, 0 crash. +2 tests.
+  - [ ] Remaining: migrate the other ~13 read-modify-write stores
+    (reminders / tasks / playbook / episodes / proactive-history /
     contacts / patterns-fired / plan-cache / …) onto the shared helper —
     a cheap one-each adoption. inbound dedup + single-flight daemon race tests
     also open.

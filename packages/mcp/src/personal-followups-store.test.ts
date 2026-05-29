@@ -167,3 +167,25 @@ describe("readFollowupStatusFilter", () => {
     expect(readFollowupStatusFilter("all")).toBe("all");
   });
 });
+
+// Concurrency (shared atomic-file helper migration): upsert / markFired /
+// cancel / snooze are read-modify-write. A lost followup is a proactive nudge
+// the user never receives; before the per-file mutation queue, two concurrent
+// detect passes each read the same snapshot and clobbered one another.
+describe("concurrent followup mutation", () => {
+  it("preserves EVERY distinct followup upserted concurrently (no last-writer-wins loss)", async () => {
+    const file = tmpFile();
+    await Promise.all(Array.from({ length: 20 }, (_unused, i) => upsertFollowup(file, fixture({ id: `fu${i.toString()}` }))));
+    const all = await readFollowups(file);
+    expect(all).toHaveLength(20);
+    expect(new Set(all.map((f) => f.id)).size).toBe(20);
+  });
+
+  it("applies every concurrent markFired on distinct scheduled followups (no crash, none dropped)", async () => {
+    const file = tmpFile();
+    await Promise.all(Array.from({ length: 20 }, (_unused, i) => upsertFollowup(file, fixture({ id: `fu${i.toString()}` }))));
+    const fired = await Promise.all((await readFollowups(file)).map((f) => markFollowupFired(file, f.id, "2026-05-13T11:00:00.000Z")));
+    expect(fired.filter(Boolean)).toHaveLength(20);
+    expect((await readFollowups(file)).every((f) => f.status === "fired")).toBe(true);
+  });
+});
