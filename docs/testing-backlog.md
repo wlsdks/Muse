@@ -163,7 +163,7 @@ the generic layers below because they test what makes Muse an *agent*.
     tests in the repo.)
   - [ ] Remaining: buildSystemPrompt (persona) snapshot; the Ollama Hermes
     tool-call wire body (buildNativeChatBody) is already shape-asserted in
-    adapter-ollama.test.ts — consider a pinned snapshot there too.
+    adapter-ollama.test.ts — DONE — adapter-ollama.test.ts pins the exact native /api/chat body for a tool-using request.
 - [ ] **CLI command-parser + run-path smoke.** The untested commander
   registrations (commands-analytics/cost/latency/persona/voice/specs/tools-admin)
   — parse args + assert the action wiring via the CLI smoke harness.
