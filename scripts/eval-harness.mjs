@@ -121,6 +121,78 @@ export const toolScorers = {
   },
 };
 
+/**
+ * LLM-as-judge (GEval) scorer factory — the SUBJECTIVE-quality tier, reserved
+ * for what deterministic code can't grade (tone, refusal, on-topic, language).
+ * Strict single-word PASS/FAIL verdict, temperature 0; the suite's `repeat`
+ * provides stochastic stability. The case carries `{ rubric, expectVerdict }`
+ * ("PASS"|"FAIL"); the scorer asks the judge model whether `output` satisfies
+ * the rubric and passes when the verdict matches the expectation.
+ *
+ * @param {{ generate: (req:any)=>Promise<{output?:string}> }} provider
+ * @param {string} model
+ */
+export function llmJudge(provider, model) {
+  const system =
+    "You are a strict evaluator. Given a RUBRIC and an OUTPUT, decide if the OUTPUT satisfies the RUBRIC. "
+    + "Respond with EXACTLY one word on the first line: PASS or FAIL. Then one short reason line. Do not output anything else.";
+  return async (output, testCase) => {
+    const expect = (testCase.expectVerdict ?? "PASS").toUpperCase();
+    const response = await provider.generate({
+      maxOutputTokens: 120,
+      messages: [
+        { content: system, role: "system" },
+        { content: `RUBRIC: ${testCase.rubric}\n\nOUTPUT:\n${typeof output === "string" ? output : JSON.stringify(output)}`, role: "user" },
+      ],
+      model,
+      temperature: 0,
+    });
+    const text = (response.output ?? "").trim();
+    const verdict = /^\s*pass\b/iu.test(text) ? "PASS" : /^\s*fail\b/iu.test(text) ? "FAIL" : "?";
+    return verdict === expect
+      ? { ok: true, detail: `judge ${verdict} (expected ${expect})` }
+      : { ok: false, detail: `judge ${verdict}, expected ${expect} — ${text.split("\n").slice(0, 2).join(" / ")}` };
+  };
+}
+
+/**
+ * OpenClaw-style promotion SHADOW TRIAL (report-only). Before a candidate
+ * memory / distilled strategy is promoted to the live store, compare a BASELINE
+ * answer (no memory) with a CANDIDATE answer (allowed to use the memory) for a
+ * probe question and emit a structured verdict — PROMOTE only if the candidate
+ * is more helpful AND the memory introduces no false/unsafe claim, else HOLD.
+ *
+ * REPORT-ONLY BY CONSTRUCTION: takes no store handle and returns a report
+ * object; it never writes anywhere — the caller decides whether to act on it,
+ * exactly like OpenClaw keeps the dream report separate from live MEMORY.md.
+ *
+ * @returns {Promise<{verdict:"PROMOTE"|"HOLD"|"?", reason:string, risk:string}>}
+ */
+export async function runShadowTrial(provider, model, input) {
+  const system =
+    "You review a CANDIDATE memory before it is promoted to long-term store. Compare the BASELINE answer (no memory) "
+    + "with the CANDIDATE answer (allowed to use the memory) for the PROBE question. Reply with EXACTLY three lines:\n"
+    + "VERDICT: PROMOTE or HOLD\nREASON: <one short line>\nRISK: <one short line, or 'none'>\n"
+    + "PROMOTE only if the candidate answer is more helpful AND the memory introduces no false or unsafe claim. Otherwise HOLD.";
+  const user = `PROBE: ${input.probe}\n\nBASELINE: ${input.baseline}\n\nCANDIDATE MEMORY: ${input.memory}\nCANDIDATE ANSWER: ${input.candidate}`;
+  const response = await provider.generate({ maxOutputTokens: 160, messages: [{ content: system, role: "system" }, { content: user, role: "user" }], model, temperature: 0 });
+  const text = (response.output ?? "").trim();
+  const verdict = /verdict:\s*promote/iu.test(text) ? "PROMOTE" : /verdict:\s*hold/iu.test(text) ? "HOLD" : "?";
+  const reason = /reason:\s*(.+)/iu.exec(text)?.[1]?.trim() ?? "";
+  const risk = /risk:\s*(.+)/iu.exec(text)?.[1]?.trim() ?? "";
+  return { reason, risk, verdict };
+}
+
+/** Scorer wrapping a shadow trial: passes when the verdict matches the case's expectVerdict. */
+export function shadowTrialScorer(provider, model) {
+  return async (_observed, testCase) => {
+    const report = await runShadowTrial(provider, model, testCase);
+    return report.verdict === testCase.expectVerdict
+      ? { ok: true, detail: `${report.verdict} — ${report.reason}` }
+      : { ok: false, detail: `got ${report.verdict}, expected ${testCase.expectVerdict} — ${report.reason}` };
+  };
+}
+
 /** AND a list of `{ok,detail}` scorers; first failure's detail wins, else the last detail. */
 export function combineScorers(...fns) {
   return async (observed, testCase, scenario) => {

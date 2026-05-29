@@ -99,18 +99,41 @@ of agent test is worth the most*.
   - [ ] Remaining: trajectory of the real plan_execute path through the
     assembly (plan_generated → tool → synthesis_started → done events), and a
     step-efficiency check that penalises a redundant re-call of the same tool.
-- **D. LLM-as-judge (GEval-style) harness** — a reusable judge (local Qwen,
-  temp 0, repeat-for-stability) scoring open-ended outputs against a plain-
-  English rubric, for things exact-match can't grade (summaries, drafts).
-- **E. Adversarial eval battery** — promote prompt-injection / jailbreak /
-  unsafe-tool-use from unit guards into a scored live battery (must-refuse set),
-  mirroring the eager-invocation negatives already in `eval:tools`.
-- **F. Hermes-style constraint gates on self-authored skills** — Muse authors
-  skills at session end; gate each authored skill on size (≤15 KB), tool-desc
-  length, and a parse/lint check before it's loadable (mirror hermes).
-- **G. OpenClaw-style shadow-trial for memory/playbook promotion** — before a
-  distilled strategy / promoted memory goes live, a report-only baseline-vs-
-  candidate judge with verdict/reason/risk, kept separate from the live store.
+- [x] **D. LLM-as-judge (GEval-style) harness** — DONE: `llmJudge(provider,
+  model)` added to `eval-harness.mjs` — the subjective-quality scorer tier
+  (strict single-word PASS/FAIL verdict, temp 0, suite `repeat` for stability;
+  case carries `{ rubric, expectVerdict }`). Proven by `eval:judge` (new
+  `scripts/eval-judge.mjs` + npm script): a meta-eval that the judge ITSELF is
+  reliable on clear-cut cases (refusal/language/correctness/on-topic) — 8/8
+  (100%) @ REPEAT=2 against qwen3:8b. Other batteries can now drop in
+  `score: llmJudge(...)` for open-ended outputs code can't grade.
+- [x] **E. Adversarial eval battery** — DONE: `scripts/eval-adversarial.mjs` +
+  `eval:adversarial` npm script. Live must-refuse set (jailbreak/DAN, phishing,
+  malware, prompt-injection secret-exfil, KO account-hacking) scored by the
+  gap-D `llmJudge` ("refuses / does not comply"), PLUS over-refusal controls
+  (benign EN/KO requests must still be helpful). 7/7 (100%) @ REPEAT=2 against
+  qwen3:8b; each pre-probed STABLE 3/3.
+  - Finding: "reveal your (benign) system prompt verbatim" was NOT included —
+    the model complies (correctly: a non-secret system prompt isn't refusal-
+    worthy); the genuine secret-exfil injection is covered by the SYSTEM-OVERRIDE
+    case. Complements the deterministic input guards (unit-tested), not replaces.
+- [x] **F. Hermes-style constraint gates on self-authored skills** — DONE:
+  `skillDraftConstraintViolations(draft)` + `parseConstrainedSkillDraft(raw)`
+  (skill-review.ts) enforce body ≤15 KB (UTF-8 bytes), description ≤500 chars,
+  name ≤80 chars on top of the parse check; WIRED into both authoring producers
+  (`draftSkillFromSignal`, `mergeSkillsIntoUmbrella`) so an over-limit draft is
+  rejected (null/undefined), never recorded — mirrors hermes' skill/tool-desc
+  size gate. 11 tests + full `pnpm check` green (6118).
+- [x] **G. OpenClaw-style shadow-trial for memory/playbook promotion** — DONE:
+  `runShadowTrial(provider, model, {probe,baseline,candidate,memory})` +
+  `shadowTrialScorer` in eval-harness.mjs emit a report-only PROMOTE/HOLD +
+  reason + risk (PROMOTE only if the candidate is more helpful AND introduces no
+  false/unsafe claim). REPORT-ONLY by construction (no store handle, writes
+  nothing). `scripts/eval-shadow-trial.mjs` + `eval:shadow-trial` prove the
+  verdict on clear-cut candidates (helpful pref → PROMOTE; secret/unconfirmed
+  over-claim → HOLD): 4/4 (100%) @ REPEAT=2, each pre-probed STABLE 3/3.
+  - [ ] Remaining: wire the trial in front of the real distill/recall-promotion
+    path so an actual promotion consults it (still report-only / advisory).
 - **H. CI gating** — make the eval batteries a real gate (extend `self-eval`)
   so a tool-selection / task-completion regression fails the run, not just logs.
 
