@@ -98,7 +98,7 @@ the generic layers below because they test what makes Muse an *agent*.
     (newest-first), /api/objectives, /api/vetoes read-only + /api/contacts CRUD
     (POST persists, GET reflects, DELETE removes, 400 no-name). Most groups
     (notes/tasks/reminders/active-context/voice/today/setup/admin/chat) already
-    have server.*.test.ts; remaining untested: proactive + the *-compat routes.
+    have server.*.test.ts; remaining untested: the *-compat (Spring-compat) routes.
 
 ## P3 — live LLM verification (Ollama up on this PC — USE it)
 
