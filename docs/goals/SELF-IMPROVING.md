@@ -155,9 +155,17 @@ next phase is making the JARVIS run them ON ITS OWN, then deepening.
   neither (check-in status flip + patterns-fired cooldown). Audit finding
   (noted, not a bug): the daemon's pattern tick forwards no signal paths, so it
   reads `process.env.HOME` for activity signals (the test stubs HOME).
-- [ ] **N3 (P1) — Surface proactive output IN-CHAT.** The in-chat idle poll
-  should also surface due check-ins + pattern suggestions (today they go to the
-  daemon's messaging channel only), so a user living in `muse` chat sees them.
+- [x] **N3 (P1) — Surface proactive output IN-CHAT.** [this commit] The
+  in-chat idle poll now also raises due check-ins + fireable pattern
+  suggestions (today's daemon-only outputs) via a new non-windowed
+  `proactiveNudges` source — `checkinItems` / `patternSuggestionItems` in
+  chat-proactive.ts, wired through chat-ink's tick as verbatim lines. Read-only
+  (the daemon owns delivery state, so already-fired check-ins / cooled-down
+  patterns never re-surface); pattern surfacing rides the existing
+  `MUSE_PROACTIVE_PATTERN_ENABLED` opt-in so the per-poll notes walk only runs
+  when asked, check-ins always surface. Verified: chat-proactive unit tests +
+  a real Ink-render test asserting both a check-in and a pattern line land in
+  the transcript; full apps/cli suite 1439/1439, lint 0/0.
 - [ ] **N4 (P1) — UserModel confidence decay / re-confirm.** Inferred prefs
   should fade or ask to re-confirm over time; add Honcho-style ONE clarifying
   question for a low-confidence inferred preference before trusting it.

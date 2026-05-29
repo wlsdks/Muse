@@ -112,6 +112,42 @@ export function calendarEventItems(events: readonly CalendarEventInput[], horizo
     .map((event) => ({ id: `event:${event.id}`, text: `Calendar: ${event.title}`, dueAt: event.startsAtIso }));
 }
 
+export interface DueCheckinInput {
+  readonly id: string;
+  readonly question: string;
+  readonly dueAtIso: string;
+  readonly status: string;
+}
+
+/**
+ * Scheduled commitment check-ins already due (`dueAtIso <= now`), as proactive
+ * items — so a user living in `muse` chat sees the same "요전에 …, 어떻게
+ * 됐어요?" the daemon would push to their channel. Surfaced once each (verbatim
+ * question), NOT via the `imminentItems` time-window: a check-in due hours ago
+ * is still worth raising. Read-only — the daemon owns delivery state, so a
+ * `fired` check-in (already delivered) never qualifies here.
+ */
+export function checkinItems(checkins: readonly DueCheckinInput[], nowMs: number): ProactiveItem[] {
+  return checkins
+    .filter((c) => c.status === "scheduled" && Number.isFinite(Date.parse(c.dueAtIso)) && Date.parse(c.dueAtIso) <= nowMs)
+    .map((c) => ({ dueAt: c.dueAtIso, id: `checkin:${c.id}`, text: `📌 ${stripUntrustedTerminalChars(c.question)}` }));
+}
+
+export interface PatternSuggestionInput {
+  readonly id: string;
+  readonly suggestion: string;
+}
+
+/**
+ * Fireable behaviour patterns as proactive items — so the in-chat surface
+ * raises "월요일마다 보고서 만드시던데, 지금 초안 잡아둘까요?" the way the daemon
+ * does. The detector's verbatim suggestion (no per-poll LLM); undated, so it
+ * rides the surface-once path, not the time-window.
+ */
+export function patternSuggestionItems(matches: readonly PatternSuggestionInput[]): ProactiveItem[] {
+  return matches.map((m) => ({ id: `pattern:${m.id}`, text: `💡 ${stripUntrustedTerminalChars(m.suggestion)}` }));
+}
+
 export interface JobDoneInput {
   readonly id: string;
   readonly status: string;

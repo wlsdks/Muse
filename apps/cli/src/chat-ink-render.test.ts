@@ -205,6 +205,19 @@ describe("MuseChatApp render — slash command echo + output", () => {
     expect(frame).toContain("Pay rent");
   });
 
+  it("surfaces a due check-in AND a pattern suggestion in-chat via proactiveNudges (P-N3)", async () => {
+    const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
+      proactiveNudges: async () => [
+        { id: "checkin:c1", text: "📌 Following up — you mentioned you'd \"email Bob\". How did it go?" },
+        { id: "pattern:p1", text: "💡 월요일마다 보고서 만드시던데, 지금 초안 잡아둘까요?" }
+      ]
+    })));
+    const frame = await waitForFrame(lastFrame, ["📌 Following up", "email Bob", "💡 월요일마다"], 3000);
+    unmount();
+    expect(frame).toContain("📌 Following up");
+    expect(frame).toContain("💡 월요일마다 보고서 만드시던데");
+  });
+
   it("renders the launch brief as an opening turn when recap is set", async () => {
     const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({
       recap: "♪ good morning\n\nToday (next 24h)",
