@@ -168,10 +168,11 @@ of agent test is worth the most*.
     path so an actual promotion consults it (still report-only / advisory).
 - [x] **H. CI gating** — DONE: `scripts/eval-agent.mjs` + `eval:agent` npm
   script run ALL harness-based batteries (eval-tool-selection / eval-judge /
-  eval-adversarial / eval-shadow-trial = 58 live cases) as ONE gate and exit 1
-  if ANY regresses (mirrors `eval:self-improving`). Batteries spawned as
+  eval-adversarial / eval-shadow-trial / eval-plan-quality) as ONE gate and exit
+  1 if ANY regresses (mirrors `eval:self-improving`). Batteries spawned as
   children so one failure can't abort the rest; LOCAL-OLLAMA-ONLY, each skips
-  cleanly when Ollama is down. Verified live: 4/4 batteries green. Registered in
+  cleanly when Ollama is down. Verified live: 5/5 batteries green (the new
+  PlanQuality battery is now regression-gated, not just runnable). Registered in
   `.claude/rules/testing.md`.
 
 > **Status: agent-eval gaps A–H all delivered.** The harness
