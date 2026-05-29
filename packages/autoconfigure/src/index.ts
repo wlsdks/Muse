@@ -186,6 +186,7 @@ import {
 export {
   buildActiveContextProvider,
   buildCalendarRegistry,
+  buildSkillRegistry,
   buildEpisodicRecallProvider,
   buildInboxContextProvider,
   buildMessagingRegistry,
@@ -219,7 +220,8 @@ export {
   resolveTelegramOffsetFile,
   resolveVetoesFile,
   resolvePlaybookFile,
-  resolvePlanCacheFile
+  resolvePlanCacheFile,
+  resolveAuthoredSkillsDir
 } from "./personal-providers.js";
 import {
   createConversationSummaryStore,
