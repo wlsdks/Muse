@@ -134,11 +134,18 @@ the generic layers below because they test what makes Muse an *agent*.
     accountability trail, outbound-safety rule 4) — 25 concurrent appends were
     19/20 CRASHING + losing ~all; now per-file append queue + random-uuid tmp =
     0 crash, all 25 preserved, order kept. action-log-concurrency.test.ts.
-  - [ ] Remaining: the other read-modify-write append stores still share the
-    latent race (proposed-action / objectives / episodes / playbook / reminders
-    / tasks / proactive-history / belief-provenance, etc.); cursor/offset stores
-    only risk the tmp-collision crash, not loss. inbound dedup + single-flight
-    daemon race tests. Consider a shared atomic-append helper to DRY the fix.
+  - [x] Store-audit slice 3: fixed proposed-action store (draft-first outbound
+    proposals) — concurrent patch crashed 7/8 + clobbered; now 0-crash, all 8
+    status patches applied + 12 concurrent proposes preserved. **The outbound-
+    safety + audit critical trio is now concurrency-safe: pending-approval,
+    action-log, proposed-action.**
+  - [ ] Remaining (LOWER stakes — flag as a deliberate shared-helper effort, not
+    per-store churn): the non-critical read-modify-write stores (objectives /
+    episodes / playbook / reminders / tasks / proactive-history / belief-
+    provenance, etc.) share the latent race; cursor/offset stores only risk the
+    tmp-collision crash, not loss. Best done as ONE shared atomic-append helper
+    (server-only util) migrated across stores, not N copy-paste fixes. inbound
+    dedup + single-flight daemon race tests also open.
 
 ## P5 — surface & contract
 
