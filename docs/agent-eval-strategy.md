@@ -106,6 +106,25 @@ of agent test is worth the most*.
 - **H. CI gating** — make the eval batteries a real gate (extend `self-eval`)
   so a tool-selection / task-completion regression fails the run, not just logs.
 
+## The harness (`scripts/eval-harness.mjs`)
+
+Batteries run on a shared, dependency-free engine shaped after the converged
+2026 best practice (Inspect AI's dataset/solver/scorer/task primitives;
+Braintrust + promptfoo "deterministic code-based scorers first, LLM-judge only
+for subjective qualities"; Hamel Husain "evals gate development, not vibes"):
+
+- `runEvalSuite({ name, scenarios, solve, score, repeat, threshold })` — the
+  reusable run/repeat(strict-all-pass)/threshold/report engine. Returns
+  `{ gate, passed, rate, total }`; the caller decides exit. Usable as a CLI gate
+  AND inline.
+- `toolScorers` (`noTool` / `selected` / `argMatches` / `argsPresent`) +
+  `combineScorers(...)` — deterministic, composable code-based scorers; an
+  LLM-as-judge scorer is just an async fn returning the same `{ ok, detail }`.
+
+First consumer: `eval:tools` was refactored onto it (behaviour-preserving, live
+39/39 @ threshold 85%). New batteries (task-completion, adversarial, LLM-judge)
+should declare scenarios + a solver + scorers rather than re-implement the loop.
+
 ## Loop rule
 
 Each fire, advance the highest-priority open item from **A→H above** (or the

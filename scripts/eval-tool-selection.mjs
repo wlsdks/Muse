@@ -25,6 +25,7 @@
  */
 
 import { OllamaProvider } from "../packages/model/dist/index.js";
+import { combineScorers, runEvalSuite, toolScorers } from "./eval-harness.mjs";
 
 const MODEL = process.env.MUSE_EVAL_MODEL ?? "qwen3:8b";
 const OLLAMA_BASE = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
@@ -175,29 +176,16 @@ async function ollamaReachable() {
   }
 }
 
-function evaluate(testCase, toolCalls) {
-  if (testCase.expectNoTool) {
-    return toolCalls.length === 0 ? { ok: true, detail: "no tool (correct)" } : { ok: false, detail: `eager call: ${toolCalls.map((c) => c.name).join(",")}` };
-  }
-  const call = toolCalls[0];
-  if (!call) return { ok: false, detail: "no tool selected (expected one)" };
-  if (call.name !== testCase.expectTool) return { ok: false, detail: `picked ${call.name}, wanted ${testCase.expectTool}` };
-  if (testCase.argIncludes && !testCase.argIncludes.test(JSON.stringify(call.arguments ?? {}))) {
-    return { ok: false, detail: `args ${JSON.stringify(call.arguments)} miss ${testCase.argIncludes}` };
-  }
-  // ArgumentCorrectness (DeepEval metric): picking the right tool isn't enough —
-  // its REQUIRED args must be present + non-empty, else the call is a no-op the
-  // runtime would reject. Graded per-case on top of selection.
-  if (testCase.requireArgs) {
-    const args = call.arguments ?? {};
-    const missing = testCase.requireArgs.filter(
-      (k) => args[k] === undefined || args[k] === null || (typeof args[k] === "string" && args[k].trim().length === 0)
-    );
-    if (missing.length > 0) {
-      return { ok: false, detail: `missing/empty required arg(s) [${missing.join(", ")}] in ${JSON.stringify(args)}` };
-    }
-  }
-  return { ok: true, detail: `${call.name}(${JSON.stringify(call.arguments ?? {})})` };
+// Build a deterministic scorer for one case from the declarative fields, using
+// the shared harness scorers: a no-tool case asserts no eager invocation; a
+// tool case ANDs selection + (optional) arg-value match + ArgumentCorrectness
+// (required args present). This is the "code-based scorer first" tier.
+function caseScorer(testCase) {
+  if (testCase.expectNoTool) return toolScorers.noTool();
+  const checks = [toolScorers.selected(testCase.expectTool)];
+  if (testCase.argIncludes) checks.push(toolScorers.argMatches(testCase.argIncludes));
+  if (testCase.requireArgs) checks.push(toolScorers.argsPresent(testCase.requireArgs));
+  return combineScorers(...checks);
 }
 
 async function main() {
@@ -213,40 +201,14 @@ async function main() {
     await buildActuatorScenario()
   ];
 
-  let total = 0;
-  let passed = 0;
-  for (const scenario of scenarios) {
-    if (scenario.skip) { console.log(`\n[${scenario.label}] SKIP — ${scenario.skip}`); continue; }
-    console.log(`\n[${scenario.label}] ${scenario.cases.length} cases (tools: ${scenario.tools.map((t) => t.name).join(", ")})`);
-    for (const testCase of scenario.cases) {
-      total += 1;
-      let runsPassed = 0;
-      let lastDetail = "";
-      for (let run = 0; run < REPEAT; run += 1) {
-        let result;
-        try {
-          const response = await provider.generate({ model: MODEL, messages: [{ role: "user", content: testCase.prompt }], tools: scenario.tools, temperature: 0, maxOutputTokens: 160 });
-          result = evaluate(testCase, response.toolCalls ?? []);
-        } catch (error) {
-          result = { ok: false, detail: `threw: ${error instanceof Error ? error.message : String(error)}` };
-        }
-        if (result.ok) runsPassed += 1;
-        lastDetail = result.detail;
-      }
-      const ok = runsPassed === REPEAT; // strict: every run must pass
-      if (ok) passed += 1;
-      const stability = REPEAT > 1 ? ` [${runsPassed}/${REPEAT} runs]` : "";
-      console.log(`  ${ok ? "PASS" : "FAIL"}${stability}  [${testCase.note}] ${lastDetail}`);
-    }
-  }
+  // Solver: elicit the model's one-shot tool selection for a case's prompt.
+  const solve = async (testCase, scenario) =>
+    (await provider.generate({ model: MODEL, messages: [{ role: "user", content: testCase.prompt }], tools: scenario.tools, temperature: 0, maxOutputTokens: 160 })).toolCalls ?? [];
+  // Scorer: deterministic per-case (selection + args), via the shared harness.
+  const score = (toolCalls, testCase) => caseScorer(testCase)(toolCalls);
 
-  const rate = total === 0 ? 0 : passed / total;
-  console.log(`\n--- ${passed}/${total} (${(rate * 100).toFixed(0)}%) ; threshold ${(THRESHOLD * 100).toFixed(0)}%`);
-  if (total === 0 || rate < THRESHOLD) {
-    console.error(`eval:tools FAILED — tool-selection reliability ${(rate * 100).toFixed(0)}% below ${(THRESHOLD * 100).toFixed(0)}%`);
-    process.exit(1);
-  }
-  console.log("eval:tools PASSED");
+  const { gate } = await runEvalSuite({ name: "eval:tools", repeat: REPEAT, scenarios, score, solve, threshold: THRESHOLD });
+  if (!gate) process.exit(1);
 }
 
 await main();
