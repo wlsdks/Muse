@@ -130,9 +130,18 @@ Direction set 2026-05-31 by 진안 ("강화학습이 중요해").
   (default-off) auto-RL safe to enable. Verified by command tests (reinforce /
   --down penalise / clamp / prefix-id / unknown refused-and-not-written) and
   LIVE through the built CLI (reward +3, then --down 8 clamps to −5 and the
-  strategy shows "· avoided"). cli 1556 green, lint 0/0. (Remaining P33 ideas:
-  injection-tracking for precise credit instead of the selection heuristic;
-  reward-weighted ORDERING for skills, not just avoidance.)
+  strategy shows "· avoided"). cli 1556 green, lint 0/0.
+- [x] **P33-6 Make the learning visible & trustworthy — `muse learned`.**
+  One honest view composing the playbook + authored-skill + skill-reward +
+  reflection stores (no model call): the strategies/skills Muse now TRUSTS
+  (reward ≥ +1), the ones it learned to AVOID (reward ≤ −4, no longer applied),
+  and its grounded reflections — so the default-off RL learning is legible
+  enough to trust and turn on (the empty state explains how to enable it).
+  This is the "shows its work" edge turned on Muse's OWN self-improvement.
+  Verified by `renderLearnedDigest` tests + LIVE through the built CLI (trusted
+  +3/+2, avoided −5, dated reflection). cli 1560 green, lint 0/0. (Remaining P33
+  ideas: injection-tracking for precise credit; reward-weighted ORDERING for
+  skills, not just avoidance.)
 
 **P32 — Grounded "dreaming" (idle memory consolidation that can't make
 things up).** Adopt the offline reflection competitors lean on (OpenClaw's
