@@ -91,6 +91,20 @@ the generic layers below because they test what makes Muse an *agent*.
     still doesn't close the object. policy 100→101. Lesson holds: the headline
     score is dragged by equivalent regex mutants; the real logic-assertion gap was
     a single escape-path case mutation testing surfaced precisely.
+  - THIRD MEASUREMENT (throwaway Stryker 9.6.1 — reused the still-installed
+    node_modules from the prior fire, NO new install, NOT committed): `model/
+    provider-shared.ts` = **82.63% total / 86.27% covered** (176 killed, 28
+    survived, 9 no-cov). Actionable survivors clustered on `isJsonValue` /
+    `isJsonObject` — the recursive JSON-shape guards the provider adapters use to
+    validate structured output — which had ZERO direct tests (only incidental
+    exercise via parseJson callers). Added a direct suite (+9 cases) pinning every
+    branch: the JSON primitives, the NON-FINITE-number rejection (NaN/±Infinity
+    aren't valid JSON), undefined/function/symbol rejection, recursive array +
+    object descent (a deep-nested invalid element fails), isJsonObject's
+    non-record rejection, and isRecord. model 305→309. The 2-3-package mutation
+    survey (P1) now spans tools/policy/model; remaining survivors are dominated by
+    equivalent regex/string-literal mutants. A committed Stryker config + CI gate
+    still needs the human lockfile OK.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
