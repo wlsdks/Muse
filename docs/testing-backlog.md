@@ -51,12 +51,25 @@ the generic layers below because they test what makes Muse an *agent*.
 
 ## P1 — assertion quality & failure modes (highest value: do these first)
 
-- [ ] **Mutation testing baseline (StrykerJS).** 6,000 green tests prove
+- [~] **Mutation testing baseline (StrykerJS).** 6,000 green tests prove
   *coverage*, not that the assertions *catch bugs*. Run Stryker on 2–3
   high-value packages (`agent-core`, `model`, `policy`) to get a mutation score;
   file the surviving-mutant hotspots as follow-up. NOTE: adds a devDep + config —
   needs human OK for the lockfile change before committing tooling; until then,
   do it as a throwaway local measurement and record the score here.
+  - FIRST MEASUREMENT (throwaway, Stryker 9.6.1 + vitest-runner, NOT committed —
+    lockfile reverted): `muse-tools-data.ts` (559 mutants, perTest coverage) =
+    **72.99% total / 76.55% covered**. ~73 of 125 survivors were metadata
+    StringLiteral mutants (tool `keywords`/`description` text — not behavior, low
+    value to assert). The ACTIONABLE logic survivors were real assertion gaps:
+    the CSV >200k and base64 >500k size guards (NoCoverage — never exercised) and
+    the base64 padBase64/url-safe re-padding path. Killed them with 4 cases
+    (CSV/base64 over-limit rejection + a url-safe round-trip needing padding) →
+    re-measured **74.42% / 77.18%**, killed 386→395, no-cov 26→20. Lesson: the
+    headline score is dragged down by un-asserted metadata strings; the real
+    logic-assertion strength is higher, but mutation testing still surfaced two
+    genuine untested DoS guards. Next: run on `policy`/`model` for more logic-dense
+    hotspots; a committed Stryker config still needs the human lockfile OK.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
