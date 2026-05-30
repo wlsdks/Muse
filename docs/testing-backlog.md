@@ -116,6 +116,19 @@ the generic layers below because they test what makes Muse an *agent*.
     agent-core/model/policy mutation survey (P1) is now complete; the actionable
     survivors it surfaced (DoS guards, escaped-quote parse path, JSON-shape guards,
     always-exhausted budget) are all killed.
+  - FIFTH MEASUREMENT (throwaway, reused install, NOT committed): `policy/
+    prompt-leakage.ts` = **42.86%** — the LOW outlier. NOT equivalent-mutant
+    noise: this is a SECURITY detector with 16 leak-detection patterns, and the
+    suite positively asserted only ~4, so a regex mutation breaking any of the
+    other 12 patterns survived = that leak class silently stops being caught. Added
+    one representative-phrase detection assertion per uncovered class: the 4 English
+    disclosure variants (my_system_prompt / original_instructions /
+    reveal_prompt_statement / the_system_prompt), all 3 KOREAN phrasings
+    (korean_prompt_statement / korean_followed_instructions /
+    korean_original_instructions — the user's language), the tool-coercion +
+    structural-rule leaks, and the cache-boundary marker echo. policy 101→104.
+    (A security detector's pattern coverage is exactly where mutation testing earns
+    its keep — a low score there is real risk, not metadata-string drag.)
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
