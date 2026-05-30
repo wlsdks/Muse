@@ -434,6 +434,14 @@ the generic layers below because they test what makes Muse an *agent*.
 
 ## Done (this loop)
 
+- [x] LIVE CI-gate sweep — `eval:agent` (gap H) all 5 batteries GREEN on qwen3:8b
+  with this round's additions composed end-to-end: eval:tools 53/53 (incl. the KO
+  actuator positives + the prompt-derived ArgumentCorrectness value assertions),
+  eval:judge 10/10, eval:adversarial 15/15 (incl. the banking out-of-scope refusal
+  + draft-vs-send controls), eval:shadow-trial 5/5, eval:plan-quality 10/10 (incl.
+  the KO pure-generation empty-plan). Confirms the cases added to three of the five
+  batteries this session pass through the aggregate CI gate, not just standalone —
+  the gap-H regression verification the `pnpm check` integration gate can't run.
 - [x] LIVE regression sweep — `eval:self-improving` 10/10 GREEN on qwen3:8b after
   the EDGE-battery strengthening this round: pattern-suggestion, preference-
   inference, skill-merge, playbook-merge, background-review(+e2e), cited-recall
