@@ -467,6 +467,14 @@ the generic layers below because they test what makes Muse an *agent*.
   capped at 5, count-desc); dailyUsage (per-UTC-day cost+runs, date-asc);
   latencyDistribution (0-1s/1-5s/5-30s/30s+ buckets + missing-timestamp→unknown).
   api 503 pass.
+- [x] ★ dreaming reflection-synthesis thin-input honesty — added a second
+  scenario to verify-reflection-synthesis: across UNRELATED one-off episodes (no
+  strong recurring theme), EVERY returned reflection must STILL satisfy the
+  grounding invariant (≥2 real source ids, supportCount == sourceIds). The model
+  may generalise loosely ("regular maintenance"), but it must never invent a
+  source id or inflate support — the dreaming honesty guarantee on the thin-input
+  path the original only tested on a clear theme. Pre-verified STABLE 3/3
+  allGrounded; battery ALL PASS on qwen3:8b. LOCAL OLLAMA ONLY.
 - [x] ③ pattern-suggestion negative — added "two unrelated one-offs, no
   recurring day" → NONE, proving the proactive synthesizer doesn't manufacture a
   recurring habit from sparse/unrelated events. (Finding, ledgered: a 0.4-confidence
