@@ -58,7 +58,11 @@ const investigate = createConfidenceGatedInvestigator({ chunks: corpus, embed, t
 const cases = [
   { name: "trigger IN corpus → cited finding surfaces", kind: "surface", item: { title: "Q3 budget review", kind: "calendar", factSheet: "" }, needles: ["📎 Related", "meeting-q3.md"] },
   { name: "trigger IN corpus (2) → cited finding surfaces", kind: "surface", item: { title: "Dentist appointment", kind: "calendar", factSheet: "" }, needles: ["📎 Related", "dentist.md"] },
-  { name: "trigger OFF-topic → SILENCE (no stray guess)", kind: "silent", item: { title: "Quarterly tax filing deadline", kind: "task", factSheet: "" } }
+  { name: "trigger OFF-topic → SILENCE (no stray guess)", kind: "silent", item: { title: "Quarterly tax filing deadline", kind: "task", factSheet: "" } },
+  // A second plausible-but-absent personal trigger: proactivity is UNSOLICITED,
+  // so a genuinely-unrelated task must stay silent, never surface an adjacent
+  // note as if it were relevant. STABLE 3/3 silent.
+  { name: "plausible personal trigger absent from corpus → SILENCE", kind: "silent", item: { title: "Gym membership renewal", kind: "task", factSheet: "" } }
 ];
 
 let failures = 0;
