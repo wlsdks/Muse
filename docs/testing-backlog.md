@@ -418,6 +418,16 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Outbound-safety DRAFT-FIRST content + refusal trail (summarizeToolDraft
+  was untested; the existing gate test drove only no-argument tools so the draft
+  was always empty). channel-approval-draft.test.ts asserts: email_send shows
+  recipient+subject but OMITS the body (a bulk/sensitive payload must never echo
+  into the chat transcript — a real leak if it regressed); web_action/home_action/
+  default shapes + clip/whitespace-collapse; and the gate hands each refused
+  risky tool to recordRefusal with the draft+arguments+userId (the rationale
+  trail), surfaces the draft in the posted prompt, stays fail-SOFT (a throwing
+  recorder never flips the deny), and never records/posts for a read tool.
+  messaging 303 pass.
 - [x] Built-in tool HANDLER output-correctness (complements gap A's tool
   SELECTION): muse-tools-time — the 6 time/date/scheduling tools (time_now,
   time_diff, time_add, time_relative, next_weekday_date, cron_for_datetime)
