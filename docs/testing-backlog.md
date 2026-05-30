@@ -418,6 +418,18 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] CalDAV provider (untested) — a daily-reliability actuator, driven through
+  the injected fetchImpl with a contract-faithful HTTP fake (real multistatus XML
+  / ICS, real method+header+body assertions). caldav-provider.test.ts: listEvents
+  issues a REPORT with Depth:1 + basic auth + a time-range filter and parses the
+  multistatus into events; RETRIES a transient 503 on the idempotent read then
+  succeeds; does NOT retry a non-retryable 403 (throws HTTP_403 with status);
+  ICS parse robustness — all-day VALUE=DATE → midnight UTC, VTIMEZONE-before-VEVENT
+  uses the VEVENT DTSTART (TZID→UTC) not the DST-rule date, a folded content line
+  is unfolded, missing DTEND → endsAt=startsAt; writes — createEvent PUTs to
+  <url>/<uid>.ics and throws on non-ok (never silently dropped), deleteEvent
+  tolerates 404 but throws otherwise, updateEvent → EVENT_NOT_FOUND for an absent
+  id. calendar 94 pass.
 - [x] Calendar provider registry (untested) — fan-out + routing. registry.test.ts:
   register/list/describe/has/primary; require → PROVIDER_NOT_FOUND with a
   registered-ids hint; listEvents fan-out concatenates + sorts (default) vs
