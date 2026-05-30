@@ -437,3 +437,11 @@ the generic layers below because they test what makes Muse an *agent*.
   + humanizer, multi-field add, future/past/now direction, next-upcoming
   (strictly future + same-day→next-week), cron per mode + the monthly>28 warning,
   and every error path. tools 187 pass.
+  - muse-tools-data — the 4 data/encoding tools (math_eval, hash_text, csv_parse,
+    base64). math_eval is also a SECURITY surface (computes precedence itself,
+    never JS eval): pinned operator precedence / parens / unary / modulo, comma
+    thousands-strip, div+mod-by-zero rejection, multi-dot literal rejected (Number
+    not parseFloat), disallowed-char / empty / unbalanced / trailing / >256
+    guards; hash_text known sha256/md5 digests + bad-algo; csv_parse header-objects
+    / no-header arrays / quoted+escaped fields / CRLF / empty; base64 standard +
+    URL-safe round-trip + invalid-input rejection. tools 201 pass.
