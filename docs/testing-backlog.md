@@ -260,11 +260,16 @@ the generic layers below because they test what makes Muse an *agent*.
     fires instead of reaching the person). add/remove serialised + atomicWriteFile:
     20 concurrent distinct adds all preserved (each still name-resolvable by
     resolveContact), 10 concurrent removes drop exactly the targeted ones. +2 tests.
-  - [ ] Remaining: migrate the other ~11 read-modify-write stores
-    (reminders / tasks / episodes / proactive-history /
-    patterns-fired / proactive-trust-ledger / plan-cache / …) onto the shared
-    helper — a cheap one-each adoption. inbound dedup + single-flight daemon race
-    tests also open.
+  - [x] Migration 7 — proactive-trust-ledger (north star: the trust score that
+    GATES proactivity is computed from this ledger; a clobbered append corrupts
+    the precision the gate reads). Was pid+Date.now tmp + a NON-fsync write +
+    unserialised appendSurfaced/recordOutcome; now atomicWriteFile (durable) +
+    withFileMutationQueue. 20 concurrent surfaces all preserved, 20 concurrent
+    outcomes each match their own surface (precision stays 1, not corrupted). +2.
+  - [ ] Remaining: migrate the other ~10 read-modify-write stores
+    (reminders / tasks / episodes / proactive-history / patterns-fired /
+    plan-cache / …) onto the shared helper — a cheap one-each adoption. inbound
+    dedup + single-flight daemon race tests also open.
 
 ## P5 — surface & contract
 
