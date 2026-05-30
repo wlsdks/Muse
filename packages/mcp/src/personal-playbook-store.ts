@@ -11,7 +11,8 @@
  */
 
 import { promises as fs } from "node:fs";
-import { dirname } from "node:path";
+
+import { atomicWriteFile, withFileMutationQueue } from "./atomic-file-store.js";
 
 /** Newest entries kept — bounds the file + the injected context. */
 export const MAX_PLAYBOOK_ENTRIES = 100;
@@ -58,24 +59,21 @@ export async function readPlaybook(file: string): Promise<readonly PlaybookEntry
 }
 
 export async function writePlaybook(file: string, entries: readonly PlaybookEntry[]): Promise<void> {
-  const payload = `${JSON.stringify({ entries }, null, 2)}\n`;
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-  await fs.mkdir(dirname(file), { recursive: true });
-  const handle = await fs.open(tmp, "w", 0o600);
-  try {
-    await handle.writeFile(payload, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  // Atomic, fsync'd, owner-only write via the shared primitive (randomUUID tmp →
+  // no same-ms rename-collision crash).
+  await atomicWriteFile(file, `${JSON.stringify({ entries }, null, 2)}\n`);
 }
 
 export async function recordPlaybookStrategy(file: string, entry: PlaybookEntry): Promise<void> {
-  const existing = await readPlaybook(file);
-  const next = [...existing.filter((e) => e.id !== entry.id), entry].slice(-MAX_PLAYBOOK_ENTRIES);
-  await writePlaybook(file, next);
+  // Serialise the read-modify-write: concurrent strategy records must not each
+  // read the same snapshot and clobber one another (a lost learned strategy is a
+  // self-improvement the agent forgets), and the FIFO cap below must apply to the
+  // real merged set, not a stale one.
+  await withFileMutationQueue(file, async () => {
+    const existing = await readPlaybook(file);
+    const next = [...existing.filter((e) => e.id !== entry.id), entry].slice(-MAX_PLAYBOOK_ENTRIES);
+    await writePlaybook(file, next);
+  });
 }
 
 export async function queryPlaybook(file: string, userId?: string): Promise<readonly PlaybookEntry[]> {
@@ -84,13 +82,15 @@ export async function queryPlaybook(file: string, userId?: string): Promise<read
 }
 
 export async function removePlaybookStrategy(file: string, id: string): Promise<boolean> {
-  const existing = await readPlaybook(file);
-  const next = existing.filter((e) => e.id !== id);
-  if (next.length === existing.length) {
-    return false;
-  }
-  await writePlaybook(file, next);
-  return true;
+  return withFileMutationQueue(file, async () => {
+    const existing = await readPlaybook(file);
+    const next = existing.filter((e) => e.id !== id);
+    if (next.length === existing.length) {
+      return false;
+    }
+    await writePlaybook(file, next);
+    return true;
+  });
 }
 
 function isPlaybookEntry(value: unknown): value is PlaybookEntry {

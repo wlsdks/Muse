@@ -145,4 +145,55 @@ describe("parseGeminiLiveServerFrame", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.type).toBe("audio-delta");
   });
+
+  // Property fuzz (backlog P5) — this parses UNTRUSTED Gemini Live websocket
+  // frames; its documented contract is "throws nothing — malformed JSON /
+  // unexpected shapes resolve to an error event or []". Asserts that invariant
+  // over a generated adversarial corpus: never throws, and every surfaced event
+  // is a well-typed LiveVoiceEvent. Deterministic LCG → reproducible.
+  describe("property fuzz (never-throws + only well-typed events)", () => {
+    const VALID_TYPES = new Set(["text-delta", "audio-delta", "turn-complete", "error"]);
+    const corpus = (): string[] => {
+      // Adversarial JSON-string frames + raw non-JSON strings.
+      const fragments: unknown[] = [
+        null, 0, "", "x", [], {}, { setupComplete: {} }, { serverContent: 5 },
+        { serverContent: {} }, { serverContent: { modelTurn: 1 } },
+        { serverContent: { modelTurn: { parts: "no" } } },
+        { serverContent: { modelTurn: { parts: [null, 1, {}, { text: "" }, { text: "hi" }] } } },
+        { serverContent: { modelTurn: { parts: [{ inlineData: { data: 1, mimeType: "x" } }] } } },
+        { serverContent: { modelTurn: { parts: [{ inlineData: { data: "AAAA", mimeType: 9 } }] } } },
+        { serverContent: { turnComplete: true } }, { serverContent: { interrupted: true } },
+        { serverContent: { modelTurn: { parts: [{ text: "a" }] }, turnComplete: true } },
+      ];
+      const raw = ["{not json", "[1,2", "undefined", "NaN", "🙂", " ", "\u0000", "{}{}", "true", "1e999"];
+      let state = 0x9e3779b1 & 0x7fffffff;
+      const rand = (n: number): number => { state = (state * 1103515245 + 12345) & 0x7fffffff; return state % n; };
+      const out: string[] = [...raw];
+      for (const f of fragments) out.push(JSON.stringify(f));
+      // weave random raw fragments to widen the malformed-JSON space
+      for (let i = 0; i < 150; i += 1) {
+        out.push(Array.from({ length: 1 + rand(8) }, () => raw[rand(raw.length)]).join(""));
+      }
+      return out;
+    };
+
+    it("never throws and returns only well-typed events for any frame", () => {
+      for (const frame of corpus()) {
+        let events: readonly { type: string }[] = [];
+        expect(() => { events = parseGeminiLiveServerFrame(frame); }).not.toThrow();
+        expect(Array.isArray(events)).toBe(true);
+        for (const e of events) {
+          expect(VALID_TYPES.has(e.type), `unexpected event type ${e.type} for frame ${JSON.stringify(frame)}`).toBe(true);
+        }
+      }
+    });
+
+    it("malformed JSON always yields exactly one error event (never a throw, never silent)", () => {
+      for (const bad of ["{not json", "[1,2", "}{", "", "   ", "\u0000", "tru"]) {
+        const events = parseGeminiLiveServerFrame(bad);
+        expect(events).toHaveLength(1);
+        expect(events[0]!.type).toBe("error");
+      }
+    });
+  });
 });

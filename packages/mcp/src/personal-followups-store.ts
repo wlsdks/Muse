@@ -22,6 +22,8 @@ import { dirname } from "node:path";
 
 import type { JsonObject } from "@muse/shared";
 
+import { atomicWriteFile, withFileMutationQueue } from "./atomic-file-store.js";
+
 export type FollowupStatus = "scheduled" | "fired" | "cancelled";
 export type FollowupStatusFilter = FollowupStatus | "all";
 
@@ -98,21 +100,10 @@ export async function readFollowups(file: string): Promise<readonly PersistedFol
 }
 
 export async function writeFollowups(file: string, followups: readonly PersistedFollowup[]): Promise<void> {
-  const payload = `${JSON.stringify({ followups }, null, 2)}\n`;
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-  await fs.mkdir(dirname(file), { recursive: true });
-  // fsync before rename: filesystems journal metadata and data
-  // separately, so a crash can otherwise commit the rename
-  // pointing at a zero-length / partial file.
-  const handle = await fs.open(tmp, "w", 0o600);
-  try {
-    await handle.writeFile(payload, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  // Atomic, fsync'd, owner-only write via the shared primitive. The randomUUID
+  // tmp (vs the old pid+Date.now) removes the same-ms rename-collision crash;
+  // `cleanupFollowupTempFiles` still matches its `${base}.tmp-` prefix.
+  await atomicWriteFile(file, `${JSON.stringify({ followups }, null, 2)}\n`);
 }
 
 /**
@@ -202,9 +193,14 @@ export function compareFollowupsByScheduledFor(
  * pass updates `summary` / `scheduledFor` without duplicating).
  */
 export async function upsertFollowup(file: string, followup: PersistedFollowup): Promise<void> {
-  const existing = await readFollowups(file);
-  const filtered = existing.filter((entry) => entry.id !== followup.id);
-  await writeFollowups(file, [...filtered, followup]);
+  // Serialise the read-modify-write so two concurrent detect/schedule passes
+  // don't each read the same snapshot and clobber one another — a lost followup
+  // is a proactive nudge the user never receives.
+  await withFileMutationQueue(file, async () => {
+    const existing = await readFollowups(file);
+    const filtered = existing.filter((entry) => entry.id !== followup.id);
+    await writeFollowups(file, [...filtered, followup]);
+  });
 }
 
 /**
@@ -216,15 +212,17 @@ export async function markFollowupFired(
   id: string,
   firedAt: string
 ): Promise<PersistedFollowup | undefined> {
-  const existing = await readFollowups(file);
-  const target = existing.find((entry) => entry.id === id);
-  if (!target || target.status !== "scheduled") {
-    return undefined;
-  }
-  const patched: PersistedFollowup = { ...target, firedAt, status: "fired" };
-  const next = existing.map((entry) => (entry.id === id ? patched : entry));
-  await writeFollowups(file, next);
-  return patched;
+  return withFileMutationQueue(file, async () => {
+    const existing = await readFollowups(file);
+    const target = existing.find((entry) => entry.id === id);
+    if (!target || target.status !== "scheduled") {
+      return undefined;
+    }
+    const patched: PersistedFollowup = { ...target, firedAt, status: "fired" };
+    const next = existing.map((entry) => (entry.id === id ? patched : entry));
+    await writeFollowups(file, next);
+    return patched;
+  });
 }
 
 /**
@@ -236,15 +234,17 @@ export async function cancelFollowup(
   id: string,
   reason: string
 ): Promise<PersistedFollowup | undefined> {
-  const existing = await readFollowups(file);
-  const target = existing.find((entry) => entry.id === id);
-  if (!target || target.status !== "scheduled") {
-    return undefined;
-  }
-  const patched: PersistedFollowup = { ...target, cancelReason: reason, status: "cancelled" };
-  const next = existing.map((entry) => (entry.id === id ? patched : entry));
-  await writeFollowups(file, next);
-  return patched;
+  return withFileMutationQueue(file, async () => {
+    const existing = await readFollowups(file);
+    const target = existing.find((entry) => entry.id === id);
+    if (!target || target.status !== "scheduled") {
+      return undefined;
+    }
+    const patched: PersistedFollowup = { ...target, cancelReason: reason, status: "cancelled" };
+    const next = existing.map((entry) => (entry.id === id ? patched : entry));
+    await writeFollowups(file, next);
+    return patched;
+  });
 }
 
 /**
@@ -260,15 +260,17 @@ export async function snoozeFollowup(
   id: string,
   newScheduledForIso: string
 ): Promise<PersistedFollowup | undefined> {
-  const existing = await readFollowups(file);
-  const target = existing.find((entry) => entry.id === id);
-  if (!target || target.status !== "scheduled") {
-    return undefined;
-  }
-  const patched: PersistedFollowup = { ...target, scheduledFor: newScheduledForIso };
-  const next = existing.map((entry) => (entry.id === id ? patched : entry));
-  await writeFollowups(file, next);
-  return patched;
+  return withFileMutationQueue(file, async () => {
+    const existing = await readFollowups(file);
+    const target = existing.find((entry) => entry.id === id);
+    if (!target || target.status !== "scheduled") {
+      return undefined;
+    }
+    const patched: PersistedFollowup = { ...target, scheduledFor: newScheduledForIso };
+    const next = existing.map((entry) => (entry.id === id ? patched : entry));
+    await writeFollowups(file, next);
+    return patched;
+  });
 }
 
 function isPersistedFollowup(value: unknown): value is PersistedFollowup {
