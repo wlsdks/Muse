@@ -70,6 +70,15 @@ the generic layers below because they test what makes Muse an *agent*.
     logic-assertion strength is higher, but mutation testing still surfaced two
     genuine untested DoS guards. Next: run on `policy`/`model` for more logic-dense
     hotspots; a committed Stryker config still needs the human lockfile OK.
+  - `policy/migration-redaction.ts` (mutation-INFORMED, no Stryker re-install —
+    `--frozen-lockfile` integration wipes the throwaway devDep, so analysed the
+    survivable mutants by hand): the existing suite asserted only happy-path
+    redaction. Killed the high-value logic/security mutants directly — the
+    connection-before-url **rule-order invariant** (an http URI with inline creds
+    must be labelled `connection`, not mislabelled `url`), `escapeRegExp`
+    (regex-meta private terms match literally, never as a pattern), the
+    empty/whitespace private-term skip branch, case-insensitive term matching, and
+    the ghp_/xox token shapes beyond sk-. +6 cases (policy 93→99).
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
@@ -193,6 +202,12 @@ the generic layers below because they test what makes Muse an *agent*.
     venting, EN weather small-talk, KO weather-app-UI comment → all NO tool. The
     actuator scenario filter now keeps expectNoTool cases. eval:tools 44/44 (100%)
     @ REPEAT=2 on qwen3:8b; each pre-verified STABLE 3/3.
+  - [x] 3 KO POSITIVES on the actuator set, closing a cross-language asymmetry:
+    search_email/knowledge_search/web_action had EN-only positives while home_action
+    already had a KO one — yet the user's primary language is Korean. Added KO
+    "은행 명세서 메일 찾아줘" → search_email, "구독 피드에 화성 소식?" →
+    knowledge_search (NOT search_email), "포럼에 댓글 남겨줘: <url>" → web_action.
+    eval:tools 53/53 (100%) @ REPEAT=2 on qwen3:8b; each pre-verified STABLE 3/3.
 
 ## P4 — generative & data-layer
 
