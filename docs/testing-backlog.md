@@ -418,6 +418,15 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Messaging poll dispatchers (untested) — the agent's "check Telegram now"
+  pull + the daemon's pollAll fan-out (daily reliability). messaging-poll-dispatchers.test.ts
+  drives the real dispatcher with REAL providers (injected fetch) + tmp inbox:
+  pollNow(telegram) polls + appends to the resolved inbox file; an unregistered
+  provider → PROVIDER_NOT_FOUND; discord/slack without a source raise a clear
+  error (not a silent ingested:0); pollAll reports per-provider counts, fans
+  Discord out over MUSE_DISCORD_POLL_CHANNELS summing per-channel ingest, and is
+  FAIL-SOFT (a provider whose poll throws is recorded in errors without blacking
+  out the rest). autoconfigure 447 pass.
 - [x] buildLoopbackTools gating (untested) — the assembly seam deciding WHICH
   in-process tools the local model sees (tool-calling.md: keep the set tight, no
   always-erroring tools). loopback-tools.test.ts exercises the real assembly with
