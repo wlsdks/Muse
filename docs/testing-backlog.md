@@ -255,10 +255,16 @@ the generic layers below because they test what makes Muse an *agent*.
     records all preserved, the FIFO cap (100) applies to the REAL merged set under
     130 concurrent over-cap records (not a stale snapshot), 10 concurrent removes
     drop exactly the targeted ones. +3 tests.
-  - [ ] Remaining: migrate the other ~12 read-modify-write stores
-    (reminders / tasks / episodes / proactive-history / contacts /
-    patterns-fired / plan-cache / …) onto the shared helper — a cheap one-each
-    adoption. inbound dedup + single-flight daemon race tests also open.
+  - [x] Migration 6 — personal-contacts-store (outbound-safety rule 3: recipient
+    resolved, never guessed — a lost contact means a send is refused / a clarify
+    fires instead of reaching the person). add/remove serialised + atomicWriteFile:
+    20 concurrent distinct adds all preserved (each still name-resolvable by
+    resolveContact), 10 concurrent removes drop exactly the targeted ones. +2 tests.
+  - [ ] Remaining: migrate the other ~11 read-modify-write stores
+    (reminders / tasks / episodes / proactive-history /
+    patterns-fired / proactive-trust-ledger / plan-cache / …) onto the shared
+    helper — a cheap one-each adoption. inbound dedup + single-flight daemon race
+    tests also open.
 
 ## P5 — surface & contract
 
