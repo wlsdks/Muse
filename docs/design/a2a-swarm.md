@@ -51,11 +51,16 @@ transport and mode routes through.
 
 - [x] **A2A-1 — Safety core.** Envelope + outbound/inbound gates, opt-in,
   redaction, inert-inbound, allowlist. `a2a-safety.ts` + 8 tests.
-- [ ] **A2A-2 — Transport (`@muse/a2a` package).** Peer-to-peer HTTP between
-  Muse instances, peer registry/allowlist, signed envelopes; routes every
-  message through the safety core. Contract-faithful HTTP fake test (the safety
-  gates hold over the wire: a non-know-how payload never leaves; an unknown peer
-  is dropped).
+- [x] **A2A-2 — Transport (`@muse/a2a` package).** Peer-to-peer HTTP between
+  Muse instances: `createPeerRegistry` (allowlist + per-peer shared secret),
+  HMAC-SHA256 envelope `signEnvelope`/`verifySignature`, and `sendToPeer` /
+  `receiveFromPeer` that route every message through the safety core
+  (`prepareOutbound` / `classifyInbound`). 8 contract-faithful tests on a fake
+  HTTP boundary: a skill is redacted + signed + POSTed; send refuses when
+  disabled / non-know-how; receive quarantines a valid signed payload but
+  REJECTS a tampered signature, an unknown peer, a disabled receiver, and a
+  VALIDLY-SIGNED non-know-how kind (the safety core overrides the signature — a
+  trusted peer still can't smuggle a compute/tool payload). build + lint 0/0.
 - [ ] **A2A-3 — Personal swarm wiring.** `muse swarm share <skill>` (outbound,
   draft-first) + inbound quarantine into the authored-skill store (execute-gated)
   + `muse swarm pending | promote <id>`. Live: a skill authored on peer A is
