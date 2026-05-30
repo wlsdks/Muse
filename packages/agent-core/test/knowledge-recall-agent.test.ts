@@ -43,6 +43,25 @@ describe("createKnowledgeSearchTool — definition meets the one-shot tool-calli
     const props = (tool.definition.inputSchema as { properties: Record<string, { description?: string }> }).properties;
     expect(props.query.description ?? "").toContain("e.g.");
   });
+
+  it("execute returns CITED matches for an in-corpus query (the WEDGE tool surface)", async () => {
+    // The execute path was exercised only by the live cited-recall battery, never
+    // a unit test. Pin it: an in-corpus query returns the rendered, source-labelled
+    // passages with the cite header — the agent is told to quote the source.
+    const tool = createKnowledgeSearchTool({ corpus: CORPUS, embed });
+    const out = await tool.execute({ query: "home insurance policy" });
+    expect(out).toContain("cite the [source]");
+    expect(out).toContain("docs/insurance.pdf");
+    expect(out).toContain("HOME-99812");
+  });
+
+  it("execute degrades to the no-match banner for an empty / non-string query (never throws or fabricates)", async () => {
+    const tool = createKnowledgeSearchTool({ corpus: CORPUS, embed });
+    expect(await tool.execute({ query: "" })).toBe("No matching passages found in the personal corpus.");
+    // A non-string query coerces to "" (not a crash, not a guessed search).
+    expect(await tool.execute({ query: 42 } as unknown as { query: string }))
+      .toBe("No matching passages found in the personal corpus.");
+  });
 });
 
 describe("rankKnowledgeChunks", () => {

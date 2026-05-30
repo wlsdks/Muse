@@ -186,6 +186,12 @@ the generic layers below because they test what makes Muse an *agent*.
     dupes. (Remaining NoCoverage — overlapTail chunk-stitching, the
     createKnowledgeSearchTool execute — are smaller follow-ups.) agent-core stable
     at 1080 (assertions added to the existing MMR test).
+    - Chipped the follow-up: `createKnowledgeSearchTool.execute` (the knowledge_search
+      TOOL = WEDGE-as-a-tool) was NoCoverage — the agent-loop integration didn't
+      actually invoke it. Added a direct unit test: an in-corpus query returns the
+      cited, source-labelled passages ("cite the [source]" + docs/insurance.pdf +
+      the policy number), and an empty / non-string query degrades to the no-match
+      banner (never throws / fabricates). agent-core 1080→1082.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
