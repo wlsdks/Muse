@@ -515,6 +515,13 @@ the generic layers below because they test what makes Muse an *agent*.
   epochMillisOrNull (number/Date/ISO → ms, else null); toJsonObject (drops
   function/undefined values); stringMapField (string→string only); readQueryBoolean;
   compatEnumString (trim+upper); chunkText (2000-char chunks, empty→[""]). api 522 pass.
+- [x] Compat run-aggregation LATENCY functions (the earlier slice covered the
+  tool/failure rollups; the latency percentiles + query mappers were not).
+  compat-run-aggregations-latency.test.ts: latencySummary computes p50/p95/p99
+  by the floor((n-1)*p) index over in-window latencies, excludes out-of-window
+  runs, and filters runs missing a start/complete timestamp; latencyTimeseries
+  buckets by day with avg+count; latencySummaryFromQuery / latencyTimeseriesFromQuery
+  map precomputed query results. api 677 pass; build typecheck green.
 - [x] Compat run-aggregation helpers (untested) — the pure tool-usage / failure
   / latency analytics behind the admin observability routes (the ToolCorrectness +
   StepEfficiency observability surface). compat-run-aggregations.test.ts:
