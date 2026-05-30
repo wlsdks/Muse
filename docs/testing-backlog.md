@@ -105,6 +105,17 @@ the generic layers below because they test what makes Muse an *agent*.
     survey (P1) now spans tools/policy/model; remaining survivors are dominated by
     equivalent regex/string-literal mutants. A committed Stryker config + CI gate
     still needs the human lockfile OK.
+  - FOURTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    step-budget.ts` = **98.70%** (76 killed, 1 survived) — already near-ideal. The
+    single survivor: `isExhausted()` (`return this.status() === "exhausted"`)
+    mutated to `return true` survived because the suite only ever asserted
+    isExhausted() === true (when exhausted), never false. A `return true`
+    regression would make the budget read as always-exhausted and stop every agent
+    loop on its first step. Killed it by asserting isExhausted() === false on a
+    fresh tracker AND on a soft-limit (under-budget) one. agent-core 1079→1080. The
+    agent-core/model/policy mutation survey (P1) is now complete; the actionable
+    survivors it surfaced (DoS guards, escaped-quote parse path, JSON-shape guards,
+    always-exhausted budget) are all killed.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
