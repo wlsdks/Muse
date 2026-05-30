@@ -1,4 +1,5 @@
 export { createPeerRegistry, type A2APeer, type PeerRegistry } from "./peer-registry.js";
+export { loadPeerConfig, type PeerConfig } from "./peer-config.js";
 export { canonicalizeEnvelope, signEnvelope, verifySignature } from "./signing.js";
 export {
   buildMuseAgentCard,
