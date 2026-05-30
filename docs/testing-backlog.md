@@ -934,6 +934,12 @@ the generic layers below because they test what makes Muse an *agent*.
   receiver parses untrusted bytes off the wire before any allowlist/signature
   check, so a garbage POST must be a clean { disposition:"reject", reason:
   "unparseable A2A body" }, never a thrown crash. Pre-verified against dist. a2a 79→81.
+- [x] a2a loadPeerConfig empty-secretEnv drop — the secretEnv test covered an
+  UNSET env var (dropped), but not a var that EXISTS yet resolves to "". A blank
+  HMAC secret makes every peer signature trivially forgeable, so the
+  `fromEnv.length > 0` guard must drop that peer exactly like the unset case —
+  a distinct branch left unguarded. Added a peer whose secretEnv → "" is dropped
+  while an inline-secret peer survives. Pre-verified against dist. a2a 81→83 pass.
 - [x] Prompt-injection detection — multilingual + privacy categories (the
   existing injection-patterns test covered English normalization + goal-033
   patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
