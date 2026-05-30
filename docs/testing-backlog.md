@@ -515,6 +515,14 @@ the generic layers below because they test what makes Muse an *agent*.
   epochMillisOrNull (number/Date/ISO → ms, else null); toJsonObject (drops
   function/undefined values); stringMapField (string→string only); readQueryBoolean;
   compatEnumString (trim+upper); chunkText (2000-char chunks, empty→[""]). api 522 pass.
+- [x] MCP route input parsers (untested) — the registration input gate (validates
+  before a server is ever connected). mcp-routes-parsers.test.ts: parseTransportType
+  allow-lists stdio/sse/streamable/http (case+whitespace insensitive) else undefined;
+  parseMcpServerInput rejects non-object / missing name / invalid transport /
+  non-object config, accepts a valid spec with defaults (autoConnect true, config
+  {}), and falls back to an existing server's fields; parseToolCallBody accepts
+  args or the arguments alias as a JSON object, rejects non-object body/args.
+  api 703 pass; build typecheck green.
 - [x] Compat session-detail serializers (untested) — compat-session-store.test.ts:
   sessionDetail 404s (RUN_HISTORY_UNAVAILABLE / SESSION_NOT_FOUND) and returns
   messages+run+session+toolCalls when found; compatSessionDetail 401s without an
