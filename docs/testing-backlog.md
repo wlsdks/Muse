@@ -418,6 +418,13 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Agent-spec compat serializers (untested) — compat-agent-spec.test.ts:
+  parseAgentSpecInput (non-object/missing-name rejected, name from id fallback,
+  invalid mode rejected, valid spec drops undefined fields); toAgentSpecResponse
+  (long systemPrompt → 120-char preview + ellipsis with the FULL prompt never in
+  the response, short → full, absent → null + hasSystemPrompt false, mode via
+  agentModeResponse); toAgentSpecUpdateInput (partial body merges over existing,
+  systemPrompt null clears). api 639 pass; build typecheck green.
 - [x] Compat auth helpers (untested) — security-relevant. compat-auth.test.ts:
   parseAuthCredentials accepts a valid login (name defaults to email), rejects
   missing/blank fields, and enforces the stricter REGISTER rules (email format,
