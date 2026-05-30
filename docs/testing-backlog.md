@@ -515,6 +515,13 @@ the generic layers below because they test what makes Muse an *agent*.
   epochMillisOrNull (number/Date/ISO → ms, else null); toJsonObject (drops
   function/undefined values); stringMapField (string→string only); readQueryBoolean;
   compatEnumString (trim+upper); chunkText (2000-char chunks, empty→[""]). api 522 pass.
+- [x] Compat session-detail serializers (untested) — compat-session-store.test.ts:
+  sessionDetail 404s (RUN_HISTORY_UNAVAILABLE / SESSION_NOT_FOUND) and returns
+  messages+run+session+toolCalls when found; compatSessionDetail 401s without an
+  authed user and SYNTHESIZES the user turn + assistant reply from the run when
+  no messages are stored (only the user turn when there's no output), else maps
+  STORED messages through; toSessionResponse reports the synthesized count + a
+  120-char preview + lastActivity. api 691 pass; build typecheck green.
 - [x] Compat run-aggregation LATENCY functions (the earlier slice covered the
   tool/failure rollups; the latency percentiles + query mappers were not).
   compat-run-aggregations-latency.test.ts: latencySummary computes p50/p95/p99
