@@ -515,6 +515,11 @@ the generic layers below because they test what makes Muse an *agent*.
   epochMillisOrNull (number/Date/ISO → ms, else null); toJsonObject (drops
   function/undefined values); stringMapField (string→string only); readQueryBoolean;
   compatEnumString (trim+upper); chunkText (2000-char chunks, empty→[""]). api 522 pass.
+- [x] Worker synthesizer (untested) — the swarm fan-in. multi-agent-synthesizer.test.ts:
+  createWorkerSynthesizer returns undefined with no model provider; with one it
+  labels each part by workerId ("### <id>\n<output>"), calls the synthesis prompt
+  at temp 0.3, trims the result, and returns "" when the model yields no output.
+  api 737 pass; build typecheck green.
 - [x] Multipart parser + SSE line-framer (untested) — server-multipart-sse.test.ts:
   parseMultipartBody separates text fields from files (base64-encodes file bytes,
   defaults content-type), accepts a quoted boundary + a header-array content type,
