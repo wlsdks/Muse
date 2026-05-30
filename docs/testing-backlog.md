@@ -467,6 +467,13 @@ the generic layers below because they test what makes Muse an *agent*.
   capped at 5, count-desc); dailyUsage (per-UTC-day cost+runs, date-asc);
   latencyDistribution (0-1s/1-5s/5-30s/30s+ buckets + missing-timestamp→unknown).
   api 503 pass.
+- [x] ③ pattern-suggestion negative — added "two unrelated one-offs, no
+  recurring day" → NONE, proving the proactive synthesizer doesn't manufacture a
+  recurring habit from sparse/unrelated events. (Finding, ledgered: a 0.4-confidence
+  "2× 6 weeks apart, different areas" DOES produce a suggestion — a threshold/gate
+  tuning question, the synthesizer reflects the confidence it's handed, not a
+  clear bug; the clean no-recurring-day case is used instead.) Pre-verified STABLE
+  3/3 NONE; verify-pattern-suggestion 4/4 ALL PASS on qwen3:8b. LOCAL OLLAMA ONLY.
 - [x] ① playbook-merge cross-domain positive — added a redundant SCHEDULING
   cluster ("leave buffer time / avoid back-to-back" ×2 → one merged strategy) so
   the merge positive isn't overfit to the summarise domain. (Finding: same-domain
