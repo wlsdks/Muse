@@ -2054,3 +2054,85 @@ describe("readFiniteNumber (provider usage-token boundary)", () => {
     expect(readFiniteNumber([1, 2], "0")).toBeUndefined();
   });
 });
+
+describe("model capability presets (local-first invariants)", () => {
+  it("the local preset declares reasoning/vision OFF and local/free, but inherits tool-calling, streaming, and structured output", async () => {
+    const { localModelCapabilities, defaultRemoteModelCapabilities } = await import("../src/provider-shared.js");
+    const local = localModelCapabilities();
+
+    // The product runs local Qwen with reasoning=false and no vision; a mutant
+    // that dropped these overrides (inheriting the remote `true`s via the spread)
+    // would silently re-enable chain-of-thought leakage / a vision claim the
+    // local model can't honor.
+    expect(local.reasoning).toBe(false);
+    expect(local.vision).toBe(false);
+    expect(local.local).toBe(true);
+    expect(local.cost).toBe("free");
+    expect(local.latencyProfile).toBe("interactive");
+    expect(local.maxInputTokens).toBe(32_768);
+    expect(local.maxOutputTokens).toBe(8_192);
+
+    // These MUST survive the spread (a mutant deleting the `...remote` spread
+    // would zero them out): the local model still calls tools and streams.
+    expect(local.toolCalling).toBe(true);
+    expect(local.streaming).toBe(true);
+    expect(local.structuredOutput).toBe(true);
+
+    // The remote default is the opposite posture on the overridden fields.
+    const remote = defaultRemoteModelCapabilities();
+    expect(remote.local).toBe(false);
+    expect(remote.reasoning).toBe(true);
+    expect(remote.vision).toBe(true);
+    expect(remote.cost).toBe("unknown");
+  });
+});
+
+describe("synthesizeStreamEventsFromResponse (Anthropic/Gemini stream parity)", () => {
+  async function collect(response: unknown): Promise<readonly { type: string }[]> {
+    const { synthesizeStreamEventsFromResponse } = await import("../src/provider-shared.js");
+    const out: { type: string }[] = [];
+    for await (const event of synthesizeStreamEventsFromResponse(response as never)) out.push(event);
+    return out;
+  }
+
+  it("replays text, tool calls, and web_search/citation events in the native SSE order", async () => {
+    const events = await collect({
+      output: "hi",
+      toolCalls: [{ id: "1", name: "t", arguments: {} }],
+      citations: [{ url: "u", title: "x" }]
+    });
+    expect(events.map((e) => e.type)).toEqual([
+      "text-delta",
+      "tool-call",
+      "tool-call-started",
+      "tool-call-finished",
+      "citations",
+      "done"
+    ]);
+  });
+
+  it("emits ONLY the terminal done event when output, tool calls, and citations are all empty", async () => {
+    // No text-delta for empty output, and no web_search status/citation triplet
+    // when there are zero citations — emitting them would fabricate a search the
+    // provider never ran.
+    const events = await collect({ output: "", toolCalls: [], citations: [] });
+    expect(events.map((e) => e.type)).toEqual(["done"]);
+  });
+
+  it("emits text-delta + done for a plain text answer with no tools or citations", async () => {
+    const events = await collect({ output: "answer" });
+    expect(events.map((e) => e.type)).toEqual(["text-delta", "done"]);
+  });
+
+  it("reports the citation count on tool-call-finished and the full items on the citations event", async () => {
+    const { synthesizeStreamEventsFromResponse } = await import("../src/provider-shared.js");
+    const events = [];
+    for await (const event of synthesizeStreamEventsFromResponse({
+      output: "x",
+      citations: [{ url: "u" }, { url: "v" }]
+    } as never)) events.push(event);
+
+    expect(events).toContainEqual({ count: 2, name: "web_search", type: "tool-call-finished" });
+    expect(events).toContainEqual({ items: [{ url: "u" }, { url: "v" }], type: "citations" });
+  });
+});
