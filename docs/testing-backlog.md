@@ -418,6 +418,16 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] User-memory auto-extract PARSE/route helpers (untested) — extractJsonObject
+  is the untrusted-boundary parser turning a small local model's raw output into
+  the structured ExtractionPayload that drives memory writes.
+  memory-auto-extract-parse.test.ts: direct JSON; ```json / bare ``` fence strip;
+  takes the LAST parseable block when the model echoes the schema/example FIRST
+  (else the real extraction is silently discarded); recovers JSON embedded in
+  prose; string-aware brace balance (a brace inside a value doesn't break it);
+  undefined for empty / non-JSON / a top-level array; pickAutoExtractSystemPrompt
+  routes KO at ≥30% Hangul else EN (empty + mixed-below-threshold → EN).
+  memory 274 pass.
 - [x] Typed user-model slots (untested) — the persistent structured model of
   who the user is (preferences/schedule/vetoes/goals), core to "it's actually
   yours". user-model-slots.test.ts: effectiveConfidence decay (asserted=no
