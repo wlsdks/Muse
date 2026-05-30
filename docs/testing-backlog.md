@@ -467,6 +467,12 @@ the generic layers below because they test what makes Muse an *agent*.
   capped at 5, count-desc); dailyUsage (per-UTC-day cost+runs, date-asc);
   latencyDistribution (0-1s/1-5s/5-30s/30s+ buckets + missing-timestamp→unknown).
   api 503 pass.
+- [x] ① skill-merge keyword-overlap negative — added a shared-keyword,
+  different-domain cluster (lock-front-door [smart home] + lock-spreadsheet-cell
+  [document]) that must return NONE, proving the curator doesn't force-merge on
+  surface keyword overlap. The no-force-merge path (the battery's stated risk)
+  had only one clearly-unrelated case; this is the harder near-miss. Pre-verified
+  STABLE 3/3 NONE; verify-skill-merge 3/3 ALL PASS on qwen3:8b. LOCAL OLLAMA ONLY.
 - [x] ② preference-inference KO negative — added a Korean one-off factual fix
   ("내 약속 언제야?" → "아니 4시야") that must return NONE, not fabricate a durable
   trait. The negative path (the whole risk per the battery's docstring) had only
