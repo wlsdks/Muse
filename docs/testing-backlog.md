@@ -418,6 +418,15 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] MCP route shapers (untested) — two SECURITY behaviors are load-bearing.
+  mcp-routes-shapers.test.ts: isSensitiveConfigKey matches authorization/password/
+  secret/token/api-key/credential case-insensitively; sanitizeConfig RECURSIVELY
+  redacts those (nested object + object-in-array) before any MCP config leaves
+  the server, preserving benign values; sendMcpError returns the curated 409 for
+  an McpRegistryError but a GENERIC 500 ("MCP operation failed") for any other
+  error — never leaking the internal message. Plus toServerSummary/Detail (status/
+  transport upper-cased, config redacted, tools listed), toMcpSecurityPolicyResponse,
+  toCompatEnum, stringifyToolOutput, sendMcpServerNotFound. api 542 pass.
 - [x] Compat-parsers (untested) — the untrusted-input normalization boundary for
   the compat API. compat-parsers.test.ts: readQueryInteger STRICT parse (a
   unit-slipped "7d"/"20x" reaches the fallback, never a silent partial parse);
