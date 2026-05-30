@@ -678,6 +678,17 @@ the generic layers below because they test what makes Muse an *agent*.
   pre-verified STABLE 3/3 (policy-2025.pdf / meeting-q3.md / ingested vpn /
   ingested kitchen-quote); battery 6/6 ALL PASS on nomic-embed-text. This is the
   load-bearing WEDGE invariant the `includes` check left unguarded. LOCAL OLLAMA ONLY.
+- [x] NORTH STAR proactive-recall-gate — NEGATIVE-attribution assertion. The
+  surface cases asserted the right source is cited but not that a WRONG one is
+  absent. Proactivity is UNSOLICITED, so citing an adjacent note the user didn't
+  ask about is exactly the cost that makes a nudge unwelcome. The investigator
+  emits a SINGLE-source finding (verified: only the relevant source appears, 3/3),
+  so added `notSources` to each surface case (Q3 → not dentist/trip; dentist →
+  not meeting-q3/trip) guarding that single-source contract against a regression
+  that started leaking multiple/wrong sources into an unsolicited heads-up.
+  Battery 4/4 ALL PASS on nomic-embed-text. The dual of the WEDGE top-rank fix:
+  the wedge proves the right source LEADS; this proves an unsolicited nudge cites
+  the right source ONLY. LOCAL OLLAMA ONLY.
 - [x] eval:tools actuator-set KO positive — added "거실 불 꺼줘." → home_action
   (requireArgs service) to the actuator confusable scenario. The state-changing
   actuator positives were all English; the KO cases there were only NEGATIVE
