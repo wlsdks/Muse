@@ -265,6 +265,17 @@ describe("createZeroResultOverclaimResponseFilter (options)", () => {
     expect(result.output).not.toContain("활발한 작업");
   });
 
+  it("does NOT strip on a PARTIAL match — zero-result without an overclaim line, or an overclaim when results WERE found (AND, not OR)", async () => {
+    const filter = createZeroResultOverclaimResponseFilter();
+    // zero-result present but NO overclaim language → nothing to strip
+    const zeroOnly = baseResponse("전체 이슈: 0건\n목록을 확인하세요.");
+    expect((await filter.apply(zeroOnly, baseContext)).output).toBe(zeroOnly.output);
+    // overclaim language but results WERE found (no zero-result) → the "all done"
+    // line is legitimate, not an overclaim; stripping it would erase a true result.
+    const overclaimWithResults = baseResponse("이슈 3건을 처리했습니다.\n모든 작업이 완료되었습니다.");
+    expect((await filter.apply(overclaimWithResults, baseContext)).output).toBe(overclaimWithResults.output);
+  });
+
   it("opt-in tool-prefix gate skips the strip when no matching tool was used", async () => {
     const filter = createZeroResultOverclaimResponseFilter({
       workspaceToolPrefixes: ["search_"]

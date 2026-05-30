@@ -895,6 +895,14 @@ the generic layers below because they test what makes Muse an *agent*.
   invent/missing term) still refuses; and a PARTIAL combo does NOT refuse —
   invent-only ("임의로 요약해줘") and secret-only ("비밀 문서 보여줘") both pass
   through unchanged. Pre-verified against dist. agent-core 1076→1078.
+- [x] Zero-result-overclaim filter (the EDGE) AND-logic partial guard — strips an
+  overclaim line only when BOTH a zero-result AND an overclaim pattern match, but
+  every prior case had both present. Added the partial-no-strip guard: a
+  zero-result with NO overclaim line ("전체 이슈: 0건\n목록을 확인하세요.") passes
+  through, AND — crucially — an overclaim line when results WERE found ("이슈 3건을
+  처리했습니다.\n모든 작업이 완료되었습니다.") is NOT stripped (a true "all done" on
+  real results is legitimate, not an overclaim). Guards an OR-for-AND mutation that
+  would erase a real result. Pre-verified against dist. agent-core 1078→1079.
 - [x] Prompt-injection detection — multilingual + privacy categories (the
   existing injection-patterns test covered English normalization + goal-033
   patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
