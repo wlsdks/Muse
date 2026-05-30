@@ -120,10 +120,19 @@ Direction set 2026-05-31 by 진안 ("강화학습이 중요해").
   prompt entirely; `muse skills authored` shows reward + "· avoided". Verified:
   store + selection-avoidance + decay/reinforce tests, and LIVE through the
   built CLI (the avoided marker + a −4 skill excluded from a matching prompt).
-  mcp 1112 / cli 1553 green, lint 0/0. (Next P33-5: positive reinforcement is
-  in for skills too; remaining — injection-tracking for precise credit instead
-  of the selection heuristic, and reward-weighted ordering for skills, not just
-  avoidance.)
+  mcp 1112 / cli 1553 green, lint 0/0.
+- [x] **P33-5 Manual reward control — the user steers the RL.**
+  `muse playbook reward <id> [amount] [--down]` and `muse skills reward
+  <name> [amount] [--down]` let the user reinforce or penalise a learned
+  strategy/skill by hand (clamped via the SAME adjust functions the auto-signal
+  uses). So a wrongly-penalised one can be RESCUED back above the avoid line and
+  a known-good one PRE-TRUSTED — the reversibility + control that makes the
+  (default-off) auto-RL safe to enable. Verified by command tests (reinforce /
+  --down penalise / clamp / prefix-id / unknown refused-and-not-written) and
+  LIVE through the built CLI (reward +3, then --down 8 clamps to −5 and the
+  strategy shows "· avoided"). cli 1556 green, lint 0/0. (Remaining P33 ideas:
+  injection-tracking for precise credit instead of the selection heuristic;
+  reward-weighted ORDERING for skills, not just avoidance.)
 
 **P32 — Grounded "dreaming" (idle memory consolidation that can't make
 things up).** Adopt the offline reflection competitors lean on (OpenClaw's

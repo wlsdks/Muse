@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
-import { isSkillAvoided, readSkillRewards } from "@muse/mcp";
+import { adjustSkillReward, isSkillAvoided, readSkillRewards } from "@muse/mcp";
 import { AuthoredSkillStore, loadSkillsFromDirectory } from "@muse/skills";
 import type { Command } from "commander";
 
@@ -130,6 +130,28 @@ export function registerSkillsCommands(program: Command, io: ProgramIO): void {
         io.stdout(`  - ${skill.name} — ${skill.description}\n`);
         io.stdout(`    authored: ${authoredAt}  last used: ${lastUsedAt}${rewardLine}\n`);
       }
+    });
+
+  skills
+    .command("reward")
+    .description("Reinforce an authored skill's reward — `--down` to penalise instead — e.g. `muse skills reward vpn-fix 2`")
+    .argument("<name>", "Authored skill name (from `muse skills authored`)")
+    .argument("[amount]", "Positive integer to add (default 1)", "1")
+    .option("--down", "Penalise (subtract the amount) instead of reinforce")
+    .action(async (name: string, amountStr: string, options: { readonly down?: boolean }) => {
+      const amount = Number(amountStr);
+      if (!Number.isInteger(amount) || amount <= 0) {
+        throw new Error("skills reward <amount> must be a positive integer");
+      }
+      const authored = await new AuthoredSkillStore({ dir: resolveAuthoredSkillsDir() }).listAuthored().catch(() => []);
+      if (!authored.some((s) => s.name === name)) {
+        io.stdout(`(no authored skill named "${name}" — see \`muse skills authored\`)\n`);
+        return;
+      }
+      const reward = await adjustSkillReward(resolveSkillRewardsFile(), name, options.down ? -amount : amount);
+      io.stdout(reward === undefined
+        ? `(could not adjust "${name}")\n`
+        : `${name} reward → ${reward > 0 ? "+" : ""}${reward.toString()}${isSkillAvoided(reward) ? " · avoided (not applied)" : ""}\n`);
     });
 
   skills
