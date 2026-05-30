@@ -964,6 +964,13 @@ the generic layers below because they test what makes Muse an *agent*.
   from the same instant: UTC → 09:00Z, Asia/Seoul (UTC+9) → next 00:00Z,
   America/New_York (EDT UTC-4) → 13:00Z — three DISTINCT UTC instants, proving tz
   genuinely shifts the next-fire. Pre-verified against dist. scheduler 83→84 pass.
+- [x] trimConversationMessages exact-budget boundary (mutation-informed) — the
+  trim fires on `total > budget`, but the suite tested only comfortably-under and
+  over; the EXACT-fit boundary (total == budget) was unasserted, so a `>`→`>=`
+  mutation that needlessly evicts from a conversation that perfectly fits would
+  pass. Added a fixed-estimator case pinning total==budget → triggeredBy 'none',
+  removedCount 0, kept whole; plus a one-token-over case proving the boundary
+  isn't inert. Pre-verified against dist. memory 281→282 pass.
 - [x] Prompt-injection detection — multilingual + privacy categories (the
   existing injection-patterns test covered English normalization + goal-033
   patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
