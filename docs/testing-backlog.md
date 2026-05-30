@@ -418,6 +418,21 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Compat response-shape helpers (untested) — compat-responses.test.ts:
+  clampLimit ([1,200] pagination clamp), prefixValidationDetails (dot-prefix
+  every field key), invalid() ParseResult constructor, errorResponse /
+  validationErrorResponse (message + details + ISO timestamp), notFound (404 +
+  standard message) / badRequest (400 + given message) reply helpers. api 585
+  pass; build typecheck green.
+- [x] Compat session-tag store (untested) — store-delegation + file-state
+  fallback + pure mappers. compat-session-tag-store.test.ts: safeIsoFromMs
+  (finite ms → ISO; NaN/Infinity/non-number → epoch — the corrupt-timestamp
+  guard); toSessionTagCompatRecord (comment ?? null, createdAt == updatedAt);
+  the configured-store path delegates create (auth user as createdBy) / list
+  (mapped) / delete (store's boolean) / deleteBySession; the no-store fallback
+  round-trips create→list→delete through the in-process state (unique sessionId
+  to avoid shared-Map collisions). api 571 pass; build typecheck green (ran
+  `pnpm --filter @muse/api build` per the vitest-no-typecheck lesson).
 - [x] MCP admin-proxy pure helpers (untested) — security-relevant. compat-mcp-proxy.test.ts:
   swaggerSourcePath URL-encodes the source name (a "../../admin?x=1" payload is
   neutralized — no path-traversal/query injection); readAdminUrl accepts only
@@ -452,6 +467,14 @@ the generic layers below because they test what makes Muse an *agent*.
   capped at 5, count-desc); dailyUsage (per-UTC-day cost+runs, date-asc);
   latencyDistribution (0-1s/1-5s/5-30s/30s+ buckets + missing-timestamp→unknown).
   api 503 pass.
+- [x] WEDGE cited-recall — added a PERSONAL near-miss REFUSAL case ("what is my
+  monthly rent?") to verify-cited-recall. The refuse path (Muse's "I'm not sure"
+  trust half) had only one out-of-corpus case; rent is a topic the corpus could
+  hold but doesn't, so the confidence gate must refuse (ambiguous) rather than
+  dress up an adjacent doc. Pre-verified STABLE 3/3 ambiguous; battery 6/6 ALL
+  PASS on nomic-embed-text. (Finding logged in the Rejected ledger: a "car
+  insurance" near-miss returns confident on the HOME policy — NOT a defect, since
+  cited recall quotes the source so the user sees the mismatch.) LOCAL OLLAMA ONLY.
 - [x] eval:tools actuator-set KO positive — added "거실 불 꺼줘." → home_action
   (requireArgs service) to the actuator confusable scenario. The state-changing
   actuator positives were all English; the KO cases there were only NEGATIVE

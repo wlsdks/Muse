@@ -82,7 +82,11 @@ const cases = [
   { name: "IN-CORPUS → confident, distinct fact", kind: "confident", query: "who owns the launch deck?", needles: ["cite the [source]", "meeting-q3.md"] },
   { name: "INGESTED chat → citable (pile-ingester reach)", kind: "confident", query: "how did I fix the VPN handshake timeout?", needles: ["cite the [source]", "ingested/vpn-setup.md", "MTU"] },
   { name: "INGESTED email → citable (.mbox reach)", kind: "confident", query: "how much was the kitchen remodel quote?", needles: ["cite the [source]", "ingested/kitchen-remodel-quote.md", "12,400,000"] },
-  { name: "OUT-OF-CORPUS → REFUSES (low-confidence or no-match, never confabulates)", kind: "refuse", query: "what is the boiling point of mercury in kelvin?" }
+  { name: "OUT-OF-CORPUS → REFUSES (low-confidence or no-match, never confabulates)", kind: "refuse", query: "what is the boiling point of mercury in kelvin?" },
+  // A PERSONAL-topic near-miss the corpus genuinely lacks: "monthly rent" is the
+  // kind of thing the corpus COULD hold but doesn't, so the gate must refuse
+  // (ambiguous / no-match) rather than dress up an adjacent doc as the answer.
+  { name: "PERSONAL near-miss absent from corpus → REFUSES (no false-confident match)", kind: "refuse", query: "what is my monthly rent?" }
 ];
 
 let failures = 0;
