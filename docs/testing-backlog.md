@@ -877,6 +877,16 @@ the generic layers below because they test what makes Muse an *agent*.
   (never a false performed on a state-changing lock/scene call) and logs failed.
   Completes state-changing-actuator reliability at every level (shared web-action
   path + home_action tool + weather read tool + home_state read fns). mcp 1114→1115.
+- [x] Korean casual-lure strip filter (PRIMARY language, identity guard) — the
+  English counterpart was unit-tested but `createCasualLureStripResponseFilter`
+  (the Korean rule table that keeps Muse from padding a clean answer with an eager
+  "무엇을 도와드릴까요?" / "혹시 더 필요하시면…" closing) had only incidental
+  integration coverage. 8 known-answer cases pin: strips a trailing 도와드릴까요/
+  말씀해 주세요 lure off a short no-tools answer; leaves a clean answer untouched;
+  does NOT strip when a WORK tool ran (a real action's closing isn't a lure) but
+  DOES when only add_reaction ran; the >500-char substantive-answer guard; the
+  drop-at-most-3 cap (a runaway strip can't eat the real answer); whitespace-only
+  stays unchanged (not blanked). Pre-verified against dist. agent-core 1068→1076.
 - [x] Prompt-injection detection — multilingual + privacy categories (the
   existing injection-patterns test covered English normalization + goal-033
   patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
