@@ -515,6 +515,15 @@ the generic layers below because they test what makes Muse an *agent*.
   epochMillisOrNull (number/Date/ISO → ms, else null); toJsonObject (drops
   function/undefined values); stringMapField (string→string only); readQueryBoolean;
   compatEnumString (trim+upper); chunkText (2000-char chunks, empty→[""]). api 522 pass.
+- [x] Generic server input-utils (untested) — the shape/coercion foundation every
+  API parser builds on. server-input-utils.test.ts: isJsonValue recursive validation
+  (rejects functions + non-finite numbers, accepts nested), isJsonObject; optional*
+  coercers (null only via the nullable variant, non-strings filtered); the read*
+  FALSE-sentinel semantics (readStringArray/readJsonObject → false for an invalid
+  present value, value when valid, fallback when absent); readNumber finite-guard;
+  parseHistoryLimit STRICT integer parse + clamp (rejects 9.5/0x10/1e3/0);
+  parseResponseLocales (ko/en filter+dedup+fallback); parseRuntimeSettingType
+  allow-list. api 721 pass; build typecheck green.
 - [x] MCP route input parsers (untested) — the registration input gate (validates
   before a server is ever connected). mcp-routes-parsers.test.ts: parseTransportType
   allow-lists stdio/sse/streamable/http (case+whitespace insensitive) else undefined;
