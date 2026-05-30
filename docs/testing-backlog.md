@@ -418,6 +418,14 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Admin dashboard summary (untested) — compat-dashboard.test.ts drives
+  dashboardSummary through fully-faked stores: scheduler attention counts
+  (disabled jobs excluded from failed/agent; attentionBacklog = running+failed),
+  MCP status rollup, and — core to Muse's edge — the RESPONSE-TRUST rollup
+  (boundaryFailures from guard_rejection, output-guard modified/rejected, and
+  UNVERIFIED responses from agent_run metadata.verified/grounded === false) plus
+  recentTrustEvents (newest-first, guard_rejection → warning); all-zero rollups
+  when no stores configured. api 603 pass; build typecheck green.
 - [x] Compat model-registry helpers (untested) — compat-models.test.ts:
   parseAgentMode (standard/plan_execute/react case+whitespace-insensitive, else
   undefined incl. non-string), agentModeResponse (plan_execute→PLAN_EXECUTE, else
