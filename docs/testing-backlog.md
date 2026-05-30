@@ -418,6 +418,14 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] eval:tools actuator-set KO positive — added "거실 불 꺼줘." → home_action
+  (requireArgs service) to the actuator confusable scenario. The state-changing
+  actuator positives were all English; the KO cases there were only NEGATIVE
+  (no-tool musings). This is the positive counterpart on the SAME surface — the
+  user-language discrimination between an actual smart-home COMMAND (act) and the
+  KO "스마트홈 기기 좋아졌더라" musing (no-tool), which outbound-safety relies on.
+  Pre-verified STABLE 3/3 (home_action with the service arg), full battery
+  eval:tools 50/50 (100%) @ REPEAT=2. LOCAL OLLAMA QWEN ONLY.
 - [x] eval:tools confusable-set strengthening — added a KO next_weekday_date
   case ("다음 주 금요일이 며칠이야?") to the confusable real-time-tools scenario.
   The positive cases there were all English; this is the user's-language
