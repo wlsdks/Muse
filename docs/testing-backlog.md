@@ -434,6 +434,15 @@ the generic layers below because they test what makes Muse an *agent*.
 
 ## Done (this loop)
 
+- [x] LIVE regression sweep — `eval:self-improving` 10/10 GREEN on qwen3:8b after
+  the EDGE-battery strengthening this round: pattern-suggestion, preference-
+  inference, skill-merge, playbook-merge, background-review(+e2e), cited-recall
+  (★ WEDGE, now with the top-RANKED-source assertion), proactive-recall-gate
+  (★ NORTH STAR, now with the single-source assertion), reflection-synthesis
+  (★ DREAMING), council (★ SWARM). Confirms the stricter wedge/north-star
+  assertions added this round compose and pass end-to-end through the aggregate
+  live gate — not just in isolation. (The `pnpm check` integration gate does NOT
+  run the LLM batteries; this is the live verification it can't provide.)
 - [x] Module unit-exhaustion of the core: agent-core, model (adapters Ollama/
   Gemini/Anthropic + policies), messaging (approval gate), autoconfigure
   (registry-builders), mcp, apps/api (chat request→handler→response→plumbing→
