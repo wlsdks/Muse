@@ -48,6 +48,18 @@ describe("loadPeerConfig", () => {
     expect(config.peers[0]!.secret).toBe("alice-secret");
   });
 
+  it("drops a peer whose secretEnv resolves to an EMPTY string (a blank HMAC secret is forgeable)", async () => {
+    // Distinct from an unset env var: the var EXISTS but is "". Registering the
+    // peer with a blank secret would make every signature trivially forgeable, so
+    // it must be dropped exactly like the unset case.
+    await writeFile(file, JSON.stringify({
+      selfId: "me",
+      peers: [{ id: "blank", secretEnv: "MUSE_PEER_BLANK", url: "u" }, { id: "ok", secret: "s", url: "u" }]
+    }), "utf8");
+    const config = await loadPeerConfig(file, { MUSE_PEER_BLANK: "" });
+    expect(config.peers.map((p) => p.id)).toEqual(["ok"]);
+  });
+
   it("prefers an inline secret over secretEnv when both are present", async () => {
     await writeFile(file, JSON.stringify({ selfId: "me", peers: [{ id: "p", secret: "inline", secretEnv: "X", url: "u" }] }), "utf8");
     expect((await loadPeerConfig(file, { X: "from-env" })).peers[0]!.secret).toBe("inline");

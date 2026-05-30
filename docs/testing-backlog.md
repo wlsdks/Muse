@@ -434,6 +434,15 @@ the generic layers below because they test what makes Muse an *agent*.
 
 ## Done (this loop)
 
+- [x] LIVE regression sweep — `eval:self-improving` 10/10 GREEN on qwen3:8b after
+  the EDGE-battery strengthening this round: pattern-suggestion, preference-
+  inference, skill-merge, playbook-merge, background-review(+e2e), cited-recall
+  (★ WEDGE, now with the top-RANKED-source assertion), proactive-recall-gate
+  (★ NORTH STAR, now with the single-source assertion), reflection-synthesis
+  (★ DREAMING), council (★ SWARM). Confirms the stricter wedge/north-star
+  assertions added this round compose and pass end-to-end through the aggregate
+  live gate — not just in isolation. (The `pnpm check` integration gate does NOT
+  run the LLM batteries; this is the live verification it can't provide.)
 - [x] Module unit-exhaustion of the core: agent-core, model (adapters Ollama/
   Gemini/Anthropic + policies), messaging (approval gate), autoconfigure
   (registry-builders), mcp, apps/api (chat request→handler→response→plumbing→
@@ -934,6 +943,19 @@ the generic layers below because they test what makes Muse an *agent*.
   receiver parses untrusted bytes off the wire before any allowlist/signature
   check, so a garbage POST must be a clean { disposition:"reject", reason:
   "unparseable A2A body" }, never a thrown crash. Pre-verified against dist. a2a 79→81.
+- [x] a2a loadPeerConfig empty-secretEnv drop — the secretEnv test covered an
+  UNSET env var (dropped), but not a var that EXISTS yet resolves to "". A blank
+  HMAC secret makes every peer signature trivially forgeable, so the
+  `fromEnv.length > 0` guard must drop that peer exactly like the unset case —
+  a distinct branch left unguarded. Added a peer whose secretEnv → "" is dropped
+  while an inline-secret peer survives. Pre-verified against dist. a2a 81→83 pass.
+- [x] computeNextRunAt timezone application — every prior case ran with
+  `timezone: "UTC"`, so the `tz` option's EFFECT was unverified: a regression
+  dropping it would silently fire reminders at the wrong local hour (a daily-
+  reliability defect). Added a single '0 9 * * *' (9am daily) resolved per zone
+  from the same instant: UTC → 09:00Z, Asia/Seoul (UTC+9) → next 00:00Z,
+  America/New_York (EDT UTC-4) → 13:00Z — three DISTINCT UTC instants, proving tz
+  genuinely shifts the next-fire. Pre-verified against dist. scheduler 83→84 pass.
 - [x] Prompt-injection detection — multilingual + privacy categories (the
   existing injection-patterns test covered English normalization + goal-033
   patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
