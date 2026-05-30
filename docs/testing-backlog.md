@@ -274,10 +274,22 @@ the generic layers below because they test what makes Muse an *agent*.
     mutation queue + randomUUID tmp: 25 overlapping ticks marking distinct
     messages all preserved (no double-reply), 30 racing same-key writes converge
     to 1, 0 crash. inbox-reply-cursor.test.ts +2 (messaging 294).
+  - [x] Single-flight lock PRIMITIVE covered — the distributed scheduler lock
+    that enforces "only one pod runs a job per TTL window" (a broken lock = the
+    same job firing twice = a double email/charge). scheduler-locks.test.ts
+    drives the InMemory lock's process-global contention map: mutual exclusion
+    (2nd owner blocked while TTL valid), owner-scoped release (a foreign release
+    does NOT free it), TTL-expiry steal (stealable at exactly lockedUntil, strict
+    >), per-job independence, non-positive-TTL floor; + NoOp always-acquire + the
+    createScheduledJobLockInsert row builder (locked_until = now+ttl, floored).
+    scheduler 81 pass. (The KyselyDistributedSchedulerLock's ON CONFLICT … WHERE
+    SQL semantics are NOT faked — they belong to the testcontainers Postgres item
+    above; a hand fake would assert the mock, not the lock.)
   - [ ] Remaining: migrate the other ~10 read-modify-write stores
     (reminders / tasks / episodes / proactive-history / patterns-fired /
     plan-cache / …) onto the shared helper — a cheap one-each adoption.
-    single-flight daemon race test still open.
+    Full daemon-level single-flight integration (the lock wired through the live
+    scheduler tick) still open above the primitive.
 
 ## P5 — surface & contract
 
