@@ -418,6 +418,13 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Admin trace/span accessors (untested) — admin-routes-trace.test.ts:
+  recordedTraceEvents is a duck-typed accessor over an UNKNOWN sink — []
+  for a non-object; uses listByRunId(runId) when a runId is given and the method
+  exists, else falls back to list() (no runId, or runId but no listByRunId), []
+  when neither method is present; recordedSpans calls recordedSpans() when
+  present else []. Defensive: a malformed/absent sink yields [] not a throw.
+  api 667 pass; build typecheck green.
 - [x] Debug-replay capture helpers + opsMetricSnapshots (untested) —
   compat-debug-replay.test.ts: debugReplayResponse (completed run → envelope with
   a 30-day expiry + captured prompt; failed run → RUN_FAILED + message; no user →
