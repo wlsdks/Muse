@@ -725,6 +725,16 @@ export {
   type TrustScore
 } from "./proactive-trust-ledger.js";
 
+export {
+  addToQuarantine,
+  listPending,
+  readQuarantine,
+  setQuarantineStatus,
+  type AddToQuarantineInput,
+  type QuarantineStatus,
+  type SwarmQuarantineEntry
+} from "./swarm-quarantine-store.js";
+
 // Episodic memory store — step 1 of docs/design/episodic-memory.md.
 // Pure CRUD over `~/.muse/episodes.json`; later steps add the
 // session-boundary sentinel, end-of-session summariser hook,
