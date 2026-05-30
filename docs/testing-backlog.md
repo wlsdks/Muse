@@ -919,6 +919,15 @@ the generic layers below because they test what makes Muse an *agent*.
   is attempted EXACTLY ONCE (no retry → no double-delivery of a message to a
   human), and records `failed` in the action log (outbound-safety rule 4).
   Pre-verified against dist. mcp 1115→1116 pass.
+- [x] a2a council-request signature verification — crash-safety + auth-binding
+  rejection edges. verifyCouncilRequest tested good/tampered-question/wrong-secret/
+  undefined, but not: a LENGTH-MISMATCH signature (timingSafeEqual THROWS on
+  unequal-length buffers, so the length guard before it is load-bearing
+  crash-safety on an untrusted peer's `x-muse-a2a-signature` header), a same-length
+  NON-HEX signature (the decode/compare catch), and a FORGED peer id (a signature
+  valid for "phone" must not authenticate a request claiming to be "laptop" — the
+  signature binds the sender identity, so a peer can't impersonate another). All
+  return false, none throw. Pre-verified against dist. a2a 78→79 pass.
 - [x] Prompt-injection detection — multilingual + privacy categories (the
   existing injection-patterns test covered English normalization + goal-033
   patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
