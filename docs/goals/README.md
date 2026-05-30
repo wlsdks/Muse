@@ -38,6 +38,14 @@ Append new rows below; the table starts fresh from this reset.
 Append one line when a discovery path is evaluated and deferred:
 `- <area> — iter <hash> — deferred: <reason>`
 
+- cited-recall near-miss "car insurance" → confident on the HOME policy — iter
+  c620dcf3 — NOT a defect: semantic recall surfaces the adjacent "Home insurance
+  … premium" chunk and the cited-recall design QUOTES the source (the rendered
+  match shows "Home insurance policy"), so the user sees the mismatch — no
+  fabrication. The wedge's contract is "cite the closest match with its source",
+  not "only answer exact-topic queries". A genuinely-absent topic ("monthly
+  rent") correctly refuses (ambiguous) and IS now a battery case. Don't re-mine
+  the car-insurance case as a bug.
 - calendar registry sync-throw on Promise-typed methods — iter c9fe9b4e — deferred:
   CalendarProviderRegistry.createEvent/updateEvent/deleteEvent are typed
   `Promise<…>` but throw SYNCHRONOUSLY on the require()/requireOrPrimary() path
