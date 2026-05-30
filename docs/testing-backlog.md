@@ -205,6 +205,33 @@ the generic layers below because they test what makes Muse an *agent*.
     - Verified-not-a-gap (artifact): the knowledge-recall `applyOverlap` 394-397
       NoCoverage was a Stryker per-test attribution artifact — apply-overlap.test.ts
       already covers the stitch loop thoroughly; no redundant test added.
+  - TWELFTH MEASUREMENT (throwaway, reused install, NOT committed): `policy/
+    adversarial-red-team.ts` = **52.52%** with 11 NoCoverage. createPatternGuard +
+    parseAttacks are directly tested, but every AdversarialRedTeam class test
+    injects an explicit `guard:`, so the constructor's
+    `guard ?? createPatternGuard(sharedInjectionPatterns)` DEFAULT was never run.
+    Added an execute() test with NO guard option, confirming a real injection is
+    blocked with the SHARED pattern's own label (role_override) — proof the default
+    wired the production patterns, not a stub. policy 112→113.
+  - THIRTEENTH MEASUREMENT (throwaway, reused install, NOT committed): `policy/
+    guard-monitor.ts` = **75.26%** — a LOGIC surface (block-rate alerting), not
+    patterns. The existing test asserted only the alerting=true case + a tie-break.
+    Killed the alerting boundary + the NoCoverage clear(): the under-sample guard
+    (a 100% block rate on 2 events still does NOT alert below minSamples — prevents
+    a false alert on a tiny window), the below-threshold case (enough samples, low
+    rate → no alert), and clear() resetting the window to zero / not-alerting.
+    policy 113→116.
+  - FOURTEENTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    proactive-recall-gate.ts` = **61.64%** — the NORTH STAR gate. Most survivors
+    were artifacts: createConfidenceGatedInvestigator IS thoroughly unit-tested
+    (happy / empty-title / empty-corpus / embed-throws / lazy-provider-throws), so
+    those NoCoverage/survivor reports are Stryker per-test attribution noise on a
+    src-co-located test. The ONE genuine survivor: decideProactiveRecall's `reason`
+    ternary (none → "no matching passages" vs ambiguous → "recall too weak") was
+    unasserted — the existing none/ambiguous tests checked confidence+surface but
+    not the reason the loop logs. Pinned both reason strings as distinct. agent-core
+    stable at 1082. The mutation survey now spans tools / model / messaging /
+    agent-core(step-budget, knowledge-recall, proactive-recall-gate) / policy(9).
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,

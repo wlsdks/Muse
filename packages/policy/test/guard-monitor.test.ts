@@ -31,6 +31,33 @@ describe("guard monitor", () => {
     }));
   });
 
+  it("does NOT alert below minSamples even at a 100% block rate, but does once samples + threshold are met", () => {
+    // The under-sample guard prevents a false alert on a tiny window (1/1 = 100%);
+    // alerting needs total >= minSamples AND blockRate >= alertThreshold.
+    const monitor = new GuardBlockRateMonitor({ alertThreshold: 0.5, minSamples: 3 });
+    monitor.record({ allowed: false, guardId: "G", reason: "x", runId: "r1" });
+    monitor.record({ allowed: false, guardId: "G", reason: "x", runId: "r2" });
+    expect(monitor.snapshot()).toMatchObject({ alerting: false, blockRate: 1, total: 2 }); // 100% but under-sampled
+    monitor.record({ allowed: true, guardId: "G", reason: null, runId: "r3" });
+    expect(monitor.snapshot().alerting).toBe(true); // 3 samples, 2/3 >= 0.5
+  });
+
+  it("does NOT alert when there are enough samples but the block rate is below threshold", () => {
+    const monitor = new GuardBlockRateMonitor({ alertThreshold: 0.5, minSamples: 3 });
+    monitor.record({ allowed: false, guardId: "G", reason: "x", runId: "a" });
+    monitor.record({ allowed: true, guardId: "G", reason: null, runId: "b" });
+    monitor.record({ allowed: true, guardId: "G", reason: null, runId: "c" });
+    expect(monitor.snapshot()).toMatchObject({ alerting: false, total: 3 }); // 1/3 < 0.5
+  });
+
+  it("clear() empties the window — snapshot resets to zero / not alerting", () => {
+    const monitor = new GuardBlockRateMonitor({ alertThreshold: 0.5, minSamples: 1 });
+    monitor.record({ allowed: false, guardId: "G", reason: "x", runId: "r1" });
+    expect(monitor.snapshot().alerting).toBe(true);
+    monitor.clear();
+    expect(monitor.snapshot()).toMatchObject({ alerting: false, blockRate: 0, total: 0 });
+  });
+
   it("byGuard breaks blockRate-AND-blocked ties by guardId asc, independent of record insertion order", () => {
     const monitor = new GuardBlockRateMonitor({ windowSize: 10 });
     // Three guards each see one allowed event — blockRate=0, blocked=0
