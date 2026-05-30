@@ -418,6 +418,16 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Outbound-safety DRAFT-FIRST content + refusal trail (summarizeToolDraft
+  was untested; the existing gate test drove only no-argument tools so the draft
+  was always empty). channel-approval-draft.test.ts asserts: email_send shows
+  recipient+subject but OMITS the body (a bulk/sensitive payload must never echo
+  into the chat transcript — a real leak if it regressed); web_action/home_action/
+  default shapes + clip/whitespace-collapse; and the gate hands each refused
+  risky tool to recordRefusal with the draft+arguments+userId (the rationale
+  trail), surfaces the draft in the posted prompt, stays fail-SOFT (a throwing
+  recorder never flips the deny), and never records/posts for a read tool.
+  messaging 303 pass.
 - [x] Built-in tool HANDLER output-correctness (complements gap A's tool
   SELECTION): muse-tools-time — the 6 time/date/scheduling tools (time_now,
   time_diff, time_add, time_relative, next_weekday_date, cron_for_datetime)
@@ -427,3 +437,19 @@ the generic layers below because they test what makes Muse an *agent*.
   + humanizer, multi-field add, future/past/now direction, next-upcoming
   (strictly future + same-day→next-week), cron per mode + the monthly>28 warning,
   and every error path. tools 187 pass.
+  - muse-tools-data — the 4 data/encoding tools (math_eval, hash_text, csv_parse,
+    base64). math_eval is also a SECURITY surface (computes precedence itself,
+    never JS eval): pinned operator precedence / parens / unary / modulo, comma
+    thousands-strip, div+mod-by-zero rejection, multi-dot literal rejected (Number
+    not parseFloat), disallowed-char / empty / unbalanced / trailing / >256
+    guards; hash_text known sha256/md5 digests + bad-algo; csv_parse header-objects
+    / no-header arrays / quoted+escaped fields / CRLF / empty; base64 standard +
+    URL-safe round-trip + invalid-input rejection. tools 201 pass.
+  - muse-tools-text — the 4 text-formatting tools (text_stats, slugify,
+    kv_summarize, markdown_table), completing the muse-tools-* output-correctness
+    trilogy. text_stats counts a ZWJ emoji as ONE grapheme (not UTF-16 units) +
+    whitespace-only→zeros; slugify lowercases/collapses/edge-trims, NFKD diacritic
+    strip, empty→"untitled", maxLength truncate+re-trim; kv_summarize dotted
+    nested flatten + empty []/{} markers + null→""; markdown_table column-union
+    derivation, explicit-column order, nested cell as compact JSON (not
+    "[object Object]"), pipe/newline escaping, empty→"". tools 215 pass.
