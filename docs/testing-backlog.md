@@ -669,6 +669,15 @@ the generic layers below because they test what makes Muse an *agent*.
   PASS on nomic-embed-text. (Finding logged in the Rejected ledger: a "car
   insurance" near-miss returns confident on the HOME policy — NOT a defect, since
   cited recall quotes the source so the user sees the mismatch.) LOCAL OLLAMA ONLY.
+- [x] WEDGE cited-recall — TOP-RANK attribution assertion. The 4 confident cases
+  asserted only that the right source was PRESENT in the rendered list (`includes`)
+  — but topK=3 surfaces adjacent vocabulary-sharing docs too, so a ranking
+  regression that demoted the correct source below a neighbour would still pass.
+  Added `matches[0].source === topSource` to each confident case so "the source
+  quoted" means the CORRECT source LEADS, not merely appears. Each top-rank
+  pre-verified STABLE 3/3 (policy-2025.pdf / meeting-q3.md / ingested vpn /
+  ingested kitchen-quote); battery 6/6 ALL PASS on nomic-embed-text. This is the
+  load-bearing WEDGE invariant the `includes` check left unguarded. LOCAL OLLAMA ONLY.
 - [x] eval:tools actuator-set KO positive — added "거실 불 꺼줘." → home_action
   (requireArgs service) to the actuator confusable scenario. The state-changing
   actuator positives were all English; the KO cases there were only NEGATIVE
