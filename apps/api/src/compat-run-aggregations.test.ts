@@ -17,7 +17,10 @@ import {
 
 const call = (name: string, status: string, error?: string): ToolCallRecord =>
   ({ error, name, status }) as unknown as ToolCallRecord;
-const run = (over: Partial<AgentRunRecord> & { id: string; createdAt: Date }): AgentRunRecord =>
+// `over` is a loose bag (cast to AgentRunRecord below) so a test can pass the
+// runtime-real `error: null` that the DB row carries — AgentRunRecord types
+// error as string|undefined, but classifyRunError handles null at runtime.
+const run = (over: Record<string, unknown> & { id: string; createdAt: Date }): AgentRunRecord =>
   ({ completedAt: null, costUsd: "0", error: null, startedAt: null, ...over }) as unknown as AgentRunRecord;
 
 describe("toolCallRanking", () => {
