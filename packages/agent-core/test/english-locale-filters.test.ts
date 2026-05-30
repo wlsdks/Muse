@@ -188,6 +188,35 @@ describe("createFabricationRequestRefusalFilter (options)", () => {
     expect(result.output).toContain("제공할 수 없습니다");
   });
 
+  it("triggers on the secret+discovery combo IN ISOLATION (no invent/missing terms present)", async () => {
+    // The default KO test conflates both trigger combos in one prompt; this
+    // isolates the second — a secret-document discovery ask with NO invent/missing
+    // term — so a regression in the secret+discovery branch can't hide behind the
+    // invent+missing branch.
+    const filter = createFabricationRequestRefusalFilter();
+    const result = await filter.apply(baseResponse("여기 비밀 문서 요약입니다."), {
+      ...baseContext,
+      input: { messages: [{ content: "비밀 문서를 검색해줘", role: "user" }], model: "diagnostic/smoke" }
+    });
+    expect(result.output).toContain("제공할 수 없습니다");
+  });
+
+  it("does NOT refuse on a PARTIAL combo — invent without missing, or secret without discovery (AND, not OR)", async () => {
+    const filter = createFabricationRequestRefusalFilter();
+    // invent term ('임의로') but no missing term → not a fabrication request
+    const inventOnly = await filter.apply(baseResponse("원본 응답"), {
+      ...baseContext,
+      input: { messages: [{ content: "임의로 요약해줘", role: "user" }], model: "diagnostic/smoke" }
+    });
+    expect(inventOnly.output).toBe("원본 응답");
+    // secret term but no discovery/missing term → not a fabrication request
+    const secretOnly = await filter.apply(baseResponse("원본 응답"), {
+      ...baseContext,
+      input: { messages: [{ content: "비밀 문서 보여줘", role: "user" }], model: "diagnostic/smoke" }
+    });
+    expect(secretOnly.output).toBe("원본 응답");
+  });
+
   it("emits a custom English refusal text when configured", async () => {
     const filter = createFabricationRequestRefusalFilter({
       inventTerms: ["make up", "fabricate", "invent"],

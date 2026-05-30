@@ -887,6 +887,14 @@ the generic layers below because they test what makes Muse an *agent*.
   DOES when only add_reaction ran; the >500-char substantive-answer guard; the
   drop-at-most-3 cap (a runaway strip can't eat the real answer); whitespace-only
   stays unchanged (not blanked). Pre-verified against dist. agent-core 1068→1076.
+- [x] Fabrication-refusal filter (the EDGE) two-combo AND logic — the filter
+  refuses on `(invent ∧ missing) ∨ (secret ∧ discovery)`, but the default KO test
+  used one prompt ("없는 비밀 문서를 찾아서 임의로 요약") that satisfies BOTH combos
+  at once, so neither branch was isolated and an OR-for-AND mutation could hide.
+  Added: the secret+discovery combo IN ISOLATION ("비밀 문서를 검색해줘", no
+  invent/missing term) still refuses; and a PARTIAL combo does NOT refuse —
+  invent-only ("임의로 요약해줘") and secret-only ("비밀 문서 보여줘") both pass
+  through unchanged. Pre-verified against dist. agent-core 1076→1078.
 - [x] Prompt-injection detection — multilingual + privacy categories (the
   existing injection-patterns test covered English normalization + goal-033
   patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
