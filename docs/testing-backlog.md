@@ -418,6 +418,12 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] MCP admin-proxy pure helpers (untested) — security-relevant. compat-mcp-proxy.test.ts:
+  swaggerSourcePath URL-encodes the source name (a "../../admin?x=1" payload is
+  neutralized — no path-traversal/query injection); readAdminUrl accepts only
+  http(s) (rejects javascript:/file: schemes), prefers adminUrl, strips a trailing
+  /sse; parseMcpAccessPolicy coerces CSV allowlists to deduped sets + keeps only
+  real booleans, and rejects an allowlist over 300 entries (DoS guard). api 556 pass.
 - [x] MCP route shapers (untested) — two SECURITY behaviors are load-bearing.
   mcp-routes-shapers.test.ts: isSensitiveConfigKey matches authorization/password/
   secret/token/api-key/credential case-insensitively; sanitizeConfig RECURSIVELY
