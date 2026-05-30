@@ -35,6 +35,10 @@ Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처
 - 채널·음성: [messaging](design/messaging.md), [line-webhook](design/line-webhook.md), [voice-mode](design/voice-mode.md), [phase-d-chat-stream-routing](design/phase-d-chat-stream-routing.md)
 - 멀티에이전트·연합: [a2a-swarm](design/a2a-swarm.md)
 
+## 에이전트 하네스 (운영 구조)
+
+[`agent-harness/`](agent-harness/README.md) — 어떤 AI 에이전트가 들어와도 동일하게 협업하도록 하는 팀 구성·역할·핸드오프 정의(2026-05 검증된 멀티에이전트 패턴 기반). 시작: [팀 구성(team-roles)](agent-harness/team-roles.md).
+
 ## 자율 확장 루프 (운영)
 
 이 문서들은 Muse를 스스로 확장하는 자율 루프의 운영 장치입니다(제품 기능 설명이 아님):
