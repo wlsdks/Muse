@@ -467,6 +467,12 @@ the generic layers below because they test what makes Muse an *agent*.
   capped at 5, count-desc); dailyUsage (per-UTC-day cost+runs, date-asc);
   latencyDistribution (0-1s/1-5s/5-30s/30s+ buckets + missing-timestamp→unknown).
   api 503 pass.
+- [x] ② preference-inference KO negative — added a Korean one-off factual fix
+  ("내 약속 언제야?" → "아니 4시야") that must return NONE, not fabricate a durable
+  trait. The negative path (the whole risk per the battery's docstring) had only
+  one EN case; this proves the no-fabrication guard holds in the user's language.
+  Pre-verified STABLE 3/3 NONE; verify-preference-inference 4/4 ALL PASS on
+  qwen3:8b. LOCAL OLLAMA QWEN ONLY.
 - [x] WEDGE cited-recall — added a PERSONAL near-miss REFUSAL case ("what is my
   monthly rent?") to verify-cited-recall. The refuse path (Muse's "I'm not sure"
   trust half) had only one out-of-corpus case; rent is a topic the corpus could
