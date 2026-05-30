@@ -418,6 +418,28 @@ the generic layers below because they test what makes Muse an *agent*.
   (latency/budget/slo/drift/agent-metrics/snapshot), calendar local-provider,
   scheduler-locks (single-flight contention), skills skill-loader (fail-open
   directory walk + later-root-wins precedence).
+- [x] Messaging-provider reliability primitives (the daily-reliability seams —
+  the human-directed "harden actuators against rate-limit / 5xx / retry /
+  timeout" focus — were untested). provider-helpers.test.ts: clampOutboundText
+  truncates with an in-budget marker + drops a trailing lone high surrogate (no
+  invalid UTF-8 a platform would 400); clampInboundLimit default/clamp/trunc;
+  tryParseJson empty+malformed→undefined; fetchWithTimeout aborts a stalled
+  request and throws a timed-out error with cause (non-finite→default);
+  fetchReadWithRetry retries a transient 5xx with LINEAR backoff, honors
+  Retry-After, returns a non-retryable 4xx immediately, and re-throws a network
+  error after maxAttempts — NEVER used for send() (double-delivery). All via
+  injected fetch + sleep (no real network). messaging 316 pass.
+- [x] Prompt-injection detection — multilingual + privacy categories (the
+  existing injection-patterns test covered English normalization + goal-033
+  patterns; the Korean/CJK/Spanish and privacy patterns were undetected-in-test).
+  injection-patterns-multilingual.test.ts asserts DETECTION of: Korean
+  role-override / prompt-extraction / env-extraction / skeleton-key; credential
+  extraction (KO + EN, secret-then-verb order); cross_user_access and
+  command_injection (core to "it can't tell anyone"); Chinese/Japanese/Spanish
+  multilingual_injection; the Unicode TAG-range (U+E0000–E007F) strip evasion +
+  Cyrillic-homoglyph fold re-forming a split keyword; per-occurrence counting;
+  empty-input edge; a custom pattern set; and the zeroWidthCodePoints set
+  contents (NUL / ZWSP / BOM / RLO bidi-override). policy 94 pass.
 - [x] Outbound-safety DRAFT-FIRST content + refusal trail (summarizeToolDraft
   was untested; the existing gate test drove only no-argument tools so the draft
   was always empty). channel-approval-draft.test.ts asserts: email_send shows
@@ -453,3 +475,11 @@ the generic layers below because they test what makes Muse an *agent*.
     nested flatten + empty []/{} markers + null→""; markdown_table column-union
     derivation, explicit-column order, nested cell as compact JSON (not
     "[object Object]"), pipe/newline escaping, empty→"". tools 215 pass.
+  - muse-tools-helpers — the shared argument parsers underpinning every tool
+    (the foundation of ArgumentCorrectness), completing muse-tools-* exhaustion.
+    readOptionalString (non-empty else undefined), readRequiredDate (valid ISO
+    else undefined), readOptionalNumber (finite else 0, no string coercion), and
+    the load-bearing readOptionalDate THREE-state — absent (undefined/null/"")
+    vs invalid (non-string/unparseable) vs date — so a tool defaulting a missing
+    reference to now() never silently anchors to the wrong instant on a malformed
+    value. tools 222 pass.

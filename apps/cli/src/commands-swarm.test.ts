@@ -1,13 +1,15 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createPeerRegistry, receiveAndQuarantine, sendToPeer } from "@muse/a2a";
 import { addToQuarantine, listPending, readQuarantine } from "@muse/mcp";
 import { AuthoredSkillStore } from "@muse/skills";
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildSwarmSkillDraft, renderPending } from "./commands-swarm.js";
+import { buildSwarmSkillDraft, registerSwarmCommands, renderPending, renderShareDraft } from "./commands-swarm.js";
+import type { ProgramIO } from "./program.js";
 
 const SHARED = "swarm-secret";
 const ON = { MUSE_A2A_ENABLED: "true" } as const;
@@ -21,6 +23,85 @@ describe("renderPending", () => {
     expect(out).toContain("[abcd1234]");
     expect(out).toContain("from phone");
     expect(out).toContain("muse swarm promote <id>");
+  });
+});
+
+describe("renderShareDraft", () => {
+  it("previews the redacted content + the target peer and says nothing was sent", () => {
+    const out = renderShareDraft({ content: "set MTU 1380", peerId: "phone", redacted: true, skillName: "vpn-fix" });
+    expect(out).toContain("peer 'phone'");
+    expect(out).toContain("vpn-fix");
+    expect(out).toContain("secret was redacted");
+    expect(out).toContain("Re-run with --yes");
+  });
+});
+
+describe("muse swarm share — draft-first outbound", () => {
+  let dir: string;
+  let out: string[];
+  let posts: { url: string; body: string }[];
+  const prevEnv: Record<string, string | undefined> = {};
+  const setEnv = (k: string, v: string) => { prevEnv[k] = process.env[k]; process.env[k] = v; };
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "muse-share-"));
+    out = [];
+    posts = [];
+    setEnv("MUSE_A2A_ENABLED", "true");
+    setEnv("MUSE_A2A_PEERS_FILE", join(dir, "a2a-peers.json"));
+    setEnv("MUSE_AUTHORED_SKILLS_DIR", join(dir, "authored"));
+    await writeFile(join(dir, "a2a-peers.json"), JSON.stringify({
+      peers: [{ id: "phone", secret: "shared-secret", url: "https://phone.test/a2a" }],
+      selfId: "laptop"
+    }), "utf8");
+    await new AuthoredSkillStore({ dir: join(dir, "authored") }).writeOrPatch({
+      body: "Set MTU 1380 on wg0. key=sk-proj-AbCdEf0123456789GhIjKl0123456789",
+      description: "fix vpn",
+      name: "vpn-fix"
+    });
+  });
+  afterEach(async () => {
+    for (const [k, v] of Object.entries(prevEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await rm(dir, { force: true, recursive: true });
+  });
+
+  const program = (): { cmd: Command; io: ProgramIO } => {
+    const io = {
+      fetch: (async (url: string, init?: RequestInit) => { posts.push({ body: String(init?.body), url: String(url) }); return new Response("{}", { status: 200 }); }) as unknown as typeof fetch,
+      readPipedStdin: async () => "",
+      stderr: (m: string) => out.push(m),
+      stdout: (m: string) => out.push(m)
+    } as unknown as ProgramIO;
+    const cmd = new Command();
+    registerSwarmCommands(cmd, io);
+    return { cmd, io };
+  };
+
+  it("WITHOUT --yes: prints the draft (PII redacted) and sends NOTHING", async () => {
+    await program().cmd.parseAsync(["node", "x", "swarm", "share", "vpn-fix", "--to", "phone"], { from: "node" });
+    const text = out.join("");
+    expect(text).toContain("Draft");
+    expect(text).toContain("MTU 1380");
+    expect(text).not.toContain("sk-proj-AbCdEf0123456789GhIjKl0123456789"); // redacted in the preview
+    expect(posts).toHaveLength(0);
+  });
+
+  it("WITH --yes: sends the redacted skill to the peer as an A2A message/send", async () => {
+    await program().cmd.parseAsync(["node", "x", "swarm", "share", "vpn-fix", "--to", "phone", "--yes"], { from: "node" });
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.url).toBe("https://phone.test/a2a");
+    const body = JSON.parse(posts[0]!.body) as { method: string; params: { message: { parts: { data: { content: string; kind: string } }[] } } };
+    expect(body.method).toBe("message/send");
+    const data = body.params.message.parts[0]!.data;
+    expect(data.kind).toBe("skill");
+    expect(data.content).toContain("MTU 1380");
+    expect(data.content).not.toContain("sk-proj-AbCdEf0123456789GhIjKl0123456789"); // PII never crossed the wire
+  });
+
+  it("unknown peer → error, no send", async () => {
+    await program().cmd.parseAsync(["node", "x", "swarm", "share", "vpn-fix", "--to", "nobody", "--yes"], { from: "node" });
+    expect(out.join("")).toMatch(/unknown peer/);
+    expect(posts).toHaveLength(0);
   });
 });
 

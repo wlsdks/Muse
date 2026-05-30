@@ -1,4 +1,5 @@
 export { createPeerRegistry, type A2APeer, type PeerRegistry } from "./peer-registry.js";
+export { loadPeerConfig, type PeerConfig } from "./peer-config.js";
 export { canonicalizeEnvelope, signEnvelope, verifySignature } from "./signing.js";
 export {
   buildMuseAgentCard,
@@ -31,3 +32,10 @@ export {
   type QuarantineDepositInput,
   type ReceiveAndQuarantineOptions
 } from "./receive-quarantine.js";
+export {
+  AGENT_CARD_PATH,
+  createA2AHandler,
+  type A2AHandlerOptions,
+  type A2ARequest,
+  type A2AResponse
+} from "./handler.js";
