@@ -483,6 +483,27 @@ memory). When "the user surface" is named below, it means THIS, plus the
 `muse demo` / `muse ingest` / `muse learned` / installer surfaces. If the real
 entry has changed, confirm the actual command before building — never guess it.
 
+## THE LOCKED HEADLINE (2026-05-31, 진안's call — do not re-litigate)
+The ONE groundbreaking bet is the GROWS-WITH-YOU LOCAL CONFIDANT: an AI that
+learns you continuously, ENTIRELY on your machine, shows + lets you reverse
+every learned thing, and physically cannot leak — "grows with you, can't
+betray you." This is the empty chair: a cloud assistant cannot ship aggressive
+background self-learning safely (the user fears where the dossier goes); Muse
+can, BECAUSE it is local. Sections 3–5 below ARE this bet, in build order:
+  - The moat is INVISIBLE without the door, so the FRONT DOOR (section 3:
+    `muse demo` + one real ingest) is the FIRST push — you cannot show
+    "it learned me over a week" to someone who can't get in in 30 seconds.
+  - THEN felt self-learning (section 4 + directive B1), brake-and-proof-first.
+The target demo storyline every near-term slice serves:
+  "Install → ask my own notes → cited answer + honest 'I don't know' +
+   'nothing left your machine.' Leave a correction, walk away. Next session I
+   did nothing — Muse answers differently, and `muse learned` shows exactly
+   what it learned, from where, and lets me delete it. All local."
+A2A / agent-to-agent is PARKED — it fights "it can't tell anyone," it is the
+rivals' strong copyable axis, and the local Qwen chains poorly. Do NOT pick an
+A2A slice; if it ever returns it is far-future privacy-preserving delegation
+under the local boundary, never the headline.
+
 ## WHAT IS BUILT vs WHAT IS THE WORK NOW (the #1 failure this loop has)
 Fabrication=0 holds and is swept green across every surface. The grounding
 GATE is built. Therefore these remain BANNED as a deliverable (each always
@@ -844,6 +865,13 @@ not a tax on the SF dream; it is the completion of it.
 
 ## Changelog (living doc)
 
+- **2026-05-31 (b)** — 진안 LOCKED the headline: the **grows-with-you local
+  confidant** ("learns you continuously, all local, shows + reverses every
+  learned thing, can't leak") is THE groundbreaking bet. Front door first (the
+  moat is invisible without the door), then felt self-learning,
+  brake-and-proof-first. **A2A / agent-to-agent PARKED** (fights "it can't
+  tell anyone", rivals' strong axis, local Qwen chains poorly). Added the
+  "THE LOCKED HEADLINE" block to B0 + the target demo storyline.
 - **2026-05-31** — Created. Folded three sources into one living meta-prompt:
   (i) the multi-agent strategy meta-prompt (local-by-construction × cited
   recall; stop polishing the gate; close the front door); (ii) the SF

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  appendSystemSection,
   applyAgentSpecSystemPrompt,
   failMissingProvider,
   isModelMessage,
@@ -119,6 +120,46 @@ describe("latestUserPrompt", () => {
   it("returns empty string when no user message is present", () => {
     expect(latestUserPrompt([{ content: "x", role: "system" }])).toBe("");
     expect(latestUserPrompt([])).toBe("");
+  });
+});
+
+describe("appendSystemSection — injects a marked section into the system message", () => {
+  const u = (content: string) => ({ content, role: "user" as const });
+  const s = (content: string) => ({ content, role: "system" as const });
+
+  it("prepends a new system message carrying the marker when none exists", () => {
+    const out = appendSystemSection([u("hi")], "BODY", "pb");
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ role: "system" });
+    expect(out[0]!.content).toContain("<!-- muse:pb -->");
+    expect(out[0]!.content).toContain("BODY");
+  });
+
+  it("modifies ONLY the system message, leaving every other message identical", () => {
+    const out = appendSystemSection([u("a"), s("SYS"), u("b")], "BODY", "pb");
+    expect(out[0]!.content).toBe("a");
+    expect(out[2]!.content).toBe("b");
+    expect(out[1]!.content).toContain("SYS");
+    expect(out[1]!.content).toContain("BODY");
+  });
+
+  it("re-applying the SAME sectionId REPLACES the prior block (no duplicate marker)", () => {
+    let out = appendSystemSection([s("SYS")], "V1", "pb");
+    out = appendSystemSection(out, "V2", "pb");
+    const content = out[0]!.content;
+    expect(content).not.toContain("V1"); // old block stripped
+    expect(content).toContain("V2");
+    expect(content.match(/muse:pb/gu)?.length).toBe(1); // exactly one marker
+  });
+
+  it("re-applying one section PRESERVES a different section (strips only this marker's block)", () => {
+    let out = appendSystemSection([s("SYS")], "PLAYBOOK_BODY", "playbook");
+    out = appendSystemSection(out, "VETO_BODY", "veto");
+    out = appendSystemSection(out, "PLAYBOOK_V2", "playbook"); // re-apply playbook only
+    const content = out[0]!.content;
+    expect(content).toContain("VETO_BODY"); // the other section survives
+    expect(content).toContain("PLAYBOOK_V2");
+    expect(content).not.toContain("PLAYBOOK_BODY"); // old playbook block replaced
   });
 });
 
