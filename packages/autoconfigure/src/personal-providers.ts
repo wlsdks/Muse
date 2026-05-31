@@ -83,6 +83,7 @@ export {
   resolveUserSkillsDir,
   resolveVetoesFile,
   resolvePlaybookFile,
+  resolveSuppressedLessonsFile,
   resolvePlanCacheFile,
   resolveWorkspaceSkillsDir
 } from "./provider-paths.js";

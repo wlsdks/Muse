@@ -229,6 +229,7 @@ export {
   resolveTelegramOffsetFile,
   resolveVetoesFile,
   resolvePlaybookFile,
+  resolveSuppressedLessonsFile,
   resolvePlanCacheFile,
   resolveAuthoredSkillsDir
 } from "./personal-providers.js";

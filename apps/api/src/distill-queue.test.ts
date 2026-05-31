@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { enqueueLearnEvent, queryPlaybook, readPendingLearnEvents, type LearnCorrectionEvent } from "@muse/mcp";
+import { enqueueLearnEvent, queryPlaybook, readPendingLearnEvents, readSuppressedLessons, recordSuppressedLesson, type LearnCorrectionEvent } from "@muse/mcp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { distillQueuedCorrections } from "./distill-queue.js";
@@ -77,5 +77,42 @@ describe("distillQueuedCorrections — idle distill-consumer", () => {
 
   it("empty queue → no-op (zero)", async () => {
     expect(await distillQueuedCorrections(deps())).toBe(0);
+  });
+
+  describe("undo that teaches (B1 §5) — a suppressed correction is NOT re-learned", () => {
+    it("skips (before distilling) a correction matching an undone lesson's source, bumps its blocked count; a different correction still distills", async () => {
+      const suppressedLessonsFile = join(dir, "suppressed.json");
+      // the user undid a lesson distilled FROM this correction (source = the signal)
+      await recordSuppressedLesson(suppressedLessonsFile, {
+        createdAt: "2026-06-01T00:00:00Z", id: "x1", text: "don't reschedule onto weekends",
+        source: "stop rescheduling things to weekends", userId: "u1"
+      });
+      // re-enqueue the same SIGNAL (correction) → matched on source → blocked before the LLM call
+      await enqueueLearnEvent(queueFile, ev("a", "stop rescheduling things to weekends"));
+      const recorded = await distillQueuedCorrections(deps({ suppressedLessonsFile }));
+      expect(recorded).toBe(0); // suppressed → not re-learned
+      expect(await queryPlaybook(playbookFile, "u1")).toEqual([]);
+      expect((await readSuppressedLessons(suppressedLessonsFile))[0]?.blockedCount).toBe(1); // veto counted the block
+
+      // a DIFFERENT, unrelated correction is NOT blocked
+      await enqueueLearnEvent(queueFile, ev("b", "always include a budget summary in expense reports"));
+      const recorded2 = await distillQueuedCorrections(deps({ suppressedLessonsFile }));
+      expect(recorded2).toBe(1);
+      expect((await queryPlaybook(playbookFile, "u1")).map((s) => s.text)).toEqual(["learned: always include a budget summary in expense reports"]);
+    });
+
+    it("a suppression with no source can't block (best-effort) — the correction still distills", async () => {
+      const suppressedLessonsFile = join(dir, "suppressed2.json");
+      await recordSuppressedLesson(suppressedLessonsFile, {
+        createdAt: "2026-06-01T00:00:00Z", id: "x2", text: "some old undone lesson", userId: "u1"
+      });
+      await enqueueLearnEvent(queueFile, ev("a", "stop rescheduling things to weekends"));
+      expect(await distillQueuedCorrections(deps({ suppressedLessonsFile }))).toBe(1);
+    });
+
+    it("with no suppressedLessonsFile wired, behaves exactly as before (back-compat)", async () => {
+      await enqueueLearnEvent(queueFile, ev("a", "anything goes"));
+      expect(await distillQueuedCorrections(deps())).toBe(1);
+    });
   });
 });

@@ -292,7 +292,27 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   what I meant — give me bullet points, not prose" → idle distill → `muse learned`
   prints the probation strategy WITH "↳ learned from your correction: '<that
   correction>'". agent-core 1238 / mcp 1229 / api 817 / cli 1618 tests +
-  `pnpm lint` 0/0. The user can now SEE why Muse believes each thing. (this commit)
+  `pnpm lint` 0/0. The user can now SEE why Muse believes each thing. (74f32db4)
+
+- [x] **P36-14 Undo that TEACHES — `muse playbook undo` makes Muse forget AND
+  not re-learn it (B1 Slice 5, undo half; `--pause` deferred).** Plain `remove`
+  just deletes a strategy — the idle distiller happily re-learns it the next
+  time you give a similar correction. New `muse playbook undo <id>` removes the
+  strategy AND records a suppressed-lesson veto keyed on its SOURCE correction
+  (provenance from P36-13), so the idle distiller skips that signal BEFORE the
+  LLM call and bumps the veto's blocked counter. Matching the stable correction
+  (not the LLM's run-to-run paraphrase) is what makes it actually stick — a flaw
+  the live test caught and drove the redesign. New `suppressed-lessons.json`
+  store (mcp) + `resolveSuppressedLessonsFile` (autoconfigure); the idle
+  distiller (api) consults it. Proven by unit tests (store round-trip incl.
+  source + cap + blocked-counter in mcp; distiller skips a matching correction
+  before distilling, bumps the counter, a different correction still distills,
+  no-source can't block, back-compat without the file in api; `undo` removes +
+  records the veto with source in cli) + a LIVE full chain on qwen3:8b
+  (HOME-isolated, never real ~/.muse): correction → distilled → `undo` → SAME
+  correction re-enqueued distilled **0** (blockedCount 1) while a DIFFERENT
+  correction still learned. mcp 1234 / api 823 / cli 1619 tests + `pnpm lint`
+  0/0. The user is now in control of what Muse keeps learning. (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

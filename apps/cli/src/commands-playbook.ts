@@ -9,8 +9,8 @@
 import { randomUUID } from "node:crypto";
 
 import { clusterByTextSimilarity, mergePlaybookStrategies, PLAYBOOK_AVOID_BELOW, strategyTextSimilarity } from "@muse/agent-core";
-import { createMuseRuntimeAssembly, resolvePlaybookFile } from "@muse/autoconfigure";
-import { adjustPlaybookReward, queryPlaybook, recordPlaybookStrategy, removePlaybookStrategy, type PlaybookEntry } from "@muse/mcp";
+import { createMuseRuntimeAssembly, resolvePlaybookFile, resolveSuppressedLessonsFile } from "@muse/autoconfigure";
+import { adjustPlaybookReward, queryPlaybook, recordPlaybookStrategy, recordSuppressedLesson, removePlaybookStrategy, type PlaybookEntry } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { distillSessionCorrections } from "./chat-distill-corrections.js";
@@ -19,6 +19,10 @@ import { resolveDefaultUserKey } from "./user-id.js";
 
 function playbookFile(): string {
   return resolvePlaybookFile(process.env as Record<string, string | undefined>);
+}
+
+function suppressedLessonsFile(): string {
+  return resolveSuppressedLessonsFile(process.env as Record<string, string | undefined>);
 }
 
 export function registerPlaybookCommands(program: Command, io: ProgramIO): void {
@@ -83,6 +87,32 @@ export function registerPlaybookCommands(program: Command, io: ProgramIO): void 
       }
       await removePlaybookStrategy(playbookFile(), match.id);
       io.stdout(`Removed strategy [${match.id.slice(0, 12)}]\n`);
+    });
+
+  playbook
+    .command("undo")
+    .description("Remove a strategy AND teach Muse not to re-learn it — unlike `remove`, the idle distiller won't bring this lesson back from a similar future correction")
+    .argument("<id>", "Strategy id (prefix from `playbook list`)")
+    .action(async (id: string) => {
+      const all = await queryPlaybook(playbookFile());
+      const match = all.find((e) => e.id === id) ?? all.find((e) => e.id.startsWith(id));
+      if (!match) {
+        io.stdout(`(no strategy matches "${id}")\n`);
+        return;
+      }
+      await removePlaybookStrategy(playbookFile(), match.id);
+      await recordSuppressedLesson(suppressedLessonsFile(), {
+        createdAt: new Date().toISOString(),
+        id: match.id,
+        text: match.text,
+        userId: match.userId,
+        // The correction it was distilled from (provenance) is the stable signal
+        // the idle distiller matches future corrections against.
+        ...(match.source ? { source: match.source } : {})
+      });
+      io.stdout(match.source
+        ? `Undid strategy [${match.id.slice(0, 12)}] — Muse won't re-learn this from a similar correction.\n`
+        : `Undid strategy [${match.id.slice(0, 12)}].\n`);
     });
 
   playbook

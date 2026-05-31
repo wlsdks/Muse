@@ -504,6 +504,15 @@ export {
   type PlaybookEntry
 } from "./personal-playbook-store.js";
 export {
+  incrementSuppressionBlocked,
+  MAX_SUPPRESSED_LESSONS,
+  querySuppressedLessons,
+  readSuppressedLessons,
+  recordSuppressedLesson,
+  writeSuppressedLessons,
+  type SuppressedLesson
+} from "./suppressed-lessons-store.js";
+export {
   adjustSkillReward,
   isSkillAvoided,
   readSkillRewards,

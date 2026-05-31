@@ -23,11 +23,43 @@ describe("muse playbook command registration", () => {
     expect(distill?.description()).toContain("last chat session");
   });
 
-  it("keeps add/list/remove/reward alongside distill", () => {
+  it("keeps add/list/remove/reward/undo alongside distill", () => {
     const program = new Command();
     registerPlaybookCommands(program, noopIo);
-    for (const name of ["add", "list", "remove", "reward", "distill"]) {
+    for (const name of ["add", "list", "remove", "reward", "undo", "distill"]) {
       expect(findSub(program, ["playbook", name])).toBeDefined();
+    }
+  });
+});
+
+describe("muse playbook undo — remove AND teach not to re-learn (B1 §5)", () => {
+  it("removes the strategy and records a suppressed lesson with its text", async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { recordPlaybookStrategy, queryPlaybook, querySuppressedLessons } = await import("@muse/mcp");
+    const dir = await mkdtemp(join(tmpdir(), "muse-pbundo-"));
+    const file = join(dir, "playbook.json");
+    const suppressed = join(dir, "suppressed.json");
+    const prevPb = process.env.MUSE_PLAYBOOK_FILE;
+    const prevSup = process.env.MUSE_SUPPRESSED_LESSONS_FILE;
+    process.env.MUSE_PLAYBOOK_FILE = file;
+    process.env.MUSE_SUPPRESSED_LESSONS_FILE = suppressed;
+    try {
+      await recordPlaybookStrategy(file, { createdAt: "2026-01-01T00:00:00Z", id: "pb_undo1", text: "always answer in bullet points", origin: "grounded", source: "no, give me bullets not prose", userId: "u" });
+      const out: string[] = [];
+      const io = { stderr: () => undefined, stdout: (m: string) => out.push(m) } as unknown as IO;
+      const program = new Command();
+      registerPlaybookCommands(program, io);
+      await program.parseAsync(["node", "x", "playbook", "undo", "pb_undo"], { from: "node" }); // prefix id
+      expect(out.join("")).toContain("won't re-learn");
+      expect(await queryPlaybook(file)).toEqual([]); // removed
+      const vetoes = await querySuppressedLessons(suppressed, "u");
+      expect(vetoes.map((v) => v.text)).toEqual(["always answer in bullet points"]); // taught
+      expect(vetoes[0]?.source).toBe("no, give me bullets not prose"); // the signal carried from provenance
+    } finally {
+      if (prevPb === undefined) delete process.env.MUSE_PLAYBOOK_FILE; else process.env.MUSE_PLAYBOOK_FILE = prevPb;
+      if (prevSup === undefined) delete process.env.MUSE_SUPPRESSED_LESSONS_FILE; else process.env.MUSE_SUPPRESSED_LESSONS_FILE = prevSup;
     }
   });
 });

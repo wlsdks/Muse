@@ -10,11 +10,14 @@
 import type { ModelProvider } from "@muse/model";
 import {
   distillStrategyFromCorrection,
+  strategyTextSimilarity,
   type CorrectionExchange,
   type DistilledStrategy
 } from "@muse/agent-core";
 import {
+  incrementSuppressionBlocked,
   markLearnEventsDone,
+  querySuppressedLessons,
   readPendingLearnEvents,
   recordPlaybookStrategy,
   type LearnCorrectionEvent
@@ -25,6 +28,15 @@ export interface DistillQueuedDeps {
   readonly playbookFile: string;
   readonly model: string;
   readonly modelProvider: Pick<ModelProvider, "generate">;
+  /**
+   * "Undo that teaches" (B1 §5): the suppressed-lessons store. When set, a
+   * freshly-distilled strategy that closely matches a lesson the user UNDID is
+   * NOT re-recorded (the veto's blocked counter is bumped instead). Omitted ⇒
+   * no suppression check (back-compat).
+   */
+  readonly suppressedLessonsFile?: string;
+  /** Similarity ≥ this ⇒ a new lesson counts as the suppressed one. Default 0.6. */
+  readonly suppressionThreshold?: number;
   /** ≤ this many events distilled per tick (the LLM call is the cost). Default 1. */
   readonly maxPerTick?: number;
   /** Injectable clock + id for tests. */
@@ -53,6 +65,20 @@ export async function distillQueuedCorrections(deps: DistillQueuedDeps): Promise
     doneIds.push(event.id); // consumed regardless — a dud signal must not jam the queue
     if (event.correction.trim().length === 0) {
       continue; // grounding fence: no real correction ⇒ no lesson
+    }
+    // "Undo that teaches" (B1 §5): if the user previously UNDID a lesson learned
+    // from THIS correction, don't silently re-learn it. Match the incoming
+    // correction (the stable signal) against the veto's source — NOT the LLM's
+    // paraphrased output, which varies run to run — and skip BEFORE the costly
+    // distill call, bumping the veto's blocked counter.
+    if (deps.suppressedLessonsFile) {
+      const threshold = deps.suppressionThreshold ?? 0.6;
+      const suppressed = await querySuppressedLessons(deps.suppressedLessonsFile, event.userId);
+      const match = suppressed.find((s) => s.source !== undefined && strategyTextSimilarity(event.correction, s.source) >= threshold);
+      if (match) {
+        await incrementSuppressionBlocked(deps.suppressedLessonsFile, match.id);
+        continue;
+      }
     }
     const exchange = exchangeFromEvent(event);
     const strategy = await distill(exchange, { model: deps.model, modelProvider: deps.modelProvider });
