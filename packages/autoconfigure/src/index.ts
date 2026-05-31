@@ -212,6 +212,7 @@ export {
   resolveMessagingCredentialsFile,
   resolveModelKeysFile,
   resolveNotesDir,
+  resolveNotesIndexFile,
   resolveActionLogFile,
   resolvePendingApprovalsFile,
   resolveObjectivesFile,

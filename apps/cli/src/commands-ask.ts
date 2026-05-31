@@ -24,11 +24,10 @@
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
-import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
-import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
+import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
 import { listReflections, readEpisodes, readReflections, readReminders, readTasks, type PersistedReminder, type PersistedTask } from "@muse/mcp";
@@ -251,18 +250,41 @@ interface ScoredChunk {
 const ASK_MMR_LAMBDA = 0.7;
 
 /**
- * Pick the top-K note chunks to ground on with Maximal Marginal Relevance
- * (Carbonell & Goldstein, SIGIR 1998) instead of pure cosine. On a small
- * local context window, three near-duplicate chunks (the same fact echoed
- * across daily-inbox notes) crowd out diverse grounding; MMR penalises a
- * candidate that merely repeats an already-picked one. Reuses the shared
- * `selectByMmr`. When there's nothing to trim (candidates ≤ K) it's just
- * the cosine sort, so behaviour only changes when diversification matters.
+ * Pick the top-K note chunks to ground on. When a `query` is supplied,
+ * selection is HYBRID — the embedding-cosine rank is fused with a lexical
+ * keyword-overlap rank via Reciprocal Rank Fusion (Cormack et al., SIGIR
+ * 2009), the same hybrid the `knowledge_search` path already uses (P23).
+ * The headline `muse ask` path was embedding-ONLY, so a query with strong
+ * distinctive terms ("WireGuard", "MTU") could rank the one answer-bearing
+ * note below near-misses on nomic's compressed cosine and fall out of the
+ * default top-K — a FALSE REFUSAL on a question the corpus answers. The
+ * fused relevance is normalised to [0,1] before MMR so the diversity term
+ * (cosine-similarity scale) stays comparable; each returned chunk keeps its
+ * ABSOLUTE cosine `score`, so the CRAG confidence framing is unchanged.
+ * Without a query (or with no content tokens) it is the prior cosine MMR.
  */
-export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: number, lambda = ASK_MMR_LAMBDA): ScoredChunk[] {
+export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: number, lambda = ASK_MMR_LAMBDA, query?: string): ScoredChunk[] {
   const sorted = [...candidates].sort((a, b) => b.score - a.score);
   if (topK <= 0 || sorted.length <= topK) {
     return sorted.slice(0, Math.max(0, topK));
+  }
+  const queryTokens = query ? lexicalTokens(query) : new Set<string>();
+  if (queryTokens.size > 0) {
+    const keyOf = (i: number): string => String(i);
+    const cosRanked = sorted
+      .map((c, i) => ({ i, s: c.score }))
+      .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
+    const lexRanked = sorted
+      .map((c, i) => ({ i, s: lexicalOverlap(queryTokens, c.chunk.text) }))
+      .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
+    const fused = fuseByReciprocalRank([cosRanked, lexRanked]);
+    const maxFused = Math.max(1e-9, ...fused.values());
+    const order = selectByMmr(
+      sorted.map((c, i) => ({ key: keyOf(i), relevance: (fused.get(keyOf(i)) ?? 0) / maxFused, embedding: c.chunk.embedding })),
+      lambda,
+      topK
+    );
+    return order.map((k) => sorted[Number(k)]!);
   }
   const order = selectByMmr(
     sorted.map((c, i) => ({ key: String(i), relevance: c.score, embedding: c.chunk.embedding })),
@@ -281,10 +303,23 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
  * `none` keeps the plain header (the "no relevant notes" block already shows).
  * Pure + exported for direct unit coverage.
  */
-export function notesGroundingFraming(scored: readonly ScoredChunk[]): { readonly verdict: RetrievalConfidence; readonly header: string; readonly guidance?: string } {
-  const verdict = scored.length === 0
+export function notesGroundingFraming(scored: readonly ScoredChunk[], query?: string): { readonly verdict: RetrievalConfidence; readonly header: string; readonly guidance?: string } {
+  const cosineVerdict = scored.length === 0
     ? "none"
-    : classifyRetrievalConfidence(scored.map((s) => ({ cosine: s.score, score: s.score, source: s.file, text: s.chunk.text })));
+    : classifyRetrievalConfidence(scored.map((s) => ({ cosine: s.score, source: s.file, score: s.score, text: s.chunk.text })));
+  // nomic's cosine space is compressed, so a genuinely-relevant note can sit
+  // just below the confident cosine threshold and get falsely flagged LOW —
+  // a soft false-refusal ("verify, may not be in your notes") on a correctly
+  // cited answer, which erodes the trust edge. A STRONG lexical match (≥2
+  // distinct query content tokens present in a grounded chunk) is a
+  // high-precision signal that the corpus really does cover the question, so
+  // it upgrades an ambiguous cosine verdict to confident. A must-refuse
+  // question shares no content tokens, so it stays LOW/none — fabrication=0
+  // is preserved (and the citation gate is the hard backstop regardless).
+  const queryTokens = query ? lexicalTokens(query) : new Set<string>();
+  const strongLexical = queryTokens.size >= 2
+    && scored.some((s) => lexicalOverlap(queryTokens, s.chunk.text) >= 2);
+  const verdict: RetrievalConfidence = cosineVerdict === "ambiguous" && strongLexical ? "confident" : cosineVerdict;
   if (verdict === "ambiguous") {
     return {
       guidance: "The USER NOTES below are only WEAK matches (low retrieval confidence). Do NOT present them as established fact; if they do not clearly answer the question, say you are not sure rather than cite a weak match.",
@@ -303,7 +338,7 @@ interface NotesIndex {
 }
 
 function notesIndexPath(): string {
-  return join(homedir(), ".muse", "notes-index.json");
+  return resolveNotesIndexFile(process.env as Record<string, string | undefined>);
 }
 
 function defaultUserKey(user: string | undefined, persona: string | undefined): string {
@@ -533,10 +568,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             const summary = await reindexNotes({
               dir: notesDir,
               indexPath: notesIndexPath(),
-              model: existingIndexModel ?? embedModel
+              model: existingIndexModel ?? embedModel,
+              // Stream per-file progress so a first ingest of a real
+              // corpus (PDFs embed slowly on CPU) shows life instead of
+              // a silent multi-second hang, and a skipped unreadable
+              // file is visible rather than swallowed.
+              onProgress: (line) => io.stderr(`  ${line}\n`)
             });
-            if (summary.embedded > 0) {
-              io.stderr(`(auto-refreshed notes index: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached)\n`);
+            if (summary.embedded > 0 || summary.failed > 0) {
+              io.stderr(`(notes index refreshed: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached, ${summary.failed.toString()} skipped)\n`);
             }
           }
         } catch (cause) {
@@ -580,10 +620,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           file: f.path,
           score: cosine(queryVec!, chunk.embedding)
         })));
-        // MMR over the candidates (not a plain top-K cosine slice) so the
-        // grounding fed to the small local model is diverse, not three
-        // near-duplicate chunks of the same note.
-        scored = diversifyAskChunks(allScored, topK);
+        // Hybrid (cosine + lexical RRF) MMR selection so a query's
+        // distinctive keywords surface the answer-bearing note even when
+        // nomic's compressed cosine ranks it below near-misses — and the
+        // grounding stays diverse, not three near-duplicate chunks.
+        scored = diversifyAskChunks(allScored, topK, ASK_MMR_LAMBDA, query);
       } catch (cause) {
         notesUnavailable = true;
         const detail = cause instanceof Error ? cause.message : String(cause);
@@ -710,7 +751,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const contextChunks = reorderForLongContext(scored);
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
-      const notesFraming = notesGroundingFraming(scored);
+      const notesFraming = notesGroundingFraming(scored, query);
       const contextBlock = notesUnavailable
         ? "(notes search unavailable this turn — answer from the other grounding sources)"
         : contextChunks.length === 0

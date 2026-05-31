@@ -95,6 +95,7 @@ import { registerSetupVoiceCommand } from "./commands-setup-voice.js";
 import { registerBriefCommand } from "./commands-brief.js";
 import { registerApprovalCommands } from "./commands-approval.js";
 import { registerAskCommand } from "./commands-ask.js";
+import { registerDemoCommand } from "./commands-demo.js";
 import { registerExportCommand } from "./commands-export.js";
 import { registerCompletionCommand } from "./commands-completion.js";
 import { registerImportCommand } from "./commands-import.js";
@@ -501,6 +502,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerJobCommands(program, io);
   registerApprovalCommands(program, io);
   registerAskCommand(program, io);
+  registerDemoCommand(program, io);
   registerExportCommand(program, io);
   registerImportCommand(program, io);
   registerSessionCommands(program, io);

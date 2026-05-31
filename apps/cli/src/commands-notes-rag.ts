@@ -320,8 +320,9 @@ export async function reindexNotes(
     let body: string;
     try {
       body = await extractDocumentText(path);
-    } catch {
+    } catch (cause) {
       failed += 1;
+      options.onProgress?.(`✗ ${path} (could not read — skipped: ${cause instanceof Error ? cause.message : String(cause)})`);
       continue;
     }
     const overlap = Math.min(200, Math.max(0, Math.floor(chunkChars / 20)));

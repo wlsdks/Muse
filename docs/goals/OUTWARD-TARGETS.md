@@ -64,6 +64,105 @@ turn; never half-shipped.
 
 ## Active target
 
+**P34 — The front door (loop-v2 headline: the moat is invisible without
+the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able
+to SEE Muse's edge — a cited answer AND an honest refusal — in seconds, with
+zero dev toolchain and no notes ingested yet, BEFORE they invest in getting
+their real corpus in. The first rung is a bundled-corpus demo; later rungs are
+one-command install (detect/pull Ollama + model), one real ingest format, and
+continuous folder-watch ingest. Direction: loop-v2 locked headline (front door
+FIRST, then felt self-learning).
+
+- [x] **P34-1 `muse demo` — the zero-setup cited-answer + honest-refusal
+  demo.** `muse demo` runs the REAL `muse ask` recall path against a bundled
+  sample corpus (shipped in the cli package) inside a throwaway HOME — a
+  HOME/USERPROFILE override + the new `MUSE_NOTES_INDEX_FILE` resolver isolate
+  every `~/.muse/*` default so the user's real data is never touched — and
+  shows ONE answerable question (cited "MTU 1380" + openable 📎 Sources) and
+  ONE must-refuse question (honest "I'm not sure", no fabrication). `--top 12`
+  injects the whole tiny corpus so the answerable note is never ranked out.
+  Proven LIVE on qwen3:8b via the built CLI + `commands-demo.test.ts` +
+  autoconfigure tests; `pnpm lint` 0/0. (c325f420)
+
+- [x] **P34-2 Corpus ingest shows progress + tolerates a bad file VISIBLY.**
+  The engine already walked `.pdf`/`.txt` and had partial-failure tolerance,
+  but the headline `muse ask` path SWALLOWED it: a first ingest was a silent
+  hang and a corrupt file was skipped with zero feedback. Now `muse ask`'s
+  auto-reindex streams per-file progress (`+ <file> (n chunks embedded)`) and
+  the extract-failure path emits `✗ <file> (could not read — skipped:
+  <reason>)`, so a beachhead user sees life during a slow first ingest and a
+  corrupt/unreadable file is visibly skipped, not fatal. Proven LIVE on
+  qwen3:8b against a `.muse-dev` mock corpus (seed notes + a corrupt `.pdf`):
+  streamed progress + the ✗ skip line, then a cited "MTU 1380" answer + 📎
+  Sources AND an honest refusal; `commands-notes-rag.test.ts` + `pnpm lint`
+  0/0. (6652986c)
+
+- [x] **P34-3 Kill the false refusal — hybrid recall on the headline path.**
+  At default top-3 `muse ask` false-refused an answerable question because the
+  chat-only path ranked notes by PURE embedding cosine, so a query with strong
+  keywords ("WireGuard", "MTU") ranked the answer note ~5th and it fell out of
+  the top-K (the GUARD-THE-EDGE failure: a false refusal makes "honest" into
+  "useless"). The headline path now fuses cosine + lexical keyword ranks via
+  RRF (the same hybrid the `knowledge_search` path already used, P23), reusing
+  agent-core's lexical primitives, no re-embedding, absolute cosine preserved
+  for the confidence framing. Proven LIVE on qwen3:8b at DEFAULT top-3 against
+  a `.muse-dev` mock corpus: the WireGuard + rent questions now return cited
+  answers (vpn note ranked FIRST) while the sister's-birthday question still
+  honestly refuses; `commands-ask-mmr.test.ts` + `pnpm lint` 0/0. (faa905b4)
+
+- [x] **P34-4 No false LOW-confidence caution on a correct cited answer.**
+  The CRAG framing flagged a correctly-grounded answer "⚠ LOW confidence —
+  verify, may not be in your notes" whenever the top match's absolute cosine
+  sat below threshold (nomic compresses cosine), undercutting trust in an
+  answer that IS grounded — a soft false-refusal. The framing now considers
+  lexical strength: a strong keyword match (≥2 distinct query content tokens
+  in a grounded chunk) upgrades an ambiguous-cosine verdict to confident,
+  while a must-refuse question (no shared tokens) stays LOW and the citation
+  gate remains the hard backstop (fabrication=0 preserved). Proven LIVE on
+  qwen3:8b at default top-3: the WireGuard answer now shows a clean grounding
+  line + cited "MTU 1380", while the sister's-birthday question still shows
+  LOW confidence and refuses; `commands-ask-crag.test.ts` + `pnpm lint` 0/0.
+  (a2dedb48)
+
+- [x] **P34-5 Bulk folder ingest — get a real corpus in, in one command.**
+  `muse read <dir> --save-to-notes <prefix>` now ingests every supported
+  document (pdf/txt/md/markdown/log/csv) under a directory (recursively) into
+  the notes corpus as `.md` notes under the prefix, so a beachhead user with a
+  pile of downloads/exports gets them all searchable in ONE command instead of
+  one `muse read` per file. Per-file progress + partial-failure tolerance (a
+  corrupt file is skipped VISIBLY, not fatal). Bug found+fixed live: notes were
+  first saved without a `.md` extension so the index walker skipped them and
+  `muse ask` couldn't cite them — the save now appends `.md`. Proven LIVE on
+  qwen3:8b against a `.muse-dev` docs folder (a .txt, a nested .md, a corrupt
+  .pdf, isolated HOME): "ingested 2, skipped 1", then `muse ask` cited both
+  ingested facts (warranty.md, manuals/trip.md) + 📎 Sources and honestly
+  refused an uncovered question; `commands-read.test.ts` + `pnpm lint` 0/0.
+  (8f142b61)
+
+- [x] **P34-6 Single-file `--save-to-notes` is actually searchable.** The
+  single-file `muse read <file> --save-to-notes <id>` path told the user "now
+  searchable" but saved a bare extensionless note the notes-index walker
+  skipped, so `muse ask` answered "I don't have access" on a just-ingested
+  fact (the single-file sibling of P34-5's bug). A shared
+  `ensureNoteMarkdownExtension` now guarantees an indexable `.md`/`.markdown`/
+  `.txt` extension on both the single-file and bulk paths. Proven LIVE on
+  qwen3:8b (isolated HOME): `muse read garage.txt --save-to-notes garage` →
+  `garage.md`, and `muse ask` cited "7731 [from garage.md]" (was "I don't have
+  access"), while an uncovered question still honestly refused;
+  `commands-read.test.ts` + `pnpm lint` 0/0. (c8441e84)
+
+- [x] **P34-7 Continuous folder-watch corpus ingest — the corpus stays live.**
+  `muse watch-folder --ingest` now folds each newly-dropped document INTO the
+  notes corpus as a citable `.md` note (searchable via `muse ask`) instead of
+  firing a proactive notice — the day-2 "stays live without re-running ingest"
+  habit, with no manual step. Reuses the `muse read` extract/save contract, so
+  a corrupt drop is skipped (✗) without crashing the watcher; the original is
+  archived. Proven LIVE on qwen3:8b (isolated HOME): dropped `pool.txt` + a
+  corrupt `.pdf` into a watched inbox → ingested `pool.txt → inbox/pool.md`,
+  skipped the corrupt one, then `muse ask` cited "4417 [from inbox/pool.md]"
+  and honestly refused an uncovered question; `commands-watch-folder.test.ts`
+  + `pnpm lint` 0/0. (this commit)
+
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,
 so RL lives in the MEMORY, not the weights).** Close the self-improvement
 loop: today Muse only LEARNS new strategies (ReasoningBank distillation,

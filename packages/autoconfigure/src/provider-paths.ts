@@ -38,6 +38,10 @@ export function resolveNotesDir(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_NOTES_DIR", "notes");
 }
 
+export function resolveNotesIndexFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_NOTES_INDEX_FILE", "notes-index.json");
+}
+
 export function resolveCredentialsFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_CREDENTIALS_FILE", "credentials.json");
 }
