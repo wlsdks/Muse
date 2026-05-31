@@ -393,6 +393,26 @@ the generic layers below because they test what makes Muse an *agent*.
     chunks/embed, confidentAt + maxChars forwarded. agent-core 1117→1138. (11 survivors:
     REFLECTION-style prompt/object literals + the hybrid-flag and topK-spread mutants that
     leave the cosine-based decision unchanged — equivalent for this gate.)
+  - TWENTY-SEVENTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    preference-inference.ts` was thinly covered (5 happy-path tests, **42.67%**) despite
+    being the behaviour-inferred half of the user model — it learns WHO THE USER IS from a
+    correction (ReasoningBank, arXiv 2509.25140) and must NOT fabricate a persona trait.
+    Deepened to 17 tests → **72.00%** (54 killed, 20 survived). The centerpiece is the
+    anti-fabrication contract: `parseInferredPreference` REJECTS the vacuous
+    accuracy/correctness cluster ("prefers accurate information", "correct", "precise",
+    "truthful", "honest", "reliable", "up-to-date") EVEN WITH a valid category — proving the
+    vacuous guard fires independently of the category check (every user wants accuracy; it
+    is not a trait). Also: NONE-as-prefix (trailing rationale), missing-preference / 2-char
+    trait floor (`< 2` not `<= 2`), invalid-BUT-present category rejected (the `||` guard,
+    not just a missing one), all five categories + case-fold, confidence default 0.6 on
+    absent/unparseable (never NaN) + fractional/leading-dot parse; and the
+    inferPreferenceFromCorrection wiring against a capturing fake provider — secret
+    redaction of the transcript before the model, optional-request line omission,
+    temperature 0.3 / maxOutputTokens 80 defaults + overrides, custom-redact. (Confirmed via
+    dist that a negative confidence defaults to 0.6 — the `-` breaks the anchored regex
+    match — so the lower clamp is unreachable and NOT asserted.) agent-core 1138→1150.
+    (20 survivors: confidence/preference/category regex char-class variants + equivalent
+    true?/if(false) defensive branches + prompt StringLiterals — pattern-coverage.)
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
