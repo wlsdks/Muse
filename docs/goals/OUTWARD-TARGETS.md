@@ -161,7 +161,19 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   +1 reinforce → injected 1), with cited-answer+refusal unaffected (no recall
   regression). agent-core 1234 / mcp 1218 / api 815 tests + `pnpm lint` 0/0.
   Idle self-learning is now SAFE to enable; remaining polish = `muse learned`
-  shows the probation flag. (this commit)
+  shows the probation flag. (a666476c)
+
+- [x] **P36-9 `muse learned` shows idle/probation learning (visible + felt).**
+  Idle-distilled strategies now render under "Learning while idle (on probation
+  — recorded, NOT yet applied until you reinforce it)", excluded from
+  trusted/avoided; a graduated one moves to Trusted. So the user SEES the
+  unattended learning + that it's held back (legibility precondition to
+  trusting it). Proven by unit tests (probation section; not double-listed;
+  renders alone) + a LIVE full chain on qwen3:8b (correction → idle distill →
+  `muse learned` prints the ⟨probation⟩ strategy), cited-answer+refusal
+  unaffected. cli 1610 tests + `pnpm lint` 0/0. The idle self-learning loop is
+  now FELT + VISIBLE end-to-end (correction → idle distill → probation → seen
+  in `muse learned` → reinforce to graduate). (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

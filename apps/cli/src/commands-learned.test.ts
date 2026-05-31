@@ -38,6 +38,30 @@ describe("renderLearnedDigest", () => {
     expect(out).toContain("skill: bad-skill  ⟨-4⟩");
   });
 
+  it("shows idle-distilled probation strategies under their own heading, not as trusted/avoided", () => {
+    const out = renderLearnedDigest({
+      reflections: [],
+      skills: [],
+      strategies: [
+        { probation: true, tag: "scheduling", text: "default ambiguous dates to the next business day" },
+        { reward: 2, text: "keep emails under four sentences" } // graduated/trusted, not probation
+      ]
+    });
+    expect(out).toContain("on probation");
+    expect(out).toContain("default ambiguous dates to the next business day (scheduling)  ⟨probation⟩");
+    // a probation strategy is NOT listed as trusted
+    const trustedBlock = out.split("on probation")[0];
+    expect(trustedBlock).not.toContain("default ambiguous dates");
+    // the graduated one still shows as trusted
+    expect(out).toContain("keep emails under four sentences");
+  });
+
+  it("the probation section alone is enough to render (not the empty hint)", () => {
+    const out = renderLearnedDigest({ reflections: [], skills: [], strategies: [{ probation: true, text: "x" }] });
+    expect(out).toContain("on probation");
+    expect(out).not.toContain("hasn't learned anything");
+  });
+
   it("shows the most recent reflections, newest first, capped at 5", () => {
     const reflections = Array.from({ length: 7 }, (_unused, i) => ({ createdAtMs: i * 1000, insight: `insight ${i.toString()}` }));
     const out = renderLearnedDigest({ reflections, skills: [], strategies: [] });

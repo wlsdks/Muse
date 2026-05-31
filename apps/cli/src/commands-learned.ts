@@ -23,7 +23,7 @@ const TRUST_AT = 1; // reward ≥ this = a strategy/skill Muse has learned to tr
 const MAX_REFLECTIONS = 5;
 
 export interface LearnedDigestInput {
-  readonly strategies: readonly { readonly text: string; readonly tag?: string; readonly reward?: number }[];
+  readonly strategies: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly probation?: boolean }[];
   readonly skills: readonly { readonly name: string; readonly reward: number }[];
   readonly reflections: readonly { readonly insight: string; readonly createdAtMs: number }[];
 }
@@ -33,11 +33,15 @@ const rewardOf = (value: number | undefined): number =>
 
 /** Render the digest. Pure (data in, text out) so it is directly testable. */
 export function renderLearnedDigest(input: LearnedDigestInput): string {
+  // Probation strategies (learned UNATTENDED on idle) are shown in their own
+  // section — recorded + visible but not yet applied — and excluded from the
+  // trusted/avoided lists so they're never double-listed.
+  const probationStrategies = input.strategies.filter((s) => s.probation === true);
   const trustedStrategies = input.strategies
-    .filter((s) => rewardOf(s.reward) >= TRUST_AT)
+    .filter((s) => s.probation !== true && rewardOf(s.reward) >= TRUST_AT)
     .sort((a, b) => rewardOf(b.reward) - rewardOf(a.reward));
   const trustedSkills = input.skills.filter((s) => s.reward >= TRUST_AT).sort((a, b) => b.reward - a.reward);
-  const avoidedStrategies = input.strategies.filter((s) => rewardOf(s.reward) <= PLAYBOOK_AVOID_BELOW);
+  const avoidedStrategies = input.strategies.filter((s) => s.probation !== true && rewardOf(s.reward) <= PLAYBOOK_AVOID_BELOW);
   const avoidedSkills = input.skills.filter((s) => s.reward <= SKILL_AVOID_BELOW);
   const recent = [...input.reflections].sort((a, b) => b.createdAtMs - a.createdAtMs).slice(0, MAX_REFLECTIONS);
 
@@ -46,6 +50,7 @@ export function renderLearnedDigest(input: LearnedDigestInput): string {
     trustedSkills.length === 0 &&
     avoidedStrategies.length === 0 &&
     avoidedSkills.length === 0 &&
+    probationStrategies.length === 0 &&
     recent.length === 0;
   if (nothing) {
     return [
@@ -68,6 +73,11 @@ export function renderLearnedDigest(input: LearnedDigestInput): string {
   if (trustedSkills.length > 0) {
     lines.push("Trusted skills:");
     for (const s of trustedSkills) lines.push(`  • ${s.name}  ⟨${reward(s.reward)}⟩`);
+    lines.push("");
+  }
+  if (probationStrategies.length > 0) {
+    lines.push("Learning while idle (on probation — recorded, NOT yet applied until you reinforce it):");
+    for (const s of probationStrategies) lines.push(`  • ${s.text}${s.tag ? ` (${s.tag})` : ""}  ⟨probation⟩`);
     lines.push("");
   }
   if (avoidedStrategies.length > 0 || avoidedSkills.length > 0) {
