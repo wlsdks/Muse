@@ -208,7 +208,25 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   honest "I did not call the bank" (and the gate stripped the model's spurious
   `[reminder: none]/[task: none]`). agent-core 1241 / cli 1661 tests +
   `pnpm lint` 0/0. A user can now ask Muse what it has done on their behalf and
-  get a cited answer from the real audit log, or an honest "no". (this commit)
+  get a cited answer from the real audit log, or an honest "no". (192db737)
+
+- [x] **P37-10 Omit empty grounding sections from the `muse ask` prompt (HARDEN
+  the edge).** With ~10 grounding sources now injected, every turn carried an
+  empty "(no pending reminders)" / "(no matching contacts)" block for each
+  source the user had nothing in — bloating the small model's context
+  (worsening lost-in-the-middle) AND inviting it to parrot a spurious
+  "[reminder: none]"-style citation (which the gate then strips, but which still
+  flashes on the streaming path). New `groundingSectionLines` includes each
+  OPTIONAL source section only when it has content this turn; the NOTES section
+  stays always-present (the primary surface). Proven by unit tests (present
+  section emitted as header/body/footer/blank; empty omitted entirely; all-empty
+  → []; order preserved) + a LIVE `muse ask` on qwen3:8b (mock corpus,
+  HOME-isolated, never real ~/.muse): WireGuard MTU still cited "[from
+  …vpn-wireguard.md]" (no recall regression); "sister's birthday?" → honest
+  refusal with ZERO spurious `[x: none]` citation (the omitted empty sections no
+  longer trigger the parrot). cli 1664 tests + `pnpm lint` 0/0. The grounding
+  prompt is now tighter for the small model and the spurious-citation surface is
+  cut at the source. (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections

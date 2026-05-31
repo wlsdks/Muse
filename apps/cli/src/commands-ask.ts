@@ -224,6 +224,20 @@ export function formatSourceReceipts(
 }
 
 /**
+ * Assemble the optional grounding sections of the `muse ask` prompt, OMITTING
+ * any that have no content. An empty "(no pending reminders)" block both bloats
+ * the small model's context (worsening lost-in-the-middle) and invites it to
+ * parrot a spurious "[reminder: none]" citation — so a source the user has
+ * nothing in this turn is left out entirely. The NOTES section is assembled
+ * separately (always present — it's the primary surface). Pure + testable.
+ */
+export function groundingSectionLines(
+  sections: ReadonlyArray<{ readonly header: string; readonly body: string; readonly footer: string; readonly present: boolean }>
+): string[] {
+  return sections.flatMap((section) => (section.present ? [section.header, section.body, section.footer, ""] : []));
+}
+
+/**
  * The "shows its work, FELT" receipt for the NON-note sources the answer cited
  * (S1 completion) — calendar / tasks / reminders / contacts / shell. Parses the
  * post-gate answer's `[event|task|reminder|contact|command: …]` markers (so only
@@ -1426,42 +1440,21 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         contextBlock,
         "=== END NOTES ===",
         "",
-        "=== USER OPEN TASKS (sorted by due date, most imminent first) ===",
-        taskBlock,
-        "=== END TASKS ===",
-        "",
-        "=== UPCOMING CALENDAR EVENTS (sorted chronologically) ===",
-        calendarBlock,
-        "=== END CALENDAR ===",
-        "",
-        "=== PENDING REMINDERS (sorted by due date) ===",
-        reminderBlock,
-        "=== END REMINDERS ===",
-        "",
-        "=== MATCHING CONTACTS (from your address book) ===",
-        contactBlock,
-        "=== END CONTACTS ===",
-        "",
-        "=== MATCHING SHELL COMMANDS (from your shell history) ===",
-        shellBlock,
-        "=== END SHELL COMMANDS ===",
-        "",
-        "=== ACTIONS MUSE HAS TAKEN ON YOUR BEHALF (your audit log) ===",
-        actionBlock,
-        "=== END ACTIONS ===",
-        "",
-        "=== PAST SESSION SUMMARIES (your prior conversations) ===",
-        episodeBlock,
-        "=== END PAST SESSIONS ===",
-        "",
-        "=== RECENT FEED HEADLINES (your watched RSS/Atom feeds, newest first) ===",
-        feedBlock,
-        "=== END FEED HEADLINES ===",
-        "",
-        "=== WHAT MUSE HAS NOTICED ABOUT YOU (high-level, from past sessions) ===",
-        reflectionBlock,
-        "=== END NOTICED ==="
-      ].join("\n");
+        // Optional sources: each is included ONLY when it has content this turn —
+        // an empty block bloats the small model's prompt and invites a spurious
+        // "[reminder: none]"-style citation. (Notes above is always present.)
+        ...groundingSectionLines([
+          { body: taskBlock, footer: "=== END TASKS ===", header: "=== USER OPEN TASKS (sorted by due date, most imminent first) ===", present: openTasks.length > 0 },
+          { body: calendarBlock, footer: "=== END CALENDAR ===", header: "=== UPCOMING CALENDAR EVENTS (sorted chronologically) ===", present: upcomingEvents.length > 0 },
+          { body: reminderBlock, footer: "=== END REMINDERS ===", header: "=== PENDING REMINDERS (sorted by due date) ===", present: pendingReminders.length > 0 },
+          { body: contactBlock, footer: "=== END CONTACTS ===", header: "=== MATCHING CONTACTS (from your address book) ===", present: matchedContacts.length > 0 },
+          { body: shellBlock, footer: "=== END SHELL COMMANDS ===", header: "=== MATCHING SHELL COMMANDS (from your shell history) ===", present: matchedCommands.length > 0 },
+          { body: actionBlock, footer: "=== END ACTIONS ===", header: "=== ACTIONS MUSE HAS TAKEN ON YOUR BEHALF (your audit log) ===", present: matchedActions.length > 0 },
+          { body: episodeBlock, footer: "=== END PAST SESSIONS ===", header: "=== PAST SESSION SUMMARIES (your prior conversations) ===", present: episodeHits.length > 0 },
+          { body: feedBlock, footer: "=== END FEED HEADLINES ===", header: "=== RECENT FEED HEADLINES (your watched RSS/Atom feeds, newest first) ===", present: feedHeadlines.length > 0 },
+          { body: reflectionBlock, footer: "=== END NOTICED ===", header: "=== WHAT MUSE HAS NOTICED ABOUT YOU (high-level, from past sessions) ===", present: reflectionLines.length > 0 }
+        ])
+      ].join("\n").trimEnd();
 
       // Show citation header before streaming the answer so the user
       // sees what's being grounded against, then the model output.
