@@ -14,52 +14,21 @@ Another you fires in ~10 minutes. Never stop, never ask a human for the next
 task, never declare the project complete.
 
 READ FIRST (every fire, in this order):
-1. docs/strategy/loop-v2.md — the LOCKED direction. The groundbreaking bet is
-   the GROWS-WITH-YOU LOCAL CONFIDANT (see "THE LOCKED HEADLINE" in PART B0):
-   an AI that learns you continuously, all on your machine, shows + lets you
-   reverse every learned thing, and can't leak. Build order: FRONT DOOR first
-   (the moat is invisible without the door), THEN felt self-learning,
-   brake-and-proof-first. A2A / agent-to-agent is PARKED — never pick it.
+1. docs/strategy/loop-v2.md — the LOCKED direction (headline: GROWS-WITH-YOU
+   LOCAL CONFIDANT; front door first, then felt self-learning,
+   brake-and-proof-first; A2A is PARKED — never pick it). Read PART B every fire.
 2. .claude/rules/iteration-loop.md — the procedure + the IMMUTABLE rails.
 3. docs/goals/CAPABILITIES.md — its newest line is the claim you falsify first.
 
-PICK ONE SLICE (first match wins — loop-v2 PART B0 "HOW TO PICK EACH SLICE"):
-  0. Falsify the newest CAPABILITIES.md line end-to-end on the REAL surface.
-     RED (broken) ⇒ repairing it is the whole iteration. Merely YELLOW
-     (works, could be nicer) ⇒ log to the README Rejected-ledger, move on.
-  Otherwise advance the next undone near-term slice toward the headline:
-     1) `muse demo` — bundled sample corpus (use fixtures/mock-corpus) + a
-        small fast model; a cited answer AND an honest refusal in <30s with
-        ZERO setup. DOES NOT EXIST YET — this is the first front-door slice.
-     2) one real ingest format (PDF or a real Obsidian vault) WITH a progress
-        signal + partial-failure tolerance (a broken file must not abort the
-        batch).
-     3) self-learning Slice 0 — readiness gate (REAL OS-idle, not Muse-API
-        idle) + cross-process Ollama lease + atomic store writes. The BRAKE
-        ships BEFORE any background LLM writer.
-     4) self-learning Slice 1 — grounded idle distillation + the 2-session
-        live proof (loop-v2 directive B1).
-     5) `muse learned` provenance/visibility + `--undo` + `--pause`.
-     6) GROW THE CAPABILITY SURFACE (self-judged — see loop-v2 "PERCEIVE
-        BROADLY · ACT WITH CONFIRMATION · GROW BOTH" + directive B3). Add ONE,
-        value-ranked, mock-verified:
-          - ONE read-only PERCEPTION connector, in directive B3's order:
-            S1 calendar_read (local ICS) → S2 tasks_read → S3 file_activity
-            (~/Downloads excluded, secret-skip) → S4 git → S5 cross-domain.
-            S1 also lands the opt-in registry + scripts/eval-perception.mjs +
-            the read-only registration guard + the registry local-filter.
-            read-only · local-only (no registry egress) · per-source consent
-            default-OFF · visible/reversible. NEVER build Messages/Mail/DM
-            stores, browser secrets, app-usage. Verify with
-            `pnpm eval:perception --domain <d>` against a GENERATED MOCK, never
-            real data. GATE the live ambient clipboard/selection reader FIRST.
-          - OR ONE gated ACTUATOR (send message / draft+send email / create
-            calendar event / set reminder / book / fill web form) — draft-first,
-            ask-first, fail-close. Verify a contract-faithful HTTP fake proving
-            deny/timeout/ambiguous-recipient ⇒ NO effect, ALONGSIDE the
-            confirmed-path send. Banking/payments out of scope.
-        Total surface may grow; keep PER-TURN exposed tools ≤5–7 (relevance
-        filter) and prove one-shot selection with `pnpm eval:tools`.
+PICK ONE SLICE — AUTHORITY is loop-v2.md PART B0 "HOW TO PICK EACH SLICE". Do
+NOT re-derive the order here; open that section, take the first undone finishable
+rung.
+  Step 0 always first: falsify the newest CAPABILITIES.md line on its recorded
+  check. RED ⇒ repairing it is the whole fire. YELLOW (works, could be nicer) ⇒
+  README Rejected-ledger, move on.
+  CONFIRM what's already built (codegraph/grep) before building — deliver the
+  MISSING piece, never rebuild an existing one; never trust a frozen
+  "exists/doesn't" claim without checking.
   Decompose anything >1 commit into its tracer bullet. Never ship a
   stub / guard-only / test-only change as the deliverable.
 
@@ -114,14 +83,9 @@ Per the human directive (2026-05-31): verify against **freely-generated mock
 data in a dedicated folder**, not the user's real PC data — it is more
 accurate (a known oracle) and safe (no real private notes touched).
 
-- **Seed (committed):** `fixtures/mock-corpus/notes/` + `EXPECTED.md`. Realistic
-  personal notes with a deterministic answer key — some questions answerable
-  (test cited recall), some deliberately not (test honest refusal). Doubles as
-  the future `muse demo` sample corpus.
-- **Scratch (gitignored `.muse-dev/`):** where the loop freely generates extra
-  mock data per slice and points `MUSE_NOTES_DIR` so Muse runs against the mock
-  corpus instead of `~/.muse`.
-- **The lever:** `MUSE_NOTES_DIR` (default `~/.muse/notes`, via
-  `resolveNotesDir`) repoints the notes corpus. If a slice touches a different
+- **Seed (committed):** `fixtures/mock-corpus/notes/` + `EXPECTED.md` — also the
+  future `muse demo` sample corpus.
+- **Scratch (gitignored `.muse-dev/`):** freely-generated extra mock per slice.
+- **The lever:** `MUSE_NOTES_DIR` repoints the notes corpus. For a different
   corpus path (RAG index, ingest target), discover the real env/flag from the
-  code and use the mock path there too — never the real one.
+  code and point IT at the mock too — never the real one.
