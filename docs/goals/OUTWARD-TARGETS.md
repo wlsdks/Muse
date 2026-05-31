@@ -331,7 +331,24 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   never real ~/.muse): `pause` → enqueue + idle distill = **0 distilled, queue
   pending 1**, `muse learned` shows the ⏸ banner → `resume` → distill = 1, queue
   drained. mcp 1238 / api 824 / cli 1621 tests + `pnpm lint` 0/0. Slice 5 is now
-  complete (undo + pause); the user can fully stop and steer learning. (this commit)
+  complete (undo + pause); the user can fully stop and steer learning. (ebaeb566)
+
+- [x] **P36-16 Autonomy is verifiable — `muse doctor` reports the learning state
+  (B1 Slice 7).** Background learning was invisible: a user couldn't tell whether
+  it was actually running. `muse doctor` now reports a `self-learning` check that
+  resolves and explains the real state — OFF (default, with how to enable) / ON
+  but daemon-not-installed (warn → `muse daemon --install`) / ON + installed
+  ("will run while idle") / PAUSED (warn → `muse playbook resume`). The
+  LaunchAgent plist now also sets `ProcessType=Background` so macOS throttles the
+  resident daemon under contention — the OS-level complement to the brake-first
+  idle gates (StartInterval intentionally omitted: it conflicts with the
+  KeepAlive-resident model). Proven by unit tests (`selfLearningCheck` all four
+  states in cli; plist contains `ProcessType`/`Background` + still plutil-valid)
+  + a LIVE `muse doctor --local` (HOME-isolated, never real ~/.muse) showing each
+  state's exact line: OFF default ✓, ON-not-installed → `muse daemon --install`,
+  ON+installed "will run while idle", paused → `muse playbook resume`. cli 1625
+  tests + `pnpm lint` 0/0. The user can now VERIFY whether Muse is set up to learn
+  while idle. (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

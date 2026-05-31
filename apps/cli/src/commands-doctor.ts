@@ -15,10 +15,11 @@ import { existsSync, promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { evaluateLocalOnlyPosture, mergeModelKeysFromFile, resolveEpisodesFile, resolveNotesDir } from "@muse/autoconfigure";
-import { parseHomeAlertChecks, readEpisodes, webWatchesFromConfig } from "@muse/mcp";
+import { evaluateLocalOnlyPosture, mergeModelKeysFromFile, parseBoolean, resolveEpisodesFile, resolveLearningPauseFile, resolveNotesDir } from "@muse/autoconfigure";
+import { isLearningPaused, parseHomeAlertChecks, readEpisodes, webWatchesFromConfig } from "@muse/mcp";
 import type { Command } from "commander";
 
+import { resolveLaunchAgentFile } from "./commands-daemon.js";
 import { DEFAULT_EMBED_MODEL, isNotesIndexStale } from "./commands-notes-rag.js";
 import { defaultEpisodeIndexFile, loadEpisodeIndex } from "./episode-index.js";
 import { resolveOllamaUrl } from "./ollama-url.js";
@@ -296,6 +297,29 @@ export function localOnlyCheck(env: Record<string, string | undefined>): LocalCh
   return { detail: posture.detail, name: "local-only", status: posture.status };
 }
 
+/**
+ * Report whether background self-learning (B1) is actually running — the
+ * verifiable-autonomy check (Slice 7). Pure of IO so it's directly testable;
+ * the caller resolves `enabled` / `paused` / `installed`.
+ */
+export function selfLearningCheck(state: {
+  readonly enabled: boolean;
+  readonly paused: boolean;
+  readonly installed: boolean;
+}): LocalCheck {
+  const name = "self-learning";
+  if (state.paused) {
+    return { detail: "PAUSED — run `muse playbook resume` to let Muse learn again", name, status: "warn" };
+  }
+  if (!state.enabled) {
+    return { detail: "OFF (default) — set MUSE_IDLE_LEARNING_ENABLED=true to let Muse learn from corrections while idle", name, status: "ok" };
+  }
+  if (!state.installed) {
+    return { detail: "ON this session, but the daemon isn't installed — run `muse daemon --install` so it keeps learning across reboots", name, status: "warn" };
+  }
+  return { detail: "ON, will run while idle (daemon installed)", name, status: "ok" };
+}
+
 interface LocalDoctorReport {
   readonly generatedAt: string;
   readonly checks: readonly LocalCheck[];
@@ -553,6 +577,13 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   if (homeAlertsVerdict) {
     checks.push({ name: "home-alerts config", ...homeAlertsVerdict });
   }
+
+  // self-learning autonomy (B1 Slice 7): is Muse actually set up to learn while idle?
+  checks.push(selfLearningCheck({
+    enabled: parseBoolean(env.MUSE_IDLE_LEARNING_ENABLED, false),
+    installed: existsSync(resolveLaunchAgentFile(process.env)),
+    paused: await isLearningPaused(resolveLearningPauseFile(env)).catch(() => false)
+  }));
 
   const worst = checks.reduce<"ok" | "warn" | "fail">((acc, c) => {
     if (c.status === "fail" || acc === "fail") return "fail";

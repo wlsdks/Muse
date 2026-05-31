@@ -249,7 +249,10 @@ function xmlEscape(value: string): string {
 
 // A macOS LaunchAgent plist that keeps `muse daemon` resident: it
 // starts at login (RunAtLoad) and is restarted if it exits
-// (KeepAlive), so the daemon survives logout / reboot.
+// (KeepAlive), so the daemon survives logout / reboot. ProcessType
+// Background marks it low-priority so macOS throttles its CPU/IO under
+// contention — the OS-level complement to the brake-first idle gates
+// (B1): background learning must never compete with the user's work.
 export function buildLaunchAgentPlist(opts: {
   readonly label: string;
   readonly programArguments: readonly string[];
@@ -273,6 +276,8 @@ ${args}
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
   <key>StandardOutPath</key>
   <string>${xmlEscape(opts.stdoutPath)}</string>
   <key>StandardErrorPath</key>
@@ -340,7 +345,7 @@ async function defaultKnowledgeEnrich(env: NodeJS.ProcessEnv): Promise<((query: 
   }
 }
 
-function resolveLaunchAgentFile(env: NodeJS.ProcessEnv): string {
+export function resolveLaunchAgentFile(env: NodeJS.ProcessEnv): string {
   const explicit = env.MUSE_DAEMON_PLIST_FILE?.trim();
   if (explicit && explicit.length > 0) return explicit;
   const home = env.HOME?.trim()?.length ? env.HOME.trim() : homedir();

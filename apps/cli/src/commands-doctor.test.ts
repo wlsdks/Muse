@@ -11,6 +11,7 @@ import {
   notesIndexHealth,
   parseNotesIndexEmbedModel,
   resolveMuseEnvPath,
+  selfLearningCheck,
   type OllamaTagsEntry
 } from "./commands-doctor.js";
 
@@ -315,3 +316,29 @@ describe("localOnlyCheck — local-only / no-cloud-egress posture", () => {
     expect(check.detail).toContain("default");
   });
 });
+
+describe("selfLearningCheck — verifiable autonomy (B1 §7)", () => {
+  it("ON + daemon installed → ok 'will run while idle'", () => {
+    const c = selfLearningCheck({ enabled: true, paused: false, installed: true });
+    expect(c.status).toBe("ok");
+    expect(c.detail).toContain("ON, will run while idle");
+  });
+
+  it("ON but daemon NOT installed → warn pointing at `muse daemon --install`", () => {
+    const c = selfLearningCheck({ enabled: true, paused: false, installed: false });
+    expect(c.status).toBe("warn");
+    expect(c.detail).toContain("muse daemon --install");
+  });
+
+  it("paused → warn pointing at `muse playbook resume` (even if enabled+installed)", () => {
+    const c = selfLearningCheck({ enabled: true, paused: true, installed: true });
+    expect(c.status).toBe("warn");
+    expect(c.detail).toContain("muse playbook resume");
+  });
+
+  it("OFF (default) → ok, explains how to enable", () => {
+    const c = selfLearningCheck({ enabled: false, paused: false, installed: false });
+    expect(c.status).toBe("ok");
+    expect(c.detail).toContain("MUSE_IDLE_LEARNING_ENABLED");
+  });
+})

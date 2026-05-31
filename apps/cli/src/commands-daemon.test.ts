@@ -753,6 +753,9 @@ describe("buildLaunchAgentPlist — resident daemon via launchd", () => {
     expect(xml).toContain("<string>com.muse.daemon</string>");
     expect(xml).toContain("<key>RunAtLoad</key>");
     expect(xml).toContain("<key>KeepAlive</key>");
+    // ProcessType Background marks the learning daemon low-priority (B1 §7).
+    expect(xml).toContain("<key>ProcessType</key>");
+    expect(xml).toContain("<string>Background</string>");
     expect(xml).toContain("<string>daemon</string>");
     if (process.platform === "darwin") {
       expect(() => execFileSync("plutil", ["-lint", file], { encoding: "utf8" })).not.toThrow();
