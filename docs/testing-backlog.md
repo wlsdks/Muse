@@ -2256,3 +2256,13 @@ the generic layers below because they test what makes Muse an *agent*.
     3_600_000] bounds, and the NaN/Infinity guard (which raw < / > comparisons miss);
     requireText trims + throws the caller's message on blank/null/undefined. Pre-verified
     against dist. scheduler 91 tests green.
+
+- [x] **mcp/personal-consent-store — fail-closed scoped-consent gate (zero coverage).**
+    The per-function census found readConsents/writeConsents/hasConsent with ZERO test
+    refs — and hasConsent is the outbound-safety rule-5 gate behind performConsentedAction
+    (standing objectives need RECORDED scoped consent, never implicitly broadened). New
+    suite pins fail-closed behavior: missing store → false; true ONLY on exact
+    user+objective+scope match; a consent for one scope does NOT authorize a different
+    scope (no broadening); no cross-user/cross-objective leakage; recordConsent idempotent
+    replace-by-id (no duplicate/lost grant); serializeConsent required + optional note.
+    Pre-verified against dist. mcp 1225 tests green.
