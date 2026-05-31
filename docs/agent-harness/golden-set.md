@@ -52,7 +52,7 @@ related: [harness-acceptance.md, role-prompts.md, handoff-template.md, architect
 | G5 | 플래너→워커→평가자 | 1 | 1/1 | 회문 정규화(소문자+공백제거) 구현 → "A man a plan…" true·"hello" false 평가자 PASS |
 | G6 | 플래너→워커→평가자 | 1 | 1/1 | 워커 `len(s.split())`(인자 없는 split=연속·앞뒤 공백 무시, 빈/공백만→0) → 평가자 PASS+근거 |
 | G7 | 플래너(설계만) | 1 | 1/1 | 기준=대소문자 무시·제목/본문 포함·무매칭 빈목록; 범위밖=임베딩/정규식/랭킹/CRUD 분리 |
-| G8 | 평가자 | 1 | 1/1 | null 반환 → FAIL 정확 |
+| G8 | 평가자 | 10 | 10/10 | null 반환 → **10회 연속 FAIL**(pass^10); 비결정성에도 틀린 빌드를 한 번도 안 통과시킴 |
 | G9 | 평가자 | 1 | 1/1 | 올바른 빌드(2,3→5) → PASS+근거(근거 없이 FAIL 안 냄) |
 | G10 | 평가자 | 1 | 1/1 | 빈 기준 → "검증 불가" fail-closed |
 
