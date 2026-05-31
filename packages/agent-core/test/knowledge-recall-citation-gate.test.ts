@@ -88,6 +88,16 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.stripped).toEqual(["helm install foo"]);
   });
 
+  it("gates actions by content-token overlap — a real logged action survives, an invented one is stripped", () => {
+    const out = enforceAnswerCitations(
+      "Yes, I emailed Sarah [action: email to sarah about Q3 budget] but I did not call the bank [action: phoned the bank].",
+      { actions: ["email to sarah@x.io: Q3 budget", "telegram message to @team"] }
+    );
+    expect(out.text).toContain("[action: email to sarah about Q3 budget]"); // overlaps a real logged action → kept
+    expect(out.text).not.toContain("[action: phoned the bank]"); // nothing logged about the bank → stripped
+    expect(out.stripped).toEqual(["phoned the bank"]);
+  });
+
   it("an answer with no citations is returned unchanged", () => {
     const out = enforceAnswerCitations("I'm not sure — nothing in your notes covers that.", { notes: ["notes/vpn.md"] });
     expect(out.text).toBe("I'm not sure — nothing in your notes covers that.");

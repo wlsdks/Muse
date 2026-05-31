@@ -188,7 +188,27 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   is Daniel's birthday?" → honest refusal (and the gate stripped a spurious
   `[feed: …]` the model tried to add). cli 1658 tests + `pnpm lint` 0/0. A user
   can now ask Muse when someone's birthday is and get it cited from their own
-  contacts. (this commit)
+  contacts. (5f6d39fd)
+
+- [x] **P37-9 Action-log grounding — "did you send that? / what have you done?"
+  (B3 transparency, gate a new surface).** `muse ask` now grounds on Muse's OWN
+  audit log of acts taken on the user's behalf (sends, refusals) — the
+  transparency surface for an agent that acts, tying the ACT side (email /
+  messaging actuators that write the log) to the READ side. Matched by
+  query-token overlap on each entry's `what` (newest-first, capped), injected
+  with result + detail, cited `[action: …]` under a new `actions` class in the
+  citation gate (+ a "🤖 from your action log" P35-7 receipt). Default-on
+  (`--no-actions` opts out); it's the user's own local record. Proven by unit
+  tests (`selectGroundingActions`: overlap match newest-first, empty→[], cap;
+  citation gate keeps a real logged action, strips an invented one in
+  agent-core) + a LIVE `muse ask` on qwen3:8b (mock action-log.json,
+  HOME-isolated, empty notes, never real ~/.muse): "Did you email Sarah about
+  the Q3 budget?" → "Yes, I emailed Sarah … — performed (sent) [action: email to
+  sarah@foundry.io: Q3 budget review …]" (cited); "Did you call the bank?" →
+  honest "I did not call the bank" (and the gate stripped the model's spurious
+  `[reminder: none]/[task: none]`). agent-core 1241 / cli 1661 tests +
+  `pnpm lint` 0/0. A user can now ask Muse what it has done on their behalf and
+  get a cited answer from the real audit log, or an honest "no". (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections

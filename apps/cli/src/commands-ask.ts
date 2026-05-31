@@ -28,10 +28,10 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
 import { chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
-import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
-import { acquireOllamaLease, listReflections, readContacts, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type Contact, type PersistedReminder, type PersistedTask } from "@muse/mcp";
+import { acquireOllamaLease, listReflections, readActionLog, readContacts, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type ActionLogEntry, type Contact, type PersistedReminder, type PersistedTask } from "@muse/mcp";
 import { redactSecretsInText } from "@muse/shared";
 
 import { parseShellHistory, selectShellCommands } from "./shell-history.js";
@@ -239,6 +239,7 @@ export function formatNonNoteReceipts(
     readonly reminders?: readonly string[];
     readonly contacts?: readonly string[];
     readonly commands?: readonly string[];
+    readonly actions?: readonly string[];
   }
 ): string | undefined {
   const lines: string[] = [];
@@ -262,6 +263,7 @@ export function formatNonNoteReceipts(
   grab("⏰ from your reminders:", /\[reminder:\s*([^\]]+?)\s*\]/giu, sources.reminders);
   grab("👤 from your contacts:", /\[contact:\s*([^\]]+?)\s*\]/giu, sources.contacts);
   grab("⌨️ from your shell history:", /\[command:\s*([^\]]+?)\s*\]/giu, sources.commands);
+  grab("🤖 from your action log:", /\[action:\s*([^\]]+?)\s*\]/giu, sources.actions);
   if (lines.length === 0) {
     return undefined;
   }
@@ -321,6 +323,30 @@ export function selectFilePassages(
     budget -= passage.text.length;
   }
   return picked.sort((a, b) => a.chunkIndex - b.chunkIndex);
+}
+
+/**
+ * The action-log entries most relevant to the question, for `muse ask`
+ * transparency grounding ("did you send that? / what have you done?"). Matches
+ * by query-token overlap against each entry's `what` text; newest-first on a
+ * tie, capped. 0-overlap entries are dropped so an unrelated question grounds on
+ * nothing (→ honest refusal). Pure + testable.
+ */
+export function selectGroundingActions(
+  entries: readonly ActionLogEntry[],
+  query: string,
+  max = 5
+): readonly ActionLogEntry[] {
+  const queryTokens = lexicalTokens(query);
+  if (queryTokens.size === 0) {
+    return [];
+  }
+  return entries
+    .map((entry, index) => ({ entry, index, score: lexicalOverlap(queryTokens, entry.what) }))
+    .filter((scored) => scored.score > 0)
+    .sort((a, b) => b.score - a.score || b.index - a.index)
+    .slice(0, max)
+    .map((scored) => scored.entry);
 }
 
 const BIRTHDAY_MONTHS = [
@@ -397,6 +423,7 @@ interface AskOptions {
   readonly calendarDays?: string;
   readonly reminders?: boolean;
   readonly contacts?: boolean;
+  readonly actions?: boolean;
   readonly shell?: boolean;
   readonly file?: string;
   readonly json?: boolean;
@@ -839,6 +866,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--no-contacts",
       "Skip injecting matching contacts as grounding context (default: include contacts whose name/alias/email matches the question)"
+    )
+    .option(
+      "--no-actions",
+      "Skip injecting matching action-log entries (default: include what Muse has done on your behalf so 'did you send that?' / 'what have you done?' answer from the real log)"
     )
     .option(
       "--shell",
@@ -1320,6 +1351,24 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           .map((cmd, i) => `<<command ${(i + 1).toString()}>>\n${cmd}\n<<end>>`)
           .join("\n\n");
 
+      // Action-log grounding (B3 transparency): "did you send that? / what have
+      // you done on my behalf?" — answer from Muse's OWN record of acts taken,
+      // matched by query overlap. The user's local audit trail, default-on.
+      let matchedActions: readonly ActionLogEntry[] = [];
+      if (options.actions !== false) {
+        try {
+          const all = await readActionLog(resolveActionLogFile(process.env as Record<string, string | undefined>));
+          matchedActions = selectGroundingActions(all, query);
+        } catch {
+          // action log missing or unreadable — silently skip
+        }
+      }
+      const actionBlock = matchedActions.length === 0
+        ? "(no matching actions)"
+        : matchedActions
+          .map((a, i) => `<<action ${(i + 1).toString()} — ${a.when.slice(0, 10)}>>\n${a.what} — ${a.result}${a.detail ? ` (${a.detail})` : ""}\n<<end>>`)
+          .join("\n\n");
+
       // Phase 2 (runtime self-tuning): the ACE playbook's [Learned
       // Strategies] reach the agent-runtime (--with-tools) path via the
       // runtime's playbookProvider, but NOT this chat-only fast path. Pull
@@ -1370,7 +1419,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // placeholder word"), and hard-forbid citing any source not
         // shown in a marker below.
         "When a fact comes from a note, END that sentence with that note's `cite as:` token, copied VERBATIM — the whole bracket exactly as printed under the passage, the name unchanged.",
-        "For other context, cite by the name shown in its marker: a task as [task: its title], an event as [event: its title], a reminder as [reminder: its text], a past session as [session: short summary], a feed headline as [feed: the feed name], a contact as [contact: their name], a shell command as [command: the command].",
+        "For other context, cite by the name shown in its marker: a task as [task: its title], an event as [event: its title], a reminder as [reminder: its text], a past session as [session: short summary], a feed headline as [feed: the feed name], a contact as [contact: their name], a shell command as [command: the command], an action you took as [action: what you did].",
         "CRITICAL: cite ONLY a source shown in the context below — copy an existing `cite as:` token, or a name shown in a marker. NEVER invent or guess a filename, feed, task, or event. If the answer is not in any passage below, cite nothing and say you are not sure.",
         "",
         notesFraming.header,
@@ -1396,6 +1445,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         "=== MATCHING SHELL COMMANDS (from your shell history) ===",
         shellBlock,
         "=== END SHELL COMMANDS ===",
+        "",
+        "=== ACTIONS MUSE HAS TAKEN ON YOUR BEHALF (your audit log) ===",
+        actionBlock,
+        "=== END ACTIONS ===",
         "",
         "=== PAST SESSION SUMMARIES (your prior conversations) ===",
         episodeBlock,
@@ -1431,6 +1484,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       }
       if (matchedCommands.length > 0) {
         groundedParts.push(`${matchedCommands.length.toString()} shell command(s)`);
+      }
+      if (matchedActions.length > 0) {
+        groundedParts.push(`${matchedActions.length.toString()} logged action(s)`);
       }
       if (episodeHits.length > 0) {
         groundedParts.push(`${episodeHits.length.toString()} past session(s)`);
@@ -1571,6 +1627,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         ? (index ? filterLiveNoteIndexFiles(index.files, existsSync).map((f) => (isAbsolute(f.path) ? relative(notesDir, f.path) : f.path)) : [])
         : scored.map((r) => (isAbsolute(r.file) ? relative(notesDir, r.file) : r.file));
       const citationGate = enforceAnswerCitations(collectedAnswer, {
+        actions: matchedActions.map((a) => a.what),
         commands: matchedCommands,
         contacts: matchedContacts.map((c) => c.name),
         events: upcomingEvents.map((e) => e.title),
@@ -1621,6 +1678,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // NON-note grounding the answer cited — calendar / tasks / reminders /
         // contacts / shell — so every cited source is followable, not just notes.
         const moreReceipts = formatNonNoteReceipts(collectedAnswer, {
+          actions: matchedActions.map((a) => a.what),
           commands: matchedCommands,
           contacts: matchedContacts.map((c) => c.name),
           events: upcomingEvents.map((e) => e.title),
