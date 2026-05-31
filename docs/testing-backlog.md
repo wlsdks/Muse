@@ -303,6 +303,17 @@ the generic layers below because they test what makes Muse an *agent*.
     function only one form). Added the whitespace direct-answer → still throws.
     (172's `?? "TOOL_ERROR"` and 181's length>0 are equivalent/defensive — a failed
     step always carries an error, empty-plan returns early — no churn.) agent-core 1085→1086.
+  - TWENTY-FIRST MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    guards.ts` = **88.07%** — the fail-close security guard factories (injection /
+    PII / topic-drift / LLM-classification input + PII-mask / leakage output). Its
+    allow/block security behavior is well-tested; the one actionable gap was the
+    LLM-classification block REASON fallback (`reason ?? category ?? default`) —
+    only the `reason` branch was tested. A blocked request must always carry a
+    human-readable reason (it feeds the action log + user feedback). Added: block
+    with only a `category` → uses it; block with neither → the default sentence.
+    agent-core 1086→1087. (The agent-core core — model-loop, plan-execute-loop,
+    knowledge-recall, proactive-recall-gate, step-budget, provider-shared,
+    guards, guard-pipeline — is now mutation-surveyed.)
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
