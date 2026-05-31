@@ -2216,3 +2216,13 @@ the generic layers below because they test what makes Muse an *agent*.
     count survives — a truthy-gate mutant would drop it and corrupt the re-eval loop's
     backoff state); and empty-string optionals dropped (truthy-gated). Pre-verified
     against dist. mcp 1208 tests green.
+
+- [x] **mcp/personal-activity-feed — readActivityFeed merge/sort/window/limit/kind.**
+    The census's other 0-symbol-hit mcp module. mcp.test.ts only exercised single-
+    source corrupt-byte robustness; the cross-source COMPOSITION was untested. New
+    suite drives the pattern+episode readers and pins: (1) merge across sources ordered
+    newest-first by PARSED instant — an episode at 18:00+09:00 (=09:00Z) sorts AFTER a
+    pattern at 10:00Z despite its raw string sorting later, proving instant-not-
+    lexicographic sort; (2) sinceMs instant floor drops older entries; (3) limit caps
+    to the newest N after sorting; (4) kind filter restricts to one source. Pre-verified
+    against dist with real temp files. mcp 1212 tests green.
