@@ -2310,3 +2310,12 @@ the generic layers below because they test what makes Muse an *agent*.
     mismatched/zero-magnitude inputs (the 0/0→NaN guard); lexicalTokens lowercases, splits
     on non-alphanumerics, dedupes, drops <2-char + stopwords; lexicalOverlap counts shared
     content tokens, 0 for an empty query. Pre-verified against dist. agent-core 1247 green.
+
+- [x] **mcp/weather — describeWeatherCode + formatWeather (zero coverage).**
+    Census found both with ZERO refs — the user-facing rendering of the weather tool's
+    result. (Model adapter mappers toAnthropicRequest/etc. were also flagged but are
+    already exercised end-to-end via cloud-provider-adapters/anthropic-attachments tests,
+    so left alone.) New tests pin: describeWeatherCode known WMO code → text, unknown →
+    'weather code N' fallback; formatWeather place(+country) + condition + ROUNDED temp,
+    each optional metric (feels/humidity/wind) appended only when a number, country
+    omitted when absent. Pre-verified against dist. mcp 1244 tests green.
