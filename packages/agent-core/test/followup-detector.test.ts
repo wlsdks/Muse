@@ -192,6 +192,25 @@ describe("extractFollowupPromises — Korean relative", () => {
     expect(result[0]?.scheduledFor.getHours()).toBe(9);
   });
 
+  it("maps every Korean `내일 <slot>` variant to its slot hour (오전/점심/오후/저녁/밤), not just 아침", () => {
+    // The KOREAN_SLOTS map + slot→hour resolution was only exercised for 아침;
+    // each other key (점심/오후→afternoon, 저녁→evening, 밤→night, 오전→morning) is its
+    // own mapping a mutant could break. Default slots: morning 9, afternoon 14,
+    // evening 19, night 21.
+    const cases = [
+      ["내일 오전에 확인할게요.", 9],
+      ["내일 점심에 다시 볼게요.", 14],
+      ["내일 오후에 보고드릴게요.", 14],
+      ["내일 저녁에 정리해 드릴게요.", 19],
+      ["내일 밤에 알려줄게요.", 21]
+    ];
+    for (const [text, hour] of cases) {
+      const hit = extractFollowupPromises(text, { now }).find((p) => p.kind === "korean-tomorrow-slot");
+      expect(hit, `expected a korean-tomorrow-slot for "${text}"`).toBeDefined();
+      expect(hit?.scheduledFor.getHours(), `"${text}" → hour`).toBe(hour);
+    }
+  });
+
   it("matches `오늘 3시에`", () => {
     const morning = new Date("2026-05-13T00:00:00.000Z"); // 09:00 KST
     const result = extractFollowupPromises("오늘 15시에 확인합니다.", { now: morning });

@@ -2132,3 +2132,11 @@ the generic layers below because they test what makes Muse an *agent*.
     so the category tests real two-timestamp diff selection. The bare-clock
     "9시랑 17시30분 사이" duration remains logged (under-specified for an ISO tool — a
     product-contract question, not a phrasing fix), deliberately NOT generated here.
+
+- [x] **agent-core/followup-detector — Korean 내일 <slot> variant mappings.**
+    extractFollowupPromises is thoroughly tested, but the KOREAN_SLOTS map + slot→hour
+    resolution was only exercised for 아침 (morning). EN "tomorrow afternoon/night" had
+    coverage; the KO equivalents did not, so each of the other five keys
+    (오전→morning, 점심/오후→afternoon, 저녁→evening, 밤→night) was a surviving mutation
+    target. New test asserts all five resolve to the right default slot hour (9/14/14/
+    19/21). Deterministic (no LLM); pre-verified against dist. agent-core suite green.
