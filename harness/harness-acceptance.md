@@ -414,6 +414,20 @@ map-reduce-and-manage(Cognition·Anthropic 3-agent harness).
   그 기준으로 보면 남았던 실제 코드 작업은 서브태스크 의존성(이번 완료)이었음.
 - **한계:** 공유 컨텍스트는 순차·누적 요약(전체 DAG 의존 그래프는 아님). 더 큰 실 코드베이스 규모는 다음.
 
+### 서른네 번째 실측 — Claude Code 네이티브 서브에이전트 통합 (2026-05-31)
+
+하네스 역할을 **실제 Claude Code 서브에이전트 파일**로 구성([claude-code-integration.md](claude-code-integration.md)).
+근거: Claude Code Subagents/Hooks 공식 문서 + 2026-05 플레이북.
+
+- **4개 서브에이전트 생성·검증**: `.claude/agents/harness-{planner,worker,evaluator,curator}.md` —
+  frontmatter 4/4 유효(name 소문자-하이픈·description·tools·model). 최소권한(평가자=쓰기 없음→
+  만든자≠판정자를 **도구 권한으로 강제**), 자동위임용 description, model 티어(opus/sonnet/haiku).
+- **레퍼런스 규약 반영**: 병렬(독립)/순차(의존)=우리 `shareContext`와 정합·위임 1단계(메인만 오케스트레이터)·
+  교차통신=디스크(핸드오프 파일)·집계=SubagentStop 훅.
+- **확인된 것:** "Claude Code 서브에이전트·팀 활용"이 매핑·문서를 넘어 **실제 동작하는 서브에이전트 파일**로
+  존재. 러너 스위트 무회귀(64/64).
+- **한계:** 세션 내 실제 Task-도구 위임/병렬 실행의 라이브 검증은 Claude Code 세션 안에서 확인(구조 검증까지 코드로).
+
 ## 한 줄 요약 (하네스 검증 체크리스트)
 
 1. **데이터 출처**를 먼저 인증했나(0층)?
