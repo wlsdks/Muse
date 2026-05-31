@@ -27,7 +27,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
-import { classifyRetrievalConfidence, enforceAnswerCitations, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
+import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -123,6 +123,22 @@ export function recentFeedHeadlines(
     .flatMap((feed) => feed.entries.map((e) => ({ feedName: feed.name, publishedAt: e.publishedAt, summary: e.summary, title: e.title })))
     .sort((a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0))
     .slice(0, limit);
+}
+
+/**
+ * "Shows its work" made FOLLOWABLE: the openable-path footer for the notes a
+ * `muse ask` answer actually CITED. Takes the post-gate answer (so only real
+ * surviving `[from …]` citations count), dedups, and resolves each to a full
+ * path the user can open to verify the receipt. Returns undefined when nothing
+ * was cited (no footer). Pure → directly testable.
+ */
+export function formatSourcesFooter(answer: string, notesDir: string): string | undefined {
+  const citedNotes = [...new Set(citedSourcesIn(answer))];
+  if (citedNotes.length === 0) {
+    return undefined;
+  }
+  const lines = citedNotes.map((src) => `   ${isAbsolute(src) ? src : join(notesDir, src)}`);
+  return `\n📎 Sources (open to verify):\n${lines.join("\n")}\n`;
 }
 
 interface AskOptions {
@@ -1047,6 +1063,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // — after the gate — so a fabricated citation is stripped before display.
       if (options.withTools && !options.json) {
         io.stdout(collectedAnswer);
+      }
+
+      // "Shows its work" made FOLLOWABLE: list the notes the answer actually
+      // CITED (post-gate, so only real surviving citations) with their full
+      // openable paths — the user can open the exact receipt to verify, not
+      // just trust the inline `[from …]` name.
+      if (!options.json) {
+        const footer = formatSourcesFooter(collectedAnswer, notesDir);
+        if (footer) io.stderr(footer);
       }
 
       if (options.json) {
