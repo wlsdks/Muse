@@ -37,6 +37,30 @@ describe("topic drift policy", () => {
     });
   });
 
+  it("allows a score that exactly equals minScore (the threshold is inclusive, >=)", () => {
+    // 1 of 5 keywords matched → score 0.2, which equals the default minScore 0.2.
+    const decision = detectTopicDrift("the retrieval system", {
+      allowedTopics: [{ id: "m", keywords: ["retrieval", "memory", "agent", "grounding", "citation"] }]
+    });
+    expect(decision.allowed).toBe(true);
+    expect(decision.bestScore).toBeCloseTo(0.2);
+    expect(decision.matchedTopicId).toBe("m");
+  });
+
+  it("when blocked with a PARTIAL match (score>0 but below threshold) it still names the best topic + matched keyword", () => {
+    // The same 0.2 score is now below a stricter 0.5 minScore → blocked. But because
+    // some keyword DID match, matchedTopicId must be the topic id (not null, which is
+    // reserved for a zero-match block) — the `best.score > 0 ? id : null` true side.
+    const decision = detectTopicDrift("the retrieval system", {
+      allowedTopics: [{ id: "m", keywords: ["retrieval", "memory", "agent", "grounding", "citation"] }],
+      minScore: 0.5
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.matchedTopicId).toBe("m");
+    expect(decision.matchedKeywords).toEqual(["retrieval"]);
+    expect(decision.bestScore).toBeCloseTo(0.2);
+  });
+
   it("fails OPEN when no usable topic is configured — drift is a soft policy, not a blanket block", () => {
     // Topic-drift must never block everything just because the caller passed no
     // topics (or only blank-id ones, which are filtered out). An empty/whitespace

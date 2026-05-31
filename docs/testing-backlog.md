@@ -1980,3 +1980,12 @@ the generic layers below because they test what makes Muse an *agent*.
     finalizing a run's status must NOT wipe the output/costUsd/tokenUsage written by an
     earlier partial update; a `??`→`input.x` mutant (reset-to-undefined) survived. Both
     pre-verified against dist. runtime-state 41 pass (+2).
+
+- [x] **policy/topic-drift — threshold boundary + partial-match-blocked branch.**
+    detectTopicDrift tests covered allow/block/fail-open/word-boundary/CJK but never
+    pinned (1) the `best.score >= threshold` boundary — a score EXACTLY equal to
+    minScore (1-of-5 keywords = 0.2 == default 0.2) must be ALLOWED; a `>=`→`>` mutant
+    flipped it to blocked; (2) the blocked-with-partial-match branch — the existing
+    block test had score 0 (→ matchedTopicId null), so the `best.score > 0 ? id : null`
+    TRUE side (a sub-threshold but non-zero match still names the topic + matched
+    keyword) was unexercised. New tests pin both. Pre-verified against dist. policy 122 pass (+2).
