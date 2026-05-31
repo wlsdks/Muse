@@ -1948,3 +1948,13 @@ the generic layers below because they test what makes Muse an *agent*.
     zero entries, asserting byMode.race == {runs:0, avg:0} — the empty-mode branch
     inside a NON-empty store (prior aggregate test only asserted the two modes that
     had entries). Both pre-verified against dist. multi-agent 64 pass (+1).
+
+- [x] **observability/PromptDriftDetector — rolling-window eviction.** The drift
+    tests covered the σ math, minSamples gate, stddev floor and no-false-positive
+    cases, but NEVER overflowed windowSize — so the ring-buffer eviction
+    (`while len > windowSize: shift()`) in recordInput/recordOutput was unexercised;
+    a `>`→`>=` or drop-the-while mutant survived. New tests: (1) window=4, record 6
+    → sampleCount==4 and inputMean==45 (mean of the retained last four, not all
+    six); (2) a flagged drift scrolls OFF once 20 stable samples fully turn a
+    windowSize-20 window over → evaluate() returns [] (detection is windowed, not
+    cumulative). Both pre-verified against dist. observability 125 pass (+2).

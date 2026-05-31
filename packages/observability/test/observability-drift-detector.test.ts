@@ -55,6 +55,23 @@ describe("PromptDriftDetector", () => {
     expect(d.evaluate().map((a) => a.type)).toEqual(["output_length"]);
   });
 
+  it("evicts oldest samples beyond windowSize (rolling window keeps only the most recent N)", () => {
+    const d = new PromptDriftDetector({ deviationThreshold: 2, minSamples: 2, now: () => 1000, windowSize: 4 });
+    for (const value of [10, 20, 30, 40, 50, 60]) d.recordInput(value);
+    expect(d.stats().sampleCount).toBe(4); // capped, not 6
+    expect(d.stats().inputMean).toBe(45); // mean of the retained last 4 [30,40,50,60], not all six
+  });
+
+  it("lets an earlier drift scroll off once stable samples fully turn the window over", () => {
+    const d = new PromptDriftDetector({ deviationThreshold: 2, minSamples: 20, now: () => 1000, windowSize: 20 });
+    for (let i = 0; i < 10; i += 1) d.recordInput(100);
+    for (let i = 0; i < 10; i += 1) d.recordInput(500);
+    expect(d.evaluate().map((a) => a.type)).toEqual(["input_length"]); // drift visible
+    for (let i = 0; i < 20; i += 1) d.recordInput(300); // 20 stable values evict all 20 drift values
+    expect(d.evaluate()).toEqual([]); // the old drift is gone — detection is windowed, not cumulative
+    expect(d.stats().sampleCount).toBe(20);
+  });
+
   it("rejects an invalid windowSize / deviationThreshold / minSamples at construction", () => {
     expect(() => new PromptDriftDetector({ windowSize: 0 })).toThrow();
     expect(() => new PromptDriftDetector({ deviationThreshold: 0 })).toThrow();
