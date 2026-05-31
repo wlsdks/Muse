@@ -2423,3 +2423,13 @@ the generic layers below because they test what makes Muse an *agent*.
     withFileMutationQueue; after, 25 concurrent fires keep all 25. Regression test
     patterns-fired-concurrent.test.ts. Remaining unserialized: plan-cache, reminder-history,
     episodes, followup-llm-budget (next fires). mcp 1263 green.
+
+- [x] **fix(mcp): serialize episodes-store RMW (upsert/remove/vacuum) — concurrency bug.**
+    episodic memory store (recall WEDGE). upsertEpisode/removeEpisode/vacuumEpisodes were
+    unserialized read-modify-write. Reproduced: 25 concurrent upserts CRASH (ENOENT, same
+    tmp-${pid}-${Date.now()} same-ms collision) + lose episodes (a lost episode is a
+    session recall can never surface). Fixed all three via withFileMutationQueue (vacuum
+    serialized WITH upsert/remove so a vacuum can't trim away a just-added episode). After:
+    25 concurrent upserts keep all 25; 10 concurrent removes → 15. Regression test
+    episodes-store-concurrent.test.ts. Remaining unserialized RMW: plan-cache,
+    reminder-history, followup-llm-budget. mcp 1265 green.
