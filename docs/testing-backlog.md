@@ -2140,3 +2140,12 @@ the generic layers below because they test what makes Muse an *agent*.
     (오전→morning, 점심/오후→afternoon, 저녁→evening, 밤→night) was a surviving mutation
     target. New test asserts all five resolve to the right default slot hour (9/14/14/
     19/21). Deterministic (no LLM); pre-verified against dist. agent-core suite green.
+
+- [x] **agent-core/knowledge-recall — reorderForLongContext (0 tests → covered).**
+    The lost-in-the-middle edge-loading reorder (sort by score, alternate into
+    front/back, return front+reversed-back so the top items sit at BOTH context edges
+    and the weakest in the middle) had NO test. New tests pin the exact order
+    ([5,4,3,2,1]→[5,3,1,2,4]: best at index 0, 2nd-best at the last index, worst dead-
+    centre), that it sorts internally (unsorted input → same order), and that it is a
+    non-mutating permutation handling empty/single/pair. Deterministic; pre-verified
+    against dist. agent-core 1232 tests green.
