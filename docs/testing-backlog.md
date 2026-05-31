@@ -861,6 +861,17 @@ the generic layers below because they test what makes Muse an *agent*.
     (`typeof entry !== "object"` → false) is EQUIVALENT — a JSON scalar can't carry a string
     "tool" property, so it's rejected downstream by the tool-string check regardless; left
     deliberately. agent-core 1221->1224.
+  - SIXTY-SEVENTH (mutation-depth): `messaging/provider-helpers.ts` (162L, the shared HTTP/clamp
+    helpers under every provider) was thoroughly covered but Stryker (throwaway) measured
+    **78.18%** — boundary/clause-isolation gaps. +4 tests: clampOutboundText at max EXACTLY the
+    13-char marker length takes the bare-slice path (`<=` not `<`); a lone high surrogate at
+    BOTH exact boundaries (0xD800 low, 0xDBFF high — fromCharCode so the source stays valid
+    UTF-8) is dropped (isolates the `>= 0xd800` / `<= 0xdbff` checks); and a NETWORK-ERROR retry
+    backs off baseDelayMs*attempt (the catch-path backoff, distinct from the 5xx path the
+    existing test covered — base*attempt not base+attempt). → **80.91%** (86→89 killed). The
+    remaining survivors are timing-dependent fetchWithTimeout default-fallback + retry-after
+    HTTP-path branches (covered behaviorally; residual mutants are timing/equivalent).
+    messaging 361->365.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,

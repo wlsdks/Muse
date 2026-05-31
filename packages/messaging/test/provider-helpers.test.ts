@@ -37,6 +37,23 @@ describe("clampOutboundText", () => {
     expect(clampOutboundText("hello world", 5)).toBe("hello");
     expect(clampOutboundText("hello", 0)).toBe("");
   });
+
+  it("at max EXACTLY the marker length, returns a bare slice (the boundary is `<=`, not `<`)", () => {
+    // marker is 13 chars; max===13 must take the bare-slice path (13 real chars),
+    // not the head+marker path (which would emit just the marker).
+    expect(clampOutboundText("ABCDEFGHIJKLMNOP", 13)).toBe("ABCDEFGHIJKLM");
+  });
+
+  it("drops a lone high surrogate at EITHER surrogate boundary (0xD800 low, 0xDBFF high)", () => {
+    // exact-boundary codepoints isolate the `>= 0xd800` and `<= 0xdbff` checks;
+    // constructed via fromCharCode so the source file stays valid UTF-8.
+    const tail = "y".repeat(20);
+    const expected = `${"x".repeat(20)}… [truncated]`;
+    for (const code of [0xd800, 0xdbff]) {
+      const text = `${"x".repeat(20)}${String.fromCharCode(code)}${tail}`;
+      expect(clampOutboundText(text, 34), `boundary 0x${code.toString(16)}`).toBe(expected);
+    }
+  });
 });
 
 describe("clampInboundLimit", () => {
@@ -139,5 +156,20 @@ describe("fetchReadWithRetry", () => {
     await expect(fetchReadWithRetry(netErr, "http://x", {}, { maxAttempts: 2, sleep: async () => {} }))
       .rejects.toThrow("ECONNRESET");
     expect(calls).toBe(2);
+  });
+
+  it("retries a NETWORK ERROR with linear backoff (baseDelayMs * attempt) then returns the recovery", async () => {
+    // The catch-path backoff (a transient ECONNRESET, distinct from the 5xx
+    // path above) must wait baseDelayMs*attempt, not baseDelayMs+attempt.
+    const delays: number[] = [];
+    let calls = 0;
+    const flaky: typeof fetch = (async () => {
+      calls += 1;
+      if (calls < 2) throw new Error("ECONNRESET");
+      return new Response("", { status: 200 });
+    }) as unknown as typeof fetch;
+    const res = await fetchReadWithRetry(flaky, "http://x", {}, { baseDelayMs: 100, maxAttempts: 3, sleep: async (ms) => { delays.push(ms); } });
+    expect(res.status).toBe(200);
+    expect(delays).toEqual([100]); // base * attempt(1), not base + attempt
   });
 });
