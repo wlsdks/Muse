@@ -765,6 +765,17 @@ the generic layers below because they test what makes Muse an *agent*.
     batch + skips an empty/whitespace insight; empty incoming → 0 (no write); tolerant read
     (missing/malformed/wrong-shape → []); FILTERS a tampered entry (empty insight / non-finite
     supportCount) on read; listReflections newest-first. mcp 1163->1170.
+  - FIFTY-EIGHTH (cross-package sweep → mcp; the shared concurrency primitive): `packages/mcp`
+    `atomic-file-store.ts` (69L, **ZERO test refs**) — `atomicWriteFile` + `withFileMutationQueue`,
+    the foundation EVERY personal sidecar store depends on (objectives/consent/veto/quarantine/
+    reflections/action-log …). First suite (8 tests, temp files): atomicWriteFile writes +
+    creates nested dirs + leaves no .tmp; 0600 default mode + explicit-mode override; overwrites
+    atomically; fsync:false still writes. withFileMutationQueue: SERIALISES 25 concurrent
+    read-modify-write increments so NO update is lost (the core lost-update fix — each op reads,
+    yields to force interleaving, writes back +1 → final===25); runs different files in PARALLEL
+    (keyed by path — a fast f2 op doesn't wait behind a slow f1 op); rejects the caller's promise
+    on a throwing op WITHOUT wedging the queue for the next op on the same file; returns the op's
+    value. mcp 1170->1178.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
