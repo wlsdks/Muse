@@ -2236,3 +2236,13 @@ the generic layers below because they test what makes Muse an *agent*.
     a fired entry (no resurrection); upsertFollowup idempotent replace-by-id; the status-
     filter parser (3 valid + default 'scheduled'); serializeFollowup required + conditional
     optionals. Pre-verified against dist. mcp 1219 tests green.
+
+- [x] **fix(test): de-flake recall-hit-recording (poll instead of fixed sleep).**
+    Surfaced last fire — recall-hit-recording.test.ts intermittently failed in the full
+    parallel `pnpm check` (expected [] vs the recorded hits), threatening the shared FF
+    gate. Root cause: the hit recording is fire-and-forget inside resolve() (must not
+    block the recall path on disk I/O — correct), but the test waited a FIXED 30ms that
+    races the write under load. Fix (test-only, no source change): replaced the sleep
+    with waitForHits(n) that polls readRecallHits until the entries land (≤2s ceiling) —
+    deterministic, returns the instant the write completes. Negative test keeps the fixed
+    wait (no write is ever issued there). autoconfigure 470 green across repeated runs.
