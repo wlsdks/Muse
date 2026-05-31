@@ -439,6 +439,20 @@ the generic layers below because they test what makes Muse an *agent*.
     of the < 2 guard; NONE-as-prefix decline; fail-soft on an undefined model output.
     agent-core 1157->1163. (7 survivors: MERGE_SYSTEM_PROMPT StringLiterals + the equivalent
     output?.trim() optional-chaining / object-literal variants — pattern-coverage.)
+  - THIRTIETH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    veto-avoidance.ts` — the NEGATIVE reinforcement twin of playbook (learned avoidance: a
+    [Learned Avoidance] system block so the agent stops PROPOSING a corrected action class
+    everywhere, not only at the consent gate). Had 5 tests (full-veto + injection + pipeline)
+    but the render branches were thin → **76.19%**. Deepened to 10 → **90.48%** (38 killed,
+    4 survived). Pinned renderVetoAvoidanceSection's structure + branches: a bare scope-only
+    veto is exactly `- <scope>` (both the objectiveId and reason ternaries fall to "" —
+    killed the reason-false-branch mutant), objectiveId-present/reason-absent renders the
+    objective clause with no dash, sanitizeInline both COLLAPSES whitespace runs (`/\s+/`
+    not `/\s/`) AND trims each field, the block is newline-joined (startsWith
+    "[Learned Avoidance]\n", not concatenated) and carries the full instruction body, and
+    one bullet per veto. agent-core 1163->1168. (4 survivors: the appendSystemSection
+    section-key + a prompt StringLiteral, and the equivalent `if(false)` no-provider guard
+    whose skip just crashes into the same fail-open catch — equivalent.)
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
