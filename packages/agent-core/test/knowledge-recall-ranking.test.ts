@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { edgeLoadByRelevance, fuseByReciprocalRank, selectByMmr } from "../src/knowledge-recall.js";
+import { edgeLoadByRelevance, fuseByReciprocalRank, reorderForLongContext, selectByMmr } from "../src/knowledge-recall.js";
 
 describe("fuseByReciprocalRank", () => {
   it("sums 1/(k + rank) across rankings, rewarding agreement between lists", () => {
@@ -62,5 +62,33 @@ describe("edgeLoadByRelevance", () => {
     expect(edgeLoadByRelevance([])).toEqual([]);
     expect(edgeLoadByRelevance(["only"])).toEqual(["only"]);
     expect([...edgeLoadByRelevance([1, 2, 3, 4, 5])].sort()).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe("reorderForLongContext (lost-in-the-middle edge-loading)", () => {
+  const scores = (items) => items.map((x) => x.score);
+  const mk = (arr) => arr.map((s) => ({ id: s, score: s }));
+
+  it("sorts by score then alternates to put the top items at BOTH edges, lowest in the middle", () => {
+    // sorted desc [5,4,3,2,1] → front=[5,3,1], back=[4,2]→reversed [2,4]
+    // → [5,3,1,2,4]: highest at index 0, second-highest at the LAST index, lowest dead-centre.
+    expect(scores(reorderForLongContext(mk([5, 4, 3, 2, 1])))).toEqual([5, 3, 1, 2, 4]);
+    const out = reorderForLongContext(mk([5, 4, 3, 2, 1]));
+    expect(out[0]?.score).toBe(5); // best at the front edge
+    expect(out[out.length - 1]?.score).toBe(4); // 2nd-best at the back edge
+    expect(out[2]?.score).toBe(1); // worst buried in the middle (where attention is weakest)
+  });
+
+  it("sorts internally, so an UNSORTED input yields the same edge-loaded order", () => {
+    expect(scores(reorderForLongContext(mk([1, 5, 3, 2, 4])))).toEqual([5, 3, 1, 2, 4]);
+  });
+
+  it("is a non-mutating permutation; handles empty / single / pair", () => {
+    const input = mk([1, 2, 3]);
+    reorderForLongContext(input);
+    expect(scores(input)).toEqual([1, 2, 3]); // input untouched
+    expect(reorderForLongContext([])).toEqual([]);
+    expect(scores(reorderForLongContext(mk([7])))).toEqual([7]);
+    expect(scores(reorderForLongContext(mk([9, 1])))).toEqual([9, 1]);
   });
 });

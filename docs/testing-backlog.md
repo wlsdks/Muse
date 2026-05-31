@@ -2104,3 +2104,48 @@ the generic layers below because they test what makes Muse an *agent*.
     (A 2nd gap found and NOT yet fixed: KO "2026-05-01이 얼마나 지난 거야?" picks time_diff
     instead of time_relative — the documented relative-vs-diff overlap; logged for a
     future targeted slice.)
+
+- [x] **fix(tools): time_relative KO relative-to-now phrasing (relative-vs-diff overlap).**
+    The logged gap #2 from the prior fire. KO prompts measuring ONE explicit date
+    against now — "2026-05-01이 얼마나 지난 거야?", "…에서 지금까지 얼마나 됐어?",
+    "…까지 며칠 남았어?" — picked time_diff 0/5 (the model saw one ISO date and grabbed
+    the two-timestamp duration tool). EN equivalents worked; time_relative's
+    disambiguation clause had EN examples only. Fix: added KO examples to its Use-when
+    clause ("X가 얼마나 지났어", "X까지 며칠 남았어", "X에서 지금까지 얼마나 됐어 — a single date
+    vs now, even when explicit ISO"). Result: the 3 broken KO cases 0/5→5/5; EN
+    time_relative + BOTH two-timestamp time_diff cases (KO + EN) stay 5/5 (no
+    regression — the relative-vs-diff boundary holds). eval:tools 60→61 (KO relative
+    golden positive added). Verified STABLE 5/5 before landing. (Remaining time gap,
+    logged: "9시랑 17시 30분 사이 몇 시간?" → no tool — informal HH:MM with no date; a
+    distinct arg-shape issue, future slice.)
+
+- [x] **eval:explore — added the time-tool confusable set as a 2nd generated scenario.**
+    The explorer now drives TWO tool sets: actuators (5) and the confusable time tools
+    (time_now/time_diff/time_add/time_relative/next_weekday_date/cron) via CATEGORY_TOOLSET.
+    Five generated time categories (KO+EN) continuously regression-monitor time-tool
+    SELECTION under variety — including the two fixes shipped this week (KO date→time_now,
+    KO relative-to-now→time_relative) and the relative-vs-diff boundary — not just
+    eval:tools' fixed prompts. Stable across seeds 1/3/5/7 (80/80 each, 0 breaches).
+    A first run surfaced a GENERATOR artifact (independently-picked dates → degenerate
+    "between X and X" / backwards to<from ranges the model reasonably abstains on);
+    fixed the generator to emit distinct chronologically-ordered ranges (twoSortedDates),
+    so the category tests real two-timestamp diff selection. The bare-clock
+    "9시랑 17시30분 사이" duration remains logged (under-specified for an ISO tool — a
+    product-contract question, not a phrasing fix), deliberately NOT generated here.
+
+- [x] **agent-core/followup-detector — Korean 내일 <slot> variant mappings.**
+    extractFollowupPromises is thoroughly tested, but the KOREAN_SLOTS map + slot→hour
+    resolution was only exercised for 아침 (morning). EN "tomorrow afternoon/night" had
+    coverage; the KO equivalents did not, so each of the other five keys
+    (오전→morning, 점심/오후→afternoon, 저녁→evening, 밤→night) was a surviving mutation
+    target. New test asserts all five resolve to the right default slot hour (9/14/14/
+    19/21). Deterministic (no LLM); pre-verified against dist. agent-core suite green.
+
+- [x] **agent-core/knowledge-recall — reorderForLongContext (0 tests → covered).**
+    The lost-in-the-middle edge-loading reorder (sort by score, alternate into
+    front/back, return front+reversed-back so the top items sit at BOTH context edges
+    and the weakest in the middle) had NO test. New tests pin the exact order
+    ([5,4,3,2,1]→[5,3,1,2,4]: best at index 0, 2nd-best at the last index, worst dead-
+    centre), that it sorts internally (unsorted input → same order), and that it is a
+    non-mutating permutation handling empty/single/pair. Deterministic; pre-verified
+    against dist. agent-core 1232 tests green.
