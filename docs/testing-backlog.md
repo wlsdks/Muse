@@ -882,6 +882,17 @@ the generic layers below because they test what makes Muse an *agent*.
     28→13 survived). Remaining: the DECISION_HINTS vocabulary list (pattern-coverage) + clampUnit's
     <0/non-finite branches (unreachable via the all-additive public scorer — defensive).
     memory 304->307.
+  - SIXTY-NINTH (mutation-depth): `agent-core/runtime-helpers.ts` (479L) Stryker 86.42% — but
+    `appendSystemSection` (the system-prompt section injector playbook/veto/council ALL use to
+    splice their [Learned Strategies]/[Learned Avoidance]/etc. blocks) had NO DIRECT test, only
+    integration via those callers. +4 direct contract tests: prepends a new marked system message
+    when none exists; modifies ONLY the system message (every other message identical — the
+    `index !== systemIndex` guard); re-applying the SAME sectionId REPLACES the prior block (no
+    duplicate marker — the stripSystemSection found-path); and re-applying one section PRESERVES
+    a different section (strips only THIS marker's block up to the next muse-marker — the bug the
+    `split(marker)[0]` naive impl had). → 87.16% (+3 net; the small delta understates it — most
+    of the file's residual survivors are telemetry span-attribute + marker-format StringLiterals,
+    pattern-coverage, correctly not chased). agent-core 1224->1228.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
