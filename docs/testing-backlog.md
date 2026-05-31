@@ -567,6 +567,18 @@ the generic layers below because they test what makes Muse an *agent*.
     for an unknown one (no throw, no write); load returns a DEFENSIVE COPY (mutating the result
     doesn't corrupt the store); a corrupt/non-object file is treated as empty rather than
     crashing AND the store recovers (can save over it). messaging 332->340.
+  - FORTIETH (cross-package sweep → messaging; dispatch-chokepoint security): `packages/
+    messaging` `registry.ts` (83L) had **ZERO test refs** — the MessagingProviderRegistry
+    that every outbound surface dispatches through. First suite (8 tests, fake providers
+    recording what they receive): register-from-constructor + has/list/describe; require()
+    returns a provider or throws PROVIDER_NOT_FOUND with a hint listing the registered ids
+    ("(none registered)" when empty); register() OVERWRITES same-id (last wins, unlike
+    ToolRegistry's dup-error); and the SECURITY contract — `send()` scrubs credentials
+    (redactSecretsInText) at the single dispatch chokepoint so a leaked secret in
+    agent-generated text is redacted BEFORE the provider sees it, even if an upstream scrub
+    was missed; send dispatches + returns the receipt, send to an unknown provider →
+    PROVIDER_NOT_FOUND; fetchInbound dispatches when supported and → UPSTREAM_FAILED when the
+    provider lacks it. messaging 340->348.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
