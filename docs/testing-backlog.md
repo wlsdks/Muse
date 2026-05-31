@@ -735,6 +735,15 @@ the generic layers below because they test what makes Muse an *agent*.
     "irreversible"); and the END-TO-END property — after undo, the recorded veto OVERRIDES prior
     consent so a subsequent performConsentedAction for the same {objective,scope} is refused
     with NO HTTP ("vetoed"). mcp 1148->1151.
+  - FIFTY-FIFTH (cross-package sweep → mcp; quarantine persistence): `packages/mcp`
+    `swarm-quarantine-store.ts` (137L, **ZERO test refs**) — where received peer know-how lands
+    execute-gated until the user promotes it. First suite (5 tests, temp files): addToQuarantine
+    deposits as PENDING + round-trips (label optional); missing/malformed file → []; a tampered
+    entry whose kind ISN'T shareable know-how ("tool-call") is FILTERED on read (defense in
+    depth — a corrupted store can't smuggle an executable kind into quarantine even though the
+    safety core already refused it); listPending returns only pending, most-recent-first;
+    setQuarantineStatus promotes/rejects a pending entry exactly once (stamps resolvedAtMs) and
+    returns null on an already-resolved or unknown id (no double-promote). mcp 1151->1156.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
