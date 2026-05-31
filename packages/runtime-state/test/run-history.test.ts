@@ -77,6 +77,37 @@ describe("InMemoryAgentRunHistoryStore", () => {
     expect(store.listToolCalls(run.id)).toEqual([]);
   });
 
+  it("listRuns paginates newest-first via offset/limit and clamps out-of-range bounds", () => {
+    let tick = 1000;
+    const store = new InMemoryAgentRunHistoryStore({
+      idFactory: (prefix) => `${prefix}-${(tick += 1).toString()}`,
+      now: () => new Date((tick += 1000))
+    });
+    store.createRun({ input: "a", model: "m", provider: "p" }); // oldest
+    store.createRun({ input: "b", model: "m", provider: "p" });
+    store.createRun({ input: "c", model: "m", provider: "p" }); // newest
+
+    expect(store.listRuns().map((r) => r.input)).toEqual(["c", "b", "a"]); // newest first
+    expect(store.listRuns({ limit: 1, offset: 1 }).map((r) => r.input)).toEqual(["b"]); // the page after the newest
+    expect(store.listRuns({ offset: 9 })).toEqual([]); // offset past the end
+    expect(store.listRuns({ limit: 0 })).toEqual([]); // Math.max(0, limit) → empty page
+    expect(store.listRuns({ offset: -5 })).toHaveLength(3); // negative offset clamps to 0, not a wraparound slice
+  });
+
+  it("updateRun with status only preserves existing output / costUsd / tokenUsage (?? existing, not a reset)", () => {
+    const store = new InMemoryAgentRunHistoryStore();
+    const run = store.createRun({ input: "x", model: "m", provider: "p" });
+    store.updateRun({ costUsd: 0.5, output: "partial", runId: run.id, status: "running", tokenUsage: { inputTokens: 10, outputTokens: 2 } });
+
+    const finalized = store.updateRun({ runId: run.id, status: "completed" }); // status only
+    expect(finalized).toMatchObject({
+      costUsd: 0.5,
+      output: "partial",
+      status: "completed",
+      tokenUsage: { inputTokens: 10, outputTokens: 2 }
+    });
+  });
+
   it("returns undefined when updating unknown records", () => {
     const store = new InMemoryAgentRunHistoryStore();
 

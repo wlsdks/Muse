@@ -1969,3 +1969,14 @@ the generic layers below because they test what makes Muse an *agent*.
     (3) listDebugReplayCaptures' `Math.max(0, limit)` clamp — limit 0 / negative
     returns [] (tests only used 10 and 1). New tests pin all three. Pre-verified
     against dist. runtime-state 39 pass (+2).
+
+- [x] **runtime-state/run-history — listRuns pagination + updateRun field preservation.**
+    run-history.test.ts covered lifecycle, tie-ordering and SQL payloads, but two
+    InMemoryAgentRunHistoryStore behaviors were unexercised: (1) listRuns offset/limit
+    pagination — the `slice(offset, offset+limit)` with `Math.max(0, …)` clamps on both
+    (page-after-newest, offset-past-end → [], limit 0 → [], negative offset → no
+    wraparound). The admin runs list paginates through this; a clamp/arithmetic mutant
+    survived. (2) updateRun with status only — each field is `input.x ?? existing.x`, so
+    finalizing a run's status must NOT wipe the output/costUsd/tokenUsage written by an
+    earlier partial update; a `??`→`input.x` mutant (reset-to-undefined) survived. Both
+    pre-verified against dist. runtime-state 41 pass (+2).
