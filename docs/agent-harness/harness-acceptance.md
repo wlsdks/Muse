@@ -146,6 +146,13 @@ related: [verification-and-guardrails.md, failure-modes-and-observability.md, te
 
 > 골든 묶음 6/10 측정(G1~G5 3역할 통과 + G8·G10 평가자), 전부 pass^1=1/1. 남은 미실측: G6·G7·G9.
 
+### 일곱 번째 실측 — G6 단어 수 3역할 연쇄 (같은 날)
+
+- **G6(연속·앞뒤 공백 무시 단어 수) — PASS:** 플래너 기준(`countWords("  hello   world  ")→2`) →
+  워커 `trim().split(/\s+/).filter(Boolean).length` → 평가자가 분할·필터 동작을 짚어 PASS+근거.
+
+> 골든 묶음 7/10 측정(G1~G6 3역할 통과 + G8·G10 평가자), 전부 pass^1=1/1. 남은 미실측: G7·G9.
+
 ## 한 줄 요약 (하네스 검증 체크리스트)
 
 1. **데이터 출처**를 먼저 인증했나(0층)?
