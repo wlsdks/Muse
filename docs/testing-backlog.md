@@ -2067,3 +2067,15 @@ the generic layers below because they test what makes Muse an *agent*.
     golden case — it stays a report-only injection-resistance metric in eval:explore
     (the deterministic channel-approval-gate is its enforced guarantee per
     outbound-safety.md). Pre-verified 5/5 each before landing.
+
+- [x] **fix(mcp): home_action thermostat/climate selection (eval:explore finding).**
+    eval:explore surfaced a reproducible tool-selection miss: "Set the thermostat to
+    22 degrees." → 0/5 home_action on qwen3:8b (model abstained), while lights/scenes/
+    KO commands were 5/5. Root cause: the home_action description gave light/scene/
+    script examples but NONE for climate, so the model didn't map thermostat → a
+    smart-home service. Fix: added a climate example ("set the thermostat — service
+    'climate.set_temperature', entity 'climate.living_room'") + "climate/thermostat,
+    fans" to the device list. Result: EN thermostat 0/5→5/5, "Turn the heating up to
+    24" also 5/5, no regression on lights/dim/scene (5/5). eval:tools 58→59 (added the
+    thermostat as a golden positive so the fix is regression-monitored). Verified
+    STABLE 5/5 before landing; eval:tools 59/59.

@@ -163,6 +163,7 @@ async function buildActuatorScenario() {
       { prompt: "Activate the bedtime scene.", expectTool: "home_action", requireArgs: ["service"], note: "scene → home_action (223)" },
       { prompt: "Run my good night routine.", expectTool: "home_action", requireArgs: ["service"], note: "routine/script → home_action (223)" },
       { prompt: "거실 불 꺼줘.", expectTool: "home_action", requireArgs: ["service"], note: "KO smart-home COMMAND → home_action (user's language; the positive counterpart to the KO 'good gear' musing trap); STABLE 3/3" },
+      { prompt: "Set the thermostat to 22 degrees.", expectTool: "home_action", requireArgs: ["service"], note: "EN thermostat → home_action (climate); was 0/5 before the climate example landed in the desc, now STABLE 5/5 — locks the fix against regression" },
       { prompt: "Find the email from the bank about my statement.", expectTool: "search_email", requireArgs: ["query"], note: "inbox search → search_email, NOT knowledge_search (199)" },
       { prompt: "은행에서 온 명세서 메일 좀 찾아줘.", expectTool: "search_email", requireArgs: ["query"], note: "KO inbox search → search_email (user's language; the positive counterpart to the KO inbox-venting trap); STABLE 3/3" },
       { prompt: "Any news about the Mars mission from the feeds I follow?", expectTool: "knowledge_search", requireArgs: ["query"], note: "feeds news → knowledge_search, NOT web/search_email (229/230)" },
