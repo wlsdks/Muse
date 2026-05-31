@@ -64,6 +64,24 @@ turn; never half-shipped.
 
 ## Active target
 
+**P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
+B2).** The front door (P34) is delivered + proven; the headline's other half
+is the *felt* quality — recall that reads like a memory, honest refusals that
+offer a hand, growth you can sense — built ONLY under the B2 guardrails
+(honesty never traded for feel; felt framing is deterministic code, never a
+second model call). Verified live on local Qwen via the same cited-answer +
+honest-refusal mock-corpus check where applicable.
+
+- [x] **P35-1 Citation-as-voice (B2 S1, build-first).** `muse ask` renders
+  each cited note as a memory — "📎 From your notes … • from your note of
+  <date> — '<verbatim snippet>'" + the openable path — instead of a bare
+  filename, by pure deterministic code (`formatSourceReceipts`: date from the
+  filename + a verbatim chunk excerpt, no second model call, gate untouched,
+  post-gate so a refusal renders no receipt). Proven LIVE on qwen3:8b: the
+  WireGuard answer shows the dated memory receipt + path; the sister's-birthday
+  refusal shows none; `commands-ask-receipts.test.ts` + `pnpm lint` 0/0.
+  (this commit)
+
 **P34 — The front door (loop-v2 headline: the moat is invisible without
 the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able
 to SEE Muse's edge — a cited answer AND an honest refusal — in seconds, with

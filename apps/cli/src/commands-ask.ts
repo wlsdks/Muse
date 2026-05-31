@@ -140,6 +140,50 @@ export function formatSourcesFooter(answer: string, notesDir: string): string | 
   return `\n📎 Sources (open to verify):\n${lines.join("\n")}\n`;
 }
 
+/** A short, whitespace-collapsed verbatim excerpt of a cited chunk. */
+export function provenanceSnippet(text: string, max = 90): string {
+  const flat = text.replace(/\s+/gu, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
+}
+
+/** A `YYYY-MM-DD` date parsed from a note's filename, if present. */
+export function provenanceDate(noteRef: string): string | undefined {
+  return /(\d{4}-\d{2}-\d{2})/u.exec(noteRef)?.[1];
+}
+
+/**
+ * S1 "citation-as-voice" (felt-experience, PART B2): render each cited note as
+ * a MEMORY, not a filename — "from your note of 2026-03-03 — '…verbatim
+ * snippet…'" + the openable path. Pure deterministic code (verbatim chunk text
+ * + date parsed from the filename, NO second model call, the gate untouched),
+ * so the receipt reads like Muse recalling WHERE you said it. Takes the
+ * post-gate answer (only real surviving citations) + the grounded chunks;
+ * undefined when nothing was cited (a refusal renders no receipt). Testable.
+ */
+export function formatSourceReceipts(
+  answer: string,
+  notesDir: string,
+  chunks: ReadonlyArray<{ readonly file: string; readonly text: string }>
+): string | undefined {
+  const cited = [...new Set(citedSourcesIn(answer))];
+  if (cited.length === 0) {
+    return undefined;
+  }
+  const snippetFor = (note: string): string | undefined => {
+    const base = note.split("/").pop();
+    const hit = chunks.find((c) => c.file === note || c.file.split("/").pop() === base);
+    return hit ? provenanceSnippet(hit.text) : undefined;
+  };
+  const blocks = cited.map((note) => {
+    const date = provenanceDate(note);
+    const lead = date ? `from your note of ${date}` : `from ${note.split("/").pop() ?? note}`;
+    const snippet = snippetFor(note);
+    const path = isAbsolute(note) ? note : join(notesDir, note);
+    return `   • ${lead}${snippet ? ` — "${snippet}"` : ""}\n     ${path}`;
+  });
+  return `\n📎 From your notes (open to verify):\n${blocks.join("\n")}\n`;
+}
+
 // Precision-first refusal markers (EN + KO). A refusal grounds NO claim, so
 // ANY citation the small model tacks onto it ("…I don't have that. cite as:
 // [from preferences.md]") is spurious — and the followable Sources footer
@@ -1204,13 +1248,18 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         io.stdout(collectedAnswer);
       }
 
-      // "Shows its work" made FOLLOWABLE: list the notes the answer actually
-      // CITED (post-gate, so only real surviving citations) with their full
-      // openable paths — the user can open the exact receipt to verify, not
-      // just trust the inline `[from …]` name.
+      // "Shows its work" made FOLLOWABLE *and FELT* (S1 citation-as-voice):
+      // each cited note rendered as a memory — "from your note of <date> —
+      // '<verbatim snippet>'" + the openable path — post-gate (only real
+      // surviving citations; a refusal renders nothing). Pure deterministic
+      // render from the grounded chunks, no second model call.
       if (!options.json) {
-        const footer = formatSourcesFooter(collectedAnswer, notesDir);
-        if (footer) io.stderr(footer);
+        const receipts = formatSourceReceipts(
+          collectedAnswer,
+          notesDir,
+          scored.map((r) => ({ file: r.file, text: r.chunk.text }))
+        );
+        if (receipts) io.stderr(receipts);
       }
 
       if (options.json) {
