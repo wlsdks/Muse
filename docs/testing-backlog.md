@@ -2275,3 +2275,12 @@ the generic layers below because they test what makes Muse an *agent*.
     (entry exactly at window-start excluded, at now included); avoidedSourceKeys collects
     ONLY vetoed sources; isSourceAvoided true for a vetoed source, false otherwise;
     appendSurfaced derives the sourceKey. Pre-verified against dist. mcp 1231 tests green.
+
+- [x] **mcp/smart-home — buildHomeAssistantServiceCall + performHomeActionWithApproval.**
+    Census found both with ZERO refs. buildHomeAssistantServiceCall builds the HA REST
+    service-call request that drives a state-changing home action; performHomeActionWithApproval
+    is the outbound-safety draft-first/fail-close path. New tests pin: builder URL
+    (trailing-slash stripped) + Bearer auth + entity_id+data body + summary, and the
+    no-entity scene form; e2e — approved POSTs the built request once (performed:true,
+    status 200), DENIED calls fetch zero times (performed:false, no state change reaches
+    the home). Contract-faithful fetch + gate fakes. Pre-verified against dist. mcp 1235 green.
