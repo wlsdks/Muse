@@ -952,6 +952,14 @@ the generic layers below because they test what makes Muse an *agent*.
     from inbound `harness/runner/*.mjs` (another loop's files: no-undef process/console +
     no-useless-assignment) — NOT this slice (npx eslint packages/a2a is clean). The harness loop
     must fix its own runner files / eslint node-env config; integration FF push is gated on it.
+  - SEVENTY-SIXTH (fix — unblock the shared lint gate): the inbound `harness/runner/*.mjs`
+    lint breakage (10 no-undef process/console + no-useless-assignment) persisted on main and
+    blocked EVERY loop's integration FF push (the gate is repo-wide `pnpm lint` 0). Root cause:
+    those node tooling scripts weren't in the eslint ignore list, unlike the sibling
+    `**/scripts/**` (also node ESM using process/console, ignored entirely). Fix: add
+    `harness/runner/**` to the ignores — consistent with the repo's established pattern for node
+    tooling scripts. `pnpm lint` → green (exit 0). Eslint-ignore-only, no source/test impact
+    (lint-green is the proportionate verification). Unblocks the shared integration gate.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
