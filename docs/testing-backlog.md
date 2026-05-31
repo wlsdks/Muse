@@ -600,6 +600,51 @@ the generic layers below because they test what makes Muse an *agent*.
     write would break polling); the 0600 sidecar mode (it reveals the bot's polling cadence +
     chat ids); and graceful "no offset" on a corrupt file / missing offset / string or null
     value. messaging 354->361.
+  - FORTY-THIRD (cross-package sweep → a2a; SECURITY/crypto): `packages/a2a` `signing.ts`
+    (42L, 3 exports) had **ZERO test refs** — HMAC-SHA256 envelope authentication for
+    agent-to-agent messages (a tampered envelope or a forged `from` without the shared secret
+    is rejected before the safety core sees it). First suite (7 tests, dist-verified):
+    round-trip verifies with the SAME secret (64-hex SHA-256); a DIFFERENT secret → false (a
+    forged from has no secret); ANY tampered safety-field (content/fromPeerId/kind/label/the
+    redacted scrub-flag) → false; a wrong-length / non-string / right-length-but-non-hex
+    signature → false WITHOUT throwing (fail-closed, the timingSafeEqual length guard + try);
+    canonicalizeEnvelope is deterministic + lays fields out kind→from→redacted→label→content,
+    and coerces an absent optional label to the SAME canonical/signature as an explicit ""
+    (both sides agree). First a2a slice. a2a 84->91.
+  - FORTY-FOURTH (cross-package sweep → a2a; SECURITY inbound gate): `packages/a2a`
+    `transport.ts` `receiveFromPeer` + `receive-quarantine.ts` `receiveAndQuarantine` (both
+    **ZERO test refs**) — the inbound peer-message gate that classifies an HTTP message
+    through the safety core and returns ONLY quarantine|reject, never execute. Two suites (10
+    tests) wiring the REAL helpers (createPeerRegistry + signEnvelope + envelopeToSendRequest):
+    receiveFromPeer quarantines a valid correctly-signed know-how message from a known peer,
+    and rejects every adversarial path — A2A disabled, unparseable body, no-know-how envelope,
+    UNKNOWN peer (not in the allowlist), missing/invalid HMAC (a valid sig under the wrong
+    secret can't forge a peer), and a correctly-signed but NON-shareable kind (the safety core
+    has the final say — a signature can't make `ask` executable). receiveAndQuarantine deposits
+    an accepted message with injected id+timestamp + the label, OMITS the label when absent,
+    and deposits NOTHING on reject (a forged message is never quarantined). a2a 91->101.
+  - FORTY-FIFTH (cross-package sweep → a2a; HTTP entry-point security): `packages/a2a`
+    `handler.ts` `createA2AHandler` (114L, **ZERO test refs**) — the inbound HTTP request
+    handler, pure over a transport-agnostic request/response shape (the `muse swarm serve`
+    command is a thin node:http wrapper). First suite (8 tests, real builders): OFF-BY-DEFAULT
+    403 to everything (even agent-card discovery) when disabled; GET serves the agent card with
+    the query string stripped + 404s other GETs + 405s non-GET/POST; POST know-how quarantines
+    a valid signed message → deposits + acks a terminal Message (kind:"message", NOT a Task —
+    "a peer can never trigger compute") and acks "rejected" + deposits nothing on a bad
+    signature; and the bounded COUNCIL compute path — empty reasoning when not participating
+    (no councilReason), runs the reasoning step for a valid signed request when participating,
+    and REFUSES to compute (empty reasoning, councilReason never called) on a bad-signature
+    council request even when participating. a2a 101->109.
+  - FORTY-SIXTH (cross-package sweep → a2a; discovery/recon surface): `packages/a2a`
+    `agent-card.ts` `buildMuseAgentCard` (113L, **ZERO test refs**) — the A2A Agent Card a peer
+    fetches to learn what this Muse accepts (the primary recon surface). First suite (6 tests):
+    url pass-through + name default "Muse"/override + protocolVersion; NO streaming + NO push
+    notifications (a webhook target is an SSRF/egress hole the local-first posture must not
+    open); the REQUIRED know-how-only extension declaring acceptsExecution:false +
+    inboundDisposition [quarantine,reject] + payloadKinds = the 3 shareable kinds + piiRedacted;
+    exactly the three know-how skills each tagged no-exec + "Never executed"; the museHmac
+    security scheme + know-how media type as default I/O; and a recon-surface check that the
+    serialized card leaks no home path / email / internal tool name. a2a 109->115.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
