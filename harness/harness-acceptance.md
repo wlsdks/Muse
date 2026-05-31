@@ -335,6 +335,18 @@ PreToolUse 훅은 도구 호출을 우회 불가로 막는 유일 메커니즘(B
   게이트를 건너뛸 수 없음.
 - **한계:** 호스트가 도구 디스패치를 `dispatchTool`로 감싸야 효력. 관측·세션 영속은 다음 정통 요소.
 
+### 스물여덟 번째 실측 — 정통 요소: 관측(트레이스) 컴포넌트 (2026-05-31)
+
+정통 5계층 중 **관측**을 코드로 추가([observability.md](observability.md) · [runner/tracer.mjs](runner/tracer.mjs)).
+실행의 모든 단계를 상관 ID로 기록·요약·redaction.
+
+- **6/6 통과**: 상관 ID(runId)+단조 seq 부여·요약 롤업(이벤트 카운트·blocked·duration·**cost 합**)·
+  민감정보 redaction(api_key 등 `[redacted]`)·toJSON 직렬화·**오케스트레이터가 트레이스+요약을 냄**·
+  PostToolUse 훅→트레이서 합성. 러너 스위트 누적 **39/39**(오케스트레이터 리팩터 무회귀).
+- **확인된 것:** 권한·훅에 이어 관측까지 코드 레이어로 — 게이트 판정·역할·재시도·비용이 한 상관 ID로
+  묶여 재현·감사 가능. run.mjs는 `last-trace.json`(events+summary, redaction 적용)을 남김.
+- **한계:** 인메모리+JSON 영속까지. 비용은 호스트가 `cost` 필드를 넣어줘야 합산. 세션 영속은 다음.
+
 ## 한 줄 요약 (하네스 검증 체크리스트)
 
 1. **데이터 출처**를 먼저 인증했나(0층)?

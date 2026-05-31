@@ -2,13 +2,14 @@
 // the harness cycle (plan -> build -> evaluate -> complete), with every step
 // gated by the deterministic runner in harness-runner.mjs. The model only ever
 // reasons WITHIN a role; this code owns the control flow and the gates, and
-// emits a trace of every decision.
+// records every decision through the tracer (observability layer).
 //
 // `callAgent` is injected so the harness stays portable and testable: pass a
 // real LLM caller (run.mjs shells to `claude -p`) in production, or a
 // contract-faithful fake in tests. Zero deps.
 
 import { advance, planGate } from './harness-runner.mjs';
+import { createTracer } from './tracer.mjs';
 
 // callAgent(role, prompt) -> Promise<string>  (role: 'planner'|'worker'|'evaluator')
 // The orchestrator parses planner/evaluator output as JSON; a malformed reply is
@@ -22,12 +23,16 @@ function parseJson(text) {
 }
 
 export async function runCycle(task, opts = {}) {
-  const { callAgent, maxRetries = 2, now = () => 0 } = opts;
+  const { callAgent, maxRetries = 2, now = () => 0, runId = 'run', redact } = opts;
   if (typeof callAgent !== 'function') throw new Error('callAgent is required');
 
-  const trace = [];
-  const log = (entry) => { trace.push({ t: now(), ...entry }); };
-  const fail = (reason, state = 'BLOCKED') => { log({ event: 'blocked', state, reason }); return { ok: false, state, reason, trace }; };
+  const tr = createTracer({ runId, now, redact });
+  const log = ({ event, ...data }) => tr.add(event, data);
+  const result = (extra) => ({ ...extra, trace: tr.events, summary: tr.summary() });
+  const fail = (reason, state = 'BLOCKED') => {
+    log({ event: 'blocked', state, reason });
+    return result({ ok: false, state, reason });
+  };
 
   let state = 'REQUESTED';
   log({ event: 'start', task });
@@ -69,7 +74,7 @@ export async function runCycle(task, opts = {}) {
       if (!done.ok) return fail(`completion gate: ${done.reason}`);
       state = done.state; // DONE
       log({ event: 'done', build: lastBuild });
-      return { ok: true, state, build: lastBuild, criteria, trace };
+      return result({ ok: true, state, build: lastBuild, criteria });
     }
 
     // FAIL -> bounded rebuild.
