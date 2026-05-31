@@ -2360,3 +2360,14 @@ the generic layers below because they test what makes Muse an *agent*.
     surfaces a clarify instead); exact preferred over partial; empty/no-match → unknown.
     contactIdentifier: email → handle → undefined. removeContact: true when removed (entry
     gone), false when the id is absent. Pre-verified against dist. mcp 1254 tests green.
+
+- [x] **mcp/personal-followup-llm-budget-store — daily budget gate (zero coverage).**
+    eval:explore mined N=12 across seeds 51-53 (120/120 each, only the known KO injection
+    report-only finding) — no NEW selection gap, so no live fix; took a census cluster
+    instead. formatLocalDay/incrementFollowupLlmBudget/isFollowupLlmBudgetExhausted (the
+    followup detector's daily LLM-call budget) had ZERO refs. New tests pin: formatLocalDay
+    zero-padded LOCAL YYYY-MM-DD; isFollowupLlmBudgetExhausted fail-closed on cap<=0/non-finite
+    (a misconfigured cap blocks, never infinite), not-exhausted with no record, at/over cap
+    for today, and yesterday's exhausted record → not exhausted today (day rollover);
+    incrementFollowupLlmBudget starts at 1, accumulates same-day, resets on rollover.
+    Pre-verified against dist. mcp 1259 tests green.
