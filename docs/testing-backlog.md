@@ -2266,3 +2266,12 @@ the generic layers below because they test what makes Muse an *agent*.
     scope (no broadening); no cross-user/cross-objective leakage; recordConsent idempotent
     replace-by-id (no duplicate/lost grant); serializeConsent required + optional note.
     Pre-verified against dist. mcp 1225 tests green.
+
+- [x] **mcp/proactive-trust-ledger — daily-cap + learned-avoidance gates (zero coverage).**
+    Census found withinDailyCap, avoidedSourceKeys, isSourceAvoided, appendSurfaced with
+    ZERO refs — the gates the proactive daemon consults before surfacing (NORTH STAR:
+    gated proactivity). New tests pin: withinDailyCap true under / false at-or-over the
+    cap, fail-closed on a non-positive/non-finite cap, and the (now-window, now] bounds
+    (entry exactly at window-start excluded, at now included); avoidedSourceKeys collects
+    ONLY vetoed sources; isSourceAvoided true for a vetoed source, false otherwise;
+    appendSurfaced derives the sourceKey. Pre-verified against dist. mcp 1231 tests green.
