@@ -1,4 +1,4 @@
-import { stripUntrustedTerminalChars } from "@muse/shared";
+import { redactSecretsInText, stripUntrustedTerminalChars } from "@muse/shared";
 
 import { appendSystemSection } from "./runtime-helpers.js";
 import type { AgentRunContext, AgentRunInput, Awaitable } from "./types.js";
@@ -49,17 +49,22 @@ export function renderAmbientContextSection(snapshot: AmbientSnapshot | undefine
   if (!snapshot) {
     return undefined;
   }
-  const fields: [string, string | undefined, number][] = [
-    ["app", snapshot.app, MAX_APP_CHARS],
-    ["window", snapshot.window, MAX_WINDOW_CHARS],
-    ["selected", snapshot.selected, MAX_SELECTED_CHARS],
-    ["clipboard", snapshot.clipboard, MAX_CLIPBOARD_CHARS],
-    ["notifications", snapshot.notifications, MAX_NOTIFICATIONS_CHARS]
+  // [key, raw, maxChars, secretBearing] — the CONTENT fields (selected text,
+  // clipboard, notifications) routinely carry secrets (a copied `.env` line,
+  // an API key, a password), so they're secret-redacted BEFORE injection so a
+  // key never reaches the model context. app/window are UI titles (low risk;
+  // redaction would mangle them). B3 gate-first: secret-skip the ambient reader.
+  const fields: [string, string | undefined, number, boolean][] = [
+    ["app", snapshot.app, MAX_APP_CHARS, false],
+    ["window", snapshot.window, MAX_WINDOW_CHARS, false],
+    ["selected", snapshot.selected, MAX_SELECTED_CHARS, true],
+    ["clipboard", snapshot.clipboard, MAX_CLIPBOARD_CHARS, true],
+    ["notifications", snapshot.notifications, MAX_NOTIFICATIONS_CHARS, true]
   ];
   const lines = ["[Ambient Context]"];
-  for (const [key, raw, max] of fields) {
+  for (const [key, raw, max, secretBearing] of fields) {
     if (raw === undefined) continue;
-    const value = sanitizeAndBound(raw, max);
+    const value = sanitizeAndBound(secretBearing ? redactSecretsInText(raw) : raw, max);
     if (value.length === 0) continue;
     lines.push(`${key}: ${value}`);
   }

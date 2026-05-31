@@ -121,3 +121,23 @@ describe("resolveAmbientSnapshot — fail-open", () => {
     ).toBeUndefined();
   });
 });
+
+describe("renderAmbientContextSection — secret-skip on the content fields (B3 gate-first)", () => {
+  it("redacts a secret in clipboard/selected before it reaches the model context", () => {
+    const out = renderAmbientContextSection({
+      app: "Terminal",
+      clipboard: "export OPENAI_API_KEY=sk-proj-abcdefghij0123456789klmnop",
+      selected: "my db is postgres://user:hunter2@db.example.com/prod"
+    });
+    expect(out).toBeDefined();
+    expect(out).not.toContain("sk-proj-abcdefghij0123456789klmnop");
+    expect(out).toContain("[redacted-openai-key]");
+    expect(out).not.toContain("hunter2"); // connection-uri creds redacted too
+    expect(out).toContain("app: Terminal"); // titles pass through unredacted
+  });
+
+  it("leaves ordinary content untouched", () => {
+    const out = renderAmbientContextSection({ clipboard: "the rent is due on the 25th" });
+    expect(out).toContain("clipboard: the rent is due on the 25th");
+  });
+});

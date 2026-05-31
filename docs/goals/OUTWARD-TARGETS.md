@@ -79,7 +79,17 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   skip malformed; provider local:true, range-filter, missing→[], mutators
   reject) + a LIVE `muse ask` on a mock `.ics` (cited "[event: Investor sync
   with Foundry @ Zoom]"; honest refusal on a flight not in the file). calendar
-  122 / autoconfigure 464 tests + `pnpm lint` 0/0. (this commit)
+  122 / autoconfigure 464 tests + `pnpm lint` 0/0. (946be45a)
+
+- [x] **P37-2 Ambient secret-skip (B3 GATE-FIRST).** The ambient reader injected
+  clipboard/selection/notifications verbatim (no secret-skip) — a copied API
+  key / `.env` line reached the model context. `renderAmbientContextSection`
+  now `redactSecretsInText`-scrubs the content fields before injection (titles
+  pass through). Proven by unit tests (a clipboard `sk-proj-…` + a credentialed
+  URI redacted; titles + ordinary text intact) + a LIVE render
+  (`OPENAI_API_KEY=[redacted-openai-key]`), cited-answer+refusal unaffected.
+  agent-core 1236 tests + `pnpm lint` 0/0. Remaining gate-first half: per-source
+  consent (default-OFF clipboard/selection flags). (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections
