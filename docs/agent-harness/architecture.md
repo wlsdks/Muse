@@ -76,7 +76,7 @@ related: [README.md, team-roles.md, handoff-template.md, role-prompts.md, verifi
 | 3 | 컨텍스트·압축 | [context-compaction](context-compaction.md) — 선제·주기·예산인지, 중요도 가중 보존 | ✅ |
 | 4 | 도구 설계 | [tool-design](tool-design.md) — 한-shot 선택·예시스키마·위험등급 | ✅ |
 | 5 | 스킬·MCP | [skills-and-mcp](skills-and-mcp.md) — 2단계 허용목록·격리·최소권한·불신출력 | ✅ |
-| 6 | 권한·승인 | [permission-matrix](permission-matrix.md) — 위험등급×처리, 최소권한, 감사 | ✅ |
+| 6 | 권한·승인 | [permission-matrix](permission-matrix.md) — 위험등급×처리·최소권한·감사 (+실측: outbound=막힘우선·금융=거부) | ✅ |
 | 7 | 메모리·상태 | [memory-layers](memory-layers.md) + 핸드오프 상태로그 — 5계층·쓰기/읽기/정리 | ✅ |
 | 8 | 오케스트레이션 | team-roles + muse-mapping | ✅ |
 | 9 | 검증·CI | verification + acceptance(6층) | ✅ |
