@@ -429,7 +429,26 @@ honest-refusal mock-corpus check where applicable.
   HOME-isolated, never real ~/.muse): the WireGuard MTU answer is cited "[from
   2026-03-03-vpn-wireguard.md]" AND shows the beat naming the preference; the
   sister's-birthday must-refuse honestly refuses with NO beat. cli 1633 tests +
-  `pnpm lint` 0/0. (this commit)
+  `pnpm lint` 0/0. (6f77e33a)
+
+- [x] **P35-6 "What you've been focused on" beat (B2 S7, pull surface).** `muse
+  today` now surfaces the note FAMILY the user has been editing most this week —
+  "🔭 You've been focused on <family> lately — N notes edited in the last week."
+  — a grounded felt "Muse noticed" moment. The ONLY signal is note *mtime*
+  (writes), never opens/reads, so it's honest ("edited", not "looked at"); a
+  quiet week yields NO line. Done as a PULL surface (in `muse today`, which the
+  user asked for) so it needs no proactive-interrupt budget — the clean tracer
+  of the push-notice S7. New pure `selectNoteFocus`/`formatNoteFocusSection`
+  (`note-focus.ts`); `muse today` gathers mtimes via the existing notes walk,
+  fail-soft + `--json`-skipped, composed alongside the existing revisit/stale-
+  task/connection sections. Proven by unit tests (most-edited family wins; quiet
+  week → silent; out-of-window/future/NaN mtimes ignored; count-tie → most-recent;
+  root notes → "your notes"; honest "edited" wording, never "looked at") + a LIVE
+  `muse today --local` (HOME-isolated, generated cluster, never real ~/.muse): 4
+  recent edits in projects/ → "🔭 You've been focused on projects lately — 4
+  notes edited in the last week"; a lone note → silent. cli 1641 tests +
+  `pnpm lint` 0/0. A user opening `muse today` now sees what they've been
+  working on, grounded in real edits. (this commit)
 
 **P34 — The front door (loop-v2 headline: the moat is invisible without
 the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able

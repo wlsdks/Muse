@@ -56,6 +56,7 @@ import { embed } from "./embed.js";
 import { defaultEpisodeIndexFile, loadEpisodeIndex } from "./episode-index.js";
 import { compareFeedEntriesNewestFirst, defaultFeedsFile, filterRecentFeedEntries, readFeedsStore } from "./feeds-store.js";
 import { formatLocalDate, formatLocalDateTime as shortDateTimeBrief } from "./human-formatters.js";
+import { formatNoteFocusSection, selectNoteFocus, type NoteMtime } from "./note-focus.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
 import type { ProgramIO } from "./program.js";
 import { colorize } from "./tty-color.js";
@@ -224,6 +225,20 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         }
       }
 
+      // "What you've been focused on": the note FAMILY the user has edited most
+      // this week (mtime only — writes, never opens). A grounded felt beat (B2
+      // S7); default-on, silent on a quiet week, --json-skipped, fail-soft.
+      let focusSection = "";
+      if (!options.json) {
+        try {
+          const { resolveNotesDir } = await import("@muse/autoconfigure");
+          const mtimes = await collectNoteMtimes(resolveNotesDir(process.env as Record<string, string | undefined>));
+          focusSection = formatNoteFocusSection(selectNoteFocus(mtimes, Date.now()));
+        } catch {
+          // unreadable notes dir must not fail the brief
+        }
+      }
+
       // "Remember when": one past session whose age crossed a spaced-revisit
       // interval today. CLI-side, default-on, silent when none, --json-skipped.
       let episodeRevisitLine = "";
@@ -241,7 +256,7 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         if (options.json) {
           helpers.writeOutput(io, { ...briefing, brief: prose });
         } else {
-          io.stdout(`${prose.trim()}\n${connectionsSection}${revisitSection}${staleTasksSection}${episodeRevisitLine}`);
+          io.stdout(`${prose.trim()}\n${connectionsSection}${revisitSection}${staleTasksSection}${focusSection}${episodeRevisitLine}`);
         }
         if (options.speak) {
           await speakPlain(io, helpers.shells, prose, options.audioVoice, parseAudioFormat(options.audioFormat));
@@ -285,7 +300,7 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
         return;
       }
 
-      io.stdout(`${formatTodayBrief(briefing, usedLocal)}${connectionsSection}${revisitSection}${staleTasksSection}${episodeRevisitLine}`);
+      io.stdout(`${formatTodayBrief(briefing, usedLocal)}${connectionsSection}${revisitSection}${staleTasksSection}${focusSection}${episodeRevisitLine}`);
     });
 }
 
@@ -802,6 +817,13 @@ async function readRecentNotes(notesDir: string): Promise<readonly string[]> {
     .sort((left, right) => right.mtime - left.mtime)
     .slice(0, MAX_RECENT_NOTES)
     .map((entry) => entry.name);
+}
+
+async function collectNoteMtimes(notesDir: string): Promise<readonly NoteMtime[]> {
+  const root = resolvePath(notesDir);
+  const collected: { name: string; mtime: number }[] = [];
+  await collectNotesRecursive(root, "", collected, 0);
+  return collected.map((entry) => ({ mtimeMs: entry.mtime, relPath: entry.name }));
 }
 
 async function collectNotesRecursive(
