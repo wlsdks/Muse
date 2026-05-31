@@ -16,6 +16,7 @@ import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runCycle } from './orchestrator.mjs';
+import { redactSecrets } from './tracer.mjs';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,9 +55,14 @@ async function main() {
     process.exit(2);
   }
   const start = Date.now();
-  const res = await runCycle(task, { callAgent, now: () => Date.now() - start });
-  await writeFile(join(here, 'last-trace.json'), JSON.stringify(res.trace, null, 2));
-  console.log(JSON.stringify({ ok: res.ok, state: res.state, reason: res.reason ?? null }));
+  const res = await runCycle(task, {
+    callAgent,
+    now: () => Date.now() - start,
+    runId: `run-${start}`,
+    redact: redactSecrets,
+  });
+  await writeFile(join(here, 'last-trace.json'), JSON.stringify({ events: res.trace, summary: res.summary }, null, 2));
+  console.log(JSON.stringify({ ok: res.ok, state: res.state, reason: res.reason ?? null, summary: res.summary }));
   process.exit(res.ok ? 0 : 1);
 }
 
