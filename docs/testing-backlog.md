@@ -2326,3 +2326,12 @@ the generic layers below because they test what makes Muse an *agent*.
     "3 messages") and the head-only form when nothing is unread; an unread list with
     "(no subject)"/"(unknown)" fallbacks for blank subject/sender; and the cap at the
     first 5 unread. Pre-verified against dist. mcp 1248 tests green.
+
+- [x] **autoconfigure/setup-status — doctor counters (countNotes/statBytes/readTaskCount/readMcpEntryCount).**
+    Census found these four with ZERO refs — the counters behind `muse doctor`/setup-status.
+    New tests pin: countNotes counts .md/.markdown/.txt + each subdir as one, skipping
+    dotfiles + other extensions, undefined on a missing dir; statBytes size / undefined;
+    readTaskCount tasks-length / 0-on-wrong-shape / undefined-on-missing (three-state); and
+    the contract distinction — readMcpEntryCount degrades to 0 (NOT undefined) on
+    missing/malformed, since the report renders "0" vs "unknown" differently. Pre-verified
+    against dist. autoconfigure 475 tests green.
