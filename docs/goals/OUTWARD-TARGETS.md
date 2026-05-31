@@ -148,7 +148,20 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   session the playbook holds the learned strategy, no manual step — effectively
   the B1 2-session proof, live. cli 1608 / api 809 tests + `pnpm lint` 0/0. The
   felt LOOP works; remaining polish = probation (record-but-don't-inject) +
-  `muse learned` visibility of idle-distilled strategies. (this commit)
+  `muse learned` visibility of idle-distilled strategies. (93d32a9b)
+
+- [x] **P36-8 Probation — unattended learning can't silently steer the agent.**
+  An idle-distilled strategy is recorded + visible but NEVER injected until a
+  real reinforce graduates it (the self-confirmation safety gate, B1 §5).
+  `PlaybookStrategy`/`PlaybookEntry` gain `probation`; `rankPlaybookStrategies`
+  excludes it from injection; `adjustPlaybookReward` clears it on net-positive
+  reward; the idle consumer records `probation:true`. Proven by unit tests
+  (excluded while on probation / injected once graduated; persistence +
+  graduation) + a LIVE gate on qwen3:8b (distilled → injected 0 on probation →
+  +1 reinforce → injected 1), with cited-answer+refusal unaffected (no recall
+  regression). agent-core 1234 / mcp 1218 / api 815 tests + `pnpm lint` 0/0.
+  Idle self-learning is now SAFE to enable; remaining polish = `muse learned`
+  shows the probation flag. (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

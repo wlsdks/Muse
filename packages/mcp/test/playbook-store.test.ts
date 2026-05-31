@@ -138,3 +138,21 @@ describe("adjustPlaybookReward — the RL reinforce/decay update", () => {
     expect(read[0]!.reward).toBe(-3);
   });
 });
+
+describe("probation — unattended idle-distilled strategies graduate on a real reinforce", () => {
+  it("persists probation:true and graduates it (probation:false) when reward goes positive", async () => {
+    const file = freshFile();
+    await recordPlaybookStrategy(file, { ...entry("p1"), probation: true });
+    expect((await readPlaybook(file))[0]?.probation).toBe(true); // recorded on probation
+    const reward = await adjustPlaybookReward(file, "p1", 1); // a real reinforce
+    expect(reward).toBe(1);
+    expect((await readPlaybook(file))[0]?.probation).toBe(false); // graduated
+  });
+
+  it("keeps probation while reward stays ≤ 0 (no graduation without evidence)", async () => {
+    const file = freshFile();
+    await recordPlaybookStrategy(file, { ...entry("p1"), probation: true });
+    await adjustPlaybookReward(file, "p1", -1); // a decay, not a reinforce
+    expect((await readPlaybook(file))[0]?.probation).toBe(true);
+  });
+});

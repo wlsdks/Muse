@@ -25,6 +25,14 @@ export interface PlaybookStrategy {
    * on relevance (today's behaviour).
    */
   readonly reward?: number;
+  /**
+   * PROBATION: a strategy written UNATTENDED (idle daemon distillation) enters
+   * probation — recorded + visible but NEVER injected — until a real signal
+   * graduates it. Breaks the self-confirmation loop: the agent must not start
+   * applying a guess it made about the user without evidence. Absent/false =
+   * graduated (injected as normal). (PART A2 / B1 §5, ExpeL evidence-gated.)
+   */
+  readonly probation?: boolean;
 }
 
 export interface PlaybookProvider {
@@ -203,7 +211,9 @@ export function rankPlaybookStrategies(
   const query = rankTokens(queryText);
   // Learned avoidance: a strategy corrected into the floor is never injected,
   // even when the bank is at/below topK (where ranking returns everything).
-  const eligible = strategies.filter((s) => !isAvoidedStrategy(s));
+  // Probation: an unattended idle-distilled strategy is recorded + visible but
+  // never injected until a real signal graduates it (self-confirmation guard).
+  const eligible = strategies.filter((s) => !isAvoidedStrategy(s) && s.probation !== true);
   // Input is oldest→newest insertion order, so `index` doubles as a recency
   // proxy (higher = more recent) for the floor below.
   const scored = eligible.map((strategy, index) => ({

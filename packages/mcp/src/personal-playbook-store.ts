@@ -41,6 +41,13 @@ export interface PlaybookEntry {
    * `adjustPlaybookReward`; consumed by agent-core's reward-weighted ranking.
    */
   readonly reward?: number;
+  /**
+   * PROBATION: written UNATTENDED (idle daemon distillation) ⇒ recorded +
+   * visible but NEVER injected, until a real reinforce graduates it (cleared
+   * when reward goes positive). Breaks the self-confirmation loop. Absent =
+   * graduated. (PART A2 / B1 §5.)
+   */
+  readonly probation?: boolean;
 }
 
 async function quarantineCorruptStore(file: string): Promise<void> {
@@ -133,7 +140,9 @@ export async function adjustPlaybookReward(file: string, id: string, delta: numb
         return e;
       }
       updated = Math.max(PLAYBOOK_REWARD_MIN, Math.min(PLAYBOOK_REWARD_MAX, (e.reward ?? 0) + delta));
-      return { ...e, reward: updated };
+      // Graduation (B1 §5): a probation strategy with net-positive reward has
+      // earned evidence — clear probation so it becomes injectable.
+      return { ...e, reward: updated, ...(e.probation && updated > 0 ? { probation: false } : {}) };
     });
     await writePlaybook(file, next);
     return updated;
@@ -149,5 +158,6 @@ function isPlaybookEntry(value: unknown): value is PlaybookEntry {
   if (typeof e.createdAt !== "string") return false;
   if (e.tag !== undefined && typeof e.tag !== "string") return false;
   if (e.reward !== undefined && (typeof e.reward !== "number" || !Number.isFinite(e.reward))) return false;
+  if (e.probation !== undefined && typeof e.probation !== "boolean") return false;
   return true;
 }

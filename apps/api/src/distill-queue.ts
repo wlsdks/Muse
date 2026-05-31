@@ -62,6 +62,9 @@ export async function distillQueuedCorrections(deps: DistillQueuedDeps): Promise
     await recordPlaybookStrategy(deps.playbookFile, {
       createdAt: now().toISOString(),
       id: newId(),
+      // Unattended write ⇒ PROBATION: recorded + visible but not injected
+      // until a real reinforce graduates it (self-confirmation guard, B1 §5).
+      probation: true,
       text: strategy.text,
       userId: event.userId,
       ...(strategy.tag ? { tag: strategy.tag } : {})

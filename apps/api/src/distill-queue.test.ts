@@ -47,6 +47,7 @@ describe("distillQueuedCorrections — idle distill-consumer", () => {
     expect(pb).toHaveLength(1);
     expect(pb[0]?.text).toContain("next business day");
     expect(pb[0]?.tag).toBe("scheduling");
+    expect(pb[0]?.probation).toBe(true); // unattended write enters probation (not injected until reinforced)
     expect(await readPendingLearnEvents(queueFile)).toEqual([]); // consumed
   });
 

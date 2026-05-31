@@ -285,6 +285,21 @@ describe("learned avoidance — a corrected-into-the-floor strategy is never inj
     expect(out[0].text).toContain("bullets"); // the un-decayed one ranks first
   });
 
+  it("excludes a PROBATION strategy from injection even when relevant (B1 §5 self-confirmation guard)", () => {
+    const bank: PlaybookStrategy[] = [
+      { probation: true, tag: "notes", text: "summarise notes as bullets" }, // relevant but on probation
+      { reward: 0, tag: "email", text: "keep emails under four sentences" }
+    ];
+    const out = rankPlaybookStrategies(bank, "summarise the notes as bullets", { topK: 6 });
+    expect(out.map((s) => s.text)).not.toContain("summarise notes as bullets");
+  });
+
+  it("injects a probation strategy ONCE graduated (probation:false)", () => {
+    const bank: PlaybookStrategy[] = [{ probation: false, reward: 1, tag: "notes", text: "summarise notes as bullets" }];
+    const out = rankPlaybookStrategies(bank, "summarise the notes as bullets", { topK: 6 });
+    expect(out.map((s) => s.text)).toContain("summarise notes as bullets");
+  });
+
   it("returns nothing when every strategy is avoided", () => {
     const bank: PlaybookStrategy[] = [{ reward: -5, text: "bad one" }, { reward: -4, text: "bad two" }];
     expect(rankPlaybookStrategies(bank, "anything", { topK: 6 })).toHaveLength(0);
