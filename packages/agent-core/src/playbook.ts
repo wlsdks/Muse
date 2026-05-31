@@ -33,6 +33,14 @@ export interface PlaybookStrategy {
    * graduated (injected as normal). (PART A2 / B1 §5, ExpeL evidence-gated.)
    */
   readonly probation?: boolean;
+  /**
+   * PROVENANCE (B1 §4): `"grounded"` (distilled from a real correction),
+   * `"reflected"` (synthesised, no direct correction), or `"manual"`. A
+   * `reflected` strategy carries a tiny ranking penalty so a synthetic guess
+   * never outranks an otherwise-equal grounded record — evidence beats
+   * synthesis at equal standing. Absent = treated as non-reflected.
+   */
+  readonly origin?: string;
 }
 
 export interface PlaybookProvider {
@@ -160,6 +168,14 @@ export const PLAYBOOK_REWARD_MAX = 5;
  */
 const REWARD_RANK_WEIGHT = 0.5;
 
+/**
+ * Tie-break penalty for a `reflected` (synthetic) strategy, B1 §4. Far smaller
+ * than one reward step (0.5) or one relevance point (1), so it ONLY decides a
+ * dead heat: a synthetic reflection never outranks an otherwise-equal grounded
+ * record, but a genuinely more-relevant/higher-reward strategy still wins.
+ */
+const REFLECTED_RANK_PENALTY = 0.01;
+
 /** Coerce a possibly-absent/garbage reward to the clamped numeric range; absent → 0. */
 export function clampReward(value: number | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -187,7 +203,8 @@ function scoreStrategy(strategy: PlaybookStrategy, query: ReadonlySet<string>): 
   const relevance = query.size === 0
     ? 0
     : rankOverlap(query, rankTokens(strategy.text)) + 2 * (strategy.tag ? rankOverlap(query, rankTokens(strategy.tag)) : 0);
-  return relevance + REWARD_RANK_WEIGHT * clampReward(strategy.reward);
+  return relevance + REWARD_RANK_WEIGHT * clampReward(strategy.reward)
+    - (strategy.origin === "reflected" ? REFLECTED_RANK_PENALTY : 0);
 }
 
 function byScoreDescThenIndexAsc(

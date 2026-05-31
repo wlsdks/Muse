@@ -254,6 +254,27 @@ describe("rankPlaybookStrategies — reward-weighted (RL over the bank)", () => 
   });
 });
 
+describe("rankPlaybookStrategies — provenance tie-break (B1 §4, reflected never outranks grounded)", () => {
+  it("a synthetic reflected strategy ranks BELOW an otherwise-equal grounded one", () => {
+    const bank: PlaybookStrategy[] = [
+      { origin: "reflected", tag: "email", text: "email reply tip", reward: 2 },
+      { origin: "grounded", tag: "email", text: "email reply tip", reward: 2 }
+    ];
+    const out = rankPlaybookStrategies(bank, "draft an email reply", { topK: 6 });
+    expect(out[0].origin).toBe("grounded"); // evidence beats synthesis at a dead heat
+    expect(out[1].origin).toBe("reflected");
+  });
+
+  it("the penalty is a tie-break only — a more-relevant reflected strategy still wins", () => {
+    const bank: PlaybookStrategy[] = [
+      { origin: "grounded", text: "unrelated gardening note", reward: 0 },
+      { origin: "reflected", tag: "email", text: "draft an email reply concisely", reward: 0 }
+    ];
+    const out = rankPlaybookStrategies(bank, "draft an email reply", { topK: 1 });
+    expect(out[0].origin).toBe("reflected"); // relevance (a full point) dwarfs the 0.01 penalty
+  });
+});
+
 describe("clampReward", () => {
   it("coerces absent/garbage to 0 and clamps into [MIN, MAX]", () => {
     expect(clampReward(undefined)).toBe(0);

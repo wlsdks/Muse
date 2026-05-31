@@ -185,6 +185,10 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
       await recordPlaybookStrategy(playbookFile, {
         createdAt: now().toISOString(),
         id: idFactory(),
+        // Provenance (B1 §4): grounded in the real correction; keep it as the
+        // "why" `muse learned` shows.
+        origin: "grounded",
+        source: exchange.correction,
         text: distilled.text,
         userId: ownerId,
         ...(distilled.tag ? { tag: distilled.tag } : {})

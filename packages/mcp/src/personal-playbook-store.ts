@@ -49,6 +49,20 @@ export interface PlaybookEntry {
    */
   readonly probation?: boolean;
   /**
+   * PROVENANCE (B1 §4 — the "why" `muse learned` shows): how this strategy was
+   * formed. `"grounded"` = distilled from a REAL correction the user gave;
+   * `"reflected"` = synthesised from a reflection (no direct correction — ranked
+   * below grounded so synthetic guesses never outrank evidence); `"manual"` =
+   * the user typed it via `muse playbook add`. Absent = legacy/unknown.
+   */
+  readonly origin?: string;
+  /**
+   * The originating evidence for `origin: "grounded"` — the verbatim correction
+   * that taught this strategy — so `muse learned` can show WHY it exists and the
+   * user can judge whether to keep it. Free text; rendered truncated.
+   */
+  readonly source?: string;
+  /**
    * ISO timestamp of the last POSITIVE reinforcement (the recency signal for
    * disuse-decay, B1 §2): a trusted strategy you stop reinforcing fades back
    * toward neutral over time so one stale thumbs-up can't steer the agent
@@ -245,5 +259,7 @@ function isPlaybookEntry(value: unknown): value is PlaybookEntry {
   if (e.reward !== undefined && (typeof e.reward !== "number" || !Number.isFinite(e.reward))) return false;
   if (e.probation !== undefined && typeof e.probation !== "boolean") return false;
   if (e.lastReinforcedAt !== undefined && typeof e.lastReinforcedAt !== "string") return false;
+  if (e.origin !== undefined && typeof e.origin !== "string") return false;
+  if (e.source !== undefined && typeof e.source !== "string") return false;
   return true;
 }

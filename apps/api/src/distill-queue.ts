@@ -65,6 +65,10 @@ export async function distillQueuedCorrections(deps: DistillQueuedDeps): Promise
       // Unattended write ⇒ PROBATION: recorded + visible but not injected
       // until a real reinforce graduates it (self-confirmation guard, B1 §5).
       probation: true,
+      // Provenance (B1 §4): distilled from a REAL correction ⇒ grounded; keep
+      // the correction as the "why" `muse learned` shows.
+      origin: "grounded",
+      source: event.correction,
       text: strategy.text,
       userId: event.userId,
       ...(strategy.tag ? { tag: strategy.tag } : {})

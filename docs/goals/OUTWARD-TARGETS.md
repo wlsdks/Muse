@@ -273,7 +273,26 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   FIRST then buried under 120 newer neutral records survived the cap, and
   `muse playbook list` shows `[champion] ⟨reward +5⟩` still present (count capped
   at 100). mcp 1227 tests + `pnpm lint` 0/0. The bank now keeps what you've
-  proven matters. (this commit)
+  proven matters. (37cf8509)
+
+- [x] **P36-13 Provenance — `muse learned` shows the WHY behind each strategy
+  (B1 Slice 4).** A learned strategy was just a sentence; now each carries its
+  ORIGIN (`grounded` = distilled from a real correction, `reflected` = synthetic,
+  `manual`) + the `source` correction that taught it, so `muse learned` shows
+  "↳ learned from your correction: '<the exact thing you said>'" under trusted
+  AND probation strategies — the legibility precondition to trusting unattended
+  learning. Both correction-distill writers (idle daemon + chat-exit) stamp
+  `origin: "grounded"` + the correction; a small ranking tie-break makes a
+  `reflected` strategy never outrank an otherwise-equal grounded one (evidence >
+  synthesis at a dead heat). Proven by unit tests (origin/source round-trip +
+  validation in mcp; grounded outranks equal reflected, penalty is tie-break-only
+  in agent-core; digest renders the why for grounded, flags reflected synthetic,
+  truncates long source, omits the line for legacy/manual in cli) + a LIVE full
+  chain on qwen3:8b (HOME-isolated, never real ~/.muse): enqueue "no, that is not
+  what I meant — give me bullet points, not prose" → idle distill → `muse learned`
+  prints the probation strategy WITH "↳ learned from your correction: '<that
+  correction>'". agent-core 1238 / mcp 1229 / api 817 / cli 1618 tests +
+  `pnpm lint` 0/0. The user can now SEE why Muse believes each thing. (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

@@ -125,6 +125,41 @@ describe("renderLearnedDigest", () => {
     expect(out).toContain("↓ fading (last added 50d ago)");
   });
 
+  it("shows the WHY under a grounded strategy — the correction that taught it (B1 §4)", () => {
+    const out = renderLearnedDigest({
+      reflections: [],
+      skills: [],
+      strategies: [
+        { reward: 2, text: "answer in bullet points", origin: "grounded", source: "no, that's not what I meant — give me bullets" },
+        { probation: true, text: "default dates to next business day", origin: "grounded", source: "I meant the next WORKING day" }
+      ]
+    });
+    expect(out).toContain('↳ learned from your correction: "no, that\'s not what I meant — give me bullets"');
+    // the probation strategy also carries its why
+    expect(out).toContain('↳ learned from your correction: "I meant the next WORKING day"');
+  });
+
+  it("flags a reflected strategy as synthetic and truncates a long source", () => {
+    const long = "x".repeat(200);
+    const out = renderLearnedDigest({
+      reflections: [],
+      skills: [],
+      strategies: [
+        { reward: 1, text: "reflected guess", origin: "reflected" },
+        { reward: 1, text: "grounded long", origin: "grounded", source: long }
+      ]
+    });
+    expect(out).toContain("↳ from a reflection (synthetic — ranked below grounded)");
+    expect(out).toContain("…"); // the 200-char source is truncated
+    expect(out).not.toContain(long);
+  });
+
+  it("renders no why line for a legacy/manual strategy without provenance", () => {
+    const out = renderLearnedDigest({ reflections: [], skills: [], strategies: [{ reward: 2, text: "manual strategy" }] });
+    expect(out).toContain("manual strategy");
+    expect(out).not.toContain("↳");
+  });
+
   it("shows the most recent reflections, newest first, capped at 5", () => {
     const reflections = Array.from({ length: 7 }, (_unused, i) => ({ createdAtMs: i * 1000, insight: `insight ${i.toString()}` }));
     const out = renderLearnedDigest({ reflections, skills: [], strategies: [] });

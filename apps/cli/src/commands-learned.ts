@@ -36,6 +36,8 @@ export interface LearnedDigestInput {
     readonly probation?: boolean;
     readonly createdAt?: string;
     readonly lastReinforcedAt?: string;
+    readonly origin?: string;
+    readonly source?: string;
   }[];
   readonly skills: readonly { readonly name: string; readonly reward: number }[];
   readonly reflections: readonly { readonly insight: string; readonly createdAtMs: number }[];
@@ -45,6 +47,27 @@ export interface LearnedDigestInput {
 
 const rewardOf = (value: number | undefined): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+/** Longest "why" source shown inline before it's truncated with an ellipsis. */
+const MAX_SOURCE_CHARS = 80;
+
+/**
+ * The provenance "why" line for a learned strategy (B1 §4) — so the user can
+ * judge whether to keep it. Grounded strategies show the verbatim correction
+ * that taught them; reflected ones are flagged synthetic; manual/legacy ones
+ * get no extra line (their origin is self-evident). Empty string ⇒ no line.
+ */
+function whyLine(strategy: { readonly origin?: string; readonly source?: string }): string {
+  if (strategy.origin === "reflected") {
+    return "    ↳ from a reflection (synthetic — ranked below grounded)";
+  }
+  if (strategy.origin === "grounded" && strategy.source && strategy.source.trim().length > 0) {
+    const src = strategy.source.replace(/\s+/gu, " ").trim();
+    const shown = src.length > MAX_SOURCE_CHARS ? `${src.slice(0, MAX_SOURCE_CHARS - 1)}…` : src;
+    return `    ↳ learned from your correction: "${shown}"`;
+  }
+  return "";
+}
 
 /**
  * The disuse trajectory suffix for a trusted strategy (B1 §2): how long since
@@ -107,6 +130,8 @@ export function renderLearnedDigest(input: LearnedDigestInput): string {
     lines.push("Trusted strategies (reinforced by your feedback):");
     for (const s of trustedStrategies) {
       lines.push(`  • ${s.text}${s.tag ? ` (${s.tag})` : ""}  ⟨${reward(rewardOf(s.reward))}⟩${trajectorySuffix(s, nowMs)}`);
+      const why = whyLine(s);
+      if (why) lines.push(why);
     }
     lines.push("");
   }
@@ -117,7 +142,11 @@ export function renderLearnedDigest(input: LearnedDigestInput): string {
   }
   if (probationStrategies.length > 0) {
     lines.push("Learning while idle (on probation — recorded, NOT yet applied until you reinforce it):");
-    for (const s of probationStrategies) lines.push(`  • ${s.text}${s.tag ? ` (${s.tag})` : ""}  ⟨probation⟩`);
+    for (const s of probationStrategies) {
+      lines.push(`  • ${s.text}${s.tag ? ` (${s.tag})` : ""}  ⟨probation⟩`);
+      const why = whyLine(s);
+      if (why) lines.push(why);
+    }
     lines.push("");
   }
   if (avoidedStrategies.length > 0 || avoidedSkills.length > 0) {

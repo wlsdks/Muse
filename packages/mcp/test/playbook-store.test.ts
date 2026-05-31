@@ -218,6 +218,29 @@ describe("decayStalePlaybookRewards — disuse-decay toward neutral (B1 §2)", (
   });
 });
 
+describe("provenance — origin/source round-trip + validation (B1 §4)", () => {
+  it("round-trips origin + source and tolerates legacy entries without them", async () => {
+    const file = freshFile();
+    await recordPlaybookStrategy(file, { ...entry("g1"), origin: "grounded", source: "no — give me bullet points, not prose" });
+    await recordPlaybookStrategy(file, entry("legacy")); // no origin/source
+    const saved = await readPlaybook(file);
+    const g1 = saved.find((e) => e.id === "g1")!;
+    expect(g1.origin).toBe("grounded");
+    expect(g1.source).toBe("no — give me bullet points, not prose");
+    expect(saved.find((e) => e.id === "legacy")!.origin).toBeUndefined();
+  });
+
+  it("drops a row with a non-string origin/source but keeps the valid ones", async () => {
+    const file = freshFile();
+    await writeFile(file, JSON.stringify({ entries: [
+      { ...entry("ok"), origin: "grounded", source: "the correction" },
+      { ...entry("bad"), origin: 42 },
+    ] }), "utf8");
+    const read = await readPlaybook(file);
+    expect(read.map((e) => e.id)).toEqual(["ok"]);
+  });
+});
+
 describe("retainPlaybookEntries — reward-/recency-weighted eviction (B1 §3)", () => {
   const e = (id: string, reward: number): PlaybookEntry => ({ ...entry(id), reward });
 
