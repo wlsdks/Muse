@@ -339,6 +339,24 @@ the generic layers below because they test what makes Muse an *agent*.
     ("Do I need to ship it.") was never exercised. +3 tests kill all three.
     agent-core 1088→1091. (Remaining survivors are the commitment-pattern regex
     variants — pattern-coverage, the same larger follow-up as the security detectors.)
+  - TWENTY-FOURTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    playbook.ts` = **59.66% → 63.03%** (141→148 killed, 94→87 survived) — the RL-over-
+    the-bank core (ACE/ReasoningBank: reward-weighted relevance ranking + Jaccard dedup
+    of distilled strategies). Five behavioral contracts were unpinned; +5 tests killed 7
+    mutants: (a) `strategyTextSimilarity` is a TRUE Jaccard ratio — the `/`→`*` mutant let
+    identical text score |tokens|² and sail past the existing loose `>= 0.99`; now pinned
+    identical===1 and a partial overlap strictly <1; (b) the `rankTokens` 2-char floor
+    (`< 2`→`<= 2`) silently dropped a real two-char term ("ml") — a query sharing only that
+    token now must still rank its strategy; (c) `latestUserText` (`role==="user" && string
+    content`) degraded to `||` would let a LATER assistant turn drive ranking — pinned via
+    applyPlaybook where the assistant turn is scheduling-aligned but the user asked about
+    email (email strategy must still lead); plus the CJK-identical and insertion-stable
+    tie-break contracts. agent-core 1091→1096. (Three same-line SIBLING mutants left as
+    brittle/near-equivalent: `slice(i,i-2)` is a negative-index slice → valid-but-wrong
+    bigrams not "", the `+` tie-break on an already-ordered 2-element array is sort-impl-
+    resistant, and `if(false)` on the length floor needs a contrived 1-char-token overlap.
+    The bulk of the remaining 87 are renderPlaybookSection prompt-text StringLiterals —
+    pattern-coverage.)
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
