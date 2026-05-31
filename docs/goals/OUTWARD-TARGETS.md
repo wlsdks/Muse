@@ -153,7 +153,26 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   REDACTED to `[redacted-openai-key]` (real `sk-proj-…` never appeared); NO
   `--shell` → 0 shell lines (opt-in respected). agent-core 1240 / cli 1647 tests
   + `pnpm lint` 0/0. A user can now opt in to ask Muse "what was that command?"
-  and get a cited answer (secrets stripped) or an honest refusal. (this commit)
+  and get a cited answer (secrets stripped) or an honest refusal. (fc0f3fe1)
+
+- [x] **P37-7 Ad-hoc `--file` grounding (B3 — ask about a file without ingesting
+  it).** `muse ask --file <path>` now grounds an answer on a specific file that
+  is NOT in the notes corpus — "what's the monthly rent in this lease?" — read
+  once, never indexed. Reuses the NOTES citation class: the file's passages are
+  lexically ranked against the question (strongest kept up to a char budget so a
+  big file can't blow the small model's context) and injected as note-class
+  context cited `[from <path>]` under the same code gate (cite token +
+  allowedNotes normalise the path identically, so it survives). Works even with
+  an empty/no notes index. New exported `selectFilePassages` helper. Proven by
+  unit tests (small file → all passages in order; big file → relevant passage in
+  + char-budget respected; empty → none) + a LIVE `muse ask --file` on qwen3:8b
+  (mock lease file, HOME-isolated, empty notes, never real ~/.muse): "monthly
+  rent and when due?" → "$4,200 … 1st of each month [from ../lease-agreement.md]"
+  (cited); "landlord's phone number?" → honest refusal, no fabrication. cli 1650
+  tests + `pnpm lint` 0/0. (Refusal's trailing `cite as:` parrot is the known
+  chat-only streaming limitation — stripped on buffered paths.) A user can now
+  ask Muse about ANY file on the fly, cited, without growing their corpus.
+  (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections

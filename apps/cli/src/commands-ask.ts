@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
-import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
+import { chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -251,6 +251,34 @@ export function answerIsRefusal(answer: string): boolean {
 }
 
 /**
+ * Select the passages of an ad-hoc `--file` to ground on: split into passages,
+ * rank by lexical overlap with the question (file order breaks ties), and keep
+ * the strongest up to `charBudget` so a large file never blows the small
+ * model's context. Returned in ORIGINAL file order (so the model reads them
+ * top-to-bottom). A tiny file → every passage; an empty file → none.
+ */
+export function selectFilePassages(
+  raw: string,
+  query: string,
+  charBudget = 6000
+): readonly { readonly chunkIndex: number; readonly text: string }[] {
+  const qTokens = lexicalTokens(query);
+  const ranked = chunkText(raw, 1200)
+    .map((text, chunkIndex) => ({ chunkIndex, ov: lexicalOverlap(qTokens, text), text }))
+    .sort((a, b) => b.ov - a.ov || a.chunkIndex - b.chunkIndex);
+  const picked: { chunkIndex: number; text: string }[] = [];
+  let budget = charBudget;
+  for (const passage of ranked) {
+    if (budget <= 0) {
+      break;
+    }
+    picked.push({ chunkIndex: passage.chunkIndex, text: passage.text });
+    budget -= passage.text.length;
+  }
+  return picked.sort((a, b) => a.chunkIndex - b.chunkIndex);
+}
+
+/**
  * Relevance of a contact to the question, for `muse ask` grounding (B3
  * perception): how many query tokens match a token of the contact's name,
  * aliases, handle, or email. 0 ⇒ NOT injected — so we ground only on the people
@@ -297,6 +325,7 @@ interface AskOptions {
   readonly reminders?: boolean;
   readonly contacts?: boolean;
   readonly shell?: boolean;
+  readonly file?: string;
   readonly json?: boolean;
   readonly withTools?: boolean;
   readonly actuators?: boolean;
@@ -743,6 +772,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       "OPT-IN: also ground on matching commands from your shell history (secret-redacted, local-only; default OFF because history is sensitive). Set $MUSE_SHELL_HISTORY_FILE / $HISTFILE to override the source."
     )
     .option(
+      "--file <path>",
+      "Ground this answer on a specific file WITHOUT ingesting it into your notes corpus (read-only). The answer cites it as [from <path>]; an off-topic question still honestly refuses."
+    )
+    .option(
       "--json",
       "Emit a single JSON object on stdout with {query, model, answer, grounded:{...}} (suppresses streaming)"
     )
@@ -896,6 +929,30 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           `Answering without notes context. To restore RAG grounding: ` +
           `\`ollama pull ${embedModel}\` (and ensure Ollama is running).)\n`
         );
+      }
+
+      // --file: ad-hoc grounding on an explicitly-named file (read-only, NOT
+      // ingested into the corpus). Reuses the NOTES citation class — the file's
+      // passages are injected as note-class context cited `[from <path>]` under
+      // the same code gate (the cite token + allowedNotes normalise the path
+      // identically, so it survives the gate). Lexically ranks the file's
+      // passages against the question and injects the strongest up to a budget,
+      // so a large file doesn't blow the small model's context; an off-topic
+      // question sees real content that lacks the answer ⇒ honest refusal.
+      if (options.file && options.file.trim().length > 0) {
+        const fileLabel = options.file.trim();
+        try {
+          const raw = await readFile(fileLabel, "utf8");
+          const picked = selectFilePassages(raw, query);
+          for (const passage of picked) {
+            scored.push({ chunk: { chunkIndex: passage.chunkIndex, embedding: [], file: fileLabel, text: passage.text }, file: fileLabel, score: 1 });
+          }
+          if (picked.length > 0) {
+            notesUnavailable = false; // we DO have note-class grounding now
+          }
+        } catch (cause) {
+          io.stderr(`muse: could not read --file ${fileLabel} (${cause instanceof Error ? cause.message : String(cause)})\n`);
+        }
       }
 
       // Auto-refresh the episode index (mirrors the notes auto-reindex above)
