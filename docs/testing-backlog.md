@@ -776,6 +776,16 @@ the generic layers below because they test what makes Muse an *agent*.
     (keyed by path — a fast f2 op doesn't wait behind a slow f1 op); rejects the caller's promise
     on a throwing op WITHOUT wedging the queue for the next op on the same file; returns the op's
     value. mcp 1170->1178.
+  - FIFTY-NINTH (cross-package sweep → mcp; actuator dispatcher): `packages/mcp`
+    `run-actuator-by-name.ts` `runActuatorByName` (92L, **ZERO test refs**) — re-runs a gated
+    actuator (email_send / web_action / home_action) by name through the SAME fail-closed
+    *WithApproval orchestration (the shared dispatcher behind `muse approvals approve` + in-chat
+    auto-completion). First suite (5 tests, real web_action orchestration + temp action-log):
+    unknown name → unknown-tool + detail; email_send / home_action without their credentials →
+    unavailable; web_action runs through the REAL performWebActionWithApproval → ran:true on
+    success; a DENIED approval maps to "declined" (not a generic failure — classifyFailure
+    denied→declined); a non-2xx / transport failure maps to "failed" with the detail. mcp
+    1178->1183.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
