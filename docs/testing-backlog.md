@@ -611,6 +611,18 @@ the generic layers below because they test what makes Muse an *agent*.
     canonicalizeEnvelope is deterministic + lays fields out kind→from→redacted→label→content,
     and coerces an absent optional label to the SAME canonical/signature as an explicit ""
     (both sides agree). First a2a slice. a2a 84->91.
+  - FORTY-FOURTH (cross-package sweep → a2a; SECURITY inbound gate): `packages/a2a`
+    `transport.ts` `receiveFromPeer` + `receive-quarantine.ts` `receiveAndQuarantine` (both
+    **ZERO test refs**) — the inbound peer-message gate that classifies an HTTP message
+    through the safety core and returns ONLY quarantine|reject, never execute. Two suites (10
+    tests) wiring the REAL helpers (createPeerRegistry + signEnvelope + envelopeToSendRequest):
+    receiveFromPeer quarantines a valid correctly-signed know-how message from a known peer,
+    and rejects every adversarial path — A2A disabled, unparseable body, no-know-how envelope,
+    UNKNOWN peer (not in the allowlist), missing/invalid HMAC (a valid sig under the wrong
+    secret can't forge a peer), and a correctly-signed but NON-shareable kind (the safety core
+    has the final say — a signature can't make `ask` executable). receiveAndQuarantine deposits
+    an accepted message with injected id+timestamp + the label, OMITS the label when absent,
+    and deposits NOTHING on reject (a forged message is never quarantined). a2a 91->101.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
