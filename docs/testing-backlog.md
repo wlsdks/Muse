@@ -838,6 +838,18 @@ the generic layers below because they test what makes Muse an *agent*.
     chars) in the file is rejected. autoconfigure 452->458. This + the SIXTY-FIRST..SIXTY-THIRD
     slices essentially close the original zero-coverage census across the large packages — only
     `autoconfigure/openai-compat-presets` (a 29L const map) remains, a trivial follow-up.
+  - SIXTY-FIFTH (cross-package sweep → autoconfigure; CENSUS CLOSED): `packages/autoconfigure`
+    `openai-compat-presets.ts` (29L, **ZERO test refs**) — the shipped OpenAI-compatible backend
+    table whose ENTRY ORDER is the credential-fallback priority inferDefaultModelFromCredentials
+    reads. First suite (3 tests): pins the priority order (groq→deepseek→together→mistral→moonshot
+    →cerebras — a silent reorder changes which provider wins when several keys are present); every
+    preset well-formed (https baseUrl, *_API_KEY envKey, provider-prefixed defaultModel so the
+    router dispatches to the right adapter); concrete spot-checks (groq baseUrl + deepseek envKey).
+    autoconfigure 458->461. **A symbol-level census re-run across the large packages
+    (autoconfigure/mcp/model/policy/agent-core) now reports 0 uncovered modules — the
+    cross-package zero-coverage census (slices 35→65) is CLOSED.** Next phase: mutation-depth on
+    the broadly-but-shallowly-covered modules (where line coverage exists but assertion strength
+    is unmeasured), and restoring the smoke:live environment.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
