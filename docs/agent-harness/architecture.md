@@ -73,7 +73,7 @@ related: [README.md, team-roles.md, handoff-template.md, role-prompts.md, verifi
 |---|---|---|---|
 | 1 | 에이전트 루프 | team-roles 패턴 + [loop-budget](loop-budget.md)(횟수·시간·예산 하드캡·회로차단) | ✅ |
 | 2 | 계획·분해 | 플래너 역할 + 핸드오프 계획 칸 | ✅ |
-| 3 | 컨텍스트·압축 | [context-compaction](context-compaction.md) — 선제·주기·예산인지, 중요도 가중 보존 | ✅ |
+| 3 | 컨텍스트·압축 | [context-compaction](context-compaction.md) — 선제·주기·예산인지·중요도 가중 보존 (+실측: 결정·출처 보존 pass^2) | ✅ |
 | 4 | 도구 설계 | [tool-design](tool-design.md) — 한-shot 선택·예시스키마·위험등급 | ✅ |
 | 5 | 스킬·MCP | [skills-and-mcp](skills-and-mcp.md) — 2단계 허용목록·격리·최소권한·불신출력 | ✅ |
 | 6 | 권한·승인 | [permission-matrix](permission-matrix.md) — 위험등급×처리·최소권한·감사 (+실측: outbound=막힘우선·금융=거부) | ✅ |
