@@ -805,6 +805,16 @@ the generic layers below because they test what makes Muse an *agent*.
     rejects array/null/primitive), errorMessage (Error.message else String()), and
     buildJsonToolSchema (closed additionalProperties:false object; includes a non-empty
     required list, DROPS an empty one — no noisy required:[]). mcp 1191->1199.
+  - SIXTY-SECOND (cross-package sweep → mcp; tool-calling surface): `packages/mcp`
+    `web-action-tool.ts` `createWebActionTool` (68L, **ZERO test refs**) — the web_action
+    MuseTool wrapper around the fail-closed performWebActionWithApproval. First suite (5 tests):
+    DEFINITION is a well-formed execute-risk tool with required [summary,url] +
+    additionalProperties:false + a Korean selection keyword (예약) + validateToolDefinitions-
+    clean; the description carries a use-when AND a do-not-use (read / payments) line
+    (tool-calling.md). EXECUTE: rejects empty url/summary BEFORE any orchestration (no spurious
+    action, zero fetch); a confirmed action defaults method to POST + uppercases a lowercase
+    input → performed:true; a denied approval maps to performed:false reason "denied" (inherits
+    the outbound-safety guarantee). mcp 1199->1204.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
