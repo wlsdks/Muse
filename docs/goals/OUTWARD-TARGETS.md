@@ -64,6 +64,26 @@ turn; never half-shipped.
 
 ## Active target
 
+**P34 — The front door (loop-v2 headline: the moat is invisible without
+the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able
+to SEE Muse's edge — a cited answer AND an honest refusal — in seconds, with
+zero dev toolchain and no notes ingested yet, BEFORE they invest in getting
+their real corpus in. The first rung is a bundled-corpus demo; later rungs are
+one-command install (detect/pull Ollama + model), one real ingest format, and
+continuous folder-watch ingest. Direction: loop-v2 locked headline (front door
+FIRST, then felt self-learning).
+
+- [x] **P34-1 `muse demo` — the zero-setup cited-answer + honest-refusal
+  demo.** `muse demo` runs the REAL `muse ask` recall path against a bundled
+  sample corpus (shipped in the cli package) inside a throwaway HOME — a
+  HOME/USERPROFILE override + the new `MUSE_NOTES_INDEX_FILE` resolver isolate
+  every `~/.muse/*` default so the user's real data is never touched — and
+  shows ONE answerable question (cited "MTU 1380" + openable 📎 Sources) and
+  ONE must-refuse question (honest "I'm not sure", no fabrication). `--top 12`
+  injects the whole tiny corpus so the answerable note is never ranked out.
+  Proven LIVE on qwen3:8b via the built CLI + `commands-demo.test.ts` +
+  autoconfigure tests; `pnpm lint` 0/0. (this commit)
+
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,
 so RL lives in the MEMORY, not the weights).** Close the self-improvement
 loop: today Muse only LEARNS new strategies (ReasoningBank distillation,

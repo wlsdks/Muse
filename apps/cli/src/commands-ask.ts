@@ -24,11 +24,10 @@
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
 import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
-import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
 import { listReflections, readEpisodes, readReflections, readReminders, readTasks, type PersistedReminder, type PersistedTask } from "@muse/mcp";
@@ -303,7 +302,7 @@ interface NotesIndex {
 }
 
 function notesIndexPath(): string {
-  return join(homedir(), ".muse", "notes-index.json");
+  return resolveNotesIndexFile(process.env as Record<string, string | undefined>);
 }
 
 function defaultUserKey(user: string | undefined, persona: string | undefined): string {

@@ -69,6 +69,7 @@ export {
   resolveMessagingCredentialsFile,
   resolveModelKeysFile,
   resolveNotesDir,
+  resolveNotesIndexFile,
   resolveObjectivesFile,
   resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
