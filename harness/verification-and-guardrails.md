@@ -85,3 +85,4 @@ related: [team-roles.md, handoff-template.md, muse-mapping.md, README.md]
 - Anthropic — [Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents) (단순성·투명성·게이트)
 - Anthropic — [Outcomes: agents that verify their own work](https://platform.claude.com/cookbook/managed-agents-cma-verify-with-outcome-grader) (2026-05; 출력만 보는 별도 grading agent → 모델 불변 +8.4%/+10.1%)
 - Cognition — [Don't Build Multi-Agents](https://cognition.ai/blog/dont-build-multi-agents) (전체 맥락 공유·충돌하는 암묵적 결정·단일 스레드 우선)
+- Boris Cherny (Claude Code 창시자) — [Latent Space 인터뷰](https://www.latent.space/p/claude-code) (검증이 품질에서 가장 중요; 자기검증 피드백 루프가 최종 품질 2~3배; harness=모델 위 최소 래퍼)
