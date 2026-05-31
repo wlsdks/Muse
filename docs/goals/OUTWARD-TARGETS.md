@@ -171,6 +171,17 @@ FIRST, then felt self-learning).
   hint never fires once any note exists). Proven LIVE on qwen3:8b (isolated
   HOME): empty corpus → hint + honest refusal; populated corpus → no hint, a
   cited "MTU 1380" answer + Sources, and an honest refusal on a must-refuse;
+  `commands-ask-onboarding.test.ts` + `pnpm lint` 0/0. (1c5ad06d)
+
+- [x] **P34-9 The on-ramp hint never lies to a user whose embedding is down.**
+  P34-8's hint was gated on indexed chunks, so when Ollama was unreachable
+  (0 chunks embedded) a user WITH notes was wrongly told "your corpus is
+  empty". It now counts note FILES on disk (`notesCorpusFileCount`),
+  independent of embedding — so the hint fires only for a truly empty corpus,
+  and a populated-but-unindexed corpus gets the "notes search unavailable —
+  ollama pull" guidance instead. Proven LIVE on qwen3:8b: Ollama-down + a
+  6-note corpus → no false "empty" line; Ollama-up + empty dir → hint fires;
+  Ollama-up + populated → cited "MTU 1380" + Sources and an honest refusal;
   `commands-ask-onboarding.test.ts` + `pnpm lint` 0/0. (this commit)
 
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,

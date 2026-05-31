@@ -23,7 +23,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 
 import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
@@ -300,10 +300,41 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
  * stuck ("it knows nothing and won't tell me how to teach it"). When the
  * corpus has ZERO notes, point them at the concrete ways to add one. Returns
  * undefined once any note exists, so a normal no-match answer is never
- * cluttered. Pure + exported for direct coverage.
+ * cluttered. The count MUST be the note FILES on disk, not the indexed/live
+ * chunk count — when embedding is down (Ollama unreachable) the index has 0
+ * live chunks even though the user has notes, and telling them "your corpus
+ * is empty" then is a false message. Pure + exported for direct coverage.
  */
-export function corpusOnboardingHint(liveNoteCount: number): string | undefined {
-  if (liveNoteCount > 0) {
+/**
+ * Count note files (`.md/.markdown/.txt/.pdf`) actually present under the
+ * notes dir, recursively — the true "does the user have a corpus" signal,
+ * independent of whether embedding succeeded. Missing/unreadable dir ⇒ 0.
+ */
+export async function notesCorpusFileCount(dir: string): Promise<number> {
+  let count = 0;
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.isDirectory()) {
+        stack.push(join(current, entry.name));
+      } else if (entry.isFile() && /\.(md|markdown|txt|pdf)$/iu.test(entry.name)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+export function corpusOnboardingHint(noteFileCount: number): string | undefined {
+  if (noteFileCount > 0) {
     return undefined;
   }
   return [
@@ -626,7 +657,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
 
       // First-run on-ramp: an empty corpus still answers honestly (refusal),
       // but a new user needs to be told HOW to add notes — emit it once here.
-      const onboardingHint = corpusOnboardingHint(filterLiveNoteIndexFiles(index.files, existsSync).length);
+      // Gate on note FILES on disk, not indexed chunks: when embedding is
+      // down the index has 0 live chunks though the user has notes, and
+      // "your corpus is empty" would be a false message.
+      const onboardingHint = corpusOnboardingHint(await notesCorpusFileCount(notesDir));
       if (onboardingHint) {
         io.stderr(`${onboardingHint}\n`);
       }
