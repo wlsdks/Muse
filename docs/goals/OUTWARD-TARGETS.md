@@ -91,7 +91,17 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   live probe) + consolidate-tick gate (not resident → no merge; resident +
   idle → merge) + a LIVE `/api/ps` probe on this box (correctly returns false
   → defers when nothing loaded); api 774 tests + `pnpm lint` 0/0. Brake-first
-  INFRA. Remaining Slice-0 brake: the cross-process Ollama lease. (this commit)
+  INFRA. Remaining Slice-0 brake: the cross-process Ollama lease. (81d29264)
+
+- [x] **P36-3 AC-power brake (B1 Slice 0, 3rd brake).** A heavy LLM merge must
+  not drain the battery. New `power-state.ts` reads `pmset -g batt`; the merge
+  now runs only on confirmed AC (battery/unknown ⇒ skip, fail-closed), wired
+  via an opt-in seam + the daemon. Net gate: OS-idle AND model-warm AND on-AC.
+  Proven by unit tests (parse / fail-closed / AC-only predicate) +
+  consolidate-tick gate (battery or unknown → no merge; idle + AC → merge) +
+  a LIVE `pmset` probe on this box (reads 'AC Power' → true). api 791 tests +
+  `pnpm lint` 0/0. Brake-first INFRA. Remaining Slice-0 brake: the
+  cross-process Ollama lease (cross-package). (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

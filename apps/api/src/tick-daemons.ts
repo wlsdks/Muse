@@ -34,6 +34,7 @@ import {
 import { startConsolidateTick } from "./consolidate-tick.js";
 import { isModelResidentLive } from "./model-resident.js";
 import { osIdleMs } from "./os-idle.js";
+import { isOnAcPower } from "./power-state.js";
 import {
   createMessagingObjectiveActuator,
   createModelObjectiveEvaluator,
@@ -538,6 +539,9 @@ export function startConsolidateDaemonIfConfigured(
     // Model-resident brake: never cold-load the multi-GB model unattended —
     // merge only when it's already loaded in Ollama (fail-closed).
     ...(consolidateModel ? { isModelResident: () => isModelResidentLive(consolidateModel) } : {}),
+    // AC-power brake: a heavy LLM merge runs on wall power only, never on
+    // battery — so background learning can't drain the laptop (fail-closed).
+    isOnAcPower: () => isOnAcPower(),
     ...(idleMsRaw !== undefined ? { idleThresholdMs: idleMsRaw } : {}),
     ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
     ...(consolidateQuietHours ? { quietHours: consolidateQuietHours } : {})

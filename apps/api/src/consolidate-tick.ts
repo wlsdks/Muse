@@ -16,6 +16,7 @@ import type { ModelProvider } from "@muse/model";
 import { AuthoredSkillStore } from "@muse/skills";
 
 import { isOsIdleEnough } from "./os-idle.js";
+import { isPowerOkForLlm } from "./power-state.js";
 import { isQuietHour, type QuietHourRange } from "./reminder-tick.js";
 
 export interface ConsolidateMergeOutcome {
@@ -47,6 +48,13 @@ export interface ConsolidateTickOptions {
    * Omitted ⇒ guard skipped (back-compat). (PART A2 / B1 brake-first.)
    */
   readonly isModelResident?: () => boolean | Promise<boolean>;
+  /**
+   * AC-power state (true=AC, false=battery, undefined=unknown). When provided,
+   * the LLM merge runs only on confirmed AC — battery/unknown ⇒ skip, so the
+   * heavy background job never drains the battery. Omitted ⇒ gate skipped
+   * (back-compat). (PART A2 / B1 brake-first.)
+   */
+  readonly isOnAcPower?: () => boolean | undefined;
   readonly intervalMs?: number;
   readonly threshold?: number;
   readonly minClusterSize?: number;
@@ -112,6 +120,8 @@ export function startConsolidateTick(options: ConsolidateTickOptions): Consolida
     // requires the MACHINE to be idle (not just Muse's /api), fail-closed —
     // so it never strains the laptop while the user works in another app.
     if (options.osIdleMs && !isOsIdleEnough(options.osIdleMs(), idleThresholdMs)) return;
+    // Brake-first: a heavy LLM merge must not drain the battery — AC only.
+    if (options.isOnAcPower && !isPowerOkForLlm(options.isOnAcPower())) return;
     // Brake-first: never COLD-load the multi-GB model in the background — only
     // merge when it's already resident (a foreground call warmed it).
     if (options.isModelResident && !(await options.isModelResident())) return;

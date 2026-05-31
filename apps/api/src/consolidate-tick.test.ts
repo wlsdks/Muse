@@ -153,3 +153,43 @@ describe("startConsolidateTick.tickOnce — model-resident brake (never cold-loa
     expect(calls).toBe(1);
   });
 });
+
+describe("startConsolidateTick.tickOnce — AC-power brake (never drain the battery)", () => {
+  const idle = { lastActivityMs: () => NOW.getTime() - IDLE_MS - 1 };
+
+  it("does NOT consolidate on battery, even when idle", async () => {
+    let calls = 0;
+    const handle = startConsolidateTick(baseOptions({
+      ...idle,
+      isOnAcPower: () => false,
+      runConsolidate: async () => { calls += 1; return []; }
+    }));
+    await handle.tickOnce();
+    handle.stop();
+    expect(calls).toBe(0);
+  });
+
+  it("does NOT consolidate when power is unknown (fail-closed)", async () => {
+    let calls = 0;
+    const handle = startConsolidateTick(baseOptions({
+      ...idle,
+      isOnAcPower: () => undefined,
+      runConsolidate: async () => { calls += 1; return []; }
+    }));
+    await handle.tickOnce();
+    handle.stop();
+    expect(calls).toBe(0);
+  });
+
+  it("consolidates when idle AND on AC power", async () => {
+    let calls = 0;
+    const handle = startConsolidateTick(baseOptions({
+      ...idle,
+      isOnAcPower: () => true,
+      runConsolidate: async () => { calls += 1; return []; }
+    }));
+    await handle.tickOnce();
+    handle.stop();
+    expect(calls).toBe(1);
+  });
+});
