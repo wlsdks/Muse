@@ -756,6 +756,15 @@ the generic layers below because they test what makes Muse an *agent*.
     one); maxPerTick caps the per-tick batch so a backlog can't burst; and FAIL-OPEN — an
     evaluator error is recorded, leaves the objective active for the next tick, and doesn't
     crash sibling objectives. mcp 1156->1163.
+  - FIFTY-SEVENTH (cross-package sweep → mcp; dreaming-reflection persistence): `packages/mcp`
+    `reflections-store.ts` (99L, **ZERO test refs**) — where the grounded "dreaming" insights
+    (each citing real episode ids) land so `muse reflections` can surface them with sources.
+    First suite (7 tests, temp files): addReflections adds fresh + round-trips the grounding
+    fields (sourceIds/supportCount); DEDUPES the same recurring theme across passes on the
+    NORMALISED insight (case + whitespace) so it isn't stored twice; dedupes within a single
+    batch + skips an empty/whitespace insight; empty incoming → 0 (no write); tolerant read
+    (missing/malformed/wrong-shape → []); FILTERS a tampered entry (empty insight / non-finite
+    supportCount) on read; listReflections newest-first. mcp 1163->1170.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
