@@ -2118,3 +2118,17 @@ the generic layers below because they test what makes Muse an *agent*.
     golden positive added). Verified STABLE 5/5 before landing. (Remaining time gap,
     logged: "9시랑 17시 30분 사이 몇 시간?" → no tool — informal HH:MM with no date; a
     distinct arg-shape issue, future slice.)
+
+- [x] **eval:explore — added the time-tool confusable set as a 2nd generated scenario.**
+    The explorer now drives TWO tool sets: actuators (5) and the confusable time tools
+    (time_now/time_diff/time_add/time_relative/next_weekday_date/cron) via CATEGORY_TOOLSET.
+    Five generated time categories (KO+EN) continuously regression-monitor time-tool
+    SELECTION under variety — including the two fixes shipped this week (KO date→time_now,
+    KO relative-to-now→time_relative) and the relative-vs-diff boundary — not just
+    eval:tools' fixed prompts. Stable across seeds 1/3/5/7 (80/80 each, 0 breaches).
+    A first run surfaced a GENERATOR artifact (independently-picked dates → degenerate
+    "between X and X" / backwards to<from ranges the model reasonably abstains on);
+    fixed the generator to emit distinct chronologically-ordered ranges (twoSortedDates),
+    so the category tests real two-timestamp diff selection. The bare-clock
+    "9시랑 17시30분 사이" duration remains logged (under-specified for an ISO tool — a
+    product-contract question, not a phrasing fix), deliberately NOT generated here.
