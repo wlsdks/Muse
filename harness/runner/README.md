@@ -50,6 +50,12 @@ updated: 2026-05-31
   단계(재계획·재빌드)를 건너뜀. → [session-persistence.md](../session-persistence.md)
 - **`session.test.mjs`** — 세션 6종(스냅샷 라운드트립·메모리/파일 스토어·4단계 체크포인트·PLANNED
   재개 플래너 미호출·빌드보유 재개 워커 미호출).
+- **`memory.mjs`** — 메모리 런타임. write(일회성 드롭)/read(관련성)/consolidate(중복병합)/decay(추론
+  반감기)/promote(코어 승격)를 결정론 코드로. → [memory-layers.md](../memory-layers.md)
+- **`memory.test.mjs`** — 메모리 5종(쓰기·관련성읽기·중복병합·감쇠·승격).
+- **`tools.mjs`** — 도구 레지스트리. 등록(verb_noun)·스키마 검증·allow/deny(denylist 우선)·소수 노출
+  (maxExposed)·위험등급→권한게이트. → [tool-design.md](../tool-design.md)
+- **`tools.test.mjs`** — 도구 6종(등록 거부·denylist 우선·validateArgs·expose 캡·권한 합성).
 
 ## 돌리는 법 (의존성 설치 불필요)
 
@@ -57,7 +63,7 @@ updated: 2026-05-31
 node --test harness/runner/
 ```
 
-마지막 측정: **45/45 통과** (적합성 13 + 오케스트레이터 5 + 적대 9 + 훅 6 + 관측 6 + 세션 6). 행복경로만이 아니라
+마지막 측정: **56/56 통과** (적합성 13 + 오케스트레이터 5 + 적대 9 + 훅 6 + 관측 6 + 세션 6 + 메모리 5 + 도구 6). 행복경로만이 아니라
 **거부 경로가 전부 초록**일 때만 러너가 "delivered"입니다. CI는
 [`.github/workflows/harness.yml`](../../.github/workflows/harness.yml)가 `harness/**` 변경마다 강제.
 
