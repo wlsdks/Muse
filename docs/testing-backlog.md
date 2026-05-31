@@ -1989,3 +1989,15 @@ the generic layers below because they test what makes Muse an *agent*.
     block test had score 0 (→ matchedTopicId null), so the `best.score > 0 ? id : null`
     TRUE side (a sub-threshold but non-zero match still names the topic + matched
     keyword) was unexercised. New tests pin both. Pre-verified against dist. policy 122 pass (+2).
+
+- [x] **memory/belief-provenance-store — per-clause validation + structural quarantine.**
+    belief-provenance-store.test.ts dropped malformed entries only via multi-field-
+    missing objects, so each typed-but-invalid clause of isBeliefProvenance was a
+    surviving mutation target. New test rejects EACH independently (kind outside
+    fact|preference, non-string value, empty userId, empty key, source outside
+    auto|user, wrong-type sessionId, wrong-type evidenceExcerpt) while keeping a
+    fully-formed entry that carries all three optionals (so their accepted-path type
+    checks run too). Second test covers the structural-quarantine branch the corrupt-
+    JSON test missed: valid JSON whose `entries` is non-array / absent → quarantine →
+    []. Provenance is the citation trail; a wrongly-admitted entry corrupts it. Both
+    pre-verified against dist. memory 309 pass (+2).

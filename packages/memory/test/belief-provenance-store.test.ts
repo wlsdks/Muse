@@ -89,4 +89,32 @@ describe("FileBeliefProvenanceStore", () => {
     const all = await readBeliefProvenance(file);
     expect(all).toHaveLength(1);
   });
+
+  it("rejects each typed-but-invalid field independently while keeping a fully-formed entry (incl. its optionals)", async () => {
+    // Every clause of the validator is its own gate on the provenance trail —
+    // a wrongly-admitted entry corrupts the citation record. The well-formed
+    // entry carries all three optionals (sessionId/evidenceExcerpt/source) so
+    // their type checks are exercised on the accepted path too.
+    const valid = entry({ evidenceExcerpt: "they said so", sessionId: "s1", source: "user" });
+    await writeFile(file, JSON.stringify({ entries: [
+      valid,
+      { ...valid, kind: "bogus" },          // kind outside fact|preference
+      { ...valid, value: 123 },             // value non-string
+      { ...valid, userId: "" },             // empty userId
+      { ...valid, key: "" },                // empty key
+      { ...valid, source: "admin" },        // source outside auto|user
+      { ...valid, sessionId: 5 },           // sessionId wrong type
+      { ...valid, evidenceExcerpt: 5 }      // evidenceExcerpt wrong type
+    ] }), "utf8");
+    const all = await readBeliefProvenance(file);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ evidenceExcerpt: "they said so", sessionId: "s1", source: "user" });
+  });
+
+  it("quarantines a structurally-wrong store (entries missing or not an array) and reads empty", async () => {
+    await writeFile(file, JSON.stringify({ entries: "not-an-array" }), "utf8");
+    expect(await readBeliefProvenance(file)).toEqual([]);
+    await writeFile(file, JSON.stringify({ notEntries: [] }), "utf8");
+    expect(await readBeliefProvenance(file)).toEqual([]);
+  });
 });
