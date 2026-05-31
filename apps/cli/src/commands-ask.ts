@@ -146,6 +146,40 @@ export function provenanceSnippet(text: string, max = 90): string {
   return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
 }
 
+/**
+ * The verbatim line of a cited chunk that best ANSWERS the query — the line
+ * with the most query content-token overlap (reusing the recall lexical
+ * primitives), so the receipt quotes "MTU 1380 …" rather than the note's "#
+ * Heading". Falls back to the chunk's opening when nothing overlaps (or no
+ * query), preserving the prior behaviour. Verbatim (then length-clamped), so
+ * the gate's honesty is never touched.
+ */
+export function relevantSnippet(text: string, query: string | undefined, max = 90): string {
+  const lines = text.split(/\r?\n/u).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) {
+    return provenanceSnippet(text, max);
+  }
+  // A markdown heading (`# …`) is structure, never something the user "said" —
+  // exclude it so the receipt quotes a content line (fall back to all lines
+  // only if the note is nothing but headings).
+  const content = lines.filter((l) => !/^#{1,6}(\s|$)/u.test(l));
+  const candidates = content.length > 0 ? content : lines;
+  const tokens = query ? lexicalTokens(query) : new Set<string>();
+  if (tokens.size > 0) {
+    let best = candidates[0]!;
+    let bestScore = -1;
+    for (const line of candidates) {
+      const score = lexicalOverlap(tokens, line);
+      if (score > bestScore) {
+        bestScore = score;
+        best = line;
+      }
+    }
+    return provenanceSnippet(best, max);
+  }
+  return provenanceSnippet(candidates[0]!, max);
+}
+
 /** A `YYYY-MM-DD` date parsed from a note's filename, if present. */
 export function provenanceDate(noteRef: string): string | undefined {
   return /(\d{4}-\d{2}-\d{2})/u.exec(noteRef)?.[1];
@@ -163,7 +197,8 @@ export function provenanceDate(noteRef: string): string | undefined {
 export function formatSourceReceipts(
   answer: string,
   notesDir: string,
-  chunks: ReadonlyArray<{ readonly file: string; readonly text: string }>
+  chunks: ReadonlyArray<{ readonly file: string; readonly text: string }>,
+  query?: string
 ): string | undefined {
   const cited = [...new Set(citedSourcesIn(answer))];
   if (cited.length === 0) {
@@ -172,7 +207,7 @@ export function formatSourceReceipts(
   const snippetFor = (note: string): string | undefined => {
     const base = note.split("/").pop();
     const hit = chunks.find((c) => c.file === note || c.file.split("/").pop() === base);
-    return hit ? provenanceSnippet(hit.text) : undefined;
+    return hit ? relevantSnippet(hit.text, query) : undefined;
   };
   const blocks = cited.map((note) => {
     const date = provenanceDate(note);
@@ -1257,7 +1292,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const receipts = formatSourceReceipts(
           collectedAnswer,
           notesDir,
-          scored.map((r) => ({ file: r.file, text: r.chunk.text }))
+          scored.map((r) => ({ file: r.file, text: r.chunk.text })),
+          query
         );
         if (receipts) io.stderr(receipts);
       }

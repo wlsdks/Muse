@@ -80,7 +80,16 @@ honest-refusal mock-corpus check where applicable.
   post-gate so a refusal renders no receipt). Proven LIVE on qwen3:8b: the
   WireGuard answer shows the dated memory receipt + path; the sister's-birthday
   refusal shows none; `commands-ask-receipts.test.ts` + `pnpm lint` 0/0.
-  (this commit)
+  (c7297ad3)
+
+- [x] **P35-2 Citation-as-voice quotes content, never a heading.** P35-1's
+  receipt excerpted the chunk's opening, which on a `# Heading`-led note read
+  robotically. `relevantSnippet` now drops markdown headings and picks the
+  highest query-overlap content line (reusing the recall lexical primitives),
+  so the receipt quotes a sentence the user actually wrote. Proven LIVE on
+  qwen3:8b: the WireGuard answer's receipt quotes a content sentence (not "#
+  WireGuard VPN setup"); the refusal shows none; `commands-ask-receipts.test.ts`
+  + `pnpm lint` 0/0. (this commit)
 
 **P34 — The front door (loop-v2 headline: the moat is invisible without
 the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able
