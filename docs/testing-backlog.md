@@ -735,6 +735,47 @@ the generic layers below because they test what makes Muse an *agent*.
     "irreversible"); and the END-TO-END property — after undo, the recorded veto OVERRIDES prior
     consent so a subsequent performConsentedAction for the same {objective,scope} is refused
     with NO HTTP ("vetoed"). mcp 1148->1151.
+  - FIFTY-FIFTH (cross-package sweep → mcp; quarantine persistence): `packages/mcp`
+    `swarm-quarantine-store.ts` (137L, **ZERO test refs**) — where received peer know-how lands
+    execute-gated until the user promotes it. First suite (5 tests, temp files): addToQuarantine
+    deposits as PENDING + round-trips (label optional); missing/malformed file → []; a tampered
+    entry whose kind ISN'T shareable know-how ("tool-call") is FILTERED on read (defense in
+    depth — a corrupted store can't smuggle an executable kind into quarantine even though the
+    safety core already refused it); listPending returns only pending, most-recent-first;
+    setQuarantineStatus promotes/rejects a pending entry exactly once (stamps resolvedAtMs) and
+    returns null on an already-resolved or unknown id (no double-promote). mcp 1151->1156.
+  - FIFTY-SIXTH (cross-package sweep → mcp; proactive re-evaluation engine): `packages/mcp`
+    `objective-evaluation-loop.ts` `runDueObjectives` (150L, **ZERO test refs**) — the
+    standing-objective re-evaluation engine (the long-horizon counterpart to runDueFollowups,
+    NORTH-STAR-adjacent proactive firing). First suite (7 tests, temp objectives file +
+    injected evaluate/act/escalate/now): MET fires the action exactly once + flips to done
+    (durable); UNMEETABLE escalates with the reason + flips to escalated (never silently
+    dropped); UNMET backs off with an exponential nextEvalAt (base*2^(attempts-1)) and stays
+    active (never spins); UNMET past maxAttempts escalates instead of retrying forever; only
+    DUE objectives are picked (skips done/cancelled + a future nextEvalAt, includes a past
+    one); maxPerTick caps the per-tick batch so a backlog can't burst; and FAIL-OPEN — an
+    evaluator error is recorded, leaves the objective active for the next tick, and doesn't
+    crash sibling objectives. mcp 1156->1163.
+  - FIFTY-SEVENTH (cross-package sweep → mcp; dreaming-reflection persistence): `packages/mcp`
+    `reflections-store.ts` (99L, **ZERO test refs**) — where the grounded "dreaming" insights
+    (each citing real episode ids) land so `muse reflections` can surface them with sources.
+    First suite (7 tests, temp files): addReflections adds fresh + round-trips the grounding
+    fields (sourceIds/supportCount); DEDUPES the same recurring theme across passes on the
+    NORMALISED insight (case + whitespace) so it isn't stored twice; dedupes within a single
+    batch + skips an empty/whitespace insight; empty incoming → 0 (no write); tolerant read
+    (missing/malformed/wrong-shape → []); FILTERS a tampered entry (empty insight / non-finite
+    supportCount) on read; listReflections newest-first. mcp 1163->1170.
+  - FIFTY-EIGHTH (cross-package sweep → mcp; the shared concurrency primitive): `packages/mcp`
+    `atomic-file-store.ts` (69L, **ZERO test refs**) — `atomicWriteFile` + `withFileMutationQueue`,
+    the foundation EVERY personal sidecar store depends on (objectives/consent/veto/quarantine/
+    reflections/action-log …). First suite (8 tests, temp files): atomicWriteFile writes +
+    creates nested dirs + leaves no .tmp; 0600 default mode + explicit-mode override; overwrites
+    atomically; fsync:false still writes. withFileMutationQueue: SERIALISES 25 concurrent
+    read-modify-write increments so NO update is lost (the core lost-update fix — each op reads,
+    yields to force interleaving, writes back +1 → final===25); runs different files in PARALLEL
+    (keyed by path — a fast f2 op doesn't wait behind a slow f1 op); rejects the caller's promise
+    on a throwing op WITHOUT wedging the queue for the next op on the same file; returns the op's
+    value. mcp 1170->1178.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
