@@ -82,7 +82,20 @@ FIRST, then felt self-learning).
   ONE must-refuse question (honest "I'm not sure", no fabrication). `--top 12`
   injects the whole tiny corpus so the answerable note is never ranked out.
   Proven LIVE on qwen3:8b via the built CLI + `commands-demo.test.ts` +
-  autoconfigure tests; `pnpm lint` 0/0. (this commit)
+  autoconfigure tests; `pnpm lint` 0/0. (c325f420)
+
+- [x] **P34-2 Corpus ingest shows progress + tolerates a bad file VISIBLY.**
+  The engine already walked `.pdf`/`.txt` and had partial-failure tolerance,
+  but the headline `muse ask` path SWALLOWED it: a first ingest was a silent
+  hang and a corrupt file was skipped with zero feedback. Now `muse ask`'s
+  auto-reindex streams per-file progress (`+ <file> (n chunks embedded)`) and
+  the extract-failure path emits `✗ <file> (could not read — skipped:
+  <reason>)`, so a beachhead user sees life during a slow first ingest and a
+  corrupt/unreadable file is visibly skipped, not fatal. Proven LIVE on
+  qwen3:8b against a `.muse-dev` mock corpus (seed notes + a corrupt `.pdf`):
+  streamed progress + the ✗ skip line, then a cited "MTU 1380" answer + 📎
+  Sources AND an honest refusal; `commands-notes-rag.test.ts` + `pnpm lint`
+  0/0. (this commit)
 
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,
 so RL lives in the MEMORY, not the weights).** Close the self-improvement

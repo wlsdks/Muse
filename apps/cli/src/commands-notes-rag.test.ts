@@ -225,6 +225,36 @@ describe("reindexNotes ingests PDFs alongside markdown (P14)", () => {
   });
 });
 
+describe("reindexNotes — a corrupt document is skipped VISIBLY, not silently (partial-failure tolerance)", () => {
+  it("emits a progress skip line for an unreadable PDF and still ingests the good note, without aborting", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "muse-reindex-skip-"));
+    await writeFile(join(dir, "good.md"), "the WireGuard MTU is 1380", "utf8");
+    // A `%PDF-` header with garbage body → pdf-parse throws "Invalid PDF
+    // structure", exercising the extract-failure catch (a real corrupt download).
+    await writeFile(join(dir, "corrupt.pdf"), Buffer.from("%PDF-1.7\nthis is not a valid pdf at all\n"));
+    const progress: string[] = [];
+
+    const summary = await reindexNotes({
+      dir,
+      fetchImpl: fakeEmbedFetch(),
+      force: true,
+      indexPath: join(dir, "index.json"),
+      model: "nomic-embed-text",
+      onProgress: (line) => progress.push(line)
+    });
+
+    // Partial-failure tolerance: the good note ingested, the run did NOT abort.
+    expect(summary.embedded).toBe(1);
+    expect(summary.failed).toBeGreaterThanOrEqual(1);
+    expect(summary.index.files.some((f) => f.path.endsWith("good.md"))).toBe(true);
+    // The corrupt file is not stored as a hollow entry.
+    expect(summary.index.files.some((f) => f.path.endsWith("corrupt.pdf"))).toBe(false);
+    // VISIBILITY: the skip is reported via onProgress, not swallowed.
+    expect(progress.some((l) => l.startsWith("✗") && l.includes("corrupt.pdf") && /could not read/.test(l))).toBe(true);
+    expect(progress.some((l) => l.startsWith("+") && l.includes("good.md"))).toBe(true);
+  });
+});
+
 describe("defaultIndexPath — empty-HOME fall-through (goal-547 sibling)", () => {
   it("roots notes-index.json under HOME when HOME is set", () => {
     const prev = process.env.HOME;

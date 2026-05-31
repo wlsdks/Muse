@@ -532,10 +532,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             const summary = await reindexNotes({
               dir: notesDir,
               indexPath: notesIndexPath(),
-              model: existingIndexModel ?? embedModel
+              model: existingIndexModel ?? embedModel,
+              // Stream per-file progress so a first ingest of a real
+              // corpus (PDFs embed slowly on CPU) shows life instead of
+              // a silent multi-second hang, and a skipped unreadable
+              // file is visible rather than swallowed.
+              onProgress: (line) => io.stderr(`  ${line}\n`)
             });
-            if (summary.embedded > 0) {
-              io.stderr(`(auto-refreshed notes index: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached)\n`);
+            if (summary.embedded > 0 || summary.failed > 0) {
+              io.stderr(`(notes index refreshed: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached, ${summary.failed.toString()} skipped)\n`);
             }
           }
         } catch (cause) {
