@@ -1958,3 +1958,14 @@ the generic layers below because they test what makes Muse an *agent*.
     six); (2) a flagged drift scrolls OFF once 20 stable samples fully turn a
     windowSize-20 window over → evaluate() returns [] (detection is windowed, not
     cumulative). Both pre-verified against dist. observability 125 pass (+2).
+
+- [x] **runtime-state/debug-replay — purge boundary + TTL-less guard + limit clamp.**
+    debug-replay.test.ts covered ordering/tiebreaker/corrupt-timestamp thoroughly but
+    purgeExpired only had a far-past-stale + far-future-fresh pair, leaving three
+    edges that mutation testing would surface: (1) the `expiresAt.getTime() <=
+    referenceTime.getTime()` boundary — a capture expiring EXACTLY at the reference
+    instant is purged (a `<=`→`<` mutant survived); (2) the `expiresAt &&` guard — a
+    capture with NO expiresAt is NEVER reaped (a retention-correctness invariant);
+    (3) listDebugReplayCaptures' `Math.max(0, limit)` clamp — limit 0 / negative
+    returns [] (tests only used 10 and 1). New tests pin all three. Pre-verified
+    against dist. runtime-state 39 pass (+2).

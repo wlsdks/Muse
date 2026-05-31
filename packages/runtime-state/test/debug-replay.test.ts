@@ -97,6 +97,27 @@ describe("InMemoryDebugReplayCaptureStore", () => {
     expect(all.map((entry) => entry.id)).toEqual(["real-time", "a-no-time", "z-no-time"]);
   });
 
+  it("purgeExpired is inclusive at the boundary and never purges a capture without an expiry", async () => {
+    const store = new InMemoryDebugReplayCaptureStore();
+    const ref = new Date("2026-05-09T00:00:00.000Z");
+    await store.saveDebugReplayCapture({ expiresAt: ref.toISOString(), id: "exactly-now", userPrompt: "x" }); // expiresAt == ref
+    await store.saveDebugReplayCapture({ expiresAt: new Date(ref.getTime() + 1).toISOString(), id: "one-ms-later", userPrompt: "x" });
+    await store.saveDebugReplayCapture({ id: "no-ttl", userPrompt: "x" }); // no expiresAt at all
+
+    const purged = await store.purgeExpired(ref);
+    expect(purged).toBe(1); // only the boundary record — the comparison is <=, not <
+    expect(await store.getDebugReplayCapture("exactly-now")).toBeUndefined();
+    expect(await store.getDebugReplayCapture("one-ms-later")).toMatchObject({ id: "one-ms-later" });
+    expect(await store.getDebugReplayCapture("no-ttl")).toMatchObject({ id: "no-ttl" }); // a TTL-less capture is never reaped
+  });
+
+  it("listDebugReplayCaptures clamps a zero / negative limit to an empty result (Math.max(0, limit))", async () => {
+    const store = new InMemoryDebugReplayCaptureStore();
+    await store.saveDebugReplayCapture({ id: "a", userPrompt: "a" });
+    expect(await store.listDebugReplayCaptures(0)).toEqual([]);
+    expect(await store.listDebugReplayCaptures(-3)).toEqual([]);
+  });
+
   it("purges expired captures and reports the count", async () => {
     const store = new InMemoryDebugReplayCaptureStore();
     await store.saveDebugReplayCapture({
