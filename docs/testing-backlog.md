@@ -725,6 +725,16 @@ the generic layers below because they test what makes Muse an *agent*.
     data: / file: / ftp: / mailto:); DROPS empty / whitespace-only / malformed / non-string
     URLs without throwing; partitions a mixed list with the EXACT dropped count + preserved
     kept order; empty input -> {kept:[],dropped:0}. agent-core 1193->1198.
+  - FIFTY-FOURTH (cross-package sweep → mcp; reversibility — outbound-safety rule 4):
+    `packages/mcp` `undo-action.ts` `undoLoggedAction` (76L, **ZERO test refs**) — the undo+teach
+    half of the correction loop: reverse a logged autonomous action where reversible, ALWAYS
+    record a durable veto so the same trigger can't recur, and log the undo. First suite (3
+    tests, temp veto/action-log/consent files): a reversible action calls the inverse
+    (reversed:true, detail propagated) + records the veto + logs the undo "performed"; an
+    IRREVERSIBLE action (no inverse) STILL records the veto (reversed:false, detail
+    "irreversible"); and the END-TO-END property — after undo, the recorded veto OVERRIDES prior
+    consent so a subsequent performConsentedAction for the same {objective,scope} is refused
+    with NO HTTP ("vetoed"). mcp 1148->1151.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
