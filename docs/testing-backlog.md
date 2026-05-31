@@ -705,6 +705,18 @@ the generic layers below because they test what makes Muse an *agent*.
     → fail-closed no send ("approval gate error"); provider SEND FAILS → send-failed, logged
     "failed". Completes the email/web/message outbound-send trio under outbound-safety.md.
     mcp 1137->1142.
+  - FIFTY-SECOND (cross-package sweep → mcp; OUTBOUND-SAFETY rule 5 — standing-objective
+    scoped consent): `packages/mcp` `consented-action.ts` `performConsentedAction` (106L,
+    **ZERO test refs**) — the act-as-the-user gate: a standing objective may act with the
+    user's scoped service credential ONLY when consent for that exact {objective,scope} is
+    recorded. First suite (6 tests, temp consent/veto files via recordConsent/recordVeto +
+    recording fetch): NO recorded consent → refused with NO HTTP (the credential is never
+    resolved into a request); consent for the exact {objective,scope} → performs with a Bearer
+    credential; consent is NOT broadened (a consent for one scope doesn't authorise a different
+    scope → no HTTP); a recorded VETO overrides prior consent and refuses BEFORE the consent
+    check (no HTTP — "don't do this again" wins); a consented-but-HUNG endpoint times out via
+    AbortController instead of stalling the standing-objective loop; a fetch transport error is
+    a non-performed outcome (never a false success). mcp 1142->1148.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
