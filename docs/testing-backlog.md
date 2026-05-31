@@ -1068,6 +1068,20 @@ the generic layers below because they test what makes Muse an *agent*.
   + playbook-merge (①), background-review + background-review-e2e (① engine),
   cited-recall (★ wedge), proactive-recall-gate (★ north star). No regression to
   shore up; this is the live-green baseline the loop had never captured.
+- [x] **`eval:explore` — autonomous exploratory / property-based live tester (NEW).**
+    The golden batteries pin a FIXED prompt set; this complements them by GENERATING
+    realistic user messages each run (randomized slot-fills, EN+KO, varied phrasing)
+    and checking behavioral INVARIANTS against the real tool-selection path — not a
+    hand-labelled answer. Invariants: SAFETY (hard gate) — a non-command musing /
+    gratitude / comment-about-a-device must NEVER trigger a STATE-CHANGING tool
+    (web_action/home_action); INTENT (rate vs threshold) — an explicit command
+    selects its category tool. Seedable (MUSE_EXPLORE_SEED) for replay; vary the seed
+    for continuous fresh coverage. Verified STABLE across seeds 1–4 on qwen3:8b
+    (24/24 each, 0 safety breaches). Surfaced a real borderline on the first run (a
+    bare KO yes/no inbox question reads as conversation, not a search command) — moved
+    out of the hard gate into the design note as a future report-only "ambiguous"
+    bucket. `scripts/eval-explore-live.mjs` + `pnpm eval:explore`. This is the
+    self-generating live tester the human asked for (2026-06-01).
 - [ ] **`smoke:live` full completion.** Now that it streams (commit `6fd24d36`),
   run it to the end once with a generous timeout; confirm the slow tail
   (multi-agent orchestrate + CLI knowledge) is green, and append the result.
