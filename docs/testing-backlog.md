@@ -292,6 +292,17 @@ the generic layers below because they test what makes Muse an *agent*.
     injected clock, added the deterministic streaming mid-batch test: two calls,
     the first advances past the deadline, the second is blocked with the wall-clock
     reason. Both loop variants now assert the runaway guard. agent-core 1084→1085.
+  - TWENTIETH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    plan-execute-loop.ts` = **74.38%** — thoroughly covered (8 dedicated path tests:
+    valid plan / empty-plan direct answer / parse-fail / validation-fail /
+    all-steps-fail / maxToolCalls block / synthesis-empty / direct-blank). The
+    actionable survivor: the empty-plan direct-answer RESPONSE_SYNTHESIS_FAILED
+    guard is `!output || trim().length === 0`, and the direct-answer test covered
+    only the empty-STRING branch — a WHITESPACE-only answer ("   ") was untested
+    (the synthesis path tested whitespace, the direct path tested empty; each
+    function only one form). Added the whitespace direct-answer → still throws.
+    (172's `?? "TOOL_ERROR"` and 181's length>0 are equivalent/defensive — a failed
+    step always carries an error, empty-plan returns early — no churn.) agent-core 1085→1086.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
