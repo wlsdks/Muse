@@ -87,7 +87,7 @@ related: [README.md, team-roles.md, handoff-template.md, role-prompts.md, verifi
 **한 줄 결론:** **12개 카테고리 전부 ✅ 문서화** (⬜ 0 / 🟡 0) **+ 실제 Claude Code로 4종 실측 통과**
 (평가자·플래너 단일, 플래너→평가자·플래너→워커→평가자 연쇄 — [harness-acceptance §7.5](harness-acceptance.md)).
 이제는 빈 칸 채우기가 아니라 **심화·실측(실제 테스트)·
-팀 점검**으로 완성도를 올리는 단계입니다.
+팀 점검**으로 완성도를 올리는 단계입니다(실측 진행 중 — 4종 통과).
 
 ## 4. 다음에 채울 것 (우선순위)
 
