@@ -24,6 +24,16 @@ The one-line identity, unchanged and load-bearing:
 > by code). That conjunction is the empty chair no cloud rival and no
 > velocity-first agent can sit in without ceasing to be what they are.
 
+## ⚡ START HERE (read first, every fire)
+
+Identity FLOOR (locked, never edit): see "THE LOCKED HEADLINE" (PART B0).
+Build order: FRONT DOOR → felt self-learning (brake-first) → perceive/act growth.
+CURRENT PHASE (the ONLY line the loop may move in this file): front door still
+open; default pick = first undone rung of B0 "HOW TO PICK EACH SLICE".
+First action: run the newest CAPABILITIES.md check. RED ⇒ fix it. GREEN ⇒ B0,
+first undone rung.
+PARKED forever: A2A. Out of scope: banking/payments.
+
 ---
 
 # PART A — THE VISION (read for WHY)
@@ -186,12 +196,6 @@ kept honest**. Three fusion rules:
    Muse can — the periphery it keeps warm is the user's own world, on the
    user's own machine, told to no one, and every inferred trait stays
    viewable/editable/deletable.
-
-**Synthesis:** continuous background self-learning *is* the "grows with you"
-arc of the SF dream — made trustworthy by binding its reward to
-grounded-correctness (not approval), keeping it local (not egressed),
-surfacing its results deterministically (felt, not a hidden log), and keeping
-its inferences visible and reversible.
 
 ---
 
@@ -441,9 +445,11 @@ one actually used.)
 
 ## A3. Perception expansion — how far Muse can safely READ to know you (research-grounded)
 
-Perception is HOW the local confidant gets to know you. The frame is
-**perceive broadly, act narrowly** — Muse may *read* your macOS world; it
-never acts on it (that stays draft-first per `outbound-safety.md`). One rule
+Perception is HOW the local confidant gets to know you. This section governs
+the READ side only; the frame here is **perceive broadly (read-only)** — Muse
+may *read* your macOS world freely. Acting on it is NOT banned: it grows behind
+the confirmation gate per B0's "PERCEIVE BROADLY · ACT WITH CONFIRMATION · GROW
+BOTH", draft-first (`outbound-safety.md`). One rule
 that is ethics AND answer-quality at once: **perceive what the user AUTHORED
 about themselves** (notes, calendar, tasks, scoped work files, git) — those
 are simultaneously the lowest-creep AND the sources the local Qwen extracts
@@ -571,7 +577,7 @@ memory). When "the user surface" is named below, it means THIS, plus the
 `muse demo` / `muse ingest` / `muse learned` / installer surfaces. If the real
 entry has changed, confirm the actual command before building — never guess it.
 
-## THE LOCKED HEADLINE (2026-05-31, 진안's call — do not re-litigate)
+## THE LOCKED HEADLINE (2026-05-31, 진안's call — do not re-litigate) — the loop may NOT edit this block, only the CURRENT PHASE line in START HERE
 The ONE groundbreaking bet is the GROWS-WITH-YOU LOCAL CONFIDANT: an AI that
 learns you continuously, ENTIRELY on your machine, shows + lets you reverse
 every learned thing, and physically cannot leak — "grows with you, can't
@@ -611,7 +617,11 @@ GROWTH axis, not a fixed list. Two halves, two rules:
     `web_action` / `home_action`). Deny / timeout / ambiguous-recipient ⇒ NO
     effect. The gate is WHAT MAKES growing actuation safe — it never relaxes
     (outbound-safety.md).
-EACH FIRE MAY judge + add ONE capability (a read connector OR a gated actuator),
+CAPABILITY GROWTH IS SUBORDINATE TO THE HEADLINE, NOT PARALLEL — it is the LAST
+resort, pickable ONLY when NO front-door (picker rung 3) and NO felt-self-
+learning (rung 4) slice is undone. A new connector/actuator always passes its
+own gate; adding one while rung 3 or rung 4 is unbuilt is breadth, REJECT it.
+When it IS the pick: add ONE capability (a read connector OR a gated actuator),
 value-ranked (value-to-creep for reads; value-to-blast-radius for acts),
 user-felt, and verified against MOCK data — never the user's real data; for an
 actuator, a contract-faithful HTTP fake proving deny/timeout/ambiguous ⇒ no
@@ -641,7 +651,7 @@ passes its own gate — that is exactly why they're seductive and forbidden):
 RECONCILED with self-learning (this REPLACES the old "freeze RL/reflection"
 ban): the learning ENGINE being default-OFF and UNFELT is no longer something
 to leave frozen — turning it ON, making it RUN continuously in the background,
-and making the user FEEL it is now TOP-PRIORITY outward work, governed by
+and making the user FEEL it is now FIRST-CLASS outward work (the self-learning rung in "HOW TO PICK", below the front door, never above it), governed by
 PART A2 + the directive blocks B1/B2, brake-and-proof-first. What stays banned
 is adding MORE inert default-off machinery; what is now MANDATED is making the
 existing machinery run, stay safe, and become felt. Do NOT deepen the gate;
@@ -676,8 +686,9 @@ DO make Muse perceptibly grow and perceptibly feel like the SF confidant.
          corpus is slower than a set budget, that is an OUTWARD reliability
          defect, not polish.
 4. MAKE SELF-IMPROVEMENT REAL AND FELT — the identity pillar (PART A2 + B1).
-   When the background self-learning track has an unbuilt slice, it is a
-   top-priority outward bullet (it is user-felt: behavior changes across
+   When the front door (rung 3) has no undone slice AND the background self-
+   learning track has an unbuilt slice, that slice is the outward bullet (it is
+   user-felt: behavior changes across
    sessions with NO manual step, visible in `muse learned`). Order is
    BRAKE-AND-PROOF-FIRST per B1: never an unattended LLM writer before its
    resource gate and its grounding proof in the SAME iteration.
@@ -861,24 +872,16 @@ NOT add a new organ where an existing seam fits. Full design: PART A2.
   reset to fast on idle+cool. Embedding is NOT free on CPU — gate and batch it.
 
 ### Safety guardrails (reversible · visible · grounded · pause)
-- A memory write is the ONLY autonomous action Muse may take unwatched. The
-  moment a learned thing would ACT on the world it drops to draft-first.
-- Grounded: every learned record carries a required replayable real source; no
-  source ⇒ NOT written. PROVE the distiller's fence (no-source ⇒ zero records)
-  red-then-green — the reflection fence being proven does not prove the
-  playbook distiller's.
-- Act-unwatched only on TRUSTWORTHY signals (correction, undo/veto). Positive
-  "thanks" is observe-and-propose only. If the "user kept/reused the result"
-  signal does not yet exist, restrict autonomous reinforcement to the negative
-  signals; do not reinforce on raw approval text or response length.
-- New learning enters PROBATION (recorded + visible, NOT injected) and
-  graduates only on a real reinforce or user okay. Disuse-decay clamps at a
-  NEUTRAL floor (0); only a correction/undo drives reward negative. `muse
-  learned` shows source, origin (grounded/reflected), probation state, decay
-  trajectory. `--undo` removes a record AND plants a bounded, decaying,
-  tightly-matched veto (with a visible "N suppressed by your undos" count).
-  MUSE_LEARNING_ENABLED + --pause ⇒ zero writes; a pass that can't confirm the
-  switch does not run.
+- A memory write is the ONLY autonomous unwatched action; the moment a learned
+  thing would ACT on the world it drops to draft-first.
+- No replayable real source ⇒ NOT written. PROVE the playbook distiller's fence
+  red-then-green (the reflection fence being proven does not prove it).
+- Reinforce only on TRUSTWORTHY signals (correction, undo/veto), never raw
+  approval text or response length. New learning enters PROBATION (visible, not
+  injected), graduates on a real reinforce or user okay. Decay clamps at a
+  NEUTRAL floor (0); only correction/undo goes negative. `--undo` plants a
+  bounded veto; MUSE_LEARNING_ENABLED + --pause ⇒ zero writes (a pass that can't
+  confirm the switch does not run).
 
 ### The falsifiable proof (the slice is not done without it)
 A 2-session LIVE round-trip on the loop PC's LOCAL Ollama Qwen:
@@ -1001,37 +1004,28 @@ not a tax on the SF dream; it is the completion of it.
 
 ```
 ## Standing directive — Perception expansion: the read-only confidant
-(PERCEIVE BROADLY, ACT NARROWLY)
+(the READ side of "PERCEIVE BROADLY · ACT WITH CONFIRMATION · GROW BOTH"; B0 owns the ACT side)
 
 NORTH-STAR ADDITION. Perception is HOW the local confidant gets to know
 the user ("Tell it everything. It can't tell anyone."). Muse may READ the
 user's macOS world to know them; it must NEVER act on or control it. This
 directive governs the READ side only — acting toward a third party stays
 fail-close + draft-first per outbound-safety.md; banking/payments stay out
-of scope. Prefer what the user AUTHORED about themselves (notes, calendar,
-tasks, scoped work files, git): those are simultaneously the lowest-creep
-AND the sources the local Qwen extracts best. NEVER mirror raw exhaust
-(browser/app/message/keystroke streams) — it is both the creepiest input
-AND the one that measurably DEGRADES personalization.
+of scope. Prefer AUTHORED sources, never raw exhaust — exhaust both creeps AND
+measurably DEGRADES personalization (PART A3 rationale; the NEVER-BUILD list
+below names the forbidden exhaust).
 
 THE FIVE SAFE-PERCEPTION GUARDRAILS (deterministic code + a test per
 source, never a prompt; all MUST hold):
-  - READ-ONLY. A perception connector exposes ONLY risk:"read" tools and
-    closes over a read-only view of its source (no mutating method
-    reachable). NOTE: today the `risk` field is SORT-ONLY — there is NO
-    registration-time rejection of a write tool, and TasksProvider/
-    CalendarProvider are single interfaces carrying mutators. So the FIRST
-    perception slice MUST land the real guard: a PerceptionToolBundle whose
-    registration THROWS on any risk!=="read" tool + a ReadOnly* narrowed
-    view (Pick<…,"list"|"search">) the connector closes over. Until that
-    guard exists, do not claim "read-only is mechanically guaranteed."
-  - LOCAL-ONLY / NO EGRESS. The egress gate (local-only-policy.ts) gates
-    INFERENCE, not the DATA SOURCE. A read through the tasks/calendar
-    registry can fan out to a CLOUD provider (Notion / cloud calendar) and
-    egress under MUSE_LOCAL_ONLY=true. EVERY perception read MUST filter
-    the registry to provider.describe().local===true before reading, and
-    the slice's test MUST assert NO non-loopback fetch occurred during the
-    read battery (not merely "no cloud inference adapter built").
+  - READ-ONLY. A connector exposes ONLY risk:"read" tools over a read-only
+    view. Because `risk` is sort-only today (A3 correction 2), the FIRST
+    perception slice MUST land the guard: a PerceptionToolBundle whose
+    registration THROWS on any risk!=="read" tool + a ReadOnly* narrowed view
+    (Pick<…,"list"|"search">). Until it exists, do not claim read-only is mechanical.
+  - LOCAL-ONLY / NO EGRESS. The egress gate gates INFERENCE, not the SOURCE, so
+    a registry read can fan out to a cloud provider (A3 correction 1). EVERY
+    read MUST filter the registry to provider.describe().local===true first, and
+    the slice's test MUST assert NO non-loopback fetch during the read battery.
   - PER-SOURCE CONSENT, default-OFF. A per-source opt-in registry, every
     source OFF until `muse perception grant <source>`. Two fail-closed
     layers (OS grant AND Muse opt-in); missing either ⇒ read refused,
@@ -1119,6 +1113,16 @@ not a pass). Buildable on macOS CLI + the launchd daemon today.
 
 ## Changelog (living doc)
 
+- **2026-06-01 (e)** — Adversarial 5-lens review pass (better-not-bigger, net
+  ≈ −46 lines). Added a top **⚡ START HERE** orientation block (unambiguous
+  first action + the one CURRENT PHASE line the loop may move). Resolved the
+  "act narrowly" (A3/B3) vs "GROW BOTH" (B0) wording contradiction — A3/B3
+  govern the READ side, B0 owns the ACT side. Made the picker literally
+  first-match-wins: self-learning (rung 4) and capability-growth (subordinate,
+  last-resort) are pickable only after the front door is exhausted. Collapsed
+  the loop-v2-prompt.md duplicate (re-ordered) slice ladder into a pointer to
+  B0. Compressed B1/B3 restatements of A2/A3 and cut the A1 Synthesis recap.
+  No locked decision re-opened.
 - **2026-05-31 (d)** — Added the **Perception expansion** (PART A3 rationale +
   directive B3), research-grounded and code-verified. Frame: perceive broadly,
   act narrowly; prefer user-AUTHORED sources, never raw exhaust. Five
