@@ -2383,3 +2383,13 @@ the generic layers below because they test what makes Muse an *agent*.
     tests regardless of teardown timing), and the 3 concurrent real-fs tests get a
     30s timeout. withFileMutationQueue itself is correct (test 1 distinctness passes) —
     these were test-harness bugs, not a serialization race. mcp 1259 green x2.
+
+- [x] **fix(test): purge the freshFile cross-test-reuse antipattern from 3 more stores.**
+    After de-flaking playbook-store, swept for the same antipattern — temp files named
+    `${files.length}-${pid}` where files.length resets to 0 each afterEach, so the path
+    is REUSED across tests and a test whose async work outlives its timeout pollutes the
+    next test's file. Found and fixed three latent cases: skill-rewards-store,
+    patch-objective, proposed-action-store-writes — each now names its temp file with
+    randomUUID() (collision-proof regardless of teardown/timeout ordering). Preventive:
+    none were failing yet, but all carried the exact fragility that bit playbook-store.
+    mcp 1259 tests green.
