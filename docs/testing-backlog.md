@@ -2335,3 +2335,11 @@ the generic layers below because they test what makes Muse an *agent*.
     the contract distinction — readMcpEntryCount degrades to 0 (NOT undefined) on
     missing/malformed, since the report renders "0" vs "unknown" differently. Pre-verified
     against dist. autoconfigure 475 tests green.
+
+- [x] **autoconfigure provider-paths (resolveDotMusePath) + provider-utils.readCredentialsSync.**
+    Census: the resolve*File family (via shared resolveDotMusePath) and readCredentialsSync
+    had ZERO refs. New tests pin: default ~/.muse/<name>, an absolute env override verbatim,
+    leading-~ expansion to home, and a BLANK/whitespace override falling back to default
+    (a cleared env var can't point a store at an empty cwd-relative path); readCredentialsSync
+    returns the providers map for a well-formed store and degrades to {} for missing/malformed/
+    missing-or-non-object providers. Pre-verified against dist. autoconfigure 481 tests green.
