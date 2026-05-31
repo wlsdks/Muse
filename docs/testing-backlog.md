@@ -672,6 +672,18 @@ the generic layers below because they test what makes Muse an *agent*.
     from an allowlisted peer (execute-gated) and REJECTS a malformed envelope / unknown peer /
     non-shareable kind — the return type has NO execute path (a peer can never run anything).
     agent-core 1182->1193.
+  - FORTY-NINTH (cross-package sweep → mcp; OUTBOUND-SAFETY send capability): `packages/mcp`
+    `email-send.ts` `sendEmailWithApproval` (119L, **ZERO test refs**) — the first capability
+    that transmits content to a third party. outbound-safety.md REQUIRES a send capability's
+    test to prove deny/timeout/ambiguous/absent produce NO external effect, alongside the
+    confirmed send. First suite (7 tests, contract-faithful: recording EmailSender + real
+    temp action-log via readActionLog): CONFIRMED sends EXACTLY ONCE with the confirmed content
+    + the gate saw the exact draft (draft-first) + logs "performed"; DENIED → no send, logged
+    "refused"; GATE THROWS (timeout/undeliverable) → FAIL-CLOSED no send ("approval gate
+    error"); AMBIGUOUS recipient → no send + candidates returned for clarification; UNKNOWN
+    recipient → no send; a handle-only contact with NO email → no send (never falls back to the
+    handle); transport SEND FAILS → reason send-failed, logged "failed". Every outcome appends
+    a rationale-bearing action-log entry (rule 4). mcp 1123->1130.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
