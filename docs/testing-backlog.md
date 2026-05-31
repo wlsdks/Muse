@@ -323,6 +323,76 @@ the generic layers below because they test what makes Muse an *agent*.
     while a real "5분 뒤" still fires. agent-core 1087→1088. (The bulk of the
     remaining survivors are promise-pattern regex variants — pattern-coverage like
     the security detectors, a larger follow-up.)
+  - TWENTY-THIRD MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    commitment-detector.ts` = **68.22% → 76.74%** (88→99 killed, 40→29 survived) —
+    the mirror of the follow-up detector: captures the USER's open-loop commitments
+    ("I need to email Bob", "~해야 해") for proactive reminding. Three actionable
+    logic survivors, none equivalent: (a) the `typeof turn !== "string" ||
+    trim().length===0` guard mutated to `if(false)` survived — no test passed a
+    malformed (null/number/blank) turn, yet `matchAll` on a non-string throws, so a
+    corrupt history blob would crash the whole pass; (b) the `text.length < 2` floor
+    mutated to `<= 2` survived — a minimal two-char clause ("go") is a real
+    commitment and must not be dropped off-by-one; (c) the `index - 12` window
+    feeding INTERROGATIVE_PREFIX mutated to `+ 12` survived — the existing
+    inverted-question tests all END in "?" (caught by the match[2] guard), so the
+    `before`-window scan that catches an inverted question with a PERIOD terminator
+    ("Do I need to ship it.") was never exercised. +3 tests kill all three.
+    agent-core 1088→1091. (Remaining survivors are the commitment-pattern regex
+    variants — pattern-coverage, the same larger follow-up as the security detectors.)
+  - TWENTY-FOURTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    playbook.ts` = **59.66% → 63.03%** (141→148 killed, 94→87 survived) — the RL-over-
+    the-bank core (ACE/ReasoningBank: reward-weighted relevance ranking + Jaccard dedup
+    of distilled strategies). Five behavioral contracts were unpinned; +5 tests killed 7
+    mutants: (a) `strategyTextSimilarity` is a TRUE Jaccard ratio — the `/`→`*` mutant let
+    identical text score |tokens|² and sail past the existing loose `>= 0.99`; now pinned
+    identical===1 and a partial overlap strictly <1; (b) the `rankTokens` 2-char floor
+    (`< 2`→`<= 2`) silently dropped a real two-char term ("ml") — a query sharing only that
+    token now must still rank its strategy; (c) `latestUserText` (`role==="user" && string
+    content`) degraded to `||` would let a LATER assistant turn drive ranking — pinned via
+    applyPlaybook where the assistant turn is scheduling-aligned but the user asked about
+    email (email strategy must still lead); plus the CJK-identical and insertion-stable
+    tie-break contracts. agent-core 1091→1096. (Three same-line SIBLING mutants left as
+    brittle/near-equivalent: `slice(i,i-2)` is a negative-index slice → valid-but-wrong
+    bigrams not "", the `+` tie-break on an already-ordered 2-element array is sort-impl-
+    resistant, and `if(false)` on the length floor needs a contrived 1-char-token overlap.
+    The bulk of the remaining 87 are renderPlaybookSection prompt-text StringLiterals —
+    pattern-coverage.)
+  - TWENTY-FIFTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    reflection-synthesis.ts` had **ZERO dedicated test file** despite being a WEDGE
+    surface — the grounded "dreaming" memory-consolidation gate (Generative Agents'
+    reflection step, arXiv 2304.03442) whose `parseReflections` enforces fabrication=0:
+    it strips any cited source id the user doesn't actually have and DROPS a reflection
+    that falls below minSupport, so the model can't ground an insight in an invented
+    source. Added the first suite (21 tests) → **81.74%** (94 killed, 17 survived). Covers
+    every grounding branch: invented-id stripping (real pair survives, fake stripped),
+    under-support drop, distinct-source dedup, minSupport=1, malformed-entry skips
+    (blank/non-string insight, non-array sources, non-object), non-string source filtering,
+    maxReflections cap + Math.max(1,trunc) coercion, prose-wrapped JSON extraction; plus
+    buildReflectionUserMessage (id-list render, default+custom redaction, whitespace
+    collapse) and the thin synthesizeReflections wrapper against a contract-faithful fake
+    provider (no-model-call below minSupport, blank id/text filtering, default+override
+    temperature/maxOutputTokens, custom-redact honored, maxReflections forwarded, fail-soft
+    on a throwing provider). agent-core 1096→1117. (Remaining 17 survivors: REFLECTION_
+    SYSTEM_PROMPT string literals + defensive guards on the extractJsonArray→JSON.parse
+    path that yield [] either way — equivalent/pattern-coverage.)
+  - TWENTY-SIXTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    proactive-recall-gate.ts` had **ZERO vitest coverage** despite being the NORTH STAR
+    surface — confidence-gated proactive recall (docs/strategy/identity.md Phase 3): the
+    same deterministic CRAG cosine gate as the wedge decides whether an UNASKED finding
+    surfaces, so Muse "earns proactivity by proving it can stay quiet" (weak/empty recall →
+    silent, never a low-confidence guess on an unasked notice). Added the first suite (21
+    tests) → **83.56%** (61 killed, 11 survived). decideProactiveRecall: confident →
+    surfaces a cited `📎 Related — [source] snippet` from the HIGHEST-cosine match;
+    ambiguous/none → silent with the right reason; custom confidentAt bar; cosine??score
+    fallback; whitespace-collapse + maxChars truncation incl. the `>` boundary (exact-length
+    = no ellipsis), zero AND negative maxChars → 160 default (negative would otherwise
+    slice(0,-n) and lop the tail). createConfidenceGatedInvestigator (contract-faithful
+    fake embed in an orthogonal 2-axis space → cosine 1.0 vs 0.0): confident→finding,
+    weak→undefined, blank-title guard PROVED to suppress a chunk that would otherwise match
+    the empty-query embedding, empty corpus, lazy chunk provider, fail-open on throwing
+    chunks/embed, confidentAt + maxChars forwarded. agent-core 1117→1138. (11 survivors:
+    REFLECTION-style prompt/object literals + the hybrid-flag and topK-spread mutants that
+    leave the cosine-based decision unchanged — equivalent for this gate.)
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
