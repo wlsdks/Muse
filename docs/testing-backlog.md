@@ -589,6 +589,17 @@ the generic layers below because they test what makes Muse an *agent*.
     TypeError (a bad write would poison every future poll); the 0600 sidecar mode (it names
     every channel the bot polls); and graceful "no cursor" on a corrupt file / missing `after`
     key / non-string or empty value. messaging 348->354.
+  - FORTY-SECOND (cross-package sweep → messaging): `packages/messaging`
+    `telegram-offset-store.ts` (61L) had **ZERO test refs** — the single-integer `update_id`
+    offset sidecar that stops a Telegram poller from reprocessing the same updates every tick
+    (Telegram redelivers unacked updates for ~24h). Distinct shape from the per-channel
+    after-stores. First suite (7 tests, temp files): undefined on a not-yet-created file;
+    round-trip + OVERWRITE on the next write (single value, not merge); Math.trunc on WRITE
+    (a fractional offset is stored as an int — update_ids are integers) AND on READ (a
+    hand-edited float is normalised); a non-finite offset (NaN/Infinity) → TypeError (a bad
+    write would break polling); the 0600 sidecar mode (it reveals the bot's polling cadence +
+    chat ids); and graceful "no offset" on a corrupt file / missing offset / string or null
+    value. messaging 354->361.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
