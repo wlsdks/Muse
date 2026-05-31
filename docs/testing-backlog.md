@@ -2149,3 +2149,14 @@ the generic layers below because they test what makes Muse an *agent*.
     centre), that it sorts internally (unsorted input → same order), and that it is a
     non-mutating permutation handling empty/single/pair. Deterministic; pre-verified
     against dist. agent-core 1232 tests green.
+
+- [x] **agent-core/knowledge-recall — citation-gate reminder type + whitespace cleanup.**
+    enforceAnswerCitations is the WEDGE/fabrication=0 output gate. Its notes/feeds/
+    tasks/events/sessions paths were tested, but two were not: (1) the `[reminder: …]`
+    source type — its own strip branch (overlap-gated) was unexercised; a mutant
+    dropping it would let a fabricated reminder citation through. (2) the post-strip
+    whitespace cleanup — a removed citation must not leave " ." or a double space in
+    the USER-FACING answer (the gate collapses them). New tests: reminder paraphrased-
+    real kept / fabricated stripped; absent source list (undefined→empty) strips all;
+    trailing "9am [from invented]." → "9am." and mid-line double-space collapsed. All
+    deterministic, pre-verified against dist. agent-core 1235 tests green.
