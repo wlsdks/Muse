@@ -44,15 +44,17 @@ related: [README.md, team-roles.md, handoff-template.md, role-prompts.md, verifi
 ```
 
 **읽는 법:** 한 작업은 오케스트레이터가 **핸드오프 한 장**을 열며 시작 → 플래너가 계획 칸 → 워커가
-빌드 칸 → 평가자가 평가 칸(만든 워커와 다른 에이전트). 모든 단계가 가드레일·게이트·관측·복구라는
+빌드 칸 → 평가자가 평가 칸(만든 워커와 다른 에이전트) → **큐레이터/학습자**가 통한 전략을 강화하고
+배운 절차를 정돈해 **다음 작업을 더 낫게** 만듭니다(Muse 고유의 자기학습 환류). 모든 단계가 가드레일·게이트·관측·복구라는
 **가로 토대** 위에서 돌고, 하네스 자체는 검증(골든 과제·6층)으로 점검됩니다.
 
 ## 2. 문서 → 구성 요소 지도
 
 | 구성 요소 | 담은 문서 |
 |---|---|
-| 역할·패턴·경계 | [team-roles](team-roles.md) |
+| 역할·패턴·경계(큐레이터/학습자 포함 7역할) | [team-roles](team-roles.md) |
 | 역할별 붙여넣기 프롬프트 | [role-prompts](role-prompts.md) |
+| 자기학습 환류(스킬·플레이북·회고) | [team-roles](team-roles.md) 큐레이터/학습자 + [muse-mapping](muse-mapping.md) |
 | 작업 상태(핸드오프) | [handoff-template](handoff-template.md) |
 | 가드레일·게이트 | [verification-and-guardrails](verification-and-guardrails.md) |
 | 실패 모드·관측·복구 | [failure-modes-and-observability](failure-modes-and-observability.md) |
