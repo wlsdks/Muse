@@ -80,6 +80,33 @@ describe("executeStreamingModelLoop", () => {
     expect(execution.finalResponse.output).toBe("final");
   });
 
+  it("cuts the REST of a batch with the wall-clock reason when the deadline crosses MID-batch (injected clock)", async () => {
+    // The streaming loop has the same mid-batch wall-clock guard as the
+    // non-streaming one but no deadline test at all. Inject a clock: two calls in
+    // one turn, the first advances past the 100ms deadline, the second is blocked
+    // with the wall-clock reason — not the max-tool-call one.
+    let clock = 0;
+    const run = {
+      maxToolCalls: 5,
+      maxRunWallclockMs: 100,
+      now: () => clock,
+      tracer: { startSpan: () => noopSpan },
+      metrics: { recordTokenUsage() {} },
+      executeToolCall: async (_ctx: AgentRunContext, toolCall: ModelToolCall): Promise<ExecutedToolResult> => {
+        clock = 200;
+        return { result: { id: toolCall.id, name: toolCall.name, output: "ran", status: "ok" }, toolCall };
+      },
+    } as unknown as ModelLoopRunner;
+    const prov = provider([
+      [done("x", [{ id: "a", name: "alpha", arguments: {} }, { id: "b", name: "beta", arguments: {} }])],
+      [done("final")],
+    ]);
+    const { execution } = await drive(prov, run, context(), true);
+    expect(execution.toolResults.map((r) => r.result.status)).toEqual(["ok", "blocked"]);
+    expect(execution.toolResults[1]?.result.output).toContain("wall-clock deadline reached");
+    expect(execution.toolResults[1]?.result.output).not.toContain("max tool call limit");
+  });
+
   it("returns the first turn with no tool execution when maxToolCalls is 0", async () => {
     const ran: string[] = [];
     const prov = provider([[done("forced", [{ id: "t1", name: "echo", arguments: {} }])]]);

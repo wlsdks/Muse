@@ -286,6 +286,12 @@ the generic layers below because they test what makes Muse an *agent*.
     so the second is blocked — and with the "wall-clock deadline reached" reason,
     NOT "max tool call limit". This is the "N sequential calls each hitting a hung
     MCP server" safety path, now testable without a timing race. agent-core 1083→1084.
+  - FOLLOW-UP (streaming parity): the STREAMING loop (executeStreamingModelLoop)
+    had the identical mid-batch wall-clock guard but NO deadline test at all (its
+    suite covered text-delta / tool-call / abort / error only). Using the same
+    injected clock, added the deterministic streaming mid-batch test: two calls,
+    the first advances past the deadline, the second is blocked with the wall-clock
+    reason. Both loop variants now assert the runaway guard. agent-core 1084→1085.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
