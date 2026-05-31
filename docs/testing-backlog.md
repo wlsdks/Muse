@@ -786,6 +786,16 @@ the generic layers below because they test what makes Muse an *agent*.
     success; a DENIED approval maps to "declined" (not a generic failure — classifyFailure
     denied→declined); a non-2xx / transport failure maps to "failed" with the detail. mcp
     1178->1183.
+  - SIXTIETH (cross-package sweep → mcp; proactive briefing imminence): `packages/mcp`
+    `briefing-imminent.ts` (103L, **ZERO test refs**) — derives the REAL imminent calendar
+    events + tasks the situational briefing surfaces (mirrors the proactive daemon's imminence
+    rule so the briefing never disagrees). First suite (8 tests): deriveCalendarBriefingImminent
+    includes a timed event in [now, now+lead]; skips all-day / before-now / after-window /
+    unparseable-start; respects the [no-proactive] opt-out in the title OR notes; queries the
+    lister with the lead window + defaults a non-finite leadMinutes to 120; fail-soft on a
+    throwing lister → []. deriveBriefingImminent (temp tasks store): includes an open task due
+    in-window; skips done / no-dueAt / proactive:false / due-out-of-window; missing file → [].
+    mcp 1183->1191.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
