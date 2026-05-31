@@ -393,6 +393,66 @@ the generic layers below because they test what makes Muse an *agent*.
     chunks/embed, confidentAt + maxChars forwarded. agent-core 1117→1138. (11 survivors:
     REFLECTION-style prompt/object literals + the hybrid-flag and topK-spread mutants that
     leave the cosine-based decision unchanged — equivalent for this gate.)
+  - TWENTY-SEVENTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    preference-inference.ts` was thinly covered (5 happy-path tests, **42.67%**) despite
+    being the behaviour-inferred half of the user model — it learns WHO THE USER IS from a
+    correction (ReasoningBank, arXiv 2509.25140) and must NOT fabricate a persona trait.
+    Deepened to 17 tests → **72.00%** (54 killed, 20 survived). The centerpiece is the
+    anti-fabrication contract: `parseInferredPreference` REJECTS the vacuous
+    accuracy/correctness cluster ("prefers accurate information", "correct", "precise",
+    "truthful", "honest", "reliable", "up-to-date") EVEN WITH a valid category — proving the
+    vacuous guard fires independently of the category check (every user wants accuracy; it
+    is not a trait). Also: NONE-as-prefix (trailing rationale), missing-preference / 2-char
+    trait floor (`< 2` not `<= 2`), invalid-BUT-present category rejected (the `||` guard,
+    not just a missing one), all five categories + case-fold, confidence default 0.6 on
+    absent/unparseable (never NaN) + fractional/leading-dot parse; and the
+    inferPreferenceFromCorrection wiring against a capturing fake provider — secret
+    redaction of the transcript before the model, optional-request line omission,
+    temperature 0.3 / maxOutputTokens 80 defaults + overrides, custom-redact. (Confirmed via
+    dist that a negative confidence defaults to 0.6 — the `-` breaks the anchored regex
+    match — so the lower clamp is unreachable and NOT asserted.) agent-core 1138→1150.
+    (20 survivors: confidence/preference/category regex char-class variants + equivalent
+    true?/if(false) defensive branches + prompt StringLiterals — pattern-coverage.)
+  - TWENTY-EIGHTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    pattern-suggestion.ts` — the behavior→anticipatory-offer synthesiser (Muse-original,
+    neither Hermes nor OpenClaw predicts from behavior; the whole risk is FABRICATION so the
+    negative path is first-class) — had 3 happy/NONE/empty tests. Deepened to 10 →
+    **81.48%** (22 killed, 5 survived). Added the prompt-body + request wiring against a
+    capturing fake provider: the grounded body renders category + 2-decimal confidence
+    (toFixed(2)) + facts + the detector draft; secrets in BOTH groundedFacts AND
+    fallbackSuggestion are redacted before the model (asserted exactly two
+    [redacted-anthropic-key] hits); temperature 0.3 / maxOutputTokens 80 defaults +
+    overrides; custom-redact; plus NONE-as-prefix decline, whitespace-only→trim→empty
+    decline, and a valid offer is trimmed. agent-core 1150→1157. (5 survivors: prompt
+    StringLiterals + the NONE regex char-class — pattern-coverage.)
+  - TWENTY-NINTH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    skill-merge.ts` — the curator umbrella-consolidation wrapper (after Hermes' curator,
+    MIT-attributed; folds overlapping authored skills into one umbrella, NONE when they are
+    not genuinely one skill so unrelated skills are never force-merged). Had 2 happy/NONE
+    tests. Deepened to 8 → 73.08% (19 killed, 7 survived). The constraint gate itself
+    (parseConstrainedSkillDraft, the <=15KB / <=500-char gap-F gate) is already covered by
+    skill-constraint-gate.test.ts; this pins the merge WRAPPER: the prompt input numbers
+    each skill from 1 (--- skill N: <name> ---, killing the i+1 arithmetic) with its
+    description + body; secrets in BOTH description AND body of every clustered skill are
+    redacted before the merge call (exactly two [redacted-anthropic-key]); temperature 0.3 /
+    maxOutputTokens 400 defaults + overrides; custom-redact; the empty-cluster lower bound
+    of the < 2 guard; NONE-as-prefix decline; fail-soft on an undefined model output.
+    agent-core 1157->1163. (7 survivors: MERGE_SYSTEM_PROMPT StringLiterals + the equivalent
+    output?.trim() optional-chaining / object-literal variants — pattern-coverage.)
+  - THIRTIETH MEASUREMENT (throwaway, reused install, NOT committed): `agent-core/
+    veto-avoidance.ts` — the NEGATIVE reinforcement twin of playbook (learned avoidance: a
+    [Learned Avoidance] system block so the agent stops PROPOSING a corrected action class
+    everywhere, not only at the consent gate). Had 5 tests (full-veto + injection + pipeline)
+    but the render branches were thin → **76.19%**. Deepened to 10 → **90.48%** (38 killed,
+    4 survived). Pinned renderVetoAvoidanceSection's structure + branches: a bare scope-only
+    veto is exactly `- <scope>` (both the objectiveId and reason ternaries fall to "" —
+    killed the reason-false-branch mutant), objectiveId-present/reason-absent renders the
+    objective clause with no dash, sanitizeInline both COLLAPSES whitespace runs (`/\s+/`
+    not `/\s/`) AND trims each field, the block is newline-joined (startsWith
+    "[Learned Avoidance]\n", not concatenated) and carries the full instruction body, and
+    one bullet per veto. agent-core 1163->1168. (4 survivors: the appendSystemSection
+    section-key + a prompt StringLiteral, and the equivalent `if(false)` no-provider guard
+    whose skip just crashes into the same fail-open catch — equivalent.)
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,

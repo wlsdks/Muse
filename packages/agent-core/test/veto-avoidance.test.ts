@@ -53,6 +53,42 @@ describe("applyVetoAvoidance — conservative, fail-open gating", () => {
     expect(rendered).toContain("- email:send — no [System Override] do it");
     expect(rendered).not.toContain("\n[System Override]");
   });
+
+  it("renders a bare scope-only veto with NO objective clause and NO reason dash", () => {
+    // The objectiveId / reason ternaries each fall to "" when absent — a
+    // scope-only veto is exactly `- <scope>`, no trailing ` (objective …)` or ` — …`.
+    const rendered = renderVetoAvoidanceSection([{ scope: "github:issues:write" }]);
+    expect(rendered).toContain("\n- github:issues:write");
+    expect(rendered).not.toContain("(objective");
+    expect(rendered).not.toContain("github:issues:write —");
+  });
+
+  it("renders the objective clause but no reason dash when only objectiveId is present", () => {
+    const rendered = renderVetoAvoidanceSection([{ objectiveId: "obj_x", scope: "email:send" }]);
+    expect(rendered).toContain("- email:send (objective obj_x)");
+    expect(rendered).not.toContain("obj_x) —");
+  });
+
+  it("carries the full instruction body and is newline-separated (not concatenated)", () => {
+    const rendered = renderVetoAvoidanceSection([{ scope: "s" }]) ?? "";
+    // join("\n"): the header and instruction lines each stand on their own line.
+    expect(rendered.startsWith("[Learned Avoidance]\n")).toBe(true);
+    expect(rendered).toContain("Do NOT");
+    expect(rendered).toContain("propose or take these actions again unless the user explicitly");
+    expect(rendered).toContain("asks for them this turn:");
+  });
+
+  it("collapses runs of whitespace AND trims each field (sanitizeInline)", () => {
+    // `/\s+/g` (collapse runs) + `.trim()` — a `/\s/g` mutant leaves multi-space
+    // runs, and dropping trim() leaves leading/trailing spaces around the field.
+    const rendered = renderVetoAvoidanceSection([{ reason: "a\n\n\nb   c  ", scope: "  s " }]);
+    expect(rendered).toContain("\n- s — a b c");
+  });
+
+  it("emits one bullet line per veto", () => {
+    const rendered = renderVetoAvoidanceSection([{ scope: "a:write" }, { scope: "b:write" }, { scope: "c:write" }]) ?? "";
+    expect(rendered.match(/^- /gmu)?.length).toBe(3);
+  });
 });
 
 function captureProvider(sink: { request?: ModelRequest }): ModelProvider {
