@@ -2206,3 +2206,13 @@ the generic layers below because they test what makes Muse an *agent*.
     mcpServers → [] (back-compat); whitespace-only server name; non-object entry;
     non-array args; empty stdio command; and the autoConnect default (true) vs explicit
     false. New tests pin all of them. Pre-verified against dist. autoconfigure 470 green.
+
+- [x] **mcp/personal-objectives-store — serializeObjective (0 coverage → covered).**
+    A symbol-level census of the 109-file mcp package found serializeObjective with
+    ZERO test references (the read/write/add/patch store fns are exercised by many
+    briefing/objective tests, but the display/transport serializer was not). New tests
+    pin: exactly the 6 required fields when no optionals set; all optionals included
+    when present; the subtle attempts:0 case (uses `!== undefined`, so a zero-attempt
+    count survives — a truthy-gate mutant would drop it and corrupt the re-eval loop's
+    backoff state); and empty-string optionals dropped (truthy-gated). Pre-verified
+    against dist. mcp 1208 tests green.
