@@ -14,6 +14,10 @@ related: [team-roles.md, handoff-template.md, muse-mapping.md, README.md]
 > 것**입니다([team-roles §0](team-roles.md)). 이 문서는 [team-roles](team-roles.md)의 평가자·게이트를
 > 실제로 믿을 수 있게 만드는 규칙 — 채점을 일관되게 하는 법, 들어오고 나가는 것을 막는 가드레일,
 > 게이트를 언제 어떻게 거는지 — 을 검증된 2026 레퍼런스에 근거해 정리합니다. (말로만, 코드 없음.)
+>
+> **1차 출처(Boris Cherny, Claude Code 창시자, 2026):** 검증은 품질에서 **가장 중요한 것** — "Claude에
+> 자기 작업을 검증할 방법(다른 에이전트로 결과 확인·stop 훅 자가검증·UI를 열어 테스트)을 주면 최종
+> 품질이 **2~3배**가 된다." 우리의 평가자·완료 게이트·훅이 정확히 그 피드백 루프다.
 
 ## 1. 평가자가 잘 판정하게 (채점 루브릭)
 
@@ -85,3 +89,4 @@ related: [team-roles.md, handoff-template.md, muse-mapping.md, README.md]
 - Anthropic — [Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents) (단순성·투명성·게이트)
 - Anthropic — [Outcomes: agents that verify their own work](https://platform.claude.com/cookbook/managed-agents-cma-verify-with-outcome-grader) (2026-05; 출력만 보는 별도 grading agent → 모델 불변 +8.4%/+10.1%)
 - Cognition — [Don't Build Multi-Agents](https://cognition.ai/blog/dont-build-multi-agents) (전체 맥락 공유·충돌하는 암묵적 결정·단일 스레드 우선)
+- Boris Cherny (Claude Code 창시자) — [Latent Space 인터뷰](https://www.latent.space/p/claude-code) (검증이 품질에서 가장 중요; 자기검증 피드백 루프가 최종 품질 2~3배; harness=모델 위 최소 래퍼)
