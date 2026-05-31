@@ -63,6 +63,7 @@ import {
   isOllamaLeaseHeldByOther,
   resolveOllamaLeaseFile,
   resolveLearnQueueFile,
+  decayStalePlaybookRewards,
   type BriefingImminent
 } from "@muse/mcp";
 import { startAmbientTick } from "./ambient-tick.js";
@@ -547,6 +548,10 @@ export function startConsolidateDaemonIfConfigured(
     // Idle REM phase (B1 Slice 1): distill queued corrections into learned
     // strategies while idle, behind the brakes (the felt grows-with-you path).
     ...(consolidateModel && consolidateProvider ? { distillQueued: () => distillQueuedCorrections({ model: consolidateModel, modelProvider: consolidateProvider, playbookFile: resolvePlaybookFile(env), queueFile: resolveLearnQueueFile(env) }) } : {}),
+    // Idle RL phase (B1 Slice 2): fade positive-reward strategies the user has
+    // stopped reinforcing back toward neutral, so a stale thumbs-up doesn't
+    // steer the agent forever. Cheap + local (no model needed), behind the brakes.
+    decayStale: () => decayStalePlaybookRewards(resolvePlaybookFile(env), { nowMs: Date.now() }),
     // AC-power brake: a heavy LLM merge runs on wall power only, never on
     // battery — so background learning can't drain the laptop (fail-closed).
     isOnAcPower: () => isOnAcPower(),

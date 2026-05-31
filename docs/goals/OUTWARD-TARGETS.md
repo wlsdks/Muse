@@ -115,7 +115,7 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   (auto-register when present / not when absent / no duplicate) + a LIVE muse
   ask with NO calendar env set ("board review … June 3rd … [event: …]"; honest
   refusal on an uncovered query). autoconfigure 467 tests + `pnpm lint` 0/0.
-  (this commit)
+  (7a6780b5)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections
@@ -236,7 +236,27 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   (singular/plural/0; counts only probation) + a LIVE full chain on qwen3:8b
   (correction → idle distill → the exact opener notice string),
   cited-answer+refusal unaffected. cli 1613 tests + `pnpm lint` 0/0. The
-  grows-with-you loop is now FELT at the moment of return. (this commit)
+  grows-with-you loop is now FELT at the moment of return. (a7fcf36b)
+
+- [x] **P36-11 Disuse-decay — learned strategies FADE when you stop reinforcing
+  them (B1 Slice 2).** A one-off thumbs-up could steer the agent forever; now a
+  positive-reward strategy left unreinforced past 30 days loses reward toward
+  NEUTRAL 0 on the idle daemon (clamped at 0 — disuse fades trust, never
+  punishes; only a real correction drives a strategy negative), so it sinks out
+  of the injected `[Learned Strategies]` block on its own. `muse learned` shows
+  the trajectory ("↓ fading (last reinforced Nd ago)") a few days BEFORE the
+  reward actually drops, so the user SEES it losing trust. `adjustPlaybookReward`
+  now stamps `lastReinforcedAt` on a positive reinforce only; new
+  `decayStalePlaybookRewards` (mcp) runs as an idle RL phase in the consolidate
+  tick behind ALL the brakes (cheap + local, no LLM). Proven by unit tests
+  (decay one step toward 0, clamps at neutral, fresh/neutral/negative/probation
+  untouched, createdAt fallback; lastReinforcedAt stamped on reinforce not on
+  penalty; tick fires decay only when idle/unbraked) + a LIVE end-to-end run on
+  this box: a stale +2 strategy decayed +2→+1→0 across ticks (a fresh +3 left
+  untouched; a 2nd tick at 0 decayed nothing) and LEFT the `muse learned`
+  Trusted list, while the fresh one stayed. mcp 1222 / api 816 / cli 1615 tests
+  + `pnpm lint` 0/0. The grows-with-you loop now self-corrects in BOTH
+  directions — it learns AND it forgets stale trust. (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

@@ -21,15 +21,52 @@ import { resolveDefaultUserKey } from "./user-id.js";
 
 const TRUST_AT = 1; // reward ≥ this = a strategy/skill Muse has learned to trust
 const MAX_REFLECTIONS = 5;
+// Show a trusted strategy as "fading" once it has gone this long without a
+// positive reinforce — a few days BEFORE the daemon's 30-day disuse-decay
+// (PLAYBOOK_DECAY_STALE_DAYS) actually lowers its reward, so the user SEES the
+// trajectory ("you've stopped reinforcing this") before the value drops.
+const FADING_AFTER_DAYS = 21;
+const DAY_MS = 86_400_000;
 
 export interface LearnedDigestInput {
-  readonly strategies: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly probation?: boolean }[];
+  readonly strategies: readonly {
+    readonly text: string;
+    readonly tag?: string;
+    readonly reward?: number;
+    readonly probation?: boolean;
+    readonly createdAt?: string;
+    readonly lastReinforcedAt?: string;
+  }[];
   readonly skills: readonly { readonly name: string; readonly reward: number }[];
   readonly reflections: readonly { readonly insight: string; readonly createdAtMs: number }[];
+  /** Injectable clock for the "fading / last reinforced" trajectory. */
+  readonly nowMs?: number;
 }
 
 const rewardOf = (value: number | undefined): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+/**
+ * The disuse trajectory suffix for a trusted strategy (B1 §2): how long since
+ * it was last positively reinforced, and a "↓ fading" flag once that gap passes
+ * `FADING_AFTER_DAYS` — so the user SEES a strategy losing trust BEFORE the idle
+ * daemon decays its reward. Empty when there's no recency anchor or it's fresh.
+ */
+function trajectorySuffix(
+  strategy: { readonly createdAt?: string; readonly lastReinforcedAt?: string },
+  nowMs: number
+): string {
+  const anchorMs = Date.parse(strategy.lastReinforcedAt ?? strategy.createdAt ?? "");
+  if (!Number.isFinite(anchorMs)) {
+    return "";
+  }
+  const days = Math.floor((nowMs - anchorMs) / DAY_MS);
+  if (days < FADING_AFTER_DAYS) {
+    return "";
+  }
+  const reinforced = strategy.lastReinforcedAt ? "reinforced" : "added";
+  return `  ↓ fading (last ${reinforced} ${days.toString()}d ago)`;
+}
 
 /** Render the digest. Pure (data in, text out) so it is directly testable. */
 export function renderLearnedDigest(input: LearnedDigestInput): string {
@@ -65,9 +102,12 @@ export function renderLearnedDigest(input: LearnedDigestInput): string {
   const lines: string[] = ["What Muse has learned about working with you", ""];
   const reward = (n: number): string => `${n > 0 ? "+" : ""}${n.toString()}`;
 
+  const nowMs = input.nowMs ?? Date.now();
   if (trustedStrategies.length > 0) {
     lines.push("Trusted strategies (reinforced by your feedback):");
-    for (const s of trustedStrategies) lines.push(`  • ${s.text}${s.tag ? ` (${s.tag})` : ""}  ⟨${reward(rewardOf(s.reward))}⟩`);
+    for (const s of trustedStrategies) {
+      lines.push(`  • ${s.text}${s.tag ? ` (${s.tag})` : ""}  ⟨${reward(rewardOf(s.reward))}⟩${trajectorySuffix(s, nowMs)}`);
+    }
     lines.push("");
   }
   if (trustedSkills.length > 0) {

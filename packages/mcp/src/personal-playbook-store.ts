@@ -48,6 +48,15 @@ export interface PlaybookEntry {
    * graduated. (PART A2 / B1 §5.)
    */
   readonly probation?: boolean;
+  /**
+   * ISO timestamp of the last POSITIVE reinforcement (the recency signal for
+   * disuse-decay, B1 §2): a trusted strategy you stop reinforcing fades back
+   * toward neutral over time so one stale thumbs-up can't steer the agent
+   * forever. Stamped by `adjustPlaybookReward` on a positive delta only —
+   * decay never refreshes it, so continued disuse keeps fading. Absent ⇒
+   * `createdAt` is the fallback recency anchor.
+   */
+  readonly lastReinforcedAt?: string;
 }
 
 async function quarantineCorruptStore(file: string): Promise<void> {
@@ -125,7 +134,12 @@ export async function removePlaybookStrategy(file: string, id: string): Promise<
  * uses). Returns the new reward, or undefined when no entry matched / delta
  * was not finite.
  */
-export async function adjustPlaybookReward(file: string, id: string, delta: number): Promise<number | undefined> {
+export async function adjustPlaybookReward(
+  file: string,
+  id: string,
+  delta: number,
+  nowMs: number = Date.now()
+): Promise<number | undefined> {
   if (!Number.isFinite(delta)) {
     return undefined;
   }
@@ -140,12 +154,61 @@ export async function adjustPlaybookReward(file: string, id: string, delta: numb
         return e;
       }
       updated = Math.max(PLAYBOOK_REWARD_MIN, Math.min(PLAYBOOK_REWARD_MAX, (e.reward ?? 0) + delta));
-      // Graduation (B1 §5): a probation strategy with net-positive reward has
-      // earned evidence — clear probation so it becomes injectable.
-      return { ...e, reward: updated, ...(e.probation && updated > 0 ? { probation: false } : {}) };
+      return {
+        ...e,
+        reward: updated,
+        // Graduation (B1 §5): a probation strategy with net-positive reward has
+        // earned evidence — clear probation so it becomes injectable.
+        ...(e.probation && updated > 0 ? { probation: false } : {}),
+        // Recency anchor for disuse-decay (B1 §2): a real (positive) reinforce
+        // refreshes it; a decay/penalty must NOT, or disuse could never fade.
+        ...(delta > 0 ? { lastReinforcedAt: new Date(nowMs).toISOString() } : {})
+      };
     });
     await writePlaybook(file, next);
     return updated;
+  });
+}
+
+/** Disuse is judged stale past this many days without a positive reinforce. */
+export const PLAYBOOK_DECAY_STALE_DAYS = 30;
+const DAY_MS = 86_400_000;
+
+/**
+ * Disuse-decay (B1 §2 — continuous RL over the bank): every positive-reward
+ * strategy NOT reinforced within `staleAfterDays` loses `step` reward toward
+ * NEUTRAL 0 (never below — disuse fades trust, it does not punish; a real
+ * correction is what drives a strategy negative). So a one-off thumbs-up
+ * can't steer the agent forever: stop reinforcing a strategy and it sinks out
+ * of the injected `[Learned Strategies]` block on its own. Probation, neutral,
+ * and already-negative entries are untouched. Serialised read-modify-write;
+ * writes only when something changed. Returns the number of strategies decayed.
+ */
+export async function decayStalePlaybookRewards(
+  file: string,
+  options: { readonly nowMs: number; readonly staleAfterDays?: number; readonly step?: number }
+): Promise<number> {
+  const staleMs = Math.max(0, options.staleAfterDays ?? PLAYBOOK_DECAY_STALE_DAYS) * DAY_MS;
+  const step = Math.max(1, Math.trunc(options.step ?? 1));
+  return withFileMutationQueue(file, async () => {
+    const existing = await readPlaybook(file);
+    let decayed = 0;
+    const next = existing.map((e) => {
+      const reward = e.reward ?? 0;
+      if (e.probation === true || reward <= 0) {
+        return e;
+      }
+      const anchorMs = Date.parse(e.lastReinforcedAt ?? e.createdAt);
+      if (!Number.isFinite(anchorMs) || options.nowMs - anchorMs < staleMs) {
+        return e;
+      }
+      decayed += 1;
+      return { ...e, reward: Math.max(0, reward - step) };
+    });
+    if (decayed > 0) {
+      await writePlaybook(file, next);
+    }
+    return decayed;
   });
 }
 
@@ -159,5 +222,6 @@ function isPlaybookEntry(value: unknown): value is PlaybookEntry {
   if (e.tag !== undefined && typeof e.tag !== "string") return false;
   if (e.reward !== undefined && (typeof e.reward !== "number" || !Number.isFinite(e.reward))) return false;
   if (e.probation !== undefined && typeof e.probation !== "boolean") return false;
+  if (e.lastReinforcedAt !== undefined && typeof e.lastReinforcedAt !== "string") return false;
   return true;
 }

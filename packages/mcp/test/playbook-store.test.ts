@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { adjustPlaybookReward, MAX_PLAYBOOK_ENTRIES, PLAYBOOK_REWARD_MAX, PLAYBOOK_REWARD_MIN, type PlaybookEntry, readPlaybook, recordPlaybookStrategy, removePlaybookStrategy, writePlaybook } from "../src/personal-playbook-store.js";
+import { adjustPlaybookReward, decayStalePlaybookRewards, MAX_PLAYBOOK_ENTRIES, PLAYBOOK_DECAY_STALE_DAYS, PLAYBOOK_REWARD_MAX, PLAYBOOK_REWARD_MIN, type PlaybookEntry, readPlaybook, recordPlaybookStrategy, removePlaybookStrategy, writePlaybook } from "../src/personal-playbook-store.js";
 
 const entry = (id: string, tag?: string): PlaybookEntry => ({
   id,
@@ -154,5 +154,66 @@ describe("probation — unattended idle-distilled strategies graduate on a real 
     await recordPlaybookStrategy(file, { ...entry("p1"), probation: true });
     await adjustPlaybookReward(file, "p1", -1); // a decay, not a reinforce
     expect((await readPlaybook(file))[0]?.probation).toBe(true);
+  });
+});
+
+describe("adjustPlaybookReward — lastReinforcedAt recency anchor (B1 §2)", () => {
+  const t0 = Date.parse("2026-06-01T00:00:00Z");
+
+  it("a positive reinforce stamps lastReinforcedAt; a decay/penalty does not", async () => {
+    const file = freshFile();
+    await recordPlaybookStrategy(file, entry("s1"));
+    await adjustPlaybookReward(file, "s1", 2, t0);
+    expect((await readPlaybook(file))[0]?.lastReinforcedAt).toBe(new Date(t0).toISOString());
+
+    // a later penalty must NOT refresh the anchor (else disuse could never fade)
+    await adjustPlaybookReward(file, "s1", -1, t0 + 5 * 86_400_000);
+    expect((await readPlaybook(file))[0]?.lastReinforcedAt).toBe(new Date(t0).toISOString());
+  });
+});
+
+describe("decayStalePlaybookRewards — disuse-decay toward neutral (B1 §2)", () => {
+  const reinforcedAt = "2026-05-01T00:00:00Z";
+  const stale = (id: string, reward: number, extra: Partial<PlaybookEntry> = {}): PlaybookEntry => ({
+    ...entry(id),
+    reward,
+    lastReinforcedAt: reinforcedAt,
+    ...extra,
+  });
+  // 40 days after the last reinforce — past the 30-day stale window.
+  const now = Date.parse(reinforcedAt) + (PLAYBOOK_DECAY_STALE_DAYS + 10) * 86_400_000;
+
+  it("decays a stale positive strategy one step toward neutral, never below 0", async () => {
+    const file = freshFile();
+    await writePlaybook(file, [stale("s1", 3), stale("s2", 1)]);
+    expect(await decayStalePlaybookRewards(file, { nowMs: now })).toBe(2);
+    const after = await readPlaybook(file);
+    expect(after.find((e) => e.id === "s1")?.reward).toBe(2);
+    expect(after.find((e) => e.id === "s2")?.reward).toBe(0); // 1 → 0, clamped at neutral
+
+    // a second pass on the floor entry is a no-op (never goes negative)
+    expect(await decayStalePlaybookRewards(file, { nowMs: now })).toBe(1); // only s1 still positive
+    expect((await readPlaybook(file)).find((e) => e.id === "s1")?.reward).toBe(1);
+  });
+
+  it("leaves fresh, neutral, negative, and probation strategies untouched", async () => {
+    const file = freshFile();
+    await writePlaybook(file, [
+      stale("fresh", 3, { lastReinforcedAt: new Date(now).toISOString() }), // reinforced just now
+      stale("neutral", 0),
+      stale("negative", -2),
+      stale("prob", 2, { probation: true }),
+    ]);
+    expect(await decayStalePlaybookRewards(file, { nowMs: now })).toBe(0);
+    const after = await readPlaybook(file);
+    expect(after.map((e) => e.reward)).toEqual([3, 0, -2, 2]);
+  });
+
+  it("falls back to createdAt when lastReinforcedAt is absent (legacy entry)", async () => {
+    const file = freshFile();
+    // entry()'s createdAt is 2026-01-01 — far past the stale window from `now`
+    await writePlaybook(file, [{ ...entry("legacy"), reward: 2 }]);
+    expect(await decayStalePlaybookRewards(file, { nowMs: now })).toBe(1);
+    expect((await readPlaybook(file))[0]?.reward).toBe(1);
   });
 });

@@ -68,6 +68,13 @@ export interface ConsolidateTickOptions {
    * Returns the count distilled (for logging). Omitted ⇒ phase skipped.
    */
   readonly distillQueued?: () => Promise<number>;
+  /**
+   * Idle RL phase (B1 Slice 2): decay positive-reward strategies the user has
+   * stopped reinforcing back toward neutral, so a stale thumbs-up can't steer
+   * the agent forever. Cheap + local (no LLM), runs behind the same brakes as
+   * the distill phase. Returns the count decayed (for logging). Omitted ⇒ skip.
+   */
+  readonly decayStale?: () => Promise<number>;
   readonly intervalMs?: number;
   readonly threshold?: number;
   readonly minClusterSize?: number;
@@ -149,6 +156,13 @@ export function startConsolidateTick(options: ConsolidateTickOptions): Consolida
         const learned = await options.distillQueued();
         if (learned > 0) {
           options.logger?.(`consolidate-tick: distilled ${learned.toString()} strategy(ies) from queued corrections`);
+        }
+      }
+      // Idle RL phase (B1 Slice 2): fade strategies the user stopped reinforcing.
+      if (options.decayStale) {
+        const decayed = await options.decayStale();
+        if (decayed > 0) {
+          options.logger?.(`consolidate-tick: decayed ${decayed.toString()} unreinforced strategy(ies) toward neutral`);
         }
       }
       const merged = await runConsolidate();

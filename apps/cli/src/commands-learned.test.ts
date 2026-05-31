@@ -95,6 +95,36 @@ describe("renderLearnedDigest", () => {
     expect(out).not.toContain("hasn't learned anything");
   });
 
+  it("flags a trusted strategy as ↓ fading once it goes unreinforced past the window (B1 §2)", () => {
+    const nowMs = Date.parse("2026-06-01T00:00:00Z");
+    const day = 86_400_000;
+    const out = renderLearnedDigest({
+      nowMs,
+      reflections: [],
+      skills: [],
+      strategies: [
+        { reward: 3, text: "fresh strategy", lastReinforcedAt: new Date(nowMs - 2 * day).toISOString() },
+        { reward: 2, text: "stale strategy", lastReinforcedAt: new Date(nowMs - 40 * day).toISOString() }
+      ]
+    });
+    // the recently-reinforced one shows no fading marker
+    const freshLine = out.split("\n").find((l) => l.includes("fresh strategy"))!;
+    expect(freshLine).not.toContain("fading");
+    // the long-unreinforced one is visibly fading, with the day count
+    expect(out).toContain("stale strategy  ⟨+2⟩  ↓ fading (last reinforced 40d ago)");
+  });
+
+  it("falls back to 'added' wording when a fading strategy has no reinforce timestamp", () => {
+    const nowMs = Date.parse("2026-06-01T00:00:00Z");
+    const out = renderLearnedDigest({
+      nowMs,
+      reflections: [],
+      skills: [],
+      strategies: [{ reward: 2, text: "legacy strategy", createdAt: new Date(nowMs - 50 * 86_400_000).toISOString() }]
+    });
+    expect(out).toContain("↓ fading (last added 50d ago)");
+  });
+
   it("shows the most recent reflections, newest first, capped at 5", () => {
     const reflections = Array.from({ length: 7 }, (_unused, i) => ({ createdAtMs: i * 1000, insight: `insight ${i.toString()}` }));
     const out = renderLearnedDigest({ reflections, skills: [], strategies: [] });

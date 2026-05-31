@@ -240,3 +240,22 @@ describe("startConsolidateTick.tickOnce — idle distill phase runs behind the b
     expect(distillCalls).toBe(1);
   });
 });
+
+describe("startConsolidateTick.tickOnce — idle disuse-decay phase runs behind the brakes (B1 Slice 2)", () => {
+  it("calls decayStale when idle, NOT when a brake blocks", async () => {
+    let decayCalls = 0;
+    const idleOpts = (over = {}) => baseOptions({
+      lastActivityMs: () => NOW.getTime() - IDLE_MS - 1,
+      decayStale: async () => { decayCalls += 1; return 2; },
+      ...over
+    });
+    // blocked by a brake (battery) → decay NOT called
+    let h = startConsolidateTick(idleOpts({ isOnAcPower: () => false }));
+    await h.tickOnce(); h.stop();
+    expect(decayCalls).toBe(0);
+    // gates pass → decay runs
+    h = startConsolidateTick(idleOpts({ isOnAcPower: () => true }));
+    await h.tickOnce(); h.stop();
+    expect(decayCalls).toBe(1);
+  });
+});
