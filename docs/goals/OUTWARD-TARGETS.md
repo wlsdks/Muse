@@ -117,6 +117,24 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   refusal on an uncovered query). autoconfigure 467 tests + `pnpm lint` 0/0.
   (7a6780b5)
 
+- [x] **P37-5 Contacts as a `muse ask` grounding source (B3 — your address
+  book).** "What's Sarah's email?", "how do I reach the plumber?" — questions
+  the local model could only answer from the user's own contacts, which `muse
+  ask` didn't read. It now pulls MATCHING contacts (query-token overlap on
+  name/aliases/email/handle — never the whole book at the small model), injects
+  them as a grounding block, and cites each as `[contact: name]` under the same
+  code-not-model citation gate (a new `contacts` class in `enforceAnswerCitations`
+  strips any `[contact: …]` not in the matched set). `--no-contacts` opts out.
+  Proven by unit tests (`contactMatchScore`: matches first-name/alias/handle, 0
+  for unrelated/empty, full-name > partial in cli; citation gate keeps a real
+  contact, strips an unknown one in agent-core) + a LIVE `muse ask` on qwen3:8b
+  against a MOCK contacts.json (HOME-isolated, empty notes, never real ~/.muse):
+  "What is Sarah's email?" → "sarah.chen@foundry.io [contact: Sarah Chen]"
+  (cited); "Dr. Patel's phone number?" → honest refusal, no fabricated number/
+  citation. agent-core 1239 / cli 1630 tests + `pnpm lint` 0/0. A user can now
+  ask Muse about their PEOPLE and get a cited answer or an honest "I don't have
+  that". (this commit)
+
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections
 while idle, on its own, without straining the laptop. Built brake-FIRST — the
@@ -348,7 +366,7 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   state's exact line: OFF default ✓, ON-not-installed → `muse daemon --install`,
   ON+installed "will run while idle", paused → `muse playbook resume`. cli 1625
   tests + `pnpm lint` 0/0. The user can now VERIFY whether Muse is set up to learn
-  while idle. (this commit)
+  while idle. (3922b411)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half

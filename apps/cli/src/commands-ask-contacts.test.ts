@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+
+import type { Contact } from "@muse/mcp";
+
+import { contactMatchScore } from "./commands-ask.js";
+
+const tokens = (q: string): Set<string> => {
+  // mirror lexicalTokens loosely for the test — split on non-word, drop short
+  return new Set(q.toLowerCase().split(/[^a-z0-9]+/u).filter((t) => t.length > 1));
+};
+
+const sarah: Contact = { id: "c1", name: "Sarah Chen", email: "sarah@example.com", phone: "+1 415 555 0101", aliases: ["Sare"] };
+const plumber: Contact = { id: "c2", name: "Mike Reynolds", handle: "@mikeplumbing" };
+
+describe("contactMatchScore — query→contact relevance for muse ask grounding (B3)", () => {
+  it("matches on the first name a question uses", () => {
+    expect(contactMatchScore(sarah, tokens("what is sarah's email"))).toBeGreaterThan(0);
+  });
+
+  it("matches on an alias and on a handle", () => {
+    expect(contactMatchScore(sarah, tokens("how do I reach sare"))).toBeGreaterThan(0);
+    expect(contactMatchScore(plumber, tokens("ping mikeplumbing about the leak"))).toBeGreaterThan(0);
+  });
+
+  it("scores 0 for an unrelated question (so the contact is NOT injected → honest refusal)", () => {
+    expect(contactMatchScore(sarah, tokens("when is my dentist appointment"))).toBe(0);
+    expect(contactMatchScore(plumber, tokens("what is the wifi password"))).toBe(0);
+  });
+
+  it("scores 0 for an empty query", () => {
+    expect(contactMatchScore(sarah, new Set())).toBe(0);
+  });
+
+  it("a more-specific question (full name) scores higher than a partial", () => {
+    expect(contactMatchScore(sarah, tokens("email sarah chen"))).toBeGreaterThan(contactMatchScore(sarah, tokens("email sarah")));
+  });
+});

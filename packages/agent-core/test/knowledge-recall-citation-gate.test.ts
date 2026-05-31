@@ -68,6 +68,16 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.stripped).toEqual(["filed quarterly taxes"]);
   });
 
+  it("gates contacts by content-token overlap — a real person's citation survives, an unknown one is stripped", () => {
+    const out = enforceAnswerCitations(
+      "Email Sarah at sarah@x.com [contact: Sarah Chen] and ask the plumber [contact: Mike's Plumbing].",
+      { contacts: ["Sarah Chen", "Dr. Alice Wong"] }
+    );
+    expect(out.text).toContain("[contact: Sarah Chen]"); // a known contact → kept
+    expect(out.text).not.toContain("[contact: Mike's Plumbing]"); // not in the address book → stripped
+    expect(out.stripped).toEqual(["Mike's Plumbing"]);
+  });
+
   it("an answer with no citations is returned unchanged", () => {
     const out = enforceAnswerCitations("I'm not sure — nothing in your notes covers that.", { notes: ["notes/vpn.md"] });
     expect(out.text).toBe("I'm not sure — nothing in your notes covers that.");

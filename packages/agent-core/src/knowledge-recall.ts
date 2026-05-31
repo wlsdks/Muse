@@ -332,6 +332,8 @@ export interface AllowedCitations {
   readonly reminders?: readonly string[];
   /** `[session: <summary>]` — retrieved past-session summaries; content-token overlap (the model rewrites the recap). */
   readonly sessions?: readonly string[];
+  /** `[contact: <name>]` — known contacts; content-token overlap (the model may cite a first name / partial). */
+  readonly contacts?: readonly string[];
 }
 
 function resolvesExact(value: string, allowed: readonly string[]): boolean {
@@ -389,6 +391,7 @@ export function enforceAnswerCitations(answer: string, allowed: AllowedCitations
   strip(/\[event:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.events ?? []));
   strip(/\[reminder:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.reminders ?? []));
   strip(/\[session:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.sessions ?? []));
+  strip(/\[contact:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.contacts ?? []));
   text = text
     .replace(/[ \t]{2,}/gu, " ")
     .replace(/[ \t]+([.,;!?])/gu, "$1")

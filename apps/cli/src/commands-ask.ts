@@ -27,10 +27,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 
 import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
-import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
-import { acquireOllamaLease, listReflections, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type PersistedReminder, type PersistedTask } from "@muse/mcp";
+import { acquireOllamaLease, listReflections, readContacts, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type Contact, type PersistedReminder, type PersistedTask } from "@muse/mcp";
 
 import { resolveReflectionsFile } from "./commands-reflections.js";
 import { classifyTier, type ModelTier } from "@muse/multi-agent";
@@ -246,6 +246,40 @@ export function answerIsRefusal(answer: string): boolean {
   return REFUSAL_MARKERS.some((m) => lower.includes(m));
 }
 
+/**
+ * Relevance of a contact to the question, for `muse ask` grounding (B3
+ * perception): how many query tokens match a token of the contact's name,
+ * aliases, handle, or email. 0 ⇒ NOT injected — so we ground only on the people
+ * the question is actually about, never dump the whole address book at the
+ * small local model.
+ */
+export function contactMatchScore(contact: Contact, queryTokens: ReadonlySet<string>): number {
+  if (queryTokens.size === 0) {
+    return 0;
+  }
+  const hay = new Set<string>();
+  const add = (text: string | undefined): void => {
+    if (text) {
+      for (const tok of lexicalTokens(text)) {
+        hay.add(tok);
+      }
+    }
+  };
+  add(contact.name);
+  add(contact.handle);
+  add(contact.email);
+  for (const alias of contact.aliases ?? []) {
+    add(alias);
+  }
+  let score = 0;
+  for (const tok of queryTokens) {
+    if (hay.has(tok)) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
 interface AskOptions {
   readonly user?: string;
   readonly persona?: string;
@@ -257,6 +291,7 @@ interface AskOptions {
   readonly calendar?: boolean;
   readonly calendarDays?: string;
   readonly reminders?: boolean;
+  readonly contacts?: boolean;
   readonly json?: boolean;
   readonly withTools?: boolean;
   readonly actuators?: boolean;
@@ -669,6 +704,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       "Skip injecting pending reminders as grounding context (default: include pending reminders sorted by due date)"
     )
     .option(
+      "--no-contacts",
+      "Skip injecting matching contacts as grounding context (default: include contacts whose name/alias/email matches the question)"
+    )
+    .option(
       "--json",
       "Emit a single JSON object on stdout with {query, model, answer, grounded:{...}} (suppresses streaming)"
     )
@@ -1057,6 +1096,40 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           .map((r, i) => `<<reminder ${(i + 1).toString()} — ${r.id} (due ${r.dueAt})>>\n${r.text}\n<<end>>`)
           .join("\n\n");
 
+      // Pull MATCHING contacts as a fifth grounding source (B3 perception).
+      // "What's Sarah's email?", "how do I reach the plumber?" — questions the
+      // local model can only answer from the user's own address book. Match on
+      // query-token overlap against name/aliases/email/handle so we inject only
+      // the relevant people (never the whole book), then cite each as
+      // [contact: name] under the same code-not-model citation gate.
+      let matchedContacts: readonly Contact[] = [];
+      if (options.contacts !== false) {
+        try {
+          const queryTokensForContacts = lexicalTokens(query);
+          const all = await readContacts(resolveContactsFile(process.env as Record<string, string | undefined>));
+          matchedContacts = all
+            .map((c) => ({ c, score: contactMatchScore(c, queryTokensForContacts) }))
+            .filter((x) => x.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+            .map((x) => x.c);
+        } catch {
+          // contacts file missing or unreadable — silently skip
+        }
+      }
+      const contactBlock = matchedContacts.length === 0
+        ? "(no matching contacts)"
+        : matchedContacts
+          .map((c, i) => {
+            const fields = [
+              c.email ? `email ${c.email}` : undefined,
+              c.phone ? `phone ${c.phone}` : undefined,
+              c.handle ? `handle ${c.handle}` : undefined
+            ].filter((f): f is string => f !== undefined).join(", ");
+            return `<<contact ${(i + 1).toString()} — ${c.id}>>\n${c.name}${fields ? ` — ${fields}` : ""}\n<<end>>`;
+          })
+          .join("\n\n");
+
       // Phase 2 (runtime self-tuning): the ACE playbook's [Learned
       // Strategies] reach the agent-runtime (--with-tools) path via the
       // runtime's playbookProvider, but NOT this chat-only fast path. Pull
@@ -1089,7 +1162,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         formatCurrentContextLine(),
         "",
         "You are Muse, the user's JARVIS-style personal AI conductor.",
-        "Answer the user's question USING ONLY the notes, open tasks, upcoming events, pending reminders, past session summaries, and recent feed headlines provided below as context.",
+        "Answer the user's question USING ONLY the notes, open tasks, upcoming events, pending reminders, matching contacts, past session summaries, and recent feed headlines provided below as context.",
         "If none of the provided context contains enough information, say so directly — do not invent facts.",
         ...(notesFraming.guidance ? [notesFraming.guidance] : []),
         "Reply in the user's preferred language (from persona prefs).",
@@ -1106,7 +1179,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // placeholder word"), and hard-forbid citing any source not
         // shown in a marker below.
         "When a fact comes from a note, END that sentence with that note's `cite as:` token, copied VERBATIM — the whole bracket exactly as printed under the passage, the name unchanged.",
-        "For other context, cite by the name shown in its marker: a task as [task: its title], an event as [event: its title], a reminder as [reminder: its text], a past session as [session: short summary], a feed headline as [feed: the feed name].",
+        "For other context, cite by the name shown in its marker: a task as [task: its title], an event as [event: its title], a reminder as [reminder: its text], a past session as [session: short summary], a feed headline as [feed: the feed name], a contact as [contact: their name].",
         "CRITICAL: cite ONLY a source shown in the context below — copy an existing `cite as:` token, or a name shown in a marker. NEVER invent or guess a filename, feed, task, or event. If the answer is not in any passage below, cite nothing and say you are not sure.",
         "",
         notesFraming.header,
@@ -1124,6 +1197,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         "=== PENDING REMINDERS (sorted by due date) ===",
         reminderBlock,
         "=== END REMINDERS ===",
+        "",
+        "=== MATCHING CONTACTS (from your address book) ===",
+        contactBlock,
+        "=== END CONTACTS ===",
         "",
         "=== PAST SESSION SUMMARIES (your prior conversations) ===",
         episodeBlock,
@@ -1153,6 +1230,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       }
       if (pendingReminders.length > 0) {
         groundedParts.push(`${pendingReminders.length.toString()} pending reminder(s)`);
+      }
+      if (matchedContacts.length > 0) {
+        groundedParts.push(`${matchedContacts.length.toString()} contact(s)`);
       }
       if (episodeHits.length > 0) {
         groundedParts.push(`${episodeHits.length.toString()} past session(s)`);
@@ -1293,6 +1373,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         ? (index ? filterLiveNoteIndexFiles(index.files, existsSync).map((f) => (isAbsolute(f.path) ? relative(notesDir, f.path) : f.path)) : [])
         : scored.map((r) => (isAbsolute(r.file) ? relative(notesDir, r.file) : r.file));
       const citationGate = enforceAnswerCitations(collectedAnswer, {
+        contacts: matchedContacts.map((c) => c.name),
         events: upcomingEvents.map((e) => e.title),
         feeds: feedHeadlines.map((h) => h.feedName),
         notes: allowedNotes,
