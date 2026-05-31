@@ -735,6 +735,132 @@ the generic layers below because they test what makes Muse an *agent*.
     "irreversible"); and the END-TO-END property — after undo, the recorded veto OVERRIDES prior
     consent so a subsequent performConsentedAction for the same {objective,scope} is refused
     with NO HTTP ("vetoed"). mcp 1148->1151.
+  - FIFTY-FIFTH (cross-package sweep → mcp; quarantine persistence): `packages/mcp`
+    `swarm-quarantine-store.ts` (137L, **ZERO test refs**) — where received peer know-how lands
+    execute-gated until the user promotes it. First suite (5 tests, temp files): addToQuarantine
+    deposits as PENDING + round-trips (label optional); missing/malformed file → []; a tampered
+    entry whose kind ISN'T shareable know-how ("tool-call") is FILTERED on read (defense in
+    depth — a corrupted store can't smuggle an executable kind into quarantine even though the
+    safety core already refused it); listPending returns only pending, most-recent-first;
+    setQuarantineStatus promotes/rejects a pending entry exactly once (stamps resolvedAtMs) and
+    returns null on an already-resolved or unknown id (no double-promote). mcp 1151->1156.
+  - FIFTY-SIXTH (cross-package sweep → mcp; proactive re-evaluation engine): `packages/mcp`
+    `objective-evaluation-loop.ts` `runDueObjectives` (150L, **ZERO test refs**) — the
+    standing-objective re-evaluation engine (the long-horizon counterpart to runDueFollowups,
+    NORTH-STAR-adjacent proactive firing). First suite (7 tests, temp objectives file +
+    injected evaluate/act/escalate/now): MET fires the action exactly once + flips to done
+    (durable); UNMEETABLE escalates with the reason + flips to escalated (never silently
+    dropped); UNMET backs off with an exponential nextEvalAt (base*2^(attempts-1)) and stays
+    active (never spins); UNMET past maxAttempts escalates instead of retrying forever; only
+    DUE objectives are picked (skips done/cancelled + a future nextEvalAt, includes a past
+    one); maxPerTick caps the per-tick batch so a backlog can't burst; and FAIL-OPEN — an
+    evaluator error is recorded, leaves the objective active for the next tick, and doesn't
+    crash sibling objectives. mcp 1156->1163.
+  - FIFTY-SEVENTH (cross-package sweep → mcp; dreaming-reflection persistence): `packages/mcp`
+    `reflections-store.ts` (99L, **ZERO test refs**) — where the grounded "dreaming" insights
+    (each citing real episode ids) land so `muse reflections` can surface them with sources.
+    First suite (7 tests, temp files): addReflections adds fresh + round-trips the grounding
+    fields (sourceIds/supportCount); DEDUPES the same recurring theme across passes on the
+    NORMALISED insight (case + whitespace) so it isn't stored twice; dedupes within a single
+    batch + skips an empty/whitespace insight; empty incoming → 0 (no write); tolerant read
+    (missing/malformed/wrong-shape → []); FILTERS a tampered entry (empty insight / non-finite
+    supportCount) on read; listReflections newest-first. mcp 1163->1170.
+  - FIFTY-EIGHTH (cross-package sweep → mcp; the shared concurrency primitive): `packages/mcp`
+    `atomic-file-store.ts` (69L, **ZERO test refs**) — `atomicWriteFile` + `withFileMutationQueue`,
+    the foundation EVERY personal sidecar store depends on (objectives/consent/veto/quarantine/
+    reflections/action-log …). First suite (8 tests, temp files): atomicWriteFile writes +
+    creates nested dirs + leaves no .tmp; 0600 default mode + explicit-mode override; overwrites
+    atomically; fsync:false still writes. withFileMutationQueue: SERIALISES 25 concurrent
+    read-modify-write increments so NO update is lost (the core lost-update fix — each op reads,
+    yields to force interleaving, writes back +1 → final===25); runs different files in PARALLEL
+    (keyed by path — a fast f2 op doesn't wait behind a slow f1 op); rejects the caller's promise
+    on a throwing op WITHOUT wedging the queue for the next op on the same file; returns the op's
+    value. mcp 1170->1178.
+  - FIFTY-NINTH (cross-package sweep → mcp; actuator dispatcher): `packages/mcp`
+    `run-actuator-by-name.ts` `runActuatorByName` (92L, **ZERO test refs**) — re-runs a gated
+    actuator (email_send / web_action / home_action) by name through the SAME fail-closed
+    *WithApproval orchestration (the shared dispatcher behind `muse approvals approve` + in-chat
+    auto-completion). First suite (5 tests, real web_action orchestration + temp action-log):
+    unknown name → unknown-tool + detail; email_send / home_action without their credentials →
+    unavailable; web_action runs through the REAL performWebActionWithApproval → ran:true on
+    success; a DENIED approval maps to "declined" (not a generic failure — classifyFailure
+    denied→declined); a non-2xx / transport failure maps to "failed" with the detail. mcp
+    1178->1183.
+  - SIXTIETH (cross-package sweep → mcp; proactive briefing imminence): `packages/mcp`
+    `briefing-imminent.ts` (103L, **ZERO test refs**) — derives the REAL imminent calendar
+    events + tasks the situational briefing surfaces (mirrors the proactive daemon's imminence
+    rule so the briefing never disagrees). First suite (8 tests): deriveCalendarBriefingImminent
+    includes a timed event in [now, now+lead]; skips all-day / before-now / after-window /
+    unparseable-start; respects the [no-proactive] opt-out in the title OR notes; queries the
+    lister with the lead window + defaults a non-finite leadMinutes to 120; fail-soft on a
+    throwing lister → []. deriveBriefingImminent (temp tasks store): includes an open task due
+    in-window; skips done / no-dueAt / proactive:false / due-out-of-window; missing file → [].
+    mcp 1183->1191.
+  - SIXTY-FIRST (cross-package sweep → mcp; shared tool-arg parsers): `packages/mcp`
+    `loopback-helpers.ts` (69L, **ZERO test refs**) — the 6 shared shape-readers + schema
+    builder underpinning every loopback MuseTool (the arg-parsing foundation, like
+    atomic-file-store is the persistence foundation). First suite (8 tests): readString
+    (string/non-string/missing), readStringArray (filters non-string entries, undefined on a
+    non-array), readBoolean (real boolean only — not "true"), readJsonObject (plain object;
+    rejects array/null/primitive), errorMessage (Error.message else String()), and
+    buildJsonToolSchema (closed additionalProperties:false object; includes a non-empty
+    required list, DROPS an empty one — no noisy required:[]). mcp 1191->1199.
+  - SIXTY-SECOND (cross-package sweep → mcp; tool-calling surface): `packages/mcp`
+    `web-action-tool.ts` `createWebActionTool` (68L, **ZERO test refs**) — the web_action
+    MuseTool wrapper around the fail-closed performWebActionWithApproval. First suite (5 tests):
+    DEFINITION is a well-formed execute-risk tool with required [summary,url] +
+    additionalProperties:false + a Korean selection keyword (예약) + validateToolDefinitions-
+    clean; the description carries a use-when AND a do-not-use (read / payments) line
+    (tool-calling.md). EXECUTE: rejects empty url/summary BEFORE any orchestration (no spurious
+    action, zero fetch); a confirmed action defaults method to POST + uppercases a lowercase
+    input → performed:true; a denied approval maps to performed:false reason "denied" (inherits
+    the outbound-safety guarantee). mcp 1199->1204.
+  - SIXTY-THIRD (cross-package sweep → agent-core; council deliberation + grounding): `packages/
+    agent-core` `council.ts` (156L, **ZERO test refs**) — several Muses reason about one question
+    and synthesise a grounded answer (Multiagent Debate, Du et al. 2023). First suite (13 tests):
+    parseCouncilAnswer is the GROUNDING gate (same honesty rule as cited recall / reflection) —
+    keeps only real contributor ids (drops an invented "GHOST"/"INVENTED"), dedupes, non-array
+    contributors → [], null on no-JSON / empty-answer / invalid JSON, extracts a prose-wrapped
+    object; buildDebateQuestion (returns the question unchanged when no OTHER member spoke,
+    excludes self + empties, whitespace-collapsed digest + refine instruction) + buildCouncilPrompt
+    render format; produceCouncilReasoning empty-question→'' (no model call), REDACTS the question
+    into the prompt AND the model output before it crosses the swarm, fail-soft on throw → '';
+    synthesizeCouncilAnswer null on empty-question / no-usable-utterances, grounds against only the
+    usable member ids (drops an invented contributor), fail-soft → null. agent-core 1208->1221.
+  - SIXTY-FOURTH (cross-package sweep → autoconfigure; auth-secret wiring): `packages/
+    autoconfigure` `auth-wiring.ts` `createAuthService` (105L, **ZERO test refs**) — builds the
+    MuseAuth service from env + the fail-open JWT secret-rotation file reader. First suite (6
+    tests, temp secrets files): NO secret anywhere → undefined (auth disabled, not crashed); an
+    env secret + no db → an in-memory Auth; a db → an AsyncAuth (Kysely-backed); the secret read
+    from the rotation file (MUSE_AUTH_SECRETS_FILE) even with no env secret; FAIL-OPEN — a corrupt
+    secrets file falls through to the env secret (a bad file can't lock the operator out of their
+    own daemon: corrupt+no-env→undefined, corrupt+env→defined); a too-short current secret (<32
+    chars) in the file is rejected. autoconfigure 452->458. This + the SIXTY-FIRST..SIXTY-THIRD
+    slices essentially close the original zero-coverage census across the large packages — only
+    `autoconfigure/openai-compat-presets` (a 29L const map) remains, a trivial follow-up.
+  - SIXTY-FIFTH (cross-package sweep → autoconfigure; CENSUS CLOSED): `packages/autoconfigure`
+    `openai-compat-presets.ts` (29L, **ZERO test refs**) — the shipped OpenAI-compatible backend
+    table whose ENTRY ORDER is the credential-fallback priority inferDefaultModelFromCredentials
+    reads. First suite (3 tests): pins the priority order (groq→deepseek→together→mistral→moonshot
+    →cerebras — a silent reorder changes which provider wins when several keys are present); every
+    preset well-formed (https baseUrl, *_API_KEY envKey, provider-prefixed defaultModel so the
+    router dispatches to the right adapter); concrete spot-checks (groq baseUrl + deepseek envKey).
+    autoconfigure 458->461. **A symbol-level census re-run across the large packages
+    (autoconfigure/mcp/model/policy/agent-core) now reports 0 uncovered modules — the
+    cross-package zero-coverage census (slices 35→65) is CLOSED.** Next phase: mutation-depth on
+    the broadly-but-shallowly-covered modules (where line coverage exists but assertion strength
+    is unmeasured), and restoring the smoke:live environment.
+  - SIXTY-SIXTH (MUTATION-DEPTH phase begins): `agent-core/plan-execute.ts` (254L) was broadly
+    covered (older tests) but assertion strength unmeasured — Stryker (throwaway): **88.89%**.
+    The survivors clustered on parsePlan's per-step validation guards, where the existing tests
+    exercised the guards together but not each clause in isolation. +3 tests isolating each
+    clause: a step ENTRY that is null / a scalar / an array each rejected (L121's
+    `!entry || typeof!=="object" || Array.isArray`), a present-but-invalid args that is null /
+    scalar / array each rejected (L131), and an OMITTED args still defaults to {} (undefined is
+    allowed). → **95.42%** (135→145 killed, 15→5 survived). The one remaining L121 survivor
+    (`typeof entry !== "object"` → false) is EQUIVALENT — a JSON scalar can't carry a string
+    "tool" property, so it's rejected downstream by the tool-string check regardless; left
+    deliberately. agent-core 1221->1224.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
