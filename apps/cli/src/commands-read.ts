@@ -50,6 +50,17 @@ export function buildDocumentNoteBody(sourcePath: string, text: string, pageCoun
   return { body, title };
 }
 
+/**
+ * The notes-index walker only indexes `.md/.markdown/.txt/.pdf`, so a note
+ * saved under a bare extensionless id (e.g. `--save-to-notes garage`) is
+ * written verbatim as `garage` and NEVER picked up by `muse ask` — the
+ * "now searchable" claim would be false. Append `.md` unless the id already
+ * carries an indexable text extension.
+ */
+export function ensureNoteMarkdownExtension(id: string): string {
+  return /\.(md|markdown|txt)$/iu.test(id) ? id : `${id}.md`;
+}
+
 /** Persist an ingested document's text as a markdown note (overwrite by id). */
 export async function saveDocumentToNotes(
   notesDir: string,
@@ -189,11 +200,11 @@ export async function ingestDirectoryToNotes(
       onProgress?.(`✗ ${file} (no text extracted — skipped)`);
       continue;
     }
-    // Save with an explicit `.md` extension so the notes-index walker
-    // (which only indexes .md/.markdown/.txt/.pdf) actually picks the
-    // ingested note up — a bare extensionless id is written verbatim and
-    // would never be searchable via `muse ask`.
-    const id = `${noteIdForDocument(dir, file, prefix)}.md`;
+    // Save with an indexable extension so the notes-index walker (which
+    // only indexes .md/.markdown/.txt/.pdf) actually picks the ingested
+    // note up — a bare extensionless id is written verbatim and would
+    // never be searchable via `muse ask`.
+    const id = ensureNoteMarkdownExtension(noteIdForDocument(dir, file, prefix));
     try {
       await saveDocumentToNotes(notesDir, id, file, text, pageCount);
       ingested += 1;
@@ -279,9 +290,10 @@ export function registerReadCommand(program: Command, io: ProgramIO): void {
           io.stderr("muse read: no text extracted — nothing to save to notes.\n");
         } else {
           const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+          const saveId = ensureNoteMarkdownExtension(options.saveToNotes.trim());
           try {
-            await saveDocumentToNotes(notesDir, options.saveToNotes.trim(), filePath, text, parsed.pageCount);
-            io.stderr(`(saved ${parsed.pageCount.toString()}-page document to ${options.saveToNotes.trim()} in ${notesDir} — now searchable via knowledge_search)\n`);
+            await saveDocumentToNotes(notesDir, saveId, filePath, text, parsed.pageCount);
+            io.stderr(`(saved ${parsed.pageCount.toString()}-page document to ${saveId} in ${notesDir} — now searchable via \`muse ask\` and knowledge_search)\n`);
           } catch (cause) {
             io.stderr(`(failed to save document to notes: ${cause instanceof Error ? cause.message : String(cause)})\n`);
             process.exitCode = 1;

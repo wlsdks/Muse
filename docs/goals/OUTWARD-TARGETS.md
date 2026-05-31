@@ -137,7 +137,19 @@ FIRST, then felt self-learning).
   .pdf, isolated HOME): "ingested 2, skipped 1", then `muse ask` cited both
   ingested facts (warranty.md, manuals/trip.md) + 📎 Sources and honestly
   refused an uncovered question; `commands-read.test.ts` + `pnpm lint` 0/0.
-  (this commit)
+  (8f142b61)
+
+- [x] **P34-6 Single-file `--save-to-notes` is actually searchable.** The
+  single-file `muse read <file> --save-to-notes <id>` path told the user "now
+  searchable" but saved a bare extensionless note the notes-index walker
+  skipped, so `muse ask` answered "I don't have access" on a just-ingested
+  fact (the single-file sibling of P34-5's bug). A shared
+  `ensureNoteMarkdownExtension` now guarantees an indexable `.md`/`.markdown`/
+  `.txt` extension on both the single-file and bulk paths. Proven LIVE on
+  qwen3:8b (isolated HOME): `muse read garage.txt --save-to-notes garage` →
+  `garage.md`, and `muse ask` cited "7731 [from garage.md]" (was "I don't have
+  access"), while an uncovered question still honestly refused;
+  `commands-read.test.ts` + `pnpm lint` 0/0. (this commit)
 
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,
 so RL lives in the MEMORY, not the weights).** Close the self-improvement

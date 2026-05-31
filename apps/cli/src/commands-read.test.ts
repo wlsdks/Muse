@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { LocalDirNotesProvider } from "@muse/mcp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildDocumentNoteBody, extractDocumentText, ingestDirectoryToNotes, isLikelyBinary, isPdfDocument, noteIdForDocument, saveDocumentToNotes } from "./commands-read.js";
+import { buildDocumentNoteBody, ensureNoteMarkdownExtension, extractDocumentText, ingestDirectoryToNotes, isLikelyBinary, isPdfDocument, noteIdForDocument, saveDocumentToNotes } from "./commands-read.js";
 
 // A telegram-bot-token shaped secret (redactSecretsInText scrubs it).
 const SECRET = `123456:${"A".repeat(35)}`;
@@ -108,5 +108,29 @@ describe("ingestDirectoryToNotes — bulk folder ingest into the corpus (partial
     expect(noteIdForDocument("/c", "/c/a.txt", "downloads")).toBe("downloads/a");
     expect(noteIdForDocument("/c", "/c/sub/b.pdf", "downloads")).toBe("downloads/sub/b");
     expect(noteIdForDocument("/c", "/c/a.txt", "")).toBe("a");
+  });
+});
+
+describe("ensureNoteMarkdownExtension — a saved note must be indexable by `muse ask`", () => {
+  it("appends .md to a bare/extensionless id (the false-'searchable' bug fix)", () => {
+    expect(ensureNoteMarkdownExtension("garage")).toBe("garage.md");
+    expect(ensureNoteMarkdownExtension("downloads/manuals/trip")).toBe("downloads/manuals/trip.md");
+  });
+
+  it("leaves an already-indexable extension untouched (no double extension)", () => {
+    expect(ensureNoteMarkdownExtension("note.md")).toBe("note.md");
+    expect(ensureNoteMarkdownExtension("vault/a.markdown")).toBe("vault/a.markdown");
+    expect(ensureNoteMarkdownExtension("log/b.txt")).toBe("log/b.txt");
+  });
+
+  it("a single-file `--save-to-notes <bareId>` save is now read back as a .md note", async () => {
+    const notesDir = await mkdtemp(join(tmpdir(), "muse-single-md-"));
+    try {
+      await saveDocumentToNotes(notesDir, ensureNoteMarkdownExtension("garage"), "/src/garage.txt", "code 7731", 1);
+      const provider = new LocalDirNotesProvider({ notesDir });
+      expect((await provider.read("garage.md"))?.body).toContain("7731");
+    } finally {
+      await rm(notesDir, { recursive: true, force: true });
+    }
   });
 });
