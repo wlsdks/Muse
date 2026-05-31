@@ -635,6 +635,16 @@ the generic layers below because they test what makes Muse an *agent*.
     (no councilReason), runs the reasoning step for a valid signed request when participating,
     and REFUSES to compute (empty reasoning, councilReason never called) on a bad-signature
     council request even when participating. a2a 101->109.
+  - FORTY-SIXTH (cross-package sweep → a2a; discovery/recon surface): `packages/a2a`
+    `agent-card.ts` `buildMuseAgentCard` (113L, **ZERO test refs**) — the A2A Agent Card a peer
+    fetches to learn what this Muse accepts (the primary recon surface). First suite (6 tests):
+    url pass-through + name default "Muse"/override + protocolVersion; NO streaming + NO push
+    notifications (a webhook target is an SSRF/egress hole the local-first posture must not
+    open); the REQUIRED know-how-only extension declaring acceptsExecution:false +
+    inboundDisposition [quarantine,reject] + payloadKinds = the 3 shareable kinds + piiRedacted;
+    exactly the three know-how skills each tagged no-exec + "Never executed"; the museHmac
+    security scheme + know-how media type as default I/O; and a recon-surface check that the
+    serialized card leaks no home path / email / internal tool name. a2a 109->115.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
