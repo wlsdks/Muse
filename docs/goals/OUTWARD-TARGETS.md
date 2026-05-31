@@ -161,6 +161,56 @@ FIRST, then felt self-learning).
   corrupt `.pdf` into a watched inbox → ingested `pool.txt → inbox/pool.md`,
   skipped the corrupt one, then `muse ask` cited "4417 [from inbox/pool.md]"
   and honestly refused an uncovered question; `commands-watch-folder.test.ts`
+  + `pnpm lint` 0/0. (500e4112)
+
+- [x] **P34-8 Empty-corpus first-run on-ramp.** A brand-new user who runs
+  `muse ask` with no notes yet got an honest refusal but no guidance — a
+  dead-end. `muse ask` now prints a one-time on-ramp hint (naming `muse demo`,
+  `muse read --save-to-notes`, `muse watch-folder --ingest`) ONLY when the
+  corpus is empty, and still answers honestly (the refusal is unchanged; the
+  hint never fires once any note exists). Proven LIVE on qwen3:8b (isolated
+  HOME): empty corpus → hint + honest refusal; populated corpus → no hint, a
+  cited "MTU 1380" answer + Sources, and an honest refusal on a must-refuse;
+  `commands-ask-onboarding.test.ts` + `pnpm lint` 0/0. (1c5ad06d)
+
+- [x] **P34-9 The on-ramp hint never lies to a user whose embedding is down.**
+  P34-8's hint was gated on indexed chunks, so when Ollama was unreachable
+  (0 chunks embedded) a user WITH notes was wrongly told "your corpus is
+  empty". It now counts note FILES on disk (`notesCorpusFileCount`),
+  independent of embedding — so the hint fires only for a truly empty corpus,
+  and a populated-but-unindexed corpus gets the "notes search unavailable —
+  ollama pull" guidance instead. Proven LIVE on qwen3:8b: Ollama-down + a
+  6-note corpus → no false "empty" line; Ollama-up + empty dir → hint fires;
+  Ollama-up + populated → cited "MTU 1380" + Sources and an honest refusal;
+  `commands-ask-onboarding.test.ts` + `pnpm lint` 0/0. (6df3d076)
+
+- [x] **P34-10 Richer demo payoff + full-oracle edge sweep.** `muse demo` now
+  shows TWO answerable questions citing DIFFERENT notes (MTU + rent) before the
+  must-refuse, so the zero-setup payoff proves cited recall is real across the
+  corpus, not one lucky hit. This fire also ran a full live regression sweep of
+  the EXPECTED.md oracle at default top-3: all 6 answerable cited correctly, all
+  4 must-refuse honestly refused — the recall edge is green end-to-end. Proven
+  LIVE on qwen3:8b; `commands-demo.test.ts` + `pnpm lint` 0/0.
+  NOTE: the front-door rungs verifiable under the cited-answer+refusal mandate
+  are now exhausted (demo, single/bulk/watch ingest, hybrid recall, confidence
+  calibration, empty-corpus on-ramp, model-readiness error UX — all done +
+  proven). The only undone front-door rung is (b) a real one-command installer,
+  whose proof is a clean-room container/CI test, not live recall. Next fire
+  should either scope (b) to a container proof or advance to rung 4 (felt
+  self-learning, 2-session proof). (e5404f5e)
+
+- [x] **P34-11 A refusal cites nothing (cross-lingual fabrication=0 fix).** A
+  Korean must-refuse (which the English oracle sweep missed) honestly refused
+  but the local model appended a spurious `cite as: [from preferences.md]`,
+  which the gate kept (real source) and the Sources footer surfaced as "open
+  to verify" — a citation on an answer that asserts nothing. A precision-first
+  `answerIsRefusal` (EN+KO) now drops all citations from a refusal: the Sources
+  footer is suppressed on every path and the inline `[from …]` is stripped on
+  the buffered `--with-tools`/`--json` paths (chat-only streams live, so the
+  inline marker can still flash — the known streaming limitation; the
+  followable footer is gone everywhere). Proven LIVE on qwen3:8b: the Korean
+  sister's-birthday refusal → no Sources footer; the Korean WireGuard
+  answerable → still cited + footer (no regression); `commands-ask-refusal.test.ts`
   + `pnpm lint` 0/0. (this commit)
 
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,

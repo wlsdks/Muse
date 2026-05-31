@@ -23,7 +23,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 
 import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
@@ -138,6 +138,33 @@ export function formatSourcesFooter(answer: string, notesDir: string): string | 
   }
   const lines = citedNotes.map((src) => `   ${isAbsolute(src) ? src : join(notesDir, src)}`);
   return `\n📎 Sources (open to verify):\n${lines.join("\n")}\n`;
+}
+
+// Precision-first refusal markers (EN + KO). A refusal grounds NO claim, so
+// ANY citation the small model tacks onto it ("…I don't have that. cite as:
+// [from preferences.md]") is spurious — and the followable Sources footer
+// must never present a source "to verify" for an answer that asserts nothing.
+// Kept high-precision (clear no-information phrases only) so a real cited
+// answer never matches; the rare partial answer ("I don't have X, but [from
+// Y]…") is the accepted precision-first cost (it loses Y's footer link).
+const REFUSAL_MARKERS: readonly string[] = [
+  "i'm not sure", "i am not sure", "i don't have", "i do not have",
+  "don't have access", "do not have access", "no information",
+  "none of the provided context", "couldn't find", "could not find",
+  "i don't know", "i do not know", "not in your notes", "nothing in your notes",
+  "don't have that information", "do not have that information",
+  "모르", "없습니다", "없어요", "없어", "정보가 없", "찾을 수 없", "알 수 없",
+  "저장하고 있지 않", "가지고 있지 않", "접근할 수 없"
+];
+
+/**
+ * True when the answer is essentially a refusal / "I'm not sure" with no
+ * grounded claim — used to deterministically drop any citation the model
+ * spuriously attached to it. Pure + exported for direct coverage.
+ */
+export function answerIsRefusal(answer: string): boolean {
+  const lower = answer.toLowerCase();
+  return REFUSAL_MARKERS.some((m) => lower.includes(m));
 }
 
 interface AskOptions {
@@ -292,6 +319,58 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
     topK
   );
   return order.map((k) => sorted[Number(k)]!);
+}
+
+/**
+ * First-run on-ramp: a brand-new user with an EMPTY notes corpus gets an
+ * honest refusal from `muse ask`, but a refusal with no guidance leaves them
+ * stuck ("it knows nothing and won't tell me how to teach it"). When the
+ * corpus has ZERO notes, point them at the concrete ways to add one. Returns
+ * undefined once any note exists, so a normal no-match answer is never
+ * cluttered. The count MUST be the note FILES on disk, not the indexed/live
+ * chunk count — when embedding is down (Ollama unreachable) the index has 0
+ * live chunks even though the user has notes, and telling them "your corpus
+ * is empty" then is a false message. Pure + exported for direct coverage.
+ */
+/**
+ * Count note files (`.md/.markdown/.txt/.pdf`) actually present under the
+ * notes dir, recursively — the true "does the user have a corpus" signal,
+ * independent of whether embedding succeeded. Missing/unreadable dir ⇒ 0.
+ */
+export async function notesCorpusFileCount(dir: string): Promise<number> {
+  let count = 0;
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.isDirectory()) {
+        stack.push(join(current, entry.name));
+      } else if (entry.isFile() && /\.(md|markdown|txt|pdf)$/iu.test(entry.name)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+export function corpusOnboardingHint(noteFileCount: number): string | undefined {
+  if (noteFileCount > 0) {
+    return undefined;
+  }
+  return [
+    "(your notes corpus is empty — Muse only answers from notes you've added.",
+    "   • try a sample first:   muse demo",
+    "   • add one file:         muse read <file> --save-to-notes <id>",
+    "   • add a whole folder:   muse read <dir> --save-to-notes <prefix>",
+    "   • keep it live:         muse watch-folder --ingest --path <dir>)"
+  ].join("\n");
 }
 
 /**
@@ -601,6 +680,16 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         io.stderr(`Index was built with embed model '${index.model}', not '${embedModel}'. Re-index or pass --embed-model ${index.model}.\n`);
         process.exitCode = 1;
         return;
+      }
+
+      // First-run on-ramp: an empty corpus still answers honestly (refusal),
+      // but a new user needs to be told HOW to add notes — emit it once here.
+      // Gate on note FILES on disk, not indexed chunks: when embedding is
+      // down the index has 0 live chunks though the user has notes, and
+      // "your corpus is empty" would be a false message.
+      const onboardingHint = corpusOnboardingHint(await notesCorpusFileCount(notesDir));
+      if (onboardingHint) {
+        io.stderr(`${onboardingHint}\n`);
       }
 
       // Embed query + rank chunks. A personal assistant shouldn't
@@ -1099,6 +1188,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       collectedAnswer = citationGate.text;
       if (!options.json && citationGate.stripped.length > 0) {
         io.stderr(`\n⚠️  Removed ${citationGate.stripped.length.toString()} citation(s) to source(s) you don't have (${citationGate.stripped.join(", ")}) — treat those claims as unverified.\n`);
+      }
+      // Refusal guard: a refusal asserts no grounded fact, so any citation the
+      // model tacked on is spurious — strip ALL of them (and thus the Sources
+      // footer) so a refusal never points the user at a source "to verify".
+      const refusalAnswer = answerIsRefusal(collectedAnswer);
+      if (refusalAnswer) {
+        collectedAnswer = enforceAnswerCitations(collectedAnswer, {
+          events: [], feeds: [], notes: [], reminders: [], sessions: [], tasks: []
+        }).text;
       }
       // The --with-tools answer was buffered (not streamed), so it prints HERE
       // — after the gate — so a fabricated citation is stripped before display.
