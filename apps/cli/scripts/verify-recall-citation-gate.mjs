@@ -72,7 +72,7 @@ const answer = (res.output ?? "").trim();
 console.log(`model answer: "${answer.slice(0, 140)}${answer.length > 140 ? "…" : ""}"`);
 
 // 1) Invariant on real model output: no citation that survives the gate is invented.
-const gated = enforceAnswerCitations(answer, realSources);
+const gated = enforceAnswerCitations(answer, { notes: realSources });
 const survivors = citedSourcesIn(gated.text);
 const lower = realSources.map((s) => s.toLowerCase());
 const allReal = survivors.every((s) => lower.includes(s.toLowerCase()));
@@ -83,7 +83,7 @@ allReal
 // 2) Deterministic adversarial: a fabricated citation injected into the real
 //    answer MUST be stripped and reported — the gate, not the model, decides.
 const tampered = `${answer} Also your SSN is on file [from secrets/ssn.md].`;
-const gatedTampered = enforceAnswerCitations(tampered, realSources);
+const gatedTampered = enforceAnswerCitations(tampered, { notes: realSources });
 const stripped = gatedTampered.stripped.includes("secrets/ssn.md") && !gatedTampered.text.includes("secrets/ssn.md");
 stripped
   ? pass("a fabricated [from secrets/ssn.md] citation is deterministically stripped + reported")

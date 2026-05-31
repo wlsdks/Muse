@@ -319,27 +319,74 @@ export interface CitationEnforcement {
   readonly stripped: readonly string[];
 }
 
+export interface AllowedCitations {
+  /** `[from <source>]` — note files; exact match (filenames are identifiers). */
+  readonly notes?: readonly string[];
+  /** `[feed: <name>]` — subscribed feeds; exact match. */
+  readonly feeds?: readonly string[];
+  /** `[task: <title>]` — open tasks; content-token overlap (the model may reword the title). */
+  readonly tasks?: readonly string[];
+  /** `[event: <title>]` — upcoming events; content-token overlap. */
+  readonly events?: readonly string[];
+  /** `[reminder: <text>]` — pending reminders; content-token overlap. */
+  readonly reminders?: readonly string[];
+}
+
+function resolvesExact(value: string, allowed: readonly string[]): boolean {
+  const v = value.trim().toLowerCase();
+  return allowed.some((item) => item.trim().toLowerCase() === v);
+}
+
+// Free-text citations (task/event/reminder titles): the model may PARAPHRASE
+// the title, so an exact match would false-strip a real one. A citation
+// resolves when it shares any CONTENT token with a real item of that type; a
+// wholly-invented title (no overlap with anything the user has) is stripped.
+function resolvesByOverlap(value: string, allowed: readonly string[]): boolean {
+  const tokens = lexicalTokens(value);
+  if (tokens.size === 0) {
+    return false;
+  }
+  return allowed.some((item) => {
+    const itemTokens = lexicalTokens(item);
+    for (const token of tokens) {
+      if (itemTokens.has(token)) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
 /**
  * Output-side grounding gate for the recall WEDGE — the code-not-model half of
- * "shows its work". Strips any `[from <source>]` the answer cites that is NOT
- * among the real sources Muse actually showed the model, so a citation to
- * something the user doesn't have can never reach them BY CODE (mirrors
- * `parseReflections` / `parseCouncilAnswer` for the recall surface). Match is
- * case/space-insensitive so a real source isn't dropped over re-casing; a
- * source absent from the allowed set is an invention and removed.
+ * "shows its work". Strips ANY citation the answer makes — `[from <note>]`,
+ * `[feed: <name>]`, `[task|event|reminder: <title>]` — whose target is NOT
+ * among the real sources Muse actually showed the model, so a fabricated
+ * citation to something the user doesn't have can never reach them BY CODE
+ * (mirrors `parseReflections` / `parseCouncilAnswer`). Notes + feeds match
+ * exactly (they are identifiers); the free-text title forms match on
+ * content-token overlap so a paraphrased-but-real citation survives.
+ * `[session: …]` is model-summarised and intentionally left untouched.
  */
-export function enforceAnswerCitations(answer: string, allowedSources: readonly string[]): CitationEnforcement {
-  const allowed = new Set(allowedSources.map((source) => source.trim().toLowerCase()));
+export function enforceAnswerCitations(answer: string, allowed: AllowedCitations): CitationEnforcement {
+  let text = answer;
   const stripped: string[] = [];
-  const text = answer
-    .replace(CITATION_RE, (match: string, raw: string) => {
-      const src = raw.trim();
-      if (allowed.has(src.toLowerCase())) {
-        return match; // a real source → keep the citation verbatim
+  const strip = (re: RegExp, resolves: (value: string) => boolean): void => {
+    text = text.replace(re, (match: string, raw: string) => {
+      const value = raw.trim();
+      if (resolves(value)) {
+        return match;
       }
-      stripped.push(src); // invented → the false citation never reaches the user
+      stripped.push(value);
       return "";
-    })
+    });
+  };
+  strip(CITATION_RE, (value) => resolvesExact(value, allowed.notes ?? []));
+  strip(/\[feed:\s*([^\]]+?)\s*\]/giu, (value) => resolvesExact(value, allowed.feeds ?? []));
+  strip(/\[task:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.tasks ?? []));
+  strip(/\[event:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.events ?? []));
+  strip(/\[reminder:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.reminders ?? []));
+  text = text
     .replace(/[ \t]{2,}/gu, " ")
     .replace(/[ \t]+([.,;!?])/gu, "$1")
     .replace(/[ \t]+\n/gu, "\n");

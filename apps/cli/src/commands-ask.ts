@@ -1021,15 +1021,21 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       }
 
       // Output-side grounding gate — the recall WEDGE's code-not-model half:
-      // strip any `[from <source>]` the chat-only answer cites that is NOT a
-      // note we actually showed it, so a fabricated citation can never reach
-      // the user (mirrors parseReflections / parseCouncilAnswer for recall).
-      // Scoped to the chat-only path; the --with-tools agent cites tool results
-      // from a different source set and is gated separately.
+      // strip any citation the chat-only answer makes — a note, feed, task,
+      // event, or reminder — that is NOT among the real sources we showed it,
+      // so a fabricated citation can never reach the user (mirrors
+      // parseReflections / parseCouncilAnswer for recall). Scoped to the
+      // chat-only path; the --with-tools agent cites a different source set and
+      // is gated separately.
       let citationGate: { readonly text: string; readonly stripped: readonly string[] } = { stripped: [], text: collectedAnswer };
       if (!options.withTools) {
-        const allowedCitations = scored.map((r) => (isAbsolute(r.file) ? relative(notesDir, r.file) : r.file));
-        citationGate = enforceAnswerCitations(collectedAnswer, allowedCitations);
+        citationGate = enforceAnswerCitations(collectedAnswer, {
+          events: upcomingEvents.map((e) => e.title),
+          feeds: feedHeadlines.map((h) => h.feedName),
+          notes: scored.map((r) => (isAbsolute(r.file) ? relative(notesDir, r.file) : r.file)),
+          reminders: pendingReminders.map((r) => r.text),
+          tasks: openTasks.map((t) => t.title)
+        });
         collectedAnswer = citationGate.text;
         if (!options.json && citationGate.stripped.length > 0) {
           io.stderr(`\n⚠️  Removed ${citationGate.stripped.length.toString()} citation(s) to source(s) you don't have (${citationGate.stripped.join(", ")}) — treat those claims as unverified.\n`);

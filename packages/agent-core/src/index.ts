@@ -145,6 +145,7 @@ export {
   renderKnowledgeMatches,
   reorderForLongContext,
   selectByMmr,
+  type AllowedCitations,
   type CitationEnforcement,
   type KnowledgeChunk,
   type KnowledgeMatch,
