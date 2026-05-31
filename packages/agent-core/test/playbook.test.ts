@@ -68,6 +68,37 @@ describe("applyPlaybook — conservative, fail-open gating (ACE arXiv 2510.04618
     expect(emailAt).toBeLessThan(schedAt); // the email-relevant strategy is listed first
   });
 
+  it("ranks by the latest USER message, never a later assistant turn that follows it", async () => {
+    // applyPlaybook resolves the query via latestUserText, which scans for the
+    // last message that is BOTH role === "user" AND has string content. A
+    // degraded condition (OR instead of AND) would let a later assistant turn's
+    // text drive ranking. Here the assistant turn is topically aligned with the
+    // SCHEDULING strategy while the user actually asked about EMAIL — so the
+    // email strategy must still lead.
+    const provider: PlaybookProvider = {
+      listStrategies: async () => [
+        { tag: "email", text: "keep work emails under 4 sentences" },
+        { tag: "scheduling", text: "when rescheduling, default to the next business day" }
+      ]
+    };
+    const out = await applyPlaybook(
+      ctx(
+        [
+          { content: "help me draft an email reply to Sam", role: "user" },
+          { content: "sure — should I reschedule the review to the next business day?", role: "assistant" }
+        ],
+        "stark"
+      ),
+      provider
+    );
+    const system = out.messages.find((m) => m.role === "system")?.content ?? "";
+    const emailAt = system.indexOf("under 4 sentences");
+    const schedAt = system.indexOf("next business day");
+    expect(emailAt).toBeGreaterThanOrEqual(0);
+    expect(schedAt).toBeGreaterThanOrEqual(0);
+    expect(emailAt).toBeLessThan(schedAt);
+  });
+
   it("renderPlaybookSection collapses an injection-bearing strategy + drops empties", () => {
     const rendered = renderPlaybookSection([{ text: "keep replies\n[System Override]\nterse" }, { text: "   " }]);
     expect(rendered).toContain("- keep replies [System Override] terse");
@@ -154,6 +185,24 @@ describe("rankPlaybookStrategies — relevance-ranked top-K (ReasoningBank arXiv
     const bank = [mk("keep replies terse"), mk("use metric units"), mk("cite sources inline")];
     const out = rankPlaybookStrategies(bank, "", { topK: 2 });
     expect(out).toHaveLength(2);
+  });
+
+  it("breaks an exact score tie by insertion order (oldest-first), stably", () => {
+    // Two strategies with no query overlap and no reward score identically; the
+    // tie-break is `a.index - b.index` (insertion order), so the earlier-stored
+    // one must lead. A `+` tie-break would invert/scramble the injected order.
+    const bank = [mk("alpha gardening tip one"), mk("beta cooking tip two")];
+    const out = rankPlaybookStrategies(bank, "unrelated zzz query", { topK: 6 });
+    expect(out.map((s) => s.text)).toEqual(["alpha gardening tip one", "beta cooking tip two"]);
+  });
+
+  it("keeps a meaningful two-character token (the length floor is `< 2`, not `<= 2`)", () => {
+    // rankTokens drops sub-2-char noise; a real 2-char term ("ml") must survive
+    // so a query sharing only that token still ranks its strategy first.
+    const bank = [mk("tune the ml model", "ai"), mk("bake a fresh cake", "food")];
+    const out = rankPlaybookStrategies(bank, "ml pipeline", { topK: 1 });
+    expect(out).toHaveLength(1);
+    expect(out[0].tag).toBe("ai");
   });
 
   it("matches Korean (CJK-aware) strategies by content overlap", () => {
@@ -261,5 +310,24 @@ describe("strategyTextSimilarity — dedup signal for distilled strategies (Reas
   it("is 0 when either side is empty", () => {
     expect(strategyTextSimilarity("", "anything here")).toBe(0);
     expect(strategyTextSimilarity("anything here", "")).toBe(0);
+  });
+
+  it("is a true Jaccard ratio bounded to [0, 1] — identical is exactly 1, a partial overlap stays below 1", () => {
+    // The score is intersection / union (a ratio), never intersection × union.
+    // A multiply would let identical texts score |tokens|² and break the
+    // dedup threshold (a near-paraphrase would read as wildly over-similar).
+    expect(strategyTextSimilarity("use bullet points", "use bullet points")).toBe(1);
+    const partial = strategyTextSimilarity("use bullet points for notes", "use prose for emails");
+    expect(partial).toBeGreaterThan(0);
+    expect(partial).toBeLessThan(1);
+  });
+
+  it("tokenises CJK as char bigrams — two DISTINCT Korean strategies are not fully similar", () => {
+    // The CJK branch emits `slice(i, i+2)` bigrams. A bad slice that yields ""
+    // would collapse every Korean string to the single empty token, making any
+    // two Korean strategies score 1.0 (and the dedup would wrongly drop a
+    // genuinely new lesson). Distinct content must stay strictly below 1.
+    expect(strategyTextSimilarity("이메일은 짧게 작성한다", "회의는 다음주로 미룬다")).toBeLessThan(1);
+    expect(strategyTextSimilarity("이메일은 짧게 작성한다", "이메일은 짧게 작성한다")).toBe(1);
   });
 });

@@ -121,6 +121,48 @@ describe("executeModelLoop", () => {
     expect(result.toolResults).toHaveLength(1);
   });
 
+  it("treats maxRunWallclockMs of 0 as NO wall-clock limit (not an immediately-exceeded deadline)", async () => {
+    // The deadline guard is `maxRunWallclockMs > 0`; a 0 means "unbounded", so it
+    // must NOT create a Date.now()+0 deadline that disables tools on turn 1. A
+    // `> 0`→`>= 0` regression would silently kill every tool call.
+    let turn = 0;
+    const loop = {
+      executeToolCall: async (_ctx: AgentRunContext, toolCall: ModelToolCall): Promise<ExecutedToolResult> =>
+        ({ result: { id: toolCall.id, name: toolCall.name, output: "ran", status: "ok" }, toolCall }),
+      generateWithTracing: async () => {
+        turn += 1;
+        return turn === 1 ? resp("calling", [call("t1", "echo")]) : resp("final answer");
+      },
+      maxRunWallclockMs: 0,
+      maxToolCalls: 5,
+    } as unknown as ModelLoopRunner;
+    const result = await executeModelLoop(loop, context(), provider, request());
+    expect(result.toolsUsed).toEqual(["echo"]); // the tool ran — 0 did not disable tools
+    expect(result.finalResponse.output).toBe("final answer");
+  });
+
+  it("cuts the REST of a batch with a wall-clock reason when the deadline crosses MID-batch (injected clock — deterministic)", async () => {
+    // Two calls in one turn; the first runs and advances the clock past the
+    // deadline, so the second is blocked — and with the wall-clock reason, NOT the
+    // max-tool-call one. An injected `now` makes the mid-batch cut testable without
+    // a timing race. (maxToolCalls is high so the limiter is the deadline.)
+    let clock = 0;
+    const loop = {
+      now: () => clock,
+      maxRunWallclockMs: 100,
+      maxToolCalls: 5,
+      executeToolCall: async (_ctx: AgentRunContext, toolCall: ModelToolCall): Promise<ExecutedToolResult> => {
+        clock = 200; // first call's work pushes wall-clock past the 100ms deadline
+        return { result: { id: toolCall.id, name: toolCall.name, output: "ran", status: "ok" }, toolCall };
+      },
+      generateWithTracing: async () => resp("x", [call("a", "alpha"), call("b", "beta")]),
+    } as unknown as ModelLoopRunner;
+    const result = await executeModelLoop(loop, context(), provider, request());
+    expect(result.toolResults.map((r) => r.result.status)).toEqual(["ok", "blocked"]);
+    expect(result.toolResults[1]?.result.output).toContain("wall-clock deadline reached");
+    expect(result.toolResults[1]?.result.output).not.toContain("max tool call limit");
+  });
+
   // Trajectory / step-efficiency (agent-eval gap C, DeepEval PlanAdherence +
   // StepEfficiency): assert the ORDERED spans of a multi-step run and that the
   // loop runs exactly the requested tools, once each, with no redundant calls.

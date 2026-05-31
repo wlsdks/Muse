@@ -43,6 +43,22 @@ describe("trimConversationMessages — default (temporal) budget contract", () =
     expect(result.messages).toHaveLength(2);
   });
 
+  it("keeps a conversation whose total EXACTLY equals the budget untouched (the > boundary, not >=)", () => {
+    // A fixed estimator pins total == budget exactly: the trim fires on
+    // `total > budget`, so an exact fit must stay whole (triggeredBy 'none').
+    // A `>`→`>=` regression would needlessly evict from a conversation that fits.
+    const estimator = { estimate: (text: string) => (text.length > 0 ? 10 : 0) };
+    const messages = [msg("user", "a"), msg("assistant", "b")]; // total = 20 with overhead 0
+    const exact = trimConversationMessages(messages, { maxContextWindowTokens: 20, outputReserveTokens: 0, estimator, messageStructureOverhead: 0 });
+    expect(exact.triggeredBy).toBe("none");
+    expect(exact.removedCount).toBe(0);
+    expect(exact.messages).toHaveLength(2);
+    // One token over the budget DOES trim — the boundary is real, not inert.
+    const over = trimConversationMessages(messages, { maxContextWindowTokens: 19, outputReserveTokens: 0, estimator, messageStructureOverhead: 0 });
+    expect(over.triggeredBy).toBe("hard_limit");
+    expect(over.removedCount).toBeGreaterThan(0);
+  });
+
   it("under a hard limit (budget ≤ 0) keeps ONLY the last user message", () => {
     const messages = [msg("user", "first"), msg("assistant", "a1"), msg("user", "second question here")];
     const result = trimConversationMessages(messages, { maxContextWindowTokens: 10, outputReserveTokens: 1_000 });
