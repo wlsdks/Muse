@@ -850,6 +850,17 @@ the generic layers below because they test what makes Muse an *agent*.
     cross-package zero-coverage census (slices 35→65) is CLOSED.** Next phase: mutation-depth on
     the broadly-but-shallowly-covered modules (where line coverage exists but assertion strength
     is unmeasured), and restoring the smoke:live environment.
+  - SIXTY-SIXTH (MUTATION-DEPTH phase begins): `agent-core/plan-execute.ts` (254L) was broadly
+    covered (older tests) but assertion strength unmeasured — Stryker (throwaway): **88.89%**.
+    The survivors clustered on parsePlan's per-step validation guards, where the existing tests
+    exercised the guards together but not each clause in isolation. +3 tests isolating each
+    clause: a step ENTRY that is null / a scalar / an array each rejected (L121's
+    `!entry || typeof!=="object" || Array.isArray`), a present-but-invalid args that is null /
+    scalar / array each rejected (L131), and an OMITTED args still defaults to {} (undefined is
+    allowed). → **95.42%** (135→145 killed, 15→5 survived). The one remaining L121 survivor
+    (`typeof entry !== "object"` → false) is EQUIVALENT — a JSON scalar can't carry a string
+    "tool" property, so it's rejected downstream by the tool-string check regardless; left
+    deliberately. agent-core 1221->1224.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
