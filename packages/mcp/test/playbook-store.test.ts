@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { adjustPlaybookReward, MAX_PLAYBOOK_ENTRIES, PLAYBOOK_REWARD_MAX, PLAYBOOK_REWARD_MIN, type PlaybookEntry, readPlaybook, recordPlaybookStrategy, removePlaybookStrategy, writePlaybook } from "../src/personal-playbook-store.js";
+import { adjustPlaybookReward, MAX_PLAYBOOK_ENTRIES, PLAYBOOK_REWARD_MAX, PLAYBOOK_REWARD_MIN, type PlaybookEntry, queryPlaybook, readPlaybook, recordPlaybookStrategy, removePlaybookStrategy, writePlaybook } from "../src/personal-playbook-store.js";
 
 const entry = (id: string, tag?: string): PlaybookEntry => ({
   id,
@@ -150,5 +150,21 @@ describe("adjustPlaybookReward — the RL reinforce/decay update", () => {
     expect(read).toHaveLength(1); // the bad-reward row is dropped, the good one survives
     expect(read[0]!.id).toBe("ok");
     expect(read[0]!.reward).toBe(-3);
+  });
+});
+
+describe("queryPlaybook — per-user isolation", () => {
+  it("returns every entry when no userId is given, but ONLY the user's own strategies when one is", async () => {
+    const file = freshFile();
+    await writePlaybook(file, [
+      { ...entry("a"), userId: "u1" },
+      { ...entry("b"), userId: "u2" },
+      { ...entry("c"), userId: "u1" }
+    ]);
+    expect((await queryPlaybook(file)).map((e) => e.id).sort()).toEqual(["a", "b", "c"]);
+    // u1 must never see u2's strategy "b" (per-user playbook isolation).
+    expect((await queryPlaybook(file, "u1")).map((e) => e.id).sort()).toEqual(["a", "c"]);
+    expect((await queryPlaybook(file, "u2")).map((e) => e.id)).toEqual(["b"]);
+    expect(await queryPlaybook(file, "nobody")).toEqual([]);
   });
 });

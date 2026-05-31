@@ -2393,3 +2393,11 @@ the generic layers below because they test what makes Muse an *agent*.
     randomUUID() (collision-proof regardless of teardown/timeout ordering). Preventive:
     none were failing yet, but all carried the exact fragility that bit playbook-store.
     mcp 1259 tests green.
+
+- [x] **eval:tools regression sweep (61/61 PASSED) + queryPlaybook per-user isolation.**
+    Ran the live eval:tools golden gate against current merged source — 61/61 PASSED,
+    confirming the tool-selection fixes (thermostat, KO date→time_now, KO relative→time_relative)
+    + injection golden negatives all still hold. Census remainder is now thin write-* passthroughs;
+    the one real guard left, queryPlaybook's per-user filter, is now covered: no userId → all,
+    a userId → ONLY that user's strategies (u1 never sees u2's "b"), unknown user → []. The
+    per-user playbook isolation is a privacy guard, not a passthrough. Pre-verified vs dist. mcp 1260 green.
