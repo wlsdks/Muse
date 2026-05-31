@@ -2433,3 +2433,11 @@ the generic layers below because they test what makes Muse an *agent*.
     25 concurrent upserts keep all 25; 10 concurrent removes → 15. Regression test
     episodes-store-concurrent.test.ts. Remaining unserialized RMW: plan-cache,
     reminder-history, followup-llm-budget. mcp 1265 green.
+
+- [x] **fix(mcp): serialize appendReminderHistory (concurrency bug).**
+    appendReminderHistory was unserialized read→append→write. Reproduced: 25 concurrent
+    fires CRASH (ENOENT, same tmp-${pid}-${Date.now()} same-ms collision) + lose records
+    (a lost reminder-fire record can let a one-shot reminder re-fire). Fixed via
+    withFileMutationQueue; after, 25 concurrent fires keep all 25, capacity cap holds.
+    Regression test reminder-history-concurrent.test.ts. Remaining unserialized RMW:
+    plan-cache, followup-llm-budget. mcp 1267 green.

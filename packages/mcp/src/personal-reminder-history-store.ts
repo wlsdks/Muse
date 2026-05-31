@@ -13,6 +13,8 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
+import { withFileMutationQueue } from "./atomic-file-store.js";
+
 export interface ReminderHistoryEntry {
   readonly reminderId: string;
   readonly text: string;
@@ -50,15 +52,21 @@ export async function appendReminderHistory(
   options: AppendReminderHistoryOptions = {}
 ): Promise<void> {
   const capacity = clampCapacity(options.capacity);
-  const existing = await readRaw(file);
-  const next = [...existing, entry];
-  const trimmed = next.length > capacity ? next.slice(next.length - capacity) : next;
-  const payload: PersistedShape = { entries: trimmed, version: 1 };
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-  await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  // Serialise the read→append→write: concurrent reminder fires otherwise read the
+  // same snapshot and the last write clobbers the rest (a lost fire record can let
+  // a one-shot reminder re-fire), and two writes in the same millisecond collided
+  // on the tmp-${pid}-${Date.now()} path and threw ENOENT on rename.
+  await withFileMutationQueue(file, async () => {
+    const existing = await readRaw(file);
+    const next = [...existing, entry];
+    const trimmed = next.length > capacity ? next.slice(next.length - capacity) : next;
+    const payload: PersistedShape = { entries: trimmed, version: 1 };
+    const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
+    await fs.mkdir(dirname(file), { recursive: true });
+    await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    await fs.rename(tmp, file);
+    await fs.chmod(file, 0o600).catch(() => undefined);
+  });
 }
 
 // Move a present-but-corrupt store aside so the next append
