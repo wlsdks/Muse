@@ -2160,3 +2160,11 @@ the generic layers below because they test what makes Muse an *agent*.
     real kept / fabricated stripped; absent source list (undefined→empty) strips all;
     trailing "9am [from invented]." → "9am." and mid-line double-space collapsed. All
     deterministic, pre-verified against dist. agent-core 1235 tests green.
+
+- [x] **agent-core/telemetry-aggregator — latency p95 at scale.** Same gap class as
+    multi-agent/orchestration-history: the latency-stats test used n=10, where p95
+    collapses to the max, so computeLatencyStats' `min(count-1, ceil(0.95n)-1)` formula
+    was indistinguishable from "return the maximum" and those mutants survived. New
+    test records 21 latencies (100..2100) and asserts p95 == 2000 (the 20th smallest,
+    STRICTLY below max 2100), exercising the nearest-rank computation. Pre-verified
+    against dist. agent-core 1236 tests green.
