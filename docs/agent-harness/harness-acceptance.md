@@ -138,6 +138,14 @@ related: [verification-and-guardrails.md, failure-modes-and-observability.md, te
 > 의미: 골든 묶음 5/10 측정(G1·G2·G3·G4 3역할 통과 + G8·G10 평가자 검증), 전부 pass^1=1/1. 다음은
 > 미실측(G5~G7·G9) + 반복(pass^k).
 
+### 여섯 번째 실측 — G5 회문 3역할 연쇄 (같은 날)
+
+- **G5(대소문자·공백 무시 회문) — PASS:** 플래너가 기준 산출("A man a plan a canal Panama"→true,
+  "hello"→false, 대소문자·공백 무시) → 워커가 정규화(소문자+공백 제거) 후 뒤집기 비교 구현 →
+  평가자가 두 입력 모두 대조해 PASS+근거. 3역할 연쇄, 양식 그대로.
+
+> 골든 묶음 6/10 측정(G1~G5 3역할 통과 + G8·G10 평가자), 전부 pass^1=1/1. 남은 미실측: G6·G7·G9.
+
 ## 한 줄 요약 (하네스 검증 체크리스트)
 
 1. **데이터 출처**를 먼저 인증했나(0층)?
