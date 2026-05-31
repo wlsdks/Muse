@@ -983,3 +983,11 @@ export {
   type TasksProvider,
   type TasksProviderInfo
 } from "./tasks-providers.js";
+
+export {
+  DEFAULT_LEASE_STALE_MS,
+  acquireOllamaLease,
+  isOllamaLeaseHeldByOther,
+  releaseOllamaLease,
+  resolveOllamaLeaseFile
+} from "./ollama-lease.js";

@@ -193,3 +193,31 @@ describe("startConsolidateTick.tickOnce — AC-power brake (never drain the batt
     expect(calls).toBe(1);
   });
 });
+
+describe("startConsolidateTick.tickOnce — Ollama lease brake (defer to foreground)", () => {
+  const idle = { lastActivityMs: () => NOW.getTime() - IDLE_MS - 1 };
+
+  it("does NOT consolidate while a foreground call holds the lease", async () => {
+    let calls = 0;
+    const handle = startConsolidateTick(baseOptions({
+      ...idle,
+      isForegroundBusy: () => true,
+      runConsolidate: async () => { calls += 1; return []; }
+    }));
+    await handle.tickOnce();
+    handle.stop();
+    expect(calls).toBe(0);
+  });
+
+  it("consolidates when idle AND no foreground call is using Ollama", async () => {
+    let calls = 0;
+    const handle = startConsolidateTick(baseOptions({
+      ...idle,
+      isForegroundBusy: () => false,
+      runConsolidate: async () => { calls += 1; return []; }
+    }));
+    await handle.tickOnce();
+    handle.stop();
+    expect(calls).toBe(1);
+  });
+});

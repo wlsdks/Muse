@@ -30,7 +30,7 @@ import { citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fu
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
-import { listReflections, readEpisodes, readReflections, readReminders, readTasks, type PersistedReminder, type PersistedTask } from "@muse/mcp";
+import { acquireOllamaLease, listReflections, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type PersistedReminder, type PersistedTask } from "@muse/mcp";
 
 import { resolveReflectionsFile } from "./commands-reflections.js";
 import { classifyTier, type ModelTier } from "@muse/multi-agent";
@@ -1186,6 +1186,14 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       if (!options.json) {
         io.stderr("💭 generating your answer on the local model…\n");
       }
+      // Hold the Ollama lease while we use the local model so the background
+      // self-learning daemon defers instead of contending for it. Best-effort
+      // (fail-soft): if the lease write fails we still answer, and process
+      // exit frees it (the daemon ignores a dead-pid lease).
+      const leaseFile = resolveOllamaLeaseFile(process.env as Record<string, string | undefined>);
+      try {
+        await acquireOllamaLease(leaseFile, process.pid, Date.now());
+      } catch { /* best-effort */ }
       if (options.withTools) {
         // Agent-runtime path — tools (muse.search, muse.notes.*,
         // muse.tasks.*, etc.) are exposed to the model and tool calls
@@ -1299,6 +1307,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // Refusal guard: a refusal asserts no grounded fact, so any citation the
       // model tacked on is spurious — strip ALL of them (and thus the Sources
       // footer) so a refusal never points the user at a source "to verify".
+      // Generation done — free the Ollama lease (best-effort; process exit
+      // also frees it for the daemon since a dead pid is ignored).
+      try {
+        await releaseOllamaLease(leaseFile, process.pid);
+      } catch { /* best-effort */ }
       const refusalAnswer = answerIsRefusal(collectedAnswer);
       if (refusalAnswer) {
         collectedAnswer = enforceAnswerCitations(collectedAnswer, {

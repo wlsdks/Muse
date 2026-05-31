@@ -59,6 +59,8 @@ import {
   queryContacts,
   resolveUpcomingBirthdays,
   webWatchesFromConfig,
+  isOllamaLeaseHeldByOther,
+  resolveOllamaLeaseFile,
   type BriefingImminent
 } from "@muse/mcp";
 import { startAmbientTick } from "./ambient-tick.js";
@@ -542,6 +544,9 @@ export function startConsolidateDaemonIfConfigured(
     // AC-power brake: a heavy LLM merge runs on wall power only, never on
     // battery — so background learning can't drain the laptop (fail-closed).
     isOnAcPower: () => isOnAcPower(),
+    // Contention brake: defer while a foreground chat/ask holds the Ollama
+    // lease, so the daemon never competes with a live foreground call.
+    isForegroundBusy: () => isOllamaLeaseHeldByOther(resolveOllamaLeaseFile(env), process.pid, { nowMs: Date.now() }),
     ...(idleMsRaw !== undefined ? { idleThresholdMs: idleMsRaw } : {}),
     ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
     ...(consolidateQuietHours ? { quietHours: consolidateQuietHours } : {})

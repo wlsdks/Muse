@@ -55,6 +55,13 @@ export interface ConsolidateTickOptions {
    * (back-compat). (PART A2 / B1 brake-first.)
    */
   readonly isOnAcPower?: () => boolean | undefined;
+  /**
+   * Foreground/background contention brake: true when a foreground call
+   * (chat/ask) currently holds the Ollama lease. When provided and true, the
+   * merge defers so the daemon never contends with a live foreground call for
+   * the local model. Omitted ⇒ skipped (back-compat). (PART A2 / B1 brake.)
+   */
+  readonly isForegroundBusy?: () => boolean | Promise<boolean>;
   readonly intervalMs?: number;
   readonly threshold?: number;
   readonly minClusterSize?: number;
@@ -122,6 +129,8 @@ export function startConsolidateTick(options: ConsolidateTickOptions): Consolida
     if (options.osIdleMs && !isOsIdleEnough(options.osIdleMs(), idleThresholdMs)) return;
     // Brake-first: a heavy LLM merge must not drain the battery — AC only.
     if (options.isOnAcPower && !isPowerOkForLlm(options.isOnAcPower())) return;
+    // Brake-first: never contend with a live foreground call for Ollama.
+    if (options.isForegroundBusy && (await options.isForegroundBusy())) return;
     // Brake-first: never COLD-load the multi-GB model in the background — only
     // merge when it's already resident (a foreground call warmed it).
     if (options.isModelResident && !(await options.isModelResident())) return;

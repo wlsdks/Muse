@@ -101,7 +101,19 @@ proof shape (unit / 2-session / eval:self-improving), NOT cited-answer+refusal.
   consolidate-tick gate (battery or unknown → no merge; idle + AC → merge) +
   a LIVE `pmset` probe on this box (reads 'AC Power' → true). api 791 tests +
   `pnpm lint` 0/0. Brake-first INFRA. Remaining Slice-0 brake: the
-  cross-process Ollama lease (cross-package). (this commit)
+  cross-process Ollama lease (cross-package). (71473fba)
+
+- [x] **P36-4 Cross-process Ollama lease — COMPLETES B1 Slice 0.** Foreground
+  chat/ask and the daemon no longer contend for the local model. New shared
+  `ollama-lease.ts` (pid+heartbeat, fail-safe, dead-pid/stale auto-release);
+  `muse ask` holds it while streaming, the daemon defers its merge while a
+  live foreground lease is held. Net gate: OS-idle AND model-warm AND on-AC
+  AND no-foreground-contention. Proven by unit tests (held-by-other/self/
+  dead/stale; owner-only release) + consolidate-tick gate + a LIVE lease
+  round-trip AND a live `muse ask` (cited "MTU 1380" + receipt, honest
+  refusal — recall intact under the lease). mcp 1211 / api 801 / cli 1605
+  tests + `pnpm lint` 0/0. Slice 0 (brakes) DONE → the idle-distillation
+  writer (Slice 1, felt payoff) is unblocked. (this commit)
 
 **P35 — Felt experience: make Muse FEEL like the SF confidant (loop-v2 PART
 B2).** The front door (P34) is delivered + proven; the headline's other half
