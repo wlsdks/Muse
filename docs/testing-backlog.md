@@ -684,6 +684,17 @@ the generic layers below because they test what makes Muse an *agent*.
     recipient → no send; a handle-only contact with NO email → no send (never falls back to the
     handle); transport SEND FAILS → reason send-failed, logged "failed". Every outcome appends
     a rationale-bearing action-log entry (rule 4). mcp 1123->1130.
+  - FIFTIETH (cross-package sweep → mcp; OUTBOUND-SAFETY state-changing web action): `packages/
+    mcp` `web-action.ts` `performWebActionWithApproval` (129L, **ZERO test refs**) — the
+    draft-first, fail-closed primitive for a state-changing HTTP action (form submit / booking)
+    under the user's identity. First suite (7 tests, contract-faithful injected fetch + temp
+    action-log): CONFIRMED fires the request EXACTLY ONCE with the confirmed method/body + the
+    gate saw the exact action (draft-first) → performed; DENIED makes NO HTTP request + logs
+    refusal; GATE THROWS → fail-closed, no HTTP; a NON-2xx response is classified FAILED (a
+    server rejection is never a false "performed" the user acts on; no retry per outbound-
+    safety); a transport error → failed; a hung approved action TIMES OUT via AbortController
+    once the wall-clock cap passes; and the (redacted) request body is recorded in the
+    action-log entry. mcp 1130->1137.
 - [x] **Failure-injection / chaos on the model loop.** Drive `AgentRuntime.run`
   /`executeModelLoop` against a provider fake that returns 429 / 503 / a mid-
   stream `{error}` / a timeout / malformed JSON — assert retry classification,
