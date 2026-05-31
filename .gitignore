@@ -87,3 +87,6 @@ harness/runner/last-trace.json
 # stray runner-agent artifacts
 __pycache__/
 *.pyc
+
+# harness runner session snapshots (run artifact)
+harness/runner/sessions/

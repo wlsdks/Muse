@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runCycle } from './orchestrator.mjs';
 import { redactSecrets } from './tracer.mjs';
+import { createFileStore } from './session.mjs';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const here = dirname(fileURLToPath(import.meta.url));
@@ -55,11 +56,16 @@ async function main() {
     process.exit(2);
   }
   const start = Date.now();
+  const runId = `run-${start}`;
+  // Checkpoint each phase so a crashed/paused run can resume without redoing
+  // completed steps (load the snapshot and pass it back as opts.resume).
+  const sessions = createFileStore(join(here, 'sessions'));
   const res = await runCycle(task, {
     callAgent,
     now: () => Date.now() - start,
-    runId: `run-${start}`,
+    runId,
     redact: redactSecrets,
+    checkpoint: (s) => sessions.save(s),
   });
   await writeFile(join(here, 'last-trace.json'), JSON.stringify({ events: res.trace, summary: res.summary }, null, 2));
   console.log(JSON.stringify({ ok: res.ok, state: res.state, reason: res.reason ?? null, summary: res.summary }));
