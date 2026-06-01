@@ -4,6 +4,10 @@
  * crucially return NONE for UNRELATED skills (no force-merge)? The negative
  * case is the whole risk of automatic consolidation.
  *
+ * Also asserts the SkillOpt held-out coverage gate does NOT false-reject a real
+ * LLM-produced umbrella (a coherent merge must still pass `validateUmbrellaCoverage`)
+ * — the one risk the deterministic unit tests can't cover.
+ *
  *   node apps/cli/scripts/verify-skill-merge.mjs        (qwen3:8b)
  *
  * Exit 0 if every case passes, 1 otherwise. LOCAL OLLAMA QWEN ONLY.
@@ -12,8 +16,8 @@ import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
-import { mergeSkillsIntoUmbrella } from "@muse/agent-core";
+import { createMuseRuntimeAssembly, createOllamaEmbedder } from "@muse/autoconfigure";
+import { mergeSkillsIntoUmbrella, validateUmbrellaCoverage } from "@muse/agent-core";
 
 const model = process.argv[2] ?? "ollama/qwen3:8b";
 if (!model.startsWith("ollama/")) { console.error("LOCAL OLLAMA QWEN ONLY"); process.exit(2); }
@@ -22,6 +26,7 @@ process.env.MUSE_DEFAULT_MODEL = model;
 
 const asm = createMuseRuntimeAssembly();
 const modelProvider = asm.modelProvider;
+const embed = createOllamaEmbedder("nomic-embed-text");
 
 const cases = [
   {
@@ -58,13 +63,19 @@ let failures = 0;
 for (const c of cases) {
   const out = await mergeSkillsIntoUmbrella(c.cluster, { model, modelProvider });
   let ok;
+  let gateNote = "";
   if (c.kind === "umbrella") {
     const blob = `${out?.name ?? ""} ${out?.description ?? ""} ${out?.body ?? ""}`.toLowerCase();
-    ok = Boolean(out?.name) && Boolean(out?.description) && Boolean(out?.body) && c.needles.some((n) => blob.includes(n.toLowerCase()));
+    const coherent = Boolean(out?.name) && Boolean(out?.description) && Boolean(out?.body) && c.needles.some((n) => blob.includes(n.toLowerCase()));
+    // Held-out gate must ACCEPT a coherent real umbrella — a rejection here is a
+    // false-reject regression, not the gate doing its job.
+    const verdict = out ? await validateUmbrellaCoverage(c.cluster, out, { embed }) : { accept: false, reason: "no umbrella produced" };
+    ok = coherent && verdict.accept;
+    gateNote = `\n   gate: ${verdict.accept ? "ACCEPT" : "REJECT"} — ${verdict.reason}`;
   } else {
     ok = out === undefined;
   }
-  console.log(`${ok ? "PASS" : "FAIL"} — ${c.name}\n   out: ${JSON.stringify(out)?.slice(0, 200)}`);
+  console.log(`${ok ? "PASS" : "FAIL"} — ${c.name}\n   out: ${JSON.stringify(out)?.slice(0, 200)}${gateNote}`);
   if (!ok) failures += 1;
 }
 

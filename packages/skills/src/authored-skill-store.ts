@@ -240,7 +240,23 @@ export class AuthoredSkillStore {
    */
   async consolidate(
     merge: (cluster: readonly SkillDraft[]) => Promise<SkillDraft | undefined>,
-    options: { readonly threshold?: number; readonly minClusterSize?: number; readonly dryRun?: boolean } = {}
+    options: {
+      readonly threshold?: number;
+      readonly minClusterSize?: number;
+      readonly dryRun?: boolean;
+      /**
+       * Held-out validation gate (SkillOpt propose-and-test): after the merger
+       * proposes an umbrella, accept the merge ONLY when this returns true /
+       * `{accept:true}`. A rejected umbrella is dropped and the originals are
+       * left intact (rollback) — never archived/overwritten. Injected so this
+       * package stays model-free; the caller wires `validateUmbrellaCoverage`.
+       * Omitted ⇒ no gate (back-compat: every cohering merge commits).
+       */
+      readonly validate?: (
+        cluster: readonly SkillDraft[],
+        umbrella: SkillDraft
+      ) => boolean | { readonly accept: boolean } | Promise<boolean | { readonly accept: boolean }>;
+    } = {}
   ): Promise<readonly { readonly umbrella: string; readonly merged: readonly string[] }[]> {
     const threshold = typeof options.threshold === "number" && options.threshold > 0 ? options.threshold : 0.5;
     const minSize = Math.max(2, Math.trunc(options.minClusterSize ?? 2));
@@ -248,8 +264,14 @@ export class AuthoredSkillStore {
     const clusters = this.clusterBySimilarity(skills, threshold).filter((c) => c.length >= minSize);
     const out: { umbrella: string; merged: readonly string[] }[] = [];
     for (const cluster of clusters) {
-      const umbrella = await merge(cluster.map((s) => ({ body: s.body, description: s.description, name: s.name })));
+      const drafts = cluster.map((s) => ({ body: s.body, description: s.description, name: s.name }));
+      const umbrella = await merge(drafts);
       if (!umbrella) continue; // cluster didn't cohere — leave the skills alone
+      if (options.validate) {
+        const verdict = await options.validate(drafts, umbrella);
+        const accept = typeof verdict === "boolean" ? verdict : verdict.accept;
+        if (!accept) continue; // held-out gate rejected — roll back: leave originals intact
+      }
       if (options.dryRun) {
         out.push({ merged: cluster.map((s) => s.name), umbrella: umbrella.name });
         continue;

@@ -11,7 +11,7 @@
  * Curator pattern adapted from Hermes Agent (MIT) — see THIRD_PARTY_NOTICES.md.
  */
 
-import { mergeSkillsIntoUmbrella } from "@muse/agent-core";
+import { mergeSkillsIntoUmbrella, validateUmbrellaCoverage } from "@muse/agent-core";
 import type { ModelProvider } from "@muse/model";
 import { AuthoredSkillStore } from "@muse/skills";
 
@@ -75,6 +75,16 @@ export interface ConsolidateTickOptions {
    * the distill phase. Returns the count decayed (for logging). Omitted ⇒ skip.
    */
   readonly decayStale?: () => Promise<number>;
+  /**
+   * Embed text to a vector (the local nomic embedder) for the SkillOpt held-out
+   * coverage gate. When provided, a proposed umbrella commits ONLY if it
+   * semantically covers every clustered skill; a coverage-losing merge is
+   * rejected (originals untouched) and logged. Omitted ⇒ gate skipped
+   * (back-compat: every cohering merge commits).
+   */
+  readonly embed?: (text: string) => Promise<readonly number[]>;
+  /** Cosine floor for the coverage gate. Default 0.65 (calibrated for nomic-embed-text). */
+  readonly coverageFloor?: number;
   readonly intervalMs?: number;
   readonly threshold?: number;
   readonly minClusterSize?: number;
@@ -122,11 +132,30 @@ export function startConsolidateTick(options: ConsolidateTickOptions): Consolida
     options.runConsolidate ??
     (async (): Promise<readonly ConsolidateMergeOutcome[]> => {
       const store = new AuthoredSkillStore({ dir: options.authoredSkillsDir });
+      const { embed } = options;
       return store.consolidate(
         (cluster) => mergeSkillsIntoUmbrella(cluster, { model: options.model, modelProvider: options.modelProvider }),
         {
           ...(options.threshold !== undefined ? { threshold: options.threshold } : {}),
-          ...(options.minClusterSize !== undefined ? { minClusterSize: options.minClusterSize } : {})
+          ...(options.minClusterSize !== undefined ? { minClusterSize: options.minClusterSize } : {}),
+          // SkillOpt held-out gate: commit a merge only if the umbrella
+          // semantically covers every clustered skill; a coverage-losing
+          // umbrella is rejected (originals untouched) and logged as
+          // rejected-edit feedback. Needs an embedder — skipped without one.
+          ...(embed
+            ? {
+                validate: async (cluster, umbrella) => {
+                  const verdict = await validateUmbrellaCoverage(cluster, umbrella, {
+                    embed,
+                    ...(options.coverageFloor !== undefined ? { floor: options.coverageFloor } : {})
+                  });
+                  if (!verdict.accept) {
+                    options.logger?.(`consolidate-tick: held-out gate rejected — ${verdict.reason}`);
+                  }
+                  return verdict.accept;
+                }
+              }
+            : {})
         }
       );
     });

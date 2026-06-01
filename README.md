@@ -354,6 +354,24 @@ Use Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`,
 `docs:`, `chore:`). Commits and PR descriptions are written in
 English so multi-locale contributors and tooling stay aligned.
 
+## Research & attributions
+
+Muse is an independent MIT project. The designs below were **studied and
+reimplemented from scratch** (no third-party source copied) — we record where
+the ideas came from, per feature. Full notices + license texts:
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+| Feature | Borrowed idea | Source |
+| --- | --- | --- |
+| Curator skill-merge **held-out validation gate** — a proposed umbrella commits only if it semantically covers every clustered skill, else rolls back (`packages/agent-core/src/skill-merge-gate.ts`) | propose-and-test self-improvement (accept only a verified edit) | **SkillOpt**, Microsoft (MIT) — [arXiv 2605.23904](https://arxiv.org/abs/2605.23904) |
+| Session-end skill authoring, curator umbrella-consolidation, behavior-inferred user model, background-review engine | fork-and-review self-improvement; curator lifecycle | **Hermes Agent**, Nous Research (MIT) |
+| Recurring-theme surfacing, episode consolidation, skill-body risk scan, commitment extraction | sleep/"dreaming" memory consolidation; scan-before-activate | **OpenClaw** (MIT) |
+| Grounded reflection synthesis (insights cite their source episodes) | offline reflection over observations | Generative Agents — [arXiv 2304.03442](https://arxiv.org/abs/2304.03442) |
+| Confidence-gated cited recall ("I'm not sure" floor) | lightweight retrieval evaluator | CRAG — [arXiv 2401.15884](https://arxiv.org/abs/2401.15884) |
+| Long-context passage reordering (strong sources at head/tail) | "Lost in the Middle" | [arXiv 2307.03172](https://arxiv.org/abs/2307.03172) |
+| Preference inference from real corrections (not self-judgement) | distil from outcome signals | ReasoningBank — [arXiv 2509.25140](https://arxiv.org/abs/2509.25140) |
+| Deterministic detection (rules) before any model generalisation | small models are unreliable self-verifiers | [arXiv 2404.17140](https://arxiv.org/abs/2404.17140) |
+
 ## License
 
 [MIT](LICENSE). The runtime, adapters, and tooling are open

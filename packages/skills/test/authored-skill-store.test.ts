@@ -299,6 +299,40 @@ describe("AuthoredSkillStore — consolidate (umbrella merge, archive-never-dele
     expect(archived).toContain("summarise-email"); // archived, not deleted
   });
 
+  it("held-out gate rejection rolls back: originals stay live, nothing archived", async () => {
+    const dir = tmpDir();
+    const store = await seedCluster(dir);
+    const merge = async (cluster: readonly { name: string }[]) =>
+      cluster.every((s) => s.name.startsWith("summarise"))
+        ? { name: "summarise", description: "Use when summarising any content", body: "## Steps\n1. read 2. bullets" }
+        : undefined;
+    // Gate refuses the proposed umbrella — the merge must NOT commit.
+    const plan = await store.consolidate(merge, { threshold: 0.4, validate: () => false });
+    expect(plan).toHaveLength(0);
+
+    const live = (await store.listAuthored()).map((s) => s.name).sort();
+    expect(live).toContain("summarise-email");
+    expect(live).toContain("summarise-doc");
+    expect(live).not.toContain("summarise"); // umbrella never written
+    const { readdir } = await import("node:fs/promises");
+    const archived = await readdir(join(dir, ".archive")).catch(() => [] as string[]);
+    expect(archived).toEqual([]); // rollback: no original archived
+  });
+
+  it("held-out gate acceptance commits the merge exactly as the ungated path", async () => {
+    const dir = tmpDir();
+    const store = await seedCluster(dir);
+    const merge = async (cluster: readonly { name: string }[]) =>
+      cluster.every((s) => s.name.startsWith("summarise"))
+        ? { name: "summarise", description: "Use when summarising any content", body: "## Steps\n1. read 2. bullets" }
+        : undefined;
+    const plan = await store.consolidate(merge, { threshold: 0.4, validate: () => ({ accept: true }) });
+    expect(plan.some((p) => p.umbrella === "summarise")).toBe(true);
+    const live = (await store.listAuthored()).map((s) => s.name);
+    expect(live).toContain("summarise");
+    expect(live).not.toContain("summarise-email");
+  });
+
   it("dry-run reports the plan and mutates nothing", async () => {
     const dir = tmpDir();
     const store = await seedCluster(dir);

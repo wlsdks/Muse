@@ -1,3 +1,9 @@
+import { mkdtempSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { AuthoredSkillStore } from "@muse/skills";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -257,5 +263,74 @@ describe("startConsolidateTick.tickOnce — idle disuse-decay phase runs behind 
     h = startConsolidateTick(idleOpts({ isOnAcPower: () => true }));
     await h.tickOnce(); h.stop();
     expect(decayCalls).toBe(1);
+  });
+});
+
+describe("startConsolidateTick.tickOnce — held-out gate on the REAL default path (SkillOpt propose-and-test)", () => {
+  function merger(output: string) {
+    return { generate: async () => ({ output }) } as unknown as Parameters<typeof startConsolidateTick>[0]["modelProvider"];
+  }
+
+  // Topic-vector fake embedder over [email, document] axes — cosine reflects
+  // which topics a text covers, so a single-topic umbrella misses the other.
+  function fakeEmbed(text: string): Promise<readonly number[]> {
+    const t = text.toLowerCase();
+    const v = [/email/u.test(t) ? 1 : 0, /doc|document/u.test(t) ? 1 : 0];
+    return Promise.resolve(v[0] === 0 && v[1] === 0 ? [0.5, 0.5] : v);
+  }
+
+  async function seedTwoSummariseSkills(): Promise<string> {
+    const dir = mkdtempSync(join(tmpdir(), "muse-consolidate-tick-"));
+    const store = new AuthoredSkillStore({ dir });
+    await store.writeOrPatch({ name: "summarise-email", description: "Use when summarising an email thread", body: "read; bullets" });
+    await store.writeOrPatch({ name: "summarise-doc", description: "Use when summarising a document", body: "skim; bullets" });
+    return dir;
+  }
+
+  it("rejects a coverage-losing umbrella: originals stay live, nothing archived, rejection logged", async () => {
+    const dir = await seedTwoSummariseSkills();
+    const logs: string[] = [];
+    // Merger drops the "document" skill — keeps only the email trigger.
+    const handle = startConsolidateTick(baseOptions({
+      authoredSkillsDir: dir,
+      lastActivityMs: () => NOW.getTime() - IDLE_MS - 1,
+      threshold: 0.3,
+      runConsolidate: undefined,
+      embed: fakeEmbed,
+      logger: (m) => logs.push(m),
+      modelProvider: merger("name: summarise-email-only\ndescription: Use when summarising an email thread\nbody:\n1. read the email\n2. emit bullets")
+    }));
+    await handle.tickOnce();
+    handle.stop();
+
+    const store = new AuthoredSkillStore({ dir });
+    const live = (await store.listAuthored()).map((s) => s.name).sort();
+    expect(live).toEqual(["summarise-doc", "summarise-email"]); // both intact (rollback)
+    const archived = await readdir(join(dir, ".archive")).catch(() => [] as string[]);
+    expect(archived).toEqual([]); // nothing archived
+    expect(logs.some((m) => m.includes("held-out gate rejected"))).toBe(true);
+  });
+
+  it("commits a coverage-preserving umbrella: originals archived, umbrella written", async () => {
+    const dir = await seedTwoSummariseSkills();
+    const logs: string[] = [];
+    // Merger keeps BOTH triggers (email + document).
+    const handle = startConsolidateTick(baseOptions({
+      authoredSkillsDir: dir,
+      lastActivityMs: () => NOW.getTime() - IDLE_MS - 1,
+      threshold: 0.3,
+      runConsolidate: undefined,
+      embed: fakeEmbed,
+      logger: (m) => logs.push(m),
+      modelProvider: merger("name: summarise-text\ndescription: Use when summarising an email thread or a document\nbody:\n1. read the email or document\n2. emit bullets")
+    }));
+    await handle.tickOnce();
+    handle.stop();
+
+    const store = new AuthoredSkillStore({ dir });
+    const live = (await store.listAuthored()).map((s) => s.name);
+    expect(live).toContain("summarise-text");
+    expect(live).not.toContain("summarise-email");
+    expect(logs.some((m) => m.includes("folded 2 skills"))).toBe(true);
   });
 });
