@@ -91,4 +91,22 @@ describe("mergeSkillsIntoUmbrella — prompt input + request wiring", () => {
     const body = sink.request?.messages.find((m) => m.role === "user")?.content ?? "";
     expect(body).toContain("<<Use when summarising an email>>");
   });
+
+  it("appends rejected-edit feedback (avoidDropping) so the re-proposal must cover the dropped skills", async () => {
+    const { modelProvider, sink } = capturing();
+    await mergeSkillsIntoUmbrella(cluster, { model: "m", modelProvider, feedback: { avoidDropping: ["summarise-notes", "summarise-chat"] } });
+    const body = sink.request?.messages.find((m) => m.role === "user")?.content ?? "";
+    expect(body).toContain("DROPPED");
+    expect(body).toContain("summarise-notes");
+    expect(body).toContain("summarise-chat");
+  });
+
+  it("adds no steer line when there is no feedback (or it is empty)", async () => {
+    const a = capturing();
+    await mergeSkillsIntoUmbrella(cluster, { model: "m", modelProvider: a.modelProvider });
+    expect(a.sink.request?.messages.find((m) => m.role === "user")?.content ?? "").not.toContain("DROPPED");
+    const b = capturing();
+    await mergeSkillsIntoUmbrella(cluster, { model: "m", modelProvider: b.modelProvider, feedback: { avoidDropping: [] } });
+    expect(b.sink.request?.messages.find((m) => m.role === "user")?.content ?? "").not.toContain("DROPPED");
+  });
 });

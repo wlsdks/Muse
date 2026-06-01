@@ -311,6 +311,41 @@ describe("startConsolidateTick.tickOnce — held-out gate on the REAL default pa
     expect(logs.some((m) => m.includes("held-out gate rejected"))).toBe(true);
   });
 
+  it("feedbackRetry end-to-end: a rejected first umbrella is re-proposed with feedback and the steered umbrella commits", async () => {
+    const dir = await seedTwoSummariseSkills();
+    const logs: string[] = [];
+    // Feedback-aware merger: without the DROPPED steer line it proposes an
+    // email-only umbrella (drops the doc skill); with it, a covering umbrella.
+    const merger = {
+      generate: async (req: { messages: { role: string; content: string }[] }) => {
+        const user = req.messages.find((m) => m.role === "user")?.content ?? "";
+        return {
+          output: /DROPPED/u.test(user)
+            ? "name: summarise-text\ndescription: Use when summarising an email thread or a document\nbody:\n1. read 2. bullets"
+            : "name: summarise-email-only\ndescription: Use when summarising an email thread\nbody:\n1. read the email"
+        };
+      }
+    } as unknown as Parameters<typeof startConsolidateTick>[0]["modelProvider"];
+    const handle = startConsolidateTick(baseOptions({
+      authoredSkillsDir: dir,
+      lastActivityMs: () => NOW.getTime() - IDLE_MS - 1,
+      threshold: 0.3,
+      runConsolidate: undefined,
+      embed: fakeEmbed,
+      logger: (m) => logs.push(m),
+      modelProvider: merger
+    }));
+    await handle.tickOnce();
+    handle.stop();
+
+    const store = new AuthoredSkillStore({ dir });
+    const live = (await store.listAuthored()).map((s) => s.name);
+    expect(live).toContain("summarise-text"); // the steered re-proposal committed
+    expect(live).not.toContain("summarise-email");
+    expect(logs.some((m) => m.includes("held-out gate rejected"))).toBe(true); // attempt 1 was rejected
+    expect(logs.some((m) => m.includes("folded 2 skills"))).toBe(true); // attempt 2 committed
+  });
+
   it("commits a coverage-preserving umbrella: originals archived, umbrella written", async () => {
     const dir = await seedTwoSummariseSkills();
     const logs: string[] = [];

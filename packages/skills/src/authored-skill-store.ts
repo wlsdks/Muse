@@ -239,7 +239,10 @@ export class AuthoredSkillStore {
    * nothing. Returns one entry per consolidated cluster.
    */
   async consolidate(
-    merge: (cluster: readonly SkillDraft[]) => Promise<SkillDraft | undefined>,
+    merge: (
+      cluster: readonly SkillDraft[],
+      feedback?: { readonly avoidDropping: readonly string[] }
+    ) => Promise<SkillDraft | undefined>,
     options: {
       readonly threshold?: number;
       readonly minClusterSize?: number;
@@ -247,15 +250,26 @@ export class AuthoredSkillStore {
       /**
        * Held-out validation gate (SkillOpt propose-and-test): after the merger
        * proposes an umbrella, accept the merge ONLY when this returns true /
-       * `{accept:true}`. A rejected umbrella is dropped and the originals are
-       * left intact (rollback) — never archived/overwritten. Injected so this
-       * package stays model-free; the caller wires `validateUmbrellaCoverage`.
-       * Omitted ⇒ no gate (back-compat: every cohering merge commits).
+       * `{accept:true}`. Return `{accept, lost}` to also feed the dropped-skill
+       * labels into a steered retry (see `feedbackRetry`). A rejected umbrella is
+       * dropped and the originals are left intact (rollback) — never
+       * archived/overwritten. Injected so this package stays model-free; the
+       * caller wires `validateUmbrellaCoverage`. Omitted ⇒ no gate (back-compat).
        */
       readonly validate?: (
         cluster: readonly SkillDraft[],
         umbrella: SkillDraft
-      ) => boolean | { readonly accept: boolean } | Promise<boolean | { readonly accept: boolean }>;
+      ) =>
+        | boolean
+        | { readonly accept: boolean; readonly lost?: readonly string[] }
+        | Promise<boolean | { readonly accept: boolean; readonly lost?: readonly string[] }>;
+      /**
+       * SkillOpt rejected-edit loop: when the gate rejects a merge AND the
+       * verdict reports the dropped skills (`lost`), re-propose ONCE with that
+       * feedback before giving up — so a fixable umbrella converges instead of
+       * being recomputed identically next tick. Default false (one attempt).
+       */
+      readonly feedbackRetry?: boolean;
     } = {}
   ): Promise<readonly { readonly umbrella: string; readonly merged: readonly string[] }[]> {
     const threshold = typeof options.threshold === "number" && options.threshold > 0 ? options.threshold : 0.5;
@@ -265,12 +279,21 @@ export class AuthoredSkillStore {
     const out: { umbrella: string; merged: readonly string[] }[] = [];
     for (const cluster of clusters) {
       const drafts = cluster.map((s) => ({ body: s.body, description: s.description, name: s.name }));
-      const umbrella = await merge(drafts);
+      let umbrella = await merge(drafts);
       if (!umbrella) continue; // cluster didn't cohere — leave the skills alone
       if (options.validate) {
         const verdict = await options.validate(drafts, umbrella);
-        const accept = typeof verdict === "boolean" ? verdict : verdict.accept;
-        if (!accept) continue; // held-out gate rejected — roll back: leave originals intact
+        let accept = typeof verdict === "boolean" ? verdict : verdict.accept;
+        const lost = typeof verdict === "boolean" ? [] : (verdict.lost ?? []);
+        if (!accept && options.feedbackRetry && lost.length > 0) {
+          // Steered re-proposal: tell the merger which skills it dropped.
+          const retry = await merge(drafts, { avoidDropping: lost });
+          if (!retry) continue;
+          const v2 = await options.validate(drafts, retry);
+          accept = typeof v2 === "boolean" ? v2 : v2.accept;
+          if (accept) umbrella = retry;
+        }
+        if (!accept) continue; // held-out gate rejected (after any retry) — roll back: originals intact
       }
       if (options.dryRun) {
         out.push({ merged: cluster.map((s) => s.name), umbrella: umbrella.name });

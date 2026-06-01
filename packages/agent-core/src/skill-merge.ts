@@ -21,6 +21,14 @@ export interface MergeSkillsOptions {
   readonly redact?: (text: string) => string;
   readonly maxOutputTokens?: number;
   readonly temperature?: number;
+  /**
+   * Steering feedback from a prior REJECTED attempt (SkillOpt's rejected-edit
+   * loop): names/labels of the skills the previous umbrella dropped. Appended to
+   * the merge prompt so the re-proposal must cover them — turns propose→test→
+   * reject into propose→test→feedback→re-propose instead of recomputing the same
+   * losing umbrella.
+   */
+  readonly feedback?: { readonly avoidDropping: readonly string[] };
 }
 
 const MERGE_SYSTEM_PROMPT =
@@ -49,9 +57,13 @@ export async function mergeSkillsIntoUmbrella(
   const input = cluster
     .map((skill, i) => `--- skill ${(i + 1).toString()}: ${skill.name} ---\n${redact(skill.description)}\n${redact(skill.body)}`)
     .join("\n\n");
+  const avoid = options.feedback?.avoidDropping ?? [];
+  const steer = avoid.length > 0
+    ? `\n\nYour previous umbrella DROPPED the purpose of these skills: ${avoid.join(", ")}. The new umbrella MUST clearly cover every one of them, or output NONE.`
+    : "";
   const messages: readonly ModelMessage[] = [
     { content: MERGE_SYSTEM_PROMPT, role: "system" },
-    { content: input, role: "user" }
+    { content: `${input}${steer}`, role: "user" }
   ];
   const request: ModelRequest = {
     maxOutputTokens: options.maxOutputTokens ?? 400,

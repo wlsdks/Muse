@@ -134,14 +134,21 @@ export function startConsolidateTick(options: ConsolidateTickOptions): Consolida
       const store = new AuthoredSkillStore({ dir: options.authoredSkillsDir });
       const { embed } = options;
       return store.consolidate(
-        (cluster) => mergeSkillsIntoUmbrella(cluster, { model: options.model, modelProvider: options.modelProvider }),
+        (cluster, feedback) => mergeSkillsIntoUmbrella(cluster, {
+          model: options.model,
+          modelProvider: options.modelProvider,
+          ...(feedback ? { feedback } : {})
+        }),
         {
           ...(options.threshold !== undefined ? { threshold: options.threshold } : {}),
           ...(options.minClusterSize !== undefined ? { minClusterSize: options.minClusterSize } : {}),
           // SkillOpt held-out gate: commit a merge only if the umbrella
           // semantically covers every clustered skill; a coverage-losing
-          // umbrella is rejected (originals untouched) and logged as
-          // rejected-edit feedback. Needs an embedder — skipped without one.
+          // umbrella is rejected (originals untouched) and logged. The verdict's
+          // `lost` labels steer a single feedbackRetry re-proposal (so a fixable
+          // umbrella converges instead of being recomputed identically next
+          // tick). Needs an embedder — gate skipped without one.
+          feedbackRetry: true,
           ...(embed
             ? {
                 validate: async (cluster, umbrella) => {
@@ -152,7 +159,7 @@ export function startConsolidateTick(options: ConsolidateTickOptions): Consolida
                   if (!verdict.accept) {
                     options.logger?.(`consolidate-tick: held-out gate rejected — ${verdict.reason}`);
                   }
-                  return verdict.accept;
+                  return { accept: verdict.accept, lost: verdict.lost };
                 }
               }
             : {})

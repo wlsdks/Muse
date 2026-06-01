@@ -333,6 +333,45 @@ describe("AuthoredSkillStore — consolidate (umbrella merge, archive-never-dele
     expect(live).not.toContain("summarise-email");
   });
 
+  it("feedbackRetry: a first-attempt reject is re-proposed with the dropped labels and the steered umbrella commits", async () => {
+    const dir = tmpDir();
+    const store = await seedCluster(dir);
+    const seenFeedback: (readonly string[])[] = [];
+    // Attempt 1 (no feedback) → a narrow umbrella that drops summarise-notes;
+    // attempt 2 (with feedback) → a covering umbrella.
+    const merge = async (cluster: readonly { name: string }[], feedback?: { readonly avoidDropping: readonly string[] }) => {
+      if (!cluster.every((s) => s.name.startsWith("summarise"))) return undefined;
+      seenFeedback.push(feedback?.avoidDropping ?? []);
+      return feedback
+        ? { name: "summarise-all", description: "Use when summarising any content", body: "covers email, doc, notes" }
+        : { name: "summarise-email-only", description: "Use when summarising an email", body: "email only" };
+    };
+    const validate = (_c: readonly { name: string }[], umbrella: { name: string }) =>
+      umbrella.name === "summarise-all" ? { accept: true } : { accept: false, lost: ["summarise-notes"] };
+    const plan = await store.consolidate(merge, { threshold: 0.4, feedbackRetry: true, validate });
+
+    expect(plan.some((p) => p.umbrella === "summarise-all")).toBe(true);
+    expect(seenFeedback).toEqual([[], ["summarise-notes"]]); // attempt 1 no feedback, attempt 2 steered
+    const live = (await store.listAuthored()).map((s) => s.name);
+    expect(live).toContain("summarise-all");
+    expect(live).not.toContain("summarise-email");
+  });
+
+  it("feedbackRetry: when the steered retry ALSO fails the gate, nothing commits (rollback)", async () => {
+    const dir = tmpDir();
+    const store = await seedCluster(dir);
+    const merge = async (cluster: readonly { name: string }[]) =>
+      cluster.every((s) => s.name.startsWith("summarise"))
+        ? { name: "summarise-bad", description: "Use when summarising an email", body: "email only" }
+        : undefined;
+    const plan = await store.consolidate(merge, { threshold: 0.4, feedbackRetry: true, validate: () => ({ accept: false, lost: ["summarise-notes"] }) });
+    expect(plan).toHaveLength(0);
+    const live = (await store.listAuthored()).map((s) => s.name).sort();
+    expect(live).toContain("summarise-email"); // originals intact
+    const { readdir } = await import("node:fs/promises");
+    expect(await readdir(join(dir, ".archive")).catch(() => [] as string[])).toEqual([]);
+  });
+
   it("dry-run reports the plan and mutates nothing", async () => {
     const dir = tmpDir();
     const store = await seedCluster(dir);
