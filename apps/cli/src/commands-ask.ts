@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
-import { chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
+import { chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, selectByMmr, verifyGrounding, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -309,6 +309,28 @@ const REFUSAL_MARKERS: readonly string[] = [
 export function answerIsRefusal(answer: string): boolean {
   const lower = answer.toLowerCase();
   return REFUSAL_MARKERS.some((m) => lower.includes(m));
+}
+
+/**
+ * Output-side grounding VERDICT for the chat-only recall wedge — the rubric
+ * verifier (`verifyGrounding`) run AFTER citation stripping, over the grounded
+ * passages. Where `enforceAnswerCitations` removes a fabricated citation, this
+ * catches the subtler failure the citation gate can't: a confident retrieval
+ * whose ANSWER then drifts beyond the evidence (low coverage). Returns a
+ * user-facing notice ONLY for an `ungrounded` verdict on a non-refusal answer;
+ * `grounded`/`weak` stay silent (weak is already handled by the low-confidence
+ * input framing, a refusal asserts no claim). Only valid where `matches` IS the
+ * full evidence — the chat-only path, never `--with-tools`.
+ */
+export function groundingVerdictNotice(
+  answer: string,
+  matches: readonly KnowledgeMatch[],
+  query: string
+): string | undefined {
+  if (answerIsRefusal(answer)) return undefined;
+  const verification = verifyGrounding(answer, matches, query);
+  if (verification.verdict !== "ungrounded") return undefined;
+  return `\n⚠️  Grounding check: this answer's claims aren't fully backed by your notes (${verification.reason}) — treat as unverified.\n`;
 }
 
 /**
@@ -1679,6 +1701,19 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           tasks: openTasks.map((t) => t.title)
         });
         if (moreReceipts) io.stderr(moreReceipts);
+      }
+
+      // Output-side rubric VERDICT (chat-only path, where `scored` IS the
+      // evidence): even after invented citations are stripped, warn when the
+      // answer's claims drift beyond the grounded passages — the fabrication
+      // signal the citation gate alone can't see.
+      if (!options.json && !options.withTools) {
+        const verdictNotice = groundingVerdictNotice(
+          collectedAnswer,
+          scored.map((r) => ({ cosine: r.score, score: r.score, source: r.file, text: r.chunk.text })),
+          query
+        );
+        if (verdictNotice) io.stderr(verdictNotice);
       }
 
       // S2 warm honesty (B2): when Muse honestly refuses AND the user has
