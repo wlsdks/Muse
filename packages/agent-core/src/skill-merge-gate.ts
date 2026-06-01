@@ -177,6 +177,17 @@ export async function validateMergeCoverage(
  * union (a skill dropped on either surface fails). The generic
  * {@link validateMergeCoverage} stays body-agnostic so the playbook path (no
  * body) keeps using it directly.
+ *
+ * NOT added — a SkillOpt "textual learning rate" / anchor bound (reject an
+ * umbrella that drifts too far from the cluster centroid). Calibration on
+ * nomic-embed-text showed no usable threshold: a buried scope-creep umbrella
+ * ("summarise … AND book flights AND manage calendar") scores 0.866 to the
+ * cluster centroid — ABOVE a terse-but-legitimate generalisation ("summarise
+ * any content", 0.809) — because the on-topic majority dominates the embedding.
+ * Any floor that rejects the creep also false-rejects real generalisation, so an
+ * embedding anchor can't bound bloat without re-introducing the very false-reject
+ * this gate was fixed to avoid. (Catching buried scope-creep would need claim
+ * decomposition / an LLM judge, which this gate deliberately avoids.)
  */
 export async function validateUmbrellaCoverage(
   cluster: readonly SkillDraft[],
