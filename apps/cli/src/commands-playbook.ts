@@ -8,12 +8,13 @@
 
 import { randomUUID } from "node:crypto";
 
-import { clusterByTextSimilarity, mergePlaybookStrategies, PLAYBOOK_AVOID_BELOW, strategyTextSimilarity } from "@muse/agent-core";
-import { createMuseRuntimeAssembly, resolveLearningPauseFile, resolvePlaybookFile, resolveSuppressedLessonsFile } from "@muse/autoconfigure";
+import { clusterByTextSimilarity, mergePlaybookStrategies, PLAYBOOK_AVOID_BELOW, strategyTextSimilarity, validateMergeCoverage } from "@muse/agent-core";
+import { createMuseRuntimeAssembly, createOllamaEmbedder, resolveLearningPauseFile, resolvePlaybookFile, resolveSuppressedLessonsFile } from "@muse/autoconfigure";
 import { adjustPlaybookReward, queryPlaybook, recordPlaybookStrategy, recordSuppressedLesson, removePlaybookStrategy, setLearningPaused, type PlaybookEntry } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { distillSessionCorrections } from "./chat-distill-corrections.js";
+import { consolidatePlaybook } from "./playbook-consolidate.js";
 import type { ProgramIO } from "./program.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 
@@ -183,28 +184,38 @@ export function registerPlaybookCommands(program: Command, io: ProgramIO): void 
         io.stdout("No near-duplicate strategies to consolidate.\n");
         return;
       }
-      let merged = 0;
-      for (const cluster of clusters) {
-        const mergedText = await mergePlaybookStrategies(
-          cluster.map((e) => e.text),
-          { model, modelProvider: assembly.modelProvider as Parameters<typeof mergePlaybookStrategies>[1]["modelProvider"] }
-        );
-        if (!mergedText) continue; // genuinely distinct — leave them
-        merged += 1;
-        if (options.apply) {
+      const modelProvider = assembly.modelProvider as Parameters<typeof mergePlaybookStrategies>[1]["modelProvider"];
+      const embed = createOllamaEmbedder("nomic-embed-text");
+      const { merged, rejected } = await consolidatePlaybook(clusters, {
+        apply: options.apply === true,
+        log: (line) => io.stdout(`${line}\n`),
+        merge: (texts) => mergePlaybookStrategies(texts, { model, modelProvider }),
+        record: async (text, tag) => {
           await recordPlaybookStrategy(playbookFile(), {
             id: `pb_${randomUUID()}`,
             userId,
-            text: mergedText,
-            ...(cluster[0]!.tag ? { tag: cluster[0]!.tag } : {}),
+            text,
+            ...(tag ? { tag } : {}),
             createdAt: new Date().toISOString()
           });
-          for (const e of cluster) await removePlaybookStrategy(playbookFile(), e.id);
+        },
+        remove: async (id) => { await removePlaybookStrategy(playbookFile(), id); },
+        // SkillOpt held-out gate: a merged strategy commits only if it still
+        // semantically covers every original (local nomic embedder); a
+        // coverage-losing merge is rejected and the originals are kept.
+        validate: async (originals, mergedText) => {
+          const verdict = await validateMergeCoverage(
+            originals.map((t) => ({ label: t.slice(0, 40), text: t })),
+            { label: mergedText.slice(0, 40), text: mergedText },
+            { embed }
+          );
+          return { accept: verdict.accept, reason: verdict.reason };
         }
-        io.stdout(`  ${options.apply ? "merged" : "would merge"} ${cluster.length.toString()} → "${mergedText}"\n`);
-      }
+      });
       if (merged === 0) {
-        io.stdout("Clusters found but none cohered into a merge.\n");
+        io.stdout(rejected > 0
+          ? `Clusters found but ${rejected.toString()} merge(s) rejected by the held-out gate.\n`
+          : "Clusters found but none cohered into a merge.\n");
         return;
       }
       if (!options.apply) io.stdout("\nRun with --apply to merge (originals removed, merged strategy recorded).\n");

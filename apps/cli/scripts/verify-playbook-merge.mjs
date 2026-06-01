@@ -12,8 +12,8 @@ import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
-import { mergePlaybookStrategies } from "@muse/agent-core";
+import { createMuseRuntimeAssembly, createOllamaEmbedder } from "@muse/autoconfigure";
+import { mergePlaybookStrategies, validateMergeCoverage } from "@muse/agent-core";
 
 const model = process.argv[2] ?? "ollama/qwen3:8b";
 if (!model.startsWith("ollama/")) { console.error("LOCAL OLLAMA QWEN ONLY"); process.exit(2); }
@@ -22,6 +22,7 @@ process.env.MUSE_DEFAULT_MODEL = model;
 
 const asm = createMuseRuntimeAssembly();
 const modelProvider = asm.modelProvider;
+const embed = createOllamaEmbedder("nomic-embed-text");
 
 const cases = [
   {
@@ -49,13 +50,21 @@ let failures = 0;
 for (const c of cases) {
   const out = await mergePlaybookStrategies(c.texts, { model, modelProvider });
   let ok;
+  let gateNote = "";
   if (c.kind === "merged") {
     const v = (out ?? "").toLowerCase();
-    ok = Boolean(out) && c.needles.some((n) => v.includes(n.toLowerCase()));
+    const coherent = Boolean(out) && c.needles.some((n) => v.includes(n.toLowerCase()));
+    // Held-out gate must ACCEPT a coherent real merge — a rejection here is a
+    // false-reject regression, not the gate doing its job.
+    const verdict = out
+      ? await validateMergeCoverage(c.texts.map((t) => ({ label: t.slice(0, 40), text: t })), { label: out.slice(0, 40), text: out }, { embed })
+      : { accept: false, reason: "no merge produced" };
+    ok = coherent && verdict.accept;
+    gateNote = `\n   gate: ${verdict.accept ? "ACCEPT" : "REJECT"} — ${verdict.reason}`;
   } else {
     ok = out === undefined;
   }
-  console.log(`${ok ? "PASS" : "FAIL"} — ${c.name}\n   out: ${JSON.stringify(out)}`);
+  console.log(`${ok ? "PASS" : "FAIL"} — ${c.name}\n   out: ${JSON.stringify(out)}${gateNote}`);
   if (!ok) failures += 1;
 }
 

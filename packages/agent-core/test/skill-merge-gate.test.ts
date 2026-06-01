@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validateUmbrellaCoverage } from "../src/skill-merge-gate.js";
+import { validateMergeCoverage, validateUmbrellaCoverage } from "../src/skill-merge-gate.js";
 
 // Deterministic fake embedder: maps each text to a 2-D unit vector at a chosen
 // angle, so pairwise cosine is exactly cos(Δangle) — no Ollama needed. The
@@ -88,5 +88,30 @@ describe("validateUmbrellaCoverage (semantic)", () => {
     const verdict = await validateUmbrellaCoverage([], umbrella, opt);
     expect(verdict.accept).toBe(false);
     expect(verdict.score).toBe(0);
+  });
+});
+
+describe("validateMergeCoverage (generic label/text — shared by playbook merge)", () => {
+  const merged = { label: "merged", text: "the merged strategy" }; // → umbrella angle 0°
+
+  it("accepts when the merged text covers every original", async () => {
+    const originals = [
+      { label: "a", text: "cov one" },
+      { label: "b", text: "cov two" }
+    ];
+    const verdict = await validateMergeCoverage(originals, merged, opt);
+    expect(verdict.accept).toBe(true);
+    expect(verdict.lost).toEqual([]);
+  });
+
+  it("rejects and reports the dropped original by its LABEL (not the raw text)", async () => {
+    const originals = [
+      { label: "keep", text: "cov one" },
+      { label: "dropped-strategy", text: "lost two" }
+    ];
+    const verdict = await validateMergeCoverage(originals, merged, opt);
+    expect(verdict.accept).toBe(false);
+    expect(verdict.lost).toEqual(["dropped-strategy"]);
+    expect(verdict.score).toBeCloseTo(1 / 2);
   });
 });

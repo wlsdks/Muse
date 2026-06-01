@@ -363,7 +363,7 @@ the ideas came from, per feature. Full notices + license texts:
 
 | Feature | Borrowed idea | Source |
 | --- | --- | --- |
-| Curator skill-merge **held-out validation gate** — a proposed umbrella commits only if it semantically covers every clustered skill, else rolls back (`packages/agent-core/src/skill-merge-gate.ts`) | propose-and-test self-improvement (accept only a verified edit) | **SkillOpt**, Microsoft (MIT) — [arXiv 2605.23904](https://arxiv.org/abs/2605.23904) |
+| **Held-out validation gate** over self-edits — a merged skill (curator) or playbook strategy commits only if it semantically covers every original, else rolls back (`packages/agent-core/src/skill-merge-gate.ts`, `validateMergeCoverage`) | propose-and-test self-improvement (accept only a verified edit) | **SkillOpt**, Microsoft (MIT) — [arXiv 2605.23904](https://arxiv.org/abs/2605.23904) |
 | Session-end skill authoring, curator umbrella-consolidation, behavior-inferred user model, background-review engine | fork-and-review self-improvement; curator lifecycle | **Hermes Agent**, Nous Research (MIT) |
 | Recurring-theme surfacing, episode consolidation, skill-body risk scan, commitment extraction | sleep/"dreaming" memory consolidation; scan-before-activate | **OpenClaw** (MIT) |
 | Grounded reflection synthesis (insights cite their source episodes) | offline reflection over observations | Generative Agents — [arXiv 2304.03442](https://arxiv.org/abs/2304.03442) |

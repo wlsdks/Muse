@@ -27,18 +27,27 @@
 import { cosineSimilarity } from "./episodic-recall.js";
 import type { SkillDraft } from "./skill-review.js";
 
-export interface UmbrellaCoverageVerdict {
-  /** Accept the umbrella (commit the merge) only when this is true. */
+export interface MergeCoverageVerdict {
+  /** Accept the merge (commit it) only when this is true. */
   readonly accept: boolean;
-  /** Fraction of the cluster's skills whose purpose the umbrella still covers (0..1). */
+  /** Fraction of the originals whose purpose the merged artifact still covers (0..1). */
   readonly score: number;
-  /** Original skill names the umbrella covers. */
+  /** Labels of the originals the merged artifact covers. */
   readonly covered: readonly string[];
-  /** Original skill names the umbrella dropped — the merge regression. */
+  /** Labels of the originals the merged artifact dropped — the merge regression. */
   readonly lost: readonly string[];
   /** Human-readable summary for the action log / rejected-edit feedback. */
   readonly reason: string;
 }
+
+/** A merge input: `label` is reported in covered/lost, `text` is what gets embedded. */
+export interface CoverageItem {
+  readonly label: string;
+  readonly text: string;
+}
+
+/** Back-compat alias — the skill-merge gate returns this same shape. */
+export type UmbrellaCoverageVerdict = MergeCoverageVerdict;
 
 export interface ValidateUmbrellaOptions {
   /** Embed text to a vector (the local nomic embedder). Required — the gate is semantic. */
@@ -68,35 +77,38 @@ function triggerText(skill: SkillDraft): string {
 }
 
 /**
- * Grade an umbrella against the cluster it claims to replace, by semantic
- * coverage. Fail-closed: any embedding error → reject (cannot verify). An empty
- * cluster never accepts.
+ * Generic held-out coverage gate, shared by every self-improvement merge
+ * (curator skill-merge, playbook strategy-merge, …): grade a `merged` artifact
+ * against the `originals` it claims to replace by semantic coverage. Each
+ * original is covered when cosine(original.text, merged.text) ≥ `floor`.
+ * Fail-closed: any embedding error → reject (cannot verify). Empty input never
+ * accepts.
  */
-export async function validateUmbrellaCoverage(
-  cluster: readonly SkillDraft[],
-  umbrella: SkillDraft,
+export async function validateMergeCoverage(
+  originals: readonly CoverageItem[],
+  merged: CoverageItem,
   options: ValidateUmbrellaOptions
-): Promise<UmbrellaCoverageVerdict> {
-  if (cluster.length === 0) {
+): Promise<MergeCoverageVerdict> {
+  if (originals.length === 0) {
     return { accept: false, covered: [], lost: [], reason: "empty cluster", score: 0 };
   }
   const floor = clamp01(options.floor ?? DEFAULT_FLOOR);
   const requireAll = options.requireAllCovered ?? true;
   const minScore = clamp01(options.minScore ?? 1);
 
-  let umbrellaVec: readonly number[];
-  const skillVecs: (readonly number[])[] = [];
+  let mergedVec: readonly number[];
+  const originalVecs: (readonly number[])[] = [];
   try {
-    umbrellaVec = await options.embed(triggerText(umbrella));
-    for (const skill of cluster) {
-      skillVecs.push(await options.embed(triggerText(skill)));
+    mergedVec = await options.embed(merged.text);
+    for (const item of originals) {
+      originalVecs.push(await options.embed(item.text));
     }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     return {
       accept: false,
       covered: [],
-      lost: cluster.map((s) => s.name),
+      lost: originals.map((o) => o.label),
       reason: `coverage gate could not run (embedder unavailable: ${message})`,
       score: 0
     };
@@ -104,22 +116,38 @@ export async function validateUmbrellaCoverage(
 
   const covered: string[] = [];
   const lost: string[] = [];
-  cluster.forEach((skill, i) => {
-    const cos = cosineSimilarity(skillVecs[i]!, umbrellaVec);
-    if (cos >= floor) {
-      covered.push(skill.name);
+  originals.forEach((item, i) => {
+    if (cosineSimilarity(originalVecs[i]!, mergedVec) >= floor) {
+      covered.push(item.label);
     } else {
-      lost.push(skill.name);
+      lost.push(item.label);
     }
   });
 
-  const score = covered.length / cluster.length;
+  const score = covered.length / originals.length;
   const accept = requireAll ? lost.length === 0 : score >= minScore;
   const reason = accept
-    ? `umbrella "${umbrella.name}" covers all ${covered.length.toString()} skills (≥${floor.toFixed(2)})`
-    : `umbrella "${umbrella.name}" drops [${lost.join(", ")}] (covered ${covered.length.toString()}/${cluster.length.toString()}, floor ${floor.toFixed(2)})`;
+    ? `"${merged.label}" covers all ${covered.length.toString()} (≥${floor.toFixed(2)})`
+    : `"${merged.label}" drops [${lost.join(", ")}] (covered ${covered.length.toString()}/${originals.length.toString()}, floor ${floor.toFixed(2)})`;
 
   return { accept, covered, lost, reason, score };
+}
+
+/**
+ * Curator skill-merge gate: grade an umbrella against the cluster it replaces.
+ * Thin wrapper over {@link validateMergeCoverage} keyed on each skill's trigger
+ * surface (name + "Use when …" description); covered/lost are reported by name.
+ */
+export function validateUmbrellaCoverage(
+  cluster: readonly SkillDraft[],
+  umbrella: SkillDraft,
+  options: ValidateUmbrellaOptions
+): Promise<MergeCoverageVerdict> {
+  return validateMergeCoverage(
+    cluster.map((s) => ({ label: s.name, text: triggerText(s) })),
+    { label: umbrella.name, text: triggerText(umbrella) },
+    options
+  );
 }
 
 function clamp01(value: number): number {
