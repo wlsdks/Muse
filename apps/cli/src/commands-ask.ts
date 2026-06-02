@@ -29,6 +29,7 @@ import { isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, parseGroundingReverifyVerdict, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
+import { classifyCasualPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -301,6 +302,16 @@ const REFUSAL_MARKERS: readonly string[] = [
   "모르", "없습니다", "없어요", "없어", "정보가 없", "찾을 수 없", "알 수 없",
   "저장하고 있지 않", "가지고 있지 않", "접근할 수 없"
 ];
+
+// Instant, on-brand replies for a PURE social prompt — so a bare "hi" / "thanks"
+// gets a clean conversational line instead of the empty-corpus on-ramp + a
+// fabricated `[action: …]` citation + a "treat as unverified" grounding warning.
+// Deterministic (no model call, no retrieval), so it is also the fastest path.
+export const CASUAL_RESPONSES: Record<CasualPromptKind, string> = {
+  farewell: "Take care — I'll be here when you need your notes.",
+  greeting: "Hi! I answer from your own notes — ask me anything you've saved and I'll quote the source, or tell you honestly when it isn't there.",
+  thanks: "You're welcome."
+};
 
 /**
  * True when the answer is essentially a refusal / "I'm not sure" with no
@@ -971,6 +982,24 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         process.exitCode = 1;
         return;
       }
+
+      // A pure social prompt ("hi" / "thanks" / "bye") is not a question about
+      // the notes — answer it conversationally and skip retrieval, the
+      // empty-corpus on-ramp, the citation gate, and the grounding-verdict
+      // warning (tool-calling.md: don't run the retrieval machinery on a
+      // greeting). Precision-first detector, so a real question never short-
+      // circuits. The fastest path in the CLI — no model call, no embedding.
+      const casualKind = classifyCasualPrompt(query);
+      if (casualKind) {
+        const reply = CASUAL_RESPONSES[casualKind];
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ answer: reply, casual: casualKind, query })}\n`);
+        } else {
+          io.stdout(`${reply}\n`);
+        }
+        return;
+      }
+
       const userKey = defaultUserKey(options.user, options.persona);
       const topK = parseBoundedInt(options.top, "--top", 1, 20, 3);
       const embedModel = options.embedModel ?? "nomic-embed-text";

@@ -186,6 +186,7 @@ export {
   type AttributedRepairPromptInput,
   type AttributedRepairResult
 } from "./attributed-repair.js";
+export { classifyCasualPrompt, type CasualPromptKind } from "./casual-prompt.js";
 export {
   createConfidenceGatedInvestigator,
   decideProactiveRecall,

@@ -291,7 +291,26 @@ qwen3:8b and added to `eval:self-improving`.
   the LIVE `verify-claim-grounding` battery (the real qwen judge rejects "Mr. Lee",
   upholds "Mr. Park") and `verify-faithfulness-rate`, where a wrong-name drift case
   is now caught (faithfulness 1.00, 16/16) with false-refusal UNCHANGED at 0.08 (no
-  answerable falsely escalated). Self-RAG arXiv:2310.11511. (this commit)
+  answerable falsely escalated). Self-RAG arXiv:2310.11511. (80797e75)
+
+**P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
+tool-calling.md).** Edge hygiene meets felt responsiveness.
+
+- [x] **P39-1 `muse ask "hi"` no longer runs the grounding machinery on a
+  greeting.** A bare "hi" / "thanks" / "bye" produced the empty-corpus on-ramp
+  (4 lines), a model-fabricated `[action: greeted user]` citation the gate then
+  stripped (flashing a "Removed 1 citation" warning), AND a "⚠️ Grounding check:
+  treat as unverified" warning — on the word "Hello!". A new precision-first
+  `classifyCasualPrompt` (agent-core, EN+KO, anchored so "hi, what's my rent?"
+  never matches) short-circuits a PURE social prompt to one clean conversational
+  line — no retrieval, no on-ramp, no citation gate, no verdict warning, no model
+  call (the fastest path in the CLI). Proof: 6 classifier unit tests
+  (`casual-prompt.test.ts`: greetings/thanks/farewells EN+KO match; a real
+  question that opens with a social word does NOT; the 30-char content guard) + 2
+  cli response-map guards (no citation token can re-enter) + a LIVE `muse ask
+  "hi"` (one clean line; "hi, what is my MTU?" still flows through the grounded
+  path). agent-core 1349 / cli 1685 + `pnpm lint` 0/0. tool-calling.md ("don't
+  invoke the retrieval machinery on a greeting"). (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections
