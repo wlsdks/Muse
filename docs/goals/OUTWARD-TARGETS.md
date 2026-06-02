@@ -1068,6 +1068,23 @@ honest-refusal mock-corpus check where applicable.
   lines. cli 1655 tests + `pnpm lint` 0/0. "Shows its work" is now FELT uniformly
   across every grounding source, not just notes. (30346851)
 
+- [x] **P35-8 `muse brief` greets you by your REAL name or none — never an invented
+  one (fabrication=0 on the felt surface).** Probing the morning briefing: with no
+  name on file `muse brief` opened "Good morning, Alex." — the small model filled
+  the "Good morning, ___" slot with an INVENTED name (consistent across runs, even
+  for `--user bob`). On a "tell it everything, it knows you" assistant, being
+  greeted by a name that isn't yours is a fabricated fact AND a trust-puncturing
+  felt miss. Fixed: a `resolveUserName(facts)` helper reads the user's actual name
+  from a `name` / `first_name` / `nickname` / … fact, and the greeting instruction
+  is now conditional — "Address the user as '<name>'" when known, else "No name is
+  on file — open with a plain time-of-day greeting and do NOT invent/guess one."
+  The briefing CONTENT was already faithful (it accurately stated a real task +
+  reminder); this closes the one fabricated slot. Proof: 3 new `resolveUserName`
+  unit tests (name variants resolved; no-name → undefined so the greeting stays
+  generic; blank ignored) + LIVE: no name → "Good morning" ×3 (no "Alex"); after
+  `muse remember "my name is Jinan"` → "Good morning, Jinan". cli 165 files / 1747
+  tests + `pnpm lint` 0/0. (this commit)
+
 **P34 — The front door (loop-v2 headline: the moat is invisible without
 the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able
 to SEE Muse's edge — a cited answer AND an honest refusal — in seconds, with

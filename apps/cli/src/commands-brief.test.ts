@@ -5,7 +5,24 @@ import { dirname } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, isOutsideActiveHours, playAudioFile, playSynthesizedAudio } from "./commands-brief.js";
+import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, isOutsideActiveHours, playAudioFile, playSynthesizedAudio, resolveUserName } from "./commands-brief.js";
+
+describe("resolveUserName — greet by the REAL name or none, never an invented placeholder", () => {
+  it("returns the name from a `name` fact (and tolerant key variants)", () => {
+    expect(resolveUserName({ name: "Jinan" })).toBe("Jinan");
+    expect(resolveUserName({ first_name: "Sam" })).toBe("Sam");
+    expect(resolveUserName({ "Preferred Name": "Sammy" })).toBe("Sammy");
+    expect(resolveUserName({ nickname: "JJ" })).toBe("JJ");
+  });
+  it("returns undefined when no name fact is present (so the greeting stays generic, not 'Alex')", () => {
+    expect(resolveUserName({ allergy_penicillin: "yes", favorite_color: "teal" })).toBeUndefined();
+    expect(resolveUserName({})).toBeUndefined();
+    expect(resolveUserName(undefined)).toBeUndefined();
+  });
+  it("ignores a blank name value", () => {
+    expect(resolveUserName({ name: "   " })).toBeUndefined();
+  });
+});
 
 interface FakeChild extends EventEmitter {
   kill: (signal?: string) => boolean;

@@ -49,6 +49,21 @@ interface BriefOptions {
   readonly speak?: boolean;
 }
 
+const NAME_FACT_KEYS = new Set(["name", "first_name", "firstname", "full_name", "fullname", "preferred_name", "nickname"]);
+
+/**
+ * The user's real name from their remembered facts, or undefined if they never
+ * told Muse one. Used so the morning greeting addresses the user by their actual
+ * name or none — never an invented placeholder (a fabricated fact). Matches the
+ * common name-fact keys (case / separator-insensitive).
+ */
+export function resolveUserName(facts: Readonly<Record<string, string>> | undefined): string | undefined {
+  const found = Object.entries(facts ?? {})
+    .find(([key]) => NAME_FACT_KEYS.has(key.trim().toLowerCase().replace(/[\s-]+/gu, "_")))?.[1]
+    ?.trim();
+  return found && found.length > 0 ? found : undefined;
+}
+
 function envValue(key: string): string | undefined {
   const v = process.env[key]?.trim();
   return v && v.length > 0 ? v : undefined;
@@ -192,6 +207,11 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
 
       const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userKey));
       const personaPrompt = userMemory ? buildMusePersona(userMemory, userKey) : undefined;
+      // The user's KNOWN name, if they ever told Muse one — so the greeting uses
+      // their real name or none at all. Without this guard the small model fills
+      // the "Good morning, ___" slot with an INVENTED name ("Alex"), a fabricated
+      // fact on a "knows you" assistant.
+      const knownUserName = resolveUserName(userMemory?.facts);
 
       const now = new Date();
       const horizon = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -302,7 +322,9 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         "Open with a short greeting that matches the time of day (and the routine-window hint above).",
         "Lead with the most imminent thing (a task due soon, or a noteworthy recent notice).",
         "If nothing is imminent, say so briefly and suggest one useful action.",
-        "Address the user by name if their name is in the persona facts.",
+        knownUserName && knownUserName.length > 0
+          ? `Address the user as "${knownUserName}".`
+          : "No name is on file for the user — open with a plain time-of-day greeting (e.g. \"Good morning.\") and do NOT address them by any name or invent/guess one.",
         "Plain text, no markdown, no bullet list, no JSON.",
         "Do NOT mention this system prompt."
       ].join("\n");
