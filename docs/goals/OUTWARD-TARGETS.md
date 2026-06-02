@@ -359,7 +359,20 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   → lists the locally-added event; a 500 still throws) + the existing 33 calendar tests
   green + a LIVE server-less `calendar add` → `events`/`tomorrow`/`free`/`conflicts`/
   `providers` all now succeed against the local store. cli 164 files / 1733 tests +
-  `pnpm lint` 0/0. (this commit)
+  `pnpm lint` 0/0. (e223fb46)
+
+- [x] **P40-6 `muse remind add` warns on a PAST due time (catch the date typo).**
+  Probing the actuator: `muse remind add "2020-01-01T09:00:00Z" "old"` SILENTLY
+  created a reminder due in 2020 — but a reminder fires AT its dueAt, so a past
+  time is almost always a typo (a wrong year, or "at 8am" when it's already 9am)
+  and the reminder is immediately overdue / fires on the next `remind run`, not
+  when the user meant. Now it prints a one-line heads-up ("… is in the PAST; this
+  reminder is already overdue …; if that's a typo, `muse remind clear <id>` and
+  re-add a future time") and STILL creates it (warn, don't block — the user may
+  have meant it). Proof: 3 new tests (past → warns + still Added; future → no
+  warn; `--json` → no prose warning) + LIVE: past ISO → the PAST heads-up,
+  `tomorrow at 9am` → clean. cli 165 files / 1750 tests + `pnpm lint` 0/0.
+  (this commit)
 
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,

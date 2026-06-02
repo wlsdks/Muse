@@ -21,10 +21,12 @@ async function runRemind(
   readonly error?: string;
   readonly apiCalls: readonly ApiCall[];
   readonly stdout: string;
+  readonly stderr: string;
 }> {
   const stdout: string[] = [];
+  const stderr: string[] = [];
   const apiCalls: ApiCall[] = [];
-  const io = { stderr: () => {}, stdout: (m: string) => stdout.push(m) };
+  const io = { stderr: (m: string) => stderr.push(m), stdout: (m: string) => stdout.push(m) };
   const helpers: RemindCommandHelpers = {
     apiRequest: apiRequestOverride ?? (async (_io, _command, path, body, method) => {
       apiCalls.push({ body, method, path });
@@ -41,8 +43,29 @@ async function runRemind(
   } catch (cause) {
     error = cause instanceof Error ? cause.message : String(cause);
   }
-  return { apiCalls, error, stdout: stdout.join("") };
+  return { apiCalls, error, stderr: stderr.join(""), stdout: stdout.join("") };
 }
+
+describe("muse remind add — past-time guard (a date typo would fire immediately)", () => {
+  it("warns when the resolved dueAt is in the PAST, but still adds it (warn, don't block)", async () => {
+    const r = await runRemind(["2020-01-01T09:00:00Z", "old", "--local"]);
+    expect(r.error).toBeUndefined();
+    expect(r.stderr).toContain("in the PAST");
+    expect(r.stderr).toContain("overdue");
+    expect(r.stdout).toContain("Added"); // not blocked — the reminder is still created
+  });
+
+  it("does NOT warn for a future time", async () => {
+    const r = await runRemind(["2099-01-01T09:00:00Z", "future", "--local"]);
+    expect(r.stderr).not.toContain("PAST");
+    expect(r.stdout).toContain("Added");
+  });
+
+  it("emits no prose past-warning under --json (structured output stays clean)", async () => {
+    const r = await runRemind(["2020-01-01T09:00:00Z", "old", "--local", "--json"]);
+    expect(r.stderr).not.toContain("PAST");
+  });
+});
 
 describe("muse remind add — pre-dispatch <when> validation", () => {
   it("remote mode rejects an invalid <when> with the actionable error BEFORE any API call", async () => {

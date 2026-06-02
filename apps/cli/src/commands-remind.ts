@@ -138,6 +138,16 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       if (resolvedDueAt instanceof Error) {
         throw resolvedDueAt;
       }
+      // A reminder fires AT its dueAt, so a PAST time is almost always a date
+      // typo (a wrong year, or "at 8am" when it is already 9am) — it would be
+      // immediately overdue and fire on the next run, not when the user meant.
+      // Warn but don't block (they may have meant it; they can `clear` it).
+      if (!options.json && new Date(resolvedDueAt).getTime() < Date.now()) {
+        io.stderr(
+          `muse: heads up — ${shortDateTime(resolvedDueAt)} is in the PAST; this reminder is already overdue and will fire on the next \`muse remind run\`. `
+          + "If that's a typo, `muse remind clear <id>` and re-add a future time.\n"
+        );
+      }
 
       const addLocal = async (): Promise<Record<string, unknown>> => {
         const created: PersistedReminder = {
