@@ -63,14 +63,18 @@ const reverify = async ({ answer, evidence, query }) => {
 const matches = [{ cosine: 0.72, score: 0.72, source: "notes/vpn.md", text: "The office VPN needs MTU 1380 on wg0 to stop handshake drops." }];
 const query = "what MTU for the office VPN";
 
+const lease = [{ cosine: 0.72, score: 0.72, source: "notes/lease.md", text: "Apartment lease: landlord is Mr. Park, monthly rent due on the 1st." }];
+
 const cases = [
-  { name: "GROUNDED base + WRONG value (9000 not in evidence) → escalated → judge rejects → UNGROUNDED", answer: "The office VPN uses MTU 9000 on wg0 [from notes/vpn.md].", expect: "ungrounded" },
-  { name: "GROUNDED base + CORRECT value (1380 in evidence) → no escalation → GROUNDED", answer: "The office VPN uses MTU 1380 on wg0 [from notes/vpn.md].", expect: "grounded" }
+  { name: "GROUNDED base + WRONG number (9000 not in evidence) → escalated → judge rejects → UNGROUNDED", answer: "The office VPN uses MTU 9000 on wg0 [from notes/vpn.md].", matches, query, expect: "ungrounded" },
+  { name: "GROUNDED base + CORRECT number (1380 in evidence) → no escalation → GROUNDED", answer: "The office VPN uses MTU 1380 on wg0 [from notes/vpn.md].", matches, query, expect: "grounded" },
+  { name: "GROUNDED base + WRONG named entity (Lee not in evidence) → escalated → judge rejects → UNGROUNDED", answer: "Your landlord is Mr. Lee [from notes/lease.md].", matches: lease, query: "who is my landlord", expect: "ungrounded" },
+  { name: "GROUNDED base + CORRECT named entity (Park in evidence) → no escalation → GROUNDED", answer: "Your landlord is Mr. Park [from notes/lease.md].", matches: lease, query: "who is my landlord", expect: "grounded" }
 ];
 
 let failures = 0;
 for (const c of cases) {
-  const v = await verifyGroundingWithReverify(c.answer, matches, query, reverify);
+  const v = await verifyGroundingWithReverify(c.answer, c.matches, c.query, reverify);
   const ok = v.verdict === c.expect;
   console.log(`${ok ? "PASS" : "FAIL"} — ${c.name}\n   verdict=${v.verdict} (${v.reason})`);
   if (!ok) failures += 1;

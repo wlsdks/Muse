@@ -277,7 +277,21 @@ qwen3:8b and added to `eval:self-improving`.
   `verify-faithfulness-rate` battery, where the groceries case is now caught and
   faithfulness rose 0.93 → 1.00 (15/15) with false-refusal UNCHANGED at 0.08, and
   cited-recall / rubric-gate / proactive-recall-gate all still green (no genuine
-  match demoted). CRAG arXiv:2401.15884. (this commit)
+  match demoted). CRAG arXiv:2401.15884. (15396269)
+
+- [x] **P38-5 Claim-level value grounding extends to NAMED ENTITIES.** P38-2 caught
+  a wrong NUMBER ("MTU 9000" vs 1380); a wrong NAME ("your landlord is Mr. Lee"
+  where the note says "Mr. Park") slipped — same hole, no digit. The value
+  escalation now also flags a capitalized named entity (≥3 letters, month/day
+  names + stopwords excluded) absent from the evidence and escalates that
+  `grounded` answer to one judge pass — FAIL-OPEN like P38-2, so a false flag only
+  costs a judge pass that upholds a correct answer, never a refusal. Proof: 3 new
+  unit tests in `knowledge-recall-reverify.test.ts` (wrong name → demoted; correct
+  name → no escalation; a month name in a correct date answer → not escalated) +
+  the LIVE `verify-claim-grounding` battery (the real qwen judge rejects "Mr. Lee",
+  upholds "Mr. Park") and `verify-faithfulness-rate`, where a wrong-name drift case
+  is now caught (faithfulness 1.00, 16/16) with false-refusal UNCHANGED at 0.08 (no
+  answerable falsely escalated). Self-RAG arXiv:2310.11511. (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections

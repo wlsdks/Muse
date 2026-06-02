@@ -574,21 +574,38 @@ export function parseGroundingReverifyVerdict(output: string): boolean {
   return /^\s*(yes|y|true|supported)\b/iu.test(output.trim());
 }
 
+// Month / day names: a correct date answer renders "September" for an evidence
+// "09" token, so they are excluded from the named-entity check below to avoid a
+// needless escalation on a faithful date.
+const VALUE_WORD_STOPLIST = new Set([
+  "january", "february", "march", "april", "may", "june", "july",
+  "august", "september", "october", "november", "december",
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
+]);
+
 /**
- * The pure-digit VALUE tokens the answer asserts that the evidence does NOT
- * contain. The rubric's `coverage` is whole-answer token overlap, so a single
- * WRONG number ("MTU 9000" where the note says "1380") barely dents coverage and
- * the answer still reads `grounded` — the documented wrong-value hole. This
- * flags exactly that case so the re-verification can escalate it to the judge
- * (claim-level grounding — Self-RAG ISSUP, arXiv:2310.11511; Chain-of-Note,
- * arXiv:2311.09210). Citations are stripped first so a `[from 2026-...]` source
- * token is never mistaken for an asserted value.
+ * The VALUE tokens the answer asserts that the evidence does NOT contain — a
+ * pure-digit NUMBER ("MTU 9000" vs the note's "1380") OR a capitalized NAMED
+ * ENTITY ("Dr. Kim" vs "Dr. Patel"). The rubric's `coverage` is whole-answer
+ * token overlap, so a single wrong value barely dents coverage and the answer
+ * still reads `grounded` — the documented wrong-value hole. This flags exactly
+ * that case so re-verification can escalate it to the judge (claim-level
+ * grounding — Self-RAG ISSUP arXiv:2310.11511; Chain-of-Note arXiv:2311.09210).
+ * Citations are stripped first (a `[from 2026-…]` source is never an asserted
+ * value); month/day names are excluded. The call site is FAIL-OPEN, so a false
+ * flag only costs one judge pass that upholds a correct answer, never a refusal.
  */
-function answerAssertsUnsupportedNumber(answer: string, matches: readonly KnowledgeMatch[]): boolean {
-  const answerNumbers = [...lexicalTokens(answer.replace(/\[[^\]]*\]/gu, " "))].filter((token) => /^\d+$/u.test(token));
-  if (answerNumbers.length === 0) return false;
+function answerAssertsUnsupportedValue(answer: string, matches: readonly KnowledgeMatch[]): boolean {
+  const stripped = answer.replace(/\[[^\]]*\]/gu, " ");
   const evidence = unionContentTokens(matches);
-  return answerNumbers.some((number) => !evidence.has(number));
+  const numbers = [...lexicalTokens(stripped)].filter((token) => /^\d+$/u.test(token));
+  if (numbers.some((number) => !evidence.has(number))) {
+    return true;
+  }
+  const namedEntities = (stripped.match(/\b[A-Z][a-zA-Z]{2,}\b/gu) ?? [])
+    .map((word) => word.toLowerCase())
+    .filter((word) => !LEXICAL_STOPWORDS.has(word) && !VALUE_WORD_STOPLIST.has(word));
+  return namedEntities.some((entity) => !evidence.has(entity));
 }
 
 /**
@@ -603,11 +620,11 @@ function answerAssertsUnsupportedNumber(answer: string, matches: readonly Knowle
  * check).
  *
  * Claim-level value escalation: a `grounded` answer that still asserts a NUMBER
- * absent from the evidence (the wrong-value hole the lexical rubric is blind to)
- * also spends ONE judge pass — but FAIL-OPEN, since `base` already cleared every
- * deterministic criterion: a judge ERROR must not demote a passing answer, only
- * an explicit unsupported verdict does. A `grounded` answer whose numbers all
- * check out, and any `ungrounded` verdict, never call the judge.
+ * or a NAMED ENTITY absent from the evidence (the wrong-value hole the lexical
+ * rubric is blind to) also spends ONE judge pass — but FAIL-OPEN, since `base`
+ * already cleared every deterministic criterion: a judge ERROR must not demote a
+ * passing answer, only an explicit unsupported verdict does. A `grounded` answer
+ * whose values all check out, and any `ungrounded` verdict, never call the judge.
  */
 export async function verifyGroundingWithReverify(
   answer: string,
@@ -629,7 +646,7 @@ export async function verifyGroundingWithReverify(
       ? { ...base, reason: "weak retrieval upheld by re-verification", verdict: "grounded" }
       : { ...base, reason: "weak retrieval rejected by re-verification", verdict: "ungrounded" };
   }
-  if (base.verdict === "grounded" && answerAssertsUnsupportedNumber(answer, matches)) {
+  if (base.verdict === "grounded" && answerAssertsUnsupportedValue(answer, matches)) {
     let supported: boolean;
     try {
       supported = await reverify({ answer, evidence, query });

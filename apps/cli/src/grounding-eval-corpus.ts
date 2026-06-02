@@ -65,6 +65,7 @@ export const GROUNDING_EVAL_CORPUS: GroundingEvalCorpus = {
     // escalation catches the fabricated number. WITHOUT it these slip and
     // faithfulness drops below the floor — so this corpus now GUARDS that fix.
     { kind: "drift", query: "what MTU did I set for the office VPN?", answer: "You set the MTU to 9000 on the wg0 interface for the office VPN [from vpn-wireguard.md].", note: "wrong VALUE 9000 vs evidence 1380 — only the number is fabricated" },
-    { kind: "drift", query: "what is my monthly rent?", answer: "Your monthly rent is 1,500,000 KRW, due on the 1st [from lease.md].", note: "wrong VALUE 1,500,000 vs evidence 1,250,000" }
+    { kind: "drift", query: "what is my monthly rent?", answer: "Your monthly rent is 1,500,000 KRW, due on the 1st [from lease.md].", note: "wrong VALUE 1,500,000 vs evidence 1,250,000" },
+    { kind: "drift", query: "who is my landlord?", answer: "Your landlord is Mr. Lee [from lease.md].", note: "wrong NAMED ENTITY Lee vs evidence Park — only the name is fabricated" }
   ]
 };

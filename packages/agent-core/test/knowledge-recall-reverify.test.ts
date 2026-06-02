@@ -89,6 +89,25 @@ describe("verifyGroundingWithReverify — claim-level value escalation (the wron
     const out = await verifyGroundingWithReverify("Mina owns pricing [from notes/owner.md].", matches, "who owns pricing", never);
     expect(out.verdict).toBe("grounded");
   });
+
+  it("escalates a GROUNDED answer asserting a WRONG NAMED ENTITY and demotes it on an unsupported judge verdict", async () => {
+    const matches = [match("notes/lease.md", "Apartment lease: landlord is Mr. Park, rent due on the 1st.", 0.72)];
+    const out = await verifyGroundingWithReverify("Your landlord is Mr. Lee [from notes/lease.md].", matches, "who is my landlord", async () => false);
+    expect(out.verdict).toBe("ungrounded");
+    expect(out.reason).toContain("value the evidence does not support");
+  });
+
+  it("does NOT escalate a GROUNDED answer whose named entities all appear in the evidence", async () => {
+    const matches = [match("notes/lease.md", "Apartment lease: landlord is Mr. Park, rent due on the 1st.", 0.72)];
+    const out = await verifyGroundingWithReverify("Your landlord is Mr. Park [from notes/lease.md].", matches, "who is my landlord", never);
+    expect(out.verdict).toBe("grounded");
+  });
+
+  it("does NOT escalate on a month name in a correct date answer (month/day names are excluded)", async () => {
+    const matches = [match("notes/ins.md", "Home insurance renewal date 2026-09-14.", 0.72)];
+    const out = await verifyGroundingWithReverify("Your home insurance renewal date is in September [from notes/ins.md].", matches, "when is my home insurance renewal date", never);
+    expect(out.verdict).toBe("grounded");
+  });
 });
 
 describe("parseGroundingReverifyVerdict — deterministic YES/NO parse, fail-close", () => {
