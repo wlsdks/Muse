@@ -1,6 +1,33 @@
 import { describe, expect, it } from "vitest";
 
-import { citedSourcesIn, enforceAnswerCitations, normalizeContactCitations } from "../src/index.js";
+import { citedSourcesIn, enforceAnswerCitations, normalizeContactCitations, normalizeMemoryCitations } from "../src/index.js";
+
+describe("normalizeMemoryCitations — repair `[from <memory-key>]` (the model's note-verb mis-form, common in Korean)", () => {
+  const keys = ["car_license_plate", "allergy_penicillin"];
+
+  it("rewrites a [from <memory-key>] to [memory: <key>] (exact key match, separator-insensitive)", () => {
+    expect(normalizeMemoryCitations("번호판은 12가 3456 [from car_license_plate].", keys))
+      .toBe("번호판은 12가 3456 [memory: car_license_plate].");
+    expect(normalizeMemoryCitations("plate [from Car License Plate].", keys))
+      .toBe("plate [memory: Car License Plate].");
+  });
+
+  it("leaves a REAL note citation untouched (a note is never mistaken for a memory)", () => {
+    expect(normalizeMemoryCitations("wifi is hunter2 [from home.md].", keys)).toBe("wifi is hunter2 [from home.md].");
+    expect(normalizeMemoryCitations("see [from projects/vpn.md].", keys)).toBe("see [from projects/vpn.md].");
+  });
+
+  it("the rewritten form flows through the gate cleanly (no false strip on a real remembered fact)", () => {
+    const repaired = normalizeMemoryCitations("plate is 12가 3456 [from car_license_plate].", keys);
+    const gated = enforceAnswerCitations(repaired, { memories: ["car license plate: 12가 3456"] });
+    expect(gated.stripped).toEqual([]);
+    expect(gated.text).toContain("[memory: car_license_plate]");
+  });
+
+  it("is a no-op with no memory keys", () => {
+    expect(normalizeMemoryCitations("x [from car_license_plate].", [])).toBe("x [from car_license_plate].");
+  });
+});
 
 describe("citedSourcesIn", () => {
   it("extracts every [from <source>] token, trimmed, in order", () => {

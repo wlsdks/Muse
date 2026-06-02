@@ -450,6 +450,28 @@ export function normalizeContactCitations(
 }
 
 /**
+ * Rewrite a remembered-fact cited with the NOTE verb to the canonical
+ * `[memory: <key>]` form — the local model (especially in Korean, where the
+ * `[memory: …]` hint block isn't injected because the query doesn't lexically
+ * match the English fact key) tends to cite a fact it knows from the persona as
+ * `[from car_license_plate]`, which the exact-match note gate then false-strips.
+ * Only a `[from <X>]` whose `<X>` EXACTLY matches a known memory key (separator /
+ * case-insensitive) is rewritten; a real `[from note.md]` is left untouched, so a
+ * note citation is never mistaken for a memory.
+ */
+export function normalizeMemoryCitations(answer: string, memoryKeys: readonly string[]): string {
+  if (memoryKeys.length === 0) {
+    return answer;
+  }
+  const norm = (value: string): string => value.trim().toLowerCase().replace(/[\s_-]+/gu, " ");
+  const keys = new Set(memoryKeys.map(norm));
+  return answer.replace(
+    /\[from\s+([^\]]+?)\s*\]/giu,
+    (match: string, ref: string) => (keys.has(norm(ref)) ? `[memory: ${ref.trim()}]` : match)
+  );
+}
+
+/**
  * Output-side grounding gate for the recall WEDGE — the code-not-model half of
  * "shows its work". Strips ANY citation the answer makes — `[from <note>]`,
  * `[feed: <name>]`, `[task|event|reminder: <title>]` — whose target is NOT

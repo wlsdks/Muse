@@ -651,6 +651,24 @@ qwen3:8b and added to `eval:self-improving`.
   upholds GROUNDED; CROSS-LINGUAL wrong value 'dragon99-red' → UNGROUNDED) passing
   6/6 twice, the 4 same-language cases still 4/4 (no regression), + LIVE `muse ask`
   in Korean 5/5 clean and a Korean must-refuse still refuses. agent-core 1373 +
+  `pnpm lint` 0/0. (9938855d)
+
+- [x] **P38-17 A Korean memory recall cites `[memory: …]`, not a false `[from <key>]`.**
+  Probing 진안's core "knows you" flow: `muse remember "내 차 번호판은 12가 3456이야"` →
+  `muse ask "내 차 번호판 뭐야?"` answered correctly ("…12가 3456") but cited it
+  `[from car_license_plate]` (the NOTE verb + the memory KEY), which the exact-match
+  note gate then stripped + warned "Removed citation". Root: the Korean query doesn't
+  lexically match the ENGLISH fact key, so the `[memory: …]`-hint grounding block
+  isn't injected — the persona still gives the model the fact, so it falls back to
+  the note verb. Same class as the P38-10 contact fix, for memory: new
+  `normalizeMemoryCitations` rewrites a `[from <X>]` whose `<X>` EXACTLY matches a
+  known memory key (separator/case-insensitive) to `[memory: <X>]` BEFORE the gate;
+  a real `[from note.md]` is never touched (a note is never mistaken for a memory).
+  Proof: 4 new unit tests (rewrite on exact key match incl. spacing variant; leave a
+  real note alone; the rewritten form passes the gate clean; no-op with no keys) +
+  LIVE: `muse ask "내 차 번호판 뭐야?"` ×3 → ZERO "Removed citation" warning and the
+  "🧠 from what you told me: car_license_plate" receipt shows; a real WiFi note query
+  still cites `[from home.md]` (not rewritten). agent-core 1377 + cli 1755 +
   `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
