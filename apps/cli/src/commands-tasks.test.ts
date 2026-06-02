@@ -128,6 +128,17 @@ describe("muse tasks — API-unreachable falls back to the local store (local-fi
     expect(error).toBeUndefined();
     expect((await readTasks(file))[0]).toMatchObject({ status: "done" });
   });
+
+  it("complete: re-completing an ALREADY-done task PRESERVES the original completedAt (idempotent, no silent rewrite)", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-tasks-redo-")), "tasks.json");
+    process.env.MUSE_TASKS_FILE = file;
+    const originalCompletedAt = "2026-01-15T10:00:00.000Z";
+    await writeTasks(file, [{ completedAt: originalCompletedAt, createdAt: "2026-01-01T00:00:00.000Z", id: "task_done9", status: "done", title: "shipped" }]);
+    const error = await runWith(async () => ({}), ["complete", "task_done9", "--local"]);
+    expect(error).toBeUndefined();
+    // the original "when it was done" is intact, NOT rewritten to now
+    expect((await readTasks(file))[0]?.completedAt).toBe(originalCompletedAt);
+  });
 });
 
 interface ApiCall {

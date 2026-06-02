@@ -29,6 +29,7 @@ import { isApiUnreachable, withApiLocalFallback } from "./program-helpers.js";
 
 import { closestCommandName } from "./closest-command.js";
 import {
+  formatLocalDateTime,
   formatProvidersList,
   formatTaskAdded,
   formatTaskCompleted,
@@ -246,12 +247,20 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .option("--local", "Update the local tasks file instead of calling the API")
     .option("--json", "Print the raw response instead of a short confirmation")
     .action(async (id: string, options: SharedOptions, command) => {
+      let alreadyDone = false;
       const completeLocal = async (): Promise<Record<string, unknown>> => {
         const file = localTasksFile();
         const all = await readTasks(file);
         const resolved = resolveLocalTaskId(id, all);
         const index = all.findIndex((task) => task.id === resolved);
-        const persisted: PersistedTask = { ...all[index]!, completedAt: new Date().toISOString(), status: "done" };
+        const existing = all[index]!;
+        // Idempotent: a task already done keeps its ORIGINAL completedAt — re-
+        // completing must not silently rewrite "when it was done" to now.
+        if (existing.status === "done") {
+          alreadyDone = true;
+          return serializeTask(existing);
+        }
+        const persisted: PersistedTask = { ...existing, completedAt: new Date().toISOString(), status: "done" };
         const next = [...all];
         next[index] = persisted;
         await writeTasks(file, next);
@@ -267,6 +276,11 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       const completed = await taskLocalFallback(io, Boolean(options.local), completeLocal, completeApi);
       if (options.json) {
         helpers.writeOutput(io, completed);
+        return;
+      }
+      if (alreadyDone) {
+        const when = String(completed.completedAt ?? "");
+        io.stdout(`Task [${String(completed.id).slice(0, 12)}] ${String(completed.title)} was already done${when ? ` (completed ${formatLocalDateTime(when)})` : ""} — no change.\n`);
         return;
       }
       io.stdout(formatTaskCompleted(completed as unknown as Parameters<typeof formatTaskCompleted>[0]));

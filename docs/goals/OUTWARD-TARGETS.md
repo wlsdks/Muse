@@ -372,7 +372,18 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   have meant it). Proof: 3 new tests (past → warns + still Added; future → no
   warn; `--json` → no prose warning) + LIVE: past ISO → the PAST heads-up,
   `tomorrow at 9am` → clean. cli 165 files / 1750 tests + `pnpm lint` 0/0.
-  (this commit)
+  (49417141)
+
+- [x] **P40-7 `muse tasks complete` is idempotent — re-completing keeps the original
+  completion time.** Probing the actuator: `muse tasks complete <id>` on an
+  ALREADY-done task SILENTLY rewrote its `completedAt` to now (losing "when it was
+  actually done") and misleadingly reported "Completed …". Now a done task keeps its
+  original `completedAt` (no write) and reports "… was already done (completed
+  <date>) — no change." The open→done path is unchanged. Proof: 1 new test (re-
+  completing a done task preserves the original `completedAt`, not rewritten to now)
+  + the existing 18 tasks tests + LIVE (already-done → "was already done (completed
+  2026-01-15 …) — no change" with the timestamp intact; an open task → normal
+  "Completed"). cli 165 files / 1751 tests + `pnpm lint` 0/0. (this commit)
 
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
