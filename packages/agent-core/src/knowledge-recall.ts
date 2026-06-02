@@ -75,10 +75,22 @@ const LEXICAL_STOPWORDS = new Set([
 ]);
 
 export function lexicalTokens(text: string): Set<string> {
+  // Split on any non-(Unicode letter / number) so NON-ASCII scripts tokenise too
+  // — the old `[^a-z0-9]` dropped EVERY Korean/CJK/Cyrillic word to nothing, which
+  // made `resolvesByOverlap` false-strip a `[task: 분기 보고서]` citation (its tokens
+  // were empty) and zeroed cross-lingual coverage. ASCII English is unchanged
+  // (`\p{L}`/`\p{N}` cover a–z and 0–9). A single CJK syllable IS a meaningful word
+  // (unlike a lone Latin letter), so CJK tokens are kept at length ≥ 1; Latin/digit
+  // tokens still need length ≥ 2 to drop stray letters.
   return new Set(
     text.toLowerCase()
-      .split(/[^a-z0-9]+/iu)
-      .filter((token) => token.length >= 2 && !LEXICAL_STOPWORDS.has(token))
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => {
+        if (token.length === 0 || LEXICAL_STOPWORDS.has(token)) {
+          return false;
+        }
+        return token.length >= 2 || /\p{Script=Han}|\p{Script=Hangul}|\p{Script=Hiragana}|\p{Script=Katakana}/u.test(token);
+      })
   );
 }
 
@@ -732,6 +744,25 @@ export async function verifyGroundingWithReverify(
     return supported
       ? { ...base, reason: "weak retrieval upheld by re-verification", verdict: "grounded" }
       : { ...base, reason: "weak retrieval rejected by re-verification", verdict: "ungrounded" };
+  }
+  // Coverage-ONLY failure: retrieval succeeded (confidence > 0) and every citation
+  // is valid (no invalid source), but the answer's lexical token-coverage is below
+  // the floor. That is exactly the band the token proxy gets WRONG — a CROSS-LINGUAL
+  // answer (Korean prose over English evidence) or a terse structured fact scores low
+  // coverage yet states a value the evidence DOES contain. Defer to the SAME judge as
+  // the weak band rather than hard-failing; a real drift / wrong value is still
+  // rejected (it stays "NO" in any language). Fail-closed to the original ungrounded
+  // verdict if there is no judge or it errors.
+  if (base.verdict === "ungrounded" && base.rubric.confidence > 0 && base.invalidCitations.length === 0) {
+    let supported: boolean;
+    try {
+      supported = await reverify({ answer, evidence, query });
+    } catch {
+      return base;
+    }
+    return supported
+      ? { ...base, reason: "low coverage upheld by re-verification", verdict: "grounded" }
+      : { ...base, reason: "low coverage rejected by re-verification", verdict: "ungrounded" };
   }
   if (base.verdict === "grounded" && answerAssertsUnsupportedValue(answer, matches)) {
     let supported: boolean;

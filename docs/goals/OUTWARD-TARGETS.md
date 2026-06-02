@@ -669,7 +669,35 @@ qwen3:8b and added to `eval:self-improving`.
   LIVE: `muse ask "내 차 번호판 뭐야?"` ×3 → ZERO "Removed citation" warning and the
   "🧠 from what you told me: car_license_plate" receipt shows; a real WiFi note query
   still cites `[from home.md]` (not rewritten). agent-core 1377 + cli 1755 +
-  `pnpm lint` 0/0. (this commit)
+  `pnpm lint` 0/0. (7a77e50a)
+
+- [x] **P38-18 A Korean task/reminder/event recall is no longer false-stripped —
+  the lexical gate tokenizes Unicode, and a coverage-only miss routes to the judge.**
+  Probing 진안's Korean actuation→recall loop: `muse remind add … "치과 예약 가기"` +
+  `muse tasks add "분기 보고서 작성하기"` then `muse ask "내가 해야 할 일이 뭐가 있어?"`
+  answered correctly and cited `[task: 분기 보고서 작성하기]` / `[reminder: 치과 예약 가기]`
+  (the EXACT Korean titles) — yet the citation gate STRIPPED them ("Removed 2
+  citations") and the verdict false-flagged. Root: `lexicalTokens` (the overlap basis
+  for the resolvesByOverlap citation classes — tasks/reminders/events/sessions/…)
+  split on `/[^a-z0-9]+/` (ASCII only), so "분기 보고서 작성하기" tokenized to `[]` →
+  zero overlap → a valid Korean citation looked unresolvable. Two coordinated fixes in
+  `packages/agent-core/src/knowledge-recall.ts`: (1) `lexicalTokens` now splits on
+  Unicode `/[^\p{L}\p{N}]+/u` and keeps single-character CJK tokens (which carry
+  meaning) while still dropping 1-char Latin — English tokenization is unchanged;
+  (2) because Unicode coverage of a cross-lingual answer can dip below the coverage
+  floor (Korean prose over English evidence), `verifyGroundingWithReverify` now
+  ESCALATES a confident, validly-cited coverage-only failure to the re-verification
+  judge instead of hard-failing it — the judge stays in the loop, so a WRONG value is
+  still rejected (fail-close on a judge error). Proof: 6 new agent-core unit tests
+  (lexicalTokens tokenizes "분기 보고서 작성하기" + keeps single-char CJK / drops 1-char
+  Latin; coverage-escalation upholds a correct cross-lingual answer, rejects a wrong
+  value, fail-closes on judge error, and does NOT escalate an INVALID-citation miss) +
+  the verify-claim-grounding battery still 6/6 on two consecutive runs (the cross-
+  lingual correct/wrong cases route through the new branch) + LIVE on qwen3:8b: the
+  Korean task/reminder recall above is now clean (no "Removed citation", no unverified
+  warning), the cross-lingual WiFi recall (P38-16) is unregressed, and a Korean
+  absent-fact ("내 여권 번호 뭐야?") still refuses with no fabrication. agent-core
+  112 files / 1383 tests + cli 165 files / 1755 tests + `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

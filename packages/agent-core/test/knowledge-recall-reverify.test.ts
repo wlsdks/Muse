@@ -63,6 +63,44 @@ describe("verifyGroundingWithReverify — test-time re-verification of the weak 
   });
 });
 
+describe("verifyGroundingWithReverify — coverage-only failure escalation (cross-lingual, fail-close)", () => {
+  // A confident retrieval with a VALID citation but low lexical coverage — the
+  // shape a correct cross-lingual answer takes (Korean prose over English
+  // evidence). The deterministic core fails it on coverage; the judge decides.
+  const matches = [match("notes/net.md", "The office WiFi password is hunter2-blue.", 0.72)];
+  const correctKr = "당신의 와이파이 비밀번호는 hunter2-blue입니다 [from notes/net.md].";
+  const wrongKr = "당신의 와이파이 비밀번호는 dragon99-red입니다 [from notes/net.md].";
+  const krQuery = "내 와이파이 비밀번호";
+
+  it("escalates the coverage failure and upholds a correct cross-lingual answer to GROUNDED", async () => {
+    const out = await verifyGroundingWithReverify(correctKr, matches, krQuery, async () => true);
+    expect(out.verdict).toBe("grounded");
+    expect(out.reason).toContain("low coverage");
+  });
+
+  it("escalates but a WRONG cross-lingual value stays UNGROUNDED when the judge rejects it", async () => {
+    const out = await verifyGroundingWithReverify(wrongKr, matches, krQuery, async () => false);
+    expect(out.verdict).toBe("ungrounded");
+  });
+
+  it("fail-closes to the original ungrounded verdict when the judge errors (no silent upgrade)", async () => {
+    const out = await verifyGroundingWithReverify(correctKr, matches, krQuery, async () => {
+      throw new Error("judge unreachable");
+    });
+    expect(out.verdict).toBe("ungrounded");
+  });
+
+  it("does NOT escalate a coverage failure whose citation is INVALID (cites an unretrieved source)", async () => {
+    const out = await verifyGroundingWithReverify(
+      "당신의 와이파이 비밀번호는 hunter2-blue입니다 [from notes/other.md].",
+      matches,
+      krQuery,
+      never
+    );
+    expect(out.verdict).toBe("ungrounded");
+  });
+});
+
 describe("verifyGroundingWithReverify — claim-level value escalation (the wrong-value hole, fail-OPEN)", () => {
   // Confident + high-coverage, every citation valid: the deterministic rubric
   // returns `grounded` and never sees that "9000" contradicts the evidence's

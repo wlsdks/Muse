@@ -26,6 +26,14 @@ describe("lexicalTokens", () => {
   it("returns an empty set when everything is a stopword or too short", () => {
     expect([...lexicalTokens("a I the is at on of")]).toEqual([]);
   });
+
+  it("tokenizes Korean/CJK so a Korean task or reminder title overlaps (no false strip)", () => {
+    expect([...lexicalTokens("분기 보고서 작성하기")].sort()).toEqual(["보고서", "분기", "작성하기"]);
+  });
+
+  it("keeps single-character CJK tokens (they carry meaning) but still drops 1-char Latin", () => {
+    expect([...lexicalTokens("차 번호판 x y")].sort()).toEqual(["번호판", "차"]);
+  });
 });
 
 describe("lexicalOverlap", () => {
