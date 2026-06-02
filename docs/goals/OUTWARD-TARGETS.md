@@ -245,7 +245,7 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   offsets; KO == EN; time-of-day; weekday unbroken; non-period rejected) + a LIVE
   `muse ask "remind me next month to renew my passport" --with-tools` → "I've set
   a reminder … for July 3, 2026" (was an error). mcp 1310 + `pnpm lint` 0/0.
-  (this commit)
+  (5def3510)
 
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
@@ -480,6 +480,22 @@ tool-calling.md).** Edge hygiene meets felt responsiveness.
   (now just "(tools used: muse.reminders.add)" + the confirmation, no banner / no
   warning) while `muse ask "what is my rent?"` still shows "(grounded on … lease.md)"
   + cites "1,250,000 KRW [from lease.md]". cli 1710 + `pnpm lint` 0/0. (316ec2d7)
+
+- [x] **P39-8 Honesty backstop: no false action promise even in a MIXED request.**
+  P39-6 short-circuits a PURE imperative ("remind me to…"), but a MIXED "what is my
+  rent AND remind me to pay it tomorrow" (starts with a question) flowed through —
+  Muse answered the rent (cited) then added "I will remind you to pay it tomorrow",
+  a false promise on the no-tools path. A new `answerPromisesAction` (agent-core)
+  keyed off the ANSWER (not the query) — it matches an action-TOOL claim ("I'll
+  remind you / set a reminder / add a task / schedule / email", "I've set/added/
+  scheduled") but not conversational "I'll explain" or a recall "you have a
+  reminder" — so on the chat-only path Muse appends an honest correction: "(Heads
+  up: I can't actually set reminders, tasks, or events on this path — re-run with
+  `--with-tools` to do that.)". --with-tools is untouched (the claim is TRUE there).
+  Proof: detector unit tests (claims match incl. mixed; cited answer / "I'll
+  explain" / "you have a reminder" don't) + a LIVE mixed `muse ask "what is my rent
+  and remind me to pay it tomorrow"` → the rent answer THEN the honest correction.
+  agent-core 1357 / cli 1710 + `pnpm lint` 0/0. (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections

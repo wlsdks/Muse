@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt } from "../src/index.js";
+import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt } from "../src/index.js";
 
 describe("classifyCasualPrompt — pure social prompts only (precision-first)", () => {
   it("classifies greetings (EN + KO), tolerating trailing punctuation and repeats", () => {
@@ -95,6 +95,32 @@ describe("classifyActionRequest — imperative DO-something requests (needs tool
       "what is my rent"
     ]) {
       expect(classifyActionRequest(q)).toBe(false);
+    }
+  });
+});
+
+describe("answerPromisesAction — catches a false 'I'll remind you' in the ANSWER (incl. mixed requests)", () => {
+  it("matches an answer that claims it set/will set a tool action", () => {
+    for (const a of [
+      "Your rent is 1,250,000 KRW. I will remind you to pay it tomorrow.",
+      "I'll set a reminder for the standup.",
+      "I've set a reminder to renew the passport.",
+      "Sure — I'll add a task to review the deck.",
+      "I have scheduled the lunch.",
+      "I'm going to email Sarah the notes."
+    ]) {
+      expect(answerPromisesAction(a)).toBe(true);
+    }
+  });
+
+  it("does NOT match a plain cited answer or a conversational 'I'll explain'", () => {
+    for (const a of [
+      "Your rent is 1,250,000 KRW [from lease.md].",
+      "I'll explain how WireGuard MTU works.",
+      "I'm not sure — that isn't in your notes.",
+      "You have a reminder to pay rent tomorrow."
+    ]) {
+      expect(answerPromisesAction(a)).toBe(false);
     }
   });
 });

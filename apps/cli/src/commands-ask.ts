@@ -29,7 +29,7 @@ import { isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, parseGroundingReverifyVerdict, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
-import { classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
+import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -1976,6 +1976,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // reintroduce the spurious-citation-on-a-refusal confusion P34-11 fixed).
       if (!options.json && shouldWarmClose(collectedAnswer, noteFileCount)) {
         io.stderr(`\n${WARM_REFUSAL_CLOSE}\n`);
+      }
+
+      // Honesty backstop: the model claimed an action ("I'll remind you…") on the
+      // chat-only path, where nothing was actually done — correct it. Catches the
+      // MIXED "what's my rent AND remind me to pay it tomorrow" the imperative-
+      // anchored classifyActionRequest misses. (--with-tools really acts, so the
+      // claim is TRUE there — never correct it on that path.)
+      if (!options.json && !options.withTools && answerPromisesAction(collectedAnswer)) {
+        io.stderr("\n(Heads up: I can't actually set reminders, tasks, or events on this path — re-run with `--with-tools` to do that.)\n");
       }
 
       // S6 "I learned this about you" (B2): when a learned preference was both

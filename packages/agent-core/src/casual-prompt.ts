@@ -101,6 +101,21 @@ export function classifyActionRequest(query: string): boolean {
   return ACTION_REQUEST_RE.test(q);
 }
 
+// The ANSWER claims it performed (or will perform) a tool action — "I'll remind
+// you…", "I've set a reminder", "I'll add a task". On the chat-only path nothing
+// was actually done, so this is a FALSE PROMISE. Keyed off the answer (not the
+// query) so it ALSO catches a MIXED "what's my rent AND remind me to pay it
+// tomorrow" that classifyActionRequest (anchored at the start) misses. Anchored
+// on the action-TOOL verbs (remind/reminder/task/event/schedule/book/email), so
+// conversational "I'll add it to your notes" / "I'll explain" don't match.
+const ACTION_PROMISE_RE =
+  /\bi(?:'ll| will|'m going to| am going to)\s+(remind\s+you|set\s+(up\s+)?(an?\s+)?reminder|schedule\b|book\b|email\s+\w|send\s+\w+\s+(an?\s+)?(email|message|text)|add\s+(an?\s+)?(task|event|reminder|to-?do)|create\s+(an?\s+)?(task|event|reminder)|put\s+[^.]*\bon\b[^.]*\bcalendar)|\bi(?:'ve| have)\s+(set\s+(up\s+)?(an?\s+)?reminder|added\s+(an?\s+)?(task|event|reminder)|scheduled\b|booked\b|emailed\b|created\s+(an?\s+)?(task|event|reminder))/iu;
+
+/** True when the answer CLAIMS it set/sent/scheduled a tool action — a false promise on a no-tools path. */
+export function answerPromisesAction(answer: string): boolean {
+  return ACTION_PROMISE_RE.test(answer);
+}
+
 /** True when the prompt asks for a whole-corpus overview/listing, not a specific recall. */
 export function classifyCorpusOverview(query: string): boolean {
   const q = query.trim().toLowerCase();
