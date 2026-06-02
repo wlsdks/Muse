@@ -1709,10 +1709,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // and `| jq` style pipelines get a clean stdout. Same convention
       // as the auto-reindex banner above. The blank line separating
       // header from answer body stays out of stdout entirely.
-      if (groundedParts.length > 0) {
-        io.stderr(`(grounded on ${groundedParts.join("; ")})\n`);
-      } else {
-        io.stderr("(no matching notes, tasks, events, or reminders — answering from persona + general knowledge)\n");
+      // Suppressed for an ACTION request (`--with-tools "set a reminder…"`): the
+      // user wants Muse to DO something, so a "grounded on lease.md ⚠ LOW
+      // confidence" recall banner on the action confirmation is just noise.
+      if (!classifyActionRequest(query)) {
+        if (groundedParts.length > 0) {
+          io.stderr(`(grounded on ${groundedParts.join("; ")})\n`);
+        } else {
+          io.stderr("(no matching notes, tasks, events, or reminders — answering from persona + general knowledge)\n");
+        }
       }
 
       // --notes-only hard-disables native web_search (the adapters
@@ -1853,7 +1858,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         tasks: openTasks.map((t) => t.title)
       });
       collectedAnswer = citationGate.text;
-      if (!options.json && citationGate.stripped.length > 0) {
+      // The stripping always runs; the WARNING is suppressed for an action
+      // request, where the model citing the tool name (`muse.reminders.add`) as a
+      // "source" is a harmless quirk on a successful action, not a fabrication
+      // the user relies on. (The text is still cleaned — the spurious token never
+      // reaches them.)
+      if (!options.json && citationGate.stripped.length > 0 && !classifyActionRequest(query)) {
         io.stderr(`\n⚠️  Removed ${citationGate.stripped.length.toString()} citation(s) to source(s) you don't have (${citationGate.stripped.join(", ")}) — treat those claims as unverified.\n`);
       }
       // Refusal guard: a refusal asserts no grounded fact, so any citation the

@@ -446,7 +446,21 @@ tool-calling.md).** Edge hygiene meets felt responsiveness.
   ask-first, never claims it acted) + a LIVE before/after (default → the honest
   guide, no false promise; `--with-tools` → "I've set a reminder…"; "what
   reminders do I have?" → still recalls). agent-core 1355 / cli 1710 +
-  `pnpm lint` 0/0. (this commit)
+  `pnpm lint` 0/0. (76a298d5)
+
+- [x] **P39-7 A `--with-tools` ACTION confirmation reads clean — no recall noise.**
+  `muse ask "set a reminder to submit taxes friday" --with-tools` set the reminder
+  but led with "(grounded on 1 note chunk(s) — lease.md ⚠ LOW confidence)" — a
+  recall banner about an unrelated note — and warned "Removed 1 citation … (muse.reminders.add)
+  — treat as unverified" when the model cited the tool name. Both are noise on a
+  successful ACTION (the user wanted Muse to DO something, not recall). Now, when
+  `classifyActionRequest` matches, the recall grounding banner is suppressed and the
+  stripped-citation WARNING is silenced (the text is still cleaned — the spurious
+  tool-name token never reaches the user). RECALL is untouched (still banners +
+  cites). Proof: a LIVE before/after `muse ask "add a reminder …" --with-tools`
+  (now just "(tools used: muse.reminders.add)" + the confirmation, no banner / no
+  warning) while `muse ask "what is my rent?"` still shows "(grounded on … lease.md)"
+  + cites "1,250,000 KRW [from lease.md]". cli 1710 + `pnpm lint` 0/0. (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections
