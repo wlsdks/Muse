@@ -15,6 +15,8 @@
 
 import {
   classifyRetrievalConfidence,
+  lexicalOverlap,
+  lexicalTokens,
   rankKnowledgeChunks,
   type KnowledgeChunk,
   type KnowledgeMatch,
@@ -34,14 +36,47 @@ export interface ProactiveRecallDecision {
 const DEFAULT_MAX_CHARS = 160;
 
 /**
+ * Pick the excerpt of a matched chunk to QUOTE in the proactive finding. The
+ * chunk matched the item as a whole (embedding), but its RELEVANT line can sit
+ * anywhere — so quoting the opening shows a non-sequitur ("Project kickoff…")
+ * when the reason it surfaced is a sentence further down ("Mom's birthday is
+ * June 12th"). Centre the snippet on the sentence with the most query overlap so
+ * the unasked nudge shows WHY it's related. No lexical signal (purely semantic
+ * match) or a short chunk ⇒ fall back to the opening — never worse than before.
+ */
+function selectRelevantExcerpt(text: string, queryTokens: ReadonlySet<string>, maxChars: number): string {
+  const collapsed = text.replace(/\s+/gu, " ").trim();
+  if (collapsed.length <= maxChars) {
+    return collapsed;
+  }
+  const segments = collapsed.split(/(?<=[.!?])\s+/u).filter((s) => s.trim().length > 0);
+  if (queryTokens.size > 0 && segments.length > 1) {
+    let best = "";
+    let bestScore = 0;
+    for (const segment of segments) {
+      const score = lexicalOverlap(queryTokens as Set<string>, segment);
+      if (score > bestScore) {
+        bestScore = score;
+        best = segment.trim();
+      }
+    }
+    if (bestScore > 0) {
+      return best.length > maxChars ? `${best.slice(0, maxChars)}…` : best;
+    }
+  }
+  return `${collapsed.slice(0, maxChars)}…`;
+}
+
+/**
  * Pure gate: given ranked matches, decide whether to surface a proactive
  * finding. CONFIDENT → a cited snippet from the top match; AMBIGUOUS / NONE →
  * stay silent. The snippet quotes the top match's `[source]` so the unasked
- * notice is as verifiable as a `muse ask` answer.
+ * notice is as verifiable as a `muse ask` answer. Pass `query` (the triggering
+ * item's title) so the snippet is the RELEVANT sentence, not the chunk opening.
  */
 export function decideProactiveRecall(
   matches: readonly KnowledgeMatch[],
-  options?: { readonly confidentAt?: number; readonly maxChars?: number }
+  options?: { readonly confidentAt?: number; readonly maxChars?: number; readonly query?: string }
 ): ProactiveRecallDecision {
   const confidence = classifyRetrievalConfidence(matches, options);
   if (confidence !== "confident") {
@@ -53,8 +88,8 @@ export function decideProactiveRecall(
   }
   const top = [...matches].sort((a, b) => (b.cosine ?? b.score) - (a.cosine ?? a.score))[0]!;
   const maxChars = options?.maxChars && options.maxChars > 0 ? Math.trunc(options.maxChars) : DEFAULT_MAX_CHARS;
-  const collapsed = top.text.replace(/\s+/gu, " ").trim();
-  const snippet = collapsed.length > maxChars ? `${collapsed.slice(0, maxChars)}…` : collapsed;
+  const queryTokens = options?.query ? lexicalTokens(options.query) : new Set<string>();
+  const snippet = selectRelevantExcerpt(top.text, queryTokens, maxChars);
   return {
     confidence,
     finding: `📎 Related in your notes — [${top.source}] ${snippet}`,
@@ -104,6 +139,7 @@ export function createConfidenceGatedInvestigator(
       return undefined;
     }
     const decision = decideProactiveRecall(matches, {
+      query,
       ...(deps.confidentAt !== undefined ? { confidentAt: deps.confidentAt } : {}),
       ...(deps.maxChars !== undefined ? { maxChars: deps.maxChars } : {})
     });

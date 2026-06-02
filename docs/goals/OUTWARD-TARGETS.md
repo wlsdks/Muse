@@ -447,7 +447,25 @@ qwen3:8b and added to `eval:self-improving`.
   (claim-grounding 4/4). Proof: LIVE `muse ask "what's on my calendar this week?"`
   ×3 → all clean (ZERO warnings) and the day is now correct ("Friday, June 5, 2026");
   tasks/reminders stay clean; negative "bank account number" still refuses;
-  `verify-claim-grounding` 4/4. cli 1710 + `pnpm lint` 0/0. (this commit)
+  `verify-claim-grounding` 4/4. cli 1710 + `pnpm lint` 0/0. (44c87f3a)
+
+- [x] **P38-13 Proactive surface "shows its work" PRECISELY — the nudge quotes the
+  RELEVANT line, not the chunk opening.** Hardening the one grounded surface I
+  hadn't touched (the proactive `📎 Related in your notes` finding). It quoted the
+  matched chunk's OPENING (first 160 chars), but a chunk matches the triggering
+  item as a whole — so when the relevant sentence sits later, the nudge surfaced a
+  non-sequitur and truncated the actual reason away (probed: a 308-char journal
+  chunk for item "Mom birthday" showed "Project kickoff… budget… timeline…" and CUT
+  OFF "Mom's birthday is June 12th"). `decideProactiveRecall` now takes the item
+  title as `query` and centres the snippet on the sentence with the most query
+  overlap (`selectRelevantExcerpt`); no lexical signal (purely semantic match) or a
+  short chunk ⇒ unchanged opening fallback, so it's never worse than before. The
+  proactive gate's confidence decision is untouched (precision of the QUOTE, not
+  of whether to surface). Proof: 4 new unit tests (relevant-line centred /
+  no-overlap falls back to opening / short chunk quoted whole / over-long chosen
+  sentence truncated) + the LIVE `verify-proactive-recall-gate.mjs` 4/4 (in-corpus
+  surfaces a cited relevant finding, off-topic stays silent). agent-core 1370 +
+  `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

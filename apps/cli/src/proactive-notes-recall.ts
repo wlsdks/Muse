@@ -81,7 +81,10 @@ export function createIndexedProactiveInvestigator(
       return undefined;
     }
     const matches = proactiveMatchesFromIndex(queryVec, chunks, options.topK ?? 3);
-    const decision = decideProactiveRecall(matches, options.confidentAt !== undefined ? { confidentAt: options.confidentAt } : {});
+    const decision = decideProactiveRecall(matches, {
+      query,
+      ...(options.confidentAt !== undefined ? { confidentAt: options.confidentAt } : {})
+    });
     return decision.surface ? decision.finding : undefined;
   };
 }

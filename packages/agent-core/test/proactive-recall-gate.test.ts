@@ -59,6 +59,35 @@ describe("decideProactiveRecall — the confidence gate that earns proactivity (
     expect(decideProactiveRecall([noCosine]).surface).toBe(true);
   });
 
+  it("centres the snippet on the line that matches the query, not the chunk OPENING", () => {
+    // A long chunk matched the item as a whole, but the relevant line sits at the
+    // end — quoting the opening would surface a non-sequitur ("Project kickoff…").
+    const chunk = "Project kickoff went well and the team aligned on goals. Budget was approved at 40k after finance review. The summer timeline is tight but doable. By the way, Mom's birthday is on June 12th and she loves orchids.";
+    const d = decideProactiveRecall([match("journal.md", chunk, 0.78)], { maxChars: 80, query: "Mom birthday" });
+    expect(d.finding).toContain("Mom's birthday is on June 12th");
+    expect(d.finding).not.toContain("Project kickoff");
+  });
+
+  it("falls back to the OPENING when the query has no lexical overlap (purely semantic match)", () => {
+    const chunk = "Project kickoff went well and the team aligned on goals. Budget was approved at 40k after finance review. The summer timeline is tight but doable here.";
+    const d = decideProactiveRecall([match("journal.md", chunk, 0.78)], { maxChars: 40, query: "xyzzy nonsense" });
+    expect(d.finding).toBe("📎 Related in your notes — [journal.md] Project kickoff went well and the team a…");
+  });
+
+  it("a short chunk is quoted whole regardless of query (no spurious sentence-splitting)", () => {
+    const d = decideProactiveRecall([match("n.md", "Mom loves orchids.", 0.7)], { maxChars: 160, query: "Mom birthday" });
+    expect(d.finding).toBe("📎 Related in your notes — [n.md] Mom loves orchids.");
+  });
+
+  it("truncates the chosen relevant sentence when it alone exceeds maxChars", () => {
+    const chunk = "An opening sentence with no relevance at all to the topic here. " +
+      "The dentist cleaning appointment is confirmed for next Tuesday at the downtown clinic on Main Street near the park.";
+    const d = decideProactiveRecall([match("h.md", chunk, 0.7)], { maxChars: 40, query: "dentist cleaning appointment" });
+    expect(d.finding).toContain("The dentist cleaning appointment");
+    expect(d.finding).toContain("…");
+    expect(d.finding).not.toContain("opening sentence");
+  });
+
   it("collapses whitespace and truncates the snippet to maxChars with an ellipsis", () => {
     const d = decideProactiveRecall([match("n.md", "alpha   beta\n\n\tgamma delta epsilon", 0.7)], { maxChars: 10 });
     // whitespace collapsed first, then sliced to 10 chars + …
