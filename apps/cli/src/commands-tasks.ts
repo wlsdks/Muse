@@ -25,7 +25,7 @@ import {
 } from "@muse/mcp";
 import type { Command } from "commander";
 
-import { isApiUnreachable } from "./program-helpers.js";
+import { isApiUnreachable, withApiLocalFallback } from "./program-helpers.js";
 
 import { closestCommandName } from "./closest-command.js";
 import {
@@ -76,6 +76,13 @@ interface SharedOptions {
 function localTasksFile(): string {
   return resolveTasksFile(process.env as Record<string, string | undefined>);
 }
+
+const taskLocalFallback = <T>(
+  io: ProgramIO,
+  useLocal: boolean,
+  local: () => Promise<T>,
+  api: () => Promise<T>
+): Promise<T> => withApiLocalFallback(io, useLocal, local, api, "tasks");
 
 export function registerTasksCommands(program: Command, io: ProgramIO, helpers: TasksCommandHelpers): void {
   const tasks = program.command("tasks").description("Personal todo list");
@@ -195,8 +202,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         resolvedDueAt = parsed;
       }
 
-      let created: Record<string, unknown>;
-      if (options.local) {
+      const addLocal = async (): Promise<Record<string, unknown>> => {
         const file = localTasksFile();
         const persisted: PersistedTask = {
           createdAt: new Date().toISOString(),
@@ -210,8 +216,9 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         };
         const existing = await readTasks(file);
         await writeTasks(file, [...existing, persisted]);
-        created = serializeTask(persisted);
-      } else {
+        return serializeTask(persisted);
+      };
+      const addApi = async (): Promise<Record<string, unknown>> => {
         const body: Record<string, unknown> = { title };
         if (options.notes && options.notes.length > 0) {
           body.notes = options.notes;
@@ -222,8 +229,9 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         if (options.due && options.due.trim().length > 0) {
           body.dueAt = options.due.trim();
         }
-        created = (await helpers.apiRequest(io, command, "/api/tasks", body, "POST")) as Record<string, unknown>;
-      }
+        return (await helpers.apiRequest(io, command, "/api/tasks", body, "POST")) as Record<string, unknown>;
+      };
+      const created = await taskLocalFallback(io, Boolean(options.local), addLocal, addApi);
       if (options.json) {
         helpers.writeOutput(io, created);
         return;
@@ -238,8 +246,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .option("--local", "Update the local tasks file instead of calling the API")
     .option("--json", "Print the raw response instead of a short confirmation")
     .action(async (id: string, options: SharedOptions, command) => {
-      let completed: Record<string, unknown>;
-      if (options.local) {
+      const completeLocal = async (): Promise<Record<string, unknown>> => {
         const file = localTasksFile();
         const all = await readTasks(file);
         const resolved = resolveLocalTaskId(id, all);
@@ -248,16 +255,16 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         const next = [...all];
         next[index] = persisted;
         await writeTasks(file, next);
-        completed = serializeTask(persisted);
-      } else {
-        completed = (await helpers.apiRequest(
-          io,
-          command,
-          `/api/tasks/${encodeURIComponent(id)}/complete`,
-          {},
-          "POST"
-        )) as Record<string, unknown>;
-      }
+        return serializeTask(persisted);
+      };
+      const completeApi = async (): Promise<Record<string, unknown>> => (await helpers.apiRequest(
+        io,
+        command,
+        `/api/tasks/${encodeURIComponent(id)}/complete`,
+        {},
+        "POST"
+      )) as Record<string, unknown>;
+      const completed = await taskLocalFallback(io, Boolean(options.local), completeLocal, completeApi);
       if (options.json) {
         helpers.writeOutput(io, completed);
         return;
@@ -327,16 +334,13 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         return;
       }
 
-      let updated: Record<string, unknown>;
-      if (options.local) {
+      const editLocal = async (): Promise<Record<string, unknown>> => {
         const file = localTasksFile();
         const all = await readTasks(file);
         const resolved = resolveLocalTaskId(id, all);
         const index = all.findIndex((task) => task.id === resolved);
         if (index === -1) {
-          io.stderr(`Task ${id} not found\n`);
-          process.exitCode = 1;
-          return;
+          throw new Error(`Task ${id} not found`);
         }
         const existing = all[index]!;
         const patched: PersistedTask = {
@@ -361,16 +365,16 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         const next = [...all];
         next[index] = cleared;
         await writeTasks(file, next);
-        updated = serializeTask(cleared);
-      } else {
-        updated = (await helpers.apiRequest(
-          io,
-          command,
-          `/api/tasks/${encodeURIComponent(id)}`,
-          updates,
-          "PATCH"
-        )) as Record<string, unknown>;
-      }
+        return serializeTask(cleared);
+      };
+      const editApi = async (): Promise<Record<string, unknown>> => (await helpers.apiRequest(
+        io,
+        command,
+        `/api/tasks/${encodeURIComponent(id)}`,
+        updates,
+        "PATCH"
+      )) as Record<string, unknown>;
+      const updated = await taskLocalFallback(io, Boolean(options.local), editLocal, editApi);
       if (options.json) {
         helpers.writeOutput(io, updated);
         return;
@@ -384,17 +388,20 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .argument("<id>", "Task id")
     .option("--local", "Delete from the local tasks file instead of calling the API")
     .action(async (id: string, options: { readonly local?: boolean }, command) => {
-      if (options.local) {
+      const deleteLocal = async (): Promise<string> => {
         const file = localTasksFile();
         const all = await readTasks(file);
         const resolved = resolveLocalTaskId(id, all);
         const next = all.filter((task) => task.id !== resolved);
         await writeTasks(file, next);
-        io.stdout(`Deleted task ${resolved}\n`);
-        return;
-      }
-      await helpers.apiRequest(io, command, `/api/tasks/${encodeURIComponent(id)}`, undefined, "DELETE");
-      io.stdout(`Deleted task ${id}\n`);
+        return resolved;
+      };
+      const deleteApi = async (): Promise<string> => {
+        await helpers.apiRequest(io, command, `/api/tasks/${encodeURIComponent(id)}`, undefined, "DELETE");
+        return id;
+      };
+      const deleted = await taskLocalFallback(io, Boolean(options.local), deleteLocal, deleteApi);
+      io.stdout(`Deleted task ${deleted}\n`);
     });
 }
 

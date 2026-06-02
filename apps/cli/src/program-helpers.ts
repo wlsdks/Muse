@@ -366,6 +366,36 @@ export function isApiUnreachable(error: unknown): boolean {
   return error.message.includes("Muse API not reachable") || error.message.includes("Muse API host unresolved");
 }
 
+/**
+ * Local-first reliability for an actuator subcommand: run `api()`, but when the
+ * Muse API server isn't running, transparently fall back to `local()` — the
+ * local store is the source of truth on the default (server-less) setup. `--local`
+ * skips the API entirely; ONLY a genuine "unreachable" (connection refused)
+ * degrades — a real 4xx/5xx still throws, so the fallback never masks a server
+ * error. Shared by `muse remind` / `muse tasks` so a WRITE behaves like a READ
+ * (`list` already degraded gracefully; the write commands hard-errored).
+ */
+export async function withApiLocalFallback<T>(
+  io: ProgramIO,
+  useLocal: boolean,
+  local: () => Promise<T>,
+  api: () => Promise<T>,
+  storeLabel: string
+): Promise<T> {
+  if (useLocal) {
+    return local();
+  }
+  try {
+    return await api();
+  } catch (cause) {
+    if (!isApiUnreachable(cause)) {
+      throw cause;
+    }
+    io.stderr(`muse: API not reachable — using the local ${storeLabel} store.\n`);
+    return local();
+  }
+}
+
 export async function* readSseEvents(response: Response): AsyncIterable<SseEvent> {
   let buffer = "";
 

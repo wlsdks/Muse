@@ -312,7 +312,21 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   a server error). Proof: 3 new tests (unreachable add → persisted locally; a 500 STILL
   throws + nothing written; unreachable clear → removed locally) + a LIVE server-less
   run of add → list → snooze → fire → history → clear, all succeeding with the
-  fallback note. cli 164 files / 1724 tests + `pnpm lint` 0/0. (this commit)
+  fallback note. cli 164 files / 1724 tests + `pnpm lint` 0/0. (2ac9372d)
+
+- [x] **P40-4 `muse tasks` works server-less too — same fix, shared helper.** Probing
+  after P40-3 found the IDENTICAL defect on the other write actuator: `muse tasks add
+  "review the deck"` hard-errored "API not reachable" server-less while `muse tasks
+  list` fell back. Promoted the local-fallback to a shared `withApiLocalFallback`
+  (in `program-helpers.ts`, alongside `isApiUnreachable`) and applied it to tasks
+  add / complete / edit / delete (remind now uses the same helper too — DRY). Same
+  safety: `--local` skips the API, a real 4xx/5xx still throws, only
+  connection-refused degrades. Proof: 3 new tests (unreachable add → persisted
+  locally; a 500 STILL throws + nothing written; unreachable complete → marked done
+  locally) + the existing 15 tasks + 16 remind tests still green + a LIVE server-less
+  run of tasks add → list → edit → complete → delete, all succeeding, and remind
+  add still works after the refactor. cli 164 files / 1727 tests + `pnpm lint` 0/0.
+  (this commit)
 
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,

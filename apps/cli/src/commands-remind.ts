@@ -38,7 +38,7 @@ import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
 import { formatLocalDateTime as shortDateTime } from "./human-formatters.js";
-import { isApiUnreachable } from "./program-helpers.js";
+import { isApiUnreachable, withApiLocalFallback } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 
 /**
@@ -79,33 +79,12 @@ function localRemindersFile(): string {
   return resolveRemindersFile(process.env as Record<string, string | undefined>);
 }
 
-/**
- * Run the API call, but on a local-first box where the Muse API server isn't
- * running, transparently fall back to the local store — exactly as `list`
- * already does for reads, now for EVERY reminder subcommand. `--local` skips the
- * API entirely; only a genuine "unreachable" (connection refused) degrades — a
- * real 4xx/5xx still throws. Without this, `muse remind add` hard-errored on the
- * default (server-less) local-first setup while `muse remind list` worked.
- */
-async function withLocalFallback<T>(
+const remindLocalFallback = <T>(
   io: ProgramIO,
   useLocal: boolean,
   local: () => Promise<T>,
   api: () => Promise<T>
-): Promise<T> {
-  if (useLocal) {
-    return local();
-  }
-  try {
-    return await api();
-  } catch (cause) {
-    if (!isApiUnreachable(cause)) {
-      throw cause;
-    }
-    io.stderr("muse: API not reachable — using the local reminders store.\n");
-    return local();
-  }
-}
+): Promise<T> => withApiLocalFallback(io, useLocal, local, api, "reminders");
 
 export function registerRemindCommands(program: Command, io: ProgramIO, helpers: RemindCommandHelpers): void {
   const remind = program.command("remind").description("Personal reminders (passive — surfaced in `muse today`)");
@@ -185,7 +164,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
         }
         return (await helpers.apiRequest(io, command, "/api/reminders", body, "POST")) as Record<string, unknown>;
       };
-      const payload = await withLocalFallback(io, Boolean(options.local), addLocal, addApi);
+      const payload = await remindLocalFallback(io, Boolean(options.local), addLocal, addApi);
       if (options.json) {
         helpers.writeOutput(io, payload);
         return;
@@ -295,7 +274,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
           "POST"
         )) as Record<string, unknown>;
       };
-      const payload = await withLocalFallback(io, Boolean(options.local), snoozeLocal, snoozeApi);
+      const payload = await remindLocalFallback(io, Boolean(options.local), snoozeLocal, snoozeApi);
       if (options.json) {
         helpers.writeOutput(io, payload);
         return;
@@ -354,7 +333,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
           "POST"
         )) as Record<string, unknown>;
       };
-      const payload = await withLocalFallback(io, Boolean(options.local), fireLocal, fireApi);
+      const payload = await remindLocalFallback(io, Boolean(options.local), fireLocal, fireApi);
       if (options.json) {
         helpers.writeOutput(io, payload);
         return;
@@ -522,7 +501,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
       };
       const historyApi = async (): Promise<HistoryPayload> =>
         (await helpers.apiRequest(io, command, `/api/reminders/history?limit=${limit.toString()}`)) as HistoryPayload;
-      const payload = await withLocalFallback(io, Boolean(options.local), historyLocal, historyApi);
+      const payload = await remindLocalFallback(io, Boolean(options.local), historyLocal, historyApi);
       if (options.json) {
         helpers.writeOutput(io, payload);
         return;
@@ -548,7 +527,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
         await helpers.apiRequest(io, command, `/api/reminders/${encodeURIComponent(id)}`, undefined, "DELETE");
         return id;
       };
-      const cleared = await withLocalFallback(io, Boolean(options.local), clearLocal, clearApi);
+      const cleared = await remindLocalFallback(io, Boolean(options.local), clearLocal, clearApi);
       io.stdout(`Cleared reminder ${cleared}\n`);
     });
 }

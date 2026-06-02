@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { writeTasks, type PersistedTask } from "@muse/mcp";
+import { readTasks, writeTasks, type PersistedTask } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -74,6 +74,59 @@ describe("muse tasks list --local --search — filters the real store", () => {
     const payload = JSON.parse(out.join("")) as { tasks: { title: string }[]; total: number };
     expect(payload.total).toBe(1);
     expect(payload.tasks.map((t) => t.title)).toEqual(["Call dentist"]);
+  });
+});
+
+describe("muse tasks — API-unreachable falls back to the local store (local-first reliability)", () => {
+  const prev = process.env.MUSE_TASKS_FILE;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.MUSE_TASKS_FILE;
+    else process.env.MUSE_TASKS_FILE = prev;
+  });
+
+  const runWith = async (apiRequest: TasksCommandHelpers["apiRequest"], args: string[]): Promise<string | undefined> => {
+    const io = { stderr: () => {}, stdout: () => {} };
+    const helpers: TasksCommandHelpers = { apiRequest, writeOutput: () => {} };
+    const program = new Command();
+    program.exitOverride();
+    registerTasksCommands(program, io, helpers);
+    try {
+      await program.parseAsync(["node", "muse", "tasks", ...args]);
+      return undefined;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : String(cause);
+    }
+  };
+  const unreachable: TasksCommandHelpers["apiRequest"] = async () => {
+    throw new Error("muse: Muse API not reachable at http://127.0.0.1:3030");
+  };
+
+  it("add: an unreachable API writes the task LOCALLY instead of hard-erroring", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-tasks-fb-")), "tasks.json");
+    process.env.MUSE_TASKS_FILE = file;
+    const error = await runWith(unreachable, ["add", "review", "the", "deck"]);
+    expect(error).toBeUndefined();
+    const stored = await readTasks(file);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ status: "open", title: "review the deck" });
+  });
+
+  it("add: a REAL api error (NOT unreachable) still throws — the fallback never masks a 500", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-tasks-fb-err-")), "tasks.json");
+    process.env.MUSE_TASKS_FILE = file;
+    const serverError: TasksCommandHelpers["apiRequest"] = async () => { throw new Error("HTTP 500 internal server error"); };
+    const error = await runWith(serverError, ["add", "review", "the", "deck"]);
+    expect(error).toContain("500");
+    expect(await readTasks(file)).toHaveLength(0); // not silently written locally on a real error
+  });
+
+  it("complete: an unreachable API marks the task done in the LOCAL store", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-tasks-fb-cmp-")), "tasks.json");
+    process.env.MUSE_TASKS_FILE = file;
+    await writeTasks(file, [{ createdAt: new Date().toISOString(), id: "task_abc1234", status: "open", title: "ship it" }]);
+    const error = await runWith(unreachable, ["complete", "task_abc1234"]);
+    expect(error).toBeUndefined();
+    expect((await readTasks(file))[0]).toMatchObject({ status: "done" });
   });
 });
 
