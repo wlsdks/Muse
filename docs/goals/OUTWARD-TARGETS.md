@@ -376,7 +376,19 @@ tool-calling.md).** Edge hygiene meets felt responsiveness.
   prose untouched) + a LIVE `muse demo` (the MTU answer now reads "…WireGuard VPN
   [from 2026-03-03-vpn-wireguard.md]" — label gone, the RIGHT source still cited,
   citation reliability preserved) + `--with-tools` still cites cleanly. cli 1695 +
-  `pnpm lint` 0/0. (this commit)
+  `pnpm lint` 0/0. (2fcdcda4)
+
+- [x] **P39-4 `muse today` stops crying "API not reachable" at the local-first
+  user.** The morning briefing tried the API daemon first and, on the expected
+  ECONNREFUSED (the default user runs no daemon — local-first is the identity),
+  printed "muse: API not reachable — falling back to local briefing." on EVERY
+  run — an error-shaped line on the working happy path. Now it warns ONLY when
+  the user EXPLICITLY pointed Muse at an API (`--api-url` / `MUSE_API_URL`, i.e.
+  they expect a remote and would want to know it's down); the default CLI user
+  silently gets the on-disk briefing. Proof: 4 unit tests (`apiWasExplicitlyConfigured`:
+  false for unset/blank/whitespace, true for flag or env) + a LIVE `muse today`
+  (0 warnings by default; 1 warning when `MUSE_API_URL` is set and unreachable).
+  cli 1699 + `pnpm lint` 0/0. (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections

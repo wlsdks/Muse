@@ -161,7 +161,15 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
           // explicitly on stderr so the user knows what's
           // happening, but never fail the command.
           if (isApiUnreachable(cause)) {
-            io.stderr("muse: API not reachable — falling back to local briefing.\n");
+            // Only warn when the user EXPLICITLY pointed Muse at an API
+            // (--api-url / MUSE_API_URL). The default is local-first with no
+            // daemon, so "API not reachable" on every plain `muse today` reads
+            // as broken to the CLI-only user the product targets — silently use
+            // the on-disk briefing instead.
+            const globals = command.optsWithGlobals() as { readonly apiUrl?: string };
+            if (apiWasExplicitlyConfigured(globals.apiUrl, process.env.MUSE_API_URL)) {
+              io.stderr("muse: API not reachable — falling back to local briefing.\n");
+            }
             briefing = await composeLocalBriefing(lookaheadHours);
             usedLocal = true;
           } else {
@@ -673,6 +681,17 @@ async function fetchRemoteBriefing(
     ? `?lookaheadHours=${encodeURIComponent(lookaheadHoursFlag)}`
     : "";
   return (await helpers.apiRequest(io, command, `/api/today${lookaheadParam}`)) as TodayBriefing;
+}
+
+/**
+ * True only when the user EXPLICITLY pointed Muse at an API endpoint
+ * (`--api-url` flag or `MUSE_API_URL`). Local-first is the default and runs with
+ * no daemon, so a plain `muse today` falling back to the on-disk briefing is the
+ * EXPECTED path — warning "API not reachable" there reads as broken. Pure +
+ * exported for direct coverage.
+ */
+export function apiWasExplicitlyConfigured(apiUrlFlag: string | undefined, apiUrlEnv: string | undefined): boolean {
+  return ((apiUrlFlag ?? apiUrlEnv) ?? "").trim().length > 0;
 }
 
 /**
