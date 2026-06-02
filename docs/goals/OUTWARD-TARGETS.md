@@ -553,7 +553,24 @@ qwen3:8b and added to `eval:self-improving`.
   no-overlap falls back to opening / short chunk quoted whole / over-long chosen
   sentence truncated) + the LIVE `verify-proactive-recall-gate.mjs` 4/4 (in-corpus
   surfaces a cited relevant finding, off-topic stays silent). agent-core 1370 +
-  `pnpm lint` 0/0. (this commit)
+  `pnpm lint` 0/0. (4bfc1ad1)
+
+- [x] **P38-14 `muse recall` + `muse today --connect` preview the RELEVANT line, not
+  the chunk opening.** P38-13 fixed the proactive-recall GATE, but the recall RANKER
+  (`rankRecallCandidates`, shared by `muse recall` search AND `muse today --connect`'s
+  "💡 Related in your brain") still previewed `chunk.text.slice(0, 200)` — the opening.
+  So a multi-line note whose match sits further down surfaced a non-sequitur (a "# Q3
+  board deck" heading + standup chatter instead of the line that matched). The ranker
+  already computes the query tokens; now the snippet is the LINE with the most query
+  overlap, markdown headings skipped — and falls back to the opening when no query /
+  single line (never worse). `findTodayConnections` now passes `queryText` so the
+  connection snippet is relevant too. Proof: 2 new unit tests (multi-line chunk →
+  the matching line, heading + opening excluded; no-query → opening fallback) + LIVE
+  `muse today --connect` with a 4-line note → "💡 Related in your brain: [notes] log.md
+  — The Q3 board deck must cover revenue up 22% and the new pricing tiers" (the match,
+  not "# Meeting log General standup…") and `muse recall "Q3 board deck pricing"` →
+  previews the same relevant line. cli 164 files / 1731 tests + `pnpm lint` 0/0.
+  (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

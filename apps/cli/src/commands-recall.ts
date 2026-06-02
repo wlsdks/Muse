@@ -101,6 +101,38 @@ function lexicalOverlap(queryTokens: ReadonlySet<string>, text: string): number 
 }
 
 /**
+ * The snippet to PREVIEW for a recall hit: the chunk LINE most relevant to the
+ * query, not the chunk's opening — a multi-line note whose match sits further
+ * down would otherwise preview a non-sequitur ("# Q3 board deck …" instead of
+ * the line that actually matched). Markdown headings are skipped (structure, not
+ * content). No query overlap (or a single-line chunk) ⇒ the opening, so it's
+ * never worse than the old `slice(0, max)`.
+ */
+function relevantExcerpt(text: string, queryTokens: ReadonlySet<string>, max = 200): string {
+  const lines = text.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return text.replace(/\s+/gu, " ").trim().slice(0, max);
+  }
+  const content = lines.filter((line) => !/^#{1,6}(\s|$)/u.test(line));
+  const candidates = content.length > 0 ? content : lines;
+  if (queryTokens.size > 0) {
+    let best = candidates[0]!;
+    let bestScore = 0;
+    for (const line of candidates) {
+      const score = lexicalOverlap(queryTokens, line);
+      if (score > bestScore) {
+        bestScore = score;
+        best = line;
+      }
+    }
+    if (bestScore > 0) {
+      return best.slice(0, max);
+    }
+  }
+  return candidates[0]!.slice(0, max);
+}
+
+/**
  * Hybrid ranker: vector cosine + a lexical keyword-overlap boost (when
  * `queryText` is given). Pure cosine when it isn't (back-compat). The lexical
  * term rescues a lexically-obvious hit the embedding under-ranks and breaks
@@ -120,12 +152,12 @@ export function rankRecallCandidates(args: {
   const scored: { readonly hit: RecallHit; readonly embedding: readonly number[] }[] = [];
   if (args.source !== "episodes") {
     for (const chunk of args.noteChunks) {
-      scored.push({ embedding: chunk.embedding, hit: { score: combined(chunk.embedding, chunk.text), ref: chunk.path, snippet: chunk.text.slice(0, 200), source: "notes" } });
+      scored.push({ embedding: chunk.embedding, hit: { score: combined(chunk.embedding, chunk.text), ref: chunk.path, snippet: relevantExcerpt(chunk.text, queryTokens), source: "notes" } });
     }
   }
   if (args.source !== "notes") {
     for (const ep of args.episodeEntries) {
-      scored.push({ embedding: ep.embedding, hit: { score: combined(ep.embedding, ep.summary), ref: ep.id, snippet: ep.summary.slice(0, 200), source: "episodes" } });
+      scored.push({ embedding: ep.embedding, hit: { score: combined(ep.embedding, ep.summary), ref: ep.id, snippet: relevantExcerpt(ep.summary, queryTokens), source: "episodes" } });
     }
   }
   const limit = Math.max(1, args.limit);

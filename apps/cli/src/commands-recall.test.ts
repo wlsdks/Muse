@@ -15,6 +15,24 @@ describe("rankRecallCandidates — hybrid keyword+vector", () => {
   it("the lexical boost surfaces an exact keyword match the embedding under-ranks", () => {
     expect(rankRecallCandidates({ ...base, queryText: "quarterly budget" })[0]?.ref).toBe("b.md");
   });
+
+  it("the snippet PREVIEWS the query-relevant line of a multi-line chunk, not the opening (and skips the heading)", () => {
+    const multiLine = [{
+      path: "log.md",
+      text: "# Meeting log\nGeneral standup chatter about the weather.\nThe Q3 board deck must cover the new pricing tiers.",
+      embedding: [1, 0]
+    }];
+    const hit = rankRecallCandidates({ episodeEntries: [], limit: 1, noteChunks: multiLine, queryText: "Q3 board deck pricing", queryVec: [1, 0], source: "notes" })[0];
+    expect(hit?.snippet).toBe("The Q3 board deck must cover the new pricing tiers.");
+    expect(hit?.snippet).not.toContain("# Meeting log"); // heading excluded
+    expect(hit?.snippet).not.toContain("standup chatter"); // not the opening
+  });
+
+  it("falls back to the opening when no query text is given (back-compat)", () => {
+    const chunk = [{ path: "n.md", text: "first line here\nsecond line there", embedding: [1, 0] }];
+    const hit = rankRecallCandidates({ episodeEntries: [], limit: 1, noteChunks: chunk, queryVec: [1, 0], source: "notes" })[0];
+    expect(hit?.snippet).toBe("first line here");
+  });
 });
 
 describe("rankRecallCandidates — MMR diversification (Carbonell & Goldstein 1998)", () => {

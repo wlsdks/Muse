@@ -489,7 +489,7 @@ async function findTodayConnections(query: string, embedModel = "nomic-embed-tex
     episodeEntries = filterLiveEpisodeEntries(episodeEntries, liveIds);
   }
   const queryVec = await embed(query, embedModel);
-  return rankRecallCandidates({ episodeEntries, limit: 3, noteChunks, queryVec, source: "all" }).filter((h) => h.score >= 0.5);
+  return rankRecallCandidates({ episodeEntries, limit: 3, noteChunks, queryText: query, queryVec, source: "all" }).filter((h) => h.score >= 0.5);
 }
 
 /**
