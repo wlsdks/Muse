@@ -17,6 +17,8 @@
  *   "in 1 month" / "in 3 months"                 → calendar-month offset
  *   "next monday" / "next mon"                   → next Monday at 09:00
  *   "next monday at 6pm" / "next monday 6pm"     → next Monday at 18:00
+ *   "next week"                                  → reference + 7 days at 09:00
+ *   "next month" / "next year"                   → calendar +1mo / +12mo
  *
  * The `at` keyword is optional: "<day> <time>" works the same as
  * "<day> at <time>" — a personal assistant should understand
@@ -35,6 +37,7 @@
  *   "월요일"                → next occurrence (always future)
  *   "이번 주 금요일"         → this ISO-week's Friday
  *   "다음 주 월요일 오후 3시" → next ISO-week's Monday 15:00
+ *   "다음 주" / "다음 달" / "내년" → +7d / calendar +1mo / +12mo at 09:00
  *
  * All resolved times use the local timezone for the wall-clock
  * computation, then return an ISO-8601 UTC (`Z`) string. So
@@ -311,6 +314,25 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     return absoluteDate;
   }
 
+  // "next week" / "next month" / "next year" — period offsets the weekday
+  // `next <day>` pattern below would mis-read ("week"/"month"/"year" aren't
+  // weekdays, so they fell through to UNRESOLVED). week → +7d; month/year →
+  // calendar offset (same semantics as "in 1 month"). "remind me next month"
+  // is as natural as "in 1 month" and must work.
+  const periodMatch = /^(?:next|the\s+following)\s+(week|month|year)(?:\s+(?:at\s+)?(.+))?$/u.exec(trimmed);
+  if (periodMatch) {
+    const periodTime = parseTimeOfDay(periodMatch[2]);
+    if (periodTime === "invalid") {
+      return undefined;
+    }
+    const periodUnit = periodMatch[1];
+    const periodTarget = periodUnit === "week"
+      ? startOfDay(new Date(reference.getTime() + 7 * 86_400_000))
+      : startOfDay(addCalendarMonths(reference, periodUnit === "month" ? 1 : 12));
+    periodTarget.setHours(periodTime.hour, periodTime.minute, 0, 0);
+    return finiteDate(periodTarget);
+  }
+
   // "this friday" is as common as "next friday"; treat both as the next
   // occurrence of that weekday (you can't schedule a past one). Without "this"
   // here it was mis-parsed as a bare weekday "this" → unresolved, so the model's
@@ -440,6 +462,24 @@ function resolveKoreanRelativePhrase(phrase: string, reference: Date): Date | un
   const weekday = resolveKoreanWeekdayPhrase(phrase, reference);
   if (weekday) {
     return weekday;
+  }
+  // "다음 주" / "다음 달" / "내년" (bare period, no 요일) — parity with the
+  // English "next week/month/year". The weekday resolver above already took
+  // "다음 주 월요일"; this is the bare period the user also says naturally.
+  const koreanPeriod = /^(다음\s*주|담주|다음\s*달|다음\s*월|내년|다음\s*해)(?:\s+(.+))?$/u.exec(phrase.trim());
+  if (koreanPeriod) {
+    const kpTime = parseKoreanTimeOfDay(koreanPeriod[2]);
+    if (kpTime === "invalid") {
+      return undefined;
+    }
+    const kpHead = (koreanPeriod[1] ?? "").replace(/\s+/gu, "");
+    const kpTarget = kpHead === "다음주" || kpHead === "담주"
+      ? startOfDay(new Date(reference.getTime() + 7 * 86_400_000))
+      : kpHead === "내년" || kpHead === "다음해"
+        ? startOfDay(addCalendarMonths(reference, 12))
+        : startOfDay(addCalendarMonths(reference, 1));
+    kpTarget.setHours(kpTime.hour, kpTime.minute, 0, 0);
+    return kpTarget;
   }
   const match = /^(오늘|내일|모레|글피)(?:\s+(.+))?$/u.exec(phrase);
   if (!match) {

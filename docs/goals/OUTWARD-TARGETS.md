@@ -228,6 +228,25 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   prompt is now tighter for the small model and the spurious-citation surface is
   cut at the source. (this commit)
 
+**P40 — Actuation usability: Muse understands natural-language dates.** The
+"do" side is only as good as the words a user actually types.
+
+- [x] **P40-1 "remind me NEXT MONTH / next week / next year" now works.** The
+  shared relative-time resolver (`muse.reminders.add` / `muse.tasks.add` /
+  `muse.calendar.add`) handled "in 1 month" and "next monday" but NOT "next
+  week" / "next month" / "next year" — the weekday `next <day>` branch read
+  "month"/"week" as a weekday, found none, and returned UNRESOLVED, so
+  `muse ask "remind me next month to renew my passport" --with-tools` died with
+  "next month is not a supported relative phrase". Added period offsets (week →
+  +7d; month/year → calendar +1mo/+12mo at 09:00, time-of-day parsed too) plus KO
+  parity (다음 주 / 다음 달 / 내년). Precision kept: "next mango" / "next thing"
+  still UNRESOLVED, "next monday" still a Monday. Proof: 7 unit tests in
+  `packages/mcp/test/relative-time-period.test.ts` (future dates; ~7d / ~1y
+  offsets; KO == EN; time-of-day; weekday unbroken; non-period rejected) + a LIVE
+  `muse ask "remind me next month to renew my passport" --with-tools` → "I've set
+  a reminder … for July 3, 2026" (was an error). mcp 1310 + `pnpm lint` 0/0.
+  (this commit)
+
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
 closed its deepest hole, and became constructive. Each verified live on
@@ -460,7 +479,7 @@ tool-calling.md).** Edge hygiene meets felt responsiveness.
   cites). Proof: a LIVE before/after `muse ask "add a reminder …" --with-tools`
   (now just "(tools used: muse.reminders.add)" + the confirmation, no banner / no
   warning) while `muse ask "what is my rent?"` still shows "(grounded on … lease.md)"
-  + cites "1,250,000 KRW [from lease.md]". cli 1710 + `pnpm lint` 0/0. (this commit)
+  + cites "1,250,000 KRW [from lease.md]". cli 1710 + `pnpm lint` 0/0. (316ec2d7)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections
