@@ -323,6 +323,19 @@ export const META_RESPONSE =
   "Add notes with `muse read <file> --save-to-notes <id>`, then ask me anything you've saved — or run `muse demo` to see a cited answer and an honest refusal in about 30 seconds.";
 
 /**
+ * Relativize a note source against the notes dir so the form a recall answer is
+ * ALLOWED to cite (the citation gate) EXACTLY matches the form the grounding
+ * VERDICT validates against. A note on disk resolves to an ABSOLUTE path, but
+ * the model is shown — and cites — the relative name; feeding the raw absolute
+ * path to the verdict made citationValidity fail and falsely flagged a correct
+ * cited answer "treat as unverified". One source of truth keeps gate + verdict
+ * + receipt consistent.
+ */
+export function relativizeNoteSource(file: string, notesDir: string): string {
+  return isAbsolute(file) ? relative(notesDir, file) : file;
+}
+
+/**
  * True when the answer is essentially a refusal / "I'm not sure" with no
  * grounded claim — used to deterministically drop any citation the model
  * spuriously attached to it. Pure + exported for direct coverage.
@@ -1282,7 +1295,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           // is shown relative to the notes dir (clean + locatable), not the
           // absolute path.
           : contextChunks.map((r, i) => {
-            const src = isAbsolute(r.file) ? relative(notesDir, r.file) : r.file;
+            const src = relativizeNoteSource(r.file, notesDir);
             return `<<note ${(i + 1).toString()} — ${src}>>\n${r.chunk.text}\ncite as: [from ${src}]\n<<end>>`;
           }).join("\n\n");
 
@@ -1698,8 +1711,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // pull MORE via knowledge_search, so its allowed notes are the whole live
       // corpus — any real note file is fair, only a non-existent one is invented.
       const allowedNotes = options.withTools
-        ? (index ? filterLiveNoteIndexFiles(index.files, existsSync).map((f) => (isAbsolute(f.path) ? relative(notesDir, f.path) : f.path)) : [])
-        : scored.map((r) => (isAbsolute(r.file) ? relative(notesDir, r.file) : r.file));
+        ? (index ? filterLiveNoteIndexFiles(index.files, existsSync).map((f) => relativizeNoteSource(f.path, notesDir)) : [])
+        : scored.map((r) => relativizeNoteSource(r.file, notesDir));
       const citationGate = enforceAnswerCitations(collectedAnswer, {
         actions: matchedActions.map((a) => a.what),
         commands: matchedCommands,
@@ -1784,7 +1797,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               return parseGroundingReverifyVerdict(judged.output ?? "");
             }
           : undefined;
-        const scoredMatches = scored.map((r) => ({ cosine: r.score, score: r.score, source: r.file, text: r.chunk.text }));
+        const scoredMatches = scored.map((r) => ({ cosine: r.score, score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text }));
         const verdictNotice = await groundingVerdictNotice(collectedAnswer, scoredMatches, query, reverify);
         if (verdictNotice) {
           io.stderr(verdictNotice);

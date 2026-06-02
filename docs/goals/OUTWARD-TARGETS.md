@@ -293,6 +293,23 @@ qwen3:8b and added to `eval:self-improving`.
   is now caught (faithfulness 1.00, 16/16) with false-refusal UNCHANGED at 0.08 (no
   answerable falsely escalated). Self-RAG arXiv:2310.11511. (80797e75)
 
+- [x] **P38-6 Kill the false "treat as unverified" warning on a CORRECT cited
+  answer (GUARD-THE-EDGE fix).** A real on-disk note resolves to an ABSOLUTE
+  path, but the model is shown — and cites — the relative name ("q3.md"). The
+  citation gate relativized its allow-list, so the citation survived; but the
+  grounding VERDICT validated the answer against the RAW absolute path, so
+  `citationValidity` failed and a perfectly correct cited answer ("Jin owns the
+  deck, Mina owns pricing [from q3.md]") got "⚠️ treat as unverified". A false
+  refusal makes honest into useless. The test corpora all use short relative
+  source names, so the batteries never hit it — it only bit REAL users with
+  notes on disk. New single source of truth `relativizeNoteSource` now feeds the
+  gate, the verdict, AND the receipt the same form. Proof: 3 unit tests
+  (`commands-ask-verdict-source.test.ts`: absolute → relative basename; nested →
+  relative subpath; already-relative untouched; never returns absolute) + a LIVE
+  before/after `muse ask` over a real on-disk corpus (the multi-fact Q3 answer
+  loses the spurious warning, keeps its 📎 receipt) + `verify-cited-recall` still
+  green. cli 1689 + `pnpm lint` 0/0. (this commit)
+
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.
 
