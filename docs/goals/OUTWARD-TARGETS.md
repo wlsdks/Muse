@@ -1292,7 +1292,23 @@ FIRST, then felt self-learning).
   GEMINI key → local model not "inferred from GEMINI"; default env; explicit opt-out →
   warn inferred; explicit MUSE_MODEL verbatim; opt-out + no key → fail) + 2 existing
   program tests corrected to opt out for the cloud path + a LIVE `muse doctor` in all
-  three scenarios. cli 164 files / 1738 tests + `pnpm lint` 0/0. (this commit)
+  three scenarios. cli 164 files / 1738 tests + `pnpm lint` 0/0. (dad5ddaf)
+
+- [x] **P34-13 A refusal reads CLEAN — no self-contradicting "treat those claims as
+  unverified" warning.** P34-11 made a refusal cite nothing; this kills the OTHER
+  refusal noise. When the small model tacks a spurious citation onto a refusal
+  ("저는 …정보를 가지고 있지 않습니다 [from n.md]"), the gate strips it — but then
+  printed "Removed 1 citation … treat those claims as unverified", which is
+  nonsensical on an answer that asserts NO claim (and especially jarring for a
+  Korean user, where the small model fabricates a citation on a refusal more often).
+  Extracted `shouldWarnStrippedCitations` and gated the notice on `!isRefusal` (it
+  already skips action requests); the spurious citation is still stripped from the
+  text — only the user-facing warning is suppressed on a refusal. Proof: 4 new unit
+  tests (fires on a claim-bearing answer; SILENT on a refusal / action request /
+  nothing-stripped / --json) + LIVE: a Korean must-refuse ("내 혈액형이 뭐야?") and an
+  English one both show the warm "add a note" nudge with ZERO "Removed citation"
+  warning; a non-refusal with a fabricated citation still warns. cli 165 files /
+  1755 tests + `pnpm lint` 0/0. (this commit)
 
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,
 so RL lives in the MEMORY, not the weights).** Close the self-improvement

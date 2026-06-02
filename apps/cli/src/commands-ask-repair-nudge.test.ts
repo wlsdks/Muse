@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { shouldSuggestRepair, suggestOptInSource } from "./commands-ask.js";
+import { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource } from "./commands-ask.js";
 
 describe("shouldSuggestRepair — surface --repair only when it can actually help", () => {
   const base = { evidenceCount: 2, json: false, repairRequested: false, verdictFired: true };
@@ -50,5 +50,22 @@ describe("suggestOptInSource — make undiscoverable --git / --shell findable on
   it("does NOT re-suggest a flag that is already enabled", () => {
     expect(suggestOptInSource("what did I commit?", { git: true, shell: false })).toBeUndefined();
     expect(suggestOptInSource("what was that shell command?", { git: false, shell: true })).toBeUndefined();
+  });
+});
+
+describe("shouldWarnStrippedCitations — the 'Removed citation' notice fires only on a claim-bearing answer", () => {
+  const base = { isActionRequest: false, isRefusal: false, json: false, strippedCount: 1 };
+  it("fires on a normal answer that had a fabricated citation stripped", () => {
+    expect(shouldWarnStrippedCitations(base)).toBe(true);
+  });
+  it("is SILENT on a refusal (it asserts no claim — 'treat those claims as unverified' is nonsensical)", () => {
+    expect(shouldWarnStrippedCitations({ ...base, isRefusal: true })).toBe(false);
+  });
+  it("is SILENT on an action request (citing a tool name is a harmless quirk)", () => {
+    expect(shouldWarnStrippedCitations({ ...base, isActionRequest: true })).toBe(false);
+  });
+  it("is SILENT when nothing was stripped, or under --json", () => {
+    expect(shouldWarnStrippedCitations({ ...base, strippedCount: 0 })).toBe(false);
+    expect(shouldWarnStrippedCitations({ ...base, json: true })).toBe(false);
   });
 });

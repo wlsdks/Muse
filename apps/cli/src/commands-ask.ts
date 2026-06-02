@@ -436,6 +436,23 @@ export function shouldSuggestRepair(args: {
   return args.verdictFired && !args.repairRequested && !args.json && args.evidenceCount > 0;
 }
 
+/**
+ * Whether to surface the "Removed N citation(s) … treat those claims as
+ * unverified" notice. Fires only when the gate actually stripped something AND
+ * the answer makes claims to doubt — NOT on a REFUSAL (which asserts nothing, so
+ * "treat those claims as unverified" is nonsensical) and NOT on an ACTION request
+ * (the model citing a tool name is a harmless quirk). The spurious citation is
+ * stripped from the text either way; this gates only the user-facing warning.
+ */
+export function shouldWarnStrippedCitations(args: {
+  readonly strippedCount: number;
+  readonly json: boolean;
+  readonly isActionRequest: boolean;
+  readonly isRefusal: boolean;
+}): boolean {
+  return args.strippedCount > 0 && !args.json && !args.isActionRequest && !args.isRefusal;
+}
+
 // Unmistakable intent words for the OPT-IN perception sources. Precision-first:
 // a git-specific token (commit/git/branch/…), never the ambiguous "work on", so
 // a non-git refusal ("what's my rent?") never gets a spurious --git tip.
@@ -2032,12 +2049,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         tasks: openTasks.map((t) => t.title)
       });
       collectedAnswer = citationGate.text;
-      // The stripping always runs; the WARNING is suppressed for an action
+      const refusalAnswer = answerIsRefusal(collectedAnswer);
+      // The stripping always runs; the WARNING is suppressed for (a) an action
       // request, where the model citing the tool name (`muse.reminders.add`) as a
-      // "source" is a harmless quirk on a successful action, not a fabrication
-      // the user relies on. (The text is still cleaned — the spurious token never
-      // reaches them.)
-      if (!options.json && citationGate.stripped.length > 0 && !classifyActionRequest(query)) {
+      // "source" is a harmless quirk on a successful action, and (b) a REFUSAL,
+      // which asserts no claim — "Removed a citation, treat those claims as
+      // unverified" is nonsensical when the answer is "I don't have that" (and the
+      // spurious citation is dropped anyway by the refusal guard below). The text
+      // is still cleaned either way — the spurious token never reaches the user.
+      if (shouldWarnStrippedCitations({ isActionRequest: classifyActionRequest(query), isRefusal: refusalAnswer, json: Boolean(options.json), strippedCount: citationGate.stripped.length })) {
         io.stderr(`\n⚠️  Removed ${citationGate.stripped.length.toString()} citation(s) to source(s) you don't have (${citationGate.stripped.join(", ")}) — treat those claims as unverified.\n`);
       }
       // Refusal guard: a refusal asserts no grounded fact, so any citation the
@@ -2048,7 +2068,6 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       try {
         await releaseOllamaLease(leaseFile, process.pid);
       } catch { /* best-effort */ }
-      const refusalAnswer = answerIsRefusal(collectedAnswer);
       if (refusalAnswer) {
         collectedAnswer = enforceAnswerCitations(collectedAnswer, {
           events: [], feeds: [], notes: [], reminders: [], sessions: [], tasks: []
