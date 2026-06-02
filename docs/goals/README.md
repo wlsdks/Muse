@@ -67,16 +67,14 @@ Append one line when a discovery path is evaluated and deferred:
   rent") correctly refuses (ambiguous) and IS now a battery case. Don't re-mine
   the car-insurance case as a bug.
 - grounding verdict evidence = note chunks ONLY for non-note sources — iter c139e922
-  — deferred: P38-10 fixed the verdict false-flagging CONTACT-grounded answers (the
-  matched contacts are now in the verdict's evidence set). The SAME notes-only
-  evidence gap likely false-flags an answer grounded purely in another non-note
-  source — tasks / events / reminders / sessions / actions / commands — as "not
-  backed by your notes". Only contacts were probed + verified this iter; the others
-  are a plausible-but-unproven follow-up. A future iter should probe e.g. `muse ask
-  "what tasks do I have?"` / "did you email Sarah?" for the spurious "unverified"
-  verdict and, if real, fold those grounded sources into `scoredMatches` the same
-  way (each is a deterministic exact-match record, so it's a safe widen). Not done
-  now: unprobed surfaces must not be flipped on speculation (verify-or-it-doesn't-exist).
+  → DISCHARGED by P38-11 (next iter). Probed the follow-up: `muse ask "what tasks do
+  I have?"` did fire BOTH the spurious citation strip (model cites the task id) AND
+  the rubric "not backed by your notes" verdict. Fixed in P38-11 — every grounded
+  source (tasks/events/reminders/sessions/actions/commands/feeds/contacts) is now in
+  the verdict's `scoredMatches`, the wrappers embed a citation hint so the model
+  cites the title, and the verdict-answer expands content-citations so a list answer
+  scores coverage. Verified live (tasks/reminders clean, claim-grounding 4/4,
+  cited-recall 6/6). Entry closed.
 - calendar registry sync-throw on Promise-typed methods — iter c9fe9b4e — deferred:
   CalendarProviderRegistry.createEvent/updateEvent/deleteEvent are typed
   `Promise<…>` but throw SYNCHRONOUSLY on the require()/requireOrPrimary() path

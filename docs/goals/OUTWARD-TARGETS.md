@@ -405,7 +405,31 @@ qwen3:8b and added to `eval:self-improving`.
   `muse ask "what is Mina Park's email address?"` → cites the contact, receipt
   "👤 from your contacts: Mina Park", and ZERO "unverified"/"Removed citation"
   warnings; negative `muse ask "what is Bob Quagmire's email?"` still refuses.
-  agent-core 1366 + cli 1710 + `pnpm lint` 0/0. (this commit)
+  agent-core 1366 + cli 1710 + `pnpm lint` 0/0. (c139e922)
+
+- [x] **P38-11 Kill the false "treat as unverified" on EVERY non-note grounded
+  answer (tasks / reminders / events / …).** P38-10 fixed contacts; probing the
+  deferred follow-up confirmed the SAME self-contradiction on the actuator-recall
+  surfaces — `muse ask "what tasks do I have?"` listed the real open tasks yet
+  fired BOTH a citation strip ("Removed 2 citations t1, t2 — treat as unverified")
+  AND the rubric verdict ("not backed by your notes"). Two root causes, fixed by
+  code: (a) the task/event/reminder wrappers exposed an id/provider in the marker
+  with NO citation hint (unlike the note wrapper's embedded `[from src]`), so the
+  local model cited the id (`[task: t1]`) which the title-matching gate stripped —
+  now each wrapper embeds the canonical `[task|event|reminder: <title/text>]` hint,
+  so the model cites the title the gate accepts; (b) the verdict scored coverage
+  against note chunks ONLY — now `scoredMatches` includes EVERY grounded source
+  shown (tasks, events, reminders, sessions, actions, commands, feeds, contacts),
+  and the verdict-answer expands content-citations inline (a LIST answer whose
+  titles live only inside `[task: …]` markers would otherwise score ~zero coverage
+  after marker-stripping). Fabrication still caught: evidence is ONLY the real
+  retrieved sources, and a wrong value is still rejected (claim-grounding 4/4) — so
+  a claim in no source stays uncovered → ungrounded. Proof: LIVE `muse ask "what
+  tasks do I have?"` → cites `[task: Review the Q3 pricing deck]`, "✅ from your
+  tasks" receipts, ZERO warnings; `"what reminders do I have?"` clean; negative
+  `"what is my bank account number?"` still refuses; `verify-claim-grounding` 4/4
+  (wrong number/name still rejected) + `verify-cited-recall` 6/6 (note recall +
+  out-of-corpus refusal intact). cli 1710 + `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

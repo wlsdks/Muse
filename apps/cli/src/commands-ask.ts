@@ -1454,7 +1454,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           .map((t, i) => {
             const due = t.dueAt ? ` (due ${t.dueAt})` : "";
             const urgent = t.urgent ? " [URGENT]" : "";
-            return `<<task ${(i + 1).toString()} — ${t.id}${urgent}>>\n${t.title}${due}\n<<end>>`;
+            // Embed the canonical citation form (`[task: <title>]`) in the
+            // wrapper, exactly like the note wrapper embeds `[from <src>]` — else
+            // the local model cites the marker's id (`[task: t1]`), which the
+            // title-matching gate then false-strips as "a source you don't have".
+            return `<<task ${(i + 1).toString()} — ${t.id}${urgent}>>\n${t.title}${due}\n[task: ${t.title}]\n<<end>>`;
           })
           .join("\n\n");
 
@@ -1498,7 +1502,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               : `${e.startsAt.toISOString()} → ${e.endsAt.toISOString()}`;
             const loc = e.location ? ` @ ${e.location}` : "";
             const provider = `[${e.providerId}]`;
-            return `<<event ${(i + 1).toString()} — ${provider}>>\n${e.title}${loc}\n${when}\n<<end>>`;
+            return `<<event ${(i + 1).toString()} — ${provider}>>\n${e.title}${loc}\n${when}\n[event: ${e.title}]\n<<end>>`;
           })
           .join("\n\n");
 
@@ -1523,7 +1527,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const reminderBlock = pendingReminders.length === 0
         ? "(no pending reminders)"
         : pendingReminders
-          .map((r, i) => `<<reminder ${(i + 1).toString()} — ${r.id} (due ${r.dueAt})>>\n${r.text}\n<<end>>`)
+          .map((r, i) => `<<reminder ${(i + 1).toString()} — ${r.id} (due ${r.dueAt})>>\n${r.text}\n[reminder: ${r.text}]\n<<end>>`)
           .join("\n\n");
 
       // Pull MATCHING contacts as a fifth grounding source (B3 perception).
@@ -1944,24 +1948,49 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               return parseGroundingReverifyVerdict(judged.output ?? "");
             }
           : undefined;
-        // The verdict scores the answer's coverage against retrieved evidence.
-        // A contact-grounded fact ("Mina's email is …") has NO support in the
-        // note chunks, so a notes-only evidence set falsely flags it "not backed
-        // by your notes". Include the matched contacts (a high-precision,
-        // structured exact match — cosine 1) as evidence so an answer drawn from
-        // the user's own address book verifies as grounded, not unverified.
-        const contactMatches = matchedContacts.map((c) => {
-          const birthday = formatContactBirthday(c.birthday);
-          const fields = [c.email, c.phone, c.handle, birthday, ...(c.aliases ?? [])]
-            .filter((f): f is string => typeof f === "string" && f.length > 0)
-            .join(" ");
-          return { cosine: 1, score: 1, source: `contact: ${c.name}`, text: `${c.name} ${fields}`.trim() };
-        });
+        // The verdict scores the answer's coverage against retrieved evidence. A
+        // fact drawn from a NON-NOTE source (a contact's email, a task title, a
+        // reminder, a calendar event, a past session, a logged action, a feed
+        // headline) has no support in the note chunks, so a notes-only evidence
+        // set falsely flags it "not backed by your notes". Score against EVERY
+        // grounded source the model was actually shown — each a high-precision
+        // structured / retrieved match — so an answer drawn from the user's own
+        // tasks / reminders / events / contacts verifies as grounded, not
+        // unverified. Fabrication is still caught: the evidence is ONLY the real
+        // retrieved sources, so a claim in none of them stays uncovered →
+        // ungrounded.
+        const exactMatch = (source: string, text: string): { cosine: number; score: number; source: string; text: string } =>
+          ({ cosine: 1, score: 1, source, text });
         const scoredMatches = [
           ...scored.map((r) => ({ cosine: r.score, score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text })),
-          ...contactMatches
+          ...matchedContacts.map((c) => {
+            const birthday = formatContactBirthday(c.birthday);
+            const fields = [c.email, c.phone, c.handle, birthday, ...(c.aliases ?? [])]
+              .filter((f): f is string => typeof f === "string" && f.length > 0)
+              .join(" ");
+            return exactMatch(`contact: ${c.name}`, `${c.name} ${fields}`.trim());
+          }),
+          ...openTasks.map((t) => exactMatch(`task: ${t.title}`, `${t.title}${t.notes ? ` ${t.notes}` : ""}${t.dueAt ? ` due ${t.dueAt}` : ""}`)),
+          ...upcomingEvents.map((e) => exactMatch(`event: ${e.title}`, `${e.title}${e.location ? ` ${e.location}` : ""}`)),
+          ...pendingReminders.map((r) => exactMatch(`reminder: ${r.text}`, r.text)),
+          ...episodeHits.map((e) => ({ cosine: e.score, score: e.score, source: `session: ${e.id}`, text: e.summary })),
+          ...matchedActions.map((a) => exactMatch(`action: ${a.what}`, `${a.what} ${a.result}${a.detail ? ` ${a.detail}` : ""}`)),
+          ...matchedCommands.map((cmd) => exactMatch(`command: ${cmd}`, cmd)),
+          ...feedHeadlines.map((h) => exactMatch(`feed: ${h.feedName}`, `${h.title}${h.summary ? ` ${h.summary}` : ""}`))
         ];
-        const verdictNotice = await groundingVerdictNotice(collectedAnswer, scoredMatches, query, reverify);
+        // The coverage check strips citation markers before scoring, so a LIST
+        // answer whose claims live only inside `[task: …]` / `[event: …]` markers
+        // (the model put the titles in the citation, not the prose) would score
+        // ~zero coverage and false-flag. By verdict time every surviving
+        // content-citation is already gate-validated against a real source, so
+        // expand them inline for the verdict ONLY — their content is grounded by
+        // construction and is present in `scoredMatches`. `[from …]` note
+        // provenance is left alone (it carries no claim).
+        const verdictAnswer = collectedAnswer.replace(
+          /\[(?:task|event|reminder|contact|session|feed|command|action):\s*([^\]]*)\]/giu,
+          " $1 "
+        );
+        const verdictNotice = await groundingVerdictNotice(verdictAnswer, scoredMatches, query, reverify);
         if (verdictNotice) {
           io.stderr(verdictNotice);
           // Constructive grounding (RARR, arXiv:2210.08726): rather than only
