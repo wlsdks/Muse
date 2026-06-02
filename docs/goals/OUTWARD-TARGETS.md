@@ -1193,6 +1193,24 @@ FIRST, then felt self-learning).
   answerable → still cited + footer (no regression); `commands-ask-refusal.test.ts`
   + `pnpm lint` 0/0. (this commit)
 
+- [x] **P34-12 `muse doctor` tells the TRUTH about the local-only model (the moat
+  must be visible AND believable).** Under `MUSE_LOCAL_ONLY` (default-ON), the
+  runtime IGNORES any ambient cloud key and runs the local `qwen3:8b` — but `muse
+  doctor` reported "model env: inferred from GEMINI_API_KEY" (a WARN) on any box that
+  merely carried a Gemini key. So a privacy-bound user running the doctor to CONFIRM
+  nothing leaves their machine was told their model is Gemini — the doctor undercut
+  the exact guarantee local-only exists to give. Extracted a pure `modelEnvCheck(env)`
+  that mirrors `resolveDefaultModel`: under local-only it reports "ollama/qwen3:8b
+  (local-only default — ambient cloud keys ignored)" (ok); the cloud-credential
+  inference (warn) appears ONLY under an explicit `MUSE_LOCAL_ONLY=false`. Bonus: the
+  doctor's "ollama model pulled" check now uses the RESOLVED model, so under
+  local-only it verifies qwen3:8b is actually pulled (it was silently skipped before,
+  since no MUSE_MODEL was set). Proof: 5 new `modelEnvCheck` unit tests (local-only +
+  GEMINI key → local model not "inferred from GEMINI"; default env; explicit opt-out →
+  warn inferred; explicit MUSE_MODEL verbatim; opt-out + no key → fail) + 2 existing
+  program tests corrected to opt out for the cloud path + a LIVE `muse doctor` in all
+  three scenarios. cli 164 files / 1738 tests + `pnpm lint` 0/0. (this commit)
+
 **P33 — Reinforcement learning over Muse's memory (the model is fixed,
 so RL lives in the MEMORY, not the weights).** Close the self-improvement
 loop: today Muse only LEARNS new strategies (ReasoningBank distillation,

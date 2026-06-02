@@ -6953,6 +6953,11 @@ describe("cli program", () => {
     process.env.MUSE_MODEL_KEYS_FILE = path.join(await mkdtemp(path.join(tmpdir(), "muse-cli-doctor-fail-")), "missing.json");
     const prevOllama = process.env.OLLAMA_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
+    // Opt OUT of local-only so the model-env check takes the cloud-inference
+    // path: with no model AND no key it fails (under local-only the runtime
+    // would resolve the local default, which can't fail — that is P34-12's fix).
+    const prevLocalOnly = process.env.MUSE_LOCAL_ONLY;
+    process.env.MUSE_LOCAL_ONLY = "false";
     try {
       const { io, output } = captureOutput();
       const program = createProgram({ ...io, fetch: async () => { throw new Error("api off"); } });
@@ -6962,6 +6967,8 @@ describe("cli program", () => {
       expect(process.exitCode).toBe(1);
       process.exitCode = 0;
     } finally {
+      if (prevLocalOnly === undefined) delete process.env.MUSE_LOCAL_ONLY;
+      else process.env.MUSE_LOCAL_ONLY = prevLocalOnly;
       const restore = (envKey: keyof typeof prev, k: string): void => {
         if (prev[envKey] === undefined) delete process.env[k];
         else process.env[k] = prev[envKey];
@@ -7221,6 +7228,7 @@ describe("cli program", () => {
       openai: process.env.OPENAI_API_KEY,
       openrouter: process.env.OPENROUTER_API_KEY,
       ollama: process.env.OLLAMA_BASE_URL,
+      localOnly: process.env.MUSE_LOCAL_ONLY,
       modelKeysFile: process.env.MUSE_MODEL_KEYS_FILE
     };
     delete process.env.MUSE_MODEL;
@@ -7230,6 +7238,9 @@ describe("cli program", () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.OLLAMA_BASE_URL;
+    // This test exercises the cloud-credential inference path, which (post P34-12)
+    // only applies under an explicit opt-out — local-only resolves the local model.
+    process.env.MUSE_LOCAL_ONLY = "false";
     process.env.MUSE_MODEL_KEYS_FILE = modelKeysFile;
     try {
       // No env, no file → fail.
@@ -7282,6 +7293,7 @@ describe("cli program", () => {
       restore("openai", "OPENAI_API_KEY");
       restore("openrouter", "OPENROUTER_API_KEY");
       restore("ollama", "OLLAMA_BASE_URL");
+      restore("localOnly", "MUSE_LOCAL_ONLY");
       restore("modelKeysFile", "MUSE_MODEL_KEYS_FILE");
     }
   });

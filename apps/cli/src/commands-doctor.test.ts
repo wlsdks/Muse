@@ -8,6 +8,7 @@ import {
   episodeIndexHealth,
   findOllamaModelTag,
   localOnlyCheck,
+  modelEnvCheck,
   notesIndexHealth,
   parseNotesIndexEmbedModel,
   resolveMuseEnvPath,
@@ -276,6 +277,37 @@ describe("resolveMuseEnvPath (goal-478/481/482 sibling, doctor surface)", () => 
   it("treats an empty / whitespace-only env value as unset (the bug 482 fixed for userId, here for doctor paths)", () => {
     expect(resolveMuseEnvPath("", "/home/u/.muse")).toBe("/home/u/.muse");
     expect(resolveMuseEnvPath("   ", "/home/u/.muse")).toBe("/home/u/.muse");
+  });
+});
+
+describe("modelEnvCheck — reports the model the runtime ACTUALLY uses (mirrors resolveDefaultModel)", () => {
+  it("local-only (default) + an ambient cloud key ⇒ reports the LOCAL model, ok (NOT 'inferred from GEMINI')", () => {
+    const check = modelEnvCheck({ MUSE_LOCAL_ONLY: "true", GEMINI_API_KEY: "k" });
+    expect(check.status).toBe("ok");
+    expect(check.detail).toContain("qwen3:8b");
+    expect(check.detail).toContain("ambient cloud keys ignored");
+    expect(check.detail).not.toContain("inferred from GEMINI");
+  });
+
+  it("local-only is the DEFAULT (env unset) — still reports the local model, not a cloud key", () => {
+    const check = modelEnvCheck({ GEMINI_API_KEY: "k" });
+    expect(check.status).toBe("ok");
+    expect(check.detail).toContain("qwen3:8b");
+  });
+
+  it("explicit MUSE_LOCAL_ONLY=false + a cloud key ⇒ warn, inferred from that key", () => {
+    const check = modelEnvCheck({ MUSE_LOCAL_ONLY: "false", GEMINI_API_KEY: "k" });
+    expect(check.status).toBe("warn");
+    expect(check.detail).toContain("inferred from GEMINI_API_KEY");
+  });
+
+  it("an explicit MUSE_MODEL is reported verbatim regardless of local-only", () => {
+    expect(modelEnvCheck({ MUSE_LOCAL_ONLY: "true", MUSE_MODEL: "ollama/llama3" }).detail).toBe("ollama/llama3");
+  });
+
+  it("no model + opt-out + no key ⇒ fail (chat/ask would fail)", () => {
+    const check = modelEnvCheck({ MUSE_LOCAL_ONLY: "false" });
+    expect(check.status).toBe("fail");
   });
 });
 

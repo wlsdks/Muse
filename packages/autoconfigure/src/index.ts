@@ -1009,10 +1009,11 @@ export function requireEnv(env: MuseEnvironment, key: string): string {
  */
 import {
   createModelProvider,
+  LOCAL_FIRST_DEFAULT_MODEL,
   resolveDefaultModel
 } from "./autoconfigure-model-provider.js";
 
-export { createModelProvider, resolveDefaultModel };
+export { createModelProvider, LOCAL_FIRST_DEFAULT_MODEL, resolveDefaultModel };
 
 export {
   parseBoolean,

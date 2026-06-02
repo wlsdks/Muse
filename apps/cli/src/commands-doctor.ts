@@ -15,7 +15,7 @@ import { existsSync, promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { evaluateLocalOnlyPosture, mergeModelKeysFromFile, parseBoolean, resolveEpisodesFile, resolveLearningPauseFile, resolveNotesDir } from "@muse/autoconfigure";
+import { evaluateLocalOnlyPosture, LOCAL_FIRST_DEFAULT_MODEL, mergeModelKeysFromFile, parseBoolean, resolveDefaultModel, resolveEpisodesFile, resolveLearningPauseFile, resolveNotesDir } from "@muse/autoconfigure";
 import { isLearningPaused, parseHomeAlertChecks, readEpisodes, webWatchesFromConfig } from "@muse/mcp";
 import type { Command } from "commander";
 
@@ -300,6 +300,36 @@ export interface LocalCheck {
 }
 
 /**
+ * Report the model the runtime will ACTUALLY use, mirroring `resolveDefaultModel`.
+ * Under local-only (the default) the runtime runs the local model and IGNORES any
+ * ambient cloud key — so a box that happens to carry a `GEMINI_API_KEY` must NOT
+ * be told "model env: inferred from GEMINI_API_KEY" (which makes a privacy-bound
+ * user think their data goes to Gemini, contradicting the very guarantee
+ * local-only provides). The cloud-credential inference is reported ONLY under an
+ * explicit `MUSE_LOCAL_ONLY=false`, exactly as the router resolves it.
+ */
+export function modelEnvCheck(env: Record<string, string | undefined>): LocalCheck {
+  const explicitModel = (env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL)?.trim();
+  if (explicitModel && explicitModel.length > 0) {
+    return { detail: explicitModel, name: "model env", status: "ok" };
+  }
+  if (parseBoolean(env.MUSE_LOCAL_ONLY, true)) {
+    return {
+      detail: `${resolveDefaultModel(env) ?? LOCAL_FIRST_DEFAULT_MODEL} (local-only default — ambient cloud keys ignored)`,
+      name: "model env",
+      status: "ok"
+    };
+  }
+  const anyKey = [
+    "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY", "OLLAMA_BASE_URL"
+  ].find((k) => (env[k] ?? "").trim().length > 0);
+  return anyKey
+    ? { detail: `inferred from ${anyKey} (MUSE_LOCAL_ONLY=false)`, name: "model env", status: "warn" }
+    : { detail: "no MUSE_MODEL / provider key — chat/ask/brief will fail", name: "model env", status: "fail" };
+}
+
+/**
  * `muse doctor --grounding` — score the bundled held-out corpus on the REAL
  * local recall + RGV stack and print faithfulness + false-refusal. Makes the
  * `fabrication=0` claim a number the user reads on their own box; the same
@@ -407,21 +437,13 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   // actually work because the runtime does its own merge at boot.
   const env = mergeModelKeysFromFile({ ...process.env });
 
-  // Model env
-  const muse_model = env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL;
-  if (muse_model) {
-    checks.push({ detail: muse_model, name: "model env", status: "ok" });
-  } else {
-    const anyKey = [
-      "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-      "OPENROUTER_API_KEY", "OLLAMA_BASE_URL"
-    ].find((k) => (env[k] ?? "").trim().length > 0);
-    if (anyKey) {
-      checks.push({ detail: `inferred from ${anyKey}`, name: "model env", status: "warn" });
-    } else {
-      checks.push({ detail: "no MUSE_MODEL / provider key — chat/ask/brief will fail", name: "model env", status: "fail" });
-    }
-  }
+  // Model env — mirrors the runtime's resolveDefaultModel so local-only's
+  // "ambient cloud keys ignored" guarantee is reported truthfully.
+  checks.push(modelEnvCheck(env));
+  // The model the runtime will actually use — under local-only (default) this is
+  // the local qwen3:8b even with no MUSE_MODEL set, so the ollama-tag-pulled check
+  // below now verifies the REAL default is available (it was silently skipped).
+  const muse_model = resolveDefaultModel(env);
 
   checks.push(localOnlyCheck(env));
 
