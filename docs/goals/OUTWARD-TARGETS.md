@@ -697,7 +697,32 @@ qwen3:8b and added to `eval:self-improving`.
   Korean task/reminder recall above is now clean (no "Removed citation", no unverified
   warning), the cross-lingual WiFi recall (P38-16) is unregressed, and a Korean
   absent-fact ("내 여권 번호 뭐야?") still refuses with no fabrication. agent-core
-  112 files / 1383 tests + cli 165 files / 1755 tests + `pnpm lint` 0/0. (this commit)
+  112 files / 1383 tests + cli 165 files / 1755 tests + `pnpm lint` 0/0. (3529a8c5)
+
+- [x] **P38-19 The grounding DRIFT verdict now runs under `muse ask --with-tools`
+  too — one gate under EVERY recall surface, no false-flag.** The recall edge's
+  post-hoc rubric verdict (`groundingVerdictNotice` + the weak-band MaTTS reverify
+  judge + the `--repair` offer) was gated `!options.withTools`, so the agent
+  (tool-using) recall path printed a confident answer with NO drift signal — the
+  one surface where "shows its work" was silent. It was skipped because the
+  verdict's note evidence is the CLI's pre-retrieval top-K (`scored`), and the
+  agent can pull a chunk via `knowledge_search` (often on a REFORMULATED query)
+  the top-K missed → scoring against `scored` alone would false-flag a correct
+  agent answer. Fixed in apps/cli/src/commands-ask.ts: the guard drops to
+  `!options.json` (verdict runs on both paths) and a new pure
+  `augmentNoteEvidenceWithCited(baseNotes, citedSources, liveNotes)` adds the FULL
+  text of every note the answer actually cites (each already gate-validated against
+  the live corpus) to the evidence — ADDITIVE ONLY, so it can prevent a false
+  "ungrounded" but never cause a false "grounded" (a drifted value in no cited note
+  stays uncovered). Proof: 6 new unit tests (pulls a cited out-of-top-K note's full
+  chunks; ignores an uncited note; no chunk dupes; no-op when nothing/invalid is
+  cited; additive-only invariant) + the existing verdict/relativize tests green +
+  LIVE on qwen3:8b: `muse ask --with-tools` asserting "WireGuard default MTU is 1420
+  [from net.md]" against a note that never states it now fires "⚠️ Grounding check:
+  … treat as unverified (low coverage rejected by re-verification)" + the --repair
+  offer (it was SILENT before); grounded `--with-tools` answers (garage code, wifi
+  password) do NOT false-flag; chat-only is byte-for-byte unchanged. cli 166 files /
+  1761 tests + `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

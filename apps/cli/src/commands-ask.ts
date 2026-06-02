@@ -421,6 +421,38 @@ export function relativizeNoteSource(file: string, notesDir: string): string {
 }
 
 /**
+ * Note evidence the grounding VERDICT scores against, augmented for the agent
+ * (`--with-tools`) path. The chat-only path's `scored` top-K IS exactly what
+ * grounded the answer; but the agent can pull a chunk via `knowledge_search`
+ * (often on a reformulated query) that the CLI's pre-retrieval top-K missed, so
+ * scoring the agent's answer against `scored` alone would false-flag a
+ * legitimately grounded answer "treat as unverified". This adds the FULL text
+ * of every note the answer actually CITES (each already gate-validated against
+ * the live corpus) so a cited note is always covered. Additive only: it can
+ * prevent a false "ungrounded", never cause a false "grounded" — a drifted
+ * value that appears in no cited note still scores uncovered. Pure + exported.
+ */
+export function augmentNoteEvidenceWithCited(
+  baseNotes: readonly KnowledgeMatch[],
+  citedSources: readonly string[],
+  liveNotes: readonly { readonly source: string; readonly chunks: readonly { readonly text: string }[] }[]
+): KnowledgeMatch[] {
+  const out: KnowledgeMatch[] = baseNotes.map((m) => ({ ...m }));
+  const seen = new Set(out.map((m) => `${m.source} ${m.text}`));
+  const cited = new Set(citedSources);
+  for (const note of liveNotes) {
+    if (!cited.has(note.source)) continue;
+    for (const chunk of note.chunks) {
+      const key = `${note.source} ${chunk.text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ cosine: 1, score: 1, source: note.source, text: chunk.text });
+    }
+  }
+  return out;
+}
+
+/**
  * Whether to nudge the user toward `--repair` after an ungrounded verdict. Only
  * when: the verdict actually fired, `--repair` wasn't already requested, we're
  * not in `--json`, and there IS retrieved evidence to rewrite from (with no
@@ -2121,13 +2153,14 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         if (tip) io.stderr(`${tip}\n`);
       }
 
-      // Output-side rubric VERDICT (chat-only path, where `scored` IS the
-      // evidence): even after invented citations are stripped, warn when the
+      // Output-side rubric VERDICT — the recall edge's drift gate, now under
+      // BOTH the chat-only AND the --with-tools agent path (one gate under EVERY
+      // surface): even after invented citations are stripped, warn when the
       // answer's claims drift beyond the grounded passages — the fabrication
       // signal the citation gate alone can't see. The ambiguous `weak` band
       // spends ONE extra local-Qwen inference (MaTTS) to re-check the answer
       // against the evidence — fail-close, so a judge error still warns.
-      if (!options.json && !options.withTools) {
+      if (!options.json) {
         const provider = assembly.modelProvider;
         const reverify: GroundingReverify | undefined = provider
           ? async ({ answer, evidence, query: q }) => {
@@ -2168,8 +2201,26 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           const human = d.toLocaleString("en-US", { day: "numeric", hour: "numeric", minute: "2-digit", month: "long", weekday: "long", year: "numeric" });
           return `${human} ${d.toISOString().slice(0, 10)}`;
         };
+        // Note evidence for the verdict. Chat-only: `scored` (the top-K shown to
+        // the model) IS exactly what grounded the answer. --with-tools: the agent
+        // can pull a chunk via `knowledge_search` (often on a REFORMULATED query)
+        // that the CLI's pre-retrieval top-K didn't include, so scoring against
+        // `scored` alone would false-flag a legitimately grounded agent answer.
+        // Augment with the FULL text of every note the answer actually cites
+        // (each already gate-validated against the live corpus above) so a cited
+        // note is always covered. This only ADDS evidence — it can prevent a
+        // false "ungrounded", never cause a false "grounded": a drifted value
+        // that appears in no cited note still scores uncovered → ungrounded.
+        const baseNoteMatches = scored.map((r) => ({ cosine: r.score, score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text }));
+        const noteMatches = options.withTools && index
+          ? augmentNoteEvidenceWithCited(
+              baseNoteMatches,
+              citedSourcesIn(collectedAnswer),
+              filterLiveNoteIndexFiles(index.files, existsSync).map((f) => ({ chunks: f.chunks, source: relativizeNoteSource(f.path, notesDir) }))
+            )
+          : baseNoteMatches;
         const scoredMatches = [
-          ...scored.map((r) => ({ cosine: r.score, score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text })),
+          ...noteMatches,
           ...matchedContacts.map((c) => {
             const birthday = formatContactBirthday(c.birthday);
             const fields = [c.email, c.phone, c.handle, birthday, ...(c.aliases ?? [])]

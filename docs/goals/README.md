@@ -858,3 +858,15 @@ Append one line when a discovery path is evaluated and deferred:
   (without loosening the genuine must-refuse set), then re-probe. The 4
   landed cases (weapons/doxxing/fraud refuse + dual-use-ops help) are
   STABLE.
+- auto-memory may distil a MODEL-asserted value as "what you told me" — iter
+  (P38-19) — DISCOVERED while live-testing the --with-tools drift gate: a
+  `muse ask --with-tools` answer that drifted ("WireGuard default MTU is 1420")
+  was, on the NEXT ask in the same HOME, recalled and cited `[memory:
+  wireguard_default_mtu]` ("🧠 from what you told me") — i.e. the model's own
+  general-knowledge assertion appears to have been auto-saved as a user-stated
+  fact. If real, this is a provenance-fabrication on the MEMORY surface (the
+  next recall presents it as the user's own fact). NOT fixed here (orthogonal to
+  the verdict slice; the P38-19 drift gate already flags the original assertion
+  as unverified). Future slice: confirm whether `muse ask` auto-distils facts,
+  and if so gate distillation so a low-confidence / unverified answer is NOT
+  promoted to a cited memory. Worth investigating as a real edge gap.
