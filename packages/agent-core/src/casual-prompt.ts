@@ -82,6 +82,25 @@ const OVERVIEW_PATTERNS: readonly RegExp[] = [
   /노트\s*(목록|요약|정리)/u
 ];
 
+// An IMPERATIVE request to DO something (set a reminder, add a task, send an
+// email) rather than a question. On the chat-only (no-tools) path the model
+// happily says "I'll remind you…" — a FALSE PROMISE, because nothing was
+// actually done. Detect it so the caller can honestly point the user at the
+// `--with-tools` path that can actually act. Anchored on the action verb at the
+// start (after an optional polite/request lead) so a QUESTION about an action
+// ("what reminders do I have?", "when is my dentist reminder?") does NOT match.
+const ACTION_REQUEST_RE =
+  /^(please\s+|pls\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|i'?d?\s+(like|want)\s+(you\s+)?to\s+)?(remind\s+me|set\s+(up\s+)?(an?\s+)?reminder|add\s+(an?\s+)?(reminder|task|to-?do|event)|create\s+(an?\s+)?(reminder|task|event)|make\s+(an?\s+)?(reminder|task|note)|schedule\s+(an?\s+)?\w|book\s+\w|email\s+\w|send\s+\w+\s+(an?\s+)?(email|message|text|note)|text\s+\w|message\s+\w)/u;
+
+/** True when the prompt is an imperative request to DO something (needs tools), not a question. */
+export function classifyActionRequest(query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q.length === 0 || q.length > 120) {
+    return false;
+  }
+  return ACTION_REQUEST_RE.test(q);
+}
+
 /** True when the prompt asks for a whole-corpus overview/listing, not a specific recall. */
 export function classifyCorpusOverview(query: string): boolean {
   const q = query.trim().toLowerCase();

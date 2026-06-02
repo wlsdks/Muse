@@ -29,7 +29,7 @@ import { isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, parseGroundingReverifyVerdict, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
-import { classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
+import { classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -324,6 +324,13 @@ export const META_RESPONSE =
   "I answer questions from your own notes and quote the exact source — and I tell you \"I'm not sure\" instead of guessing. " +
   "Everything runs locally on your machine; nothing leaves. " +
   "Add notes with `muse read <file> --save-to-notes <id>`, then ask me anything you've saved — or run `muse demo` to see a cited answer and an honest refusal in about 30 seconds.";
+
+// Honest guide for an action request on the chat-only path — so Muse never says
+// "I'll remind you…" without actually doing it (a false promise).
+export const ACTION_GUIDE =
+  "That's something to DO, not a question — and on this path I can only read and answer, so I won't pretend to have done it. " +
+  "Re-run with `--with-tools` and I'll actually do it (I show the exact action and ask before any outbound send or change). " +
+  "Reads stay silent; writes/sends always ask first.";
 
 /**
  * Relativize a note source against the notes dir so the form a recall answer is
@@ -1117,6 +1124,20 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           io.stdout(`${JSON.stringify({ answer: META_RESPONSE, meta: true, query })}\n`);
         } else {
           io.stdout(`${META_RESPONSE}\n`);
+        }
+        return;
+      }
+
+      // An imperative DO-something request ("remind me to…", "email Sarah…") on
+      // the chat-only path: the model would happily say "I'll remind you…" — a
+      // FALSE PROMISE, since the no-tools path can't act. Be honest and point at
+      // the path that actually can (which asks before any outbound send). On
+      // --with-tools the agent really does it, so don't short-circuit there.
+      if (!options.withTools && classifyActionRequest(query)) {
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ actionRequest: true, needsTools: true, query })}\n`);
+        } else {
+          io.stdout(`${ACTION_GUIDE}\n`);
         }
         return;
       }

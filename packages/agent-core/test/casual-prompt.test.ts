@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt } from "../src/index.js";
+import { classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt } from "../src/index.js";
 
 describe("classifyCasualPrompt — pure social prompts only (precision-first)", () => {
   it("classifies greetings (EN + KO), tolerating trailing punctuation and repeats", () => {
@@ -65,6 +65,36 @@ describe("classifyMetaPrompt — questions ABOUT Muse itself (precision-first)",
       "what is my rent"
     ]) {
       expect(classifyMetaPrompt(q)).toBe(false);
+    }
+  });
+});
+
+describe("classifyActionRequest — imperative DO-something requests (needs tools), not questions", () => {
+  it("matches imperative action requests, with or without a polite lead", () => {
+    for (const q of [
+      "remind me to call the dentist tomorrow",
+      "set a reminder for the 9am standup",
+      "add a task to review the deck",
+      "create an event for Friday",
+      "email Sarah the notes",
+      "can you remind me to water the plants",
+      "please add a reminder to renew the passport",
+      "I'd like you to schedule a call with Mina"
+    ]) {
+      expect(classifyActionRequest(q)).toBe(true);
+    }
+  });
+
+  it("does NOT match a QUESTION about actions/reminders (only imperatives)", () => {
+    for (const q of [
+      "what reminders do I have?",
+      "when is my dentist reminder?",
+      "did you email Sarah?",
+      "what should I remind myself about",
+      "how do I set a reminder",
+      "what is my rent"
+    ]) {
+      expect(classifyActionRequest(q)).toBe(false);
     }
   });
 });

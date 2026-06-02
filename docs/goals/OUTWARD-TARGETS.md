@@ -429,7 +429,24 @@ tool-calling.md).** Edge hygiene meets felt responsiveness.
   `listNoteFiles` / `formatCorpusOverview` unit tests + a LIVE `muse ask "what's
   in my notes?"` (lists `lease.md` + `projects/vpn.md`, the user can now SEE
   their corpus) while `muse ask "what is my rent?"` still recalls + cites.
-  agent-core 1353 / cli 1709 + `pnpm lint` 0/0. (this commit)
+  agent-core 1353 / cli 1709 + `pnpm lint` 0/0. (c0644ab4)
+
+- [x] **P39-6 No more false promise of action on the chat-only path.** Ask `muse
+  ask "remind me to call the dentist tomorrow"` WITHOUT `--with-tools` and the
+  model said "I'll remind you to call the dentist tomorrow" — a FALSE PROMISE
+  (the no-tools path can't act, so nothing was set; it even fabricated a
+  `[reminder: …]` citation the gate then stripped). A new precision-first
+  `classifyActionRequest` (agent-core, anchored on the imperative action verb so
+  "what reminders do I have?" / "how do I set a reminder" do NOT match) now, on
+  the chat-only path, replies honestly: "That's something to DO… re-run with
+  `--with-tools` and I'll actually do it (I ask before any outbound send)."
+  `--with-tools` is untouched — it really sets the reminder (`muse.reminders.add`).
+  Proof: classifier unit tests (imperatives EN match incl. polite leads;
+  questions about actions don't) + an ACTION_GUIDE guard (mentions --with-tools +
+  ask-first, never claims it acted) + a LIVE before/after (default → the honest
+  guide, no false promise; `--with-tools` → "I've set a reminder…"; "what
+  reminders do I have?" → still recalls). agent-core 1355 / cli 1710 +
+  `pnpm lint` 0/0. (this commit)
 
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections

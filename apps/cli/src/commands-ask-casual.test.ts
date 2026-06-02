@@ -1,7 +1,7 @@
 import { classifyCasualPrompt } from "@muse/agent-core";
 import { describe, expect, it } from "vitest";
 
-import { CASUAL_RESPONSES, META_RESPONSE } from "./commands-ask.js";
+import { ACTION_GUIDE, CASUAL_RESPONSES, META_RESPONSE } from "./commands-ask.js";
 
 describe("CASUAL_RESPONSES — clean conversational replies for a social prompt", () => {
   it("has a reply for every kind the classifier produces", () => {
@@ -17,6 +17,16 @@ describe("CASUAL_RESPONSES — clean conversational replies for a social prompt"
       expect(reply.length).toBeGreaterThan(0);
       expect(reply).not.toMatch(/\[(from|action|event|task|reminder|contact|command|session|feed)\b/u);
     }
+  });
+});
+
+describe("ACTION_GUIDE — honest, never a false promise of action", () => {
+  it("points at --with-tools and the ask-first safety, and never claims it already acted", () => {
+    expect(ACTION_GUIDE).toMatch(/--with-tools/u);
+    expect(ACTION_GUIDE).toMatch(/ask/iu); // surfaces the ask-before-acting safety
+    // Must NOT claim the action is done — that is exactly the false promise it fixes.
+    expect(ACTION_GUIDE).not.toMatch(/I'?ve (set|sent|added|created|scheduled|done)/iu);
+    expect(ACTION_GUIDE).not.toMatch(/I'?ll (remind|email|set|send)/iu);
   });
 });
 
