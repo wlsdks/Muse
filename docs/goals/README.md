@@ -38,6 +38,18 @@ Append new rows below; the table starts fresh from this reset.
 Append one line when a discovery path is evaluated and deferred:
 `- <area> — iter <hash> — deferred: <reason>`
 
+- `muse chat` lacks the recall citation gate (no `enforceAnswerCitations`) — iter
+  0acf121c — NOT a defect: the edge's grounded surfaces (docs/strategy/the-edge.md)
+  are Recall (`muse ask`) / Proactivity / Reflection / Council — NOT chat. Chat is
+  the conversational companion BY DESIGN; cited-recall is `muse ask`'s job. Do not
+  "fix" chat to cite/gate. (If ever revisited: it routes through the agent runtime,
+  so it shares #1's tool-result-surfacing prerequisite, and the Ink TUI is not
+  headlessly verifiable.)
+- injection-input-guard scans the user's OWN trusted notes (false-positives a
+  note that legitimately mentions credentials, breaking `--with-tools`) — iter
+  90543ed1 — deferred: needs a trusted/untrusted-content split; security-sensitive,
+  not a safe autonomous change without human review.
+
 - proactive-recall-gate weak-adjacency surfacing (Flight booking → meeting-q3,
   Car insurance → dentist) — iter cdd301e3 — same non-defect class as the recall
   car-insurance case: the proactive finding CITES its source ("[meeting-q3.md]…"),

@@ -339,7 +339,20 @@ qwen3:8b and added to `eval:self-improving`.
   (`shouldSuggestRepair`: fires on ungrounded-with-evidence; silent on a clean
   answer / repair-already-set / --json / no-evidence) + a LIVE `muse ask "what
   cipher does the office VPN use?"` over a note that doesn't say (the answer trips
-  the verdict and the --repair tip appears). cli 1704 + `pnpm lint` 0/0. (this commit)
+  the verdict and the --repair tip appears). cli 1704 + `pnpm lint` 0/0. (0acf121c)
+
+- [x] **P38-9 The 📎 receipt shows the SAME relative path the answer cited (not
+  the basename).** After P38-6 made citations relative (`[from projects/vpn.md]`),
+  the "open to verify" receipt still labelled the source by basename ("from
+  vpn.md") for a non-dated note — so a user with `a/notes.md` AND `b/notes.md`
+  couldn't tell which "from notes.md" receipt was which. The receipt now prints
+  the cited relative path, matching the citation. Proof: the `commands-ask-receipts`
+  test updated to assert "from tasks/finances.md" (not "from finances.md") + a LIVE
+  `muse ask` over a nested note (`projects/vpn.md`): answer cites
+  `[from projects/vpn.md]` AND the receipt reads "from projects/vpn.md". cli 1704 +
+  `pnpm lint` 0/0. (Investigated this iter + recorded in the Rejected ledger: `muse
+  chat` lacks the citation gate, but that is BY DESIGN — chat is conversational,
+  not one of the edge's grounded surfaces; do not "fix" it.) (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

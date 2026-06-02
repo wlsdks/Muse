@@ -217,7 +217,10 @@ export function formatSourceReceipts(
   };
   const blocks = cited.map((note) => {
     const date = provenanceDate(note);
-    const lead = date ? `from your note of ${date}` : `from ${note.split("/").pop() ?? note}`;
+    // Show the SAME relative path the answer cited (`[from projects/vpn.md]`),
+    // not just the basename — otherwise a user with `a/notes.md` and
+    // `b/notes.md` can't tell which "from notes.md" receipt is which.
+    const lead = date ? `from your note of ${date}` : `from ${note}`;
     const snippet = snippetFor(note);
     const path = isAbsolute(note) ? note : join(notesDir, note);
     return `   • ${lead}${snippet ? ` — "${snippet}"` : ""}\n     ${path}`;

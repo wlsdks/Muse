@@ -53,9 +53,9 @@ describe("formatSourceReceipts — S1 citation-as-voice (date + verbatim snippet
     expect(out).toContain("/home/u/.muse/notes/2026-03-03-vpn-wireguard.md"); // openable
   });
 
-  it("falls back to the note name when the filename has no date", () => {
+  it("shows the SAME relative path the answer cited (not just the basename) when the filename has no date", () => {
     const out = formatSourceReceipts("Rent is due [from tasks/finances.md].", "/n", chunks);
-    expect(out).toContain("from finances.md");
+    expect(out).toContain("from tasks/finances.md"); // matches the [from tasks/finances.md] citation, so a/notes.md vs b/notes.md is unambiguous
     expect(out).toContain('"Rent is due on the 25th');
   });
 
