@@ -37,6 +37,7 @@ const BATTERIES = [
   { axis: "★ WEDGE: rubric re-verification (MaTTS)", file: "apps/cli/scripts/verify-rubric-reverify.mjs", name: "rubric-reverify" },
   { axis: "★ WEDGE: scored faithfulness + false-refusal rates", file: "apps/cli/scripts/verify-faithfulness-rate.mjs", name: "faithfulness-rate" },
   { axis: "★ WEDGE: claim-level value grounding (wrong-value hole)", file: "apps/cli/scripts/verify-claim-grounding.mjs", name: "claim-grounding" },
+  { axis: "★ WEDGE: attributed self-repair (constructive, fail-closed)", file: "apps/cli/scripts/verify-attributed-repair.mjs", name: "attributed-repair" },
   { axis: "★ NORTH STAR: gated proactive recall", file: "apps/cli/scripts/verify-proactive-recall-gate.mjs", name: "proactive-recall-gate" },
   { axis: "★ DREAMING: grounded reflection", file: "apps/cli/scripts/verify-reflection-synthesis.mjs", name: "reflection-synthesis" },
   { axis: "★ DREAMING: reflection RGV re-verify", file: "apps/cli/scripts/verify-reflection-grounding.mjs", name: "reflection-grounding" },

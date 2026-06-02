@@ -28,6 +28,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, parseGroundingReverifyVerdict, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -470,6 +471,7 @@ interface AskOptions {
   readonly actuators?: boolean;
   readonly tiered?: boolean;
   readonly connect?: boolean;
+  readonly repair?: boolean;
   /**
    * Clamps the answer to notes + local-memory grounding only.
    * Disables native web_search on every provider path and, when
@@ -941,6 +943,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--tiered",
       "Route this ask to a fast or high-capability model by classifying the question (lookups → fast, reasoning → heavy; defaults to heavy when unsure). Tier models come from MUSE_FAST_MODEL / MUSE_HEAVY_MODEL (each defaults to the configured model). An explicit --model overrides tiering. Off by default."
+    )
+    .option(
+      "--repair",
+      "When an answer fails the grounding check, attempt ONE local rewrite constrained to your retrieved notes and show it as a 'Corrected from your notes' offer — but ONLY if the rewrite then re-verifies grounded (else the honest refusal stands; a fix is never fabricated). Off by default; spends one extra local inference."
     )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const argQuery = queryParts.join(" ").trim();
@@ -1728,13 +1734,36 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               return parseGroundingReverifyVerdict(judged.output ?? "");
             }
           : undefined;
-        const verdictNotice = await groundingVerdictNotice(
-          collectedAnswer,
-          scored.map((r) => ({ cosine: r.score, score: r.score, source: r.file, text: r.chunk.text })),
-          query,
-          reverify
-        );
-        if (verdictNotice) io.stderr(verdictNotice);
+        const scoredMatches = scored.map((r) => ({ cosine: r.score, score: r.score, source: r.file, text: r.chunk.text }));
+        const verdictNotice = await groundingVerdictNotice(collectedAnswer, scoredMatches, query, reverify);
+        if (verdictNotice) {
+          io.stderr(verdictNotice);
+          // Constructive grounding (RARR, arXiv:2210.08726): rather than only
+          // warning, attempt ONE rewrite constrained to the retrieved evidence
+          // and show it ONLY if it re-verifies grounded through the SAME gate
+          // (so a wrong value can't survive — the claim-level check applies to
+          // the fix too). Fail-closed: no grounded rewrite ⇒ the refusal stands.
+          if (options.repair && provider && reverify) {
+            const repair = await repairToEvidence(collectedAnswer, scoredMatches, query, {
+              gate: (candidate) => enforceAnswerCitations(candidate, { notes: allowedNotes }).text,
+              isRefusal: answerIsRefusal,
+              rewrite: async ({ answer: draft, evidence, query: q }) => {
+                const rewritten = await provider.generate({
+                  maxOutputTokens: 400,
+                  messages: [
+                    { content: REPAIR_SYSTEM_PROMPT, role: "system" },
+                    { content: buildAttributedRepairPrompt({ answer: draft, evidence, query: q }), role: "user" }
+                  ],
+                  model,
+                  temperature: 0
+                });
+                return rewritten.output ?? "";
+              },
+              verify: (candidate, candidateMatches, q) => verifyGroundingWithReverify(candidate, candidateMatches, q, reverify)
+            });
+            if (repair.repaired) io.stderr(`\n🔧 Corrected from your notes:\n${repair.repaired}\n`);
+          }
+        }
       }
 
       // S2 warm honesty (B2): when Muse honestly refuses AND the user has

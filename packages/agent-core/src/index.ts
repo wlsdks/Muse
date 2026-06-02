@@ -179,6 +179,14 @@ export {
   type GroundingEvalResult
 } from "./grounding-eval.js";
 export {
+  buildAttributedRepairPrompt,
+  repairToEvidence,
+  REPAIR_SYSTEM_PROMPT,
+  type AttributedRepairDeps,
+  type AttributedRepairPromptInput,
+  type AttributedRepairResult
+} from "./attributed-repair.js";
+export {
   createConfidenceGatedInvestigator,
   decideProactiveRecall,
   type ConfidenceGatedInvestigatorDeps,
