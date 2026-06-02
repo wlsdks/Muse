@@ -228,6 +228,41 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   prompt is now tighter for the small model and the spurious-citation surface is
   cut at the source. (this commit)
 
+**P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
+conversational session — NOT a loop fire).** The edge gained an instrument,
+closed its deepest hole, and became constructive. Each verified live on
+qwen3:8b and added to `eval:self-improving`.
+
+- [x] **P38-1 `muse doctor --grounding` — scored faithfulness + false-refusal.**
+  Turns the `fabrication=0` claim into two numbers a user reads on their own box:
+  a bundled held-out corpus (12 answerable / 8 must-refuse / 7 drift) scored
+  through the real recall + RGV stack prints faithfulness + false-refusal; the
+  same `scoreGroundingEval` (agent-core, rank/verify injected, unit-tested) is the
+  `verify-faithfulness-rate` battery (regression gate). false-refusal is loop-v2's
+  GUARD-THE-EDGE metric, previously unmeasured. Baseline 0.93 / 0.08 on nomic +
+  qwen3:8b; floor 0.84 / 0.25 (one miss below). RAGAS arXiv:2309.15217. (92ed90b5)
+
+- [x] **P38-2 Claim-level value grounding — catch the wrong-value answer.** A
+  confident, high-coverage, fully-cited answer asserting a WRONG NUMBER ("MTU
+  9000" where the note says 1380) read `grounded` — its single wrong token barely
+  dents whole-answer coverage, so the judge never fired (the deepest documented
+  hole). `verifyGroundingWithReverify` now escalates a `grounded` answer asserting
+  a number absent from the evidence to one judge pass (fail-OPEN; the recall wedge
+  inherits it). The faithfulness corpus gained 2 wrong-value cases that WITHOUT
+  this drop faithfulness to 0.80 < the 0.84 floor — so the metric now GUARDS the
+  fix. `verify-claim-grounding` battery. Self-RAG arXiv:2310.11511 / Chain-of-Note
+  arXiv:2311.09210. (ace7db9b)
+
+- [x] **P38-3 `muse ask --repair` — attributed self-repair (constructive).** The
+  edge only WARNED on an ungrounded answer; `--repair` rewrites it constrained to
+  the retrieved evidence and shows it as "Corrected from your notes" ONLY if the
+  rewrite re-verifies grounded through the same gate (so a wrong value can't
+  survive into the fix). Fail-closed — a refusing / ungrounded / no-evidence
+  rewrite leaves the honest refusal standing; a fix is never fabricated. Pure
+  `repairToEvidence` (agent-core, 8 unit tests) + `--repair` flag +
+  `verify-attributed-repair` battery (live: "MTU 9000" → "MTU 1380",
+  off-corpus → refused). RARR arXiv:2210.08726. (e83e506f)
+
 **P36 — Background self-learning, brake-and-proof-first (loop-v2 PART A2 /
 B1).** The headline's "grows-with-you" core: Muse learns from corrections
 while idle, on its own, without straining the laptop. Built brake-FIRST — the
