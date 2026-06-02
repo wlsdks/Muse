@@ -429,7 +429,25 @@ qwen3:8b and added to `eval:self-improving`.
   tasks" receipts, ZERO warnings; `"what reminders do I have?"` clean; negative
   `"what is my bank account number?"` still refuses; `verify-claim-grounding` 4/4
   (wrong number/name still rejected) + `verify-cited-recall` 6/6 (note recall +
-  out-of-corpus refusal intact). cli 1710 + `pnpm lint` 0/0. (this commit)
+  out-of-corpus refusal intact). cli 1710 + `pnpm lint` 0/0. (b844cf4c)
+
+- [x] **P38-12 Events recall: REPAIR the piece P38-11 claimed but didn't live-prove
+  — clean verdict AND the correct weekday.** Falsifying P38-11 with a real
+  `calendar.json` event exposed events still RED: `muse ask "what's on my schedule?"`
+  cited the event fine but STILL fired "not backed by your notes", AND the model told
+  the user the WRONG day ("Saturday" for a Thursday). Root cause: the event wrapper
+  fed the model only ISO timestamps, so it (a) mis-derived the weekday and (b) its
+  reformatted-date prose ("Saturday, June 4th, 8 PM") + true framing ("no other
+  events this week") missed the note-only-style evidence → coverage 0.43 < 0.5 floor.
+  Fix (both in `commands-ask.ts`, no core change): the event wrapper now hands the
+  model a HUMAN-readable local date (`toLocaleString` weekday/month/day/time, ISO
+  kept for precision) so it echoes the CORRECT day, and the verdict evidence for
+  every date-bearing source (events/tasks/reminders) carries the same human date
+  rendering so the derived date tokens are covered. Fabrication still caught
+  (claim-grounding 4/4). Proof: LIVE `muse ask "what's on my calendar this week?"`
+  ×3 → all clean (ZERO warnings) and the day is now correct ("Friday, June 5, 2026");
+  tasks/reminders stay clean; negative "bank account number" still refuses;
+  `verify-claim-grounding` 4/4. cli 1710 + `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

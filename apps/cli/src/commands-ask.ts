@@ -1497,9 +1497,16 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         ? "(no upcoming events)"
         : upcomingEvents
           .map((e, i) => {
+            // Show a HUMAN-readable local date, not the raw ISO: the small model
+            // mis-derives the weekday from an ISO string (told the user the wrong
+            // day), and its reformatted prose then fails the verdict's token
+            // coverage. Hand it the rendered date it should echo (the system
+            // locale/tz is the user's), keeping the ISO for unambiguous precision.
+            const fmtWhen = (d: Date): string =>
+              d.toLocaleString("en-US", { day: "numeric", hour: "numeric", minute: "2-digit", month: "long", weekday: "long", year: "numeric" });
             const when = e.allDay
-              ? `${e.startsAt.toISOString().slice(0, 10)} (all-day)`
-              : `${e.startsAt.toISOString()} → ${e.endsAt.toISOString()}`;
+              ? `${fmtWhen(e.startsAt)} (all-day, ${e.startsAt.toISOString().slice(0, 10)})`
+              : `${fmtWhen(e.startsAt)} to ${fmtWhen(e.endsAt)} (${e.startsAt.toISOString()})`;
             const loc = e.location ? ` @ ${e.location}` : "";
             const provider = `[${e.providerId}]`;
             return `<<event ${(i + 1).toString()} — ${provider}>>\n${e.title}${loc}\n${when}\n[event: ${e.title}]\n<<end>>`;
@@ -1961,6 +1968,18 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // ungrounded.
         const exactMatch = (source: string, text: string): { cosine: number; score: number; source: string; text: string } =>
           ({ cosine: 1, score: 1, source, text });
+        // A date-bearing answer reformats the stored ISO timestamp into prose
+        // ("Saturday, June 4th, 8:00 PM"), so the evidence text must carry that
+        // SAME human rendering or the coverage check false-flags the derived
+        // date/time as unsupported. Render in the system locale/tz — the same
+        // basis the model reasons from — and keep the ISO form too (belt-and-suspenders).
+        const humanDate = (value: string | Date | undefined): string => {
+          if (!value) return "";
+          const d = value instanceof Date ? value : new Date(value);
+          if (Number.isNaN(d.getTime())) return "";
+          const human = d.toLocaleString("en-US", { day: "numeric", hour: "numeric", minute: "2-digit", month: "long", weekday: "long", year: "numeric" });
+          return `${human} ${d.toISOString().slice(0, 10)}`;
+        };
         const scoredMatches = [
           ...scored.map((r) => ({ cosine: r.score, score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text })),
           ...matchedContacts.map((c) => {
@@ -1970,9 +1989,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               .join(" ");
             return exactMatch(`contact: ${c.name}`, `${c.name} ${fields}`.trim());
           }),
-          ...openTasks.map((t) => exactMatch(`task: ${t.title}`, `${t.title}${t.notes ? ` ${t.notes}` : ""}${t.dueAt ? ` due ${t.dueAt}` : ""}`)),
-          ...upcomingEvents.map((e) => exactMatch(`event: ${e.title}`, `${e.title}${e.location ? ` ${e.location}` : ""}`)),
-          ...pendingReminders.map((r) => exactMatch(`reminder: ${r.text}`, r.text)),
+          ...openTasks.map((t) => exactMatch(`task: ${t.title}`, `${t.title}${t.notes ? ` ${t.notes}` : ""}${t.dueAt ? ` due ${t.dueAt} ${humanDate(t.dueAt)}` : ""}`)),
+          ...upcomingEvents.map((e) => exactMatch(`event: ${e.title}`, `${e.title}${e.location ? ` ${e.location}` : ""} ${humanDate(e.startsAt)} ${humanDate(e.endsAt)}`.trim())),
+          ...pendingReminders.map((r) => exactMatch(`reminder: ${r.text}`, `${r.text} ${humanDate(r.dueAt)}`.trim())),
           ...episodeHits.map((e) => ({ cosine: e.score, score: e.score, source: `session: ${e.id}`, text: e.summary })),
           ...matchedActions.map((a) => exactMatch(`action: ${a.what}`, `${a.what} ${a.result}${a.detail ? ` ${a.detail}` : ""}`)),
           ...matchedCommands.map((cmd) => exactMatch(`command: ${cmd}`, cmd)),
