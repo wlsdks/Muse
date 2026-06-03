@@ -137,6 +137,19 @@ describe("verifyGroundingWithReverify — claim-level value escalation (the wron
     expect(out.verdict).toBe("grounded");
   });
 
+  it("escalates a GROUNDED answer asserting a WRONG EMAIL DOMAIN and demotes it on an unsupported judge verdict", async () => {
+    const matches = [match("notes/contacts.md", "Jane Park leads sales; her email is jane@globex.com.", 0.72)];
+    const out = await verifyGroundingWithReverify("Jane Park's email is jane@acme.com [from notes/contacts.md].", matches, "what is Jane Park's email", async () => false);
+    expect(out.verdict).toBe("ungrounded");
+    expect(out.reason).toContain("value the evidence does not support");
+  });
+
+  it("does NOT escalate a GROUNDED answer whose email matches the evidence verbatim", async () => {
+    const matches = [match("notes/contacts.md", "Jane Park leads sales; her email is jane@globex.com.", 0.72)];
+    const out = await verifyGroundingWithReverify("Jane Park's email is jane@globex.com [from notes/contacts.md].", matches, "what is Jane Park's email", never);
+    expect(out.verdict).toBe("grounded");
+  });
+
   it("escalates a GROUNDED answer asserting a WRONG NAMED ENTITY and demotes it on an unsupported judge verdict", async () => {
     const matches = [match("notes/lease.md", "Apartment lease: landlord is Mr. Park, rent due on the 1st.", 0.72)];
     const out = await verifyGroundingWithReverify("Your landlord is Mr. Lee [from notes/lease.md].", matches, "who is my landlord", async () => false);

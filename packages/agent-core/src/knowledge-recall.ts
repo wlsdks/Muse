@@ -746,7 +746,8 @@ const VALUE_WORD_STOPLIST = new Set([
 
 /**
  * The VALUE tokens the answer asserts that the evidence does NOT contain — a
- * pure-digit NUMBER ("MTU 9000" vs the note's "1380") OR a capitalized NAMED
+ * pure-digit NUMBER ("MTU 9000" vs the note's "1380"), a whole EMAIL ADDRESS
+ * ("jane@acme.com" vs the note's "jane@globex.com"), OR a capitalized NAMED
  * ENTITY ("Dr. Kim" vs "Dr. Patel"). The rubric's `coverage` is whole-answer
  * token overlap, so a single wrong value barely dents coverage and the answer
  * still reads `grounded` — the documented wrong-value hole. This flags exactly
@@ -761,6 +762,19 @@ function answerAssertsUnsupportedValue(answer: string, matches: readonly Knowled
   const evidence = unionContentTokens(matches);
   const numbers = [...lexicalTokens(stripped)].filter((token) => /^\d+$/u.test(token));
   if (numbers.some((number) => !evidence.has(number))) {
+    return true;
+  }
+  // Structured identifiers — an EMAIL ADDRESS the answer asserts must appear
+  // VERBATIM in the evidence. The token rules above are blind to these: an email
+  // tokenises to lowercase parts (jane@acme.com → jane/acme/com), so a drifted
+  // DOMAIN ("acme" for the note's "globex") is neither a pure digit nor a
+  // capitalised entity and a WRONG contact email passes as "grounded" — the most
+  // dangerous drift for a contact / outbound surface. Compare whole addresses
+  // against the raw evidence text, case-insensitively (local part + domain are
+  // both copied verbatim from a note, never reformatted).
+  const evidenceText = matches.map((m) => m.text).join(" ").toLowerCase();
+  const emails = stripped.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/giu) ?? [];
+  if (emails.some((address) => !evidenceText.includes(address.toLowerCase()))) {
     return true;
   }
   const namedEntities = (stripped.match(/\b[A-Z][a-zA-Z]{2,}\b/gu) ?? [])

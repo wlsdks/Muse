@@ -1092,6 +1092,31 @@ qwen3:8b and added to `eval:self-improving`.
   with its receipt — so the STREAMED answer is clean, not just the gated copy. cli
   167 files / 1799 tests + `pnpm lint` 0/0. (9a20b66b)
 
+- [x] **P38-29 The wrong-value gate now catches a drifted EMAIL ADDRESS, not just
+  a wrong number / named entity — the most dangerous contact-data drift.** P38-2
+  escalates a `grounded` answer that asserts a NUMBER or capitalized NAMED ENTITY
+  absent from the evidence to one judge pass (claim-level grounding). But an EMAIL
+  fell through BOTH checks: `jane@acme.com` tokenizes to lowercase parts
+  (jane/acme/com), so a drifted DOMAIN ("acme" for the note's "globex") is neither a
+  pure digit nor a capitalized entity — a confident, high-coverage, cited answer
+  asserting a WRONG email read `grounded` (verified: base verdict grounded @1.00
+  ungated). For a contact / outbound surface that is the most dangerous drift: Muse
+  confidently hands you a wrong address. Fixed in
+  packages/agent-core/src/knowledge-recall.ts: `answerAssertsUnsupportedValue` now
+  also extracts whole email addresses from the answer and flags any not present
+  VERBATIM in the raw evidence text (case-insensitive), so a drifted email escalates
+  to the same fail-OPEN judge pass that demotes it to "I'm not sure" on an unsupported
+  verdict; a correct email (present in evidence) triggers NO extra pass, so there is
+  zero latency/UX cost on the common path. Proof: 2 new unit tests in
+  packages/agent-core/test/knowledge-recall-reverify.test.ts (a wrong-domain email
+  demotes to ungrounded with the "value the evidence does not support" reason; a
+  verbatim-matching email never escalates — uses the `never` reverifier) + the full
+  @muse/agent-core suite green (112 files / 1401 tests) + a real-LLM round-trip on
+  qwen3:8b: `muse ask "what is Jane Park's email?"` over a note holding
+  `jane@globex.com` answers `jane@globex.com [from contacts.md]` cited, grounded, no
+  spurious warning (the correct path is unbroken). agent-core 112 files / 1401 tests +
+  `pnpm lint` 0/0. (this commit)
+
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.
 
