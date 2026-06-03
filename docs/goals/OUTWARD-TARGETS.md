@@ -445,7 +445,7 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   five failing phrasings now `Added` at the right local time (오늘 저녁 7시 → 19:00,
   내일 아침 8시 → next-day 08:00, 밤 10시 → 22:00, 새벽 5시 → 05:00, 내일 저녁 6시 반 →
   18:30) and 오후 3시 still → 15:00. mcp 167 files / 1320 tests + cli remind/tasks/
-  calendar 73 + `pnpm lint` 0/0. (this commit)
+  calendar 73 + `pnpm lint` 0/0. (66b10f17)
 
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
@@ -835,6 +835,29 @@ qwen3:8b and added to `eval:self-improving`.
   NOTHING, while Busan/Jinan/서울 user facts and the prefs still extract — no
   over-drop, negatives still clean). memory 31 files / 320 tests + autoconfigure 484 +
   cli 166 files / 1761 tests + `pnpm lint` 0/0. (17090f9e)
+
+- [x] **P38-22 A contact recall is no longer false-flagged "unverified" when the
+  model cites the raw `contact_<uuid>` id.** Probing the contacts grounding source
+  (P37-5, 진안's address book): `muse ask "what is Mina's email?"` answered correctly
+  ("mina@acme.com") but cited it `[from contact_<uuid>]` — the NOTE verb + the raw
+  internal contact id the grounding marker shows (`<<contact N — contact_<uuid>>>`)
+  — and the gate then STRIPPED it with "⚠️ Removed 1 citation … treat those claims as
+  unverified" on a TRUE recall. Root: `normalizeContactCitations`'s repair regex is
+  anchored on the literal word "contact" + a separator, but the id is
+  `contact_<uuid>` (the `_` is not a separator), so `[from contact_<uuid>]` never
+  matched and fell through to the note gate. Same class as P38-10 (contacts) /
+  P38-17 (memory), now for the raw-id form. Fixed in
+  packages/agent-core/src/knowledge-recall.ts: a second pass rewrites a bare
+  `[from <X>]` whose `<X>` EXACTLY matches a known contact id OR full name
+  (separator/case-insensitive, NEVER a fuzzy token overlap) to `[contact: <name>]`;
+  a real `[from note.md]` — even one resembling a contact (`mina-park-resume.md`) —
+  is left untouched. Proof: 5 new agent-core unit tests (raw `[from contact_<uuid>]`
+  → `[contact: <name>]`; `[from <Full Name>]` → canonical; the rewrite flows through
+  the gate with zero strips; a contact-resembling note is NOT rewritten) + the
+  existing contact/gate tests green + LIVE on qwen3:8b: `muse ask "what is Mina's
+  email?"` now shows the "👤 from your contacts: Mina Park" receipt with NO "Removed
+  citation / treat as unverified" warning (before: stripped + warned). agent-core 112
+  files / 1387 tests + cli 167 files / 1773 tests + `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.

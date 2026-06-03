@@ -452,10 +452,30 @@ export function normalizeContactCitations(
     });
     return overlap?.name;
   };
-  return answer.replace(
+  const withContactVerb = answer.replace(
     /\[\s*(?:from\s+)?contact\s*(?:[:#-]\s*|\s+)([^\]]+?)\s*\]/giu,
     (match: string, ref: string) => {
       const name = resolveName(ref);
+      return name ? `[contact: ${name}]` : match;
+    }
+  );
+  // Also catch the bare NOTE-verb form `[from <X>]` where <X> is the raw
+  // `contact_<uuid>` id (or the full contact name) the model echoed — the
+  // `contact`-anchored pass above misses it because the id is `contact_<uuid>`
+  // (no "contact" + separator). Only an EXACT id / name match is rewritten
+  // (separator- and case-insensitive, never a fuzzy token overlap), so a real
+  // `[from note.md]` is never mistaken for a contact.
+  const normRef = (value: string): string => value.trim().toLowerCase().replace(/[\s_-]+/gu, " ");
+  const exactContactName = (ref: string): string | undefined => {
+    const low = ref.trim().toLowerCase();
+    const n = normRef(ref);
+    const hit = contacts.find((c) => c.id.toLowerCase() === low || normRef(c.id) === n || normRef(c.name) === n);
+    return hit?.name;
+  };
+  return withContactVerb.replace(
+    /\[from\s+([^\]]+?)\s*\]/giu,
+    (match: string, ref: string) => {
+      const name = exactContactName(ref);
       return name ? `[contact: ${name}]` : match;
     }
   );

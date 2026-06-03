@@ -226,4 +226,32 @@ describe("normalizeContactCitations — repair the model's contact-citation mis-
   it("an already-canonical `[contact: Mina Park]` is preserved (idempotent)", () => {
     expect(normalizeContactCitations("X [contact: Mina Park].", book)).toBe("X [contact: Mina Park].");
   });
+
+  // The real-world contact id is `contact_<uuid>` (the grounding marker is
+  // `<<contact N — contact_<uuid>>>`), and the model often echoes that raw id
+  // with the NOTE verb: `[from contact_<uuid>]`. The `contact`-anchored regex
+  // misses it (the `_` is not a separator), so without this pass the gate
+  // false-strips a CORRECT contact recall and warns "treat as unverified".
+  const uuidBook = [{ id: "contact_60a1f9d8-9bae-4c8e-9064-b33e0db22d31", name: "Mina Park" }];
+
+  it("rewrites the raw `[from contact_<uuid>]` id form to `[contact: <name>]`", () => {
+    expect(normalizeContactCitations("Email is mina@x.io [from contact_60a1f9d8-9bae-4c8e-9064-b33e0db22d31].", uuidBook))
+      .toBe("Email is mina@x.io [contact: Mina Park].");
+  });
+
+  it("rewrites a `[from <Full Name>]` (note verb + exact contact name) to the canonical form", () => {
+    expect(normalizeContactCitations("Ask [from Mina Park].", uuidBook)).toBe("Ask [contact: Mina Park].");
+  });
+
+  it("the raw-id rewrite flows through the gate cleanly (the false-strip + 'unverified' warning is gone)", () => {
+    const repaired = normalizeContactCitations("mina@x.io [from contact_60a1f9d8-9bae-4c8e-9064-b33e0db22d31].", uuidBook);
+    const gated = enforceAnswerCitations(repaired, { contacts: uuidBook.map((c) => c.name) });
+    expect(gated.stripped).toEqual([]);
+    expect(gated.text).toContain("[contact: Mina Park]");
+  });
+
+  it("never rewrites a real `[from <note>]` that merely resembles a contact (exact-match only, no fuzzy)", () => {
+    expect(normalizeContactCitations("X [from contact-notes.md].", uuidBook)).toBe("X [from contact-notes.md].");
+    expect(normalizeContactCitations("X [from mina-park-resume.md].", uuidBook)).toBe("X [from mina-park-resume.md].");
+  });
 });
