@@ -10,6 +10,7 @@ import {
   PLAYBOOK_REWARD_MAX,
   PLAYBOOK_REWARD_MIN,
   rankPlaybookStrategies,
+  rankPlaybookStrategiesByRelevance,
   renderPlaybookSection,
   strategyTextSimilarity,
   type PlaybookProvider,
@@ -214,6 +215,48 @@ describe("rankPlaybookStrategies — relevance-ranked top-K (ReasoningBank arXiv
     const out = rankPlaybookStrategies(bank, "샘에게 이메일 답장 작성해줘", { topK: 1 });
     expect(out).toHaveLength(1);
     expect(out[0].tag).toBe("email");
+  });
+});
+
+describe("rankPlaybookStrategiesByRelevance — embedding-blended retrieval (experience-following)", () => {
+  // Hand-built vectors so cosine is deterministic: the query and the SEMANTIC
+  // strategy point the same way; the lexically-overlapping distractor is
+  // orthogonal. (Real nomic-embed produces the analogous geometry.)
+  const VEC: Record<string, readonly number[]> = {
+    "how should I respond to a message from a coworker": [1, 0, 0],
+    "keep replies warm and brief": [0.96, 0.05, 0],
+    "message the coworker about the server outage": [0, 0, 1]
+  };
+  const embed = async (text: string): Promise<readonly number[]> => VEC[text] ?? [0, 0, 0];
+  const query = "how should I respond to a message from a coworker";
+  const semantic: PlaybookStrategy = { text: "keep replies warm and brief" };
+  const lexicalDecoy: PlaybookStrategy = { text: "message the coworker about the server outage" };
+
+  it("ranks a SEMANTIC match above a lexically-overlapping but off-topic one (where lexical ranking inverts)", async () => {
+    // Lexical: the decoy shares "message"/"coworker" with the query and wins —
+    // the WRONG strategy, because the right one is a paraphrase with no shared token.
+    const lexical = rankPlaybookStrategies([semantic, lexicalDecoy], query, { topK: 2 });
+    expect(lexical[0].text).toBe(lexicalDecoy.text);
+
+    // Embedding: meaning wins, surfacing the strategy the user actually wants.
+    const ranked = await rankPlaybookStrategiesByRelevance([semantic, lexicalDecoy], query, embed, { topK: 2 });
+    expect(ranked[0].text).toBe(semantic.text);
+  });
+
+  it("still EXCLUDES avoided + probation strategies even on a high cosine", async () => {
+    const avoided: PlaybookStrategy = { text: "keep replies warm and brief", reward: -5 };
+    const onProbation: PlaybookStrategy = { text: "keep replies warm and brief", probation: true };
+    for (const blocked of [avoided, onProbation]) {
+      const out = await rankPlaybookStrategiesByRelevance([blocked, lexicalDecoy], query, embed, { topK: 6 });
+      expect(out.map((s) => s.text)).not.toContain(blocked.text);
+    }
+  });
+
+  it("falls back to PURE lexical when the embedder throws (graceful degradation, no dropped strategy)", async () => {
+    const throwing = async (): Promise<readonly number[]> => { throw new Error("embedder unreachable"); };
+    const out = await rankPlaybookStrategiesByRelevance([semantic, lexicalDecoy], query, throwing, { topK: 2 });
+    const lexical = rankPlaybookStrategies([semantic, lexicalDecoy], query, { topK: 2 });
+    expect(out.map((s) => s.text)).toEqual(lexical.map((s) => s.text));
   });
 });
 

@@ -199,11 +199,48 @@ export function isAvoidedStrategy(strategy: PlaybookStrategy): boolean {
   return clampReward(strategy.reward) <= PLAYBOOK_AVOID_BELOW;
 }
 
-function scoreStrategy(strategy: PlaybookStrategy, query: ReadonlySet<string>): number {
+/** A strategy is injectable when it is neither avoided (reward floor) nor on probation. */
+export function isInjectableStrategy(strategy: PlaybookStrategy): boolean {
+  return !isAvoidedStrategy(strategy) && strategy.probation !== true;
+}
+
+/**
+ * Embedding cosine weight. A semantic match contributes up to this many points
+ * — set above the max realistic lexical-overlap so a strategy the user phrased
+ * DIFFERENTLY from the current query still surfaces (experience-following:
+ * retrieval quality dominates a frozen small model's output), while reward and
+ * avoidance still sink a repeatedly-corrected one. Only applied by the
+ * embedding ranker; the lexical ranker passes no cosine.
+ */
+const EMBED_RANK_WEIGHT = 5;
+
+function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) {
+    return 0;
+  }
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < n; i += 1) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  if (na === 0 || nb === 0) {
+    return 0;
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+function scoreStrategy(strategy: PlaybookStrategy, query: ReadonlySet<string>, cosine?: number): number {
   const relevance = query.size === 0
     ? 0
     : rankOverlap(query, rankTokens(strategy.text)) + 2 * (strategy.tag ? rankOverlap(query, rankTokens(strategy.tag)) : 0);
-  return relevance + REWARD_RANK_WEIGHT * clampReward(strategy.reward)
+  const semantic = typeof cosine === "number" && Number.isFinite(cosine) ? EMBED_RANK_WEIGHT * cosine : 0;
+  return relevance + semantic + REWARD_RANK_WEIGHT * clampReward(strategy.reward)
     - (strategy.origin === "reflected" ? REFLECTED_RANK_PENALTY : 0);
 }
 
@@ -218,26 +255,21 @@ function finiteOr(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-export function rankPlaybookStrategies(
+function rankEligible(
   strategies: readonly PlaybookStrategy[],
-  queryText: string,
-  options?: RankPlaybookOptions
+  options: RankPlaybookOptions | undefined,
+  scoreOf: (strategy: PlaybookStrategy) => number
 ): readonly PlaybookStrategy[] {
   const topK = Math.max(1, Math.trunc(finiteOr(options?.topK, DEFAULT_RANK_TOPK)));
   const minScore = finiteOr(options?.minScore, 0);
-  const query = rankTokens(queryText);
   // Learned avoidance: a strategy corrected into the floor is never injected,
   // even when the bank is at/below topK (where ranking returns everything).
   // Probation: an unattended idle-distilled strategy is recorded + visible but
   // never injected until a real signal graduates it (self-confirmation guard).
-  const eligible = strategies.filter((s) => !isAvoidedStrategy(s) && s.probation !== true);
+  const eligible = strategies.filter(isInjectableStrategy);
   // Input is oldest→newest insertion order, so `index` doubles as a recency
   // proxy (higher = more recent) for the floor below.
-  const scored = eligible.map((strategy, index) => ({
-    index,
-    score: scoreStrategy(strategy, query),
-    strategy
-  }));
+  const scored = eligible.map((strategy, index) => ({ index, score: scoreOf(strategy), strategy }));
 
   if (eligible.length <= topK) {
     return [...scored].sort(byScoreDescThenIndexAsc).map((s) => s.strategy);
@@ -257,6 +289,55 @@ export function rankPlaybookStrategies(
     }
   }
   return [...selected].sort(byScoreDescThenIndexAsc).map((s) => s.strategy);
+}
+
+export function rankPlaybookStrategies(
+  strategies: readonly PlaybookStrategy[],
+  queryText: string,
+  options?: RankPlaybookOptions
+): readonly PlaybookStrategy[] {
+  const query = rankTokens(queryText);
+  return rankEligible(strategies, options, (s) => scoreStrategy(s, query));
+}
+
+/**
+ * Embedding-ranked variant of `rankPlaybookStrategies`: blends cosine(query,
+ * strategy) into the score so a strategy the user phrased DIFFERENTLY from the
+ * current query still surfaces — lexical token-overlap misses a paraphrase, but
+ * meaning doesn't. `embed` is duck-typed (text → vector) so agent-core stays
+ * model-agnostic; the caller passes a local embedder. Only eligible
+ * (non-avoided, non-probation) strategies are embedded, and any strategy whose
+ * embedding fails falls back to its pure-lexical score — so a flaky embedder
+ * degrades gracefully rather than dropping a strategy. Same top-K + recency
+ * floor + exclusions as the sync ranker.
+ */
+export async function rankPlaybookStrategiesByRelevance(
+  strategies: readonly PlaybookStrategy[],
+  queryText: string,
+  embed: (text: string) => Promise<readonly number[]>,
+  options?: RankPlaybookOptions
+): Promise<readonly PlaybookStrategy[]> {
+  const query = rankTokens(queryText);
+  let queryVec: readonly number[] | undefined;
+  try {
+    queryVec = await embed(queryText);
+  } catch {
+    queryVec = undefined;
+  }
+  const cosineByText = new Map<string, number>();
+  if (queryVec && queryVec.length > 0) {
+    for (const strategy of strategies.filter(isInjectableStrategy)) {
+      if (cosineByText.has(strategy.text)) {
+        continue;
+      }
+      try {
+        cosineByText.set(strategy.text, cosineSimilarity(queryVec, await embed(strategy.text)));
+      } catch {
+        // leave unset → this strategy is scored on lexical overlap + reward only
+      }
+    }
+  }
+  return rankEligible(strategies, options, (s) => scoreStrategy(s, query, cosineByText.get(s.text)));
 }
 
 function latestUserText(messages: readonly { readonly role: string; readonly content: string }[]): string {

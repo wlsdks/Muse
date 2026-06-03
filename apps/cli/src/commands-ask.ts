@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -2120,8 +2120,27 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const envTopK = Number(process.env.MUSE_PLAYBOOK_INJECT_TOPK);
         const topK = Number.isFinite(envTopK) && envTopK >= 1 ? envTopK : undefined;
         const entries = await queryPlaybook(resolvePlaybookFile(process.env as Record<string, string | undefined>), userKey);
-        playbookSection = selectPlaybookSection(entries, query, topK);
-        appliedStrategy = playbookSection ? topAppliedStrategy(entries, query, topK) : undefined;
+        // Embedding-ranked strategy retrieval (opt-in): rank by semantic
+        // similarity so a strategy phrased differently from the query still
+        // surfaces, instead of pure lexical token-overlap. Off by default (it
+        // adds a local nomic pass per strategy); fail-soft back to lexical.
+        if (process.env.MUSE_PLAYBOOK_EMBED_RANK === "true") {
+          const embedModel = process.env.MUSE_PLAYBOOK_EMBED_MODEL?.trim() || "nomic-embed-text";
+          const mapped = entries.map((entry) => ({
+            text: entry.text,
+            ...(entry.tag ? { tag: entry.tag } : {}),
+            ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),
+            ...(entry.probation ? { probation: true } : {})
+          }));
+          const ranked = await rankPlaybookStrategiesByRelevance(
+            mapped, query, (text) => embed(text, embedModel), topK === undefined ? undefined : { topK }
+          );
+          playbookSection = renderPlaybookSection(ranked);
+          appliedStrategy = playbookSection ? ranked[0]?.text : undefined;
+        } else {
+          playbookSection = selectPlaybookSection(entries, query, topK);
+          appliedStrategy = playbookSection ? topAppliedStrategy(entries, query, topK) : undefined;
+        }
       } catch {
         playbookSection = undefined;
         appliedStrategy = undefined;
