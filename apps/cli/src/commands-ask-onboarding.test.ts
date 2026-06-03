@@ -7,9 +7,10 @@ import { describe, expect, it } from "vitest";
 import { corpusOnboardingHint, notesCorpusFileCount, queryHasAdHocGrounding } from "./commands-ask.js";
 
 describe("queryHasAdHocGrounding — a query that supplies its own source suppresses the notes on-ramp", () => {
-  it("is true when --file / --url / --git / --shell is given", () => {
+  it("is true when --file / --url / --clipboard / --git / --shell is given", () => {
     expect(queryHasAdHocGrounding({ file: "/x/resume.pdf" })).toBe(true);
     expect(queryHasAdHocGrounding({ url: "https://example.com" })).toBe(true);
+    expect(queryHasAdHocGrounding({ clipboard: true })).toBe(true);
     expect(queryHasAdHocGrounding({ git: true })).toBe(true);
     expect(queryHasAdHocGrounding({ shell: true })).toBe(true);
   });

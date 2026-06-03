@@ -397,6 +397,30 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   prints "could not fetch --url … (host did not resolve …) — I won't ground on it".
   cli 167 files / 1784 tests + `pnpm lint` 0/0. (b80a3f83)
 
+- [x] **P37-19 `muse ask --clipboard` — ask about whatever you just copied
+  (Perception growth, the ephemeral sibling of `--file`/`--url`).** A NEW
+  read-only local source: you copy an article / error message / snippet / email,
+  then `muse ask --clipboard "<question>"` grounds the answer on the clipboard
+  text cited `[from clipboard]`, and an off-topic question honestly refuses — no
+  file to save first. Routes through the SAME cited-recall + grounding gate as
+  `--file`/`--url` (the clipboard passages enter `scored` → `selectFilePassages`
+  ranking → `enforceAnswerCitations` + the grounding verdict), so it's a NEW
+  surface gated by construction, not a bypass. New leaf module
+  apps/cli/src/clipboard-reader.ts: a pure `clipboardCommand(platform)` mapping
+  (darwin→`pbpaste`, win32→PowerShell `Get-Clipboard`, linux→`xclip`, else
+  undefined) + a `readClipboardText` shim that shells out read-only and locally
+  (never leaves the box); an empty clipboard or read failure is reported, never
+  grounded-on-nothing; `queryHasAdHocGrounding` now counts `--clipboard` so the
+  empty-notes on-ramp stays silent. Proof: 6 unit tests (the platform mapping for
+  all four cases + fail-loud on an unsupported platform + the on-ramp wiring) +
+  the full cli suite green (168 files / 1804 tests) + LIVE on qwen3:8b: copying
+  "The WireGuard handshake fails until you lower the MTU to 1380 on wg0…" then
+  `muse ask --clipboard "what MTU and which interface?"` answers "MTU of 1380 on
+  the wg0 interface [from clipboard]" with its receipt, and a copied grocery list
+  asked "what is the capital of France?" honestly refuses ("I don't have that
+  information… [from no relevant source]" — no invented Paris). cli 168 files /
+  1804 tests + `pnpm lint` 0/0. (this commit)
+
 **P40 — Actuation usability: Muse understands natural-language dates.** The
 "do" side is only as good as the words a user actually types.
 

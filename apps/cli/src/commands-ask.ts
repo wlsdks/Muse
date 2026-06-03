@@ -48,6 +48,7 @@ import { filterLiveEpisodeEntries, filterLiveNoteIndexFiles, type RecallHit } fr
 import { formatConnectionsSection } from "./commands-today.js";
 import { embed } from "./embed.js";
 import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpisodeIndex, saveEpisodeIndex } from "./episode-index.js";
+import { readClipboardText } from "./clipboard-reader.js";
 import { extractDirectoryDocuments, htmlToText, isHtmlDocument, isPdfDocument, parsePdfBuffer } from "./document-reader.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
 import { resolvePersona } from "./program-helpers.js";
@@ -752,6 +753,7 @@ interface AskOptions {
   readonly git?: boolean;
   readonly file?: string;
   readonly url?: string;
+  readonly clipboard?: boolean;
   readonly json?: boolean;
   readonly withTools?: boolean;
   readonly actuators?: boolean;
@@ -998,12 +1000,14 @@ export async function notesCorpusFileCount(dir: string): Promise<number> {
 export function queryHasAdHocGrounding(options: {
   readonly file?: string;
   readonly url?: string;
+  readonly clipboard?: boolean;
   readonly git?: boolean;
   readonly shell?: boolean;
 }): boolean {
   return Boolean(
     (options.file && options.file.trim().length > 0)
     || (options.url && options.url.trim().length > 0)
+    || options.clipboard
     || options.git
     || options.shell
   );
@@ -1332,6 +1336,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--url <url>",
       "Ground this answer on a public web page's readable text WITHOUT ingesting it (read-only fetch). The answer cites it as [from <host>]; an off-topic question still honestly refuses."
+    )
+    .option(
+      "--clipboard",
+      "Ground this answer on whatever text you just copied to your clipboard (read-only, local). The answer cites it as [from clipboard]; an off-topic question still honestly refuses. Great for 'I copied this — what does it mean?' without saving a file."
     )
     .option(
       "--json",
@@ -1689,6 +1697,32 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           }
         } catch (cause) {
           io.stderr(`muse: could not fetch --url ${urlLabel} (${cause instanceof Error ? cause.message : String(cause)})\n`);
+        }
+      }
+
+      // --clipboard: ad-hoc grounding on whatever the user just copied — the
+      // ephemeral sibling of --file/--url. Read-only and local (shells out to
+      // pbpaste / xclip / Get-Clipboard). Grounds on it cited `[from clipboard]`;
+      // an empty clipboard or a read failure is reported, never grounded-on-nothing.
+      if (options.clipboard) {
+        if (!options.json) {
+          io.stderr("📋 reading your clipboard…\n");
+        }
+        try {
+          const clipText = await readClipboardText();
+          if (clipText.trim().length > 0) {
+            const picked = selectFilePassages(clipText, query);
+            for (const passage of picked) {
+              scored.push({ chunk: { chunkIndex: passage.chunkIndex, embedding: [], file: "clipboard", text: passage.text }, file: "clipboard", score: 1 });
+            }
+            if (picked.length > 0) {
+              notesUnavailable = false;
+            }
+          } else {
+            io.stderr("muse: your clipboard is empty — I can't ground on it.\n");
+          }
+        } catch (cause) {
+          io.stderr(`muse: could not read the clipboard (${cause instanceof Error ? cause.message : String(cause)}) — I won't ground on it.\n`);
         }
       }
 
