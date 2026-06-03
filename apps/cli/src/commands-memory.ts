@@ -470,6 +470,50 @@ export function registerMemoryCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  • ${p.summary}  (recalled ${p.hits.toString()}×)\n`);
       }
     });
+
+  memory
+    .command("encrypt")
+    .description("Encrypt your user-memory AT REST (AES-256-GCM). Reads/writes stay transparent; a plaintext backup is kept. Set MUSE_MEMORY_KEY for a portable key (else a per-host key is used).")
+    .action(async () => {
+      const store = new FileUserMemoryStore();
+      try {
+        const { alreadyEncrypted, backupPath } = await store.encryptAtRest();
+        if (alreadyEncrypted) {
+          io.stdout("Your user-memory is already encrypted at rest.\n");
+          return;
+        }
+        io.stdout("🔒 Encrypted your user-memory at rest (AES-256-GCM).\n");
+        io.stdout(`   A plaintext backup is at: ${backupPath ?? "(none)"}\n`);
+        io.stdout("   The key comes from MUSE_MEMORY_KEY (or a per-host fallback). Keep MUSE_MEMORY_KEY safe — without it AND the backup, the data is unrecoverable.\n");
+      } catch (cause) {
+        io.stderr(`muse memory encrypt: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        process.exitCode = 1;
+      }
+    });
+
+  memory
+    .command("decrypt")
+    .description("Reverse encryption-at-rest — rewrite your user-memory as plaintext (needs the correct MUSE_MEMORY_KEY / per-host key)")
+    .action(async () => {
+      const store = new FileUserMemoryStore();
+      try {
+        const { alreadyPlaintext } = await store.decryptAtRest();
+        io.stdout(alreadyPlaintext ? "Your user-memory is already plaintext.\n" : "🔓 Rewrote your user-memory as plaintext.\n");
+      } catch (cause) {
+        io.stderr(`muse memory decrypt: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        process.exitCode = 1;
+      }
+    });
+
+  memory
+    .command("encryption-status")
+    .description("Show whether your user-memory is encrypted at rest")
+    .action(async () => {
+      const store = new FileUserMemoryStore();
+      io.stdout(await store.isEncryptedAtRest()
+        ? "🔒 encrypted at rest (AES-256-GCM)\n"
+        : "🔓 plaintext (run `muse memory encrypt` to protect it at rest)\n");
+    });
 }
 
 interface PromoteMemoriesStore {

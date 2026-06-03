@@ -229,6 +229,27 @@ P43 bullet is unbuilt.
   not flagged. (Honest scope: the learned baseline is episode-TOPIC cadence;
   per-contact messaging cadence is a future entity type.)
 
+**P44 — Trust: encryption at rest (the discretion refusal, made real against
+storage access — not just network egress).** "It can't tell anyone" was true
+against the network (cloud egress refused in code) but FALSE against the disk:
+the confided life sat in plaintext JSON behind OS file-perms only.
+
+- [x] **P44-1 `muse memory encrypt` encrypts your user-memory at rest.** The
+  most sensitive store (facts / preferences / the typed user model) can now be
+  AES-256-GCM encrypted, so a stolen/seized laptop or a leaked backup can't read
+  it; reads/writes stay transparent (the persona still loads), with `decrypt` to
+  reverse + `encryption-status`. Panel-decided (13 agents chose this lever over
+  re-decomposition/graduation) + red-teamed (3 attackers on the actual diff).
+  SAFE by the red-team's required guards, all tested: read() never writes (no
+  encrypt-on-read race); a WRONG key FAILS CLOSED (throws, ciphertext
+  byte-unchanged — never quarantined/emptied), incl. a wrong-key write that can't
+  bury it; a plaintext BACKUP is written before the first encrypt; ALL writes
+  serialize through ONE cross-process O_EXCL lock (with stale-lock stealing) so a
+  daemon write can't race the migrate and lose data. Proven live: `muse memory
+  encrypt` removed the confided secret from cleartext on disk, fail-closed on a
+  wrong key, and `decrypt` restored it. `5a8b3506`. Remaining: extend to the
+  episodes / action-log stores (same primitive + locked migration).
+
 **P37 — Perception growth: read-only local connectors (loop-v2 B3).** The
 self-learning core (P36) is delivered end-to-end + felt; this axis grows what
 Muse can READ to know you — new local, read-only, per-source sources the agent

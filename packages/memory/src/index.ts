@@ -371,6 +371,13 @@ export {
   FileUserMemoryStore,
   type FileUserMemoryStoreOptions
 } from "./memory-user-store-file.js";
+export {
+  decryptMemoryEnvelope,
+  encryptMemoryEnvelope,
+  isEncryptedMemoryEnvelope,
+  memoryEncryptionSecret,
+  type EncryptedMemoryEnvelope
+} from "./memory-encryption.js";
 
 
 

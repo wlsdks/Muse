@@ -1,10 +1,10 @@
-import { mkdtemp, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { FileUserMemoryStore } from "../src/index.js";
+import { decryptMemoryEnvelope, encryptMemoryEnvelope, FileUserMemoryStore, isEncryptedMemoryEnvelope } from "../src/index.js";
 
 async function newStore() {
   const dir = await mkdtemp(join(tmpdir(), "muse-user-mem-"));
@@ -249,5 +249,109 @@ describe("FileUserMemoryStore — corrupt-file resilience (no crash on every run
     const { file, store } = await newStore();
     await writeFile(file, '"just a string"');
     await expect(store.findByUserId("u1")).resolves.toBeUndefined();
+  });
+});
+
+describe("memory-encryption primitive", () => {
+  const env = { MUSE_MEMORY_KEY: "passphrase-xyz" };
+  it("round-trips a string through AES-256-GCM", () => {
+    const envelope = encryptMemoryEnvelope('{"users":{}}', env);
+    expect(isEncryptedMemoryEnvelope(envelope)).toBe(true);
+    expect(decryptMemoryEnvelope(envelope, env)).toBe('{"users":{}}');
+  });
+  it("THROWS on a wrong key (auth-tag mismatch) — never returns garbage", () => {
+    const envelope = encryptMemoryEnvelope("secret", env);
+    expect(() => decryptMemoryEnvelope(envelope, { MUSE_MEMORY_KEY: "wrong" })).toThrow(/could not be decrypted/u);
+  });
+  it("does not mistake a plaintext store for an encrypted envelope", () => {
+    expect(isEncryptedMemoryEnvelope({ users: {}, version: 1 })).toBe(false);
+    expect(isEncryptedMemoryEnvelope({ algorithm: "aes-256-gcm", data: "x", iv: "y", salt: "z", tag: "t", version: 1 })).toBe(true);
+  });
+});
+
+describe("FileUserMemoryStore — encryption at rest (data-loss-critical)", () => {
+  const KEY = { MUSE_MEMORY_KEY: "test-passphrase-abc" };
+  async function encStore() {
+    const dir = await mkdtemp(join(tmpdir(), "muse-mem-enc-"));
+    const file = join(dir, "user-memory.json");
+    return { dir, file, store: new FileUserMemoryStore({ env: KEY, file, now: () => new Date("2026-05-12T10:00:00Z") }) };
+  }
+
+  it("round-trips: encryptAtRest writes an encrypted envelope, reads decrypt, and writes stay encrypted", async () => {
+    const { file, store } = await encStore();
+    await store.upsertFact("stark", "city", "Malibu");
+    expect(await store.isEncryptedAtRest()).toBe(false); // plaintext until migrated
+
+    const { alreadyEncrypted, backupPath } = await store.encryptAtRest();
+    expect(alreadyEncrypted).toBe(false);
+    expect(backupPath).toBeDefined();
+    const onDisk = await readFile(file, "utf8");
+    expect(onDisk).toContain("aes-256-gcm");
+    expect(onDisk).not.toContain("Malibu"); // the confided value is not on disk in cleartext
+    expect(await store.isEncryptedAtRest()).toBe(true);
+
+    const reread = new FileUserMemoryStore({ env: KEY, file });
+    expect((await reread.findByUserId("stark"))?.facts).toEqual({ city: "Malibu" });
+
+    await reread.upsertFact("stark", "role", "engineer"); // a write PRESERVES the encrypted format
+    expect(await readFile(file, "utf8")).toContain("aes-256-gcm");
+    expect((await new FileUserMemoryStore({ env: KEY, file }).findByUserId("stark"))?.facts).toEqual({ city: "Malibu", role: "engineer" });
+  });
+
+  it("writes the plaintext BACKUP before encrypting (recoverable if the key changes)", async () => {
+    const { store } = await encStore();
+    await store.upsertFact("stark", "city", "Malibu");
+    const { backupPath } = await store.encryptAtRest();
+    const backup = JSON.parse(await readFile(backupPath!, "utf8")) as { users: { stark: { facts: { city: string } } } };
+    expect(backup.users.stark.facts.city).toBe("Malibu");
+  });
+
+  it("FAIL-CLOSED: a WRONG key THROWS on read and NEVER destroys the ciphertext", async () => {
+    const { file, store } = await encStore();
+    await store.upsertFact("stark", "secret", "the-vault-code");
+    await store.encryptAtRest();
+    const ciphertextBefore = await readFile(file, "utf8");
+
+    const wrongKey = new FileUserMemoryStore({ env: { MUSE_MEMORY_KEY: "WRONG" }, file });
+    await expect(wrongKey.findByUserId("stark")).rejects.toThrow(/could not be decrypted/u);
+    expect(await readFile(file, "utf8")).toBe(ciphertextBefore); // byte-unchanged — no quarantine, no empty
+    await expect(wrongKey.upsertFact("stark", "x", "y")).rejects.toThrow(/could not be decrypted/u); // write fails closed too
+    expect(await readFile(file, "utf8")).toBe(ciphertextBefore); // still byte-unchanged — no empty bury
+    expect((await new FileUserMemoryStore({ env: KEY, file }).findByUserId("stark"))?.facts.secret).toBe("the-vault-code"); // right key recovers
+  });
+
+  it("read() NEVER writes — a plaintext store read leaves the file byte-unchanged (no silent encrypt-on-read)", async () => {
+    const { file, store } = await encStore();
+    await store.upsertFact("stark", "city", "Malibu");
+    const before = await readFile(file, "utf8");
+    await store.findByUserId("stark");
+    await store.findByUserId("missing");
+    expect(await readFile(file, "utf8")).toBe(before);
+  });
+
+  it("decryptAtRest reverses the migration; both directions idempotent", async () => {
+    const { file, store } = await encStore();
+    await store.upsertFact("stark", "city", "Malibu");
+    await store.encryptAtRest();
+    expect((await store.encryptAtRest()).alreadyEncrypted).toBe(true);
+
+    expect((await store.decryptAtRest()).alreadyPlaintext).toBe(false);
+    expect(await readFile(file, "utf8")).toContain("Malibu");
+    expect(await store.isEncryptedAtRest()).toBe(false);
+    expect((await store.decryptAtRest()).alreadyPlaintext).toBe(true);
+  });
+
+  it("a STALE lock (a crashed write's leftover) is STOLEN so a crash can't block writes forever", async () => {
+    const { file, store } = await encStore();
+    await store.upsertFact("stark", "city", "Malibu");
+    // leftover lock from a process that died mid-write, with an OLD mtime
+    await writeFile(`${file}.lock`, "");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(`${file}.lock`, old, old);
+    // the next write steals the stale lock and proceeds (no permanent block, no data loss)
+    await store.upsertFact("stark", "role", "engineer");
+    expect((await store.findByUserId("stark"))?.facts).toEqual({ city: "Malibu", role: "engineer" });
+    // and the migrate runs under the SAME lock, so it is serialized against ordinary writes
+    expect((await store.encryptAtRest()).alreadyEncrypted).toBe(false);
   });
 });

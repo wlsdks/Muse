@@ -16,10 +16,11 @@
  * the user explicitly disables persistence.
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { decryptMemoryEnvelope, encryptMemoryEnvelope, isEncryptedMemoryEnvelope } from "./memory-encryption.js";
 import {
   EMPTY_USER_MODEL,
   removeUserModelSlot as removeSlot,
@@ -43,6 +44,13 @@ export interface FileUserMemoryStoreOptions {
   readonly file?: string;
   /** Injectable clock for tests. */
   readonly now?: () => Date;
+  /**
+   * Environment for the at-rest encryption key (`MUSE_MEMORY_KEY` or the per-host
+   * fallback). Injectable so a test can pin/rotate the key. Defaults to
+   * `process.env`. Encryption is OFF until `encryptAtRest()` runs once — a
+   * plaintext store stays plaintext and is byte-unchanged.
+   */
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 type StoredMemory = {
@@ -63,6 +71,17 @@ function defaultPath(): string {
 
 function emptyFile(): StoredFile {
   return { users: {}, version: 1 };
+}
+
+function coerceStoredFile(parsed: unknown): StoredFile {
+  if (!parsed || typeof parsed !== "object") {
+    return emptyFile();
+  }
+  const root = parsed as { version?: number; users?: Record<string, StoredMemory> };
+  if (root.version !== 1 || !root.users) {
+    return emptyFile();
+  }
+  return { users: root.users, version: 1 };
 }
 
 function memoryToStored(memory: UserMemory): StoredMemory {
@@ -97,14 +116,16 @@ export class FileUserMemoryStore implements UserMemoryStore {
   private static readonly writeQueues = new Map<string, Promise<unknown>>();
   private readonly file: string;
   private readonly now: () => Date;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(options: FileUserMemoryStoreOptions = {}) {
     this.file = options.file ?? defaultPath();
     this.now = options.now ?? (() => new Date());
+    this.env = options.env ?? process.env;
   }
 
   async findByUserId(userId: string): Promise<UserMemory | undefined> {
-    const data = await this.read();
+    const { file: data } = await this.read();
     const entry = data.users[userId];
     return entry ? storedToMemory(entry) : undefined;
   }
@@ -170,20 +191,20 @@ export class FileUserMemoryStore implements UserMemoryStore {
   }
 
   async deleteByUserId(userId: string): Promise<boolean> {
-    return this.serializeWrite(async () => {
-      const data = await this.read();
+    return this.serializeWrite(async () => this.withFileLock(async () => {
+      const { file: data, encrypted } = await this.read();
       if (!data.users[userId]) {
         return false;
       }
       const { [userId]: _dropped, ...rest } = data.users;
-      await this.write({ ...data, users: rest });
+      await this.write({ ...data, users: rest }, encrypted);
       return true;
-    });
+    }));
   }
 
   private async patch(userId: string, mutator: (existing: UserMemory) => UserMemory): Promise<UserMemory> {
-    return this.serializeWrite(async () => {
-      const data = await this.read();
+    return this.serializeWrite(async () => this.withFileLock(async () => {
+      const { file: data, encrypted } = await this.read();
       const existingStored = data.users[userId];
       const baseline: UserMemory = existingStored
         ? storedToMemory(existingStored)
@@ -199,9 +220,9 @@ export class FileUserMemoryStore implements UserMemoryStore {
         ...data,
         users: { ...data.users, [userId]: memoryToStored(updated) }
       };
-      await this.write(next);
+      await this.write(next, encrypted);
       return updated;
-    });
+    }));
   }
 
   private async serializeWrite<T>(fn: () => Promise<T>): Promise<T> {
@@ -211,13 +232,18 @@ export class FileUserMemoryStore implements UserMemoryStore {
     return next;
   }
 
-  private async read(): Promise<StoredFile> {
+  // Returns the parsed file AND whether it was encrypted at rest, so a write can
+  // PRESERVE the format (an encrypted store stays encrypted) without a side flag.
+  // NEVER writes — the only write from a read path was the corrupt-PLAINTEXT
+  // quarantine; an encrypted store with a WRONG key THROWS (fail-closed) instead,
+  // because quarantining/emptying its ciphertext would lose the confided life.
+  private async read(): Promise<{ readonly file: StoredFile; readonly encrypted: boolean }> {
     let raw: string;
     try {
       raw = await readFile(this.file, "utf8");
     } catch (cause) {
       if (cause instanceof Error && (cause as NodeJS.ErrnoException).code === "ENOENT") {
-        return emptyFile();
+        return { encrypted: false, file: emptyFile() };
       }
       throw cause;
     }
@@ -225,20 +251,23 @@ export class FileUserMemoryStore implements UserMemoryStore {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      // A corrupt user-memory.json would otherwise crash EVERY run — the
-      // store is read to inject memory into the system prompt. Quarantine
-      // the bad file and degrade to empty, matching the personal stores.
+      // Non-JSON ⇒ corrupt PLAINTEXT (an encrypted store is a valid JSON
+      // envelope, so it never lands here). Quarantine + degrade to empty as
+      // before — a corrupt plaintext memory must not crash EVERY run.
       await this.quarantineCorrupt();
-      return emptyFile();
+      return { encrypted: false, file: emptyFile() };
     }
-    if (!parsed || typeof parsed !== "object") {
-      return emptyFile();
+    if (isEncryptedMemoryEnvelope(parsed)) {
+      const plaintext = decryptMemoryEnvelope(parsed, this.env); // THROWS on wrong key / tamper — fail closed
+      let inner: unknown;
+      try {
+        inner = JSON.parse(plaintext);
+      } catch {
+        throw new Error("user-memory decrypted but its contents are not valid JSON — refusing to overwrite; restore the .plaintext-backup file.");
+      }
+      return { encrypted: true, file: coerceStoredFile(inner) };
     }
-    const root = parsed as { version?: number; users?: Record<string, StoredMemory> };
-    if (root.version !== 1 || !root.users) {
-      return emptyFile();
-    }
-    return { users: root.users, version: 1 };
+    return { encrypted: false, file: coerceStoredFile(parsed) };
   }
 
   private async quarantineCorrupt(): Promise<void> {
@@ -249,10 +278,121 @@ export class FileUserMemoryStore implements UserMemoryStore {
     }
   }
 
-  private async write(data: StoredFile): Promise<void> {
+  private async write(data: StoredFile, encrypted: boolean): Promise<void> {
     await mkdir(dirname(this.file), { recursive: true });
+    const serialized = JSON.stringify(data, null, 2);
+    const payload = encrypted
+      ? `${JSON.stringify(encryptMemoryEnvelope(serialized, this.env), null, 2)}\n`
+      : `${serialized}\n`;
     const tmp = `${this.file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-    await writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+    await writeFile(tmp, payload, { mode: 0o600 });
     await rename(tmp, this.file);
+  }
+
+  /**
+   * Whether the at-rest store is currently encrypted — detects the envelope
+   * FORMAT without decrypting, so `muse memory encryption-status` works even when
+   * the key is wrong/absent (a wrong key shouldn't hide that the file IS
+   * encrypted). A missing/empty/plaintext file is "not encrypted".
+   */
+  async isEncryptedAtRest(): Promise<boolean> {
+    let raw: string;
+    try {
+      raw = await readFile(this.file, "utf8");
+    } catch {
+      return false;
+    }
+    try {
+      return isEncryptedMemoryEnvelope(JSON.parse(raw));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * One-shot migration to encryption-at-rest: snapshot the plaintext to a
+   * `.plaintext-backup-<ts>` (recovery if the key derivation later changes), then
+   * rewrite the store encrypted. Cross-process LOCKED (an O_EXCL lockfile) so a
+   * concurrent daemon can't race the migration, AND in-process serialized. After
+   * this, ordinary writes preserve the encrypted format. Idempotent: a no-op when
+   * already encrypted.
+   */
+  async encryptAtRest(): Promise<{ readonly alreadyEncrypted: boolean; readonly backupPath?: string }> {
+    return this.serializeWrite(async () => this.withFileLock(async () => {
+      const { file: data, encrypted } = await this.read();
+      if (encrypted) {
+        return { alreadyEncrypted: true };
+      }
+      const backupPath = `${this.file}.plaintext-backup-${this.now().toISOString().replace(/[:.]/gu, "-")}`;
+      await mkdir(dirname(this.file), { recursive: true });
+      await writeFile(backupPath, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+      await this.write(data, true);
+      return { alreadyEncrypted: false, backupPath };
+    }));
+  }
+
+  /**
+   * Reverse the migration — rewrite the store as plaintext. Reads (and so
+   * decrypts) first, which THROWS fail-closed if the key is wrong, so a wrong-key
+   * decrypt can never silently emit an empty plaintext file. Cross-process locked.
+   */
+  async decryptAtRest(): Promise<{ readonly alreadyPlaintext: boolean }> {
+    return this.serializeWrite(async () => this.withFileLock(async () => {
+      const { file: data, encrypted } = await this.read();
+      if (!encrypted) {
+        return { alreadyPlaintext: true };
+      }
+      await this.write(data, false);
+      return { alreadyPlaintext: false };
+    }));
+  }
+
+  // EVERY mutation (upsert / delete / encrypt / decrypt) runs under ONE
+  // cross-process O_EXCL lock so a concurrent ordinary write in another process
+  // (e.g. the daemon's auto-extract) cannot race a migration's read-modify-write
+  // and lose a fact or the encryption (last-rename-wins). The in-process
+  // serializeWrite still orders same-process writes so they don't busy-spin on
+  // the file lock. A lock older than LOCK_STALE_MS (a write whose process died
+  // mid-flight) is STOLEN so a crash can't block writes forever; reads never
+  // lock (the atomic rename keeps the file consistent for a concurrent reader).
+  private async withFileLock<T>(fn: () => Promise<T>): Promise<T> {
+    await mkdir(dirname(this.file), { recursive: true });
+    const lockPath = `${this.file}.lock`;
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    for (let attempt = 0; handle === undefined; attempt += 1) {
+      try {
+        handle = await open(lockPath, "wx");
+      } catch (cause) {
+        if (!(cause instanceof Error) || (cause as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw cause;
+        }
+        if (await lockIsStale(lockPath)) {
+          await unlink(lockPath).catch(() => undefined); // steal a dead holder's lock
+          continue;
+        }
+        if (attempt >= LOCK_MAX_ATTEMPTS) {
+          throw new Error("user-memory is locked by another write in progress — retry shortly", { cause });
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
+      }
+    }
+    try {
+      return await fn();
+    } finally {
+      await handle.close().catch(() => undefined);
+      await unlink(lockPath).catch(() => undefined);
+    }
+  }
+}
+
+const LOCK_STALE_MS = 30_000;
+const LOCK_RETRY_MS = 50;
+const LOCK_MAX_ATTEMPTS = 60; // ~3s before giving up on a live lock holder
+
+async function lockIsStale(lockPath: string): Promise<boolean> {
+  try {
+    return Date.now() - (await stat(lockPath)).mtimeMs > LOCK_STALE_MS;
+  } catch {
+    return true; // vanished between the EEXIST and the stat — treat as stealable
   }
 }
