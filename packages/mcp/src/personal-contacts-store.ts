@@ -38,6 +38,15 @@ export interface Contact {
    * recipient (that stays name / phone / email / handle).
    */
   readonly relationship?: string;
+  /**
+   * Edges to OTHER people in the graph — "who works with whom". Each is the
+   * linked person's `name` plus an optional symmetric relation label
+   * ("works with", "friends with"). Powers "who works with Bob?" recall: the
+   * query names a person → that contact's block lists their connections.
+   * Recorded bidirectionally by `linkContacts`. NOT an identifier (never
+   * resolves a recipient).
+   */
+  readonly connections?: readonly { readonly to: string; readonly as?: string }[];
 }
 
 export interface UpcomingBirthday {
@@ -194,6 +203,52 @@ export async function queryContacts(file: string, env: NodeJS.ProcessEnv = proce
 }
 
 /**
+ * Record a SYMMETRIC edge between two existing contacts (bidirectional, so recall
+ * works from either side): adds `{to: B, as}` to A and `{to: A, as}` to B,
+ * de-duplicated by target (an existing edge's label is updated). Names resolve
+ * case-insensitively against name/aliases. Returns ok:false (no write) when a
+ * name is unknown or both resolve to the same contact.
+ */
+export async function linkContacts(
+  file: string,
+  nameA: string,
+  nameB: string,
+  as?: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<{ readonly ok: boolean; readonly reason?: string }> {
+  return withFileMutationQueue(file, async () => {
+    const all = await readContacts(file, env);
+    const a = findContactByName(all, nameA);
+    const b = findContactByName(all, nameB);
+    if (!a) return { ok: false, reason: `no contact named "${nameA}"` };
+    if (!b) return { ok: false, reason: `no contact named "${nameB}"` };
+    if (a.id === b.id) return { ok: false, reason: "a contact cannot be linked to itself" };
+    const next = all.map((c) => {
+      if (c.id === a.id) return { ...c, connections: upsertConnection(c.connections, b.name, as) };
+      if (c.id === b.id) return { ...c, connections: upsertConnection(c.connections, a.name, as) };
+      return c;
+    });
+    await writeContacts(file, next, env);
+    return { ok: true };
+  });
+}
+
+function findContactByName(all: readonly Contact[], name: string): Contact | undefined {
+  const q = name.trim().toLowerCase();
+  if (q.length === 0) return undefined;
+  return all.find((c) => c.name.toLowerCase() === q || (c.aliases ?? []).some((alias) => alias.toLowerCase() === q));
+}
+
+function upsertConnection(
+  existing: readonly { readonly to: string; readonly as?: string }[] | undefined,
+  to: string,
+  as?: string
+): readonly { readonly to: string; readonly as?: string }[] {
+  const rest = (existing ?? []).filter((edge) => edge.to.toLowerCase() !== to.toLowerCase());
+  return [...rest, { to, ...(as ? { as } : {}) }];
+}
+
+/**
  * Canonical empty body — seeded when encrypting an absent/empty store so the
  * encrypted format is ESTABLISHED on disk (else the first later add would peek
  * "no file", land in plaintext, and drop the encrypt intent).
@@ -266,7 +321,10 @@ export function serializeContact(contact: Contact): JsonObject {
     ...(contact.phone ? { phone: contact.phone } : {}),
     ...(contact.aliases && contact.aliases.length > 0 ? { aliases: [...contact.aliases] } : {}),
     ...(contact.birthday ? { birthday: contact.birthday } : {}),
-    ...(contact.relationship ? { relationship: contact.relationship } : {})
+    ...(contact.relationship ? { relationship: contact.relationship } : {}),
+    ...(contact.connections && contact.connections.length > 0
+      ? { connections: contact.connections.map((c) => ({ to: c.to, ...(c.as ? { as: c.as } : {}) })) }
+      : {})
   };
 }
 
@@ -339,6 +397,16 @@ function coerceContact(value: unknown): Contact | undefined {
   const phone = str(c.phone);
   const birthday = str(c.birthday);
   const relationship = str(c.relationship);
+  // Drop any malformed edge (missing/non-string `to`) rather than crash the read.
+  const connections = Array.isArray(c.connections)
+    ? c.connections.flatMap((e): readonly { to: string; as?: string }[] => {
+        if (!e || typeof e !== "object") return [];
+        const to = str((e as Record<string, unknown>).to);
+        if (to === undefined) return [];
+        const as = str((e as Record<string, unknown>).as);
+        return [{ to, ...(as !== undefined ? { as } : {}) }];
+      })
+    : undefined;
   return {
     id: c.id,
     name: c.name,
@@ -347,6 +415,7 @@ function coerceContact(value: unknown): Contact | undefined {
     ...(phone !== undefined ? { phone } : {}),
     ...(aliases && aliases.length > 0 ? { aliases } : {}),
     ...(birthday !== undefined ? { birthday } : {}),
-    ...(relationship !== undefined ? { relationship } : {})
+    ...(relationship !== undefined ? { relationship } : {}),
+    ...(connections && connections.length > 0 ? { connections } : {})
   };
 }

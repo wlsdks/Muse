@@ -7,10 +7,13 @@ import { describe, expect, it } from "vitest";
 import {
   addContact,
   contactIdentifier,
+  linkContacts,
   queryContacts,
+  readContacts,
   removeContact,
   resolveContact,
   resolveUpcomingBirthdays,
+  serializeContact,
   type Contact
 } from "./personal-contacts-store.js";
 
@@ -130,5 +133,65 @@ describe("concurrent contact mutation", () => {
     await Promise.all(Array.from({ length: 20 }, (_unused, i) => addContact(file, { email: `c${i.toString()}@x.com`, id: `c${i.toString()}`, name: `C${i.toString()}` })));
     await Promise.all(Array.from({ length: 10 }, (_unused, i) => removeContact(file, `c${i.toString()}`)));
     expect(await queryContacts(file)).toHaveLength(10);
+  });
+});
+
+describe("linkContacts — the relationship-graph EDGES (who works with whom)", () => {
+  it("records a SYMMETRIC edge on BOTH contacts, with the relation label, so recall works from either side", async () => {
+    const file = tempFile();
+    await addContact(file, bob);
+    await addContact(file, alice);
+
+    const result = await linkContacts(file, "Bob", "Alice", "works with");
+    expect(result.ok).toBe(true);
+
+    const all = await readContacts(file);
+    const b = all.find((c) => c.id === "c_bob")!;
+    const a = all.find((c) => c.id === "c_alice")!;
+    expect(b.connections).toEqual([{ as: "works with", to: "Alice" }]);
+    expect(a.connections).toEqual([{ as: "works with", to: "Bob" }]); // bidirectional
+  });
+
+  it("resolves names case-insensitively via alias, and an edge with no --as relation is stored bare", async () => {
+    const file = tempFile();
+    await addContact(file, alice); // alias "Ally"
+    await addContact(file, bob);
+    expect((await linkContacts(file, "ally", "bob")).ok).toBe(true);
+    const a = (await readContacts(file)).find((c) => c.id === "c_alice")!;
+    expect(a.connections).toEqual([{ to: "Bob" }]); // no `as` when none given
+  });
+
+  it("re-linking the SAME pair UPDATES the label (dedup by target, no duplicate edge)", async () => {
+    const file = tempFile();
+    await addContact(file, bob);
+    await addContact(file, alice);
+    await linkContacts(file, "Bob", "Alice", "works with");
+    await linkContacts(file, "Bob", "Alice", "manages");
+    const b = (await readContacts(file)).find((c) => c.id === "c_bob")!;
+    expect(b.connections).toEqual([{ as: "manages", to: "Alice" }]); // one edge, updated label
+  });
+
+  it("returns ok:false (no write) for an unknown name or self-link", async () => {
+    const file = tempFile();
+    await addContact(file, bob);
+    expect((await linkContacts(file, "Bob", "Nobody")).ok).toBe(false);
+    expect((await linkContacts(file, "Ghost", "Bob")).reason).toContain("Ghost");
+    expect((await linkContacts(file, "Bob", "Bob")).reason).toContain("itself");
+    expect((await readContacts(file)).find((c) => c.id === "c_bob")!.connections).toBeUndefined();
+  });
+
+  it("round-trips connections through serialize, and a malformed edge is DROPPED on read (never crashes)", async () => {
+    const file = tempFile();
+    await addContact(file, bob);
+    await addContact(file, alice);
+    await linkContacts(file, "Bob", "Alice", "friends with");
+    // serialize emits the connections
+    const ser = serializeContact((await readContacts(file)).find((c) => c.id === "c_bob")!);
+    expect(ser.connections).toEqual([{ as: "friends with", to: "Alice" }]);
+    // a hand-edited store with a malformed edge (missing `to`) drops just that edge
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(file, JSON.stringify({ contacts: [{ connections: [{ as: "x" }, { to: "Alice", as: "ok" }], id: "c_bob", name: "Bob" }] }));
+    const b = (await readContacts(file)).find((c) => c.id === "c_bob")!;
+    expect(b.connections).toEqual([{ as: "ok", to: "Alice" }]); // the {as:"x"} (no `to`) edge dropped
   });
 });

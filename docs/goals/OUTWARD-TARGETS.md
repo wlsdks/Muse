@@ -589,6 +589,32 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   manager?"` → "your manager is Dana Wu [contact: Dana Wu]" (grounded + cited on the
   contact). `67ccef38`.
 
+- [x] **P37-21 The people graph now has EDGES — "who works with Bob?" recall.** P37-20
+  added a person's ROLE TO YOU (relationship); this adds edges BETWEEN people — the
+  capability map's STANDOUT knowing-you gap ("models no roles or edges … can't answer
+  'who works with Bob'"). Added a `connections?: { to, as? }[]` field to `Contact`
+  (`@muse/mcp`: serialized, read-boundary coerced — a malformed edge missing `to` is
+  DROPPED, never crashing the read), a bidirectional `linkContacts(file, A, B, as?)`
+  store function (resolves names case-insensitively via name/alias, records the edge on
+  BOTH contacts de-duped by target so recall works from either side, no write on an
+  unknown name / self-link), `muse contacts link Bob Alice --as "works with"`, rendered
+  in `muse contacts list` ("↔ works with Alice"), and wired into `muse ask` grounding:
+  the contacts block now renders "connections: works with Alice" so a query naming a
+  person surfaces their edges and the model answers + cites. NOT an identifier (same
+  safety boundary as relationship — an edge never resolves a recipient). First slice:
+  SYMMETRIC edges (the same label both ways — "works with"); asymmetric relations
+  ("manages" / "managed by") are a follow-on. Proof: 4 new `linkContacts` unit tests
+  (bidirectional edge with label; alias-resolution + bare edge w/o `as`; re-link UPDATES
+  the label deduped; ok:false no-write on unknown/self; serialize round-trip + malformed
+  edge dropped) + the contacts store + encryption suites unregressed (`@muse/mcp` 1457)
+  + `pnpm check` exit 0 across all 20 workspaces + `pnpm lint` 0/0 + a LIVE round-trip on
+  qwen3:8b: `muse contacts link Bob Alice --as "works with"` then `muse ask "who works
+  with Bob?"` → "Bob works with Alice [contact: Bob]" (grounded + cited on the contact;
+  the contact-answer grounding caveat is pre-existing — P37-20's "who is my manager?"
+  shows the identical note-coverage caveat, the rubric is tuned for note-grounding).
+  mcp 1457 + cli 1894 + pnpm check exit 0 + pnpm lint 0/0 + live who-works-with-Bob
+  round-trip. (b25634d4)
+
 - [x] **P37-9 Action-log grounding — "did you send that? / what have you done?"
   (B3 transparency, gate a new surface).** `muse ask` now grounds on Muse's OWN
   audit log of acts taken on the user's behalf (sends, refusals) — the

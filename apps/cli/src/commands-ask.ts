@@ -2075,12 +2075,16 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         : matchedContacts
           .map((c, i) => {
             const birthday = formatContactBirthday(c.birthday);
+            const connections = c.connections && c.connections.length > 0
+              ? c.connections.map((e) => `${e.as ?? "connected to"} ${e.to}`).join("; ")
+              : undefined;
             const fields = [
               c.relationship ? `your ${c.relationship}` : undefined,
               c.email ? `email ${c.email}` : undefined,
               c.phone ? `phone ${c.phone}` : undefined,
               c.handle ? `handle ${c.handle}` : undefined,
-              birthday ? `birthday ${birthday}` : undefined
+              birthday ? `birthday ${birthday}` : undefined,
+              connections ? `connections: ${connections}` : undefined
             ].filter((f): f is string => f !== undefined).join(", ");
             return `<<contact ${(i + 1).toString()} — ${c.id}>>\n${c.name}${fields ? ` — ${fields}` : ""}\n[contact: ${c.name}]\n<<end>>`;
           })

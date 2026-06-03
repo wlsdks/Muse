@@ -617,6 +617,7 @@ export {
   encryptContactsAtRest,
   formatBirthdayBriefLine,
   isContactsEncrypted,
+  linkContacts,
   queryContacts,
   readContacts,
   removeContact,

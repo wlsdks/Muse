@@ -10,7 +10,7 @@
  */
 
 import { resolveContactsFile } from "@muse/autoconfigure";
-import { addContact, contactIdentifier, decryptContactsAtRest, encryptContactsAtRest, isContactsEncrypted, queryContacts, resolveContact, resolveUpcomingBirthdays, type Contact } from "@muse/mcp";
+import { addContact, contactIdentifier, decryptContactsAtRest, encryptContactsAtRest, isContactsEncrypted, linkContacts, queryContacts, resolveContact, resolveUpcomingBirthdays, type Contact } from "@muse/mcp";
 import { createRunId } from "@muse/shared";
 import type { Command } from "commander";
 
@@ -27,7 +27,10 @@ function describeContact(contact: Contact): string {
     .filter((v): v is string => typeof v === "string" && v.length > 0)
     .join(" · ");
   const reachLabel = reach ? ` — ${reach}` : contact.relationship ? "" : " — (no email/handle/phone)";
-  return `${contact.name}${aliases}${role}${reachLabel}`;
+  const edges = contact.connections && contact.connections.length > 0
+    ? `\n    ↔ ${contact.connections.map((c) => `${c.as ? `${c.as} ` : "connected to "}${c.to}`).join(", ")}`
+    : "";
+  return `${contact.name}${aliases}${role}${reachLabel}${edges}`;
 }
 
 interface AddOptions {
@@ -204,6 +207,23 @@ export function registerContactsCommands(program: Command, io: ProgramIO): void 
       for (const contact of all) {
         io.stdout(`${describeContact(contact)}\n`);
       }
+    });
+
+  contacts
+    .command("link")
+    .description("Record that two people are connected — e.g. `muse contacts link Bob Alice --as 'works with'` → \"who works with Bob?\"")
+    .argument("<personA>", "First person's name (or alias)")
+    .argument("<personB>", "Second person's name (or alias)")
+    .option("--as <relation>", "How they're connected, e.g. 'works with', 'friends with', 'married to' (symmetric)")
+    .action(async (personA: string, personB: string, options: { readonly as?: string }) => {
+      const relation = options.as?.trim();
+      const result = await linkContacts(contactsFile(), personA, personB, relation && relation.length > 0 ? relation : undefined);
+      if (!result.ok) {
+        io.stderr(`Could not link: ${result.reason}. Add both people first with \`muse contacts add\`.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      io.stdout(`Linked ${personA} ${relation ? `(${relation}) ` : ""}↔ ${personB}. Ask "who ${relation ?? "is connected to"} ${personA}?" to recall it.\n`);
     });
 
   contacts
