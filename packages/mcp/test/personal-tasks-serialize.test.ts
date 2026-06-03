@@ -1,8 +1,45 @@
 import { describe, expect, it } from "vitest";
 
-import { type PersistedTask, readTaskStatusFilter, serializeTask, serializeTaskForModel } from "../src/personal-tasks-store.js";
+import { type PersistedTask, readTaskStatusFilter, resolveTaskRef, serializeTask, serializeTaskForModel } from "../src/personal-tasks-store.js";
 
 const base: PersistedTask = { id: "t1", title: "buy milk", status: "open", createdAt: "2026-01-01T00:00:00Z" };
+
+describe("resolveTaskRef — complete/update a task by id OR a word from its title (one shot, not a 2-step search)", () => {
+  const tasks: PersistedTask[] = [
+    { id: "task_1", title: "Buy milk", status: "open", createdAt: "2026-01-01T00:00:00Z" },
+    { id: "task_2", title: "Email the Q3 deck", status: "open", createdAt: "2026-01-01T00:00:00Z" },
+    { id: "task_3", title: "Buy milk for the office", status: "done", completedAt: "2026-01-02T00:00:00Z", createdAt: "2026-01-01T00:00:00Z" }
+  ];
+
+  it("resolves an exact id", () => {
+    const r = resolveTaskRef(tasks, "task_2");
+    expect(r.status === "resolved" && r.task.id).toBe("task_2");
+  });
+
+  it("resolves a unique TITLE word (what the model actually passes) to the task", () => {
+    expect((resolveTaskRef(tasks, "Q3") as { task: PersistedTask }).task.id).toBe("task_2");
+  });
+
+  it("prefers the OPEN task when a word hits both an open and a done task", () => {
+    // "milk" matches task_1 (open) and task_3 (done) → the open one wins (unique among open).
+    expect((resolveTaskRef(tasks, "milk") as { task: PersistedTask }).task.id).toBe("task_1");
+  });
+
+  it("returns AMBIGUOUS candidates (never a guess) when multiple OPEN tasks match", () => {
+    const two: PersistedTask[] = [
+      { id: "a", title: "Call mom", status: "open", createdAt: "2026-01-01T00:00:00Z" },
+      { id: "b", title: "Call the dentist", status: "open", createdAt: "2026-01-01T00:00:00Z" }
+    ];
+    const r = resolveTaskRef(two, "call");
+    expect(r.status).toBe("ambiguous");
+    expect(r.status === "ambiguous" && r.candidates.map((c) => c.id)).toEqual(["a", "b"]);
+  });
+
+  it("returns not-found for an empty ref or no match", () => {
+    expect(resolveTaskRef(tasks, "").status).toBe("not-found");
+    expect(resolveTaskRef(tasks, "groceries").status).toBe("not-found");
+  });
+});
 
 describe("serializeTask", () => {
   it("emits only the required fields for a minimal task", () => {

@@ -402,12 +402,14 @@ export {
   parseTaskDueAt,
   readTasks,
   readTaskStatusFilter,
+  resolveTaskRef,
   resolveTasksDueLine,
   selectTasksDueWithin,
   serializeTask,
   writeTasks,
   type DueTask,
   type PersistedTask,
+  type TaskRefResolution,
   type TaskStatusFilter
 } from "./personal-tasks-store.js";
 

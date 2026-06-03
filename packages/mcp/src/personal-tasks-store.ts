@@ -132,6 +132,47 @@ export function serializeTaskForModel(task: PersistedTask, now: () => Date = () 
   return task.dueAt ? { ...base, dueAtLocal: formatDueLocal(task.dueAt, now) } : base;
 }
 
+export type TaskRefResolution =
+  | { readonly status: "resolved"; readonly task: PersistedTask }
+  | { readonly status: "ambiguous"; readonly candidates: readonly PersistedTask[] }
+  | { readonly status: "not-found" };
+
+/**
+ * Resolve a model-supplied task reference to a single task. The chat model
+ * refers to a task by its TITLE ("the milk task"), not its generated id — but
+ * complete / update need a unique target, and the model fumbles the 2-step
+ * "search to get the id, then act" chain (it passes the TITLE as the id →
+ * "not found"). So resolve here: an exact id wins; otherwise a case-insensitive
+ * substring match on the task title, preferring an OPEN task over a done one
+ * when both match. A UNIQUE match resolves; MULTIPLE matches are ambiguous
+ * (return candidates, never act on a guess); none → not-found. Mirrors the
+ * reminder `resolveReminderRef`.
+ */
+export function resolveTaskRef(
+  tasks: readonly PersistedTask[],
+  ref: string | undefined
+): TaskRefResolution {
+  const trimmed = ref?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return { status: "not-found" };
+  }
+  const byId = tasks.find((task) => task.id === trimmed);
+  if (byId) {
+    return { status: "resolved", task: byId };
+  }
+  const needle = trimmed.toLowerCase();
+  const matches = tasks.filter((task) => task.title.toLowerCase().includes(needle));
+  const open = matches.filter((task) => task.status === "open");
+  const pool = open.length > 0 ? open : matches;
+  if (pool.length === 1) {
+    return { status: "resolved", task: pool[0]! };
+  }
+  if (pool.length > 1) {
+    return { status: "ambiguous", candidates: pool };
+  }
+  return { status: "not-found" };
+}
+
 export function readTaskStatusFilter(value: string | undefined): TaskStatusFilter {
   return value === "done" || value === "all" ? value : "open";
 }

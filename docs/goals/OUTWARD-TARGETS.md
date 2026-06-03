@@ -1529,6 +1529,25 @@ in the loop.
   reschedules it to 2026-06-05T08:00:00Z (5pm KST tomorrow). (The tasks complete/update/
   delete tools have the identical id-vs-text gap — a clean follow-on.) (585cfa28)
 
+- [x] **P41-9 You can now complete / reschedule a TASK by NAME too — "mark the milk
+  task as done" works instead of "task not found" (the P41-8 sibling, now delivered).**
+  P41-8 fixed reminders edit-by-reference and flagged the identical gap on tasks;
+  probing confirmed it live: `muse ask --with-tools "mark the milk task as done"` called
+  `muse.tasks.complete` with the TEXT "milk" as the `id` → "The task 'milk' could not be
+  found" → the task stayed OPEN. The complete/update task tools required a literal id —
+  the same 2-step "search then act" chain the small model fumbles. Fixed with a pure
+  `resolveTaskRef(tasks, ref)` mirroring `resolveReminderRef` — exact id wins, else a
+  case-insensitive substring match on the task TITLE preferring an OPEN task over a done
+  one; UNIQUE → resolved, MULTIPLE → candidates (fail-close, never act on a guess), none →
+  not-found — wired into `complete` + `update` (their `id` arg now accepts an id OR a
+  distinct word like 'milk', documented). Verified: 5 new unit tests (exact id; unique
+  title word; open preferred over done; ambiguous → candidates; empty / no-match →
+  not-found) + the tasks suites unregressed — @muse/mcp 174 files / 1493 tests +
+  `pnpm lint` 0/0 + a LIVE before/after on qwen3:8b: the SAME prompt that returned "task
+  not found" (task left open) now resolves "milk" → the task and marks it DONE, and
+  "move the deck task to next Friday" resolves "deck" → the task and sets its dueAt
+  (both edit-by-name actuators now land). (8e2d1fbf)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links
