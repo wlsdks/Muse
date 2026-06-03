@@ -18,7 +18,7 @@
  * reimplementation for Muse, no code copied. See THIRD_PARTY_NOTICES.md.
  */
 
-export type CommitmentKind = "need-to" | "have-to" | "should" | "ko-haeya" | "ko-plan";
+export type CommitmentKind = "need-to" | "have-to" | "should" | "will" | "ko-haeya" | "ko-plan";
 
 export interface UserCommitment {
   /** The captured commitment clause (the action), trimmed. */
@@ -51,6 +51,12 @@ const RULES: readonly Rule[] = [
   { re: /\bI(?:'ve|\s+have)?\s+got\s+to\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "have-to", confidence: "high" },
   { re: /\bI\s+have\s+to\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "have-to", confidence: "high" },
   { re: /\bI\s+should\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "should", confidence: "low" },
+  // The most common way a person voices a commitment in passing: a stated
+  // intent ("I'll email Bob", "I will finish the report", "I'm going to / gonna
+  // call the dentist"). A small stative-starter stoplist below drops the
+  // non-actionable forms ("I'll be late", "I'll see").
+  { re: /\bI(?:'ll|\s+will)\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "will", confidence: "high" },
+  { re: /\bI(?:'m|\s+am)\s+(?:going\s+to|gonna)\s+([^.!?\n]{2,120}?)\s*([.!?\n]|$)/giu, kind: "will", confidence: "high" },
   { re: /([^.!?\n]{2,60}?)\s*해야\s*(?:해|돼|겠어|겠다|지)/gu, kind: "ko-haeya", confidence: "high" },
   { re: /([^.!?\n]{2,60}?)\s*하기로\s*했(?:어|다|지)/gu, kind: "ko-plan", confidence: "low" }
 ];
@@ -58,6 +64,10 @@ const RULES: readonly Rule[] = [
 // Auxiliary that, placed right before "I", makes the clause an inverted
 // question ("Do I need to…?", "Should I…?") rather than a commitment.
 const INTERROGATIVE_PREFIX = /\b(?:do|does|did|should|would|will|can|could|may)\s*$/iu;
+
+// First word of an "I'll/I'm going to <X>" clause that makes it a stative remark,
+// not an actionable commitment ("I'll be late", "I'll see", "I'll bet/say").
+const WILL_STATIVE_STARTERS = new Set(["be", "see", "bet", "say"]);
 
 export function detectUserCommitments(
   userTurns: readonly string[],
@@ -77,6 +87,9 @@ export function detectUserCommitments(
         if (match[2] === "?") continue;
         const before = turn.slice(Math.max(0, (match.index ?? 0) - 12), match.index ?? 0);
         if (INTERROGATIVE_PREFIX.test(before)) continue;
+        // A stated-intent clause whose verb is stative ("I'll be late", "I'll
+        // see") is a remark, not a task — don't surface it as a commitment.
+        if (rule.kind === "will" && WILL_STATIVE_STARTERS.has((text.split(/\s+/u)[0] ?? "").toLowerCase())) continue;
         const key = `${rule.kind}:${text.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);

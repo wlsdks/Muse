@@ -22,6 +22,19 @@ describe("detectUserCommitments — rule-only, conservative (EN + KO)", () => {
     expect(c).toMatchObject({ text: "call the dentist", confidence: "low", kind: "should" });
   });
 
+  it("captures the common stated-intent forms: I'll / I will / I'm going to / gonna", () => {
+    expect(detectUserCommitments(["I'll call the dentist tomorrow."])[0]).toMatchObject({ text: "call the dentist tomorrow", kind: "will", confidence: "high" });
+    expect(detectUserCommitments(["I will finish the Q3 report by Friday."])[0]).toMatchObject({ text: "finish the Q3 report by Friday", kind: "will" });
+    expect(detectUserCommitments(["I'm going to review the PR this afternoon."])[0]).toMatchObject({ text: "review the PR this afternoon", kind: "will" });
+    expect(detectUserCommitments(["I'm gonna pick up groceries later."])[0]).toMatchObject({ text: "pick up groceries later", kind: "will" });
+  });
+
+  it("does NOT fire on a stative 'I'll be …' / 'I'll see' remark, or a 'Will I …?' question", () => {
+    expect(detectUserCommitments(["I'll be late to the meeting."])).toHaveLength(0);
+    expect(detectUserCommitments(["I'll see."])).toHaveLength(0);
+    expect(detectUserCommitments(["Will I make it on time?"])).toHaveLength(0);
+  });
+
   it("captures Korean 해야/하기로 했 commitments", () => {
     const found = detectUserCommitments([
       "내일 회의 자료 준비해야 해",

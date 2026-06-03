@@ -1090,7 +1090,7 @@ qwen3:8b and added to `eval:self-improving`.
   now cites `[feed: HN]` INLINE (was `[feed 1]`) and `muse ask "what is Mina's
   email?"` cites `[contact: Mina Park]` INLINE (was `[from contact_<uuid>]`), each
   with its receipt — so the STREAMED answer is clean, not just the gated copy. cli
-  167 files / 1799 tests + `pnpm lint` 0/0. (this commit)
+  167 files / 1799 tests + `pnpm lint` 0/0. (9a20b66b)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.
@@ -1456,6 +1456,26 @@ offer a hand, growth you can sense — built ONLY under the B2 guardrails
 (honesty never traded for feel; felt framing is deterministic code, never a
 second model call). Verified live on local Qwen via the same cited-answer +
 honest-refusal mock-corpus check where applicable.
+
+- [x] **P35-11 Muse now notices the most common way you voice a commitment —
+  "I'll …" / "I will …" / "I'm going to …" — not just "I need/have to".** The
+  SF-confidant "anticipates" quality runs on `detectUserCommitments` (the
+  deterministic rule engine behind `muse commitments scan` + `muse checkins scan`,
+  which read recent chat for things you said you'd do and offer to track them). It
+  caught "I need to" / "I have to" / "I should" + Korean, but MISSED the single most
+  common English phrasing — a stated intent: `muse commitments scan` over a chat
+  with "I'll call the dentist tomorrow" / "I'm going to review the PR" found NOTHING.
+  Fixed in packages/agent-core/src/commitment-detector.ts: two new rules (`I'll` /
+  `I will` and `I'm going to` / `gonna`) → a new `"will"` kind, with a small
+  stative-starter guard ("I'll be late", "I'll see", "I'll bet/say" are remarks, not
+  tasks) and the existing question filter ("Will I make it?" stays a non-commitment).
+  Proof: 2 new unit tests (the four intent forms detected as kind `will`; the stative
+  / question forms NOT) + the full agent-core suite green (1399) + the cli build
+  green (the new kind breaks no consumer) + LIVE end-to-end: seeding
+  `~/.muse/last-chat.jsonl` with "I'll call the dentist tomorrow about the
+  appointment" and running `muse commitments scan` now surfaces "• call the dentist
+  tomorrow about the appointment" (before: "No open commitments detected"). agent-core
+  112 files / 1399 tests + `pnpm lint` 0/0. (this commit)
 
 - [x] **P35-1 Citation-as-voice (B2 S1, build-first).** `muse ask` renders
   each cited note as a memory — "📎 From your notes … • from your note of
