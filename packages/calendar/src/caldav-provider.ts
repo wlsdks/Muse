@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
-import { CalendarProviderError, isRetryableCalendarStatus } from "./errors.js";
+import { CalendarProviderError, CALENDAR_RETRY_AFTER_CAP_MS, isRetryableCalendarStatus, parseRetryAfterMs } from "./errors.js";
 import type {
   CalendarEvent,
   CalendarEventInput,
@@ -13,7 +13,10 @@ import type {
 } from "./types.js";
 
 export interface CalDAVRetryOptions {
-  /** Extra attempts after the first, for the idempotent events read only. Default 2. */
+  /**
+   * Extra attempts after the first. Bounds the idempotent events read (429/5xx)
+   * AND a write's 429-only rate-limit retry (a write 5xx is never retried). Default 2.
+   */
   readonly retries?: number;
   /** First backoff in ms; doubles each retry. Default 250. */
   readonly baseDelayMs?: number;
@@ -127,7 +130,7 @@ export class CalDAVCalendarProvider implements CalendarProvider {
     const ics = renderVEvent(uid, input);
     const href = `${this.url}${uid}.ics`;
 
-    const response = await this.fetchImpl(href, {
+    const response = await this.writeWithRetry(href, {
       body: ics,
       headers: this.headers({ contentType: "text/calendar; charset=utf-8" }),
       method: "PUT"
@@ -172,7 +175,7 @@ export class CalDAVCalendarProvider implements CalendarProvider {
 
     const ics = renderVEvent(id, merged);
     const href = `${this.url}${id}.ics`;
-    const response = await this.fetchImpl(href, {
+    const response = await this.writeWithRetry(href, {
       body: ics,
       headers: this.headers({ contentType: "text/calendar; charset=utf-8" }),
       method: "PUT"
@@ -186,13 +189,33 @@ export class CalDAVCalendarProvider implements CalendarProvider {
   }
 
   async deleteEvent(id: string): Promise<void> {
-    const response = await this.fetchImpl(`${this.url}${id}.ics`, {
+    const response = await this.writeWithRetry(`${this.url}${id}.ics`, {
       headers: this.headers({}),
       method: "DELETE"
     });
 
     if (!response.ok && response.status !== 404) {
       throw new CalendarProviderError(this.id, `HTTP_${response.status}`, await this.errorText(response), undefined, response.status);
+    }
+  }
+
+  /**
+   * A CalDAV WRITE (PUT create/update, DELETE) is non-idempotent at the protocol
+   * level, so it retries ONLY a 429 rate-limit — iCloud / Fastmail reject it
+   * BEFORE applying the mutation, so a retry can't double-create or double-delete
+   * — honouring Retry-After (capped). A write 5xx or a network reject is AMBIGUOUS
+   * (it may have committed) and is NEVER retried. Same safe-write rule as the
+   * Google adapter; the idempotent listEvents REPORT keeps its own 429/5xx retry.
+   */
+  private async writeWithRetry(href: string, init: RequestInit): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await this.fetchImpl(href, init);
+      if (response.status === 429 && attempt < this.retries) {
+        const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"), Date.now());
+        await this.sleep(retryAfterMs !== undefined ? Math.min(retryAfterMs, CALENDAR_RETRY_AFTER_CAP_MS) : this.baseDelayMs * 2 ** attempt);
+        continue;
+      }
+      return response;
     }
   }
 

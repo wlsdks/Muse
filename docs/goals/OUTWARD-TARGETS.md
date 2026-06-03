@@ -1031,6 +1031,31 @@ in the loop.
   confirm is now as reliably delivered as an automatic notice, not silently lost to a
   momentary rate limit. (69c8c74f)
 
+- [x] **P41-4 A CalDAV (iCloud / Fastmail / Proton) calendar WRITE now survives a
+  rate-limit — Retry-After parity with the Google adapter, so reliability no longer
+  depends on which calendar backend you use.** The Google calendar provider already
+  retried a 429 write safely (P43-2 Slice 1), but the CalDAV adapter's
+  `createEvent`/`updateEvent`/`deleteEvent` did a single raw PUT/DELETE with NO retry —
+  so an iCloud/Fastmail user's "add this to my calendar" was dropped on a one-off
+  `429 + Retry-After` while a Google user's identical write succeeded a tick later. That
+  is the exact backend-dependent reliability asymmetry the P43-2 decomposition flagged
+  ("CalDAV/home write Retry-After parity"). Fixed by routing all three CalDAV writes
+  through a new `writeWithRetry` that applies the SAME safe-write rule as the Google
+  adapter: retry ONLY a 429 — iCloud/Fastmail reject it BEFORE applying the mutation, so
+  a retry can't double-create or double-delete — honouring `Retry-After` (capped at 30s
+  via the shared `CALENDAR_RETRY_AFTER_CAP_MS`/`parseRetryAfterMs`), while a write 5xx or
+  a network reject stays NEVER-retried (AMBIGUOUS — may have committed); the idempotent
+  `listEvents` REPORT keeps its own 429/5xx read retry. Proof: 5 new contract-faithful
+  tests in `packages/calendar/test/caldav-provider.test.ts` over the REAL provider with
+  only `fetch` faked (per the calendar-write contract — real ICS/method/header
+  assertions, never a stubbed registry): a 429 PUT retries then succeeds honouring the 2s
+  Retry-After (not the 250ms backoff); a write 5xx is NOT retried (HTTP_503, 1 call); a
+  no-hint 429 falls back to exponential backoff; the 429 budget exhausts to HTTP_429
+  (initial + 2 retries, no infinite loop); a 429 DELETE retries then tolerates the 204.
+  Full @muse/calendar suite green (12 files / 144 tests, +5) + `pnpm lint` 0/0. calendar
+  144 + lint 0/0 — whichever calendar a user actually runs, a momentary provider rate
+  limit no longer silently loses an event they asked Muse to create. (462fca9d)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links

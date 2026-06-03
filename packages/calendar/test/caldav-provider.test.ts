@@ -7,7 +7,8 @@ import type { CalendarRange } from "../src/types.js";
 // actuator. Driven through the injected fetchImpl with a CONTRACT-FAITHFUL HTTP
 // fake (real CalDAV multistatus XML / ICS, real method+header+body assertions),
 // never a stubbed registry. Covers the reliability contract (retry the
-// idempotent REPORT read on transient failure; NEVER retry a write; fail-close
+// idempotent REPORT read on transient failure; retry a write ONLY on a 429
+// rate-limit — never an ambiguous 5xx — honouring Retry-After; fail-close
 // on a hard error) and the ICS parse robustness (folded lines, VTIMEZONE-before-
 // VEVENT, TZID→UTC, all-day).
 
@@ -169,5 +170,56 @@ describe("CalDAVCalendarProvider — writes (PUT / DELETE)", () => {
     const fetch = recordingFetch(() => ok(multistatus(vevent))); // only ev1 exists
     const provider = new CalDAVCalendarProvider({ fetchImpl: fetch.impl, password: "p", url: "https://dav.test/cal/", username: "u" });
     await expect(provider.updateEvent("missing", { title: "x" })).rejects.toMatchObject({ code: "EVENT_NOT_FOUND" });
+  });
+});
+
+describe("CalDAVCalendarProvider — writes retry only a 429 rate-limit (Retry-After parity with the Google adapter)", () => {
+  const created = (): Response => new Response("", { status: 201 });
+  const writer = (responder: (attempt: number) => Response, slept: number[]) => {
+    const fetch = recordingFetch(responder);
+    const provider = new CalDAVCalendarProvider({
+      fetchImpl: fetch.impl, password: "p", retry: { retries: 2, sleep: async (ms: number) => { slept.push(ms); } }, url: "https://dav.test/cal/", username: "u"
+    });
+    return { fetch, provider };
+  };
+
+  it("RETRIES a 429 PUT, then succeeds — safe because a 429 is rejected BEFORE the mutation applies (honours Retry-After)", async () => {
+    const slept: number[] = [];
+    const { fetch, provider } = writer((attempt) => (attempt < 2 ? new Response("rate", { headers: { "retry-after": "2" }, status: 429 }) : created()), slept);
+    const event = await provider.createEvent({ endsAt: new Date("2026-06-01T11:00:00Z"), startsAt: new Date("2026-06-01T10:00:00Z"), title: "New" });
+    expect(event.title).toBe("New");
+    expect(fetch.calls).toHaveLength(2); // one 429 + one success
+    expect(fetch.calls.every((c) => c.method === "PUT")).toBe(true);
+    expect(slept).toEqual([2000]); // honoured Retry-After (2s), not the 250ms backoff
+  });
+
+  it("does NOT retry a 5xx PUT (a retried CalDAV write could double-create)", async () => {
+    const slept: number[] = [];
+    const { fetch, provider } = writer(() => new Response("server error", { status: 503 }), slept);
+    await expect(provider.createEvent({ endsAt: new Date(1), startsAt: new Date(0), title: "x" })).rejects.toMatchObject({ code: "HTTP_503" });
+    expect(fetch.calls).toHaveLength(1); // no retry on an ambiguous write 5xx
+    expect(slept).toEqual([]);
+  });
+
+  it("a 429 with no Retry-After falls back to exponential backoff", async () => {
+    const slept: number[] = [];
+    const { provider } = writer((attempt) => (attempt < 2 ? new Response("rate", { status: 429 }) : created()), slept);
+    await provider.createEvent({ endsAt: new Date(1), startsAt: new Date(0), title: "x" });
+    expect(slept).toEqual([250]); // baseDelayMs * 2^0, no server hint
+  });
+
+  it("exhausts the 429 retry budget and surfaces HTTP_429 (no infinite loop)", async () => {
+    const slept: number[] = [];
+    const { fetch, provider } = writer(() => new Response("rate", { headers: { "retry-after": "1" }, status: 429 }), slept);
+    await expect(provider.createEvent({ endsAt: new Date(1), startsAt: new Date(0), title: "x" })).rejects.toMatchObject({ code: "HTTP_429" });
+    expect(fetch.calls).toHaveLength(3); // initial + 2 retries, then give up
+  });
+
+  it("a 429 DELETE is retried too, then tolerates the eventual 204", async () => {
+    const slept: number[] = [];
+    const { fetch, provider } = writer((attempt) => (attempt < 2 ? new Response("rate", { headers: { "retry-after": "1" }, status: 429 }) : new Response(null, { status: 204 })), slept);
+    await expect(provider.deleteEvent("ev1")).resolves.toBeUndefined();
+    expect(fetch.calls).toHaveLength(2);
+    expect(fetch.calls.every((c) => c.method === "DELETE")).toBe(true);
   });
 });
