@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,7 +43,7 @@ function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonH
 
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; contradictionClassify?: DaemonHelpers["contradictionClassify"]; messagingPoll?: DaemonHelpers["messagingPoll"]; consolidateMerge?: DaemonHelpers["consolidateMerge"]; consolidateValidate?: DaemonHelpers["consolidateValidate"] }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; contradictionClassify?: DaemonHelpers["contradictionClassify"]; emailSyncProvider?: DaemonHelpers["emailSyncProvider"]; messagingPoll?: DaemonHelpers["messagingPoll"]; consolidateMerge?: DaemonHelpers["consolidateMerge"]; consolidateValidate?: DaemonHelpers["consolidateValidate"] }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -63,6 +63,7 @@ async function runDaemon(
       ...(opts.briefingCalendarLister ? { briefingCalendarLister: opts.briefingCalendarLister } : {}),
       ...(opts.selfLearnDistill ? { selfLearnDistill: opts.selfLearnDistill } : {}),
       ...(opts.contradictionClassify ? { contradictionClassify: opts.contradictionClassify } : {}),
+      ...(opts.emailSyncProvider ? { emailSyncProvider: opts.emailSyncProvider } : {}),
       ...(opts.messagingPoll ? { messagingPoll: opts.messagingPoll } : {}),
       ...(opts.consolidateMerge ? { consolidateMerge: opts.consolidateMerge } : {}),
       ...(opts.consolidateValidate ? { consolidateValidate: opts.consolidateValidate } : {}),
@@ -1300,5 +1301,44 @@ describe("muse daemon — continuous messaging poll tick (P43-3 ingestion)", () 
     expect(on.stdout).toContain("msg-poll:   enabled");
     const off = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], { env: tmpEnv(), registry });
     expect(off.stdout).toContain("msg-poll:   disabled");
+  });
+});
+
+describe("muse daemon — continuous email-sync tick (P37-23, always-on email→recall)", () => {
+  const emailProvider = { listRecent: async () => [{ from: "Dana Wu <dana@example.com>", id: "m1", snippet: "can we move the Q3 review to Thursday?", subject: "Q3 budget review", unread: true }] };
+
+  it("--once syncs recent emails into recallable notes when enabled (opt-in, no manual command)", async () => {
+    const env = tmpEnv();
+    env.MUSE_EMAIL_SYNC_ENABLED = "true";
+    env.MUSE_NOTES_DIR = mkdtempSync(join(tmpdir(), "muse-daemon-email-"));
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { emailSyncProvider: emailProvider, env, registry });
+
+    expect(res.stdout).toMatch(/email-sync: 1 email\(s\) → recall/);
+    const note = readFileSync(join(env.MUSE_NOTES_DIR, "email", "m1.md"), "utf8");
+    expect(note).toContain("Q3 budget review"); // subject → recallable
+    expect(note).toContain("Dana Wu");          // from → "what did Dana email about?"
+  });
+
+  it("does NOTHING when MUSE_EMAIL_SYNC_ENABLED is unset (opt-in — off by default, no notes written)", async () => {
+    const env = tmpEnv();
+    env.MUSE_NOTES_DIR = mkdtempSync(join(tmpdir(), "muse-daemon-email-off-"));
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { emailSyncProvider: emailProvider, env, registry });
+
+    expect(res.stdout).not.toContain("email-sync:");
+    expect(existsSync(join(env.MUSE_NOTES_DIR, "email", "m1.md"))).toBe(false);
+  });
+
+  it("--status reports email-sync enabled when the gate + token are set", async () => {
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+    const on = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], {
+      env: { ...tmpEnv(), MUSE_EMAIL_SYNC_ENABLED: "true", MUSE_GMAIL_TOKEN: "tok" }, registry
+    });
+    expect(on.stdout).toContain("email-sync: enabled");
+    const off = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], { env: tmpEnv(), registry });
+    expect(off.stdout).toContain("email-sync: disabled");
   });
 });

@@ -25,6 +25,7 @@ import {
   resolveEpisodesFile,
   resolveFollowupsFile,
   resolveLearningPauseFile,
+  resolveNotesDir,
   resolveObjectivesFile,
   resolvePatternsFiredFile,
   resolvePlaybookFile,
@@ -63,6 +64,8 @@ import {
   runDueProactiveNotices,
   readEpisodes,
   resolveLearnQueueFile,
+  GmailEmailProvider,
+  type EmailProvider,
   decayStalePlaybookRewards,
   isLearningPaused,
   queryPlaybook,
@@ -88,6 +91,7 @@ import { deliverEveningRecapIfDue, gatherEveningRecap } from "./commands-recap.j
 import { closestCommandName } from "./closest-command.js";
 import { parseBoundedFlag } from "./commands-proactive.js";
 import { DEFAULT_REFLECTION_INTERVAL_MS, resolveReflectionsFile, runReflectionPass, shouldRunReflection } from "./commands-reflections.js";
+import { syncEmailsToNotes } from "./email-sync.js";
 import { createIndexedProactiveInvestigator } from "./proactive-notes-recall.js";
 import { consolidatePlaybook } from "./playbook-consolidate.js";
 import type { ProgramIO } from "./program.js";
@@ -145,6 +149,13 @@ export interface DaemonHelpers {
    * inject line) without a live LLM. Absent → the real model-backed classifier.
    */
   readonly contradictionClassify?: DecayContradictedDeps["classify"];
+  /**
+   * Test seam — inject the email source the continuous email-sync tick reads, so a
+   * smoke can drive Gmail→notes ingestion (a contract-faithful real GmailEmailProvider
+   * with a fake fetch) without a live Gmail round-trip. Absent → the real provider
+   * built from MUSE_GMAIL_TOKEN.
+   */
+  readonly emailSyncProvider?: Pick<EmailProvider, "listRecent">;
   /**
    * Test seams — inject the LLM merge + the held-out coverage validator the
    * autonomous playbook-consolidate tick uses, so a smoke can drive a real
@@ -637,6 +648,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
         io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) && followupModel ? "enabled (distill + decay + consolidate)" : "disabled (set MUSE_SELFLEARN_ENABLED + a model)"}\n`);
         io.stdout(`  recap:      ${parseBoolean(e.MUSE_RECAP_ENABLED, false) ? `enabled (evening, after ${(e.MUSE_RECAP_HOUR ?? "21").toString()}:00)` : "disabled (set MUSE_RECAP_ENABLED)"}\n`);
+        io.stdout(`  email-sync: ${parseBoolean(e.MUSE_EMAIL_SYNC_ENABLED, false) && e.MUSE_GMAIL_TOKEN?.trim() ? "enabled (recent emails → recall)" : "disabled (set MUSE_EMAIL_SYNC_ENABLED + MUSE_GMAIL_TOKEN)"}\n`);
         io.stdout(`  msg-poll:   ${parseBoolean(e.MUSE_MESSAGING_POLL_ENABLED, false) ? "enabled (new inbound → recallable)" : "disabled (set MUSE_MESSAGING_POLL_ENABLED)"}\n`);
         // The resolved source paths — the first thing to check when a
         // tick "isn't firing": is it reading the file you think it is?
@@ -888,6 +900,32 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
           });
           if (added > 0) io.stdout(`[${new Date(nowMs).toISOString()}] reflections: +${added.toString()} (see \`muse reflections\`)\n`);
         } catch { /* fail-soft — dreaming is a background nicety */ }
+      };
+
+      // Continuous email ingestion — the always-on half of `muse email sync`: the
+      // daemon pulls recent inbox emails into recallable notes on its own tick, so
+      // your email is kept in the cited-recall corpus WITHOUT a manual command (the
+      // map's "always-on connector" gap; mirrors the messaging poll). Opt-in
+      // (MUSE_EMAIL_SYNC_ENABLED + MUSE_GMAIL_TOKEN), interval-throttled, fail-soft
+      // (a Gmail blip never breaks the daemon). Read-only + written locally as notes.
+      const DEFAULT_EMAIL_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+      const emailSyncIntervalRaw = e.MUSE_EMAIL_SYNC_INTERVAL_MS ? Number(e.MUSE_EMAIL_SYNC_INTERVAL_MS) : DEFAULT_EMAIL_SYNC_INTERVAL_MS;
+      const emailSyncIntervalMs = Number.isFinite(emailSyncIntervalRaw) && emailSyncIntervalRaw > 0 ? emailSyncIntervalRaw : DEFAULT_EMAIL_SYNC_INTERVAL_MS;
+      const emailSyncLimitRaw = e.MUSE_EMAIL_SYNC_LIMIT ? Number(e.MUSE_EMAIL_SYNC_LIMIT) : 20;
+      const emailSyncLimit = Number.isFinite(emailSyncLimitRaw) && emailSyncLimitRaw > 0 ? Math.min(100, Math.trunc(emailSyncLimitRaw)) : 20;
+      let lastEmailSyncMs: number | undefined;
+      const emailSyncTick = async (): Promise<void> => {
+        if (!parseBoolean(e.MUSE_EMAIL_SYNC_ENABLED, false)) return;
+        const token = e.MUSE_GMAIL_TOKEN?.trim();
+        const provider = helpers.emailSyncProvider ?? (token ? new GmailEmailProvider(token) : undefined);
+        if (!provider) return; // opt-in: no token, no sync
+        const nowMs = Date.now();
+        if (lastEmailSyncMs !== undefined && nowMs - lastEmailSyncMs < emailSyncIntervalMs) return;
+        lastEmailSyncMs = nowMs;
+        try {
+          const written = await syncEmailsToNotes(provider, resolveNotesDir(e), emailSyncLimit);
+          if (written > 0) io.stdout(`[${new Date(nowMs).toISOString()}] email-sync: ${written.toString()} email(s) → recall (ask about them with \`muse ask\`)\n`);
+        } catch { /* fail-soft — a Gmail blip must never break the daemon */ }
       };
 
       // Unattended learning — the daemon distills the corrections you made in
@@ -1147,6 +1185,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await homeWatchTick();
         await briefingTick();
         await reflectionTick();
+        await emailSyncTick();
         await selfLearnTick();
         await selfLearnDecayTick();
         await playbookConsolidateTick();

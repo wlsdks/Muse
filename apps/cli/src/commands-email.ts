@@ -6,7 +6,6 @@
  * `sendEmailWithApproval` (@muse/mcp); this is the CLI surface.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { resolveActionLogFile, resolveContactsFile, resolveNotesDir } from "@muse/autoconfigure";
@@ -16,12 +15,12 @@ import {
   sendEmailWithApproval,
   type EmailApprovalGate,
   type EmailProvider,
-  type EmailSender,
-  type EmailSummary
+  type EmailSender
 } from "@muse/mcp";
 import { confirm, isCancel } from "@clack/prompts";
 import type { Command } from "commander";
 
+import { syncEmailsToNotes } from "./email-sync.js";
 import type { ProgramIO } from "./program.js";
 
 interface SendOptions {
@@ -106,28 +105,19 @@ export function registerEmailCommands(program: Command, io: ProgramIO, deps: Ema
       }
       const raw = Number((options.limit ?? "20").trim());
       const limit = Number.isFinite(raw) && raw > 0 ? Math.min(100, Math.trunc(raw)) : 20;
-      let summaries: readonly EmailSummary[];
+      const notesDir = deps.notesDir ?? resolveNotesDir(process.env as Record<string, string | undefined>);
+      let written: number;
       try {
-        summaries = await provider.listRecent(limit);
+        written = await syncEmailsToNotes(provider, notesDir, limit);
       } catch (cause) {
         io.stderr(`muse email sync: could not read Gmail (${cause instanceof Error ? cause.message : String(cause)}).\n`);
         process.exitCode = 1;
         return;
       }
-      const emailDir = join(deps.notesDir ?? resolveNotesDir(process.env as Record<string, string | undefined>), "email");
-      await mkdir(emailDir, { recursive: true });
-      let written = 0;
-      for (const summary of summaries) {
-        // Idempotent: one note per Gmail message id, so a re-sync overwrites
-        // rather than duplicating. The note carries from/subject/date/snippet so
-        // the existing notes-recall (and its citation gate) grounds on it.
-        await writeFile(join(emailDir, `${safeEmailId(summary.id)}.md`), renderEmailNote(summary), "utf8");
-        written += 1;
-      }
       io.stdout(
         written === 0
           ? "No emails to sync (your inbox read returned nothing).\n"
-          : `Synced ${written.toString()} email${written === 1 ? "" : "s"} into ${emailDir}. ` +
+          : `Synced ${written.toString()} email${written === 1 ? "" : "s"} into ${join(notesDir, "email")}. ` +
             `Ask about them, e.g. \`muse ask "what did <person> email me about?"\`.\n`
       );
     });
@@ -136,24 +126,6 @@ export function registerEmailCommands(program: Command, io: ProgramIO, deps: Ema
 function buildGmailReader(io: ProgramIO): EmailProvider | undefined {
   const token = process.env.MUSE_GMAIL_TOKEN?.trim();
   return token ? new GmailEmailProvider(token, io.fetch ?? globalThis.fetch) : undefined;
-}
-
-/** A Gmail message id → a safe, stable note filename (so a re-sync overwrites). */
-function safeEmailId(id: string): string {
-  const safe = id.replace(/[^a-zA-Z0-9_-]/gu, "_").slice(0, 80);
-  return safe.length > 0 ? safe : "email";
-}
-
-function renderEmailNote(e: EmailSummary): string {
-  const lines = [
-    `# Email: ${e.subject || "(no subject)"}`,
-    "",
-    `From: ${e.from}`,
-    ...(e.date ? [`Date: ${e.date}`] : []),
-    "",
-    e.snippet || "(no preview text)"
-  ];
-  return `${lines.join("\n")}\n`;
 }
 
 function buildGmailSender(io: ProgramIO): EmailSender | undefined {

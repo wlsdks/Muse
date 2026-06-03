@@ -473,6 +473,26 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   `muse ask "what did Dana email me about?"` over a synced email note on qwen3:8b →
   "Dana emailed you about moving the Q3 budget review to Thursday afternoon [from
   email/m1.md]" (grounded + cited to the email note, clean — no caveat). (40330662)
+- [x] **P37-23 ALWAYS-ON email ingestion — the daemon keeps your email in recall,
+  unattended.** P37-22 made `muse email sync` a MANUAL pull; this is the always-on
+  half (the capability map's biggest perception gap: "no always-on connector that keeps
+  email continuously synced into the citable corpus"; mirrors the P43-3 messaging poll
+  for email). Extracted the sync logic into a shared `syncEmailsToNotes(provider,
+  notesDir, limit)` (apps/cli/src/email-sync.ts) used by BOTH the CLI command AND a new
+  daemon `emailSyncTick`, so the manual + automatic surfaces ingest identically (no
+  duplication). The tick is opt-in (`MUSE_EMAIL_SYNC_ENABLED` + `MUSE_GMAIL_TOKEN`),
+  interval-throttled (`MUSE_EMAIL_SYNC_INTERVAL_MS`, default 15 min), fail-soft (a Gmail
+  blip never breaks the daemon), read-only, written locally; `muse daemon --status`
+  reports it. So with the daemon running, your recent emails flow into the cited-recall
+  corpus with NO manual command — `muse ask "what did Dana email?"` just works. Proof:
+  3 daemon tests (a `--once` tick syncs a fake-provider inbox into a recallable note
+  carrying from/subject; OFF by default writes nothing; `--status` reports
+  enabled/disabled) + the full @muse/cli suite green (173 files / 1904 tests) + `pnpm
+  lint` 0/0 + a LIVE `muse daemon --once` on the loop PC (email-sync enabled, no token →
+  clean opt-in no-op, daemon completes exit 0; `--status` → "email-sync: enabled (recent
+  emails → recall)"); the recall itself was proven live in P37-22. The ingestion is
+  fetch→write-notes (not the LLM path), so the daemon test + the P37-22 live recall are
+  the surface checks. (811301fe)
 - [x] **P37-1 Local `.ics` calendar reader (B3 ②).** A read-only
   `LocalIcsCalendarProvider` reads a user's EXPORTED `.ics` file (no cloud);
   `parseIcsCalendar` reuses the CalDAV VEVENT parser. Wired as the `ics`
