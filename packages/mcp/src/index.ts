@@ -307,14 +307,17 @@ export {
   readCheckins,
   runDueCheckins,
   scheduleCheckins,
+  snoozeCheckin,
   writeCheckins,
   type CancelCheckinResult,
+  type CheckinMutationReason,
   type CheckinSendRegistry,
   type CheckinStatus,
   type PersistedCheckin,
   type RunDueCheckinsOptions,
   type RunDueCheckinsSummary,
-  type ScheduleCheckinsOptions
+  type ScheduleCheckinsOptions,
+  type SnoozeCheckinResult
 } from "./commitment-checkin.js";
 
 export {

@@ -10,6 +10,7 @@ import {
   readCheckins,
   runDueCheckins,
   scheduleCheckins,
+  snoozeCheckin,
   writeCheckins,
   type CheckinSendRegistry,
   type PersistedCheckin
@@ -77,6 +78,40 @@ describe("cancelCheckin", () => {
     expect(cancelCheckin(list, "chk_f").reason).toBe("already-fired");
     expect(cancelCheckin(list, "chk_c").reason).toBe("already-cancelled");
     expect(cancelCheckin([], "").reason).toBe("not-found");
+  });
+});
+
+describe("snoozeCheckin", () => {
+  const mk = (id: string, status: PersistedCheckin["status"]): PersistedCheckin => ({
+    id, userId: "stark", commitment: id, question: `q ${id}`, dueAtIso: "2026-05-02T10:00:00.000Z",
+    createdAt: NOW.toISOString(), status, sourceKey: id
+  });
+  const LATER = "2026-05-10T10:00:00.000Z";
+
+  it("bumps a scheduled check-in's due time, keeping it scheduled, leaving siblings untouched", () => {
+    const list = [mk("chk_a", "scheduled"), mk("chk_b", "scheduled")];
+    const res = snoozeCheckin(list, "chk_a", LATER);
+    expect(res.snoozed?.id).toBe("chk_a");
+    expect(res.snoozed?.dueAtIso).toBe(LATER);
+    const a = res.checkins.find((c) => c.id === "chk_a")!;
+    expect(a.dueAtIso).toBe(LATER);
+    expect(a.status).toBe("scheduled"); // still scheduled, just later
+    expect(res.checkins.find((c) => c.id === "chk_b")?.dueAtIso).toBe("2026-05-02T10:00:00.000Z"); // untouched
+  });
+
+  it("resolves a unique prefix and refuses an ambiguous one without mutating", () => {
+    expect(snoozeCheckin([mk("chk_abc", "scheduled")], "chk_ab", LATER).snoozed?.id).toBe("chk_abc");
+    const amb = snoozeCheckin([mk("chk_a1", "scheduled"), mk("chk_a2", "scheduled")], "chk_a", LATER);
+    expect(amb.snoozed).toBeUndefined();
+    expect(amb.reason).toBe("ambiguous");
+    expect(amb.checkins.every((c) => c.dueAtIso === "2026-05-02T10:00:00.000Z")).toBe(true);
+  });
+
+  it("reports not-found / already-fired / already-cancelled without mutating", () => {
+    const list = [mk("chk_f", "fired"), mk("chk_c", "cancelled")];
+    expect(snoozeCheckin(list, "chk_missing", LATER).reason).toBe("not-found");
+    expect(snoozeCheckin(list, "chk_f", LATER).reason).toBe("already-fired");
+    expect(snoozeCheckin(list, "chk_c", LATER).reason).toBe("already-cancelled");
   });
 });
 

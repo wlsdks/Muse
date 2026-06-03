@@ -7,7 +7,7 @@
  */
 
 import { detectUserCommitments } from "@muse/agent-core";
-import { appendCheckins, cancelCheckin, readCheckins, scheduleCheckins, writeCheckins, type PersistedCheckin } from "@muse/mcp";
+import { appendCheckins, cancelCheckin, parseReminderDueAt, readCheckins, scheduleCheckins, snoozeCheckin, writeCheckins, type PersistedCheckin } from "@muse/mcp";
 import type { Command } from "commander";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -133,6 +133,38 @@ export function registerCheckinsCommands(program: Command, io: ProgramIO): void 
         result.reason === "ambiguous" ? `'${id}' matches ${String(result.matches)} check-ins — use a longer id.`
         : result.reason === "already-fired" ? `Check-in '${id}' already fired — nothing to cancel.`
         : result.reason === "already-cancelled" ? `Check-in '${id}' is already cancelled.`
+        : `No scheduled check-in matches '${id}'. Run \`muse checkins list\` to see ids.`;
+      io.stderr(`${message}\n`);
+    });
+
+  checkins
+    .command("snooze <id> <when>")
+    .description("Defer a scheduled check-in to a later time (e.g. \"next week\", \"the 15th\", \"3 days\")")
+    .option("--json", "Print the raw payload")
+    .action(async (id: string, when: string, options: { readonly json?: boolean }) => {
+      const parsed = parseReminderDueAt(when, () => new Date());
+      if (parsed instanceof Error) {
+        io.stderr(`muse checkins snooze: ${parsed.message}\n`);
+        return;
+      }
+      const file = checkinsFile();
+      const all = await readCheckins(file).catch(() => []);
+      const result = snoozeCheckin(all, id, parsed);
+      if (result.snoozed) {
+        await writeCheckins(file, result.checkins);
+      }
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ reason: result.reason ?? null, snoozed: result.snoozed ?? null }, null, 2)}\n`);
+        return;
+      }
+      if (result.snoozed) {
+        io.stdout(`Snoozed check-in [${result.snoozed.id}] — now due ${shortDateTime(result.snoozed.dueAtIso)}.\n`);
+        return;
+      }
+      const message =
+        result.reason === "ambiguous" ? `'${id}' matches ${String(result.matches)} check-ins — use a longer id.`
+        : result.reason === "already-fired" ? `Check-in '${id}' already fired — nothing to snooze.`
+        : result.reason === "already-cancelled" ? `Check-in '${id}' is cancelled — nothing to snooze.`
         : `No scheduled check-in matches '${id}'. Run \`muse checkins list\` to see ids.`;
       io.stderr(`${message}\n`);
     });

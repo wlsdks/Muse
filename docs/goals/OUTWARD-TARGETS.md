@@ -1664,7 +1664,29 @@ honest-refusal mock-corpus check where applicable.
   the scheduled list now shows only the passport check-in, and a bogus id prints "No
   scheduled check-in matches …". mcp 167 / 1348 + cli 168 / 1808 + `pnpm lint` 0/0 —
   a user can now dismiss a check-in for something they already did instead of being
-  nagged about it. (this commit)
+  nagged about it. (86642efa)
+
+- [x] **P35-14 You can now SNOOZE a proactive check-in — defer the nudge instead of
+  killing it.** P35-13 gave you cancel (silence forever); the complement is "ask me
+  LATER, not now" — a check-in that isn't relevant yet shouldn't have to be dismissed.
+  Added a pure `snoozeCheckin(checkins, idOrPrefix, newDueAtIso)` in
+  packages/mcp/src/commitment-checkin.ts that bumps a scheduled check-in's `dueAtIso`
+  (keeping it scheduled), sharing the SAME id-matching (exact / unique-prefix /
+  refuse-ambiguous) and status guards as cancel — the matcher + status-reason were
+  extracted to one `matchCheckin` helper so cancel and snooze address a check-in
+  identically. Wired as `muse checkins snooze <id> <when>`, where `<when>` is resolved
+  through the SAME relative-time parser as reminders (`parseReminderDueAt`) — so it
+  understands "next week", "3 days", and the bare day-of-month / month-qualified forms
+  P40-11/12 just added ("the 20th", "the 1st of next month"). Proof: 3 new unit tests
+  in packages/mcp/test/commitment-checkin.test.ts (bumps the due time keeping it
+  scheduled + leaving siblings untouched; unique-prefix resolves + ambiguous refuses
+  without mutating; not-found / already-fired / already-cancelled report without
+  mutating) + the existing cancel tests still green (the shared-matcher refactor is
+  behaviour-preserving) + the full @muse/mcp (167 / 1351) and @muse/cli (168 / 1808)
+  suites green + LIVE on the loop PC (today 2026-06-03): a check-in due 2026-06-04
+  10:00, `muse checkins snooze <id> "next week"` → now due 2026-06-10 09:00, and
+  `… "the 20th"` → 2026-06-20 09:00. mcp 167 / 1351 + cli 168 / 1808 + `pnpm lint` 0/0
+  — a user can now push a check-in to a better time instead of losing it. (this commit)
 
 - [x] **P35-1 Citation-as-voice (B2 S1, build-first).** `muse ask` renders
   each cited note as a memory — "📎 From your notes … • from your note of

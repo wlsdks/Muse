@@ -127,47 +127,98 @@ export function scheduleCheckins(
   return out;
 }
 
+/** Why a check-in lookup or mutation produced no change. */
+export type CheckinMutationReason = "not-found" | "ambiguous" | "already-fired" | "already-cancelled";
+
 export interface CancelCheckinResult {
   /** The (possibly unchanged) list to persist. */
   readonly checkins: readonly PersistedCheckin[];
   /** The check-in that was cancelled, when the cancel succeeded. */
   readonly cancelled?: PersistedCheckin;
   /** Why nothing was cancelled, when `cancelled` is undefined. */
-  readonly reason?: "not-found" | "ambiguous" | "already-fired" | "already-cancelled";
+  readonly reason?: CheckinMutationReason;
   /** How many check-ins the id matched (for the ambiguous case). */
   readonly matches?: number;
+}
+
+export interface SnoozeCheckinResult {
+  readonly checkins: readonly PersistedCheckin[];
+  /** The check-in whose due time was bumped, when the snooze succeeded. */
+  readonly snoozed?: PersistedCheckin;
+  readonly reason?: CheckinMutationReason;
+  readonly matches?: number;
+}
+
+/**
+ * Resolve a check-in by exact id or a UNIQUE id prefix (the list shows the full
+ * id; a prefix is the convenience). An ambiguous prefix never resolves to a
+ * guess — it reports how many it matched so the caller can refuse. Shared by
+ * cancel + snooze so both address a check-in identically.
+ */
+function matchCheckin(
+  checkins: readonly PersistedCheckin[],
+  idOrPrefix: string
+): { readonly target: PersistedCheckin } | { readonly target?: undefined; readonly reason: "not-found" | "ambiguous"; readonly matches?: number } {
+  const needle = idOrPrefix.trim();
+  if (needle.length === 0) {
+    return { reason: "not-found" };
+  }
+  const exact = checkins.filter((c) => c.id === needle);
+  const matched = exact.length > 0 ? exact : checkins.filter((c) => c.id.startsWith(needle));
+  if (matched.length === 0) {
+    return { reason: "not-found" };
+  }
+  if (matched.length > 1) {
+    return { matches: matched.length, reason: "ambiguous" };
+  }
+  return { target: matched[0]! };
+}
+
+/** A mutation only applies to a SCHEDULED check-in; report why otherwise. */
+function mutableStatusReason(target: PersistedCheckin): CheckinMutationReason | undefined {
+  if (target.status === "fired") return "already-fired";
+  if (target.status === "cancelled") return "already-cancelled";
+  return undefined;
 }
 
 /**
  * Cancel a SCHEDULED check-in so the daemon won't ask "how did it go?" — the
  * opt-out that makes proactivity calm: a nudge for something you already did, or
- * never wanted, must be silenceable. Matches by exact id or a UNIQUE id prefix
- * (the list shows the full id; a prefix is the convenience). A fired check-in
- * already happened and an already-cancelled one is a no-op; both report why
- * rather than silently "succeeding". Pure: returns the updated list to persist.
+ * never wanted, must be silenceable. A fired check-in already happened and an
+ * already-cancelled one is a no-op; both report why rather than silently
+ * "succeeding". Pure: returns the updated list to persist.
  */
 export function cancelCheckin(checkins: readonly PersistedCheckin[], idOrPrefix: string): CancelCheckinResult {
-  const needle = idOrPrefix.trim();
-  if (needle.length === 0) {
-    return { checkins, reason: "not-found" };
+  const m = matchCheckin(checkins, idOrPrefix);
+  if (!m.target) {
+    return { checkins, reason: m.reason, ...(m.matches !== undefined ? { matches: m.matches } : {}) };
   }
-  const exact = checkins.filter((c) => c.id === needle);
-  const matched = exact.length > 0 ? exact : checkins.filter((c) => c.id.startsWith(needle));
-  if (matched.length === 0) {
-    return { checkins, reason: "not-found" };
+  const statusReason = mutableStatusReason(m.target);
+  if (statusReason) {
+    return { checkins, reason: statusReason };
   }
-  if (matched.length > 1) {
-    return { checkins, matches: matched.length, reason: "ambiguous" };
+  const cancelled: PersistedCheckin = { ...m.target, status: "cancelled" };
+  return { cancelled, checkins: checkins.map((c) => (c.id === m.target.id ? cancelled : c)) };
+}
+
+/**
+ * Defer a SCHEDULED check-in to a later moment — "ask me next week, not
+ * tomorrow". The complement to cancel: a nudge that's not relevant YET shouldn't
+ * have to be killed. The caller resolves `<when>` to an ISO timestamp (reusing
+ * the same relative-time parser as reminders); this just bumps `dueAtIso`,
+ * keeping the check-in scheduled. Same id-matching + status guards as cancel.
+ */
+export function snoozeCheckin(checkins: readonly PersistedCheckin[], idOrPrefix: string, newDueAtIso: string): SnoozeCheckinResult {
+  const m = matchCheckin(checkins, idOrPrefix);
+  if (!m.target) {
+    return { checkins, reason: m.reason, ...(m.matches !== undefined ? { matches: m.matches } : {}) };
   }
-  const target = matched[0]!;
-  if (target.status === "fired") {
-    return { checkins, reason: "already-fired" };
+  const statusReason = mutableStatusReason(m.target);
+  if (statusReason) {
+    return { checkins, reason: statusReason };
   }
-  if (target.status === "cancelled") {
-    return { checkins, reason: "already-cancelled" };
-  }
-  const cancelled: PersistedCheckin = { ...target, status: "cancelled" };
-  return { cancelled, checkins: checkins.map((c) => (c.id === target.id ? cancelled : c)) };
+  const snoozed: PersistedCheckin = { ...m.target, dueAtIso: newDueAtIso };
+  return { snoozed, checkins: checkins.map((c) => (c.id === m.target.id ? snoozed : c)) };
 }
 
 async function writeFileAtomic(file: string, text: string): Promise<void> {
