@@ -42,7 +42,8 @@ const BATTERIES = [
   { axis: "★ DREAMING: grounded reflection", file: "apps/cli/scripts/verify-reflection-synthesis.mjs", name: "reflection-synthesis" },
   { axis: "★ DREAMING: reflection RGV re-verify", file: "apps/cli/scripts/verify-reflection-grounding.mjs", name: "reflection-grounding" },
   { axis: "★ SWARM: grounded council synthesis", file: "apps/cli/scripts/verify-council.mjs", name: "council" },
-  { axis: "★ SWARM: council RGV re-verify", file: "apps/cli/scripts/verify-council-grounding.mjs", name: "council-grounding" }
+  { axis: "★ SWARM: council RGV re-verify", file: "apps/cli/scripts/verify-council-grounding.mjs", name: "council-grounding" },
+  { axis: "★ SWARM: council self-abstention (5th surface)", file: "apps/cli/scripts/verify-council-self-abstention.mjs", name: "council-self-abstention" }
 ];
 
 async function ollamaReachable() {

@@ -20,7 +20,11 @@
 import type { ModelMessage, ModelProvider, ModelRequest } from "@muse/model";
 import { redactSecretsInText } from "@muse/shared";
 
-import type { GroundingReverify } from "./knowledge-recall.js";
+import {
+  classifyRetrievalConfidence,
+  type GroundingReverify,
+  type KnowledgeMatch
+} from "./knowledge-recall.js";
 
 export interface CouncilUtterance {
   /** The participating peer's id (e.g. "phone", "alice"). */
@@ -54,6 +58,60 @@ const REASONING_SYSTEM_PROMPT =
   "You are one member of a council of AI assistants reasoning about a shared question. " +
   "Give your concise reasoning and recommendation in 2-4 sentences — your perspective, not a final verdict. " +
   "Do NOT include any personal data, names, or private specifics; reason in general terms. Plain text only.";
+
+export interface CouncilAbstentionOptions {
+  /** Absolute-cosine bar a member's corpus must clear to weigh in. Default `DEFAULT_CONFIDENT_AT`. */
+  readonly confidentAt?: number;
+}
+
+/**
+ * Council self-abstention — the multi-agent twin of "I'm not sure", extending the
+ * fabrication=0 grounding invariant to a FIFTH surface (the peer DRAFT) at the
+ * COLONY level. A member returns its `draft` only when its OWN corpus holds
+ * CONFIDENT evidence for the question, and ABSTAINS (returns "") otherwise — so an
+ * ignorant peer stays silent instead of injecting a confident-but-ungrounded
+ * opinion that `synthesizeCouncilAnswer` might fold in (the classic
+ * multi-agent-debate failure: a member with no relevant knowledge still emits a
+ * plausible opinion).
+ *
+ * The signal is RETRIEVAL CONFIDENCE over the member's own corpus (the same CRAG
+ * gate the recall wedge uses), NOT token-coverage of the draft: the council
+ * reasons in GENERAL terms by design (the system prompt forbids quoting private
+ * specifics), so a coverage gate would silence every member (over-abstention). A
+ * member with a CONFIDENT match speaks; `none`/`ambiguous` (no corpus, or only a
+ * weak off-corpus near-miss) abstains — selective, not blanket silence, and
+ * DETERMINISTIC (the CRAG verdict decides, never the stochastic 8B). Purely
+ * SUBTRACTIVE + entirely LOCAL: a member grounds against its own corpus, which
+ * never crosses the wire — no new shareable kind, no inbound state change.
+ */
+export function abstainIfUngrounded(
+  draft: string,
+  matches: readonly KnowledgeMatch[],
+  options?: CouncilAbstentionOptions
+): string {
+  if (draft.trim().length === 0) {
+    return "";
+  }
+  return classifyRetrievalConfidence(matches, options) === "confident" ? draft : "";
+}
+
+/**
+ * `produceCouncilReasoning` + self-abstention. Short-circuits to abstain (no model
+ * call, no leaked generic opinion) when the member's corpus lacks confident
+ * evidence for the question; otherwise produces the reasoning and gates it through
+ * `abstainIfUngrounded`. Keeps `produceCouncilReasoning` untouched for back-compat.
+ */
+export async function produceGroundedCouncilReasoning(
+  question: string,
+  matches: readonly KnowledgeMatch[],
+  options: CouncilModelOptions & { readonly abstention?: CouncilAbstentionOptions }
+): Promise<string> {
+  if (classifyRetrievalConfidence(matches, options.abstention) !== "confident") {
+    return "";
+  }
+  const draft = await produceCouncilReasoning(question, options);
+  return abstainIfUngrounded(draft, matches, options.abstention);
+}
 
 /** A participant's bounded reasoning utterance — short, PII-redacted, no tools. */
 export async function produceCouncilReasoning(question: string, options: CouncilModelOptions): Promise<string> {

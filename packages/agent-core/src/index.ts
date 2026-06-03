@@ -210,12 +210,15 @@ export {
   type SynthesizeReflectionsOptions
 } from "./reflection-synthesis.js";
 export {
+  abstainIfUngrounded,
   buildCouncilPrompt,
   buildDebateQuestion,
   parseCouncilAnswer,
   produceCouncilReasoning,
+  produceGroundedCouncilReasoning,
   synthesizeCouncilAnswer,
   verifyCouncilGrounding,
+  type CouncilAbstentionOptions,
   type CouncilAnswer,
   type CouncilModelOptions,
   type CouncilUtterance

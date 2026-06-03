@@ -2,14 +2,21 @@ import type { ModelRequest } from "@muse/model";
 import { describe, expect, it } from "vitest";
 
 import {
+  abstainIfUngrounded,
   buildCouncilPrompt,
   buildDebateQuestion,
   parseCouncilAnswer,
   produceCouncilReasoning,
+  produceGroundedCouncilReasoning,
   synthesizeCouncilAnswer,
   type CouncilModelOptions,
   type CouncilUtterance
 } from "../src/council.js";
+import type { KnowledgeMatch } from "../src/knowledge-recall.js";
+
+const match = (cosine: number): KnowledgeMatch => ({ cosine, score: cosine, source: "notes/x.md", text: "the office VPN uses MTU 1380" });
+const CONFIDENT: readonly KnowledgeMatch[] = [match(0.72)];
+const AMBIGUOUS: readonly KnowledgeMatch[] = [match(0.42)];
 
 const fakeProvider = (output: string, sink?: { request?: ModelRequest }): Pick<CouncilModelOptions, "modelProvider">["modelProvider"] => ({
   generate: async (request: ModelRequest) => { if (sink) sink.request = request; return { id: "r", model: request.model, output }; }
@@ -101,5 +108,60 @@ describe("synthesizeCouncilAnswer — grounded final answer", () => {
 
   it("fail-soft: a throwing provider yields null", async () => {
     expect(await synthesizeCouncilAnswer("Q?", members, { model: "m", modelProvider: { generate: async () => { throw new Error("down"); } } })).toBeNull();
+  });
+});
+
+describe("council self-abstention — a member speaks only with confident corpus", () => {
+  it("returns the draft when the member's corpus confidently matches the question", () => {
+    expect(abstainIfUngrounded("MTU should be 1380 here.", CONFIDENT)).toBe("MTU should be 1380 here.");
+  });
+
+  it("abstains (\"\") on a weak/ambiguous near-miss corpus — no confident evidence", () => {
+    expect(abstainIfUngrounded("I think it's fine.", AMBIGUOUS)).toBe("");
+  });
+
+  it("abstains on an empty corpus (knows nothing about the question)", () => {
+    expect(abstainIfUngrounded("Confident-sounding opinion.", [])).toBe("");
+  });
+
+  it("abstains on an empty draft regardless of corpus", () => {
+    expect(abstainIfUngrounded("   ", CONFIDENT)).toBe("");
+  });
+
+  it("respects a custom confidentAt bar", () => {
+    // At a stricter 0.8 bar the 0.72 match is no longer confident → abstain.
+    expect(abstainIfUngrounded("x y z", CONFIDENT, { confidentAt: 0.8 })).toBe("");
+    // At a looser 0.3 bar the 0.42 ambiguous match clears → speak.
+    expect(abstainIfUngrounded("x y z", AMBIGUOUS, { confidentAt: 0.3 })).toBe("x y z");
+  });
+
+  it("produceGroundedCouncilReasoning SHORT-CIRCUITS (no model call) when the corpus isn't confident", async () => {
+    const sink: { request?: ModelRequest } = {};
+    const out = await produceGroundedCouncilReasoning("Q?", AMBIGUOUS, opts("a generic opinion", sink));
+    expect(out).toBe("");
+    expect(sink.request, "an ignorant member must not even spend a model call (nor risk leaking a generic opinion)").toBeUndefined();
+  });
+
+  it("produceGroundedCouncilReasoning produces + returns reasoning when the corpus is confident", async () => {
+    const sink: { request?: ModelRequest } = {};
+    const out = await produceGroundedCouncilReasoning("What MTU for the VPN?", CONFIDENT, opts("Use 1380 for the satellite link.", sink));
+    expect(out).toBe("Use 1380 for the satellite link.");
+    expect(sink.request).toBeDefined(); // the knowledgeable member DID reason
+  });
+
+  it("SELECTIVITY end-to-end: an abstaining member is absent from the synthesised contributors", async () => {
+    // bob abstains (empty reasoning); only alice's utterance reaches synthesis.
+    const aliceUtt = utt("alice", "Use MTU 1380 for stability.");
+    const bobAbstains = await produceGroundedCouncilReasoning("Q?", [], opts("(would-be opinion)"));
+    expect(bobAbstains).toBe("");
+    const utterances = [aliceUtt, ...(bobAbstains ? [utt("bob", bobAbstains)] : [])];
+    expect(utterances.map((u) => u.peerId)).toEqual(["alice"]); // bob dropped before synthesis
+    const synth = await synthesizeCouncilAnswer(
+      "Q?",
+      utterances,
+      opts('{"answer":"Go with 1380.","contributors":["alice"]}')
+    );
+    expect(synth?.contributors).toEqual(["alice"]);
+    expect(synth?.contributors).not.toContain("bob");
   });
 });

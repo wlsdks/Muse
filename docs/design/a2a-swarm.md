@@ -79,6 +79,26 @@ transport and mode routes through.
   redaction, draft-first outbound, inbound quarantine, and off-by-default — so
   federating know-how with a trusted peer needs only adding them to
   `a2a-peers.json`. (A future hardening: explicit mutual-consent handshake.)
+- [x] **A2A-6 — Council self-abstention (honest colony, the 5th grounded
+  surface).** Opt-in `MUSE_A2A_COUNCIL_GROUNDED`: a council member grounds its
+  OWN take against its OWN corpus and ABSTAINS (stays silent) when it has no
+  CONFIDENT evidence for the question — the multi-agent twin of "I'm not sure",
+  extending the fabrication=0 grounding invariant to the peer-DRAFT surface so an
+  ignorant peer can't inject a confident-but-ungrounded opinion the synthesiser
+  folds in (the classic multiagent-debate failure). Deterministic gate
+  (`abstainIfUngrounded`/`produceGroundedCouncilReasoning` — CRAG retrieval
+  verdict, not the stochastic 8B), purely SUBTRACTIVE (members say LESS), entirely
+  LOCAL (the corpus never crosses the wire — only the abstain/speak decision
+  does), no new shareable kind, inbound-inert untouched. It is the PREREQUISITE
+  for richer colony learning: who SPEAKS on a question reveals who has corpus for
+  it (emergent specialization / federated trust need members to first stop
+  speaking when ignorant). Proven live on qwen3:8b + nomic-embed
+  (`verify-council-self-abstention` in `eval:self-improving`): an off-corpus
+  member abstains + is EXCLUDED from the synthesised contributors while an
+  in-corpus member (the over-abstention tripwire) speaks + IS a contributor. Next:
+  Signed Grounding Receipt — a contributing member attaches a tamper-evident
+  receipt so the synthesiser verifies-before-fold (swarm trust, externally
+  auditable).
 
 ## Tension with the identity — resolved
 

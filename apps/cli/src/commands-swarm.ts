@@ -11,7 +11,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { buildDebateQuestion, buildGroundingReverifyPrompt, isA2AEnabled, parseGroundingReverifyVerdict, prepareOutbound, produceCouncilReasoning, REVERIFY_SYSTEM_PROMPT, synthesizeCouncilAnswer, type CouncilAnswer, type CouncilUtterance, type GroundingReverify } from "@muse/agent-core";
+import { buildDebateQuestion, buildGroundingReverifyPrompt, isA2AEnabled, parseGroundingReverifyVerdict, prepareOutbound, produceCouncilReasoning, produceGroundedCouncilReasoning, REVERIFY_SYSTEM_PROMPT, synthesizeCouncilAnswer, type CouncilAnswer, type CouncilUtterance, type GroundingReverify } from "@muse/agent-core";
 import { AGENT_CARD_PATH, buildMuseAgentCard, createA2AHandler, loadPeerConfig, requestCouncilReasoning, sendToPeer, type A2APeer } from "@muse/a2a";
 import { createMuseRuntimeAssembly, resolveAuthoredSkillsDir } from "@muse/autoconfigure";
 import {
@@ -22,9 +22,35 @@ import {
   type SwarmQuarantineEntry
 } from "@muse/mcp";
 import { AuthoredSkillStore } from "@muse/skills";
+import type { ModelProvider } from "@muse/model";
 import type { Command } from "commander";
 
+import { councilCorpusMatches, isCouncilGroundedMode } from "./council-corpus.js";
 import type { ProgramIO } from "./program.js";
+
+/**
+ * Produce one council member's reasoning, honouring this node's grounded-council
+ * posture: in grounded mode (`MUSE_A2A_COUNCIL_GROUNDED`) the member self-abstains
+ * (returns "") when its OWN notes hold no confident evidence for the question, so
+ * an ignorant voice never dilutes the synthesis. `reasoningQuestion` is what the
+ * member reasons about (a debate round adds the others' digest); `retrievalQuestion`
+ * is the ORIGINAL question the corpus relevance is judged against. Default (off) is
+ * byte-identical to `produceCouncilReasoning`.
+ */
+async function councilMemberReasoning(args: {
+  readonly reasoningQuestion: string;
+  readonly retrievalQuestion: string;
+  readonly model: string;
+  readonly modelProvider: Pick<ModelProvider, "generate">;
+  readonly env: Record<string, string | undefined>;
+}): Promise<string> {
+  const { reasoningQuestion, retrievalQuestion, model, modelProvider, env } = args;
+  if (!isCouncilGroundedMode(env)) {
+    return produceCouncilReasoning(reasoningQuestion, { model, modelProvider });
+  }
+  const matches = await councilCorpusMatches(retrievalQuestion, { env });
+  return produceGroundedCouncilReasoning(reasoningQuestion, matches, { model, modelProvider });
+}
 
 function quarantineFile(): string {
   return process.env.MUSE_SWARM_QUARANTINE_FILE?.trim() || join(homedir(), ".muse", "swarm-quarantine.json");
@@ -55,6 +81,7 @@ function whenMs(ms: number): string {
 export interface SwarmStatus {
   readonly enabled: boolean;
   readonly councilEnabled: boolean;
+  readonly councilGrounded: boolean;
   readonly selfId: string;
   readonly peers: readonly { readonly id: string; readonly url: string }[];
   readonly pendingCount: number;
@@ -66,6 +93,7 @@ export function renderSwarmStatus(s: SwarmStatus): string {
     "Muse swarm — status",
     `  A2A:     ${onOff(s.enabled, "set MUSE_A2A_ENABLED=true")}`,
     `  Council: ${onOff(s.councilEnabled, "set MUSE_A2A_COUNCIL=true")}`,
+    `  Grounded council (self-abstain when your notes can't ground a take): ${onOff(s.councilGrounded, "set MUSE_A2A_COUNCIL_GROUNDED=true")}`,
     `  You are: ${s.selfId.length > 0 ? s.selfId : "(selfId unset in ~/.muse/a2a-peers.json)"}`,
     s.peers.length > 0
       ? `  Peers (${s.peers.length.toString()}): ${s.peers.map((p) => `${p.id} (${p.url})`).join(", ")}`
@@ -159,6 +187,7 @@ export function registerSwarmCommands(program: Command, io: ProgramIO): void {
       const pendingCount = listPending(await readQuarantine(quarantineFile())).length;
       io.stdout(`${renderSwarmStatus({
         councilEnabled: ["true", "1", "yes", "on"].includes((env.MUSE_A2A_COUNCIL ?? "").trim().toLowerCase()),
+        councilGrounded: isCouncilGroundedMode(env),
         enabled: isA2AEnabled(env),
         pendingCount,
         peers: config.peers.map((p) => ({ id: p.id, url: p.url })),
@@ -287,14 +316,20 @@ export function registerSwarmCommands(program: Command, io: ProgramIO): void {
       const config = await loadPeerConfig(peersFile());
       const card = buildMuseAgentCard({ url: `http://${options.host}:${port.toString()}/a2a` });
       // Council participation is a SECOND opt-in: a council request triggers a
-      // bounded, tool-free, PII-redacted reasoning step (no corpus, no execution).
+      // bounded, tool-free, PII-redacted reasoning step (no corpus dump, no
+      // execution). In grounded mode this Muse self-ABSTAINS on a question its own
+      // notes can't ground — an ignorant peer stays silent instead of injecting a
+      // confident-but-ungrounded opinion (only the abstain/speak decision crosses
+      // the wire; the corpus never does).
       const councilOn = ["true", "1", "yes", "on"].includes((env.MUSE_A2A_COUNCIL ?? "").trim().toLowerCase());
       let councilReason: ((question: string) => Promise<string>) | undefined;
       if (councilOn) {
         const assembly = createMuseRuntimeAssembly();
         const model = assembly.defaultModel;
         if (assembly.modelProvider && model) {
-          councilReason = (question) => produceCouncilReasoning(question, { model, modelProvider: assembly.modelProvider! });
+          const provider = assembly.modelProvider;
+          councilReason = (question) =>
+            councilMemberReasoning({ env, model, modelProvider: provider, reasoningQuestion: question, retrievalQuestion: question });
         }
       }
       const handler = createA2AHandler({
@@ -360,7 +395,7 @@ export function registerSwarmCommands(program: Command, io: ProgramIO): void {
       const rounds = Math.max(1, Math.min(3, Math.trunc(Number.parseInt(options.rounds, 10) || 1)));
       io.stdout(`🏛  Convening the council (${config.peers.length.toString()} peer(s)${rounds > 1 ? `, ${rounds.toString()} debate rounds` : ""})…\n`);
       let utterances = await gatherCouncil(question, {
-        ownReasoning: () => produceCouncilReasoning(question, { model, modelProvider }),
+        ownReasoning: () => councilMemberReasoning({ env, model, modelProvider, reasoningQuestion: question, retrievalQuestion: question }),
         peers: config.peers,
         requestReasoning: (peer, q) => requestCouncilReasoning({ env, fetchImpl: io.fetch ?? globalThis.fetch, fromPeerId: config.selfId, peer, question: q }),
         selfId: config.selfId
@@ -369,7 +404,7 @@ export function registerSwarmCommands(program: Command, io: ProgramIO): void {
       for (let round = 2; round <= rounds && utterances.length > 1; round += 1) {
         const prior = utterances;
         utterances = await gatherCouncil(question, {
-          ownReasoning: () => produceCouncilReasoning(buildDebateQuestion(question, config.selfId.length > 0 ? config.selfId : "me", prior), { model, modelProvider }),
+          ownReasoning: () => councilMemberReasoning({ env, model, modelProvider, reasoningQuestion: buildDebateQuestion(question, config.selfId.length > 0 ? config.selfId : "me", prior), retrievalQuestion: question }),
           peers: config.peers,
           requestReasoning: (peer, q) => requestCouncilReasoning({ env, fetchImpl: io.fetch ?? globalThis.fetch, fromPeerId: config.selfId, peer, question: buildDebateQuestion(q, peer.id, prior) }),
           selfId: config.selfId
