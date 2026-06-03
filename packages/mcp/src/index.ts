@@ -793,6 +793,7 @@ export {
 export {
   clearEpisodes,
   computeEpisodeRetention,
+  detectTopicAbsence,
   planEpisodeConsolidation,
   readEpisodes,
   recurringThemes,
@@ -805,7 +806,8 @@ export {
   type EpisodeConsolidation,
   type EpisodeRetentionOptions,
   type EpisodeTheme,
-  type PersistedEpisode
+  type PersistedEpisode,
+  type TopicAbsence
 } from "./personal-episodes-store.js";
 
 // Self-followup firing engine — step 4 of agent-self-followup.md.

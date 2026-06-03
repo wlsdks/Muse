@@ -271,6 +271,109 @@ export function recurringThemes(
     .map((entry) => ({ topic: entry.display, count: entry.count, lastSeen: entry.lastSeen }));
 }
 
+export interface TopicAbsence {
+  /** The topic label, in the casing of its first occurrence. */
+  readonly topic: string;
+  /** How many episodes carried it — the cadence sample size. */
+  readonly occurrences: number;
+  /** endedAt of the most recent episode carrying it — the citation anchor. */
+  readonly lastSeen: string;
+  /** The 60-word recap of that most-recent episode — the cited evidence. */
+  readonly lastSummary: string;
+  /** Typical days between occurrences (the LEARNED baseline, median gap). */
+  readonly typicalGapDays: number;
+  /** Days since the last occurrence — how long it has been silent. */
+  readonly silentDays: number;
+}
+
+const EPISODE_DAY_MS = 86_400_000;
+
+function medianGap(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+}
+
+/**
+ * The INVERSE of `recurringThemes`: surface topics that USED to recur on a
+ * regular cadence but have now gone SILENT for far longer than their own
+ * baseline — "you used to discuss X every few days; nothing in three weeks". A
+ * learned-habit ABSENCE signal (a deviation from a per-topic baseline, not a
+ * hard due-date — the heads-up a passive list never gives). Needs enough history
+ * to establish a cadence (`minOccurrences` episodes ⇒ that many timestamps); the
+ * typical gap is the MEDIAN consecutive gap (robust to one outlier). A topic
+ * fires only when the current silence is BOTH past an absolute floor
+ * (`minSilentDays`, so a fast cadence can't fire on a single day's gap) AND
+ * `staleFactor`× its own typical gap. Each result cites the most recent episode
+ * (its date + summary). Pure: no I/O, no model. Topics matched
+ * case-insensitively, counted once per episode.
+ */
+export function detectTopicAbsence(
+  episodes: readonly PersistedEpisode[],
+  options: {
+    readonly now: Date;
+    readonly minOccurrences?: number;
+    readonly staleFactor?: number;
+    readonly minSilentDays?: number;
+    readonly limit?: number;
+  }
+): readonly TopicAbsence[] {
+  const nowMs = options.now.getTime();
+  const minOccurrences = Math.max(3, Math.trunc(options.minOccurrences ?? 3));
+  const staleFactor = options.staleFactor && options.staleFactor > 1 ? options.staleFactor : 2.5;
+  const minSilentMs = Math.max(0, options.minSilentDays ?? 10) * EPISODE_DAY_MS;
+  const limit = Math.max(1, Math.trunc(options.limit ?? 5));
+  const byKey = new Map<string, { times: number[]; lastSeen: string; lastSummary: string; display: string }>();
+  for (const episode of episodes) {
+    const t = Date.parse(episode.endedAt);
+    if (!Number.isFinite(t)) continue;
+    const seenInEpisode = new Set<string>();
+    for (const raw of episode.topics ?? []) {
+      const topic = raw.trim();
+      if (topic.length === 0) continue;
+      const key = topic.toLowerCase();
+      if (seenInEpisode.has(key)) continue;
+      seenInEpisode.add(key);
+      const entry = byKey.get(key);
+      if (entry) {
+        entry.times.push(t);
+        if (episode.endedAt > entry.lastSeen) {
+          entry.lastSeen = episode.endedAt;
+          entry.lastSummary = episode.summary;
+        }
+      } else {
+        byKey.set(key, { display: topic, lastSeen: episode.endedAt, lastSummary: episode.summary, times: [t] });
+      }
+    }
+  }
+  const out: TopicAbsence[] = [];
+  for (const entry of byKey.values()) {
+    if (entry.times.length < minOccurrences) continue;
+    const sorted = [...entry.times].sort((a, b) => a - b);
+    const gaps: number[] = [];
+    for (let i = 1; i < sorted.length; i += 1) {
+      gaps.push(sorted[i]! - sorted[i - 1]!);
+    }
+    const typicalMs = medianGap(gaps);
+    if (typicalMs <= 0) continue;
+    const silentMs = nowMs - sorted[sorted.length - 1]!;
+    if (silentMs >= minSilentMs && silentMs > staleFactor * typicalMs) {
+      out.push({
+        lastSeen: entry.lastSeen,
+        lastSummary: entry.lastSummary,
+        occurrences: entry.times.length,
+        silentDays: Math.max(1, Math.round(silentMs / EPISODE_DAY_MS)),
+        topic: entry.display,
+        typicalGapDays: Math.max(1, Math.round(typicalMs / EPISODE_DAY_MS))
+      });
+    }
+  }
+  return out
+    .sort((a, b) => b.silentDays / b.typicalGapDays - a.silentDays / a.typicalGapDays || b.silentDays - a.silentDays)
+    .slice(0, limit);
+}
+
 export interface EpisodeConsolidation {
   /** Id of the episode kept (higher importance, then more recent). */
   readonly kept: string;

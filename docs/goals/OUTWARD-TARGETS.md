@@ -189,13 +189,25 @@ P43 bullet is unbuilt.
   against the real `appendInbound` store + `FileBackedInboxContextProvider`
   (cursor advances once, no double-injection) + `eval:self-improving` 18/18
   live. (9175184c)
-- [ ] **P43-4 Absence/anomaly anticipation + evening recap.** Muse
+- [x] **P43-4 Absence/anomaly anticipation + evening recap.** Muse
   notices the ABSENCE of an expected thing ("a project went cold, a
   contact went quiet, this is unusual for you") and bookends the day with
   an end-of-day digest of slipping commitments — through the same
   grounded, rate-capped, vetoable notice surface as the morning brief.
   Flips when a seeded "gone cold" pattern fires a cited anomaly notice AND
-  the evening recap re-surfaces an open loop, proven live.
+  the evening recap re-surfaces an open loop, proven live. FLIPPED
+  `8eaa868a`: the evening recap now fires a "🔕 Gone quiet" anomaly —
+  `detectTopicAbsence` baselines each session-topic's MEDIAN cadence across
+  the episode bank and flags a topic gone silent past an absolute floor AND
+  `staleFactor`× its own gap, CITED to the last session that touched it (the
+  inverse of `recurringThemes`). Earlier slices delivered the recap +
+  proactive daemon delivery + the hard-due-date "Slipping" section (which
+  re-surfaces open loops); this adds the LEARNED-habit deviation half.
+  Proven live: a seeded gone-cold topic ("Project Apollo", ~4d cadence,
+  silent 28d) fires `🔕 "Project Apollo" — usually every ~4d, silent 28d
+  (last on May 6)` in a real `muse recap` run, while a still-active topic is
+  not flagged. (Honest scope: the learned baseline is episode-TOPIC cadence;
+  per-contact messaging cadence is a future entity type.)
 
 **P37 — Perception growth: read-only local connectors (loop-v2 B3).** The
 self-learning core (P36) is delivered end-to-end + felt; this axis grows what

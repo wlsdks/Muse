@@ -1,5 +1,5 @@
 import { resolveActionLogFile, resolveEpisodesFile, resolveFollowupsFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
-import { readActionLog, readEpisodes, readFollowups, readReminders, readTasks } from "@muse/mcp";
+import { detectTopicAbsence, readActionLog, readEpisodes, readFollowups, readReminders, readTasks } from "@muse/mcp";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
@@ -32,6 +32,12 @@ export interface EveningRecapInput {
    * their dueAt). "<title> — was due <when>" lines.
    */
   readonly slipping: readonly string[];
+  /**
+   * GONE QUIET — the learned-habit absence signal: a topic that used to recur
+   * across your sessions on a regular cadence has fallen silent for far longer
+   * than its own baseline. Each line cites the last session that touched it.
+   */
+  readonly goneQuiet: readonly string[];
   readonly openFollowups: number;
 }
 
@@ -72,6 +78,15 @@ export function composeEveningRecap(input: EveningRecapInput): string {
     }
   }
 
+  // Learned-habit absence: a topic you used to return to regularly that's gone
+  // quiet vs its OWN baseline — a deviation a hard-due-date list can't catch.
+  if (input.goneQuiet.length > 0) {
+    lines.push("", `🔕 Gone quiet — a usual habit you haven't returned to (${input.goneQuiet.length.toString()}):`);
+    for (const item of input.goneQuiet.slice(0, 5)) {
+      lines.push(`  🔕 ${item}`);
+    }
+  }
+
   if (input.comingUp.length > 0) {
     lines.push("", "Coming up (next 24h):");
     for (const item of input.comingUp.slice(0, 8)) {
@@ -97,6 +112,7 @@ export async function gatherEveningRecap(
   let sessionsToday = 0;
   const comingUp: string[] = [];
   const slipping: string[] = [];
+  const goneQuiet: string[] = [];
   let openFollowups = 0;
   const shortDate = (d: Date): string => d.toLocaleDateString("en-US", { day: "numeric", month: "short" });
   const shortTime = (d: Date): string => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -109,11 +125,17 @@ export async function gatherEveningRecap(
     }
   } catch { /* fail-soft */ }
   try {
-    for (const episode of await readEpisodes(resolveEpisodesFile(env))) {
+    const episodes = await readEpisodes(resolveEpisodesFile(env));
+    for (const episode of episodes) {
       const ended = new Date(episode.endedAt);
       if (!Number.isNaN(ended.getTime()) && sameLocalDay(ended, now)) {
         sessionsToday += 1;
       }
+    }
+    // Learned-habit absence: a topic gone silent vs its own cadence baseline,
+    // cited to the last session that touched it.
+    for (const absence of detectTopicAbsence(episodes, { now })) {
+      goneQuiet.push(`"${absence.topic}" — usually every ~${absence.typicalGapDays.toString()}d, silent ${absence.silentDays.toString()}d (last on ${shortDate(new Date(absence.lastSeen))})`);
     }
   } catch { /* fail-soft */ }
   try {
@@ -144,7 +166,7 @@ export async function gatherEveningRecap(
   try {
     openFollowups = (await readFollowups(resolveFollowupsFile(env))).length;
   } catch { /* fail-soft */ }
-  return { comingUp, now, openFollowups, performedToday, sessionsToday, slipping };
+  return { comingUp, goneQuiet, now, openFollowups, performedToday, sessionsToday, slipping };
 }
 
 /**
@@ -193,7 +215,7 @@ export function registerRecapCommand(program: Command, io: ProgramIO): void {
     .action(async (options: { readonly json?: boolean }) => {
       const input = await gatherEveningRecap(process.env as Record<string, string | undefined>, new Date());
       if (options.json === true) {
-        io.stdout(`${JSON.stringify({ comingUp: input.comingUp, openFollowups: input.openFollowups, performedToday: input.performedToday, sessionsToday: input.sessionsToday, slipping: input.slipping })}\n`);
+        io.stdout(`${JSON.stringify({ comingUp: input.comingUp, goneQuiet: input.goneQuiet, openFollowups: input.openFollowups, performedToday: input.performedToday, sessionsToday: input.sessionsToday, slipping: input.slipping })}\n`);
         return;
       }
       io.stdout(`${composeEveningRecap(input)}\n`);

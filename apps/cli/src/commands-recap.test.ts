@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { appendActionLog, writeTasks } from "@muse/mcp";
+import { appendActionLog, writeEpisodes, writeTasks } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -11,7 +11,7 @@ import type { ProgramIO } from "./program.js";
 
 describe("composeEveningRecap — deterministic evening digest", () => {
   const base = (over: Partial<EveningRecapInput> = {}): EveningRecapInput => ({
-    comingUp: [], now: new Date("2026-06-04T21:00:00"), openFollowups: 0, performedToday: [], sessionsToday: 0, slipping: [], ...over
+    comingUp: [], goneQuiet: [], now: new Date("2026-06-04T21:00:00"), openFollowups: 0, performedToday: [], sessionsToday: 0, slipping: [], ...over
   });
 
   it("renders the retrospective (actions + sessions), what's coming up, and open follow-ups", () => {
@@ -51,6 +51,16 @@ describe("composeEveningRecap — deterministic evening digest", () => {
   it("omits the Slipping section when nothing is overdue", () => {
     expect(composeEveningRecap(base({ performedToday: ["x"] }))).not.toContain("Slipping");
   });
+
+  it("surfaces GONE QUIET items (the learned-habit absence) with their citation", () => {
+    const out = composeEveningRecap(base({ goneQuiet: ['"Project Apollo" — usually every ~4d, silent 28d (last on Apr 1)'] }));
+    expect(out).toContain("Gone quiet — a usual habit you haven't returned to (1)");
+    expect(out).toContain('🔕 "Project Apollo" — usually every ~4d, silent 28d (last on Apr 1)');
+  });
+
+  it("omits the Gone quiet section when nothing has fallen silent", () => {
+    expect(composeEveningRecap(base({ performedToday: ["x"] }))).not.toContain("Gone quiet");
+  });
 });
 
 describe("gatherEveningRecap — overdue detection (the absence signal)", () => {
@@ -76,6 +86,27 @@ describe("gatherEveningRecap — overdue detection (the absence signal)", () => 
     expect(input.slipping.some((s) => s.includes("Pay rent"))).toBe(true);
     expect(input.slipping.some((s) => s.includes("Future thing"))).toBe(false);
     expect(input.slipping.some((s) => s.includes("Done thing"))).toBe(false);
+  });
+
+  it("flags a topic gone silent vs its OWN cadence (cited to the last session), ignoring a still-active one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-recap-quiet-"));
+    const epFile = join(dir, "episodes.json");
+    const now = new Date("2026-06-04T21:00:00");
+    const dayAgo = (n: number): string => new Date(now.getTime() - n * 86_400_000).toISOString();
+    const ep = (id: string, days: number, topics: string[]) => ({ endedAt: dayAgo(days), id, startedAt: dayAgo(days), summary: `session ${id}`, topics, userId: "u1" });
+    await writeEpisodes(epFile, [
+      // "Project Apollo": ~every 4 days, then SILENT for 28 days → gone quiet
+      ep("a1", 40, ["Project Apollo"]), ep("a2", 36, ["Project Apollo"]), ep("a3", 32, ["Project Apollo"]), ep("a4", 28, ["Project Apollo"]),
+      // "daily standup": every day, last seen yesterday → still active, NOT flagged
+      ep("b1", 3, ["daily standup"]), ep("b2", 2, ["daily standup"]), ep("b3", 1, ["daily standup"])
+    ]);
+    const env: Record<string, string | undefined> = {
+      MUSE_ACTION_LOG_FILE: join(dir, "a.json"), MUSE_EPISODES_FILE: epFile, MUSE_FOLLOWUPS_FILE: join(dir, "f.json"),
+      MUSE_REMINDERS_FILE: join(dir, "r.json"), MUSE_TASKS_FILE: join(dir, "t.json")
+    };
+    const input = await gatherEveningRecap(env, now);
+    expect(input.goneQuiet.some((s) => s.includes("Project Apollo") && s.includes("last on"))).toBe(true); // flagged + cited
+    expect(input.goneQuiet.some((s) => s.includes("daily standup"))).toBe(false); // still-active topic not flagged
   });
 });
 
@@ -135,7 +166,7 @@ describe("shouldFireRecap — once-a-day evening gate (pure)", () => {
 
 describe("deliverEveningRecapIfDue — proactive fire + dedup (pure deps)", () => {
   const sampleInput: EveningRecapInput = {
-    comingUp: [], now: new Date("2026-06-04T21:30:00"), openFollowups: 0, performedToday: ["did a thing"], sessionsToday: 1, slipping: []
+    comingUp: [], goneQuiet: [], now: new Date("2026-06-04T21:30:00"), openFollowups: 0, performedToday: ["did a thing"], sessionsToday: 1, slipping: []
   };
   it("fires when due: composes, sends, and records the fire", async () => {
     const sent: string[] = [];
