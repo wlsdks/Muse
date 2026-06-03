@@ -452,8 +452,10 @@ export {
 
 export {
   createUserMemoryAutoExtractHook,
+  dropModelAssertedValues,
   extractJsonObject,
   pickAutoExtractSystemPrompt,
+  readSkipAutoExtract,
   type ExtractionPayload,
   type UserMemoryAutoExtractOptions
 } from "./memory-auto-extract.js";

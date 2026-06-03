@@ -243,6 +243,22 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
         if (!payload) {
           return;
         }
+        // Provenance gate: a fact/preference whose value the MODEL asserted (in
+        // its reply) but the USER never said (absent from their turn) is dropped
+        // — never persisted as "what you told me". Vetoes/goals are explicit
+        // user directives and left as-is.
+        // Only filter a proper Record — a malformed array-shaped facts/preferences
+        // (a reasoning-off model sometimes emits one) is left untouched so the
+        // downstream sanitizer still rejects it instead of being silently coerced.
+        const groundedPayload: ExtractionPayload = {
+          ...payload,
+          ...(payload.facts && !Array.isArray(payload.facts)
+            ? { facts: dropModelAssertedValues(payload.facts, boundedUser, boundedAssistant) }
+            : {}),
+          ...(payload.preferences && !Array.isArray(payload.preferences)
+            ? { preferences: dropModelAssertedValues(payload.preferences, boundedUser, boundedAssistant) }
+            : {})
+        };
         const provenance: ProvenanceContext | undefined = options.provenanceStore
           ? {
               store: options.provenanceStore,
@@ -254,7 +270,7 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
                 .slice(0, PROVENANCE_EXCERPT_MAX)
             }
           : undefined;
-        await persist(options.store, userId, payload, {
+        await persist(options.store, userId, groundedPayload, {
           maxFacts,
           maxGoals,
           maxKey,
@@ -307,6 +323,55 @@ function readUserId(context: AgentRunContextView): string | undefined {
  */
 export function readSkipAutoExtract(context: AgentRunContextView): boolean {
   return context.input.metadata?.skipUserMemoryAutoExtract === true;
+}
+
+// Generic / boolean-ish value words that carry no provenance signal — a fact
+// value of just "yes" (e.g. allergy_penicillin: yes, inferred from the user
+// saying "I'm allergic to penicillin") must NOT be judged by where the word
+// "yes" appears. Only DISTINCTIVE value tokens (a number, a name, a place) tell
+// us whose assertion it was.
+const NON_DISTINCTIVE_VALUE_TOKENS = new Set([
+  "yes", "no", "true", "false", "none", "null", "na", "ok", "okay", "unknown",
+  "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "on", "at", "and", "or"
+]);
+
+function distinctiveValueTokens(text: string): string[] {
+  return [...new Set(
+    text.toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => token.length >= 2 && !NON_DISTINCTIVE_VALUE_TOKENS.has(token))
+  )];
+}
+
+/**
+ * Drop any fact/preference whose VALUE is demonstrably the MODEL's assertion,
+ * not the user's: all of its distinctive tokens appear in the assistant reply
+ * yet NONE appear in the user's own turn. This closes a provenance fabrication —
+ * a one-shot Q&A ("what's WireGuard's default MTU?" → "1420") would otherwise
+ * distil `wireguard_default_mtu: 1420` as a fact the USER stated, which a later
+ * recall cites as "from what you told me". A user-stated value (its tokens are
+ * in the user turn) survives; an inferred boolean ("yes"/"none", no distinctive
+ * tokens) survives (fail-open — we can't attribute it, so we keep it). Pure +
+ * exported; the same shape as the citation gate (code, not a prompt plea).
+ */
+export function dropModelAssertedValues(
+  record: Readonly<Record<string, string>>,
+  userTurn: string,
+  assistantOutput: string
+): Record<string, string> {
+  const userTokens = new Set(distinctiveValueTokens(userTurn));
+  const assistantTokens = new Set(distinctiveValueTokens(assistantOutput));
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(record)) {
+    const valueTokens = distinctiveValueTokens(value);
+    const modelAsserted = valueTokens.length > 0
+      && valueTokens.every((token) => assistantTokens.has(token))
+      && valueTokens.every((token) => !userTokens.has(token));
+    if (!modelAsserted) {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 function readSessionId(context: AgentRunContextView): string | undefined {

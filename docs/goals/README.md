@@ -866,7 +866,7 @@ Append one line when a discovery path is evaluated and deferred:
   the next recall cited it "🧠 from what you told me". Fixed by making recall
   read-only for memory: `muse ask` sets `metadata.skipUserMemoryAutoExtract` (hook
   honors it via `readSkipAutoExtract`) + forbids the `remember_fact` tool; chat
-  auto-extract unchanged. Don't re-mine. (Residual, lower priority: the hook mining
-  the assistant output is a latent provenance risk on CHAT too — a future slice
-  could ground extracted facts in the USER's statements only; not pursued here to
-  keep chat behavior stable.)
+  auto-extract unchanged. Don't re-mine. (Residual RESOLVED in P38-21: the chat
+  surface's separate extractor mined the assistant output too — now both paths run
+  the deterministic `dropModelAssertedValues` provenance gate, dropping a value the
+  model asserted that the user never said; proven live on qwen3:8b, 11/11 battery.)

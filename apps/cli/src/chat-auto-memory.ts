@@ -10,7 +10,7 @@
  * cooldown keeps it from firing every trivial turn.
  */
 
-import { extractJsonObject } from "@muse/memory";
+import { dropModelAssertedValues, extractJsonObject } from "@muse/memory";
 
 // A sharper, example-bearing extraction prompt than the shared agent-runtime
 // one — verified to extract reliably on the LOCAL qwen3:8b tier (the shared
@@ -91,7 +91,14 @@ export async function extractMemoryFromTurn(opts: {
       }
       return out;
     };
-    return { facts: pickStrings(payload.facts), preferences: pickStrings(payload.preferences) };
+    // Provenance gate: drop a fact/preference whose value the MODEL asserted in
+    // its reply but the USER never said (absent from their turn) — so a question
+    // answered with a fact ("what's WireGuard's MTU?" → "1420") is never stored
+    // as "what you told me". A user-stated value survives.
+    return {
+      facts: dropModelAssertedValues(pickStrings(payload.facts), user, assistant),
+      preferences: dropModelAssertedValues(pickStrings(payload.preferences), user, assistant)
+    };
   } catch {
     return empty;
   }

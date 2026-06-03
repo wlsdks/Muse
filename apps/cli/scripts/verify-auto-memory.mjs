@@ -52,6 +52,26 @@ for (const c of cases) {
   if (ok) pass += 1;
   rows.push(`${ok ? "PASS" : "FAIL"} [${c.kind}] ${c.user}\n      → ${all}`);
 }
+
+// Provenance gate: the user ASKS, the assistant ANSWERS with a fact. That value
+// is the MODEL's assertion, not what the user told Muse — it must NOT be stored
+// (else a later recall cites it "from what you told me"). Uses the real assistant
+// answer so dropModelAssertedValues is exercised end-to-end on the local model.
+const provenanceCases = [
+  { user: "What is WireGuard's standard default MTU in bytes?", assistant: "WireGuard's standard default MTU is 1420 bytes." },
+  { user: "What's the capital of France?", assistant: "The capital of France is Paris." }
+];
+let provPass = 0;
+for (const c of provenanceCases) {
+  const out = await extractMemoryFromTurn({ ...ctx, user: c.user, assistant: c.assistant });
+  const all = JSON.stringify({ ...out.facts, ...out.preferences });
+  const ok = Object.keys(out.facts).length + Object.keys(out.preferences).length === 0;
+  if (ok) provPass += 1;
+  rows.push(`${ok ? "PASS" : "FAIL"} [provenance] ${c.user}\n      → ${all}`);
+}
+
+const total = cases.length + provenanceCases.length;
+const totalPass = pass + provPass;
 console.log(rows.join("\n"));
-console.log(`\n${pass}/${cases.length} cases passed`);
-process.exit(pass === cases.length ? 0 : 1);
+console.log(`\n${totalPass}/${total} cases passed`);
+process.exit(totalPass === total ? 0 : 1);

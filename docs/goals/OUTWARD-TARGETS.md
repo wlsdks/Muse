@@ -746,7 +746,33 @@ qwen3:8b and added to `eval:self-improving`.
   `--with-tools` WireGuard probe that wrote `wireguard_default_mtu` before now leaves
   NO memory file across two runs, while the P38-19 drift verdict still fires. memory
   30 files / 312 tests + autoconfigure 484 + cli 166 files / 1761 tests + `pnpm lint`
-  0/0. (this commit)
+  0/0. (c2d37ad8)
+
+- [x] **P38-21 Chat auto-memory drops a fact the MODEL asserted but the USER never
+  said — the provenance gate now covers the conversational surface, not just
+  `muse ask`.** P38-20 made one-shot recall skip extraction; the residual it flagged
+  was that the SAME leak lives on `muse chat`, via a SEPARATE extractor
+  (`extractMemoryFromTurn`, apps/cli/chat-auto-memory.ts) that also mines the
+  assistant reply — so a user who ASKS "what's WireGuard's default MTU?" and gets
+  "1420" would have `wireguard_default_mtu: 1420` stored as their own fact, later
+  cited "🧠 from what you told me". Fixed with a deterministic provenance gate (the
+  same code-not-prompt shape as the citation gate): new pure, exported
+  `dropModelAssertedValues(record, userTurn, assistantOutput)` in packages/memory
+  drops a fact/preference iff its DISTINCTIVE value tokens all appear in the
+  assistant's reply and NONE appear in the user's turn — i.e. the value was the
+  model's assertion, not the user's words. A user-stated value (its token is in the
+  user turn) survives; an inferred boolean ("allergy: yes" — "yes" carries no
+  distinctive token) survives (fail-open, can't attribute → keep). Applied in BOTH
+  extraction paths: the chat `extractMemoryFromTurn` AND the agent-runtime
+  auto-extract hook (a malformed array-shaped payload is left for the existing
+  sanitizer). Proof: 8 new memory unit tests (drops the WireGuard/Paris answer-value;
+  keeps a user-stated Seoul/Mina; keeps an inferred boolean; keeps a terse-reply
+  payload; hook end-to-end persists nothing on a model-asserted fact, persists a
+  user-stated one) + the live `verify-auto-memory` battery EXTENDED with 2 provenance
+  cases and run on qwen3:8b → 11/11 (the WireGuard + capital-of-France answers store
+  NOTHING, while Busan/Jinan/서울 user facts and the prefs still extract — no
+  over-drop, negatives still clean). memory 31 files / 320 tests + autoconfigure 484 +
+  cli 166 files / 1761 tests + `pnpm lint` 0/0. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.
