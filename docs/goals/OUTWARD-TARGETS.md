@@ -317,6 +317,34 @@ P43 bullet is unbuilt.
   (deduped). @muse/mcp 173 files / 1468 tests + @muse/cli 174 files / 1917 tests +
   `pnpm lint` 0/0. (70918eb8)
 
+- [x] **P43-6 Muse notices a NOTE FAMILY gone quiet — "you usually update your
+  project-apollo notes every few days; nothing in three weeks."** The filesystem
+  sibling of P43-4's topic-absence (which baselines episode-CONVERSATION cadence):
+  this baselines the user's own NOTE-WRITING cadence per folder. The capability map
+  named "a normally-active note family silent for a week" as a distinct unbuilt
+  absence signal — topic-absence catches what you stopped DISCUSSING with Muse, this
+  catches a folder of notes you stopped WRITING (a dropped project thread Muse
+  couldn't otherwise see). Added a pure `detectNoteFamilyAbsence(events, {now, …})`
+  (packages/mcp — same robust cadence math as `detectTopicAbsence`: each note file
+  is one update event, a family fires only with ≥3 files AND silence past an
+  absolute floor AND `staleFactor`× its own MEDIAN gap) + a `gatherNoteFamilyActivity`
+  CLI helper that walks the notes corpus (family = top-level folder, "general" for
+  root notes; mtime = update time; the auto-ingested `email/` folder EXCLUDED so its
+  arrival cadence isn't mistaken for a writing habit), wired into the SAME evening-
+  recap "🔕 Gone quiet" section as topic-absence. Fail-soft (an unreadable corpus →
+  no events → no recap noise), no false positives (too-few-files / zero-cadence /
+  fast-cadence-under-floor all suppressed). Verified deterministically AND end-to-end:
+  7 unit tests for the detector (flags a stale family with its cadence baseline;
+  ignores a still-active one; too-few-files / zero-cadence / under-floor suppressed;
+  most-overdue-first ordering; empty-name/NaN ignored) in BOTH TZ + 2 helper unit
+  tests (folder→family grouping, root→"general", dotfiles skipped, email excluded;
+  missing dir → []) + a recap-integration test (a stale "apollo" folder flagged, an
+  active "journal" folder NOT, the "email" folder excluded) + a REAL `muse recap` run
+  with planted stale note mtimes →
+  `🔕 your "project-apollo" notes — usually updated every ~4d, silent 28d` (the
+  active journal folder correctly silent). @muse/mcp 174 files / 1475 tests +
+  @muse/cli 174 files / 1920 tests + `pnpm lint` 0/0. (4401194c)
+
 **P44 — Trust: encryption at rest (the discretion refusal, made real against
 storage access — not just network egress).** "It can't tell anyone" was true
 against the network (cloud egress refused in code) but FALSE against the disk:

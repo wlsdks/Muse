@@ -1,6 +1,8 @@
-import { resolveActionLogFile, resolveEpisodesFile, resolveFollowupsFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
-import { detectTopicAbsence, readActionLog, readEpisodes, readFollowups, readReminders, readTasks } from "@muse/mcp";
+import { resolveActionLogFile, resolveEpisodesFile, resolveFollowupsFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readEpisodes, readFollowups, readReminders, readTasks } from "@muse/mcp";
 import type { Command } from "commander";
+import { type Dirent, promises as fs } from "node:fs";
+import { join, relative, sep } from "node:path";
 
 import type { ProgramIO } from "./program.js";
 
@@ -100,6 +102,44 @@ export function composeEveningRecap(input: EveningRecapInput): string {
 }
 
 /**
+ * Auto-ingested folders whose mtimes reflect arrival cadence (email sync), NOT
+ * the user's own note-WRITING habit — flagging them "gone quiet" would be noise.
+ */
+const NOTE_FAMILY_EXCLUDE: ReadonlySet<string> = new Set(["email"]);
+
+/**
+ * Walk the notes corpus and emit one activity event per file (family = its
+ * top-level folder, or "general" for root-level notes; mtime = the update
+ * time). The deterministic absence detector then baselines each family's
+ * cadence. Fail-soft: an unreadable corpus yields no events (no recap noise).
+ */
+export async function gatherNoteFamilyActivity(
+  notesDir: string,
+  exclude: ReadonlySet<string> = NOTE_FAMILY_EXCLUDE
+): Promise<NoteActivityEvent[]> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(notesDir, { recursive: true, withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const events: NoteActivityEvent[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.name.startsWith(".")) continue;
+    const parent = (entry as { parentPath?: string; path?: string }).parentPath ?? (entry as { path?: string }).path ?? notesDir;
+    const full = join(parent, entry.name);
+    const segments = relative(notesDir, full).split(sep);
+    const familyName = segments.length > 1 ? segments[0]! : "general";
+    if (exclude.has(familyName)) continue;
+    try {
+      const stat = await fs.stat(full);
+      events.push({ family: familyName, updatedAtMs: stat.mtimeMs });
+    } catch { /* skip an unreadable file */ }
+  }
+  return events;
+}
+
+/**
  * Gather the recap facts from the user's local stores (fail-soft per source).
  * Shared by the on-demand `muse recap` command and the daemon's evening tick.
  */
@@ -136,6 +176,14 @@ export async function gatherEveningRecap(
     // cited to the last session that touched it.
     for (const absence of detectTopicAbsence(episodes, { now })) {
       goneQuiet.push(`"${absence.topic}" — usually every ~${absence.typicalGapDays.toString()}d, silent ${absence.silentDays.toString()}d (last on ${shortDate(new Date(absence.lastSeen))})`);
+    }
+  } catch { /* fail-soft */ }
+  try {
+    // Note-family absence: a folder of notes you used to update regularly that's
+    // gone quiet vs its own cadence — the filesystem sibling of topic-absence.
+    const activity = await gatherNoteFamilyActivity(resolveNotesDir(env));
+    for (const absence of detectNoteFamilyAbsence(activity, { now })) {
+      goneQuiet.push(`your "${absence.family}" notes — usually updated every ~${absence.typicalGapDays.toString()}d, silent ${absence.silentDays.toString()}d`);
     }
   } catch { /* fail-soft */ }
   try {

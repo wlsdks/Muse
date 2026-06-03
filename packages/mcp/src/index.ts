@@ -830,6 +830,15 @@ export {
   type TopicAbsence
 } from "./personal-episodes-store.js";
 
+// Note-family absence — the filesystem counterpart to topic-absence: a folder
+// of notes the user used to update regularly that has gone silent vs its own
+// cadence. Surfaced in the evening recap's "gone quiet" section.
+export {
+  detectNoteFamilyAbsence,
+  type NoteActivityEvent,
+  type NoteFamilyAbsence
+} from "./note-family-absence.js";
+
 // Reusable encryption-at-rest for the function-based JSON stores — AES-256-GCM
 // envelope + the user-memory key, cross-process locked, fail-closed migration.
 export {

@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,7 +6,7 @@ import { appendActionLog, writeEpisodes, writeTasks } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { composeEveningRecap, deliverEveningRecapIfDue, gatherEveningRecap, registerRecapCommand, shouldFireRecap, type EveningRecapInput } from "./commands-recap.js";
+import { composeEveningRecap, deliverEveningRecapIfDue, gatherEveningRecap, gatherNoteFamilyActivity, registerRecapCommand, shouldFireRecap, type EveningRecapInput } from "./commands-recap.js";
 import type { ProgramIO } from "./program.js";
 
 describe("composeEveningRecap — deterministic evening digest", () => {
@@ -107,6 +107,64 @@ describe("gatherEveningRecap — overdue detection (the absence signal)", () => 
     const input = await gatherEveningRecap(env, now);
     expect(input.goneQuiet.some((s) => s.includes("Project Apollo") && s.includes("last on"))).toBe(true); // flagged + cited
     expect(input.goneQuiet.some((s) => s.includes("daily standup"))).toBe(false); // still-active topic not flagged
+  });
+
+  it("flags a NOTE FAMILY (folder) gone quiet vs its own cadence, excludes the auto-ingested email folder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-recap-notes-"));
+    const notesDir = join(dir, "notes");
+    const now = new Date("2026-06-04T21:00:00");
+    const daysAgo = (n: number): Date => new Date(now.getTime() - n * 86_400_000);
+    // Plant a file in <family> with its mtime set to `daysAgo(n)`.
+    const plant = (family: string, name: string, n: number): void => {
+      const folder = join(notesDir, family);
+      mkdirSync(folder, { recursive: true });
+      const file = join(folder, name);
+      writeFileSync(file, `# ${name}\n`, "utf8");
+      utimesSync(file, daysAgo(n), daysAgo(n));
+    };
+    // "apollo": 4 notes ~every 4 days, last touched 28 days ago → gone quiet.
+    plant("apollo", "a1.md", 40); plant("apollo", "a2.md", 36); plant("apollo", "a3.md", 32); plant("apollo", "a4.md", 28);
+    // "journal": 4 notes, last touched yesterday → still active, NOT flagged.
+    plant("journal", "j1.md", 3); plant("journal", "j2.md", 2); plant("journal", "j3.md", 1); plant("journal", "j4.md", 0);
+    // "email": auto-ingested, also stale — must be EXCLUDED (not the user's habit).
+    plant("email", "m1.md", 40); plant("email", "m2.md", 35); plant("email", "m3.md", 30);
+
+    const env: Record<string, string | undefined> = {
+      MUSE_ACTION_LOG_FILE: join(dir, "a.json"), MUSE_EPISODES_FILE: join(dir, "e.json"), MUSE_FOLLOWUPS_FILE: join(dir, "f.json"),
+      MUSE_REMINDERS_FILE: join(dir, "r.json"), MUSE_TASKS_FILE: join(dir, "t.json"), MUSE_NOTES_DIR: notesDir
+    };
+    const input = await gatherEveningRecap(env, now);
+    expect(input.goneQuiet.some((s) => s.includes('"apollo" notes') && s.includes("silent"))).toBe(true);
+    expect(input.goneQuiet.some((s) => s.includes("journal"))).toBe(false);
+    expect(input.goneQuiet.some((s) => s.includes("email"))).toBe(false);
+  });
+});
+
+describe("gatherNoteFamilyActivity — folder = family, mtime = update event", () => {
+  it("groups by top-level folder, roots to 'general', skips dotfiles, excludes the email folder", async () => {
+    const notesDir = mkdtempSync(join(tmpdir(), "muse-notes-activity-"));
+    const write = (rel: string): void => {
+      const file = join(notesDir, rel);
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, "x", "utf8");
+    };
+    write("apollo/a1.md");
+    write("apollo/a2.md");
+    write("root-note.md"); // → family "general"
+    write("email/m1.md"); // excluded
+    write(".hidden.md"); // skipped (dotfile)
+
+    const events = await gatherNoteFamilyActivity(notesDir);
+    const families = events.map((e) => e.family).sort();
+    expect(families).toContain("apollo");
+    expect(families).toContain("general");
+    expect(families).not.toContain("email");
+    expect(events.filter((e) => e.family === "apollo")).toHaveLength(2);
+    expect(events.every((e) => Number.isFinite(e.updatedAtMs))).toBe(true);
+  });
+
+  it("returns [] for a missing notes dir (fail-soft)", async () => {
+    expect(await gatherNoteFamilyActivity(join(tmpdir(), "muse-does-not-exist-xyz"))).toEqual([]);
   });
 });
 
