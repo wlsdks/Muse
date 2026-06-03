@@ -117,3 +117,58 @@ describe("unreadBriefingLine", () => {
     expect(line).toBe("4 unread — “Q3 plan” (Alice), “invoice” (Bob), “review” (carol@z.com), +1 more");
   });
 });
+
+describe("GmailEmailProvider.sendEmail — 429-only safe retry (non-idempotent send)", () => {
+  // Contract-faithful Gmail send fake: routes ONLY messages/send, asserts the
+  // Bearer header, serves a scripted status sequence and counts the POSTs (so a
+  // double-send shows up as an extra call). Never a fake registry.
+  function sendFetch(statuses: { status: number; retryAfter?: string }[]): { fetchImpl: typeof globalThis.fetch; calls: () => number } {
+    let i = 0;
+    const fetchImpl = (async (url: string | URL, init?: { headers?: Record<string, string>; method?: string }) => {
+      expect(String(url)).toContain("/messages/send");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers?.authorization).toMatch(/^Bearer /u);
+      const s = statuses[Math.min(i, statuses.length - 1)]!;
+      i += 1;
+      return new Response(s.status === 200 ? "{}" : "err", { status: s.status, ...(s.retryAfter ? { headers: { "retry-after": s.retryAfter } } : {}) });
+    }) as unknown as typeof globalThis.fetch;
+    return { calls: () => i, fetchImpl };
+  }
+  const provider = (fetchImpl: typeof globalThis.fetch, sleep: (ms: number) => Promise<void> = async () => {}) =>
+    new GmailEmailProvider("tok", fetchImpl, { retries: 2, sleep });
+
+  it("RETRIES a 429 then succeeds, honouring Retry-After — a 429 is rejected BEFORE delivery, so no double-send", async () => {
+    const slept: number[] = [];
+    const fake = sendFetch([{ retryAfter: "2", status: 429 }, { status: 200 }]);
+    await provider(fake.fetchImpl, async (ms) => { slept.push(ms); }).sendEmail("a@b.com", "hi", "body");
+    expect(fake.calls()).toBe(2); // one 429 + one success
+    expect(slept).toEqual([2000]); // honoured Retry-After (2s), NOT the 250ms backoff
+  });
+
+  it("a 429 with no Retry-After falls back to exponential backoff", async () => {
+    const slept: number[] = [];
+    const fake = sendFetch([{ status: 429 }, { status: 200 }]);
+    await provider(fake.fetchImpl, async (ms) => { slept.push(ms); }).sendEmail("a@b.com", "hi", "body");
+    expect(slept).toEqual([250]);
+  });
+
+  it("NEVER retries a 5xx (ambiguous — the message may have been delivered): single attempt, no double-send", async () => {
+    const fake = sendFetch([{ status: 503 }]);
+    await expect(provider(fake.fetchImpl).sendEmail("a@b.com", "hi", "body")).rejects.toThrow(/Gmail send failed \(503\)/u);
+    expect(fake.calls()).toBe(1);
+  });
+
+  it("NEVER retries a network reject (ambiguous), and surfaces an auth 403 in one attempt", async () => {
+    const netFetch = (async () => { throw new Error("ECONNRESET"); }) as unknown as typeof globalThis.fetch;
+    await expect(provider(netFetch).sendEmail("a@b.com", "hi", "body")).rejects.toThrow(/ECONNRESET/u);
+    const authFake = sendFetch([{ status: 403 }]);
+    await expect(provider(authFake.fetchImpl).sendEmail("a@b.com", "hi", "body")).rejects.toThrow(/auth rejected \(403\)/u);
+    expect(authFake.calls()).toBe(1);
+  });
+
+  it("exhausts the 429 budget and surfaces HTTP 429 (no infinite loop)", async () => {
+    const fake = sendFetch([{ retryAfter: "1", status: 429 }]);
+    await expect(provider(fake.fetchImpl).sendEmail("a@b.com", "hi", "body")).rejects.toThrow(/Gmail send failed \(429\)/u);
+    expect(fake.calls()).toBe(3); // initial + 2 retries, then give up
+  });
+});
