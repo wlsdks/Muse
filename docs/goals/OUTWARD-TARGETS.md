@@ -666,7 +666,33 @@ in the loop.
   @muse/messaging (368) and @muse/mcp (168 files / 1363) suites green + cli build green.
   mcp 168 files / 1363 + messaging 368 + `pnpm lint` 0/0 — a user whose reminder hits a
   provider rate limit now still gets it, a tick or two later, instead of silently losing
-  it. (this commit)
+  it. (f33e17c1)
+
+- [x] **P41-2 `muse messaging send` is now draft-first + fail-closed + action-logged
+  — an ungated third-party send is closed (outbound-safety.md violation).** The CLI's
+  `messaging send --local` (Telegram / Discord / Slack / LINE) called `registry.send`
+  DIRECTLY — no draft-first confirm, no approval gate, no action-log — while the
+  sibling `muse email send` was fully gated. That is exactly the autonomous third-party
+  send `.claude/rules/outbound-safety.md` and CLAUDE.md forbid ("never an autonomous
+  send"); the already-built, already-tested `sendMessageWithApproval` (packages/mcp/src/message-send.ts,
+  draft-first + fail-closed gate + action-log) was wired into the agent tool but NOT the
+  human CLI. Fixed in apps/cli/src/commands-messaging.ts: the `--local` send now routes
+  through `sendMessageWithApproval` with a terminal confirm gate that shows the EXACT
+  draft (provider → destination + text) and sends only on explicit confirmation, records
+  every outcome (sent OR refused) to the action log, and — crucially — FAIL-CLOSES when
+  the confirm prompt can't be delivered (a non-TTY / piped / CI context refuses rather
+  than hanging on stdin or sending unconfirmed); a `--user` flag tags the log; a `deps`
+  seam injects the gate/registry for tests. Also exported `sendMessageWithApproval` from
+  the @muse/mcp index (it was import-only). Proof: 3 new deterministic tests in
+  apps/cli/src/commands-messaging-send.test.ts over the REAL CLI action with a fake
+  registry + injected gate (contract-faithful per outbound-safety.md, no model/network):
+  a DENIED gate sends NOTHING and logs a `refused` entry; a THROWING gate is treated as a
+  denial (still no send, fail-closed); an APPROVED gate sends the exact `{destination,
+  text}` and logs `performed` — plus the existing program.test.ts round-trip updated to
+  assert the non-TTY send now fail-closes ("Not sent", zero provider calls). cli 169
+  files / 1811 tests + mcp 168 / 1363 + `pnpm lint` 0/0 — a user (or a stray script)
+  can no longer fire a message to a third party from the CLI without seeing and
+  confirming the exact content, and every send/refusal is on the record. (this commit)
 
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,

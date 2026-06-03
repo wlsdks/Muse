@@ -636,6 +636,13 @@ export {
   type SendEmailWithApprovalOptions
 } from "./email-send.js";
 export {
+  sendMessageWithApproval,
+  type MessageApprovalGate,
+  type MessageDraft,
+  type SendMessageOutcome,
+  type SendMessageWithApprovalOptions
+} from "./message-send.js";
+export {
   createEmailReadMessageTool,
   createEmailReadTool,
   createEmailSearchTool,

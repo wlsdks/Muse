@@ -2947,17 +2947,19 @@ describe("cli program", () => {
         await program1.parseAsync(["node", "muse", "messaging", "providers", "--local"], { from: "node" });
         expect(output1.join("")).toContain("Telegram");
 
+        // A --local send is now DRAFT-FIRST gated (outbound-safety.md): without an
+        // explicit confirmation (non-TTY here ⇒ clack cancels ⇒ fail-closed) it must
+        // NOT reach the provider. The confirmed-send routing is covered deterministically
+        // in commands-messaging-send.test.ts (injected approve gate + fake registry).
         const { io: io2, output: output2 } = captureOutput();
         const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("api fetch must not be called"); } });
         await program2.parseAsync(
           ["node", "muse", "messaging", "send", "telegram", "@me", "hello", "world", "--local"],
           { from: "node" }
         );
-        const text = output2.join("");
-        expect(text).toContain("Sent telegram → @me");
-        expect(text).toContain("id 11");
-        expect(seenUrls).toHaveLength(1);
-        expect(seenUrls[0]).toContain("/botfake-token/sendMessage");
+        expect(output2.join("")).toContain("Not sent");
+        expect(seenUrls).toHaveLength(0); // nothing left the process without a confirm
+        process.exitCode = 0; // the fail-closed path sets exitCode=1; don't leak it
       } finally {
         globalThis.fetch = originalFetch;
       }
