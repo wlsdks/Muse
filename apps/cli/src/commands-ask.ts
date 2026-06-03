@@ -549,7 +549,8 @@ export function stripEchoedCiteAs(answer: string): string {
 export const CITATION_INSTRUCTION_LINES: readonly string[] = [
   "When a fact comes from a note, END that sentence with that note's `[from …]` tag, copied VERBATIM — the bracket exactly as printed under the passage, the name unchanged.",
   "For other context, cite by the name shown in its marker: a task as [task: its title], an event as [event: its title], a reminder as [reminder: its text], a past session as [session: short summary], a feed headline as [feed: the feed name], a contact as [contact: their name], a shell command as [command: the command], a git commit as [commit: its subject line], a fact you remember about the user as [memory: its topic], an action you took as [action: what you did].",
-  "CRITICAL: cite ONLY a source shown in the context below — copy the `[from …]` tag printed under a passage, or a name from a marker. NEVER invent or guess a filename, feed, task, or event. If the answer is not in any passage below, cite nothing and say you are not sure."
+  "CRITICAL: cite ONLY a source shown in the context below — copy the `[from …]` tag printed under a passage, or a name from a marker. NEVER invent or guess a filename, feed, task, or event. If the answer is not in any passage below, cite nothing and say you are not sure.",
+  "CONFLICTS: if two passages give DIFFERENT answers to the question (e.g. one note says June 12, another says June 15) and NEITHER clearly updates/corrects the other, do NOT silently pick one — surface BOTH and the conflict: \"I have conflicting notes: [from A] says X, [from B] says Y — which is current?\", citing each. BUT if one passage clearly UPDATES the other ('moved to', 'now', 'corrected to', a later date stated as the change), use the updated value and don't call it a conflict."
 ];
 
 /**

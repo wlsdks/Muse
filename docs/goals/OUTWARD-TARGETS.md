@@ -1362,6 +1362,27 @@ conversational session — NOT a loop fire).** The edge gained an instrument,
 closed its deepest hole, and became constructive. Each verified live on
 qwen3:8b and added to `eval:self-improving`.
 
+- [x] **P38-36 Conflicting notes are SURFACED, not silently resolved — "I have
+  conflicting notes — which is current?"** A real honesty hole found by live probe: with
+  TWO conflicting notes (a.md "dentist June 12th", b.md "dentist June 15th", no update
+  wording), `muse ask "when is my dentist appointment?"` CONFIDENTLY answered "June 12th
+  [from a.md]" — silently ignoring the conflicting b.md. For a confidant you trust on its
+  word, picking one of two contradictory facts with no flag is a fabrication-adjacent
+  failure (the grounding gate catches a claim with NO source, but not a claim with a
+  CONFLICTING source). This EXTENDS the honesty edge from "I'm not sure" to "I have
+  conflicting info". Fixed with a CONFLICTS instruction in the recall answer contract
+  (`CITATION_INSTRUCTION_LINES`, commands-ask.ts): when two passages give different answers
+  and neither clearly updates the other, surface BOTH + the conflict citing each; BUT if one
+  passage clearly UPDATES the other ('moved to', 'now', 'corrected'), use the updated value
+  and don't call it a conflict. No new model call → ZERO added latency (it rides the existing
+  generation). Verified: a deterministic test (the contract carries the conflict rule +
+  the don't-over-flag-an-update carve-out) + a permanent live battery
+  (`apps/cli/scripts/verify-conflict-surfacing.mjs`, wired into `eval:self-improving`): on
+  qwen3:8b a GENUINE conflict → "I have conflicting notes: [from a.md] says June 12th,
+  [from b.md] says June 15th — which is current?" (surfaces both, cited), an explicit UPDATE
+  → RESOLVES to the new value (Thursday 4pm) without leaving it open. cli 1912 + `pnpm lint`
+  0/0 + the live battery 2/2 + a full LIVE `muse ask` round-trip showing both the surfaced
+  conflict and the correctly-resolved update on qwen3:8b. (c563c56e)
 - [x] **P38-1 `muse doctor --grounding` — scored faithfulness + false-refusal.**
   Turns the `fabrication=0` claim into two numbers a user reads on their own box:
   a bundled held-out corpus (12 answerable / 8 must-refuse / 7 drift) scored

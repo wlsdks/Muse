@@ -33,6 +33,7 @@ const BATTERIES = [
   { axis: "① self-improve", file: "apps/cli/scripts/verify-background-review.mjs", name: "background-review" },
   { axis: "①②③ engine e2e", file: "apps/cli/scripts/verify-background-review-e2e.mjs", name: "background-review-e2e" },
   { axis: "★ WEDGE: cited recall", file: "apps/cli/scripts/verify-cited-recall.mjs", name: "cited-recall" },
+  { axis: "★ WEDGE: conflict-surfacing (I-have-conflicting-notes)", file: "apps/cli/scripts/verify-conflict-surfacing.mjs", name: "conflict-surfacing" },
   { axis: "★ WEDGE: recall citation gate", file: "apps/cli/scripts/verify-recall-citation-gate.mjs", name: "recall-citation-gate" },
   { axis: "★ WEDGE: rubric grounding gate", file: "apps/cli/scripts/verify-rubric-gate.mjs", name: "rubric-gate" },
   { axis: "★ WEDGE: rubric re-verification (MaTTS)", file: "apps/cli/scripts/verify-rubric-reverify.mjs", name: "rubric-reverify" },

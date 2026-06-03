@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { stripEchoedCiteAs } from "./commands-ask.js";
+import { CITATION_INSTRUCTION_LINES, stripEchoedCiteAs } from "./commands-ask.js";
+
+describe("CITATION_INSTRUCTION_LINES — the recall answer-behaviour contract carries the conflict rule", () => {
+  it("instructs the model to SURFACE conflicting evidence instead of silently picking one", () => {
+    const joined = CITATION_INSTRUCTION_LINES.join("\n");
+    expect(joined).toMatch(/CONFLICT/u);
+    expect(joined).toMatch(/which is current/u); // the explicit conflict phrasing
+    expect(joined).toMatch(/UPDATES the other|updates\/corrects/u); // the don't-over-flag-an-update carve-out
+  });
+});
 
 describe("stripEchoedCiteAs — drop the echoed marker label, keep the citation", () => {
   it("strips a 'cite as:' the model echoed right before a real citation bracket", () => {
