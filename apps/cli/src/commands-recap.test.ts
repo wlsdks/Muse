@@ -6,7 +6,7 @@ import { appendActionLog } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { composeEveningRecap, registerRecapCommand, type EveningRecapInput } from "./commands-recap.js";
+import { composeEveningRecap, deliverEveningRecapIfDue, registerRecapCommand, shouldFireRecap, type EveningRecapInput } from "./commands-recap.js";
 import type { ProgramIO } from "./program.js";
 
 describe("composeEveningRecap — deterministic evening digest", () => {
@@ -75,5 +75,62 @@ describe("muse recap — wired command over the real stores (fail-soft)", () => 
     const out = await run();
     expect(out).toContain("Evening recap");
     expect(out).toContain("✓ Booked the Q3 review room");
+  });
+});
+
+describe("shouldFireRecap — once-a-day evening gate (pure)", () => {
+  const evening = new Date("2026-06-04T21:30:00");
+  it("does NOT fire before the evening hour", () => {
+    expect(shouldFireRecap(new Date("2026-06-04T15:00:00"), undefined, 21)).toBe(false);
+  });
+  it("fires past the hour when it has never fired", () => {
+    expect(shouldFireRecap(evening, undefined, 21)).toBe(true);
+  });
+  it("does NOT fire a second time the same day", () => {
+    expect(shouldFireRecap(evening, "2026-06-04T21:05:00", 21)).toBe(false);
+  });
+  it("fires again the next day", () => {
+    expect(shouldFireRecap(evening, "2026-06-03T21:05:00", 21)).toBe(true);
+  });
+  it("treats a garbage last-fired timestamp as not-fired (fires)", () => {
+    expect(shouldFireRecap(evening, "not-a-date", 21)).toBe(true);
+  });
+});
+
+describe("deliverEveningRecapIfDue — proactive fire + dedup (pure deps)", () => {
+  const sampleInput: EveningRecapInput = {
+    comingUp: [], now: new Date("2026-06-04T21:30:00"), openFollowups: 0, performedToday: ["did a thing"], sessionsToday: 1
+  };
+  it("fires when due: composes, sends, and records the fire", async () => {
+    const sent: string[] = [];
+    let recorded = false;
+    const outcome = await deliverEveningRecapIfDue({
+      now: new Date("2026-06-04T21:30:00"), recapHour: 21, lastFiredISO: undefined,
+      gather: async () => sampleInput, send: async (t) => { sent.push(t); }, recordFired: () => { recorded = true; }
+    });
+    expect(outcome).toBe("fired");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("did a thing");
+    expect(recorded).toBe(true);
+  });
+  it("does NOT fire before the hour (no send, no record)", async () => {
+    const sent: string[] = [];
+    let recorded = false;
+    const outcome = await deliverEveningRecapIfDue({
+      now: new Date("2026-06-04T15:00:00"), recapHour: 21, lastFiredISO: undefined,
+      gather: async () => sampleInput, send: async (t) => { sent.push(t); }, recordFired: () => { recorded = true; }
+    });
+    expect(outcome).toBe("not-due");
+    expect(sent).toHaveLength(0);
+    expect(recorded).toBe(false);
+  });
+  it("does NOT re-fire when already fired today (dedup)", async () => {
+    let sent = 0;
+    const outcome = await deliverEveningRecapIfDue({
+      now: new Date("2026-06-04T22:00:00"), recapHour: 21, lastFiredISO: "2026-06-04T21:05:00",
+      gather: async () => sampleInput, send: async () => { sent += 1; }, recordFired: () => {}
+    });
+    expect(outcome).toBe("not-due");
+    expect(sent).toBe(0);
   });
 });

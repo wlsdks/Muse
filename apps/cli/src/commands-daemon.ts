@@ -78,6 +78,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { checkinsFile } from "./commands-checkins.js";
+import { deliverEveningRecapIfDue, gatherEveningRecap } from "./commands-recap.js";
 import { closestCommandName } from "./closest-command.js";
 import { parseBoundedFlag } from "./commands-proactive.js";
 import { DEFAULT_REFLECTION_INTERVAL_MS, resolveReflectionsFile, runReflectionPass, shouldRunReflection } from "./commands-reflections.js";
@@ -602,6 +603,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
         io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) && followupModel ? "enabled" : "disabled (set MUSE_SELFLEARN_ENABLED + a model)"}\n`);
+        io.stdout(`  recap:      ${parseBoolean(e.MUSE_RECAP_ENABLED, false) ? `enabled (evening, after ${(e.MUSE_RECAP_HOUR ?? "21").toString()}:00)` : "disabled (set MUSE_RECAP_ENABLED)"}\n`);
         // The resolved source paths — the first thing to check when a
         // tick "isn't firing": is it reading the file you think it is?
         io.stdout(`sources:\n`);
@@ -906,6 +908,39 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         } catch { /* fail-soft — background maintenance must never break the daemon */ }
       };
 
+      // Evening recap — a once-a-day proactive digest of what got done today +
+      // what's coming up, delivered after MUSE_RECAP_HOUR (default 21:00) and
+      // self-deduped to once per calendar day via a sidecar. Off by default;
+      // turns `muse recap` from an on-demand report into anticipation (P43-4).
+      const recapHourRaw = e.MUSE_RECAP_HOUR ? Number(e.MUSE_RECAP_HOUR) : 21;
+      const recapHour = Number.isFinite(recapHourRaw) && recapHourRaw >= 0 && recapHourRaw <= 23 ? Math.trunc(recapHourRaw) : 21;
+      const recapSidecar = e.MUSE_RECAP_SIDECAR_FILE?.trim()?.length
+        ? e.MUSE_RECAP_SIDECAR_FILE.trim()
+        : join(homedir(), ".muse", "recap-fired.json");
+      const recapTick = async (): Promise<void> => {
+        if (!parseBoolean(e.MUSE_RECAP_ENABLED, false)) return;
+        let lastFiredISO: string | undefined;
+        try {
+          lastFiredISO = (JSON.parse(readFileSync(recapSidecar, "utf8")) as { lastFired?: string }).lastFired;
+        } catch { /* no sidecar yet ⇒ never fired */ }
+        try {
+          const outcome = await deliverEveningRecapIfDue({
+            now: new Date(),
+            recapHour,
+            ...(lastFiredISO !== undefined ? { lastFiredISO } : { lastFiredISO: undefined }),
+            gather: (now) => gatherEveningRecap(e, now),
+            send: async (text) => { await messagingRegistry.send(provider, { destination, text }); },
+            recordFired: (when) => {
+              try {
+                mkdirSync(dirname(recapSidecar), { recursive: true });
+                writeFileSync(recapSidecar, JSON.stringify({ lastFired: when.toISOString() }), "utf8");
+              } catch { /* fail-soft */ }
+            }
+          });
+          if (outcome === "fired") io.stdout(`[${new Date().toISOString()}] recap: delivered the evening recap\n`);
+        } catch { /* fail-soft — the recap is a daily nicety, never break the daemon */ }
+      };
+
       const runTick = async (): Promise<void> => {
         await proactiveTick();
         await remindersTick();
@@ -920,6 +955,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await reflectionTick();
         await selfLearnTick();
         await selfLearnDecayTick();
+        await recapTick();
       };
 
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);

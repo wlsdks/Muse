@@ -66,55 +66,98 @@ export function composeEveningRecap(input: EveningRecapInput): string {
   return lines.join("\n");
 }
 
+/**
+ * Gather the recap facts from the user's local stores (fail-soft per source).
+ * Shared by the on-demand `muse recap` command and the daemon's evening tick.
+ */
+export async function gatherEveningRecap(
+  env: Record<string, string | undefined>,
+  now: Date
+): Promise<EveningRecapInput> {
+  const horizon = new Date(now.getTime() + DAY_MS);
+  const performedToday: string[] = [];
+  let sessionsToday = 0;
+  const comingUp: string[] = [];
+  let openFollowups = 0;
+  try {
+    for (const entry of await readActionLog(resolveActionLogFile(env))) {
+      const when = new Date(entry.when);
+      if (entry.result === "performed" && !Number.isNaN(when.getTime()) && sameLocalDay(when, now)) {
+        performedToday.push(entry.what);
+      }
+    }
+  } catch { /* fail-soft */ }
+  try {
+    for (const episode of await readEpisodes(resolveEpisodesFile(env))) {
+      const ended = new Date(episode.endedAt);
+      if (!Number.isNaN(ended.getTime()) && sameLocalDay(ended, now)) {
+        sessionsToday += 1;
+      }
+    }
+  } catch { /* fail-soft */ }
+  try {
+    for (const reminder of await readReminders(resolveRemindersFile(env))) {
+      const due = new Date(reminder.dueAt);
+      if (reminder.status === "pending" && !Number.isNaN(due.getTime()) && due >= now && due <= horizon) {
+        comingUp.push(`${reminder.text} — due ${due.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
+      }
+    }
+  } catch { /* fail-soft */ }
+  try {
+    openFollowups = (await readFollowups(resolveFollowupsFile(env))).length;
+  } catch { /* fail-soft */ }
+  return { comingUp, now, openFollowups, performedToday, sessionsToday };
+}
+
+/**
+ * Pure: should the PROACTIVE evening recap fire now? True once we're past the
+ * evening hour AND it hasn't already fired today (once per calendar day). A
+ * missing/garbage last-fired timestamp counts as "not fired" (fire).
+ */
+export function shouldFireRecap(now: Date, lastFiredISO: string | undefined, recapHour: number): boolean {
+  if (now.getHours() < recapHour) {
+    return false;
+  }
+  if (lastFiredISO === undefined || lastFiredISO.length === 0) {
+    return true;
+  }
+  const last = new Date(lastFiredISO);
+  return Number.isNaN(last.getTime()) || !sameLocalDay(last, now);
+}
+
+/**
+ * Compose + deliver the proactive evening recap IF it is due (evening hour +
+ * not yet fired today), then record the fire. Pure of IO via injected deps so
+ * the daemon tick stays thin and this is unit-testable. Returns what it did.
+ */
+export async function deliverEveningRecapIfDue(deps: {
+  readonly now: Date;
+  readonly recapHour: number;
+  readonly lastFiredISO: string | undefined;
+  readonly gather: (now: Date) => Promise<EveningRecapInput>;
+  readonly send: (text: string) => Promise<void>;
+  readonly recordFired: (now: Date) => Promise<void> | void;
+}): Promise<"fired" | "not-due"> {
+  if (!shouldFireRecap(deps.now, deps.lastFiredISO, deps.recapHour)) {
+    return "not-due";
+  }
+  const input = await deps.gather(deps.now);
+  await deps.send(composeEveningRecap(input));
+  await deps.recordFired(deps.now);
+  return "fired";
+}
+
 export function registerRecapCommand(program: Command, io: ProgramIO): void {
   program
     .command("recap")
     .description("Evening recap — what you got done today + what's coming up (the retrospective sibling of `muse brief`)")
     .option("--json", "Emit the structured recap as JSON instead of the digest")
     .action(async (options: { readonly json?: boolean }) => {
-      const env = process.env as Record<string, string | undefined>;
-      const now = new Date();
-      const horizon = new Date(now.getTime() + DAY_MS);
-
-      const performedToday: string[] = [];
-      let sessionsToday = 0;
-      const comingUp: string[] = [];
-      let openFollowups = 0;
-
-      // Each source is fail-soft: a missing/corrupt store degrades that section
-      // to empty rather than crashing the recap.
-      try {
-        for (const entry of await readActionLog(resolveActionLogFile(env))) {
-          const when = new Date(entry.when);
-          if (entry.result === "performed" && !Number.isNaN(when.getTime()) && sameLocalDay(when, now)) {
-            performedToday.push(entry.what);
-          }
-        }
-      } catch { /* fail-soft */ }
-      try {
-        for (const episode of await readEpisodes(resolveEpisodesFile(env))) {
-          const ended = new Date(episode.endedAt);
-          if (!Number.isNaN(ended.getTime()) && sameLocalDay(ended, now)) {
-            sessionsToday += 1;
-          }
-        }
-      } catch { /* fail-soft */ }
-      try {
-        for (const reminder of await readReminders(resolveRemindersFile(env))) {
-          const due = new Date(reminder.dueAt);
-          if (reminder.status === "pending" && !Number.isNaN(due.getTime()) && due >= now && due <= horizon) {
-            comingUp.push(`${reminder.text} — due ${due.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
-          }
-        }
-      } catch { /* fail-soft */ }
-      try {
-        openFollowups = (await readFollowups(resolveFollowupsFile(env))).length;
-      } catch { /* fail-soft */ }
-
+      const input = await gatherEveningRecap(process.env as Record<string, string | undefined>, new Date());
       if (options.json === true) {
-        io.stdout(`${JSON.stringify({ comingUp, openFollowups, performedToday, sessionsToday })}\n`);
+        io.stdout(`${JSON.stringify({ comingUp: input.comingUp, openFollowups: input.openFollowups, performedToday: input.performedToday, sessionsToday: input.sessionsToday })}\n`);
         return;
       }
-      io.stdout(`${composeEveningRecap({ comingUp, now, openFollowups, performedToday, sessionsToday })}\n`);
+      io.stdout(`${composeEveningRecap(input)}\n`);
     });
 }
