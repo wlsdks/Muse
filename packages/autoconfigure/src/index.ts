@@ -970,6 +970,8 @@ export { createApiServerOptions } from "./api-server-options.js";
 
 export { createGateEmbedder, createOllamaEmbedder } from "./context-engineering-builders.js";
 
+export { distillQueuedCorrections, type DistillQueuedDeps } from "./distill-queue.js";
+
 export {
   assembleKnowledgeCorpus,
   createKnowledgeEnricher,

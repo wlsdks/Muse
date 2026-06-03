@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { MessagingProviderRegistry, type MessagingProvider, type OutboundMessage, type OutboundReceipt } from "@muse/messaging";
-import { buildCheckinQuestion, readProposedActions, readReflections, writeCheckins, writeEpisodes, writeFollowups, writeObjectives, type PersistedCheckin, type PersistedEpisode } from "@muse/mcp";
+import { buildCheckinQuestion, enqueueLearnEvent, readPendingLearnEvents, readProposedActions, readReflections, setLearningPaused, writeCheckins, writeEpisodes, writeFollowups, writeObjectives, type PersistedCheckin, type PersistedEpisode } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -43,7 +43,7 @@ function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonH
 
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"] }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"] }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -61,6 +61,7 @@ async function runDaemon(
       ...(opts.chromeConnection ? { chromeConnection: opts.chromeConnection } : {}),
       ...(opts.knowledgeEnrich ? { knowledgeEnrich: opts.knowledgeEnrich } : {}),
       ...(opts.briefingCalendarLister ? { briefingCalendarLister: opts.briefingCalendarLister } : {}),
+      ...(opts.selfLearnDistill ? { selfLearnDistill: opts.selfLearnDistill } : {}),
       // Default: followup tick disabled (no model) so proactive cases stay hermetic.
       resolveFollowupModel: opts.resolveFollowupModel ?? (async () => undefined)
     });
@@ -87,7 +88,11 @@ function tmpEnv(): NodeJS.ProcessEnv {
     MUSE_PROACTIVE_SIDECAR_FILE: join(dir, "fired.json"),
     MUSE_PROPOSED_ACTIONS_FILE: join(dir, "proposed.json"),
     MUSE_REMINDERS_FILE: join(dir, "reminders.json"),
-    MUSE_TASKS_FILE: join(dir, "tasks.json")
+    MUSE_TASKS_FILE: join(dir, "tasks.json"),
+    MUSE_LEARN_QUEUE_FILE: join(dir, "learn-queue.jsonl"),
+    MUSE_PLAYBOOK_FILE: join(dir, "playbook.json"),
+    MUSE_LEARNING_PAUSE_FILE: join(dir, "learning-paused.json"),
+    MUSE_SUPPRESSED_LESSONS_FILE: join(dir, "suppressed.json")
   };
 }
 
@@ -992,5 +997,77 @@ describe("muse daemon — grounded dreaming tick (P32-3)", () => {
 
     expect(res.stdout).not.toContain("reflections:");
     expect(await readReflections(env.MUSE_REFLECTIONS_FILE)).toHaveLength(0);
+  });
+});
+
+describe("muse daemon — unattended self-learning tick (P43-1 slice 1)", () => {
+  // A correction the user made in a past session, queued at correction time.
+  async function seedCorrection(env: NodeJS.ProcessEnv): Promise<void> {
+    await enqueueLearnEvent(env.MUSE_LEARN_QUEUE_FILE!, {
+      id: "lc1",
+      userId: "u1",
+      priorAnswer: "Your standup is at 10am.",
+      correction: "No — standup moved to 9:30am on Mondays.",
+      enqueuedAtMs: 1
+    });
+  }
+  // Deterministic distiller so the round-trip needs no live LLM.
+  const fakeDistill: NonNullable<DaemonHelpers["selfLearnDistill"]> = async () =>
+    ({ tag: "scheduling", text: "Monday standup is at 9:30am, not 10am." });
+
+  it("distills a queued correction into a strategy with NO manual command, then drains the queue", async () => {
+    const env = tmpEnv();
+    env.MUSE_SELFLEARN_ENABLED = "true";
+    await seedCorrection(env);
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      env, registry, resolveFollowupModel: async () => fakeFollowupModel(), selfLearnDistill: fakeDistill
+    });
+
+    expect(res.stdout).toMatch(/learned: \+1 strategy from your corrections/);
+    expect(await readPendingLearnEvents(env.MUSE_LEARN_QUEUE_FILE!)).toHaveLength(0); // consumed
+  });
+
+  it("BRAKE: learns nothing and leaves the queue intact when learning is paused", async () => {
+    const env = tmpEnv();
+    env.MUSE_SELFLEARN_ENABLED = "true";
+    await seedCorrection(env);
+    await setLearningPaused(env.MUSE_LEARNING_PAUSE_FILE!, true);
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      env, registry, resolveFollowupModel: async () => fakeFollowupModel(), selfLearnDistill: fakeDistill
+    });
+
+    expect(res.stdout).not.toContain("learned: +");
+    expect(await readPendingLearnEvents(env.MUSE_LEARN_QUEUE_FILE!)).toHaveLength(1); // untouched, resume catches up
+  });
+
+  it("does NOTHING when MUSE_SELFLEARN_ENABLED is unset (gate is real — off by default)", async () => {
+    const env = tmpEnv();
+    await seedCorrection(env);
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      env, registry, resolveFollowupModel: async () => fakeFollowupModel(), selfLearnDistill: fakeDistill
+    });
+
+    expect(res.stdout).not.toContain("learned: +");
+    expect(await readPendingLearnEvents(env.MUSE_LEARN_QUEUE_FILE!)).toHaveLength(1);
+  });
+
+  it("--status reports self-learn enabled only with the flag AND a model", async () => {
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const on = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], {
+      env: { ...tmpEnv(), MUSE_SELFLEARN_ENABLED: "true" }, registry, resolveFollowupModel: async () => fakeFollowupModel()
+    });
+    expect(on.stdout).toContain("self-learn: enabled");
+
+    const off = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], {
+      env: tmpEnv(), registry, resolveFollowupModel: async () => fakeFollowupModel()
+    });
+    expect(off.stdout).toContain("self-learn: disabled");
   });
 });

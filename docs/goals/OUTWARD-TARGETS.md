@@ -118,6 +118,12 @@ P43 bullet is unbuilt.
   command, proven by a live `eval:self-improving`-style battery. (This is
   the literal answer to "is it continuously self-developing like JARVIS?"
   — today the design exists but only runs by hand.)
+  _Slice 1 (DELIVERED) — `muse daemon` now distills queued corrections on
+  its idle tick with NO manual command (brake-first, probation writes); the
+  drain (`distillQueuedCorrections`) moved to `@muse/autoconfigure` so the
+  CLI daemon + api tick share it. Decomposition + remaining slices →
+  `docs/goals/P43-close-the-loop.md`. Bullet stays `[ ]` until the 2-session
+  live battery proves an unattended correction changes a later session._
 - [ ] **P43-2 Reliable carry-to-done.** A multi-step goal reaches a
   VERIFIED done: the plan-execute loop verifies each step's effect,
   replans on a failed/ambiguous step, and EVERY actuator (email /

@@ -16,15 +16,21 @@ import type { Command } from "commander";
 import {
   buildCalendarRegistry,
   buildMessagingRegistry,
+  createGateEmbedder,
+  distillQueuedCorrections,
   parseBoolean,
   resolveContactsFile,
   resolveEpisodesFile,
   resolveFollowupsFile,
+  resolveLearningPauseFile,
   resolveObjectivesFile,
   resolvePatternsFiredFile,
+  resolvePlaybookFile,
   resolveProactiveHistoryFile,
   resolveRemindersFile,
-  resolveTasksFile
+  resolveSuppressedLessonsFile,
+  resolveTasksFile,
+  type DistillQueuedDeps
 } from "@muse/autoconfigure";
 import { synthesizePatternSuggestion } from "@muse/agent-core";
 import type { PatternMatch } from "@muse/memory";
@@ -53,6 +59,7 @@ import {
   runDuePatternNotices,
   runDueProactiveNotices,
   readEpisodes,
+  resolveLearnQueueFile,
   runDueReminders,
   runDueSituationalBriefing,
   webWatchesFromConfig,
@@ -113,6 +120,13 @@ export interface DaemonHelpers {
   readonly knowledgeEnrich?: (query: string) => Promise<string | undefined> | string | undefined;
   /** Test seam — inject the calendar lister the briefing's imminent uses. */
   readonly briefingCalendarLister?: BriefingCalendarLister;
+  /**
+   * Test seam — inject the distiller the self-learning tick turns a queued
+   * correction into a strategy with, so a smoke can assert an unattended
+   * distill (and the brake) without a live LLM. Absent → the real local-Qwen
+   * distiller (an `undefined` return ⇒ no strategy written, the grounding fence).
+   */
+  readonly selfLearnDistill?: DistillQueuedDeps["distill"];
 }
 
 // Followups REQUIRE a model to synthesize their message. The real
@@ -585,6 +599,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  home-watch: ${homeWatchRunner ? "enabled" : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
+        io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) && followupModel ? "enabled" : "disabled (set MUSE_SELFLEARN_ENABLED + a model)"}\n`);
         // The resolved source paths — the first thing to check when a
         // tick "isn't firing": is it reading the file you think it is?
         io.stdout(`sources:\n`);
@@ -837,6 +852,36 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         } catch { /* fail-soft — dreaming is a background nicety */ }
       };
 
+      // Unattended learning — the daemon distills the corrections you made in
+      // past sessions (queued at correction time) into learned strategies with
+      // NO manual `muse playbook distill`. Off by default; brake-first (the
+      // learning-pause kill switch is checked inside distillQueuedCorrections,
+      // one distill per tick); every write lands on PROBATION until a real
+      // reinforce graduates it. Silent unless it actually learns something.
+      const DEFAULT_SELFLEARN_INTERVAL_MS = 5 * 60 * 1000;
+      const selfLearnIntervalRaw = e.MUSE_SELFLEARN_INTERVAL_MS ? Number(e.MUSE_SELFLEARN_INTERVAL_MS) : DEFAULT_SELFLEARN_INTERVAL_MS;
+      const selfLearnIntervalMs = Number.isFinite(selfLearnIntervalRaw) && selfLearnIntervalRaw > 0 ? selfLearnIntervalRaw : DEFAULT_SELFLEARN_INTERVAL_MS;
+      let lastSelfLearnMs: number | undefined;
+      const selfLearnTick = async (): Promise<void> => {
+        if (!parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) || !followupModel) return;
+        const nowMs = Date.now();
+        if (lastSelfLearnMs !== undefined && nowMs - lastSelfLearnMs < selfLearnIntervalMs) return;
+        lastSelfLearnMs = nowMs;
+        try {
+          const recorded = await distillQueuedCorrections({
+            model: followupModel.model,
+            modelProvider: followupModel.modelProvider as DistillQueuedDeps["modelProvider"],
+            embed: createGateEmbedder(e),
+            queueFile: resolveLearnQueueFile(e),
+            playbookFile: resolvePlaybookFile(e),
+            suppressedLessonsFile: resolveSuppressedLessonsFile(e),
+            pauseFile: resolveLearningPauseFile(e),
+            ...(helpers.selfLearnDistill ? { distill: helpers.selfLearnDistill } : {})
+          });
+          if (recorded > 0) io.stdout(`[${new Date(nowMs).toISOString()}] learned: +${recorded.toString()} strateg${recorded === 1 ? "y" : "ies"} from your corrections (see \`muse learned\`)\n`);
+        } catch { /* fail-soft — background learning must never break the daemon */ }
+      };
+
       const runTick = async (): Promise<void> => {
         await proactiveTick();
         await remindersTick();
@@ -849,6 +894,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await homeWatchTick();
         await briefingTick();
         await reflectionTick();
+        await selfLearnTick();
       };
 
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);
