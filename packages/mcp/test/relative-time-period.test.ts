@@ -76,3 +76,38 @@ describe("resolveRelativeTimePhrase — period phrases (next week/month/year + K
     expect(resolveRelativeTimePhrase("이달 말", now)?.toISOString()).toBe(resolveRelativeTimePhrase("end of month", now)?.toISOString());
   });
 });
+
+describe("resolveRelativeTimePhrase — colloquial Korean time-of-day words (아침/저녁/밤/새벽)", () => {
+  it("아침 (morning) reads as AM: '내일 아침 8시' → next day 08:00", () => {
+    const resolved = resolveRelativeTimePhrase("내일 아침 8시", now)!;
+    expect(resolved.getHours()).toBe(8);
+    expect(resolved.getMinutes()).toBe(0);
+    const today = resolveRelativeTimePhrase("오늘 아침 8시", now)!;
+    expect(Math.round((resolved.getTime() - today.getTime()) / 86_400_000)).toBe(1);
+  });
+
+  it("저녁 (evening) reads as PM: '오늘 저녁 7시' → today 19:00", () => {
+    expect(resolveRelativeTimePhrase("오늘 저녁 7시", now)!.getHours()).toBe(19);
+  });
+
+  it("밤 (night) reads as PM, but 밤 12시 is midnight", () => {
+    expect(resolveRelativeTimePhrase("밤 10시", now)!.getHours()).toBe(22);
+    expect(resolveRelativeTimePhrase("밤 12시", now)!.getHours()).toBe(0);
+  });
+
+  it("새벽 (dawn) reads as AM: '새벽 5시' → 05:00", () => {
+    expect(resolveRelativeTimePhrase("새벽 5시", now)!.getHours()).toBe(5);
+  });
+
+  it("keeps 반 (half past) with a colloquial period: '내일 저녁 6시 반' → 18:30", () => {
+    const resolved = resolveRelativeTimePhrase("내일 저녁 6시 반", now)!;
+    expect(resolved.getHours()).toBe(18);
+    expect(resolved.getMinutes()).toBe(30);
+  });
+
+  it("점심 → noon; the formal 오후/오전 still work unchanged (no regression)", () => {
+    expect(resolveRelativeTimePhrase("점심", now)!.getHours()).toBe(12);
+    expect(resolveRelativeTimePhrase("오후 3시", now)!.getHours()).toBe(15);
+    expect(resolveRelativeTimePhrase("오전 9시", now)!.getHours()).toBe(9);
+  });
+});

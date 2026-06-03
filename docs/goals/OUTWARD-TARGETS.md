@@ -328,7 +328,7 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   Scientist at Acme Corp [from resume.pdf]" (extracted from the PDF), an off-topic
   "phone number?" honestly refuses, a malformed PDF / a PNG / a scanned PDF all
   refuse, and a `.txt` file still grounds. cli 167 files / 1773 tests + `pnpm lint`
-  0/0. (this commit)
+  0/0. (02c3f412)
 
 **P40 — Actuation usability: Muse understands natural-language dates.** The
 "do" side is only as good as the words a user actually types.
@@ -427,6 +427,25 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   + the existing 18 tasks tests + LIVE (already-done → "was already done (completed
   2026-01-15 …) — no change" with the timestamp intact; an open task → normal
   "Completed"). cli 165 files / 1751 tests + `pnpm lint` 0/0. (this commit)
+
+- [x] **P40-8 `muse remind`/`tasks`/`calendar` understand colloquial Korean times
+  (아침/저녁/밤/새벽), not just the formal 오전/오후.** Probing the natural-language
+  date parser in 진안's native language: `muse remind add "내일 아침 8시"` /
+  `"오늘 저녁 7시"` / `"밤 10시"` all FAILED with "dueAt must be an ISO-8601 timestamp
+  or a supported relative phrase" — everyday phrasings rejected — while the formal
+  `"내일 오후 3시"` worked. Root: `parseKoreanTimeOfDay` (the shared parser behind
+  `parseTaskDueAt` → reminders/tasks/calendar/followups) only matched the meridiem
+  `오전|오후`, so a colloquial time-of-day word never parsed. Fixed in
+  packages/mcp/src/loopback-relative-time.ts: the meridiem now also accepts
+  새벽/아침 (→ AM) and 오후/저녁/밤 (→ PM), plus 점심 → noon, with the night edge case
+  handled (밤 12시 = 00:00 midnight, vs 오후/저녁 12시 = noon) and 반 (half-past)
+  preserved. Proof: 6 new parser unit tests (아침→AM incl. the +1-day check for 내일;
+  저녁→PM; 밤 PM with the 밤 12시 midnight special-case; 새벽→AM; 저녁 6시 반 → 18:30;
+  점심→noon AND 오후/오전 unregressed) + the full mcp suite green (1320) + LIVE: the
+  five failing phrasings now `Added` at the right local time (오늘 저녁 7시 → 19:00,
+  내일 아침 8시 → next-day 08:00, 밤 10시 → 22:00, 새벽 5시 → 05:00, 내일 저녁 6시 반 →
+  18:30) and 오후 3시 still → 15:00. mcp 167 files / 1320 tests + cli remind/tasks/
+  calendar 73 + `pnpm lint` 0/0. (this commit)
 
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,

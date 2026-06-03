@@ -640,13 +640,17 @@ function parseKoreanTimeOfDay(spec: string | undefined): { hour: number; minute:
     return { hour: DEFAULT_HOUR, minute: DEFAULT_MINUTE };
   }
   const cleaned = spec.trim();
-  if (cleaned === "정오") {
+  if (cleaned === "정오" || cleaned === "점심") {
     return { hour: 12, minute: 0 };
   }
   if (cleaned === "자정") {
     return { hour: 0, minute: 0 };
   }
-  const m = /^(오전|오후)?\s*(\d{1,2})\s*시(?:\s*(?:(\d{1,2})\s*분|(반)))?$/u.exec(cleaned);
+  // The meridiem accepts the colloquial time-of-day words a Korean user
+  // actually types, not just the formal 오전/오후: 새벽/아침 read as AM,
+  // 오후/저녁/밤 as PM. So "내일 아침 8시" and "오늘 저녁 7시" resolve as
+  // readily as "내일 오후 3시" did.
+  const m = /^(새벽|아침|오전|오후|저녁|밤)?\s*(\d{1,2})\s*시(?:\s*(?:(\d{1,2})\s*분|(반)))?$/u.exec(cleaned);
   if (!m) {
     return "invalid";
   }
@@ -657,15 +661,19 @@ function parseKoreanTimeOfDay(spec: string | undefined): { hour: number; minute:
   if (minute < 0 || minute > 59) {
     return "invalid";
   }
-  if (meridiem === "오후") {
-    if (rawHour < 1 || rawHour > 12) return "invalid";
-    return { hour: rawHour === 12 ? 12 : rawHour + 12, minute };
-  }
-  if (meridiem === "오전") {
+  const isAm = meridiem === "새벽" || meridiem === "아침" || meridiem === "오전";
+  const isPm = meridiem === "오후" || meridiem === "저녁" || meridiem === "밤";
+  if (isAm) {
     if (rawHour < 1 || rawHour > 12) return "invalid";
     return { hour: rawHour === 12 ? 0 : rawHour, minute };
   }
-  // No 오전/오후 marker → treat as a 24-hour clock ("15시").
+  if (isPm) {
+    if (rawHour < 1 || rawHour > 12) return "invalid";
+    // 밤 12시 = midnight (00:00); 오후/저녁 12시 = noon (12:00).
+    if (meridiem === "밤" && rawHour === 12) return { hour: 0, minute };
+    return { hour: rawHour === 12 ? 12 : rawHour + 12, minute };
+  }
+  // No meridiem marker → treat as a 24-hour clock ("15시").
   if (rawHour < 0 || rawHour > 23) {
     return "invalid";
   }
