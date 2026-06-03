@@ -187,6 +187,53 @@ export function isOutsideActiveHours(activeHours: readonly number[], hour: numbe
   });
 }
 
+/** Clock times in `text` as minutes-since-midnight + their raw form. Handles
+ *  12-hour ("3pm", "3:30 p.m.") and 24-hour ("15:00") — the two forms the model
+ *  and the fact sheet use — so a faithful time matches regardless of format. */
+function clockTimesToMinutes(text: string): Array<{ readonly raw: string; readonly minutes: number }> {
+  const out: Array<{ readonly raw: string; readonly minutes: number }> = [];
+  for (const m of text.matchAll(/\b(\d{1,2})(?::([0-5]\d))?\s*([ap])\.?\s?m\.?\b/giu)) {
+    const h = Number(m[1]);
+    const min = m[2] ? Number(m[2]) : 0;
+    if (h < 1 || h > 12) continue;
+    const pm = (m[3] ?? "").toLowerCase() === "p";
+    const hour24 = pm ? (h === 12 ? 12 : h + 12) : (h === 12 ? 0 : h);
+    out.push({ minutes: hour24 * 60 + min, raw: m[0].trim() });
+  }
+  // 24-hour HH:MM NOT followed by am/pm (so "3:30 pm" isn't double-counted as 03:30).
+  for (const m of text.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*[ap]\.?\s?m)/giu)) {
+    out.push({ minutes: Number(m[1]) * 60 + Number(m[2]), raw: m[0].trim() });
+  }
+  return out;
+}
+
+/**
+ * The clock times the brief ASSERTS that are on neither the fact sheet nor the
+ * current clock — i.e. a meeting/appointment time the model invented or drifted.
+ * The brief is model-composed prose over a deterministic fact sheet (the only
+ * `muse ask`-style surface with no grounding gate); this is its fabrication
+ * check, scoped to TIMES (the most dangerous, most verifiable claim — a wrong
+ * time makes you miss or mis-attend). Format-robust (both sides normalised) and
+ * conservative: a time it can't parse is never flagged, so it stays fail-open
+ * (the caller WARNS, never blocks). Pure + exported.
+ */
+export function unscheduledTimesInBrief(briefProse: string, factSheet: string, nowMinutes?: number): readonly string[] {
+  const allowed = new Set(clockTimesToMinutes(factSheet).map((t) => t.minutes));
+  if (nowMinutes !== undefined && Number.isFinite(nowMinutes)) {
+    allowed.add(Math.trunc(nowMinutes));
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const t of clockTimesToMinutes(briefProse)) {
+    if (allowed.has(t.minutes)) continue;
+    const key = t.raw.toLowerCase().replace(/\s+/gu, "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t.raw);
+  }
+  return out;
+}
+
 export function registerBriefCommand(program: Command, io: ProgramIO): void {
   program
     .command("brief")
@@ -364,6 +411,16 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         return;
       }
       io.stdout("\n");
+
+      // Grounding check for the brief surface: the summary is model-composed prose,
+      // so it could assert a meeting time that isn't on your schedule. Warn (never
+      // block — fail-open) if it mentions a clock time absent from the fact sheet
+      // and the current clock, so a fabricated/drifted appointment time can't pass
+      // unflagged on the morning briefing.
+      const fabricatedTimes = unscheduledTimesInBrief(composed, factSheet, now.getHours() * 60 + now.getMinutes());
+      if (fabricatedTimes.length > 0) {
+        io.stderr(`\n⚠️  This summary mentions a time not on your schedule (${fabricatedTimes.join(", ")}) — double-check it against your calendar before relying on it.\n`);
+      }
 
       if (options.speak) {
         await speakAloud(io, composed.trim());

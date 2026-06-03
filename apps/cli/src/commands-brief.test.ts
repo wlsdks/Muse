@@ -5,7 +5,37 @@ import { dirname } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, isOutsideActiveHours, playAudioFile, playSynthesizedAudio, resolveUserName } from "./commands-brief.js";
+import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, isOutsideActiveHours, playAudioFile, playSynthesizedAudio, resolveUserName, unscheduledTimesInBrief } from "./commands-brief.js";
+
+describe("unscheduledTimesInBrief — the brief surface's fabricated-time gate (fail-open)", () => {
+  // Fact sheet times: 09:30 (now line), 15:00 + 16:00 (event), 18:00 (reminder).
+  const factSheet = "Today: Thursday 09:30 local\nEvents:\n  · 15:00–16:00 Team sync\nReminders:\n  · 18:00 call mom";
+  const now = 9 * 60 + 30; // 09:30
+
+  it("flags NOTHING when the brief only echoes scheduled times (12h or 24h) or the current time", () => {
+    expect(unscheduledTimesInBrief("You have a team sync at 3pm and should call mom at 6pm.", factSheet, now)).toEqual([]);
+    expect(unscheduledTimesInBrief("Team sync at 15:00.", factSheet, now)).toEqual([]); // 24h echo
+    expect(unscheduledTimesInBrief("Good morning, it's 9:30am.", factSheet, now)).toEqual([]); // current clock allowed
+  });
+
+  it("does NOT flag a relative phrase that isn't a clock time", () => {
+    expect(unscheduledTimesInBrief("Your meeting is in 2 hours; 3 tasks are open.", factSheet, now)).toEqual([]);
+  });
+
+  it("FLAGS a clock time that is nowhere on the schedule (a fabricated appointment)", () => {
+    expect(unscheduledTimesInBrief("Don't forget your dentist at 5pm.", factSheet, now)).toEqual(["5pm"]);
+    expect(unscheduledTimesInBrief("Standup at 7:45am.", factSheet, now)).toEqual(["7:45am"]);
+  });
+
+  it("flags an invented time even when the schedule is empty, but never the current clock", () => {
+    expect(unscheduledTimesInBrief("You have a call at 2pm.", "Open tasks: 0", now)).toEqual(["2pm"]);
+    expect(unscheduledTimesInBrief("It's 9:30 — nothing scheduled.", "Open tasks: 0", now)).toEqual([]); // now allowed
+  });
+
+  it("dedupes repeated mentions of the same fabricated time", () => {
+    expect(unscheduledTimesInBrief("Meet at 5pm, again at 5 pm.", factSheet, now)).toEqual(["5pm"]);
+  });
+});
 
 describe("resolveUserName — greet by the REAL name or none, never an invented placeholder", () => {
   it("returns the name from a `name` fact (and tolerant key variants)", () => {

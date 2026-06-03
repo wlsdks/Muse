@@ -1360,7 +1360,37 @@ qwen3:8b and added to `eval:self-improving`.
   on it", while `muse ask --url https://example.com` still fetches the HTML page. mcp
   167 files / 1359 tests + `pnpm lint` 0/0 — a user who points Muse at a PDF or image
   URL gets an honest refusal instead of a confident answer invented from binary
-  garbage. (this commit)
+  garbage. (5c6064bc)
+
+- [x] **P38-33 The morning brief is now grounded against your schedule — it can't
+  assert a meeting TIME that isn't on your calendar without flagging it.** The brief
+  (`muse brief`) was the one `muse ask`-style surface with NO grounding gate: its
+  JARVIS summary is model-composed prose streamed straight to stdout, so a drifted or
+  invented appointment time ("don't forget your dentist at 5pm" when nothing's at 5pm)
+  would pass as fact on the flagship felt surface. Added a pure exported
+  `unscheduledTimesInBrief(briefProse, factSheet, nowMinutes)` in
+  apps/cli/src/commands-brief.ts: it extracts clock times from BOTH the brief and the
+  deterministic fact sheet — normalising 12-hour ("3pm", "3:30 p.m.") and 24-hour
+  ("15:00") to minutes so a faithful time matches regardless of the format the model
+  chose — and returns any time the brief asserts that's on neither the schedule nor the
+  current clock. The brief action warns ("⚠️ This summary mentions a time not on your
+  schedule (…) — double-check it") when it fires; it is FAIL-OPEN (warns, never blocks
+  or regenerates) and deliberately ZERO-false-positive (a time it can't parse, a
+  relative phrase like "in 2 hours", a scheduled time in any format, and the current
+  clock are all allowed) — false positives on the morning briefing would erode trust
+  worse than the gap. Catches a wholly-fabricated time; a drift to a time that happens
+  to be elsewhere on the schedule (e.g. an event's end time) is the accepted precision
+  trade for zero false positives. Proof: 5 new deterministic tests in
+  apps/cli/src/commands-brief.test.ts (echoed 12h/24h scheduled times + the current
+  clock + a relative "in 2 hours" → nothing flagged; a 5pm/7:45am nowhere on the
+  schedule → flagged; an invented time on an empty schedule flagged but the current
+  clock still allowed; repeated mentions deduped) + the full @muse/cli suite green
+  (169 files / 1821 tests) + LIVE on the loop PC: with a reminder seeded at 17:42, the
+  brief opened "Good afternoon. You have a dentist appointment scheduled for 17:42."
+  with NO warning (the faithful time matched — zero false positive end-to-end). cli
+  169 files / 1821 tests + `pnpm lint` 0/0 — the brief surface now plugs into the
+  fabrication=0 edge like recall/reflection/council do, so Muse can't quietly tell you
+  about a meeting you don't have. (this commit)
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.
