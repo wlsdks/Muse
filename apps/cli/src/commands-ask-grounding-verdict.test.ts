@@ -32,6 +32,19 @@ describe("groundingVerdictNotice — output-side rubric verdict on the ask wedge
     expect(await groundingVerdictNotice("I'm not sure — nothing in your notes covers that.", [], "when is my flight")).toBeUndefined();
   });
 
+  it("a web-grounded --with-tools answer is NOT false-flagged once the agent's tool output is in the evidence", async () => {
+    const query = "what is the capital of France";
+    const answer = "The capital of France is Paris.";
+    // Notes-only evidence (what the verdict had before): the answer's claim is in
+    // no note → the agent's correct web answer false-flags "not backed by notes".
+    const notesOnly = [match("notes/trip.md", "Booked a hotel in Lyon for the spring trip.", 0.4)];
+    expect(await groundingVerdictNotice(answer, notesOnly, query)).toBeDefined();
+    // WITH the agent's web-tool output added as evidence (the fix: the answer is
+    // scored against what the AGENT was shown), it covers and the warning clears.
+    const withToolEvidence = [...notesOnly, match("tool: web_search", "Paris is the capital and largest city of France.", 1)];
+    expect(await groundingVerdictNotice(answer, withToolEvidence, query)).toBeUndefined();
+  });
+
   // The handler gates the "📎 From your notes" receipt on the verdict — a receipt
   // is shown ONLY when groundingVerdictNotice returns undefined (the answer passed
   // grounding). This pins the contract that makes that gate meaningful: an

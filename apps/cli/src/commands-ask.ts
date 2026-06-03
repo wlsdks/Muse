@@ -2260,6 +2260,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
 
       let collectedAnswer = "";
       let toolsUsed: readonly string[] = [];
+      // The agent's read-tool outputs (web fetches, knowledge_search, …) — the
+      // evidence the --with-tools answer was grounded in. Fed into the output
+      // grounding verdict below so a web-grounded answer isn't false-flagged
+      // against the notes-only evidence set.
+      let agentGroundingSources: readonly { readonly source: string; readonly text: string }[] = [];
       // S3 narrate-the-wait (B2): the real generation stage — the silent gap
       // before the first token on a 10–40s local model. A static, honest
       // line so the wait reads as working, not frozen (latency-honest: it
@@ -2309,6 +2314,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           });
           collectedAnswer = result.response.output ?? "";
           toolsUsed = result.toolsUsed ?? [];
+          agentGroundingSources = result.groundingSources ?? [];
         } catch (cause) {
           // Same --json contract as the chat-only path: an agent
           // failure must be a parseable stdout object, not an
@@ -2561,7 +2567,14 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           ...matchedCommands.map((cmd) => exactMatch(`command: ${cmd}`, cmd)),
           ...matchedCommits.map((c) => exactMatch(`commit: ${c.subject}`, c.subject)),
           ...allMemoryFacts.map((f) => exactMatch(`memory: ${f.key}`, renderMemoryFact(f))),
-          ...feedHeadlines.map((h) => exactMatch(`feed: ${h.feedName}`, `${h.title}${h.summary ? ` ${h.summary}` : ""}`))
+          ...feedHeadlines.map((h) => exactMatch(`feed: ${h.feedName}`, `${h.title}${h.summary ? ` ${h.summary}` : ""}`)),
+          // The --with-tools agent's OWN read-tool outputs (web fetches,
+          // knowledge_search, …): the evidence it was shown. Without these a
+          // correctly web-grounded answer scores ~zero coverage against the
+          // notes-only set above and false-flags "not backed by your notes".
+          // Still fabrication-safe: only REAL tool outputs are added, so a claim
+          // in none of them (notes OR tool results) stays uncovered → ungrounded.
+          ...agentGroundingSources.map((s) => exactMatch(`tool: ${s.source}`, s.text))
         ];
         // The coverage check strips citation markers before scoring, so a LIST
         // answer whose claims live only inside `[task: …]` / `[event: …]` markers

@@ -336,7 +336,7 @@ export class AgentRuntime {
         guardedResponse,
         preparedRequest.contextWindow,
         layeredContext.agentSpec,
-        { toolsUsed: execution.toolsUsed }
+        { toolResults: execution.toolResults, toolsUsed: execution.toolsUsed }
       );
     } catch (error) {
       await this.handleRunError(context, runSpan, error, startedAtMs);

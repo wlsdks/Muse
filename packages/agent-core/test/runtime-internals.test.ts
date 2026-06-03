@@ -124,6 +124,20 @@ describe("createRunResult", () => {
     });
   });
 
+  it("derives groundingSources from the tools' non-empty text outputs (the agent's evidence), skipping empty ones", () => {
+    const toolResults: ExecutedToolResult[] = [
+      { result: { id: "c1", name: "web_search", output: "Paris is the capital of France.", status: "completed" }, toolCall: { args: {}, id: "c1", name: "web_search" } },
+      { result: { id: "c2", name: "messaging_send", output: "  ", status: "completed" }, toolCall: { args: {}, id: "c2", name: "messaging_send" } }
+    ];
+    const result = createRunResult("run-g", sampleResponse, undefined, undefined, { toolResults });
+    expect(result.groundingSources).toEqual([{ source: "web_search", text: "Paris is the capital of France." }]);
+  });
+
+  it("omits groundingSources when no tool returned text (chat-only / actuator-only run)", () => {
+    expect(createRunResult("run-h", sampleResponse, undefined, undefined, { toolResults: [] }).groundingSources).toBeUndefined();
+    expect(createRunResult("run-i", sampleResponse, undefined, undefined, {}).groundingSources).toBeUndefined();
+  });
+
   it("attaches contextWindow when supplied", () => {
     const window = { budgetTokens: 8000, estimatedTokens: 100, removedCount: 0, summaryInserted: false };
     expect(createRunResult("run-2", sampleResponse, window, undefined)).toEqual({

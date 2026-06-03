@@ -130,6 +130,30 @@ export function responseFilterEvidenceFromExecution(execution: ModelLoopExecutio
  * contextWindow are all optional so a small no-tools no-cache no-spec run
  * doesn't carry empty fields.
  */
+/** Cap per-tool evidence text so a large web page can't bloat the reverify prompt. */
+const GROUNDING_SOURCE_TEXT_CAP = 4000;
+
+/**
+ * The text outputs of the tools the agent actually ran, as grounding evidence
+ * `{ source: toolName, text: output }`. A caller's output-side grounding verdict
+ * scores the answer against THIS — the evidence the agent was shown — so a
+ * web-grounded `--with-tools` answer isn't false-flagged against a notes-only
+ * set. Empty outputs (an actuator's "sent", a no-results lookup) are skipped.
+ */
+function groundingSourcesFromToolResults(
+  toolResults: readonly ExecutedToolResult[]
+): readonly { readonly source: string; readonly text: string }[] {
+  const out: { source: string; text: string }[] = [];
+  for (const executed of toolResults) {
+    const raw = typeof executed.result.output === "string" ? executed.result.output.trim() : "";
+    if (raw.length === 0) {
+      continue;
+    }
+    out.push({ source: executed.result.name, text: raw.length > GROUNDING_SOURCE_TEXT_CAP ? raw.slice(0, GROUNDING_SOURCE_TEXT_CAP) : raw });
+  }
+  return out;
+}
+
 export function createRunResult(
   runId: string,
   response: ModelResponse,
@@ -138,12 +162,15 @@ export function createRunResult(
   execution: {
     readonly fromCache?: boolean;
     readonly toolsUsed?: readonly string[];
+    readonly toolResults?: readonly ExecutedToolResult[];
   } = {}
 ): AgentRunResult {
   const agentSpecReport = agentSpec ? toAgentSpecRunReport(agentSpec) : undefined;
+  const groundingSources = execution.toolResults ? groundingSourcesFromToolResults(execution.toolResults) : [];
   const base = {
     ...(execution.fromCache ? { fromCache: true } : {}),
     ...(execution.toolsUsed && execution.toolsUsed.length > 0 ? { toolsUsed: execution.toolsUsed } : {}),
+    ...(groundingSources.length > 0 ? { groundingSources } : {}),
     response,
     runId
   };

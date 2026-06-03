@@ -163,4 +163,13 @@ export interface AgentRunResult {
   readonly contextWindow?: AgentContextWindowReport;
   readonly fromCache?: boolean;
   readonly toolsUsed?: readonly string[];
+  /**
+   * The text outputs of the read-tools the agent actually ran (knowledge_search,
+   * web fetches, etc.), each `{ source: toolName, text: output }`. Surfaced so a
+   * caller's output-side grounding verdict can score the answer against the
+   * evidence the AGENT was shown — otherwise a correctly web-grounded
+   * `--with-tools` answer false-flags against a notes-only evidence set. Omitted
+   * when no tool returned text (e.g. a chat-only or actuator-only run).
+   */
+  readonly groundingSources?: readonly { readonly source: string; readonly text: string }[];
 }
