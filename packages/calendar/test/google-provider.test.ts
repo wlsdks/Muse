@@ -7,8 +7,9 @@ import type { CalendarRange } from "../src/types.js";
 // daily-reliability actuator over OAuth. Driven through the injected fetchImpl
 // with a contract-faithful HTTP fake that routes the OAuth token endpoint and
 // the calendar API separately. Covers the OAuth token lifecycle (mint + cache),
-// the reliability contract (retry the idempotent GET, NEVER retry a write), and
-// the event ⇄ request-body mapping.
+// the reliability contract (retry the idempotent GET; retry a write ONLY on a
+// 429 rate-limit honouring Retry-After, never on an ambiguous 5xx), and the
+// event ⇄ request-body mapping.
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
@@ -78,7 +79,7 @@ describe("GoogleCalendarProvider — OAuth + listEvents", () => {
   });
 });
 
-describe("GoogleCalendarProvider — writes are never retried", () => {
+describe("GoogleCalendarProvider — writes retry only a 429 rate-limit (never an ambiguous 5xx)", () => {
   it("createEvent POSTs the mapped body and returns the created event", async () => {
     const fetch = makeFetch(() => new Response(JSON.stringify({ end: { dateTime: "2026-06-01T11:00:00Z" }, id: "new1", start: { dateTime: "2026-06-01T10:00:00Z" }, summary: "New" }), { status: 200 }));
     const created = await provider(fetch.impl).createEvent({ endsAt: new Date("2026-06-01T11:00:00Z"), location: "Z", startsAt: new Date("2026-06-01T10:00:00Z"), title: "New" });
@@ -94,6 +95,37 @@ describe("GoogleCalendarProvider — writes are never retried", () => {
     await expect(provider(fetch.impl, { retries: 2, sleep: async () => {} }).createEvent({ endsAt: new Date(1), startsAt: new Date(0), title: "x" }))
       .rejects.toMatchObject({ code: "HTTP_500" });
     expect(fetch.apiCalls()).toHaveLength(1); // no retry on a write
+  });
+
+  it("RETRIES a 429 rate-limit on a write, then succeeds — safe because a 429 is rejected BEFORE the mutation applies", async () => {
+    const slept: number[] = [];
+    const ok = new Response(JSON.stringify({ end: { dateTime: "2026-06-01T11:00:00Z" }, id: "new1", start: { dateTime: "2026-06-01T10:00:00Z" }, summary: "New" }), { status: 200 });
+    const fetch = makeFetch((attempt) => (attempt < 3
+      ? new Response("rate limited", { headers: { "retry-after": "2" }, status: 429 })
+      : ok));
+    const created = await provider(fetch.impl, { retries: 2, sleep: async (ms) => { slept.push(ms); } })
+      .createEvent({ endsAt: new Date("2026-06-01T11:00:00Z"), startsAt: new Date("2026-06-01T10:00:00Z"), title: "New" });
+
+    expect(created.id).toBe("new1");
+    expect(fetch.apiCalls()).toHaveLength(2); // one 429 + one success
+    expect(slept).toEqual([2000]); // honoured Retry-After (2s), NOT the 250ms backoff
+  });
+
+  it("a write 429 with no Retry-After falls back to exponential backoff", async () => {
+    const slept: number[] = [];
+    const ok = new Response(JSON.stringify({ end: { dateTime: "2026-06-01T11:00:00Z" }, id: "n", start: { dateTime: "2026-06-01T10:00:00Z" }, summary: "N" }), { status: 200 });
+    const fetch = makeFetch((attempt) => (attempt < 3 ? new Response("rate", { status: 429 }) : ok));
+    await provider(fetch.impl, { retries: 2, sleep: async (ms) => { slept.push(ms); } })
+      .createEvent({ endsAt: new Date(1), startsAt: new Date(0), title: "x" });
+
+    expect(slept).toEqual([250]); // baseDelayMs * 2^0, no server hint
+  });
+
+  it("exhausts the 429 retry budget on a write and surfaces HTTP_429 (no infinite loop)", async () => {
+    const fetch = makeFetch(() => new Response("rate", { headers: { "retry-after": "1" }, status: 429 }));
+    await expect(provider(fetch.impl, { retries: 2, sleep: async () => {} }).createEvent({ endsAt: new Date(1), startsAt: new Date(0), title: "x" }))
+      .rejects.toMatchObject({ code: "HTTP_429" });
+    expect(fetch.apiCalls()).toHaveLength(3); // initial + 2 retries, then give up
   });
 
   it("deleteEvent issues a DELETE and treats 204 as success (void)", async () => {

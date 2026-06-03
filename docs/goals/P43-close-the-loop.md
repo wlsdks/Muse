@@ -60,9 +60,33 @@ model.
   unattended; session B measurably reflects the learned strategy with NO manual
   command. When that is green end-to-end on local Qwen, **P43-1 flips**.
 
-## P43-2 / P43-3 / P43-4
+## P43-2 — Reliable carry-to-done (all-actuator retry + plan-execute verify)
 
-Decomposed when reached (see the bullet text in `OUTWARD-TARGETS.md`). P43-2 =
-plan-execute verify-each-step + replan + all-actuator retry; P43-3 = one live
-stream syncing into the citable corpus with persisted offset state; P43-4 =
+The bullet flips only when a 2+-step task carries to a verified done through an
+injected failure. Vertical slices, hardening one actuator's transient-failure
+gap at a time (the human focus: a proven-once actuator that breaks on a
+rate-limit / transient 5xx is a USER-FACING reliability defect):
+
+- **Slice 1 — Google Calendar writes survive a 429 rate-limit. ✅ DELIVERED.**
+  Messaging already retried (`sendWithRetry`); calendar writes did NOT — Google
+  `createEvent`/`updateEvent`/`deleteEvent` failed outright on a transient
+  status (line `maxRetries = GET ? retries : 0`). Now a WRITE retries ONLY a 429
+  rate-limit, honouring `Retry-After` (clamped) — SAFE because a 429 is rejected
+  BEFORE the mutation applies, so it can't double-create; a write 5xx or a
+  mid-flight network reject stays non-retried (AMBIGUOUS — may have committed).
+  Proof: contract-faithful HTTP fake in `google-provider.test.ts` — a 429+Retry
+  -After retries then succeeds (honours 2s, not the 250ms backoff), no-hint 429
+  falls back to backoff, the budget exhausts to HTTP_429 (no infinite loop), and
+  a 5xx write is still NEVER retried.
+- **Slice 2+ (remaining).** Extend safe transient-retry to the email send (429
+  -only — never a 5xx, since Gmail send is non-idempotent), CalDAV/home write
+  Retry-After parity, then the plan-execute loop that verifies each step's
+  effect + replans on a failed/ambiguous step. The FLIP needs a 2+-step task
+  carried to a verified done through an injected deny/timeout/5xx.
+
+## P43-3 / P43-4
+
+Decomposed when reached (see the bullet text in `OUTWARD-TARGETS.md`).
+P43-3 = one live stream syncing into the citable corpus with persisted offset
+state; P43-4 =
 absence/anomaly anticipation + evening recap.

@@ -135,6 +135,14 @@ P43 bullet is unbuilt.
   deny/timeout/5xx/ambiguous-recipient failure, proven by a
   contract-faithful fake per `outbound-safety.md` ("I did it" without
   verification is itself a fabrication risk).
+  _Slice 1 (DELIVERED, this commit) — Google Calendar writes now survive a
+  429 rate-limit (retry honouring Retry-After; a 5xx/network reject stays
+  non-retried — safe for the non-idempotent insert). Closes the calendar
+  actuator's transient-failure gap (messaging already retried). Remaining:
+  email/CalDAV/home retry parity + the plan-execute verify/replan loop.
+  Decomposition → `docs/goals/P43-close-the-loop.md`. Bullet stays `[ ]`
+  until a 2+-step task carries to a verified done through an injected
+  failure._
 - [ ] **P43-3 Continuous auto-syncing ingestion.** At least one live
   personal stream (email / messages / calendar) syncs into the citable
   corpus on its own with PERSISTED offset state — new inbound becomes

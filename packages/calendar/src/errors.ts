@@ -29,6 +29,33 @@ export function isRetryableCalendarStatus(status: number | undefined): boolean {
   return status >= 500 && status <= 599;
 }
 
+/**
+ * Cap on a server-mandated `Retry-After`, so an absurd hint ("retry in an
+ * hour") can't freeze a calendar write. A real Google 429 is seconds.
+ */
+export const CALENDAR_RETRY_AFTER_CAP_MS = 30_000;
+
+/**
+ * Parse an HTTP `Retry-After` header into a wait in ms (RFC 7231): either
+ * delta-seconds (a non-negative integer) or an HTTP-date. A decimal, negative,
+ * or junk value is rejected (→ `undefined`, caller falls back to its backoff);
+ * a past date clamps to 0. Mirrors the messaging / model Retry-After contract.
+ */
+export function parseRetryAfterMs(header: string | null | undefined, nowMs: number): number | undefined {
+  if (header === null || header === undefined) return undefined;
+  const trimmed = header.trim();
+  if (trimmed.length === 0) return undefined;
+  if (/^\d+$/u.test(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+  }
+  // Only attempt a date parse when the value carries a clock component — this
+  // stops the lenient `Date.parse` coercing junk like "3.5" into a stray date.
+  if (!trimmed.includes(":")) return undefined;
+  const dateMs = Date.parse(trimmed);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - nowMs) : undefined;
+}
+
 export class CalendarProviderError extends Error {
   readonly providerId: string;
   readonly code: string;

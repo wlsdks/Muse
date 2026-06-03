@@ -1,4 +1,4 @@
-import { CalendarProviderError, isRetryableCalendarStatus } from "./errors.js";
+import { CalendarProviderError, CALENDAR_RETRY_AFTER_CAP_MS, isRetryableCalendarStatus, parseRetryAfterMs } from "./errors.js";
 import type {
   CalendarEvent,
   CalendarEventInput,
@@ -171,11 +171,14 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   private async request<T>(path: string, init: { readonly method: string; readonly body?: string }): Promise<T> {
-    // Retry transient 429/5xx (and network rejects) for the idempotent
-    // GET read so a flaky moment doesn't drop the calendar from the
-    // briefing. Writes (POST/PATCH/DELETE) are NEVER retried — a retried
-    // mutation could double-create / double-delete an event.
-    const maxRetries = init.method === "GET" ? this.retries : 0;
+    // GET (idempotent read): retry transient 429/5xx AND a mid-flight network
+    // reject so a flaky moment doesn't drop the calendar from the briefing.
+    // A WRITE (POST/PATCH/DELETE) retries ONLY a 429 rate-limit, honouring
+    // Retry-After — the server rejected the mutation BEFORE applying it, so a
+    // retry can't double-act. A write 5xx or a network reject is AMBIGUOUS (it
+    // may have committed) and is NEVER retried.
+    const isWrite = init.method !== "GET";
+    const networkRetries = isWrite ? 0 : this.retries;
     for (let attempt = 0; ; attempt += 1) {
       const accessToken = await this.acquireAccessToken();
       let response: Response;
@@ -190,7 +193,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
           method: init.method
         });
       } catch (cause) {
-        if (attempt < maxRetries) {
+        if (attempt < networkRetries) {
           await this.sleep(this.baseDelayMs * 2 ** attempt);
           continue;
         }
@@ -202,8 +205,11 @@ export class GoogleCalendarProvider implements CalendarProvider {
       }
 
       if (!response.ok) {
-        if (attempt < maxRetries && isRetryableCalendarStatus(response.status)) {
-          await this.sleep(this.baseDelayMs * 2 ** attempt);
+        const retriable = isWrite ? response.status === 429 : isRetryableCalendarStatus(response.status);
+        if (attempt < this.retries && retriable) {
+          const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"), Date.now());
+          const backoffMs = this.baseDelayMs * 2 ** attempt;
+          await this.sleep(retryAfterMs !== undefined ? Math.min(retryAfterMs, CALENDAR_RETRY_AFTER_CAP_MS) : backoffMs);
           continue;
         }
         const text = await response.text().catch(() => "");
