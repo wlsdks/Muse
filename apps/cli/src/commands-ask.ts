@@ -736,6 +736,30 @@ export function selectProbationSuggestion(
     .map((e) => ({ id: e.id, text: e.text }))[0];
 }
 
+/**
+ * The grounding-EVIDENCE text for a matched contact — the contact's name plus
+ * EVERY field the prompt block renders: relationship/role (P37-20), connections/
+ * edges (P37-21), email/phone/handle/birthday/aliases. The grounding rubric scores
+ * an answer's coverage against this; if a field the model can answer from (a role,
+ * an edge) is rendered in the block but MISSING here, a correct "your manager is
+ * Dana" / "Bob works with Alice" answer scores ~zero coverage and false-flags
+ * "unverified". So this MUST mirror the block render. Only REAL contact data, so a
+ * fabricated role/edge stays uncovered → still flagged.
+ */
+export function contactGroundingEvidence(contact: Contact): string {
+  const connections = (contact.connections ?? []).map((e) => `${e.as ?? "connected to"} ${e.to}`);
+  const fields = [
+    contact.relationship,
+    contact.email,
+    contact.phone,
+    contact.handle,
+    formatContactBirthday(contact.birthday),
+    ...(contact.aliases ?? []),
+    ...connections
+  ].filter((f): f is string => typeof f === "string" && f.length > 0).join(" ");
+  return `${contact.name} ${fields}`.trim();
+}
+
 export function contactMatchScore(contact: Contact, queryTokens: ReadonlySet<string>): number {
   if (queryTokens.size === 0) {
     return 0;
@@ -2621,13 +2645,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           : baseNoteMatches;
         const scoredMatches = [
           ...noteMatches,
-          ...matchedContacts.map((c) => {
-            const birthday = formatContactBirthday(c.birthday);
-            const fields = [c.email, c.phone, c.handle, birthday, ...(c.aliases ?? [])]
-              .filter((f): f is string => typeof f === "string" && f.length > 0)
-              .join(" ");
-            return exactMatch(`contact: ${c.name}`, `${c.name} ${fields}`.trim());
-          }),
+          ...matchedContacts.map((c) => exactMatch(`contact: ${c.name}`, contactGroundingEvidence(c))),
           ...openTasks.map((t) => exactMatch(`task: ${t.title}`, `${t.title}${t.notes ? ` ${t.notes}` : ""}${t.dueAt ? ` due ${t.dueAt} ${humanDate(t.dueAt)}` : ""}`)),
           ...upcomingEvents.map((e) => exactMatch(`event: ${e.title}`, `${e.title}${e.location ? ` ${e.location}` : ""} ${humanDate(e.startsAt)} ${humanDate(e.endsAt)}`.trim())),
           ...pendingReminders.map((r) => exactMatch(`reminder: ${r.text}`, `${r.text} ${humanDate(r.dueAt)}`.trim())),

@@ -614,6 +614,19 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   shows the identical note-coverage caveat, the rubric is tuned for note-grounding).
   mcp 1457 + cli 1894 + pnpm check exit 0 + pnpm lint 0/0 + live who-works-with-Bob
   round-trip. (b25634d4)
+  _Refinement (f8284636): the grounding EVIDENCE now mirrors the prompt block — when
+  P37-20 added `relationship` and P37-21 added `connections` to the contact block, the
+  rubric's contact-evidence text (`contactGroundingEvidence`, extracted + unit-tested)
+  was NOT updated to include them, so a correctly-cited "your manager is Dana" /
+  "Bob works with Alice" answer scored ~zero coverage against email/phone-only evidence
+  and false-flagged "treat as unverified" — contradicting the identity (a cited answer
+  saying "unverified"). Fixed: the evidence now carries the role + edges (REAL data
+  only, so a fabricated edge stays uncovered → still flagged). Proven: 4 helper unit
+  tests + a LIVE `muse ask "who works with Bob?"` → "Bob works with Alice [from contact:
+  Bob]" with NO caveat (clean grounded) on qwen3:8b. Honest scope: this is necessary
+  but not sufficient — a VERBOSE answer (the persona's polite fluff) can still dilute
+  the coverage fraction below the floor; that is pre-existing + model-dependent + not
+  contact-specific, untouched here. cli 1898 + pnpm lint 0/0 + live clean recall._
 
 - [x] **P37-9 Action-log grounding — "did you send that? / what have you done?"
   (B3 transparency, gate a new surface).** `muse ask` now grounds on Muse's OWN

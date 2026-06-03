@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Contact } from "@muse/mcp";
 
-import { contactMatchScore } from "./commands-ask.js";
+import { contactGroundingEvidence, contactMatchScore } from "./commands-ask.js";
 
 const tokens = (q: string): Set<string> => {
   // mirror lexicalTokens loosely for the test — split on non-word, drop short
@@ -60,5 +60,31 @@ describe("formatContactBirthday — readable birthday for contacts grounding", (
     expect(formatContactBirthday("")).toBeUndefined();
     expect(formatContactBirthday("not-a-date")).toBeUndefined();
     expect(formatContactBirthday("13-40")).toBeUndefined();
+  });
+});
+
+describe("contactGroundingEvidence — the grounding evidence mirrors the prompt block (no false 'unverified')", () => {
+  it("INCLUDES the relationship/role (P37-20) so 'your manager is Dana' is covered, not false-flagged", () => {
+    const dana: Contact = { id: "c_d", name: "Dana Wu", email: "dana@example.com", relationship: "manager" };
+    const evidence = contactGroundingEvidence(dana);
+    expect(evidence).toContain("Dana Wu");
+    expect(evidence).toContain("manager"); // the claim "your manager is Dana" is now covered by the evidence
+    expect(evidence).toContain("dana@example.com");
+  });
+
+  it("INCLUDES connections/edges (P37-21) so 'Bob works with Alice' is covered", () => {
+    const bob: Contact = { id: "c_b", name: "Bob", email: "bob@x.com", connections: [{ to: "Alice", as: "works with" }] };
+    const evidence = contactGroundingEvidence(bob);
+    expect(evidence).toContain("works with Alice"); // the edge claim is in the evidence
+  });
+
+  it("only adds REAL data — a contact with no role/edges yields just name + reach fields (a fabricated edge stays uncovered)", () => {
+    const flat: Contact = { id: "c_f", name: "Sam", handle: "@sam" };
+    expect(contactGroundingEvidence(flat)).toBe("Sam @sam");
+  });
+
+  it("a bare edge (no `as` relation) is rendered as 'connected to <name>'", () => {
+    const c: Contact = { id: "c_x", name: "Pat", connections: [{ to: "Jo" }] };
+    expect(contactGroundingEvidence(c)).toContain("connected to Jo");
   });
 });
