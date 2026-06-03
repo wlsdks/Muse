@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -767,6 +767,7 @@ interface AskOptions {
   readonly tiered?: boolean;
   readonly connect?: boolean;
   readonly repair?: boolean;
+  readonly why?: boolean;
   /**
    * Clamps the answer to notes + local-memory grounding only.
    * Disables native web_search on every provider path and, when
@@ -1375,6 +1376,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--repair",
       "When an answer fails the grounding check, attempt ONE local rewrite constrained to your retrieved notes and show it as a 'Corrected from your notes' offer — but ONLY if the rewrite then re-verifies grounded (else the honest refusal stands; a fix is never fabricated). Off by default; spends one extra local inference."
+    )
+    .option(
+      "--why",
+      "When Muse refuses or flags an answer, show WHY — which grounding criterion fell short (confidence / coverage / answerability / citation) and the measured value vs its threshold (e.g. 'best match 0.42, I need 0.55'), so you can rephrase, reindex, or add a note. Silent on a confident, grounded answer."
     )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const argQuery = queryParts.join(" ").trim();
@@ -2617,6 +2622,24 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             if (repair.repaired) io.stderr(`\n🔧 Corrected from your notes:\n${repair.repaired}\n`);
           } else if (shouldSuggestRepair({ evidenceCount: scoredMatches.length, json: Boolean(options.json), repairRequested: Boolean(options.repair), verdictFired: true })) {
             io.stderr("(Re-run with --repair and I'll rewrite this using only your notes — shown only if it then checks out.)\n");
+          }
+        }
+
+        // `--why`: the "shows its work" edge applied to the REFUSAL itself. When
+        // the answer isn't grounded, name the deterministic rubric criterion that
+        // fell short + the measured value vs threshold, so an opaque "I'm not
+        // sure" becomes actionable (rephrase / reindex / add a note). No extra
+        // model call (the rubric is deterministic); silent on a grounded answer;
+        // runs even on a refusal — which the fabrication warning above skips —
+        // since explaining WHY it refused is exactly the point.
+        if (options.why && !options.json) {
+          const topCosine = scoredMatches.length > 0
+            ? Math.max(...scoredMatches.map((m) => m.cosine ?? m.score))
+            : undefined;
+          const whyLines = explainGroundingVerdict(verifyGrounding(verdictAnswer, scoredMatches, query), { topCosine });
+          if (whyLines.length > 0) {
+            const head = answerIsRefusal(collectedAnswer) ? "Why I can't answer from your notes" : "Why this answer is flagged";
+            io.stderr(`\n🔎 ${head}:\n${whyLines.map((l) => `  • ${l}`).join("\n")}\n`);
           }
         }
 

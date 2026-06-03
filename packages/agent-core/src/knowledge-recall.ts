@@ -777,6 +777,59 @@ export function verifyGrounding(
   return { invalidCitations, reason: "evidence only weakly supports the answer", rubric, verdict: "weak" };
 }
 
+export interface GroundingExplanationOptions {
+  /** The top match's ABSOLUTE cosine — the rubric stores the categorical confidence, not the raw value. */
+  readonly topCosine?: number;
+  readonly confidentAt?: number;
+  readonly coverageFloor?: number;
+  readonly answerabilityFloor?: number;
+}
+
+/**
+ * Plain-language WHY behind a non-`grounded` verdict — the "shows its work" edge
+ * applied to the REFUSAL itself (`muse ask --why`). Names each rubric criterion
+ * that fell short and the measured value vs its threshold, turning an opaque
+ * "I'm not sure" into an inspectable, actionable judgement (rephrase, reindex,
+ * add a note). Returns `[]` for a `grounded` verdict — silent on the happy path
+ * (a targeted trust affordance, not a debug firehose). Pure: the caller passes
+ * the top match's cosine, since the rubric carries the categorical confidence
+ * (1/0.5/0), not the raw cosine the user wants to see.
+ */
+export function explainGroundingVerdict(
+  verification: GroundingVerification,
+  options?: GroundingExplanationOptions
+): string[] {
+  if (verification.verdict === "grounded") {
+    return [];
+  }
+  const confidentAt = finiteOr(options?.confidentAt, DEFAULT_CONFIDENT_AT);
+  const coverageFloor = finiteOr(options?.coverageFloor, DEFAULT_COVERAGE_FLOOR);
+  const answerabilityFloor = finiteOr(options?.answerabilityFloor, DEFAULT_ANSWERABILITY_FLOOR);
+  const { answerability, confidence, coverage } = verification.rubric;
+  const cosineNote = typeof options?.topCosine === "number"
+    ? ` (best match ${options.topCosine.toFixed(2)}, I need ${confidentAt.toFixed(2)})`
+    : "";
+  const lines: string[] = [];
+  if (confidence === 0) {
+    lines.push(`no notes came close enough to the question${cosineNote} — confidence criterion`);
+  } else if (confidence < 1) {
+    lines.push(`the closest notes are only loosely related${cosineNote} — confidence criterion (low)`);
+  }
+  if (verification.invalidCitations.length > 0) {
+    lines.push(`the answer cited ${verification.invalidCitations.length.toString()} source(s) you don't have (${verification.invalidCitations.join(", ")}) — citation criterion`);
+  }
+  if (coverage < coverageFloor) {
+    lines.push(`the evidence covers only ${(coverage * 100).toFixed(0)}% of the answer's wording (I need ${(coverageFloor * 100).toFixed(0)}%) — coverage criterion`);
+  }
+  if (answerability < answerabilityFloor) {
+    lines.push(`your notes address only ${(answerability * 100).toFixed(0)}% of the question (I need ${(answerabilityFloor * 100).toFixed(0)}%) — answerability criterion`);
+  }
+  if (lines.length === 0) {
+    lines.push(verification.reason);
+  }
+  return lines;
+}
+
 export interface GroundingReverifyInput {
   readonly answer: string;
   /** The grounded passages, joined — the evidence the judge checks against. */

@@ -1705,6 +1705,27 @@ qwen3:8b and added to `eval:self-improving`.
   @muse/agent-core (112 files / 1405) and @muse/cli (169 files / 1821) suites green.
   agent-core 112 / 1405 + cli 169 / 1821 + `pnpm lint` 0/0 — Muse can no longer quietly
   remember, and later cite, a decision you never made. (this commit)
+- [x] **P38-35 `muse ask --why` shows WHY it refused — the "shows its work" edge
+  applied to the REFUSAL itself.** When Muse says "I'm not sure" (or flags an
+  answer), `--why` names the deterministic RGV criterion that fell short and the
+  measured value vs its threshold — "best match 0.42, I need 0.55 — confidence
+  criterion", "the evidence covers only 6% … (I need 50%) — coverage criterion",
+  "your notes address only 0% of the question … — answerability criterion", or a
+  fabricated-citation list — so an opaque "no" becomes an inspectable, ACTIONABLE
+  judgement (rephrase / reindex / add a note). The moat-analysis workflow's
+  red-teamed pick: a refusal-with-reasons is uncopyable without first building the
+  deterministic multi-criterion verdict — exactly what hermes/openclaw's
+  capability-first design lacks (no refusal, no per-criterion verdict to surface).
+  Pure formatter (`explainGroundingVerdict`, agent-core) over the rubric
+  `verifyGrounding` already computes — NO extra model call; SILENT on a grounded
+  answer (a targeted trust affordance, not a debug firehose); runs even on a
+  refusal (which the fabrication warning skips), since explaining WHY is the point.
+  Proof: 6 deterministic agent-core unit tests (grounded → []; confidence/coverage/
+  answerability/citation criteria each named with the measured value; weak →
+  low-confidence; custom thresholds) + a LIVE `muse ask --why` on the loop PC
+  (qwen3:8b + real nomic-embed): an off-corpus question refused and printed the
+  coverage (6% / need 50%) + answerability (0% / need 34%) criteria. agent-core
+  114 / 1444 + cli build clean + `pnpm check` exit 0 + `pnpm lint` 0/0. `436437c4`.
 
 **P39 — Felt: a social prompt gets an instant clean reply (loop-v2 PART A1 +
 tool-calling.md).** Edge hygiene meets felt responsiveness.
