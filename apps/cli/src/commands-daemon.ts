@@ -33,7 +33,7 @@ import {
   resolveTasksFile,
   type DistillQueuedDeps
 } from "@muse/autoconfigure";
-import { synthesizePatternSuggestion } from "@muse/agent-core";
+import { clusterByTextSimilarity, mergePlaybookStrategies, PLAYBOOK_AVOID_BELOW, strategyTextSimilarity, synthesizePatternSuggestion, validateMergeCoverage } from "@muse/agent-core";
 import type { PatternMatch } from "@muse/memory";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import {
@@ -63,6 +63,9 @@ import {
   resolveLearnQueueFile,
   decayStalePlaybookRewards,
   isLearningPaused,
+  queryPlaybook,
+  recordPlaybookStrategy,
+  removePlaybookStrategy,
   runDueReminders,
   runDueSituationalBriefing,
   webWatchesFromConfig,
@@ -84,7 +87,9 @@ import { closestCommandName } from "./closest-command.js";
 import { parseBoundedFlag } from "./commands-proactive.js";
 import { DEFAULT_REFLECTION_INTERVAL_MS, resolveReflectionsFile, runReflectionPass, shouldRunReflection } from "./commands-reflections.js";
 import { createIndexedProactiveInvestigator } from "./proactive-notes-recall.js";
+import { consolidatePlaybook } from "./playbook-consolidate.js";
 import type { ProgramIO } from "./program.js";
+import { randomUUID } from "node:crypto";
 
 type FollowupModel = {
   readonly modelProvider: Parameters<typeof runDueFollowups>[0]["modelProvider"];
@@ -131,6 +136,14 @@ export interface DaemonHelpers {
    * distiller (an `undefined` return ⇒ no strategy written, the grounding fence).
    */
   readonly selfLearnDistill?: DistillQueuedDeps["distill"];
+  /**
+   * Test seams — inject the LLM merge + the held-out coverage validator the
+   * autonomous playbook-consolidate tick uses, so a smoke can drive a real
+   * merge of near-duplicate PROBATION strategies (and the safety contract:
+   * merged stays on probation, never graduates) without a live LLM/embedder.
+   */
+  readonly consolidateMerge?: (texts: readonly string[]) => Promise<string | undefined>;
+  readonly consolidateValidate?: (originals: readonly string[], merged: string) => Promise<{ readonly accept: boolean; readonly reason: string; readonly lost?: readonly string[] }>;
   /**
    * Test seam — inject the messaging poll so a smoke can assert the daemon
    * pulls new inbound (which the inbox-injection cursor then makes recallable)
@@ -613,7 +626,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  home-watch: ${homeWatchRunner ? "enabled" : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
-        io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) && followupModel ? "enabled" : "disabled (set MUSE_SELFLEARN_ENABLED + a model)"}\n`);
+        io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) && followupModel ? "enabled (distill + decay + consolidate)" : "disabled (set MUSE_SELFLEARN_ENABLED + a model)"}\n`);
         io.stdout(`  recap:      ${parseBoolean(e.MUSE_RECAP_ENABLED, false) ? `enabled (evening, after ${(e.MUSE_RECAP_HOUR ?? "21").toString()}:00)` : "disabled (set MUSE_RECAP_ENABLED)"}\n`);
         io.stdout(`  msg-poll:   ${parseBoolean(e.MUSE_MESSAGING_POLL_ENABLED, false) ? "enabled (new inbound → recallable)" : "disabled (set MUSE_MESSAGING_POLL_ENABLED)"}\n`);
         // The resolved source paths — the first thing to check when a
@@ -920,6 +933,71 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         } catch { /* fail-soft — background maintenance must never break the daemon */ }
       };
 
+      // Autonomous playbook CONSOLIDATE — the unattended distill (slice 1) writes
+      // PROBATION strategies; exact/lexical near-duplicates are deduped at write
+      // time, but SEMANTIC paraphrases the lexical dedup misses still accumulate.
+      // This merges near-duplicate PROBATION strategies into one via the LLM
+      // merger behind the SkillOpt held-out coverage gate (a merge commits only
+      // if the result still covers every original; else the originals are kept).
+      // SAFETY: it operates ONLY on probation strategies and the merged strategy
+      // STAYS on probation — autonomous consolidation NEVER graduates a guess
+      // into the injected block (graduation stays bound to a positive user act),
+      // and the graduated/injected bank is never touched. Brake-first: ≤1 cluster
+      // per tick, the same MUSE_SELFLEARN switch + learning-pause brake, off
+      // without a model.
+      const DEFAULT_SELFLEARN_CONSOLIDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+      const consolidateIntervalRaw = e.MUSE_SELFLEARN_CONSOLIDATE_INTERVAL_MS ? Number(e.MUSE_SELFLEARN_CONSOLIDATE_INTERVAL_MS) : DEFAULT_SELFLEARN_CONSOLIDATE_INTERVAL_MS;
+      const consolidateIntervalMs = Number.isFinite(consolidateIntervalRaw) && consolidateIntervalRaw > 0 ? consolidateIntervalRaw : DEFAULT_SELFLEARN_CONSOLIDATE_INTERVAL_MS;
+      let lastConsolidateMs: number | undefined;
+      const playbookConsolidateTick = async (): Promise<void> => {
+        if (!parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) || !followupModel) return;
+        const nowMs = Date.now();
+        if (lastConsolidateMs !== undefined && nowMs - lastConsolidateMs < consolidateIntervalMs) return;
+        lastConsolidateMs = nowMs;
+        try {
+          if (await isLearningPaused(resolveLearningPauseFile(e))) return; // brake: paused ⇒ bank frozen
+          const playbookFile = resolvePlaybookFile(e);
+          // The playbook file is a single-user ~/.muse bucket — operate on the
+          // whole file (no external userId resolution); the merged strategy
+          // inherits the cluster's userId.
+          const entries = await queryPlaybook(playbookFile);
+          // ONLY fresh PENDING learnings: probation AND not-yet-avoided. The
+          // graduated / avoided bank is never autonomously merged.
+          const pending = entries.filter((x) => x.probation === true && (x.reward ?? 0) > PLAYBOOK_AVOID_BELOW);
+          const clusters = clusterByTextSimilarity(pending, (x) => x.text, strategyTextSimilarity, 0.6).filter((c) => c.length >= 2);
+          if (clusters.length === 0) return;
+          const cluster = clusters[0]!; // ≤1 per tick (brake-first)
+          const userId = cluster[0]!.userId;
+          const tag = cluster.find((x) => x.tag)?.tag;
+          const merge = helpers.consolidateMerge ?? ((texts) =>
+            mergePlaybookStrategies(texts, { model: followupModel.model, modelProvider: followupModel.modelProvider as Parameters<typeof mergePlaybookStrategies>[1]["modelProvider"] }));
+          const validate = helpers.consolidateValidate ?? (async (originals: readonly string[], mergedText: string) => {
+            const verdict = await validateMergeCoverage(originals.map((t) => ({ label: t, text: t })), { label: mergedText.slice(0, 40), text: mergedText }, { embed: createGateEmbedder(e) });
+            return { accept: verdict.accept, lost: verdict.lost, reason: verdict.reason };
+          });
+          const { merged } = await consolidatePlaybook([cluster], {
+            apply: true,
+            log: () => { /* the daemon logs the single outcome below */ },
+            merge,
+            // SAFETY: the merged strategy STAYS on probation — never graduate.
+            record: async (text) => {
+              await recordPlaybookStrategy(playbookFile, {
+                createdAt: new Date(nowMs).toISOString(),
+                id: `pb_${randomUUID()}`,
+                origin: "grounded",
+                probation: true,
+                text,
+                userId,
+                ...(tag ? { tag } : {})
+              });
+            },
+            remove: async (id) => { await removePlaybookStrategy(playbookFile, id); },
+            validate
+          });
+          if (merged > 0) io.stdout(`[${new Date(nowMs).toISOString()}] consolidate: merged ${cluster.length.toString()} near-duplicate pending learning(s) into 1 (still on probation; see \`muse learned\`)\n`);
+        } catch { /* fail-soft — background maintenance must never break the daemon */ }
+      };
+
       // Evening recap — a once-a-day proactive digest of what got done today +
       // what's coming up, delivered after MUSE_RECAP_HOUR (default 21:00) and
       // self-deduped to once per calendar day via a sidecar. Off by default;
@@ -989,6 +1067,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await reflectionTick();
         await selfLearnTick();
         await selfLearnDecayTick();
+        await playbookConsolidateTick();
         await recapTick();
         await messagingPollTick();
       };

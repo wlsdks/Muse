@@ -130,11 +130,22 @@ P43 bullet is unbuilt.
   reward/probation (no autonomous graduation off a repeat; a 10-voter panel
   ratified that graduating on a repeat would invert the sign). A negative-
   assertion test pins "no probation strategy graduates without a positive user
-  act." Remaining (honesty-sensitive): autonomous graduation stays bound to a
-  positive user act (NOT built as auto-graduation), and the 2-session live
-  battery. Decomposition → `docs/goals/P43-close-the-loop.md`. Bullet stays `[ ]`
-  until the 2-session live battery proves an unattended signal changes a later
-  session._
+  act." Slice 3b (DELIVERED, `473d1dd4`) — the daemon now also CONSOLIDATES
+  semantic near-duplicate PENDING learnings autonomously: a `playbookConsolidateTick`
+  (same `MUSE_SELFLEARN_ENABLED` switch + learning-pause brake, ≤1 cluster/tick)
+  clusters PROBATION strategies by `strategyTextSimilarity` and merges a cluster
+  via the LLM merger behind the SkillOpt held-out coverage gate (a merge commits
+  only if it still covers every original; else originals kept) — closing the last
+  manual-only self-learning mechanism (`muse playbook consolidate`) into the
+  daemon. SIGN-SAFE: it operates ONLY on probation+non-avoided strategies and the
+  merged strategy STAYS on probation (never auto-graduates; the graduated/injected
+  bank is never touched) — proven by a daemon test asserting the merged entry is
+  `probation:true`, that graduated strategies are untouched, and that the pause
+  brake + held-out reject keep the bank intact. Remaining (honesty-sensitive):
+  autonomous GRADUATION stays bound to a positive user act (NOT built), and the
+  2-session live battery. Decomposition → `docs/goals/P43-close-the-loop.md`.
+  Bullet stays `[ ]` until the 2-session live battery proves an unattended signal
+  changes a later session._
 - [x] **P43-2 Reliable carry-to-done.** A multi-step goal reaches a
   VERIFIED done: the plan-execute loop verifies each step's effect,
   replans on a failed/ambiguous step, and EVERY actuator (email /

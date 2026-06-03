@@ -43,7 +43,7 @@ function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonH
 
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; messagingPoll?: DaemonHelpers["messagingPoll"] }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; messagingPoll?: DaemonHelpers["messagingPoll"]; consolidateMerge?: DaemonHelpers["consolidateMerge"]; consolidateValidate?: DaemonHelpers["consolidateValidate"] }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -63,6 +63,8 @@ async function runDaemon(
       ...(opts.briefingCalendarLister ? { briefingCalendarLister: opts.briefingCalendarLister } : {}),
       ...(opts.selfLearnDistill ? { selfLearnDistill: opts.selfLearnDistill } : {}),
       ...(opts.messagingPoll ? { messagingPoll: opts.messagingPoll } : {}),
+      ...(opts.consolidateMerge ? { consolidateMerge: opts.consolidateMerge } : {}),
+      ...(opts.consolidateValidate ? { consolidateValidate: opts.consolidateValidate } : {}),
       // Default: followup tick disabled (no model) so proactive cases stay hermetic.
       resolveFollowupModel: opts.resolveFollowupModel ?? (async () => undefined)
     });
@@ -1070,6 +1072,84 @@ describe("muse daemon — unattended self-learning tick (P43-1 slice 1)", () => 
       env: tmpEnv(), registry, resolveFollowupModel: async () => fakeFollowupModel()
     });
     expect(off.stdout).toContain("self-learn: disabled");
+  });
+});
+
+describe("muse daemon — autonomous playbook consolidate tick (P43-1, sign-safe)", () => {
+  const probationDup = (id: string, text: string): Parameters<typeof writePlaybook>[1][number] =>
+    ({ createdAt: "2026-01-01T00:00:00Z", id, probation: true, text, userId: "u1" });
+  // Deterministic merge + accept gate so the round-trip needs no live LLM/embedder.
+  const fakeMerge: NonNullable<DaemonHelpers["consolidateMerge"]> = async () => "Monday standup is at 9:30am (consolidated).";
+  const fakeAccept: NonNullable<DaemonHelpers["consolidateValidate"]> = async () => ({ accept: true, reason: "covers all originals" });
+  const seedDup = async (env: NodeJS.ProcessEnv): Promise<void> => {
+    // Near-duplicate PROBATION strategies (Jaccard ≥ the 0.6 clustering threshold).
+    await writePlaybook(env.MUSE_PLAYBOOK_FILE!, [
+      probationDup("p1", "Monday standup moved to nine thirty in the morning"),
+      probationDup("p2", "Monday standup moved to nine thirty in the morning now")
+    ]);
+  };
+
+  it("merges near-duplicate PROBATION strategies into ONE that STAYS on probation (never auto-graduates), removing the originals", async () => {
+    const env = tmpEnv();
+    env.MUSE_SELFLEARN_ENABLED = "true";
+    await seedDup(env);
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      consolidateMerge: fakeMerge, consolidateValidate: fakeAccept, env, registry, resolveFollowupModel: async () => fakeFollowupModel()
+    });
+
+    expect(res.stdout).toMatch(/consolidate: merged 2 near-duplicate pending learning/);
+    const after = await readPlaybook(env.MUSE_PLAYBOOK_FILE!);
+    expect(after).toHaveLength(1); // 2 originals removed, 1 merged recorded
+    expect(after[0]?.text).toBe("Monday standup is at 9:30am (consolidated).");
+    expect(after[0]?.probation).toBe(true); // SAFETY: merged stays on probation — NO autonomous graduation
+  });
+
+  it("SAFETY: never touches GRADUATED (non-probation) strategies — only pending learnings are auto-consolidated", async () => {
+    const env = tmpEnv();
+    env.MUSE_SELFLEARN_ENABLED = "true";
+    await writePlaybook(env.MUSE_PLAYBOOK_FILE!, [
+      { createdAt: "2026-01-01T00:00:00Z", id: "g1", reward: 2, text: "Keep emails under four sentences.", userId: "u1" },
+      { createdAt: "2026-01-01T00:00:00Z", id: "g2", reward: 2, text: "Keep every email to four sentences or fewer.", userId: "u1" }
+    ]);
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      consolidateMerge: fakeMerge, consolidateValidate: fakeAccept, env, registry, resolveFollowupModel: async () => fakeFollowupModel()
+    });
+
+    expect(res.stdout).not.toContain("consolidate: merged");
+    expect(await readPlaybook(env.MUSE_PLAYBOOK_FILE!)).toHaveLength(2); // graduated bank untouched
+  });
+
+  it("BRAKE: a paused learner freezes the bank — no autonomous consolidate", async () => {
+    const env = tmpEnv();
+    env.MUSE_SELFLEARN_ENABLED = "true";
+    await seedDup(env);
+    await setLearningPaused(env.MUSE_LEARNING_PAUSE_FILE!, true);
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      consolidateMerge: fakeMerge, consolidateValidate: fakeAccept, env, registry, resolveFollowupModel: async () => fakeFollowupModel()
+    });
+
+    expect(res.stdout).not.toContain("consolidate: merged");
+    expect(await readPlaybook(env.MUSE_PLAYBOOK_FILE!)).toHaveLength(2); // untouched
+  });
+
+  it("held-out gate REJECTS a coverage-losing merge — originals are KEPT, nothing removed", async () => {
+    const env = tmpEnv();
+    env.MUSE_SELFLEARN_ENABLED = "true";
+    await seedDup(env);
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      consolidateMerge: fakeMerge, consolidateValidate: async () => ({ accept: false, reason: "lost coverage" }), env, registry, resolveFollowupModel: async () => fakeFollowupModel()
+    });
+
+    expect(res.stdout).not.toContain("consolidate: merged");
+    expect(await readPlaybook(env.MUSE_PLAYBOOK_FILE!)).toHaveLength(2); // rejected merge → originals kept
   });
 });
 
