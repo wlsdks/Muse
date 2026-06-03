@@ -2,16 +2,16 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { appendActionLog } from "@muse/mcp";
+import { appendActionLog, writeTasks } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { composeEveningRecap, deliverEveningRecapIfDue, registerRecapCommand, shouldFireRecap, type EveningRecapInput } from "./commands-recap.js";
+import { composeEveningRecap, deliverEveningRecapIfDue, gatherEveningRecap, registerRecapCommand, shouldFireRecap, type EveningRecapInput } from "./commands-recap.js";
 import type { ProgramIO } from "./program.js";
 
 describe("composeEveningRecap — deterministic evening digest", () => {
   const base = (over: Partial<EveningRecapInput> = {}): EveningRecapInput => ({
-    comingUp: [], now: new Date("2026-06-04T21:00:00"), openFollowups: 0, performedToday: [], sessionsToday: 0, ...over
+    comingUp: [], now: new Date("2026-06-04T21:00:00"), openFollowups: 0, performedToday: [], sessionsToday: 0, slipping: [], ...over
   });
 
   it("renders the retrospective (actions + sessions), what's coming up, and open follow-ups", () => {
@@ -40,6 +40,42 @@ describe("composeEveningRecap — deterministic evening digest", () => {
     const out = composeEveningRecap(base({ performedToday: Array.from({ length: 11 }, (_, i) => `action ${i.toString()}`) }));
     expect(out).toContain("Today you got done (11)");
     expect(out).toContain("…and 3 more");
+  });
+
+  it("surfaces SLIPPING items (overdue/missed) — the absence/anomaly signal", () => {
+    const out = composeEveningRecap(base({ slipping: ["Pay rent — was due Jun 1", "Call dentist — was due Jun 3 2:00 PM"] }));
+    expect(out).toContain("Slipping — expected by now, not done (2)");
+    expect(out).toContain("⚠ Pay rent — was due Jun 1");
+  });
+
+  it("omits the Slipping section when nothing is overdue", () => {
+    expect(composeEveningRecap(base({ performedToday: ["x"] }))).not.toContain("Slipping");
+  });
+});
+
+describe("gatherEveningRecap — overdue detection (the absence signal)", () => {
+  it("flags an OPEN task past its dueAt as slipping; ignores a future-due open task and a done task", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-recap-gather-"));
+    const tasksFile = join(dir, "tasks.json");
+    const now = new Date("2026-06-04T21:00:00");
+    const past = new Date(now.getTime() - 3 * 86_400_000).toISOString();
+    const future = new Date(now.getTime() + 3 * 86_400_000).toISOString();
+    await writeTasks(tasksFile, [
+      { createdAt: past, dueAt: past, id: "t1", status: "open", title: "Pay rent" },
+      { createdAt: past, dueAt: future, id: "t2", status: "open", title: "Future thing" },
+      { completedAt: now.toISOString(), createdAt: past, dueAt: past, id: "t3", status: "done", title: "Done thing" }
+    ]);
+    const env: Record<string, string | undefined> = {
+      MUSE_ACTION_LOG_FILE: join(dir, "a.json"),
+      MUSE_EPISODES_FILE: join(dir, "e.json"),
+      MUSE_FOLLOWUPS_FILE: join(dir, "f.json"),
+      MUSE_REMINDERS_FILE: join(dir, "r.json"),
+      MUSE_TASKS_FILE: tasksFile
+    };
+    const input = await gatherEveningRecap(env, now);
+    expect(input.slipping.some((s) => s.includes("Pay rent"))).toBe(true);
+    expect(input.slipping.some((s) => s.includes("Future thing"))).toBe(false);
+    expect(input.slipping.some((s) => s.includes("Done thing"))).toBe(false);
   });
 });
 
@@ -99,7 +135,7 @@ describe("shouldFireRecap — once-a-day evening gate (pure)", () => {
 
 describe("deliverEveningRecapIfDue — proactive fire + dedup (pure deps)", () => {
   const sampleInput: EveningRecapInput = {
-    comingUp: [], now: new Date("2026-06-04T21:30:00"), openFollowups: 0, performedToday: ["did a thing"], sessionsToday: 1
+    comingUp: [], now: new Date("2026-06-04T21:30:00"), openFollowups: 0, performedToday: ["did a thing"], sessionsToday: 1, slipping: []
   };
   it("fires when due: composes, sends, and records the fire", async () => {
     const sent: string[] = [];

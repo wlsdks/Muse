@@ -1,5 +1,5 @@
-import { resolveActionLogFile, resolveEpisodesFile, resolveFollowupsFile, resolveRemindersFile } from "@muse/autoconfigure";
-import { readActionLog, readEpisodes, readFollowups, readReminders } from "@muse/mcp";
+import { resolveActionLogFile, resolveEpisodesFile, resolveFollowupsFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { readActionLog, readEpisodes, readFollowups, readReminders, readTasks } from "@muse/mcp";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
@@ -26,6 +26,12 @@ export interface EveningRecapInput {
   readonly sessionsToday: number;
   /** "thing — due <time>" lines for reminders due in the next 24h. */
   readonly comingUp: readonly string[];
+  /**
+   * SLIPPING — the absence/anomaly signal: things that were expected by now and
+   * did NOT happen (open tasks past their dueAt, reminders still pending past
+   * their dueAt). "<title> — was due <when>" lines.
+   */
+  readonly slipping: readonly string[];
   readonly openFollowups: number;
 }
 
@@ -54,6 +60,18 @@ export function composeEveningRecap(input: EveningRecapInput): string {
     lines.push("", "Quiet day — nothing logged yet.");
   }
 
+  // Absence/anomaly: what was expected by now but hasn't happened — the heads-up
+  // a passive list never gives ("you usually have this done").
+  if (input.slipping.length > 0) {
+    lines.push("", `⚠️  Slipping — expected by now, not done (${input.slipping.length.toString()}):`);
+    for (const item of input.slipping.slice(0, 8)) {
+      lines.push(`  ⚠ ${item}`);
+    }
+    if (input.slipping.length > 8) {
+      lines.push(`  …and ${(input.slipping.length - 8).toString()} more`);
+    }
+  }
+
   if (input.comingUp.length > 0) {
     lines.push("", "Coming up (next 24h):");
     for (const item of input.comingUp.slice(0, 8)) {
@@ -78,7 +96,10 @@ export async function gatherEveningRecap(
   const performedToday: string[] = [];
   let sessionsToday = 0;
   const comingUp: string[] = [];
+  const slipping: string[] = [];
   let openFollowups = 0;
+  const shortDate = (d: Date): string => d.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+  const shortTime = (d: Date): string => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   try {
     for (const entry of await readActionLog(resolveActionLogFile(env))) {
       const when = new Date(entry.when);
@@ -98,15 +119,32 @@ export async function gatherEveningRecap(
   try {
     for (const reminder of await readReminders(resolveRemindersFile(env))) {
       const due = new Date(reminder.dueAt);
-      if (reminder.status === "pending" && !Number.isNaN(due.getTime()) && due >= now && due <= horizon) {
-        comingUp.push(`${reminder.text} — due ${due.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
+      if (reminder.status !== "pending" || Number.isNaN(due.getTime())) {
+        continue;
+      }
+      if (due >= now && due <= horizon) {
+        comingUp.push(`${reminder.text} — due ${shortTime(due)}`);
+      } else if (due < now) {
+        // Pending past its due time = an expected thing that didn't happen.
+        slipping.push(`${reminder.text} — was due ${shortDate(due)} ${shortTime(due)}`);
+      }
+    }
+  } catch { /* fail-soft */ }
+  try {
+    for (const task of await readTasks(resolveTasksFile(env))) {
+      if (task.status !== "open" || task.dueAt === undefined) {
+        continue;
+      }
+      const due = new Date(task.dueAt);
+      if (!Number.isNaN(due.getTime()) && due < now) {
+        slipping.push(`${task.title} — was due ${shortDate(due)}`);
       }
     }
   } catch { /* fail-soft */ }
   try {
     openFollowups = (await readFollowups(resolveFollowupsFile(env))).length;
   } catch { /* fail-soft */ }
-  return { comingUp, now, openFollowups, performedToday, sessionsToday };
+  return { comingUp, now, openFollowups, performedToday, sessionsToday, slipping };
 }
 
 /**
@@ -155,7 +193,7 @@ export function registerRecapCommand(program: Command, io: ProgramIO): void {
     .action(async (options: { readonly json?: boolean }) => {
       const input = await gatherEveningRecap(process.env as Record<string, string | undefined>, new Date());
       if (options.json === true) {
-        io.stdout(`${JSON.stringify({ comingUp: input.comingUp, openFollowups: input.openFollowups, performedToday: input.performedToday, sessionsToday: input.sessionsToday })}\n`);
+        io.stdout(`${JSON.stringify({ comingUp: input.comingUp, openFollowups: input.openFollowups, performedToday: input.performedToday, sessionsToday: input.sessionsToday, slipping: input.slipping })}\n`);
         return;
       }
       io.stdout(`${composeEveningRecap(input)}\n`);
