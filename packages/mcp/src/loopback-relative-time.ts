@@ -137,11 +137,52 @@ function resolveFractionalDurationMs(phrase: string): number | undefined {
   return undefined;
 }
 
-function standaloneDayPartHour(phrase: string): number | undefined {
-  const key = phrase === "tonight"
-    ? "night"
-    : /^(?:this\s+)?(morning|afternoon|evening|night)$/u.exec(phrase)?.[1];
-  return key === undefined ? undefined : DAY_PART_HOURS[key];
+/**
+ * Map a day-part word + a clock spec to a 24h time, letting the day-part supply
+ * the AM/PM when the user wrote only a bare 1-12 hour: "morning at 8" → 08:00,
+ * "evening at 6" → 18:00, "tonight at 8" → 20:00 (night), "night at 12" →
+ * midnight. An EXPLICIT am/pm or HH:MM (or a 13-23 hour) is honoured as written —
+ * the day-part bias only fills the gap a bare hour leaves.
+ */
+function dayPartBiasedTime(part: string, timeSpec: string): { hour: number; minute: number } | undefined {
+  const cleaned = timeSpec.trim().toLowerCase();
+  const bareHour = /^(\d{1,2})$/u.exec(cleaned);
+  if (bareHour) {
+    const raw = Number.parseInt(bareHour[1] ?? "", 10);
+    if (!Number.isFinite(raw) || raw < 0 || raw > 23) return undefined;
+    if (raw < 1 || raw > 12) {
+      return { hour: raw, minute: 0 }; // already a 24h hour ("evening at 20")
+    }
+    const pm = part === "afternoon" || part === "evening" || part === "night";
+    if (!pm) {
+      return { hour: raw === 12 ? 0 : raw, minute: 0 }; // morning
+    }
+    if (part === "night" && raw === 12) {
+      return { hour: 0, minute: 0 }; // "tonight at 12" → midnight
+    }
+    return { hour: raw === 12 ? 12 : raw + 12, minute: 0 };
+  }
+  const explicit = parseTimeOfDay(cleaned); // am/pm, HH:MM, noon/midnight — honour as written
+  return explicit === "invalid" ? undefined : explicit;
+}
+
+/**
+ * A standalone day-part phrase, optionally with a clock time, → that time TODAY:
+ * "tonight" / "this evening" → the slot's default hour; "tonight at 8" → 20:00;
+ * "this morning at 8" → 08:00. A day-headed form ("tomorrow morning at 9") is
+ * handled by the dayPattern + parseTimeOfDay path, so the two never overlap.
+ */
+function standaloneDayPartTime(phrase: string): { hour: number; minute: number } | undefined {
+  const m = /^(?:(tonight)|(?:this\s+)?(morning|afternoon|evening|night))(?:\s+(?:at\s+)?(.+))?$/u.exec(phrase);
+  if (!m) {
+    return undefined;
+  }
+  const part = m[1] ? "night" : (m[2] ?? "");
+  const timeSpec = m[3];
+  if (timeSpec === undefined) {
+    return { hour: DAY_PART_HOURS[part] ?? DEFAULT_HOUR, minute: 0 };
+  }
+  return dayPartBiasedTime(part, timeSpec);
 }
 
 const MONTHS: Record<string, number> = {
@@ -277,10 +318,10 @@ export function resolveRelativeTimePhrase(phrase: string, now: () => Date): Date
     return finiteDate(new Date(reference.getTime() + fractionalMs));
   }
 
-  const standaloneHour = standaloneDayPartHour(trimmed);
-  if (standaloneHour !== undefined) {
+  const standaloneTime = standaloneDayPartTime(trimmed);
+  if (standaloneTime !== undefined) {
     const day = startOfDay(reference);
-    day.setHours(standaloneHour, 0, 0, 0);
+    day.setHours(standaloneTime.hour, standaloneTime.minute, 0, 0);
     return finiteDate(day);
   }
 
@@ -430,6 +471,12 @@ function parseTimeOfDay(spec: string | undefined): { hour: number; minute: numbe
   const dayPartHour = DAY_PART_HOURS[cleaned];
   if (dayPartHour !== undefined) {
     return { hour: dayPartHour, minute: 0 };
+  }
+  // Day-part + an explicit clock time ("tomorrow morning at 9", "monday evening
+  // at 6") — the day-part biases a bare 1-12 hour to AM/PM.
+  const dayPartTimeMatch = /^(morning|afternoon|evening|night)\s+(?:at\s+)?(.+)$/u.exec(cleaned);
+  if (dayPartTimeMatch) {
+    return dayPartBiasedTime(dayPartTimeMatch[1] ?? "", dayPartTimeMatch[2] ?? "") ?? "invalid";
   }
   const ampmMatch = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/u.exec(cleaned);
   if (ampmMatch) {

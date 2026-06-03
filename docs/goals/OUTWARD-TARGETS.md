@@ -470,6 +470,29 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   18:30) and 오후 3시 still → 15:00. mcp 167 files / 1320 tests + cli remind/tasks/
   calendar 73 + `pnpm lint` 0/0. (66b10f17)
 
+- [x] **P40-9 A day-part word + a specific hour parses in English too ("tonight at
+  8", "tomorrow morning at 9").** The English counterpart of P40-8: a colloquial
+  day-part word combined with an explicit hour was REJECTED — `muse remind add
+  "tonight at 8"`, `"this evening at 7"`, `"tomorrow morning at 9"`, `"tomorrow
+  evening at 6"`, `"tomorrow night at 10"`, `"this morning at 8"` ALL failed with
+  "dueAt must be … a supported relative phrase", though the bare `"tomorrow morning"`
+  worked. Root: the standalone path only matched a bare day-part ("tonight" alone),
+  the dayPattern mis-routed "tonight at 8" into the weekday branch, and
+  `parseTimeOfDay` had no case for "morning at 9". Fixed in
+  packages/mcp/src/loopback-relative-time.ts: a new `dayPartBiasedTime(part, spec)`
+  lets the day-part supply AM/PM for a bare 1-12 hour (morning → AM;
+  afternoon/evening/night → PM; "tonight at 12" → midnight), wired through a new
+  `standaloneDayPartTime` (today, e.g. "this morning at 8" → 08:00) and a new
+  day-part branch in `parseTimeOfDay` (day-headed, e.g. "tomorrow evening at 6"). An
+  EXPLICIT am/pm or HH:MM is still honoured over the bias. Proof: 6 new parser unit
+  tests (tonight/evening → PM; this morning → AM; tomorrow morning/evening/night +
+  the +1-day check; weekday + day-part + hour; explicit 8pm honoured + "tonight at
+  12" = midnight; bare day-part unregressed) + the full mcp suite green (1326) + cli
+  remind/tasks/calendar 73 + LIVE: 11 phrasings resolve to the right local time
+  ("tonight at 8" → 20:00, "tomorrow morning at 9" → next-day 09:00, "tonight at
+  8pm" → 20:00, "tonight at 12" → 00:00) with "at 5pm" / "tomorrow morning"
+  unregressed. mcp 167 files / 1326 tests + `pnpm lint` 0/0. (this commit)
+
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
 closed its deepest hole, and became constructive. Each verified live on
@@ -1374,7 +1397,7 @@ honest-refusal mock-corpus check where applicable.
   a contact and no notes the on-ramp is GONE and the answer + "👤 from your contacts"
   receipt show; with only a remembered fact (`muse remember "my name is Jinan"`) the
   on-ramp is GONE and "what is my name?" answers from memory; a brand-new empty HOME
-  still shows the on-ramp. cli 167 files / 1778 tests + `pnpm lint` 0/0. (this commit)
+  still shows the on-ramp. cli 167 files / 1778 tests + `pnpm lint` 0/0. (a4aba92b)
 
 **P34 — The front door (loop-v2 headline: the moat is invisible without
 the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able

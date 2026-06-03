@@ -111,3 +111,38 @@ describe("resolveRelativeTimePhrase — colloquial Korean time-of-day words (아
     expect(resolveRelativeTimePhrase("오전 9시", now)!.getHours()).toBe(9);
   });
 });
+
+describe("resolveRelativeTimePhrase — English day-part word + a specific hour (AM/PM from the word)", () => {
+  it("standalone 'tonight at 8' / 'this evening at 7' read as PM today", () => {
+    expect(resolveRelativeTimePhrase("tonight at 8", now)!.getHours()).toBe(20);
+    expect(resolveRelativeTimePhrase("this evening at 7", now)!.getHours()).toBe(19);
+  });
+
+  it("'this morning at 8' reads as AM today", () => {
+    expect(resolveRelativeTimePhrase("this morning at 8", now)!.getHours()).toBe(8);
+  });
+
+  it("day-headed 'tomorrow morning at 9' / 'tomorrow evening at 6' / 'tomorrow night at 10'", () => {
+    const morning = resolveRelativeTimePhrase("tomorrow morning at 9", now)!;
+    expect(morning.getHours()).toBe(9);
+    expect(resolveRelativeTimePhrase("tomorrow evening at 6", now)!.getHours()).toBe(18);
+    expect(resolveRelativeTimePhrase("tomorrow night at 10", now)!.getHours()).toBe(22);
+    // about a day ahead of the same time anchored to today
+    const todayMorning = resolveRelativeTimePhrase("this morning at 9", now)!;
+    expect(Math.round((morning.getTime() - todayMorning.getTime()) / 86_400_000)).toBe(1);
+  });
+
+  it("a weekday + day-part + hour works ('monday morning at 9')", () => {
+    expect(resolveRelativeTimePhrase("monday morning at 9", now)!.getHours()).toBe(9);
+  });
+
+  it("an EXPLICIT am/pm is honoured over the day-part bias, and 'tonight at 12' is midnight", () => {
+    expect(resolveRelativeTimePhrase("tonight at 8pm", now)!.getHours()).toBe(20);
+    expect(resolveRelativeTimePhrase("tonight at 12", now)!.getHours()).toBe(0);
+  });
+
+  it("a bare day-part still resolves to its default hour (no regression)", () => {
+    expect(resolveRelativeTimePhrase("tomorrow morning", now)!.getHours()).toBe(9);
+    expect(resolveRelativeTimePhrase("this evening", now)!.getHours()).toBe(18);
+  });
+});

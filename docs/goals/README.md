@@ -871,8 +871,7 @@ Append one line when a discovery path is evaluated and deferred:
   the deterministic `dropModelAssertedValues` provenance gate, dropping a value the
   model asserted that the user never said; proven live on qwen3:8b, 11/11 battery.)
 - English "tonight at 8" / "this evening at 8" (day-part word + specific hour) — iter
-  (P40-8) — deferred: P40-8 fixed the Korean colloquial time-of-day words; the English
-  counterpart of "tonight"/"this evening"/"this morning" + a specific hour still falls
-  through (standalone "tonight" works, "tonight at 8" doesn't). A clean follow-up in the
-  same `resolveRelativeTimePhrase` English branch (map the day-part word to an AM/PM bias
-  for the bare hour). Not done here to keep the slice focused on the native-language fix.
+  (P40-8) — **RESOLVED in P40-9 (this commit):** `dayPartBiasedTime` maps the day-part
+  word to an AM/PM bias for a bare hour, wired through `standaloneDayPartTime` (today)
+  and a new `parseTimeOfDay` day-part branch (day-headed). 6 new tests + 11 live
+  phrasings green. Don't re-mine.
