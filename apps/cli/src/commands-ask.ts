@@ -986,6 +986,25 @@ export async function notesCorpusFileCount(dir: string): Promise<number> {
   return count;
 }
 
+/**
+ * Whether this query EXPLICITLY supplied its own grounding source — a `--file`,
+ * `--url`, `--git`, or `--shell`. When it did, the empty-notes on-ramp is
+ * irrelevant noise (the user told Muse exactly what to ground on). Pure + exported.
+ */
+export function queryHasAdHocGrounding(options: {
+  readonly file?: string;
+  readonly url?: string;
+  readonly git?: boolean;
+  readonly shell?: boolean;
+}): boolean {
+  return Boolean(
+    (options.file && options.file.trim().length > 0)
+    || (options.url && options.url.trim().length > 0)
+    || options.git
+    || options.shell
+  );
+}
+
 export function corpusOnboardingHint(noteFileCount: number, hasOtherPersonalData = false): string | undefined {
   // The first-run notes on-ramp. Suppressed once the user has notes OR any other
   // personal data (contacts / tasks / reminders / remembered facts) — otherwise
@@ -1036,6 +1055,10 @@ export async function userHasOtherPersonalData(
   } catch { /* skip */ }
   try {
     if ((await readReminders(resolveRemindersFile(env as MuseEnvironment))).length > 0) return true;
+  } catch { /* skip */ }
+  try {
+    // A continuous-companion user with past sessions (but no notes) isn't "empty".
+    if ((await readEpisodes(resolveEpisodesFile(env as MuseEnvironment))).some((e) => e.userId === userId)) return true;
   } catch { /* skip */ }
   return false;
 }
@@ -1484,12 +1507,16 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         return;
       }
 
-      // Only probe the other personal stores when notes ARE empty (the only case
-      // the hint could fire) — so a notes-having user pays no extra reads.
-      const hasOtherPersonalData = noteFileCount === 0
+      // This query EXPLICITLY supplied its own grounding (a file, a URL, git, or
+      // shell history) — the "add notes" on-ramp is irrelevant noise then.
+      const hasAdHocGrounding = queryHasAdHocGrounding(options);
+      // Only probe the other personal stores when notes ARE empty AND no ad-hoc
+      // source was given (the only case the hint could fire) — so a notes-having
+      // or source-supplying user pays no extra reads.
+      const hasOtherPersonalData = !hasAdHocGrounding && noteFileCount === 0
         ? await userHasOtherPersonalData(userKey, process.env as Record<string, string | undefined>)
         : false;
-      const onboardingHint = corpusOnboardingHint(noteFileCount, hasOtherPersonalData);
+      const onboardingHint = corpusOnboardingHint(noteFileCount, hasOtherPersonalData || hasAdHocGrounding);
       if (onboardingHint) {
         io.stderr(`${onboardingHint}\n`);
       }

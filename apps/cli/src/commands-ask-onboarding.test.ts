@@ -4,7 +4,26 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { corpusOnboardingHint, notesCorpusFileCount } from "./commands-ask.js";
+import { corpusOnboardingHint, notesCorpusFileCount, queryHasAdHocGrounding } from "./commands-ask.js";
+
+describe("queryHasAdHocGrounding — a query that supplies its own source suppresses the notes on-ramp", () => {
+  it("is true when --file / --url / --git / --shell is given", () => {
+    expect(queryHasAdHocGrounding({ file: "/x/resume.pdf" })).toBe(true);
+    expect(queryHasAdHocGrounding({ url: "https://example.com" })).toBe(true);
+    expect(queryHasAdHocGrounding({ git: true })).toBe(true);
+    expect(queryHasAdHocGrounding({ shell: true })).toBe(true);
+  });
+
+  it("is false for a plain query (or a blank/whitespace flag)", () => {
+    expect(queryHasAdHocGrounding({})).toBe(false);
+    expect(queryHasAdHocGrounding({ file: "   ", url: "" })).toBe(false);
+  });
+
+  it("suppresses the hint via corpusOnboardingHint when fed as hasOtherPersonalData", () => {
+    expect(corpusOnboardingHint(0, queryHasAdHocGrounding({ url: "https://example.com" }))).toBeUndefined();
+    expect(corpusOnboardingHint(0, queryHasAdHocGrounding({}))).toBeDefined();
+  });
+});
 
 describe("corpusOnboardingHint — first-run on-ramp for an empty corpus", () => {
   it("returns a hint naming the concrete ways to add notes when the corpus is empty", () => {

@@ -395,7 +395,7 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   documentation examples without needing permission [from example.com]" with the
   receipt, an off-topic "CEO's phone number?" refuses, and an unresolvable host
   prints "could not fetch --url … (host did not resolve …) — I won't ground on it".
-  cli 167 files / 1784 tests + `pnpm lint` 0/0. (this commit)
+  cli 167 files / 1784 tests + `pnpm lint` 0/0. (b80a3f83)
 
 **P40 — Actuation usability: Muse understands natural-language dates.** The
 "do" side is only as good as the words a user actually types.
@@ -1487,6 +1487,26 @@ honest-refusal mock-corpus check where applicable.
   receipt show; with only a remembered fact (`muse remember "my name is Jinan"`) the
   on-ramp is GONE and "what is my name?" answers from memory; a brand-new empty HOME
   still shows the on-ramp. cli 167 files / 1778 tests + `pnpm lint` 0/0. (a4aba92b)
+
+- [x] **P35-10 The "empty notes" on-ramp also stays silent when the query SUPPLIES
+  its own grounding (`--file`/`--url`/`--git`/`--shell`) or the user has past
+  sessions.** Observed while falsifying P37-18: `muse ask --url https://example.com
+  "…"` answered correctly FROM the page yet still printed "(your notes corpus is
+  empty — Muse only answers from notes you've added …)" — nagging a user who told
+  Muse EXACTLY what to ground on, and falsely (the answer came from the URL). Same
+  felt-honesty class as P35-9, which only checked the persistent stores
+  (memory/contacts/tasks/reminders) and missed (a) a per-query ad-hoc source and (b)
+  a continuous-companion user with episodes. Fixed in apps/cli/src/commands-ask.ts:
+  a new exported `queryHasAdHocGrounding(options)` (true for a non-blank
+  `--file`/`--url` or `--git`/`--shell`) suppresses the on-ramp for this query, and
+  `userHasOtherPersonalData` now also counts past sessions (episodes for the user).
+  A genuinely empty Muse with a plain query still gets the on-ramp. Proof: 3 new
+  unit tests (queryHasAdHocGrounding true for each flag, false for a plain/blank
+  query, and it suppresses corpusOnboardingHint) + LIVE on qwen3:8b: `--url
+  example.com` and `--file doc.txt` (no notes) answer with NO on-ramp; an
+  episodes-only user's "what did we discuss?" has NO on-ramp; a plain off-corpus
+  query on an empty HOME still shows it. cli 167 files / 1787 tests + `pnpm lint`
+  0/0. (this commit)
 
 **P34 — The front door (loop-v2 headline: the moat is invisible without
 the door).** Per loop-v2 B0 §3, a privacy-bound first-time user must be able
