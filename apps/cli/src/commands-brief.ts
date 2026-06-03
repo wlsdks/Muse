@@ -35,6 +35,8 @@ import {
 } from "@muse/autoconfigure";
 import type { CalendarEvent } from "@muse/calendar";
 import { formatBirthdayBriefLine, readCheckins, readContacts, readProactiveHistory, readReminders, resolveUpcomingBirthdays, selectDueCheckins, type PersistedCheckin, type PersistedReminder } from "@muse/mcp";
+
+import { resolveTodayWeatherLine } from "./commands-today.js";
 import type { Command } from "commander";
 
 import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
@@ -399,6 +401,14 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         // contacts file missing or unreadable — brief still works
       }
 
+      // Weather for the user's configured home — a morning JARVIS that doesn't
+      // tell you it's about to rain is incomplete. OPT-IN (MUSE_WEATHER_LOCATION):
+      // no location ⇒ no lookup ⇒ no egress, so a strict-local user is unaffected.
+      // Open-Meteo (free, no key — a public weather DATA api, not a cloud LLM, like
+      // `muse search`); fail-soft (a lookup blip never breaks the brief). Same
+      // helper `muse today` uses, so the two surfaces agree.
+      const weatherLine = await resolveTodayWeatherLine(process.env as Record<string, string | undefined>);
+
       const nowIso = now.toISOString();
       const factSheet = [
         `Today: ${formatLocalDate(nowIso)} ${now.toLocaleDateString("en-US", { weekday: "long" })} ${formatLocalTime(nowIso)} local`,
@@ -422,6 +432,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         `Follow-ups you're due on (things the user said they'd do): ${dueCheckins.length.toString()}`,
         ...dueCheckins.map((c) => `  · ${c.commitment} (mentioned ${formatLocalDate(c.createdAt)})`),
         ...(birthdayLine ? [`Upcoming birthdays (next 7 days): ${birthdayLine}`] : []),
+        ...(weatherLine ? [`Weather (your area): ${weatherLine}`] : []),
         `Recent proactive notices (last 5): ${recentHistory.length.toString()}`,
         ...recentHistory.slice(-3).map((entry) => {
           const fired = entry.firedAtIso ? formatLocalDateTime(entry.firedAtIso) : "?";
@@ -440,6 +451,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         "Otherwise lead with the most imminent thing (a task due soon, or a noteworthy recent notice).",
         "If there are follow-ups the user is due on (things they said they'd do), gently surface one — a time-sensitive personal commitment matters more than a routine task.",
         "If a contact's birthday is TODAY or TOMORROW (see 'Upcoming birthdays'), mention it warmly — a birthday you can still act on matters; only the named people in the fact sheet, never invent one.",
+        "If a 'Weather (your area)' line is present, work it in briefly — and if rain/snow is coming, suggest preparing (an umbrella, leave early); never invent weather not in the fact sheet.",
         "If nothing is imminent, say so briefly and suggest one useful action.",
         knownUserName && knownUserName.length > 0
           ? `Address the user as "${knownUserName}".`

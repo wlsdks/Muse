@@ -2308,6 +2308,25 @@ honest-refusal mock-corpus check where applicable.
   morning. There are no immediate tasks or events, but Dana Wu's birthday is
   tomorrow — a perfect opportunity to send a thoughtful message." `80ea512a`.
 
+- [x] **P35-17 Your morning brief now tells you the WEATHER (+ a rain heads-up) —
+  the classic JARVIS morning feature.** `muse today` already showed weather (Open-
+  Meteo, free, no key, keyed on `MUSE_WEATHER_LOCATION`), but `muse brief` — the
+  morning summary read first thing — didn't. The brief now reuses the SAME
+  `resolveTodayWeatherLine` helper (so the two surfaces agree), adding a "Weather
+  (your area)" fact-sheet line + a prompt instruction to work it in and, if rain/
+  snow is coming, suggest preparing (an umbrella, leave early). OPT-IN +
+  LOCAL-SAFE: no `MUSE_WEATHER_LOCATION` ⇒ no lookup ⇒ no egress (a strict-local
+  user is unaffected); Open-Meteo is a public weather DATA api (not a cloud LLM/
+  voice — outside the local-only model gate, like `muse search`/`--url`). Fail-soft
+  (a lookup blip never breaks the brief); no fabrication (the model is told never
+  to invent weather not in the fact sheet). Proven by the existing
+  `resolveTodayWeatherLine` / weather-format mcp+cli tests + the full @muse/cli
+  suite green (173/1892), `pnpm lint` 0/0, and a LIVE `muse brief` on qwen3:8b with
+  `MUSE_WEATHER_LOCATION=Seoul`: "오늘 Seoul의 날씨는 주로 맑지만 오후 11시경에 비가
+  올 가능성이 있으니 우산을 준비하시거나 일찍 이동하시길 추천드려요" (the live
+  Open-Meteo line — "mainly clear, 19°C … rain likely ~11:00" — worked into the
+  brief, in the user's language). `d2dddb23`.
+
 - [x] **P35-1 Citation-as-voice (B2 S1, build-first).** `muse ask` renders
   each cited note as a memory — "📎 From your notes … • from your note of
   <date> — '<verbatim snippet>'" + the openable path — instead of a bare
