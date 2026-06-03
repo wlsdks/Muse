@@ -1018,11 +1018,12 @@ describe("muse daemon — unattended self-learning tick (P43-1 slice 1)", () => 
   const fakeDistill: NonNullable<DaemonHelpers["selfLearnDistill"]> = async () =>
     ({ tag: "scheduling", text: "Monday standup is at 9:30am, not 10am." });
 
-  it("distills a queued correction into a strategy with NO manual command, then drains the queue", async () => {
+  it("distills a queued correction into a strategy with NO manual command, drains the queue, AND tells the user on their channel", async () => {
     const env = tmpEnv();
     env.MUSE_SELFLEARN_ENABLED = "true";
     await seedCorrection(env);
-    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
 
     const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
       env, registry, resolveFollowupModel: async () => fakeFollowupModel(), selfLearnDistill: fakeDistill
@@ -1030,6 +1031,12 @@ describe("muse daemon — unattended self-learning tick (P43-1 slice 1)", () => 
 
     expect(res.stdout).toMatch(/learned: \+1 strategy from your corrections/);
     expect(await readPendingLearnEvents(env.MUSE_LEARN_QUEUE_FILE!)).toHaveLength(0); // consumed
+    // FELT (P43-1): the autonomous learning is DELIVERED to the user's channel,
+    // not just the daemon console — and it's honest that nothing auto-applies.
+    const learnNotice = sent.find((m) => m.text.includes("Learned from your corrections"));
+    expect(learnNotice, "the daemon must surface its autonomous learning to the user").toBeDefined();
+    expect(learnNotice!.text).toContain("muse learned");
+    expect(learnNotice!.text).toContain("until you reinforce it");
   });
 
   it("BRAKE: learns nothing and leaves the queue intact when learning is paused", async () => {

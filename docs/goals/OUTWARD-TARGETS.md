@@ -141,11 +141,25 @@ P43 bullet is unbuilt.
   merged strategy STAYS on probation (never auto-graduates; the graduated/injected
   bank is never touched) — proven by a daemon test asserting the merged entry is
   `probation:true`, that graduated strategies are untouched, and that the pause
-  brake + held-out reject keep the bank intact. Remaining (honesty-sensitive):
-  autonomous GRADUATION stays bound to a positive user act (NOT built), and the
-  2-session live battery. Decomposition → `docs/goals/P43-close-the-loop.md`.
-  Bullet stays `[ ]` until the 2-session live battery proves an unattended signal
-  changes a later session._
+  brake + held-out reject keep the bank intact. Slice 4 (DELIVERED, `06421642`) —
+  the autonomous learning is now FELT: when the self-learn tick distills strategies
+  from your corrections, the daemon DELIVERS a notice to your channel ("Learned
+  from your corrections: I noted N strateg(y/ies) … review with `muse learned`
+  (nothing changes how I answer until you reinforce it)") — not just a daemon-stdout
+  line a background user never sees. SAFE: it only SURFACES the probation strategy,
+  never auto-applies it (the injection path is untouched); quiet-hours-gated +
+  fail-soft. Proven by a daemon test (the learning is delivered to the user's
+  channel, honest that nothing auto-applies) + a LIVE `muse daemon --once` on
+  qwen3:8b distilling a behaviour correction and delivering the notice. Remaining
+  (honesty-sensitive, HELD FOR HUMAN REVIEW per the decomposition): the injection-
+  path change that the FLIP needs — and note the sign-safe design makes the
+  ADDITIVE flip ("apply a graduated strategy, no manual command") unreachable (a
+  correction is a NEGATIVE signal so it never graduates; an explicit reinforce IS a
+  manual command), so the only flip path is the SUBTRACTIVE one (a correction decays
+  a contradicted injected strategy so a later session stops applying it) — a
+  decision for Jinan, since it autonomously alters what steers Muse's reasoning.
+  Decomposition → `docs/goals/P43-close-the-loop.md`. Bullet stays `[ ]` until the
+  2-session live battery proves an unattended signal changes a later session._
 - [x] **P43-2 Reliable carry-to-done.** A multi-step goal reaches a
   VERIFIED done: the plan-execute loop verifies each step's effect,
   replans on a failed/ambiguous step, and EVERY actuator (email /

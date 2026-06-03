@@ -907,7 +907,21 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
             pauseFile: resolveLearningPauseFile(e),
             ...(helpers.selfLearnDistill ? { distill: helpers.selfLearnDistill } : {})
           });
-          if (recorded > 0) io.stdout(`[${new Date(nowMs).toISOString()}] learned: +${recorded.toString()} strateg${recorded === 1 ? "y" : "ies"} from your corrections (see \`muse learned\`)\n`);
+          if (recorded > 0) {
+            io.stdout(`[${new Date(nowMs).toISOString()}] learned: +${recorded.toString()} strateg${recorded === 1 ? "y" : "ies"} from your corrections (see \`muse learned\`)\n`);
+            // FELT self-learning (P43-1): deliver the autonomous-learning event
+            // to the user's CHANNEL — not just this console they don't watch —
+            // so a background daemon's learning is PERCEIVED, not silent (loop-v2
+            // "felt self-learning"). Quiet-hours-gated + fail-soft like every
+            // notice. SAFE: the strategy stays PROBATION — this only SURFACES it,
+            // never auto-applies it (the honesty-sensitive injection path is
+            // untouched; nothing graduates without the user's own reinforce).
+            await noticeSink.deliver({
+              kind: "self-learn",
+              text: `I noted ${recorded.toString()} strateg${recorded === 1 ? "y" : "ies"} from how you've corrected me lately — review with \`muse learned\` (nothing changes how I answer until you reinforce it).`,
+              title: "Learned from your corrections"
+            });
+          }
         } catch { /* fail-soft — background learning must never break the daemon */ }
       };
 
