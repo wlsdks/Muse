@@ -40,3 +40,42 @@ describe("calendar loopback tools meet the one-shot tool-calling bar", () => {
     expect(props.startsAtIso.description ?? "").toMatch(/tomorrow 3pm|ISO/u);
   });
 });
+
+describe("calendar add result carries LOCAL-time fields so the model echoes the time you asked for, not the UTC ISO", () => {
+  // A registry whose createEvent echoes the parsed input back as the created event.
+  const echoRegistry = {
+    createEvent: async (_providerId: string, input: { startsAt: Date; endsAt: Date; allDay: boolean; title: string }) => ({
+      ...input, id: "e1", providerId: "local"
+    }),
+    deleteEvent: async () => undefined,
+    listEvents: async () => [],
+    updateEvent: async () => ({})
+  } as unknown as Parameters<typeof createCalendarMcpServer>[0]["registry"];
+
+  const addEvent = async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const server = createCalendarMcpServer({ registry: echoRegistry });
+    const add = server.tools.find((t) => t.name === "add")!;
+    const result = (await add.execute(args)) as { event?: Record<string, unknown> };
+    return result.event ?? {};
+  };
+
+  it("a TIMED event → startsAtLocal renders the LOCAL clock hour + AM/PM, not the bare UTC ISO", async () => {
+    const event = await addEvent({ title: "Dentist", startsAtIso: "2026-06-05T06:00:00.000Z", endsAtIso: "2026-06-05T07:00:00.000Z" });
+    const localHour = new Date("2026-06-05T06:00:00.000Z").getHours(); // KST 15 (3 PM) / UTC 6 (6 AM)
+    const hour12 = (localHour % 12) || 12;
+    const ampm = localHour < 12 ? "AM" : "PM";
+    expect(String(event["startsAtLocal"])).toContain(`${String(hour12)}:00`);
+    expect(String(event["startsAtLocal"])).toContain(ampm);
+    expect(String(event["startsAtLocal"])).not.toContain("T06:00");
+    expect(String(event["startsAtIso"])).toBe("2026-06-05T06:00:00.000Z"); // raw ISO still present for machine use
+    expect(String(event["endsAtLocal"])).toMatch(/AM|PM/u);
+  });
+
+  it("an ALL-DAY event → startsAtLocal is date-only (no misleading 12:00 AM)", async () => {
+    const event = await addEvent({ title: "Holiday", startsAtIso: "2026-06-05T00:00:00.000Z", allDay: true });
+    expect(String(event["startsAtLocal"])).not.toContain("AM");
+    expect(String(event["startsAtLocal"])).not.toContain("PM");
+    expect(String(event["startsAtLocal"])).not.toContain("T00:00");
+    expect(String(event["startsAtLocal"])).toMatch(/2026/u);
+  });
+});

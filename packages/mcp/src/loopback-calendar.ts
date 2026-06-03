@@ -7,6 +7,7 @@ import type {
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import { computeAvailability } from "./calendar-availability.js";
+import { formatDueLocal } from "./local-due-format.js";
 import { readBoolean, readString, readStringArray, errorMessage } from "./loopback-helpers.js";
 import type { LoopbackMcpServer } from "./loopback.js";
 import { resolveRelativeTimePhrase } from "./loopback-relative-time.js";
@@ -154,7 +155,8 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           "English: 'tomorrow 3pm', 'today at 14:30', 'in 2 hours', 'next Friday', 'next Monday at 9am'. " +
           "Korean: '내일 오후 3시', '오늘 14시 30분', '2시간 후', '다음 주 금요일', '다음 주 월요일 오전 9시'. " +
           "Pass the user's natural-language phrase directly (in their own language) — the server resolves it against the current local time. " +
-          "If `providerId` is omitted, the primary (first registered) provider is used.",
+          "If `providerId` is omitted, the primary (first registered) provider is used. " +
+          "When you confirm the event back to the user, state the time using the result's `startsAtLocal` / `endsAtLocal` fields (the local-timezone time, e.g. 'Fri, Jun 5, 2026, 3:00 PM'), NEVER the raw ISO `startsAtIso` / `endsAtIso`, which are UTC and read back the wrong hour.",
         execute: async (args): Promise<JsonObject> => {
           const title = readString(args, "title")?.trim();
           const startsAtIso = readString(args, "startsAtIso");
@@ -286,13 +288,24 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
   };
 }
 
+// The local-timezone rendering the chat model should echo. An all-day event
+// has no meaningful clock time (its startsAt is local midnight), so show the
+// date only — otherwise `formatDueLocal` would read it back as "12:00 AM".
+function eventLocal(when: Date, allDay: boolean): string {
+  return allDay
+    ? when.toLocaleDateString("en-US", { weekday: "short", year: "numeric", month: "short", day: "numeric" })
+    : formatDueLocal(when.toISOString());
+}
+
 function serializeEvent(event: CalendarEvent): JsonObject {
   return {
     allDay: event.allDay,
     endsAtIso: event.endsAt.toISOString(),
+    endsAtLocal: eventLocal(event.endsAt, event.allDay),
     id: event.id,
     providerId: event.providerId,
     startsAtIso: event.startsAt.toISOString(),
+    startsAtLocal: eventLocal(event.startsAt, event.allDay),
     title: event.title,
     ...(event.location ? { location: event.location } : {}),
     ...(event.notes ? { notes: event.notes } : {}),

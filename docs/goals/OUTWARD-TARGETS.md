@@ -1256,6 +1256,29 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   "Fri, Jun 5, 2026, 3:00 PM local time" (was "6:00 AM"). @muse/mcp 173 files / 1463
   tests + `pnpm lint` 0/0. (efcd5cb2)
 
+- [x] **P40-15 The CALENDAR event confirmation states a real local time too —
+  completes the write-actuator family (reminder + task + calendar).** Probing the
+  agent calendar actuator found the same class of defect, even uglier: `muse ask
+  --with-tools "add a dentist appointment to my calendar for tomorrow at 3pm"` STORED
+  the event correctly (3 PM local) but confirmed "Start Time: 2026-06-05T06:00:00.000Z"
+  — the raw UTC ISO TIMESTAMP echoed verbatim (the reminder/task cases at least showed
+  "6:00 AM"; the calendar showed the full machine ISO). The `muse.calendar.*` tool
+  results serialized only `startsAtIso`/`endsAtIso` (raw UTC), so the model parroted
+  them. Fixed by reusing the proven P40-14 `formatDueLocal` helper: `serializeEvent`
+  (shared by `add`/`list`/`update`) now also emits `startsAtLocal`/`endsAtLocal` in the
+  server's local timezone, with an ALL-DAY carve-out (date-only, no misleading
+  "12:00 AM"), plus a `muse.calendar.add` description anchor telling the model to confirm
+  with the `*Local` fields, never the raw ISO. Verified: 2 new tz-robust unit tests over
+  the REAL add tool result (a TIMED event → `startsAtLocal` renders the LOCAL clock hour
+  + AM/PM, not the bare UTC ISO, while `startsAtIso` is still present for machine use; an
+  ALL-DAY event → date-only, no AM/PM) passing in BOTH TZ=Asia/Seoul and TZ=UTC + a NEW
+  PERMANENT live battery (`apps/cli/scripts/verify-calendar-local-time.mjs`, wired into
+  `eval:self-improving`) driving the REAL calendar add tool over a REAL local provider
+  then asking qwen3:8b to confirm — states the LOCAL 3 PM, not the UTC 6 AM / raw ISO
+  (2/2) + a full LIVE `muse ask --with-tools` e2e now reading "Friday, June 5, 2026 at
+  3:00 PM (local time)" (was "2026-06-05T06:00:00.000Z"). @muse/mcp 174 files / 1477 tests
+  + `pnpm lint` 0/0. (f0722a20)
+
 **P41 — Actuation reliability: actuators survive real-world failure modes
 (human-directed 2026-05-23: "harden the one-of-each actuators into daily-reliable
 integrations — a proven-once actuator that breaks on a real-world failure mode
