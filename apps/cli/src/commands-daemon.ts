@@ -942,8 +942,27 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         lastDecayMs = nowMs;
         try {
           if (await isLearningPaused(resolveLearningPauseFile(e))) return; // brake: paused ⇒ bank frozen
-          const decayed = await decayStalePlaybookRewards(resolvePlaybookFile(e), { nowMs });
-          if (decayed > 0) io.stdout(`[${new Date(nowMs).toISOString()}] decay: ${decayed.toString()} stale strateg${decayed === 1 ? "y" : "ies"} faded toward neutral\n`);
+          const playbookFile = resolvePlaybookFile(e);
+          const beforeReward = new Map((await queryPlaybook(playbookFile)).map((s) => [s.id, s.reward ?? 0]));
+          const decayed = await decayStalePlaybookRewards(playbookFile, { nowMs });
+          if (decayed > 0) {
+            io.stdout(`[${new Date(nowMs).toISOString()}] decay: ${decayed.toString()} stale strateg${decayed === 1 ? "y" : "ies"} faded toward neutral\n`);
+            // FELT forgetting (P43-1): when a preference you TAUGHT crosses from
+            // healthy into near-forgotten (reward >1 → ≤1) purely from disuse, tell
+            // you so you can RESCUE it before it's gone — the symmetric other half
+            // of the learned-notice (slice 4). SAFE: surfacing only; the decay
+            // itself is the existing model-free RL, untouched.
+            const fading = (await queryPlaybook(playbookFile))
+              .filter((s) => { const prev = beforeReward.get(s.id); return prev !== undefined && prev > 1 && (s.reward ?? 0) <= 1; })
+              .sort((a, b) => (a.reward ?? 0) - (b.reward ?? 0))[0];
+            if (fading) {
+              await noticeSink.deliver({
+                kind: "self-learn-decay",
+                text: `A preference you taught me — "${fading.text}" — is fading from disuse. Reinforce it with \`muse playbook reward ${fading.id.slice(0, 8)}\` to keep it.`,
+                title: "A preference is fading"
+              });
+            }
+          }
         } catch { /* fail-soft — background maintenance must never break the daemon */ }
       };
 

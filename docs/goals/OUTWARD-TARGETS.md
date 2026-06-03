@@ -164,7 +164,17 @@ P43 bullet is unbuilt.
   NEVER a graduated one, no-nag on irrelevant, picks the most-relevant, empty bank)
   + LIVE on qwen3:8b: a seeded probation strategy resurfaced as the actionable
   suggestion on a relevant `muse ask`; faithfulness battery UNREGRESSED (1.00/0.00).
-  Remaining (honesty-sensitive, HELD FOR HUMAN REVIEW per the decomposition): the
+  Slice 6 (DELIVERED, `98a7f65d`) — the FORGETTING half of felt RL is now felt +
+  RESCUABLE: when the disuse-decay tick fades a preference you TAUGHT across the
+  healthy→near-forgotten line (reward >1 → ≤1) purely from disuse, the daemon
+  delivers a rescue notice ("A preference you taught me — '…' — is fading from
+  disuse. Reinforce it with `muse playbook reward <id>` to keep it"), so a valued
+  preference can't silently vanish. SAFE: surfacing only (the decay itself is the
+  existing model-free RL); no-nag (fires once, on the >1→≤1 crossing, not while a
+  strategy still has buffer). Proven by 2 daemon tests (a reward-2→1 strategy fires
+  the rescue notice; a reward-3→2 does NOT nag) + a LIVE `muse daemon --once` on a
+  60-day-stale taught preference fading and delivering the rescue notice. Remaining
+  (honesty-sensitive, HELD FOR HUMAN REVIEW per the decomposition): the
   injection-path change that the FLIP needs — and note the sign-safe design makes the
   ADDITIVE flip ("apply a graduated strategy, no manual command") unreachable (a
   correction is a NEGATIVE signal so it never graduates; an explicit reinforce IS a

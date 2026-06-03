@@ -1170,16 +1170,36 @@ describe("muse daemon — unattended disuse-decay tick (P43-1 slice 2)", () => {
     }]);
   }
 
-  it("fades a stale, unused positive-reward strategy toward neutral on the tick (RL forgets) — no model needed", async () => {
+  it("fades a stale, unused positive-reward strategy toward neutral AND tells you it's fading so you can rescue it", async () => {
     const env = tmpEnv();
     env.MUSE_SELFLEARN_ENABLED = "true";
-    await seedStaleStrategy(env);
-    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+    await seedStaleStrategy(env); // reward 2 → 1: crosses from healthy (>1) into near-forgotten (≤1)
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
 
     const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
 
     expect(res.stdout).toMatch(/decay: 1 stale strategy faded toward neutral/);
     expect((await readPlaybook(env.MUSE_PLAYBOOK_FILE!))[0]!.reward).toBe(1); // 2 → 1, one step toward neutral
+    // FELT forgetting (P43-1): the taught preference crossing into near-forgotten
+    // is surfaced so the user can rescue it before it's gone.
+    const fadeNotice = sent.find((m) => m.text.includes("is fading from disuse"));
+    expect(fadeNotice, "a taught preference crossing into near-forgotten must be surfaced for rescue").toBeDefined();
+    expect(fadeNotice!.text).toContain("Prefer concise answers.");
+    expect(fadeNotice!.text).toContain("muse playbook reward");
+  });
+
+  it("does NOT cry 'fading' on a strategy that still has a healthy buffer (reward 3 → 2, stays >1)", async () => {
+    const env = tmpEnv();
+    env.MUSE_SELFLEARN_ENABLED = "true";
+    await seedStaleStrategy(env, 3); // 3 → 2: still above the near-forgotten line, no nag
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+    const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+    expect(res.stdout).toMatch(/decay: 1 stale strategy faded toward neutral/);
+    expect(sent.some((m) => m.text.includes("is fading from disuse"))).toBe(false);
   });
 
   it("BRAKE: a paused learner's bank is frozen — nothing decays", async () => {
