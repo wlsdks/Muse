@@ -28,12 +28,13 @@ import {
   buildCalendarRegistry,
   buildVoiceRegistry,
   createMuseRuntimeAssembly,
+  resolveContactsFile,
   resolveProactiveHistoryFile,
   resolveRemindersFile,
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { CalendarEvent } from "@muse/calendar";
-import { readCheckins, readProactiveHistory, readReminders, selectDueCheckins, type PersistedCheckin, type PersistedReminder } from "@muse/mcp";
+import { formatBirthdayBriefLine, readCheckins, readContacts, readProactiveHistory, readReminders, resolveUpcomingBirthdays, selectDueCheckins, type PersistedCheckin, type PersistedReminder } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
@@ -385,6 +386,19 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         // checkins file missing or unreadable — brief still works
       }
 
+      // Upcoming birthdays in the next week — a morning JARVIS that lets you
+      // forget your friend's birthday tomorrow is a broken one. A few days'
+      // notice is enough to actually act (a gift, a call); the brief LEADS with
+      // a today/tomorrow one. Deterministic from the contacts' stored birthday
+      // (no fabricated date — `resolveUpcomingBirthdays` skips a malformed one).
+      let birthdayLine: string | undefined;
+      try {
+        const contacts = await readContacts(resolveContactsFile(process.env as Record<string, string | undefined>));
+        birthdayLine = formatBirthdayBriefLine(resolveUpcomingBirthdays(contacts, { now, withinDays: 7 }));
+      } catch {
+        // contacts file missing or unreadable — brief still works
+      }
+
       const nowIso = now.toISOString();
       const factSheet = [
         `Today: ${formatLocalDate(nowIso)} ${now.toLocaleDateString("en-US", { weekday: "long" })} ${formatLocalTime(nowIso)} local`,
@@ -407,6 +421,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         ...dueReminders.map((r) => `  · ${formatLocalTime(r.dueAt)} ${r.text}`),
         `Follow-ups you're due on (things the user said they'd do): ${dueCheckins.length.toString()}`,
         ...dueCheckins.map((c) => `  · ${c.commitment} (mentioned ${formatLocalDate(c.createdAt)})`),
+        ...(birthdayLine ? [`Upcoming birthdays (next 7 days): ${birthdayLine}`] : []),
         `Recent proactive notices (last 5): ${recentHistory.length.toString()}`,
         ...recentHistory.slice(-3).map((entry) => {
           const fired = entry.firedAtIso ? formatLocalDateTime(entry.firedAtIso) : "?";
@@ -424,6 +439,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         "If there are OVERDUE items (past their due date), LEAD with them — they are the most time-sensitive AND the user can still act on them today; do not bury them under upcoming items.",
         "Otherwise lead with the most imminent thing (a task due soon, or a noteworthy recent notice).",
         "If there are follow-ups the user is due on (things they said they'd do), gently surface one — a time-sensitive personal commitment matters more than a routine task.",
+        "If a contact's birthday is TODAY or TOMORROW (see 'Upcoming birthdays'), mention it warmly — a birthday you can still act on matters; only the named people in the fact sheet, never invent one.",
         "If nothing is imminent, say so briefly and suggest one useful action.",
         knownUserName && knownUserName.length > 0
           ? `Address the user as "${knownUserName}".`

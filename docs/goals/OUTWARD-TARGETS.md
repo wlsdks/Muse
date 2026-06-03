@@ -2287,6 +2287,27 @@ honest-refusal mock-corpus check where applicable.
   their morning brief now sees the things they said they'd do and are overdue on,
   instead of that follow-up living only inside a daemon they may not run. (this commit)
 
+- [x] **P35-16 Your morning brief now reminds you of an UPCOMING BIRTHDAY — a
+  JARVIS that lets you forget your friend's birthday tomorrow is broken.** The
+  `formatBirthdayBriefLine` / `resolveUpcomingBirthdays` helpers existed and the
+  background DAEMON fired birthday notices, but `muse brief` — the morning summary
+  a user actually reads — never surfaced them, so a user who reads the brief
+  (rather than running the daemon) would miss a birthday they could still act on.
+  The brief now loads contacts, computes the upcoming birthdays within the next 7
+  days (enough notice to send a gift / call), and adds an "Upcoming birthdays" line
+  to the deterministic fact sheet + a prompt instruction to warmly surface a
+  today/tomorrow one (only the named people, never invent a date — `resolveUpcoming
+  Birthdays` skips a malformed/absent birthday). Correctly PRIORITISED: when there
+  are OVERDUE items the brief still leads with those (more time-sensitive); the
+  birthday surfaces when the morning is otherwise clear. Fail-soft (an unreadable
+  contacts file never breaks the brief). The fabricated-time gate is unaffected (a
+  birthday line carries no clock time). Proven by the existing `resolveUpcoming
+  Birthdays` / `formatBirthdayBriefLine` mcp tests + the full @muse/cli (173/1892)
+  & @muse/mcp (170/1408) suites green, `pnpm lint` 0/0, and a LIVE `muse brief` on
+  qwen3:8b over isolated stores with a contact whose birthday is tomorrow: "Good
+  morning. There are no immediate tasks or events, but Dana Wu's birthday is
+  tomorrow — a perfect opportunity to send a thoughtful message." `80ea512a`.
+
 - [x] **P35-1 Citation-as-voice (B2 S1, build-first).** `muse ask` renders
   each cited note as a memory — "📎 From your notes … • from your note of
   <date> — '<verbatim snippet>'" + the openable path — instead of a bare
