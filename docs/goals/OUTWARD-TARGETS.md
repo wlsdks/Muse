@@ -1489,6 +1489,27 @@ in the loop.
   creates BOTH — the calendar "Meeting with Sarah" at 2pm AND the reminder at 1pm (correctly
   an hour before). (4c3acf55)
 
+- [x] **P41-8 You can now edit a reminder by NAME — "push my dentist reminder to 5pm"
+  works instead of "reminder not found".** Probing the edit path exposed a real
+  carry-to-done defect: `muse ask --with-tools "push my dentist reminder back to 5pm
+  tomorrow"` called `muse.reminders.snooze` but passed the TEXT "Call dentist" as the
+  `id` (the model refers to reminders by description, not id, and went straight to snooze
+  without `search`), so the tool answered "reminder not found" and the reschedule SILENTLY
+  did nothing. The snooze/fire/clear tools required a literal `id` — a 2-step "search to
+  get the id, then act" chain the small model fumbles. Fixed per tool-calling.md (one
+  tool does the whole job): a pure `resolveReminderRef(reminders, ref)` — an exact id
+  wins, else a case-insensitive substring match on the reminder text (preferring PENDING
+  over already-fired when both match); a UNIQUE match resolves, MULTIPLE matches return
+  the candidates (fail-close — never modify a guessed reminder), none → not-found — wired
+  into snooze / fire / clear (their `id` arg now accepts an id OR a distinct word like
+  'dentist', documented in the schema). Verified: 5 new unit tests (exact id; unique text
+  word; pending preferred over fired; ambiguous → candidates not a guess; empty / no-match
+  → not-found) + the reminder suites unregressed — @muse/mcp 174 files / 1488 tests +
+  `pnpm lint` 0/0 + a LIVE before/after on qwen3:8b: the SAME prompt that returned
+  "reminder not found" (dueAt unchanged) now resolves "dentist" → the reminder and
+  reschedules it to 2026-06-05T08:00:00Z (5pm KST tomorrow). (The tasks complete/update/
+  delete tools have the identical id-vs-text gap — a clean follow-on.) (585cfa28)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links

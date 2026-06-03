@@ -13,6 +13,7 @@ import {
   normalizeReminderRecurrence,
   readReminders,
   readReminderStatusFilter,
+  resolveReminderRef,
   serializeReminderForModel,
   writeReminders,
   type PersistedReminder
@@ -254,13 +255,14 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
       },
       {
         description:
-          "Bump a reminder's dueAt forward. `id` selects the reminder, `dueAt` accepts the same " +
-          "ISO-8601-or-relative grammar as `add` ('in 30 minutes', 'tomorrow at 9am', etc.). " +
+          "Reschedule a reminder (push it back / move it). `id` selects the reminder — pass its id " +
+          "OR a distinct word from its text ('dentist'); `dueAt` accepts the same ISO-8601-or-relative " +
+          "grammar as `add` ('in 30 minutes', 'tomorrow at 9am', '5pm tomorrow'). " +
           "If `dueAt` is omitted, defaults to a 10-minute snooze from now. " +
           "Status is reset to 'pending' so a fired reminder can be revived. Returns the updated reminder.",
         execute: async (args): Promise<JsonObject> => {
-          const id = readString(args, "id");
-          if (!id) {
+          const ref = readString(args, "id");
+          if (!ref) {
             return { error: "id is required" };
           }
           const dueAtRaw = readString(args, "dueAt")?.trim();
@@ -278,10 +280,14 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
             nextDueAt = new Date(now().getTime() + 10 * 60_000).toISOString();
           }
           const reminders = await readReminders(file);
-          const index = reminders.findIndex((reminder) => reminder.id === id);
-          if (index < 0) {
-            return { error: `reminder not found: ${id}` };
+          const resolution = resolveReminderRef(reminders, ref);
+          if (resolution.status === "ambiguous") {
+            return { error: `"${ref}" matches multiple reminders — say which one`, candidates: resolution.candidates.map((r) => ({ id: r.id, text: r.text })) as JsonValue };
           }
+          if (resolution.status !== "resolved") {
+            return { error: `reminder not found: ${ref}` };
+          }
+          const index = reminders.findIndex((reminder) => reminder.id === resolution.reminder.id);
           const snoozed: PersistedReminder = {
             ...reminders[index]!,
             dueAt: nextDueAt,
@@ -303,7 +309,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
               description: "New due time. Same grammar as `add` (ISO or relative phrase). Omit for a 10-minute snooze.",
               type: "string"
             },
-            id: { description: "The reminder's id, from `due` / `history` / `search`.", type: "string" }
+            id: { description: "The reminder's id (from `due` / `search`) OR a distinct word from its text, e.g. 'dentist'. An ambiguous word returns the matching candidates instead of guessing.", type: "string" }
           },
           required: ["id"],
           type: "object"
@@ -319,8 +325,8 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           "to the current time; pass an explicit ISO-8601 if recording a delayed log entry. " +
           "Status flips pending → fired; `snooze` is the inverse if the user wants it back.",
         execute: async (args): Promise<JsonObject> => {
-          const id = readString(args, "id");
-          if (!id) {
+          const ref = readString(args, "id");
+          if (!ref) {
             return { error: "id is required" };
           }
           const firedAtRaw = readString(args, "firedAt")?.trim();
@@ -335,16 +341,23 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
             firedAt = now().toISOString();
           }
           const reminders = await readReminders(file);
-          const next = fireReminder(reminders, id, firedAt);
+          const resolution = resolveReminderRef(reminders, ref);
+          if (resolution.status === "ambiguous") {
+            return { error: `"${ref}" matches multiple reminders — say which one`, candidates: resolution.candidates.map((r) => ({ id: r.id, text: r.text })) as JsonValue };
+          }
+          if (resolution.status !== "resolved") {
+            return { error: `reminder not found: ${ref}` };
+          }
+          const next = fireReminder(reminders, resolution.reminder.id, firedAt);
           if (!next) {
-            return { error: `reminder not found: ${id}` };
+            return { error: `reminder not found: ${ref}` };
           }
           try {
             await writeReminders(file, next);
           } catch (error) {
             return { error: errorMessage(error) };
           }
-          const fired = next.find((reminder) => reminder.id === id) as PersistedReminder;
+          const fired = next.find((reminder) => reminder.id === resolution.reminder.id) as PersistedReminder;
           return { reminder: serializeReminderForModel(fired, now) as JsonValue };
         },
         inputSchema: {
@@ -354,7 +367,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
               description: "Optional ISO-8601 timestamp; defaults to now.",
               type: "string"
             },
-            id: { description: "The reminder's id, from `due` / `history` / `search`.", type: "string" }
+            id: { description: "The reminder's id (from `due` / `search`) OR a distinct word from its text, e.g. 'dentist'. An ambiguous word returns candidates.", type: "string" }
           },
           required: ["id"],
           type: "object"
@@ -364,28 +377,32 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
         risk: "write"
       },
       {
-        description: "Remove a reminder by id. Returns `{ removed: true, id }` on success or an error if no match.",
+        description: "Remove a reminder. `id` is its id OR a distinct word from its text ('dentist'). Returns `{ removed: true, id }` on success, candidates on an ambiguous word, or an error if no match.",
         execute: async (args): Promise<JsonObject> => {
-          const id = readString(args, "id");
-          if (!id) {
+          const ref = readString(args, "id");
+          if (!ref) {
             return { error: "id is required" };
           }
           const reminders = await readReminders(file);
-          const next = reminders.filter((reminder) => reminder.id !== id);
-          if (next.length === reminders.length) {
-            return { error: `reminder not found: ${id}` };
+          const resolution = resolveReminderRef(reminders, ref);
+          if (resolution.status === "ambiguous") {
+            return { error: `"${ref}" matches multiple reminders — say which one`, candidates: resolution.candidates.map((r) => ({ id: r.id, text: r.text })) as JsonValue };
           }
+          if (resolution.status !== "resolved") {
+            return { error: `reminder not found: ${ref}` };
+          }
+          const next = reminders.filter((reminder) => reminder.id !== resolution.reminder.id);
           try {
             await writeReminders(file, next);
           } catch (error) {
             return { error: errorMessage(error) };
           }
-          return { id, removed: true };
+          return { id: resolution.reminder.id, removed: true };
         },
         inputSchema: {
           additionalProperties: false,
           properties: {
-            id: { description: "The reminder's id, from `due` / `history` / `search`.", type: "string" }
+            id: { description: "The reminder's id (from `due` / `search`) OR a distinct word from its text, e.g. 'dentist'. An ambiguous word returns candidates.", type: "string" }
           },
           required: ["id"],
           type: "object"

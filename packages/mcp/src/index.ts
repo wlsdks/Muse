@@ -870,6 +870,8 @@ export {
   normalizeReminderRecurrence,
   parseReminderDueAt,
   parseReminderVia,
+  resolveReminderRef,
+  type ReminderRefResolution,
   readReminders,
   readReminderStatusFilter,
   serializeReminder,

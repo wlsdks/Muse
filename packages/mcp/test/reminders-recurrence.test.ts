@@ -1,6 +1,46 @@
 import { describe, expect, it } from "vitest";
 
-import { fireReminder, nextReminderOccurrence, normalizeReminderRecurrence, type PersistedReminder } from "../src/index.js";
+import { fireReminder, nextReminderOccurrence, normalizeReminderRecurrence, resolveReminderRef, type PersistedReminder } from "../src/index.js";
+
+describe("resolveReminderRef — edit a reminder by id OR by a word from its text (one shot, not a 2-step search)", () => {
+  const reminders: PersistedReminder[] = [
+    { id: "rem_1", text: "Call the dentist", dueAt: "2026-06-05T06:00:00Z", status: "pending", createdAt: "2026-06-04T00:00:00Z" },
+    { id: "rem_2", text: "Pay the electricity bill", dueAt: "2026-06-06T06:00:00Z", status: "pending", createdAt: "2026-06-04T00:00:00Z" },
+    { id: "rem_3", text: "Call the dentist back", dueAt: "2026-06-01T06:00:00Z", status: "fired", createdAt: "2026-06-04T00:00:00Z" }
+  ];
+
+  it("resolves an exact id", () => {
+    const r = resolveReminderRef(reminders, "rem_2");
+    expect(r.status).toBe("resolved");
+    expect(r.status === "resolved" && r.reminder.id).toBe("rem_2");
+  });
+
+  it("resolves a unique TEXT word (what the model actually passes) to the reminder", () => {
+    const r = resolveReminderRef(reminders, "electricity");
+    expect(r.status === "resolved" && r.reminder.id).toBe("rem_2");
+  });
+
+  it("prefers the PENDING match when a word hits both a pending and a fired reminder", () => {
+    // "dentist" matches rem_1 (pending) and rem_3 (fired) → the pending one wins (unique among pending).
+    const r = resolveReminderRef(reminders, "dentist");
+    expect(r.status === "resolved" && r.reminder.id).toBe("rem_1");
+  });
+
+  it("returns AMBIGUOUS candidates (never a guess) when multiple PENDING reminders match", () => {
+    const two: PersistedReminder[] = [
+      { id: "a", text: "Call mom", dueAt: "2026-06-05T06:00:00Z", status: "pending", createdAt: "2026-06-04T00:00:00Z" },
+      { id: "b", text: "Call dad", dueAt: "2026-06-05T06:00:00Z", status: "pending", createdAt: "2026-06-04T00:00:00Z" }
+    ];
+    const r = resolveReminderRef(two, "call");
+    expect(r.status).toBe("ambiguous");
+    expect(r.status === "ambiguous" && r.candidates.map((c) => c.id)).toEqual(["a", "b"]);
+  });
+
+  it("returns not-found for an empty ref or no match", () => {
+    expect(resolveReminderRef(reminders, "").status).toBe("not-found");
+    expect(resolveReminderRef(reminders, "groceries").status).toBe("not-found");
+  });
+});
 
 describe("normalizeReminderRecurrence — coerce, never drop (a one-time reminder must still be created)", () => {
   it("passes through the real cadences daily/weekly (case-insensitive)", () => {

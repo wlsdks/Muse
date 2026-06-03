@@ -189,6 +189,46 @@ export function normalizeReminderRecurrence(raw: string | undefined): { recurren
   return { note: `recurrence '${value}' isn't supported (only 'daily' or 'weekly'); created a one-time reminder` };
 }
 
+export type ReminderRefResolution =
+  | { readonly status: "resolved"; readonly reminder: PersistedReminder }
+  | { readonly status: "ambiguous"; readonly candidates: readonly PersistedReminder[] }
+  | { readonly status: "not-found" };
+
+/**
+ * Resolve a model-supplied reminder reference to a single reminder. The chat
+ * model refers to a reminder by its TEXT ("my dentist reminder"), not its id —
+ * but snooze / fire / clear need a unique target, and the model fumbles the
+ * 2-step "search to get the id, then act" chain (it passes the TEXT as the id →
+ * "not found"). So resolve here: an exact id wins; otherwise a case-insensitive
+ * substring match on the reminder text, preferring PENDING over already-fired
+ * when both match. A UNIQUE match resolves; MULTIPLE matches are ambiguous
+ * (return candidates, never act on a guess); none → not-found.
+ */
+export function resolveReminderRef(
+  reminders: readonly PersistedReminder[],
+  ref: string | undefined
+): ReminderRefResolution {
+  const trimmed = ref?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return { status: "not-found" };
+  }
+  const byId = reminders.find((reminder) => reminder.id === trimmed);
+  if (byId) {
+    return { status: "resolved", reminder: byId };
+  }
+  const needle = trimmed.toLowerCase();
+  const matches = reminders.filter((reminder) => reminder.text.toLowerCase().includes(needle));
+  const pending = matches.filter((reminder) => reminder.status === "pending");
+  const pool = pending.length > 0 ? pending : matches;
+  if (pool.length === 1) {
+    return { status: "resolved", reminder: pool[0]! };
+  }
+  if (pool.length > 1) {
+    return { status: "ambiguous", candidates: pool };
+  }
+  return { status: "not-found" };
+}
+
 /**
  * Validate a `via` payload supplied by the REST route, the MCP
  * `add` tool, or any future `update` surface. Returns the cleaned
