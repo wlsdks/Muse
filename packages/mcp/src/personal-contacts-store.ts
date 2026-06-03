@@ -18,7 +18,8 @@ import { promises as fs } from "node:fs";
 
 import type { JsonObject } from "@muse/shared";
 
-import { atomicWriteFile, withFileMutationQueue } from "./atomic-file-store.js";
+import { withFileMutationQueue } from "./atomic-file-store.js";
+import { decryptFileAtRest, encryptFileAtRest, isFileEncryptedAtRest, readMaybeEncrypted, withFileLock, writeMaybeEncrypted } from "./encrypted-file.js";
 
 export interface Contact {
   readonly id: string;
@@ -124,16 +125,19 @@ async function quarantineCorruptStore(file: string): Promise<void> {
   }
 }
 
-export async function readContacts(file: string): Promise<readonly Contact[]> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(file, "utf8");
-  } catch {
+export async function readContacts(file: string, env: NodeJS.ProcessEnv = process.env): Promise<readonly Contact[]> {
+  // A WRONG key THROWS here (fail-closed) — propagate it; an undecryptable people
+  // graph is NOT corrupt and must NEVER be quarantined-to-empty (that would erase
+  // the user's contacts on a key mismatch). The ask path reads contacts fail-soft,
+  // and resolveContact fails CLOSED (a recipient never resolves on a bad key, so a
+  // send refuses / clarifies — never a wrong send).
+  const { text } = await readMaybeEncrypted(file, env);
+  if (text === undefined) {
     return [];
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(text) as unknown;
   } catch {
     await quarantineCorruptStore(file);
     return [];
@@ -148,40 +152,78 @@ export async function readContacts(file: string): Promise<readonly Contact[]> {
   });
 }
 
-export async function writeContacts(file: string, contacts: readonly Contact[]): Promise<void> {
-  // Atomic, fsync'd, owner-only write via the shared primitive (randomUUID tmp →
-  // no same-ms rename-collision crash).
-  await atomicWriteFile(file, `${JSON.stringify({ contacts }, null, 2)}\n`);
+export async function writeContacts(file: string, contacts: readonly Contact[], env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const text = `${JSON.stringify({ contacts }, null, 2)}\n`;
+  // Peek + write under the cross-process migration lock so an ordinary add can't
+  // race `encryptContactsAtRest` and clobber it with a stale-format payload;
+  // format is preserved (encrypted stays encrypted). atomicWriteFile keeps 0o600.
+  await withFileLock(file, async () => {
+    const encrypted = await isFileEncryptedAtRest(file);
+    await writeMaybeEncrypted(file, text, encrypted, env);
+  });
 }
 
 /** Add a contact. Idempotent on `id`: re-adding the same id REPLACES. */
-export async function addContact(file: string, contact: Contact): Promise<void> {
+export async function addContact(file: string, contact: Contact, env: NodeJS.ProcessEnv = process.env): Promise<void> {
   // Serialise the read-modify-write: a lost contact is a recipient that later
   // won't resolve, which under outbound-safety rule 3 (recipient resolved, never
   // guessed) means a send is refused / a clarify fires instead of reaching the
   // intended person. Concurrent adds must not clobber.
   await withFileMutationQueue(file, async () => {
-    const existing = await readContacts(file);
+    const existing = await readContacts(file, env);
     const filtered = existing.filter((entry) => entry.id !== contact.id);
-    await writeContacts(file, [...filtered, contact]);
+    await writeContacts(file, [...filtered, contact], env);
   });
 }
 
-export async function removeContact(file: string, id: string): Promise<boolean> {
+export async function removeContact(file: string, id: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   return withFileMutationQueue(file, async () => {
-    const existing = await readContacts(file);
+    const existing = await readContacts(file, env);
     const next = existing.filter((entry) => entry.id !== id);
     if (next.length === existing.length) {
       return false;
     }
-    await writeContacts(file, next);
+    await writeContacts(file, next, env);
     return true;
   });
 }
 
-export async function queryContacts(file: string): Promise<readonly Contact[]> {
-  const all = await readContacts(file);
+export async function queryContacts(file: string, env: NodeJS.ProcessEnv = process.env): Promise<readonly Contact[]> {
+  const all = await readContacts(file, env);
   return [...all].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+
+/**
+ * Canonical empty body — seeded when encrypting an absent/empty store so the
+ * encrypted format is ESTABLISHED on disk (else the first later add would peek
+ * "no file", land in plaintext, and drop the encrypt intent).
+ */
+const EMPTY_CONTACTS_BODY = `${JSON.stringify({ contacts: [] }, null, 2)}\n`;
+
+/**
+ * One-shot migrate the people graph to encryption-at-rest (AES-256-GCM under the
+ * shared MUSE_MEMORY_KEY / per-host fallback — the same envelope memory /
+ * episodes / action-log use). Snapshots a plaintext backup BEFORE encrypting,
+ * runs under the cross-process lock, idempotent.
+ */
+export async function encryptContactsAtRest(
+  file: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<{ readonly alreadyEncrypted: boolean; readonly backupPath?: string }> {
+  return encryptFileAtRest(file, env, { emptyContent: EMPTY_CONTACTS_BODY });
+}
+
+/** Reverse the migration — rewrite the people graph as plaintext. Throws fail-closed on a wrong key. */
+export async function decryptContactsAtRest(
+  file: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<{ readonly alreadyPlaintext: boolean }> {
+  return decryptFileAtRest(file, env);
+}
+
+/** Format-only check (no key needed) — is the people graph encrypted at rest? */
+export async function isContactsEncrypted(file: string): Promise<boolean> {
+  return isFileEncryptedAtRest(file);
 }
 
 /**

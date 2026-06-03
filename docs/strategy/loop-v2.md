@@ -50,6 +50,16 @@ First action: run the newest CAPABILITIES.md check. RED ⇒ fix it. GREEN ⇒
 advance the lowest-numbered undone P43 bullet (decompose across iterations; the
 bullet stays `[ ]` until the whole continuous/autonomous/reliable behaviour is
 proven end-to-end live).
+STATUS 2026-06-04: P43 (close the loop) is COMPLETE — all four bullets flipped
+(P43-1 autonomous sign-safe correction-decay `c29c0a30`; P43-2/3/4 earlier). The
+next FRONTIER is Jinan's call (his 9-agent-audit cadence set this one); until he
+sets it, the loop maintains the FLOORS and grows per the LOCKED-HEADLINE build
+order (front-door + felt-learning done ⇒ next is perceive/act growth), picking the
+highest-value OUTWARD slice each fire (procedure step-3 fallback). Floor-completion
+in flight: encryption-at-rest coverage (memory/episodes/action-log/contacts DONE;
+playbook/tasks/notes remain) + the two still-ungated grounding surfaces
+(`--with-tools` agent RGV, proactivity rubric — now un-banned since no P43 bullet
+is unbuilt, though B0's grounding-diminishing-returns caution applies).
 PARKED forever: A2A. Out of scope: banking/payments.
 
 ---

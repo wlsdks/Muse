@@ -385,6 +385,32 @@ the confided life sat in plaintext JSON behind OS file-perms only.
   extending "It can't tell anyone" to the action log while the accountability +
   tamper-evidence guarantees stay intact. (6a8c4f8a)
 
+- [x] **P44-5 `muse contacts encrypt` encrypts your people graph at rest — who your
+  doctor / manager / partner are (with their email / phone / handle / birthday) is no
+  longer plaintext on a stolen laptop.** Continues the discretion floor (P44-1 memory,
+  P44-2 episodes, P44-4 action-log) onto the relationship graph — the most sensitive
+  remaining plaintext store. Wraps the store's read/write with the SAME red-teamed
+  `encrypted-file` helper (AES-256-GCM under `MUSE_MEMORY_KEY` / per-host): `readContacts`
+  decrypts transparently and on a WRONG key THROWS fail-closed — an undecryptable graph
+  is NOT corrupt and is NEVER quarantined-to-empty; `writeContacts`/`addContact`/`removeContact`
+  peek-and-preserve the on-disk format under the cross-process migration lock (0o600 kept).
+  New `muse contacts encrypt` (plaintext-backup-before-encrypt, idempotent), `decrypt`,
+  `encryption-status` (format-only, no key). OUTBOUND-SAFE by construction: the
+  recipient-resolution path reads contacts, so a wrong key resolves against an EMPTY set
+  → a send REFUSES / clarifies, NEVER mis-routes (outbound-safety rule 3); the ask path's
+  contact read is fail-soft (degrades, never crashes). Proven: 14 contract-faithful tests
+  (`contacts-encryption.test.ts` — round-trip + on-disk-envelope + cleartext name/email
+  absent; wrong-key read/add/decrypt fail-closed byte-unchanged + right key still reads;
+  the outbound-safe wrong-key resolveContact case; plaintext backup; idempotent;
+  read-never-writes; corrupt-plaintext still quarantines; 12 concurrent adds survive) +
+  the 41 existing contacts tests unregressed + `pnpm check` exit 0 across all 20 workspaces
+  (optional-`env` param backward-compatible) + `pnpm lint` 0/0 + a LIVE `muse contacts
+  encrypt` round-trip: plaintext→encrypt (cleartext backup + warning)→AES-256-GCM envelope
+  with "Dana Wu"/"doctor" gone→`muse contacts list`/`resolve` decrypt and still resolve
+  the recipient→a WRONG key fails closed without showing any contact. mcp 1438 + pnpm
+  check exit 0 + pnpm lint 0/0 + live encrypt round-trip — a stolen laptop no longer
+  reveals your relationship graph, and a bad key can never mis-route a message. (ba3ab947)
+
 **P37 — Perception growth: read-only local connectors (loop-v2 B3).** The
 self-learning core (P36) is delivered end-to-end + felt; this axis grows what
 Muse can READ to know you — new local, read-only, per-source sources the agent

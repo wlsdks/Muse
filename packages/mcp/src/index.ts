@@ -610,7 +610,10 @@ export {
 export {
   addContact,
   contactIdentifier,
+  decryptContactsAtRest,
+  encryptContactsAtRest,
   formatBirthdayBriefLine,
+  isContactsEncrypted,
   queryContacts,
   readContacts,
   removeContact,

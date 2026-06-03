@@ -10,7 +10,7 @@
  */
 
 import { resolveContactsFile } from "@muse/autoconfigure";
-import { addContact, contactIdentifier, queryContacts, resolveContact, resolveUpcomingBirthdays, type Contact } from "@muse/mcp";
+import { addContact, contactIdentifier, decryptContactsAtRest, encryptContactsAtRest, isContactsEncrypted, queryContacts, resolveContact, resolveUpcomingBirthdays, type Contact } from "@muse/mcp";
 import { createRunId } from "@muse/shared";
 import type { Command } from "commander";
 
@@ -232,5 +232,63 @@ export function registerContactsCommands(program: Command, io: ProgramIO): void 
       }
       io.stderr(`No contact matches '${query}'. Add one with \`muse contacts add\`.\n`);
       process.exitCode = 1;
+    });
+
+  contacts
+    .command("encrypt")
+    .description("Encrypt the people graph at rest (AES-256-GCM; key = MUSE_MEMORY_KEY or per-host)")
+    .option("--json", "Emit a structured result")
+    .action(async (options: { readonly json?: boolean }) => {
+      const file = contactsFile();
+      const result = await encryptContactsAtRest(file);
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ encrypted: true, file, ...result }, null, 2)}\n`);
+        return;
+      }
+      if (result.alreadyEncrypted) {
+        io.stdout(`Contacts are already encrypted at rest (${file}).\n`);
+        return;
+      }
+      io.stdout(
+        `Encrypted contacts at rest: ${file}\n` +
+        (result.backupPath
+          ? `Plaintext backup saved: ${result.backupPath}\n` +
+            `  ⚠ This backup is CLEARTEXT — it holds your full people graph unencrypted.\n` +
+            `  Delete it once you've confirmed 'muse contacts list' still works with your key.\n`
+          : "") +
+        `Set MUSE_MEMORY_KEY to a stable secret so the key survives a host/user change.\n`
+      );
+    });
+
+  contacts
+    .command("decrypt")
+    .description("Revert the people graph to plaintext at rest")
+    .option("--json", "Emit a structured result")
+    .action(async (options: { readonly json?: boolean }) => {
+      const file = contactsFile();
+      const result = await decryptContactsAtRest(file);
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ encrypted: false, file, ...result }, null, 2)}\n`);
+        return;
+      }
+      io.stdout(
+        result.alreadyPlaintext
+          ? `Contacts are already plaintext at rest (${file}).\n`
+          : `Reverted contacts to plaintext at rest: ${file}\n`
+      );
+    });
+
+  contacts
+    .command("encryption-status")
+    .description("Report whether the people graph is encrypted at rest (no key needed)")
+    .option("--json", "Emit a structured result")
+    .action(async (options: { readonly json?: boolean }) => {
+      const file = contactsFile();
+      const encrypted = await isContactsEncrypted(file);
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ encrypted, file }, null, 2)}\n`);
+        return;
+      }
+      io.stdout(`Contacts at rest: ${encrypted ? "ENCRYPTED" : "plaintext"} (${file})\n`);
     });
 }
