@@ -186,8 +186,9 @@ export function createMessagingObjectiveActuator(options: MessagingObjectiveActu
   readonly escalate: (objective: StandingObjective, reason: string) => Promise<void>;
 } {
   const now = options.now ?? (() => new Date());
-  const send = (text: string): Promise<void> =>
-    sendWithRetry(options.registry, options.providerId, { destination: options.destination, text });
+  const send = async (text: string): Promise<void> => {
+    await sendWithRetry(options.registry, options.providerId, { destination: options.destination, text });
+  };
   const record = async (
     objective: StandingObjective,
     what: string,

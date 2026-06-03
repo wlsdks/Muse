@@ -14,7 +14,7 @@
  * directly without env or real provider keys.
  */
 
-import { MessagingProviderError, type MessagingProviderRegistry } from "@muse/messaging";
+import { MessagingProviderError, type MessagingProviderRegistry, type OutboundReceipt } from "@muse/messaging";
 
 const BACKOFFS_MS: readonly number[] = [0, 200, 800];
 /**
@@ -30,11 +30,11 @@ export interface SendWithRetryOptions {
 }
 
 export async function sendWithRetry(
-  registry: MessagingProviderRegistry,
+  registry: Pick<MessagingProviderRegistry, "send">,
   providerId: string,
   message: { readonly destination: string; readonly text: string },
   options: SendWithRetryOptions = {}
-): Promise<void> {
+): Promise<OutboundReceipt> {
   const sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let lastError: unknown;
   for (let attempt = 0; attempt < BACKOFFS_MS.length; attempt += 1) {
@@ -49,8 +49,7 @@ export async function sendWithRetry(
       await sleep(serverHint ?? BACKOFFS_MS[attempt] ?? 0);
     }
     try {
-      await registry.send(providerId, message);
-      return;
+      return await registry.send(providerId, message);
     } catch (cause) {
       lastError = cause;
       if (cause instanceof MessagingProviderError && !cause.retryable) {

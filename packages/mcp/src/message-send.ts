@@ -21,6 +21,7 @@
 
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
+import { sendWithRetry } from "./messaging-retry.js";
 import { appendActionLog, type ActionResult } from "./personal-action-log-store.js";
 
 export interface ApprovalDecision {
@@ -47,6 +48,8 @@ export interface SendMessageWithApprovalOptions {
   readonly approvalGate?: MessageApprovalGate;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
+  /** Injected so tests assert the transient-retry backoff without real waits. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export type SendMessageOutcome =
@@ -85,7 +88,17 @@ export async function sendMessageWithApproval(options: SendMessageWithApprovalOp
   }
 
   try {
-    const receipt = await options.registry.send(options.providerId, { destination: options.destination, text: options.text });
+    // A user-CONFIRMED message must survive a transient rate-limit (429 +
+    // Retry-After) / 5xx the same way every proactive notice does — dropping
+    // a message the user explicitly approved on a one-off blip is a worse
+    // failure than a background notice missing. Reuses the same retry ladder
+    // (permanent 401/404/INVALID short-circuit on attempt 1 via .retryable).
+    const receipt = await sendWithRetry(
+      options.registry,
+      options.providerId,
+      { destination: options.destination, text: options.text },
+      { sleep: options.sleep }
+    );
     await log("performed", "user-approved outbound message", `sent: ${options.text.slice(0, 200)}`);
     return { destination: receipt.destination, messageId: receipt.messageId, sent: true };
   } catch (cause) {

@@ -1003,6 +1003,34 @@ in the loop.
   can no longer fire a message to a third party from the CLI without seeing and
   confirming the exact content, and every send/refusal is on the record. (94b0fc77)
 
+- [x] **P41-3 A message YOU confirmed now survives a transient rate-limit instead of
+  being dropped — the user-approved outbound send rides the same retry ladder the
+  background notices already do.** P41-1 hardened `sendWithRetry` (429 + Retry-After,
+  bounded), but ONLY the proactive firing loops used it; the draft-first
+  `sendMessageWithApproval` (packages/mcp/src/message-send.ts — behind BOTH the agent's
+  `muse.messaging.send` tool AND the `muse messaging send` CLI) called `registry.send`
+  RAW. So the asymmetry was backwards: a background "9am reminder" notice retried a 429,
+  but a message the user EXPLICITLY drafted-and-confirmed got logged `failed` and dropped
+  on the first one-off blip — the worse failure (the user believes their confirmed message
+  went). Fixed by routing the post-approval delivery through the existing `sendWithRetry`:
+  the draft-first approval gate runs FIRST and unchanged (deny/timeout/ambiguous still
+  fail-closed — no new send path), and only the already-approved send now retries a
+  transient 429/5xx honouring Retry-After while a permanent 401/404/INVALID still
+  short-circuits on attempt 1 via `.retryable`. Required `sendWithRetry` to RETURN the
+  `OutboundReceipt` it was discarding (the confirmed path needs the messageId) and to
+  accept a `Pick<…,"send">` (it only sends); a `sleep` seam threads through for tests.
+  Proof: 2 new contract-faithful tests over a REAL `TelegramProvider` in a REAL
+  `MessagingProviderRegistry` with only `fetch` faked (per outbound-safety.md — never a
+  stubbed registry): a 429-then-200 is retried and DELIVERED (`sent:true`, messageId 42,
+  logged `performed`, exactly 2 HTTP calls); a permanent 401 is NOT retried (`send-failed`,
+  logged `failed`, exactly 1 call) — plus the existing transport-error test now asserts the
+  full 3-attempt ladder ran. `pnpm check` exit 0 across all 20 workspaces (the
+  `sendWithRetry` signature change consumed by @muse/mcp + apps/api — agent-core 1444, mcp
+  1410, messaging 368, api 849, cli 1892, …) + `pnpm lint` 0/0. mcp 1410 + messaging 368 +
+  api 849 + cli 1892 + pnpm check exit 0 + pnpm lint 0/0 — a message you took the trouble to
+  confirm is now as reliably delivered as an automatic notice, not silently lost to a
+  momentary rate limit. (69c8c74f)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links
