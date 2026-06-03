@@ -44,8 +44,16 @@ describe("createInputGuards", () => {
 });
 
 describe("createOutputGuards", () => {
-  it("enables PII masking by default; the leak guard stays off until armed", () => {
-    expect(ids(createOutputGuards(env()))).toEqual(["pii-output-mask"]);
+  it("under local-only (default) does NOT mask the answer — asking for your own contact's email shouldn't return s****@****", () => {
+    expect(ids(createOutputGuards(env()))).toEqual([]);
+  });
+
+  it("enables the PII OUTPUT mask when cloud egress is possible (local-only OFF)", () => {
+    expect(ids(createOutputGuards(env({ MUSE_LOCAL_ONLY: "false" })))).toEqual(["pii-output-mask"]);
+  });
+
+  it("an explicit MUSE_OUTPUT_GUARD_PII_MASK_ENABLED forces masking on even under local-only", () => {
+    expect(ids(createOutputGuards(env({ MUSE_OUTPUT_GUARD_PII_MASK_ENABLED: "true" })))).toEqual(["pii-output-mask"]);
   });
 
   it("returns nothing when the master flag is off", () => {
@@ -53,13 +61,14 @@ describe("createOutputGuards", () => {
   });
 
   it("adds the system-prompt-leak guard only when enabled AND canary tokens are supplied", () => {
-    expect(ids(createOutputGuards(env({ MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_LEAK_ENABLED: "true" })))).toEqual([
+    // Force the PII mask on to isolate the canary-guard behavior from the posture default.
+    expect(ids(createOutputGuards(env({ MUSE_OUTPUT_GUARD_PII_MASK_ENABLED: "true", MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_LEAK_ENABLED: "true" })))).toEqual([
       "pii-output-mask",
     ]); // enabled but no canary → not added
     expect(
       ids(
         createOutputGuards(
-          env({ MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_LEAK_ENABLED: "true", MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_CANARY_TOKENS: "SECRET1,SECRET2" }),
+          env({ MUSE_OUTPUT_GUARD_PII_MASK_ENABLED: "true", MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_LEAK_ENABLED: "true", MUSE_OUTPUT_GUARD_SYSTEM_PROMPT_CANARY_TOKENS: "SECRET1,SECRET2" }),
         ),
       ),
     ).toEqual(["pii-output-mask", "system-prompt-leakage-output-guard"]);

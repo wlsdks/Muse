@@ -165,7 +165,17 @@ export function createOutputGuards(env: MuseEnvironment): readonly OutputGuardSt
 
   const guards: OutputGuardStage[] = [];
 
-  if (parseBoolean(env.MUSE_OUTPUT_GUARD_PII_MASK_ENABLED, true)) {
+  // The PII OUTPUT mask REWRITES the agent's answer (and the cached / recorded
+  // copy), redacting any email/phone to `s****@****`. On a local "tell it
+  // everything" assistant that means asking "what's my dentist's email?" gets a
+  // MASKED answer for the user's OWN contact — the answer is the thing the user
+  // wants. It also doesn't prevent egress (under cloud the PII already left on
+  // the INPUT side), so its only effect is corrupting the user-facing answer +
+  // store. So, mirroring the PII INPUT guard, it fires by default ONLY when cloud
+  // egress is possible (MUSE_LOCAL_ONLY off); an explicit
+  // MUSE_OUTPUT_GUARD_PII_MASK_ENABLED forces it on under any posture.
+  const cloudEgressPossible = !parseBoolean(env.MUSE_LOCAL_ONLY, true);
+  if (parseBoolean(env.MUSE_OUTPUT_GUARD_PII_MASK_ENABLED, cloudEgressPossible)) {
     guards.push(createPiiMaskingOutputGuard());
   }
 

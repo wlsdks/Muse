@@ -1402,6 +1402,28 @@ in the loop.
   returns a full email draft to Sarah, while under `MUSE_LOCAL_ONLY=false` it STILL blocks
   (egress protection for cloud users preserved). (21585a88)
 
+- [x] **P41-6 The agent no longer MASKS your own contacts' details back to you —
+  "what's my dentist's email?" returns the address, not `***@***.***`.** The output-guard
+  sibling of P41-5 (which fixed the INPUT block): the PII OUTPUT mask
+  (`createPiiMaskingOutputGuard`) was on by default and REWRITES the agent's final answer
+  (and the cached / run-history copy — `applyOutputGuards` replaces `finalResponse`),
+  redacting any email/phone. So `muse ask --with-tools "what is Sarah's email?"` handed the
+  user back `***@***.***` for their OWN contact — the answer is the very thing they asked
+  for. And unlike a true egress control it doesn't even prevent egress (under cloud the PII
+  already left on the INPUT side), so its only effect is corrupting the user-facing answer +
+  local store. Fixed with the SAME posture-aware pattern (`createOutputGuards`, autoconfigure):
+  the PII OUTPUT mask fires by default ONLY when cloud egress is possible (`MUSE_LOCAL_ONLY`
+  off); an explicit `MUSE_OUTPUT_GUARD_PII_MASK_ENABLED=true` forces it on under any posture.
+  The system-prompt-leak output guard and the injection input guard are UNCHANGED. (Same
+  security reasoning the independent sub-agent panel validated for P41-5 — removing a control
+  firing outside its threat model under local-only, not a fail-open regression.) Verified: 3
+  new posture tests (local-only default → NO output mask so the answer isn't redacted;
+  `MUSE_LOCAL_ONLY=false` → mask present; explicit force → on) — @muse/autoconfigure 75 files
+  / 499 tests + @muse/agent-core 1446 + @muse/cli 174 files / 1920 tests + `pnpm lint` 0/0 + a
+  DETERMINISTIC before/after through the REAL guard pipeline: the same answer
+  ("…reached at sarah.chen@example.com…") passes UNMASKED under local-only but is rewritten to
+  `***@***.***` under `MUSE_LOCAL_ONLY=false` (and under an explicit force-on). (1e65eb60)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links
