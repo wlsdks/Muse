@@ -1109,6 +1109,30 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   "📅 This week:" with "Today — Fri, Jun 5" (the events with HH:MM), "Sun, Jun 7  🎂 Mina's
   birthday", and "Mon, Jun 8  ☑ Pay rent (due)" — grouped by day, empty days skipped. (e3b9678c)
 
+- [x] **P37-39 `muse week` now shows the WEATHER FORECAST per day — plan your week around the
+  weather, not just your calendar — closing the parity gap where `muse today`/`muse brief` had
+  weather but the 7-day planner didn't.** The week agenda grouped events/tasks/birthdays by day
+  but carried no weather, so "is Saturday a good day for the hike?" meant a separate lookup —
+  even though the daily-forecast capability (`resolveForecastLine`, `provider.dailyForecast`,
+  `formatDailyForecast`) already existed and `muse today`/`muse brief` already wove in today's
+  weather. Added to `commands-week.ts`: a compact `formatWeekForecast(day)` (condition + rounded
+  °C range + rain%, no date prefix since the day header carries the date), a graceful
+  `resolveWeekForecasts(env, days, provider?)` that reads `MUSE_WEATHER_LOCATION` and fetches the
+  multi-day Open-Meteo forecast (the same public weather DATA api `muse today` uses — returns []
+  and never throws when no location is set or the lookup fails), and a forecast attach in the pure
+  `groupWeekAgenda`: each day's header gains its forecast, AND a free-but-known day (no events/
+  tasks but a forecast) now APPEARS so you see the whole week's weather — while staying backward
+  compatible (with no forecasts passed, empty days are skipped exactly as before). Read-only,
+  local, deterministic; `--json` carries the per-day forecast too. Verified: 6 new tests
+  (forecast attached to a day's header; a forecast-only free day appears; no-forecasts behaviour
+  unchanged; `formatWeekForecast` compact form; `resolveWeekForecasts` returns keyed summaries
+  with an injected fake provider AND [] with no location — apps/cli/src/commands-week.test.ts) +
+  the full @muse/cli suite (182 files / 2070 tests) + tsc build + `pnpm lint` 0/0 + 0 raw control
+  bytes + a LIVE run on the loop PC: `MUSE_WEATHER_LOCATION=Seoul muse week` printed all 7 days
+  with the real forecast woven into each header ("Today — Fri, Jun 5 — light drizzle, 16–26°C,
+  rain 8%", …) even on an empty calendar, and `muse week` with no location gracefully printed the
+  clear-week message (weather omitted, no crash). (b9a6efda)
+
 - [x] **P37-9 Action-log grounding — "did you send that? / what have you done?"
   (B3 transparency, gate a new surface).** `muse ask` now grounds on Muse's OWN
   audit log of acts taken on the user's behalf (sends, refusals) — the

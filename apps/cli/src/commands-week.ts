@@ -7,7 +7,7 @@
  */
 
 import { resolveContactsFile, resolveLocalCalendarFile, resolveTasksFile } from "@muse/autoconfigure";
-import { readTasks } from "@muse/mcp";
+import { OpenMeteoWeatherProvider, readTasks, type DailyForecast, type WeatherProvider } from "@muse/mcp";
 import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
@@ -19,18 +19,63 @@ type Env = Record<string, string | undefined>;
 export interface WeekDay {
   readonly label: string;
   readonly lines: readonly string[];
+  /** This day's weather forecast summary, e.g. "Partly cloudy, 15–25°C, rain 30%" — present only when configured + available. */
+  readonly forecast?: string;
 }
 
 export interface WeekAgendaInput {
   readonly events: readonly { readonly title: string; readonly startsAtIso: string }[];
   readonly tasks: readonly { readonly title: string; readonly dueAt: string }[];
   readonly birthdays: readonly { readonly name: string; readonly daysUntil: number }[];
+  /** Per-day forecast summaries keyed by local YYYY-MM-DD; attached to each day's header. */
+  readonly forecasts?: readonly { readonly dateIso: string; readonly summary: string }[];
 }
 
 const DAY_MS = 86_400_000;
 const clean = (s: string): string => stripUntrustedTerminalChars(s).replace(/\s+/gu, " ").trim();
 const startOfLocalDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 const dayLabel = (d: Date): string => d.toLocaleDateString("en-US", { day: "numeric", month: "short", weekday: "short" });
+const localDateIso = (d: Date): string =>
+  `${d.getFullYear().toString()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`;
+
+/** A compact one-day forecast for the week header (no date prefix — the day's header already carries the date). Pure. */
+export function formatWeekForecast(day: DailyForecast): string {
+  const range = `${Math.round(day.tempMinC).toString()}–${Math.round(day.tempMaxC).toString()}°C`;
+  const rain = day.precipitationProbabilityMaxPct !== undefined ? `, rain ${day.precipitationProbabilityMaxPct.toString()}%` : "";
+  return `${day.condition}, ${range}${rain}`;
+}
+
+/**
+ * The next `days` days of forecast summaries keyed by local date, for the week
+ * agenda — resolved from `MUSE_WEATHER_LOCATION` via the same Open-Meteo provider
+ * `muse today`/`muse brief` use (a public weather DATA api, not a cloud LLM). Returns
+ * [] when no location is configured or the lookup fails (graceful, never throws), so
+ * the week view simply omits weather rather than erroring.
+ */
+export async function resolveWeekForecasts(
+  env: Env,
+  days = 7,
+  provider?: WeatherProvider
+): Promise<readonly { readonly dateIso: string; readonly summary: string }[]> {
+  const location = env.MUSE_WEATHER_LOCATION?.trim();
+  if (!location || location.length === 0) {
+    return [];
+  }
+  const wp = provider ?? new OpenMeteoWeatherProvider();
+  if (!wp.dailyForecast) {
+    return [];
+  }
+  try {
+    const geo = await wp.geocode(location);
+    if (!geo) {
+      return [];
+    }
+    const forecast = await wp.dailyForecast(geo, { days });
+    return forecast.slice(0, days).map((d) => ({ dateIso: d.dateIso, summary: formatWeekForecast(d) }));
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Bucket events / due tasks / birthdays into the next `days` LOCAL calendar
@@ -61,16 +106,21 @@ export function groupWeekAgenda(data: WeekAgendaInput, now: Date, days = 7): rea
   for (const birthday of data.birthdays) {
     push(birthday.daysUntil, `🎂 ${clean(birthday.name)}'s birthday`, Number.POSITIVE_INFINITY);
   }
+  const forecastByDate = new Map((data.forecasts ?? []).map((f) => [f.dateIso, f.summary] as const));
   const out: WeekDay[] = [];
   for (let i = 0; i < days; i += 1) {
     const items = buckets[i]!;
-    if (items.length === 0) {
+    const date = new Date(today0 + i * DAY_MS);
+    const forecast = forecastByDate.get(localDateIso(date));
+    // A day appears if it has agenda items OR a forecast — so a free-but-known
+    // day still shows its weather (plan around it), while staying backward
+    // compatible: with no forecasts passed, empty days are skipped as before.
+    if (items.length === 0 && forecast === undefined) {
       continue;
     }
     items.sort((a, b) => a.time - b.time);
-    const date = new Date(today0 + i * DAY_MS);
     const label = i === 0 ? `Today — ${dayLabel(date)}` : i === 1 ? `Tomorrow — ${dayLabel(date)}` : dayLabel(date);
-    out.push({ label, lines: items.map((item) => item.text) });
+    out.push({ label, lines: items.map((item) => item.text), ...(forecast !== undefined ? { forecast } : {}) });
   }
   return out;
 }
@@ -82,7 +132,7 @@ export function formatWeekAgenda(week: readonly WeekDay[]): string {
   }
   const lines = ["📅 This week:"];
   for (const day of week) {
-    lines.push("", `  ${day.label}`);
+    lines.push("", `  ${day.label}${day.forecast ? ` — ${day.forecast}` : ""}`);
     for (const item of day.lines) {
       lines.push(`    ${item}`);
     }
@@ -93,7 +143,7 @@ export function formatWeekAgenda(week: readonly WeekDay[]): string {
 export function registerWeekCommand(program: Command, io: ProgramIO): void {
   program
     .command("week")
-    .description("Your next 7 days at a glance — events, due tasks, and birthdays grouped by day (read-only, local)")
+    .description("Your next 7 days at a glance — events, due tasks, birthdays, and the daily weather forecast grouped by day (read-only, local)")
     .option("--json", "Emit the agenda as JSON")
     .action(async (options: { readonly json?: boolean }) => {
       const env = process.env as Env;
@@ -106,7 +156,8 @@ export function registerWeekCommand(program: Command, io: ProgramIO): void {
           && Date.parse(task.dueAt) >= now.getTime() && Date.parse(task.dueAt) < weekEnd.getTime())
         .map((task) => ({ dueAt: task.dueAt as string, title: task.title }));
       const birthdays = await readUpcomingBirthdays(resolveContactsFile(env), now).catch(() => []);
-      const week = groupWeekAgenda({ birthdays, events, tasks }, now);
+      const forecasts = await resolveWeekForecasts(env).catch(() => []);
+      const week = groupWeekAgenda({ birthdays, events, forecasts, tasks }, now);
       if (options.json) {
         io.stdout(`${JSON.stringify(week, null, 2)}\n`);
         return;
