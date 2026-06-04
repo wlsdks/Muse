@@ -134,8 +134,26 @@ export function htmlToText(html: string): string {
   return decodeHtmlEntities(stripped).replace(/\s+/gu, " ").trim();
 }
 
-/** Extensions `extractDocumentText` can turn into note text. */
-export const SUPPORTED_DOC_EXT = new Set([".pdf", ".txt", ".md", ".markdown", ".log", ".csv", ".html", ".htm", ".eml"]);
+/**
+ * Extensions the folder walk (`muse ask --file <dir>` + `muse read <dir>`)
+ * collects. Covers every PROSE format the notes index perceives (commands-notes-rag
+ * `NOTE_FILE_RE`: org-mode, reStructuredText, AsciiDoc, MDX, markdown variants) —
+ * so a power-user's `.org`/`.rst`/`.adoc` notes aren't silently skipped by ad-hoc
+ * folder grounding/ingest while the index includes them — PLUS this reader's own
+ * document extras (`.log`/`.csv`/`.html`/`.htm`/`.eml`, special-cased above). A
+ * single non-supported text file still reads (UTF-8 pass-through); only the
+ * directory walk is gated, so it must stay aligned with `NOTE_FILE_RE` (guarded by
+ * a drift test).
+ */
+export const SUPPORTED_DOC_EXT = new Set([
+  ".pdf",
+  ".txt", ".text",
+  ".md", ".markdown", ".mkd", ".mdown", ".mdx",
+  ".org", ".rst", ".adoc", ".asciidoc",
+  ".log", ".csv",
+  ".html", ".htm",
+  ".eml"
+]);
 
 /** Recursively collect supported document files under `dir` (skips hidden + `.processed`), sorted. */
 export async function walkDocuments(dir: string): Promise<string[]> {

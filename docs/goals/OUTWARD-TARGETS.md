@@ -785,6 +785,32 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   `muse ask "when does Project Zephyr ship?"` → "Project Zephyr ships on August 14, 2026
   [from zephyr.org]" (3 embedded incl zephyr.org + a .rst note, 0 skipped). (90411ca7)
 
+- [x] **P37-28 `muse ask --file <dir>` and `muse read <dir>` now perceive a FOLDER of
+  `.org` / `.rst` / `.adoc` / `.mdx` notes too — not just markdown — closing the gap where
+  the notes index perceived them but ad-hoc folder grounding/ingest silently skipped them.**
+  P37-25 widened the notes-INDEX walker to a deliberately wide prose set (`NOTE_FILE_RE`:
+  md/markdown/mkd/mdown/mdx/txt/text/org/rst/adoc/asciidoc/pdf) "so a power-user's
+  non-markdown notes aren't silently invisible" — but the SEPARATE document-reader path
+  (`document-reader.ts` `SUPPORTED_DOC_EXT`, used by both `muse ask --file <dir>`'s
+  `extractDirectoryDocuments` and `muse read <dir>`'s `walkDocuments`) kept the OLD narrow
+  set (`.pdf/.txt/.md/.markdown/.log/.csv/.html/.htm/.eml`), MISSING exactly `.org`/`.rst`/
+  `.adoc`/`.asciidoc`/`.mdx`/`.mkd`/`.mdown`/`.text`. So the same `.org` notes the index
+  includes were silently dropped from a folder ask/ingest — a single `muse ask --file
+  foo.org` worked (UTF-8 pass-through) but the directory walk filtered them out. Closed by
+  widening `SUPPORTED_DOC_EXT` to cover every prose format `NOTE_FILE_RE` perceives (plus the
+  reader's own document extras `.log`/`.csv`/`.html`/`.htm`/`.eml`), with a DRIFT-GUARD test
+  asserting the reader's set is a superset of the index's note formats so they can't diverge
+  again. Pure file-collection change — no dependency added, no model in the loop, binary
+  refusal unchanged. Perception-axis expansion (rotated off the recent felt/trust slices per
+  B0's "favour a genuinely NEW axis"). Verified deterministically AND live: extended the
+  `walkDocuments`/`extractDirectoryDocuments` tests (a `.org`/`.rst`/`.adoc`/`.mdx` corpus is
+  now collected + its text extracted; binary + dotfiles still skipped) + the new drift-guard
+  test (every `NOTE_FILE_RE` prose ext ∈ `SUPPORTED_DOC_EXT`) + full @muse/cli 174 files /
+  1936 tests + tsc build + `pnpm lint` 0/0 + a LIVE `muse ask --file <dir>` on the loop PC
+  over a folder containing ONLY a `.org` file → "grounded on 1 note chunk(s) — aurora.org" →
+  "The staging deploy key rotates every 14 days [from aurora.org]", where before the `.org`
+  file was silently skipped and the folder had zero groundable docs. (a5ce7adc)
+
 - [x] **P37-26 `muse today` now shows upcoming BIRTHDAYS — you don't miss "Zelda's
   birthday is today" just because you didn't wait for the morning brief.** Probing the
   felt daily digest exposed a gap: the morning BRIEF surfaces birthdays

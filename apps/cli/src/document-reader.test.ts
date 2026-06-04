@@ -4,7 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { emlToText, extractDirectoryDocuments, extractDocumentText, htmlToText, isEmlDocument, isHtmlDocument, isLikelyBinary, isPdfDocument, parsePdfBuffer, walkDocuments } from "./document-reader.js";
+import { NOTE_FILE_RE } from "./commands-notes-rag.js";
+import { SUPPORTED_DOC_EXT, emlToText, extractDirectoryDocuments, extractDocumentText, htmlToText, isEmlDocument, isHtmlDocument, isLikelyBinary, isPdfDocument, parsePdfBuffer, walkDocuments } from "./document-reader.js";
 
 const SAMPLE_EML = [
   "From: Jane Park <jane@globex.com>",
@@ -123,33 +124,60 @@ describe("walkDocuments + extractDirectoryDocuments — `--file <dir>` grounding
     await writeFile(join(dir, "budget.txt"), "The Q3 budget is $42,000.\n");
     await writeFile(join(dir, "launch.md"), "Launch on August 14.\n");
     await writeFile(join(dir, "sub", "notes.log"), "nested log line\n");
+    // Non-markdown PROSE notes the index already perceives (P37-25) — must NOT be
+    // silently skipped by folder grounding/ingest anymore.
+    await writeFile(join(dir, "design.org"), "* Design\nThe API rate limit is 90 req/s.\n");
+    await writeFile(join(dir, "manual.rst"), "Manual\n======\nThe serial port runs at 115200 baud.\n");
+    await writeFile(join(dir, "guide.adoc"), "= Guide\nThe default timeout is 30 seconds.\n");
+    await writeFile(join(dir, "spec.mdx"), "# Spec\nThe webhook secret rotates monthly.\n");
     await writeFile(join(dir, "photo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0xff])); // binary, skipped
     await writeFile(join(dir, "archive.zip"), "ignored extension\n"); // unsupported ext
     await writeFile(join(dir, ".hidden.txt"), "hidden, skipped\n"); // dotfile
   });
   afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
-  it("walks only the supported text/PDF extensions, recursively, skipping dotfiles", async () => {
+  it("walks the supported text/PDF/prose extensions, recursively, skipping dotfiles + unsupported", async () => {
     const found = (await walkDocuments(dir)).map((p) => p.replace(`${dir}/`, ""));
     expect(found).toContain("budget.txt");
     expect(found).toContain("launch.md");
     expect(found).toContain("sub/notes.log");
+    // The non-markdown prose notes are now collected (the gap this slice closed):
+    expect(found).toContain("design.org");
+    expect(found).toContain("manual.rst");
+    expect(found).toContain("guide.adoc");
+    expect(found).toContain("spec.mdx");
     expect(found).not.toContain("archive.zip");      // unsupported extension
     expect(found).not.toContain(".hidden.txt");       // dotfile
   });
 
-  it("extracts text from every readable doc and SKIPS the binary one (no garbage)", async () => {
+  it("extracts text from every readable doc (incl. .org/.rst/.adoc/.mdx) and SKIPS the binary one", async () => {
     const docs = await extractDirectoryDocuments(dir);
     const byName = Object.fromEntries(docs.map((d) => [d.path.replace(`${dir}/`, ""), d.text]));
     expect(byName["budget.txt"]).toContain("$42,000");
     expect(byName["launch.md"]).toContain("August 14");
     expect(byName["sub/notes.log"]).toContain("nested log");
+    expect(byName["design.org"]).toContain("90 req/s");
+    expect(byName["manual.rst"]).toContain("115200 baud");
+    expect(byName["guide.adoc"]).toContain("30 seconds");
+    expect(byName["spec.mdx"]).toContain("rotates monthly");
     expect(Object.keys(byName)).not.toContain("photo.png"); // binary skipped, not garbage
   });
 
   it("respects the maxFiles cap", async () => {
     const docs = await extractDirectoryDocuments(dir, 1);
     expect(docs.length).toBe(1);
+  });
+
+  // Drift guard: every PROSE format the notes index perceives (NOTE_FILE_RE)
+  // must also be folder-groundable, else `muse ask --file <dir>` / `muse read
+  // <dir>` silently skip notes the index includes — the inconsistency this slice
+  // closed. (The reader carries a few extra document types of its own, which is
+  // fine — this only asserts the reader is a SUPERSET of the index's notes.)
+  it("SUPPORTED_DOC_EXT covers every prose format the notes index (NOTE_FILE_RE) perceives", () => {
+    for (const ext of ["md", "markdown", "mkd", "mdown", "mdx", "txt", "text", "org", "rst", "adoc", "asciidoc", "pdf"]) {
+      expect(NOTE_FILE_RE.test(`note.${ext}`)).toBe(true); // sanity: this IS a note format
+      expect(SUPPORTED_DOC_EXT.has(`.${ext}`)).toBe(true); // ...and the folder walk collects it
+    }
   });
 });
 
