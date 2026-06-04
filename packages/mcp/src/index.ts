@@ -654,6 +654,7 @@ export {
 } from "./email-provider.js";
 export {
   replyEmailWithApproval,
+  composeForward,
   replySubject,
   sendEmailWithApproval,
   type ApprovalDecision,
@@ -673,11 +674,13 @@ export {
 export {
   createEmailReadMessageTool,
   createEmailReadTool,
+  createEmailForwardTool,
   createEmailReplyTool,
   createEmailSearchTool,
   createEmailSendTool,
   type EmailReadMessageToolDeps,
   type EmailReadToolDeps,
+  type EmailForwardToolDeps,
   type EmailReplyToolDeps,
   type EmailSearchToolDeps,
   type EmailSendToolDeps

@@ -2198,6 +2198,27 @@ in the loop.
   `muse email reply` (no token) failing closed with the set-MUSE_GMAIL_TOKEN guidance and `muse email
   --help` listing `reply`. (3ca05c82)
 
+- [x] **P41-24 `muse email forward <id> --to <contact>` — Muse can now FORWARD a received email to
+  one of your contacts (draft-first, Fwd: subject, original quoted), not just send-new or reply.**
+  Reach had send (P11) + reply (P41-22) but no FORWARD — passing a received message ON to a
+  different person, a daily email action. Built it as a clean COMPOSITION reusing both proven paths:
+  a pure `composeForward(message, note?)` (@muse/mcp email-send.ts — idempotent "Fwd:" subject + an
+  optional prepended note above a quoted "--- Forwarded message ---" header + the original body) +
+  reading the original via `EmailReader.getMessage` + the EXISTING `sendEmailWithApproval` for the
+  recipient (resolved BY CONTACT NAME via resolveContact, draft-first, action-logged) — so forward
+  inherits the whole outbound-safety contract for free (ambiguous/unknown contact ⇒ no send, deny ⇒
+  no send). Shipped on TWO surfaces: a `muse email forward --id <id> --to <contact> [--note]` CLI
+  command (the reliable, explicit surface) AND an `email_forward` agent tool (armed with MUSE_GMAIL_TOKEN
+  alongside send/reply). HONEST SCOPE (per P41-22): the local qwen3:8b does not reliably one-shot-
+  SELECT these email-outbound tools, so the CLI command is the delivered reliable surface and the
+  agent tool is best-effort. Verified (outbound-safety contract = the delivery gate): `composeForward`
+  (Fwd: idempotent / quoted original / note / empty subject), the `email_forward` tool (CONFIRM
+  forwards to the resolved contact with the Fwd: subject + quoted body / UNKNOWN-message / AMBIGUOUS-
+  contact→candidates / DENY → no send via a contract-faithful real GmailEmailProvider + faked fetch),
+  and the `muse email forward` CLI (same four). @muse/mcp 174/1537 + @muse/cli 178/2017 +
+  mcp/cli/autoconfigure/agent-core/api builds + `pnpm lint` 0/0 + a LIVE `muse email forward` (no
+  token) failing closed + `muse email --help` listing `forward`. (812b3cac)
+
 - [x] **P41-23 `muse remind clear "pay rent"` / `snooze "standup"` — the CLI now manages a reminder
   BY TEXT, not just by raw uuid — COMPLETING the by-name actuator parity (tasks P41-21, calendar
   P41-19, now reminders).** The AGENT reminder tools resolve by name (`resolveReminderRef`), so

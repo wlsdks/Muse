@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { GmailEmailProvider } from "./email-provider.js";
-import { replyEmailWithApproval, replySubject, sendEmailWithApproval, type EmailApprovalGate } from "./email-send.js";
+import { composeForward, replyEmailWithApproval, replySubject, sendEmailWithApproval, type EmailApprovalGate } from "./email-send.js";
 import { readActionLog } from "./personal-action-log-store.js";
 import type { Contact } from "./personal-contacts-store.js";
 
@@ -194,5 +194,25 @@ describe("replyEmailWithApproval — outbound-safety contract (reply to a receiv
     expect(outcome).toMatchObject({ reason: "no-identifier", sent: false });
     expect(gateCalls).toBe(0); // never even drafted/prompted
     expect(sends).toHaveLength(0);
+  });
+});
+
+describe("composeForward — Fwd subject + quoted original body", () => {
+  const msg = { body: "Please review by Friday.", from: "Jane Park <jane@globex.com>", subject: "Q3 budget" };
+
+  it("builds a Fwd: subject and quotes the original with an optional note", () => {
+    const f = composeForward(msg, "FYI Bob");
+    expect(f.subject).toBe("Fwd: Q3 budget");
+    expect(f.body).toContain("FYI Bob");
+    expect(f.body).toContain("--- Forwarded message ---");
+    expect(f.body).toContain("From: Jane Park <jane@globex.com>");
+    expect(f.body).toContain("Subject: Q3 budget");
+    expect(f.body).toContain("Please review by Friday.");
+  });
+
+  it("does NOT stack Fwd:, handles an empty subject, and omits the note when absent", () => {
+    expect(composeForward({ ...msg, subject: "Fwd: Q3 budget" }).subject).toBe("Fwd: Q3 budget");
+    expect(composeForward({ ...msg, subject: "" }).subject).toBe("Fwd: (no subject)");
+    expect(composeForward(msg).body.startsWith("--- Forwarded message ---")).toBe(true);
   });
 });

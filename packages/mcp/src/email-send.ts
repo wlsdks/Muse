@@ -173,3 +173,17 @@ export function replySubject(original: string): string {
   }
   return trimmed.length > 0 ? `Re: ${trimmed}` : "Re:";
 }
+
+/**
+ * Compose a FORWARD of a received email — a "Fwd:" subject (idempotent) and a
+ * body that prepends an optional note above a quoted "--- Forwarded message ---"
+ * header (From / Subject) and the original body. Pure; the actual send still
+ * routes through `sendEmailWithApproval` (contact-resolved, draft-first).
+ */
+export function composeForward(message: { readonly from: string; readonly subject: string; readonly body: string }, note?: string): { readonly subject: string; readonly body: string } {
+  const original = message.subject.trim();
+  const subject = /^fwd:/iu.test(original) ? original : `Fwd: ${original.length > 0 ? original : "(no subject)"}`;
+  const header = `--- Forwarded message ---\nFrom: ${message.from}\nSubject: ${original.length > 0 ? original : "(no subject)"}`;
+  const prefix = note !== undefined && note.trim().length > 0 ? `${note.trim()}\n\n` : "";
+  return { body: `${prefix}${header}\n\n${message.body}`, subject };
+}

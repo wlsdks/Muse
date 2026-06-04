@@ -184,3 +184,49 @@ describe("muse email reply — surface (draft-first reply to a received email)",
     expect(r.exitCode).toBe(1);
   });
 });
+
+describe("muse email forward — surface (draft-first forward to a contact)", () => {
+  const MSG: EmailMessage = { body: "Can you confirm Friday?", from: "Jane Park <jane@globex.com>", id: "m1", subject: "Q3 budget" };
+  const reader = (msg: EmailMessage | undefined): EmailReader => ({ getMessage: async (id) => (id === "m1" ? msg : undefined) });
+
+  it("CONFIRM: reads the message, forwards to the resolved CONTACT with a Fwd: subject + quoted body", async () => {
+    const fix = fixtures([{ email: "alice@example.com", id: "c_a", name: "Alice" }]);
+    const { sender, sends } = recordingSender();
+    const r = await run(["forward", "--id", "m1", "--to", "Alice", "--note", "FYI Alice"], { ...fix, approvalGate: approve, reader: reader(MSG), sender });
+    expect(r.output).toContain("Forwarded to alice@example.com");
+    expect(sends).toHaveLength(1);
+    expect(sends[0]!.to).toBe("alice@example.com");
+    expect(sends[0]!.subject).toBe("Fwd: Q3 budget");
+    expect(sends[0]!.body).toContain("FYI Alice");
+    expect(sends[0]!.body).toContain("--- Forwarded message ---");
+    expect(sends[0]!.body).toContain("Can you confirm Friday?");
+    expect(r.exitCode).toBeUndefined();
+  });
+
+  it("AMBIGUOUS contact: no send, lists candidates", async () => {
+    const fix = fixtures([{ email: "bob1@example.com", id: "c_b1", name: "Bob" }, { email: "bob2@example.com", id: "c_b2", name: "Bob" }]);
+    const { sender, sends } = recordingSender();
+    const r = await run(["forward", "--id", "m1", "--to", "Bob"], { ...fix, approvalGate: approve, reader: reader(MSG), sender });
+    expect(r.output).toContain("is ambiguous");
+    expect(sends).toHaveLength(0);
+    expect(r.exitCode).toBe(1);
+  });
+
+  it("UNKNOWN message id: no send, clear error", async () => {
+    const fix = fixtures([{ email: "alice@example.com", id: "c_a", name: "Alice" }]);
+    const { sender, sends } = recordingSender();
+    const r = await run(["forward", "--id", "nope", "--to", "Alice"], { ...fix, approvalGate: approve, reader: reader(MSG), sender });
+    expect(r.output).toContain("no message with id 'nope'");
+    expect(sends).toHaveLength(0);
+    expect(r.exitCode).toBe(1);
+  });
+
+  it("DENY: nothing is sent", async () => {
+    const fix = fixtures([{ email: "alice@example.com", id: "c_a", name: "Alice" }]);
+    const { sender, sends } = recordingSender();
+    const r = await run(["forward", "--id", "m1", "--to", "Alice"], { ...fix, approvalGate: deny, reader: reader(MSG), sender });
+    expect(r.output).toContain("Not sent (denied)");
+    expect(sends).toHaveLength(0);
+    expect(r.exitCode).toBe(1);
+  });
+});

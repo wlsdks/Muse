@@ -15,7 +15,7 @@ import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { extractEmailAddress, type EmailProvider, type EmailReader, type EmailSearcher, type EmailSender } from "./email-provider.js";
-import { replyEmailWithApproval, replySubject, sendEmailWithApproval, type EmailApprovalGate } from "./email-send.js";
+import { composeForward, replyEmailWithApproval, replySubject, sendEmailWithApproval, type EmailApprovalGate } from "./email-send.js";
 import type { Contact } from "./personal-contacts-store.js";
 
 export interface EmailSendToolDeps {
@@ -134,6 +134,72 @@ export function createEmailReplyTool(deps: EmailReplyToolDeps): MuseTool {
         return { repliedTo: to, sent: true, subject };
       }
       return { detail: outcome.detail, reason: outcome.reason, sent: false };
+    }
+  };
+}
+
+export interface EmailForwardToolDeps {
+  readonly reader: EmailReader;
+  readonly sender: EmailSender;
+  readonly contacts: () => Promise<readonly Contact[]> | readonly Contact[];
+  readonly approvalGate: EmailApprovalGate;
+  readonly actionLogFile: string;
+  readonly userId: string;
+}
+
+export function createEmailForwardTool(deps: EmailForwardToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "FORWARD an email the user RECEIVED to one of their CONTACTS (resolved by name). Reads the original message by id, prepends an optional note, and the user confirms the exact forward before it sends. USE when the user says 'forward that / the <X> email to <contact>'. Look the message up first (email_recent / search_email) for its id. NOT a new email (email_send), NOT a reply to the original sender (email_reply).",
+      domain: "messaging",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          id: { description: "Id of the message to forward, from a prior email_recent / search_email result, e.g. '18f2a1c3d4e5'.", type: "string" },
+          note: { description: "Optional note to prepend above the forwarded message, e.g. 'FYI — see below.'", type: "string" },
+          to: { description: "Recipient CONTACT NAME (resolved via the contacts graph), e.g. 'Bob'.", type: "string" }
+        },
+        required: ["id", "to"],
+        type: "object"
+      },
+      keywords: ["forward", "fwd", "email", "send on", "pass along"],
+      name: "email_forward",
+      risk: "execute"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const id = typeof args["id"] === "string" ? args["id"].trim() : "";
+      const to = typeof args["to"] === "string" ? args["to"].trim() : "";
+      const note = typeof args["note"] === "string" ? args["note"] : undefined;
+      if (id.length === 0 || to.length === 0) {
+        return { error: "email_forward requires 'id' (the message to forward) and 'to' (a contact name)", sent: false };
+      }
+      const message = await deps.reader.getMessage(id);
+      if (!message) {
+        return { detail: `no message with id '${id}' — look it up with email_recent or search_email first`, reason: "unknown-message", sent: false };
+      }
+      const { body, subject } = composeForward({ body: message.body, from: message.from, subject: message.subject }, note);
+      const outcome = await sendEmailWithApproval({
+        actionLogFile: deps.actionLogFile,
+        approvalGate: deps.approvalGate,
+        body,
+        contacts: await Promise.resolve(deps.contacts()),
+        recipientQuery: to,
+        sender: deps.sender,
+        subject,
+        userId: deps.userId
+      });
+      if (outcome.sent) {
+        return { forwardedTo: outcome.to, sent: true, subject };
+      }
+      return {
+        detail: outcome.detail,
+        reason: outcome.reason,
+        sent: false,
+        ...(outcome.reason === "ambiguous-recipient" && outcome.candidates
+          ? { candidates: outcome.candidates.map((c) => c.name) }
+          : {})
+      };
     }
   };
 }

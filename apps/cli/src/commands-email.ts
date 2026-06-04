@@ -12,6 +12,7 @@ import { resolveActionLogFile, resolveContactsFile, resolveNotesDir } from "@mus
 import {
   GmailEmailProvider,
   extractEmailAddress,
+  composeForward,
   queryContacts,
   replyEmailWithApproval,
   replySubject,
@@ -47,7 +48,7 @@ export interface EmailCommandDeps {
 }
 
 export function registerEmailCommands(program: Command, io: ProgramIO, deps: EmailCommandDeps = {}): void {
-  const email = program.command("email").description("Email — sync your inbox into recall (`sync`) + draft-first send (`send`) / reply (`reply`)");
+  const email = program.command("email").description("Email — sync your inbox into recall (`sync`) + draft-first send / reply / forward");
 
   email
     .command("send")
@@ -148,6 +149,62 @@ export function registerEmailCommands(program: Command, io: ProgramIO, deps: Ema
         return;
       }
       io.stderr(`Not sent (${outcome.reason}): ${outcome.detail}\n`);
+      process.exitCode = 1;
+    });
+
+  email
+    .command("forward")
+    .description("Forward a received email (by id) to a contact — drafts it (Fwd: + quoted original) and sends only after you confirm")
+    .requiredOption("--id <id>", "Id of the message to forward (from your mail client / `muse email sync`)")
+    .requiredOption("--to <name>", "Recipient contact name (resolved via your contacts)")
+    .option("--note <text>", "Optional note to prepend above the forwarded message")
+    .option("--user <id>", "User identity for the action log", "stark")
+    .action(async (options: { readonly id?: string; readonly to?: string; readonly note?: string; readonly user?: string }) => {
+      const provider = buildGmailProvider(io);
+      const reader = deps.reader ?? provider;
+      const sender = deps.sender ?? provider;
+      if (!reader || !sender) {
+        io.stderr("muse email forward: set MUSE_GMAIL_TOKEN to a Gmail OAuth2 access token (gmail.send scope).\n");
+        process.exitCode = 1;
+        return;
+      }
+      const message = await reader.getMessage(options.id ?? "");
+      if (!message) {
+        io.stderr(`muse email forward: no message with id '${options.id ?? ""}' — check the id.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const { body, subject } = composeForward(message, options.note);
+      const contactsFile = deps.contactsFile ?? resolveContactsFile(process.env as Record<string, string | undefined>);
+      const gate: EmailApprovalGate = deps.approvalGate ?? ((draft) => {
+        io.stdout(`\nTo: ${draft.recipientName} <${draft.to}>\nSubject: ${draft.subject}\n\n${draft.body}\n\n`);
+        return confirm({ message: "Forward this email?" }).then((answer) =>
+          isCancel(answer) || answer !== true
+            ? { approved: false, reason: "user did not confirm" }
+            : { approved: true });
+      });
+      const outcome = await sendEmailWithApproval({
+        actionLogFile: deps.actionLogFile ?? resolveActionLogFile(process.env as Record<string, string | undefined>),
+        approvalGate: gate,
+        body,
+        contacts: await queryContacts(contactsFile),
+        recipientQuery: options.to ?? "",
+        sender,
+        subject,
+        userId: options.user ?? "stark"
+      });
+      if (outcome.sent) {
+        io.stdout(`Forwarded to ${outcome.to}.\n`);
+        return;
+      }
+      if (outcome.reason === "ambiguous-recipient") {
+        io.stderr(`'${options.to}' is ambiguous — did you mean one of:\n`);
+        for (const c of outcome.candidates ?? []) {
+          io.stderr(`  - ${c.name}${c.email ? ` <${c.email}>` : ""}\n`);
+        }
+      } else {
+        io.stderr(`Not sent (${outcome.reason}): ${outcome.detail}\n`);
+      }
       process.exitCode = 1;
     });
 
