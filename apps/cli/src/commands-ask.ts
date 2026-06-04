@@ -53,6 +53,7 @@ import { readClipboardText } from "./clipboard-reader.js";
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
 import { convertUnit, detectUnitConversion, formatConversion } from "./unit-conversion.js";
+import { detectPercentageQuery, formatPercentage } from "./percentage-query.js";
 import { docxToText, emlToText, extractDirectoryDocuments, formatDirectoryCapNotice, formatUrlTruncationNotice, htmlToText, isDocxDocument, isEmlDocument, isHtmlDocument, isPdfDocument, isPptxDocument, parsePdfBuffer, pptxToText } from "./document-reader.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
 import { resolvePersona } from "./program-helpers.js";
@@ -1648,6 +1649,22 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           }
           return;
         }
+      }
+
+      // Percentage word-problems (tips, discounts, tax, raises) — "18% of $54",
+      // "$80 with 15% off", "200 plus 8%", "20% tip on 45". The 8B miscalculates
+      // these and the symbolic arithmetic fast-path can't reach them (they carry
+      // words + currency). Compute EXACTLY. Precision-first: only the recognised
+      // shapes fire, else it falls through to recall.
+      const percentage = detectPercentageQuery(query);
+      if (percentage) {
+        const answer = formatPercentage(percentage);
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ answer, percentage, query })}\n`);
+        } else {
+          io.stdout(`${answer}\n`);
+        }
+        return;
       }
 
       // A question ABOUT Muse itself ("what can you do?") is answered from the

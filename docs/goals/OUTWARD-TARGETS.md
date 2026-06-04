@@ -2208,6 +2208,28 @@ in the loop.
   (result 5.51), and the negative `"how many people are on the team?"` → NOT hijacked (recall).
   (488f26bd)
 
+- [x] **P41-27 `muse ask "what's a 20% tip on $45?"` / "$80 with 15% off" now answers the EXACT
+  percentage deterministically — the FOURTH deterministic "compute it, don't let the 8B guess"
+  lever (after arithmetic P41-20, dates P41-25, units P41-26), and the single highest-FREQUENCY
+  everyday math: tips, discounts, tax, raises.** The 8B miscalculates these, and the symbolic
+  arithmetic fast-path can't reach them because they carry WORDS ("of", "off", "tip") and currency
+  symbols (so they fail its digits-only gate). Added a pure percentage fast-path
+  (apps/cli/src/percentage-query.ts): `detectPercentageQuery` recognises five shapes — "X% of Y",
+  "X% off [of] Y" / "Y with X% off" (discount), "Y plus/increased by X%" / "add X% to Y" (markup),
+  "Y minus/decreased by X%" (reduction), and "X% tip on Y" — each anchored `^…$` so ONLY a query
+  that is entirely the computation fires (a non-computable percentage question like "what percent of
+  the team is remote?" returns null and falls through to recall), parsing `$`/`,` in the amount and
+  remembering the currency to echo; `formatPercentage` frames each kind with the exact result (the
+  discount also shows "you save …", the tip shows the total). `muse ask` short-circuits it after the
+  unit fast-path. NO model call, NO retrieval. Verified deterministically AND live: 9 tests
+  (detectPercentageQuery parses all five kinds incl. currency + returns null on four non-percentage /
+  not-purely-a-computation cases; formatPercentage framing per kind + 2-decimal rounding —
+  apps/cli/src/percentage-query.test.ts) + @muse/cli 180 files / 2057 tests + tsc build + `pnpm lint`
+  0/0 + LIVE on the loop PC: `"what's a 20% tip on $45?"` → "A 20% tip on $45 is $9 (total $54).",
+  `"$80 with 15% off"` → "15% off $80 is $68 (you save $12).", `"what is 7.5% of 1200?"` → "7.5% of
+  1200 is 90.", `"200 plus 8%"` → "200 plus 8% is 216.", `--json "15% off 80"` → exact JSON, and the
+  negative `"what percent of the team is remote?"` → NOT hijacked (recall). (73eb17a7)
+
 - [x] **P41-17 Reminders can now repeat MONTHLY — "remind me to pay rent on the 1st of
   every month" finally sticks, where before only daily/weekly were allowed and a monthly
   request silently became a ONE-TIME reminder.** Reminder recurrence was `"daily" | "weekly"`
