@@ -19,6 +19,7 @@ import {
   parseTaskDueAt,
   readTasks,
   readTaskStatusFilter,
+  resolveTaskRef,
   serializeTask,
   writeTasks,
   type PersistedTask
@@ -243,7 +244,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
   tasks
     .command("complete")
     .description("Mark a task done (--local skips the API)")
-    .argument("<id>", "Task id")
+    .argument("<id>", "Task id, id prefix, or title — e.g. 'groceries'")
     .option("--local", "Update the local tasks file instead of calling the API")
     .option("--json", "Print the raw response instead of a short confirmation")
     .action(async (id: string, options: SharedOptions, command) => {
@@ -289,7 +290,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
   tasks
     .command("edit")
     .description("Update an existing task in place (--local skips the API)")
-    .argument("<id>", "Task id (full or short prefix)")
+    .argument("<id>", "Task id, id prefix, or title")
     .option("--title <text...>", "New title")
     .option("--notes <text>", "New free-form notes (pass an empty string to clear)")
     .option("--tags <list>", "New comma-separated tag list (pass an empty string to clear)")
@@ -399,7 +400,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
   tasks
     .command("delete")
     .description("Remove a task (--local skips the API)")
-    .argument("<id>", "Task id")
+    .argument("<id>", "Task id, id prefix, or title")
     .option("--local", "Delete from the local tasks file instead of calling the API")
     .action(async (id: string, options: { readonly local?: boolean }, command) => {
       const deleteLocal = async (): Promise<string> => {
@@ -457,6 +458,14 @@ export function filterTasksBySearch<T extends { readonly title?: unknown; readon
   });
 }
 
+/**
+ * Resolve a CLI task reference to a single id. An exact id wins; then a unique
+ * id PREFIX; then — the capability this adds — the task TITLE, so
+ * `muse tasks complete groceries` works like the agent's "complete the groceries
+ * task" instead of demanding the raw uuid (reuses the SAME `resolveTaskRef` the
+ * agent tools use: case-insensitive title substring, OPEN tasks preferred).
+ * Ambiguity NEVER guesses — it throws with the candidate titles.
+ */
 export function resolveLocalTaskId(input: string, all: readonly PersistedTask[]): string {
   const exact = all.find((task) => task.id === input);
   if (exact) return exact.id;
@@ -464,10 +473,18 @@ export function resolveLocalTaskId(input: string, all: readonly PersistedTask[])
   if (matches.length === 1) {
     return matches[0]!.id;
   }
-  if (matches.length === 0) {
-    const suggestion = closestCommandName(input.trim(), all.map((t) => t.id));
-    const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
-    throw new Error(`task not found: ${input}${hint}`);
+  if (matches.length > 1) {
+    throw new Error(`ambiguous task prefix '${input}' matched ${matches.length.toString()} tasks; use a longer id (full uuid is in the on-disk file or --json output)`);
   }
-  throw new Error(`ambiguous task prefix '${input}' matched ${matches.length.toString()} tasks; use a longer id (full uuid is in the on-disk file or --json output)`);
+  const byTitle = resolveTaskRef(all, input);
+  if (byTitle.status === "resolved") {
+    return byTitle.task.id;
+  }
+  if (byTitle.status === "ambiguous") {
+    const titles = byTitle.candidates.map((task) => `'${task.title}'`).join(", ");
+    throw new Error(`'${input}' matches ${byTitle.candidates.length.toString()} tasks: ${titles} — be more specific or use the id`);
+  }
+  const suggestion = closestCommandName(input.trim(), all.map((t) => t.id));
+  const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
+  throw new Error(`task not found: ${input}${hint}`);
 }

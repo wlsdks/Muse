@@ -233,3 +233,36 @@ describe("resolveLocalTaskId — typo-tolerant id resolution", () => {
       .toThrow(/task not found: totallyunrelated$/u);
   });
 });
+
+describe("resolveLocalTaskId — by TITLE (CLI parity with the agent's by-name complete)", () => {
+  const tasks = [
+    { createdAt: "2026-05-19T10:00:00.000Z", id: "task_abc123def", status: "open" as const, title: "Buy groceries" },
+    { createdAt: "2026-05-19T11:00:00.000Z", id: "task_xyz789ghi", status: "open" as const, title: "Call the dentist" }
+  ];
+
+  it("resolves a task by a case-insensitive title substring (no uuid needed)", () => {
+    expect(resolveLocalTaskId("groceries", tasks)).toBe("task_abc123def");
+    expect(resolveLocalTaskId("DENTIST", tasks)).toBe("task_xyz789ghi");
+  });
+
+  it("rejects an ambiguous title with the candidate titles, never guessing", () => {
+    const two = [
+      { createdAt: "2026-05-19T10:00:00.000Z", id: "task_a", status: "open" as const, title: "review the budget" },
+      { createdAt: "2026-05-19T11:00:00.000Z", id: "task_b", status: "open" as const, title: "review the roadmap" }
+    ];
+    expect(() => resolveLocalTaskId("review", two))
+      .toThrow(/'review' matches 2 tasks: 'review the budget', 'review the roadmap'/u);
+  });
+
+  it("prefers an OPEN task over a done one when both titles match", () => {
+    const mixed = [
+      { completedAt: "2026-05-18T09:00:00.000Z", createdAt: "2026-05-17T10:00:00.000Z", id: "task_done", status: "done" as const, title: "pay rent" },
+      { createdAt: "2026-05-19T11:00:00.000Z", id: "task_open", status: "open" as const, title: "pay rent" }
+    ];
+    expect(resolveLocalTaskId("pay rent", mixed)).toBe("task_open");
+  });
+
+  it("still throws not-found when neither id nor title matches", () => {
+    expect(() => resolveLocalTaskId("nonexistent", tasks)).toThrow(/task not found: nonexistent/u);
+  });
+});

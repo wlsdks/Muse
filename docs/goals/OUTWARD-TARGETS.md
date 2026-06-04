@@ -2032,6 +2032,27 @@ in the loop.
   conversationally) — a selection nuance, not a resolution bug; the by-name resolution itself is
   handler-proven and works whenever the model does call update/delete. (12fb4f29)
 
+- [x] **P41-21 `muse tasks complete groceries` — the CLI now completes / edits / deletes a
+  task BY TITLE, not just by raw uuid, closing a CLI↔agent asymmetry.** The AGENT tools have
+  resolved tasks by NAME since P41-8/9 (via `resolveTaskRef`), so "complete the groceries task"
+  works in chat — but the CLI `muse tasks complete <id>` ran through `resolveLocalTaskId`, which
+  did EXACT id or id-PREFIX only and then threw "task not found", forcing the user to dig the
+  generated uuid out of `--json`/the on-disk file just to tick off a todo (the single most common
+  task action). Fixed by extending `resolveLocalTaskId` to fall back to the SAME `resolveTaskRef`
+  the agent uses (exact id → unique id prefix → case-insensitive TITLE substring, OPEN tasks
+  preferred) BEFORE giving up — so all three id-taking subcommands (complete / edit / delete) gain
+  by-title resolution through one change, with their `<id>` arg descriptions updated to "Task id,
+  id prefix, or title". Ambiguity NEVER guesses (per outbound-safety rule 3 spirit): it throws with
+  the candidate titles ("'review' matches 2 tasks: 'review the budget', 'review the roadmap' — be
+  more specific or use the id"). Deterministic (local file, no model). Verified: 4 new unit tests
+  (resolve by case-insensitive title substring; ambiguous title → candidate-title error, no guess;
+  OPEN preferred over done when both titles match; still not-found when neither id nor title
+  matches) + the existing id/prefix tests unregressed + the full @muse/cli suite (176 files / 1972
+  tests) + tsc build + `pnpm lint` 0/0 + LIVE on the loop PC: `muse tasks complete groceries
+  --local` → "Completed [task_…] Buy groceries" (list confirms done), `muse tasks delete passport
+  --local` → "Deleted task …" (both by title, no uuid), `complete review` → the ambiguous candidate
+  list, `complete nonexistent` → not-found. (8bf86746)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links
