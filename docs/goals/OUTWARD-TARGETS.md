@@ -345,6 +345,29 @@ P43 bullet is unbuilt.
   active journal folder correctly silent). @muse/mcp 174 files / 1475 tests +
   @muse/cli 174 files / 1920 tests + `pnpm lint` 0/0. (4401194c)
 
+- [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
+  and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
+  The evening recap (P43-4) is the retrospective sibling of the morning brief, and its
+  "Coming up (next 24h)" is the forward half — but it read ONLY reminders: it pulled in NO
+  calendar events at all (the recap never touched the calendar file) and NO birthdays, even
+  though BOTH the morning brief and `muse today` surface them. So a user reviewing their
+  evening saw "nothing coming up" while a 9am meeting and a friend's birthday tomorrow sat
+  invisible — defeating the recap's whole "what's coming up" purpose. Closed in
+  `gatherEveningRecap` (apps/cli/src/commands-recap.ts): it now also reads the local calendar
+  (reusing `readLocalEvents`, newly exported from commands-today.ts) for events STARTING in
+  `[now, now+24h]` and the contacts' upcoming birthdays (`resolveUpcomingBirthdays(..., {
+  withinDays: 1 })`, the same helper the brief + today use), pushing each into `comingUp`
+  (events rendered with a local time, birthdays as "<name>'s birthday — today/tomorrow") —
+  each read fail-soft so a missing calendar/contacts file just contributes nothing. Pure
+  composition over the deterministic recap (no model call). Verified deterministically AND
+  live: a new `gatherEveningRecap` test (a seeded event within 24h is in `comingUp`, one 5
+  days out is excluded; a contact whose birthday is tomorrow is surfaced as "<name>'s
+  birthday — tomorrow", a months-away one excluded — commands-recap.test.ts) + the full
+  @muse/cli suite (174 files / 1942 tests) + tsc build + `pnpm lint` 0/0 + a LIVE `muse recap`
+  on the loop PC over a seeded calendar + contacts: "Coming up (next 24h)" now lists
+  "⏰ Dentist appointment — 7:32 AM" and "⏰ Zelda's birthday — tomorrow", where before the
+  evening recap surfaced neither. (7ececd59)
+
 **P44 — Trust: encryption at rest (the discretion refusal, made real against
 storage access — not just network egress).** "It can't tell anyone" was true
 against the network (cloud egress refused in code) but FALSE against the disk:

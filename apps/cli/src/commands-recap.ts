@@ -1,8 +1,10 @@
-import { resolveActionLogFile, resolveEpisodesFile, resolveFollowupsFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
-import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readEpisodes, readFollowups, readReminders, readTasks } from "@muse/mcp";
+import { resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readContacts, readEpisodes, readFollowups, readReminders, readTasks, resolveUpcomingBirthdays } from "@muse/mcp";
 import type { Command } from "commander";
 import { type Dirent, promises as fs } from "node:fs";
 import { join, relative, sep } from "node:path";
+
+import { readLocalEvents } from "./commands-today.js";
 
 import type { ProgramIO } from "./program.js";
 
@@ -187,6 +189,16 @@ export async function gatherEveningRecap(
     }
   } catch { /* fail-soft */ }
   try {
+    // Tomorrow's CALENDAR EVENTS — the most concrete "coming up" items, which the
+    // recap omitted entirely (brief + today both surface them). Local calendar only.
+    for (const event of await readLocalEvents(resolveLocalCalendarFile(env), now, horizon)) {
+      const start = new Date(event.startsAtIso);
+      if (!Number.isNaN(start.getTime()) && start >= now && start <= horizon) {
+        comingUp.push(`${event.title} — ${sameLocalDay(start, now) ? shortTime(start) : `${shortDate(start)} ${shortTime(start)}`}`);
+      }
+    }
+  } catch { /* fail-soft — no local calendar */ }
+  try {
     for (const reminder of await readReminders(resolveRemindersFile(env))) {
       const due = new Date(reminder.dueAt);
       if (reminder.status !== "pending" || Number.isNaN(due.getTime())) {
@@ -211,6 +223,13 @@ export async function gatherEveningRecap(
       }
     }
   } catch { /* fail-soft */ }
+  try {
+    // Upcoming BIRTHDAYS — the whole point of storing them is not to miss one; the
+    // brief + `muse today` surface them, the evening recap didn't. Today / tomorrow.
+    for (const bday of resolveUpcomingBirthdays(await readContacts(resolveContactsFile(env)), { now, withinDays: 1 })) {
+      comingUp.push(`${bday.contact.name}'s birthday — ${bday.daysUntil === 0 ? "today" : "tomorrow"}`);
+    }
+  } catch { /* fail-soft — no contacts */ }
   try {
     openFollowups = (await readFollowups(resolveFollowupsFile(env))).length;
   } catch { /* fail-soft */ }

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { appendActionLog, writeEpisodes, writeTasks } from "@muse/mcp";
+import { appendActionLog, writeContacts, writeEpisodes, writeTasks } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -86,6 +86,33 @@ describe("gatherEveningRecap — overdue detection (the absence signal)", () => 
     expect(input.slipping.some((s) => s.includes("Pay rent"))).toBe(true);
     expect(input.slipping.some((s) => s.includes("Future thing"))).toBe(false);
     expect(input.slipping.some((s) => s.includes("Done thing"))).toBe(false);
+  });
+
+  it("surfaces tomorrow's calendar EVENTS and upcoming BIRTHDAYS in 'coming up' (parity with brief + today)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-recap-comingup-"));
+    const now = new Date("2026-06-04T21:00:00"); // evening of Jun 4
+    const calendarFile = join(dir, "calendar.json");
+    const contactsFile = join(dir, "contacts.json");
+    writeFileSync(calendarFile, JSON.stringify({ events: [
+      // ~tomorrow morning — inside the 24h horizon → surfaced
+      { allDay: false, id: "ev1", title: "Team standup", startsAt: new Date(now.getTime() + 12 * 3_600_000).toISOString(), endsAt: new Date(now.getTime() + 13 * 3_600_000).toISOString() },
+      // 5 days out — outside the horizon → excluded
+      { allDay: false, id: "ev2", title: "Quarterly review", startsAt: new Date(now.getTime() + 5 * 86_400_000).toISOString(), endsAt: new Date(now.getTime() + 5 * 86_400_000 + 3_600_000).toISOString() }
+    ] }), "utf8");
+    await writeContacts(contactsFile, [
+      { id: "c1", name: "Zelda", birthday: "06-05" }, // tomorrow (now = Jun 4) → surfaced
+      { id: "c2", name: "Bob", birthday: "12-25" } // months away → excluded by withinDays:1
+    ]);
+    const env: Record<string, string | undefined> = {
+      MUSE_ACTION_LOG_FILE: join(dir, "a.json"), MUSE_EPISODES_FILE: join(dir, "e.json"),
+      MUSE_FOLLOWUPS_FILE: join(dir, "f.json"), MUSE_REMINDERS_FILE: join(dir, "r.json"),
+      MUSE_TASKS_FILE: join(dir, "t.json"), MUSE_CALENDAR_FILE: calendarFile, MUSE_CONTACTS_FILE: contactsFile
+    };
+    const input = await gatherEveningRecap(env, now);
+    expect(input.comingUp.some((c) => c.includes("Team standup"))).toBe(true); // event in window
+    expect(input.comingUp.some((c) => c.includes("Quarterly review"))).toBe(false); // far event excluded
+    expect(input.comingUp.some((c) => c.includes("Zelda's birthday") && c.includes("tomorrow"))).toBe(true); // birthday tomorrow
+    expect(input.comingUp.some((c) => c.includes("Bob"))).toBe(false); // far birthday excluded
   });
 
   it("flags a topic gone silent vs its OWN cadence (cited to the last session), ignoring a still-active one", async () => {

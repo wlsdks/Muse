@@ -885,7 +885,7 @@ export async function readDueFollowups(
     });
 }
 
-async function readLocalEvents(
+export async function readLocalEvents(
   file: string,
   from: Date,
   to: Date
