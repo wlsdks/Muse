@@ -43,8 +43,8 @@ describe("groupWeekAgenda — bucket the next 7 days by local calendar day", () 
   });
 
   it("strips untrusted terminal escapes from a third-party event title", () => {
-    const week = groupWeekAgenda({ birthdays: [], events: [{ startsAtIso: "2026-06-05T10:00:00", title: "Stand[31mup" }], tasks: [] }, now);
-    expect(week[0]!.lines[0]).not.toContain("");
+    const week = groupWeekAgenda({ birthdays: [], events: [{ startsAtIso: "2026-06-05T10:00:00", title: "Stand\u001b[31mup" }], tasks: [] }, now);
+    expect(week[0]!.lines[0]).not.toContain("\u001b");
     expect(week[0]!.lines[0]).toContain("10:00");
   });
 });

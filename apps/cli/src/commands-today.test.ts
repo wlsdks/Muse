@@ -562,8 +562,8 @@ describe("formatNextEvent — time-aware 'what's next' lead", () => {
   });
 
   it("strips untrusted terminal escape chars from a third-party event title", () => {
-    const out = formatNextEvent([{ startsAtIso: "2026-05-18T10:00:00.000Z", title: "Stand[31mup" }], now);
-    expect(out).not.toContain("");
+    const out = formatNextEvent([{ startsAtIso: "2026-05-18T10:00:00.000Z", title: "Stand\u001b[31mup" }], now);
+    expect(out).not.toContain("\u001b");
     expect(out).toContain("in 25 min");
   });
 });
