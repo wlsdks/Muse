@@ -1917,6 +1917,27 @@ in the loop.
   round-trip on qwen3:8b: "remind me to pay rent on the 1st of every month" → the model selects
   `muse.reminders.add` (which now accepts the monthly cadence). (23596174)
 
+- [x] **P41-18 Reminders can now repeat YEARLY too — "remind me to renew my passport
+  every year on March 3rd" / anniversaries / annual subscriptions — completing the cadence
+  set (daily / weekly / monthly / yearly).** P41-17 added monthly; the obvious sibling
+  (anniversaries, annual renewals, yearly reviews) was still rejected. Added `"yearly"`
+  across the same surfaces P41-17 touched (type, `normalizeReminderRecurrence`, the shape
+  guard, the agent `muse.reminders.add` enum + description, the CLI `--repeat` + validation,
+  the REST route). The re-arm math reuses the EXACT calendar-clamping helper monthly uses —
+  yearly is just a 12-month step — so a Feb 29 yearly reminder lands on Feb 28 in non-leap
+  years and RETURNS to Feb 29 in the next leap year (no drift), and missed years skip to the
+  next future occurrence. Verified deterministically AND live: new tests (normalize passes
+  "yearly"; nextReminderOccurrence advances one year on-time; the Feb 29 anchor clamps to
+  Feb 28 in non-leap years then returns to Feb 29 in 2032; missed years skip forward —
+  packages/mcp/test/reminders-recurrence.test.ts) + the full @muse/mcp (174 files / 1514
+  tests), @muse/cli (174 files / 1947 tests) and @muse/api (145 files / 849 tests) suites
+  (this fire ran the FULL cli suite, fixing the now-stale `--repeat` error-message assertion
+  too) + tsc builds + `pnpm lint` 0/0 + a LIVE `muse remind … "our anniversary" --repeat
+  yearly --local --json` → `recurrence: "yearly"` (was rejected) + a LIVE tool-selection on
+  qwen3:8b: "set a yearly reminder to renew my passport on March 3rd" → `muse.reminders.add`
+  (a clear reminder-action phrasing; the informational "remind me OF X" phrasing is selected
+  less reliably, but that's cadence-independent). (71e06773)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links

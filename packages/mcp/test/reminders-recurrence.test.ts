@@ -54,9 +54,11 @@ describe("normalizeReminderRecurrence — coerce, never drop (a one-time reminde
     }
   });
 
-  it("now passes through MONTHLY as a real cadence (rent / bills / subscriptions)", () => {
+  it("passes through MONTHLY and YEARLY as real cadences (rent / bills; anniversaries / annual renewals)", () => {
     expect(normalizeReminderRecurrence("monthly")).toEqual({ recurrence: "monthly" });
     expect(normalizeReminderRecurrence("Monthly")).toEqual({ recurrence: "monthly" });
+    expect(normalizeReminderRecurrence("yearly")).toEqual({ recurrence: "yearly" });
+    expect(normalizeReminderRecurrence("Yearly")).toEqual({ recurrence: "yearly" });
   });
 
   it("a genuinely unsupported cadence still yields a one-shot + a note, NEVER a hard error", () => {
@@ -111,6 +113,28 @@ describe("nextReminderOccurrence — MONTHLY (calendar-aware, day clamped, ancho
     const next = nextReminderOccurrence(localIso(2026, 0, 15), "monthly", localIso(2026, 3, 10));
     expect(parts(next)).toMatchObject({ m: 3, d: 15 });
     expect(Date.parse(next)).toBeGreaterThan(Date.parse(localIso(2026, 3, 10)));
+  });
+});
+
+describe("nextReminderOccurrence — YEARLY (calendar-aware: Feb 29 clamps, then returns in a leap year)", () => {
+  const localIso = (y: number, m: number, d: number, h = 9): string => new Date(y, m, d, h, 0).toISOString();
+  const parts = (iso: string): { y: number; m: number; d: number } => { const x = new Date(iso); return { d: x.getDate(), m: x.getMonth(), y: x.getFullYear() }; };
+
+  it("advances one year when fired on time (an anniversary)", () => {
+    expect(parts(nextReminderOccurrence(localIso(2026, 5, 15), "yearly", localIso(2026, 5, 15)))).toMatchObject({ d: 15, m: 5, y: 2027 });
+  });
+
+  it("a Feb 29 yearly reminder clamps to Feb 28 in non-leap years, then RETURNS to Feb 29 in the next leap year (no drift)", () => {
+    // anchor Feb 29 2028 (a leap year), fired then → Feb 28 2029 (clamped, non-leap)
+    expect(parts(nextReminderOccurrence(localIso(2028, 1, 29), "yearly", localIso(2028, 1, 29)))).toMatchObject({ d: 28, m: 1, y: 2029 });
+    // by mid-2031 the next occurrence is Feb 29 2032 — the next leap year, anchor restored (NOT Feb 28)
+    expect(parts(nextReminderOccurrence(localIso(2028, 1, 29), "yearly", localIso(2031, 5, 1)))).toMatchObject({ d: 29, m: 1, y: 2032 });
+  });
+
+  it("skips missed years to the next FUTURE occurrence", () => {
+    const next = nextReminderOccurrence(localIso(2020, 6, 4), "yearly", localIso(2026, 0, 1)); // due Jul 4 2020, now Jan 2026 → Jul 4 2026
+    expect(parts(next)).toMatchObject({ d: 4, m: 6, y: 2026 });
+    expect(Date.parse(next)).toBeGreaterThan(Date.parse(localIso(2026, 0, 1)));
   });
 });
 

@@ -154,7 +154,7 @@ describe("muse remind add --repeat — recurring reminders", () => {
 
   it("rejects an invalid --repeat value (no reminder created)", async () => {
     const r = await runRemind(["2026-12-25T09:00:00Z", "standup", "--repeat", "hourly"]);
-    expect(r.error).toContain("--repeat must be 'daily', 'weekly', or 'monthly'");
+    expect(r.error).toContain("--repeat must be 'daily', 'weekly', 'monthly', or 'yearly'");
     expect(r.apiCalls).toHaveLength(0);
   });
 

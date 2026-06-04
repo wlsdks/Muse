@@ -28,7 +28,7 @@ export interface ReminderVia {
   readonly destination: string;
 }
 
-export type ReminderRecurrence = "daily" | "weekly" | "monthly";
+export type ReminderRecurrence = "daily" | "weekly" | "monthly" | "yearly";
 
 export interface PersistedReminder {
   readonly id: string;
@@ -180,13 +180,13 @@ export function normalizeReminderRecurrence(raw: string | undefined): { recurren
     return {};
   }
   const lower = value.toLowerCase();
-  if (lower === "daily" || lower === "weekly" || lower === "monthly") {
+  if (lower === "daily" || lower === "weekly" || lower === "monthly" || lower === "yearly") {
     return { recurrence: lower };
   }
   if (ONE_TIME_RECURRENCE_SENTINELS.has(lower)) {
     return {};
   }
-  return { note: `recurrence '${value}' isn't supported (only 'daily', 'weekly', or 'monthly'); created a one-time reminder` };
+  return { note: `recurrence '${value}' isn't supported (only 'daily', 'weekly', 'monthly', or 'yearly'); created a one-time reminder` };
 }
 
 export type ReminderRefResolution =
@@ -279,19 +279,21 @@ export function nextReminderOccurrence(dueAt: string, recurrence: ReminderRecurr
   if (!Number.isFinite(due) || !Number.isFinite(fromMs)) {
     return dueAt;
   }
-  if (recurrence === "monthly") {
-    // Calendar-aware (months vary 28–31 days): the Nth occurrence is the original
-    // due day in `due`+N months, the day CLAMPED to that month's length so a "31st"
-    // reminder lands on the LAST day of a short month (Feb 28) and RETURNS to the
-    // 31st in long months — computed from the ORIGINAL due each time so the anchor
-    // day never drifts down. Advance N until strictly after `from` (skips missed
-    // months after daemon downtime).
+  if (recurrence === "monthly" || recurrence === "yearly") {
+    // Calendar-aware (months vary 28–31 days; a year is 12 months): the Nth
+    // occurrence is the original due day in `due` + N*step months, the day CLAMPED
+    // to that month's length so a "31st" monthly (or "Feb 29th" yearly) reminder
+    // lands on the LAST valid day of a short month (Feb 28) and RETURNS to the 31st
+    // (or Feb 29 in a leap year) — computed from the ORIGINAL due each time so the
+    // anchor day never drifts down. Advance N until strictly after `from` (skips
+    // missed periods after daemon downtime).
+    const stepMonths = recurrence === "yearly" ? 12 : 1;
     const dueDate = new Date(due);
     let n = 1;
-    let next = addMonthsClamped(dueDate, n);
+    let next = addMonthsClamped(dueDate, stepMonths * n);
     while (next.getTime() <= fromMs) {
       n += 1;
-      next = addMonthsClamped(dueDate, n);
+      next = addMonthsClamped(dueDate, stepMonths * n);
     }
     return next.toISOString();
   }
@@ -410,7 +412,8 @@ function isPersistedReminder(value: unknown): value is PersistedReminder {
   if (candidate.recurrence !== undefined
     && candidate.recurrence !== "daily"
     && candidate.recurrence !== "weekly"
-    && candidate.recurrence !== "monthly") {
+    && candidate.recurrence !== "monthly"
+    && candidate.recurrence !== "yearly") {
     return false;
   }
   if (candidate.via !== undefined) {
