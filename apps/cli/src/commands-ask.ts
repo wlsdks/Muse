@@ -23,7 +23,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative } from "node:path";
 
@@ -241,6 +241,70 @@ export function formatSourceReceipts(
     return `   • ${lead}${snippet ? ` — "${snippet}"` : ""}${target ? `\n     ${target}` : ""}`;
   });
   return `\n📎 From your notes (open to verify):\n${blocks.join("\n")}\n`;
+}
+
+/** Coarse PAST age for a staleness hint — "9d ago" / "3w ago" / "8mo ago" / "2y ago". Pure. */
+export function formatCoarseAge(ageMs: number): string {
+  const days = Math.floor(ageMs / 86_400_000);
+  if (days < 14) {
+    return `${days.toString()}d ago`;
+  }
+  if (days < 60) {
+    return `${Math.round(days / 7).toString()}w ago`;
+  }
+  if (days < 365) {
+    return `${Math.round(days / 30).toString()}mo ago`;
+  }
+  const years = days / 365;
+  return `${years.toFixed(years < 2 ? 1 : 0)}y ago`;
+}
+
+/**
+ * Ages of the NOTE files an answer cited — so the caller can warn when a fact
+ * was drawn from a stale note. Skips AD-HOC sources (--url/--clipboard carry
+ * their own provenance) and DATED journal notes (the receipt already prints
+ * "from your note of <date>", so recency is visible). A file that's gone is
+ * skipped (never a false staleness claim). Mirrors `formatSourceReceipts`'s
+ * note→path resolution.
+ */
+export async function collectCitedNoteAges(
+  answer: string,
+  chunks: ReadonlyArray<{ readonly file: string; readonly text: string }>,
+  notesDir: string,
+  now: Date,
+  verifyTargets?: ReadonlyMap<string, string | null>
+): Promise<{ readonly note: string; readonly ageMs: number }[]> {
+  const out: { note: string; ageMs: number }[] = [];
+  for (const note of [...new Set(citedSourcesIn(answer))]) {
+    if (verifyTargets?.has(note) || provenanceDate(note) !== undefined) {
+      continue;
+    }
+    const base = note.split("/").pop();
+    const hit = chunks.find((c) => c.file === note || c.file.split("/").pop() === base);
+    const filePath = hit && isAbsolute(hit.file) ? hit.file : isAbsolute(note) ? note : join(notesDir, note);
+    try {
+      const stats = await stat(filePath);
+      out.push({ ageMs: now.getTime() - stats.mtimeMs, note });
+    } catch {
+      // file gone / unreadable — skip rather than assert a false age
+    }
+  }
+  return out;
+}
+
+/**
+ * The "shows its work" staleness heads-up: when a grounded answer cited a note
+ * last edited longer ago than `thresholdMs`, name it + how old it is so the user
+ * can judge whether the fact still holds. Empty when every cited note is fresh.
+ * Pure.
+ */
+export function formatStalenessWarning(ages: readonly { readonly note: string; readonly ageMs: number }[], thresholdMs: number): string {
+  const stale = ages.filter((age) => age.ageMs > thresholdMs).sort((a, b) => b.ageMs - a.ageMs);
+  if (stale.length === 0) {
+    return "";
+  }
+  const parts = stale.map((age) => `${age.note} (${formatCoarseAge(age.ageMs)})`);
+  return `\n⚠ Heads up — cited note${stale.length === 1 ? "" : "s"} last edited a while ago, so the fact may be out of date: ${parts.join(", ")}.\n`;
 }
 
 /**
@@ -2865,6 +2929,17 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             adHocVerifyTargets
           );
           if (receipts) io.stderr(receipts);
+          // Staleness heads-up: a fact drawn from a long-untouched note may be
+          // out of date — show the source's age so the user can judge it.
+          if (!options.json) {
+            const staleness = formatStalenessWarning(
+              await collectCitedNoteAges(collectedAnswer, scored.map((r) => ({ file: r.file, text: r.chunk.text })), notesDir, new Date(), adHocVerifyTargets),
+              180 * 86_400_000
+            );
+            if (staleness) {
+              io.stderr(staleness);
+            }
+          }
           const moreReceipts = formatNonNoteReceipts(collectedAnswer, {
             actions: matchedActions.map((a) => a.what),
             commands: matchedCommands,

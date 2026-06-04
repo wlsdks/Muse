@@ -3232,6 +3232,27 @@ tool-calling.md).** Edge hygiene meets felt responsiveness.
   false-refusal; plus a live `muse ask --verify-claims` round-trip on a grounded answer ran clean.
   (3150b579)
 
+- [x] **P38-39 `muse ask` now WARNS when an answer rests on a STALE note — the "shows its work"
+  edge extended to source RECENCY ("⚠ cited note last edited a while ago, the fact may be out of
+  date: vpn.md (8mo ago)").** The source receipt named WHICH note and, for dated journal notes,
+  the date — but for a regular note (vpn.md, budget.md) it showed "from vpn.md" with NO recency, so
+  a fact pulled from a two-year-old note read as fresh (a staleness blind spot — the note said X but
+  X may have changed). Added a staleness heads-up computed ALONGSIDE the receipt (the heavily-tested
+  `formatSourceReceipts` left untouched, avoiding an async refactor of its ~10 call sites): a pure
+  `formatCoarseAge` (d / w / mo / y), a pure `formatStalenessWarning(ages, thresholdMs)` (names cited
+  notes older than the threshold, oldest first; empty when all fresh), and `collectCitedNoteAges`
+  (stats each cited note's file for its mtime, SKIPPING ad-hoc --url/--clipboard sources — they carry
+  their own provenance — and dated journal notes — the date is already shown — and a missing file, so
+  no false age) — wired into the grounded-answer branch of `muse ask` with a 180-day threshold, on
+  stderr (not --json). Deterministic (file mtime; the warning fires before/after the model, no extra
+  inference). Verified: 3 unit tests (formatCoarseAge buckets; formatStalenessWarning names + sorts +
+  threshold + empty; collectCitedNoteAges stats a real seeded note and skips ad-hoc/dated/missing —
+  apps/cli/src/commands-ask-receipts.test.ts) + the full @muse/cli suite (178 files / 2020 tests) +
+  tsc build + `pnpm lint` 0/0 + a LIVE run on the loop PC: a vpn.md note touch-stamped 8 months old,
+  reindexed, then `muse ask "what MTU does the office VPN use?"` answered "MTU 1380 [from vpn.md]"
+  and printed "⚠ Heads up — cited note last edited a while ago, so the fact may be out of date:
+  vpn.md (8mo ago)." (e09dab3d)
+
 - [x] **P39-2 `muse ask "what can you do?"` answers honestly about MUSE, not a
   hallucinated over-claim.** A meta/capability question ran retrieval and made
   the local model free-compose an aspirational answer ("I can manage your

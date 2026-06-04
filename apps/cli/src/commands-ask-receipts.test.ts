@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSourceReceipts, provenanceDate, provenanceSnippet, relevantSnippet } from "./commands-ask.js";
+import { collectCitedNoteAges, formatCoarseAge, formatSourceReceipts, formatStalenessWarning, provenanceDate, provenanceSnippet, relevantSnippet } from "./commands-ask.js";
 
 describe("relevantSnippet — quote a content line, never a markdown heading", () => {
   const note = "# WireGuard VPN setup\nUnrelated grocery list line.\nMTU 1380 to avoid fragmentation on the VPN.";
@@ -105,5 +105,49 @@ describe("formatSourceReceipts — S1 citation-as-voice (date + verbatim snippet
     const out = formatSourceReceipts("See [from 2026-03-03-vpn-wireguard.md].", "/n", []);
     expect(out).toContain("from your note of 2026-03-03");
     expect(out).not.toContain('—'); // no snippet dash when there's no chunk
+  });
+});
+
+describe("staleness heads-up — the 'shows its work' edge applied to source recency", () => {
+  it("formatCoarseAge buckets into days / weeks / months / years", () => {
+    expect(formatCoarseAge(9 * 86_400_000)).toBe("9d ago");
+    expect(formatCoarseAge(21 * 86_400_000)).toBe("3w ago");
+    expect(formatCoarseAge(240 * 86_400_000)).toBe("8mo ago");
+    expect(formatCoarseAge(800 * 86_400_000)).toBe("2y ago");
+  });
+
+  it("formatStalenessWarning names notes older than the threshold (oldest first), empty otherwise", () => {
+    const day = 86_400_000;
+    const out = formatStalenessWarning([
+      { ageMs: 30 * day, note: "fresh.md" },     // under 180d → not warned
+      { ageMs: 240 * day, note: "budget.md" },
+      { ageMs: 400 * day, note: "vpn.md" }
+    ], 180 * day);
+    expect(out).toContain("may be out of date");
+    expect(out).toContain("vpn.md (1.1y ago), budget.md (8mo ago)"); // oldest first, fresh.md omitted
+    expect(out).not.toContain("fresh.md");
+    expect(formatStalenessWarning([{ ageMs: 10 * day, note: "fresh.md" }], 180 * day)).toBe("");
+  });
+
+  it("collectCitedNoteAges stats a cited note's file, skips ad-hoc + dated + missing", async () => {
+    const { mkdtempSync, writeFileSync, utimesSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-stale-"));
+    const vpn = join(dir, "vpn.md");
+    writeFileSync(vpn, "MTU 1380", "utf8");
+    const eightMonthsAgo = new Date(Date.now() - 240 * 86_400_000);
+    utimesSync(vpn, eightMonthsAgo, eightMonthsAgo);
+    const now = new Date();
+    const ages = await collectCitedNoteAges(
+      "MTU is 1380 [from vpn.md], also [from clipboard], and [from 2026-03-03-journal.md].",
+      [{ file: vpn, text: "MTU 1380" }],
+      dir,
+      now,
+      new Map([["clipboard", null]]) // clipboard is ad-hoc → skipped
+    );
+    expect(ages).toHaveLength(1); // vpn.md only; clipboard (ad-hoc) + the dated journal note skipped
+    expect(ages[0]!.note).toBe("vpn.md");
+    expect(ages[0]!.ageMs).toBeGreaterThan(200 * 86_400_000);
   });
 });
