@@ -180,29 +180,55 @@ export async function walkDocuments(dir: string): Promise<string[]> {
   return out.sort();
 }
 
+export interface DirectoryDocumentsResult {
+  /** The documents read (capped at `cap`; binary / empty files skipped). */
+  readonly documents: readonly { readonly path: string; readonly text: string }[];
+  /** Total SUPPORTED documents in the folder BEFORE the cap — so the caller can
+   *  warn that some weren't read, instead of silently grounding on a subset. */
+  readonly totalFound: number;
+  /** The read cap applied (`maxFiles`). */
+  readonly cap: number;
+}
+
 /**
  * Read + extract text from up to `maxFiles` supported documents under `dir` — so
  * `muse ask --file <dir>` can ground on a folder without ingesting it. Each file
  * goes through `extractDocumentText` (PDF or text); a file that fails to read or
  * parse, or that has no text, is skipped (best-effort) rather than aborting the
- * whole directory. Returns `{ path, text }` for every readable doc.
+ * whole directory. Returns the read documents PLUS `totalFound` / `cap` so the
+ * caller can be HONEST when a big folder was truncated (no silent cap).
  */
 export async function extractDirectoryDocuments(
   dir: string,
   maxFiles = 25
-): Promise<{ readonly path: string; readonly text: string }[]> {
-  const files = (await walkDocuments(dir)).slice(0, Math.max(1, maxFiles));
-  const out: { path: string; text: string }[] = [];
+): Promise<DirectoryDocumentsResult> {
+  const cap = Math.max(1, maxFiles);
+  const allFiles = await walkDocuments(dir);
+  const files = allFiles.slice(0, cap);
+  const documents: { path: string; text: string }[] = [];
   for (const path of files) {
     try {
       const buffer = await readFile(path);
       const { text } = await extractDocumentText(path, buffer);
       if (text.trim().length > 0) {
-        out.push({ path, text });
+        documents.push({ path, text });
       }
     } catch {
       // unreadable / binary / malformed — skip this file, keep the rest
     }
   }
-  return out;
+  return { cap, documents, totalFound: allFiles.length };
+}
+
+/**
+ * The honest "I didn't read everything" notice for `muse ask --file <dir>`: when a
+ * folder has MORE supported documents than the read cap, the answer grounds on only
+ * the first `cap`, so SAY SO — a missing answer shouldn't be mistaken for "not in
+ * your documents" (Muse shows its work). Empty when nothing was dropped. Pure.
+ */
+export function formatDirectoryCapNotice(folder: string, totalFound: number, cap: number): string {
+  if (totalFound <= cap) {
+    return "";
+  }
+  return `muse: ${folder} has ${totalFound.toString()} documents — grounding on the first ${cap.toString()} only; the other ${(totalFound - cap).toString()} were NOT read. Ask about a narrower subset, or split the folder.\n`;
 }

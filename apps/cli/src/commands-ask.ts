@@ -50,7 +50,7 @@ import { formatConnectionsSection } from "./commands-today.js";
 import { embed } from "./embed.js";
 import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpisodeIndex, saveEpisodeIndex } from "./episode-index.js";
 import { readClipboardText } from "./clipboard-reader.js";
-import { emlToText, extractDirectoryDocuments, htmlToText, isEmlDocument, isHtmlDocument, isPdfDocument, parsePdfBuffer } from "./document-reader.js";
+import { emlToText, extractDirectoryDocuments, formatDirectoryCapNotice, htmlToText, isEmlDocument, isHtmlDocument, isPdfDocument, parsePdfBuffer } from "./document-reader.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
 import { resolvePersona } from "./program-helpers.js";
 import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
@@ -1739,10 +1739,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           // a budget — cited per-file `[from <name>]`. An off-topic question finds no
           // overlapping passage ⇒ honest refusal (never a general-knowledge guess).
           try {
-            const docs = await extractDirectoryDocuments(fileLabel);
+            const { documents: docs, totalFound, cap } = await extractDirectoryDocuments(fileLabel);
             if (docs.length === 0) {
-              io.stderr(`muse: --file ${fileLabel} — no readable text/PDF documents found in that folder (looked for .txt/.md/.markdown/.pdf/.log/.csv).\n`);
+              io.stderr(`muse: --file ${fileLabel} — no readable text/PDF documents found in that folder (text / markdown / .org / .rst / PDF / .csv / .html / .eml).\n`);
             } else {
+              // Honest about a truncated big folder — never silently ground on a subset.
+              const capNotice = formatDirectoryCapNotice(fileLabel, totalFound, cap);
+              if (capNotice) {
+                io.stderr(capNotice);
+              }
               const queryTokens = lexicalTokens(query);
               const pool = docs
                 .flatMap((doc) => chunkText(doc.text, 1200).map((text) => ({ file: doc.path, overlap: lexicalOverlap(queryTokens, text), text })))

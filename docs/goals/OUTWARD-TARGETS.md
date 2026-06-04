@@ -1132,6 +1132,26 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   with the receipt "Dummy PDF file" — where before the same URL was refused as non-text and
   nothing could be grounded on. (7f769db5)
 
+- [x] **P37-30 `muse ask --file <dir>` no longer SILENTLY truncates a big folder — it now
+  tells you when it grounded on only the first 25 documents (Muse shows its work).** Folder
+  grounding capped at 25 docs (`extractDirectoryDocuments` default `maxFiles=25`) and the
+  caller just took them — so pointing `--file` at a 50-document folder grounded the answer on
+  25 with NO indication the other 25 were excluded, exactly the "silent cap" the loop bans and
+  a hole in the honesty edge: a missing answer reads as "not in your documents" when really the
+  answer-bearing doc was never read. Closed in apps/cli/src/document-reader.ts: `extractDirectoryDocuments`
+  now returns `{ documents, totalFound, cap }` (the total SUPPORTED docs before the cap), and a
+  pure `formatDirectoryCapNotice(folder, totalFound, cap)` renders an honest stderr notice
+  ("<folder> has N documents — grounding on the first 25 only; the other M were NOT read. Ask
+  about a narrower subset, or split the folder.") which `muse ask --file <dir>` prints when
+  truncated; empty when everything was read. Also refreshed the stale empty-folder message
+  (it still listed only the pre-P37-28 formats). Verified deterministically AND live: tests
+  (`extractDirectoryDocuments` reports `totalFound > cap` when the folder exceeds the cap;
+  `formatDirectoryCapNotice` names the total / first-25 / not-read count, and is empty at or
+  under the cap — apps/cli/src/document-reader.test.ts) + the full @muse/cli suite (174 files /
+  1952 tests) + tsc build + `pnpm lint` 0/0 + a LIVE `muse ask --file <dir>` over a seeded
+  30-`.md` folder → "muse: …/docs has 30 documents — grounding on the first 25 only; the other
+  5 were NOT read…", where before the 5 dropped docs were silent. (a363c44a)
+
 - [x] **P37-19 `muse ask --clipboard` — ask about whatever you just copied
   (Perception growth, the ephemeral sibling of `--file`/`--url`).** A NEW
   read-only local source: you copy an article / error message / snippet / email,

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { NOTE_FILE_RE } from "./commands-notes-rag.js";
-import { SUPPORTED_DOC_EXT, emlToText, extractDirectoryDocuments, extractDocumentText, htmlToText, isEmlDocument, isHtmlDocument, isLikelyBinary, isPdfDocument, parsePdfBuffer, walkDocuments } from "./document-reader.js";
+import { SUPPORTED_DOC_EXT, emlToText, extractDirectoryDocuments, extractDocumentText, formatDirectoryCapNotice, htmlToText, isEmlDocument, isHtmlDocument, isLikelyBinary, isPdfDocument, parsePdfBuffer, walkDocuments } from "./document-reader.js";
 
 const SAMPLE_EML = [
   "From: Jane Park <jane@globex.com>",
@@ -151,7 +151,7 @@ describe("walkDocuments + extractDirectoryDocuments — `--file <dir>` grounding
   });
 
   it("extracts text from every readable doc (incl. .org/.rst/.adoc/.mdx) and SKIPS the binary one", async () => {
-    const docs = await extractDirectoryDocuments(dir);
+    const { documents: docs } = await extractDirectoryDocuments(dir);
     const byName = Object.fromEntries(docs.map((d) => [d.path.replace(`${dir}/`, ""), d.text]));
     expect(byName["budget.txt"]).toContain("$42,000");
     expect(byName["launch.md"]).toContain("August 14");
@@ -163,9 +163,11 @@ describe("walkDocuments + extractDirectoryDocuments — `--file <dir>` grounding
     expect(Object.keys(byName)).not.toContain("photo.png"); // binary skipped, not garbage
   });
 
-  it("respects the maxFiles cap", async () => {
-    const docs = await extractDirectoryDocuments(dir, 1);
-    expect(docs.length).toBe(1);
+  it("respects the maxFiles cap AND reports the total found so a truncated folder isn't silent", async () => {
+    const result = await extractDirectoryDocuments(dir, 1);
+    expect(result.documents.length).toBe(1); // only 1 read
+    expect(result.cap).toBe(1);
+    expect(result.totalFound).toBeGreaterThan(1); // the folder has more — caller can warn
   });
 
   // Drift guard: every PROSE format the notes index perceives (NOTE_FILE_RE)
@@ -206,3 +208,17 @@ describe("htmlToText + isHtmlDocument — read an HTML file's readable text, not
     expect(out.text).not.toContain("<");
   });
 });
+
+describe("formatDirectoryCapNotice — be honest when a big --file <dir> was truncated", () => {
+  it("is empty when nothing was dropped (read everything)", () => {
+    expect(formatDirectoryCapNotice("/notes", 10, 25)).toBe("");
+    expect(formatDirectoryCapNotice("/notes", 25, 25)).toBe(""); // exactly at the cap, none dropped
+  });
+
+  it("names the total, the cap, and how many were NOT read", () => {
+    const notice = formatDirectoryCapNotice("/big-folder", 50, 25);
+    expect(notice).toContain("/big-folder has 50 documents");
+    expect(notice).toContain("first 25 only");
+    expect(notice).toContain("other 25 were NOT read");
+  });
+})
