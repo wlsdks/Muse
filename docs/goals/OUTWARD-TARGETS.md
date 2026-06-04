@@ -3204,6 +3204,29 @@ honest-refusal mock-corpus check where applicable.
   tests + `pnpm lint` 0/0 — a user who says "I'll do X this week" is followed up at the
   end of the week, not nagged tomorrow. (faa74d82)
 
+- [x] **P35-18 You can now TRACK a detected commitment as a task in one step — `muse
+  commitments track <number>` turns "I need to email Bob" (caught from chat) into a real
+  task, instead of the scan just listing loops and telling you to re-type them yourself.**
+  `muse commitments scan` detected open loops and ended with "These aren't tracked yet — add
+  the ones that matter as tasks or reminders" — leaving the user to manually re-type each one
+  into `muse tasks add`, so the detect→ACT loop never closed. Closed by numbering the scan
+  output ("1. • …") and adding `muse commitments track <n>` (apps/cli/src/commands-commitments.ts):
+  it re-detects (deterministic order, so the number is stable for a scan→track in the same
+  sitting), takes the nth commitment, and appends it as an open task via the same task store
+  the rest of the CLI uses. A pure `buildTaskFromCommitment` does the selection: it validates
+  the index (out-of-range / none-detected → a clear error naming the valid range, never a
+  throw) and is IDEMPOTENT — a commitment already an OPEN task (case-insensitive title match)
+  is skipped, so re-tracking can't duplicate. Deterministic — `detectUserCommitments` is the
+  rule engine, no model. Verified deterministically AND live: 4 new `buildTaskFromCommitment`
+  tests (builds the open task from the Nth commitment; out-of-range / empty error with the
+  range named; idempotent dedup against an existing open task) + the full @muse/cli suite (174
+  files / 1947 tests) + tsc build + `pnpm lint` 0/0 + a LIVE `muse commitments scan` →
+  "1. • email Bob the Q3 numbers before Friday" then `muse commitments track 1` →
+  "Tracked as a task: …" and `muse tasks list` shows the new `[task_…] email Bob the Q3
+  numbers …`. (Also repaired a stale P41-17 assertion in commands-remind.test.ts — the
+  --repeat error message now lists 'monthly' — caught when this fire ran the full cli suite
+  that P41-17 hadn't.) (67d108b9)
+
 - [x] **P35-13 You can now CANCEL a proactive check-in — the opt-out that makes
   proactivity calm.** P35-11/12 taught Muse to notice a commitment and schedule a
   warm "how did it go?" nudge; but there was NO way to silence one — if you'd already
