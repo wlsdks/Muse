@@ -18,7 +18,7 @@
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join as pathJoin, resolve as pathResolve, sep as pathSep } from "node:path";
+import { join as pathJoin, relative as pathRelative, resolve as pathResolve, sep as pathSep } from "node:path";
 
 import { applyOverlap } from "@muse/agent-core";
 import { resolveNotesDir } from "@muse/autoconfigure";
@@ -229,6 +229,39 @@ async function walkMarkdown(dir: string): Promise<readonly { path: string; mtime
     }
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Recently-edited notes, newest first — "what was I working on?" Pure (over pre-walked files). */
+export function selectRecentNotes(
+  files: readonly { readonly path: string; readonly mtimeMs: number }[],
+  limit = 10
+): readonly { readonly path: string; readonly mtimeMs: number }[] {
+  return [...files].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, Math.max(1, limit));
+}
+
+/** A coarse PAST-relative age — "just now" / "12m ago" / "3h ago" / "2d ago". Pure. */
+export function formatRelativeAge(deltaMs: number): string {
+  const mins = Math.round(deltaMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins.toString()}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours.toString()}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days.toString()}d ago`;
+}
+
+/** Human-readable "recently edited" list for `muse notes recent`. Pure. */
+export function formatRecentNotes(
+  entries: readonly { readonly path: string; readonly mtimeMs: number }[],
+  notesDir: string,
+  now: Date
+): string {
+  if (entries.length === 0) {
+    return "No notes yet. Capture one with `muse note <thought>` or `muse notes save`.\n";
+  }
+  const nowMs = now.getTime();
+  const lines = entries.map((entry) => `  ${formatRelativeAge(nowMs - entry.mtimeMs)} — ${pathRelative(notesDir, entry.path)}`);
+  return `📝 Recently edited:\n${lines.join("\n")}\n`;
 }
 
 export function cosine(a: readonly number[], b: readonly number[]): number {
@@ -681,5 +714,24 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
       for (const item of due) {
         io.stdout(`  [${item.intervalDays.toString()}d] ${item.path} — last touched ${Math.floor(item.ageDays).toString()}d ago\n`);
       }
+    });
+
+  notes
+    .command("recent")
+    .description("Show your most recently edited notes (newest first) — resume where you left off across all folders. Read-only, deterministic (uses file mtime; no Ollama).")
+    .option("--dir <path>", "Notes directory (default MUSE_NOTES_DIR or ~/.muse/notes)")
+    .option("--limit <n>", "How many to show (default 10)")
+    .option("--json", "Print JSON instead of formatted text")
+    .action(async (options: { readonly dir?: string; readonly limit?: string; readonly json?: boolean }) => {
+      const dir = options.dir ?? resolveNotesDir(process.env as Record<string, string | undefined>);
+      const limit = options.limit !== undefined && Number.isFinite(Number(options.limit))
+        ? Math.max(1, Math.trunc(Number(options.limit)))
+        : 10;
+      const entries = selectRecentNotes(await walkMarkdown(dir), limit);
+      if (options.json) {
+        io.stdout(`${JSON.stringify(entries.map((entry) => ({ mtimeMs: entry.mtimeMs, path: pathRelative(dir, entry.path) })), null, 2)}\n`);
+        return;
+      }
+      io.stdout(formatRecentNotes(entries, dir, new Date()));
     });
 }

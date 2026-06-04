@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { chunkText, cosine, defaultIndexPath, extractDocumentText, isNotesIndexStale, NOTE_FILE_RE, parseRagBoundedInt, reindexNotes } from "./commands-notes-rag.js";
+import { chunkText, cosine, defaultIndexPath, extractDocumentText, formatRecentNotes, formatRelativeAge, isNotesIndexStale, NOTE_FILE_RE, parseRagBoundedInt, reindexNotes, selectRecentNotes } from "./commands-notes-rag.js";
 
 describe("NOTE_FILE_RE — the corpus indexes prose formats beyond .md/.txt", () => {
   it("matches markdown + plain-text + markup note formats (so org/rst/mdx notes aren't invisible)", () => {
@@ -319,5 +319,37 @@ describe("reindexNotes — an embedding failure is counted, not reported as succ
     // hollow "indexed" entry that silently returns no recall hits.
     const stored = summary.index.files.find((f) => f.path.endsWith("note.md"));
     expect(stored?.chunks.length ?? 0).toBe(0);
+  });
+});
+
+describe("muse notes recent — resume where you left off (newest-first)", () => {
+  it("selectRecentNotes sorts by mtime DESC and caps at the limit", () => {
+    const files = [
+      { mtimeMs: 1000, path: "/n/old.md" },
+      { mtimeMs: 5000, path: "/n/newest.md" },
+      { mtimeMs: 3000, path: "/n/mid.md" }
+    ];
+    expect(selectRecentNotes(files, 2).map((f) => f.path)).toEqual(["/n/newest.md", "/n/mid.md"]);
+    expect(selectRecentNotes(files).map((f) => f.path)).toEqual(["/n/newest.md", "/n/mid.md", "/n/old.md"]);
+    expect(selectRecentNotes(files, 0).length).toBe(1); // limit floors at 1
+  });
+
+  it("formatRelativeAge renders coarse past ages", () => {
+    expect(formatRelativeAge(20_000)).toBe("just now"); // <1 min
+    expect(formatRelativeAge(12 * 60_000)).toBe("12m ago");
+    expect(formatRelativeAge(3 * 3_600_000)).toBe("3h ago");
+    expect(formatRelativeAge(2 * 86_400_000)).toBe("2d ago");
+  });
+
+  it("formatRecentNotes renders the relative age + path, and guides when empty", () => {
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    const out = formatRecentNotes([
+      { mtimeMs: Date.parse("2026-05-18T10:00:00.000Z"), path: "/notes/project/plan.md" },
+      { mtimeMs: Date.parse("2026-05-16T12:00:00.000Z"), path: "/notes/budget.md" }
+    ], "/notes", now);
+    expect(out).toContain("📝 Recently edited:");
+    expect(out).toContain("2h ago — project/plan.md");
+    expect(out).toContain("2d ago — budget.md");
+    expect(formatRecentNotes([], "/notes", now)).toContain("No notes yet");
   });
 });

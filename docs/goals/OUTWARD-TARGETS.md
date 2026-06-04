@@ -2293,6 +2293,24 @@ graph intact as the corpus evolves, so a power-user's Zettelkasten doesn't rot.
   broken: health, running   Repair with `muse notes fix-links`", where before the breakage was
   silent. (f6b3b49a)
 
+- [x] **P42-6 `muse notes recent` — "what was I working on?" across ALL folders, newest first.**
+  `muse notes list` is name-ordered directory entries and `muse notes review` resurfaces OLD notes
+  due for a spaced revisit (Leitner intervals) — but neither answers "what did I just touch?", so
+  resuming work in a many-folder corpus meant guessing or scrolling. Added a `muse notes recent`
+  command (apps/cli/src/commands-notes-rag.ts) that reuses the existing `walkMarkdown` (recursive,
+  prose-format-aware) + a pure `selectRecentNotes` (sort by file mtime DESC, cap at `--limit`,
+  default 10) + a pure `formatRecentNotes` rendering each with a coarse relative age via
+  `formatRelativeAge` ("just now" / "12m ago" / "3h ago" / "2d ago") and the folder-relative path,
+  with `--json` and an empty-state hint. Read-only + deterministic (file mtime, no Ollama). Distinct
+  from `list` (name order) and `review` (spaced-OLD); verified there was no prior recency view in
+  EITHER notes command file before building. Verified: 3 unit tests (`selectRecentNotes` mtime-DESC
+  + limit-floors-at-1; `formatRelativeAge` min/hour/day buckets; `formatRecentNotes` age+path render
+  + empty hint — apps/cli/src/commands-notes-rag.test.ts) + the full @muse/cli suite (176 files /
+  1994 tests) + tsc build + `pnpm lint` 0/0 + a LIVE run on the loop PC: three notes `touch`-stamped
+  across 20 days (one in a `project/` subfolder) → `muse notes recent` printed "📝 Recently edited:
+  1d ago — project/plan.md / 18d ago — budget.md / 20d ago — old.md" (newest first, across folders)
+  and `--limit 1` showed only the newest. (bf4d5333)
+
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
 closed its deepest hole, and became constructive. Each verified live on
