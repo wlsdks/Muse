@@ -52,6 +52,7 @@ import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpis
 import { readClipboardText } from "./clipboard-reader.js";
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
+import { convertUnit, detectUnitConversion, formatConversion } from "./unit-conversion.js";
 import { emlToText, extractDirectoryDocuments, formatDirectoryCapNotice, formatUrlTruncationNotice, htmlToText, isEmlDocument, isHtmlDocument, isPdfDocument, parsePdfBuffer } from "./document-reader.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
 import { resolvePersona } from "./program-helpers.js";
@@ -1622,6 +1623,24 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           const answer = formatDateAnswer(datePhrase, resolved, { includeTime: phraseHasTime(datePhrase) });
           if (options.json) {
             io.stdout(`${JSON.stringify({ answer, date: { iso: resolved, phrase: datePhrase }, query })}\n`);
+          } else {
+            io.stdout(`${answer}\n`);
+          }
+          return;
+        }
+      }
+
+      // A pure UNIT-conversion question ("how many km in 5 miles?", "100F in C?")
+      // — the 8B miscalculates conversions (temperature needs a formula). Convert
+      // it EXACTLY. Precision-first: only fires when both units are known and in
+      // the same dimension, else it falls through to recall.
+      const conversion = detectUnitConversion(query);
+      if (conversion) {
+        const result = convertUnit(conversion.value, conversion.from, conversion.to);
+        if (result !== null) {
+          const answer = formatConversion(conversion.value, conversion.from, conversion.to, result);
+          if (options.json) {
+            io.stdout(`${JSON.stringify({ answer, conversion: { ...conversion, result }, query })}\n`);
           } else {
             io.stdout(`${answer}\n`);
           }

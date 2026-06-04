@@ -2104,6 +2104,27 @@ in the loop.
   JSON, and the negative `"when is my dentist appointment?"` → NOT hijacked (fell through to recall).
   (3927a323)
 
+- [x] **P41-26 `muse ask "how many km in 5 miles?"` / "what's 100F in C?" now answers the EXACT
+  conversion deterministically — the third deterministic "compute it, don't let the 8B guess" lever
+  (after arithmetic P41-20 and dates P41-25), per the small-model-maximization focus.** The local
+  8B miscalculates unit conversions — temperature especially, which needs a FORMULA not a factor.
+  Added a pure unit-conversion fast-path (apps/cli/src/unit-conversion.ts): a factor table for
+  length / mass / volume (m/km/cm/mm/mi/yd/ft/in, g/kg/mg/lb/oz/st, l/ml/gal/qt/pt/cup, with word
+  aliases) + explicit C/F/K temperature formulas, a `convertUnit(value, from, to)` that returns null
+  for an unknown unit OR a cross-dimension request, a `detectUnitConversion` recognising "how many
+  <to> in <N> <from>" and "<N> <from> in/to <to>" (optional "convert"/"what's") — and `muse ask`
+  short-circuits it (after the casual/meta/arithmetic/date short-circuits) ONLY when both units
+  convert, so a non-conversion question ("how many people are coming?") falls through to recall.
+  `formatConversion` echoes the user's unit words with a sensibly-rounded result ("5 miles = 8.05
+  km."). NO model call, NO retrieval. Verified deterministically AND live: 7 unit tests (convertUnit
+  factor + temperature-by-formula + null on unknown/cross-dimension; detectUnitConversion both
+  phrasings + null on non-conversion / time-units / cross-dimension; formatConversion rounding —
+  apps/cli/src/unit-conversion.test.ts) + @muse/cli 180 files / 2034 tests + tsc build + `pnpm lint`
+  0/0 + LIVE on the loop PC: `muse ask "how many km in 5 miles?"` → "5 miles = 8.05 km.",
+  `"what's 100F in C?"` → "100 f = 37.78 c.", `--json "convert 2.5 kg to lb"` → exact JSON
+  (result 5.51), and the negative `"how many people are on the team?"` → NOT hijacked (recall).
+  (488f26bd)
+
 - [x] **P41-17 Reminders can now repeat MONTHLY — "remind me to pay rent on the 1st of
   every month" finally sticks, where before only daily/weekly were allowed and a monthly
   request silently became a ONE-TIME reminder.** Reminder recurrence was `"daily" | "weekly"`
