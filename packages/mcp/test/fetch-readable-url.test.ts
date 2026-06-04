@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fetchReadableUrl, isReadableContentType, type HostLookup } from "../src/index.js";
+import { fetchReadableUrl, isPdfContentType, isReadableContentType, type HostLookup } from "../src/index.js";
 
 const publicLookup: HostLookup = async () => [{ address: "93.184.216.34", family: 4 }];
 const privateLookup: HostLookup = async () => [{ address: "10.0.0.5", family: 4 }];
@@ -74,6 +74,42 @@ describe("fetchReadableUrl", () => {
     if (!res.ok) expect(res.error).toMatch(/not a readable text page.*application\/pdf/u);
   });
 
+  it("READS a PDF URL when a pdfExtractor is wired (online PDF grounding)", async () => {
+    const res = await fetchReadableUrl("https://example.test/policy.pdf", {
+      fetchImpl: typedFetch("%PDF-1.7 ...binary bytes...", "application/pdf"),
+      lookup: publicLookup,
+      retryOptions: noWait,
+      pdfExtractor: async (bytes) => `decoded ${bytes.length.toString()} bytes — annual premium 840,000 KRW, renews 2026-09-14`
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.text).toContain("annual premium 840,000 KRW");
+      expect(res.finalUrl).toBe("https://example.test/policy.pdf");
+    }
+  });
+
+  it("refuses a PDF whose extractor yields no text (scanned / image-only — never grounds on empty)", async () => {
+    const res = await fetchReadableUrl("https://example.test/scan.pdf", {
+      fetchImpl: typedFetch("%PDF...", "application/pdf"),
+      lookup: publicLookup,
+      retryOptions: noWait,
+      pdfExtractor: async () => "   "
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/no extractable text/u);
+  });
+
+  it("surfaces a PDF extractor failure as a clear error (not a crash)", async () => {
+    const res = await fetchReadableUrl("https://example.test/corrupt.pdf", {
+      fetchImpl: typedFetch("not really a pdf", "application/pdf"),
+      lookup: publicLookup,
+      retryOptions: noWait,
+      pdfExtractor: async () => { throw new Error("invalid PDF structure"); }
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/PDF could not be read.*invalid PDF structure/u);
+  });
+
   it("refuses an image content-type", async () => {
     const res = await fetchReadableUrl("https://example.test/photo.png", {
       fetchImpl: typedFetch("\x00\x00binary", "image/png"),
@@ -98,6 +134,16 @@ describe("fetchReadableUrl", () => {
     });
     expect(res).toMatchObject({ ok: false });
     if (!res.ok) expect(res.error).toMatch(/binary content/u);
+  });
+});
+
+describe("isPdfContentType", () => {
+  it("matches application/pdf (with params) and x-pdf, not html/text", () => {
+    expect(isPdfContentType("application/pdf")).toBe(true);
+    expect(isPdfContentType("application/pdf; charset=binary")).toBe(true);
+    expect(isPdfContentType("application/x-pdf")).toBe(true);
+    expect(isPdfContentType("text/html")).toBe(false);
+    expect(isPdfContentType("application/json")).toBe(false);
   });
 });
 

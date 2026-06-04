@@ -21,6 +21,15 @@ export interface FetchReadableUrlOptions {
   readonly timeoutMs?: number;
   /** Cap on returned readable text. Default extractReadableText's own (16k). */
   readonly maxChars?: number;
+  /**
+   * Optional PDF text extractor. When the URL serves `application/pdf` AND this
+   * is provided, the body is read as bytes and run through it (instead of being
+   * refused as non-text), so `muse ask --url <pdf>` can ground on an online PDF.
+   * Injected (not a static import) so the pdf-parse dependency stays in the CLI
+   * — this core never grows a PDF dependency. Absent ⇒ a PDF URL is refused as
+   * before (the `web_read` tool stays text-only).
+   */
+  readonly pdfExtractor?: (bytes: Uint8Array) => Promise<string>;
 }
 
 export type FetchReadableUrlResult =
@@ -45,6 +54,12 @@ export function isReadableContentType(contentType: string): boolean {
     || mime === "application/ld+json"
     || mime === "application/xml"
     || mime.endsWith("+xml");
+}
+
+/** Whether a response's `content-type` declares a PDF. Exported for testing. */
+export function isPdfContentType(contentType: string): boolean {
+  const mime = contentType.toLowerCase().split(";")[0]!.trim();
+  return mime === "application/pdf" || mime === "application/x-pdf";
 }
 
 /**
@@ -102,6 +117,23 @@ export async function fetchReadableUrl(
   // grounds on and cites to the URL — a fabrication. (The caller surfaces this
   // as an honest "I won't ground on it".)
   const declaredType = response.headers.get("content-type") ?? "";
+  // An online PDF: read its text via the injected extractor instead of refusing
+  // it (an undecodable binary). Only when a `pdfExtractor` is wired — otherwise a
+  // PDF falls through to the non-text refusal below, unchanged.
+  if (isPdfContentType(declaredType) && options.pdfExtractor) {
+    let text: string;
+    try {
+      text = await options.pdfExtractor(new Uint8Array(await response.arrayBuffer()));
+    } catch (error) {
+      return { ok: false, error: `PDF could not be read: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      return { ok: false, error: "PDF had no extractable text (scanned / image-only?)" };
+    }
+    const capped = options.maxChars && trimmed.length > options.maxChars ? trimmed.slice(0, options.maxChars) : trimmed;
+    return { ok: true, finalUrl: response.url || guard.url.toString(), text: capped, truncated: capped.length < trimmed.length };
+  }
   if (!isReadableContentType(declaredType)) {
     return { ok: false, error: `not a readable text page (content-type: ${declaredType.split(";")[0]!.trim() || "unknown"})` };
   }

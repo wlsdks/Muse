@@ -1831,7 +1831,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           io.stderr(`🌐 fetching ${urlLabel}…\n`);
         }
         try {
-          const fetched = await fetchReadableUrl(urlLabel, { maxChars: 60_000 });
+          const fetched = await fetchReadableUrl(urlLabel, {
+            maxChars: 60_000,
+            // Read an online PDF (a policy doc / paper / manual linked on the web)
+            // via the same pdf-parse path `--file <pdf>` uses, instead of refusing it.
+            pdfExtractor: async (bytes) => (await parsePdfBuffer(Buffer.from(bytes))).text
+          });
           if (!fetched.ok) {
             io.stderr(`muse: could not fetch --url ${urlLabel} (${fetched.error}) — I won't ground on it.\n`);
           } else if (fetched.text.trim().length > 0) {

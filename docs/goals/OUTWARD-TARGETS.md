@@ -1087,6 +1087,31 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   prints "could not fetch --url … (host did not resolve …) — I won't ground on it".
   cli 167 files / 1784 tests + `pnpm lint` 0/0. (b80a3f83)
 
+- [x] **P37-29 `muse ask --url <pdf>` now READS an online PDF instead of refusing it —
+  ask about a policy doc / paper / manual linked on the web, not just an HTML page.**
+  P37-18's `fetchReadableUrl` deliberately REFUSED any non-text content-type (a PDF
+  decodes to garbled bytes the model would hallucinate from), so `muse ask --url
+  <a-pdf-url>` answered "not a readable text page (content-type: application/pdf)" — yet
+  the web is full of PDFs and `--file <pdf>` already reads them locally. Closed by an
+  injected PDF extractor: `fetchReadableUrl` (packages/mcp/src/fetch-readable-url.ts) gained
+  an optional `pdfExtractor?: (bytes) => Promise<string>` — when the URL serves
+  `application/pdf` AND an extractor is wired, the body is read as bytes and run through it
+  (else a PDF still refuses, so the `web_read` tool stays text-only); the CLI `--url` path
+  passes `parsePdfBuffer` (the SAME pdf-parse path `--file <pdf>` uses), so the pdf-parse
+  dependency stays in the CLI and `@muse/mcp` never grows it. The SSRF guard (public hosts
+  only, re-checked after redirects) is UNCHANGED; an empty/scanned PDF (no extractable text)
+  is refused rather than grounded-on-empty, and an extractor failure surfaces a clear error.
+  Verified deterministically AND live: 4 new @muse/mcp tests (a PDF URL with a wired
+  extractor returns its text + finalUrl; an extractor yielding no text is refused; an
+  extractor throw becomes a clear "PDF could not be read" error; `isPdfContentType` matches
+  application/pdf incl. params + x-pdf, not html/json) — the existing "PDF refused without an
+  extractor" test still passes (backward-compatible) — + @muse/mcp 174 files / 1507 tests +
+  @muse/mcp & @muse/cli tsc builds + `pnpm lint` 0/0 + a FULL LIVE `muse ask --url
+  https://www.w3.org/.../dummy.pdf "what does this document say?"` on the loop PC's qwen3:8b:
+  "🌐 fetching … (grounded on 1 note chunk(s) — w3.org)" → an answer citing "[from w3.org]"
+  with the receipt "Dummy PDF file" — where before the same URL was refused as non-text and
+  nothing could be grounded on. (7f769db5)
+
 - [x] **P37-19 `muse ask --clipboard` — ask about whatever you just copied
   (Perception growth, the ephemeral sibling of `--file`/`--url`).** A NEW
   read-only local source: you copy an article / error message / snippet / email,
