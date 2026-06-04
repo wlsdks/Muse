@@ -26,6 +26,7 @@ import {
   readReminderHistory,
   readReminders,
   readReminderStatusFilter,
+  resolveReminderRef,
   runDueReminders,
   serializeReminder,
   writeReminders,
@@ -238,7 +239,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
   remind
     .command("snooze")
     .description("Bump a reminder's dueAt forward (default 10 min)")
-    .argument("<id>", "Reminder id")
+    .argument("<id>", "Reminder id, id prefix, or text — e.g. 'rent'")
     .option(
       "--in <when>",
       "When to remind instead. Same grammar as `add` (e.g. 'in 30 minutes', 'tomorrow at 9am')"
@@ -296,7 +297,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
   remind
     .command("fire")
     .description("Mark a reminder as delivered — flips status pending → fired, stops surfacing in `today`")
-    .argument("<id>", "Reminder id")
+    .argument("<id>", "Reminder id, id prefix, or text — e.g. 'rent'")
     .option(
       "--at <iso>",
       "Optional ISO-8601 firedAt (defaults to now). Useful for backfilling delayed log entries."
@@ -522,7 +523,7 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
   remind
     .command("clear")
     .description("Remove a reminder")
-    .argument("<id>", "Reminder id")
+    .argument("<id>", "Reminder id, id prefix, or text — e.g. 'rent'")
     .option("--local", "Delete from the local reminders file instead of the API")
     .action(async (id: string, options: { readonly local?: boolean }, command) => {
       const clearLocal = async (): Promise<string> => {
@@ -601,6 +602,14 @@ function formatReminderHistory(payload: {
  * renderers print (`rem_0810976`). Refuses to guess when the
  * prefix matches more than one row.
  */
+/**
+ * Resolve a CLI reminder reference to a single id. An exact id wins; then a
+ * unique id PREFIX; then — the capability this adds — the reminder TEXT, so
+ * `muse remind clear "pay rent"` / `snooze "standup"` work like the agent's
+ * by-name reminder tools instead of demanding the raw uuid (reuses the SAME
+ * `resolveReminderRef`: case-insensitive text substring, PENDING preferred).
+ * Ambiguity NEVER guesses — it throws with the candidate texts.
+ */
 export function resolveLocalReminderId(input: string, all: readonly PersistedReminder[]): string {
   const exact = all.find((reminder) => reminder.id === input);
   if (exact) return exact.id;
@@ -608,10 +617,18 @@ export function resolveLocalReminderId(input: string, all: readonly PersistedRem
   if (matches.length === 1) {
     return matches[0]!.id;
   }
-  if (matches.length === 0) {
-    const suggestion = closestCommandName(input.trim(), all.map((r) => r.id));
-    const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
-    throw new Error(`reminder not found: ${input}${hint}`);
+  if (matches.length > 1) {
+    throw new Error(`ambiguous reminder prefix '${input}' matched ${matches.length.toString()} reminders; use a longer id`);
   }
-  throw new Error(`ambiguous reminder prefix '${input}' matched ${matches.length.toString()} reminders; use a longer id`);
+  const byText = resolveReminderRef(all, input);
+  if (byText.status === "resolved") {
+    return byText.reminder.id;
+  }
+  if (byText.status === "ambiguous") {
+    const texts = byText.candidates.map((reminder) => `'${reminder.text}'`).join(", ");
+    throw new Error(`'${input}' matches ${byText.candidates.length.toString()} reminders: ${texts} — be more specific or use the id`);
+  }
+  const suggestion = closestCommandName(input.trim(), all.map((r) => r.id));
+  const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
+  throw new Error(`reminder not found: ${input}${hint}`);
 }

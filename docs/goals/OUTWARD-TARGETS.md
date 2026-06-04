@@ -2118,6 +2118,27 @@ in the loop.
   `muse email reply` (no token) failing closed with the set-MUSE_GMAIL_TOKEN guidance and `muse email
   --help` listing `reply`. (3ca05c82)
 
+- [x] **P41-23 `muse remind clear "pay rent"` / `snooze "standup"` — the CLI now manages a reminder
+  BY TEXT, not just by raw uuid — COMPLETING the by-name actuator parity (tasks P41-21, calendar
+  P41-19, now reminders).** The AGENT reminder tools resolve by name (`resolveReminderRef`), so
+  "clear the rent reminder" works in chat — but the CLI `muse remind clear / snooze / fire <id>` ran
+  through `resolveLocalReminderId`, which did EXACT id or id-PREFIX only and then threw "reminder not
+  found", forcing the user to dig the generated uuid out of `--json`/the on-disk file just to snooze
+  or dismiss a reminder. Fixed by extending `resolveLocalReminderId` to fall back to the SAME
+  `resolveReminderRef` the agent uses (exact id → unique id prefix → case-insensitive TEXT substring,
+  PENDING reminders preferred) BEFORE giving up — so all three id-taking subcommands (clear / snooze /
+  fire) gain by-text resolution through one change, with their `<id>` arg descriptions updated to
+  "Reminder id, id prefix, or text". Ambiguity NEVER guesses (outbound-safety rule 3 spirit): it
+  throws with the candidate texts ("'review' matches 2 reminders: 'review the budget', 'review the
+  roadmap' — be more specific or use the id"). Deterministic (local file, no model). Verified: 4 new
+  unit tests (resolve by case-insensitive text substring; ambiguous text → candidate-text error, no
+  guess; PENDING preferred over fired when both texts match; still not-found when neither id nor text
+  matches) + the existing id/prefix tests unregressed + the full @muse/cli suite (176 files / 1986
+  tests) + tsc build + `pnpm lint` 0/0 + LIVE on the loop PC: `muse remind clear "dentist" --local` →
+  "Cleared reminder …", `muse remind snooze "rent" --in "in 2 hours" --local` → "Snoozed [rent] → …"
+  (both by text, no uuid), `clear "review"` → the ambiguous candidate list, `clear "nonexistent"` →
+  not-found. (63a8f82e)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links

@@ -236,3 +236,36 @@ describe("resolveLocalReminderId — typo-tolerant id resolution (goal-544 sibli
       .toThrow(/reminder not found: totallyunrelated$/u);
   });
 });
+
+describe("resolveLocalReminderId — by TEXT (CLI parity with the agent's by-name reminder tools)", () => {
+  const reminders = [
+    { id: "rem_abc123def", text: "Pay the rent", dueAt: "2026-05-21T10:00:00Z", createdAt: "2026-05-20T10:00:00Z", status: "pending" as const },
+    { id: "rem_xyz789ghi", text: "Call the dentist", dueAt: "2026-05-21T11:00:00Z", createdAt: "2026-05-20T10:00:00Z", status: "pending" as const }
+  ];
+
+  it("resolves a reminder by a case-insensitive text substring (no uuid needed)", () => {
+    expect(resolveLocalReminderId("rent", reminders)).toBe("rem_abc123def");
+    expect(resolveLocalReminderId("DENTIST", reminders)).toBe("rem_xyz789ghi");
+  });
+
+  it("rejects an ambiguous text with the candidate texts, never guessing", () => {
+    const two = [
+      { id: "rem_a", text: "review the budget", dueAt: "2026-05-21T10:00:00Z", createdAt: "2026-05-20T10:00:00Z", status: "pending" as const },
+      { id: "rem_b", text: "review the roadmap", dueAt: "2026-05-21T11:00:00Z", createdAt: "2026-05-20T10:00:00Z", status: "pending" as const }
+    ];
+    expect(() => resolveLocalReminderId("review", two))
+      .toThrow(/'review' matches 2 reminders: 'review the budget', 'review the roadmap'/u);
+  });
+
+  it("prefers a PENDING reminder over a fired one when both texts match", () => {
+    const mixed = [
+      { id: "rem_fired", text: "pay rent", dueAt: "2026-05-18T10:00:00Z", createdAt: "2026-05-17T10:00:00Z", status: "fired" as const },
+      { id: "rem_pending", text: "pay rent", dueAt: "2026-06-21T10:00:00Z", createdAt: "2026-05-20T10:00:00Z", status: "pending" as const }
+    ];
+    expect(resolveLocalReminderId("pay rent", mixed)).toBe("rem_pending");
+  });
+
+  it("still throws not-found when neither id nor text matches", () => {
+    expect(() => resolveLocalReminderId("nonexistent", reminders)).toThrow(/reminder not found: nonexistent/u);
+  });
+});
