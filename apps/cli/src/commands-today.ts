@@ -341,6 +341,7 @@ export function formatTodayBrief(briefing: TodayBriefing, local: boolean): strin
   return (
     `Today (${shortDateLabel(briefing.generatedAt)}, next ${briefing.lookaheadHours}h${local ? ", local" : ""})\n`
     + formatOverdue(overdue)
+    + formatNextEvent(briefing.events, now)
     + formatWeatherLine(briefing.weather)
     + formatReminders(futureReminders, briefing.generatedAt)
     + formatFollowups(briefing.followups, briefing.generatedAt)
@@ -1226,6 +1227,44 @@ export function formatEvents(events: readonly { readonly id: string; readonly ti
     return `  - ${event.startsAtIso.slice(11, 16)} — ${title}`;
   });
   return `\nUpcoming (${events.length}):\n${lines.join("\n")}\n`;
+}
+
+/** Relative countdown to the next event — "in 25 min" / "in 2h 10m" / "in 3 days". */
+function formatTimeUntil(deltaMs: number): string {
+  const mins = Math.round(deltaMs / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `in ${mins.toString()} min`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours < 24) return remMins > 0 ? `in ${hours.toString()}h ${remMins.toString()}m` : `in ${hours.toString()}h`;
+  const days = Math.round(hours / 24);
+  return `in ${days.toString()} day${days === 1 ? "" : "s"}`;
+}
+
+/**
+ * The soonest FUTURE event as a time-aware lead — "⏰ Next: Standup in 25 min" —
+ * so `muse today` tells you what's imminent at a glance instead of leaving you to
+ * subtract the clock from a flat list of start times. Events that already started
+ * are skipped; empty when nothing upcoming remains in the window (end of day), so
+ * it never adds noise. Pure.
+ */
+export function formatNextEvent(
+  events: readonly { readonly title: string; readonly startsAtIso: string }[] | undefined,
+  now: Date
+): string {
+  if (!events || events.length === 0) {
+    return "";
+  }
+  const nowMs = now.getTime();
+  const next = events
+    .map((event) => ({ startMs: Date.parse(event.startsAtIso), title: event.title }))
+    .filter((event) => Number.isFinite(event.startMs) && event.startMs > nowMs)
+    .sort((a, b) => a.startMs - b.startMs)[0];
+  if (!next) {
+    return "";
+  }
+  const title = stripUntrustedTerminalChars(next.title).replace(/\s+/gu, " ").trim();
+  return `⏰ Next: ${title} ${formatTimeUntil(next.startMs - nowMs)}\n`;
 }
 
 function formatNotes(notes: readonly string[] | undefined): string {

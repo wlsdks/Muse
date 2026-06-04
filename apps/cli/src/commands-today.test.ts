@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { writeFollowups, writeReminders, type PersistedFollowup, type PersistedReminder } from "@muse/mcp";
 import { describe, expect, it } from "vitest";
 
-import { formatConnectionsSection, formatEpisodeRevisitLine, formatEvents, formatHeadlines, formatOverdue, formatRevisitSection, formatStaleTasksSection, formatTasks, formatTodayBrief, formatTodayConflicts, formatWeatherLine, parseLookaheadHours, pickConnectionQuery, readDueFollowups, readDueReminders, readUpcomingBirthdays, relativeDueTag, resolveTodayFeedHeadlines, resolveTodayWeatherLine, selectEpisodeToRevisit, selectStaleTasks, selectTodayOverdue } from "./commands-today.js";
+import { formatConnectionsSection, formatEpisodeRevisitLine, formatEvents, formatHeadlines, formatNextEvent, formatOverdue, formatRevisitSection, formatStaleTasksSection, formatTasks, formatTodayBrief, formatTodayConflicts, formatWeatherLine, parseLookaheadHours, pickConnectionQuery, readDueFollowups, readDueReminders, readUpcomingBirthdays, relativeDueTag, resolveTodayFeedHeadlines, resolveTodayWeatherLine, selectEpisodeToRevisit, selectStaleTasks, selectTodayOverdue } from "./commands-today.js";
 
 describe("muse today — Birthdays section (the brief's birthdays, surfaced in the on-demand digest)", () => {
   const base = { generatedAt: "2026-06-04T09:00:00Z", lookaheadHours: 24 };
@@ -528,5 +528,42 @@ describe("formatTodayBrief", () => {
     const out = formatTodayBrief({ generatedAt: "2026-05-25T08:00:00.000Z", lookaheadHours: 24 }, true);
     expect(out).toContain("Today (");
     expect(out).toMatch(/fresh start/i);
+  });
+});
+
+describe("formatNextEvent — time-aware 'what's next' lead", () => {
+  const now = new Date("2026-05-18T09:35:00.000Z");
+
+  it("highlights the SOONEST future event with a relative countdown", () => {
+    const out = formatNextEvent([
+      { startsAtIso: "2026-05-18T14:00:00.000Z", title: "Lunch with Sam" },
+      { startsAtIso: "2026-05-18T10:00:00.000Z", title: "Standup" }
+    ], now);
+    expect(out).toBe("⏰ Next: Standup in 25 min\n");
+  });
+
+  it("skips events that already started and picks the next upcoming one", () => {
+    const out = formatNextEvent([
+      { startsAtIso: "2026-05-18T09:00:00.000Z", title: "Earlier meeting" },
+      { startsAtIso: "2026-05-18T11:05:00.000Z", title: "Review" }
+    ], now);
+    expect(out).toBe("⏰ Next: Review in 1h 30m\n");
+  });
+
+  it("formats whole-hour and multi-day distances", () => {
+    expect(formatNextEvent([{ startsAtIso: "2026-05-18T12:35:00.000Z", title: "X" }], now)).toBe("⏰ Next: X in 3h\n");
+    expect(formatNextEvent([{ startsAtIso: "2026-05-20T09:35:00.000Z", title: "Y" }], now)).toBe("⏰ Next: Y in 2 days\n");
+  });
+
+  it("is empty with no events, or when none remain upcoming (end of day)", () => {
+    expect(formatNextEvent(undefined, now)).toBe("");
+    expect(formatNextEvent([], now)).toBe("");
+    expect(formatNextEvent([{ startsAtIso: "2026-05-18T08:00:00.000Z", title: "Done" }], now)).toBe("");
+  });
+
+  it("strips untrusted terminal escape chars from a third-party event title", () => {
+    const out = formatNextEvent([{ startsAtIso: "2026-05-18T10:00:00.000Z", title: "Stand[31mup" }], now);
+    expect(out).not.toContain("");
+    expect(out).toContain("in 25 min");
   });
 });

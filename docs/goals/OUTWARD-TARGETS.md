@@ -946,6 +946,23 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   `⚠ Overdue — past due, still open, act today (1): ⚠ pay the overdue invoice (was due
   1970-01-01 09:00)`, where before it was buried in a tagged `Reminders` line. (2d199bef)
 
+- [x] **P37-34 `muse today` is now TIME-AWARE — it leads with "⏰ Next: Standup in 25 min", the
+  soonest UPCOMING event with a relative countdown, instead of leaving you to subtract the clock
+  from a flat list of start times.** The brief listed events as "20:18 — Standup" (absolute start
+  time only); running `muse today` mid-morning meant doing the mental math to know what's imminent
+  and how soon. Added a pure `formatNextEvent(events, now)` (apps/cli/src/commands-today.ts) that
+  picks the soonest event whose start is in the FUTURE (already-started events skipped), renders a
+  relative countdown via `formatTimeUntil` ("in 25 min" / "in 1h 30m" / "in 3 days"), and is EMPTY
+  when nothing upcoming remains (end of day → no noise); it reuses the same `stripUntrustedTerminalChars`
+  hardening as the events list (a third-party invite title is untrusted). Wired as a lead line right
+  after the OVERDUE lead (P37-27), so the brief now opens with "what slipped" + "what's next".
+  Deterministic (no model — pure time arithmetic). Verified: 5 unit tests (soonest-future pick with
+  countdown; already-started events skipped; whole-hour + multi-day formatting; empty for no-events /
+  all-past / undefined; terminal-escape strip — apps/cli/src/commands-today.test.ts) + the full
+  @muse/cli suite (176 files / 1991 tests) + tsc build + `pnpm lint` 0/0 + a LIVE run on the loop PC:
+  `muse calendar add "Standup" --at <+25min>` then `muse today --local` → "⏰ Next: Standup in 25 min"
+  as the lead, above the "Upcoming (1): - 20:18 — Standup" list. (3e8ddf04)
+
 - [x] **P37-9 Action-log grounding — "did you send that? / what have you done?"
   (B3 transparency, gate a new surface).** `muse ask` now grounds on Muse's OWN
   audit log of acts taken on the user's behalf (sends, refusals) — the
