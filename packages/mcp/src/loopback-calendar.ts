@@ -32,6 +32,34 @@ export interface CalendarMcpServerOptions {
 export function createCalendarMcpServer(options: CalendarMcpServerOptions): LoopbackMcpServer {
   const { registry } = options;
 
+  // List a generous window and resolve the agent's event ref (id OR title word)
+  // so update/delete don't force a list→find-id→act chain. Returns the matched
+  // event, or an error payload (ambiguous → candidates with local times).
+  const resolveEventForAction = async (
+    ref: string,
+    providerId: string | undefined
+  ): Promise<{ readonly event: EventRefLike } | { readonly error: string; readonly candidates?: JsonValue }> => {
+    const from = new Date(Date.now() - 30 * 86_400_000);
+    const to = new Date(Date.now() + 365 * 86_400_000);
+    let events;
+    try {
+      events = await registry.listEvents({ from, to }, providerId);
+    } catch (error) {
+      return { error: errorMessage(error) };
+    }
+    const resolution = resolveEventByRef(events, ref);
+    if (resolution.status === "ambiguous") {
+      return {
+        candidates: resolution.candidates.map((event) => ({ id: event.id, startsAtLocal: eventLocal(event.startsAt, false), title: event.title })) as JsonValue,
+        error: `"${ref}" matches multiple events — say which one`
+      };
+    }
+    if (resolution.status !== "resolved") {
+      return { error: `event not found: ${ref}` };
+    }
+    return { event: resolution.event };
+  };
+
   return {
     description: "Personal calendar (provider-neutral: local file, Google Calendar, CalDAV, macOS).",
     name: "muse.calendar",
@@ -263,12 +291,18 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
       },
       {
         description:
-          "Update an existing calendar event by id (and providerId). Pass only the fields you want to change.",
+          "Update/reschedule an existing calendar event. `id` is its id OR a distinct word from " +
+          "its title ('dentist') — an ambiguous word returns the matching events instead of guessing. " +
+          "Pass only the fields you want to change. Use for 'move my dentist appointment to Friday 3pm', " +
+          "'rename the standup', 'change the location'.",
         execute: async (args): Promise<JsonObject> => {
-          const providerId = readString(args, "providerId");
-          const id = readString(args, "id");
-          if (!providerId || !id) {
-            return { error: "providerId and id are required" };
+          const ref = readString(args, "id");
+          if (!ref) {
+            return { error: "id (or a distinct word from the event title) is required" };
+          }
+          const resolved = await resolveEventForAction(ref, readString(args, "providerId"));
+          if ("error" in resolved) {
+            return resolved.candidates ? { candidates: resolved.candidates, error: resolved.error } : { error: resolved.error };
           }
           const update: CalendarEventUpdate = {
             ...(readString(args, "title") ? { title: readString(args, "title")! } : {}),
@@ -279,7 +313,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
             ...("notes" in args ? { notes: readString(args, "notes") ?? null } : {})
           };
           try {
-            const updated = await registry.updateEvent(providerId, id, update);
+            const updated = await registry.updateEvent(resolved.event.providerId, resolved.event.id, update);
             return { event: serializeEvent(updated) as JsonValue };
           } catch (error) {
             return { error: errorMessage(error) };
@@ -290,14 +324,14 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           properties: {
             allDay: { description: "Set true/false to change the all-day flag (only if changing it).", type: "boolean" },
             endsAtIso: { description: "New end time — ISO-8601 or a relative phrase (only if changing it).", type: "string" },
-            id: { description: "The event's id, from `list`.", type: "string" },
+            id: { description: "The event's id (from `list`) OR a distinct word from its title, e.g. 'dentist'. An ambiguous word returns the matching events.", type: "string" },
             location: { description: "New location (only if changing it).", type: "string" },
             notes: { description: "New notes (only if changing it).", type: "string" },
-            providerId: { description: "Calendar provider id the event belongs to.", type: "string" },
+            providerId: { description: "Optional — narrow the search to one provider when you have several. Resolved from the matched event when omitted.", type: "string" },
             startsAtIso: { description: "New start time — ISO-8601 or a relative phrase (only if changing it).", type: "string" },
             title: { description: "New title (only if changing it).", type: "string" }
           },
-          required: ["providerId", "id"],
+          required: ["id"],
           type: "object"
         },
         domain: "calendar",
@@ -305,16 +339,22 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
         risk: "write"
       },
       {
-        description: "Delete a calendar event by providerId + id.",
+        description:
+          "Cancel / delete a calendar event. `id` is its id OR a distinct word from its title " +
+          "('standup') — an ambiguous word returns the matching events instead of guessing. " +
+          "Use for 'cancel my dentist appointment', 'delete the 3pm meeting'.",
         execute: async (args): Promise<JsonObject> => {
-          const providerId = readString(args, "providerId");
-          const id = readString(args, "id");
-          if (!providerId || !id) {
-            return { error: "providerId and id are required" };
+          const ref = readString(args, "id");
+          if (!ref) {
+            return { error: "id (or a distinct word from the event title) is required" };
+          }
+          const resolved = await resolveEventForAction(ref, readString(args, "providerId"));
+          if ("error" in resolved) {
+            return resolved.candidates ? { candidates: resolved.candidates, error: resolved.error } : { error: resolved.error };
           }
           try {
-            await registry.deleteEvent(providerId, id);
-            return { deleted: true, id, providerId };
+            await registry.deleteEvent(resolved.event.providerId, resolved.event.id);
+            return { deleted: true, id: resolved.event.id, providerId: resolved.event.providerId, title: resolved.event.title };
           } catch (error) {
             return { error: errorMessage(error) };
           }
@@ -322,10 +362,10 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
         inputSchema: {
           additionalProperties: false,
           properties: {
-            id: { description: "The event's id to delete, from `list`.", type: "string" },
-            providerId: { description: "Calendar provider id the event belongs to.", type: "string" }
+            id: { description: "The event's id (from `list`) OR a distinct word from its title, e.g. 'standup'. An ambiguous word returns the matching events.", type: "string" },
+            providerId: { description: "Optional — narrow the search to one provider when you have several. Resolved from the matched event when omitted.", type: "string" }
           },
-          required: ["providerId", "id"],
+          required: ["id"],
           type: "object"
         },
         domain: "calendar",
@@ -334,6 +374,46 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
       }
     ]
   };
+}
+
+export interface EventRefLike {
+  readonly id: string;
+  readonly providerId: string;
+  readonly title: string;
+  readonly startsAt: Date;
+}
+
+export type EventRefResolution =
+  | { readonly status: "resolved"; readonly event: EventRefLike }
+  | { readonly status: "ambiguous"; readonly candidates: readonly EventRefLike[] }
+  | { readonly status: "not-found" };
+
+/**
+ * Resolve a calendar event the agent named — its exact id OR a distinct word
+ * from its title ('dentist') — so `update` / `delete` work in ONE shot instead
+ * of forcing the small model to chain list → find-id → act. Exact-id wins;
+ * otherwise a case-insensitive title-substring match: a unique hit resolves, two+
+ * return the candidates (never guess), zero is not-found. Pure (mirrors
+ * resolveReminderRef / resolveTaskRef).
+ */
+export function resolveEventByRef(events: readonly EventRefLike[], ref: string): EventRefResolution {
+  const trimmed = ref.trim();
+  if (trimmed.length === 0) {
+    return { status: "not-found" };
+  }
+  const byId = events.find((event) => event.id === trimmed);
+  if (byId) {
+    return { event: byId, status: "resolved" };
+  }
+  const lower = trimmed.toLowerCase();
+  const byTitle = events.filter((event) => event.title.toLowerCase().includes(lower));
+  if (byTitle.length === 1) {
+    return { event: byTitle[0]!, status: "resolved" };
+  }
+  if (byTitle.length > 1) {
+    return { candidates: byTitle, status: "ambiguous" };
+  }
+  return { status: "not-found" };
 }
 
 // The local-timezone rendering the chat model should echo. An all-day event

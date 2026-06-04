@@ -1938,6 +1938,29 @@ in the loop.
   (a clear reminder-action phrasing; the informational "remind me OF X" phrasing is selected
   less reliably, but that's cadence-independent). (71e06773)
 
+- [x] **P41-19 The agent can EDIT or CANCEL a calendar event BY NAME — "change my dentist
+  appointment to Friday 3pm" / "cancel my standup" work in ONE shot, instead of the model
+  having to chain list → copy the opaque id → update/delete.** `muse.calendar.update` and
+  `delete` REQUIRED `providerId` + the event `id` "from list" — an opaque id the small model
+  doesn't have, forcing a 3-step flow it can't reliably chain (unlike reminders/tasks, which
+  resolve by NAME since P41-8/9). Added a pure `resolveEventByRef(events, ref)` (exact id wins;
+  a unique title-substring resolves; 2+ return the candidates — NEVER guess, per outbound-safety
+  rule 3; 0 is not-found) + a closure that lists a generous window (now-30d…+365d, all providers
+  or the given one) and resolves the ref, then update/delete act on the matched event's real
+  id + providerId. `providerId` became OPTIONAL (resolved from the match) and `id` now accepts a
+  title word; descriptions carry use-when examples per tool-calling.md. Verified deterministically
+  AND live: 6 new tests (`resolveEventByRef`: exact id, unique word case-insensitive, ambiguous→
+  candidates, not-found/empty; update resolves a title word to the right id then updates; delete
+  resolves a word, an ambiguous word returns candidates and deletes NOTHING, a non-match errors
+  and acts on nothing — packages/mcp/test/calendar-availability.test.ts) + the full @muse/mcp
+  (174 files / 1520 tests) suite + mcp/autoconfigure/cli builds + `pnpm lint` 0/0 + LIVE
+  tool-selection on qwen3:8b: "cancel my standup meeting on the calendar" → `muse.calendar.delete`
+  and "change the start time of my dentist appointment to Friday 3pm" → `muse.calendar.update`
+  (both the by-name path). HONEST NOTE: the 8B selects these for clear edit/cancel phrasings; a
+  "reschedule/move my X appointment" phrasing is selected less reliably (it answers
+  conversationally) — a selection nuance, not a resolution bug; the by-name resolution itself is
+  handler-proven and works whenever the model does call update/delete. (12fb4f29)
+
 **P42 — Knowledge: your notes stay coherent (the [[wiki-link]] graph is a
 first-class structure, not just decoration).** Muse already builds a note link
 graph (`buildNoteLinkGraph`), surfaces backlinks, and AUDITS for broken links

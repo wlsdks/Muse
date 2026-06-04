@@ -321,7 +321,10 @@ export type LoopbackToolRisk = ToolRisk;
  */
 export {
   createCalendarMcpServer,
-  type CalendarMcpServerOptions
+  resolveEventByRef,
+  type CalendarMcpServerOptions,
+  type EventRefLike,
+  type EventRefResolution
 } from "./loopback-calendar.js";
 
 /**

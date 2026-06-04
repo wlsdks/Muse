@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computeAvailability, createCalendarMcpServer, type AvailabilityEventLike } from "../src/index.js";
+import { computeAvailability, createCalendarMcpServer, resolveEventByRef, type AvailabilityEventLike } from "../src/index.js";
 
 const D = (iso: string) => new Date(iso);
 function ev(title: string, startsAt: string, endsAt: string, allDay = false): AvailabilityEventLike {
@@ -166,5 +166,69 @@ describe("muse.calendar.conflicts tool — double-booking detection over the reg
     expect(out.total).toBe(0);
     expect(typeof out.windowFromIso).toBe("string");
     expect(typeof out.windowToIso).toBe("string");
+  });
+});
+
+describe("resolveEventByRef — update/delete an event by id OR a title word (one shot)", () => {
+  const evt = (id: string, title: string) => ({ id, providerId: "p", startsAt: new Date("2026-06-10T15:00:00Z"), title });
+  const events = [evt("e1", "Dentist appointment"), evt("e2", "Team standup"), evt("e3", "Standup retro")];
+
+  it("an exact id wins; a UNIQUE title word resolves to that event", () => {
+    expect(resolveEventByRef(events, "e1")).toMatchObject({ status: "resolved", event: { id: "e1" } });
+    expect(resolveEventByRef(events, "dentist")).toMatchObject({ status: "resolved", event: { id: "e1" } }); // case-insensitive
+  });
+
+  it("an AMBIGUOUS word returns the candidates (never guesses)", () => {
+    const r = resolveEventByRef(events, "standup");
+    expect(r.status).toBe("ambiguous");
+    if (r.status === "ambiguous") expect(r.candidates.map((e) => e.id).sort()).toEqual(["e2", "e3"]);
+  });
+
+  it("a non-matching ref / empty ref is not-found", () => {
+    expect(resolveEventByRef(events, "lunch")).toEqual({ status: "not-found" });
+    expect(resolveEventByRef(events, "  ")).toEqual({ status: "not-found" });
+  });
+});
+
+describe("muse.calendar update/delete BY NAME — resolve from the title, not a copy-pasted id", () => {
+  function calendarServer(events: { id: string; title: string }[], spy: { updated?: unknown; deleted?: unknown }) {
+    return createCalendarMcpServer({
+      registry: {
+        listEvents: async () => events.map((e) => ({ allDay: false, endsAt: new Date("2026-06-10T16:00:00Z"), id: e.id, providerId: "p", startsAt: new Date("2026-06-10T15:00:00Z"), title: e.title })),
+        createEvent: async () => ({}),
+        updateEvent: async (providerId: string, id: string) => { spy.updated = { id, providerId }; return { allDay: false, endsAt: new Date("2026-06-10T17:00:00Z"), id, providerId, startsAt: new Date("2026-06-10T16:00:00Z"), title: "moved" }; },
+        deleteEvent: async (providerId: string, id: string) => { spy.deleted = { id, providerId }; },
+        describe: () => []
+      } as never
+    });
+  }
+  const tool = (server: ReturnType<typeof createCalendarMcpServer>, name: string) => server.tools.find((t) => t.name === name)!;
+
+  it("update resolves a title word to the right event id, then updates it", async () => {
+    const spy: { updated?: unknown } = {};
+    const server = calendarServer([{ id: "e1", title: "Dentist appointment" }, { id: "e2", title: "Team standup" }], spy);
+    const out = await tool(server, "update").execute({ id: "dentist", startsAtIso: "2026-06-12T15:00:00Z" }, {} as never);
+    expect(spy.updated).toEqual({ id: "e1", providerId: "p" }); // resolved by name → the dentist event
+    expect(out).toMatchObject({ event: { id: "e1" } });
+  });
+
+  it("delete resolves a title word; an ambiguous word returns candidates and deletes NOTHING", async () => {
+    const spy: { deleted?: unknown } = {};
+    const server = calendarServer([{ id: "e2", title: "Team standup" }, { id: "e3", title: "Standup retro" }], spy);
+    const ambiguous = await tool(server, "delete").execute({ id: "standup" }, {} as never) as { error?: string; candidates?: unknown[] };
+    expect(ambiguous.error).toContain("multiple");
+    expect((ambiguous.candidates ?? []).length).toBe(2);
+    expect(spy.deleted).toBeUndefined(); // never guessed
+
+    const ok = await tool(server, "delete").execute({ id: "retro" }, {} as never);
+    expect(spy.deleted).toEqual({ id: "e3", providerId: "p" });
+    expect(ok).toMatchObject({ deleted: true, id: "e3" });
+  });
+
+  it("a non-matching ref errors and acts on nothing", async () => {
+    const spy: { updated?: unknown; deleted?: unknown } = {};
+    const server = calendarServer([{ id: "e1", title: "Dentist appointment" }], spy);
+    expect(await tool(server, "update").execute({ id: "nonexistent", title: "x" }, {} as never)).toMatchObject({ error: expect.stringContaining("not found") });
+    expect(spy.updated).toBeUndefined();
   });
 });
