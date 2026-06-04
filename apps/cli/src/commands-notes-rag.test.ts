@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { chunkText, cosine, defaultIndexPath, extractDocumentText, formatRecentNotes, formatRelativeAge, isNotesIndexStale, NOTE_FILE_RE, parseRagBoundedInt, reindexNotes, selectRecentNotes } from "./commands-notes-rag.js";
+import { chunkText, cosine, defaultIndexPath, extractDocumentText, formatRecentNotes, formatRelatedNotes, formatRelativeAge, isNotesIndexStale, NOTE_FILE_RE, parseRagBoundedInt, rankRelatedNotes, reindexNotes, resolveIndexNotePath, selectRecentNotes } from "./commands-notes-rag.js";
 
 describe("NOTE_FILE_RE — the corpus indexes prose formats beyond .md/.txt", () => {
   it("matches markdown + plain-text + markup note formats (so org/rst/mdx notes aren't invisible)", () => {
@@ -351,5 +351,46 @@ describe("muse notes recent — resume where you left off (newest-first)", () =>
     expect(out).toContain("2h ago — project/plan.md");
     expect(out).toContain("2d ago — budget.md");
     expect(formatRecentNotes([], "/notes", now)).toContain("No notes yet");
+  });
+});
+
+describe("muse notes related — semantic note discovery (embedding similarity)", () => {
+  const chunk = (file: string, embedding: number[]) => ({ chunkIndex: 0, embedding, file, text: "x" });
+  const index = {
+    builtAtIso: "2026-06-01T00:00:00.000Z",
+    files: [
+      { chunks: [chunk("a.md", [1, 0, 0])], mtimeMs: 1, path: "/notes/a.md" },
+      { chunks: [chunk("b.md", [0.8, 0.2, 0])], mtimeMs: 2, path: "/notes/b.md" }, // close to a
+      { chunks: [chunk("c.md", [0, 1, 0])], mtimeMs: 3, path: "/notes/c.md" },     // orthogonal → cosine 0, filtered
+      { chunks: [chunk("d.md", [0.5, 0.5, 0])], mtimeMs: 4, path: "/notes/d.md" }  // medium
+    ],
+    model: "nomic-embed-text",
+    version: 1 as const
+  };
+
+  it("ranks notes by centroid cosine, excludes the target and zero-overlap notes", () => {
+    const related = rankRelatedNotes(index, "/notes/a.md");
+    expect(related.map((r) => r.path)).toEqual(["/notes/b.md", "/notes/d.md"]); // b closer than d, c (cos 0) dropped, a excluded
+    expect(related[0]!.score).toBeGreaterThan(related[1]!.score);
+  });
+
+  it("honours the limit and returns [] for an unknown / chunkless target", () => {
+    expect(rankRelatedNotes(index, "/notes/a.md", 1).map((r) => r.path)).toEqual(["/notes/b.md"]);
+    expect(rankRelatedNotes(index, "/notes/missing.md")).toEqual([]);
+  });
+
+  it("resolveIndexNotePath matches exact path, basename stem, and a unique substring", () => {
+    expect(resolveIndexNotePath(index, "/notes/a.md")).toBe("/notes/a.md");
+    expect(resolveIndexNotePath(index, "b")).toBe("/notes/b.md");      // stem
+    expect(resolveIndexNotePath(index, "B.MD")).toBe("/notes/b.md");   // case-insensitive stem
+    expect(resolveIndexNotePath(index, "zzz")).toBeUndefined();        // no match
+  });
+
+  it("formatRelatedNotes renders a % score + relative path, and an empty-state line", () => {
+    const out = formatRelatedNotes("/notes/a.md", [{ path: "/notes/b.md", score: 0.97 }], "/notes");
+    expect(out).toContain("🔗 Notes related to 'a.md':");
+    expect(out).toContain("97%");
+    expect(out).toContain("b.md");
+    expect(formatRelatedNotes("/notes/a.md", [], "/notes")).toContain("stands alone");
   });
 });

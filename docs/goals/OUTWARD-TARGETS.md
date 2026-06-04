@@ -2355,6 +2355,28 @@ graph intact as the corpus evolves, so a power-user's Zettelkasten doesn't rot.
   1d ago — project/plan.md / 18d ago — budget.md / 20d ago — old.md" (newest first, across folders)
   and `--limit 1` showed only the newest. (bf4d5333)
 
+- [x] **P42-7 `muse notes related <note>` — find notes SEMANTICALLY related to one (embedding
+  similarity), discovering connections the explicit [[wiki-links]] missed.** The note graph handled
+  EXPLICIT links (P42-1..5: links/graph/backlinks) and recall does QUERY→note search, but nothing
+  surfaced NOTE→note semantic relatedness — "what else is about this?" — so a Zettelkasten with
+  un-linked but topically-related notes had no way to find them. Added a `muse notes related` command
+  (apps/cli/src/commands-notes-rag.ts) that ranks notes by cosine between their CENTROID embeddings
+  (the component-wise mean of each note's chunk embeddings) over the prebuilt index — the embedding
+  complement to the link graph (GraphRAG / HippoRAG sibling). Pure `rankRelatedNotes(index, target,
+  limit)` (excludes the target + zero-overlap notes, top-N by score) + `resolveIndexNotePath` (exact
+  path / basename stem / unique substring, extension-insensitive) + `formatRelatedNotes` (score as a
+  %); the command loads the existing index (hints to `muse notes reindex` if absent) and supports
+  `--limit` / `--json`. Read-only; the ranking is deterministic (cosine over stored vectors — the
+  only model use is the pre-existing reindex that built the embeddings). Verified deterministically
+  AND live: 6 unit tests (rankRelatedNotes ranks by centroid cosine, excludes target + cosine-0
+  notes, honours limit, [] on unknown target; resolveIndexNotePath exact/stem/case-insensitive/no-
+  match; formatRelatedNotes % + relative path + stands-alone empty case — apps/cli/src/commands-
+  notes-rag.test.ts) + the full @muse/cli suite (178 files / 2009 tests) + tsc build + `pnpm lint`
+  0/0 + a LIVE run on the loop PC: a 3-note corpus (vpn.md about WireGuard/MTU, wireguard.md about
+  WireGuard tunnels, recipe.md about cooking) → `muse notes reindex` (Ollama nomic-embed, 3 embedded)
+  → `muse notes related vpn` → "🔗 Notes related to 'vpn.md': 63% wireguard.md / 45% recipe.md" —
+  the semantically-related WireGuard note ranked ABOVE the unrelated recipe. (2b0fd41f)
+
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
 closed its deepest hole, and became constructive. Each verified live on

@@ -18,7 +18,7 @@
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join as pathJoin, relative as pathRelative, resolve as pathResolve, sep as pathSep } from "node:path";
+import { basename as pathBasename, join as pathJoin, relative as pathRelative, resolve as pathResolve, sep as pathSep } from "node:path";
 
 import { applyOverlap } from "@muse/agent-core";
 import { resolveNotesDir } from "@muse/autoconfigure";
@@ -275,6 +275,80 @@ export function cosine(a: readonly number[], b: readonly number[]): number {
   if (na === 0 || nb === 0) return 0;
   const result = dot / Math.sqrt(na * nb);
   return Number.isFinite(result) ? result : 0;
+}
+
+/** A note's centroid embedding — the component-wise mean of its chunk embeddings. Pure. */
+function noteCentroid(chunks: readonly { readonly embedding: readonly number[] }[]): number[] {
+  if (chunks.length === 0) {
+    return [];
+  }
+  const dim = chunks[0]!.embedding.length;
+  const sum = new Array<number>(dim).fill(0);
+  for (const chunk of chunks) {
+    for (let i = 0; i < dim; i += 1) {
+      sum[i]! += chunk.embedding[i] ?? 0;
+    }
+  }
+  return sum.map((value) => value / chunks.length);
+}
+
+export interface RelatedNote {
+  readonly path: string;
+  readonly score: number;
+}
+
+/**
+ * Rank the notes most SEMANTICALLY related to `targetPath` by cosine between
+ * note centroid embeddings — the embedding complement to the [[wiki-link]] graph
+ * (it surfaces connections the explicit links missed; GraphRAG / HippoRAG
+ * sibling). The target itself and any note with no embedding overlap are
+ * excluded; top `limit` by score. Pure (operates on the prebuilt index).
+ */
+export function rankRelatedNotes(index: NotesIndex, targetPath: string, limit = 5): readonly RelatedNote[] {
+  const target = index.files.find((file) => file.path === targetPath);
+  if (!target) {
+    return [];
+  }
+  const targetVec = noteCentroid(target.chunks);
+  if (targetVec.length === 0) {
+    return [];
+  }
+  return index.files
+    .filter((file) => file.path !== targetPath && file.chunks.length > 0)
+    .map((file) => ({ path: file.path, score: cosine(targetVec, noteCentroid(file.chunks)) }))
+    .filter((related) => related.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(1, limit));
+}
+
+/** Resolve a user note query (exact path / basename / unique stem-substring) to an indexed file path. */
+export function resolveIndexNotePath(index: NotesIndex, query: string): string | undefined {
+  const trimmed = query.trim();
+  const exact = index.files.find((file) => file.path === trimmed);
+  if (exact) {
+    return exact.path;
+  }
+  const stem = (path: string): string => pathBasename(path).replace(/\.[^.]+$/u, "").toLowerCase();
+  const needle = stem(trimmed);
+  const byStem = index.files.filter((file) => stem(file.path) === needle);
+  if (byStem.length === 1) {
+    return byStem[0]!.path;
+  }
+  const bySubstring = index.files.filter((file) => stem(file.path).includes(needle));
+  return bySubstring.length === 1 ? bySubstring[0]!.path : undefined;
+}
+
+/** Human-readable related-notes list (score as a %). Pure. */
+export function formatRelatedNotes(targetPath: string, related: readonly RelatedNote[], notesDir: string): string {
+  const rel = (path: string): string => pathRelative(notesDir, path) || pathBasename(path);
+  if (related.length === 0) {
+    return `No notes are semantically related to '${rel(targetPath)}' yet (or it stands alone).\n`;
+  }
+  const lines = [`🔗 Notes related to '${rel(targetPath)}':`];
+  for (const note of related) {
+    lines.push(`  ${(note.score * 100).toFixed(0).padStart(3)}%  ${rel(note.path)}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 async function loadIndex(path: string): Promise<NotesIndex | undefined> {
@@ -733,5 +807,36 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
         return;
       }
       io.stdout(formatRecentNotes(entries, dir, new Date()));
+    });
+
+  notes
+    .command("related")
+    .description("Find notes SEMANTICALLY related to a given note (embedding similarity) — discover connections the [[wiki-links]] missed. Needs a built index (run `muse notes reindex` or any `muse ask` first). Read-only.")
+    .argument("<note>", "Note id or basename, e.g. 'project-plan' or 'project-plan.md'")
+    .option("--limit <n>", "How many related notes to show (default 5)")
+    .option("--json", "Print JSON instead of formatted text")
+    .action(async (note: string, options: { readonly limit?: string; readonly json?: boolean }) => {
+      const dir = resolveNotesDir(process.env as Record<string, string | undefined>);
+      const limit = options.limit !== undefined && Number.isFinite(Number(options.limit))
+        ? Math.max(1, Math.trunc(Number(options.limit)))
+        : 5;
+      const index = await loadIndex(defaultIndexPath());
+      if (!index) {
+        io.stderr("muse notes related: no notes index yet — run `muse notes reindex` (or any `muse ask`) first.\n");
+        process.exitCode = 1;
+        return;
+      }
+      const targetPath = resolveIndexNotePath(index, note);
+      if (targetPath === undefined) {
+        io.stderr(`No indexed note matches '${note}'. Run \`muse notes list\` to see indexed notes (or reindex if it's new).\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const related = rankRelatedNotes(index, targetPath, limit);
+      if (options.json) {
+        io.stdout(`${JSON.stringify(related.map((r) => ({ path: pathRelative(dir, r.path), score: r.score })), null, 2)}\n`);
+        return;
+      }
+      io.stdout(formatRelatedNotes(targetPath, related, dir));
     });
 }
