@@ -54,6 +54,7 @@ import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-quer
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
 import { convertUnit, detectUnitConversion, formatConversion } from "./unit-conversion.js";
 import { detectPercentageQuery, formatPercentage } from "./percentage-query.js";
+import { detectTimezoneQuery, formatTimezone } from "./timezone-query.js";
 import { docxToText, emlToText, extractDirectoryDocuments, formatDirectoryCapNotice, formatUrlTruncationNotice, htmlToText, isDocxDocument, isEmlDocument, isHtmlDocument, isPdfDocument, isPptxDocument, parsePdfBuffer, pptxToText } from "./document-reader.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
 import { resolvePersona } from "./program-helpers.js";
@@ -1661,6 +1662,21 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const answer = formatPercentage(percentage);
         if (options.json) {
           io.stdout(`${JSON.stringify({ answer, percentage, query })}\n`);
+        } else {
+          io.stdout(`${answer}\n`);
+        }
+        return;
+      }
+
+      // Time-zone questions — "what's 9am PST in Seoul?", "what time is it in
+      // Tokyo?". The 8B doesn't reliably know the current time, the offsets, or
+      // DST; compute it EXACTLY from the host clock + IANA database. Precision-
+      // first: only fires when every named zone resolves, else falls through.
+      const timezone = detectTimezoneQuery(query);
+      if (timezone) {
+        const answer = formatTimezone(timezone, new Date());
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ answer, timezone, query })}\n`);
         } else {
           io.stdout(`${answer}\n`);
         }

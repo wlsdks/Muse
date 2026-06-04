@@ -2230,7 +2230,31 @@ in the loop.
   1200 is 90.", `"200 plus 8%"` → "200 plus 8% is 216.", `--json "15% off 80"` → exact JSON, and the
   negative `"what percent of the team is remote?"` → NOT hijacked (recall). (73eb17a7)
 
-- [x] **P41-17 Reminders can now repeat MONTHLY — "remind me to pay rent on the 1st of
+- [x] **P41-28 `muse ask "what's 9am PST in Seoul?"` / "what time is it in Tokyo?" now answers the
+  EXACT time-zone conversion deterministically — the FIFTH "compute it, don't let the 8B guess"
+  lever (after arithmetic P41-20, dates P41-25, units P41-26, percentage P41-27), and the
+  single most-useful one for cross-zone scheduling (a Korea-based user working with the US asks
+  this daily).** The 8B doesn't reliably know the current time, the UTC offsets, or DST, so it
+  fabricates. Added a pure timezone fast-path (apps/cli/src/timezone-query.ts) computing from the
+  HOST CLOCK + the IANA database via `Intl` (NO dependency): `detectTimezoneQuery` recognises
+  "<time> <zone> in/to <zone>" (convert) and "what time is it in <zone>" (now), resolving ~15
+  business zones by abbreviation (PST/EST/JST/KST/GMT/…) OR city (Seoul/Tokyo/London/New York/…);
+  `formatTimezone` applies the DST-correct offset difference (via `Intl.DateTimeFormat` offset
+  extraction), naming both zones and flagging a "(next day)"/"(previous day)" roll across the date
+  line. `muse ask` short-circuits it after the percentage fast-path, ONLY when every named zone
+  resolves — so a non-timezone question ("what time is the standup meeting?") returns null and
+  falls through to recall. NO model call, NO retrieval. DST-correctness is PROVEN by the test vs
+  live divergence: the unit test pins a winter instant (9am LA → 2am Seoul), the summer live run
+  gives 9am LA → 1am Seoul — exactly the 1-hour DST shift, so the offset math is real, not
+  hard-coded. Verified deterministically AND live: 7 tests (detectTimezoneQuery parses convert +
+  now forms incl. cities, returns null on four non-timezone / unresolved-zone cases; formatTimezone
+  eastward + next-day + previous-day rolls + current-time-in-zone against a fixed instant —
+  apps/cli/src/timezone-query.test.ts) + @muse/cli 180 files / 2064 tests + tsc build + `pnpm lint`
+  0/0 + LIVE on the loop PC: `"what's 9am PST in Seoul?"` → "9:00 AM Los Angeles is 1:00 AM in Seoul
+  (next day).", `"convert 3pm EST to London"` → "3:00 PM New York is 8:00 PM in London.", `"what
+  time is it in Tokyo?"` → "It's 7:52 AM in Tokyo right now.", `--json "5pm Seoul in New York"` →
+  exact JSON, and the negative `"what time is the standup meeting?"` → NOT hijacked (recall).
+  (2bc2a34e)
   every month" finally sticks, where before only daily/weekly were allowed and a monthly
   request silently became a ONE-TIME reminder.** Reminder recurrence was `"daily" | "weekly"`
   ONLY — `normalizeReminderRecurrence` explicitly rejected "monthly" ("isn't supported …
