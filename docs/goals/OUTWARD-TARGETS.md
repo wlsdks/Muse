@@ -1167,6 +1167,16 @@ user-verified — a window can't be auto-asserted headlessly).
   refined (violet→cyan gradient stroke, typography). Verified: `swift build` + `swift test` 34 + the `.app`
   relaunched + `pnpm lint` 0/0; live voice + animations user-verified. Deferred: proactive "speaks first" +
   richer motion._
+- [x] **P45-14 Voice ACTUALLY WORKS now — via open-source whisper.cpp (I verified end-to-end, per Jinan).**
+  (cf5beedb) Truth found by really testing: Apple on-device STT isn't available on this Mac, and Muse's
+  whisper.cpp had no binary/model installed → voice was impossible. Fixed: `brew install whisper-cpp` + a
+  multilingual model (`~/.muse/whisper-models/ggml-base.bin`), VERIFIED headless transcription (EN exact, KO
+  "안녕하세요 오늘 날씨 어때요" exact). New `WhisperCapture` (Swift) records the mic (AVAudioEngine, RMS
+  end-of-speech) → `afconvert` 16kHz → `whisper-cli` locally (audio never leaves the Mac); transcript lands
+  in the input field for review/send. Replaced the broken Apple `SpeechCapture`; mic permission requested
+  up-front; falls back to typing + a setup hint if whisper is absent. Input bar moved up from the bottom
+  edge. Verified: `swift build` + `swift test` 34 + the EN+KO whisper transcription check + the `.app`
+  relaunched + `pnpm lint` 0/0; live mic→whisper user-verified. README documents the one-time setup._
 - [x] **P44-1 `muse memory encrypt` encrypts your user-memory at rest.** The
   most sensitive store (facts / preferences / the typed user model) can now be
   AES-256-GCM encrypted, so a stolen/seized laptop or a leaked backup can't read

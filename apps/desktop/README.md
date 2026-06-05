@@ -29,6 +29,23 @@ swift run MuseDesktop          # the companion appears bottom-right; drag it any
 - **Real app bundle** (needed for the mic permission): `./scripts/make-app.sh`
   then `open MuseDesktop.app`.
 
+## Voice (open-source, local)
+
+Voice input uses **whisper.cpp** (open-source, on-device — your audio never
+leaves the Mac). One-time setup:
+
+```bash
+brew install whisper-cpp
+mkdir -p ~/.muse/whisper-models
+curl -L -o ~/.muse/whisper-models/ggml-base.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin   # multilingual (Korean + English)
+```
+
+Then tap the mic in the input bar, speak, and the transcription lands in the
+input field (review/edit, then send). Without whisper.cpp installed the
+companion falls back to typing. (Apple's on-device recogniser isn't used — it
+isn't reliably available across Macs/languages.)
+
 ## Verify
 
 ```bash

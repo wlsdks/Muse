@@ -16,8 +16,8 @@ struct CompanionView: View {
             answerCard
             Spacer(minLength: 0)
             orb
-            Spacer(minLength: 0)
             if model.inputVisible { inputBar }
+            Spacer(minLength: 0)
         }
         .padding(18)
         .frame(width: 360, height: 360)

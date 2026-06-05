@@ -20,6 +20,7 @@ public enum ResolvedLanguage: String, Sendable {
     case korean, english
 
     public var speechLocale: String { self == .korean ? "ko-KR" : "en-US" }
+    public var whisperLang: String { self == .korean ? "ko" : "en" }
     public var askPlaceholder: String { self == .korean ? "무엇이든 물어보세요…" : "Ask Muse anything…" }
     public var greeting: String {
         self == .korean ? "안녕하세요, Muse예요. 무엇이든 물어보세요." : "Hi, I'm Muse — ask me anything."

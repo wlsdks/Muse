@@ -15,7 +15,7 @@ final class CompanionModel: ObservableObject {
     var voiceMuted = false
 
     private let speaker: Speaker = SpeakerFactory.make()
-    private let speech = SpeechCapture()
+    private let whisper = WhisperCapture()
     private var busy = false
     private var listening = false
 
@@ -28,14 +28,13 @@ final class CompanionModel: ObservableObject {
         lookName = ProcessInfo.processInfo.environment["MUSE_DESKTOP_CHARACTER"] ?? prefs.look
         language = lang
         bubble = "" // idle = just the orb; the bubble appears only on an answer / listening
-        speech.localeIdentifier = lang.speechLocale // all stored props set → self usable
     }
 
     /// Tap the orb → toggle the input (always works); cancel voice if listening.
     /// Closing returns to just-the-orb (clears the bubble).
     func clickOrb() {
         guard !busy else { return }
-        if listening { speech.cancel(); listening = false; orbState = .idle; return }
+        if listening { whisper.cancel(); listening = false; orbState = .idle; return }
         inputVisible.toggle()
         if !inputVisible { bubble = "" }
         orbState = .idle
@@ -69,29 +68,41 @@ final class CompanionModel: ObservableObject {
 
     func startVoice() {
         guard !busy, !listening else { return }
+        guard WhisperCapture.isAvailable else {
+            bubble = language == .korean
+                ? "음성 인식을 쓰려면 whisper.cpp가 필요해요: `brew install whisper-cpp` + 모델을 ~/.muse/whisper-models/ggml-base.bin 에. 일단 입력해 주세요."
+                : "Voice needs whisper.cpp: `brew install whisper-cpp` + a model at ~/.muse/whisper-models/ggml-base.bin. Type for now."
+            inputVisible = true
+            return
+        }
         listening = true
         orbState = .listening
-        inputVisible = true      // keep the input bar — the transcript fills it live
+        inputVisible = true
         inputText = ""
+        whisper.languageCode = language.whisperLang
         Task { [weak self] in
+            guard await WhisperCapture.requestMic() else {
+                guard let self else { return }
+                self.listening = false; self.orbState = .idle
+                self.bubble = self.language == .korean ? "마이크 권한이 필요해요 (시스템 설정 → 개인정보 보호 → 마이크)." : "Microphone access is needed (System Settings → Privacy → Microphone)."
+                return
+            }
             guard let self else { return }
             do {
-                try await self.speech.start(
-                    onPartial: { text in Task { @MainActor [weak self] in self?.inputText = text } },
-                    onFinal: { text in Task { @MainActor [weak self] in self?.heardVoice(text) } }
-                )
+                // whisper.cpp isn't streaming → the transcript arrives on `onDone`
+                // (after you stop speaking + ~1-3s) and lands in the input field.
+                try self.whisper.start(onDone: { [weak self] text in Task { @MainActor in self?.whisperDone(text) } })
             } catch {
                 self.listening = false
                 self.orbState = .idle
                 self.bubble = self.language.voiceUnavailable
-                self.inputVisible = true
             }
         }
     }
 
     /// Recognised speech lands in the INPUT FIELD (Jinan: "말하면 입력창에 나왔으면") so
     /// you can review/edit it and press send — not auto-submitted.
-    private func heardVoice(_ text: String) {
+    private func whisperDone(_ text: String) {
         listening = false
         orbState = .idle
         inputText = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -106,6 +117,5 @@ final class CompanionModel: ObservableObject {
     func setLanguage(_ pref: AppLanguage) {
         PrefsStore.update { $0.language = pref.rawValue }
         language = resolveLanguage(pref, systemIsKorean: Self.systemIsKorean)
-        speech.localeIdentifier = language.speechLocale
     }
 }
