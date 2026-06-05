@@ -49,4 +49,19 @@ describe("tasks + reminders loopback tools meet the one-shot tool-calling bar", 
     const kw = (list as { keywords?: string[] }).keywords ?? [];
     for (const w of ["리마인더", "보여줘", "reminders"]) expect(kw).toContain(w);
   });
+
+  it("reminders.add carries reminder keywords and tasks.add does NOT pull reminder intent", () => {
+    // "내일 9시 회의 리마인더 추가해줘" was adding a TASK because reminders.add had
+    // no keywords (score 0) while tasks.add matched "추가" (score 1). reminders.add
+    // must own 리마인더/알림/remind so it outranks tasks.add for reminder intent;
+    // tasks.add must NOT keep "remind me to" (which dragged reminder intent to tasks).
+    const remAdd = createRemindersMcpServer({ file: "/tmp/muse-test-reminders.json" }).tools.find((t) => t.name === "add")!;
+    const remKw = (remAdd as { keywords?: string[] }).keywords ?? [];
+    for (const w of ["리마인더", "알림", "remind"]) expect(remKw).toContain(w);
+
+    const taskAdd = createTasksMcpServer({ file: "/tmp/muse-test-tasks.json" }).tools.find((t) => t.name === "add")!;
+    const taskKw = (taskAdd as { keywords?: string[] }).keywords ?? [];
+    expect(taskKw).not.toContain("remind me to");
+    expect(taskKw).not.toContain("리마인더");
+  });
 });

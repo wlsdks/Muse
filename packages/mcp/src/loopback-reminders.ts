@@ -119,7 +119,10 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           "has passed. " +
           "Optional `recurrence`: 'daily', 'weekly', 'monthly', or 'yearly' makes it repeat (re-arms to the next occurrence each time it fires) — use for 'every day' / 'every Monday' / 'on the 1st of every month' (rent, bills, subscriptions) / 'every year' (anniversaries, annual renewals); omit for a one-time reminder. A monthly 31st (or a yearly Feb 29) lands on the last valid day of shorter months/years. " +
           "Reminders fire on the user's configured channel. " +
-          "When you confirm the reminder back to the user, state the time using the result's `dueAtLocal` field (the due time in the user's local timezone, e.g. 'Thu, Jun 5, 2026, 3:00 PM (tomorrow)') — NEVER the raw ISO `dueAt`, which is in UTC and will read back the wrong hour.",
+          "When you confirm the reminder back to the user, state the time using the result's `dueAtLocal` field (the due time in the user's local timezone, e.g. 'Thu, Jun 5, 2026, 3:00 PM (tomorrow)') — NEVER the raw ISO `dueAt`, which is in UTC and will read back the wrong hour. " +
+          "USE WHEN the user asks to be REMINDED / alerted at a time ('내일 9시 회의 리마인더 추가해줘', 'remind me to call mom at 6pm', '알림 맞춰줘'); " +
+          "you MUST call this to actually create it — never just reply that it was set. NOT for a plain to-do with no alert time (use the tasks `add` tool).",
+        keywords: ["reminder", "리마인더", "리마인드", "알림", "remind", "remind me", "notify", "알려줘", "맞춰줘", "추가", "add", "등록"],
         execute: async (args): Promise<JsonObject> => {
           const text = readString(args, "text")?.trim();
           if (!text) {
