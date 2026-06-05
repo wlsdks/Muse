@@ -8,7 +8,9 @@ import {
   formatChatGroundingBlock,
   gateChatAnswer,
   groundChatTurn,
-  isPersonalFactRecall
+  groundedNoteSources,
+  isPersonalFactRecall,
+  withGroundingReceipt
 } from "./chat-grounding.js";
 import type { RecallHit } from "./commands-recall.js";
 
@@ -66,6 +68,27 @@ describe("gateChatAnswer (deterministic anti-fabrication gate)", () => {
   it("still refuses a recall whose topic is NOT on file (birthday never stored)", () => {
     const out = gateChatAnswer("내 생일 언제야?", "당신의 생일은 5월 3일입니다.", [], ["user_name"]);
     expect(out).toBe(chatAbstention("내 생일 언제야?"));
+  });
+});
+
+describe("groundingReceipt (source quoted)", () => {
+  it("cites only the note whose content is IN the answer (not every retrieved note)", () => {
+    const matches = [
+      { cosine: 0.7, score: 0.7, source: "/Users/x/.muse/notes/wifi/seoul_office.md", text: "와이파이 비밀번호는 muse2026 이야" },
+      { cosine: 0.6, score: 0.6, source: "/Users/x/.muse/notes/dogfood-test.md", text: "Muse is a JARVIS-style agent" }, // retrieved but irrelevant
+      { cosine: 0.3, score: 0.3, source: "/Users/x/.muse/notes/below.md", text: "muse2026 noise" } // below threshold
+    ];
+    // Answer states muse2026 → only seoul_office grounded it; dogfood (no shared
+    // distinctive token) and the below-threshold note are excluded.
+    expect(groundedNoteSources(matches, "비밀번호는 muse2026 입니다.")).toEqual(["seoul_office.md"]);
+  });
+  it("appends a 📎 receipt to a grounded answer (Korean)", () => {
+    expect(withGroundingReceipt("비밀번호는 muse2026 입니다.", ["seoul_office.md"], true))
+      .toBe("비밀번호는 muse2026 입니다.\n\n📎 노트: seoul_office.md");
+  });
+  it("does NOT receipt an abstention or a source-less answer", () => {
+    expect(withGroundingReceipt(chatAbstention("내 생일?"), ["x.md"], true)).toBe(chatAbstention("내 생일?"));
+    expect(withGroundingReceipt("일반 답변입니다.", [], true)).toBe("일반 답변입니다.");
   });
 });
 

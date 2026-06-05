@@ -151,6 +151,48 @@ export function chatAbstention(question: string): string {
     : "I don't have that recorded yet — tell me and I'll remember it.";
 }
 
+export function isChatAbstention(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed === chatAbstention("가").trim() || trimmed === chatAbstention("a").trim();
+}
+
+// A note actually GROUNDED the answer only if a distinctive token from it (a
+// value with a digit, or a word ≥5 chars — not a common word shared by the
+// question) shows up in the answer. This keeps the receipt accurate: an answer
+// of "muse2026" cites seoul_office.md, not every loosely-retrieved note.
+function noteGroundedAnswer(noteText: string, answerLower: string): boolean {
+  const tokens = noteText.toLowerCase().match(/[a-z0-9가-힣]+/giu) ?? [];
+  return tokens.some((token) => (token.length >= 5 || /\d/u.test(token)) && answerLower.includes(token));
+}
+
+/** The note/source refs (basenames) that actually grounded the answer — above the
+ * authoritative threshold AND with content present in the answer, deduped. Drives
+ * the accurate "source quoted" receipt on chat. */
+export function groundedNoteSources(
+  matches: readonly KnowledgeMatch[],
+  answer: string,
+  minScore: number = CHAT_GROUNDING_MIN_SCORE
+): string[] {
+  const answerLower = answer.toLowerCase();
+  const refs = matches
+    .filter((match) => (match.cosine ?? match.score) >= minScore && noteGroundedAnswer(match.text, answerLower))
+    .map((match) => {
+      const parts = match.source.trim().split(/[/\\]/u);
+      return parts[parts.length - 1] ?? match.source.trim();
+    })
+    .filter((ref) => ref.length > 0);
+  return [...new Set(refs)];
+}
+
+/** Append a "shows its work" source receipt when chat answered FROM the user's
+ * notes — the model often forgets to render [from <source>] inline, but the
+ * "answers from your notes, source quoted" promise should still be visible. */
+export function withGroundingReceipt(answer: string, sources: readonly string[], korean: boolean): string {
+  if (sources.length === 0 || isChatAbstention(answer) || answer.includes("[from")) return answer;
+  const label = korean ? "노트" : "from";
+  return `${answer}\n\n📎 ${label}: ${sources.join(", ")}`;
+}
+
 /**
  * The deterministic anti-fabrication gate for the conversational surface. For a
  * personal-fact recall whose answer is NOT grounded in the retrieved evidence
@@ -196,6 +238,14 @@ export function gateChatAnswer(
   // (cross-language tolerant); pass. Otherwise the lexical gate decides, so a
   // cross-entity conflation ("the cat is 보리", the dog's name) is refused.
   if (asksAboutStoredFact(question, knownFactKeys)) return answer;
+  // The answer actually QUOTES distinctive content from a retrieved note
+  // (e.g. "muse2026" from seoul_office.md) → grounded for real, no matter how
+  // verifyGrounding's borderline rubric falls on the model's varied phrasing.
+  // A fabrication (no note holds the invented value) won't match, so it's safe.
+  const answerLower = answer.toLowerCase();
+  if (matches.some((match) => (match.cosine ?? match.score) >= CHAT_GROUNDING_MIN_SCORE && noteGroundedAnswer(match.text, answerLower))) {
+    return answer;
+  }
   const { verdict } = verifyGrounding(answer, matches, question);
   return verdict === "grounded" ? answer : chatAbstention(question);
 }

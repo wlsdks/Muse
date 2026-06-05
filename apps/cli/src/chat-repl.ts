@@ -23,7 +23,7 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { conversationMatches, gateChatAnswer, retrieveChatGrounding } from "./chat-grounding.js";
+import { conversationMatches, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
@@ -242,8 +242,12 @@ export async function runLocalChat(
   const knownFactKeys = userMemory ? Object.keys(userMemory.facts ?? {}) : [];
   const gated = gateChatAnswer(message, result.response.output, evidence, knownFactKeys);
 
+  // "Answers from your notes, source quoted": render the source receipt the model
+  // often omits inline, so a grounded answer shows WHERE it came from.
+  const response = withGroundingReceipt(gated, groundedNoteSources(matches, gated), /[가-힣]/u.test(message));
+
   return {
-    response: gated,
+    response,
     runId: result.runId,
     toolsUsed: result.toolsUsed ?? []
   };
