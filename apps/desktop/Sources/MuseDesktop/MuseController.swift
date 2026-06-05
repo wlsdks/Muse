@@ -43,8 +43,8 @@ final class MuseController: NSObject {
 
         let characterItem = NSMenuItem(title: "Character", action: nil, keyEquivalent: "")
         let characterMenu = NSMenu()
-        // The glowing "Orb" is the default; the mascot + pixel sprites are alternates.
-        let names = ["orb", "muse"] + SpriteLibrary.all.compactMap { $0.name }
+        // The glowing "Orb" is the default; the lyre, the mascot + pixel sprites are alternates.
+        let names = ["orb", "harp", "muse"] + SpriteLibrary.all.compactMap { $0.name }
         for name in names {
             let mi = NSMenuItem(title: name.capitalized, action: #selector(pickCharacter(_:)), keyEquivalent: "")
             mi.representedObject = name

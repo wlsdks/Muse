@@ -144,6 +144,30 @@ if let flag = arguments.firstIndex(of: "--render-orb"), flag + 1 < arguments.cou
     exit(1)
 }
 
+// Headless preview of the LYRE/HARP: `MuseDesktop --render-harp <png> [size] [state] [phase]`.
+if let flag = arguments.firstIndex(of: "--render-harp"), flag + 1 < arguments.count {
+    let path = arguments[flag + 1]
+    let size = min(max((flag + 2 < arguments.count ? Int(arguments[flag + 2]) : nil) ?? 320, 64), 2048)
+    let stateName = flag + 3 < arguments.count ? arguments[flag + 3] : "idle"
+    let phase = CGFloat((flag + 4 < arguments.count ? Double(arguments[flag + 4]) : nil) ?? 0)
+    let state: CharacterView.State = stateName == "listening" ? .listening : stateName == "speaking" ? .speaking : stateName == "thinking" ? .thinking : .idle
+    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
+                                     bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                     colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+          let gctx = NSGraphicsContext(bitmapImageRep: rep) else { exit(1) }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = gctx
+    // dark backdrop so the glow reads, matching the companion's frosted panel
+    NSColor(calibratedRed: 0.10, green: 0.09, blue: 0.16, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: CGFloat(size), height: CGFloat(size)).fill()
+    HarpMuse.draw(in: NSRect(x: 0, y: 0, width: CGFloat(size), height: CGFloat(size)), state: state, phase: phase)
+    NSGraphicsContext.restoreGraphicsState()
+    if let data = rep.representation(using: .png, properties: [:]) {
+        try? data.write(to: URL(fileURLWithPath: path)); exit(0)
+    }
+    exit(1)
+}
+
 // Headless preview of the VECTOR mascot: `MuseDesktop --render-vector <png> [size]`.
 if let flag = arguments.firstIndex(of: "--render-vector"), flag + 1 < arguments.count {
     let path = arguments[flag + 1]

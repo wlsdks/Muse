@@ -10,6 +10,7 @@ struct CompanionView: View {
 
     private let accent = Color(red: 0.62, green: 0.91, blue: 1.0)
     private let violet = Color(red: 0.55, green: 0.45, blue: 0.95)
+    private let noteGold = Color(red: 0.96, green: 0.82, blue: 0.46)
 
     var body: some View {
         VStack(spacing: 12) {
@@ -30,6 +31,8 @@ struct CompanionView: View {
 
     private var orb: some View {
         ZStack {
+            // Mini notes always drifting freely around the avatar — Muse is music.
+            AmbientNotes(tint: noteGold).frame(width: 240, height: 210).allowsHitTesting(false)
             OrbRepresentable(lookName: model.lookName, state: model.orbState, onClick: { model.clickOrb() })
                 .frame(width: 116, height: 116)
             if model.orbState == .listening {
@@ -140,5 +143,42 @@ private struct ListeningNotes: View {
             }
         }
         .onAppear { animate = true }
+    }
+}
+
+/// Mini musical notes drifting freely around the avatar — always on, since Muse
+/// is the goddess of music. Each note bobs along its own slow looping path.
+private struct AmbientNotes: View {
+    let tint: Color
+    @State private var float = false
+
+    private struct Note {
+        let glyph: String, x: CGFloat, y: CGFloat, dx: CGFloat, dy: CGFloat
+        let size: CGFloat, delay: Double, dur: Double, maxOpacity: Double
+    }
+    private let notes: [Note] = [
+        .init(glyph: "\u{266A}", x: -88, y: -16, dx: -10, dy: -28, size: 15, delay: 0.0, dur: 4.4, maxOpacity: 0.55),
+        .init(glyph: "\u{266B}", x: 82, y: -42, dx: 14, dy: -22, size: 18, delay: 0.8, dur: 5.2, maxOpacity: 0.60),
+        .init(glyph: "\u{2669}", x: -66, y: 48, dx: -12, dy: 22, size: 13, delay: 1.7, dur: 4.8, maxOpacity: 0.45),
+        .init(glyph: "\u{266C}", x: 94, y: 26, dx: 12, dy: 24, size: 16, delay: 0.4, dur: 5.6, maxOpacity: 0.50),
+        .init(glyph: "\u{266A}", x: 22, y: -80, dx: 8, dy: -18, size: 14, delay: 2.3, dur: 4.2, maxOpacity: 0.50),
+        .init(glyph: "\u{266B}", x: -28, y: 76, dx: -8, dy: 18, size: 15, delay: 1.2, dur: 5.0, maxOpacity: 0.45)
+    ]
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<notes.count, id: \.self) { i in
+                let n = notes[i]
+                Text(n.glyph)
+                    .font(.system(size: n.size, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .shadow(color: tint.opacity(0.5), radius: 4)
+                    .offset(x: float ? n.x + n.dx : n.x, y: float ? n.y + n.dy : n.y)
+                    .rotationEffect(.degrees(float ? 10 : -10))
+                    .opacity(float ? n.maxOpacity : n.maxOpacity * 0.25)
+                    .animation(.easeInOut(duration: n.dur).repeatForever(autoreverses: true).delay(n.delay), value: float)
+            }
+        }
+        .onAppear { float = true }
     }
 }

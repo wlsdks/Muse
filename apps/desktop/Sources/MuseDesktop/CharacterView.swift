@@ -8,7 +8,7 @@ import MuseDesktopCore
 /// shows activity when listening.
 final class CharacterView: NSView {
     enum State { case idle, listening, thinking, speaking }
-    enum Look { case orb, vector, pixel }
+    enum Look { case orb, vector, pixel, harp }
 
     var state: State = .idle { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
@@ -17,8 +17,8 @@ final class CharacterView: NSView {
     }
     private var look: Look = .orb
 
-    /// `orb`/default → the glowing orb; `muse`/`vector` → the vector mascot;
-    /// `aria`/`celestial` → those pixel sprites.
+    /// `orb`/default → the glowing orb; `harp`/`lyre` → the glowing lyre;
+    /// `muse`/`vector` → the vector mascot; `aria`/`celestial` → those pixel sprites.
     func setCharacterNamed(_ name: String?) {
         switch (name ?? "").lowercased() {
         case "aria", "celestial":
@@ -26,6 +26,9 @@ final class CharacterView: NSView {
             sprite = SpriteLibrary.named((name ?? "").lowercased())
         case "muse", "vector":
             look = .vector
+            tick = 0; needsDisplay = true
+        case "harp", "lyre":
+            look = .harp
             tick = 0; needsDisplay = true
         default:
             look = .orb
@@ -85,6 +88,10 @@ final class CharacterView: NSView {
         case .vector:
             let bob: CGFloat = (tick % 50 < 25) ? 0 : 2
             VectorMuse.draw(in: bounds, state: state, blink: blinking, mouthOpen: mouthOpen, breathe: bob)
+            return
+        case .harp:
+            let bob: CGFloat = (tick % 60 < 30) ? 0 : 2
+            HarpMuse.draw(in: bounds, state: state, phase: phase, breathe: bob)
             return
         case .pixel:
             break
