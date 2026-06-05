@@ -235,6 +235,15 @@ export {
   type CouncilUtterance
 } from "./council.js";
 export {
+  DEFAULT_ROLES,
+  defaultShouldOrchestrate,
+  orchestrateAnswer,
+  type OrchestratedAnswer,
+  type OrchestrateOptions,
+  type OrchestrationProposal,
+  type OrchestrationRole
+} from "./orchestrate.js";
+export {
   A2ASafetyError,
   classifyInbound,
   isA2AEnabled,
