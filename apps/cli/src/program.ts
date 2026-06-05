@@ -91,6 +91,7 @@ import { registerBenfordCommand } from "./commands-benford.js";
 import { registerKeywordsCommand } from "./commands-keywords.js";
 import { registerOnThisDayCommand } from "./commands-on-this-day.js";
 import { registerTrendCommand } from "./commands-trend.js";
+import { registerDiversityCommand } from "./commands-diversity.js";
 import { registerFindCommand } from "./commands-find.js";
 import { registerHistoryCommand } from "./commands-history.js";
 import { registerOpenCommand } from "./commands-open.js";
@@ -503,6 +504,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerKeywordsCommand(program, io);
   registerOnThisDayCommand(program, io);
   registerTrendCommand(program, io);
+  registerDiversityCommand(program, io);
   registerHistoryCommand(program, io);
   registerOpenCommand(program, io);
   registerNotesCommands(program, io, { apiRequest, writeOutput });

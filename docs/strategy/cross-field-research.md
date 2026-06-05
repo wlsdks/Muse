@@ -44,6 +44,7 @@ is yoked to a fabrication-zero floor is far harder.
 | Field | Mechanism (paper) | Muse capability |
 | --- | --- | --- |
 | Ecology | Marginal Value Theorem / optimal foraging (Charnov 1976) | `muse recall --adaptive` — the evidence picks how many sources to return |
+| Ecology / biodiversity | Shannon & Simpson diversity indices + Pielou evenness (Shannon 1948; Simpson 1949) | `muse diversity` — is a category column DIVERSE or concentrated in one bucket? |
 | Collective behaviour / biology | Stigmergy, ant pheromone trails (Grassé 1959; Vittori 2006) | `muse notes trails` / `hubs` — an evaporating co-recall relatedness graph |
 | Physiology / neuroscience | Allostasis — predictive regulation (Sterling 2012) | `muse pattern upcoming` — anticipate a recurring need before its slot |
 | Network science | k-shell decomposition / influential spreaders (Kitsak et al. 2010) | `muse notes hubs` — the load-bearing core of your notes (depth, not degree) |

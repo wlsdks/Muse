@@ -386,6 +386,7 @@ catalog + negative results in
 | Field | Mechanism | Capability |
 | --- | --- | --- |
 | Ecology | Marginal Value Theorem (Charnov 1976) | `muse recall --adaptive` |
+| Ecology (biodiversity) | Shannon & Simpson diversity (Shannon 1948; Simpson 1949) | `muse diversity` |
 | Collective behaviour | Stigmergy / ant trails (Grassé; Vittori) | `muse notes trails` / `hubs` |
 | Physiology | Allostasis (Sterling 2012) | `muse pattern upcoming` |
 | Control theory | CUSUM change-point (Page 1954) | `muse pattern lapsed` |

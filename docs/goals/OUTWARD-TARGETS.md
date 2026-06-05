@@ -878,6 +878,27 @@ P43 bullet is unbuilt.
   rising `spend` column → `muse trend d.csv kg` = "Strongly DECREASING … (p<0.01), z=-4.93", `noise` =
   "none", `spend` = "increasing/strong". Honest scope: rows must be in time order; a `muse csv --trend`
   flag and seasonality are follow-ons. (57c921ae)
+
+- [x] **P43-24 `muse diversity <file> <column>` — is a categorical column DIVERSE or concentrated in
+  one bucket? ("⚠ Highly concentrated — 'rent' dominates").** A LIFE-SCIENCES slice (per Jinan's
+  biology-lean directive) — the ecologist's biodiversity measures applied to your own data. The
+  mechanism: SHANNON (Shannon, "A Mathematical Theory of Communication", Bell System Technical Journal
+  27, 1948) and SIMPSON (Simpson, "Measurement of Diversity", Nature 163:688, 1949) diversity indices +
+  Pielou's evenness — the two measures ECOLOGISTS use to quantify biodiversity (how evenly a population
+  spreads across categories vs is dominated by one). Distinct from `muse csv --group-by` (the buckets)
+  and `muse benford`/`muse trend` (shape / direction of a NUMERIC column) — this is the EVENNESS of a
+  CATEGORICAL one. Pure `apps/cli/src/diversity.ts` (`categoryCounts`; `diversityOf` — Shannon H'=-Σp·lnp,
+  Gini-Simpson 1-Σp², Pielou J'=H'/ln S; `formatDiversity` with the J' conventional bands) wired into
+  `muse diversity` (`--json`) reusing the csv parser. Deterministic, no model. Verified deterministically
+  AND live: 7 unit tests (count distinct/trimmed/blank-drop; a perfectly even spread maxes Shannon=ln S
+  and evenness=1; a single category → 0/0/1-by-convention; a dominated spread → low evenness naming the
+  dominant; empty all-zero; format flags concentrated vs balanced — apps/cli/src/diversity.test.ts) +
+  `pnpm lint` 0/0 + `@muse/shared` byte-hygiene 30 + cli 2281 + 0 raw control bytes + a LIVE run on the
+  loop PC: a `category` column where 'rent' is 90% → "Highly concentrated — 'rent' dominates (90.0%),
+  evenness J'=0.469", while a 4-even-category column → "Well balanced … evenness 1.0". RECORDED per the
+  mandate: the module header cites the papers, a row added to docs/strategy/cross-field-research.md AND
+  the README's cross-field table. Honest scope: categorical columns; rarefaction / Hill numbers are
+  follow-ons. (6ec44a46)
 - [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
   and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
   The evening recap (P43-4) is the retrospective sibling of the morning brief, and its
