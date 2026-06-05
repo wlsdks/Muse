@@ -63,11 +63,19 @@ final class WhisperCapture {
         if let loadTask { return loadTask }
         let name = modelName
         let task = Task<WhisperKit, Error> { [weak self] in
-            let started = Date()
-            let kit = try await WhisperKit(WhisperKitConfig(model: name, verbose: false, logLevel: .error, prewarm: true, download: true))
-            await MainActor.run { self?.whisperKit = kit }
-            WhisperCapture.log("model loaded: \(name) in \(String(format: "%.1f", Date().timeIntervalSince(started)))s")
-            return kit
+            do {
+                let started = Date()
+                let kit = try await WhisperKit(WhisperKitConfig(model: name, verbose: false, logLevel: .error, download: true))
+                await MainActor.run { self?.whisperKit = kit }
+                WhisperCapture.log("model loaded: \(name) in \(String(format: "%.1f", Date().timeIntervalSince(started)))s")
+                return kit
+            } catch {
+                // A failed load must NOT stay cached — that leaves voice dead until
+                // the app restarts. Clear it so the next tap retries from scratch.
+                WhisperCapture.log("model load FAILED: \(error.localizedDescription)")
+                await MainActor.run { self?.loadTask = nil }
+                throw error
+            }
         }
         loadTask = task
         return task

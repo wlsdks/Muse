@@ -38,8 +38,8 @@ public enum ResolvedLanguage: String, Sendable {
     }
     public var voiceUnavailable: String {
         self == .korean
-            ? "이 언어는 온디바이스 음성을 지원하지 않아요 — 입력해 주세요."
-            : "On-device speech isn't available — type instead."
+            ? "음성 모델을 불러오지 못했어요. 잠시 후 마이크를 다시 탭해 주세요 (최초 1회는 다운로드)."
+            : "Couldn't load the speech model. Tap the mic again in a moment (first run downloads it)."
     }
     public var notCaught: String {
         self == .korean ? "잘 못 들었어요 — 다시 시도해 주세요." : "I didn't catch that — try again."

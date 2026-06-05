@@ -20,25 +20,11 @@ final class QwenSpeaker: Speaker {
     private var loadTask: Task<Void, Never>?
     private var current: Task<Void, Never>?
 
-    init() { preload() }
-
-    private func preload() {
-        guard loadTask == nil else { return }
-        loadTask = Task { [weak self] in
-            do {
-                let kit = try await TTSKit(model: .qwen3TTS_0_6b)
-                await MainActor.run { self?.tts = kit }
-                WhisperCapture.log("TTS model loaded (qwen3-tts 0.6b)")
-            } catch {
-                WhisperCapture.log("TTS load failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
     func speak(_ text: String, language: ResolvedLanguage, onFinish: @escaping () -> Void) {
+        ensureLoaded()
         current?.cancel()
         guard let tts else {
-            // Model still downloading/loading — don't be silent; use the system voice this once.
+            // Neural voice still loading — don't be silent; use the system voice this once.
             fallback.speak(text, language: language, onFinish: onFinish)
             return
         }
@@ -47,6 +33,23 @@ final class QwenSpeaker: Speaker {
             do { _ = try await tts.play(text: text, voice: nil, language: langValue) }
             catch { WhisperCapture.log("TTS play failed: \(error.localizedDescription)") }
             await MainActor.run { onFinish() }
+        }
+    }
+
+    /// Load the Qwen3-TTS model on the first spoken reply — lazy (after launch) so
+    /// it doesn't contend with the speech-to-text model loading at the same time.
+    /// A failed load isn't cached, so the next reply retries.
+    private func ensureLoaded() {
+        guard loadTask == nil, tts == nil else { return }
+        loadTask = Task { [weak self] in
+            do {
+                let kit = try await TTSKit(model: .qwen3TTS_0_6b)
+                await MainActor.run { self?.tts = kit }
+                WhisperCapture.log("TTS model loaded (qwen3-tts 0.6b)")
+            } catch {
+                WhisperCapture.log("TTS load FAILED: \(error.localizedDescription)")
+                await MainActor.run { self?.loadTask = nil }
+            }
         }
     }
 }
