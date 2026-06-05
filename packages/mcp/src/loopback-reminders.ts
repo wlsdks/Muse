@@ -321,6 +321,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           required: ["id"],
           type: "object"
         },
+        keywords: ["reminder", "리마인더", "리마인드", "알림", "remind", "snooze", "postpone", "미뤄", "미루", "연기", "늦춰", "뒤로", "나중에"],
         domain: "tasks",
         name: "snooze",
         risk: "write"
@@ -414,6 +415,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           required: ["id"],
           type: "object"
         },
+        keywords: ["reminder", "리마인더", "리마인드", "알림", "remind", "clear", "delete", "remove", "cancel", "삭제", "지워", "제거", "취소", "없애"],
         domain: "tasks",
         name: "clear",
         risk: "write"

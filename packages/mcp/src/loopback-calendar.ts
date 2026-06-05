@@ -340,6 +340,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           required: ["id"],
           type: "object"
         },
+        keywords: ["일정", "캘린더", "calendar", "event", "미팅", "약속", "meeting", "update", "change", "reschedule", "수정", "변경", "바꿔", "옮겨", "연기", "미뤄"],
         domain: "calendar",
         name: "update",
         risk: "write"
@@ -374,6 +375,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           required: ["id"],
           type: "object"
         },
+        keywords: ["일정", "캘린더", "calendar", "event", "미팅", "약속", "meeting", "delete", "remove", "cancel", "삭제", "취소", "지워", "제거", "없애"],
         domain: "calendar",
         name: "delete",
         risk: "write"

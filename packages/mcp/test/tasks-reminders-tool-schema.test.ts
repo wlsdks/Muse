@@ -74,4 +74,13 @@ describe("tasks + reminders loopback tools meet the one-shot tool-calling bar", 
     expect(taskKw).not.toContain("remind me to");
     expect(taskKw).not.toContain("리마인더");
   });
+
+  it("reminders snooze/clear own the reminder NOUN + verb so '리마인더 미뤄/삭제' isn't hijacked by tasks", () => {
+    // "약 먹기 리마인더 30분 미뤄줘" got no tool and "…지워줘" hit tasks.delete because
+    // snooze/clear had no keywords. Each reminder lifecycle write needs the noun + verb.
+    const server = createRemindersMcpServer({ file: "/tmp/muse-test-reminders.json" });
+    const kwOf = (name: string) => ((server.tools.find((t) => t.name === name) as { keywords?: string[] })?.keywords ?? []);
+    for (const w of ["리마인더", "미뤄", "snooze"]) expect(kwOf("snooze")).toContain(w);
+    for (const w of ["리마인더", "삭제", "clear"]) expect(kwOf("clear")).toContain(w);
+  });
 });

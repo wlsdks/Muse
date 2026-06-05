@@ -50,6 +50,16 @@ describe("calendar loopback tools meet the one-shot tool-calling bar", () => {
     for (const w of ["일정", "캘린더", "추가"]) expect(kwOf("add")).toContain(w);
     for (const w of ["일정", "캘린더", "보여줘"]) expect(kwOf("list")).toContain(w);
   });
+
+  it("calendar update/delete own the event NOUN + verb so '일정 삭제/변경' isn't hijacked by tasks.delete/update", () => {
+    // "내일 회의 일정 삭제해줘" hit muse.tasks.delete because calendar.delete had no
+    // keywords while tasks.delete (keyworded last fire) matched "삭제". Each calendar
+    // lifecycle write needs the event noun + its verb to win calendar intent.
+    const server = createCalendarMcpServer({ registry: stubRegistry });
+    const kwOf = (name: string) => ((server.tools.find((t) => t.name === name) as { keywords?: string[] })?.keywords ?? []);
+    for (const w of ["일정", "삭제", "delete"]) expect(kwOf("delete")).toContain(w);
+    for (const w of ["일정", "변경", "update"]) expect(kwOf("update")).toContain(w);
+  });
 });
 
 describe("calendar add result carries LOCAL-time fields so the model echoes the time you asked for, not the UTC ISO", () => {
