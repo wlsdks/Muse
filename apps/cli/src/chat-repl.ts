@@ -25,7 +25,7 @@ import type { Command } from "commander";
 
 import { classifyCasualPrompt } from "@muse/agent-core";
 
-import { conversationMatches, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, withGroundingReceipt } from "./chat-grounding.js";
+import { conversationMatches, gateChatAnswer, groundedNoteSources, isPersonalFactRecall, retrieveChatGrounding, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
@@ -173,6 +173,17 @@ export function createTuiChatSubmitter(
   };
 }
 
+/**
+ * The "ambient" facts safe to inject on EVERY turn — just the user's name, so
+ * Muse can address them. Entity facts (pet, dentist, …) are recall-only: kept
+ * out of non-recall turns because the local model free-associates them into
+ * unrelated answers.
+ */
+export function pickIdentityFacts(facts: Readonly<Record<string, string>>): Record<string, string> {
+  const name = facts.user_name;
+  return name === undefined ? {} : { user_name: name };
+}
+
 export async function runLocalChat(
   io: ProgramIO,
   message: string,
@@ -232,7 +243,16 @@ export async function runLocalChat(
   const userMemory = assembly.userMemoryStore
     ? await Promise.resolve(assembly.userMemoryStore.findByUserId(userId)).catch(() => undefined)
     : undefined;
-  const userMemoryBlock = userMemory ? (buildMusePersona(userMemory, userId) ?? "").trim() : "";
+  // qwen3:8b free-associates remembered ENTITY facts into unrelated turns —
+  // it volunteered the user's dog in a hydration answer and a "good morning"
+  // (a prompt instruction not to was ignored). So gate deterministically: only
+  // a personal-fact RECALL turn ("what's my dog's name?") gets the full fact
+  // set; every other turn sees just the user's name (needed to address them),
+  // which removes the tangent without weakening recall.
+  const personaMemory = userMemory && !isPersonalFactRecall(message)
+    ? { ...userMemory, facts: pickIdentityFacts(userMemory.facts) }
+    : userMemory;
+  const userMemoryBlock = personaMemory ? (buildMusePersona(personaMemory, userId) ?? "").trim() : "";
   const personaPreamble = (await loadActivePersonaPreamble().catch(() => "")).trim();
   const { block: groundingBlock, matches } = isCasual
     ? { block: "", matches: [] as Awaited<ReturnType<typeof retrieveChatGrounding>>["matches"] }

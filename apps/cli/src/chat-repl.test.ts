@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAgentMode } from "./chat-repl.js";
+import { parseAgentMode, pickIdentityFacts } from "./chat-repl.js";
+
+describe("pickIdentityFacts (non-recall turns get ONLY the name, no tangent-prone entity facts)", () => {
+  it("keeps user_name, drops entity facts (dog_name, dentist, …)", () => {
+    expect(pickIdentityFacts({ user_name: "진안", dog_name: "보리", dentist: "Dr. Kim" })).toEqual({ user_name: "진안" });
+  });
+  it("returns {} when there is no name to address by", () => {
+    expect(pickIdentityFacts({ dog_name: "보리" })).toEqual({});
+  });
+});
 
 describe("parseAgentMode", () => {
   it("returns undefined when --mode is unset", () => {
