@@ -1089,6 +1089,29 @@ data, never the user's real ~/.muse. Value-to-creep ranked; each is read-only
   `muse calendar add "Standup" --at <+25min>` then `muse today --local` → "⏰ Next: Standup in 25 min"
   as the lead, above the "Upcoming (1): - 20:18 — Standup" list. (3e8ddf04)
 
+- [x] **P37-40 `muse today` now tells you WHO you're meeting and HOW you know them — an event whose
+  title names a known contact is annotated with that person's RELATIONSHIP ("Lunch with Dana (your
+  manager)", "Checkup with Priya (your doctor)") — the relationship graph (P37-20/36) surfaced in the
+  day view.** The brief listed events by title + time but said nothing about the PEOPLE in them, even
+  though the contact graph already knows Dana is your manager and Priya your doctor — so a glance at
+  the day didn't connect "who + their role". Added a pure `annotateEventTitle(title, contacts)`
+  (apps/cli/src/commands-today.ts) that matches a relationship-bearing contact's name / first-name /
+  alias TOKEN as a whole word in the event title (so "Lunch with Dana" matches the contact "Dana Wu")
+  and returns " (your <relationship>)" — only relationship-bearing contacts annotate (a bare name adds
+  nothing), listing multiple matched people with their roles. Wired as a CLIENT-SIDE briefing
+  enrichment (like weather/feeds, so it works on BOTH the local and remote paths) that appends the
+  annotation to each event's title, so it flows through the next-event lead, the Upcoming list, AND
+  the conflict line. Fail-soft (unreadable contacts → events shown plain). This SELECTED slice came
+  from the same 5-agent code-grounded direction-review workflow (proposal #5, felt+knowing-you). NOT
+  an identifier — it never resolves a recipient, same safety boundary as P37-20. Verified: 4 unit
+  tests (a first-name mention → "(your manager)"; an alias match; NO annotation for a no-relationship
+  contact or an unmentioned one; multiple people listed with roles — apps/cli/src/commands-today.test.ts)
+  + the full @muse/cli suite (185 files / 2092 tests) + tsc build + `pnpm lint` 0/0 + 0 raw control
+  bytes + a LIVE run on the loop PC: seeded `Dana Wu --relationship manager` + `Priya --relationship
+  doctor` and three events, then `muse today --local` printed "  - 03:00 — Lunch with Dana (your
+  manager)", "  - 04:00 — Checkup with Priya (your doctor)", and "Team standup" UN-annotated (no
+  contact named). (879f95f7)
+
 - [x] **P37-35 `muse week` — your next 7 days at a glance, GROUPED BY DAY (events + due tasks +
   birthdays under each day), so you can plan the week instead of reading a flat next-24h brief.**
   `muse today` is the today-framed brief (overdue, today's tasks, next-24h calendar); its

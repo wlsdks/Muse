@@ -2,10 +2,37 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { writeFollowups, writeReminders, type PersistedFollowup, type PersistedReminder } from "@muse/mcp";
+import { writeFollowups, writeReminders, type Contact, type PersistedFollowup, type PersistedReminder } from "@muse/mcp";
 import { describe, expect, it } from "vitest";
 
-import { formatConnectionsSection, formatEpisodeRevisitLine, formatEvents, formatHeadlines, formatNextEvent, formatOverdue, formatRevisitSection, formatStaleTasksSection, formatTasks, formatTodayBrief, formatTodayConflicts, formatWeatherLine, parseLookaheadHours, pickConnectionQuery, readDueFollowups, readDueReminders, readUpcomingBirthdays, relativeDueTag, resolveTodayFeedHeadlines, resolveTodayWeatherLine, selectEpisodeToRevisit, selectStaleTasks, selectTodayOverdue } from "./commands-today.js";
+import { annotateEventTitle, formatConnectionsSection, formatEpisodeRevisitLine, formatEvents, formatHeadlines, formatNextEvent, formatOverdue, formatRevisitSection, formatStaleTasksSection, formatTasks, formatTodayBrief, formatTodayConflicts, formatWeatherLine, parseLookaheadHours, pickConnectionQuery, readDueFollowups, readDueReminders, readUpcomingBirthdays, relativeDueTag, resolveTodayFeedHeadlines, resolveTodayWeatherLine, selectEpisodeToRevisit, selectStaleTasks, selectTodayOverdue } from "./commands-today.js";
+
+const contact = (over: Partial<Contact> & { name: string }): Contact => ({ id: over.name.toLowerCase().replace(/\s+/gu, "_"), ...over });
+
+describe("annotateEventTitle — surface a known contact's relationship in an event title", () => {
+  const dana = contact({ name: "Dana Wu", relationship: "manager" });
+  const sarah = contact({ name: "Sarah", relationship: "wife", aliases: ["Sare"] });
+  const bob = contact({ name: "Bob Lee" }); // no relationship
+
+  it("annotates a first-name mention with the relationship", () => {
+    expect(annotateEventTitle("Lunch with Dana", [dana, sarah, bob])).toBe(" (your manager)");
+    expect(annotateEventTitle("Dana / me 1:1", [dana])).toBe(" (your manager)");
+  });
+
+  it("matches on an alias too", () => {
+    expect(annotateEventTitle("Dinner with Sare", [sarah])).toBe(" (your wife)");
+  });
+
+  it("does NOT annotate a contact with no relationship, nor an unmentioned one", () => {
+    expect(annotateEventTitle("Sync with Bob", [bob])).toBe("");        // Bob has no relationship
+    expect(annotateEventTitle("Standup", [dana, sarah])).toBe("");      // nobody named
+    expect(annotateEventTitle("Project review", [dana])).toBe("");
+  });
+
+  it("lists multiple matched people with their roles", () => {
+    expect(annotateEventTitle("Dinner with Dana and Sarah", [dana, sarah])).toBe(" (Dana: your manager; Sarah: your wife)");
+  });
+});
 
 describe("muse today — Birthdays section (the brief's birthdays, surfaced in the on-demand digest)", () => {
   const base = { generatedAt: "2026-06-04T09:00:00Z", lookaheadHours: 24 };

@@ -43,6 +43,7 @@ import {
   type PersistedTask,
   readEpisodes,
   detectCalendarConflicts,
+  type Contact,
   type WeatherProvider
 } from "@muse/mcp";
 import {
@@ -194,6 +195,24 @@ export function registerTodayCommands(program: Command, io: ProgramIO, helpers: 
       const headlines = await resolveTodayFeedHeadlines(process.env as Record<string, string | undefined>, lookaheadHours);
       if (headlines && headlines.length > 0) {
         briefing = { ...briefing, headlines };
+      }
+
+      // Annotate an event whose title names a known contact with that person's
+      // relationship to the user ("Lunch with Dana (your manager)") — the
+      // relationship graph surfaced in the day view. Client-side like weather /
+      // feeds, so it works on both the local and remote briefing paths. Fail-soft.
+      if (briefing.events && briefing.events.length > 0) {
+        try {
+          const contacts = await queryContacts(resolveContactsFile(process.env as Record<string, string | undefined>));
+          if (contacts.length > 0) {
+            briefing = {
+              ...briefing,
+              events: briefing.events.map((e) => ({ ...e, title: `${e.title}${annotateEventTitle(e.title, contacts)}` }))
+            };
+          }
+        } catch {
+          // contacts unreadable — show events without the relationship annotation
+        }
       }
 
       // SB/proactive: related past knowledge for today's items (opt-in). One
@@ -1209,6 +1228,46 @@ export function formatTodayConflicts(
     return `  - "${a}" overlaps "${b}" (${c.overlapStartsAt.toISOString().slice(11, 16)}–${c.overlapEndsAt.toISOString().slice(11, 16)} UTC)`;
   });
   return `\n⚠️  Double-booked (${conflicts.length.toString()}):\n${lines.join("\n")}\n`;
+}
+
+const NAME_TOKEN = /[^\p{L}\p{N}]+/u;
+
+/**
+ * When a calendar event's title names a known contact who has a RELATIONSHIP to
+ * the user, return the annotation to append — "Lunch with Dana" → " (your
+ * manager)" — surfacing the relationship graph (P37-20/36) in the day view.
+ * Matches a contact's name/alias TOKEN as a whole word in the title (so "Dana"
+ * matches "Lunch with Dana"); only relationship-bearing contacts annotate (a
+ * bare name adds nothing). Empty when nothing matches. Pure.
+ */
+export function annotateEventTitle(title: string, contacts: readonly Contact[]): string {
+  const words = new Set(title.toLowerCase().split(NAME_TOKEN).filter((w) => w.length >= 2));
+  if (words.size === 0) {
+    return "";
+  }
+  const matched: { readonly first: string; readonly relationship: string }[] = [];
+  const seen = new Set<string>();
+  for (const contact of contacts) {
+    const relationship = contact.relationship?.trim();
+    if (!relationship || seen.has(contact.id)) {
+      continue;
+    }
+    const names = [contact.name, ...(contact.aliases ?? [])];
+    const hit = names.some((name) =>
+      name.toLowerCase().split(NAME_TOKEN).some((token) => token.length >= 2 && words.has(token))
+    );
+    if (hit) {
+      seen.add(contact.id);
+      matched.push({ first: contact.name.split(/\s+/u)[0] ?? contact.name, relationship });
+    }
+  }
+  if (matched.length === 0) {
+    return "";
+  }
+  if (matched.length === 1) {
+    return ` (your ${matched[0]!.relationship})`;
+  }
+  return ` (${matched.map((m) => `${m.first}: your ${m.relationship}`).join("; ")})`;
 }
 
 export function formatEvents(events: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string }[] | undefined): string {
