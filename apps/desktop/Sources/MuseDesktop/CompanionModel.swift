@@ -34,7 +34,7 @@ final class CompanionModel: ObservableObject {
     /// Closing returns to just-the-orb (clears the bubble).
     func clickOrb() {
         guard !busy else { return }
-        if listening { whisper.cancel(); listening = false; orbState = .idle; return }
+        if listening { stopVoiceAndTranscribe(); return } // tap while recording → finish + transcribe
         inputVisible.toggle()
         if !inputVisible { bubble = "" }
         orbState = .idle
@@ -66,8 +66,11 @@ final class CompanionModel: ObservableObject {
         }
     }
 
+    /// Tap the mic: start recording, or — if already recording — STOP and
+    /// transcribe (push-to-talk; reliable, no silence guessing).
     func startVoice() {
-        guard !busy, !listening else { return }
+        guard !busy else { return }
+        if listening { stopVoiceAndTranscribe(); return }
         guard WhisperCapture.isAvailable else {
             bubble = language == .korean
                 ? "음성 인식을 쓰려면 whisper.cpp가 필요해요: `brew install whisper-cpp` + 모델을 ~/.muse/whisper-models/ggml-base.bin 에. 일단 입력해 주세요."
@@ -79,6 +82,7 @@ final class CompanionModel: ObservableObject {
         orbState = .listening
         inputVisible = true
         inputText = ""
+        bubble = language.listeningHint // clear feedback while recording (whisper isn't streaming)
         whisper.languageCode = language.whisperLang
         Task { [weak self] in
             guard await WhisperCapture.requestMic() else {
@@ -87,10 +91,8 @@ final class CompanionModel: ObservableObject {
                 self.bubble = self.language == .korean ? "마이크 권한이 필요해요 (시스템 설정 → 개인정보 보호 → 마이크)." : "Microphone access is needed (System Settings → Privacy → Microphone)."
                 return
             }
-            guard let self else { return }
+            guard let self, self.listening else { return }
             do {
-                // whisper.cpp isn't streaming → the transcript arrives on `onDone`
-                // (after you stop speaking + ~1-3s) and lands in the input field.
                 try self.whisper.start(onDone: { [weak self] text in Task { @MainActor in self?.whisperDone(text) } })
             } catch {
                 self.listening = false
@@ -100,12 +102,24 @@ final class CompanionModel: ObservableObject {
         }
     }
 
-    /// Recognised speech lands in the INPUT FIELD (Jinan: "말하면 입력창에 나왔으면") so
-    /// you can review/edit it and press send — not auto-submitted.
+    func stopVoiceAndTranscribe() {
+        guard listening else { return }
+        listening = false
+        orbState = .thinking
+        bubble = language.transcribing
+        whisper.stopAndTranscribe()
+    }
+
+    /// Transcript lands in the INPUT FIELD (Jinan: "말하면 입력창에 나왔으면") for
+    /// review/send — not auto-submitted.
     private func whisperDone(_ text: String) {
         listening = false
         orbState = .idle
-        inputText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        inputText = trimmed
+        bubble = trimmed.isEmpty
+            ? (language == .korean ? "잘 못 들었어요 — 마이크를 탭하고 다시 말해주세요." : "Didn't catch that — tap the mic and try again.")
+            : ""
         inputVisible = true
     }
 

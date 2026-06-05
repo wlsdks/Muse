@@ -70,11 +70,12 @@ struct CompanionView: View {
     private var inputBar: some View {
         HStack(spacing: 12) {
             Button(action: { model.startVoice() }) {
-                Image(systemName: model.orbState == .listening ? "waveform" : "mic.fill")
-                    .font(.system(size: 14, weight: .medium))
+                Image(systemName: model.orbState == .listening ? "stop.circle.fill" : "mic.fill")
+                    .font(.system(size: model.orbState == .listening ? 17 : 14, weight: .medium))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(model.orbState == .listening ? accent : Color.secondary)
+            .foregroundStyle(model.orbState == .listening ? Color(red: 0.95, green: 0.45, blue: 0.5) : Color.secondary)
+            .help(model.orbState == .listening ? "Tap to finish" : "Hold a conversation by voice")
 
             TextField(model.language.askPlaceholder, text: $model.inputText)
                 .textFieldStyle(.plain)

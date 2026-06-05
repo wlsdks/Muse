@@ -26,7 +26,10 @@ public enum ResolvedLanguage: String, Sendable {
         self == .korean ? "안녕하세요, Muse예요. 무엇이든 물어보세요." : "Hi, I'm Muse — ask me anything."
     }
     public var listeningHint: String {
-        self == .korean ? "듣고 있어요… 질문을 말해주세요." : "Listening… speak your question."
+        self == .korean ? "🎙️ 듣고 있어요… 끝나면 마이크를 다시 탭하세요." : "🎙️ Listening… tap the mic again when you're done."
+    }
+    public var transcribing: String {
+        self == .korean ? "✍️ 변환 중…" : "✍️ Transcribing…"
     }
     public var voiceUnavailable: String {
         self == .korean

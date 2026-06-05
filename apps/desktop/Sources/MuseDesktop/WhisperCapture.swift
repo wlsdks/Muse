@@ -15,10 +15,10 @@ final class WhisperCapture {
     /// "ko" / "en" / "auto".
     var languageCode = "auto"
 
-    private let endSilence: TimeInterval = 1.4   // stop this long after speech stops
+    private let endSilence: TimeInterval = 1.6   // auto-stop this long after speech stops
     private let noSpeechGrace: TimeInterval = 7   // wait this long for speech to start
-    private let maxDuration: TimeInterval = 45
-    private let rmsThreshold: Float = 0.005 // lower = more sensitive (quiet mics)
+    private let maxDuration: TimeInterval = 20    // hard cap (tap-to-stop is the primary control)
+    private let rmsThreshold: Float = 0.02 // above room ambient so silence actually auto-stops
     private var maxRMS: Float = 0
     private var startedAt = Date()
 
@@ -115,6 +115,11 @@ final class WhisperCapture {
     }
 
     func cancel() { stop(transcribe: false) }
+
+    /// Finish now and transcribe what was recorded (tap-to-stop).
+    func stopAndTranscribe() { stop(transcribe: true) }
+
+    var isRunning: Bool { running }
 
     private func handleLevel(_ buffer: AVAudioPCMBuffer) {
         guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
