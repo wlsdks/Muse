@@ -648,6 +648,17 @@ export const CITATION_INSTRUCTION_LINES: readonly string[] = [
   "SAVING: this one-shot answer CANNOT persist anything — there is no memory write here. If the user tells you to remember / note / save / 'don't forget' a FACT about them, do NOT claim you saved or noted it (that would be a lie). Instead say you can't save it from a one-shot question and tell them how: run `muse remember \"<the fact>\"`, or tell you inside a `muse chat` session (those are kept). (A request to set a reminder or task is different — that's handled by tools, not this rule.)"
 ];
 
+// First-principles (Musk) + contrarian-question (Thiel) reasoning, distilled to
+// concrete behaviour a small local model can follow — and strictly SUBORDINATE
+// to the grounding rules above (docs/strategy/reasoning-principles.md): the
+// thinking style is the engine, the citation/refusal rules are the brake. None
+// of these may produce a claim the context can't support.
+export const REASONING_PRINCIPLE_LINES: readonly string[] = [
+  "HOW TO REASON (within the rules above): reason from first principles — break the question down and build the answer UP from the specific facts in the context, not from generic assumptions or what is 'usually' true.",
+  "Prefer the specific and concrete — a date, number, or name WITH its source — over a vague generality; but never state a specific you cannot point to in the context.",
+  "You may surface a non-obvious angle or gently question an assumption, but offer it as a question to check, NOT a verdict — state as FACT only what the context supports, and say you are not sure about the rest."
+];
+
 /**
  * True when the answer is essentially a refusal / "I'm not sure" with no
  * grounded claim — used to deterministically drop any citation the model
@@ -2610,6 +2621,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // placeholder word"), and hard-forbid citing any source not
         // shown in a marker below.
         ...CITATION_INSTRUCTION_LINES,
+        ...REASONING_PRINCIPLE_LINES,
         "",
         notesFraming.header,
         contextBlock,
