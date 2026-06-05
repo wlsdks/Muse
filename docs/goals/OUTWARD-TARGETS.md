@@ -4373,6 +4373,34 @@ honest-refusal mock-corpus check where applicable.
   refusal shows none; `commands-ask-receipts.test.ts` + `pnpm lint` 0/0.
   (c7297ad3)
 
+- [x] **P35-19 Your morning `muse brief` now PROACTIVELY surfaces a grounded insight Muse has
+  formed about you — "💡 Looking back — you tend to defer the Q3 launch tasks to Fridays" —
+  unprompted, the JARVIS "I've noticed…" nudge.** Muse synthesises higher-order reflections about
+  the user (`reflections-store`, P32-1/2 — each grounded in real episodes, invented ids stripped), but
+  they were PULL-only (`muse reflections`); the capability map flagged exactly this as the standout
+  proactivity gap ("reflections are PULL, not proactively PUSHED as an unprompted 'I've noticed…'
+  nudge"). Added a pure module apps/cli/src/brief-reflection.ts: `selectBriefReflection(reflections,
+  now, {maxAgeDays=14})` picks the ONE worth surfacing — the strongest RECENT insight (highest
+  supportCount so a recurring theme beats a one-off, tie-broken by recency), skipping empty,
+  future-dated, or stale (>maxAgeDays) ones so the same insight isn't repeated every morning forever —
+  and `formatBriefReflectionLine` renders it. Wired into `muse brief` (apps/cli/src/commands-brief.ts):
+  after the model-composed prose it reads the reflections store (fail-soft — a missing/corrupt store
+  leaves the brief standing on its own) and appends the line. Crucially the insight is surfaced
+  VERBATIM, NOT fed back through the model — it is already cited, and re-generating it would risk the
+  model paraphrasing the citation away (the same fabrication=0 discipline as the verbatim-quote
+  proactive-recall surface). This is a Felt/proactivity slice (reflections PULL→PUSH) — distinct from
+  the recently-churned notes/contacts/calendar CLI work. Verified deterministically AND live: 5 unit
+  tests (selectBriefReflection ranks by support then recency, skips stale beyond maxAgeDays, skips
+  empty/future, [] when none qualify; formatBriefReflectionLine renders the insight verbatim and tags
+  a recurring theme only when supportCount>1 — apps/cli/src/brief-reflection.test.ts) + the full
+  @muse/cli suite (188 files / 2132 tests) + tsc build + `pnpm lint` 0/0 + 0 raw control bytes + a FULL
+  LIVE run on the loop PC against the real qwen3:8b: with a seeded reflection ("You tend to defer the
+  Q3 launch tasks to Fridays", supportCount 3) `muse brief` printed the greeting prose then "💡 Looking
+  back — You tend to defer the Q3 launch tasks to Fridays. (a recurring theme, seen 3×)", and the
+  NEGATIVE control — no reflections store → the brief printed the greeting with NO "Looking back" line
+  and no crash (it never invents an insight). Honest bound: repetition is bounded only by the 14-day
+  freshness window; a per-insight "already surfaced" ledger is a follow-on. (e3abde27)
+
 - [x] **P35-2 Citation-as-voice quotes content, never a heading.** P35-1's
   receipt excerpted the chunk's opening, which on a `# Heading`-led note read
   robotically. `relevantSnippet` now drops markdown headings and picks the

@@ -34,7 +34,10 @@ import {
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { CalendarEvent } from "@muse/calendar";
-import { formatBirthdayBriefLine, readCheckins, readContacts, readProactiveHistory, readReminders, resolveUpcomingBirthdays, selectDueCheckins, type PersistedCheckin, type PersistedReminder } from "@muse/mcp";
+import { formatBirthdayBriefLine, readCheckins, readContacts, readProactiveHistory, readReflections, readReminders, resolveUpcomingBirthdays, selectDueCheckins, type PersistedCheckin, type PersistedReminder } from "@muse/mcp";
+
+import { formatBriefReflectionLine, selectBriefReflection } from "./brief-reflection.js";
+import { resolveReflectionsFile } from "./commands-reflections.js";
 
 import { resolveTodayWeatherLine } from "./commands-today.js";
 import type { Command } from "commander";
@@ -486,6 +489,13 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       const fabricatedTimes = unscheduledTimesInBrief(composed, factSheet, now.getHours() * 60 + now.getMinutes());
       if (fabricatedTimes.length > 0) {
         io.stderr(`\n⚠️  This summary mentions a time not on your schedule (${fabricatedTimes.join(", ")}) — double-check it against your calendar before relying on it.\n`);
+      }
+
+      try {
+        const surfaced = selectBriefReflection(await readReflections(resolveReflectionsFile()), now.getTime());
+        if (surfaced) io.stdout(formatBriefReflectionLine(surfaced));
+      } catch {
+        // reflections store missing/corrupt — the brief stands on its own
       }
 
       if (options.speak) {
