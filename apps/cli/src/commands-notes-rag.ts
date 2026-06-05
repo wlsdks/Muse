@@ -21,11 +21,12 @@ import { homedir } from "node:os";
 import { basename as pathBasename, join as pathJoin, relative as pathRelative, resolve as pathResolve, sep as pathSep } from "node:path";
 
 import { applyOverlap } from "@muse/agent-core";
-import { resolveNotesDir } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveNotesDir } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
 import { parsePdfBuffer } from "./commands-read.js";
 import { embed } from "./embed.js";
+import { classifyNoteContradiction, formatNoteConflicts, selectConflictCandidatePairs, type ConflictNote, type NoteConflict } from "./note-conflicts.js";
 import type { ProgramIO } from "./program.js";
 
 export const DEFAULT_EMBED_MODEL = "nomic-embed-text";
@@ -665,6 +666,66 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
           process.exitCode = 1;
         }
       }
+    });
+
+  notes
+    .command("conflicts")
+    .description("Find places your OWN notes disagree — pairs that assert contradictory facts (two different WiFi passwords, prices, dates) so you can fix them before Muse grounds an answer on the wrong one. Read-only; uses the local model. Use when you suspect stale/duplicated notes; not for finding RELATED notes (that is `notes related`).")
+    .option("--dir <path>", "Notes directory (default MUSE_NOTES_DIR or ~/.muse/notes)")
+    .option("--max <n>", "Max candidate pairs to check with the model (cost cap)", "12")
+    .option("--model <tag>", "Model override")
+    .option("--json", "Print structured conflicts instead of the grouped list")
+    .action(async (options: { readonly dir?: string; readonly max: string; readonly model?: string; readonly json?: boolean }) => {
+      const dir = options.dir ?? resolveNotesDir(process.env as Record<string, string | undefined>);
+      const maxPairs = parseRagBoundedInt(options.max, "--max", 1, 100, 12);
+
+      const noteBodies: ConflictNote[] = [];
+      try {
+        const rels = await readdir(dir, { recursive: true });
+        for (const rel of rels) {
+          const name = typeof rel === "string" ? rel : String(rel);
+          if (!/\.(md|markdown|txt)$/iu.test(name)) continue;
+          const abs = pathJoin(dir, name);
+          try {
+            const fileStat = await stat(abs);
+            if (!fileStat.isFile()) continue;
+            const body = await readFile(abs, "utf8");
+            if (body.trim().length > 0) noteBodies.push({ body, path: name.split(pathSep).join("/") });
+          } catch {
+            // unreadable file — skip, never abort the scan
+          }
+        }
+      } catch (cause) {
+        io.stderr(`muse: cannot read notes dir ${dir} (${cause instanceof Error ? cause.message : String(cause)})\n`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const candidates = selectConflictCandidatePairs(noteBodies, { maxPairs });
+      if (candidates.length === 0) {
+        io.stdout(options.json ? `${JSON.stringify({ checked: 0, conflicts: [] }, null, 2)}\n` : "✓ No overlapping note pairs to compare.\n");
+        return;
+      }
+
+      const assembly = createMuseRuntimeAssembly({});
+      const model = options.model ?? assembly.defaultModel;
+      if (!assembly.modelProvider || !model) {
+        io.stderr("muse notes conflicts requires a configured model. Set MUSE_MODEL or pass --model.\n");
+        process.exitCode = 2;
+        return;
+      }
+
+      const conflicts: NoteConflict[] = [];
+      for (const pair of candidates) {
+        const verdict = await classifyNoteContradiction(pair.a.body, pair.b.body, { model, modelProvider: assembly.modelProvider });
+        if (verdict === "contradict") conflicts.push({ a: pair.a.path, b: pair.b.path });
+      }
+
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ checked: candidates.length, conflicts }, null, 2)}\n`);
+        return;
+      }
+      io.stdout(formatNoteConflicts(conflicts));
     });
 
   notes

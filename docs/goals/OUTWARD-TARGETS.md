@@ -2906,6 +2906,41 @@ graph intact as the corpus evolves, so a power-user's Zettelkasten doesn't rot.
   → `muse notes related vpn` → "🔗 Notes related to 'vpn.md': 63% wireguard.md / 45% recipe.md" —
   the semantically-related WireGuard note ranked ABOVE the unrelated recipe. (2b0fd41f)
 
+- [x] **P42-11 `muse notes conflicts` — find where your OWN notes DISAGREE (two different WiFi
+  passwords, two prices for one thing) so you fix the corpus before Muse ever grounds an answer on
+  the wrong one.** The whole P42 target keeps the notes graph COHERENT (links/backlinks/terminal-note
+  audits), but coherence had a hole: two notes can assert CONTRADICTORY facts about the same thing and
+  nothing surfaced it — the corpus silently disagrees with itself, and at recall time the grounding
+  gate would pick whichever note scored higher and answer confidently from ONE of two conflicting
+  sources (a fabrication risk born inside the user's own data). The capability map named this the
+  standout secondary memory gap ("no cross-corpus conflict detector found"). Added `muse notes
+  conflicts` (apps/cli/src/commands-notes-rag.ts + a new pure module apps/cli/src/note-conflicts.ts):
+  it reads every note recursively, generates candidate pairs DETERMINISTICALLY — notes sharing ≥2
+  salient tokens (a topic fingerprint: content words ≥4 chars minus stopwords), so only plausibly-
+  same-topic pairs are compared — ranks them by overlap and caps the set (`--max`, default 12) so the
+  model cost is bounded and reported (`checked` in `--json`, never a silent truncation), then runs
+  ONE local-model polarity call per candidate (`classifyNoteContradiction`, the SAME proven one-word
+  CONTRADICT/AGREE/UNRELATED classifier shape behind correction-decay — qwen3:8b is reliable at
+  focused NLI/polarity) and reports only the CONTRADICT pairs with both source paths. Deliberately NOT
+  secret-redacted: the differing value is often the secret itself (a password), the data never leaves
+  the box under local-only, and redacting would mask the very conflict. Read-only; fail-soft per file;
+  the honesty edge ("shows its work") turned INWARD on the user's own knowledge base. This is a
+  Knowledge / corpus-coherence slice — distinct from the recently-churned find/calendar/ask-scope
+  work, and the first cross-note SEMANTIC integrity check (vs P42-1..5's structural link integrity).
+  Verified deterministically AND live: 8 unit tests (salientTokens keeps content words / drops
+  stopwords+short; selectConflictCandidatePairs pairs only same-topic notes never a note with itself,
+  ranks by shared-count, caps at maxPairs, [] below threshold / single note; classifyNoteContradiction
+  parses the one-word verdict case-insensitively and returns "uncertain" on an unparseable/thrown
+  provider; formatNoteConflicts lists each pair with a review nudge and an all-clear line with no
+  invented warning — apps/cli/src/note-conflicts.test.ts) + the full @muse/cli suite (187 files / 2127
+  tests) + tsc build + `pnpm lint` 0/0 + 0 raw control bytes + a FULL LIVE run on the loop PC against
+  the real qwen3:8b: a corpus with work/wifi.md ("office WiFi password is sunflower42") and home/wifi.md
+  ("office WiFi password is daisy99") plus unrelated hiking/diet notes → `muse notes conflicts` →
+  "Found 1 place(s) your notes disagree: work/wifi.md ↔ home/wifi.md" (the unrelated notes were never
+  even candidates), and the NEGATIVE control — two same-topic notes with the SAME password value →
+  `checked: 1, conflicts: []` (it WAS a candidate, so the model gate, not just lexical overlap, did the
+  discriminating). (79c10d4d)
+
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
 closed its deepest hole, and became constructive. Each verified live on
