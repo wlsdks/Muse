@@ -23,10 +23,13 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
+import type { KnowledgeMatch } from "@muse/agent-core";
+
 import { conversationMatches, gateChatAnswer, retrieveChatGrounding } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
-import { formatCurrentContextLine } from "./muse-persona.js";
+import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
+import { resolveDefaultUserKey } from "./user-id.js";
 import {
   apiRequest,
   promptText,
@@ -205,15 +208,21 @@ export async function runLocalChat(
   if (options.disableTools) metadata.maxTools = 0;
   const hasMetadata = Object.keys(metadata).length > 0;
 
-  // System content grounds the model in `now` (date hallucination
-  // guard) and the active persona preamble. The preamble is keyed
-  // only on the persona id, not userId, so it is safe on this
-  // one-shot path unlike the user-memory-folding buildMusePersona.
+  // System content grounds the model in `now`, the base persona, AND what Muse
+  // durably knows about the user (name, language preference, …). Loading the
+  // user memory here — like the REPL does — is what lets the desktop chat answer
+  // "what's my name?" and honour the stored response-language preference across
+  // sessions, instead of forgetting everything the moment the conversation resets.
+  const userId = resolveDefaultUserKey({});
+  const userMemory = assembly.userMemoryStore
+    ? await Promise.resolve(assembly.userMemoryStore.findByUserId(userId)).catch(() => undefined)
+    : undefined;
+  const userMemoryBlock = userMemory ? (buildMusePersona(userMemory, userId) ?? "").trim() : "";
   const personaPreamble = (await loadActivePersonaPreamble().catch(() => "")).trim();
   const { block: groundingBlock, matches } = await retrieveChatGrounding(message);
-  const systemContent = (personaPreamble.length > 0
-    ? `${personaPreamble}\n\n${formatCurrentContextLine()}`
-    : formatCurrentContextLine()) + groundingBlock;
+  const systemContent = [personaPreamble, userMemoryBlock, formatCurrentContextLine()]
+    .filter((part) => part.length > 0)
+    .join("\n\n") + groundingBlock;
   const messages = [
     { content: systemContent, role: "system" as const },
     ...(options.priorHistory ?? []),
@@ -226,10 +235,17 @@ export async function runLocalChat(
   });
 
   // Deterministic anti-fabrication gate: for a recall of the user's OWN data,
-  // refuse honestly when the answer isn't grounded in the retrieved notes/episodes
-  // OR this conversation — instead of letting the model invent a fact as "memory".
-  const evidence = [...matches, ...conversationMatches(options.priorHistory ?? [])];
-  const gated = gateChatAnswer(message, result.response.output, evidence);
+  // refuse honestly when the answer isn't grounded in the evidence (retrieved
+  // notes/episodes, this conversation, OR the durable user memory) — instead of
+  // letting the model invent a fact as "memory". The user-memory is evidence too,
+  // so a fact Muse genuinely knows (the name) is answered, not refused.
+  const memoryEvidence: KnowledgeMatch[] = userMemoryBlock.length > 0
+    ? [{ cosine: 1, score: 1, source: "memory", text: userMemoryBlock }]
+    : [];
+  const evidence = [...matches, ...conversationMatches(options.priorHistory ?? []), ...memoryEvidence];
+  const knownFactValues = userMemory ? Object.values(userMemory.facts ?? {}).map((value) => String(value)) : [];
+  const knownFactKeys = userMemory ? Object.keys(userMemory.facts ?? {}) : [];
+  const gated = gateChatAnswer(message, result.response.output, evidence, knownFactValues, knownFactKeys);
 
   return {
     response: gated,

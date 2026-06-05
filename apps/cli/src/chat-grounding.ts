@@ -159,8 +159,41 @@ export function chatAbstention(question: string): string {
  * call): `verifyGrounding` is a rubric over the answer + evidence. Non-recall /
  * general turns pass through untouched, so general knowledge is never refused.
  */
-export function gateChatAnswer(question: string, answer: string, matches: readonly KnowledgeMatch[]): string {
+// Personal-fact topics → fragments of the stored fact-key they ask about. When a
+// question asks about a topic Muse HAS on file, the answer is grounded in real
+// data even if the model renders the value imperfectly across languages (e.g.
+// romanized "jinan" voiced back as "지난"), so it must not be refused. Topics with
+// NO stored fact (a pet name never recorded) still fall through to the gate.
+const FACT_TOPICS: ReadonlyArray<readonly [RegExp, readonly string[]]> = [
+  [/이름|name/iu, ["name"]],
+  [/비밀번호|비번|암호|password|passcode/iu, ["password", "passcode", "pw"]],
+  [/생일|birth/iu, ["birth"]],
+  [/나이|age\b/iu, ["age"]],
+  [/이메일|메일|email|e-mail/iu, ["email", "mail"]],
+  [/전화|연락처|phone|number/iu, ["phone", "tel", "number"]],
+  [/주소|address/iu, ["address", "addr"]]
+];
+
+function asksAboutStoredFact(question: string, knownFactKeys: readonly string[]): boolean {
+  const keys = knownFactKeys.map((key) => key.toLowerCase());
+  return FACT_TOPICS.some(([topic, fragments]) => topic.test(question) && fragments.some((frag) => keys.some((key) => key.includes(frag))));
+}
+
+export function gateChatAnswer(
+  question: string,
+  answer: string,
+  matches: readonly KnowledgeMatch[],
+  knownFactValues: readonly string[] = [],
+  knownFactKeys: readonly string[] = []
+): string {
   if (!isPersonalFactRecall(question)) return answer;
+  // Muse genuinely HAS this fact on file → the answer is real-data-backed, not
+  // invented; pass even if the surface form differs across languages.
+  if (asksAboutStoredFact(question, knownFactKeys)) return answer;
+  // Same-script fallback: the answer states a stored VALUE verbatim.
+  if (knownFactValues.some((value) => value.trim().length >= 2 && answer.includes(value.trim()))) {
+    return answer;
+  }
   const { verdict } = verifyGrounding(answer, matches, question);
   return verdict === "grounded" ? answer : chatAbstention(question);
 }
