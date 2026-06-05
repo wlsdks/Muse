@@ -85,7 +85,7 @@ export function registerEmailCommands(program: Command, io: ProgramIO, deps: Ema
       });
 
       if (outcome.sent) {
-        io.stdout(`Sent to ${outcome.to}.\n`);
+        io.stdout(`Sent to ${outcome.to}.${outcome.messageId ? ` (id: ${outcome.messageId})` : ""}\n`);
         return;
       }
       if (outcome.reason === "ambiguous-recipient") {
@@ -145,7 +145,7 @@ export function registerEmailCommands(program: Command, io: ProgramIO, deps: Ema
         userId: options.user ?? "stark"
       });
       if (outcome.sent) {
-        io.stdout(`Replied to ${outcome.to}.\n`);
+        io.stdout(`Replied to ${outcome.to}.${outcome.messageId ? ` (id: ${outcome.messageId})` : ""}\n`);
         return;
       }
       io.stderr(`Not sent (${outcome.reason}): ${outcome.detail}\n`);
@@ -194,7 +194,7 @@ export function registerEmailCommands(program: Command, io: ProgramIO, deps: Ema
         userId: options.user ?? "stark"
       });
       if (outcome.sent) {
-        io.stdout(`Forwarded to ${outcome.to}.\n`);
+        io.stdout(`Forwarded to ${outcome.to}.${outcome.messageId ? ` (id: ${outcome.messageId})` : ""}\n`);
         return;
       }
       if (outcome.reason === "ambiguous-recipient") {

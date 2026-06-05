@@ -52,7 +52,7 @@ export interface SendEmailWithApprovalOptions {
 }
 
 export type SendEmailOutcome =
-  | { readonly sent: true; readonly to: string }
+  | { readonly sent: true; readonly to: string; readonly messageId?: string }
   | {
       readonly sent: false;
       readonly reason: "ambiguous-recipient" | "unknown-recipient" | "no-identifier" | "denied" | "send-failed";
@@ -89,15 +89,20 @@ async function dispatchEmailDraft(
     await deps.log("refused", `email to ${draft.to}: ${draft.subject}`, "outbound email refused", decision.reason ?? "not approved");
     return { detail: decision.reason ?? "not approved", reason: "denied", sent: false };
   }
+  let messageId: string | undefined;
   try {
-    await deps.sender.sendEmail(draft.to, draft.subject, draft.body);
+    messageId = await deps.sender.sendEmail(draft.to, draft.subject, draft.body);
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     await deps.log("failed", `email to ${draft.to}: ${draft.subject}`, "user-approved outbound email", detail);
     return { detail, reason: "send-failed", sent: false };
   }
-  await deps.log("performed", `email to ${draft.to}: ${draft.subject}`, "user-approved outbound email", `sent: ${draft.body.slice(0, 200)}`);
-  return { sent: true, to: draft.to };
+  // Record the provider's message id in the action log as proof-of-send — so
+  // "did that email actually go through?" is answerable + the exact message is
+  // findable later (post-action verification, per the accountability contract).
+  const idNote = messageId ? ` (id: ${messageId})` : "";
+  await deps.log("performed", `email to ${draft.to}: ${draft.subject}`, "user-approved outbound email", `sent${idNote}: ${draft.body.slice(0, 200)}`);
+  return { sent: true, to: draft.to, ...(messageId ? { messageId } : {}) };
 }
 
 export async function sendEmailWithApproval(options: SendEmailWithApprovalOptions): Promise<SendEmailOutcome> {

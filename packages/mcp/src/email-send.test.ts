@@ -60,7 +60,8 @@ describe("sendEmailWithApproval — outbound-safety contract", () => {
     const { sender, sends } = gmailSender();
     const opts = baseOpts({ approvalGate: approve, sender });
     const outcome = await sendEmailWithApproval(opts);
-    expect(outcome).toEqual({ sent: true, to: "alice@example.com" });
+    // Proof-of-send: Gmail's message id (from the 2xx body) is captured + returned.
+    expect(outcome).toEqual({ messageId: "sent1", sent: true, to: "alice@example.com" });
     expect(sends).toHaveLength(1);
     expect(sends[0]!.url).toContain("/messages/send");
     expect(sends[0]!.bearer).toBe(true);
@@ -68,6 +69,18 @@ describe("sendEmailWithApproval — outbound-safety contract", () => {
     expect(Buffer.from(sends[0]!.raw, "base64url").toString("utf8")).toContain("See attached.");
     const log = await readActionLog(opts.actionLogFile);
     expect(log[0]).toMatchObject({ result: "performed", what: "email to alice@example.com: Q3 plan" });
+    // ...and the action log records the id as proof-of-send (post-action verification).
+    expect(log[0]!.detail).toContain("(id: sent1)");
+  });
+
+  it("a successful send with a non-JSON 2xx body still SENDS (no id), never failing the send", async () => {
+    const sends: unknown[] = [];
+    const fetchImpl = (async () => { sends.push(1); return new Response("OK", { status: 200 }); }) as unknown as typeof globalThis.fetch;
+    const sender = new GmailEmailProvider("tok", fetchImpl);
+    const opts = baseOpts({ approvalGate: approve, sender });
+    const outcome = await sendEmailWithApproval(opts);
+    expect(outcome).toEqual({ sent: true, to: "alice@example.com" }); // sent, just no messageId
+    expect((await readActionLog(opts.actionLogFile))[0]).toMatchObject({ result: "performed" });
   });
 
   it("DENY: no send fires and the refusal is logged", async () => {
@@ -160,7 +173,7 @@ describe("replyEmailWithApproval — outbound-safety contract (reply to a receiv
     const { sender, sends } = gmailSender();
     const opts = replyOpts({ sender });
     const outcome = await replyEmailWithApproval(opts);
-    expect(outcome).toEqual({ sent: true, to: "jane@globex.com" });
+    expect(outcome).toEqual({ messageId: "sent1", sent: true, to: "jane@globex.com" }); // reply also captures the id
     expect(sends).toHaveLength(1);
     const mime = Buffer.from(sends[0]!.raw, "base64url").toString("utf8");
     expect(mime).toContain("jane@globex.com");

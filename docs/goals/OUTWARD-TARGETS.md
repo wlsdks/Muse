@@ -2459,6 +2459,28 @@ in the loop.
   mcp/cli/autoconfigure/agent-core/api builds + `pnpm lint` 0/0 + a LIVE `muse email forward` (no
   token) failing closed + `muse email --help` listing `forward`. (812b3cac)
 
+- [x] **P41-30 A sent email is now VERIFIABLE — `muse email send`/reply/forward captures Gmail's
+  message id (proof-of-send) and records it in the action log, so "did that email actually go
+  through?" is answerable — closing the actuation "no post-action verification step" gap.** The Gmail
+  provider's `sendEmail` returned `Promise<void>` and DISCARDED the send response — which contains the
+  message id — so a successful send left no verifiable handle: the action log recorded "sent: <body>"
+  but nothing tying it to the real Gmail message, and the user got "Sent to alice." with no proof.
+  Changed `EmailSender.sendEmail` to resolve to the provider's message id (`Promise<string |
+  undefined>`); the Gmail adapter parses the 2xx body for `.id` (defensively — a non-JSON 2xx NEVER
+  fails a successful send, it just yields no id); the shared `dispatchEmailDraft` (which all THREE of
+  send / reply / forward funnel through) threads the id into the action-log `detail` ("sent (id:
+  18f…): …") AND the `SendEmailOutcome` (`messageId?`), and the CLI confirmations surface it ("Sent to
+  alice@example.com. (id: 18f…)"). It is a read-only addition to the existing gated send — the send
+  behaviour is unchanged, so zero outbound risk. This SELECTED slice came from the 5-agent code-
+  grounded direction-review workflow (proposal #4, actuation-reach). Verified via the outbound-safety
+  contract (a contract-faithful real `GmailEmailProvider` + faked fetch, never a fake registry): the
+  CONFIRM send test now asserts `outcome.messageId === "sent1"` AND the action-log detail contains
+  "(id: sent1)"; the reply CONFIRM likewise; a NEW test proves a non-JSON 2xx body still SENDS with no
+  id (never failing the send); the deny / timeout / ambiguous / unknown-recipient gates are unchanged.
+  @muse/mcp 1539 tests + the full `pnpm check` exit 0 (every workspace: @muse/cli 2092, @muse/api 849,
+  …) + `pnpm lint` 0/0 — a user (or the system) can now confirm an outbound email actually left by its
+  Gmail message id, recorded as accountable proof-of-send. (ac0bd57d)
+
 - [x] **P41-23 `muse remind clear "pay rent"` / `snooze "standup"` — the CLI now manages a reminder
   BY TEXT, not just by raw uuid — COMPLETING the by-name actuator parity (tasks P41-21, calendar
   P41-19, now reminders).** The AGENT reminder tools resolve by name (`resolveReminderRef`), so

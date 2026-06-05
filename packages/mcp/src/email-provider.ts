@@ -81,7 +81,8 @@ export function extractPlainTextBody(payload: unknown): string {
  * this is just the transport.
  */
 export interface EmailSender {
-  sendEmail(to: string, subject: string, body: string): Promise<void>;
+  /** Send the email; resolve to the provider's message id (proof-of-send) when available, else undefined. */
+  sendEmail(to: string, subject: string, body: string): Promise<string | undefined>;
 }
 
 function header(headers: ReadonlyArray<Record<string, unknown>>, name: string): string {
@@ -114,7 +115,7 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
     private readonly retryOptions: RetryOptions = {}
   ) {}
 
-  async sendEmail(to: string, subject: string, body: string): Promise<void> {
+  async sendEmail(to: string, subject: string, body: string): Promise<string | undefined> {
     const mime = [
       `To: ${to}`,
       `Subject: ${subject}`,
@@ -143,7 +144,15 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
         throw new Error(`Gmail auth rejected (${response.status.toString()}) — token missing/expired or lacks gmail.send scope`);
       }
       if (response.ok) {
-        return;
+        // Capture Gmail's message id for proof-of-send (action-log + confirmation).
+        // A successful 2xx with an odd/non-JSON body must NEVER fail the send —
+        // return undefined and let the caller record the send without an id.
+        try {
+          const parsed = JSON.parse(await response.text()) as Record<string, unknown>;
+          return typeof parsed.id === "string" ? parsed.id : undefined;
+        } catch {
+          return undefined;
+        }
       }
       if (response.status === 429 && attempt < retries) {
         const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"), Date.now());
