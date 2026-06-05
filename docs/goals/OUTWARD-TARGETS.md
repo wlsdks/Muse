@@ -1157,6 +1157,16 @@ user-verified — a window can't be auto-asserted headlessly).
   `WindowDragArea` behind the SwiftUI content drags empty areas. The didMove observer still persists the
   position. Verified: `swift build` + `swift test` 34 + the `.app` relaunched + `pnpm lint` 0/0; drag/tap
   is user-verified._
+- [x] **P45-13 Voice actually works + idle is just the orb + clear listening animation (live feedback).**
+  (e974b620) (1) VOICE fix: the silence timer was started at tap, finalizing an EMPTY transcript ~1.2s later
+  before the user spoke (only ever "잘 못 들었어요") — now a 7s no-speech grace waits for speech and the
+  end-of-speech countdown starts only after the first result. (2) Recognised speech lands in the INPUT
+  FIELD live + stays for review (no auto-submit). (3) IDLE = JUST THE ORB (no default greeting bubble;
+  answer/input appear only when needed; closing returns to the bare orb). (4) LISTENING is obvious: notes
+  drift up around the orb + the mic becomes a waveform. (5) The orb gently self-drifts when idle. (6) Glass
+  refined (violet→cyan gradient stroke, typography). Verified: `swift build` + `swift test` 34 + the `.app`
+  relaunched + `pnpm lint` 0/0; live voice + animations user-verified. Deferred: proactive "speaks first" +
+  richer motion._
 - [x] **P44-1 `muse memory encrypt` encrypts your user-memory at rest.** The
   most sensitive store (facts / preferences / the typed user model) can now be
   AES-256-GCM encrypted, so a stolen/seized laptop or a leaked backup can't read

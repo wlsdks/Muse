@@ -29,6 +29,8 @@ final class SpeechCapture {
     private var task: SFSpeechRecognitionTask?
     private var silenceTimer: Timer?
     private var maxTimer: Timer?
+    private var noSpeechTimer: Timer?
+    private let noSpeechGrace: TimeInterval = 7 // wait this long for the user to START speaking
     private var running = false
     private var lastText = ""
     private var onPartial: ((String) -> Void)?
@@ -94,6 +96,10 @@ final class SpeechCapture {
             DispatchQueue.main.async {
                 guard let self, self.running else { return }
                 if let result {
+                    // First real audio → stop waiting for speech, start the
+                    // end-of-speech silence countdown (only AFTER speech began,
+                    // so we don't finalize empty before the user even speaks).
+                    self.noSpeechTimer?.invalidate(); self.noSpeechTimer = nil
                     self.lastText = result.bestTranscription.formattedString
                     self.onPartial?(self.lastText)
                     self.resetSilenceTimer()
@@ -104,7 +110,9 @@ final class SpeechCapture {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.running else { return }
-            self.resetSilenceTimer()
+            self.noSpeechTimer = Timer.scheduledTimer(withTimeInterval: self.noSpeechGrace, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async { self?.finish() }
+            }
             self.maxTimer = Timer.scheduledTimer(withTimeInterval: self.maxDuration, repeats: false) { [weak self] _ in
                 DispatchQueue.main.async { self?.finish() }
             }
@@ -125,6 +133,7 @@ final class SpeechCapture {
         running = false
         silenceTimer?.invalidate(); silenceTimer = nil
         maxTimer?.invalidate(); maxTimer = nil
+        noSpeechTimer?.invalidate(); noSpeechTimer = nil
         // Drop the request FIRST (under lock) so a concurrent tap reads nil and
         // stops appending; only then stop the engine + remove the tap + endAudio.
         lock.lock(); let req = request; request = nil; lock.unlock()

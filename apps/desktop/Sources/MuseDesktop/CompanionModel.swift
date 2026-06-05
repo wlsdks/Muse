@@ -27,16 +27,18 @@ final class CompanionModel: ObservableObject {
         let lang = resolveLanguage(pref, systemIsKorean: Self.systemIsKorean)
         lookName = ProcessInfo.processInfo.environment["MUSE_DESKTOP_CHARACTER"] ?? prefs.look
         language = lang
-        bubble = lang.greeting
+        bubble = "" // idle = just the orb; the bubble appears only on an answer / listening
         speech.localeIdentifier = lang.speechLocale // all stored props set → self usable
     }
 
     /// Tap the orb → toggle the input (always works); cancel voice if listening.
+    /// Closing returns to just-the-orb (clears the bubble).
     func clickOrb() {
         guard !busy else { return }
-        if listening { speech.cancel(); listening = false; orbState = .idle; inputVisible = false; return }
+        if listening { speech.cancel(); listening = false; orbState = .idle; return }
         inputVisible.toggle()
-        orbState = inputVisible ? .listening : .idle
+        if !inputVisible { bubble = "" }
+        orbState = .idle
     }
 
     func submit() {
@@ -69,28 +71,31 @@ final class CompanionModel: ObservableObject {
         guard !busy, !listening else { return }
         listening = true
         orbState = .listening
-        bubble = language.listeningHint
+        inputVisible = true      // keep the input bar — the transcript fills it live
+        inputText = ""
         Task { [weak self] in
             guard let self else { return }
             do {
                 try await self.speech.start(
-                    onPartial: { text in Task { @MainActor [weak self] in self?.bubble = text.isEmpty ? (self?.language.listeningHint ?? "…") : text } },
-                    onFinal: { text in Task { @MainActor [weak self] in self?.heard(text) } }
+                    onPartial: { text in Task { @MainActor [weak self] in self?.inputText = text } },
+                    onFinal: { text in Task { @MainActor [weak self] in self?.heardVoice(text) } }
                 )
             } catch {
                 self.listening = false
+                self.orbState = .idle
                 self.bubble = self.language.voiceUnavailable
                 self.inputVisible = true
             }
         }
     }
 
-    private func heard(_ text: String) {
+    /// Recognised speech lands in the INPUT FIELD (Jinan: "말하면 입력창에 나왔으면") so
+    /// you can review/edit it and press send — not auto-submitted.
+    private func heardVoice(_ text: String) {
         listening = false
-        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { orbState = .idle; bubble = language.notCaught; return }
-        inputText = query
-        submit()
+        orbState = .idle
+        inputText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        inputVisible = true
     }
 
     func setCharacter(_ name: String) {
@@ -102,6 +107,5 @@ final class CompanionModel: ObservableObject {
         PrefsStore.update { $0.language = pref.rawValue }
         language = resolveLanguage(pref, systemIsKorean: Self.systemIsKorean)
         speech.localeIdentifier = language.speechLocale
-        if !busy && !listening && !inputVisible { bubble = language.greeting }
     }
 }
