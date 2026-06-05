@@ -17,7 +17,8 @@
 import {
   detectTimeOfDayPatterns,
   detectWeeklyTaskPatterns,
-  type PatternMatch
+  type PatternMatch,
+  type Weekday
 } from "./pattern-detector.js";
 import type { PatternSignals } from "./pattern-signals.js";
 
@@ -114,4 +115,64 @@ function buildCooldownIndex(fired: readonly CooldownRecordLike[]): Map<string, n
     }
   }
   return out;
+}
+
+const PREDICT_WEEKDAYS: readonly Weekday[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** The next wall-clock ms at or after `now` falling on `weekday` at `startHour:00`. */
+export function nextOccurrenceMs(weekday: Weekday, startHour: number, now: Date): number {
+  const target = PREDICT_WEEKDAYS.indexOf(weekday);
+  const result = new Date(now);
+  result.setHours(startHour, 0, 0, 0);
+  let daysAhead = (target - now.getDay() + 7) % 7;
+  if (daysAhead === 0 && result.getTime() <= now.getTime()) daysAhead = 7; // today's slot already passed → next week
+  result.setDate(result.getDate() + daysAhead);
+  result.setHours(startHour, 0, 0, 0);
+  return result.getTime();
+}
+
+export interface PredictedNeed {
+  readonly id: string;
+  readonly label: string;
+  readonly predictedAtMs: number;
+  readonly confidence: number;
+  readonly kind: "time-of-day-action" | "weekly-task";
+}
+
+export interface PredictUpcomingNeedsOptions {
+  readonly leadWindowMs?: number;
+  readonly minConfidence?: number;
+}
+
+/**
+ * ALLOSTASIS — predictive regulation (Sterling, "Allostasis: a model of
+ * predictive regulation", Physiology & Behavior 106(1):5-15, 2012): a system
+ * adjusts AHEAD of an anticipated demand rather than only reacting once the
+ * demand arrives. Muse's pattern firing is reactive — `selectFireablePatterns`
+ * fires only when `now` is INSIDE a recurring slot. This anticipates: from the
+ * detected recurring patterns it computes each one's NEXT occurrence and returns
+ * those landing within `[now, now+leadWindow]`, soonest first — so Muse can
+ * pre-position a heads-up before the slot, not at it. Pure; the detectors do the
+ * mining, this projects them forward. Defaults: 48 h lead window, 0.6 confidence.
+ */
+export function predictUpcomingNeeds(
+  now: Date,
+  signals: PatternSignals,
+  options: PredictUpcomingNeedsOptions = {}
+): readonly PredictedNeed[] {
+  const leadWindowMs = Number.isFinite(options.leadWindowMs) ? options.leadWindowMs! : 48 * 3_600_000;
+  const minConfidence = Number.isFinite(options.minConfidence) ? options.minConfidence! : 0.6;
+  const nowMs = now.getTime();
+  const horizon = nowMs + Math.max(0, leadWindowMs);
+  const out: PredictedNeed[] = [];
+  for (const match of [...detectTimeOfDayPatterns(now, signals), ...detectWeeklyTaskPatterns(now, signals)]) {
+    if (match.confidence < minConfidence) continue;
+    const parsedHour = match.category === "time-of-day-action" ? Number.parseInt(match.bucket.hourBand.split("-")[0]!, 10) : 9;
+    const startHour = Number.isFinite(parsedHour) ? parsedHour : 9;
+    const predictedAtMs = nextOccurrenceMs(match.bucket.weekday, startHour, now);
+    if (predictedAtMs >= nowMs && predictedAtMs <= horizon) {
+      out.push({ confidence: match.confidence, id: match.id, kind: match.category, label: match.suggestion, predictedAtMs });
+    }
+  }
+  return out.sort((left, right) => left.predictedAtMs - right.predictedAtMs);
 }

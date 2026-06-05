@@ -490,8 +490,12 @@ export {
   type WeeklyTaskMatch
 } from "./pattern-detector.js";
 export {
+  nextOccurrenceMs,
+  predictUpcomingNeeds,
   selectFireablePatterns,
   type CooldownRecordLike,
+  type PredictedNeed,
+  type PredictUpcomingNeedsOptions,
   type SelectFireablePatternsOptions
 } from "./pattern-orchestration.js";
 

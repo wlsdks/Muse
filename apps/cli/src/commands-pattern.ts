@@ -22,6 +22,7 @@ import {
   aggregateActivitySignals,
   detectTimeOfDayPatterns,
   detectWeeklyTaskPatterns,
+  predictUpcomingNeeds,
   type PatternMatch
 } from "@muse/memory";
 import {
@@ -76,6 +77,32 @@ export function registerPatternCommands(program: Command, io: ProgramIO): void {
         return;
       }
       io.stdout(formatPatternList(all));
+    });
+
+  pattern
+    .command("upcoming")
+    .description("Anticipate your RECURRING needs BEFORE they arrive — patterns whose next occurrence lands within a lead window, soonest first (allostatic prediction). `pattern list` shows every cluster; this shows what's COMING UP.")
+    .option("--within <hours>", "Lead window in hours (default 48)")
+    .option("--min-confidence <n>", "Drop predictions below this confidence (default 0.6)")
+    .option("--json", "Print the raw payload instead of the formatted list")
+    .action(async (options: { readonly within?: string; readonly minConfidence?: string } & SharedOptions) => {
+      const withinHours = options.within !== undefined && Number.isFinite(Number(options.within)) && Number(options.within) > 0 ? Number(options.within) : 48;
+      const minConfidence = parseConfidence(options.minConfidence, 0.6);
+      const signals = await aggregateActivitySignals();
+      const predicted = predictUpcomingNeeds(new Date(), signals, { leadWindowMs: withinHours * 3_600_000, minConfidence });
+      if (options.json) {
+        io.stdout(`${JSON.stringify({ predicted: predicted.map((need) => ({ ...need, predictedAtIso: new Date(need.predictedAtMs).toISOString() })), total: predicted.length }, null, 2)}\n`);
+        return;
+      }
+      if (predicted.length === 0) {
+        io.stdout(`Nothing recurring coming up in the next ${withinHours.toString()}h. (Patterns build as you use Muse; see all clusters with \`muse pattern list\`.)\n`);
+        return;
+      }
+      io.stdout(`Coming up (recurring, next ${withinHours.toString()}h):\n`);
+      for (const need of predicted) {
+        const when = new Date(need.predictedAtMs).toLocaleString("en-US", { day: "numeric", hour: "numeric", minute: "2-digit", month: "short", weekday: "short" });
+        io.stdout(`  🔮 ${need.label}  — ${when} (confidence ${(need.confidence * 100).toFixed(0)}%)\n`);
+      }
     });
 
   pattern

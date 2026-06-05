@@ -496,6 +496,36 @@ P43 bullet is unbuilt.
   active journal folder correctly silent). @muse/mcp 174 files / 1475 tests +
   @muse/cli 174 files / 1920 tests + `pnpm lint` 0/0. (4401194c)
 
+- [x] **P43-9 `muse pattern upcoming` — Muse now ANTICIPATES a recurring need BEFORE its slot
+  arrives ("🔮 you usually edit journal notes Mon 9 AM — Mon, Jun 8"), not only when the moment is
+  already here.** THIRD slice of the cross-field research direction (after MVT recall P38-42 and
+  stigmergy trails P42-13). The mechanism: ALLOSTASIS — predictive regulation, where a system adjusts
+  AHEAD of an anticipated demand rather than reacting once it arrives, the predictive counterpart to
+  reactive homeostasis (Sterling, "Allostasis: a model of predictive regulation", Physiology &
+  Behavior 106(1):5-15, 2012). Faithfully distilled: Muse already MINES recurring patterns
+  (pattern-detector) but its firing was REACTIVE — `selectFireablePatterns` uses `currentSlotOnly:
+  true`, surfacing a "you usually…" nudge only when NOW is already INSIDE the recurring slot, and
+  `muse pattern list` is a confidence-sorted audit of all clusters with no forward projection. Added a
+  pure `predictUpcomingNeeds(now, signals, {leadWindowMs, minConfidence})` + `nextOccurrenceMs(weekday,
+  startHour, now)` to packages/memory/src/pattern-orchestration.ts (beside selectFireablePatterns):
+  the detectors do the mining, and this PROJECTS each detected pattern FORWARD to its next occurrence,
+  returning only those landing within `[now, now+leadWindow]`, soonest first — so Muse can pre-position
+  the heads-up before the slot. Wired a `muse pattern upcoming` command (apps/cli/src/commands-
+  pattern.ts) reusing the existing `aggregateActivitySignals` gatherer, with `--within <hours>`
+  (default 48) and `--min-confidence`. Additive — `pattern list`/`fired` and the reactive firing path
+  are byte-for-byte unchanged. Verified deterministically AND live: 6 unit tests (nextOccurrenceMs
+  returns today when the slot is still ahead, the next matching weekday when today's slot has passed,
+  and tomorrow for an adjacent weekday; predictUpcomingNeeds predicts a pattern's next occurrence
+  inside the window, omits it beyond the window, drops sub-confidence ones, and returns [] on empty
+  signals — packages/memory/test/pattern-orchestration.test.ts) + the FULL cross-package `pnpm check`
+  (every workspace green: memory 333, agent-core 1460, mcp 1542, cli 2179, api 849 …) + tsc + `pnpm
+  lint` 0/0 + 0 raw control bytes + a FULL LIVE run on the loop PC: three journal notes whose mtimes
+  were set to the last three Mondays at 10:00 → `muse pattern upcoming --within 200 --min-confidence
+  0.3` printed "🔮 You usually edit journal notes around 9-12 on Mons (3 edits across 3 days)… — Mon,
+  Jun 8, 9:00 AM (confidence 100%)" while `--within 1` printed "Nothing recurring coming up in the next
+  1h" (the lead-window gate). Honest scope: standalone command; auto-delivering the anticipation
+  ahead-of-slot through the proactive daemon (with cooldown) is the follow-on. (b667ec64)
+
 - [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
   and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
   The evening recap (P43-4) is the retrospective sibling of the morning brief, and its

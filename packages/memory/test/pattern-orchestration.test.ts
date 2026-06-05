@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   detectTimeOfDayPatterns,
   detectWeeklyTaskPatterns,
+  nextOccurrenceMs,
+  predictUpcomingNeeds,
   selectFireablePatterns
 } from "../src/index.js";
 import type { NoteMtimeSignal, PatternSignals, TaskSignal } from "../src/pattern-signals.js";
@@ -36,6 +38,36 @@ function signalsWithStrongJournalTuesday(): PatternSignals {
     tasks: []
   };
 }
+
+describe("nextOccurrenceMs — the next weekday+hour slot at or after now", () => {
+  it("returns TODAY when the slot is still ahead today, else the NEXT matching weekday", () => {
+    const tueNoon = new Date(2026, 4, 5, 12, 0); // Tue 2026-05-05 12:00 (a Tuesday)
+    expect(nextOccurrenceMs("Tue", 21, tueNoon)).toBe(new Date(2026, 4, 5, 21, 0).getTime()); // 9pm today, still ahead
+    expect(nextOccurrenceMs("Tue", 9, tueNoon)).toBe(new Date(2026, 4, 12, 9, 0).getTime()); // 9am already passed → next Tuesday
+    expect(nextOccurrenceMs("Wed", 9, tueNoon)).toBe(new Date(2026, 4, 6, 9, 0).getTime()); // tomorrow
+  });
+});
+
+describe("predictUpcomingNeeds — allostatic prediction within a lead window", () => {
+  it("predicts a recurring pattern's NEXT occurrence when it lands inside the window, soonest first", () => {
+    const wed = new Date(2026, 4, 6, 12, 0); // the Wednesday after the 5 journal-Tuesdays
+    const predicted = predictUpcomingNeeds(wed, signalsWithStrongJournalTuesday(), { leadWindowMs: 7 * 86_400_000, minConfidence: 0.5 });
+    expect(predicted).toHaveLength(1);
+    expect(predicted[0]!.kind).toBe("time-of-day-action");
+    expect(predicted[0]!.predictedAtMs).toBe(new Date(2026, 4, 12, 21, 0).getTime()); // next Tuesday 21:00 (hour-band 21-24)
+  });
+
+  it("does NOT predict a pattern whose next occurrence is beyond the lead window", () => {
+    const wed = new Date(2026, 4, 6, 12, 0); // next Tuesday 21:00 is ~6 days away
+    expect(predictUpcomingNeeds(wed, signalsWithStrongJournalTuesday(), { leadWindowMs: 24 * 3_600_000, minConfidence: 0.5 })).toEqual([]);
+  });
+
+  it("drops predictions below the confidence floor and returns [] on empty signals", () => {
+    const wed = new Date(2026, 4, 6, 12, 0);
+    expect(predictUpcomingNeeds(wed, signalsWithStrongJournalTuesday(), { leadWindowMs: 7 * 86_400_000, minConfidence: 0.99999 })[0]).toBeDefined(); // conf 1.0 survives
+    expect(predictUpcomingNeeds(wed, { activityEvents: [], capturedAtMs: 0, noteEdits: [], tasks: [] })).toEqual([]);
+  });
+});
 
 describe("selectFireablePatterns", () => {
   it("returns [] when no signals are present", () => {
