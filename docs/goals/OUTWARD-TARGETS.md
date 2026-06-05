@@ -857,6 +857,27 @@ P43 bullet is unbuilt.
   "📅 On this day, you wrote: journal/2025-06-05.md (1 year ago)" (excluding the this-year note), and the
   `muse on-this-day` command still works after the refactor. Honest scope: path-dated notes only; the
   literal brief emission requires an actual anniversary in the corpus (by design). (cfc1c355)
+
+- [x] **P43-23 `muse trend <file> <column>` — is a numeric column trending UP or DOWN over time, or
+  just wandering? ("⚠ Strongly DECREASING … falling ↘ (p<0.01)").** A fresh personal-data capability —
+  rotated to the csv/personal-data axis (last touched ~6 slices ago) with a NEW mechanism + command. The
+  mechanism: the MANN-KENDALL trend test (Mann, "Nonparametric tests against trend", Econometrica 13(3):
+  245-259, 1945; Kendall, "Rank Correlation Methods", 1975) — the standard NON-PARAMETRIC test for a
+  monotonic trend, used in environmental statistics (river flows, temperatures) because it assumes nothing
+  about the distribution and is robust to outliers; plus SEN's slope (the median of all pairwise slopes)
+  for the distribution-free magnitude. Distinct from `muse csv` (a static aggregate) and `muse benford`
+  (distribution SHAPE) — this is the DIRECTION over time. Pure `apps/cli/src/trend.ts` (`mannKendall` — the
+  S statistic with a tie-corrected variance and continuity-corrected z, graded against the normal critical
+  values; `sensSlope`; `formatTrend`) wired into `muse trend` (`--json`) reusing the csv parser
+  (parseCsv/resolveColumn/toNumber). Deterministic, no model; assumes rows are in time order; "insufficient"
+  below 8 points. Verified deterministically AND live: 9 unit tests (Sen's slope = the constant step on a
+  linear series; strong INCREASING on a rising series, DECREASING on a falling one, NONE on a wandering
+  one; insufficient below the floor; all-equal ties → no false trend — apps/cli/src/trend.test.ts) +
+  `pnpm lint` 0/0 + `@muse/shared` byte-hygiene 30 + cli 2274 + 0 raw control bytes + a LIVE run on the
+  loop PC: a 14-row CSV with a steadily-falling `kg` column, a wandering `noise` column, and a steadily-
+  rising `spend` column → `muse trend d.csv kg` = "Strongly DECREASING … (p<0.01), z=-4.93", `noise` =
+  "none", `spend` = "increasing/strong". Honest scope: rows must be in time order; a `muse csv --trend`
+  flag and seasonality are follow-ons. (57c921ae)
 - [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
   and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
   The evening recap (P43-4) is the retrospective sibling of the morning brief, and its
