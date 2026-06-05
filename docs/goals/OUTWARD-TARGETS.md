@@ -2657,6 +2657,29 @@ graph intact as the corpus evolves, so a power-user's Zettelkasten doesn't rot.
   1d ago — project/plan.md / 18d ago — budget.md / 20d ago — old.md" (newest first, across folders)
   and `--limit 1` showed only the newest. (bf4d5333)
 
+- [x] **P42-8 `muse notes folders` — see WHERE your knowledge lives + which collections have GONE
+  COLD, at a glance.** The notes commands could search / relate / list-recent individual notes, but
+  none gave a bird's-eye view of the CORPUS — which top-level collections you have, how big each is,
+  and which you've stopped maintaining — so "is my projects/ folder stale?" / "where's most of my
+  knowledge?" meant scrolling the filesystem. Added a `muse notes folders` command (apps/cli/src/
+  commands-notes-rag.ts) reusing the existing `walkMarkdown` + a pure `summarizeNoteFolders` (groups
+  notes by their TOP-LEVEL folder under the notes dir — a root-level note → "(root)" — and aggregates
+  the count + newest/oldest edit time, sorted by count desc) + a pure `formatNoteFolders` rendering
+  each collection with its note count and last-activity age (`formatRelativeAge`), flagging a folder
+  whose NEWEST note is older than 90 days as "⚠ gone cold" — the actionable knowledge-hygiene signal,
+  not just raw counts; `--json` too. Read-only + deterministic (file mtime, no Ollama, no index
+  dependency). This SELECTED slice came from the 5-agent code-grounded direction-review workflow
+  (proposal #1, perception-knowledge, conf 0.92 — verified no `folders` command existed). Verified:
+  4 unit tests (`summarizeNoteFolders` groups by top-level folder incl. a sub-folder rolling up to its
+  top, root→"(root)", count + newest/oldest, count-desc order, [] for empty; `formatNoteFolders`
+  renders counts + last-edit ages, flags a >90d-cold collection, leaves a fresh one un-flagged, empty
+  case — apps/cli/src/commands-notes-rag.test.ts) + the full @muse/cli suite (185 files / 2096 tests)
+  + tsc build + `pnpm lint` 0/0 + a LIVE run on the loop PC: a corpus with work/ (2 notes), aurora/
+  (1 note `touch`-stamped 120 days old), personal/ (1), and a root note → `muse notes folders` printed
+  "📁 Your note collections (4 folders, 5 notes):" with "work  2 notes  last edit just now", "aurora
+  1 note  last edit 120d ago  ⚠ gone cold", and the rest — and `--json` the structured summaries.
+  (b2664a99)
+
 - [x] **P42-7 `muse notes related <note>` — find notes SEMANTICALLY related to one (embedding
   similarity), discovering connections the explicit [[wiki-links]] missed.** The note graph handled
   EXPLICIT links (P42-1..5: links/graph/backlinks) and recall does QUERY→note search, but nothing

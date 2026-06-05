@@ -264,6 +264,63 @@ export function formatRecentNotes(
   return `📝 Recently edited:\n${lines.join("\n")}\n`;
 }
 
+export interface FolderSummary {
+  readonly folder: string;
+  readonly count: number;
+  /** mtime of the MOST recently edited note in the folder (last activity). */
+  readonly newestMs: number;
+  /** mtime of the OLDEST note in the folder. */
+  readonly oldestMs: number;
+}
+
+/**
+ * Group notes by their TOP-LEVEL folder under `notesDir` (a root-level note →
+ * "(root)") and aggregate the count + the newest/oldest edit time, so the user
+ * can see where their knowledge lives and which collections have gone cold.
+ * Sorted by note count desc, then folder name. Pure.
+ */
+export function summarizeNoteFolders(
+  files: readonly { readonly path: string; readonly mtimeMs: number }[],
+  notesDir: string
+): readonly FolderSummary[] {
+  const byFolder = new Map<string, { count: number; newestMs: number; oldestMs: number }>();
+  for (const file of files) {
+    const segments = pathRelative(notesDir, file.path).split(/[/\\]/u);
+    const folder = segments.length > 1 ? segments[0]! : "(root)";
+    const current = byFolder.get(folder);
+    if (current) {
+      current.count += 1;
+      current.newestMs = Math.max(current.newestMs, file.mtimeMs);
+      current.oldestMs = Math.min(current.oldestMs, file.mtimeMs);
+    } else {
+      byFolder.set(folder, { count: 1, newestMs: file.mtimeMs, oldestMs: file.mtimeMs });
+    }
+  }
+  return [...byFolder.entries()]
+    .map(([folder, stats]) => ({ folder, ...stats }))
+    .sort((a, b) => b.count - a.count || a.folder.localeCompare(b.folder));
+}
+
+/** A note collection whose NEWEST note hasn't changed in this long has gone cold. */
+const FOLDER_STALE_MS = 90 * 86_400_000;
+
+/** Human-readable note-collection overview for `muse notes folders`. Pure. */
+export function formatNoteFolders(summaries: readonly FolderSummary[], now: Date): string {
+  if (summaries.length === 0) {
+    return "📁 No notes yet. Capture one with `muse note <thought>` or `muse notes save`.\n";
+  }
+  const nowMs = now.getTime();
+  const totalNotes = summaries.reduce((sum, summary) => sum + summary.count, 0);
+  const width = Math.max(...summaries.map((summary) => summary.folder.length));
+  const lines = summaries.map((summary) => {
+    const cold = nowMs - summary.newestMs > FOLDER_STALE_MS ? "  ⚠ gone cold" : "";
+    const noun = summary.count === 1 ? "note " : "notes";
+    return `  ${summary.folder.padEnd(width)}  ${summary.count.toString().padStart(3)} ${noun}   last edit ${formatRelativeAge(nowMs - summary.newestMs)}${cold}`;
+  });
+  const folderWord = summaries.length === 1 ? "collection" : "collections";
+  return `📁 Your note ${folderWord} (${summaries.length.toString()} folder${summaries.length === 1 ? "" : "s"}, ${totalNotes.toString()} notes):\n${lines.join("\n")}\n`;
+}
+
 export function cosine(a: readonly number[], b: readonly number[]): number {
   if (a.length !== b.length) return 0;
   let dot = 0, na = 0, nb = 0;
@@ -807,6 +864,21 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
         return;
       }
       io.stdout(formatRecentNotes(entries, dir, new Date()));
+    });
+
+  notes
+    .command("folders")
+    .description("Show your note COLLECTIONS (top-level folders) with note counts + last-activity age, so you can see where your knowledge lives and which collections have gone cold. Read-only, deterministic (file mtime; no Ollama).")
+    .option("--dir <path>", "Notes directory (default MUSE_NOTES_DIR or ~/.muse/notes)")
+    .option("--json", "Print JSON instead of formatted text")
+    .action(async (options: { readonly dir?: string; readonly json?: boolean }) => {
+      const dir = options.dir ?? resolveNotesDir(process.env as Record<string, string | undefined>);
+      const summaries = summarizeNoteFolders(await walkMarkdown(dir), dir);
+      if (options.json) {
+        io.stdout(`${JSON.stringify(summaries, null, 2)}\n`);
+        return;
+      }
+      io.stdout(formatNoteFolders(summaries, new Date()));
     });
 
   notes

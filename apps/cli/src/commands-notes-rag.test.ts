@@ -3,7 +3,51 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { chunkText, cosine, defaultIndexPath, extractDocumentText, formatRecentNotes, formatRelatedNotes, formatRelativeAge, isNotesIndexStale, NOTE_FILE_RE, parseRagBoundedInt, rankRelatedNotes, reindexNotes, resolveIndexNotePath, selectRecentNotes } from "./commands-notes-rag.js";
+import { chunkText, cosine, defaultIndexPath, extractDocumentText, formatNoteFolders, formatRecentNotes, formatRelatedNotes, formatRelativeAge, isNotesIndexStale, NOTE_FILE_RE, parseRagBoundedInt, rankRelatedNotes, reindexNotes, resolveIndexNotePath, selectRecentNotes, summarizeNoteFolders } from "./commands-notes-rag.js";
+
+describe("summarizeNoteFolders — group notes by top-level collection + last activity", () => {
+  const DAY = 86_400_000;
+  const now = 2_000_000_000_000; // a fixed reference
+  const files = [
+    { path: "/notes/work/q3.md", mtimeMs: now - 2 * DAY },
+    { path: "/notes/work/standup.md", mtimeMs: now - 100 * DAY },
+    { path: "/notes/work/sub/deep.md", mtimeMs: now - 1 * DAY }, // still "work" (top-level)
+    { path: "/notes/personal/diary.md", mtimeMs: now - 5 * DAY },
+    { path: "/notes/inbox.md", mtimeMs: now - 3 * DAY } // root-level → "(root)"
+  ];
+
+  it("groups by the TOP-LEVEL folder, counts, and tracks newest/oldest", () => {
+    const out = summarizeNoteFolders(files, "/notes");
+    expect(out.map((f) => [f.folder, f.count])).toEqual([["work", 3], ["(root)", 1], ["personal", 1]]); // count desc, then name
+    const work = out.find((f) => f.folder === "work")!;
+    expect(work.newestMs).toBe(now - 1 * DAY);   // the deep sub-note is the most recent
+    expect(work.oldestMs).toBe(now - 100 * DAY);
+  });
+
+  it("returns [] for an empty corpus", () => {
+    expect(summarizeNoteFolders([], "/notes")).toEqual([]);
+  });
+});
+
+describe("formatNoteFolders — readable collection overview, flags cold folders", () => {
+  const now = new Date("2026-06-05T12:00:00Z");
+  const ms = (days: number): number => now.getTime() - days * 86_400_000;
+
+  it("lists folders with counts + last-activity, flagging a collection gone cold (>90d)", () => {
+    const out = formatNoteFolders([
+      { folder: "work", count: 12, newestMs: ms(2), oldestMs: ms(300) },
+      { folder: "aurora", count: 4, newestMs: ms(120), oldestMs: ms(200) } // cold
+    ], now);
+    expect(out).toContain("📁 Your note collections (2 folders, 16 notes):");
+    expect(out).toMatch(/work\s+12 notes\s+last edit 2d ago/u);
+    expect(out).toContain("⚠ gone cold"); // aurora's newest is 120d old
+    expect(out).not.toMatch(/work.*gone cold/u); // work is fresh
+  });
+
+  it("handles the empty case", () => {
+    expect(formatNoteFolders([], now)).toContain("No notes yet");
+  });
+});
 
 describe("NOTE_FILE_RE — the corpus indexes prose formats beyond .md/.txt", () => {
   it("matches markdown + plain-text + markup note formats (so org/rst/mdx notes aren't invisible)", () => {
