@@ -122,7 +122,29 @@ final class CharacterView: NSView {
         }
     }
 
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    // Tap → onClick (open input); drag → move the window. (SwiftUI's hosting view
+    // can swallow the events `isMovableByWindowBackground` relies on, so the orb
+    // drives the window drag itself.)
+    private var downPoint: NSPoint?
+    private var didDrag = false
+
+    override func mouseDown(with event: NSEvent) {
+        downPoint = event.locationInWindow
+        didDrag = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if let start = downPoint, !didDrag,
+           abs(event.locationInWindow.x - start.x) > 3 || abs(event.locationInWindow.y - start.y) > 3 {
+            didDrag = true
+        }
+        if didDrag { window?.performDrag(with: event) }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if !didDrag { onClick?() }
+        downPoint = nil
+    }
 
     deinit { timer?.invalidate() }
 }

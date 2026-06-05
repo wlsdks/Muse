@@ -1150,6 +1150,13 @@ user-verified — a window can't be auto-asserted headlessly).
   (no more hardcoded en-US), placeholders/greeting, and the localized error text. Verified: `swift build` +
   `swift test` 34 (was 30; +4 language) + the `.app` relaunched + `pnpm lint` 0/0; the glass look is
   user-verified on the real desktop._
+- [x] **P45-12 The companion is reliably DRAGGABLE again after the SwiftUI move.** (a21258ec) An
+  NSHostingView can swallow the background mouse events `isMovableByWindowBackground` relies on, so dragging
+  (which Jinan relies on) could silently break. Fixes: the ORB is now drag-or-click (`CharacterView`
+  mouseDown→drag >3px = `window.performDrag`, else mouseUp = tap → open input), and a transparent
+  `WindowDragArea` behind the SwiftUI content drags empty areas. The didMove observer still persists the
+  position. Verified: `swift build` + `swift test` 34 + the `.app` relaunched + `pnpm lint` 0/0; drag/tap
+  is user-verified._
 - [x] **P44-1 `muse memory encrypt` encrypts your user-memory at rest.** The
   most sensitive store (facts / preferences / the typed user model) can now be
   AES-256-GCM encrypted, so a stolen/seized laptop or a leaked backup can't read

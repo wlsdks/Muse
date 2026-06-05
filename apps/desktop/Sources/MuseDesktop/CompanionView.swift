@@ -18,6 +18,7 @@ struct CompanionView: View {
         }
         .padding(18)
         .frame(width: 360, height: 360)
+        .background(WindowDragArea()) // empty areas drag the window
         .animation(.spring(response: 0.34, dampingFraction: 0.82), value: model.inputVisible)
         .animation(.easeInOut(duration: 0.22), value: model.bubble)
     }
