@@ -372,6 +372,33 @@ the ideas came from, per feature. Full notices + license texts:
 | Preference inference from real corrections (not self-judgement) | distil from outcome signals | ReasoningBank — [arXiv 2509.25140](https://arxiv.org/abs/2509.25140) |
 | Deterministic detection (rules) before any model generalisation | small models are unreliable self-verifiers | [arXiv 2404.17140](https://arxiv.org/abs/2404.17140) |
 
+### Cross-field mechanism distillation (the moat)
+
+Beyond the AI-agent literature, Muse continuously mines OPEN papers from **many
+fields** — biology, ecology, neuroscience, network science, control theory,
+decision & information theory, linguistics, psychology, forensic & environmental
+statistics — distilling a real mechanism into a deterministic, live-verified
+capability. A rival can copy a feature; copying a *research-distillation
+discipline yoked to a fabrication-zero floor* is far harder. A sample (full
+catalog + negative results in
+[`docs/strategy/cross-field-research.md`](docs/strategy/cross-field-research.md)):
+
+| Field | Mechanism | Capability |
+| --- | --- | --- |
+| Ecology | Marginal Value Theorem (Charnov 1976) | `muse recall --adaptive` |
+| Collective behaviour | Stigmergy / ant trails (Grassé; Vittori) | `muse notes trails` / `hubs` |
+| Physiology | Allostasis (Sterling 2012) | `muse pattern upcoming` |
+| Control theory | CUSUM change-point (Page 1954) | `muse pattern lapsed` |
+| Queueing theory | Little's Law (Little 1961) | `muse tasks flow` |
+| Forensic statistics | Benford's Law (Benford 1938) | `muse benford` |
+| Environmental statistics | Mann-Kendall trend (Mann 1945) | `muse trend` |
+| Cognitive psychology | Date-cued autobiographical recall (Rubin 1986) | `muse on-this-day` |
+| Information science | Luhn extractive summary (Luhn 1958) | `muse summarize` |
+| Org. psychology | Attention residue / deep work (Leroy 2009) | `muse calendar focus` / `block` |
+
+Each mechanism cites its paper in the module header comment; every slice is
+recorded in [`CAPABILITIES.md`](docs/goals/CAPABILITIES.md).
+
 ## License
 
 [MIT](LICENSE). The runtime, adapters, and tooling are open
