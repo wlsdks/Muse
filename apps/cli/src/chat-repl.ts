@@ -23,6 +23,8 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
+import { classifyCasualPrompt } from "@muse/agent-core";
+
 import { conversationMatches, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
@@ -201,9 +203,14 @@ export async function runLocalChat(
     throw new Error("Local chat requires MUSE_MODEL and a configured model provider");
   }
 
+  // A bare greeting / social prompt never needs a tool — but projecting the tool
+  // schemas into the prompt is what made even "안녕" take ~22s (qwen3:8b's
+  // prompt-eval on the big tool block). Detect it deterministically and drop the
+  // tools, taking that turn from ~22s to ~2s (measured) with no capability loss.
+  const isCasual = classifyCasualPrompt(message) !== null;
   const metadata: Record<string, string | number> = {};
   if (agentMode) metadata.agentMode = agentMode;
-  if (options.disableTools) metadata.maxTools = 0;
+  if (options.disableTools || isCasual) metadata.maxTools = 0;
   const hasMetadata = Object.keys(metadata).length > 0;
 
   // System content grounds the model in `now`, the base persona, AND what Muse
@@ -217,7 +224,9 @@ export async function runLocalChat(
     : undefined;
   const userMemoryBlock = userMemory ? (buildMusePersona(userMemory, userId) ?? "").trim() : "";
   const personaPreamble = (await loadActivePersonaPreamble().catch(() => "")).trim();
-  const { block: groundingBlock, matches } = await retrieveChatGrounding(message);
+  const { block: groundingBlock, matches } = isCasual
+    ? { block: "", matches: [] as Awaited<ReturnType<typeof retrieveChatGrounding>>["matches"] }
+    : await retrieveChatGrounding(message);
   const systemContent = [personaPreamble, userMemoryBlock, formatCurrentContextLine()]
     .filter((part) => part.length > 0)
     .join("\n\n") + groundingBlock;
