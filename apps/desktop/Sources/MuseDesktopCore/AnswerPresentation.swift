@@ -1,0 +1,49 @@
+import Foundation
+
+/// What the companion should show in its bubble and (optionally) speak aloud for
+/// one Muse answer. Pure + headless-testable: it decides WHEN to speak (only a
+/// real answer — never an error or an empty result) and WHAT to speak (the
+/// answer minus citation markers, which read badly aloud). The AppKit layer just
+/// renders `bubbleText` and, if `speechText != nil`, hands it to a Speaker.
+public struct AnswerPresentation: Equatable, Sendable {
+    public let bubbleText: String
+    /// nil ⇒ stay silent (an error, an empty answer, or speech disabled).
+    public let speechText: String?
+
+    public init(bubbleText: String, speechText: String?) {
+        self.bubbleText = bubbleText
+        self.speechText = speechText
+    }
+}
+
+public enum MusePresenter {
+    /// Map a CLI result to what the bubble shows and what (if anything) is spoken.
+    public static func present(_ result: Result<String, MuseBridgeError>) -> AnswerPresentation {
+        switch result {
+        case .success(let answer):
+            let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return AnswerPresentation(bubbleText: "I don't have anything on that in your notes.", speechText: nil)
+            }
+            return AnswerPresentation(bubbleText: trimmed, speechText: stripCitationsForSpeech(trimmed))
+        case .failure(.emptyQuery):
+            return AnswerPresentation(bubbleText: "Ask me something about your notes.", speechText: nil)
+        case .failure(.cliFailed):
+            return AnswerPresentation(
+                bubbleText: "I couldn't reach the Muse CLI. Is `muse` on your PATH (or set MUSE_BIN)?",
+                speechText: nil
+            )
+        }
+    }
+
+    /// Drop "[from <source>]" citation markers from the SPOKEN text — they read
+    /// badly aloud ("from v-p-n dot m-d") — while the bubble keeps them visible.
+    public static func stripCitationsForSpeech(_ text: String) -> String {
+        let withoutCitations = text.replacingOccurrences(
+            of: "\\s*\\[from[^\\]]*\\]",
+            with: "",
+            options: .regularExpression
+        )
+        return withoutCitations.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}

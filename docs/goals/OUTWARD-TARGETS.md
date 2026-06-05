@@ -1019,6 +1019,28 @@ user-verified — a window can't be auto-asserted headlessly).
   window's visual + drag + click-to-ask behaviour is user-verified via `swift run MuseDesktop`. Honest
   scope: voice (click → push-to-talk through the existing local `@muse/voice` whisper.cpp + Piper) is
   slice 2; a real pixel sprite + global hotkey + menu-bar is slice 3; signed `.app` packaging is later._
+- [x] **P45-2 The companion is now a PRETTY, HUMAN Muse who SPEAKS — a laurel-crowned woman with auburn
+  hair and a cream dress, faintly alive (breathes, blinks, mouths the words, shows a ♪ when listening),
+  who reads her cited answer aloud.** (f47cb3c9) Directly from Jinan ("더 예쁘게 + 약간 사람같이 + hermes처럼
+  음악 듣는 여자같이 + 뮤즈에 어울리게"): the slice-1 placeholder pixel blob is replaced by a feminine Muse bust
+  (`MuseSprite` — a palette-keyed 14×16 grid: hair/laurel/face/blush/lips/dress; `MusePalette` — auburn
+  hair, gold laurel, cream dress), animated for a faintly-alive feel (`CharacterView` timer: a breathing
+  bob, a blink every ~3s, the mouth flapping open/closed WHILE she speaks, and a gold ♪ music note when
+  listening/speaking — the "woman enjoying music" nod, Muse-styled). And she now SPEAKS her answer:
+  `MusePresenter.present` (pure, in the headless core) maps the CLI result to bubble text + speech text,
+  speaking ONLY a real answer (never an error/empty) with the `[from <src>]` citation markers stripped
+  from the spoken text (they read badly aloud) but kept in the bubble; `SystemSpeaker` uses on-device
+  `AVSpeechSynthesizer` (LOCAL, no cloud, no server), `MUSE_DESKTOP_SPEAK=0` mutes; while she talks the
+  character is in `.speaking` and her mouth moves, returning to idle when speech finishes. Added a headless
+  `MuseDesktop --render <png> [scale]` mode that draws the sprite to a PNG with NO window — a faithful
+  visual check of the art (I rendered + inspected it: a recognizable pretty Muse girl, not a blob).
+  Verified: `swift build` compiles app + core; `swift test` 12 tests (was 5) — `present` speaks an answer
+  minus citations + stays silent on empty/CLI-failure (4), `MuseSprite` is a clean rectangle with
+  face+laurel+dress and width-aligned blink/mouth override rows (3), + the 5 bridge tests; the app launches
+  without crashing; `pnpm lint` 0/0 (Swift ignored, TS workspace untouched). The live animation + spoken
+  audio + drag are user-verified via `swift run MuseDesktop`. Honest scope: voice INPUT (speak your
+  question) is slice 3; an artist sprite sheet + global hotkey + menu bar follow; the code-drawn Muse is a
+  strong placeholder a real sprite can swap in without touching the app._
 
 **P44 — Trust: encryption at rest (the discretion refusal, made real against
 storage access — not just network egress).** "It can't tell anyone" was true

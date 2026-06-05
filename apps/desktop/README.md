@@ -25,8 +25,9 @@ swift run MuseDesktop          # the companion appears bottom-right; drag it any
 ## Verify
 
 ```bash
-swift build                    # compiles the AppKit app + the bridge core
-swift test                     # MuseDesktopCore bridge logic (headless)
+swift build                          # compiles the AppKit app + the bridge core
+swift test                           # MuseDesktopCore logic, headless (12 tests)
+swift run MuseDesktop --render out.png 24   # render the Muse sprite to a PNG (no window) — a faithful preview of the art
 ```
 
 ## Layout
@@ -40,10 +41,16 @@ swift test                     # MuseDesktopCore bridge logic (headless)
 
 ## Slice plan
 
-1. **(done)** Transparent, always-on-top, draggable panel + placeholder pixel
-   character + click → text input → local cited answer in a bubble.
-2. **Voice**: click → push-to-talk through the existing local `@muse/voice`
-   (whisper.cpp STT + Piper TTS) so you can speak and hear the answer.
-3. **Character**: a real pixel-art sprite sheet animated by the agent state;
-   a global hotkey + menu-bar presence.
-4. Packaging: a signed/notarised `.app` (personal use runs unsigned).
+1. **(done)** Transparent, always-on-top, draggable panel + click → text input →
+   local cited answer in a bubble.
+2. **(done)** A pretty, human pixel-art **Muse** — a laurel-crowned woman with
+   auburn hair and a cream dress (`MuseSprite` grid + `MusePalette`), faintly
+   alive: she breathes, blinks, mouths the words while speaking, and shows a
+   gold music note when listening/speaking. And she now **speaks her answer
+   aloud** (on-device `AVSpeechSynthesizer`, local, citation markers dropped from
+   the speech). `MUSE_DESKTOP_SPEAK=0` mutes.
+3. **Voice input**: click → push-to-talk (speak your question) — native
+   on-device speech, or through the existing local `@muse/voice` (whisper.cpp).
+4. **Character polish**: swap the code-drawn grid for an artist sprite sheet with
+   per-state frames; a global hotkey + menu-bar presence.
+5. Packaging: a signed/notarised `.app` (personal use runs unsigned).
