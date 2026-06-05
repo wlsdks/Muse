@@ -863,7 +863,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       modelProvider,
       guards: createInputGuards(env),
       outputGuards: createOutputGuards(env),
-      requestTimeoutMs: parseInteger(env.MUSE_MODEL_REQUEST_TIMEOUT_MS, 45_000),
+      requestTimeoutMs: parseInteger(env.MUSE_MODEL_REQUEST_TIMEOUT_MS, 120_000),
       responseFilters: createResponseFilters(env),
       responseCache: parseBoolean(env.MUSE_CACHE_ENABLED, true) ? responseCache : undefined,
       retry: {
