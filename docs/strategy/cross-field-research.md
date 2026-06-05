@@ -103,6 +103,22 @@ grounding floor (which is first-principles-by-construction: "claim only what the
 sources establish"), not by extra prompt lines. (The framing doc stands; the
 prompt wiring's fate is 진안's call since he approved it.)
 
+**Second efficacy finding — a SERIOUS chat defect + a fix that failed its
+efficacy test (2026-06-05).** Investigation found that `muse chat` (the PRIMARY
+conversational surface) injects NO notes per turn — so a factual question about
+the user's OWN data is answered from the model's GENERAL knowledge. Asked "what's
+the office VPN MTU?" with a note saying **1380**, chat confabulated *"usually 1500
+bytes — consult your network administrator"* — a fabrication-rate-=0 VIOLATION on
+the main surface (ask, which pre-retrieves, correctly answers 1380). A per-turn
+note-injection fix was built and EFFICACY-TESTED live: qwen3:8b ERRATICALLY
+ignores the injected note (abstains under hedged framing, confabulates 1500 under
+strong framing — *with the note literally in context*). The fix FAILED its
+efficacy test and was NOT shipped (the discipline in action: don't ship what
+doesn't work). The RELIABLE fix is architectural — route a confident factual chat
+turn through the ask path's structured, low-temperature, notes-PRIMARY grounding
+(which works), not the conversational stream. Flagged for a dedicated effort
+(crown-jewel; needs Jinan's input). **This is the standing chat-grounding gap.**
+
 ## Next direction
 
 Per 진안 (2026-06-05): lean harder into **biology / life-sciences / biotech** —
