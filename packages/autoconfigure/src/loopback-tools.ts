@@ -150,7 +150,11 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
   // Reminders loopback: always registered. The store self-creates
   // on first write; the file may be absent on fresh installs.
   const reminders = createLoopbackMcpMuseTools(
-    createRemindersMcpServer({ file: deps.remindersFile, historyFile: deps.reminderHistoryFile })
+    createRemindersMcpServer({
+      file: deps.remindersFile,
+      historyFile: deps.reminderHistoryFile,
+      maxListEntries: parseInteger(env.MUSE_REMINDERS_LIST_MAX, 12)
+    })
   );
 
   // Proactive audit loopback — `muse.proactive.history`.

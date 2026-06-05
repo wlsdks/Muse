@@ -26,9 +26,10 @@ import {
  *   - `muse.reminders.add` (write) — schedule a one-shot reminder
  *     ("내일 6시에 우유 사라고 알려줘"), backed by the same
  *     `~/.muse/reminders.json` the CLI / REST surface uses.
- *   - `muse.reminders.due` (read) — list reminders the user should
- *     see right now (status=pending && dueAt ≤ now), so the LLM can
- *     proactively surface them when answering anything time-shaped.
+ *   - `muse.reminders.list` (read) — show / list the user's reminders
+ *     (status filter, due-soonest first); status:'due' fetches the set
+ *     the user should see right now (pending && dueAt ≤ now), so the LLM
+ *     can proactively surface them when answering anything time-shaped.
 
  *   - `muse.reminders.search` (read) — substring grep across the
  *     reminder text. Defaults to status="all" so vague callbacks
@@ -181,19 +182,22 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
       },
       {
         description:
-          "List reminders. `status` filter: 'pending' (default), 'fired', 'all', or 'due' " +
-          "(overdue or now-or-earlier pending). Newest first up to `" +
+          "Show / list the user's reminders, due-soonest first. `status` filter: 'pending' (default, " +
+          "not-yet-fired), 'fired', 'all', or 'due' (overdue or now-or-earlier pending). Returns up to `" +
           maxListEntries.toString() +
-          "` entries. Use 'due' to fetch the set the user should be reminded about right now.",
+          "` entries with the TRUE total. Use when the user asks to SEE their reminders ('내 리마인더 보여줘', " +
+          "'리마인더 목록', 'what reminders do I have'); pass status:'due' for 'what should I be reminded about now'. " +
+          "NOT for calendar events (use the calendar tool) or todo tasks (use the tasks tool).",
+        keywords: ["reminder", "reminders", "리마인더", "리마인드", "알림", "목록", "보여줘", "list", "show", "remind"],
         execute: async (args): Promise<JsonObject> => {
           const status = readReminderStatusFilter(readString(args, "status"));
           const reminders = await readReminders(file);
           const filtered = filterReminders(reminders, status, now);
-          const sorted = [...filtered]
-            .sort(compareRemindersByDueAt)
-            .slice(0, maxListEntries);
+          const sorted = [...filtered].sort(compareRemindersByDueAt);
+          const shownList = sorted.slice(0, maxListEntries);
           return {
-            reminders: sorted.map((reminder) => serializeReminderForModel(reminder, now)) as JsonValue,
+            reminders: shownList.map((reminder) => serializeReminderForModel(reminder, now)) as JsonValue,
+            shown: shownList.length,
             status,
             total: sorted.length
           };
@@ -206,7 +210,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           type: "object"
         },
         domain: "tasks",
-        name: "due",
+        name: "list",
         risk: "read"
       },
       {

@@ -35,4 +35,18 @@ describe("tasks + reminders loopback tools meet the one-shot tool-calling bar", 
     const server = createRemindersMcpServer({ file: "/tmp/muse-test-reminders.json" });
     expect(validateToolDefinitions(asMuseTools(server.tools)).filter((i) => i.code === "undescribed_parameter")).toEqual([]);
   });
+
+  it("exposes the reminders list tool as a verb_noun 'list' (NOT 'due') with reminder keywords", () => {
+    // The local model picked `calendar.list` for "내 리마인더 보여줘" because the
+    // reminders list tool was misnamed `due` with no keywords — and wrongly said
+    // "you have no reminders". The tool is `list`, keyworded so the relevance
+    // filter surfaces it for reminder-list prompts.
+    const server = createRemindersMcpServer({ file: "/tmp/muse-test-reminders.json" });
+    const names = server.tools.map((t) => t.name);
+    expect(names).toContain("list");
+    expect(names).not.toContain("due");
+    const list = server.tools.find((t) => t.name === "list")!;
+    const kw = (list as { keywords?: string[] }).keywords ?? [];
+    for (const w of ["리마인더", "보여줘", "reminders"]) expect(kw).toContain(w);
+  });
 });

@@ -4491,17 +4491,17 @@ describe("muse.reminders loopback server", () => {
     });
     expect(future).toMatchObject({ reminder: { id: "rem_2", status: "pending" } });
 
-    const due = await connection.callTool!("due", { status: "due" });
+    const due = await connection.callTool!("list", { status: "due" });
     expect(due).toMatchObject({ status: "due", total: 1 });
     expect((due.reminders as Array<{ id: string }>)[0]?.id).toBe("rem_1");
 
-    const all = await connection.callTool!("due", { status: "all" });
+    const all = await connection.callTool!("list", { status: "all" });
     expect(all).toMatchObject({ status: "all", total: 2 });
 
     const removed = await connection.callTool!("clear", { id: "rem_1" });
     expect(removed).toMatchObject({ id: "rem_1", removed: true });
 
-    const after = await connection.callTool!("due", { status: "all" });
+    const after = await connection.callTool!("list", { status: "all" });
     expect(after).toMatchObject({ total: 1 });
   });
 
@@ -4604,7 +4604,7 @@ describe("muse.reminders loopback server", () => {
     });
 
     // After firing, `due` no longer surfaces it (status filter excludes "fired").
-    const due = await connection.callTool!("due", { status: "due" });
+    const due = await connection.callTool!("list", { status: "due" });
     expect(due).toMatchObject({ total: 0 });
 
     // Explicit firedAt is preserved.
