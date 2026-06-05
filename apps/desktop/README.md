@@ -22,7 +22,11 @@ swift run MuseDesktop          # the companion appears bottom-right; drag it any
 - Click the character → a text field appears → ask about your notes → the cited
   answer shows in the speech bubble and is read aloud.
 - **Pick a character**: `MUSE_DESKTOP_CHARACTER=aria` (default — a girl with
-  headphones, enjoying the music) or `=celestial` (an ethereal starlit Muse).
+  headphones, enjoying the music) or `=celestial` (an ethereal starlit Muse) —
+  or switch live from the **menu-bar ♪ → Character**.
+- **Summon from anywhere**: ⌃⌥Space (Control-Option-Space) shows/hides her.
+- **Real app bundle** (needed for the mic permission): `./scripts/make-app.sh`
+  then `open MuseDesktop.app`.
 
 ## Verify
 
@@ -54,6 +58,10 @@ swift run MuseDesktop --render out.png 24   # render the Muse sprite to a PNG (n
    `aria` (default — a girl with headphones enjoying music, the look you asked
    for) and `celestial` (an ethereal starlit Muse). Swap with
    `MUSE_DESKTOP_CHARACTER`; preview any candidate JSON with `--render-json`.
-4. **Voice input**: click → push-to-talk (speak your question) — on-device
-   speech.
-5. **Shell**: a global hotkey + a menu-bar item; package as a real `.app` bundle.
+4. **(done)** Shell + packaging: a **menu-bar item** (♪ → Show/Hide, switch
+   Character, Mute voice, Quit), a **global hotkey** (⌃⌥Space, Carbon — no
+   Accessibility permission needed), and a real **`.app` bundle**
+   (`scripts/make-app.sh` → `MuseDesktop.app` with a stable bundle id + the
+   mic/speech usage strings, so voice can get permission).
+5. **Voice input**: click → push-to-talk (speak your question) — on-device
+   speech (`SFSpeechRecognizer`, needs the `.app` from step 4).

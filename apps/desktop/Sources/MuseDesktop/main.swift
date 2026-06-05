@@ -38,12 +38,10 @@ if let flag = arguments.firstIndex(of: "--render-json"), flag + 2 < arguments.co
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var panel: FloatingPanel?
+    private let controller = MuseController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let panel = FloatingPanel()
-        panel.orderFrontRegardless()
-        self.panel = panel
+        controller.start()
     }
 }
 

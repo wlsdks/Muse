@@ -1,0 +1,84 @@
+import AppKit
+import Carbon.HIToolbox
+import MuseDesktopCore
+
+/// Owns the companion's app-level pieces: the floating panel, a menu-bar item,
+/// and a global hotkey. One small coordinator so `AppDelegate` stays trivial.
+final class MuseController: NSObject {
+    private let panel = FloatingPanel()
+    private var statusItem: NSStatusItem?
+    private var hotKey: GlobalHotKey?
+    private var muteItem: NSMenuItem?
+
+    func start() {
+        panel.orderFrontRegardless()
+        installMenuBar()
+        // Control-Option-Space toggles the panel from anywhere (two real
+        // modifiers — avoids the macOS 15+ Option-only-hotkey bug; Carbon path
+        // needs no Accessibility permission).
+        hotKey = GlobalHotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey)) { [weak self] in
+            self?.toggleVisibility()
+        }
+    }
+
+    private func toggleVisibility() {
+        if panel.isVisible {
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+            panel.makeKey()
+        }
+    }
+
+    private func installMenuBar() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.title = "\u{266A}" // ♪
+        item.button?.toolTip = "Muse"
+
+        let menu = NSMenu()
+        add(menu, "Show / Hide Muse  (⌃⌥Space)", #selector(toggleFromMenu))
+
+        let characterItem = NSMenuItem(title: "Character", action: nil, keyEquivalent: "")
+        let characterMenu = NSMenu()
+        for sprite in SpriteLibrary.all {
+            let mi = NSMenuItem(title: (sprite.name ?? "?").capitalized, action: #selector(pickCharacter(_:)), keyEquivalent: "")
+            mi.representedObject = sprite.name
+            mi.target = self
+            mi.state = (sprite.name == SpriteLibrary.default.name) ? .on : .off
+            characterMenu.addItem(mi)
+        }
+        characterItem.submenu = characterMenu
+        menu.addItem(characterItem)
+
+        muteItem = add(menu, "Mute voice", #selector(toggleMute))
+        menu.addItem(.separator())
+        add(menu, "Quit Muse", #selector(quit), key: "q")
+
+        item.menu = menu
+        statusItem = item
+    }
+
+    @discardableResult
+    private func add(_ menu: NSMenu, _ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+        let mi = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        mi.target = self
+        menu.addItem(mi)
+        return mi
+    }
+
+    @objc private func toggleFromMenu() { toggleVisibility() }
+
+    @objc private func pickCharacter(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        panel.setCharacter(name)
+        sender.menu?.items.forEach { $0.state = ($0 === sender) ? .on : .off }
+        if !panel.isVisible { toggleVisibility() }
+    }
+
+    @objc private func toggleMute() {
+        panel.voiceMuted.toggle()
+        muteItem?.state = panel.voiceMuted ? .on : .off
+    }
+
+    @objc private func quit() { NSApplication.shared.terminate(nil) }
+}

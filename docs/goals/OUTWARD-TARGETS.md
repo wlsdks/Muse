@@ -1061,6 +1061,20 @@ user-verified — a window can't be auto-asserted headlessly).
   the aria + celestial PNGs which I INSPECTED (a cute headphone girl + an elegant starlit muse, not blobs);
   app launches without crashing; `pnpm lint` 0/0 (Swift ignored). Live animation + character switch are
   user-verified via `swift run MuseDesktop`._
+- [x] **P45-4 The companion is now a real, summonable menu-bar APP — a menu-bar ♪ (Show/Hide, switch
+  character, Mute voice, Quit), a global hotkey ⌃⌥Space from any app, and a proper `.app` bundle.** (59e77381)
+  Per the architecture-workflow plan. Menu bar via `NSStatusItem`; the Character submenu switches
+  aria↔celestial LIVE; a `MuseController` owns panel+menu+hotkey. Global hotkey via Carbon
+  `RegisterEventHotKey` (needs NO Accessibility permission — a global `NSEvent` monitor would; two real
+  modifiers ⌃⌥ dodge the macOS-15+ Option-only-hotkey bug). PACKAGING: `apps/desktop/scripts/make-app.sh`
+  assembles `MuseDesktop.app` from the release binary with a real Info.plist (stable
+  `CFBundleIdentifier=com.muse.desktop`, `LSUIElement` agent app, + the NSMicrophone/NSSpeechRecognition
+  usage strings) + ad-hoc codesign — the PREREQUISITE for voice-input TCC permission (a bare `swift run`
+  binary cannot get mic/speech and hard-crashes if it asks without the usage string). Verified: `swift
+  build` + `swift test` 18 (core unchanged) + `make-app.sh` produced a bundle whose Info.plist PASSES
+  `plutil -lint` and carries the right keys (PlistBuddy) + is signed (`_CodeSignature`) + LAUNCHES without
+  crashing + `pnpm lint` 0/0. Menu actions + the hotkey are user-verified via `open MuseDesktop.app`.
+  Voice input (slice 5) builds on this bundle._
 
 **P44 — Trust: encryption at rest (the discretion refusal, made real against
 storage access — not just network egress).** "It can't tell anyone" was true

@@ -10,6 +10,11 @@ final class FloatingPanel: NSPanel, NSTextFieldDelegate {
     private let input = NSTextField()
     private let speaker: Speaker = SpeakerFactory.make()
     private var busy = false
+    /// Toggled from the menu bar; when true the answer still shows but isn't spoken.
+    var voiceMuted = false
+
+    /// Switch the on-screen character live (menu bar → Character submenu).
+    func setCharacter(_ name: String) { character.sprite = SpriteLibrary.named(name) }
 
     init() {
         super.init(
@@ -106,7 +111,7 @@ final class FloatingPanel: NSPanel, NSTextFieldDelegate {
                 guard let self else { return }
                 self.bubble.stringValue = presentation.bubbleText
                 self.busy = false
-                if let speech = presentation.speechText {
+                if let speech = presentation.speechText, !self.voiceMuted {
                     self.character.state = .speaking
                     self.speaker.speak(speech) { [weak self] in self?.character.state = .idle }
                 } else {
