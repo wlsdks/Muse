@@ -43,6 +43,22 @@ const MIN_QUERY_CHARS = 4;
  * answer even with the note in context, so the block states plainly that these
  * passages are the source of truth and must be cited, not overridden.
  */
+/**
+ * A short, user-facing citation source. A note's `ref` is its ABSOLUTE path
+ * ("/Users/me/.muse/notes/wifi_passwords/seoul_office.md") — ugly, it leaks the
+ * home dir, AND it is so long the local model spent its output budget echoing
+ * it and TRUNCATED the answer mid-citation. Strip to the path under the notes
+ * dir ("wifi_passwords/seoul_office.md"), else the basename. Non-path refs
+ * (conversation, …) pass through untouched.
+ */
+export function shortCitationRef(ref: string): string {
+  const marker = "/notes/";
+  const idx = ref.lastIndexOf(marker);
+  if (idx >= 0) return ref.slice(idx + marker.length);
+  if (ref.includes("/")) return ref.slice(ref.lastIndexOf("/") + 1);
+  return ref;
+}
+
 export function formatChatGroundingBlock(
   hits: readonly RecallHit[],
   minScore: number = CHAT_GROUNDING_MIN_SCORE
@@ -51,7 +67,7 @@ export function formatChatGroundingBlock(
     .filter((hit) => hit.score >= minScore)
     .slice(0, CHAT_GROUNDING_MAX_HITS);
   if (relevant.length === 0) return "";
-  const lines = relevant.map((hit) => `- ${hit.snippet.trim()} [from ${hit.ref}]`);
+  const lines = relevant.map((hit) => `- ${hit.snippet.trim()} [from ${shortCitationRef(hit.ref)}]`);
   return (
     "\n\nThe following passages are from the user's OWN notes — they are the " +
     "authoritative source for any question about the user's data, plans, or " +

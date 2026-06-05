@@ -10,6 +10,7 @@ import {
   groundChatTurn,
   groundedNoteSources,
   isPersonalFactRecall,
+  shortCitationRef,
   withGroundingReceipt
 } from "./chat-grounding.js";
 import type { RecallHit } from "./commands-recall.js";
@@ -96,12 +97,31 @@ function hit(over: Partial<RecallHit> = {}): RecallHit {
   return { source: "notes", ref: "vpn.md", score: 0.7, snippet: "Office VPN MTU is 1380.", ...over };
 }
 
+describe("shortCitationRef", () => {
+  it("strips the absolute notes-dir prefix so a citation is clean + leaks no home dir", () => {
+    expect(shortCitationRef("/Users/jinan/.muse/notes/wifi_passwords/seoul_office.md")).toBe("wifi_passwords/seoul_office.md");
+  });
+  it("falls back to the basename for a path with no /notes/ segment", () => {
+    expect(shortCitationRef("/var/data/report.md")).toBe("report.md");
+  });
+  it("passes a non-path ref through untouched", () => {
+    expect(shortCitationRef("conversation")).toBe("conversation");
+    expect(shortCitationRef("vpn.md")).toBe("vpn.md");
+  });
+});
+
 describe("formatChatGroundingBlock", () => {
   it("emits an authoritative, citation-bearing block for a relevant hit", () => {
     const block = formatChatGroundingBlock([hit()]);
     expect(block).toContain("Office VPN MTU is 1380.");
     expect(block).toContain("[from vpn.md]");
     expect(block.toLowerCase()).toContain("authoritative");
+  });
+
+  it("cites a note by its notes-relative path, never the leaked absolute home path", () => {
+    const block = formatChatGroundingBlock([hit({ ref: "/Users/jinan/.muse/notes/wifi_passwords/seoul_office.md" })]);
+    expect(block).toContain("[from wifi_passwords/seoul_office.md]");
+    expect(block).not.toContain("/Users/jinan");
   });
 
   it("returns '' when every hit is below the relevance threshold (refusal floor intact)", () => {
