@@ -23,7 +23,7 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { groundChatTurn } from "./chat-grounding.js";
+import { conversationMatches, gateChatAnswer, retrieveChatGrounding } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
@@ -210,7 +210,7 @@ export async function runLocalChat(
   // only on the persona id, not userId, so it is safe on this
   // one-shot path unlike the user-memory-folding buildMusePersona.
   const personaPreamble = (await loadActivePersonaPreamble().catch(() => "")).trim();
-  const groundingBlock = await groundChatTurn(message);
+  const { block: groundingBlock, matches } = await retrieveChatGrounding(message);
   const systemContent = (personaPreamble.length > 0
     ? `${personaPreamble}\n\n${formatCurrentContextLine()}`
     : formatCurrentContextLine()) + groundingBlock;
@@ -225,8 +225,14 @@ export async function runLocalChat(
     model: model ?? assembly.defaultModel ?? "default"
   });
 
+  // Deterministic anti-fabrication gate: for a recall of the user's OWN data,
+  // refuse honestly when the answer isn't grounded in the retrieved notes/episodes
+  // OR this conversation — instead of letting the model invent a fact as "memory".
+  const evidence = [...matches, ...conversationMatches(options.priorHistory ?? [])];
+  const gated = gateChatAnswer(message, result.response.output, evidence);
+
   return {
-    response: result.response.output,
+    response: gated,
     runId: result.runId,
     toolsUsed: result.toolsUsed ?? []
   };

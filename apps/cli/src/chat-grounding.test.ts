@@ -3,10 +3,53 @@ import { describe, expect, it } from "vitest";
 import {
   CHAT_GROUNDING_MAX_HITS,
   CHAT_GROUNDING_MIN_SCORE,
+  chatAbstention,
+  conversationMatches,
   formatChatGroundingBlock,
-  groundChatTurn
+  gateChatAnswer,
+  groundChatTurn,
+  isPersonalFactRecall
 } from "./chat-grounding.js";
 import type { RecallHit } from "./commands-recall.js";
+
+describe("isPersonalFactRecall", () => {
+  it("flags recall of the user's own stored facts", () => {
+    expect(isPersonalFactRecall("내 강아지 이름 뭐야?")).toBe(true);
+    expect(isPersonalFactRecall("내 고양이 이름이 뭐야")).toBe(true);
+    expect(isPersonalFactRecall("내 와이파이 비밀번호 뭐였지?")).toBe(true);
+    expect(isPersonalFactRecall("what's my wifi password?")).toBe(true);
+  });
+  it("does NOT flag general or advice questions (never gate general knowledge)", () => {
+    expect(isPersonalFactRecall("물 마시는 게 왜 중요해?")).toBe(false);
+    expect(isPersonalFactRecall("내 아침 루틴 추천해줘")).toBe(false); // 추천=advice
+    expect(isPersonalFactRecall("좋은 하루 보내는 방법 알려줘")).toBe(false);
+    expect(isPersonalFactRecall("리액트에서 useState가 뭐야?")).toBe(false); // no possessive
+  });
+  it("does NOT flag a STATEMENT that provides a fact (the user telling us — never refuse)", () => {
+    expect(isPersonalFactRecall("내 사무실 와이파이 비밀번호는 muse2026 이야. 기억해.")).toBe(false);
+    expect(isPersonalFactRecall("내 강아지 이름은 보리야")).toBe(false);
+  });
+});
+
+describe("gateChatAnswer (deterministic anti-fabrication gate)", () => {
+  it("refuses an UNGROUNDED personal fact instead of letting it through", () => {
+    const out = gateChatAnswer("내 고양이 이름이 뭐야?", "당신의 고양이 이름은 미니입니다.", []);
+    expect(out).toBe(chatAbstention("내 고양이 이름이 뭐야?"));
+    expect(out).toContain("기억");
+  });
+  it("keeps an answer grounded in the conversation", () => {
+    const evidence = conversationMatches([
+      { role: "user", content: "내 사무실 와이파이 비밀번호는 muse2026 이야." },
+      { role: "assistant", content: "기억해뒀어요." }
+    ]);
+    const out = gateChatAnswer("내 와이파이 비밀번호 뭐였지?", "와이파이 비밀번호는 muse2026 입니다.", evidence);
+    expect(out).toContain("muse2026");
+  });
+  it("passes general / non-recall turns through untouched", () => {
+    const general = "물은 신체 기능 유지에 필수입니다.";
+    expect(gateChatAnswer("물 마시는 게 왜 중요해?", general, [])).toBe(general);
+  });
+});
 
 function hit(over: Partial<RecallHit> = {}): RecallHit {
   return { source: "notes", ref: "vpn.md", score: 0.7, snippet: "Office VPN MTU is 1380.", ...over };
