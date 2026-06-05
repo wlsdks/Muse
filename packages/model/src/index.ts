@@ -91,6 +91,15 @@ export interface ModelRequest {
    * capability ignore it and the caller falls back to a parser + validator.
    */
   readonly responseFormat?: JsonObject;
+  /**
+   * Ask the model to reason natively first (e.g. Qwen via Ollama `think: true`),
+   * exposing its chain-of-thought in a SEPARATE channel (`ModelResponse.reasoning`
+   * / `reasoning-delta` stream events) instead of mixed into the answer. Off by
+   * default — enable only for user-facing generation where the reasoning improves
+   * the answer and can be shown as a live "thinking" process; keep it off for the
+   * fast deterministic internal calls (tool routing, rubric scoring).
+   */
+  readonly reasoning?: boolean;
 }
 
 export interface WebSearchCitation {
@@ -107,11 +116,14 @@ export interface ModelResponse {
   readonly toolCalls?: readonly ModelToolCall[];
   readonly usage?: ModelUsage;
   readonly citations?: readonly WebSearchCitation[];
+  /** Native reasoning trace (Qwen `thinking`), present only when `reasoning` was requested. */
+  readonly reasoning?: string;
   readonly raw?: unknown;
 }
 
 export type ModelEvent =
   | { readonly type: "text-delta"; readonly text: string }
+  | { readonly type: "reasoning-delta"; readonly text: string }
   | { readonly type: "tool-call"; readonly toolCall: ModelToolCall }
   | { readonly type: "tool-call-started"; readonly name: string }
   | { readonly type: "tool-call-finished"; readonly name: string; readonly count?: number }

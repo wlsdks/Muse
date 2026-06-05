@@ -91,6 +91,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
       model: json.model ?? request.model ?? this.nativeDefaultModel ?? "unknown",
       output: stripLeadingThinkBlock(json.message?.content ?? ""),
       raw: json,
+      ...(json.message?.thinking ? { reasoning: json.message.thinking } : {}),
       ...(json.message?.tool_calls && json.message.tool_calls.length > 0
         ? {
             toolCalls: json.message.tool_calls.map((tc, i) => {
@@ -151,6 +152,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     const providerId = this.id;
     let buf = "";
     let output = "";
+    let reasoning = "";
     let lastJson: OllamaNativeChatResponse | undefined;
     let streamError: ModelProviderError | undefined;
     const streamedToolCalls: ModelToolCall[] = [];
@@ -173,6 +175,14 @@ export class OllamaProvider extends OpenAICompatibleProvider {
         return;
       }
       lastJson = parsed;
+      // Native reasoning streams in a SEPARATE `thinking` channel — surface it
+      // as reasoning-delta so a UI can show a live "thinking" process distinct
+      // from the answer.
+      const thinkingDelta = parsed.message?.thinking ?? "";
+      if (thinkingDelta) {
+        reasoning += thinkingDelta;
+        yield { text: thinkingDelta, type: "reasoning-delta" };
+      }
       const delta = parsed.message?.content ?? "";
       if (delta) {
         output += delta;
@@ -237,6 +247,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
       model: lastJson?.model ?? request.model ?? this.nativeDefaultModel ?? "unknown",
       output: stripLeadingThinkBlock(output),
       raw: lastJson,
+      ...(reasoning ? { reasoning } : {}),
       ...(streamedToolCalls.length > 0 ? { toolCalls: streamedToolCalls } : {}),
       ...(lastJson?.eval_count || lastJson?.prompt_eval_count
         ? {
@@ -331,10 +342,11 @@ export class OllamaProvider extends OpenAICompatibleProvider {
       // multi-second reload, and so it's less likely to be evicted mid-session
       // (an eviction surfaces to the user as a failed turn). Local-first speed.
       keep_alive: "30m",
-      // The point of this whole override: kill the chain-of-thought
-      // emission for Qwen 3.5+ thinking models. Non-thinking models
-      // ignore the field; cost is zero.
-      think: false,
+      // Native reasoning is OFF by default (fast, deterministic, reliable tool
+      // calls) and opt-in per request: when `reasoning` is set, Qwen emits its
+      // chain-of-thought in a SEPARATE `thinking` channel (captured below), not
+      // mixed into the answer.
+      think: request.reasoning ?? false,
       // Native structured output: Ollama's `format` takes a JSON Schema and
       // constrains decoding to it — guaranteed schema-valid JSON, not
       // parse-and-hope. Sent only when the caller requested it.
@@ -356,6 +368,7 @@ interface OllamaNativeChatResponse {
   readonly message?: {
     readonly role?: string;
     readonly content?: string;
+    readonly thinking?: string;
     readonly tool_calls?: readonly {
       readonly id?: string;
       readonly function?: { readonly name?: string; readonly arguments?: unknown };

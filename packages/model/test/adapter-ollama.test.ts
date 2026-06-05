@@ -115,13 +115,26 @@ describe("OllamaProvider — native /api/chat request wire shape", () => {
     `);
   });
 
-  it("targets /api/chat, strips the ollama/ model prefix, and always sends think:false", async () => {
+  it("targets /api/chat, strips the ollama/ model prefix, and sends think:false by default", async () => {
     const p = new OllamaProvider({ fetch: jsonFetch({ message: { content: "ok" } }) });
     await p.generate(userReq());
     expect(captured.url).toBe("http://127.0.0.1:11434/api/chat");
     expect(lastBody().model).toBe("qwen3:8b");
     expect(lastBody().think).toBe(false);
     expect(lastBody().stream).toBe(false);
+  });
+
+  it("sends think:true when native reasoning is requested", async () => {
+    const p = new OllamaProvider({ fetch: jsonFetch({ message: { content: "ok" } }) });
+    await p.generate(userReq({ reasoning: true }));
+    expect(lastBody().think).toBe(true);
+  });
+
+  it("captures the native thinking channel into response.reasoning", async () => {
+    const p = new OllamaProvider({ fetch: jsonFetch({ message: { content: "the answer", thinking: "let me think… step 1…" } }) });
+    const res = await p.generate(userReq({ reasoning: true }));
+    expect(res.output).toBe("the answer");
+    expect(res.reasoning).toBe("let me think… step 1…");
   });
 
   it("defaults num_ctx to 8192 and omits optional fields when unset", async () => {
