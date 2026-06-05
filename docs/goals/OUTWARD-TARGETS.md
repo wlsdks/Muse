@@ -4649,6 +4649,28 @@ honest-refusal mock-corpus check where applicable.
   (Tech Daily)", and the NEGATIVE control — no feeds store → the brief printed with ZERO "In your
   feeds" blocks and no crash. (a5a01bab)
 
+- [x] **P35-21 Your morning `muse brief` now FLAGS a double-booking — "🗓️ Heads up — you're
+  double-booked: 'Standup' (3:29 PM) overlaps 'Dentist' (3:44 PM)" — the single thing you most want
+  to catch at a glance before the day starts.** The brief listed the next-24h events but never flagged
+  when two of them OVERLAP, and the model prose can't be trusted to spot the clash (in the live run it
+  cheerfully listed both events as "upcoming" without noticing they collide). Surfaced it
+  DETERMINISTICALLY: a pure `formatBriefConflicts(conflicts)` (apps/cli/src/brief-conflicts.ts) renders
+  a "🗓️ double-booked" block naming each clashing pair with their start times (empty string when none),
+  wired into `muse brief` (apps/cli/src/commands-brief.ts) by running the existing
+  `detectCalendarConflicts` over the SAME next-24h events the brief already gathered — no extra IO, no
+  model — and appended prominently (before the reflection/feed lines) since a clash outranks them.
+  Reuses the P43-5 conflict machinery but brings it to the morning-brief surface, where it was silent.
+  This is a Felt/proactivity slice — distinct content (calendar conflicts) from the recently-added
+  reflection (P35-19) and feeds (P35-20) brief blocks, and the highest-value morning signal. Verified
+  deterministically AND live: 2 unit tests (formatBriefConflicts renders a double-booked block naming
+  each clashing pair with start times; returns an empty string when there are no conflicts so nothing
+  is added — apps/cli/src/brief-conflicts.test.ts) + the full @muse/cli suite (192 files / 2174 tests)
+  + tsc build + `pnpm lint` 0/0 + 0 raw control bytes + a FULL LIVE run on the loop PC: two overlapping
+  events seeded for the next 24h (Standup 3:29 PM + Dentist 3:44 PM) → `muse brief` printed the greeting
+  then "🗓️ Heads up — you're double-booked: 'Standup' (3:29 PM) overlaps 'Dentist' (3:44 PM)", and the
+  NEGATIVE control — a single non-overlapping event → the brief printed with ZERO double-booked blocks.
+  (19a5414f)
+
 - [x] **P35-2 Citation-as-voice quotes content, never a heading.** P35-1's
   receipt excerpted the chunk's opening, which on a `# Heading`-led note read
   robotically. `relevantSnippet` now drops markdown headings and picks the

@@ -34,8 +34,9 @@ import {
   resolveTasksFile
 } from "@muse/autoconfigure";
 import type { CalendarEvent } from "@muse/calendar";
-import { formatBirthdayBriefLine, readCheckins, readContacts, readProactiveHistory, readReflections, readReminders, resolveUpcomingBirthdays, selectDueCheckins, type PersistedCheckin, type PersistedReminder } from "@muse/mcp";
+import { detectCalendarConflicts, formatBirthdayBriefLine, readCheckins, readContacts, readProactiveHistory, readReflections, readReminders, resolveUpcomingBirthdays, selectDueCheckins, type PersistedCheckin, type PersistedReminder } from "@muse/mcp";
 
+import { formatBriefConflicts } from "./brief-conflicts.js";
 import { formatBriefFeedLines, selectBriefFeedHeadlines } from "./brief-feeds.js";
 import { formatBriefReflectionLine, selectBriefReflection } from "./brief-reflection.js";
 import { resolveReflectionsFile } from "./commands-reflections.js";
@@ -492,6 +493,11 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       if (fabricatedTimes.length > 0) {
         io.stderr(`\n⚠️  This summary mentions a time not on your schedule (${fabricatedTimes.join(", ")}) — double-check it against your calendar before relying on it.\n`);
       }
+
+      // A double-booking is the single thing you most want flagged in the morning,
+      // and the model prose can't be trusted to spot the overlap — surface it
+      // deterministically over the same next-24h events the brief already gathered.
+      io.stdout(formatBriefConflicts(detectCalendarConflicts(upcomingEvents)));
 
       try {
         const surfaced = selectBriefReflection(await readReflections(resolveReflectionsFile()), now.getTime());
