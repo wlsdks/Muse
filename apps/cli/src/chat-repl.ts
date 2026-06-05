@@ -210,7 +210,17 @@ export async function runLocalChat(
   const isCasual = classifyCasualPrompt(message) !== null;
   const metadata: Record<string, string | number> = {};
   if (agentMode) metadata.agentMode = agentMode;
-  if (options.disableTools || isCasual) metadata.maxTools = 0;
+  if (options.disableTools || isCasual) {
+    metadata.maxTools = 0;
+  } else {
+    // Cap the tools projected into the prompt to the few most relevant
+    // (planForContext ranks by the user message). Projecting the WHOLE registry
+    // is what makes a substantive turn ~25s — qwen3:8b's prompt-eval is dominated
+    // by the tool block — and tool-calling.md mandates ≤5-7 per turn anyway (more
+    // tools = more wrong-selection). Env-overridable; 0/negative disables the cap.
+    const cap = Math.trunc(Number(process.env.MUSE_CHAT_MAX_TOOLS ?? "6"));
+    if (Number.isFinite(cap) && cap > 0) metadata.maxTools = cap;
+  }
   const hasMetadata = Object.keys(metadata).length > 0;
 
   // System content grounds the model in `now`, the base persona, AND what Muse
