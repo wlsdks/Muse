@@ -34,12 +34,27 @@ public enum MuseBridge {
     /// one-shot that runs on the LOCAL Qwen by default (and the system-wide
     /// MUSE_LOCAL_ONLY posture is default-on), so the companion's answers stay
     /// on-device — no flag needed (and `ask` rejects `--local`, that's `chat`).
+    /// `--json` makes stdout a single clean `{query, model, answer, grounded}`
+    /// object, so the bubble shows just the answer — not the CLI's progress
+    /// lines ("🔎 searching…", "💭 generating…") or its "(Re-run with --repair)" hint.
     public static func invocation(query: String, bin: String) -> MuseInvocation {
-        MuseInvocation(executable: bin, arguments: ["ask", query])
+        MuseInvocation(executable: bin, arguments: ["ask", "--json", query])
     }
 
-    /// Strip ANSI escape codes + surrounding whitespace from the CLI's stdout so
-    /// the speech bubble shows clean text (the CLI colourises for a terminal).
+    private struct AskJSON: Decodable { let answer: String }
+
+    /// Extract the clean answer from `muse ask --json` stdout. Falls back to
+    /// `cleanAnswer` (ANSI/whitespace strip) if the output isn't the expected
+    /// JSON, so a CLI change degrades gracefully instead of showing nothing.
+    public static func parseAnswer(_ raw: String) -> String {
+        if let data = raw.data(using: .utf8), let decoded = try? JSONDecoder().decode(AskJSON.self, from: data) {
+            return decoded.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return cleanAnswer(raw)
+    }
+
+    /// Strip ANSI escape codes + surrounding whitespace (the non-JSON fallback,
+    /// and the cleaner used before display).
     public static func cleanAnswer(_ raw: String) -> String {
         let stripped = raw.replacingOccurrences(
             of: "\u{1B}\\[[0-9;]*[A-Za-z]",
@@ -57,7 +72,7 @@ public enum MuseBridge {
     ) async throws -> String {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw MuseBridgeError.emptyQuery }
-        return try run(invocation(query: trimmed, bin: bin))
+        return parseAnswer(try run(invocation(query: trimmed, bin: bin)))
     }
 
     static func run(_ invocation: MuseInvocation) throws -> String {
@@ -87,6 +102,6 @@ public enum MuseBridge {
             let err = String(data: errData, encoding: .utf8) ?? ""
             throw MuseBridgeError.cliFailed(status: process.terminationStatus, stderr: err)
         }
-        return cleanAnswer(String(data: outData, encoding: .utf8) ?? "")
+        return String(data: outData, encoding: .utf8) ?? ""
     }
 }

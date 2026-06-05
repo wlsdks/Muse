@@ -1125,6 +1125,13 @@ user-verified — a window can't be auto-asserted headlessly).
   wrapper returns a grounded answer + `pnpm lint` 0/0; Muse is RUNNING on the loop PC. LESSON: arg-building
   unit tests + launch-no-crash passed while the real CLI call was broken — a GUI bridge needs an
   end-to-end round-trip, not just arg assertions._
+- [x] **P45-9 The companion shows a CLEAN answer — not the CLI's terminal noise.** (5f086e06) Running it
+  live revealed the bridge piped `muse ask`'s human stdout (progress lines "🔎 searching…" / "💭
+  generating…" + the "(Re-run with --repair)" CLI hint) straight into the bubble. Switched MuseBridge to
+  `muse ask --json` (stdout = a clean `{query, model, answer, grounded}` object); `parseAnswer` extracts
+  the `answer` field, falling back to ANSI-strip `cleanAnswer` for non-JSON so a CLI change degrades
+  gracefully. Verified: `swift build` + `swift test` 26 (was 24; +2 parseAnswer) + the `.app` relaunched +
+  a real `muse ask --json` round-trip via the baked wrapper returned a clean answer + `pnpm lint` 0/0._
 - [x] **P44-1 `muse memory encrypt` encrypts your user-memory at rest.** The
   most sensitive store (facts / preferences / the typed user model) can now be
   AES-256-GCM encrypted, so a stolen/seized laptop or a leaked backup can't read

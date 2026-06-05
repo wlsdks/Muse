@@ -2,12 +2,23 @@ import XCTest
 @testable import MuseDesktopCore
 
 final class MuseBridgeTests: XCTestCase {
-    func testInvocationCallsLocalAsk() {
+    func testInvocationCallsLocalAskAsJSON() {
         let invocation = MuseBridge.invocation(query: "what's my office VPN MTU?", bin: "muse")
         XCTAssertEqual(invocation.executable, "muse")
-        // `muse ask` is RAG-grounded on the local Qwen by default (and rejects
-        // `--local`, which is a `chat` flag) — so the args are just ask + query.
-        XCTAssertEqual(invocation.arguments, ["ask", "what's my office VPN MTU?"])
+        // `muse ask` is RAG-grounded on the local Qwen by default; `--json` gives
+        // a clean structured answer (no progress lines / CLI hints in the bubble).
+        XCTAssertEqual(invocation.arguments, ["ask", "--json", "what's my office VPN MTU?"])
+    }
+
+    func testParseAnswerExtractsTheAnswerFieldFromJSON() {
+        let json = ##"{"query":"q","model":"ollama/qwen3:8b","answer":"  1380 bytes [from vpn.md]  ","grounded":{"noteChunks":[]}}"##
+        XCTAssertEqual(MuseBridge.parseAnswer(json), "1380 bytes [from vpn.md]")
+    }
+
+    func testParseAnswerFallsBackToCleanAnswerForNonJSON() {
+        // A CLI that isn't emitting the expected JSON (or an error string) still
+        // shows something readable rather than nothing.
+        XCTAssertEqual(MuseBridge.parseAnswer("\u{1B}[32mplain text\u{1B}[0m\n"), "plain text")
     }
 
     func testDefaultBinHonoursEnvOverride() {
