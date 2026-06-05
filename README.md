@@ -400,6 +400,7 @@ catalog + negative results in
 | Cognitive psychology | Date-cued autobiographical recall (Rubin 1986) | `muse on-this-day` |
 | Information science | Luhn extractive summary (Luhn 1958) | `muse summarize` |
 | Org. psychology | Attention residue / deep work (Leroy 2009) | `muse calendar focus` / `block` |
+| Network science / ecology | Betweenness / brokerage (Freeman 1977) + keystone species (Paine 1966) | `muse notes bridges` |
 
 Each mechanism cites its paper in the module header comment; every slice is
 recorded in [`CAPABILITIES.md`](docs/goals/CAPABILITIES.md).

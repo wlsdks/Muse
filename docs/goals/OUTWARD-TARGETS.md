@@ -899,6 +899,31 @@ P43 bullet is unbuilt.
   mandate: the module header cites the papers, a row added to docs/strategy/cross-field-research.md AND
   the README's cross-field table. Honest scope: categorical columns; rarefaction / Hill numbers are
   follow-ons. (6ec44a46)
+- [x] **P43-25 `muse notes bridges` — the BRIDGE notes whose [[wiki-links]] connect your otherwise-
+  separate topic clusters, where cross-domain insight lives ("🌉 burnout.md — brokers 4 connections
+  between your topics").** (26cdaf75) A knowledge-graph perception slice on a NEW mechanism, deliberately
+  NOT another `muse <stat> <file> <col>` filter (Jinan's "mine the literature, don't just keep adding
+  list-filters" correction). Mechanism: BETWEENNESS CENTRALITY (Freeman, "A Set of Measures of Centrality
+  Based on Betweenness", Sociometry 40(1):35-41, 1977) via Brandes' algorithm (Brandes, J. Math. Sociology
+  25(2), 2001) — a node's importance is how many of the graph's shortest paths pass THROUGH it = how much
+  it brokers flow between separated parts — with the cross-field anchor being the ecological KEYSTONE
+  species (Paine, Am. Naturalist 100, 1966: a low-abundance element with disproportionate structural
+  impact — remove it and the system fragments) and Burt's STRUCTURAL HOLES / brokerage (1992). DISTINCT
+  from `notes hubs` (k-shell coreness on the CO-RECALL graph — the dense centre) and `notes related` (a
+  note's neighbours): a bridge can be peripheral yet load-bearing precisely because it is the sole
+  connector between clusters. Pure `apps/cli/src/note-bridges.ts` (`resolvedAdjacency` collapses the
+  directed wiki-link graph to an undirected resolved-only adjacency; `betweennessCentrality` is Brandes;
+  `selectBridges` ranks non-zero brokers; `formatBridges`) reusing the existing `loadNoteLinkGraph` +
+  `buildNoteLinkGraph`, wired into `muse notes bridges` (`--limit`/`--json`). Deterministic, no model —
+  efficacy-clear by construction. Verified deterministically AND live: 9 unit tests (undirected resolved-
+  only adjacency drops unresolved links + keeps isolates; a path a-b-c gives the middle all brokerage; a
+  clique brokers nothing; a two-triangle barbell ranks the SOLE connector first + excludes clique leaves;
+  star centre; limit; format + empty — apps/cli/src/note-bridges.test.ts) + `pnpm lint` 0/0 + `@muse/shared`
+  byte-hygiene + cli 2301 + 0 raw control bytes + a LIVE `muse notes bridges` on the loop PC: a barbell
+  corpus (work {sprint,standup} + health {running,sleep} joined ONLY through burnout.md) ranked burnout.md
+  #1 (brokers all 4 cross-cluster pairs), and a fully-linked clique → "No bridge notes". RECORDED per the
+  mandate: module header cites the papers, a row added to docs/strategy/cross-field-research.md AND the
+  README's cross-field table._
 - [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
   and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
   The evening recap (P43-4) is the retrospective sibling of the morning brief, and its

@@ -61,6 +61,7 @@ is yoked to a fabrication-zero floor is far harder.
 | Cognitive psychology | Autobiographical / date-cued recall (Rubin et al. 1986) | `muse on-this-day` + a brief beat — notes from today's date in earlier years |
 | Environmental statistics | Mann-Kendall trend + Sen's slope (Mann 1945; Kendall 1975) | `muse trend` — is a tracking column rising, falling, or wandering? |
 | Cognition / strategy | First-principles thinking (Musk) + contrarian question (Thiel) | reasoning principles in `muse ask` — engine; the grounding floor is the brake ([reasoning-principles.md](reasoning-principles.md)) |
+| Network science / ecology | Betweenness centrality / brokerage (Freeman 1977; Brandes 2001) + structural holes (Burt 1992) + keystone species (Paine 1966) | `muse notes bridges` — the notes connecting your otherwise-separate topic clusters (where cross-domain insight lives) |
 
 ## Negative results (recorded so we don't repeat them)
 

@@ -26,6 +26,7 @@ import type { Command } from "commander";
 
 import { parsePdfBuffer } from "./commands-read.js";
 import { embed } from "./embed.js";
+import { formatBridges, selectBridges } from "./note-bridges.js";
 import { classifyNoteContradiction, formatNoteConflicts, selectConflictCandidatePairs, selectSemanticConflictCandidatePairs, type ConflictNote, type NoteConflict } from "./note-conflicts.js";
 import { coreShellRanking, readTrails, resolveTrailsFile, topCoRecalled } from "./recall-trail.js";
 import type { ProgramIO } from "./program.js";
@@ -1072,5 +1073,23 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
       for (const hub of hubs) {
         io.stdout(`  ${rel(hub.noteId)}  (core ${hub.shell.toString()}, co-recalled with ${hub.degree.toString()})\n`);
       }
+    });
+
+  notes
+    .command("bridges")
+    .description("Show your BRIDGE notes — the ones whose [[wiki-links]] connect otherwise-separate topic clusters, where cross-domain insight lives (betweenness centrality / brokerage; ecological keystone). Read-only, deterministic, no Ollama. Use to find the notes that link your different interests; not the dense centre (that is `notes hubs`) or one note's neighbours (`notes related`).")
+    .option("--limit <n>", "How many bridge notes to show (default 10)")
+    .option("--json", "Print JSON instead of formatted text")
+    .action(async (options: { readonly limit?: string; readonly json?: boolean }) => {
+      const dir = resolveNotesDir(process.env as Record<string, string | undefined>);
+      const limit = options.limit !== undefined && Number.isFinite(Number(options.limit))
+        ? Math.max(1, Math.trunc(Number(options.limit)))
+        : 10;
+      const bridges = selectBridges(await loadNoteLinkGraph(dir), limit);
+      if (options.json) {
+        io.stdout(`${JSON.stringify(bridges, null, 2)}\n`);
+        return;
+      }
+      io.stdout(`${formatBridges(bridges)}\n`);
     });
 }
