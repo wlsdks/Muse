@@ -1075,6 +1075,22 @@ user-verified — a window can't be auto-asserted headlessly).
   `plutil -lint` and carries the right keys (PlistBuddy) + is signed (`_CodeSignature`) + LAUNCHES without
   crashing + `pnpm lint` 0/0. Menu actions + the hotkey are user-verified via `open MuseDesktop.app`.
   Voice input (slice 5) builds on this bundle._
+- [x] **P45-5 A user can now TALK to the companion: click Muse → speak your question → on-device
+  transcription → she answers from your notes and reads it aloud (the "클릭만 해도 음성" ask).** (5b6855c0)
+  `SpeechCapture` captures the mic (AVAudioEngine) and transcribes with `SFSpeechRecognizer` pinned to
+  `requiresOnDeviceRecognition = true` — your VOICE NEVER LEAVES THE MAC; it REFUSES rather than fall back
+  to Apple's network recognizer (same local-only posture as MUSE_LOCAL_ONLY). One-shot end-of-speech via a
+  1.2s silence timer + a 55s cap. CRASH-SAFE: macOS hard-crashes a process that requests mic/speech without
+  the Info.plist usage strings, so `SpeechCapture` checks `usageStringsPresent` (Bundle.main) FIRST and,
+  with no bundle, throws → the panel falls back to the TEXT field instead of ever calling the auth API. The
+  decision is the pure, tested `VoiceGate.decide` in the headless core (listen / fallbackToText /
+  refuseOffDevice). Click → listen (partial transcript streams into the bubble) → ask → speak; 2nd click
+  cancels. Verified: `swift build` + `swift test` 22 (was 18) — VoiceGate listens when ready, falls back
+  WITHOUT asking when usage strings absent (crash-prevention invariant) / denied / unavailable, refuses
+  off-device rather than use the network; BOTH the `swift run` binary (text-fallback path, no crash) and
+  the voice-capable `.app` launch without crashing; `pnpm lint` 0/0. The live mic→transcribe→ask→speak loop
+  is user-verified via `MuseDesktop.app` (one-time mic+speech grant). This COMPLETES the companion's core:
+  a pretty, draggable, always-on-top Muse you summon (⌃⌥Space) and TALK to, fully local._
 
 **P44 — Trust: encryption at rest (the discretion refusal, made real against
 storage access — not just network egress).** "It can't tell anyone" was true

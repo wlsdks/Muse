@@ -9,7 +9,9 @@ final class FloatingPanel: NSPanel, NSTextFieldDelegate {
     private let bubble = NSTextField(labelWithString: "")
     private let input = NSTextField()
     private let speaker: Speaker = SpeakerFactory.make()
+    private let speech = SpeechCapture()
     private var busy = false
+    private var listening = false
     /// Toggled from the menu bar; when true the answer still shows but isn't spoken.
     var voiceMuted = false
 
@@ -52,7 +54,7 @@ final class FloatingPanel: NSPanel, NSTextFieldDelegate {
 
         character.frame = NSRect(x: 18, y: 18, width: 132, height: 150)
         character.sprite = SpriteLibrary.named(ProcessInfo.processInfo.environment["MUSE_DESKTOP_CHARACTER"])
-        character.onClick = { [weak self] in self?.revealInput() }
+        character.onClick = { [weak self] in self?.handleClick() }
         content.addSubview(character)
 
         input.frame = NSRect(x: 168, y: 64, width: 176, height: 28)
@@ -70,6 +72,40 @@ final class FloatingPanel: NSPanel, NSTextFieldDelegate {
         let margin: CGFloat = 24
         let visible = screen.visibleFrame
         setFrameOrigin(NSPoint(x: visible.maxX - frame.width - margin, y: visible.minY + margin))
+    }
+
+    /// Click → talk: try on-device voice; if it's unavailable (e.g. `swift run`
+    /// with no .app bundle, or permission denied) fall back to typing. A second
+    /// click while listening cancels.
+    private func handleClick() {
+        guard !busy else { return }
+        if listening { speech.cancel(); listening = false; character.state = .idle; return }
+        Task { [weak self] in
+            guard let self else { return }
+            self.listening = true
+            self.character.state = .listening
+            self.bubble.stringValue = "Listening… speak your question."
+            do {
+                try await self.speech.start(
+                    onPartial: { [weak self] text in self?.bubble.stringValue = text.isEmpty ? "Listening…" : text },
+                    onFinal: { [weak self] text in self?.onHeard(text) }
+                )
+            } catch SpeechCapture.CaptureError.offDeviceUnavailable {
+                self.listening = false
+                self.bubble.stringValue = "On-device speech isn't available for your language — type instead."
+                self.revealInput()
+            } catch {
+                self.listening = false
+                self.revealInput() // no bundle / denied / busy → typing
+            }
+        }
+    }
+
+    private func onHeard(_ text: String) {
+        listening = false
+        let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty { character.state = .idle; bubble.stringValue = "I didn't catch that — click me to try again."; return }
+        submit(q)
     }
 
     private func revealInput() {

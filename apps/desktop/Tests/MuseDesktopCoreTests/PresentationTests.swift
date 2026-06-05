@@ -96,3 +96,30 @@ final class SpriteLibraryTests: XCTestCase {
         }
     }
 }
+
+final class VoiceGateTests: XCTestCase {
+    private func decide(usage: Bool = true, speech: Bool = true, mic: Bool = true, avail: Bool = true, onDevice: Bool = true) -> VoiceStart {
+        VoiceGate.decide(usageStringsPresent: usage, speechAuthorized: speech, micAuthorized: mic, recognizerAvailable: avail, supportsOnDevice: onDevice)
+    }
+
+    func testListensWhenEverythingIsReady() {
+        XCTAssertEqual(decide(), .listen)
+    }
+
+    func testNoBundleUsageStringsFallsBackToTextWithoutAsking() {
+        // The crash-prevention invariant: a bare `swift run` (no usage strings) must NOT request auth.
+        XCTAssertEqual(decide(usage: false), .fallbackToText)
+        // even if other inputs would otherwise allow listening
+        XCTAssertEqual(decide(usage: false, speech: false, mic: false), .fallbackToText)
+    }
+
+    func testDeniedOrUnavailableFallsBackToText() {
+        XCTAssertEqual(decide(speech: false), .fallbackToText)
+        XCTAssertEqual(decide(mic: false), .fallbackToText)
+        XCTAssertEqual(decide(avail: false), .fallbackToText)
+    }
+
+    func testRefusesRatherThanUseTheNetworkWhenOnDeviceUnavailable() {
+        XCTAssertEqual(decide(onDevice: false), .refuseOffDevice)
+    }
+}

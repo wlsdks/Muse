@@ -19,8 +19,9 @@ swift run MuseDesktop          # the companion appears bottom-right; drag it any
 
 - The CLI is found as `muse` on your `PATH`. Override with `MUSE_BIN`
   (e.g. `MUSE_BIN="node /abs/path/to/apps/cli/dist/index.js" swift run MuseDesktop`).
-- Click the character → a text field appears → ask about your notes → the cited
-  answer shows in the speech bubble and is read aloud.
+- Click the character → **speak your question** (on-device; from the `.app`
+  bundle) → she answers in the bubble and reads it aloud. In a bare `swift run`
+  (no mic permission) a click opens a **text field** instead.
 - **Pick a character**: `MUSE_DESKTOP_CHARACTER=aria` (default — a girl with
   headphones, enjoying the music) or `=celestial` (an ethereal starlit Muse) —
   or switch live from the **menu-bar ♪ → Character**.
@@ -63,5 +64,8 @@ swift run MuseDesktop --render out.png 24   # render the Muse sprite to a PNG (n
    Accessibility permission needed), and a real **`.app` bundle**
    (`scripts/make-app.sh` → `MuseDesktop.app` with a stable bundle id + the
    mic/speech usage strings, so voice can get permission).
-5. **Voice input**: click → push-to-talk (speak your question) — on-device
-   speech (`SFSpeechRecognizer`, needs the `.app` from step 4).
+5. **(done)** Voice input: click Muse → push-to-talk (speak your question) →
+   on-device `SFSpeechRecognizer` (`requiresOnDeviceRecognition` — your voice
+   never leaves the Mac; refuses rather than use the network) → she answers and
+   reads it aloud. Needs the `.app` from step 4 for the mic permission; in a
+   bare `swift run` she gracefully falls back to the text field.
