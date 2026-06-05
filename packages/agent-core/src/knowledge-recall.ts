@@ -427,6 +427,67 @@ export function classifyRetrievalConfidence(
   return borderlineTop && flatDistribution ? "ambiguous" : "confident";
 }
 
+// Near-tie band (cosine units) for the clarify gate. Two DISTINCT sources whose
+// top cosines sit within this band are "equally relevant" — the open question is
+// WHICH the user meant, not whether the corpus covers it. Tight (vs
+// CONFIDENCE_MIN_MARGIN's 0.08) so only a genuine tie fires, never a clear lead;
+// calibrated against nomic's compressed cosine space.
+const DEFAULT_CLARIFY_TIE_MARGIN = 0.03;
+
+export interface RecallClarification {
+  /** True when distinct sources are equally-strong enough that asking beats guessing. */
+  readonly clarify: boolean;
+  /** The distinct divergent sources to offer, strongest first (empty unless `clarify`). */
+  readonly sources: readonly string[];
+  /** Why it did or didn't fire — for logging / tests. */
+  readonly reason: string;
+}
+
+/**
+ * Expected-information-gain gate (Lindley 1956, "On a Measure of the Information
+ * Provided by an Experiment"; Howard 1966, value of perfect information): when
+ * several retrieved sources are each independently strong, come from DISTINCT
+ * sources, and are nearly TIED, the residual uncertainty is over WHICH reading
+ * the user meant — so a single clarifying question carries the highest expected
+ * information gain, more than silently answering the top one (it may be the wrong
+ * reading) or abstaining (the corpus DOES cover it). One dominant source ⇒ low
+ * entropy ⇒ just answer; nothing strong ⇒ abstain. Pure + deterministic so the
+ * small model can't flake the decision — the THIRD arm of the recall wedge
+ * (answer / clarify / abstain), alongside `classifyRetrievalConfidence`.
+ */
+export function decideRecallClarification(
+  matches: readonly KnowledgeMatch[],
+  options?: { readonly confidentAt?: number; readonly tieMargin?: number; readonly maxSources?: number }
+): RecallClarification {
+  const confidentAt = finiteOr(options?.confidentAt, DEFAULT_CONFIDENT_AT);
+  const tieMargin = Math.max(0, finiteOr(options?.tieMargin, DEFAULT_CLARIFY_TIE_MARGIN));
+  const maxSources = Math.max(2, Math.trunc(finiteOr(options?.maxSources, 3)));
+  // Best score per DISTINCT source: several chunks of the SAME note are one
+  // candidate, not a tie — there is no ambiguity within a single source.
+  const bestBySource = new Map<string, number>();
+  for (const match of matches) {
+    const value = match.cosine ?? match.score;
+    const prev = bestBySource.get(match.source);
+    if (prev === undefined || value > prev) bestBySource.set(match.source, value);
+  }
+  const strong = [...bestBySource.entries()]
+    .filter(([, value]) => value >= confidentAt)
+    .sort((left, right) => right[1] - left[1]);
+  if (strong.length < 2) {
+    return { clarify: false, reason: strong.length === 1 ? "one dominant source — answer it" : "no strong source — abstain", sources: [] };
+  }
+  const top = strong[0]![1];
+  const tied = strong.filter(([, value]) => top - value <= tieMargin);
+  if (tied.length < 2) {
+    return { clarify: false, reason: "top source clearly leads — answer it", sources: [] };
+  }
+  return {
+    clarify: true,
+    reason: `${tied.length.toString()} distinct sources within ${tieMargin.toString()} of the top — high expected information gain from clarifying`,
+    sources: tied.slice(0, maxSources).map(([source]) => source)
+  };
+}
+
 export function renderKnowledgeMatches(matches: readonly KnowledgeMatch[], options?: { readonly confidentAt?: number }): string {
   if (matches.length === 0) {
     return "No matching passages found in the personal corpus.";

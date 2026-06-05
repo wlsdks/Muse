@@ -7,6 +7,7 @@ import {
   classifyRetrievalConfidence,
   createAgentRuntime,
   createKnowledgeSearchTool,
+  decideRecallClarification,
   edgeLoadByRelevance,
   lexicalTokens,
   rankKnowledgeChunks,
@@ -229,6 +230,58 @@ describe("classifyRetrievalConfidence — CRAG verdict (arXiv 2401.15884)", () =
 
   it("margin guard: a single borderline match has no runner-up, so it is not 'flat' — stays confident", () => {
     expect(classifyRetrievalConfidence([m(0.57)])).toBe("confident");
+  });
+});
+
+describe("decideRecallClarification — EVPI/EIG third arm (Lindley 1956; Howard 1966)", () => {
+  const at = (source: string, cosine: number) => ({ cosine, score: 0.02, source, text: `t-${source}` });
+
+  it("clarifies when two DISTINCT sources are both strong AND near-tied (high information gain)", () => {
+    const out = decideRecallClarification([at("a.md", 0.62), at("b.md", 0.61)]);
+    expect(out.clarify).toBe(true);
+    expect(out.sources).toEqual(["a.md", "b.md"]); // strongest first
+  });
+
+  it("does NOT clarify when one source clearly dominates (low entropy — just answer)", () => {
+    expect(decideRecallClarification([at("a.md", 0.70), at("b.md", 0.58)]).clarify).toBe(false);
+  });
+
+  it("does NOT clarify when only one source is strong (no tie to resolve)", () => {
+    expect(decideRecallClarification([at("a.md", 0.62), at("b.md", 0.40)]).clarify).toBe(false);
+  });
+
+  it("does NOT clarify when no source clears the confident bar (abstain territory, not clarify)", () => {
+    const out = decideRecallClarification([at("a.md", 0.50), at("b.md", 0.49)]);
+    expect(out.clarify).toBe(false);
+    expect(out.reason).toMatch(/no strong source/);
+  });
+
+  it("collapses several chunks of the SAME note into ONE candidate — not a self-tie", () => {
+    // two near-tied chunks but both from a.md: one source, no ambiguity.
+    expect(decideRecallClarification([at("a.md", 0.62), at("a.md", 0.61)]).clarify).toBe(false);
+  });
+
+  it("offers at most maxSources distinct divergent sources, strongest first", () => {
+    const out = decideRecallClarification(
+      [at("a.md", 0.64), at("b.md", 0.63), at("c.md", 0.625), at("d.md", 0.62)],
+      { maxSources: 2 }
+    );
+    expect(out.clarify).toBe(true);
+    expect(out.sources).toEqual(["a.md", "b.md"]);
+  });
+
+  it("a wider tieMargin pulls a farther runner-up into the tie; a tight one excludes it", () => {
+    const matches = [at("a.md", 0.62), at("b.md", 0.57)]; // 0.05 apart
+    expect(decideRecallClarification(matches, { tieMargin: 0.06 }).clarify).toBe(true);
+    expect(decideRecallClarification(matches, { tieMargin: 0.02 }).clarify).toBe(false);
+  });
+
+  it("falls back to score when cosine is absent, and a non-finite tieMargin uses the default", () => {
+    expect(decideRecallClarification([
+      { score: 0.62, source: "a.md", text: "t" },
+      { score: 0.61, source: "b.md", text: "t" }
+    ]).clarify).toBe(true);
+    expect(decideRecallClarification([at("a.md", 0.62), at("b.md", 0.61)], { tieMargin: Number.NaN }).clarify).toBe(true);
   });
 });
 

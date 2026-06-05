@@ -143,6 +143,7 @@ export {
   classifyRetrievalConfidence,
   createCachingEmbedder,
   citedSourcesIn,
+  decideRecallClarification,
   bm25Scores,
   createKnowledgeSearchTool,
   edgeLoadByRelevance,
@@ -181,6 +182,7 @@ export {
   type KnowledgeMatch,
   type KnowledgeSearchToolOptions,
   type RankKnowledgeOptions,
+  type RecallClarification,
   type RetrievalConfidence,
   type VerifyGroundingOptions
 } from "./knowledge-recall.js";

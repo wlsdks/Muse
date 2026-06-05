@@ -27,7 +27,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -3136,6 +3136,23 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             tasks: openTasks.map((t) => t.title)
           });
           if (moreReceipts) io.stderr(moreReceipts);
+        }
+      }
+
+      // EVPI / expected-information-gain (Lindley 1956; Howard 1966): when the
+      // notes hold several EQUALLY-strong but DISTINCT matches, the residual
+      // uncertainty is over WHICH the user meant — a single clarifying question
+      // has higher expected value than silently answering the top one (which may
+      // be the wrong reading). Surface the divergent sources so the user can
+      // disambiguate; the best-effort answer above still stands. Deterministic
+      // (no model call), suppressed on a refusal (already says "I'm not sure").
+      if (!options.json && !answerIsRefusal(collectedAnswer)) {
+        const clarification = decideRecallClarification(
+          scored.map((r) => ({ cosine: r.score, score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text }))
+        );
+        if (clarification.clarify) {
+          const offered = clarification.sources.map((s) => `[${s}]`).join(", ");
+          io.stderr(`\n⚖️ Your notes gave a few equally-strong but different matches — did you mean ${offered}? Re-ask naming one for a single grounded answer.\n`);
         }
       }
 

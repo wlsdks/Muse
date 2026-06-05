@@ -555,6 +555,42 @@ P43 bullet is unbuilt.
   Honest scope: time-of-day (note-edit) patterns; weekly-TASK lapse + auto-delivery through the daemon
   are follow-ons. (22cfb15a)
 
+- [x] **P43-11 `muse ask` now CLARIFIES instead of guessing when your notes hold several
+  equally-strong but DIFFERENT matches ("⚖️ did you mean [apollo-cat.md], [apollo-project.md]? Re-ask
+  naming one"), rather than silently answering from one — possibly the wrong — interpretation.** SIXTH
+  slice of the cross-field research direction (after MVT P38-42, stigmergy P42-13, allostasis P43-9,
+  k-shell P42-14, CUSUM P43-10), on a DIFFERENT axis (interaction/front-door) from the churned
+  pattern-detector + notes-graph work. The mechanism: EXPECTED INFORMATION GAIN / value of information
+  (Lindley, "On a Measure of the Information Provided by an Experiment", Ann. Math. Statist. 27:986-1005,
+  1956; Howard, "Information Value Theory", IEEE Trans. SSC 2:22-26, 1966 — EVPI) — a clarifying question
+  is worth asking exactly when the residual uncertainty over candidate interpretations is high, i.e. when
+  several distinct candidates are near-tied; if one dominates (low entropy) you just act, and if nothing
+  is credible you abstain. Faithfully distilled into the THIRD ARM of the recall wedge (answer / CLARIFY
+  / abstain), beside `classifyRetrievalConfidence`'s answer-vs-abstain: a pure
+  `decideRecallClarification(matches, {confidentAt, tieMargin, maxSources})` in
+  packages/agent-core/src/knowledge-recall.ts keeps the best score per DISTINCT source (several chunks of
+  one note are one candidate, not a tie) and fires only when ≥2 distinct sources each clear the confident
+  bar (0.55) AND sit within a tight tie-margin (0.03) of the top — genuinely divergent, not a clear lead.
+  Wired into `muse ask` (apps/cli/src/commands-ask.ts) as an ADDITIVE advisory footer beside the existing
+  grounding-verdict / staleness beats: the best-effort answer still stands (no suppression → no regression
+  to the core answer/abstain wedge), it names the divergent sources so the user can disambiguate, it is
+  DETERMINISTIC (no model call on the load-bearing decision, so the small model can't flake it), and it is
+  suppressed on a refusal (which already says "I'm not sure"). This fills a previously-SILENT gap — two
+  strong divergent notes classify as `confident`, so today Muse answers from the top one with no signal
+  that another reading was equally supported. Verified deterministically AND live: 8 unit tests
+  (clarifies on two near-tied distinct strong sources; does NOT when one dominates / only one is strong /
+  none clears the bar; collapses same-note chunks into one candidate; honours maxSources + a wider/tighter
+  tieMargin; score-fallback + non-finite-margin default — packages/agent-core/test/knowledge-recall-agent.
+  test.ts) + the FULL cross-package `pnpm check` (every workspace green: agent-core 1468, cli 2182, mcp
+  1542, memory 336, api 849, shared 30 …) + tsc + `pnpm lint` 0/0 + 0 raw control bytes + a FULL LIVE run
+  on the loop PC (qwen3:8b + nomic-embed): a two-note corpus where "Apollo" names both a cat and an
+  engineering project → `muse ask "Apollo"` printed "⚖️ Your notes gave a few equally-strong but different
+  matches — did you mean [apollo-cat.md], [apollo-project.md]? Re-ask naming one for a single grounded
+  answer.", while the single-source query "billing system migration project" (apollo-project 0.88 vs
+  apollo-cat 0.33) printed NO clarify — the gate discriminates, it is not always-on. Honest scope:
+  notes-source ambiguity (the advisory is scoped to note matches, not tasks/events/contacts); it advises,
+  it does not yet drive an interactive follow-up turn. (a6b34205)
+
 - [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
   and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
   The evening recap (P43-4) is the retrospective sibling of the morning brief, and its
