@@ -30,11 +30,12 @@ public enum MuseBridge {
         return "muse"
     }
 
-    /// Build the invocation for a grounded answer. Local-first BY CONSTRUCTION:
-    /// `--local` is always present, so the companion can never route a question
-    /// to a cloud model — the MUSE_LOCAL_ONLY posture holds end-to-end.
+    /// Build the invocation for a grounded answer. `muse ask` is a RAG-grounded
+    /// one-shot that runs on the LOCAL Qwen by default (and the system-wide
+    /// MUSE_LOCAL_ONLY posture is default-on), so the companion's answers stay
+    /// on-device — no flag needed (and `ask` rejects `--local`, that's `chat`).
     public static func invocation(query: String, bin: String) -> MuseInvocation {
-        MuseInvocation(executable: bin, arguments: ["ask", "--local", query])
+        MuseInvocation(executable: bin, arguments: ["ask", query])
     }
 
     /// Strip ANSI escape codes + surrounding whitespace from the CLI's stdout so

@@ -21,6 +21,20 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$EXE"
 
+# A Finder/`open`-launched .app inherits a minimal PATH (no `muse`), so bake an
+# absolute CLI launcher + point MUSE_BIN at it via LSEnvironment, so clicking the
+# orb actually reaches the local Muse runtime.
+REPO="$(cd ../.. && pwd)"
+NODE="$(command -v node || echo /usr/bin/env\ node)"
+CLI="$REPO/apps/cli/dist/index.js"
+WRAPPER="$APP/Contents/Resources/muse-cli"
+cat > "$WRAPPER" <<WRAP
+#!/bin/bash
+exec "$NODE" "$CLI" "\$@"
+WRAP
+chmod +x "$WRAPPER"
+MUSE_BIN_ABS="$(cd "$APP/Contents/Resources" && pwd)/muse-cli"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -35,6 +49,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
+  <key>LSEnvironment</key><dict><key>MUSE_BIN</key><string>${MUSE_BIN_ABS}</string></dict>
   <key>NSMicrophoneUsageDescription</key><string>Muse listens to your voice so you can ask about your notes hands-free. Audio is transcribed on-device and never leaves your Mac.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Muse turns your spoken question into text on-device. Your speech never leaves your Mac.</string>
   <key>NSHumanReadableCopyright</key><string>(c) 2026</string>

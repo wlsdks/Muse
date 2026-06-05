@@ -38,29 +38,7 @@ enum VoiceOrb {
             }
         }
 
-        // 3D sphere: a radial gradient whose bright start is offset up-left,
-        // with cyan + pink tints blended inside for an iridescent shimmer.
-        let hx = cx - r * 0.30, hy = cy + r * 0.32
-        ctx.saveGState()
-        ctx.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
-        ctx.clip()
-        if let grad = gradient([light, mid, deep], [0, 0.55, 1]) {
-            ctx.drawRadialGradient(grad, startCenter: CGPoint(x: hx, y: hy), startRadius: 0,
-                                   endCenter: CGPoint(x: cx, y: cy), endRadius: r,
-                                   options: [.drawsAfterEndLocation])
-        }
-        radial(ctx, center: CGPoint(x: cx - r * 0.35, y: cy + r * 0.35), r0: 0, r1: r * 0.95,
-               colors: [cyanTint.withAlphaComponent(0.40), cyanTint.withAlphaComponent(0)], locations: [0, 1])
-        radial(ctx, center: CGPoint(x: cx + r * 0.42, y: cy - r * 0.42), r0: 0, r1: r * 1.0,
-               colors: [pinkTint.withAlphaComponent(0.34), pinkTint.withAlphaComponent(0)], locations: [0, 1])
-        ctx.restoreGState()
-
-        // glassy rim + specular highlight
-        ctx.setLineWidth(1.5)
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.22).cgColor)
-        ctx.strokeEllipse(in: CGRect(x: cx - r + 1, y: cy - r + 1, width: r * 2 - 2, height: r * 2 - 2))
-        radial(ctx, center: CGPoint(x: hx, y: hy), r0: 0, r1: r * 0.40,
-               colors: [NSColor.white.withAlphaComponent(0.8), NSColor.white.withAlphaComponent(0)], locations: [0, 1])
+        sphere(ctx, cx: cx, cy: cy, r: r)
 
         // thinking: a small bright bead orbiting the rim
         if state == .thinking {
@@ -69,6 +47,42 @@ enum VoiceOrb {
             radial(ctx, center: CGPoint(x: bx, y: by), r0: 0, r1: r * 0.22,
                    colors: [accent.withAlphaComponent(0.9), accent.withAlphaComponent(0)], locations: [0, 1])
         }
+    }
+
+    /// The iridescent 3D sphere itself (gradient + cyan/pink tints + rim +
+    /// specular). Shared by `draw` and the menu-bar `icon`.
+    private static func sphere(_ ctx: CGContext, cx: CGFloat, cy: CGFloat, r: CGFloat) {
+        let hx = cx - r * 0.30, hy = cy + r * 0.32
+        ctx.saveGState()
+        ctx.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
+        ctx.clip()
+        if let grad = gradient([light, mid, deep], [0, 0.55, 1]) {
+            ctx.drawRadialGradient(grad, startCenter: CGPoint(x: hx, y: hy), startRadius: 0,
+                                   endCenter: CGPoint(x: cx, y: cy), endRadius: r, options: [.drawsAfterEndLocation])
+        }
+        radial(ctx, center: CGPoint(x: cx - r * 0.35, y: cy + r * 0.35), r0: 0, r1: r * 0.95,
+               colors: [cyanTint.withAlphaComponent(0.40), cyanTint.withAlphaComponent(0)], locations: [0, 1])
+        radial(ctx, center: CGPoint(x: cx + r * 0.42, y: cy - r * 0.42), r0: 0, r1: r * 1.0,
+               colors: [pinkTint.withAlphaComponent(0.34), pinkTint.withAlphaComponent(0)], locations: [0, 1])
+        ctx.restoreGState()
+
+        ctx.setLineWidth(max(1, r * 0.06))
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.22).cgColor)
+        ctx.strokeEllipse(in: CGRect(x: cx - r + 1, y: cy - r + 1, width: r * 2 - 2, height: r * 2 - 2))
+        radial(ctx, center: CGPoint(x: hx, y: hy), r0: 0, r1: r * 0.40,
+               colors: [NSColor.white.withAlphaComponent(0.8), NSColor.white.withAlphaComponent(0)], locations: [0, 1])
+    }
+
+    /// A small orb image for the menu-bar status item — Muse, recognizable.
+    static func icon(diameter: CGFloat = 18) -> NSImage {
+        let image = NSImage(size: NSSize(width: diameter, height: diameter))
+        image.lockFocus()
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            ctx.setShouldAntialias(true)
+            sphere(ctx, cx: diameter / 2, cy: diameter / 2, r: diameter / 2 - 1)
+        }
+        image.unlockFocus()
+        return image
     }
 
     private static func gradient(_ colors: [NSColor], _ locations: [CGFloat]) -> CGGradient? {

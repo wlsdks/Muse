@@ -32,8 +32,11 @@ final class MuseController: NSObject {
 
     private func installMenuBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "\u{266A}" // ♪
-        item.button?.toolTip = "Muse"
+        // The glowing orb itself, so Muse is recognizable in the menu bar.
+        let icon = VoiceOrb.icon(diameter: 18)
+        icon.isTemplate = false
+        item.button?.image = icon
+        item.button?.toolTip = "Muse — click for options (⌃⌥Space to show/hide)"
 
         let menu = NSMenu()
         add(menu, "Show / Hide Muse  (⌃⌥Space)", #selector(toggleFromMenu))

@@ -1114,6 +1114,17 @@ user-verified — a window can't be auto-asserted headlessly).
   from the menu bar + `MUSE_DESKTOP_CHARACTER`. Iterated visually via new headless `--render-orb` /
   `--render-vector` modes. Verified: `swift build` + `swift test` 24 + launch (orb default) + `pnpm lint`
   0/0 + I inspected the final renders (a premium glowing sphere). Animation user-verified via `swift run`._
+- [x] **P45-8 The companion ACTUALLY ANSWERS now (a real bug, caught by running it), shows the glowing
+  orb in the MENU BAR, and the `.app` reaches the local runtime.** (0cdc41c3) Jinan: "여기에도 muse가 나오게
+  + 니가 컨트롤해봐줘야지 계속 틀어놓고". Running it for real surfaced that MuseBridge called `muse ask --local`
+  but `ask` is local-by-default and REJECTS `--local` (a `chat` flag) → every orb click errored and it
+  never answered; fixed to `muse ask <query>` (verified live: a real round-trip returned a grounded
+  answer). Menu-bar status item is now the glowing `VoiceOrb.icon` (was a ♪). `make-app.sh` bakes an
+  absolute CLI wrapper + `MUSE_BIN` via Info.plist `LSEnvironment` so a Finder-launched `.app` (minimal
+  PATH) reaches `muse`. Verified: `swift build` + `swift test` 24 + the real end-to-end `ask` via the baked
+  wrapper returns a grounded answer + `pnpm lint` 0/0; Muse is RUNNING on the loop PC. LESSON: arg-building
+  unit tests + launch-no-crash passed while the real CLI call was broken — a GUI bridge needs an
+  end-to-end round-trip, not just arg assertions._
 - [x] **P44-1 `muse memory encrypt` encrypts your user-memory at rest.** The
   most sensitive store (facts / preferences / the typed user model) can now be
   AES-256-GCM encrypted, so a stolen/seized laptop or a leaked backup can't read

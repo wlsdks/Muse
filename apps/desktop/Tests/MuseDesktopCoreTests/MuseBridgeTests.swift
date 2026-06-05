@@ -2,12 +2,12 @@ import XCTest
 @testable import MuseDesktopCore
 
 final class MuseBridgeTests: XCTestCase {
-    func testInvocationIsLocalFirstByConstruction() {
+    func testInvocationCallsLocalAsk() {
         let invocation = MuseBridge.invocation(query: "what's my office VPN MTU?", bin: "muse")
         XCTAssertEqual(invocation.executable, "muse")
-        XCTAssertEqual(invocation.arguments, ["ask", "--local", "what's my office VPN MTU?"])
-        // The companion must NEVER be able to reach a cloud model.
-        XCTAssertTrue(invocation.arguments.contains("--local"))
+        // `muse ask` is RAG-grounded on the local Qwen by default (and rejects
+        // `--local`, which is a `chat` flag) — so the args are just ask + query.
+        XCTAssertEqual(invocation.arguments, ["ask", "what's my office VPN MTU?"])
     }
 
     func testDefaultBinHonoursEnvOverride() {
