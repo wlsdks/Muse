@@ -623,6 +623,33 @@ P43 bullet is unbuilt.
   scope: lexical resemblance (catches syndicated/reworded, not a fully synonym-rewritten retelling); the
   `feeds search` / per-feed views are untouched. (84b66443)
 
+- [x] **P43-13 `muse summarize <file>` — an EXTRACTIVE gist of a document: its OWN top sentences,
+  deterministic and local, with a guarantee that NOTHING was invented (every line is verbatim from the
+  source).** EIGHTH slice of the cross-field research direction, on the Perception/documents axis (fresh,
+  non-graph code — dodges the churned recall/notes-graph/pattern AND the graph-centrality theme). The
+  mechanism: LUHN extractive summarization (Luhn, "The Automatic Creation of Literature Abstracts", IBM
+  Journal of R&D 2(2):159-165, 1958 — the founding paper of automatic summarization) — score each sentence
+  by the DENSITY of its significant words: find the tightest cluster of significant (recurring, non-
+  stopword) words and score it sigCount²/windowLength (Luhn's measure), so a sentence packing the
+  document's key terms close together ranks highest. Faithfully distilled into a pure
+  `apps/cli/src/extractive-summary.ts` (`splitSentences` — verbatim, decimal-safe, drops markdown heading
+  lines; `significantWords` — recurring non-stopwords, falling back to all content words for a short text;
+  `luhnSentenceScore`; `rankSentencesByLuhn`; `summarizeExtractive` — top-K in ORIGINAL order so it reads
+  coherently). Wired as `muse summarize <file>` (`--sentences`, `--json`) in commands-summarize.ts +
+  program.ts. The point of difference from `muse ask --file "summarize this"`: that is the model's
+  ABSTRACTIVE (reworded, can-drift) summary; this is EXTRACTIVE — the document's own sentences, so it
+  CANNOT fabricate, true to Muse's "shows its work" / no-fabrication edge, and needs no model (instant,
+  offline, free). Verified deterministically AND live: 11 unit tests (sentence split is verbatim +
+  decimal-safe + empty-safe; Luhn score is 0 with no significant words, rewards a tight cluster, prefers
+  density over raw count; summary picks the densest topic sentence, returns the chosen set in DOCUMENT
+  order, is always a verbatim substring of the source — no fabrication, defaults to 3 + clamps + never
+  over-returns, [] on empty — apps/cli/src/extractive-summary.test.ts) + `pnpm lint` 0/0 + `@muse/shared`
+  byte-hygiene 30 + cli 2203 + 0 raw control bytes + a LIVE run on the loop PC: a quarterly-update doc
+  padded with filler (lunch / weather / donuts) → `muse summarize report.md --sentences 2` extracted the
+  two billing-migration sentences VERBATIM and dropped every filler line; the markdown heading no longer
+  glues onto the first sentence. Honest scope: file input (a `--url` / stdin source and a per-note
+  `muse notes summarize` are natural follow-ons); English stopword list. (91c9b1ee)
+
 - [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
   and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
   The evening recap (P43-4) is the retrospective sibling of the morning brief, and its
