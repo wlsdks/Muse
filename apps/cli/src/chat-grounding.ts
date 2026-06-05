@@ -227,6 +227,28 @@ function asksAboutStoredFact(question: string, knownFactKeys: readonly string[])
   return FACT_TOPICS.some(([topic, fragments]) => topic.test(question) && fragments.some((frag) => keys.some((key) => key.includes(frag))));
 }
 
+/**
+ * Which stored-fact keys belong in the persona for THIS message. qwen3:8b
+ * free-associates a remembered ENTITY fact (the user's dog) into unrelated
+ * turns, so don't hand it facts the message isn't about. Keep a fact when:
+ *   - it's the user's name (always — needed to address them), OR
+ *   - NO topic covers it (an unknown fact type like "dentist" — keep so recall
+ *     for it still works), OR
+ *   - a topic that covers it MATCHES the message (the user is actually asking
+ *     about it, e.g. "내 강아지?" → dog_name).
+ * A fact a topic covers but the message doesn't ask about is dropped — that's
+ * the dog the model would otherwise drag into "물 왜 중요해?" or "내 이름?".
+ */
+export function factKeysToInject(message: string, allKeys: readonly string[]): string[] {
+  return allKeys.filter((key) => {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === "user_name") return true;
+    const coveringTopics = FACT_TOPICS.filter(([, fragments]) => fragments.some((frag) => lowerKey.includes(frag)));
+    if (coveringTopics.length === 0) return true;
+    return coveringTopics.some(([topic]) => topic.test(message));
+  });
+}
+
 export function gateChatAnswer(
   question: string,
   answer: string,

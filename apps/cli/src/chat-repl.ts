@@ -25,7 +25,7 @@ import type { Command } from "commander";
 
 import { classifyCasualPrompt } from "@muse/agent-core";
 
-import { conversationMatches, gateChatAnswer, groundedNoteSources, isPersonalFactRecall, retrieveChatGrounding, withGroundingReceipt } from "./chat-grounding.js";
+import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
@@ -173,15 +173,10 @@ export function createTuiChatSubmitter(
   };
 }
 
-/**
- * The "ambient" facts safe to inject on EVERY turn — just the user's name, so
- * Muse can address them. Entity facts (pet, dentist, …) are recall-only: kept
- * out of non-recall turns because the local model free-associates them into
- * unrelated answers.
- */
-export function pickIdentityFacts(facts: Readonly<Record<string, string>>): Record<string, string> {
-  const name = facts.user_name;
-  return name === undefined ? {} : { user_name: name };
+/** Keep only the named keys from a fact map (preserving values). */
+export function filterFactsToKeys(facts: Readonly<Record<string, string>>, keys: readonly string[]): Record<string, string> {
+  const allow = new Set(keys);
+  return Object.fromEntries(Object.entries(facts).filter(([key]) => allow.has(key)));
 }
 
 export async function runLocalChat(
@@ -245,12 +240,13 @@ export async function runLocalChat(
     : undefined;
   // qwen3:8b free-associates remembered ENTITY facts into unrelated turns —
   // it volunteered the user's dog in a hydration answer and a "good morning"
-  // (a prompt instruction not to was ignored). So gate deterministically: only
-  // a personal-fact RECALL turn ("what's my dog's name?") gets the full fact
-  // set; every other turn sees just the user's name (needed to address them),
-  // which removes the tangent without weakening recall.
-  const personaMemory = userMemory && !isPersonalFactRecall(message)
-    ? { ...userMemory, facts: pickIdentityFacts(userMemory.facts) }
+  // (a prompt instruction not to was ignored). So gate deterministically by
+  // per-fact topic relevance: keep the name + facts the message is actually
+  // about + facts no topic covers; drop a covered-but-unasked fact (the dog).
+  // This removes the tangent on general/casual AND single-fact recall turns
+  // ("내 이름?") without weakening recall for the fact actually asked about.
+  const personaMemory = userMemory
+    ? { ...userMemory, facts: filterFactsToKeys(userMemory.facts, factKeysToInject(message, Object.keys(userMemory.facts))) }
     : userMemory;
   const userMemoryBlock = personaMemory ? (buildMusePersona(personaMemory, userId) ?? "").trim() : "";
   const personaPreamble = (await loadActivePersonaPreamble().catch(() => "")).trim();

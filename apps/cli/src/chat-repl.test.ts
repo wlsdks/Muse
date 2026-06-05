@@ -1,13 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAgentMode, pickIdentityFacts } from "./chat-repl.js";
+import { filterFactsToKeys, parseAgentMode } from "./chat-repl.js";
+import { factKeysToInject } from "./chat-grounding.js";
 
-describe("pickIdentityFacts (non-recall turns get ONLY the name, no tangent-prone entity facts)", () => {
-  it("keeps user_name, drops entity facts (dog_name, dentist, …)", () => {
-    expect(pickIdentityFacts({ user_name: "진안", dog_name: "보리", dentist: "Dr. Kim" })).toEqual({ user_name: "진안" });
+describe("factKeysToInject (per-fact topic relevance — no tangent, recall preserved)", () => {
+  const keys = ["user_name", "dog_name", "dentist"];
+  it("a general turn keeps only the name (drops the covered-but-unasked dog)", () => {
+    expect(factKeysToInject("물 자주 마시는 게 왜 중요해?", keys)).toEqual(["user_name", "dentist"]);
   });
-  it("returns {} when there is no name to address by", () => {
-    expect(pickIdentityFacts({ dog_name: "보리" })).toEqual({});
+  it("a name-recall turn keeps the name, still drops the unrelated dog", () => {
+    expect(factKeysToInject("내 이름 뭐야?", keys)).toEqual(["user_name", "dentist"]);
+  });
+  it("a dog-recall turn keeps the dog (recall wedge intact)", () => {
+    expect(factKeysToInject("내 강아지 이름 뭐야?", keys)).toEqual(["user_name", "dog_name", "dentist"]);
+  });
+  it("a fact no topic covers (dentist) is always kept so its recall never breaks", () => {
+    expect(factKeysToInject("좋은 아침이야", keys)).toContain("dentist");
+  });
+});
+
+describe("filterFactsToKeys", () => {
+  it("keeps only the allowed keys, preserving values", () => {
+    expect(filterFactsToKeys({ user_name: "진안", dog_name: "보리" }, ["user_name"])).toEqual({ user_name: "진안" });
   });
 });
 
