@@ -107,23 +107,27 @@ describe("auditNoteGraph — orphans + broken links (Zettelkasten hygiene)", () 
     ]);
     const audit = auditNoteGraph(graph);
     expect(audit.orphans).toEqual(["lonely.md"]);
+    expect(audit.terminals).toEqual([]); // every linked-to note here also links out
     expect(audit.brokenLinks).toEqual([{ source: "a.md", target: "ghost" }]);
   });
 
-  it("a fully-connected corpus has no orphans or broken links", () => {
+  it("a fully-connected corpus has no orphans, terminals, or broken links", () => {
     const graph = buildNoteLinkGraph([
       { id: "a.md", body: "[[b]]" },
       { id: "b.md", body: "[[a]]" }
     ]);
-    expect(auditNoteGraph(graph)).toEqual({ brokenLinks: [], orphans: [] });
+    expect(auditNoteGraph(graph)).toEqual({ brokenLinks: [], orphans: [], terminals: [] });
   });
 
-  it("a note that is only linked TO (no outbound) is NOT an orphan", () => {
+  it("a note that is only linked TO (no outbound) is a TERMINAL, not an orphan", () => {
     const graph = buildNoteLinkGraph([
-      { id: "hub.md", body: "[[leaf]]" },
-      { id: "leaf.md", body: "no outbound links" }
+      { id: "hub.md", body: "[[leaf]] and [[stub]]" },
+      { id: "leaf.md", body: "no outbound links" },   // referenced, dead-end
+      { id: "stub.md", body: "also a dead-end" }       // referenced, dead-end
     ]);
-    expect(auditNoteGraph(graph).orphans).toEqual([]); // leaf has a backlink
+    const audit = auditNoteGraph(graph);
+    expect(audit.orphans).toEqual([]);                  // both have a backlink → not orphans
+    expect(audit.terminals).toEqual(["leaf.md", "stub.md"]); // referenced stubs worth expanding (sorted)
   });
 });
 

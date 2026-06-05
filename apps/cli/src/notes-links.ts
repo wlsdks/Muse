@@ -231,23 +231,27 @@ export function linkExpandRefs(args: {
 export interface NoteGraphAudit {
   /** Note ids with no inbound AND no outbound links — disconnected islands. */
   readonly orphans: readonly string[];
+  /** Note ids OTHERS link to but which link OUT to nothing — referenced dead-ends / stubs worth expanding. */
+  readonly terminals: readonly string[];
   /** Outbound `[[targets]]` that resolve to no note in the corpus. */
   readonly brokenLinks: readonly { readonly source: string; readonly target: string }[];
 }
 
 /**
  * Corpus-wide link-graph health (Zettelkasten hygiene): orphan notes (no
- * links in or out — knowledge that's fallen off the graph) and broken
- * links (a `[[target]]` pointing at a note that doesn't exist). Both
+ * links in or out — knowledge that's fallen off the graph), TERMINAL notes
+ * (linked-to but linking nowhere — referenced stubs worth developing), and
+ * broken links (a `[[target]]` pointing at a note that doesn't exist). All
  * sorted for stable output.
  */
 export function auditNoteGraph(graph: NoteLinkGraph): NoteGraphAudit {
   const orphans: string[] = [];
+  const terminals: string[] = [];
   const brokenLinks: { source: string; target: string }[] = [];
   for (const [id, targets] of graph.outbound) {
     const inboundCount = (graph.backlinks.get(noteLinkKey(id)) ?? []).length;
-    if (targets.length === 0 && inboundCount === 0) {
-      orphans.push(id);
+    if (targets.length === 0) {
+      (inboundCount === 0 ? orphans : terminals).push(id);
     }
     for (const target of targets) {
       if (!graph.keyToId.has(target.toLowerCase())) {
@@ -256,8 +260,9 @@ export function auditNoteGraph(graph: NoteLinkGraph): NoteGraphAudit {
     }
   }
   orphans.sort((a, b) => a.localeCompare(b));
+  terminals.sort((a, b) => a.localeCompare(b));
   brokenLinks.sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
-  return { brokenLinks, orphans };
+  return { brokenLinks, orphans, terminals };
 }
 
 /** Resolve a user query (exact id or a name/stem) to a note id present in the graph. */

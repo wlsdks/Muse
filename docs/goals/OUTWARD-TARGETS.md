@@ -2768,6 +2768,27 @@ graph intact as the corpus evolves, so a power-user's Zettelkasten doesn't rot.
   1 note  last edit 120d ago  ⚠ gone cold", and the rest — and `--json` the structured summaries.
   (b2664a99)
 
+- [x] **P42-9 `muse notes graph` now flags TERMINAL notes — notes others link TO but which link OUT
+  to nothing (referenced dead-end stubs worth expanding) — completing the link-graph hygiene
+  diagnostic alongside orphans + broken links.** The audit surfaced orphans (no links in OR out) and
+  broken links, but a note that is REFERENCED yet links nowhere — a stub you keep pointing at but
+  never developed — was invisible: it isn't an orphan (it has a backlink) and isn't a broken link, so
+  it silently fell through (a test even asserted such a leaf is NOT an orphan, but the pattern was
+  never surfaced). Added a `terminals` field to `NoteGraphAudit` + computed it in `auditNoteGraph`
+  (apps/cli/src/notes-links.ts): for each note with zero outbound links, it's an orphan when inbound
+  is also zero, else a TERMINAL (inbound > 0) — sorted, stable. `muse notes graph` renders a new "⚠ N
+  terminal note(s) (linked-to but linking nowhere — stubs worth expanding)" section (and `--json`
+  carries `terminals` automatically). Read-only + deterministic (no model). This SELECTED slice was
+  the runner-up of the second code-grounded direction-review workflow (the synthesis said "build it
+  next if the calendar fix is taken"). Verified: notes-links audit tests (a referenced no-outbound
+  note is a TERMINAL not an orphan, two sorted; a fully-connected corpus has empty
+  orphans/terminals/brokenLinks; the orphan+broken case has no terminals — apps/cli/src/
+  notes-links.test.ts) + the full @muse/cli suite (185 files / 2107 tests) + tsc build + `pnpm lint`
+  0/0 + 0 raw control bytes + a LIVE run on the loop PC: a corpus where hub.md links to [[concepts]]
+  (a no-outbound stub) + [[ghost]] (broken) and lonely.md is an island → `muse notes graph` printed
+  "⚠ 1 broken link(s): hub.md → [[ghost]]", "⚠ 1 orphan note(s): lonely.md", and "⚠ 1 terminal note(s)
+  …: concepts.md" — all three categories correctly distinguished. (abcee050)
+
 - [x] **P42-7 `muse notes related <note>` — find notes SEMANTICALLY related to one (embedding
   similarity), discovering connections the explicit [[wiki-links]] missed.** The note graph handled
   EXPLICIT links (P42-1..5: links/graph/backlinks) and recall does QUERY→note search, but nothing

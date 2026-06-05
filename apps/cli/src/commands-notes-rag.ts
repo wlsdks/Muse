@@ -794,7 +794,7 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
 
   notes
     .command("graph")
-    .description("Audit the note link graph — orphan notes (no [[links]] in or out) and broken links (targets that don't resolve). Zettelkasten hygiene. Read-only, deterministic.")
+    .description("Audit the note link graph — orphan notes (no [[links]] in or out), terminal notes (linked-to but linking nowhere — stubs worth expanding), and broken links (targets that don't resolve). Zettelkasten hygiene. Read-only, deterministic.")
     .option("--dir <path>", "Notes directory (default MUSE_NOTES_DIR or ~/.muse/notes)")
     .option("--json", "Print JSON instead of formatted text")
     .action(async (options: { readonly dir?: string; readonly json?: boolean }) => {
@@ -820,6 +820,14 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
         io.stdout(`  ⚠ ${audit.orphans.length.toString()} orphan note(s) (no links in or out):\n`);
         for (const orphan of audit.orphans) {
           io.stdout(`    ${orphan}\n`);
+        }
+      }
+      if (audit.terminals.length === 0) {
+        io.stdout("  ✓ no terminal notes\n");
+      } else {
+        io.stdout(`  ⚠ ${audit.terminals.length.toString()} terminal note(s) (linked-to but linking nowhere — stubs worth expanding):\n`);
+        for (const terminal of audit.terminals) {
+          io.stdout(`    ${terminal}\n`);
         }
       }
     });
