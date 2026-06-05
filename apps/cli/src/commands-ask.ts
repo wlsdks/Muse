@@ -53,6 +53,7 @@ import { readClipboardText } from "./clipboard-reader.js";
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
 import { countdownDays, detectCountdownQuery, formatCountdown } from "./countdown-query.js";
+import { detectDateDiffQuery, formatDateDiff } from "./date-diff-query.js";
 import { escapeSystemPromptMarkers } from "./prompt-escape.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
 import { convertUnit, detectUnitConversion, formatConversion } from "./unit-conversion.js";
@@ -1658,6 +1659,20 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             return;
           }
         }
+      }
+
+      // A pure date-DIFFERENCE question ("how many days between June 1 and Aug 15",
+      // "how long from X to Y"). The 8B is confidently off-by-one; count it EXACTLY
+      // from literal dates. Precision-first: both endpoints must parse, else recall.
+      const dateDiff = detectDateDiffQuery(query, new Date());
+      if (dateDiff) {
+        const answer = formatDateDiff(dateDiff);
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ answer, dateDiff: { days: dateDiff.days, from: dateDiff.from.toISOString(), to: dateDiff.to.toISOString(), unit: dateDiff.unit }, query })}\n`);
+        } else {
+          io.stdout(`${answer}\n`);
+        }
+        return;
       }
 
       // A pure UNIT-conversion question ("how many km in 5 miles?", "100F in C?")

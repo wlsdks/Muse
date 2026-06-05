@@ -2345,6 +2345,33 @@ in the loop.
   Monday, March 1, 2027" (8B 245), `"how many weeks until Christmas?"` → "about 29 weeks …",
   `--json "days until June 20"` → exact JSON, and the negative `"how many days are in February?"` → NOT
   hijacked (recall). (655c510c)
+
+- [x] **P41-34 `muse ask "how many days between June 1 and August 15?"` now answers the EXACT date
+  difference — FIXING the 8B's confidently-off-by-one ("how many days from 2026-03-01 to 2026-11-20?"
+  → it said 263, the answer is 264).** Distinct from the COUNTDOWN fast-path (P41-29, which counts from
+  NOW to a date): this counts between two GIVEN dates. I verified the gap live first — the 8B is
+  reliable on percentage-change and base conversion (so NO fast-path for those) but is confidently
+  off-by-one on a date span, which is a fabrication-class error a trust-first assistant should not
+  give. Added a pure date-difference fast-path (apps/cli/src/date-diff-query.ts) with its OWN LITERAL
+  date parser (NOT the reminder grammar, which rolls a past month-day forward to its next occurrence —
+  wrong for a between-two-dates span): `parseLiteralDate` reads ISO `YYYY-MM-DD`, "Month Day[, Year]" /
+  "Day Month [Year]", and today/tomorrow/yesterday, treating a bare "June 1" as THIS year and rolling a
+  `from→to` span forward a year when the end precedes the start (Dec 20 → Jan 5). `detectDateDiffQuery`
+  recognises "how many days/weeks/months between X and Y" and "how long from X to Y", computes the
+  exact day count (weeks/months derived), and is precision-first — BOTH endpoints must parse as literal
+  dates, so a non-date "between" question ("how long between meetings is healthy?") falls through to
+  recall. Disjoint from countdown's regex, so "how many days until Christmas" still routes to countdown.
+  NO model call, NO retrieval. Verified deterministically AND live: 8 tests (between bare month-days =
+  75; ISO span = 264 where the 8B said 263; weeks 364→52 + "how long"; the Dec→Jan year-roll = 16 with
+  to-year 2027; null on a countdown / non-date "between" / unparseable; formatDateDiff days/weeks/1-day
+  — apps/cli/src/date-diff-query.test.ts) + @muse/cli 185 files / 2113 tests + tsc build + `pnpm lint`
+  0/0 + LIVE on the loop PC: `"how many days from 2026-03-01 to 2026-11-20?"` → "264 days …" (the 8B's
+  263 corrected), `"between June 1 and August 15?"` → "75 days …", `"from December 20 to January 5?"` →
+  "16 days … January 5, 2027" (year-rolled), `--json` weeks, `"how many days until 2026-12-25?"` still
+  the countdown ("203 days until …"), and the negative `"how long between meetings is healthy?"` → NOT
+  hijacked (recall). (067e5ff7)
+
+- [x] **P41-26 `muse ask "how many km in 5 miles?"` / "what's 100F in C?" now answers the EXACT
   conversion deterministically — the third deterministic "compute it, don't let the 8B guess" lever
   (after arithmetic P41-20 and dates P41-25), per the small-model-maximization focus.** The local
   8B miscalculates unit conversions — temperature especially, which needs a FORMULA not a factor.
