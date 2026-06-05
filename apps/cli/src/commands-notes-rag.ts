@@ -27,7 +27,7 @@ import type { Command } from "commander";
 import { parsePdfBuffer } from "./commands-read.js";
 import { embed } from "./embed.js";
 import { classifyNoteContradiction, formatNoteConflicts, selectConflictCandidatePairs, selectSemanticConflictCandidatePairs, type ConflictNote, type NoteConflict } from "./note-conflicts.js";
-import { readTrails, resolveTrailsFile, topCoRecalled } from "./recall-trail.js";
+import { coreShellRanking, readTrails, resolveTrailsFile, topCoRecalled } from "./recall-trail.js";
 import type { ProgramIO } from "./program.js";
 
 export const DEFAULT_EMBED_MODEL = "nomic-embed-text";
@@ -1045,6 +1045,32 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
       io.stdout(`Notes recalled together with ${rel(targetPath)}:\n`);
       for (const partner of partners) {
         io.stdout(`  ${rel(partner.noteId)}  (trail ${partner.strength.toFixed(2)})\n`);
+      }
+    });
+
+  notes
+    .command("hubs")
+    .description("Show your structural knowledge HUBS — the load-bearing notes at the dense CORE of your co-recall graph (k-shell decomposition; the deepest-core note, not the most-co-recalled, is the real hub). Builds on `notes trails`; read-only. Use to find what your knowledge centres on; not for one note's neighbours (that is `notes trails`).")
+    .option("--limit <n>", "How many hub notes to show (default 10)")
+    .option("--json", "Print JSON instead of formatted text")
+    .action(async (options: { readonly limit?: string; readonly json?: boolean }) => {
+      const dir = resolveNotesDir(process.env as Record<string, string | undefined>);
+      const limit = options.limit !== undefined && Number.isFinite(Number(options.limit))
+        ? Math.max(1, Math.trunc(Number(options.limit)))
+        : 10;
+      const rel = (path: string): string => pathRelative(dir, path) || pathBasename(path);
+      const hubs = coreShellRanking(await readTrails(resolveTrailsFile(process.env as Record<string, string | undefined>)), Date.now(), { limit });
+      if (options.json) {
+        io.stdout(`${JSON.stringify(hubs.map((hub) => ({ degree: hub.degree, path: rel(hub.noteId), shell: hub.shell })), null, 2)}\n`);
+        return;
+      }
+      if (hubs.length === 0) {
+        io.stdout("No co-recall hubs yet — they emerge as you `muse recall` notes together (then `muse notes trails`/`hubs`).\n");
+        return;
+      }
+      io.stdout("Your knowledge hubs (structural core of your co-recall graph):\n");
+      for (const hub of hubs) {
+        io.stdout(`  ${rel(hub.noteId)}  (core ${hub.shell.toString()}, co-recalled with ${hub.degree.toString()})\n`);
       }
     });
 }

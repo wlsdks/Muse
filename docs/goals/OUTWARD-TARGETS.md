@@ -3225,6 +3225,37 @@ graph intact as the corpus evolves, so a power-user's Zettelkasten doesn't rot.
   where queries surface different subsets); depositing on the `muse ask` grounding path too is a
   follow-on. (ce5bd8bb)
 
+- [x] **P42-14 `muse notes hubs` — the load-bearing CORE of your knowledge, found by network-science
+  k-shell decomposition: the structurally important note is the one deepest in the dense core, NOT the
+  one with the most connections.** FOURTH slice of the cross-field research direction (after MVT recall
+  P38-42, stigmergy trails P42-13, allostasis prediction P43-9), from a SECOND research sweep over
+  fields the first didn't cover (information theory / control theory / bandits / linguistics / network
+  science). The mechanism: k-shell / k-core decomposition (Kitsak, Gallos, Havlin, Liljeros, Muchnik,
+  Stanley & Makse, "Identification of influential spreaders in complex networks", Nature Physics 6:888,
+  2010, arXiv:1001.5285) — the most influential spreaders are NOT the highest-degree nodes but those
+  deepest in the network core, found by iterative minimum-degree pruning (peel every node at the
+  current minimum degree, stamping its k-shell index; survivors of later rounds form deeper cores).
+  Faithfully distilled onto the co-recall trail graph P42-13 built: `coreShellRanking(trails, nowMs,
+  opts)` (apps/cli/src/recall-trail.ts) builds undirected adjacency from the trails whose CURRENT
+  evaporated strength clears minStrength, runs the standard k-shell peel, and returns notes by (shell
+  desc, degree desc, id) — the deepest-core notes are the user's structural knowledge HUBS, a GLOBAL
+  structural map the single-node `notes trails` (P42-13) cannot give and one that PROVABLY differs from
+  the naive "most co-recalled" (degree) answer. Wired a read-only `muse notes hubs` command (apps/cli/
+  src/commands-notes-rag.ts, beside `notes trails`) with `--limit`/`--json`. Fully deterministic — ZERO
+  model calls (immune to the smoke:live stall). Additive; existing behaviour unchanged. The
+  research+adversarial workflow (5 under-explored fields → synth → vet) WebFetch-verified the paper and
+  the seam and returned BUILD on all five refutation tests. Verified deterministically AND live: 3 unit
+  tests (a 2-core triangle ranks STRICTLY above pendant notes; the DISCRIMINATING test — a dense clique
+  node (shell 2) outranks a HIGH-DEGREE star centre (degree 5, shell 1), encoding the paper's k-shell≠
+  degree claim; a long-decayed edge is excluded + empty graph → [] — apps/cli/src/recall-trail.test.ts)
+  + the full @muse/cli suite (193 files / 2182 tests) + the @muse/shared byte-hygiene gate (30) + tsc
+  build + `pnpm lint` 0/0 + 0 raw control bytes + a FULL LIVE run on the loop PC: a seeded co-recall
+  graph (a triangle a/b/c plus a star hub.md→5 leaves) → `muse notes hubs` printed "a.md (core 2,
+  co-recalled with 2) / b.md (core 2…) / c.md (core 2…) / hub.md (core 1, co-recalled with 5)" — the
+  deep triangle core ranked ABOVE the degree-5 star centre, the paper's whole point made mechanical.
+  Honest scope: the hubs sharpen as the co-recall graph fills (it builds from real recall usage); using
+  the hub ranking to bias retrieval / proactivity is the follow-on. (4ff9b490)
+
 **P38 — Grounding edge: measure → catch → repair (delivered 2026-06-02,
 conversational session — NOT a loop fire).** The edge gained an instrument,
 closed its deepest hole, and became constructive. Each verified live on

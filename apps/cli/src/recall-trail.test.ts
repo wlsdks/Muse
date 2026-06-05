@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { depositCoRecall, emptyTrails, topCoRecalled } from "./recall-trail.js";
+import { coreShellRanking, depositCoRecall, emptyTrails, topCoRecalled } from "./recall-trail.js";
 
 const NOW = 1_700_000_000_000;
 const day = 86_400_000;
@@ -43,5 +43,50 @@ describe("topCoRecalled — evaporation-weighted partners, strongest first", () 
     expect(topCoRecalled(trails, "a.md", NOW, { halfLifeMs: 30 * day, minStrength: 0.05 })).toEqual([]);
     const wide = depositCoRecall(emptyTrails(), ["a.md", "b.md", "c.md", "d.md"], NOW);
     expect(topCoRecalled(wide, "a.md", NOW, { limit: 2 })).toHaveLength(2);
+  });
+});
+
+describe("coreShellRanking — k-shell decomposition surfaces structural hubs", () => {
+  const edge = (trails: ReturnType<typeof emptyTrails>, a: string, b: string) => depositCoRecall(trails, [a, b], NOW);
+
+  it("ranks a 2-core (triangle) STRICTLY above pendant notes (k-shell 2 vs 1)", () => {
+    // triangle a-b-c (2-core) + pendant d-a + pendant e-d
+    let t = depositCoRecall(emptyTrails(), ["a.md", "b.md", "c.md"], NOW); // triangle
+    t = edge(t, "a.md", "d.md");
+    t = edge(t, "d.md", "e.md");
+    const ranked = coreShellRanking(t, NOW);
+    const shellOf = (id: string) => ranked.find((r) => r.noteId === id)!.shell;
+    expect(shellOf("a.md")).toBe(2);
+    expect(shellOf("b.md")).toBe(2);
+    expect(shellOf("c.md")).toBe(2);
+    expect(shellOf("d.md")).toBe(1);
+    expect(shellOf("e.md")).toBe(1);
+    expect(ranked[0]!.shell).toBe(2); // a hub leads
+  });
+
+  it("the discriminating test: a dense clique node outranks a HIGH-DEGREE star centre (k-shell ≠ degree)", () => {
+    // star: hub H joined to 5 leaves (H degree 5, but shell 1) ...
+    let t = emptyTrails();
+    for (const leaf of ["l1.md", "l2.md", "l3.md", "l4.md", "l5.md"]) t = edge(t, "H.md", leaf);
+    // ... plus a separate triangle clique x-y-z (each degree 2, shell 2)
+    t = depositCoRecall(t, ["x.md", "y.md", "z.md"], NOW);
+    const ranked = coreShellRanking(t, NOW);
+    const shellOf = (id: string) => ranked.find((r) => r.noteId === id)!.shell;
+    const degreeOf = (id: string) => ranked.find((r) => r.noteId === id)!.degree;
+    expect(degreeOf("H.md")).toBe(5); // highest degree by far
+    expect(shellOf("H.md")).toBe(1); // ...but shallow shell
+    expect(shellOf("x.md")).toBe(2); // clique is the deep core
+    // the clique (shell 2) outranks the high-degree star centre (shell 1) — the paper's whole point
+    expect(ranked[0]!.shell).toBe(2);
+    expect(ranked.findIndex((r) => r.noteId === "x.md")).toBeLessThan(ranked.findIndex((r) => r.noteId === "H.md"));
+  });
+
+  it("excludes a long-decayed edge so it can't inflate a shell, and returns [] on an empty graph", () => {
+    const day = 86_400_000;
+    let t = depositCoRecall(emptyTrails(), ["a.md", "b.md", "c.md"], NOW); // triangle now
+    t = depositCoRecall(t, ["c.md", "d.md"], NOW - 300 * day); // ancient edge (evaporated)
+    const ranked = coreShellRanking(t, NOW, { halfLifeMs: 30 * day });
+    expect(ranked.find((r) => r.noteId === "d.md")).toBeUndefined(); // decayed edge dropped
+    expect(coreShellRanking(emptyTrails(), NOW)).toEqual([]);
   });
 });

@@ -107,6 +107,72 @@ export function topCoRecalled(
   return out.sort((x, y) => y.strength - x.strength).slice(0, limit);
 }
 
+export interface NoteCoreRank {
+  readonly noteId: string;
+  readonly shell: number;
+  readonly degree: number;
+}
+
+/**
+ * k-shell (k-core) decomposition over the co-recall graph (Kitsak, Gallos,
+ * Havlin, Liljeros, Muchnik, Stanley & Makse, "Identification of influential
+ * spreaders in complex networks", Nature Physics 6:888, 2010, arXiv:1001.5285):
+ * the structurally most influential node is the one deepest in the network CORE,
+ * found by iterative minimum-degree pruning — NOT the highest-degree node.
+ * Repeatedly remove every node at the current minimum degree, stamping it with
+ * that degree as its k-shell index; survivors of later rounds form successively
+ * deeper cores. Applied to the co-recall trails, the deepest-core notes are the
+ * user's load-bearing structural knowledge HUBS — a GLOBAL structural map that
+ * the single-node `topCoRecalled` cannot give, and one that provably differs from
+ * the naive "most co-recalled" (degree) answer. Edges are trails whose CURRENT
+ * evaporated strength clears `minStrength` (undirected, unweighted for the
+ * decomposition). Deterministic; ranked by (shell desc, degree desc, id asc).
+ */
+export function coreShellRanking(
+  trails: CoRecallTrails,
+  nowMs: number,
+  options: { readonly halfLifeMs?: number; readonly minStrength?: number; readonly limit?: number } = {}
+): readonly NoteCoreRank[] {
+  const halfLifeMs = options.halfLifeMs ?? DEFAULT_HALF_LIFE_MS;
+  const minStrength = options.minStrength ?? 0.05;
+  const limit = Math.max(1, Math.trunc(options.limit ?? 10));
+  const adjacency = new Map<string, Set<string>>();
+  for (const edge of Object.values(trails.trails)) {
+    if (edge.a === edge.b) continue;
+    if (evaporatedWeight(edge, nowMs, halfLifeMs) < minStrength) continue;
+    (adjacency.get(edge.a) ?? adjacency.set(edge.a, new Set()).get(edge.a)!).add(edge.b);
+    (adjacency.get(edge.b) ?? adjacency.set(edge.b, new Set()).get(edge.b)!).add(edge.a);
+  }
+  if (adjacency.size === 0) return [];
+  const originalDegree = new Map<string, number>();
+  const remaining = new Map<string, Set<string>>();
+  for (const [node, neighbours] of adjacency) {
+    originalDegree.set(node, neighbours.size);
+    remaining.set(node, new Set(neighbours));
+  }
+  const shell = new Map<string, number>();
+  while (remaining.size > 0) {
+    let minDegree = Infinity;
+    for (const neighbours of remaining.values()) minDegree = Math.min(minDegree, neighbours.size);
+    let peeled = true;
+    while (peeled) {
+      peeled = false;
+      for (const [node, neighbours] of [...remaining]) {
+        if (neighbours.size <= minDegree) {
+          shell.set(node, minDegree);
+          for (const neighbour of neighbours) remaining.get(neighbour)?.delete(node);
+          remaining.delete(node);
+          peeled = true;
+        }
+      }
+    }
+  }
+  return [...shell.entries()]
+    .map(([noteId, shellIndex]) => ({ degree: originalDegree.get(noteId) ?? 0, noteId, shell: shellIndex }))
+    .sort((x, y) => y.shell - x.shell || y.degree - x.degree || x.noteId.localeCompare(y.noteId))
+    .slice(0, limit);
+}
+
 export function resolveTrailsFile(env: Record<string, string | undefined> = process.env): string {
   const fromEnv = env.MUSE_RECALL_TRAILS_FILE?.trim();
   if (fromEnv && fromEnv.length > 0) return fromEnv;
