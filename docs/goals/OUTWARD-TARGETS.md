@@ -591,6 +591,38 @@ P43 bullet is unbuilt.
   notes-source ambiguity (the advisory is scoped to note matches, not tasks/events/contacts); it advises,
   it does not yet drive an interactive follow-up turn. (a6b34205)
 
+- [x] **P43-12 `muse feeds today` and the morning brief now COLLAPSE the same story carried by
+  several feeds into one ("1 near-duplicate story collapsed"), so a breaking headline syndicated across
+  outlets no longer fills the feed view with copies — you see DISTINCT stories.** SEVENTH slice of the
+  cross-field research direction, deliberately rotated OFF the churned recall/notes-graph/pattern code
+  (Step 8) onto the Perception/feeds axis. The mechanism: BRODER RESEMBLANCE / shingling (Broder, "On the
+  resemblance and containment of documents", SEQUENCES 1997) — represent each title as a SET of word-token
+  shingles and treat two titles as near-duplicates when their resemblance r(A,B)=|A∩B|/|A∪B| (Jaccard)
+  clears a threshold; the classic web-scale dedup primitive (AltaVista collapsed mirror/syndicated pages
+  this way), with MinHash as its scalable estimator (unneeded here — a feed view holds few items, so the
+  EXACT resemblance is computed). NOTE — the slice's own "shows its work" moment: I first built this with
+  SimHash (Charikar 2002), then a LIVE calibration on real headline pairs FALSIFIED it (char-trigram
+  SimHash put a near-dup retelling at Hamming 14 but two DIFFERENT stories sharing a template — "Magnitude
+  6 quake strikes Japan" vs "Magnitude 5 quake strikes Chile" — also at 14, so any threshold either missed
+  dups or FALSE-MERGED distinct stories = hidden news). Pivoted to Broder resemblance, which separates
+  cleanly (distinct stories ≤0.43, syndicated retellings ≥0.5), and tuned the threshold to 0.5 for
+  PRECISION — it never merges two different stories (the news-hiding hazard), at the cost of letting a
+  terse/synonym-heavy retelling through as a benign extra row. Pure new module
+  `apps/cli/src/feed-dedupe.ts` (`titleShingles`, `jaccardResemblance`, `collapseNearDuplicates` keeping
+  the FRESHEST of each cluster) wired into `selectBriefFeedHeadlines` (collapse BEFORE the slice so the
+  brief's few slots show distinct stories) and `muse feeds today` (human view deduped + discloses the
+  collapsed count; `--json` stays RAW — structured consumers get every entry). Deterministic, no model —
+  so the "feed titles never reach the model" safety property holds (it only set-compares tokens). Verified
+  deterministically AND live: 13 unit tests (shingling; resemblance 1/0/threshold split; greedy collapse
+  keeps freshest + counts; NEVER merges distinct same-topic stories; threshold strict/permissive; blank
+  title never a dup; order preserved — apps/cli/src/feed-dedupe.test.ts) + `pnpm lint` 0/0 + `@muse/shared`
+  byte-hygiene 30 + cli 2192 + 0 raw control bytes + a LIVE run on the loop PC: a feeds store with the
+  same Apple/M5 story from two outlets + a distinct bakery story → `muse feeds today` showed the FRESHEST
+  Apple headline + the bakery and "(1 near-duplicate story collapsed)", while `--json` returned all 3 raw;
+  the brief's `selectBriefFeedHeadlines` returned 2 distinct headlines instead of 3 with a dup. Honest
+  scope: lexical resemblance (catches syndicated/reworded, not a fully synonym-rewritten retelling); the
+  `feeds search` / per-feed views are untouched. (84b66443)
+
 - [x] **P43-7 The evening recap's "Coming up" now includes tomorrow's CALENDAR EVENTS
   and BIRTHDAYS — your `muse recap` forward view finally matches the brief + `muse today`.**
   The evening recap (P43-4) is the retrospective sibling of the morning brief, and its

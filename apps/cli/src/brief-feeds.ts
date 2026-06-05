@@ -6,6 +6,7 @@
  * the brief.
  */
 
+import { collapseNearDuplicates } from "./feed-dedupe.js";
 import { compareFeedEntriesNewestFirst, filterRecentFeedEntries, type FeedsStore } from "./feeds-store.js";
 
 export interface BriefHeadline {
@@ -27,10 +28,15 @@ export function selectBriefFeedHeadlines(store: FeedsStore, nowMs: number, optio
   const withinHours = Math.max(1, options.withinHours ?? 24);
   const limit = Math.max(1, options.limit ?? 3);
   const cutoff = new Date(nowMs - withinHours * 3_600_000);
-  return store.feeds
+  const recent = store.feeds
     .flatMap((feed) => filterRecentFeedEntries(feed.entries, cutoff).map((entry) => ({ entry, feedTitle: feed.name })))
     .filter(({ entry }) => entry.title.trim().length > 0)
-    .sort((a, b) => compareFeedEntriesNewestFirst(a.entry, b.entry))
+    .sort((a, b) => compareFeedEntriesNewestFirst(a.entry, b.entry));
+  // Collapse the SAME story reported by several feeds (SimHash near-dup) BEFORE
+  // the slice, so the brief's few slots show DISTINCT stories, not three copies
+  // of one breaking headline. The freshest of each cluster survives (input is
+  // newest-first).
+  return collapseNearDuplicates(recent, ({ entry }) => entry.title).kept
     .slice(0, limit)
     .map(({ entry, feedTitle }) => ({ feedTitle, link: entry.link, title: entry.title }));
 }

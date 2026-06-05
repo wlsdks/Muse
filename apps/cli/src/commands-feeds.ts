@@ -21,6 +21,7 @@ import { formatErrorForTerminal, stripUntrustedTerminalChars } from "@muse/share
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
+import { collapseNearDuplicates } from "./feed-dedupe.js";
 import {
   compareFeedEntriesNewestFirst,
   defaultFeedsFile,
@@ -425,6 +426,8 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
         }))
       ).sort(compareFeedEntriesNewestFirst);
       if (options.json) {
+        // --json is the raw archive view (structured consumers want every entry);
+        // near-dup collapse applies only to the human render below.
         io.stdout(`${JSON.stringify({ entries: rolled, hours, total: rolled.length }, null, 2)}\n`);
         return;
       }
@@ -432,8 +435,15 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
         io.stdout(`(no feed entries in the last ${hours.toString()}h — try a longer --hours window or run \`muse feeds refresh\`)\n`);
         return;
       }
-      for (const entry of rolled) {
+      // Collapse the same story carried by several feeds (SimHash near-dup) so
+      // the human view isn't three rows of one breaking headline — the freshest
+      // of each cluster survives (rolled is newest-first). --json keeps them all.
+      const { kept, collapsed } = collapseNearDuplicates(rolled, (entry) => entry.title);
+      for (const entry of kept) {
         for (const line of formatFeedEntryLines(entry)) io.stdout(`${line}\n`);
+      }
+      if (collapsed > 0) {
+        io.stdout(`\n(${collapsed.toString()} near-duplicate ${collapsed === 1 ? "story" : "stories"} collapsed — same story across feeds; \`--json\` for the full list)\n`);
       }
     });
 
