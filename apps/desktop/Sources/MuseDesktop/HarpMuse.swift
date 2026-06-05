@@ -81,18 +81,23 @@ enum HarpMuse {
             let t = CGFloat(i) / CGFloat(count - 1)
             let topX = 0.40 + t * 0.20
             let botX = 0.41 + t * 0.18
-            var alpha: CGFloat = 0.8
+            var alpha: CGFloat = 0.95
             if state == .speaking {
-                alpha = 0.4 + 0.5 * abs(sin(phase * 2 + CGFloat(i) * 0.7))
+                alpha = 0.55 + 0.45 * abs(sin(phase * 2 + CGFloat(i) * 0.7))
             } else if state == .listening {
-                alpha = 0.65 + 0.3 * abs(sin(phase + CGFloat(i)))
+                alpha = 0.8 + 0.2 * abs(sin(phase + CGFloat(i)))
             }
             let path = CGMutablePath()
             path.move(to: P(topX, 0.82))
             path.addLine(to: P(botX, 0.30))
+            // soft glow under the crisp string so they read as luminous
+            ctx.addPath(path)
+            ctx.setStrokeColor(gold.withAlphaComponent(alpha * 0.35).cgColor)
+            ctx.setLineWidth(s * 0.020)
+            ctx.strokePath()
             ctx.addPath(path)
             ctx.setStrokeColor(string.withAlphaComponent(alpha).cgColor)
-            ctx.setLineWidth(s * 0.0055)
+            ctx.setLineWidth(s * 0.0065)
             ctx.strokePath()
         }
 

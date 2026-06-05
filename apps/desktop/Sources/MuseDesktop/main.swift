@@ -136,6 +136,8 @@ if let flag = arguments.firstIndex(of: "--render-orb"), flag + 1 < arguments.cou
           let gctx = NSGraphicsContext(bitmapImageRep: rep) else { exit(1) }
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = gctx
+    NSColor(calibratedRed: 0.10, green: 0.09, blue: 0.16, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: CGFloat(size), height: CGFloat(size)).fill()
     VoiceOrb.draw(in: NSRect(x: 0, y: 0, width: CGFloat(size), height: CGFloat(size)), state: state, phase: phase)
     NSGraphicsContext.restoreGraphicsState()
     if let data = rep.representation(using: .png, properties: [:]) {

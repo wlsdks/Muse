@@ -17,23 +17,16 @@ final class CharacterView: NSView {
     }
     private var look: Look = .orb
 
-    /// `orb`/default → the glowing orb; `harp`/`lyre` → the glowing lyre;
-    /// `muse`/`vector` → the vector mascot; `aria`/`celestial` → those pixel sprites.
+    /// `harp`/`lyre` → the glowing lyre; anything else → the glowing orb (default).
+    /// Only these two looks ship.
     func setCharacterNamed(_ name: String?) {
         switch (name ?? "").lowercased() {
-        case "aria", "celestial":
-            look = .pixel
-            sprite = SpriteLibrary.named((name ?? "").lowercased())
-        case "muse", "vector":
-            look = .vector
-            tick = 0; needsDisplay = true
         case "harp", "lyre":
             look = .harp
-            tick = 0; needsDisplay = true
         default:
             look = .orb
-            tick = 0; needsDisplay = true
         }
+        tick = 0; needsDisplay = true
     }
 
     private var tick = 0
