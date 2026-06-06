@@ -23,6 +23,22 @@ export function detectArithmeticQuery(query: string): string | null {
   q = q.replace(/[?\s]+$/u, "");
   q = q.replace(QUESTION_FRAMING, "");
   q = q.replace(/\s*=\s*$/u, "").trim();
+  // Natural-language operators → symbols, so "12 times 4" / "17 곱하기 6은" reach
+  // the deterministic evaluator just like "12 * 4" — the 8B mis-multiplies either
+  // spelling. The all-symbolic check below still rejects anything left with
+  // letters, so a sentence that merely contains "times"/"minus" never qualifies.
+  q = q
+    .replace(/\bmultiplied\s+by\b/gu, "*")
+    .replace(/\bdivided\s+by\b/gu, "/")
+    .replace(/\btimes\b/gu, "*")
+    .replace(/\bplus\b/gu, "+")
+    .replace(/\bminus\b/gu, "-")
+    .replace(/곱하기/gu, "*")
+    .replace(/더하기/gu, "+")
+    .replace(/빼기/gu, "-")
+    .replace(/나누기/gu, "/")
+    .replace(/([\d)])\s*(은|는|이|가)$/u, "$1") // drop a trailing Korean topic particle
+    .trim();
   if (q.length === 0 || q.length > 256) {
     return null;
   }

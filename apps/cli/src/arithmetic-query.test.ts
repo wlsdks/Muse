@@ -12,6 +12,21 @@ describe("detectArithmeticQuery — only a PURE calculation short-circuits `muse
     expect(detectArithmeticQuery("  12 / 4 =  ")).toBe("12 / 4"); // trailing "=" and spaces stripped
   });
 
+  it("normalizes natural-language operators (EN + KO) to symbols so spelled-out math also short-circuits", () => {
+    expect(detectArithmeticQuery("what is 12 times 4?")).toBe("12 * 4");
+    expect(detectArithmeticQuery("13 multiplied by 7")).toBe("13 * 7");
+    expect(detectArithmeticQuery("20 minus 5")).toBe("20 - 5");
+    expect(detectArithmeticQuery("100 divided by 4")).toBe("100 / 4");
+    expect(detectArithmeticQuery("8 plus 9")).toBe("8 + 9");
+    expect(detectArithmeticQuery("17 곱하기 6은?")).toBe("17 * 6"); // KO operator + trailing topic particle
+    expect(detectArithmeticQuery("100 나누기 4")).toBe("100 / 4");
+  });
+
+  it("does NOT treat a sentence that merely contains an operator word as math", () => {
+    expect(detectArithmeticQuery("what did Sarah say about it 5 times?")).toBeNull();
+    expect(detectArithmeticQuery("나는 운동을 곱하기 좋아해")).toBeNull(); // letters remain → not pure math
+  });
+
   it("returns null for a real NOTES question (never hijacks retrieval)", () => {
     expect(detectArithmeticQuery("what is my Q3 budget?")).toBeNull();
     expect(detectArithmeticQuery("what's the launch date?")).toBeNull();

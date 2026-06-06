@@ -25,6 +25,7 @@ import type { Command } from "commander";
 
 import { answerClaimsAction, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, classifyTaskListQuery, requestsToolAction } from "@muse/agent-core";
 
+import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
 import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, isChatAbstention, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
@@ -326,6 +327,24 @@ export async function runLocalChat(
       runId: "local-tasks",
       toolsUsed: []
     };
+  }
+
+  // Pure arithmetic ("12 times 4", "what is (1200+850)/2") — the local 8B
+  // confidently mis-multiplies ("12 times 4" → "24"), so compute it
+  // deterministically through the same evaluator the muse.math tool uses rather
+  // than trusting the model's digits. The precision-first detector only fires on
+  // a query that is NOTHING but a calculation, so a notes question is untouched.
+  const arithmeticExpression = detectArithmeticQuery(message);
+  if (arithmeticExpression) {
+    const { evaluateArithmeticExpression } = await import("@muse/mcp");
+    const evaluated = evaluateArithmeticExpression(arithmeticExpression);
+    if ("result" in evaluated) {
+      return {
+        response: formatArithmeticResult(arithmeticExpression, evaluated.result),
+        runId: "local-arithmetic",
+        toolsUsed: []
+      };
+    }
   }
 
   // A bare greeting / social prompt never needs a tool — but projecting the tool
