@@ -21,15 +21,21 @@ describe("classifyCasualPrompt — pure social prompts only (precision-first)", 
     }
   });
 
-  it("classifies thanks (EN + KO)", () => {
-    for (const q of ["thanks", "Thank you", "thx", "ty", "고마워", "감사합니다", "appreciate it"]) {
+  it("classifies thanks (EN + KO), incl. KO 수고 variants", () => {
+    for (const q of ["thanks", "Thank you", "thx", "ty", "고마워", "감사합니다", "appreciate it", "수고했어", "수고하셨어요", "수고"]) {
       expect(classifyCasualPrompt(q)).toBe("thanks");
     }
   });
 
-  it("classifies farewells (EN + KO)", () => {
-    for (const q of ["bye", "goodbye", "see you", "take care", "잘가", "안녕히 계세요"]) {
+  it("classifies farewells (EN + KO), incl. KO good-night 잘 자 / 굿나잇", () => {
+    for (const q of ["bye", "goodbye", "see you", "take care", "잘가", "안녕히 계세요", "잘 자", "잘자요", "굿나잇", "푹 자요"]) {
       expect(classifyCasualPrompt(q)).toBe("farewell");
+    }
+  });
+
+  it("does NOT mistake a real request that merely STARTS with a farewell/thanks word", () => {
+    for (const q of ["잘 자는 방법 알려줘", "수고했어 오늘 일정 정리해줘", "잘 자라고 알람 맞춰줘"]) {
+      expect(classifyCasualPrompt(q)).toBeNull();
     }
   });
 
