@@ -1,11 +1,58 @@
 # Muse
 
-> **Tell it everything. It can't tell anyone.**
+> **Tell it everything — it can't tell anyone, and it gets stronger by fixing its own blind spots.**
+>
+> *네 약점까지 다 말해 — 아무한테도 안 새고, 그걸 같이 고쳐 더 똑똑해지니까.*
 
-Your AI assistant that answers from your own notes and files — quotes the
-exact source, says "I'm not sure" instead of making things up, and runs
-entirely on your machine. Nothing ever leaves it. That's not a setting;
-it's enforced in the code.
+Muse is a personal AI companion that runs **entirely on your own machine** and
+answers from **your own** notes and files — quoting the exact source, saying
+"I'm not sure" instead of guessing, and getting genuinely better over time by
+finding and fixing its own weak spots. Nothing ever leaves your machine; that's
+not a setting, it's enforced in the code.
+
+## What Muse is — five principles
+
+Read these five and you know exactly what kind of agent this is.
+
+1. **Local by construction — _so you can tell it everything._**
+   Runs entirely on a local open-source model (qwen3:8b via Ollama, or any
+   weights you run locally); cloud egress is **refused in code**
+   (`MUSE_LOCAL_ONLY` on by default). Not your agent on someone else's cloud —
+   actually yours.
+
+2. **Shows its work — _never makes things up._**
+   Every answer, nudge, and insight cites the real source it came from; weak
+   grounding becomes "I'm not sure"; an un-groundable claim is **dropped by
+   code**. Fabrication rate = 0 is a release gate, enforced on every surface
+   (recall, proactivity, reflection, chat).
+
+3. **Whetstone — _overcomes its own weaknesses to get stronger._**
+   Muse notices what it reliably gets wrong (a refusal it shouldn't make, an
+   action it claimed but didn't do), records it, and systematically grinds it
+   down — the way a disciplined learner improves a fixed brain, with no weight
+   changes. A modest model kept sharp out-cuts a finer one left dull.
+   (`muse doctor --weaknesses`)
+
+4. **Distills nature's mechanisms — _the cross-field moat._**
+   Muse mines OPEN papers from **biology, ecology, neuroscience** and beyond,
+   turning a real mechanism into a deterministic, live-verified capability:
+   optimal foraging → adaptive recall depth, ant stigmergy → an evaporating
+   note-relatedness graph, allostasis → anticipating a recurring need,
+   biodiversity indices → spotting a one-sided corpus. A rival can copy a
+   feature; copying a *research-distillation discipline yoked to a
+   fabrication-zero floor* is far harder.
+
+5. **Yours to act through — _draft-first, never autonomous._**
+   Acts through your real tools (calendar, notes, tasks, reminders, the web) —
+   but any send or action toward another person is draft-first and needs your
+   explicit confirmation; banking and money movement are permanently out of
+   scope.
+
+Principle 1 is *why* you can tell it everything; principles 2–3 are *what it
+then does for you*; principle 4 is *how* it keeps getting capabilities a copycat
+can't. Deep dives: [the edge](docs/strategy/the-edge.md) ·
+[Whetstone](docs/strategy/whetstone.md) ·
+[cross-field catalog](docs/strategy/cross-field-research.md).
 
 **Quickstart:** `muse onboard` walks you — one command at a time — from a
 fresh install to your first private, cited answer (point it at a notes
@@ -32,21 +79,16 @@ textbook 1500), instead of confabulating; nothing relevant in your notes ⇒ it
 stays on the refusal floor. Every surface Muse gains plugs into the gate.
 Full rationale: [`docs/strategy/the-edge.md`](docs/strategy/the-edge.md).
 
-### Three core axes
+### How it improves on a *fixed* local model: Playbook + Whetstone
 
-1. **Grounding edge** — never fabricate; cite the real source or say "I'm not
-   sure" (the floor, enforced in code).
-2. **Playbook** — reinforce the strategies that *work* for you (RL-flavoured
-   reward/decay of learned plays).
-3. **Whetstone** *(designed; building incrementally)* — the metacognitive
-   complement to the Playbook: Muse **identifies its own weaknesses and
-   systematically grinds them down**, the way a disciplined human learner
-   improves a fixed brain — no weight changes, all in process/memory/prompts.
-   A modest model kept sharp out-performs a finer one left dull. Grounded in
-   real learning-science and 2024-2026 agent research; it strengthens the
-   grounding edge (records and remediates the gate's own misses, with a
-   calibration brake against over-confidence) and never bypasses it.
-   Design + citations: [`docs/strategy/whetstone.md`](docs/strategy/whetstone.md).
+Two complementary memories — never a weight change — let Muse get better the way
+a person does: the **Playbook** reinforces the strategies that *work* for you
+(reward/decay of learned plays), and **Whetstone** (principle 3) records what it
+gets *wrong* and systematically grinds it down. Grounded in real learning-science
+and 2024-2026 agent research; Whetstone strengthens the grounding edge (it
+remediates the gate's own misses, with a calibration brake against
+over-confidence) and never bypasses it. Design + citations:
+[`docs/strategy/whetstone.md`](docs/strategy/whetstone.md).
 
 A native **macOS desktop companion** (a floating, voice-capable orb;
 on-device speech via WhisperKit + Qwen3-TTS) is the newest surface — same
