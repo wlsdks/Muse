@@ -25,7 +25,7 @@ import type { Command } from "commander";
 
 import { answerClaimsAction, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, requestsToolAction } from "@muse/agent-core";
 
-import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
+import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, isChatAbstention, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
@@ -401,7 +401,8 @@ export async function runLocalChat(
   // completion for a specific phrasing (observed deterministically on "오늘 할 일
   // 보여줘"), which surfaces as a blank chat bubble. Fall back to an honest retry
   // ask — better than silence, and not a deferral ("잠시만요…"), it admits the miss.
-  const response = withReceipt.trim().length > 0 ? withReceipt : emptyAnswerFallback(message);
+  const usedEmptyFallback = withReceipt.trim().length === 0;
+  const response = usedEmptyFallback ? emptyAnswerFallback(message) : withReceipt;
 
   // "빨래 다 했어" — a past-tense REPORT of finishing a task. The model only acts
   // on the imperative ("완료로 표시해줘") and just acknowledges this, leaving the
@@ -421,10 +422,25 @@ export async function runLocalChat(
   // didn't act), don't let the false "done" stand — admit it honestly so the
   // user knows nothing happened, matching the cited-recall edge ("I'm not sure"
   // over a confident fabrication).
-  if (requestsToolAction(message) && answerClaimsAction(finalResponse) && !actionToolRan(toolsUsed)) {
+  const unbackedAction = requestsToolAction(message) && answerClaimsAction(finalResponse) && !actionToolRan(toolsUsed);
+  if (unbackedAction) {
     finalResponse = `${finalResponse}\n\n${/[가-힣]/u.test(message)
       ? "⚠️ 그런데 방금은 실제로 처리하지 못했어요. 한 번 더 말씀해 주시겠어요?"
       : "⚠️ Heads up — I didn't actually do that just now. Could you say it once more?"}`;
+  }
+
+  // Whetstone slice 1 — record the turn's failure signal to the weakness ledger
+  // (detect → classify → persist). Fire-and-forget: a ledger write must never
+  // break a turn. `unbacked-action` is always a true failure; a refusal is a
+  // softer "couldn't answer" gap (may just be a missing note) — both are useful
+  // self-knowledge. Casual turns never reach here as a failure.
+  // Awaited (not fire-and-forget): a one-shot `chat --json` exits the moment
+  // runLocalChat returns, so a dangling promise never flushes the ledger write.
+  // recordChatWeakness swallows its own errors, so awaiting can't break the turn.
+  if (unbackedAction) {
+    await recordChatWeakness(message, "unbacked-action");
+  } else if (!isCasual && (usedEmptyFallback || isChatAbstention(finalResponse) || looksLikeRefusal(finalResponse))) {
+    await recordChatWeakness(message, "grounding-gap");
   }
 
   return {
@@ -432,6 +448,32 @@ export async function runLocalChat(
     runId: result.runId,
     toolsUsed
   };
+}
+
+// The explicit refusal phrases the grounding floor emits ("잘 모르겠어요" /
+// "I'm not sure" / "no matching passages") — anchored on these, NOT a bare
+// "not sure", so a normal answer that merely contains the words isn't logged.
+const REFUSAL_RE = /잘\s*모르겠|모르겠어|관련(된|있는)?\s*(노트|메모|정보|내용)[^.]*없|찾(지|을)\s*(못했|수\s*없)|i'?m\s+not\s+sure|i\s+am\s+not\s+sure|no\s+matching\s+(passages|notes)|don'?t\s+have\s+(that|any)|couldn'?t\s+find/iu;
+
+function looksLikeRefusal(text: string): boolean {
+  return REFUSAL_RE.test(text);
+}
+
+/**
+ * Append a failure signal to the Whetstone weakness ledger. @muse/mcp +
+ * @muse/autoconfigure are loaded LAZILY — a static import of these heavy
+ * modules breaks the bun-compiled desktop binary (top-level await in a sync
+ * context). Best-effort; swallows every error.
+ */
+async function recordChatWeakness(message: string, axis: "grounding-gap" | "unbacked-action"): Promise<void> {
+  try {
+    const { recordWeakness } = await import("@muse/mcp");
+    const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
+    const file = resolveWeaknessesFile(process.env as Record<string, string | undefined>);
+    await recordWeakness(file, { axis, message });
+  } catch {
+    // a ledger write must never surface as a chat error
+  }
 }
 
 /**

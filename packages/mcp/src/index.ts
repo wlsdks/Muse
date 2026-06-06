@@ -898,6 +898,16 @@ export {
 } from "./personal-reminders-store.js";
 
 export {
+  readWeaknesses,
+  recordWeakness,
+  topicKeyFromMessage,
+  upsertWeakness,
+  writeWeaknesses,
+  type WeaknessAxis,
+  type WeaknessEntry
+} from "./weakness-ledger.js";
+
+export {
   appendReminderHistory,
   readReminderHistory,
   type AppendReminderHistoryOptions,

@@ -70,6 +70,11 @@ export function resolveReminderHistoryFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_REMINDER_HISTORY_FILE", "reminder-history.json");
 }
 
+/** The Whetstone weakness ledger — what Muse couldn't answer / didn't actually do. */
+export function resolveWeaknessesFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_WEAKNESSES_FILE", "weaknesses.json");
+}
+
 export function resolveProactiveHistoryFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_PROACTIVE_HISTORY_FILE", "proactive-history.json");
 }

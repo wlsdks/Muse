@@ -222,6 +222,7 @@ export {
   resolveDiscordInboxFile,
   resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
+  resolveWeaknessesFile,
   resolveSessionLockFile,
   resolveSlackAfterFile,
   resolveSlackInboxFile,
