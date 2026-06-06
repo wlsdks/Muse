@@ -32,7 +32,7 @@ change is a regression.**
     abstention decision behind a flag, live-verify no new false refusals.
   - *Check:* a battery asserting empirical coverage ≥ target on a held-out split.
 
-- [ ] **A2 · Quorum-sensing multi-witness confidence** (Becker et al., Nat. Commun. 2022/2023) — *biology.*
+- [x] **A2 · Quorum-sensing multi-witness confidence** (opt-in single-source hedge `MUSE_QUORUM_HEDGE`) (Becker et al., Nat. Commun. 2022/2023) — *biology.*
   - *Mechanism:* a population switch fires only when aggregated independent
     signals cross a quorum threshold; noise-robust distributed vote.
   - *Muse:* answer only when ≥quorum independent passages agree, else "I'm not

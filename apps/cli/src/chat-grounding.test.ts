@@ -122,6 +122,16 @@ describe("groundingReceipt (source quoted)", () => {
     expect(withGroundingReceipt(chatAbstention("내 생일?"), ["x.md"], true)).toBe(chatAbstention("내 생일?"));
     expect(withGroundingReceipt("일반 답변입니다.", [], true)).toBe("일반 답변입니다.");
   });
+
+  it("A2 quorum hedge is opt-in (default off) and only fires on a SINGLE witness source", () => {
+    // default off → no hedge, even with one source
+    expect(withGroundingReceipt("월세는 125만원입니다.", ["lease.md"], true, {})).not.toContain("한 곳에만");
+    // opt-in on + single witness → honest single-source hedge
+    expect(withGroundingReceipt("월세는 125만원입니다.", ["lease.md"], true, { MUSE_QUORUM_HEDGE: "1" })).toContain("한 곳에만 근거한");
+    expect(withGroundingReceipt("rent is 1.25M", ["lease.md"], false, { MUSE_QUORUM_HEDGE: "1" })).toContain("single note");
+    // opt-in on + TWO corroborating witnesses → no hedge (corroborated)
+    expect(withGroundingReceipt("월세는 125만원입니다.", ["lease.md", "budget.md"], true, { MUSE_QUORUM_HEDGE: "1" })).not.toContain("한 곳에만");
+  });
 });
 
 function hit(over: Partial<RecallHit> = {}): RecallHit {

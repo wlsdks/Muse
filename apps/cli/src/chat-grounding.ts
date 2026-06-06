@@ -1,4 +1,4 @@
-import { verifyGrounding, type KnowledgeMatch } from "@muse/agent-core";
+import { independentWitnessCount, quorumVerdict, verifyGrounding, type KnowledgeMatch } from "@muse/agent-core";
 
 import { searchRecall, type RecallHit } from "./commands-recall.js";
 
@@ -258,10 +258,26 @@ export function stripFabricatedCitations(answer: string, sources: readonly strin
 /** Append a "shows its work" source receipt when chat answered FROM the user's
  * notes — the model often forgets to render [from <source>] inline, but the
  * "answers from your notes, source quoted" promise should still be visible. */
-export function withGroundingReceipt(answer: string, sources: readonly string[], korean: boolean): string {
+export function withGroundingReceipt(
+  answer: string,
+  sources: readonly string[],
+  korean: boolean,
+  env: NodeJS.ProcessEnv = process.env
+): string {
   if (sources.length === 0 || isChatAbstention(answer) || answer.includes("[from")) return answer;
   const label = korean ? "노트" : "from";
-  return `${answer}\n\n📎 ${label}: ${sources.join(", ")}`;
+  let receipt = `${answer}\n\n📎 ${label}: ${sources.join(", ")}`;
+  // Quorum hedge (A2, biology — Becker et al. 2022/2023): when the answer rests
+  // on a SINGLE independent witness source, honestly acknowledge it isn't
+  // corroborated. Opt-in (`MUSE_QUORUM_HEDGE=1`) and default-off, because most
+  // personal facts legitimately live in one note — hedging every one would be
+  // noise; this never refuses, it only labels confidence.
+  if (env.MUSE_QUORUM_HEDGE === "1" && quorumVerdict(independentWitnessCount(sources)) === "single") {
+    receipt += korean
+      ? "\n(노트 한 곳에만 근거한 답이에요 — 최신인지 확인해 주세요.)"
+      : "\n(Based on a single note — double-check it's current.)";
+  }
+  return receipt;
 }
 
 /**
