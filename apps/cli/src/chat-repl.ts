@@ -23,7 +23,7 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { classifyCasualPrompt } from "@muse/agent-core";
+import { classifyCasualPrompt, classifyMetaPrompt } from "@muse/agent-core";
 
 import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
@@ -173,6 +173,18 @@ export function createTuiChatSubmitter(
   };
 }
 
+// A question ABOUT Muse ("뭐 할 수 있어?") gets a DETERMINISTIC, honest answer.
+// Free-composing on the local model over-claims AND was observed dumping an
+// unrelated note (the user's wifi password) into a "what can you do?" reply.
+// Every clause here is a capability actually verified to work — honesty about
+// what Muse can do is the same edge as honesty about recall.
+export const DESKTOP_META_KO =
+  "저는 당신의 노트와 메모에서 답을 찾아 출처까지 함께 알려드려요. 모르면 추측하지 않고 \"잘 모르겠어요\"라고 솔직히 말씀드려요. " +
+  "할 일·리마인더·일정도 추가하고 정리해드릴 수 있어요. 모든 건 이 기기 안에서만 처리되고 밖으로 나가지 않습니다.";
+export const DESKTOP_META_EN =
+  "I answer from your own notes and memos and quote the exact source — and if I'm not sure, I say so instead of guessing. " +
+  "I can also add and organize your tasks, reminders, and calendar events. Everything runs on this device and nothing leaves it.";
+
 /** Keep only the named keys from a fact map (preserving values). */
 export function filterFactsToKeys(facts: Readonly<Record<string, string>>, keys: readonly string[]): Record<string, string> {
   const allow = new Set(keys);
@@ -207,6 +219,13 @@ export async function runLocalChat(
 
   if (!assembly.agentRuntime || !(model ?? assembly.defaultModel)) {
     throw new Error("Local chat requires MUSE_MODEL and a configured model provider");
+  }
+
+  // A question ABOUT Muse itself short-circuits to a deterministic, honest
+  // capability answer BEFORE any model call — the local model otherwise
+  // over-claims and (observed) injects an unrelated note into the reply.
+  if (classifyMetaPrompt(message)) {
+    return { response: /[가-힣]/u.test(message) ? DESKTOP_META_KO : DESKTOP_META_EN, runId: "local-meta", toolsUsed: [] };
   }
 
   // A bare greeting / social prompt never needs a tool — but projecting the tool

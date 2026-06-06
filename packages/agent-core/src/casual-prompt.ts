@@ -55,7 +55,7 @@ export function classifyCasualPrompt(query: string): CasualPromptKind | null {
 // gets a grounding warning. Anchored so "what can you do about my taxes" or
 // "how do you cook rice" never match — only a whole-query meta phrase does.
 const META_PROMPT_RE =
-  /^(what can you (do|help( me)? with)|what do you do|what are you|who are you|what'?s? (is )?muse|how (do|does) (you|this|it) work|what can (i|you) ask|help|뭐\s?할\s?수\s?있어|무엇을?\s?할\s?수\s?있어|넌?\s?뭐야|너\s?뭐야|어떻게\s?(작동|동작)해|도움말|사용법)$/u;
+  /^(what can you (do|help( me)? with)|what do you do|what are you|who are you|what'?s? (is )?muse|how (do|does) (you|this|it) work|what can (i|you) ask|help|(너|넌|니)?\s?뭐\s?할\s?수\s?있어|뭐\s?할\s?줄\s?알아|무엇을?\s?할\s?수\s?있어|넌?\s?뭐야|너\s?뭐야|누구야|어떻게\s?(작동|동작)해|뭐\s?하는\s?(애|거)야|도움말|사용법)$/u;
 
 /** True when the prompt asks about MUSE ITSELF (capabilities / identity / usage). */
 export function classifyMetaPrompt(query: string): boolean {

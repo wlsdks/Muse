@@ -68,7 +68,8 @@ describe("classifyMetaPrompt — questions ABOUT Muse itself (precision-first)",
     for (const q of [
       "what can you do?", "what can you do", "what do you do", "what are you",
       "who are you?", "what is muse", "how do you work?", "how does this work",
-      "what can I ask", "help", "넌 뭐야?", "뭐 할 수 있어", "어떻게 작동해", "사용법"
+      "what can I ask", "help", "넌 뭐야?", "뭐 할 수 있어", "어떻게 작동해", "사용법",
+      "넌 뭐 할 수 있어?", "너 뭐 할 수 있어", "뭐 할 줄 알아?", "누구야"
     ]) {
       expect(classifyMetaPrompt(q)).toBe(true);
     }
@@ -80,7 +81,9 @@ describe("classifyMetaPrompt — questions ABOUT Muse itself (precision-first)",
       "how do you make sourdough",
       "what are you working on in the migration plan",
       "who are the attendees in the Q3 meeting",
-      "what is my rent"
+      "what is my rent",
+      "파이썬으로 뭐 할 수 있어?",
+      "오늘 뭐 할 수 있는 시간 있어?"
     ]) {
       expect(classifyMetaPrompt(q)).toBe(false);
     }
