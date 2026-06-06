@@ -2464,6 +2464,28 @@ describe("muse.tasks loopback server", () => {
     expect(moved.task.dueAt).toBe("2026-06-20T01:00:00.000Z");
   });
 
+  it("a date-only reschedule ('2026-06-20', no time) keeps the task's TIME-of-day", async () => {
+    // The dual bug: moving a 2pm deadline to another DAY reset it to midnight/9am.
+    const { mkdtempSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const dir = mkdtempSync(`${tmpdir}/muse-tasks-dateonly-`);
+    let counter = 0;
+    const connection = createLoopbackMcpConnection(createTasksMcpServer({
+      file: `${dir}/tasks.json`,
+      idFactory: () => `task_${++counter}`,
+      now: () => new Date("2026-06-06T03:00:00.000Z")
+    }));
+    const seedIso = "2026-06-12T05:00:00.000Z"; // Friday, a non-midnight time
+    const added = await connection.callTool!("add", { dueAt: seedIso, title: "Submit report" }) as { task: { id: string } };
+
+    const moved = await connection.callTool!("update", { dueAt: "2026-06-20", id: added.task.id }) as { task: { dueAt?: string } };
+    const due = new Date(moved.task.dueAt!);
+    expect(due.getHours()).toBe(new Date(seedIso).getHours()); // TIME-of-day preserved (TZ-safe)
+    expect(due.getMinutes()).toBe(new Date(seedIso).getMinutes());
+    expect(due.toDateString()).not.toBe(new Date(seedIso).toDateString()); // moved to a different day
+    expect(due.getTime()).toBeGreaterThan(new Date(seedIso).getTime());
+  });
+
   it("rejects an invalid dueAt with a clear error", async () => {
     const { mkdtempSync } = await import("node:fs");
     const tmpdir = await import("node:os").then((m) => m.tmpdir());
