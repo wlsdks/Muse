@@ -1051,4 +1051,11 @@ async function runCalibrationDoctor(io: ProgramIO, alpha: number, asJson: boolea
     return;
   }
   io.stdout(formatCalibration(reports));
+  // The chat grounding gate (chat-grounding.ts) reads MUSE_GROUNDING_MIN_COSINE
+  // as an opt-in override of its 0.5 default — print how to apply the value the
+  // requested alpha calibrated to, so the calibration actually reaches the gate.
+  const chosen = reports.find((report) => report.alpha === alpha);
+  if (chosen && Number.isFinite(chosen.threshold)) {
+    io.stdout(`\n  Apply (opt-in): export MUSE_GROUNDING_MIN_COSINE=${chosen.threshold.toFixed(3)}   # the α=${alpha.toFixed(2)} threshold; the chat gate stays at 0.5 until set\n`);
+  }
 }

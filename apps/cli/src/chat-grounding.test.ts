@@ -10,12 +10,35 @@ import {
   groundChatTurn,
   groundedNoteSources,
   isPersonalFactRecall,
+  resolveGroundingMinScore,
   shortCitationRef,
   stripFabricatedCitations,
   stripTruncatedCitation,
   withGroundingReceipt
 } from "./chat-grounding.js";
 import type { RecallHit } from "./commands-recall.js";
+
+describe("resolveGroundingMinScore — the conformal-calibrated threshold is opt-in via env (A1c)", () => {
+  it("defaults to CHAT_GROUNDING_MIN_SCORE (0.5) when the env is unset", () => {
+    expect(resolveGroundingMinScore({})).toBe(CHAT_GROUNDING_MIN_SCORE);
+  });
+
+  it("honours a valid MUSE_GROUNDING_MIN_COSINE override (the calibrated value)", () => {
+    expect(resolveGroundingMinScore({ MUSE_GROUNDING_MIN_COSINE: "0.559" })).toBeCloseTo(0.559, 6);
+  });
+
+  it("ignores an out-of-range / garbage value (never silently breaks the gate)", () => {
+    for (const bad of ["0", "1.2", "-0.3", "nope", ""]) {
+      expect(resolveGroundingMinScore({ MUSE_GROUNDING_MIN_COSINE: bad })).toBe(CHAT_GROUNDING_MIN_SCORE);
+    }
+  });
+
+  it("the override flows into formatChatGroundingBlock: a 0.55 hit is injected at the default but held out at a 0.6 threshold", () => {
+    const hits: RecallHit[] = [{ source: "notes", ref: "vpn.md", score: 0.55, snippet: "Office VPN MTU is 1380." }];
+    expect(formatChatGroundingBlock(hits)).toContain("1380"); // default 0.5 → injected
+    expect(formatChatGroundingBlock(hits, 0.6)).toBe(""); // a stricter calibrated cutoff holds it out
+  });
+});
 
 describe("isPersonalFactRecall", () => {
   it("flags recall of the user's own stored facts", () => {

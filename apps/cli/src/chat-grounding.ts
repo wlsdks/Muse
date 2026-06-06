@@ -27,6 +27,18 @@ import { searchRecall, type RecallHit } from "./commands-recall.js";
 // persona's "say you don't know" line governs.
 export const CHAT_GROUNDING_MIN_SCORE = 0.5;
 
+/**
+ * The cosine a retrieval hit must clear to be treated as authoritative. Defaults
+ * to CHAT_GROUNDING_MIN_SCORE (0.5); `MUSE_GROUNDING_MIN_COSINE` overrides it with
+ * the conformal-calibrated value from `muse doctor --calibration` (e.g. 0.559 at
+ * α=0.10). Opt-in: the floor is unchanged until a value is set, and an
+ * out-of-range value is ignored, so a bad env can never silently break the gate.
+ */
+export function resolveGroundingMinScore(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.MUSE_GROUNDING_MIN_COSINE);
+  return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : CHAT_GROUNDING_MIN_SCORE;
+}
+
 // Cap the injected passages so a broad query can't balloon the prompt on a
 // small context window; the top few by cosine carry the answer.
 export const CHAT_GROUNDING_MAX_HITS = 4;
@@ -61,7 +73,7 @@ export function shortCitationRef(ref: string): string {
 
 export function formatChatGroundingBlock(
   hits: readonly RecallHit[],
-  minScore: number = CHAT_GROUNDING_MIN_SCORE
+  minScore: number = resolveGroundingMinScore()
 ): string {
   const relevant = hits
     .filter((hit) => hit.score >= minScore)
@@ -122,7 +134,7 @@ export async function retrieveChatGrounding(
       embedModel,
       env
     });
-    return { block: formatChatGroundingBlock(hits, opts.minScore ?? CHAT_GROUNDING_MIN_SCORE), matches: hitsToMatches(hits) };
+    return { block: formatChatGroundingBlock(hits, opts.minScore ?? resolveGroundingMinScore()), matches: hitsToMatches(hits) };
   } catch {
     return { block: "", matches: [] };
   }
@@ -191,7 +203,7 @@ function noteGroundedAnswer(noteText: string, answerLower: string): boolean {
 export function groundedNoteSources(
   matches: readonly KnowledgeMatch[],
   answer: string,
-  minScore: number = CHAT_GROUNDING_MIN_SCORE
+  minScore: number = resolveGroundingMinScore()
 ): string[] {
   const answerLower = answer.toLowerCase();
   const refs = matches
@@ -324,7 +336,7 @@ export function gateChatAnswer(
   // verifyGrounding's borderline rubric falls on the model's varied phrasing.
   // A fabrication (no note holds the invented value) won't match, so it's safe.
   const answerLower = answer.toLowerCase();
-  if (matches.some((match) => (match.cosine ?? match.score) >= CHAT_GROUNDING_MIN_SCORE && noteGroundedAnswer(match.text, answerLower))) {
+  if (matches.some((match) => (match.cosine ?? match.score) >= resolveGroundingMinScore() && noteGroundedAnswer(match.text, answerLower))) {
     return answer;
   }
   const { verdict } = verifyGrounding(answer, matches, question);
