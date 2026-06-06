@@ -49,3 +49,52 @@ describe("MultiAgentOrchestrator — final-answer synthesis (SB next: one cohere
     expect(result.response.output).toContain("## Generalist");
   });
 });
+
+describe("MultiAgentOrchestrator — verification against the original objective (MAST +15.6%)", () => {
+  it("an UNSATISFIED verdict records the verdict AND appends an honest 'incomplete' note naming what's missing", async () => {
+    const orchestrator = new MultiAgentOrchestrator({ idFactory: () => "v1", workers: twoWorkers() });
+    let sawObjective = "";
+    const result = await orchestrator.run(
+      { messages: [{ content: "should we cache in redis, and what are the risks?", role: "user" }], model: "m" },
+      {
+        synthesizeFinalAnswer: async () => "Cache in Redis.", // drops the risks the user asked for
+        verifyFinalAnswer: async (objective, output) => {
+          sawObjective = objective;
+          return output.includes("risk") ? { satisfied: true } : { missing: "the risks", satisfied: false };
+        }
+      }
+    );
+    expect(sawObjective).toBe("should we cache in redis, and what are the risks?"); // verifier gets the ORIGINAL ask
+    expect(result.response.output).toContain("Cache in Redis.");
+    expect(result.response.output).toContain("⚠ This answer may be incomplete");
+    expect(result.response.output).toContain("still missing: the risks");
+    expect((result.response.raw as { verification?: { satisfied: boolean; missing?: string } }).verification).toEqual({ missing: "the risks", satisfied: false });
+  });
+
+  it("a SATISFIED verdict ships the answer clean (no note) but still records the verdict", async () => {
+    const orchestrator = new MultiAgentOrchestrator({ idFactory: () => "v2", workers: twoWorkers() });
+    const result = await orchestrator.run(
+      { messages: [{ content: "cache?", role: "user" }], model: "m" },
+      {
+        synthesizeFinalAnswer: async () => "Cache in Redis; risks: stale data.",
+        verifyFinalAnswer: async () => ({ satisfied: true })
+      }
+    );
+    expect(result.response.output).toBe("Cache in Redis; risks: stale data.");
+    expect(result.response.output).not.toContain("incomplete");
+    expect((result.response.raw as { verification?: { satisfied: boolean } }).verification).toEqual({ satisfied: true });
+  });
+
+  it("a throwing verifier is fail-soft — the answer still ships, no verification field", async () => {
+    const orchestrator = new MultiAgentOrchestrator({ idFactory: () => "v3", workers: twoWorkers() });
+    const result = await orchestrator.run(
+      { messages: [{ content: "cache?", role: "user" }], model: "m" },
+      {
+        synthesizeFinalAnswer: async () => "Cache in Redis.",
+        verifyFinalAnswer: async () => { throw new Error("judge down"); }
+      }
+    );
+    expect(result.response.output).toBe("Cache in Redis.");
+    expect((result.response.raw as { verification?: unknown }).verification).toBeUndefined();
+  });
+});

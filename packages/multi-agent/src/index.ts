@@ -108,6 +108,17 @@ export interface OrchestrationRunOptions {
    * orchestration falls back to the concatenation (never loses the answer).
    */
   readonly synthesizeFinalAnswer?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<string>;
+  /**
+   * Verification against the ORIGINAL objective (MAST, arXiv 2503.13657: a verify
+   * step focused on the high-level task → +15.6% success; most multi-agent
+   * failures are coordination, not capability). After synthesis, a SEPARATE judge
+   * (maker ≠ judge) checks the final answer actually satisfies the user's request
+   * and names what's MISSING. The verdict is attached to `response.raw.verification`,
+   * and an unsatisfied verdict appends one honest line to the output (Muse's
+   * shows-its-work edge — never silently return an incomplete synthesis).
+   * Caller-provided so this package stays model-agnostic; fail-soft.
+   */
+  readonly verifyFinalAnswer?: (objective: string, output: string) => Promise<{ readonly satisfied: boolean; readonly missing?: string }>;
 }
 
 export interface MultiAgentOrchestrationResult {
@@ -394,7 +405,9 @@ export class MultiAgentOrchestrator {
         results,
         options.maxOutputCharsPerWorker,
         options.summarizeWorkerOutput,
-        options.synthesizeFinalAnswer
+        options.synthesizeFinalAnswer,
+        objectiveFromInput(input),
+        options.verifyFinalAnswer
       ),
       results,
       runId
@@ -605,6 +618,13 @@ function joinMessages(messages: readonly ModelMessage[]): string {
   return messages.map((message) => message.content).join("\n");
 }
 
+/** The user's request to verify the final answer against — the latest user turn,
+ *  or the whole transcript if there is none. */
+function objectiveFromInput(input: AgentRunInput): string {
+  const lastUser = [...input.messages].reverse().find((message) => message.role === "user");
+  return (lastUser?.content ?? joinMessages(input.messages)).trim();
+}
+
 // ASCII/Latin keywords must match on word boundaries — a raw substring
 // lets a short keyword ("ai", "go", "db", "rag") fire inside unrelated
 // words ("email", "ago", "fragment") and silently inflate dispatch
@@ -644,7 +664,9 @@ async function buildOrchestrationResponse(
   results: readonly OrchestrationStepResult[],
   maxOutputCharsPerWorker: number | undefined,
   summarizeWorkerOutput: ((workerId: string, output: string) => Promise<string>) | undefined,
-  synthesizeFinalAnswer?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<string>
+  synthesizeFinalAnswer?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<string>,
+  objective?: string,
+  verifyFinalAnswer?: (objective: string, output: string) => Promise<{ readonly satisfied: boolean; readonly missing?: string }>
 ): Promise<AgentRunResult["response"]> {
   const cap = maxOutputCharsPerWorker && maxOutputCharsPerWorker > 0 ? maxOutputCharsPerWorker : undefined;
   const projected = await Promise.all(results.map(async (result) => {
@@ -679,6 +701,24 @@ async function buildOrchestrationResponse(
     }
   }
 
+  // Verification against the original objective (the MAST +15.6% lever). A SEPARATE
+  // judge confirms the synthesised answer satisfies the user's request; an
+  // unsatisfied verdict is recorded AND surfaced honestly. Fail-soft — a throwing
+  // verifier never breaks the run (the answer still ships).
+  let verification: { readonly satisfied: boolean; readonly missing?: string } | undefined;
+  if (verifyFinalAnswer && objective && objective.trim().length > 0 && output.trim().length > 0) {
+    try {
+      const verdict = await verifyFinalAnswer(objective, output);
+      verification = verdict.missing ? { missing: verdict.missing, satisfied: verdict.satisfied } : { satisfied: verdict.satisfied };
+      if (!verdict.satisfied) {
+        const gap = verdict.missing?.trim();
+        output = `${output}\n\n⚠ This answer may be incomplete${gap ? ` — still missing: ${gap}` : "."}`;
+      }
+    } catch {
+      // keep the answer; verification is best-effort
+    }
+  }
+
   return {
     id: createRunId("multi_agent_response"),
     model,
@@ -688,7 +728,8 @@ async function buildOrchestrationResponse(
       workers: results.map((result) => ({
         status: result.status,
         workerId: result.workerId
-      }))
+      })),
+      ...(verification ? { verification } : {})
     }
   };
 }

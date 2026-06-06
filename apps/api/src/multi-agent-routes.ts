@@ -39,6 +39,7 @@ interface OrchestrateBody {
   readonly maxOutputCharsPerWorker?: number;
   readonly summarize?: boolean;
   readonly synthesize?: boolean;
+  readonly verify?: boolean;
   readonly tiered?: boolean;
 }
 
@@ -187,6 +188,9 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     const synthesizer = parsed.value.synthesize === true
       ? createWorkerSynthesizer(options.modelProvider, input.model)
       : undefined;
+    const verifier = parsed.value.verify === true
+      ? createAnswerVerifier(options.modelProvider, input.model)
+      : undefined;
 
     try {
       const orchestration = await orchestrator.run(input, {
@@ -196,7 +200,8 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
           ? { maxOutputCharsPerWorker: parsed.value.maxOutputCharsPerWorker }
           : {}),
         ...(summarizer ? { summarizeWorkerOutput: summarizer } : {}),
-        ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {})
+        ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {}),
+        ...(verifier ? { verifyFinalAnswer: verifier } : {})
       });
 
       return {
@@ -282,6 +287,9 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     const synthesizer = parsed.value.synthesize === true
       ? createWorkerSynthesizer(options.modelProvider, input.model)
       : undefined;
+    const verifier = parsed.value.verify === true
+      ? createAnswerVerifier(options.modelProvider, input.model)
+      : undefined;
     const orchestrationOptions = {
       ...(effectiveMode ? { mode: effectiveMode } : {}),
       ...(parsed.value.maxWorkers !== undefined ? { maxWorkers: parsed.value.maxWorkers } : {}),
@@ -289,7 +297,8 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
         ? { maxOutputCharsPerWorker: parsed.value.maxOutputCharsPerWorker }
         : {}),
       ...(summarizer ? { summarizeWorkerOutput: summarizer } : {}),
-      ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {})
+      ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {}),
+      ...(verifier ? { verifyFinalAnswer: verifier } : {})
     };
 
     reply.header("content-type", "text/event-stream; charset=utf-8");
@@ -566,6 +575,13 @@ function parseOrchestrateBody(value: unknown): ParseResult<OrchestrateBody> {
     return invalid("INVALID_ORCHESTRATE_REQUEST", "synthesize must be a boolean");
   }
 
+  let verify: boolean | undefined;
+  if (typeof body.verify === "boolean") {
+    verify = body.verify;
+  } else if (body.verify !== undefined) {
+    return invalid("INVALID_ORCHESTRATE_REQUEST", "verify must be a boolean");
+  }
+
   let tiered: boolean | undefined;
   if (typeof body.tiered === "boolean") {
     tiered = body.tiered;
@@ -584,6 +600,7 @@ function parseOrchestrateBody(value: unknown): ParseResult<OrchestrateBody> {
       ...(maxOutputCharsPerWorker !== undefined ? { maxOutputCharsPerWorker } : {}),
       ...(summarize !== undefined ? { summarize } : {}),
       ...(synthesize !== undefined ? { synthesize } : {}),
+      ...(verify !== undefined ? { verify } : {}),
       ...(tiered !== undefined ? { tiered } : {})
     }
   };
@@ -671,6 +688,57 @@ export function createWorkerSummarizer(
 const SYNTHESIZER_SYSTEM_PROMPT =
   "You are the final synthesizer for a multi-agent orchestrator. You are given each sub-agent's output (e.g. a direct answer plus a risks/gaps review). Fuse them into ONE coherent answer for the user: lead with the answer, then fold in the most important risks/caveats. Resolve overlaps, drop the per-agent headers, and do not invent facts beyond what the sub-agents provided. Output the final answer text only — no preamble, no '## agent' markers.";
 const SYNTHESIZER_MAX_OUTPUT_TOKENS = 512;
+
+// Verification against the original objective (MAST +15.6%). A SEPARATE judge
+// (maker ≠ judge) — never the synthesizer self-grading (LLMs can't reliably
+// self-correct, arXiv 2310.01798). Strict one-line verdict so it parses
+// deterministically on the local model.
+const VERIFIER_SYSTEM_PROMPT =
+  "You are a strict completeness checker for an answer produced by a multi-agent system. Given the USER REQUEST and the ANSWER, decide if the answer FULLY satisfies every part the user asked for. Reply with EXACTLY one line and nothing else: `SATISFIED` if it does, or `MISSING: <the specific part the answer fails to cover>` if a requested part is absent. Judge only completeness against the request — not style, length, or tone. When unsure, prefer SATISFIED.";
+const VERIFIER_MAX_OUTPUT_TOKENS = 80;
+
+/**
+ * Build the final-answer verifier wired to the real model provider — the live
+ * half of the orchestrator's `verifyFinalAnswer` seam. Parses the strict
+ * one-line verdict deterministically; an unparseable verdict is treated as
+ * SATISFIED so a healthy answer is never falsely flagged.
+ */
+export function createAnswerVerifier(
+  modelProvider: ModelProvider | undefined,
+  model: string
+): ((objective: string, output: string) => Promise<{ readonly satisfied: boolean; readonly missing?: string }>) | undefined {
+  if (!modelProvider) {
+    return undefined;
+  }
+  return async (objective, output) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        modelProvider.generate({
+          maxOutputTokens: VERIFIER_MAX_OUTPUT_TOKENS,
+          messages: [
+            { content: VERIFIER_SYSTEM_PROMPT, role: "system" },
+            { content: `USER REQUEST:\n${objective}\n\nANSWER:\n${output}`, role: "user" }
+          ],
+          model,
+          temperature: 0
+        }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("verifier timeout")), SYNTHESIZER_REQUEST_TIMEOUT_MS);
+        })
+      ]);
+      const text = (response.output ?? "").trim();
+      const missing = /^\s*missing\s*:\s*(.+)$/im.exec(text);
+      if (missing && missing[1]) {
+        return { missing: missing[1].trim(), satisfied: false };
+      }
+      // SATISFIED, or anything unparseable → do not falsely flag a healthy answer.
+      return { satisfied: true };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+}
 const SYNTHESIZER_REQUEST_TIMEOUT_MS = 20_000;
 
 export function createWorkerSynthesizer(

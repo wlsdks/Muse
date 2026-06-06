@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
 
-import { createWorkerSummarizer, toMultiAgentSseStream } from "../src/multi-agent-routes.js";
+import { createAnswerVerifier, createWorkerSummarizer, toMultiAgentSseStream } from "../src/multi-agent-routes.js";
 
 function busWithClearSpy() {
   const bus = new InMemoryAgentMessageBus();
@@ -89,6 +89,17 @@ describe("createWorkerSummarizer timer hygiene", () => {
 
   it("returns undefined when no modelProvider is wired (legacy contract — no summarizer means no timer)", () => {
     expect(createWorkerSummarizer(undefined, "model")).toBeUndefined();
+  });
+
+  it("createAnswerVerifier parses the strict verdict: SATISFIED → ok, MISSING: X → flagged, garbage → ok (never falsely flag), no provider → undefined", async () => {
+    function stub(output: string): ModelProvider {
+      return { generate: async (): Promise<ModelResponse> => ({ id: "x", model: "x", output }), id: "stub", listModels: async () => [], stream: async function* () { /* unused */ } };
+    }
+    expect(createAnswerVerifier(undefined, "m")).toBeUndefined();
+    expect(await createAnswerVerifier(stub("SATISFIED"), "m")!("req", "ans")).toEqual({ satisfied: true });
+    expect(await createAnswerVerifier(stub("MISSING: the risk analysis"), "m")!("req", "ans")).toEqual({ missing: "the risk analysis", satisfied: false });
+    // an unparseable verdict must NOT falsely flag a healthy answer
+    expect(await createAnswerVerifier(stub("hmm, looks mostly fine I think"), "m")!("req", "ans")).toEqual({ satisfied: true });
   });
 
   it("falls back to the raw output when the model returns an empty string — and STILL clears the timer in the finally path", async () => {
