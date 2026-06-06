@@ -9,6 +9,18 @@ describe("classifyCasualPrompt — pure social prompts only (precision-first)", 
     }
   });
 
+  it("classifies KO time-of-day greetings incl. the copula suffix (so they take the fast path, not the 7s grounded path)", () => {
+    for (const q of ["좋은 아침", "좋은 아침이야", "좋은 아침이에요", "좋은 저녁이에요", "좋은 밤", "좋은 오후예요", "굿모닝"]) {
+      expect(classifyCasualPrompt(q)).toBe("greeting");
+    }
+  });
+
+  it("does NOT mistake a real question that merely STARTS with a time-of-day phrase for a greeting", () => {
+    for (const q of ["좋은 하루 보내는 방법 알려줘", "내 아침 일정 뭐야", "좋은 아침 뭐 먹을까"]) {
+      expect(classifyCasualPrompt(q)).toBeNull();
+    }
+  });
+
   it("classifies thanks (EN + KO)", () => {
     for (const q of ["thanks", "Thank you", "thx", "ty", "고마워", "감사합니다", "appreciate it"]) {
       expect(classifyCasualPrompt(q)).toBe("thanks");

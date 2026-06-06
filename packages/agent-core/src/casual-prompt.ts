@@ -17,7 +17,7 @@
 export type CasualPromptKind = "greeting" | "thanks" | "farewell";
 
 const CASUAL_PATTERNS: ReadonlyArray<{ readonly kind: CasualPromptKind; readonly re: RegExp }> = [
-  { kind: "greeting", re: /^(hi+|hey+|hello+|helo|yo|hiya|howdy|sup|gm|good morning|good evening|good afternoon|안녕|안녕하세요|하이|헬로|여보세요)( there| muse)?$/u },
+  { kind: "greeting", re: /^(hi+|hey+|hello+|helo|yo|hiya|howdy|sup|gm|good morning|good evening|good afternoon|안녕|안녕하세요|하이|헬로|여보세요|좋은\s?아침|좋은\s?저녁|좋은\s?밤|좋은\s?오후|좋은\s?하루|굿모닝|굿이브닝)( there| muse|이야|이에요|예요|요|입니다|하세요)?$/u },
   { kind: "thanks", re: /^(thanks?|thank you|thanks a lot|thank u|thx|ty|tysm|cheers|much appreciated|appreciate it|고마워|고마워요|고맙습니다|감사|감사해|감사해요|감사합니다|땡큐)$/u },
   { kind: "farewell", re: /^(bye+|bye bye|goodbye|good bye|see you|see ya|see you later|cya|later|good ?night|take care|잘있어|잘 있어|안녕히|안녕히 계세요|잘가|잘 가|바이|다음에 봐)$/u }
 ];
