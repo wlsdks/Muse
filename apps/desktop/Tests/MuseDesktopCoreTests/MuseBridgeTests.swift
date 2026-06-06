@@ -49,4 +49,20 @@ final class MuseBridgeTests: XCTestCase {
             XCTAssertEqual(error as? MuseBridgeError, .emptyQuery)
         }
     }
+
+    func testCompanionEnvironmentInjectsKeepAliveWhenAbsent() {
+        let env = MuseBridge.companionEnvironment([:])
+        XCTAssertEqual(env["MUSE_OLLAMA_KEEP_ALIVE"], "2h")
+    }
+
+    func testCompanionEnvironmentDefaultsWhenBlank() {
+        let env = MuseBridge.companionEnvironment(["MUSE_OLLAMA_KEEP_ALIVE": "   "])
+        XCTAssertEqual(env["MUSE_OLLAMA_KEEP_ALIVE"], "2h")
+    }
+
+    func testCompanionEnvironmentHonoursUserOverride() {
+        let env = MuseBridge.companionEnvironment(["MUSE_OLLAMA_KEEP_ALIVE": "-1", "PATH": "/usr/bin"])
+        XCTAssertEqual(env["MUSE_OLLAMA_KEEP_ALIVE"], "-1")
+        XCTAssertEqual(env["PATH"], "/usr/bin") // inherits the rest of the environment
+    }
 }

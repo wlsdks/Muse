@@ -83,11 +83,28 @@ public enum MuseBridge {
         return parseAnswer(try run(invocation(query: trimmed, bin: bin)))
     }
 
+    /// The companion runs ALL DAY: keep the local Ollama model warm so a turn
+    /// after an idle gap is instant, not a multi-second cold reload. Injects a
+    /// generous `MUSE_OLLAMA_KEEP_ALIVE` default into the spawned CLI's
+    /// environment — but the user's own value always wins. Pure + testable.
+    public static func companionEnvironment(
+        _ base: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        var env = base
+        let existing = env["MUSE_OLLAMA_KEEP_ALIVE"]?.trimmingCharacters(in: .whitespaces) ?? ""
+        if existing.isEmpty {
+            env["MUSE_OLLAMA_KEEP_ALIVE"] = "2h"
+        }
+        return env
+    }
+
     static func run(_ invocation: MuseInvocation) throws -> String {
         let process = Process()
         // Resolve via `env` so a bare name like `muse` is found on PATH.
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [invocation.executable] + invocation.arguments
+        // Keep the local model warm across idle gaps (always-on companion).
+        process.environment = companionEnvironment()
 
         let stdout = Pipe()
         let stderr = Pipe()
