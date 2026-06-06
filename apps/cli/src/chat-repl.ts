@@ -313,11 +313,28 @@ export async function runLocalChat(
     ...(options.priorHistory ?? []),
     { content: message, role: "user" as const }
   ];
-  const result = await assembly.agentRuntime.run({
+  let result = await assembly.agentRuntime.run({
     messages,
     ...(hasMetadata ? { metadata } : {}),
     model: model ?? assembly.defaultModel ?? "default"
   });
+
+  // qwen3:8b deterministically returns a BLANK completion (no text, no tool
+  // call) for some "[time] [noun] 보여줘" phrasings — "오늘 할 일 보여줘" is empty
+  // 8/8 while "할 일 보여줘" / "오늘 할 일 알려줘" answer fine. Re-asking with a
+  // NEWLINE-led nudge breaks the degenerate stop (a space-join / punctuation
+  // does NOT — only a newline). Recovers most; the empty-answer fallback floors
+  // the rest. The retry's prompt is nudged but the answer is still gated against
+  // the ORIGINAL message.
+  if (result.response.output.trim().length === 0) {
+    const nudge = /[가-힣]/u.test(message) ? "간단히 답해줘." : "Please answer briefly.";
+    const retry = await assembly.agentRuntime.run({
+      messages: [{ content: systemContent, role: "system" as const }, ...(options.priorHistory ?? []), { content: `${message}\n${nudge}`, role: "user" as const }],
+      ...(hasMetadata ? { metadata } : {}),
+      model: model ?? assembly.defaultModel ?? "default"
+    });
+    if (retry.response.output.trim().length > 0) result = retry;
+  }
 
   // Deterministic anti-fabrication gate: for a recall of the user's OWN data,
   // refuse honestly when the answer isn't grounded in the evidence (retrieved
