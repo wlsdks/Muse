@@ -372,7 +372,15 @@ export async function runLocalChat(
   const { block: groundingBlock, matches } = isCasual
     ? { block: "", matches: [] as Awaited<ReturnType<typeof retrieveChatGrounding>>["matches"] }
     : await retrieveChatGrounding(message);
-  const systemContent = [personaPreamble, userMemoryBlock, formatCurrentContextLine()]
+  // Reply in the user's language. Without this the local model drifts to English
+  // for "assistant-y" replies — a Korean "회의 취소해줘" got an English "sir,
+  // please provide…" clarification ~2/3 of the time, jarring for a KO-primary
+  // companion. Detected from the message, stated explicitly (the strongest form
+  // for a small model), and placed FIRST so it isn't buried under the persona.
+  const languageDirective = /[가-힣]/u.test(message)
+    ? "사용자가 한국어로 말했습니다. 한국어로 답하세요. (단, 비밀번호·파일명·인용 출처 같은 고유값은 원문 그대로 두세요.)"
+    : "Reply in English, matching the user's language.";
+  const systemContent = [languageDirective, personaPreamble, userMemoryBlock, formatCurrentContextLine()]
     .filter((part) => part.length > 0)
     .join("\n\n") + groundingBlock;
   const messages = [
