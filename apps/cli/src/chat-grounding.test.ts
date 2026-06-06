@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   CHAT_GROUNDING_MAX_HITS,
@@ -167,6 +167,8 @@ describe("formatChatGroundingBlock", () => {
 });
 
 describe("groundChatTurn", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("returns '' for a too-short turn without touching retrieval", async () => {
     expect(await groundChatTurn("hi")).toBe("");
   });
@@ -176,10 +178,14 @@ describe("groundChatTurn", () => {
   });
 
   it("fails soft to '' when retrieval throws (no index / Ollama down)", async () => {
-    // No notes index + no test-embedding hook => searchRecall throws on embed; we swallow it.
-    const block = await groundChatTurn("what is my office VPN MTU?", {
-      env: { MUSE_NOTES_INDEX_FILE: "/nonexistent/notes-index.json", OLLAMA_BASE_URL: "http://127.0.0.1:1" }
-    });
-    expect(block).toBe("");
+    // searchRecall reads the index path + Ollama URL from PROCESS env (not the
+    // `env` it's handed), so stub the real ones: a nonexistent index + an
+    // unreachable Ollama makes `embed` throw; retrieveChatGrounding swallows it.
+    // (Passing only an `env` object left the real ~/.muse notes + live Ollama in
+    // play, so this test passed only on a box with an empty notes corpus.)
+    vi.stubEnv("MUSE_NOTES_INDEX_FILE", "/nonexistent/notes-index.json");
+    vi.stubEnv("OLLAMA_BASE_URL", "http://127.0.0.1:1");
+    vi.stubEnv("MUSE_RECALL_TEST_QUERY_EMBEDDING", "");
+    expect(await groundChatTurn("what is my office VPN MTU?")).toBe("");
   });
 });
