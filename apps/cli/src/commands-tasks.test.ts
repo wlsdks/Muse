@@ -6,7 +6,7 @@ import { readTasks, writeTasks, type PersistedTask } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { filterTasksByDue, filterTasksBySearch, filterTasksByTag, parseDueWindow, registerTasksCommands, resolveLocalTaskId, type TasksCommandHelpers } from "./commands-tasks.js";
+import { filterTasksByDue, filterTasksBySearch, filterTasksByTag, formatOpenLoops, parseDueWindow, registerTasksCommands, resolveLocalTaskId, type TasksCommandHelpers } from "./commands-tasks.js";
 
 describe("filterTasksByTag — keep only tasks carrying a tag (case-insensitive)", () => {
   const tasks = [
@@ -310,5 +310,17 @@ describe("resolveLocalTaskId — by TITLE (CLI parity with the agent's by-name c
 
   it("still throws not-found when neither id nor title matches", () => {
     expect(() => resolveLocalTaskId("nonexistent", tasks)).toThrow(/task not found: nonexistent/u);
+  });
+});
+
+describe("formatOpenLoops — Zeigarnik open-loops readout (C4)", () => {
+  it("all-clear when there are no loops", () => {
+    expect(formatOpenLoops([])).toContain("No open loops");
+  });
+  it("lists each planless loop with its age + how to close it", () => {
+    const out = formatOpenLoops([{ title: "file taxes", ageDays: 40 }, { title: "call dentist", ageDays: 15 }]);
+    expect(out).toContain("file taxes — open 40d, no plan");
+    expect(out).toContain("call dentist");
+    expect(out).toContain("--due");
   });
 });

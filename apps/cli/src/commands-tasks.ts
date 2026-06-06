@@ -13,6 +13,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import { openLoops, type OpenLoop } from "@muse/agent-core";
 import { resolveTasksFile } from "@muse/autoconfigure";
 import {
   compareTasksByDueDate,
@@ -79,6 +80,19 @@ interface SharedOptions {
 
 function localTasksFile(): string {
   return resolveTasksFile(process.env as Record<string, string | undefined>);
+}
+
+/** Render the open-loops nudge — surface the planless nagging tasks + how to close them. Pure. */
+export function formatOpenLoops(loops: readonly OpenLoop[]): string {
+  if (loops.length === 0) {
+    return "🔓 No open loops — every unfinished task either has a plan or is fresh. Clear head.\n";
+  }
+  const lines = ["🔓 Open loops (unfinished + unscheduled — a plan closes the loop):"];
+  for (const loop of loops) {
+    lines.push(`  • ${loop.title} — open ${Math.round(loop.ageDays).toString()}d, no plan`);
+  }
+  lines.push(`  ↳ give one a plan: muse tasks edit "<title>" --due <when>  (or complete it)`);
+  return `${lines.join("\n")}\n`;
 }
 
 const taskLocalFallback = <T>(
@@ -226,6 +240,20 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         tasks: payload.tasks as unknown as Parameters<typeof formatTaskList>[0]["tasks"],
         total: payload.total
       }));
+    });
+
+  tasks
+    .command("open-loops")
+    .description("Unfinished, UNSCHEDULED tasks that have been nagging a while — close the loop by giving each a plan (Zeigarnik/Ovsiankina; local)")
+    .option("--json", "Print the raw loops")
+    .action(async (options: { readonly json?: boolean }) => {
+      const all = await readTasks(localTasksFile());
+      const loops = openLoops(all, { nowMs: Date.now() });
+      if (options.json) {
+        io.stdout(`${JSON.stringify(loops, null, 2)}\n`);
+        return;
+      }
+      io.stdout(formatOpenLoops(loops));
     });
 
   tasks

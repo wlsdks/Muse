@@ -209,6 +209,7 @@ export { DEFAULT_QUORUM, independentWitnessCount, quorumVerdict, type QuorumVerd
 export { overdueContacts, type ContactInteractions, type OverdueContact, type OverdueOptions } from "./relationship-decay.js";
 export { selectEarnedThemes, type EarnedProactivityOptions, type EarnedTheme, type ThemeOccurrence, type ThemeSignal } from "./earned-proactivity.js";
 export { dailyCounts, mostAnomalousDays, type AnomalyOptions, type DayAnomaly, type DayCount } from "./activity-anomaly.js";
+export { openLoops, type OpenLoop, type OpenLoopOptions, type TaskLike } from "./open-loops.js";
 export {
   createConfidenceGatedInvestigator,
   decideProactiveRecall,
