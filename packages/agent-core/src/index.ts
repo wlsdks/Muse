@@ -207,6 +207,7 @@ export { answerClaimsAction, answerPromisesAction, classifyActionRequest, classi
 export { calibrateAbstention, conformalThreshold, empiricalCoverage, type CalibrationResult } from "./conformal.js";
 export { DEFAULT_QUORUM, independentWitnessCount, quorumVerdict, type QuorumVerdict } from "./quorum.js";
 export { overdueContacts, type ContactInteractions, type OverdueContact, type OverdueOptions } from "./relationship-decay.js";
+export { selectEarnedThemes, type EarnedProactivityOptions, type EarnedTheme, type ThemeOccurrence, type ThemeSignal } from "./earned-proactivity.js";
 export {
   createConfidenceGatedInvestigator,
   decideProactiveRecall,

@@ -63,7 +63,7 @@ change is a regression.**
 ## Group C — sharpen an EXISTING axis (recall / proactivity / reflection)
 
 - [ ] **C1 · Matrix-Profile / DAMP discord** (Lu et al., SIGKDD 2022) → `muse anomaly`: your most structurally abnormal day vs your own history.
-- [ ] **C2 · C1 feed-forward-loop persistence gate** (Mangan & Alon 2003) → earned-proactivity: a nudge fires only when a theme persists across multiple sources over a dwell window (the north-star "earned proactivity", 3 counters + threshold).
+- [~] **C2 · C1 feed-forward-loop persistence gate** — pure `selectEarnedThemes` engine ✅ (proven); daemon wiring (needs a theme-occurrence source) next. (Mangan & Alon 2003) → earned-proactivity: a nudge fires only when a theme persists across multiple sources over a dwell window (the north-star "earned proactivity", 3 counters + threshold).
 - [ ] **C3 · Peak-end rule** (Kahneman et al. 1993) → `muse recap` stores an episode as its PEAK + END (cited), cheaper retrieval.
 - [ ] **C4 · Zeigarnik / Ovsiankina open-loops** (Masicampo & Baumeister 2011) → `muse open-loops`: surface unfinished tasks + attach a when/where plan.
 - [ ] **C5 · Bayesian online change-point** (Adams & MacKay 2007) → `muse patterns --shifts`: detect the START of a new routine regime (complements CUSUM).
