@@ -7,25 +7,33 @@
  */
 
 import { dailyCounts, mostAnomalousDays, type DayAnomaly } from "@muse/agent-core";
-import { resolveEpisodesFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
-import { readEpisodes, readReminders, readTasks } from "@muse/mcp";
+import { resolveActionLogFile, resolveEpisodesFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { readActionLog, readEpisodes, readReminders, readTasks } from "@muse/mcp";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
 
 const parseMs = (iso: string | undefined): number => (iso ? Date.parse(iso) : Number.NaN);
 
-/** Gather the user's activity timestamps (tasks + episodes + reminders created). Fail-soft per store. */
+/**
+ * Gather the user's activity timestamps. Includes the ACTION LOG (every action
+ * Muse took, by `when`) alongside tasks/episodes/reminders created — without it
+ * a personal corpus is so sparse (most days create nothing) that the daily
+ * median is 0 and "your busiest day" degenerates into "any day you did anything".
+ * Fail-soft per store.
+ */
 export async function gatherActivityTimestamps(env: Record<string, string | undefined>): Promise<number[]> {
-  const [tasks, episodes, reminders] = await Promise.all([
+  const [tasks, episodes, reminders, actions] = await Promise.all([
     readTasks(resolveTasksFile(env)).catch(() => []),
     readEpisodes(resolveEpisodesFile(env)).catch(() => []),
-    readReminders(resolveRemindersFile(env)).catch(() => [])
+    readReminders(resolveRemindersFile(env)).catch(() => []),
+    readActionLog(resolveActionLogFile(env), env as NodeJS.ProcessEnv).catch(() => [])
   ]);
   return [
     ...tasks.map((task) => parseMs(task.createdAt)),
     ...episodes.map((episode) => parseMs(episode.endedAt)),
-    ...reminders.map((reminder) => parseMs(reminder.createdAt))
+    ...reminders.map((reminder) => parseMs(reminder.createdAt)),
+    ...actions.map((action) => parseMs(action.when))
   ].filter((value) => Number.isFinite(value));
 }
 
