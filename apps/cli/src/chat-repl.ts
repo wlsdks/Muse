@@ -382,7 +382,16 @@ export async function runLocalChat(
   // whitewashed a cross-entity conflation ("the cat is 보리", the dog's name).
   const evidence = [...matches, ...conversationMatches(options.priorHistory ?? [])];
   const knownFactKeys = userMemory ? Object.keys(userMemory.facts ?? {}) : [];
-  const gated = gateChatAnswer(message, result.response.output, evidence, knownFactKeys);
+  // A tool that actually RAN (tasks.list, calendar.list, reminders.list, …) IS
+  // the grounding for a "what are my X?" recall — its data answered the question.
+  // The notes/episodes anti-fabrication gate must not override a real tool result
+  // with a false "I don't remember that" (observed: "내 할일 뭐 있어?" ran
+  // tasks.list and found the task, yet the gate abstained on the possessive
+  // "내 … 뭐"). The gate still guards a tool-less, ungrounded personal-fact recall.
+  const toolGrounded = (result.toolsUsed ?? []).length > 0;
+  const gated = toolGrounded
+    ? result.response.output
+    : gateChatAnswer(message, result.response.output, evidence, knownFactKeys);
 
   // The local model sometimes stops mid-citation, leaving a broken "[from …"
   // fragment; drop it so the clean 📎 receipt can stand in for the source.
