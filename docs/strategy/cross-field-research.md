@@ -159,3 +159,40 @@ autobiographical memory). Candidates to mine next: immune clonal selection /
 affinity maturation, gene-regulatory motifs, homeostatic feedback, predictive
 coding / free energy, complementary-learning-systems consolidation, ecological
 diversity indices, kin selection / reciprocity for the relationship graph.
+
+## Candidate pipeline — researched 2026-06-06 (not yet applied)
+
+Three parallel field sweeps (biology / CS-stats / cognitive-behavioral), all
+citation-verified, leaning 2018-2026 to answer "are we only using old classics?".
+Curated by fit to a LOCAL personal-data AI: deterministic + locally-computable +
+live-verifiable + never weakens the fabrication-zero floor. Verdict = my pick.
+
+### A. Hardens the grounding/calibration FLOOR (highest strategic value — principle 2 + Whetstone)
+
+| Mechanism (paper) | Field | Muse capability | Verdict |
+| --- | --- | --- | --- |
+| **Conformal prediction / calibrated abstention** (Angelopoulos & Bates 2022; Mohri & Hashimoto, ICML 2024) | Statistics/ML | Replace the hand-tuned cosine "I'm not sure" threshold with a distribution-free quantile calibrated on the user's OWN notes → a *formal* coverage guarantee ("when I answer I'm right ≥90%, else I abstain"); `muse doctor --calibration`. | ★★★ BUILD FIRST — recent, hardens the release-gate invariant, IS Whetstone's calibration brake, slots into `verifyGrounding` |
+| **Quorum sensing / multi-witness confidence** (Becker et al., Nat. Commun. 2022/2023) | Biology (microbiology) | Answer only when ≥quorum independent passages agree; else "I'm not sure — only 1/3 sources agree." A 2nd line of defense on fabrication-zero. | ★★★ — recent biology, deterministic aggregate, falsifiable via RGV battery |
+
+### B. Fills a NEW axis Muse has zero coverage of
+
+| Mechanism (paper) | Field | Muse capability | Verdict |
+| --- | --- | --- | --- |
+| **Dunbar layers / tie-strength decay** (Roberts & Dunbar 2011; Sapiezynski et al., Sci. Rep. 2022) | Social neuroscience | `muse relationships nudge` — from contact TIMESTAMPS only (no content), flag a tie whose gap >> your usual cadence: "haven't talked to X in a while." Privacy-preserving, emotionally resonant. | ★★★ — fills the relationship-maintenance gap; pure metadata arithmetic |
+| **Synaptic tagging & capture / hippocampal replay** (Luboeinski & Tetzlaff 2021; Cairney et al., Trends Neurosci. 2025) | Neuroscience | `muse consolidate`/`muse sleep` — a salience×recency×cross-ref replay pass that promotes worth-keeping notes/episodes and lets the rest decay (the loop-v2 Sleep daemon). | ★★ — recent, aligns with the planned Sleep daemon |
+
+### C. Sharpens an EXISTING axis (recall / proactivity / reflection)
+
+| Mechanism (paper) | Field | Muse capability | Verdict |
+| --- | --- | --- | --- |
+| **Matrix Profile / DAMP discord** (Lu et al., SIGKDD 2022) | Time-series | `muse anomaly` — your most structurally abnormal day vs your OWN history ("you wrote 12× less Tuesday"). Parameter-light, no model. | ★★ — recent, clean, deterministic |
+| **C1 feed-forward loop (persistence detector)** (Mangan & Alon 2003) | Systems biology | Earned-proactivity gate: a nudge fires only when a theme PERSISTS across multiple sources over a dwell window (3 counters + threshold) — operationalizes the "earned proactivity" north star. | ★★ — tiny, deterministic, on-mission |
+| **Peak-end rule** (Kahneman et al. 1993) | Cognitive psychology | `muse recap` stores an episode as its PEAK + END (cited), not the full transcript — cheaper retrieval, same re-evocative power. | ★★ — refines episodic memory |
+| **Zeigarnik/Ovsiankina open loops** (Masicampo & Baumeister 2011; meta-analysis 2025) | Cognitive psychology | `muse open-loops` — surface unfinished tasks + attach a when/where plan (the plan dissolves the intrusive tension). | ★★ — refines task surfacing |
+| **Bayesian online change-point** (Adams & MacKay 2007; ext. 2018-2024) | Statistics | `muse patterns --shifts` — detect the START of a new routine regime (complements the existing CUSUM breach detector). | ★ — additive to CUSUM |
+
+### Gimmick-risk (sound cool, weak real value on a personal corpus)
+- **Predictive coding / free-energy** — collapses to a threshold gate (quorum does it simpler) or needs infra an 8B can't run.
+- **Hawkes self-exciting bursts** — needs a DENSE event log; noisy on a sparse personal corpus.
+- **Negative thymic selection (anomaly)** — KL "new topic" alert fires too often on legit new interests.
+- **Fresh-start effect** — habituates if fired every Monday; only fire on personally-meaningful landmarks.
