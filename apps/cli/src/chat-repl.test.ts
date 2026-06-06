@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { filterFactsToKeys, formatNotesOverview, parseAgentMode } from "./chat-repl.js";
+import { emptyAnswerFallback, filterFactsToKeys, formatNotesOverview, parseAgentMode } from "./chat-repl.js";
+
+describe("emptyAnswerFallback (never a blank chat bubble)", () => {
+  it("gives an honest KO retry-ask for a Korean message", () => {
+    const out = emptyAnswerFallback("오늘 할 일 보여줘");
+    expect(out.length).toBeGreaterThan(0);
+    expect(out).toContain("다시");
+    expect(out).not.toContain("잠시"); // not a deferral
+  });
+  it("gives an EN retry-ask for an English message", () => {
+    expect(emptyAnswerFallback("show my tasks")).toMatch(/once more|say it/i);
+  });
+});
 
 describe("formatNotesOverview (deterministic corpus inventory, KO/EN)", () => {
   it("lists the notes-relative paths with a KO header + count", () => {

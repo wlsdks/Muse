@@ -335,13 +335,26 @@ export async function runLocalChat(
 
   // "Answers from your notes, source quoted": render the source receipt the model
   // often omits inline, so a grounded answer shows WHERE it came from.
-  const response = withGroundingReceipt(repaired, groundedNoteSources(matches, repaired), /[가-힣]/u.test(message));
+  const withReceipt = withGroundingReceipt(repaired, groundedNoteSources(matches, repaired), /[가-힣]/u.test(message));
+
+  // Never hand the desktop a BLANK answer. qwen3:8b occasionally returns an empty
+  // completion for a specific phrasing (observed deterministically on "오늘 할 일
+  // 보여줘"), which surfaces as a blank chat bubble. Fall back to an honest retry
+  // ask — better than silence, and not a deferral ("잠시만요…"), it admits the miss.
+  const response = withReceipt.trim().length > 0 ? withReceipt : emptyAnswerFallback(message);
 
   return {
     response,
     runId: result.runId,
     toolsUsed: result.toolsUsed ?? []
   };
+}
+
+/** Honest stand-in when the model returns a blank completion — never a blank bubble. */
+export function emptyAnswerFallback(message: string): string {
+  return /[가-힣]/u.test(message)
+    ? "방금은 답을 제대로 만들지 못했어요. 한 번만 다시, 조금 다르게 말씀해 주시겠어요?"
+    : "I didn't manage to put that answer together — could you say it once more, maybe a little differently?";
 }
 
 export function parseAgentMode(value: string | undefined): AgentMode | undefined {
