@@ -37,7 +37,6 @@ import {
   writeRunLog
 } from "./program-helpers.js";
 import { closestCommandName } from "./closest-command.js";
-import { listNoteFiles, notesCorpusFileCount } from "./commands-ask.js";
 import type { ProgramIO } from "./program.js";
 
 const AGENT_MODES: readonly string[] = ["react", "plan_execute"];
@@ -250,6 +249,11 @@ export async function runLocalChat(
   // recall ranks the whole corpus weakly so the model refused or dumped raw
   // "ref=…" ids. List it deterministically when the user actually has notes.
   if (classifyCorpusOverview(message)) {
+    // Lazy import: a STATIC import of the big `commands-ask` module pulls its
+    // async-init dependency graph into chat-repl's module init, which the bun
+    // `--compile` bundler emits as a top-level `await init_commands_ask()` in a
+    // sync context → the bundled desktop binary crashes at startup. Defer it.
+    const { listNoteFiles, notesCorpusFileCount } = await import("./commands-ask.js");
     const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
     const total = await notesCorpusFileCount(notesDir).catch(() => 0);
     if (total > 0) {
