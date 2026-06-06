@@ -83,7 +83,7 @@ export type TimezoneQuery =
   | { readonly kind: "now"; readonly to: Zone };
 
 const NOW_RE = /^(?:what(?:'s| is)?\s+(?:the\s+)?time(?:\s+is\s+it)?|what\s+time\s+is\s+it|current\s+time)\s+in\s+(.+?)(?:\s+(?:right\s+)?now)?$/u;
-const CONVERT_RE = /^(?:what(?:'s| is)?\s+|whats\s+|convert\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight)\s+(.+?)\s+(?:in|to)\s+(.+?)(?:\s+time)?$/u;
+const CONVERT_RE = /^(?:what\s+time\s+is\s+|what(?:'s| is)?\s+|whats\s+|convert\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight)\s+(.+?)\s+(?:in|to)\s+(.+?)(?:\s+time)?$/u;
 
 /**
  * Detect a pure time-zone question and return its parts, or null. Handles

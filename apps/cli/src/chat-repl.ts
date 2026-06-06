@@ -28,6 +28,7 @@ import { answerClaimsAction, classifyCasualPrompt, classifyCorpusOverview, class
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
 import { countdownDays, detectCountdownQuery, formatCountdown } from "./countdown-query.js";
 import { detectDateDiffQuery, formatDateDiff } from "./date-diff-query.js";
+import { detectTimezoneQuery, formatTimezone } from "./timezone-query.js";
 import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, isChatAbstention, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
@@ -370,6 +371,13 @@ export async function runLocalChat(
     const dateDiff = detectDateDiffQuery(message, new Date());
     if (dateDiff) {
       return { response: formatDateDiff(dateDiff), runId: "local-date-diff", toolsUsed: [] };
+    }
+    // Time-zone conversion / "what time is it in X" — the 8B doesn't reliably know
+    // offsets or DST (it answered "5am"/"6am" for 3pm New York → Seoul, exact: 4am
+    // EDT). formatTimezone computes it DST-correctly from the IANA database.
+    const timezone = detectTimezoneQuery(message);
+    if (timezone) {
+      return { response: formatTimezone(timezone, new Date()), runId: "local-timezone", toolsUsed: [] };
     }
   }
 

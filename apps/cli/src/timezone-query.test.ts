@@ -13,6 +13,11 @@ describe("detectTimezoneQuery — only a real timezone question short-circuits",
     expect(detectTimezoneQuery("9:30am tokyo in new york")).toMatchObject({ kind: "convert", minutes: 570 });
   });
 
+  it("parses the 'what time is <time> <zone> in <zone>' framing (a convert, not a now-query)", () => {
+    expect(detectTimezoneQuery("what time is 3pm New York in Seoul?")).toMatchObject({ kind: "convert", minutes: 900 });
+    expect(detectTimezoneQuery("what time is 9am London in Tokyo")).toMatchObject({ kind: "convert", minutes: 540 });
+  });
+
   it("parses 'what time is it in <zone>' (now)", () => {
     expect(detectTimezoneQuery("what time is it in Tokyo?")).toMatchObject({ kind: "now" });
     expect(detectTimezoneQuery("what's the time in London right now")).toMatchObject({ kind: "now" });
