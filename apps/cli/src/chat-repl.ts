@@ -25,7 +25,7 @@ import type { Command } from "commander";
 
 import { classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt } from "@muse/agent-core";
 
-import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
+import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
@@ -354,9 +354,14 @@ export async function runLocalChat(
   // fragment; drop it so the clean 📎 receipt can stand in for the source.
   const repaired = stripTruncatedCitation(gated);
 
+  // Drop a FABRICATED "[from X]" (e.g. "[from weather]" with no weather tool
+  // call) — a fake source marker betrays the cited-recall edge. Only citations
+  // naming a real retrieved source survive.
+  const deFabbed = stripFabricatedCitations(repaired, matches.map((m) => m.source));
+
   // "Answers from your notes, source quoted": render the source receipt the model
   // often omits inline, so a grounded answer shows WHERE it came from.
-  const withReceipt = withGroundingReceipt(repaired, groundedNoteSources(matches, repaired), /[가-힣]/u.test(message));
+  const withReceipt = withGroundingReceipt(deFabbed, groundedNoteSources(matches, deFabbed), /[가-힣]/u.test(message));
 
   // Never hand the desktop a BLANK answer. qwen3:8b occasionally returns an empty
   // completion for a specific phrasing (observed deterministically on "오늘 할 일

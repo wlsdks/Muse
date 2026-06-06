@@ -11,6 +11,7 @@ import {
   groundedNoteSources,
   isPersonalFactRecall,
   shortCitationRef,
+  stripFabricatedCitations,
   stripTruncatedCitation,
   withGroundingReceipt
 } from "./chat-grounding.js";
@@ -115,6 +116,26 @@ describe("stripTruncatedCitation (repair a mid-citation runtime truncation)", ()
   });
   it("leaves an answer with no citation untouched", () => {
     expect(stripTruncatedCitation("그건 아직 기억하고 있지 않아요.")).toBe("그건 아직 기억하고 있지 않아요.");
+  });
+});
+
+describe("stripFabricatedCitations (drop a citation for a source that wasn't retrieved)", () => {
+  const noteSrc = "/Users/x/.muse/notes/wifi_passwords/seoul_office.md";
+  it("strips a fabricated non-existent source, keeping the answer text", () => {
+    expect(stripFabricatedCitations("현재 비가 옵니다. [from weather]", [])).toBe("현재 비가 옵니다.");
+    expect(stripFabricatedCitations("아마 맞을 거예요 [from internet]", [noteSrc])).toBe("아마 맞을 거예요");
+  });
+  it("keeps a citation that names a REAL retrieved source (short path or basename)", () => {
+    expect(stripFabricatedCitations("비번은 muse2026 [from wifi_passwords/seoul_office.md]", [noteSrc]))
+      .toBe("비번은 muse2026 [from wifi_passwords/seoul_office.md]");
+    expect(stripFabricatedCitations("답 [from seoul_office.md]", [noteSrc])).toBe("답 [from seoul_office.md]");
+  });
+  it("keeps the real note citation but strips the fabricated one in a mixed answer", () => {
+    expect(stripFabricatedCitations("비번 muse2026 [from seoul_office.md], 날씨 비 [from weather]", [noteSrc]))
+      .toBe("비번 muse2026 [from seoul_office.md], 날씨 비");
+  });
+  it("leaves an answer with no citation untouched", () => {
+    expect(stripFabricatedCitations("그냥 답변입니다.", [])).toBe("그냥 답변입니다.");
   });
 });
 

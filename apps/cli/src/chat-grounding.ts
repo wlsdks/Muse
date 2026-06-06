@@ -218,6 +218,31 @@ export function stripTruncatedCitation(answer: string): string {
   return answer.slice(0, idx).trimEnd();
 }
 
+/**
+ * Strip an inline `[from X]` citation whose X is NOT a source actually placed in
+ * the grounding context. The local model invents citations for data it never
+ * grounded — "현재 비가 옵니다 [from weather]" with no weather tool call, "[from
+ * internet]", "[from memory]" — which fakes the "shows its work" edge: a source
+ * marker the user can't trust. Only a citation naming a real retrieved source
+ * (by its notes-relative path OR basename) survives; the answer text is kept.
+ */
+export function stripFabricatedCitations(answer: string, sources: readonly string[]): string {
+  if (!answer.includes("[from ")) return answer;
+  const valid = new Set<string>();
+  for (const source of sources) {
+    const short = shortCitationRef(source).toLowerCase();
+    valid.add(short);
+    valid.add(short.split("/").pop() ?? short);
+  }
+  return answer
+    .replace(/\s*\[from ([^\]]+)\]/gu, (full: string, cited: string) => {
+      const c = cited.trim().toLowerCase();
+      return valid.has(c) || valid.has(c.split("/").pop() ?? c) ? full : "";
+    })
+    .replace(/[ \t]+\n/gu, "\n")
+    .trimEnd();
+}
+
 /** Append a "shows its work" source receipt when chat answered FROM the user's
  * notes — the model often forgets to render [from <source>] inline, but the
  * "answers from your notes, source quoted" promise should still be visible. */
