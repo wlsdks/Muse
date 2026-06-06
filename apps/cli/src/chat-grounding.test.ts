@@ -21,7 +21,13 @@ describe("isPersonalFactRecall", () => {
     expect(isPersonalFactRecall("내 강아지 이름 뭐야?")).toBe(true);
     expect(isPersonalFactRecall("내 고양이 이름이 뭐야")).toBe(true);
     expect(isPersonalFactRecall("내 와이파이 비밀번호 뭐였지?")).toBe(true);
+    expect(isPersonalFactRecall("제 비밀번호 뭐였지?")).toBe(true); // 제 (humble my) + space
     expect(isPersonalFactRecall("what's my wifi password?")).toBe(true);
+  });
+  it("does NOT mistake 내일/제일 (tomorrow/most) for the possessive 내/제 — a planning question is NOT fact-recall", () => {
+    expect(isPersonalFactRecall("이번 주 뭐가 제일 급해?")).toBe(false); // 제일 = most, not 제(my)
+    expect(isPersonalFactRecall("오늘 제일 중요한 일이 뭐야?")).toBe(false);
+    expect(isPersonalFactRecall("내일 뭐부터 해야 해?")).toBe(false); // 내일 = tomorrow, not 내(my)
   });
   it("does NOT flag general or advice questions (never gate general knowledge)", () => {
     expect(isPersonalFactRecall("물 마시는 게 왜 중요해?")).toBe(false);

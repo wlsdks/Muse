@@ -150,7 +150,11 @@ const HANGUL = /[가-힣]/u;
 export function isPersonalFactRecall(question: string): boolean {
   const q = question.trim();
   // Must be the user asking about THEIR OWN data...
-  const possessive = /(^|\s)(내|제|나의|내가|my\b|what'?s my|what is my)/iu.test(q);
+  // `내`/`제` (my) must be a STANDALONE word (followed by a space), or the
+  // first-person `내가`/`제가`. Without the boundary, bare `내`/`제` matched
+  // "내일" (tomorrow) and "제일" (most) — so "이번 주 뭐가 제일 급해?" was wrongly
+  // treated as fact-recall and abstained despite the tasks that answer it.
+  const possessive = /(^|\s)(내(?=\s)|제(?=\s)|내가|제가|나의|my\b|what'?s my|what is my)/iu.test(q);
   // ...for a stored fact...
   const asksFact = /(이름|비밀번호|비번|번호|주소|생일|이메일|메일|나이|뭐|무엇|뭔|언제|어디|얼마|몇|what|when|where|which|who)/iu.test(q);
   // ...as a QUESTION (not a STATEMENT that PROVIDES the fact — "내 비번은 1234야"
