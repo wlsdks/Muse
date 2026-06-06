@@ -20,10 +20,10 @@
 
 import type { Readable } from "node:stream";
 
-import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveNotesDir } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { classifyCasualPrompt, classifyMetaPrompt } from "@muse/agent-core";
+import { classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt } from "@muse/agent-core";
 
 import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, retrieveChatGrounding, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
 import { isRecord } from "./credential-store.js";
@@ -37,6 +37,7 @@ import {
   writeRunLog
 } from "./program-helpers.js";
 import { closestCommandName } from "./closest-command.js";
+import { listNoteFiles, notesCorpusFileCount } from "./commands-ask.js";
 import type { ProgramIO } from "./program.js";
 
 const AGENT_MODES: readonly string[] = ["react", "plan_execute"];
@@ -185,6 +186,23 @@ export const DESKTOP_META_EN =
   "I answer from your own notes and memos and quote the exact source — and if I'm not sure, I say so instead of guessing. " +
   "I can also add and organize your tasks, reminders, and calendar events. Everything runs on this device and nothing leaves it.";
 
+/**
+ * Render a notes-corpus inventory for "내 노트 뭐 있어?" / "what notes do I have".
+ * Top-K recall ranks every note weakly for a whole-corpus query, so the gate
+ * abstains ("I can't list them") — wrong; we DO know the corpus. Deterministic,
+ * KO/EN by message script, clean notes-relative paths (no home dir).
+ */
+export function formatNotesOverview(noteFiles: readonly string[], total: number, korean: boolean): string {
+  const lines = noteFiles.map((file) => `  • ${file}`);
+  const more = total > noteFiles.length
+    ? [korean ? `  … 외 ${(total - noteFiles.length).toString()}개 더` : `  … and ${(total - noteFiles.length).toString()} more`]
+    : [];
+  const head = korean
+    ? `저장된 노트가 ${total.toString()}개 있어요. 이 중 무엇이든 물어보시면 출처와 함께 답해드릴게요:`
+    : `You have ${total.toString()} note${total === 1 ? "" : "s"}. Ask me about any of them and I'll quote the source:`;
+  return [head, ...lines, ...more].join("\n");
+}
+
 /** Keep only the named keys from a fact map (preserving values). */
 export function filterFactsToKeys(facts: Readonly<Record<string, string>>, keys: readonly string[]): Record<string, string> {
   const allow = new Set(keys);
@@ -226,6 +244,21 @@ export async function runLocalChat(
   // over-claims and (observed) injects an unrelated note into the reply.
   if (classifyMetaPrompt(message)) {
     return { response: /[가-힣]/u.test(message) ? DESKTOP_META_KO : DESKTOP_META_EN, runId: "local-meta", toolsUsed: [] };
+  }
+
+  // "내 노트 뭐 있어?" / "what notes do I have" wants the INVENTORY, but top-K
+  // recall ranks the whole corpus weakly so the model refused or dumped raw
+  // "ref=…" ids. List it deterministically when the user actually has notes.
+  if (classifyCorpusOverview(message)) {
+    const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+    const total = await notesCorpusFileCount(notesDir).catch(() => 0);
+    if (total > 0) {
+      return {
+        response: formatNotesOverview(await listNoteFiles(notesDir), total, /[가-힣]/u.test(message)),
+        runId: "local-corpus",
+        toolsUsed: []
+      };
+    }
   }
 
   // A bare greeting / social prompt never needs a tool — but projecting the tool

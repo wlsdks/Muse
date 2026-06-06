@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { filterFactsToKeys, parseAgentMode } from "./chat-repl.js";
+import { filterFactsToKeys, formatNotesOverview, parseAgentMode } from "./chat-repl.js";
+
+describe("formatNotesOverview (deterministic corpus inventory, KO/EN)", () => {
+  it("lists the notes-relative paths with a KO header + count", () => {
+    const out = formatNotesOverview(["a.md", "wifi/b.md"], 2, true);
+    expect(out).toContain("저장된 노트가 2개");
+    expect(out).toContain("• a.md");
+    expect(out).toContain("• wifi/b.md");
+    expect(out).not.toContain("/Users/"); // never a home path
+  });
+  it("uses an EN header + 'and N more' when the list is capped", () => {
+    const out = formatNotesOverview(["a.md"], 5, false);
+    expect(out).toContain("You have 5 notes");
+    expect(out).toContain("… and 4 more");
+  });
+});
 import { factKeysToInject } from "./chat-grounding.js";
 
 describe("factKeysToInject (per-fact topic relevance — no tangent, recall preserved)", () => {
