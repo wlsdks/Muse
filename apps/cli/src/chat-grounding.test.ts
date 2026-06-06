@@ -6,6 +6,7 @@ import {
   chatAbstention,
   chatAutoReindexEnabled,
   conversationMatches,
+  expressesNoInformation,
   formatChatGroundingBlock,
   gateChatAnswer,
   groundChatTurn,
@@ -139,6 +140,27 @@ describe("groundingReceipt (source quoted)", () => {
   it("does NOT receipt an abstention or a source-less answer", () => {
     expect(withGroundingReceipt(chatAbstention("내 생일?"), ["x.md"], true)).toBe(chatAbstention("내 생일?"));
     expect(withGroundingReceipt("일반 답변입니다.", [], true)).toBe("일반 답변입니다.");
+  });
+
+  it("does NOT receipt a model-PHRASED 'no information' answer (📎 on a non-answer is misleading)", () => {
+    // Live-observed: the model parroted a tangential note phrase ("김지원 매니저에게
+    // 문의") into an abstention, which a single ≥5-char token mis-cited. A receipt
+    // on "정보는 기록에 없습니다" implies the note answered when the answer says it didn't.
+    const ko = "회사 주차장의 층수에 대한 정보는 현재 기록에 없습니다. 김지원 매니저에게 문의하시기 바랍니다.";
+    expect(withGroundingReceipt(ko, ["회사.md"], true)).toBe(ko);
+    const en = "I do not have access to flight schedules.";
+    expect(withGroundingReceipt(en, ["trip.md"], false)).toBe(en);
+  });
+
+  it("expressesNoInformation discriminates a disclaimer from a real grounded answer", () => {
+    expect(expressesNoInformation("회사 주차장의 정보는 현재 기록에 없습니다.")).toBe(true);
+    expect(expressesNoInformation("그 일정은 확인할 수 없어요.")).toBe(true);
+    expect(expressesNoInformation("I do not have that information.")).toBe(true);
+    expect(expressesNoInformation("I'm not sure about that.")).toBe(true);
+    // real grounded answers must NOT trip it (else they lose their receipt)
+    expect(expressesNoInformation("사내 와이파이 비밀번호는 Muse2026! 입니다.")).toBe(false);
+    expect(expressesNoInformation("회의는 7월 3일 오후 4시 3층 대강당에서 열립니다.")).toBe(false);
+    expect(expressesNoInformation("Your flight departs at 2:15 PM from gate B12.")).toBe(false);
   });
 
   it("A2 quorum hedge is opt-in (default off) and only fires on a SINGLE witness source", () => {

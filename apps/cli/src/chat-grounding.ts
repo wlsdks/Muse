@@ -235,6 +235,24 @@ export function isChatAbstention(text: string): boolean {
   return trimmed === chatAbstention("가").trim() || trimmed === chatAbstention("a").trim();
 }
 
+// A model-PHRASED disclaimer of having the asked-for info — not the canonical
+// `chatAbstention` string, so `isChatAbstention` misses it. Used to suppress the
+// 📎 receipt: a source receipt on a "정보는 기록에 없습니다" / "I don't have
+// that" answer is actively misleading — it implies the note answered when the
+// answer itself says it didn't (observed live: the model parroted a tangential
+// note phrase into an abstention, which a single ≥5-char token then mis-cited).
+// Tuned to strong disclaim idioms; a genuine grounded answer that merely tacks
+// on "그 외 정보는 없어요" may lose its receipt — an accepted trade, since citing
+// a source on a non-answer breaks the honesty edge harder than a missing receipt.
+const NO_INFO_RE = /기록에\s*없|정보[가는를도]?\s*(?:현재\s*)?(?:제\s*)?(?:기록에\s*)?없|알\s*수\s*없|찾을\s*수\s*없|확인할\s*수\s*없|가지고\s*있지\s*않|\bdo(?:es)?\s*n'?t\s+have\b|\bdo\s+not\s+have\b|\bno\s+(?:information|record|data)\b|\bnot\s+in\s+(?:my|the|your)\s+records?\b|\b(?:can'?t|cannot|could\s*n'?t)\s+find\b|\bnot\s+sure\b/iu;
+
+/** Does the answer DISCLAIM having the asked-for information? Broader than the
+ * canonical `isChatAbstention` — catches a free-form model abstention so a 📎
+ * source receipt is never stapled onto a "no information" reply. */
+export function expressesNoInformation(text: string): boolean {
+  return NO_INFO_RE.test(text);
+}
+
 // A note actually GROUNDED the answer only if a distinctive token from it (a
 // value with a digit, or a word ≥5 chars — not a common word shared by the
 // question) shows up in the answer. This keeps the receipt accurate: an answer
@@ -311,7 +329,7 @@ export function withGroundingReceipt(
   korean: boolean,
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  if (sources.length === 0 || isChatAbstention(answer) || answer.includes("[from")) return answer;
+  if (sources.length === 0 || isChatAbstention(answer) || expressesNoInformation(answer) || answer.includes("[from")) return answer;
   const label = korean ? "노트" : "from";
   let receipt = `${answer}\n\n📎 ${label}: ${sources.join(", ")}`;
   // Quorum hedge (A2, biology — Becker et al. 2022/2023): when the answer rests
