@@ -219,6 +219,16 @@ export async function runLocalChat(
     readonly priorHistory?: readonly { readonly role: "user" | "assistant"; readonly content: string }[];
   } = {}
 ) {
+  // NFC-normalize the message. macOS/Swift passes CLI arguments in NFD (Hangul
+  // syllables DECOMPOSED into jamo — "뭐" → ㅁ+ㅜ+ㅓ), so the desktop companion's
+  // Korean turns arrived as NFD while every classifier/keyword here is NFC →
+  // classifyMetaPrompt / isPersonalFactRecall / tool keywords all silently
+  // missed, and the app answered Korean questions with garbage. A direct
+  // `bash` spawn passes NFC, which is why the binary tested fine in isolation.
+  message = message.normalize("NFC");
+  if (options.priorHistory) {
+    options = { ...options, priorHistory: options.priorHistory.map((turn) => ({ ...turn, content: turn.content.normalize("NFC") })) };
+  }
   // When the caller passes --model explicitly, push it into the
   // env so the autoconfigure assembly factory wires the matching
   // provider (the assembly is built lazily here, not at module

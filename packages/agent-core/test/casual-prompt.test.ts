@@ -75,6 +75,16 @@ describe("classifyMetaPrompt — questions ABOUT Muse itself (precision-first)",
     }
   });
 
+  it("NFD Korean misses the classifier (the macOS/Swift desktop bug) — NFC normalization recovers it", () => {
+    // macOS/Swift passes CLI args in NFD (Hangul decomposed into jamo), so the
+    // desktop companion's Korean turns missed every NFC classifier. runLocalChat
+    // now NFC-normalizes the message; this documents why.
+    const nfd = "뭐 할 수 있어?".normalize("NFD");
+    expect(nfd).not.toBe("뭐 할 수 있어?");
+    expect(classifyMetaPrompt(nfd)).toBe(false);
+    expect(classifyMetaPrompt(nfd.normalize("NFC"))).toBe(true);
+  });
+
   it("does NOT match a question about the user's notes that merely contains a meta word", () => {
     for (const q of [
       "what can you do about my taxes?",

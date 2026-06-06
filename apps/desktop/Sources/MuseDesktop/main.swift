@@ -22,6 +22,31 @@ if let f = arguments.firstIndex(of: "--check-ollama") {
     exit(0)
 }
 
+// Headless chat self-test: `MuseDesktop --selftest-chat "<query>"`. Runs the
+// EXACT path a typed companion turn uses — MuseBridge spawns the bundled CLI,
+// MusePresenter shapes the bubble + spoken text — so the FULL desktop answer
+// path is verifiable end-to-end without the GUI (synthetic clicks can't drive
+// the non-activating panel). Prints BUBBLE (on-screen) and SPEECH (TTS) lines.
+if let flag = arguments.firstIndex(of: "--selftest-chat"), flag + 1 < arguments.count {
+    let query = arguments[flag + 1]
+    let lang: ResolvedLanguage = query.range(of: "\\p{Hangul}", options: .regularExpression) != nil ? .korean : .english
+    let done = DispatchSemaphore(value: 0)
+    var code: Int32 = 1
+    Task {
+        let result: Result<String, MuseBridgeError>
+        do { result = .success(try await MuseBridge.ask(query: query)) }
+        catch let error as MuseBridgeError { result = .failure(error) }
+        catch { result = .failure(.cliFailed(status: -1, stderr: "\(error)")) }
+        let presentation = MusePresenter.present(result, language: lang)
+        print("BUBBLE: \(presentation.bubbleText)")
+        print("SPEECH: \(presentation.speechText ?? "(silent)")")
+        if case .success = result { code = 0 }
+        done.signal()
+    }
+    done.wait()
+    exit(code)
+}
+
 /// Keep a user-supplied pixel scale in a sane range so a typo can't request a
 /// multi-gigabyte bitmap (or a zero/negative one).
 func clampScale(_ value: Int) -> Int { min(max(value, 1), 256) }
