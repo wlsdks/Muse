@@ -2,7 +2,7 @@ import { scoreGroundingEval } from "@muse/agent-core";
 import type { KnowledgeMatch } from "@muse/agent-core";
 import { describe, expect, it } from "vitest";
 
-import { CHAT_GROUNDING_EVAL_CORPUS, chatGateVerify } from "./chat-grounding-eval.js";
+import { CHAT_GROUNDING_EVAL_CORPUS, CHAT_GROUNDING_THRESHOLDS, chatGateVerify } from "./chat-grounding-eval.js";
 
 // Deterministic stand-in for live retrieval: hand every query the full note set
 // as confident matches, so the scorer exercises the chat gate's verdict logic
@@ -36,5 +36,9 @@ describe("CHAT_GROUNDING_EVAL_CORPUS — the chat gate catches drift and never f
     expect(result.falseRefusalRate).toBe(0);
     expect(result.drift).toBeGreaterThanOrEqual(3);
     expect(result.answerable).toBeGreaterThanOrEqual(6);
+  });
+  it("demands a perfect faithfulness floor — the chat gate is deterministic, so any drop is a real miss", () => {
+    expect(CHAT_GROUNDING_THRESHOLDS.minFaithfulness).toBe(1);
+    expect(CHAT_GROUNDING_THRESHOLDS.maxFalseRefusal).toBeLessThanOrEqual(0.1);
   });
 });

@@ -7,6 +7,23 @@ import type {
 } from "@muse/agent-core";
 
 import { gateChatAnswer, isChatAbstention } from "./chat-grounding.js";
+import type { GroundingThresholds } from "./grounding-eval-runner.js";
+
+/**
+ * Regression floor for the CHAT gate. Tighter than the ask path's
+ * `GROUNDING_THRESHOLDS` (0.84 / 0.25) ON PURPOSE: the chat gate is
+ * DETERMINISTIC (no stochastic judge) and retrieval is temperature-0
+ * embeddings, so the battery is fully reproducible (measured 8/8 at 1.00 / 0.00).
+ * A deterministic gate that drops below 1.00 faithfulness means a drift it used
+ * to catch now slips — a real bug — so the loose 0.84 floor would be a silent
+ * pass. minFaithfulness is therefore 1.00; maxFalseRefusal keeps a little slack
+ * (a gate-logic regression refuses several cases, not one) without inviting a
+ * brittle single-case flake.
+ */
+export const CHAT_GROUNDING_THRESHOLDS: GroundingThresholds = {
+  maxFalseRefusal: 0.1,
+  minFaithfulness: 1
+};
 
 /**
  * Live, scored battery for the CONVERSATIONAL surface (`muse chat`) — the one

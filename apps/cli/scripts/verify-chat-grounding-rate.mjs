@@ -13,8 +13,8 @@
  * (exit 0) when local Ollama / the embed model is unreachable. LOCAL OLLAMA ONLY.
  */
 import { createOllamaEmbedder } from "@muse/autoconfigure";
-import { CHAT_GROUNDING_EVAL_CORPUS, runChatGroundingEval } from "../dist/chat-grounding-eval.js";
-import { GROUNDING_THRESHOLDS, renderGroundingEvalReport } from "../dist/grounding-eval-runner.js";
+import { CHAT_GROUNDING_EVAL_CORPUS, CHAT_GROUNDING_THRESHOLDS, runChatGroundingEval } from "../dist/chat-grounding-eval.js";
+import { renderGroundingEvalReport } from "../dist/grounding-eval-runner.js";
 
 const embedModel = process.argv[2] ?? "nomic-embed-text";
 const baseUrl = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
@@ -42,12 +42,12 @@ try {
 }
 
 const result = await runChatGroundingEval(CHAT_GROUNDING_EVAL_CORPUS, { embed });
-const report = renderGroundingEvalReport(result, GROUNDING_THRESHOLDS);
+const report = renderGroundingEvalReport(result, CHAT_GROUNDING_THRESHOLDS);
 
 console.log(report.text);
 console.log(
   report.status === "ok"
-    ? `\nPASS — chat gate faithfulness ${result.faithfulnessRate.toFixed(2)} >= ${GROUNDING_THRESHOLDS.minFaithfulness}, false-refusal ${result.falseRefusalRate.toFixed(2)} <= ${GROUNDING_THRESHOLDS.maxFalseRefusal}`
+    ? `\nPASS — chat gate faithfulness ${result.faithfulnessRate.toFixed(2)} >= ${CHAT_GROUNDING_THRESHOLDS.minFaithfulness}, false-refusal ${result.falseRefusalRate.toFixed(2)} <= ${CHAT_GROUNDING_THRESHOLDS.maxFalseRefusal}`
     : `\nFAIL — a chat-gate rate regressed below threshold`
 );
 process.exit(report.status === "ok" ? 0 : 1);
