@@ -87,7 +87,13 @@ export function formatCurrentContextLine(now: Date = new Date()): string {
   const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long", timeZone: tz });
   const dateStr = now.toLocaleDateString("en-CA", { timeZone: tz });
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", hour12: false, minute: "2-digit", timeZone: tz });
-  return `Current local context: ${dateStr} ${timeStr} ${dayOfWeek} (${tz}).`;
+  // Name the part of day so the small model doesn't misread the 24h clock — it
+  // greeted "이른 아침" (early morning) at 23:38. Stating it in code beats making
+  // the 8B infer it.
+  const hour = Number(timeStr.slice(0, 2));
+  const partOfDay = hour < 5 ? "late night" : hour < 9 ? "early morning" : hour < 12 ? "morning"
+    : hour < 17 ? "afternoon" : hour < 21 ? "evening" : "night";
+  return `Current local context: ${dateStr} ${timeStr} ${dayOfWeek} ${partOfDay} (${tz}).`;
 }
 
 /** Max facts / plain-preferences rendered into the persona (env override,

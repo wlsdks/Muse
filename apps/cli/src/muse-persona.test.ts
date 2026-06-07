@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { buildMusePersona, formatCurrentContextLine, personaEntryCap } from "./muse-persona.js";
 
 describe("formatCurrentContextLine", () => {
-  it("emits a single 'Current local context: YYYY-MM-DD HH:MM Weekday (TZ).' line", () => {
+  it("emits a single 'Current local context: YYYY-MM-DD HH:MM Weekday <part-of-day> (TZ).' line", () => {
     const fixed = new Date("2026-05-13T12:30:00Z");
     const line = formatCurrentContextLine(fixed);
-    expect(line).toMatch(/^Current local context: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \w+ \([^)]+\)\.$/);
+    expect(line).toMatch(/^Current local context: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \w+ (?:late night|early morning|morning|afternoon|evening|night) \([^)]+\)\.$/);
   });
 
   it("renders YYYY-MM-DD (en-CA locale) so the date parses unambiguously", () => {
