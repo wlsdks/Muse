@@ -28,7 +28,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectByMmr, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
-import { buildAttributedRepairPrompt, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
+import { buildAttributedRepairPrompt, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
@@ -938,6 +938,9 @@ interface AskOptions {
   readonly persona?: string;
   readonly model?: string;
   readonly image?: string;
+  readonly extract?: string;
+  readonly toCalendar?: boolean;
+  readonly apply?: boolean;
   readonly top?: string;
   readonly embedModel?: string;
   readonly autoReindex?: boolean;
@@ -1634,6 +1637,18 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .option(
       "--image <path>",
       "Attach a local image (PNG/JPEG/GIF/WebP/HEIC) for the model to SEE — runs locally on the multimodal default (gemma4). e.g. `muse ask --image receipt.jpg '이 영수증 정리해줘'`."
+    )
+    .option(
+      "--extract <fields>",
+      "With --image: extract structured data for the comma-separated fields and print JSON (grounded — an unreadable field is omitted, never invented). e.g. `muse ask --image receipt.jpg --extract 'merchant,total,date'`."
+    )
+    .option(
+      "--to-calendar",
+      "With --image: extract a calendar event from the image and DRAFT it (title/startsAt/location/notes). Draft-first — prints the proposed event; re-run with --apply to actually create it. e.g. `muse ask --image flyer.jpg --to-calendar`."
+    )
+    .option(
+      "--apply",
+      "With --to-calendar: actually create the extracted event (default is draft-only)."
     )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const argQuery = queryParts.join(" ").trim();
@@ -2335,6 +2350,70 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const model = tierRoute?.model ?? baseModel;
       if (tierRoute) {
         io.stderr(`(tier: ${tierRoute.tier} → ${model})\n`);
+      }
+
+      // Grounded vision actions: --extract / --to-calendar read the IMAGE (not
+      // notes) and emit structured output / a draft action, so they short-circuit
+      // the normal recall+grounding flow. Both require --image.
+      if (options.extract || options.toCalendar) {
+        if (imageAttachments.length === 0) {
+          io.stderr("--extract / --to-calendar require --image <path>\n");
+          process.exitCode = 1;
+          return;
+        }
+        const img = imageAttachments[0]!;
+        if (options.toCalendar) {
+          const ex = await extractStructuredFromImage(assembly.modelProvider, {
+            imageBase64: img.dataBase64,
+            instruction: "Extract a calendar event from this image: its title, the start date/time (startsAt, copied EXACTLY as shown, e.g. '2026-06-20 19:00' or 'June 20 7pm'), plus location and notes if present. Omit any field that isn't visible.",
+            mimeType: img.mimeType,
+            model,
+            schema: { properties: { location: { type: "string" }, notes: { type: "string" }, startsAt: { type: "string" }, title: { type: "string" } }, required: ["title", "startsAt"], type: "object" }
+          });
+          if (!ex.ok || typeof ex.data?.title !== "string" || typeof ex.data?.startsAt !== "string") {
+            io.stderr(`muse ask --to-calendar: couldn't read an event from the image (${ex.error ?? "no visible title/start time"}).\n`);
+            process.exitCode = 1;
+            return;
+          }
+          const ev = ex.data;
+          io.stdout(`📅 Draft event from the image:\n  title: ${String(ev.title)}\n  startsAt: ${String(ev.startsAt)}${typeof ev.location === "string" ? `\n  location: ${ev.location}` : ""}${typeof ev.notes === "string" ? `\n  notes: ${ev.notes}` : ""}\n`);
+          if (options.apply !== true) {
+            io.stdout("\n(draft only — re-run with --apply to create it)\n");
+            return;
+          }
+          const { createCalendarMcpServer } = await import("@muse/mcp");
+          const registry = buildCalendarRegistry(process.env as MuseEnvironment);
+          const addTool = createCalendarMcpServer({ registry }).tools.find((t) => t.name === "add");
+          if (!addTool) { io.stderr("no calendar provider configured\n"); process.exitCode = 1; return; }
+          const res = await addTool.execute({
+            startsAt: String(ev.startsAt),
+            title: String(ev.title),
+            ...(typeof ev.location === "string" ? { location: ev.location } : {}),
+            ...(typeof ev.notes === "string" ? { notes: ev.notes } : {})
+          });
+          io.stdout(res && typeof res === "object" && "error" in res ? `\n❌ ${String((res as { error: unknown }).error)}\n` : `\n✅ Created: ${JSON.stringify(res)}\n`);
+          return;
+        }
+        const fields = (options.extract ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+        if (fields.length === 0) {
+          io.stderr("--extract needs at least one field, e.g. --extract 'merchant,total,date'\n");
+          process.exitCode = 1;
+          return;
+        }
+        const ex = await extractStructuredFromImage(assembly.modelProvider, {
+          imageBase64: img.dataBase64,
+          instruction: `Extract these fields from the image: ${fields.join(", ")}.`,
+          mimeType: img.mimeType,
+          model,
+          schema: { properties: Object.fromEntries(fields.map((f) => [f, { type: "string" }])), type: "object" }
+        });
+        if (!ex.ok) {
+          io.stderr(`muse ask --extract: ${ex.error}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        io.stdout(`${JSON.stringify(ex.data, null, options.json === true ? 0 : 2)}\n`);
+        return;
       }
 
       const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userKey));
