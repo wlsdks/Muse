@@ -7,7 +7,7 @@ things up, and runs ENTIRELY on a local model with `MUSE_LOCAL_ONLY` ON BY
 DEFAULT (cloud egress refused in code; explicit opt-out forfeits the
 guarantee). Local-by-construction is the floor, not the pitch.
 **The FUNCTIONAL edge — "Muse shows its work": one deterministic grounding +
-citation gate under EVERY surface (recall, proactivity, reflection) so every
+citation gate under EVERY surface (recall, proactivity, reflection, vision) so every
 claim cites a real source, weak grounding becomes "I'm not sure", and an
 un-groundable claim is dropped by code — fabrication rate = 0 is a release
 gate.** Every change must STRENGTHEN this edge (gate a new surface / harden an

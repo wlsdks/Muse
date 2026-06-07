@@ -50,7 +50,8 @@ const BATTERIES = [
   { axis: "★ SWARM: council self-abstention (5th surface)", file: "apps/cli/scripts/verify-council-self-abstention.mjs", name: "council-self-abstention" },
   { axis: "⏰ ACTUATION: reminder local-time confirmation (no UTC misread)", file: "apps/cli/scripts/verify-reminder-local-time.mjs", name: "reminder-local-time" },
   { axis: "⏰ ACTUATION: task local-time confirmation (no UTC misread)", file: "apps/cli/scripts/verify-task-local-time.mjs", name: "task-local-time" },
-  { axis: "⏰ ACTUATION: calendar local-time confirmation (no raw-ISO echo)", file: "apps/cli/scripts/verify-calendar-local-time.mjs", name: "calendar-local-time" }
+  { axis: "⏰ ACTUATION: calendar local-time confirmation (no raw-ISO echo)", file: "apps/cli/scripts/verify-calendar-local-time.mjs", name: "calendar-local-time" },
+  { axis: "★ VISION: grounding floor on the image surface (answer visible / abstain on absent)", file: "apps/cli/scripts/verify-vision-grounding.mjs", name: "vision-grounding" }
 ];
 
 async function ollamaReachable() {

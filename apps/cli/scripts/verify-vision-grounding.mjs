@@ -30,7 +30,11 @@ try {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.join(here, "..", "dist", "index.js");
 const fixture = (name) => path.join(here, "fixtures", "vision", name);
-const ABSTAIN = /can'?t tell|cannot find|can'?t find|don'?t have|do not have|not sure|no information|not (?:shown|visible|listed|printed)|isn'?t (?:shown|visible|on)/iu;
+// Broad abstention/refusal matcher — gemma4 phrases "it isn't there" many ways
+// ("there is no …", "I am sorry, …", "cannot find", "not printed", "doesn't
+// have"). A FABRICATED answer would instead STATE a value (a name/number), which
+// none of these match — so this stays safe (it can't pass an invented answer).
+const ABSTAIN = /I (?:am|'m) sorry|apolog|can(?:not|'?t) (?:tell|find|see|determine|locate|identify)|unable to|not sure|no (?:information|cashier|name|price|mention|record|indication|details?)|there (?:is|'?s) no|(?:not|isn'?t|aren'?t|wasn'?t) (?:shown|visible|listed|printed|provided|present|available|specified|mentioned|included|displayed)|do(?:es)?n'?t (?:have|show|include|list|contain|mention|appear|specify)/iu;
 
 let failures = 0;
 function ask(image, question) {

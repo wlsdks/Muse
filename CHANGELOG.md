@@ -9,6 +9,22 @@ move from `Unreleased` to dated/versioned headings.
 
 ### Added
 
+- **Default local model → `gemma4:12b`** (was `qwen3:8b`). Chosen for native
+  multimodal vision plus stronger grounding; verified across every agent-eval
+  gate (tools, faithfulness, adversarial safety, judge meta-eval, plan-quality,
+  self-improving). Answer temperature is now pinned explicitly (grounding-first
+  0.6, `MUSE_ANSWER_TEMPERATURE`) instead of inheriting the model's high default.
+- **Grounded vision actions** — turn the camera into a grounded, draft-first
+  agent. `muse ask --image` sees a photo; `--extract "f,…"` pulls structured
+  JSON; `--auto` classifies the image (event / receipt / contact / document) and
+  drafts the matching action (calendar event / expense note / contact / titled
+  note), writing only on `--apply`. The agent does the same flag-free given an
+  image + a natural request. `muse chat --local --image` and the Ink chat's
+  `@photo.png` bring vision to the chat surface. The grounding floor holds on the
+  image surface (an unreadable field is omitted, an absent fact is refused — never
+  invented), gated by `eval:vision`, `eval:vision-agent`, `eval:vision-grounding`
+  (the last registered into the `eval:self-improving` release battery).
+
 - **Proactive surfacing (Phases A + B + C + D)**. New daemon scans the
   calendar registry AND the personal-tasks store every minute
   (`MUSE_PROACTIVE_TICK_MS`, default 60s) and pushes a one-line
