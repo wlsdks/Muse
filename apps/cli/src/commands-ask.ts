@@ -3105,7 +3105,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           /\[(?:task|event|reminder|contact|session|feed|command|commit|memory|action):\s*([^\]]*)\]/giu,
           " $1 "
         );
-        const verdictNotice = await groundingVerdictNotice(verdictAnswer, scoredMatches, query, reverify);
+        // A vision query (`--image`) is grounded in the IMAGE the user supplied,
+        // not in their notes — so the notes-grounding verdict is irrelevant here
+        // and its "unverified" warning would be misleading. Skip it.
+        const verdictNotice = imageAttachments.length > 0
+          ? undefined
+          : await groundingVerdictNotice(verdictAnswer, scoredMatches, query, reverify);
         if (verdictNotice) {
           io.stderr(verdictNotice);
           // Constructive grounding (RARR, arXiv:2210.08726): rather than only
