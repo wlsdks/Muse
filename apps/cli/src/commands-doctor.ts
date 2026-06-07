@@ -390,7 +390,7 @@ async function runGroundingDoctor(io: ProgramIO): Promise<"ok" | "fail"> {
     return "ok";
   }
 
-  const model = process.env.MUSE_DEFAULT_MODEL ?? process.env.MUSE_MODEL ?? "ollama/qwen3:8b";
+  const model = process.env.MUSE_DEFAULT_MODEL ?? process.env.MUSE_MODEL ?? LOCAL_FIRST_DEFAULT_MODEL;
   process.env.MUSE_DEFAULT_MODEL ??= model;
   const modelProvider = createMuseRuntimeAssembly().modelProvider;
   if (!modelProvider) {

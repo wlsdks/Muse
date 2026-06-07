@@ -17,8 +17,14 @@ import { parseBoolean, parseCsv, parseInteger, parseOptionalString } from "./env
 import type { MuseEnvironment } from "./index.js";
 
 /**
-/** The zero-config local model for a local-first install (Ollama + Qwen). */
-export const LOCAL_FIRST_DEFAULT_MODEL = "ollama/qwen3:8b";
+ * The zero-config local model for a local-first install (Ollama + Gemma 4 12B).
+ * Chosen over qwen3:8b on measured edge: stricter grounding (faithfulness 0.94
+ * vs 0.88 on the held-out corpus) AND native multimodal (vision / document /
+ * OCR / chart) — the future capability unlock — at the cost of ~38% slower
+ * generation and a tool-selection gap that Muse's tool descriptions are being
+ * tuned to close. Still fully local (Ollama), so the local-only stance holds.
+ */
+export const LOCAL_FIRST_DEFAULT_MODEL = "ollama/gemma4:12b";
 
 /**
  * Resolve the default model identifier the runtime should use.

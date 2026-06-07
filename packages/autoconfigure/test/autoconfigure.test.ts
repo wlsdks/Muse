@@ -946,9 +946,9 @@ describe("autoconfigure", () => {
     // zero-config default is the local model even if a cloud key is in env
     // (which the local-only gate would refuse anyway). Cloud inference is
     // gated behind an explicit MUSE_LOCAL_ONLY=false opt-out.
-    expect(resolveDefaultModel({})).toBe("ollama/qwen3:8b");
-    expect(resolveDefaultModel({ GEMINI_API_KEY: "x" })).toBe("ollama/qwen3:8b");
-    expect(resolveDefaultModel({ OPENAI_API_KEY: "x" })).toBe("ollama/qwen3:8b");
+    expect(resolveDefaultModel({})).toBe("ollama/gemma4:12b");
+    expect(resolveDefaultModel({ GEMINI_API_KEY: "x" })).toBe("ollama/gemma4:12b");
+    expect(resolveDefaultModel({ OPENAI_API_KEY: "x" })).toBe("ollama/gemma4:12b");
   });
 
   it("resolveDefaultModel infers from credentials only when local-only is opted out", () => {

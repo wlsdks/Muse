@@ -341,7 +341,7 @@ describe("modelEnvCheck — reports the model the runtime ACTUALLY uses (mirrors
   it("local-only (default) + an ambient cloud key ⇒ reports the LOCAL model, ok (NOT 'inferred from GEMINI')", () => {
     const check = modelEnvCheck({ MUSE_LOCAL_ONLY: "true", GEMINI_API_KEY: "k" });
     expect(check.status).toBe("ok");
-    expect(check.detail).toContain("qwen3:8b");
+    expect(check.detail).toContain("gemma4:12b");
     expect(check.detail).toContain("ambient cloud keys ignored");
     expect(check.detail).not.toContain("inferred from GEMINI");
   });
@@ -349,7 +349,7 @@ describe("modelEnvCheck — reports the model the runtime ACTUALLY uses (mirrors
   it("local-only is the DEFAULT (env unset) — still reports the local model, not a cloud key", () => {
     const check = modelEnvCheck({ GEMINI_API_KEY: "k" });
     expect(check.status).toBe("ok");
-    expect(check.detail).toContain("qwen3:8b");
+    expect(check.detail).toContain("gemma4:12b");
   });
 
   it("explicit MUSE_LOCAL_ONLY=false + a cloud key ⇒ warn, inferred from that key", () => {
