@@ -327,6 +327,8 @@ export {
 
 export { groundToolArguments, type ToolArgumentGrounding } from "./tool-argument-grounding.js";
 
+export { extractStructuredFromImage, type VisionExtractInput, type VisionExtractResult } from "./vision-extract.js";
+
 export {
   createAgentCheckpointState,
   decodeCheckpointMessages,
