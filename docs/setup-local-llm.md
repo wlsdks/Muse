@@ -16,11 +16,17 @@ calls is to point it at a local open-source model via **Ollama**.
 > 지정 → 자료 인입 → 첫 질문까지 한 단계씩 이끌어 **비공개·출처 인용
 > 첫 답변**까지 데려다줍니다. 기능 전체 지도는 [SYSTEM-MAP](SYSTEM-MAP.md).
 
-This document covers four tiers, smallest to largest:
+**Default: `gemma4:12b`** *(~16 GB unified memory / VRAM)* — Muse's zero-config
+local model. It's natively **multimodal** (the agent can SEE images — receipts,
+contracts, charts, handwriting — via `muse ask --image`), has strong grounding,
+and runs fully local under Ollama. Apache-2.0, no API key.
+
+On a smaller machine, point Muse at a lighter qwen tier instead
+(`muse config set defaultModel ollama/<tag>`) — all run locally, no key:
 
 - **Low** — 4 GB RAM laptop, chat-only. ~1.0 GB model.
 - **Mid** — 8+ GB RAM, balanced JARVIS surface. ~2.7 GB model.
-- **High** *(recommended)* — 12+ GB RAM, stable tool calling. ~6.6 GB model.
+- **High** — 12+ GB RAM, stable tool calling. ~6.6 GB model.
 - **Power** — 32+ GB RAM (M-Pro / M-Max), agentic-coding tier. ~17 GB model.
 
 No tier requires an API key. None of them send your data to anyone.
@@ -36,8 +42,9 @@ curl -fsSL https://ollama.com/install.sh | sh           # Linux
 # 2. start the daemon (skip on Windows — the installer starts it)
 ollama serve &
 
-# 3. pull a model — pick a tier
-ollama pull qwen3.5:2b-q4_K_M          # low,  ~1.9 GB, 159 ms first-token (recommended)
+# 3. pull a model — gemma4:12b is the default; pick a lighter tier on small RAM
+ollama pull gemma4:12b                 # DEFAULT, ~7.6 GB, multimodal (vision), needs Ollama ≥ 0.30
+ollama pull qwen3.5:2b-q4_K_M          # low,  ~1.9 GB, 159 ms first-token
 ollama pull qwen2.5:7b-instruct        # mid,  4.7 GB, proven baseline
 ollama pull qwen3.5:9b-q4_K_M          # high, 6.6 GB, best reply quality
 ollama pull qwen3.6:27b                # power, 17 GB, agentic coding
@@ -57,7 +64,8 @@ Pass `--check` to dry-run without writing.
 
 | Tier | Model | Size on disk | Min RAM | Strengths | Weaknesses |
 | --- | --- | --- | --- | --- | --- |
-| **low** | `qwen3.5:2b-q4_K_M` | 1.9 GB | 6 GB | **recommended daily-driver** — Apr 2026 Qwen 3.5, 159 ms first-token via `OllamaProvider` (think:false auto) | thinking model (Muse handles automatically) |
+| **default** | `gemma4:12b` | 7.6 GB | ~16 GB | **zero-config default** — native multimodal (vision/OCR/charts), strong grounding (faithfulness 0.94), Apache-2.0; ~16 tok/s | needs Ollama ≥ 0.30 + ~16 GB; slower than the small qwen tiers |
+| **low** | `qwen3.5:2b-q4_K_M` | 1.9 GB | 6 GB | lightest daily-driver — Apr 2026 Qwen 3.5, 159 ms first-token via `OllamaProvider` (think:false auto) | thinking model (Muse handles automatically); text-only |
 | **mid** | `qwen2.5:7b-instruct` | 4.7 GB | 8 GB | proven baseline, 201 ms first-token, 27 tok/s | older (Sep 2024) |
 | **high** | `qwen3.5:9b-q4_K_M` | 6.6 GB | 12 GB | best reply quality at moderate cost, Apr 2026 Qwen 3.5 | needs ≥ 12 GB RAM |
 | **power** | `qwen3.6:27b` | 17 GB | 32 GB | open-weight agentic-coding tier (Apr 2026), best 27 B coding model | M-Pro 32 GB+ or workstation only |
@@ -152,7 +160,7 @@ override per call when you need cloud reasoning:
 
 ```bash
 # default = local
-muse config set defaultModel ollama/qwen3.5:9b
+muse config set defaultModel ollama/gemma4:12b
 
 # one-off cloud call when you need it
 muse chat --model gemini/gemini-2.5-pro "Plan the Q3 migration."
