@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { KnowledgeMatch } from "@muse/agent-core";
+
 import {
+  answerAssertsUnsupportedNumber,
   CHAT_GROUNDING_MAX_HITS,
   CHAT_GROUNDING_MIN_SCORE,
   chatAbstention,
@@ -119,6 +122,62 @@ describe("gateChatAnswer (deterministic anti-fabrication gate)", () => {
   it("still refuses a recall whose topic is NOT on file (birthday never stored)", () => {
     const out = gateChatAnswer("내 생일 언제야?", "당신의 생일은 5월 3일입니다.", [], ["user_name"]);
     expect(out).toBe(chatAbstention("내 생일 언제야?"));
+  });
+
+  // Wrong-VALUE drift: every word but the number overlaps the note, so the
+  // holistic coverage / noteGroundedAnswer shortcuts read "grounded" — only the
+  // deterministic number check catches the fabricated value (parity with the
+  // judge-backed escalation `muse ask` already has).
+  const lease: KnowledgeMatch = {
+    cosine: 0.7, score: 0.7, source: "lease.md",
+    text: "Apartment lease: monthly rent 1,250,000 KRW due on the 1st, landlord is Mr. Park."
+  };
+  const vpn: KnowledgeMatch = {
+    cosine: 0.7, score: 0.7, source: "vpn-wireguard.md",
+    text: "Office VPN fix: set MTU to 1380 on the wg0 interface and restart wireguard."
+  };
+  it("REFUSES a wrong rent value the note doesn't contain (1,500,000 vs 1,250,000)", () => {
+    const q = "내 월세 얼마야?";
+    expect(gateChatAnswer(q, "당신의 월세는 1,500,000 KRW입니다.", [lease])).toBe(chatAbstention(q));
+  });
+  it("REFUSES a wrong MTU value (1500 vs the note's 1380)", () => {
+    const q = "내 VPN MTU 뭐였지?";
+    expect(gateChatAnswer(q, "MTU는 1500으로 설정돼 있어요.", [vpn])).toBe(chatAbstention(q));
+  });
+  it("PASSES the correct rent, comma-formatting tolerant (1,250,000 == 1250000)", () => {
+    const a = "당신의 월세는 1250000 KRW, 매월 1일 납부입니다.";
+    expect(gateChatAnswer("내 월세 얼마야?", a, [lease])).toBe(a);
+  });
+  it("PASSES the correct MTU value grounded in the note", () => {
+    const a = "MTU는 1380으로 설정돼 있어요.";
+    expect(gateChatAnswer("내 VPN MTU 뭐였지?", a, [vpn])).toBe(a);
+  });
+  it("allows a number the user supplied in the QUESTION even if absent from notes", () => {
+    const q = "내 월세 1,500,000 맞아?";
+    const a = "네, 1,500,000 맞아요.";
+    expect(gateChatAnswer(q, a, [lease])).toBe(a);
+  });
+});
+
+describe("answerAssertsUnsupportedNumber", () => {
+  const note = (text: string): KnowledgeMatch => ({ cosine: 0.7, score: 0.7, source: "n.md", text });
+  it("flags a >=3-digit value present in neither evidence nor question", () => {
+    expect(answerAssertsUnsupportedNumber("MTU is 1500", [note("MTU is 1380")], "what MTU?")).toBe(true);
+  });
+  it("does not flag a value that IS in the evidence", () => {
+    expect(answerAssertsUnsupportedNumber("MTU is 1380", [note("MTU is 1380")], "what MTU?")).toBe(false);
+  });
+  it("normalizes thousands separators on both sides", () => {
+    expect(answerAssertsUnsupportedNumber("rent 1250000", [note("rent 1,250,000 KRW")], "rent?")).toBe(false);
+  });
+  it("ignores 1-2 digit counts/ordinals/date parts (no false flag)", () => {
+    expect(answerAssertsUnsupportedNumber("due on the 5th, serves 4", [note("due on the 1st")], "when?")).toBe(false);
+  });
+  it("returns false when the answer asserts no number", () => {
+    expect(answerAssertsUnsupportedNumber("your landlord is Mr. Park", [note("landlord Mr. Park")], "who?")).toBe(false);
+  });
+  it("ignores digits inside a [from …] citation", () => {
+    expect(answerAssertsUnsupportedNumber("renews 2026-09-14 [from policy-2025.pdf]", [note("renewal date 2026-09-14")], "renew?")).toBe(false);
   });
 });
 

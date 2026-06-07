@@ -401,6 +401,50 @@ export function factKeysToInject(message: string, allKeys: readonly string[]): s
   });
 }
 
+// Canonical digit string for a written number: strip thousands separators so
+// "1,250,000" and "1250000" compare equal. Only runs of >= 3 digits are treated
+// as VALUES — 1-2 digit numbers are counts / ordinals ("the 1st", "12th",
+// "serves 4") and date parts ("…-02-28"), whose reformatting ("3" vs "03",
+// "Sep 14") would otherwise cause false refusals.
+function valueNumbers(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const run of text.match(/\d[\d,]*\d|\d/gu) ?? []) {
+    const digits = run.replace(/,/gu, "");
+    if (digits.length >= 3) out.add(digits);
+  }
+  return out;
+}
+
+/**
+ * Does the answer assert a substantive NUMBER present in neither the retrieved
+ * evidence nor the question? `muse ask` catches this wrong-VALUE drift with a
+ * judge pass (`answerAssertsUnsupportedValue` → reverify, fail-open), but the
+ * chat gate is sync-by-design with no model call, so it needs a DETERMINISTIC
+ * equivalent. Numbers don't paraphrase, so the false-positive rate is ~0
+ * (protecting false-refusal=0); restricting to >= 3-digit values targets the
+ * highest-harm class the holistic `coverage` / `noteGroundedAnswer` shortcuts
+ * wave through — a wrong MTU (1500 vs the note's 1380), a wrong rent, a
+ * fabricated price/phone. Claim-level support applied as code (FActScore atomic
+ * facts, Self-RAG ISSUP — arXiv:2305.14251, arXiv:2310.11511). Citations are
+ * stripped first so a `[from …2026…]` source is never read as an asserted value.
+ */
+export function answerAssertsUnsupportedNumber(
+  answer: string,
+  matches: readonly KnowledgeMatch[],
+  question: string
+): boolean {
+  const answerNumbers = valueNumbers(answer.replace(/\[[^\]]*\]/gu, " "));
+  if (answerNumbers.size === 0) return false;
+  const supported = new Set<string>(valueNumbers(question));
+  for (const match of matches) {
+    for (const number of valueNumbers(match.text)) supported.add(number);
+  }
+  for (const number of answerNumbers) {
+    if (!supported.has(number)) return true;
+  }
+  return false;
+}
+
 export function gateChatAnswer(
   question: string,
   answer: string,
@@ -412,6 +456,12 @@ export function gateChatAnswer(
   // (cross-language tolerant); pass. Otherwise the lexical gate decides, so a
   // cross-entity conflation ("the cat is 보리", the dog's name) is refused.
   if (asksAboutStoredFact(question, knownFactKeys)) return answer;
+  // A substantive number the notes don't contain is a fabricated value even when
+  // the rest of the answer overlaps a note — the `noteGroundedAnswer` shortcut
+  // and `verifyGrounding`'s whole-answer coverage below would otherwise wave it
+  // through (a single wrong number barely dents token coverage). Refuse
+  // deterministically: the sync chat counterpart to ask's value escalation.
+  if (answerAssertsUnsupportedNumber(answer, matches, question)) return chatAbstention(question);
   // The answer actually QUOTES distinctive content from a retrieved note
   // (e.g. "muse2026" from seoul_office.md) → grounded for real, no matter how
   // verifyGrounding's borderline rubric falls on the model's varied phrasing.
