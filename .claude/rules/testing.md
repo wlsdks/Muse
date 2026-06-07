@@ -7,9 +7,7 @@ test before HTTP smoke.
 This file is the **gate list** (which command proves what). For HOW to
 test Muse as an *agent* — grade outcomes not paths, `pass^k`
 reliability, tool-calling + irrelevance, multi-agent hand-off asserts,
-binary LLM-judge — see [`agent-testing.md`](agent-testing.md) (method)
-and [`docs/agent-eval-strategy.md`](../../docs/agent-eval-strategy.md)
-(the living catalogue).
+binary LLM-judge — see [`agent-testing.md`](agent-testing.md) (the method).
 
 ## Verification gates (cheapest first)
 
@@ -69,8 +67,7 @@ and [`docs/agent-eval-strategy.md`](../../docs/agent-eval-strategy.md)
    (must-refuse safety + over-refusal controls), `eval:shadow-trial`
    (report-only promotion review), and `eval:plan-quality` (PlanQuality:
    valid/complete/ordered/efficient multi-step plans) in one pass and
-   fails if ANY regresses — the agent-eval CI gate per
-   `docs/agent-eval-strategy.md`. All run on `scripts/eval-harness.mjs`
+   fails if ANY regresses — the agent-eval CI gate. All run on `scripts/eval-harness.mjs`
    (runEvalSuite + scorers + llmJudge + runShadowTrial). **LOCAL OLLAMA
    ONLY**; each battery skips (exit 0) when Ollama is unreachable. Run
    after touching tool names/descriptions/schemas, the eval harness, or

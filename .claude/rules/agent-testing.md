@@ -7,11 +7,8 @@ the real goal state, and does so *reliably* across a stochastic model.
 That is a different discipline — **evaluation (evals)** — and it is a
 first-class gate here, not an afterthought.
 
-This file is the contract for HOW we test Muse as an agent. The deep,
-living catalogue of what is built lives in
-[`docs/agent-eval-strategy.md`](../../docs/agent-eval-strategy.md)
-(gaps A–H, the harness internals); this rule is the durable *method*
-that converged across the 2024–2026 public literature and how it maps
+This file is the contract for HOW we test Muse as an agent — the durable
+*method* that converged across the 2024–2026 public literature and how it maps
 onto Muse. When you ship an agent-facing capability, you ship its eval.
 
 ## The non-negotiables (every agent capability)
