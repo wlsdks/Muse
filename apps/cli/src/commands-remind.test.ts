@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { readReminders, writeReminders, type PersistedReminder } from "@muse/mcp";
 import { Command } from "commander";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { registerRemindCommands, resolveLocalReminderId, type RemindCommandHelpers } from "./commands-remind.js";
 
@@ -47,6 +47,18 @@ async function runRemind(
 }
 
 describe("muse remind add — past-time guard (a date typo would fire immediately)", () => {
+  // --local resolves the reminders file from MUSE_REMINDERS_FILE; without this
+  // isolation these add tests wrote 'old'/'future' fixtures into the REAL
+  // ~/.muse/reminders.json on every run (1227 junk reminders had accumulated).
+  const prevEnv = process.env.MUSE_REMINDERS_FILE;
+  beforeEach(() => {
+    process.env.MUSE_REMINDERS_FILE = join(mkdtempSync(join(tmpdir(), "muse-rem-past-")), "reminders.json");
+  });
+  afterEach(() => {
+    if (prevEnv === undefined) delete process.env.MUSE_REMINDERS_FILE;
+    else process.env.MUSE_REMINDERS_FILE = prevEnv;
+  });
+
   it("warns when the resolved dueAt is in the PAST, but still adds it (warn, don't block)", async () => {
     const r = await runRemind(["2020-01-01T09:00:00Z", "old", "--local"]);
     expect(r.error).toBeUndefined();
