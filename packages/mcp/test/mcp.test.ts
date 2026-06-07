@@ -2834,7 +2834,7 @@ describe("muse.tasks loopback server", () => {
       expect(parseTaskDueAt("100 days from now", now)).toMatch(/^2026-09-15/u);
     });
 
-    it("resolves a Korean absolute date ('2026년 8월 15일' / '8월 15일')", async () => {
+    it("resolves a Korean absolute date ('2026년 8월 15일' / '8월 15일'), with or without a time", async () => {
       const { parseTaskDueAt } = await import("../src/personal-tasks-store.js");
       const now = () => new Date("2026-06-07T12:00:00Z");
       // Full Korean date → that exact ISO day (2026-08-15 is a Saturday).
@@ -2842,6 +2842,14 @@ describe("muse.tasks loopback server", () => {
       // Year-less Korean month-day → its NEXT occurrence (Aug 15 is still ahead of Jun 7).
       expect(parseTaskDueAt("8월 15일", now)).toMatch(/^2026-08-15/u);
       expect(parseTaskDueAt("12월 25일", now)).toMatch(/^2026-12-25/u);
+      // Korean absolute date PLUS a Korean time — the LOCAL clock is asserted
+      // (TZ-agnostic: setHours is local), so "오후 3시" is 15:00 wherever it runs.
+      const withTime = new Date(parseTaskDueAt("8월 15일 오후 3시", now) as string);
+      expect([withTime.getMonth(), withTime.getDate(), withTime.getHours()]).toEqual([7, 15, 15]);
+      const withYear = new Date(parseTaskDueAt("2026년 8월 20일 오전 9시", now) as string);
+      expect([withYear.getFullYear(), withYear.getMonth(), withYear.getDate(), withYear.getHours()]).toEqual([2026, 7, 20, 9]);
+      // An impossible calendar day is rejected, not rolled over.
+      expect(parseTaskDueAt("2월 30일", now)).toBeInstanceOf(Error);
     });
 
     it("rejects impossible calendar dates instead of silently rolling them over", async () => {

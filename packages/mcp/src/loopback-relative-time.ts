@@ -723,6 +723,33 @@ function resolveKoreanRelativePhrase(phrase: string, reference: Date): Date | un
     lastDay.setHours(koMonthEndTime.hour, koMonthEndTime.minute, 0, 0);
     return lastDay;
   }
+  // A Korean ABSOLUTE date — "8월 15일", "2026년 8월 20일 오전 9시" — optionally
+  // with a time (the time grammar above already handles "오후 3시"). A bare date
+  // defaults to 09:00 like the other heads; a year-less month-day that already
+  // passed this year rolls to next year (parity with the English "March 1").
+  const koAbsDate = /^(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일(?:\s+(.+))?$/u.exec(phrase.trim());
+  if (koAbsDate) {
+    const koAbsTime = parseKoreanTimeOfDay(koAbsDate[4]);
+    if (koAbsTime === "invalid") {
+      return undefined;
+    }
+    const koAbsMonth = Number(koAbsDate[2]);
+    const koAbsDay = Number(koAbsDate[3]);
+    if (koAbsMonth < 1 || koAbsMonth > 12 || koAbsDay < 1 || koAbsDay > 31) {
+      return undefined;
+    }
+    const koAbsYear = koAbsDate[1] ? Number(koAbsDate[1]) : reference.getFullYear();
+    let koAbsTarget = new Date(koAbsYear, koAbsMonth - 1, koAbsDay);
+    // Reject an impossible day (2월 30일) — `new Date` would roll it over silently.
+    if (koAbsTarget.getMonth() !== koAbsMonth - 1) {
+      return undefined;
+    }
+    if (!koAbsDate[1] && koAbsTarget.getTime() < startOfDay(reference).getTime()) {
+      koAbsTarget = new Date(koAbsYear + 1, koAbsMonth - 1, koAbsDay);
+    }
+    koAbsTarget.setHours(koAbsTime.hour, koAbsTime.minute, 0, 0);
+    return koAbsTarget;
+  }
   const match = /^(오늘|내일|모레|글피)(?:\s+(.+))?$/u.exec(phrase);
   if (!match) {
     // Bare Korean time with no day word ("오후 5시", "정오",
