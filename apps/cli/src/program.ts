@@ -102,7 +102,7 @@ import { registerSetupVoiceCommand } from "./commands-setup-voice.js";
 import { registerBriefCommand } from "./commands-brief.js";
 import { registerRecapCommand } from "./commands-recap.js";
 import { registerApprovalCommands } from "./commands-approval.js";
-import { registerAskCommand } from "./commands-ask.js";
+import { loadImageAttachment, registerAskCommand } from "./commands-ask.js";
 import { registerDemoCommand } from "./commands-demo.js";
 import { registerExportCommand } from "./commands-export.js";
 import { registerCompletionCommand } from "./commands-completion.js";
@@ -310,10 +310,15 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       "-i, --interactive",
       "open a continuous REPL — each line is a turn, /exit quits, /reset clears, /help lists commands (--local only)"
     )
+    .option(
+      "--image <path>",
+      "Attach a local image (PNG/JPEG/GIF/WebP/HEIC) for the model to SEE — local vision via gemma4 (--local only). e.g. `muse chat --local --image receipt.jpg '이거 정리해줘'`."
+    )
     .action(async (
       messageParts: readonly string[],
       options: {
         readonly continue?: boolean;
+        readonly image?: string;
         readonly interactive?: boolean;
         readonly json?: boolean;
         readonly local?: boolean;
@@ -352,6 +357,22 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       if (options.local && options.stream) {
         throw new Error("--stream requires remote API chat; omit --local");
       }
+      // Multimodal: --image attaches a local image for the model to see. Vision
+      // runs through the local agent runtime → Ollama adapter, so it requires
+      // --local (the remote API path has no image channel).
+      let imageAttachments: ReadonlyArray<{ readonly mimeType: string; readonly dataBase64: string }> = [];
+      if (options.image) {
+        if (!options.local) {
+          throw new Error("--image requires --local (local vision via gemma4; the remote API path has no image channel)");
+        }
+        const loaded = await loadImageAttachment(options.image);
+        if (!loaded.ok) {
+          io.stderr(`${loaded.error}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        imageAttachments = [loaded.attachment];
+      }
 
       // Compose metadata: merge agentMode, web_search override, and
       // --no-tools (maxTools:0) for the chat-only fast path.
@@ -376,7 +397,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
         : (await loadActivePersonaPreamble().catch(() => "")).trim();
 
       const body = options.local
-        ? await runLocalChat(io, message, model, agentMode, { disableTools: toolsDisabled, priorHistory })
+        ? await runLocalChat(io, message, model, agentMode, { disableTools: toolsDisabled, priorHistory, ...(imageAttachments.length > 0 ? { imageAttachments } : {}) })
         : options.stream
           ? await streamRemoteChat(io, command, message, model, options.json === true, agentMode, options.webSearch === false, personaPreamble)
         : await apiRequest(io, command, "/api/chat", dropUndefined({

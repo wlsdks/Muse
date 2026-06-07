@@ -284,6 +284,8 @@ export async function runLocalChat(
   options: {
     readonly disableTools?: boolean;
     readonly priorHistory?: readonly { readonly role: "user" | "assistant"; readonly content: string }[];
+    /** Inline image attachments (gemma4 vision) for `muse chat --image`. */
+    readonly imageAttachments?: ReadonlyArray<{ readonly mimeType: string; readonly dataBase64: string }>;
   } = {}
 ) {
   // NFC-normalize the message. macOS/Swift passes CLI arguments in NFD (Hangul
@@ -539,7 +541,7 @@ export async function runLocalChat(
   const messages = [
     { content: systemContent, role: "system" as const },
     ...(options.priorHistory ?? []),
-    { content: message, role: "user" as const }
+    { content: message, role: "user" as const, ...(options.imageAttachments && options.imageAttachments.length > 0 ? { attachments: options.imageAttachments } : {}) }
   ];
   let result = await assembly.agentRuntime.run({
     messages,

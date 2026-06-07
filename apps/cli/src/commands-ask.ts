@@ -911,9 +911,10 @@ type LoadedImage =
   | { readonly ok: true; readonly attachment: { readonly mimeType: string; readonly dataBase64: string } }
   | { readonly ok: false; readonly error: string };
 
-/** Load a local image file as an inline base64 attachment for `muse ask --image`.
- *  The runtime carries it to the Ollama adapter's per-message `images` (gemma4 vision). */
-async function loadImageAttachment(filePath: string): Promise<LoadedImage> {
+/** Load a local image file as an inline base64 attachment for `muse ask --image`
+ *  (and `muse chat --image`). The runtime carries it to the Ollama adapter's
+ *  per-message `images` (gemma4 vision). */
+export async function loadImageAttachment(filePath: string): Promise<LoadedImage> {
   const dot = filePath.lastIndexOf(".");
   const ext = dot >= 0 ? filePath.slice(dot).toLowerCase() : "";
   const mimeType = IMAGE_MIME_BY_EXT[ext];
