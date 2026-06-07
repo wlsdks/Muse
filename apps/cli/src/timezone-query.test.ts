@@ -58,4 +58,12 @@ describe("formatTimezone — exact conversion against a fixed instant", () => {
     expect(formatTimezone(detectTimezoneQuery("what time is it in Tokyo")!, NOW)).toBe("It's 9:00 PM in Tokyo right now.");
     expect(formatTimezone(detectTimezoneQuery("what time is it in New York")!, NOW)).toBe("It's 7:00 AM in New York right now.");
   });
+
+  it("renders a Korean answer with Korean city names and the right topic particle", () => {
+    // 도쿄 (no final consonant) → 는 ; 런던 (final ㄴ) → 은.
+    expect(formatTimezone(detectTimezoneQuery("지금 도쿄 몇 시야?")!, NOW)).toBe("지금 도쿄는 오후 9시입니다.");
+    expect(formatTimezone(detectTimezoneQuery("런던 지금 몇 시?")!, NOW)).toBe("지금 런던은 오후 12시입니다.");
+    // A convert keeps Korean city names on both sides (not "Seoul"/"New York").
+    expect(formatTimezone(detectTimezoneQuery("서울 오후 3시는 뉴욕으로 몇 시?")!, NOW)).toContain("서울 오후 3시는 뉴욕");
+  });
 });

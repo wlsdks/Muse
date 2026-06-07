@@ -39,6 +39,23 @@ function resolveZone(phrase: string): Zone | undefined {
   return ZONES[phrase.trim().toLowerCase().replace(/\s+/gu, " ")];
 }
 
+// Korean display names, so a Korean answer reads "서울 오전 4시" not "Seoul 오전 4시".
+const KO_LABELS: Record<string, string> = {
+  UTC: "UTC",
+  "America/Los_Angeles": "로스앤젤레스", "America/Denver": "덴버", "America/Chicago": "시카고",
+  "America/New_York": "뉴욕", "Europe/London": "런던", "Europe/Paris": "파리", "Asia/Kolkata": "인도",
+  "Asia/Tokyo": "도쿄", "Asia/Seoul": "서울", "Asia/Shanghai": "상하이", "Asia/Hong_Kong": "홍콩",
+  "Asia/Singapore": "싱가포르", "Asia/Dubai": "두바이", "Australia/Sydney": "시드니"
+};
+function koLabel(zone: Zone): string {
+  return KO_LABELS[zone.iana] ?? zone.label;
+}
+/** The topic particle for a Korean word: 은 after a final consonant (batchim), 는 otherwise. */
+function koTopicParticle(word: string): string {
+  const last = word.charCodeAt(word.length - 1) - 0xac00;
+  return last >= 0 && last <= 11171 && last % 28 !== 0 ? "은" : "는";
+}
+
 /** The UTC offset (ms) of `tz` at the instant `date` — DST-correct via Intl. */
 function zoneOffsetMs(date: Date, tz: string): number {
   const dtf = new Intl.DateTimeFormat("en-US", {
@@ -171,7 +188,8 @@ export function formatTimezone(q: TimezoneQuery, now: Date): string {
     const local = new Date(now.getTime() + zoneOffsetMs(now, here.iana));
     const mins = local.getUTCHours() * 60 + local.getUTCMinutes();
     if (q.ko) {
-      return `지금 ${here.label}는 ${formatKoClock(mins)}입니다.`;
+      const koHere = koLabel(here);
+      return `지금 ${koHere}${koTopicParticle(koHere)} ${formatKoClock(mins)}입니다.`;
     }
     return `It's ${formatClock(mins)} in ${here.label} right now.`;
   }
@@ -181,7 +199,7 @@ export function formatTimezone(q: TimezoneQuery, now: Date): string {
   const tgtMin = ((total % 1440) + 1440) % 1440;
   if (q.ko) {
     const koDayNote = dayShift > 0 ? " (다음 날)" : dayShift < 0 ? " (전날)" : "";
-    return `${q.from.label} ${formatKoClock(q.minutes)}는 ${q.to.label} ${formatKoClock(tgtMin)}입니다${koDayNote}.`;
+    return `${koLabel(q.from)} ${formatKoClock(q.minutes)}는 ${koLabel(q.to)} ${formatKoClock(tgtMin)}입니다${koDayNote}.`;
   }
   const dayNote = dayShift > 0 ? " (next day)" : dayShift < 0 ? " (previous day)" : "";
   return `${formatClock(q.minutes)} ${q.from.label} is ${formatClock(tgtMin)} in ${q.to.label}${dayNote}.`;
