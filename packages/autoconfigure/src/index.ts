@@ -862,6 +862,9 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       maxToolOutputChars: parseInteger(env.MUSE_MAX_TOOL_OUTPUT_CHARS, 8_000),
       metrics: runtimeAgentMetrics,
       modelProvider,
+      // Grounding-first answer temperature, set explicitly so the runtime
+      // doesn't inherit the model's Ollama Modelfile default (gemma4 ships 1.0).
+      defaults: { temperature: resolveAnswerTemperature(env) },
       guards: createInputGuards(env),
       outputGuards: createOutputGuards(env),
       requestTimeoutMs: parseInteger(env.MUSE_MODEL_REQUEST_TIMEOUT_MS, 120_000),
@@ -1027,10 +1030,11 @@ export function requireEnv(env: MuseEnvironment, key: string): string {
 import {
   createModelProvider,
   LOCAL_FIRST_DEFAULT_MODEL,
+  resolveAnswerTemperature,
   resolveDefaultModel
 } from "./autoconfigure-model-provider.js";
 
-export { createModelProvider, LOCAL_FIRST_DEFAULT_MODEL, resolveDefaultModel };
+export { createModelProvider, LOCAL_FIRST_DEFAULT_MODEL, resolveAnswerTemperature, resolveDefaultModel };
 
 export {
   parseBoolean,

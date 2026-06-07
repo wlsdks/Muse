@@ -13,7 +13,21 @@ import {
   type ModelProvider
 } from "@muse/model";
 
-import { parseBoolean, parseCsv, parseInteger, parseOptionalString } from "./env-parsers.js";
+import { parseBoolean, parseCsv, parseInteger, parseNonNegativeFloat, parseOptionalString } from "./env-parsers.js";
+
+/**
+ * Temperature for Muse's user-facing ANSWER generation (chat / ask). Set
+ * EXPLICITLY (not left to the model's Ollama Modelfile default) so a grounding-
+ * first assistant doesn't silently inherit a high default — gemma4:12b ships
+ * `temperature 1.0`, qwen3:8b shipped 0.6; relying on the model default meant
+ * the gemma4 swap quietly raised answer temperature (more variance / fabrication
+ * risk). 0.6 is the grounding-friendly value Muse's recall edge was proven on;
+ * `MUSE_ANSWER_TEMPERATURE` overrides. (Tool-selection / reverify paths still
+ * pin temperature 0 explicitly — this is only the unspecified-answer default.)
+ */
+export function resolveAnswerTemperature(env: MuseEnvironment): number {
+  return parseNonNegativeFloat(env.MUSE_ANSWER_TEMPERATURE, 0.6);
+}
 import type { MuseEnvironment } from "./index.js";
 
 /**
