@@ -25,8 +25,9 @@ function contentTokens(text: string): string[] {
  * if ANY of its content tokens appears as a substring of the utterance — so a
  * value carried across Korean particle attachment ("강남역" grounded by
  * "강남역에서") survives, and only a value with NO overlap at all is dropped.
- * Non-string / empty values and an empty utterance are left untouched
- * (fail-open: never drop when grounding can't be assessed). Required args are
+ * Empty values and an empty utterance are left untouched (fail-open: never drop
+ * when grounding can't be assessed). A string-ARRAY arg (e.g. task `tags`) keeps
+ * its grounded elements and drops only the fabricated ones. Required args are
  * the caller's concern — pass only optional free-text arg names in `groundedArgs`.
  */
 export function groundToolArguments(
@@ -38,18 +39,30 @@ export function groundToolArguments(
   if (haystack.trim().length === 0 || groundedArgs.length === 0) {
     return { args, dropped: [] };
   }
+  const isGrounded = (value: string): boolean => {
+    const tokens = contentTokens(value);
+    return tokens.length === 0 || tokens.some((token) => haystack.includes(token));
+  };
   const dropped: string[] = [];
   const next: Record<string, unknown> = { ...args };
   for (const name of groundedArgs) {
     const value = next[name];
-    if (typeof value !== "string" || value.trim().length === 0) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      if (!isGrounded(value)) {
+        delete next[name];
+        dropped.push(name);
+      }
       continue;
     }
-    const tokens = contentTokens(value);
-    const grounded = tokens.length === 0 || tokens.some((token) => haystack.includes(token));
-    if (!grounded) {
-      delete next[name];
-      dropped.push(name);
+    // A string ARRAY (e.g. task `tags`) — drop the fabricated ELEMENTS, keep the
+    // grounded ones; remove the arg entirely only if nothing survives.
+    if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      const kept = (value as string[]).filter((item) => item.trim().length === 0 || isGrounded(item));
+      if (kept.length < value.length) {
+        dropped.push(name);
+        if (kept.length === 0) delete next[name];
+        else next[name] = kept;
+      }
     }
   }
   return { args: next, dropped };

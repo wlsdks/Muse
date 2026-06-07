@@ -131,9 +131,9 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           type: "object"
         },
         domain: "tasks",
-        // `notes` is free-text the 8B fabricates beyond the user's words; drop it
-        // when ungrounded (title is required and is the user's own content).
-        groundedArgs: ["notes"],
+        // `notes`/`tags` are free-text the 8B fabricates beyond the user's words;
+        // drop them when ungrounded (title is required and is the user's content).
+        groundedArgs: ["notes", "tags"],
         name: "add",
         risk: "write"
       },

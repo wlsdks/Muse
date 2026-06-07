@@ -26,10 +26,10 @@ describe("tasks + reminders loopback tools meet the one-shot tool-calling bar", 
     expect((add.inputSchema as { properties: Record<string, { description?: string }> }).properties.title.description ?? "").toContain("e.g.");
   });
 
-  it("marks the tasks 'add' free-text notes as a groundedArg (drop fabricated notes)", () => {
+  it("marks the tasks 'add' free-text notes + tags as groundedArgs (drop fabricated ones)", () => {
     const server = createTasksMcpServer({ file: "/tmp/muse-test-tasks.json" });
     const add = server.tools.find((t) => t.name === "add")!;
-    expect((add as { groundedArgs?: readonly string[] }).groundedArgs).toEqual(["notes"]);
+    expect((add as { groundedArgs?: readonly string[] }).groundedArgs).toEqual(["notes", "tags"]);
   });
 
   it("every lifecycle tool (complete/update/delete) carries action keywords so it isn't starved by add/list", () => {

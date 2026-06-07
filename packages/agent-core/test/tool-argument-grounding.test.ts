@@ -42,6 +42,28 @@ describe("groundToolArguments — drop a fabricated free-text arg the utterance 
     expect(out.dropped).toEqual([]);
   });
 
+  it("drops fabricated tag elements but keeps grounded ones (string array)", () => {
+    const out = groundToolArguments(
+      { tags: ["운동", "회의", "강남"], title: "운동" },
+      ["tags"],
+      "운동 일정 추가해줘"
+    );
+    expect(out.args).toEqual({ tags: ["운동"], title: "운동" });
+    expect(out.dropped).toEqual(["tags"]);
+  });
+
+  it("removes the tags arg entirely when every element is fabricated", () => {
+    const out = groundToolArguments({ tags: ["회의", "강남"] }, ["tags"], "운동 추가");
+    expect(out.args).toEqual({});
+    expect(out.dropped).toEqual(["tags"]);
+  });
+
+  it("keeps a fully-grounded tag array untouched (not reported as dropped)", () => {
+    const out = groundToolArguments({ tags: ["운동"] }, ["tags"], "운동 일정");
+    expect(out.args).toEqual({ tags: ["운동"] });
+    expect(out.dropped).toEqual([]);
+  });
+
   it("does not mutate the input object", () => {
     const input = { location: "강남역", title: "회의" };
     groundToolArguments(input, ["location"], "회의");
