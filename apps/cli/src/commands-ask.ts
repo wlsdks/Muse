@@ -897,10 +897,46 @@ export function contactMatchScore(contact: Contact, queryTokens: ReadonlySet<str
   return score;
 }
 
+const IMAGE_MIME_BY_EXT: Readonly<Record<string, string>> = {
+  ".bmp": "image/bmp",
+  ".gif": "image/gif",
+  ".heic": "image/heic",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp"
+};
+
+type LoadedImage =
+  | { readonly ok: true; readonly attachment: { readonly mimeType: string; readonly dataBase64: string } }
+  | { readonly ok: false; readonly error: string };
+
+/** Load a local image file as an inline base64 attachment for `muse ask --image`.
+ *  The runtime carries it to the Ollama adapter's per-message `images` (gemma4 vision). */
+async function loadImageAttachment(filePath: string): Promise<LoadedImage> {
+  const dot = filePath.lastIndexOf(".");
+  const ext = dot >= 0 ? filePath.slice(dot).toLowerCase() : "";
+  const mimeType = IMAGE_MIME_BY_EXT[ext];
+  if (!mimeType) {
+    return { error: `muse ask --image: unsupported image type '${ext || filePath}' (use PNG/JPEG/GIF/WebP/HEIC/BMP)`, ok: false };
+  }
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(filePath);
+  } catch (cause) {
+    return { error: `muse ask --image: could not read ${filePath}: ${cause instanceof Error ? cause.message : String(cause)}`, ok: false };
+  }
+  if (bytes.length === 0) {
+    return { error: `muse ask --image: ${filePath} is empty (0 bytes)`, ok: false };
+  }
+  return { attachment: { dataBase64: bytes.toString("base64"), mimeType }, ok: true };
+}
+
 interface AskOptions {
   readonly user?: string;
   readonly persona?: string;
   readonly model?: string;
+  readonly image?: string;
   readonly top?: string;
   readonly embedModel?: string;
   readonly autoReindex?: boolean;
@@ -1594,6 +1630,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       "--verify-claims",
       "Per-claim grounding (Self-RAG ISSUP): after a GROUNDED answer, re-check EACH atomic claim against your notes and surface only the trustworthy subset — so a single fabricated clause in an otherwise-grounded answer ('Mina owns pricing AND the budget was 2M') is flagged 'I'm not sure about …' instead of riding through. Opt-in, fail-open (a check error keeps the claim), never turns a good answer into a refusal; spends one extra local inference per claim."
     )
+    .option(
+      "--image <path>",
+      "Attach a local image (PNG/JPEG/GIF/WebP/HEIC) for the model to SEE — runs locally on the multimodal default (gemma4). e.g. `muse ask --image receipt.jpg '이 영수증 정리해줘'`."
+    )
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       const argQuery = queryParts.join(" ").trim();
       const piped = await (io.readPipedStdin ?? readPipedStdin)();
@@ -1612,10 +1652,25 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         query = argQuery;
       } else if (piped.length > 0) {
         query = piped;
+      } else if (options.image) {
+        query = "Describe this image.";
       } else {
         io.stderr("usage: muse ask <query>   |   cat content | muse ask [optional-instruction]\n");
         process.exitCode = 1;
         return;
+      }
+
+      // Multimodal: load a local image so the model can SEE it (the runtime
+      // carries `attachments` through to the Ollama adapter → gemma4 vision).
+      let imageAttachments: ReadonlyArray<{ readonly mimeType: string; readonly dataBase64: string }> = [];
+      if (options.image) {
+        const loaded = await loadImageAttachment(options.image);
+        if (!loaded.ok) {
+          io.stderr(`${loaded.error}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        imageAttachments = [loaded.attachment];
       }
 
       // A pure social prompt ("hi" / "thanks" / "bye") is not a question about
@@ -2744,7 +2799,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           const result = await assembly.agentRuntime.run({
             messages: [
               { content: systemPrompt, role: "system" },
-              { content: query, role: "user" }
+              { content: query, role: "user", ...(imageAttachments.length > 0 ? { attachments: imageAttachments } : {}) }
             ],
             metadata: {
               userId: userKey,
@@ -2816,7 +2871,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             assembly.modelProvider!.stream({
               messages: [
                 { content: composeChatSystemContent(systemPrompt, playbookSection), role: "system" },
-                { content: query, role: "user" }
+                { content: query, role: "user", ...(imageAttachments.length > 0 ? { attachments: imageAttachments } : {}) }
               ],
               ...(webSearchPolicy ? { metadata: { webSearchPolicy } } : {}),
               model
