@@ -276,10 +276,14 @@ export function parseTaskDueAt(raw: string, now: () => Date): string | Error {
   // "three days from now") becomes its digit so it resolves like "2 weeks" /
   // "3 days" — the grammar's number patterns only accept digits. Scoped to a
   // number IMMEDIATELY before a unit, so prose ("one of them") is untouched.
-  const deSpelled = trimmed.replace(
-    /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b/giu,
-    (_m, num: string, unit: string) => `${SPELLED_NUMBERS[num.toLowerCase()] ?? num} ${unit}`
-  );
+  const deSpelled = trimmed
+    .replace(
+      /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b/giu,
+      (_m, num: string, unit: string) => `${SPELLED_NUMBERS[num.toLowerCase()] ?? num} ${unit}`
+    )
+    // "this coming Monday" / "coming Friday" — drop the filler "coming" so it
+    // resolves like "this Monday" / "Monday" (the grammar already handles those).
+    .replace(/\bcoming\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/giu, "$1");
   // "100 days from now" / "45 days from today" are the spoken equivalents of
   // "in 100 days" — which the grammar already resolves. Rewrite that trailing
   // "<n> <unit> from now/today" form to the "in <n> <unit>" form so both phrasings

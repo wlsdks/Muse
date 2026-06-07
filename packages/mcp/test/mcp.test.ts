@@ -2844,6 +2844,14 @@ describe("muse.tasks loopback server", () => {
       expect(parseTaskDueAt("call three people", now)).toBeInstanceOf(Error);
     });
 
+    it("resolves the filler 'coming' in a weekday phrase ('this coming Monday')", async () => {
+      const { parseTaskDueAt } = await import("../src/personal-tasks-store.js");
+      const now = () => new Date("2026-06-07T12:00:00Z"); // a Sunday
+      expect(parseTaskDueAt("this coming Monday", now)).toBe(parseTaskDueAt("this Monday", now));
+      expect(parseTaskDueAt("coming Monday", now)).toBe(parseTaskDueAt("Monday", now));
+      expect(parseTaskDueAt("this coming Monday", now)).toMatch(/^2026-06-08/u);
+    });
+
     it("resolves a Korean absolute date ('2026년 8월 15일' / '8월 15일'), with or without a time", async () => {
       const { parseTaskDueAt } = await import("../src/personal-tasks-store.js");
       const now = () => new Date("2026-06-07T12:00:00Z");
