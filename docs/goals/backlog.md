@@ -13,11 +13,14 @@
 
 ## Open — grounding edge (the maintained floor → frontier)
 
-- ◦ **(follow-up) SQuAD drift-path arm — lift Δ above 0.63** — the public-dataset arm
-  SHIPPED (see Done), Δ+0.63 on gemma4. 3/8 drift cases slip because the mismatched
-  answer shares tokens with the cited paragraph (coverage doesn't fully fail). Sharpen:
-  pick drift answers with NO lexical overlap (distinct entities/numbers), or add the
-  SQuAD-unanswerable→fabricated-answer drift variant. Smaller, well-specified now.
+- ◦ **(follow-up) SQuAD drift arm — STABILIZE before optimizing** — a fire (2026-06-09)
+  TRIED the obvious sharpen (pick drift answers with NO lexical overlap so coverage fully
+  fails) and it made Δ WORSE: +0.63 → +0.13 (gate-ON catch 5/8 → 1/8). Reverted. The real
+  finding: the SQuAD drift catch is HIGH-VARIANCE — the gate-ON path runs verifyGroundingWithReverify
+  (a stochastic gemma reverify), so a single-run Δ on 8 cases is not stable, and the lexical-coverage
+  hypothesis does not dominate the catch. So the right next step is STABILITY first: run the SQuAD
+  arm at MUSE_EVAL_REPEAT≥3 (pass^k) and/or grow to 20-30 cases to get a stable number, THEN optimize.
+  (Rejected: the disjoint-drift sharpen, as an unverified — in fact negative — win.)
 - ⏳ **Source-trust segregation — NEEDS JINAN'S DESIGN CALL** (architectural fork; an autonomous
   fire should not pick it). The decision: merge tool-output INTO the grounding set with `trusted:false`
   (touches the core recall/gate path) vs mark trust on the VerifiedSource/response-filters path where
@@ -113,6 +116,11 @@
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-09 eighth `improve-muse` fire (20-min loop) — **NEGATIVE result, recorded**: tried the
+  disjoint-drift sharpen on the SQuAD arm; it dropped Δ +0.63→+0.13 (catch 5/8→1/8), so verify-before-claim
+  REVERTED it. Real finding: the SQuAD drift catch is high-variance (stochastic gemma reverify) — the
+  single-run +0.63 is not stable; stabilize with pass^k before optimizing. A failed experiment caught and
+  recorded, not shipped — the discipline working on a metric regression.
 - ✓ 2026-06-09 seventh `improve-muse` fire (20-min loop) — **trace outcome-label schema**:
   writeRunLog now lifts `success`/`grounded` to the TOP LEVEL of every `.muse/runs` trace
   (readResponseSuccess/readResponseGrounded), so error-analysis can grep outcomes without
