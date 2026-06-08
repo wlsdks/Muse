@@ -13,13 +13,6 @@
 
 ## Open — refilled 2026-06-09 (gap-finding scout, clean autonomous slices)
 
-- ★ **Harden `groundToolArguments` against substring false-positives** — `isGrounded`
-  (tool-argument-grounding.ts:42) uses raw `haystack.includes(token)`, so a fabricated value token
-  "art" is "grounded" by *"start the meeting"*. Change to a token-boundary match for whitespace-delimited
-  scripts (reuse contentTokens membership / `\b`), KEEPING substring for CJK (강남역 ⊂ 강남역에서 must
-  still pass). Add Latin false-positive cases. Strengthens the anti-fabrication edge
-  ([[project_tool_arg_fabrication]]). Verify: `pnpm --filter @muse/agent-core test -t groundToolArguments`
-  + build (existing 11 cases incl. Korean particle stay green). Risk: one pure function, fully tested.
 - ★ **Add a `noWrite` over-invocation scorer to the eval harness** — `scripts/eval-harness.mjs`
   toolScorers (line ~99) has `noTool` (zero calls) but no scorer for "READ tools OK, NO write/execute
   tool may fire" (a greeting may call knowledge_search but must never call calendar_add/web_action).
@@ -132,6 +125,11 @@
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-09 tenth `improve-muse` fire (20-min loop) — **groundToolArguments substring-hardening**:
+  isGrounded now matches a value token at a WORD START (prefix), not as a raw substring — so a fabricated
+  "art" is no longer grounded by "start the meeting", while morphology (meeting→meetings) and Korean
+  particle attachment (강남역→강남역에서) still ground. Strengthens the deterministic anti-fabrication edge
+  at the tool boundary. unit 12/12; live eval:tool-arg-grounding 2/2 (강남역 kept, fabrication dropped).
 - ✓ 2026-06-09 ninth `improve-muse` fire (20-min loop) — **REFILL + outbound-safety guard test**:
   the clean backlog had drained, so FIND WORK (c) ran a gap-finding scout → 3 fresh clean ★ slices
   added (contacts negative-invariant, groundToolArguments substring-hardening, noWrite scorer). Then
