@@ -50,10 +50,12 @@
 
 ## Open — dev-loop fuel & measurement (makes the loop compound)
 
-- ★ **Trace outcome-logging parity for `cli.local`** — (a fire scoped the write site: it is spread
-  across apps/cli/src/program-helpers.ts + commands-telemetry.ts, and needs the success/grounded
-  signal from the response shape — mirror how the cli.remote path sets them. Medium-risk persisted-path
-  change; investigate the response shape before building.) PREREQUISITE for any
+- ★ **Trace outcome-logging — POPULATE cli.local `grounded`** — the top-level outcome-label SCHEMA
+  shipped (see Done: writeRunLog now lifts `success`/`grounded` to the top of every trace via
+  readResponseSuccess/readResponseGrounded; null for cli.local until populated). REMAINING (the
+  medium-risk part): thread the `grounded` verdict the local ask path already computes
+  (commands-ask.ts ~3413) into the writeRunLog input so cli.local traces carry a real label — THEN
+  error-analysis has fuel. PREREQUISITE for any
   error-analysis. Verified 2026-06-08: 1078/1095 `.muse/runs` traces (cli.local) carry
   only {message,response,toolsUsed,runId} — NO success/grounded/errorCode; only the 16
   cli.remote traces do. So failures are not yet machine-readable. Slice: write
@@ -111,6 +113,11 @@
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-09 seventh `improve-muse` fire (20-min loop) — **trace outcome-label schema**:
+  writeRunLog now lifts `success`/`grounded` to the TOP LEVEL of every `.muse/runs` trace
+  (readResponseSuccess/readResponseGrounded), so error-analysis can grep outcomes without
+  descending into `response`. Additive (no existing test broke; 17/17). Foundation for the
+  data flywheel; populating cli.local's `grounded` (medium-risk ask-path change) is the next sub-slice.
 - ✓ 2026-06-09 sixth `improve-muse` fire (20-min loop) — **`groundedCases` ratchet**: self-eval
   now also counts the grounding-corpus CASES (29), so a dropped case fails self-eval, not just a
   dropped battery file (must-fix #3, for the grounding corpus). unit 9/9. Same fire surfaced the
