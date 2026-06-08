@@ -192,8 +192,8 @@ async function buildActuatorScenario() {
     const tools = instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
     const byName = new Set(tools.map((t) => t.name));
     const cases = [
-      { prompt: "Post a comment on the project forum thread saying the build works now.", expectTool: "web_action", requireArgs: ["summary", "url"], note: "post → web_action (231)" },
-      { prompt: "Reserve a table for two at 7pm tomorrow on the restaurant's booking page.", expectTool: "web_action", requireArgs: ["summary", "url"], note: "reserve → web_action (231)" },
+      { prompt: "Post a comment on the project forum thread saying the build works now: https://forum.example.com/t/42", expectTool: "web_action", requireArgs: ["summary", "url"], note: "post → web_action (231); url in prompt — web_action requires a target URL, so the case carries one (no model-invented arg)" },
+      { prompt: "Reserve a table for two at 7pm tomorrow here: https://book.example.com/r/9", expectTool: "web_action", requireArgs: ["summary", "url"], note: "reserve → web_action (231); url in prompt — web_action requires a target URL, so the case carries one (no model-invented arg)" },
       { prompt: "Activate the bedtime scene.", expectTool: "home_action", requireArgs: ["service"], note: "scene → home_action (223)" },
       { prompt: "Run my good night routine.", expectTool: "home_action", requireArgs: ["service"], note: "routine/script → home_action (223)" },
       { prompt: "거실 불 꺼줘.", expectTool: "home_action", requireArgs: ["service"], note: "KO smart-home COMMAND → home_action (user's language; the positive counterpart to the KO 'good gear' musing trap); STABLE 3/3" },
