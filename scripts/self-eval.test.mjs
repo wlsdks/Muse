@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  countGroundedCases,
   countGroundedSurfaces,
   countTestFileNames,
   countVerifiedCapabilityLines,
@@ -45,6 +46,25 @@ test("countGroundedSurfaces: a dropped surface is a numeric regression via detec
   const prev = { gates: { groundedSurfaces: { status: "pass", value: 27 } } };
   const curr = { gates: { groundedSurfaces: { status: "pass", value: 26 } } };
   assert.deepEqual(detectRegressions(prev, curr), ["groundedSurfaces: 27→26"]);
+});
+
+test("countGroundedCases counts kind: entries in the grounding corpus, so a dropped case regresses", () => {
+  const corpus = [
+    "export const GROUNDING_EVAL_CORPUS = {",
+    '  notes: [{ source: "a.md", text: "kind: not a case — inside a string" }],',
+    "  cases: [",
+    '    { kind: "answerable", query: "q1", answer: "a [from a.md]" },',
+    '    { kind: "refuse", query: "q2" },',
+    '    { kind: "drift", query: "q3", answer: "x" }',
+    "  ]",
+    "};"
+  ].join("\n");
+  assert.equal(countGroundedCases(corpus), 3); // the in-string "kind:" (no quote after) is not counted
+  assert.equal(countGroundedCases(""), 0);
+  // a dropped case is a numeric regression
+  const prev = { gates: { groundedCases: { status: "pass", value: 29 } } };
+  const curr = { gates: { groundedCases: { status: "pass", value: 28 } } };
+  assert.deepEqual(detectRegressions(prev, curr), ["groundedCases: 29→28"]);
 });
 
 test("detectRegressions: pass→fail and numeric drops are regressions", () => {

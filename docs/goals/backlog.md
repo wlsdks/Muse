@@ -18,7 +18,10 @@
   answer shares tokens with the cited paragraph (coverage doesn't fully fail). Sharpen:
   pick drift answers with NO lexical overlap (distinct entities/numbers), or add the
   SQuAD-unanswerable→fabricated-answer drift variant. Smaller, well-specified now.
-- ★ **Source-trust segregation — WIRE the foundation through** — FOUNDATION SHIPPED (see Done):
+- ⏳ **Source-trust segregation — NEEDS JINAN'S DESIGN CALL** (architectural fork; an autonomous
+  fire should not pick it). The decision: merge tool-output INTO the grounding set with `trusted:false`
+  (touches the core recall/gate path) vs mark trust on the VerifiedSource/response-filters path where
+  tool-derived citations already live. FOUNDATION SHIPPED (see Done):
   `KnowledgeMatch.trusted` provenance bit + the pure detector `groundedOnUntrustedOnly` (flags a
   grounded answer resting ONLY on untrusted sources), agent-core, 4 tests. REMAINING — RE-SCOPED
   2026-06-09 (a fire found the naive wiring target wrong): tool-output does NOT become a
@@ -47,7 +50,10 @@
 
 ## Open — dev-loop fuel & measurement (makes the loop compound)
 
-- ★ **Trace outcome-logging parity for `cli.local`** — PREREQUISITE for any
+- ★ **Trace outcome-logging parity for `cli.local`** — (a fire scoped the write site: it is spread
+  across apps/cli/src/program-helpers.ts + commands-telemetry.ts, and needs the success/grounded
+  signal from the response shape — mirror how the cli.remote path sets them. Medium-risk persisted-path
+  change; investigate the response shape before building.) PREREQUISITE for any
   error-analysis. Verified 2026-06-08: 1078/1095 `.muse/runs` traces (cli.local) carry
   only {message,response,toolsUsed,runId} — NO success/grounded/errorCode; only the 16
   cli.remote traces do. So failures are not yet machine-readable. Slice: write
@@ -67,11 +73,10 @@
 
 ## Open — dev-loop hardening (from the 2026-06-08 will-it-work review)
 
-- ★ **`groundedSurfaces` ratchet should count CASES, not battery FILES** — adding a
-  golden case to an EXISTING battery (the most common write-back) leaves the file
-  count unchanged, so self-eval's ratchet is blind to a dropped case. Slice: sum the
-  case-array lengths across the registered verify-*.mjs / corpus datasets so a removed
-  case fails self-eval. Source: will-it-work review must-fix #3.
+- ◦ **Extend `groundedCases` to ALL battery corpora** — the `groundedCases` ratchet
+  SHIPPED for the grounding corpus (see Done: a dropped case there now fails self-eval).
+  Remaining: extend the count to the other golden sets (eval:tools, adversarial, plan-quality)
+  whose cases live in their own files, so a dropped case in ANY battery regresses. Source: must-fix #3.
 - ◦ **Backlog refill is the autonomy ceiling** — write-back records the provenance of
   the consumed item but does NOT mint net-new actionable work, so autonomy lasts ~the
   seed length (~7 fires) then degrades to gap-scout. The durable refill is error-analysis,
@@ -106,6 +111,11 @@
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-09 sixth `improve-muse` fire (20-min loop) — **`groundedCases` ratchet**: self-eval
+  now also counts the grounding-corpus CASES (29), so a dropped case fails self-eval, not just a
+  dropped battery file (must-fix #3, for the grounding corpus). unit 9/9. Same fire surfaced the
+  human-decision ceiling: source-trust → ⏳ (architectural fork, needs Jinan), trace-logging scoped
+  (medium-risk persisted path). The loop is reaching the seed-drain / refill point honestly.
 - ✓ 2026-06-09 fifth `improve-muse` fire (20-min loop) — **pick-evals matches grounding TEST
   files** (regex `grounded` added → `grounded-not-true.test.ts` now maps to the grounding
   batteries, not lint-only). Same fire RE-SCOPED the source-trust ★: a graph trace found

@@ -63,6 +63,18 @@ export function countGroundedSurfaces(selfImprovingSource) {
 }
 
 /**
+ * Count the labelled CASES in the grounding eval corpus. The surface ratchet counts
+ * battery FILES, so adding (or silently DROPPING) a case inside an existing corpus
+ * leaves it blind — the most common write-back is a new golden case, not a new file.
+ * Counting `kind:` entries in the corpus turns a dropped case into a numeric
+ * regression too. Deterministic (no Ollama); pairs with countGroundedSurfaces.
+ */
+export function countGroundedCases(corpusSource) {
+  const matches = corpusSource.match(/\bkind:\s*"/gu);
+  return matches ? matches.length : 0;
+}
+
+/**
  * Regressions between the previous scoreboard entry and the current one: a
  * boolean gate that went pass→fail, or a numeric gate whose value dropped.
  * No previous entry ⇒ nothing to regress against.
@@ -160,6 +172,9 @@ function main() {
   const releaseGatePath = join(ROOT, "scripts/eval-self-improving.mjs");
   const releaseGateSrc = existsSync(releaseGatePath) ? readFileSync(releaseGatePath, "utf8") : "";
   gates.groundedSurfaces = { status: "pass", value: countGroundedSurfaces(releaseGateSrc) };
+  const corpusPath = join(ROOT, "apps/cli/src/grounding-eval-corpus.ts");
+  const corpusSrc = existsSync(corpusPath) ? readFileSync(corpusPath, "utf8") : "";
+  gates.groundedCases = { status: "pass", value: countGroundedCases(corpusSrc) };
   if (full) {
     gates.tests = gateExit("pnpm -s -r test");
   }
