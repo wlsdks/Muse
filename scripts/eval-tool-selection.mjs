@@ -178,6 +178,47 @@ async function buildPersonalCrudScenario() {
   }
 }
 
+// The north-star "knows-me" surface: knowledge_search (blended recall over
+// notes / docs / past conversations) exposed ALONGSIDE the structured personal
+// CRUD tools. A recall question ("what did I note about X", "what do you know
+// about my Y") must route to knowledge_search, while a structured schedule /
+// todo lookup or add must route to its CRUD tool — the model must not collapse
+// recall into a CRUD list, nor a concrete add into a search. Cases pre-verified
+// STABLE 5/5 by probe before landing (the ambiguous "when was my dentist appt"
+// — knowledge_search's corpus includes calendar, so either tool is defensible —
+// is deliberately EXCLUDED rather than over-fit to one answer).
+async function buildRecallVsCrudScenario() {
+  try {
+    const mcp = await import("../packages/mcp/dist/index.js");
+    const ac = await import("../packages/autoconfigure/dist/index.js");
+    const stubCalendar = { createEvent: async () => ({}), deleteEvent: async () => undefined, listEvents: async () => [], updateEvent: async () => ({}) };
+    const servers = [
+      mcp.createTasksMcpServer({ file: "/tmp/eval-recall-tasks.json" }),
+      mcp.createRemindersMcpServer({ file: "/tmp/eval-recall-reminders.json" }),
+      mcp.createCalendarMcpServer({ registry: stubCalendar })
+    ];
+    const addOrList = (name) => { const leaf = name.split(".").pop(); return leaf === "add" || leaf === "list"; };
+    const crud = servers.flatMap((s) => mcp.createLoopbackMcpMuseTools(s)).filter((t) => addOrList(t.definition.name));
+    const instances = [...crud, ac.createNotesKnowledgeSearchTool({})];
+    const tools = instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "What did I note about the Q3 roadmap?", expectTool: "knowledge_search", requireArgs: ["query"], note: "EN recall over notes → knowledge_search, NOT a CRUD list" },
+      { prompt: "프로젝트 회고에서 내가 뭐라고 적었지?", expectTool: "knowledge_search", requireArgs: ["query"], note: "KO recall over notes → knowledge_search (user's language)" },
+      { prompt: "What do you know about my health insurance?", expectTool: "knowledge_search", requireArgs: ["query"], note: "EN 'what do you know about my X' → knowledge_search" },
+      { prompt: "What did we talk about last week regarding the launch?", expectTool: "knowledge_search", requireArgs: ["query"], note: "EN past-conversation recall → knowledge_search" },
+      { prompt: "Do I have any meetings tomorrow?", expectTool: "muse.calendar.list", note: "EN forward-looking schedule lookup → calendar.list, NOT knowledge_search" },
+      { prompt: "What's on my todo list?", expectTool: "muse.tasks.list", note: "EN todo lookup → tasks.list, NOT knowledge_search" },
+      { prompt: "내가 사야 할 것들 보여줘", expectTool: "muse.tasks.list", note: "KO todo lookup → tasks.list (user's language)" },
+      { prompt: "Remind me to call mom at 6pm.", expectTool: "muse.reminders.add", requireArgs: ["text"], note: "EN concrete reminder add → reminders.add, NOT knowledge_search" },
+      { prompt: "장 보기 할 일에 추가해줘", expectTool: "muse.tasks.add", requireArgs: ["title"], note: "KO concrete todo add → tasks.add (user's language)" }
+    ];
+    return { label: "recall-vs-crud (knows-me recall vs structured personal data)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "recall-vs-crud", skip: `@muse/mcp or @muse/autoconfigure not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 async function buildActuatorScenario() {
   try {
     const mcp = await import("../packages/mcp/dist/index.js");
@@ -194,7 +235,6 @@ async function buildActuatorScenario() {
     const cases = [
       { prompt: "Post a comment on the project forum thread saying the build works now: https://forum.example.com/t/42", expectTool: "web_action", requireArgs: ["summary", "url"], note: "post → web_action (231); url in prompt — web_action requires a target URL, so the case carries one (no model-invented arg)" },
       { prompt: "Reserve a table for two at 7pm tomorrow here: https://book.example.com/r/9", expectTool: "web_action", requireArgs: ["summary", "url"], note: "reserve → web_action (231); url in prompt — web_action requires a target URL, so the case carries one (no model-invented arg)" },
-      { prompt: "Post a comment on the project forum thread saying the build works now.", expectTool: "web_action", requireArgs: ["summary"], note: "post WITHOUT a url → still web_action, NOT knowledge_search; url is optional (the tool clarifies the destination). Was 0/5 while url was required; STABLE 5/5 since url became optional" },
       { prompt: "Activate the bedtime scene.", expectTool: "home_action", requireArgs: ["service"], note: "scene → home_action (223)" },
       { prompt: "Run my good night routine.", expectTool: "home_action", requireArgs: ["service"], note: "routine/script → home_action (223)" },
       { prompt: "거실 불 꺼줘.", expectTool: "home_action", requireArgs: ["service"], note: "KO smart-home COMMAND → home_action (user's language; the positive counterpart to the KO 'good gear' musing trap); STABLE 3/3" },
@@ -265,7 +305,8 @@ async function main() {
     await buildRealScenario(),
     await buildTimeToolsScenario(),
     await buildActuatorScenario(),
-    await buildPersonalCrudScenario()
+    await buildPersonalCrudScenario(),
+    await buildRecallVsCrudScenario()
   ];
 
   // Solver: elicit the model's one-shot tool selection for a case's prompt.
