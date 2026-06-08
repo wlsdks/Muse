@@ -29,12 +29,13 @@ const deps = (over: Partial<WebActionToolDeps> = {}): WebActionToolDeps => ({
 const ctx = { runId: "r", userId: "u1" };
 
 describe("createWebActionTool — the web_action MuseTool definition", () => {
-  it("is a well-formed execute-risk tool with required summary+url and validateToolDefinitions-clean", () => {
+  it("is a well-formed execute-risk tool requiring only summary (url clarified, never guessed) and validateToolDefinitions-clean", () => {
     const tool = createWebActionTool(deps());
     expect(tool.definition.name).toBe("web_action");
     expect(tool.definition.risk).toBe("execute");
-    const schema = tool.definition.inputSchema as { required: string[]; additionalProperties: boolean };
-    expect(schema.required).toEqual(["summary", "url"]);
+    const schema = tool.definition.inputSchema as { required: string[]; additionalProperties: boolean; properties: Record<string, unknown> };
+    expect(schema.required).toEqual(["summary"]);
+    expect(schema.properties).toHaveProperty("url");
     expect(schema.additionalProperties).toBe(false);
     expect(tool.definition.keywords).toContain("예약"); // Korean selection keyword
     expect(validateToolDefinitions([tool])).toEqual([]);
@@ -49,11 +50,12 @@ describe("createWebActionTool — the web_action MuseTool definition", () => {
 });
 
 describe("createWebActionTool — execute routes through the fail-closed orchestration", () => {
-  it("rejects empty url / summary BEFORE any orchestration (no spurious action)", async () => {
+  it("rejects empty summary and clarifies an absent url BEFORE any orchestration (no spurious action)", async () => {
     let fetched = false;
     const tool = createWebActionTool(deps({ fetchImpl: (async () => { fetched = true; return new Response(""); }) as unknown as typeof fetch }));
     expect(await tool.execute({ summary: "", url: "https://x" }, ctx)).toMatchObject({ performed: false });
-    expect(await tool.execute({ summary: "do", url: "  " }, ctx)).toMatchObject({ performed: false });
+    expect(await tool.execute({ summary: "do", url: "  " }, ctx)).toMatchObject({ performed: false, reason: "needs-url" });
+    expect(await tool.execute({ summary: "do" }, ctx)).toMatchObject({ performed: false, reason: "needs-url" });
     expect(fetched).toBe(false);
   });
 

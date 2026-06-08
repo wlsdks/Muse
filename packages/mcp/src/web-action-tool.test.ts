@@ -27,12 +27,13 @@ function logFile(): string {
 const ctx = { runId: "run-1", userId: "stark" };
 
 describe("createWebActionTool", () => {
-  it("exposes an execute-risk web_action tool requiring summary + url", () => {
+  it("exposes an execute-risk web_action tool requiring only summary (url resolved/clarified, never guessed)", () => {
     const { fetchImpl } = recordingFetch();
     const tool = createWebActionTool({ actionLogFile: logFile(), approvalGate: approve, fetchImpl, userId: "stark" });
     expect(tool.definition.name).toBe("web_action");
     expect(tool.definition.risk).toBe("execute");
-    expect(tool.definition.inputSchema.required).toEqual(["summary", "url"]);
+    expect(tool.definition.inputSchema.required).toEqual(["summary"]);
+    expect(tool.definition.inputSchema.properties).toHaveProperty("url");
   });
 
   it("CONFIRM: performs the request and reports performed", async () => {
@@ -53,10 +54,23 @@ describe("createWebActionTool", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("rejects a missing url/summary without firing", async () => {
+  it("CLARIFY: an absent url asks for one and fires no request (destination resolved, never guessed)", async () => {
     const { fetchImpl, calls } = recordingFetch();
     const tool = createWebActionTool({ actionLogFile: logFile(), approvalGate: approve, fetchImpl, userId: "stark" });
-    const out = await tool.execute({ summary: "Book", url: "" }, ctx) as Record<string, unknown>;
+    const variants: Record<string, string>[] = [{ summary: "Post a comment" }, { summary: "Post a comment", url: "" }, { summary: "Post a comment", url: "   " }];
+    for (const args of variants) {
+      const out = await tool.execute(args, ctx) as Record<string, unknown>;
+      expect(out.performed).toBe(false);
+      expect(out.reason).toBe("needs-url");
+      expect(typeof out.detail).toBe("string");
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects a missing summary without firing", async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    const tool = createWebActionTool({ actionLogFile: logFile(), approvalGate: approve, fetchImpl, userId: "stark" });
+    const out = await tool.execute({ summary: "", url: "https://book.test/x" }, ctx) as Record<string, unknown>;
     expect(out.performed).toBe(false);
     expect(calls).toHaveLength(0);
   });

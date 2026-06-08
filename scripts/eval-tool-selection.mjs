@@ -194,6 +194,7 @@ async function buildActuatorScenario() {
     const cases = [
       { prompt: "Post a comment on the project forum thread saying the build works now: https://forum.example.com/t/42", expectTool: "web_action", requireArgs: ["summary", "url"], note: "post → web_action (231); url in prompt — web_action requires a target URL, so the case carries one (no model-invented arg)" },
       { prompt: "Reserve a table for two at 7pm tomorrow here: https://book.example.com/r/9", expectTool: "web_action", requireArgs: ["summary", "url"], note: "reserve → web_action (231); url in prompt — web_action requires a target URL, so the case carries one (no model-invented arg)" },
+      { prompt: "Post a comment on the project forum thread saying the build works now.", expectTool: "web_action", requireArgs: ["summary"], note: "post WITHOUT a url → still web_action, NOT knowledge_search; url is optional (the tool clarifies the destination). Was 0/5 while url was required; STABLE 5/5 since url became optional" },
       { prompt: "Activate the bedtime scene.", expectTool: "home_action", requireArgs: ["service"], note: "scene → home_action (223)" },
       { prompt: "Run my good night routine.", expectTool: "home_action", requireArgs: ["service"], note: "routine/script → home_action (223)" },
       { prompt: "거실 불 꺼줘.", expectTool: "home_action", requireArgs: ["service"], note: "KO smart-home COMMAND → home_action (user's language; the positive counterpart to the KO 'good gear' musing trap); STABLE 3/3" },

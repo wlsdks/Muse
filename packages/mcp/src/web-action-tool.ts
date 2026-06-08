@@ -33,9 +33,9 @@ export function createWebActionTool(deps: WebActionToolDeps): MuseTool {
           body: { description: "Request body (e.g. JSON).", type: "string" },
           method: { description: "HTTP method (default POST).", type: "string" },
           summary: { description: "Human description of what this action does (shown for confirmation).", type: "string" },
-          url: { description: "Target URL.", type: "string" }
+          url: { description: "Target URL, e.g. 'https://forum.example.com/t/42'. Omit ONLY if the user has not given one yet — the tool then asks for it rather than guessing.", type: "string" }
         },
-        required: ["summary", "url"],
+        required: ["summary"],
         type: "object"
       },
       keywords: ["web", "submit", "book", "form", "action", "post", "reserve", "rsvp", "apply", "register", "subscribe", "예약", "신청"],
@@ -45,8 +45,13 @@ export function createWebActionTool(deps: WebActionToolDeps): MuseTool {
     execute: async (args): Promise<JsonObject> => {
       const url = typeof args["url"] === "string" ? args["url"].trim() : "";
       const summary = typeof args["summary"] === "string" ? args["summary"].trim() : "";
-      if (url.length === 0 || summary.length === 0) {
-        return { performed: false, reason: "web_action requires a non-empty 'url' and 'summary'" };
+      if (summary.length === 0) {
+        return { performed: false, reason: "web_action requires a non-empty 'summary'" };
+      }
+      // Destination resolved, never guessed (outbound-safety): an absent URL
+      // is reported back for clarification — fail-closed, no HTTP fires.
+      if (url.length === 0) {
+        return { detail: "Which URL should I act on? Give me the exact page/link and I'll confirm the action before sending.", performed: false, reason: "needs-url" };
       }
       const method = typeof args["method"] === "string" && args["method"].trim().length > 0
         ? args["method"].trim().toUpperCase()
