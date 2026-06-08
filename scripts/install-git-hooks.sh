@@ -30,6 +30,19 @@ if [ "${MUSE_SKIP_PREPUSH:-0}" = "1" ]; then
   echo "pre-push: grounding tripwire skipped (MUSE_SKIP_PREPUSH=1)"
   exit 0
 fi
+# Git GUI / IDE clients spawn hooks with a minimal PATH where a version-manager
+# (corepack/nvm/volta) pnpm is absent. Resolve it; if it still can't be found,
+# SKIP (fail-open on a broken hook environment) — never block a push because the
+# tripwire couldn't even start. Run `pnpm precheck:grounding` manually to check.
+if ! command -v pnpm >/dev/null 2>&1; then
+  for d in "$HOME/.local/share/pnpm" "$HOME/Library/pnpm" "/opt/homebrew/bin" "/usr/local/bin"; do
+    [ -x "$d/pnpm" ] && PATH="$d:$PATH"
+  done
+fi
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pre-push: pnpm not on PATH — grounding tripwire skipped (run 'pnpm precheck:grounding' manually to verify)"
+  exit 0
+fi
 exec pnpm -s precheck:grounding
 EOF
 chmod +x "$push_hook"

@@ -118,6 +118,11 @@
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-09 **pre-push hook fix** — the hook ran `exec pnpm` and blocked the push with
+  "pnpm: not found" from a GUI/IDE git client (which spawns hooks with a minimal PATH where an
+  nvm/corepack-installed pnpm is absent). Now resolves pnpm (with common-path fallback) and SKIPs
+  (exit 0) if still unfound — fail-open on a broken hook environment, never block a push because the
+  tripwire couldn't start. LESSON: a pre-push convenience hook must degrade to skip, not block.
 - ✓ 2026-06-09 eleventh `improve-muse` fire (20-min loop) — **`noWrite` over-invocation scorer**:
   `toolScorers.noWrite(writeToolNames)` in eval-harness.mjs — reads allowed, any write/execute
   (actuator) tool fails. The IrrelAcc primitive `noTool` couldn't express ("report yesterday" may
