@@ -4,6 +4,7 @@ import type { KnowledgeMatch } from "@muse/agent-core";
 
 import {
   answerAssertsUnsupportedEmail,
+  answerAssertsUnsupportedIdentifier,
   answerAssertsUnsupportedNumber,
   CHAT_GROUNDING_MAX_HITS,
   CHAT_GROUNDING_MIN_SCORE,
@@ -210,6 +211,30 @@ describe("answerAssertsUnsupportedNumber", () => {
   });
   it("ignores digits inside a [from …] citation", () => {
     expect(answerAssertsUnsupportedNumber("renews 2026-09-14 [from policy-2025.pdf]", [note("renewal date 2026-09-14")], "renew?")).toBe(false);
+  });
+});
+
+describe("answerAssertsUnsupportedIdentifier (non-numeric string drift)", () => {
+  const note = (text: string): KnowledgeMatch => ({ cosine: 0.8, score: 0.8, source: "n.md", text });
+  it("flags a wrong SSID the number guard misses (1-digit run, heavy lexical overlap)", () => {
+    expect(answerAssertsUnsupportedIdentifier("Your home wifi SSID is Linksys-2G.", [note("wifi SSID is Nest-5G")], "what is my wifi SSID?")).toBe(true);
+  });
+  it("does not flag the correct identifier that IS in the evidence", () => {
+    expect(answerAssertsUnsupportedIdentifier("Your home wifi SSID is Nest-5G.", [note("wifi SSID is Nest-5G")], "what is my wifi SSID?")).toBe(false);
+  });
+  it("does not over-refuse a correct identifier re-rendered with a different separator", () => {
+    // "Nest 5G" / "nest5g" canonicalize to the note's "Nest-5G" → must not flag.
+    expect(answerAssertsUnsupportedIdentifier("Your wifi SSID is Nest 5G.", [note("wifi SSID is Nest-5G")], "ssid?")).toBe(false);
+    expect(answerAssertsUnsupportedIdentifier("Your wifi SSID is nest5g.", [note("wifi SSID is Nest-5G")], "ssid?")).toBe(false);
+  });
+  it("does not flag an identifier the user supplied in the question", () => {
+    expect(answerAssertsUnsupportedIdentifier("yes, your tag is B205", [note("no match")], "is my room B205?")).toBe(false);
+  });
+  it("ignores pure-digit values (handled by the number guard) and pure-letter prose", () => {
+    expect(answerAssertsUnsupportedIdentifier("rent 1,250,000 KRW, landlord Mr. Lee", [note("rent 1,250,000 KRW")], "rent?")).toBe(false);
+  });
+  it("ignores an identifier inside a [from …] citation", () => {
+    expect(answerAssertsUnsupportedIdentifier("set it [from vpn-wg0.md]", [note("no match")], "vpn?")).toBe(false);
   });
 });
 

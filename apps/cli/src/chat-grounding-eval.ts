@@ -51,13 +51,15 @@ export const CHAT_GROUNDING_EVAL_CORPUS: GroundingEvalCorpus = {
     { kind: "answerable", query: "what is my office VPN MTU?", answer: "Your office VPN MTU is 1380 on the wg0 interface.", note: "MTU value" },
     { kind: "answerable", query: "how much is my gym membership?", answer: "Your gym membership is 89,000 KRW per month.", note: "gym fee" },
     { kind: "answerable", query: "what is my home wifi SSID?", answer: "Your home wifi SSID is Nest-5G.", note: "wifi ssid (no number)" },
+    { kind: "answerable", query: "what is my wifi network name?", answer: "Your wifi SSID is Nest-5G.", note: "correct identifier must NOT be refused (false-refusal control for the identifier guard)" },
     { kind: "answerable", query: "when does my passport expire?", answer: "Your passport expires on 2029-11-03.", note: "passport expiry date" },
     { kind: "answerable", query: "what is my work email?", answer: "Your work email is jinan@foundry.io.", note: "work email" },
 
     // drift — a wrong VALUE the note doesn't contain must be caught (abstained)
     { kind: "drift", query: "what is my monthly rent?", answer: "Your monthly rent is 1,500,000 KRW, due on the 1st.", note: "wrong rent 1,500,000 vs 1,250,000" },
     { kind: "drift", query: "what is my office VPN MTU?", answer: "Your office VPN MTU is 1500 on the wg0 interface.", note: "wrong MTU 1500 vs 1380" },
-    { kind: "drift", query: "what is my work email?", answer: "Your work email is jinan@acme.com.", note: "wrong email domain acme vs foundry.io" }
+    { kind: "drift", query: "what is my work email?", answer: "Your work email is jinan@acme.com.", note: "wrong email domain acme vs foundry.io" },
+    { kind: "drift", query: "what is my home wifi SSID?", answer: "Your home wifi SSID is Linksys-2G.", note: "wrong SSID (non-numeric identifier) Linksys-2G vs Nest-5G — the string-drift hole the number guard misses" }
   ]
 };
 

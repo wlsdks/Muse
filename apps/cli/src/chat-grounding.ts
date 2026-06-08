@@ -469,6 +469,57 @@ export function answerAssertsUnsupportedEmail(
   return emails.some((address) => !haystack.includes(address.toLowerCase()));
 }
 
+// An IDENTIFIER token mixes letters AND digits (optionally hyphen-joined): an
+// SSID, model number, interface tag, room code — "Nest-5G", "wg0", "B205". Like
+// a number or email it is a VERBATIM identifier that never paraphrases, so the
+// false-positive rate of requiring it in the evidence is ~0. A pure-digit run
+// ("192", "2029-11-03") or pure-letter word ("KRW", "Park") is NOT an
+// identifier — those are handled by answerAssertsUnsupportedNumber or are
+// paraphrasable prose.
+// Canonicalize to the alphanumeric core (drop case + every separator) so a
+// copied identifier re-rendered with a different separator — "Nest-5G" vs
+// "Nest 5G" vs "nest5g" — compares equal. Without this the guard would FALSE-
+// REFUSE a correct answer that merely spaced the value differently.
+function canonicalIdentifier(token: string): string {
+  return token.toLowerCase().replace(/[^a-z0-9]/giu, "");
+}
+
+// The mixed letter+digit identifier tokens an answer asserts, in canonical form.
+function answerIdentifiers(text: string): string[] {
+  const out: string[] = [];
+  for (const token of text.match(/[a-z0-9]+(?:-[a-z0-9]+)*/giu) ?? []) {
+    if (/[a-z]/iu.test(token) && /\d/u.test(token)) out.push(canonicalIdentifier(token));
+  }
+  return out;
+}
+
+/**
+ * Does the answer assert a mixed letter+digit IDENTIFIER present in neither the
+ * evidence nor the question? The string-drift counterpart to
+ * {@link answerAssertsUnsupportedNumber}: a wrong SSID ("Linksys-2G" for the
+ * note's "Nest-5G") has only a 1-digit run, so the number guard waves it
+ * through, and its heavy lexical overlap with the note ("home wifi SSID is …")
+ * makes verifyGrounding's coverage rubric score it `grounded` — a fabrication
+ * surfaced on the chat surface. Identifiers don't paraphrase, so requiring a
+ * verbatim match is false-refusal-safe. (A wrong PURE-ALPHABETIC proper noun —
+ * "Mr. Lee" for "Mr. Park" — is NOT covered here: names paraphrase across
+ * scripts/titles, so a lexical rule would false-refuse; that residual needs NER
+ * or a judge, neither of which fits this sync, no-model-call gate.)
+ */
+export function answerAssertsUnsupportedIdentifier(
+  answer: string,
+  matches: readonly KnowledgeMatch[],
+  question: string
+): boolean {
+  const answerIds = answerIdentifiers(answer.replace(/\[[^\]]*\]/gu, " "));
+  if (answerIds.length === 0) return false;
+  // Substring (not token-equality) against the canonical evidence+question so a
+  // separator-variant rendering of a SUPPORTED identifier still matches; only an
+  // identifier absent from the evidence in any form is flagged.
+  const haystack = canonicalIdentifier(`${question} ${matches.map((match) => match.text).join(" ")}`);
+  return answerIds.some((id) => !haystack.includes(id));
+}
+
 export function gateChatAnswer(
   question: string,
   answer: string,
@@ -489,6 +540,9 @@ export function gateChatAnswer(
   // Same deterministic guard for a verbatim EMAIL identifier — a wrong domain on
   // a right local-part is an outbound-safety hazard the token shortcut misses.
   if (answerAssertsUnsupportedEmail(answer, matches, question)) return chatAbstention(question);
+  // Same deterministic guard for a mixed letter+digit identifier — a wrong SSID
+  // / code the lexical-coverage rubric waves through (non-numeric string drift).
+  if (answerAssertsUnsupportedIdentifier(answer, matches, question)) return chatAbstention(question);
   // The answer actually QUOTES distinctive content from a retrieved note
   // (e.g. "muse2026" from seoul_office.md) → grounded for real, no matter how
   // verifyGrounding's borderline rubric falls on the model's varied phrasing.
