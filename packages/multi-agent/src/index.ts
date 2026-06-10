@@ -266,6 +266,11 @@ export class SupervisorAgent {
           }
         });
 
+        const handoff = validateWorkerHandoff(worker.id, result.response.output);
+        if (!handoff.ok) {
+          throw new NoAgentWorkerError(handoff.reason);
+        }
+
         return {
           ...result,
           handoffs,
@@ -441,13 +446,20 @@ export class MultiAgentOrchestrator {
     for (const worker of workers) {
       try {
         const result = await worker.run(withSelectedWorker(currentInput, worker));
+        const handoff = validateWorkerHandoff(worker.id, result.response.output);
+        if (!handoff.ok) {
+          results.push({ error: handoff.reason, status: "failed", workerId: worker.id });
+          await this.publishWorkerFailure(worker.id, new Error(handoff.reason)).catch(() => undefined);
+          currentInput = addHandoffMessage(currentInput, worker.id, new Error(handoff.reason));
+          continue;
+        }
         results.push({ result, status: "completed", workerId: worker.id });
         // A bus-publish failure must NOT re-trigger the catch (it
         // would double-push a `failed` entry for this worker and
         // corrupt the pipeline input) — only worker.run decides
         // status. Same stance as runRace.
         await this.publishWorkerResult(worker.id, result).catch(() => undefined);
-        currentInput = addWorkerResultMessage(currentInput, worker.id, result.response.output);
+        currentInput = addWorkerResultMessage(currentInput, worker.id, handoff.output);
       } catch (error) {
         results.push({ error: errorMessage(error), status: "failed", workerId: worker.id });
         await this.publishWorkerFailure(worker.id, error).catch(() => undefined);
@@ -462,6 +474,11 @@ export class MultiAgentOrchestrator {
     return Promise.all(workers.map(async (worker): Promise<OrchestrationStepResult> => {
       try {
         const result = await worker.run(withSelectedWorker(input, worker));
+        const handoff = validateWorkerHandoff(worker.id, result.response.output);
+        if (!handoff.ok) {
+          await this.publishWorkerFailure(worker.id, new Error(handoff.reason)).catch(() => undefined);
+          return { error: handoff.reason, status: "failed", workerId: worker.id };
+        }
         // A bus-publish failure must not downgrade a succeeded
         // worker to "failed" or reject the whole Promise.all —
         // only worker.run decides status. Same stance as runRace.
@@ -493,6 +510,19 @@ export class MultiAgentOrchestrator {
         void worker.run(withSelectedWorker(input, worker))
           .then(async (result) => {
             if (resolved) {
+              return;
+            }
+            // A blank answer must not win the race — "first USEFUL answer
+            // wins". Route it through the failure path instead.
+            const handoff = validateWorkerHandoff(worker.id, result.response.output);
+            if (!handoff.ok) {
+              await this.publishWorkerFailure(worker.id, new Error(handoff.reason)).catch(() => undefined);
+              failures.push({ error: handoff.reason, status: "failed", workerId: worker.id });
+              pending -= 1;
+              if (pending === 0 && !resolved) {
+                resolved = true;
+                resolve(failures);
+              }
               return;
             }
             resolved = true;
@@ -560,6 +590,24 @@ export class MultiAgentOrchestrator {
 
     return worker;
   }
+}
+
+export type WorkerHandoff =
+  | { readonly ok: true; readonly workerId: string; readonly output: string }
+  | { readonly ok: false; readonly workerId: string; readonly reason: string };
+
+/**
+ * Typed hand-off validation at the worker boundary. An EMPTY worker output
+ * flowing downstream as "completed" is the dominant multi-agent bug class
+ * (MAST: information withholding) — the next worker, the synthesizer, or the
+ * caller reads silence as success. Fail-close: blank means failed.
+ */
+export function validateWorkerHandoff(workerId: string, output: string): WorkerHandoff {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) {
+    return { ok: false, reason: `worker '${workerId}' returned an empty hand-off — treated as failure (fail-close)`, workerId };
+  }
+  return { ok: true, output: trimmed, workerId };
 }
 
 export function createWorkerResult(
