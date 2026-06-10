@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { independentWitnessCount, quorumVerdict, verifyGrounding, type KnowledgeMatch } from "@muse/agent-core";
+import { independentWitnessCount, quorumVerdict, verifyGrounding, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 
 import { defaultNotesIndexFile, searchRecall, type RecallHit } from "./commands-recall.js";
 
@@ -469,35 +469,71 @@ export function answerAssertsUnsupportedEmail(
   return emails.some((address) => !haystack.includes(address.toLowerCase()));
 }
 
-export function gateChatAnswer(
+type ChatGateDecision = "pass" | "abstain" | "verify";
+
+function chatGatePrecheck(
   question: string,
   answer: string,
   matches: readonly KnowledgeMatch[],
-  knownFactKeys: readonly string[] = []
-): string {
-  if (!isPersonalFactRecall(question)) return answer;
+  knownFactKeys: readonly string[]
+): ChatGateDecision {
+  if (!isPersonalFactRecall(question)) return "pass";
   // Muse genuinely HAS a fact for this SPECIFIC topic → real-data-backed
   // (cross-language tolerant); pass. Otherwise the lexical gate decides, so a
   // cross-entity conflation ("the cat is 보리", the dog's name) is refused.
-  if (asksAboutStoredFact(question, knownFactKeys)) return answer;
+  if (asksAboutStoredFact(question, knownFactKeys)) return "pass";
   // A substantive number the notes don't contain is a fabricated value even when
   // the rest of the answer overlaps a note — the `noteGroundedAnswer` shortcut
   // and `verifyGrounding`'s whole-answer coverage below would otherwise wave it
   // through (a single wrong number barely dents token coverage). Refuse
   // deterministically: the sync chat counterpart to ask's value escalation.
-  if (answerAssertsUnsupportedNumber(answer, matches, question)) return chatAbstention(question);
+  if (answerAssertsUnsupportedNumber(answer, matches, question)) return "abstain";
   // Same deterministic guard for a verbatim EMAIL identifier — a wrong domain on
   // a right local-part is an outbound-safety hazard the token shortcut misses.
-  if (answerAssertsUnsupportedEmail(answer, matches, question)) return chatAbstention(question);
+  if (answerAssertsUnsupportedEmail(answer, matches, question)) return "abstain";
   // The answer actually QUOTES distinctive content from a retrieved note
   // (e.g. "muse2026" from seoul_office.md) → grounded for real, no matter how
   // verifyGrounding's borderline rubric falls on the model's varied phrasing.
   // A fabrication (no note holds the invented value) won't match, so it's safe.
   const answerLower = answer.toLowerCase();
   if (matches.some((match) => (match.cosine ?? match.score) >= resolveGroundingMinScore() && noteGroundedAnswer(match.text, answerLower))) {
-    return answer;
+    return "pass";
   }
+  return "verify";
+}
+
+export function gateChatAnswer(
+  question: string,
+  answer: string,
+  matches: readonly KnowledgeMatch[],
+  knownFactKeys: readonly string[] = []
+): string {
+  const decision = chatGatePrecheck(question, answer, matches, knownFactKeys);
+  if (decision === "pass") return answer;
+  if (decision === "abstain") return chatAbstention(question);
   const { verdict } = verifyGrounding(answer, matches, question);
+  return verdict === "grounded" ? answer : chatAbstention(question);
+}
+
+/**
+ * The chat gate with ask-parity escalation: the deterministic prechecks are
+ * identical to {@link gateChatAnswer}, but the borderline bands (weak
+ * retrieval, coverage-only failure, an unsupported asserted value) spend ONE
+ * reverify inference instead of hard-falling on the lexical rubric — so chat
+ * refuses drift, and rescues cross-lingual phrasing, as reliably as ask.
+ * Fail-close: a judge error keeps the abstention.
+ */
+export async function gateChatAnswerWithReverify(
+  question: string,
+  answer: string,
+  matches: readonly KnowledgeMatch[],
+  knownFactKeys: readonly string[],
+  reverify: GroundingReverify
+): Promise<string> {
+  const decision = chatGatePrecheck(question, answer, matches, knownFactKeys);
+  if (decision === "pass") return answer;
+  if (decision === "abstain") return chatAbstention(question);
+  const { verdict } = await verifyGroundingWithReverify(answer, matches, question, reverify);
   return verdict === "grounded" ? answer : chatAbstention(question);
 }
 

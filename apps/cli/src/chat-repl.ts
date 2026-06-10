@@ -30,7 +30,8 @@ import { countdownDays, detectCountdownQuery, formatCountdown } from "./countdow
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
 import { detectDateDiffQuery, formatDateDiff } from "./date-diff-query.js";
 import { detectTimezoneQuery, formatTimezone } from "./timezone-query.js";
-import { conversationMatches, factKeysToInject, gateChatAnswer, groundedNoteSources, isChatAbstention, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
+import { conversationMatches, factKeysToInject, gateChatAnswer, gateChatAnswerWithReverify, groundedNoteSources, isChatAbstention, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
+import { createQwenReverify } from "./grounding-eval-runner.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
@@ -598,9 +599,19 @@ export async function runLocalChat(
   // tasks.list and found the task, yet the gate abstained on the possessive
   // "내 … 뭐"). The gate still guards a tool-less, ungrounded personal-fact recall.
   const toolGrounded = (result.toolsUsed ?? []).length > 0;
+  // Ask-parity escalation: when a model provider is available the borderline
+  // bands get the same one-shot reverify judge ask uses (fires only on those
+  // bands — the common grounded turn costs zero extra inference). Without a
+  // provider the sync deterministic gate stands alone, as before.
+  const chatProvider = assembly.modelProvider;
+  const reverifyJudge = chatProvider && "generate" in chatProvider
+    ? createQwenReverify(chatProvider, model ?? assembly.defaultModel ?? "default")
+    : undefined;
   const gated = toolGrounded
     ? result.response.output
-    : gateChatAnswer(message, result.response.output, evidence, knownFactKeys);
+    : reverifyJudge
+      ? await gateChatAnswerWithReverify(message, result.response.output, evidence, knownFactKeys, reverifyJudge)
+      : gateChatAnswer(message, result.response.output, evidence, knownFactKeys);
 
   // The local model sometimes stops mid-citation, leaving a broken "[from …"
   // fragment; drop it so the clean 📎 receipt can stand in for the source.
