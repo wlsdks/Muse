@@ -11,7 +11,7 @@
 
 import { stripUntrustedTerminalChars } from "@muse/shared";
 
-import { computeActivationBoost } from "./actr-activation.js";
+import { approximateActivationBoost, computeActivationBoost } from "./actr-activation.js";
 import { humanizeRelativeFromIso } from "./time-helpers.js";
 
 export interface EpisodicMatch {
@@ -508,6 +508,14 @@ export interface SummaryListSource {
 
 export interface StoreBackedEpisodicRecallProviderOptions {
   readonly store: SummaryListSource;
+  /**
+   * Recall-hit stats per sessionId (from the recall-hits ledger). When
+   * supplied, ranking uses ACT-R activation (frequency × recency over the
+   * episode's recall history) instead of the creation-time half-life alone.
+   */
+  readonly recallStats?: () =>
+    | Promise<ReadonlyMap<string, { readonly hits: number; readonly lastHitMs: number }>>
+    | ReadonlyMap<string, { readonly hits: number; readonly lastHitMs: number }>;
   readonly topK?: number;
   readonly minScore?: number;
   /** Max summaries fetched per resolve. Default 200. */
@@ -548,6 +556,7 @@ export interface StoreBackedEpisodicRecallProviderOptions {
  * a legacy in-memory store) so the runtime keeps working.
  */
 export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider {
+  private readonly recallStatsLoader?: StoreBackedEpisodicRecallProviderOptions["recallStats"];
   private readonly store: SummaryListSource;
   private readonly topK: number;
   private readonly minScore: number;
@@ -560,6 +569,7 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
   private readonly embed?: (text: string) => Promise<readonly number[]>;
 
   constructor(options: StoreBackedEpisodicRecallProviderOptions) {
+    this.recallStatsLoader = options.recallStats;
     this.store = options.store;
     this.embed = options.embed;
     this.topK = Math.max(1, finiteOr(options.topK, 3));
@@ -598,6 +608,14 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
       }
     }
     const nowMs = this.now();
+    let recallStats: ReadonlyMap<string, { readonly hits: number; readonly lastHitMs: number }> | undefined;
+    if (this.recallStatsLoader) {
+      try {
+        recallStats = await this.recallStatsLoader();
+      } catch {
+        recallStats = undefined;
+      }
+    }
     const scored: EpisodicMatch[] = [];
     for (const summary of summaries) {
       if (!isVisibleToUser(userId, summary.userId, this.allowAnonymousEpisodes)) {
@@ -617,7 +635,16 @@ export class StoreBackedEpisodicRecallProvider implements EpisodicRecallProvider
         continue;
       }
       const createdAtIso = summary.createdAt?.toISOString();
-      const recencyBoost = computeRecencyBoost(createdAtIso, nowMs, this.recencyWeight, this.recencyHalfLifeDays);
+      const stats = recallStats?.get(summary.sessionId);
+      // ACT-R activation over the recall-hit history when the ledger has it;
+      // the legacy creation-time half-life otherwise (identical to before).
+      const recencyBoost = stats
+        ? approximateActivationBoost(
+            { createdMs: summary.createdAt?.getTime() ?? stats.lastHitMs, hits: stats.hits, lastHitMs: stats.lastHitMs },
+            nowMs,
+            this.recencyWeight
+          )
+        : computeRecencyBoost(createdAtIso, nowMs, this.recencyWeight, this.recencyHalfLifeDays);
       scored.push({
         createdAtIso,
         narrative: summary.narrative,

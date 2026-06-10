@@ -48,3 +48,41 @@ export function computeActivationBoost(
   }
   return weight / (1 + Math.exp(-activation));
 }
+
+export interface RecallHitStats {
+  readonly hits: number;
+  readonly lastHitMs: number;
+  readonly createdMs: number;
+}
+
+/**
+ * Base-level activation from COUNT + WINDOW when the full access history
+ * isn't stored (the recall-hits ledger keeps `hits` and `lastHitMs` only):
+ * synthesize uniformly-spaced access times from creation to the last hit —
+ * ACT-R's standard optimized-learning approximation (Petrov 2006; Anderson &
+ * Lebiere 1998) — and reuse the exact activation sum. Frequency and overall
+ * recency are preserved; only the true spacing pattern is idealized.
+ */
+export function approximateActivationBoost(
+  stats: RecallHitStats,
+  nowMs: number,
+  weight: number,
+  decay?: number
+): number {
+  if (!Number.isFinite(stats.createdMs) || !Number.isFinite(stats.lastHitMs) || stats.hits <= 0) {
+    return 0;
+  }
+  const first = Math.min(stats.createdMs, stats.lastHitMs);
+  const last = stats.lastHitMs;
+  const count = Math.max(1, Math.trunc(stats.hits));
+  const times: number[] = [];
+  if (count === 1) {
+    times.push(last);
+  } else {
+    const step = (last - first) / (count - 1);
+    for (let index = 0; index < count; index += 1) {
+      times.push(first + step * index);
+    }
+  }
+  return computeActivationBoost(times, nowMs, weight, decay);
+}

@@ -64,3 +64,43 @@ describe("episodic recall with access history (ACT-R ranking)", () => {
     expect(result?.matches[0]?.sessionId).toBe("spaced");
   });
 });
+
+describe("approximateActivationBoost (count + window approximation, Petrov 2006)", () => {
+  it("more recall hits in the same window beat fewer", async () => {
+    const { approximateActivationBoost } = await import("./actr-activation.js");
+    const many = approximateActivationBoost({ createdMs: daysAgo(30), hits: 6, lastHitMs: daysAgo(1) }, NOW, 0.15);
+    const few = approximateActivationBoost({ createdMs: daysAgo(30), hits: 1, lastHitMs: daysAgo(1) }, NOW, 0.15);
+    expect(many).toBeGreaterThan(few);
+  });
+
+  it("a recent last hit beats a stale one at the same count", async () => {
+    const { approximateActivationBoost } = await import("./actr-activation.js");
+    const fresh = approximateActivationBoost({ createdMs: daysAgo(30), hits: 3, lastHitMs: daysAgo(1) }, NOW, 0.15);
+    const stale = approximateActivationBoost({ createdMs: daysAgo(30), hits: 3, lastHitMs: daysAgo(25) }, NOW, 0.15);
+    expect(fresh).toBeGreaterThan(stale);
+  });
+
+  it("bounded by weight and zero on nonsense input", async () => {
+    const { approximateActivationBoost } = await import("./actr-activation.js");
+    expect(approximateActivationBoost({ createdMs: daysAgo(1), hits: 50, lastHitMs: daysAgo(0.01) }, NOW, 0.15)).toBeLessThanOrEqual(0.15);
+    expect(approximateActivationBoost({ createdMs: Number.NaN, hits: 0, lastHitMs: Number.NaN }, NOW, 0.15)).toBe(0);
+  });
+});
+
+describe("store-backed provider uses recall-hit activation when stats are supplied", () => {
+  it("the frequently-recalled episode outranks the equally-similar never-recalled one", async () => {
+    const { StoreBackedEpisodicRecallProvider } = await import("./episodic-recall.js");
+    const summaries = [
+      { createdAt: new Date(daysAgo(30)), narrative: "muse project deadline planning talk", sessionId: "cold" },
+      { createdAt: new Date(daysAgo(30)), narrative: "muse project deadline planning talk", sessionId: "hot" }
+    ];
+    const provider = new StoreBackedEpisodicRecallProvider({
+      allowAnonymousEpisodes: true,
+      now: () => NOW,
+      recallStats: () => new Map([["hot", { hits: 5, lastHitMs: daysAgo(2) }]]),
+      store: { listAll: () => summaries }
+    });
+    const result = await provider.resolve("muse deadline planning");
+    expect(result?.matches[0]?.sessionId).toBe("hot");
+  });
+});

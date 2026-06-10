@@ -27,7 +27,7 @@ import {
 } from "@muse/agent-core";
 import { CalendarProviderRegistry, type CalendarEvent } from "@muse/calendar";
 import type { JsonObject } from "@muse/shared";
-import { appendCheckins, readCheckins, readReminders, readVetoes, queryPlaybook, queryPlanCache, recordPlanTemplate, recordRecallHits, scheduleCheckins, type PersistedCheckin } from "@muse/mcp";
+import { appendCheckins, readCheckins, readReminders, readVetoes, queryPlaybook, queryPlanCache, readRecallHits, recordPlanTemplate, recordRecallHits, scheduleCheckins, type PersistedCheckin } from "@muse/mcp";
 import type { ConversationSummaryStore, TaskMemoryStore, UserMemoryStore, UserModelSlot } from "@muse/memory";
 import { FileBackedInboxContextProvider, type InboxSourceConfig } from "@muse/messaging";
 
@@ -279,10 +279,19 @@ export function buildEpisodicRecallProvider(
   // fail-open to Jaccard if unreachable). Opt out with
   // MUSE_EPISODIC_RECALL_EMBED=false.
   const embedEnabled = env.MUSE_EPISODIC_RECALL_EMBED?.trim().toLowerCase() !== "false";
-  const embedModel = env.MUSE_EPISODIC_RECALL_EMBED_MODEL?.trim() || "nomic-embed-text";
+  const embedModel = env.MUSE_EPISODIC_RECALL_EMBED_MODEL?.trim() || env.MUSE_EMBED_MODEL?.trim() || "nomic-embed-text-v2-moe";
+  // ACT-R activation fuel: the recall-hits ledger this same provider already
+  // writes (withRecallHitRecording below) feeds frequency × recency ranking —
+  // an episode the user keeps coming back to outranks an equally-similar
+  // one-off. Fail-soft loader: unreadable ledger ⇒ legacy half-life ranking.
+  const recallHitsFile = resolveRecallHitsFile(env);
   const provider = new StoreBackedEpisodicRecallProvider({
     maxFetched,
     minScore,
+    recallStats: async () => {
+      const records = await readRecallHits(recallHitsFile).catch(() => []);
+      return new Map(records.map((record) => [record.key, { hits: record.hits, lastHitMs: record.lastHitMs }]));
+    },
     store: summaryStore,
     topK,
     ...(embedEnabled ? { embed: createOllamaEmbedder(embedModel) } : {})
