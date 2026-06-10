@@ -82,3 +82,69 @@ export async function scoreRetrievalRecall(
   }
   return { hit1, hitK, misses, total: cases.length };
 }
+
+export interface MultiHopCase {
+  readonly query: string;
+  /** EVERY source that must surface for the answer to be assemblable. */
+  readonly expectedSources: readonly string[];
+}
+
+export interface MultiHopCorpus {
+  readonly notes: ReadonlyArray<{ readonly source: string; readonly text: string }>;
+  readonly cases: readonly MultiHopCase[];
+}
+
+/**
+ * Two-hop questions whose answer needs TWO notes jointly ("the team of the
+ * person who recommended the book"): single-shot retrieval must surface both
+ * or the gate can only refuse/half-answer. Measures whether multi-hop
+ * decomposition is a real gap at personal-corpus scale before building it.
+ */
+export const MULTIHOP_RECALL_CORPUS: MultiHopCorpus = {
+  cases: [
+    { expectedSources: ["rec-minseo.md", "minseo.md"], query: "사피엔스 추천해준 사람이 무슨 팀이야?" },
+    { expectedSources: ["dentist.md", "insurance2.md"], query: "스케일링 받는 치과가 어느 보험으로 처리되지?" },
+    { expectedSources: ["trip2.md", "landlord2.md"], query: "여행에서 돌아온 다음 주에 만나야 하는 사람 연락처는?" },
+    { expectedSources: ["book-loan.md", "minseo.md"], query: "내 책 빌려간 사람 직책이 뭐야?" },
+    { expectedSources: ["standup2.md", "alex.md"], query: "who runs the meeting I attend every weekday morning?" },
+    { expectedSources: ["gift.md", "sister.md"], query: "what should I buy for the birthday coming up next month?" }
+  ],
+  notes: [
+    { source: "rec-minseo.md", text: "'사피엔스'는 민서가 강력 추천해준 책이다." },
+    { source: "minseo.md", text: "민서는 마케팅팀 팀장이고 직책은 부장이다." },
+    { source: "dentist.md", text: "스케일링은 강남미소치과에서 6개월마다 받는다." },
+    { source: "insurance2.md", text: "강남미소치과 진료비는 한화 실비보험으로 청구한다." },
+    { source: "trip2.md", text: "오사카 여행에서 6월 23일에 돌아온다. 다음 주에 집주인을 만나기로 했다." },
+    { source: "landlord2.md", text: "집주인 연락처는 010-9876-5432." },
+    { source: "book-loan.md", text: "'팩트풀니스'는 민서가 빌려갔다." },
+    { source: "standup2.md", text: "Team standup is every weekday at 9:30 am, hosted by Alex." },
+    { source: "alex.md", text: "Alex is the engineering lead based in Berlin." },
+    { source: "gift.md", text: "Next month is my sister's birthday." },
+    { source: "sister.md", text: "My sister loves ceramic coffee cups and jazz vinyl." }
+  ]
+};
+
+export interface JointRecallResult {
+  readonly total: number;
+  /** Cases where EVERY expected source surfaced in the returned top-K. */
+  readonly joint: number;
+  readonly misses: readonly string[];
+}
+
+export async function scoreJointRecall(
+  cases: readonly MultiHopCase[],
+  rank: (query: string) => Promise<readonly KnowledgeMatch[]>
+): Promise<JointRecallResult> {
+  let joint = 0;
+  const misses: string[] = [];
+  for (const testCase of cases) {
+    const sources = new Set((await rank(testCase.query)).map((match) => match.source));
+    const missing = testCase.expectedSources.filter((source) => !sources.has(source));
+    if (missing.length === 0) {
+      joint += 1;
+    } else {
+      misses.push(`${testCase.query} → missing ${missing.join(", ")}`);
+    }
+  }
+  return { joint, misses, total: cases.length };
+}

@@ -157,6 +157,7 @@ export {
   normalizeMemoryCitations,
   normalizeSlotCitations,
   rankKnowledgeChunks,
+  rankKnowledgeChunksWithHop,
   renderKnowledgeMatches,
   reorderForLongContext,
   buildGroundingReverifyPrompt,

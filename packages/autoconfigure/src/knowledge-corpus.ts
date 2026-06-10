@@ -1,4 +1,4 @@
-import { chunkText, classifyRetrievalConfidence, edgeLoadByRelevance, rankKnowledgeChunks, renderKnowledgeMatches, type KnowledgeChunk } from "@muse/agent-core";
+import { chunkText, classifyRetrievalConfidence, edgeLoadByRelevance, rankKnowledgeChunksWithHop, renderKnowledgeMatches, type KnowledgeChunk } from "@muse/agent-core";
 import type { NotesProvider, TasksProvider } from "@muse/mcp";
 import type { MuseTool } from "@muse/tools";
 
@@ -479,10 +479,11 @@ export function createKnowledgeEnricher(options: KnowledgeEnricherOptions): (que
       ...(options.contactsSource ? { contactsSource: options.contactsSource } : {}),
       ...(options.emailSource ? { emailSource: options.emailSource } : {})
     });
-    const matches = await rankKnowledgeChunks(query, corpus, {
+    const matches = await rankKnowledgeChunksWithHop(query, corpus, {
       embed: options.embed,
       hybrid: true,
       ...(process.env.MUSE_RECALL_BM25 === "true" ? { bm25: true } : {}),
+      ...(process.env.MUSE_RECALL_SECOND_HOP === "true" ? { secondHop: true } : {}),
       topK: 5,
       ...(options.minScore !== undefined ? { minScore: options.minScore } : { minScore: 0.2 })
     });
@@ -566,11 +567,12 @@ export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchTool
         ...(options.maxFeedEntries !== undefined ? { maxFeedEntries: options.maxFeedEntries } : {}),
         ...(options.maxEpisodes !== undefined ? { maxEpisodes: options.maxEpisodes } : {})
       });
-      const matches = await rankKnowledgeChunks(query, corpus, {
+      const matches = await rankKnowledgeChunksWithHop(query, corpus, {
         diversify: true,
         embed: options.embed,
         hybrid: true,
         ...(process.env.MUSE_RECALL_BM25 === "true" ? { bm25: true } : {}),
+        ...(process.env.MUSE_RECALL_SECOND_HOP === "true" ? { secondHop: true } : {}),
         ...(options.topK !== undefined ? { topK: options.topK } : {})
       });
       return renderKnowledgeMatches(edgeLoadByRelevance(matches));

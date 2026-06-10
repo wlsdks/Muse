@@ -952,6 +952,55 @@ export function selectBestGroundedDraft(
   return best;
 }
 
+
+/**
+ * Deterministic second-hop retrieval (pseudo-relevance feedback, Rocchio
+ * lineage): a two-hop question ("the team of the person who recommended the
+ * book") names only hop 1 — the bridging note shares no tokens with the
+ * query, so single-shot recall measured 2/6 joint@4 on the multi-hop battery.
+ * Re-query with the TOP primary hits' own text (the bridge entity lives
+ * there), then RRF-merge primary + hop lists. Zero model calls — two extra
+ * embeds; `secondHop` is opt-in so the base path is byte-identical without it.
+ */
+export async function rankKnowledgeChunksWithHop(
+  query: string,
+  notes: ReadonlyArray<{ readonly source: string; readonly text: string }>,
+  options: RankKnowledgeOptions & { readonly secondHop?: boolean }
+): Promise<KnowledgeMatch[]> {
+  const primary = await rankKnowledgeChunks(query, notes, options);
+  if (options.secondHop !== true || primary.length === 0) {
+    return primary;
+  }
+  const keyOf = (match: KnowledgeMatch): string => `${match.source}|${match.text}`;
+  const byKey = new Map<string, KnowledgeMatch>();
+  const lists: string[][] = [primary.map((match) => { byKey.set(keyOf(match), match); return keyOf(match); })];
+  for (const seed of primary.slice(0, 2)) {
+    try {
+      const hop = await rankKnowledgeChunks(seed.text, notes, options);
+      lists.push(hop.map((match) => {
+        const key = keyOf(match);
+        const known = byKey.get(key);
+        if (!known || (match.cosine ?? 0) > (known.cosine ?? 0)) byKey.set(key, match);
+        return key;
+      }));
+    } catch {
+      // hop retrieval is best-effort — a failed hop keeps the primary list
+    }
+  }
+  // AUGMENT, never displace: the primary ranking is the measured single-hop
+  // optimum (hit@1 15/15), so it keeps its exact order; hop-only bridges are
+  // APPENDED (best-fused first, max 2) — multi-hop gains joint coverage while
+  // single-hop behavior stays byte-identical.
+  const fused = fuseByReciprocalRank(lists);
+  const primaryKeys = new Set(primary.map((match) => keyOf(match)));
+  const additions = [...byKey.keys()]
+    .filter((key) => !primaryKeys.has(key))
+    .sort((a, b) => (fused.get(b) ?? 0) - (fused.get(a) ?? 0))
+    .slice(0, 2)
+    .map((key) => byKey.get(key)!);
+  return [...primary, ...additions];
+}
+
 export interface GroundingExplanationOptions {
   /** The top match's ABSOLUTE cosine — the rubric stores the categorical confidence, not the raw value. */
   readonly topCosine?: number;
