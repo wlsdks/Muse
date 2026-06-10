@@ -323,8 +323,14 @@ export async function rankKnowledgeChunks(
     };
     if (options.diversify === true && eligible.length > topK) {
       const lambda = Math.min(1, Math.max(0, finiteOr(options.mmrLambda, 0.5)));
+      // MMR relevance must share the diversity penalty's scale: the penalty is
+      // a raw cosine in [0,1], while an RRF score tops out near 2/(k+1)≈0.03 —
+      // feeding RRF here let the similarity term dominate ~30×, so after the
+      // first pick MMR maximized DISSIMILARITY and a near-noise chunk displaced
+      // the second-most-relevant one (audit finding). Rank by fused order, but
+      // diversify on cosine relevance like the non-hybrid path.
       const order = selectByMmr(
-        eligible.map((k) => ({ embedding: embByKey.get(k) ?? [], key: k, relevance: fused.get(k) ?? 0 })),
+        eligible.map((k) => ({ embedding: embByKey.get(k) ?? [], key: k, relevance: cosByKey.get(k) ?? 0 })),
         lambda,
         topK
       );

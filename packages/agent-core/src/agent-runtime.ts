@@ -737,6 +737,18 @@ export class AgentRuntime {
     if (!this.responseCache) {
       return;
     }
+    // A run that ACTED must never be replayed: a cache hit skips the model
+    // loop, the executor, AND the approval gate, so an identical follow-up
+    // request would get a "done" confirmation with no action performed
+    // (terminal state ≠ claim). Cache only runs whose every tool is a known
+    // read — an unknown tool (registry drift) counts as acting, fail-close.
+    const acted = toolsUsed.some((name) => {
+      const definition = this.toolRegistry?.get(name)?.definition;
+      return !definition || definition.risk !== "read";
+    });
+    if (acted) {
+      return;
+    }
 
     try {
       await this.responseCache.put(key, cachedResponseFromModelResponse(response, toolsUsed));

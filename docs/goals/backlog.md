@@ -11,6 +11,40 @@
 > Priority: ★ = do next · ◦ = ready · ⏳ = blocked (reason noted).
 > Each item: **what** — why (source) — the smallest verifiable slice.
 
+## Open — 2026-06-10 full-feature audit (3 reviewers; VERIFIED findings → fix queue)
+
+FIXED already: actuator non-TTY fail-close (d7112db9) · hybrid-MMR scale bug · write-run cache
+replay (this commit). Remaining, severity order:
+
+- ★ **Ink chat (bare `muse`) has NO output gate** — chat-ink.ts submit renders the stream verbatim:
+  no gateChatAnswer/reverify, no stripFabricatedCitations, no receipts; a fabrication persists via
+  appendLastChatTurn and returns as cosine-1 conversation evidence (whitewash loop). Fix: run the
+  same post-stream pipeline runLocalChat uses; groundingFor must also return matches. (CLI audit #1)
+- ★ **MCP/agent calendar delete/update orphans the linked reminder** — loopback-calendar.ts
+  delete/update never runs removeRemindersForEvent/reschedule (CLI-only today): "치과 약속 취소해줘"
+  via chat leaves a pending reminder firing for a cancelled event. Move the two helpers into
+  @muse/mcp and call from the MCP executors (+ API DELETE route). (both audits, HIGH)
+- ◦ **Reminders/tasks stores: unserialized RMW** — daemon tick vs chat add loses writes (last-writer-
+  wins); adopt atomicWriteFile + withFileMutationQueue + withFileLock (the 19-store pattern);
+  fix `${pid}-${Date.now()}` tmp collision. (stores audit #2)
+- ◦ **Calendar store + credential store: corrupt file → silent full wipe** — adopt the sibling
+  stores' quarantine-on-corrupt posture + atomic writes. (stores audit #3)
+- ◦ **toolGrounded blanket bypass** — chat gate skipped on ANY tool call even when the tool returned
+  nothing; narrow to non-empty groundingSources, keep number/email checks always-on. (CLI audit #4)
+- ◦ **Chat-only users never get the embedder migration** — refreshStaleNotesIndexForChat doesn't
+  treat legacy-model as stale → v2-moe queries ranked against v1 vectors (cross-model cosine noise
+  above the 0.5 authoritative floor). Treat model mismatch as stale. (CLI audit #5)
+- ◦ **Rescheduled fired reminder never re-fires** — rescheduleRemindersForEvent keeps status:"fired"
+  while telling the user it shifted; reset to pending when new dueAt is future. (CLI audit #3)
+- ◦ **ask error paths skip the run-log trace** (failed runs are exactly the error-analysis fuel) +
+  Ctrl-C still runs the verdict pipeline and logs success:true. try/finally + success:false entries.
+  (CLI audit #6/#7)
+- ◦ smaller: correction-polarity regex unanchored ("NOT CONTRADICT"→contradict decay) ·
+  enforceAnswerCitations whitespace rewrite on clean answers (breaks code-block quotes) ·
+  casual-prompt 말해줘 over-match suppresses source blocks · dedup memoizes write results ·
+  groundToolArguments partial-array reported as dropped · consented-action header override ·
+  web_action URL vetting · encryption coverage (calendar credentials!). (audit LOW/MED tail)
+
 ## Open — refilled 2026-06-09 (gap-finding scout, clean autonomous slices)
 
 ## Open — frontier research pass 2026-06-10 (3 fresh tracks; full table → docs/strategy/frontier-research-2026-06.md)
