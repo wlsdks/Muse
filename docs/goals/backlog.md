@@ -13,22 +13,26 @@
 
 ## Open — refilled 2026-06-09 (gap-finding scout, clean autonomous slices)
 
-## Open — refilled 2026-06-10 (gap-scout, scope: user-felt features + performance)
+## Open — agent-performance levers (ranked research pass 2026-06-10)
 
-- ★ **Chat grounding parity — reverify escalation on the front-door surface** — `muse chat`'s
-  gate is the sync deterministic check only (chat-grounding.ts:500 `verifyGrounding`, by design —
-  the path streams), while `ask` escalates the ambiguous weak band through the reverify judge
-  (`verifyGroundingWithReverify`). Named-entity drift on chat is a RECORDED open gap. Slice:
-  post-stream reverify escalation on the weak band (warn/abstain after the stream, the same
-  post-hoc pattern ask uses), so chat refuses drift as reliably as ask. groundedSurfaces +1.
-- ◦ **Perf pair: chat-REPL query-embedding cache + desktop lazy index load** — (a) the REPL
-  re-embeds every turn's query via HTTP (embed.ts is stateless; one-shot `muse ask` is a fresh
-  process so a cache only pays inside the REPL/desktop session); (b) chat-ink parses the notes
-  index at startup even if /recall is never used — lazy-load it like the episode index. Honest
-  scale: tens-to-hundreds of ms each, felt in the desktop companion, NOT a 10s win.
-- ✗ rejected this refill: "expose `muse notes graph/links`" — they ALREADY exist
-  (commands-notes-rag.ts:848/886); the scout missed the -rag split exactly as
-  feedback_verify_cli_command_sites warned. Re-verified, not re-derived.
+Full ranked list + sources: [`docs/strategy/agent-performance-levers.md`](../strategy/agent-performance-levers.md).
+The top actionable three, in order:
+
+- ★ **Multilingual embedder A/B** (lever #1) — `nomic-embed-text` v1 is EN-centric while the
+  user's queries/notes are Korean: a silent recall ceiling upstream of EVERY grounded surface.
+  Slice: KO 10-case recall set + grounding battery on v1 vs `nomic-embed-text-v2-moe`
+  (or embeddinggemma); promote the default ONLY on a measured pass^3 win + one-time reindex.
+- ◦ **Few-shot tool exemplars from labeled traces** (lever #2) — inject 2-3 semantically similar
+  past SUCCESSFUL tool calls into the tool-calling turn (LangChain 16%→52%; arXiv 2508.15214).
+  Slice: one confusable family (time tools), eval:tools REPEAT=3 before/after.
+- ◦ **KV quant + flash-attention + stable-prefix prompt ordering** (lever #3) — env posture +
+  ordering audit so REPL/desktop turns reuse the prefill. Slice: measure turn-2 TTFT, add a
+  doctor posture check.
+- ✗ rejected this refill: "expose `muse notes graph/links`" (ALREADY exist,
+  commands-notes-rag.ts:848/886 — the -rag split trap again); "desktop lazy index load"
+  (FALSIFIED — searchRecall loads only inside the /recall handler, chat-ink.ts:1065, no startup
+  parse); "REPL query-embedding cache" (different query each turn ⇒ near-zero hit rate; the real
+  latency lever is #3 prefix reuse).
 
 ## Open — grounding edge (the maintained floor → frontier)
 
@@ -105,11 +109,6 @@
 
 ## Open — agent core
 
-- ◦ **Type + validate the multi-agent worker handoff (fail-close) + a live orchestration
-  eval** — handoff is untyped free-text today (multi-agent/index.ts:593); SupervisorAgent
-  is unit-tested only. MAST: untyped handoff is the dominant multi-agent bug class.
-  Lower priority — secondary surface for a single-user agent.
-
 ## Blocked / deferred
 
 - ⏳ **Grammar-constrained tool-call decoding** — INFEASIBLE on Ollama today: `format`
@@ -130,6 +129,23 @@
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-10 **Chat grounding parity — reverify escalation on the front-door surface**: the
+  chat gate's borderline bands (weak retrieval, coverage-only failure, unsupported asserted
+  value) now spend the SAME one-shot reverify judge ask uses (`gateChatAnswerWithReverify`,
+  shared `chatGatePrecheck` keeps the deterministic number/email/quote checks identical; the
+  judge fires ONLY on those bands — zero extra inference on a normal grounded turn; fail-close
+  on judge error). Closes the recorded named-entity-drift-on-chat gap via the value-escalation
+  band. TDD 6/6; CLI suite 2436 green; precheck:grounding pass^3; eval:chat-grounding
+  faithfulness 1.00 / false-refusal 0.00; live chat round-trip cited. Sync `gateChatAnswer`
+  stays (eval + no-provider fallback).
+- ✓ 2026-06-10 **Multi-agent handoff fail-close (`validateWorkerHandoff`)**: a BLANK worker
+  output no longer flows downstream as "completed" (MAST information-withholding) — sequential
+  marks the step failed and tells the next worker, parallel reports failed, race never lets a
+  blank answer win, supervisor excludes the worker and falls through. Typed `WorkerHandoff` +
+  6/6 tests (incl. failure-propagation assertions); multi-agent suite 75/75.
+- ✓ 2026-06-10 **Agent-performance levers research pass** → ranked 12-lever list with sources +
+  feasibility-on-Ollama-today at `docs/strategy/agent-performance-levers.md`; top 3 promoted to
+  the Open section above.
 - ✓ 2026-06-10 **Best-of-N recall shipped — the gate is now a SELECTOR, not just a filter**
   (`muse ask --best-of <n>`, 2-5): when the first draft fails the grounding verdict, redraw n-1
   fresh drafts, `selectBestGroundedDraft` (agent-core, deterministic rubric-sum ranking, "weak"
