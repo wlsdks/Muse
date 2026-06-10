@@ -70,8 +70,8 @@ excluded when scoring).
   deterministic deltas + an anti-collapse invariant test (+10.6% AppWorld for the pattern). (T1-1)
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting
   each is verifier-backed (85.36% same-mistake repetition without one, arXiv 2510.18254). (T1-10)
-- (queued behind fuel/prereqs: sleep-time compute · semantic-entropy battery · Mem0 UPDATE op ·
-  Bayesian surprise/SDT proactivity · AWM workflow mining · conformal factuality back-off)
+- (queued behind fuel/prereqs: sleep-time compute · Mem0 UPDATE op · AWM workflow mining ·
+  conformal factuality back-off · Bayesian-surprise digest ranking (SDT half SHIPPED — see Done))
 - ✗ blocked, recorded: SEPs / DoLa / contrastive decoding (need hidden states / decode-time
   intervention; Ollama logprobs are observational only).
 
@@ -194,6 +194,12 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-11 **F9(half): SDT-adaptive proactivity criterion** — Green&Swets likelihood-ratio
+  criterion as code: `sdtCriterion` (Laplace-smoothed, bounded β) + `adjustConfidenceFloor`
+  (acceptance-region scaling) + `summarizeNoticeResponses` (done/snooze=acted, dismiss=noise,
+  from the existing ↩-reply markers). WIRED live: the daemon's pattern tick now adapts the
+  0.7 firing floor per the user's own response history (≥3 responses; fail-soft to default).
+  A dismiss-heavy pattern category self-suppresses; an acted-on one fires more readily. 4/4.
 - ✓ 2026-06-11 **Maturity-review do-next batch (#1-#5 ALL shipped)**: ① dead ACT-R wired (recall-hit
   ledger → Petrov-2006 approximation, hot episode outranks cold; 3fb1b95d). ② multi-hop measured
   REAL (joint@4 2/6) → deterministic second-hop ships 4/6 with single-hop hit@1 15/15 preserved

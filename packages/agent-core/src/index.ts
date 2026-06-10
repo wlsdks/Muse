@@ -410,3 +410,4 @@ export { applyCitationSanitisation, buildModelRequestWithWebSearch } from "./mod
 export { renderToolExemplarSection, selectToolExemplars, type ToolExemplar } from "./tool-exemplars.js";
 export { summarizeTokenConfidence, type TokenConfidenceSummary } from "./token-confidence.js";
 export { baseLevelActivation, computeActivationBoost } from "./actr-activation.js";
+export { adjustConfidenceFloor, sdtCriterion, summarizeNoticeResponses, type NoticeResponseStats } from "./sdt-criterion.js";
