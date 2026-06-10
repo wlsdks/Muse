@@ -2888,7 +2888,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // still ALWAYS present ("anything due today?" needs `now`); when a
         // persona is injected it duplicates buildMusePersona's line — harmless.
         ...(notesFraming.guidance ? [notesFraming.guidance] : []),
-        formatCurrentContextLine(),
+        // Persona already carries its own date/time line (buildMusePersona);
+        // only the persona-less path needs this one — the duplicate was ~20
+        // wasted tokens every persona turn (subtraction sweep).
+        ...(personaPrompt ? [] : [formatCurrentContextLine()]),
         "",
         notesFraming.header,
         contextBlock,
