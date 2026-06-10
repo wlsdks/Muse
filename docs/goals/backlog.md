@@ -16,10 +16,10 @@
 FIXED already: actuator non-TTY fail-close (d7112db9) · hybrid-MMR scale bug · write-run cache
 replay (this commit). Remaining, severity order:
 
-- ★ **Ink chat (bare `muse`) has NO output gate** — chat-ink.ts submit renders the stream verbatim:
-  no gateChatAnswer/reverify, no stripFabricatedCitations, no receipts; a fabrication persists via
-  appendLastChatTurn and returns as cosine-1 conversation evidence (whitewash loop). Fix: run the
-  same post-stream pipeline runLocalChat uses; groundingFor must also return matches. (CLI audit #1)
+- ✓→Done **Ink chat output gate** — finalizeGatedChatAnswer (the ONE shared post-stream pipeline:
+  gate→reverify→citation strips→receipt) now runs on the Ink surface AND chat-repl was refactored
+  onto it so the surfaces cannot drift again; groundingFor returns matches; render test pins that
+  a fabricated answer is gated before display AND before history commit. (CLI audit #1, HIGH)
 - ★ **MCP/agent calendar delete/update orphans the linked reminder** — loopback-calendar.ts
   delete/update never runs removeRemindersForEvent/reschedule (CLI-only today): "치과 약속 취소해줘"
   via chat leaves a pending reminder firing for a cancelled event. Move the two helpers into

@@ -248,6 +248,39 @@ export async function groundChatTurn(
   return (await retrieveChatGrounding(message, opts)).block;
 }
 
+
+export interface FinalizeGatedChatAnswerArgs {
+  readonly question: string;
+  readonly answer: string;
+  readonly matches: readonly KnowledgeMatch[];
+  readonly history?: readonly { readonly role: string; readonly content: string }[];
+  readonly toolsUsed?: readonly string[];
+  readonly knownFactKeys?: readonly string[];
+  readonly reverify?: GroundingReverify;
+}
+
+/**
+ * The ONE post-stream pipeline every conversational surface must run — the
+ * audit found the Ink chat rendered the raw stream (no gate, no citation
+ * strip, no receipt) while runLocalChat had all four steps inline, and the
+ * divergence let a fabrication persist into the history as cosine-1
+ * "conversation evidence". Shared here so the surfaces cannot drift again:
+ * gate (reverify-backed when a judge is supplied) → truncated-citation strip →
+ * fabricated-citation strip → source receipt.
+ */
+export async function finalizeGatedChatAnswer(args: FinalizeGatedChatAnswerArgs): Promise<string> {
+  const evidence = [...args.matches, ...conversationMatches(args.history ?? [])];
+  const toolGrounded = (args.toolsUsed ?? []).length > 0;
+  const gated = toolGrounded
+    ? args.answer
+    : args.reverify
+      ? await gateChatAnswerWithReverify(args.question, args.answer, evidence, args.knownFactKeys ?? [], args.reverify)
+      : gateChatAnswer(args.question, args.answer, evidence, args.knownFactKeys ?? []);
+  const repaired = stripTruncatedCitation(gated);
+  const deFabbed = stripFabricatedCitations(repaired, args.matches.map((match) => match.source));
+  return withGroundingReceipt(deFabbed, groundedNoteSources(args.matches, deFabbed), /[가-힣]/u.test(args.question));
+}
+
 const HANGUL = /[가-힣]/u;
 
 /**

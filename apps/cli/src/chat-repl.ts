@@ -30,7 +30,7 @@ import { countdownDays, detectCountdownQuery, formatCountdown } from "./countdow
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
 import { detectDateDiffQuery, formatDateDiff } from "./date-diff-query.js";
 import { detectTimezoneQuery, formatTimezone } from "./timezone-query.js";
-import { buildQueryRewritePrompt, conversationMatches, factKeysToInject, gateChatAnswer, gateChatAnswerWithReverify, groundedNoteSources, isChatAbstention, needsContextualRewrite, parseQueryRewrite, QUERY_REWRITE_RESPONSE_FORMAT, QUERY_REWRITE_SYSTEM_PROMPT, retrieveChatGrounding, stripFabricatedCitations, stripTruncatedCitation, withGroundingReceipt } from "./chat-grounding.js";
+import { buildQueryRewritePrompt, factKeysToInject, finalizeGatedChatAnswer, isChatAbstention, needsContextualRewrite, parseQueryRewrite, QUERY_REWRITE_RESPONSE_FORMAT, QUERY_REWRITE_SYSTEM_PROMPT, retrieveChatGrounding } from "./chat-grounding.js";
 import { createQwenReverify } from "./grounding-eval-runner.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
@@ -614,41 +614,26 @@ export async function runLocalChat(
   // the topic→stored-key check (knownFactKeys), and deliberately NOT folded into
   // the lexical evidence — doing so let a stored value satisfy ANY question and
   // whitewashed a cross-entity conflation ("the cat is 보리", the dog's name).
-  const evidence = [...matches, ...conversationMatches(options.priorHistory ?? [])];
   const knownFactKeys = userMemory ? Object.keys(userMemory.facts ?? {}) : [];
-  // A tool that actually RAN (tasks.list, calendar.list, reminders.list, …) IS
-  // the grounding for a "what are my X?" recall — its data answered the question.
-  // The notes/episodes anti-fabrication gate must not override a real tool result
-  // with a false "I don't remember that" (observed: "내 할일 뭐 있어?" ran
-  // tasks.list and found the task, yet the gate abstained on the possessive
-  // "내 … 뭐"). The gate still guards a tool-less, ungrounded personal-fact recall.
-  const toolGrounded = (result.toolsUsed ?? []).length > 0;
   // Ask-parity escalation: when a model provider is available the borderline
   // bands get the same one-shot reverify judge ask uses (fires only on those
   // bands — the common grounded turn costs zero extra inference). Without a
-  // provider the sync deterministic gate stands alone, as before.
+  // provider the sync deterministic gate stands alone, as before. The whole
+  // post-stream pipeline (gate → strips → receipt) is the SHARED
+  // finalizeGatedChatAnswer so this surface and the Ink chat cannot drift.
   const chatProvider = assembly.modelProvider;
   const reverifyJudge = chatProvider && "generate" in chatProvider
     ? createQwenReverify(chatProvider, model ?? assembly.defaultModel ?? "default")
     : undefined;
-  const gated = toolGrounded
-    ? result.response.output
-    : reverifyJudge
-      ? await gateChatAnswerWithReverify(message, result.response.output, evidence, knownFactKeys, reverifyJudge)
-      : gateChatAnswer(message, result.response.output, evidence, knownFactKeys);
-
-  // The local model sometimes stops mid-citation, leaving a broken "[from …"
-  // fragment; drop it so the clean 📎 receipt can stand in for the source.
-  const repaired = stripTruncatedCitation(gated);
-
-  // Drop a FABRICATED "[from X]" (e.g. "[from weather]" with no weather tool
-  // call) — a fake source marker betrays the cited-recall edge. Only citations
-  // naming a real retrieved source survive.
-  const deFabbed = stripFabricatedCitations(repaired, matches.map((m) => m.source));
-
-  // "Answers from your notes, source quoted": render the source receipt the model
-  // often omits inline, so a grounded answer shows WHERE it came from.
-  const withReceipt = withGroundingReceipt(deFabbed, groundedNoteSources(matches, deFabbed), /[가-힣]/u.test(message));
+  const withReceipt = await finalizeGatedChatAnswer({
+    answer: result.response.output,
+    history: options.priorHistory ?? [],
+    knownFactKeys,
+    matches,
+    question: message,
+    ...(reverifyJudge ? { reverify: reverifyJudge } : {}),
+    toolsUsed: result.toolsUsed ?? []
+  });
 
   // Never hand the desktop a BLANK answer. qwen3:8b occasionally returns an empty
   // completion for a specific phrasing (observed deterministically on "오늘 할 일
