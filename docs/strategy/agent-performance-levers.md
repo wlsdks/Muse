@@ -7,6 +7,11 @@
 > Standing constraints: local-only absolute; leaderboard-chasing rejected
 > (2026-06-08); `format`+`tools` not composable on Ollama (#6002).
 
+**Status 2026-06-10**: #1 SHIPPED (KO hit@1 50%→100%, default flipped + legacy migration) ·
+#3 SHIPPED (doctor `ollama-perf` + stable-prefix prompt ordering) · #2 mechanism+A/B SHIPPED
+(`selectToolExemplars`, eval:tools arm 14/14 — golden set saturated, production wiring gated
+on real-trace failures).
+
 | # | Lever | Axis | Feasibility today | Smallest verifiable slice |
 |---|---|---|---|---|
 | 1 | **Multilingual embedder default** — `nomic-embed-text`(v1, EN-centric)이 한국어 질의의 조용한 recall 천장; `nomic-embed-text-v2-moe`/`embeddinggemma`/`qwen3-embedding` 후보 | Q (대) | High — embed.ts는 모델 파라미터화 끝; 인덱스 재임베드 1회 | KO 10케이스 recall셋 + grounding 배터리 A/B, pass^3 측정승격 |

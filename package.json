@@ -35,7 +35,7 @@
     "eval": "node apps/cli/scripts/eval.mjs",
     "smoke:live": "node scripts/smoke-live-llm.mjs",
     "smoke:live:all": "node scripts/smoke-live-all-providers.mjs",
-    "eval:tools": "pnpm --filter @muse/model build && pnpm --filter @muse/tools build && node scripts/eval-tool-selection.mjs",
+    "eval:tools": "pnpm --filter @muse/agent-core build && pnpm --filter @muse/model build && pnpm --filter @muse/tools build && node scripts/eval-tool-selection.mjs",
     "eval:explore": "pnpm --filter @muse/model build && pnpm --filter @muse/mcp build && pnpm --filter @muse/autoconfigure build && node scripts/eval-explore-live.mjs",
     "calibrate:tools": "pnpm --filter @muse/model build && pnpm --filter @muse/tools build && node scripts/calibrate-tool-names.mjs",
     "eval:tools:nl": "pnpm --filter @muse/model build && pnpm --filter @muse/tools build && node scripts/eval-nl-tool-selection.mjs",

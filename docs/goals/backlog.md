@@ -16,23 +16,22 @@
 ## Open — agent-performance levers (ranked research pass 2026-06-10)
 
 Full ranked list + sources: [`docs/strategy/agent-performance-levers.md`](../strategy/agent-performance-levers.md).
-The top actionable three, in order:
+Levers #1 (multilingual embedder, SHIPPED — KO hit@1 50%→100%), #3 (KV posture + prefix
+ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from the list:
 
-- ★ **Multilingual embedder A/B** (lever #1) — `nomic-embed-text` v1 is EN-centric while the
-  user's queries/notes are Korean: a silent recall ceiling upstream of EVERY grounded surface.
-  Slice: KO 10-case recall set + grounding battery on v1 vs `nomic-embed-text-v2-moe`
-  (or embeddinggemma); promote the default ONLY on a measured pass^3 win + one-time reindex.
-- ◦ **Few-shot tool exemplars from labeled traces** (lever #2) — inject 2-3 semantically similar
-  past SUCCESSFUL tool calls into the tool-calling turn (LangChain 16%→52%; arXiv 2508.15214).
-  Slice: one confusable family (time tools), eval:tools REPEAT=3 before/after.
-- ◦ **KV quant + flash-attention + stable-prefix prompt ordering** (lever #3) — env posture +
-  ordering audit so REPL/desktop turns reuse the prefill. Slice: measure turn-2 TTFT, add a
-  doctor posture check.
-- ✗ rejected this refill: "expose `muse notes graph/links`" (ALREADY exist,
-  commands-notes-rag.ts:848/886 — the -rag split trap again); "desktop lazy index load"
-  (FALSIFIED — searchRecall loads only inside the /recall handler, chat-ink.ts:1065, no startup
-  parse); "REPL query-embedding cache" (different query each turn ⇒ near-zero hit rate; the real
-  latency lever is #3 prefix reuse).
+- ◦ **Tool-exemplar production wiring — gated on real-trace failures** — the mechanism
+  (`selectToolExemplars`/`renderToolExemplarSection`) + the eval:tools A/B arm shipped; the
+  golden set is near-saturated, so the lift must be demonstrated on REAL failing prompts.
+  When labeled traces accumulate misses, extract an exemplar bank from successful traces and
+  wire injection into the runtime tool path; promote on a measured eval:tools + replay win.
+- ◦ **`format` schema constraint on the remaining judge paths** (lever #5) — reverify verdict,
+  llmJudge, polarity, preference (4/~7 done in-repo). Slice: reverify judge first + malformed
+  regression test.
+- ◦ **Local reranker on recall top-8** (lever #4) — Ollama has no rerank API; yes/no-logit
+  workaround, flag-gated, A/B on the embedder-ab corpus + grounding battery.
+- ✗ rejected this refill: "expose `muse notes graph/links`" (ALREADY exist — the -rag split
+  trap again); "desktop lazy index load" (FALSIFIED — no startup parse); "REPL query-embedding
+  cache" (near-zero hit rate; the real latency lever was prefix reuse, now shipped).
 
 ## Open — grounding edge (the maintained floor → frontier)
 
@@ -129,6 +128,21 @@ The top actionable three, in order:
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-10 **Lever #1 SHIPPED — multilingual embedder default + one-time legacy migration**
+  (6caaa6ac): measured A/B (eval:embedder-ab, production ranking config, paraphrase queries) —
+  v1 `nomic-embed-text` KO hit@1 **50%** vs `nomic-embed-text-v2-moe` **100%** (EN 100% too,
+  no regression; embeddinggemma 92%). Default flipped (env `MUSE_EMBED_MODEL` overrides; leaf
+  module `embed-model-default.ts`; 20 literals swept). `resolveIndexModel` migrates a
+  LEGACY-default index once (live-verified on the real index); custom models preserved. All
+  grounding batteries green ON THE NEW EMBEDDER (pass^3, Δ+0.94, chat 1.00/0.00).
+  NOTE for the setup-language idea: one multilingual default serves KO+EN, so no setup
+  language question is needed for the embedder; reply language remains a persona pref.
+- ✓ 2026-06-10 **Lever #3 SHIPPED — ollama-perf doctor posture + stable-prefix prompt ordering**
+  (c76ad9ba + part of 6caaa6ac): `muse doctor` advisory for OLLAMA_FLASH_ATTENTION/KV_CACHE_TYPE
+  (reads process env + macOS launchd); ask's volatile prompt lines (time, retrieval guidance)
+  moved BELOW the stable instruction block so Ollama's KV prefix reuse survives across turns.
+  Residual: TTFT effect not isolated (needs control of the user's Ollama.app env — measure
+  after Jinan sets the env vars).
 - ✓ 2026-06-10 **Chat grounding parity — reverify escalation on the front-door surface**: the
   chat gate's borderline bands (weak retrieval, coverage-only failure, unsupported asserted
   value) now spend the SAME one-shot reverify judge ask uses (`gateChatAnswerWithReverify`,
