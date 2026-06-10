@@ -18,3 +18,12 @@ describe("askOutcomeLabel (cli.local trace outcome label)", () => {
     expect(askOutcomeLabel({ refusal: false, verdict: null })).toBeNull();
   });
 });
+
+describe("askOutcomeLabel coverage for the --json verdict field", () => {
+  it("every payload value the json consumer can receive is produced by the label fn", () => {
+    expect(askOutcomeLabel({ refusal: false, verdict: "grounded" })).toBe("grounded");
+    expect(askOutcomeLabel({ refusal: false, verdict: "ungrounded" })).toBe("ungrounded");
+    expect(askOutcomeLabel({ refusal: true, verdict: null })).toBe("abstain");
+    expect(askOutcomeLabel({ refusal: false, verdict: null })).toBeNull();
+  });
+});

@@ -194,6 +194,10 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-11 **fresh-pass #1: --json carries the gate verdict** — the verdict now computes in
+  json mode too (emissions stay non-json; best-of stays inert there); payload gains
+  `groundedVerdict`; json traces now carry REAL labels instead of null (more error-analysis
+  fuel). Live-verified. Closes half of audit CLI #8 (dead verdict under --json).
 - ✓ 2026-06-11 **F9(half): SDT-adaptive proactivity criterion** — Green&Swets likelihood-ratio
   criterion as code: `sdtCriterion` (Laplace-smoothed, bounded β) + `adjustConfidenceFloor`
   (acceptance-region scaling) + `summarizeNoticeResponses` (done/snooze=acted, dismiss=noise,

@@ -3234,7 +3234,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // spends ONE extra local-Qwen inference (MaTTS) to re-check the answer
       // against the evidence — fail-close, so a judge error still warns.
       let groundedVerdictLabel: "grounded" | "ungrounded" | null = null;
-      if (!options.json) {
+      // The verdict now runs in --json mode too (previously skipped): a JSON
+      // consumer (desktop bridge, scripts) could not tell a gated answer from
+      // an unchecked one, and json traces carried grounded:null. Emissions
+      // below stay non-json-only; the COMPUTATION is unconditional.
+      {
         const provider = assembly.modelProvider;
         const reverify: GroundingReverify | undefined = provider
           ? async ({ answer, evidence, query: q }) => {
@@ -3343,7 +3347,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // answered rate, never admit a fabrication. Chat-only path — a
         // --with-tools redraw would re-execute side-effecting tools.
         const bestOfTotal = parseBoundedInt(options.bestOf, "--best-of", 1, 5, 1);
-        if (verdictNotice && bestOfTotal > 1 && provider && !options.withTools && imageAttachments.length === 0 && !refusalAnswer) {
+        if (verdictNotice && bestOfTotal > 1 && provider && !options.withTools && !options.json && imageAttachments.length === 0 && !refusalAnswer) {
           const survivor = await drawBestGroundedRedraft({
             attempts: bestOfTotal - 1,
             clean: (draft) => enforceAnswerCitations(stripEchoedCiteAs(draft), citationAllowed).text,
@@ -3374,7 +3378,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         if (imageAttachments.length === 0) {
           groundedVerdictLabel = verdictNotice ? "ungrounded" : "grounded";
         }
-        if (verdictNotice) {
+        if (verdictNotice && !options.json) {
           io.stderr(verdictNotice);
           // Constructive grounding (RARR, arXiv:2210.08726): rather than only
           // warning, attempt ONE rewrite constrained to the retrieved evidence
@@ -3403,7 +3407,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           } else if (shouldSuggestRepair({ evidenceCount: scoredMatches.length, json: Boolean(options.json), repairRequested: Boolean(options.repair), verdictFired: true })) {
             io.stderr("(Re-run with --repair and I'll rewrite this using only your notes — shown only if it then checks out.)\n");
           }
-        } else if (options.verifyClaims && reverify && !answerIsRefusal(collectedAnswer)) {
+        } else if (options.verifyClaims && reverify && !options.json && !answerIsRefusal(collectedAnswer)) {
           // --verify-claims: per-claim ISSUP refinement of an answer the whole-
           // answer gate just PASSED (no verdictNotice). One fabricated clause can
           // ride through because it barely dents whole-answer coverage — re-judge
@@ -3441,7 +3445,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // would vouch for a fabrication (the edge must not "show its work" for
         // work that failed its own check); the warning above stands alone there.
         // A refusal asserts no claim so it never reaches here with citations.
-        if (!verdictNotice) {
+        if (!verdictNotice && !options.json) {
           const receipts = formatSourceReceipts(
             collectedAnswer,
             notesDir,
@@ -3560,6 +3564,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           query,
           model,
           answer: collectedAnswer,
+          // The gate's verdict, so a JSON consumer can render trust honestly:
+          // "grounded" | "ungrounded" | "abstain" | null (verdict didn't run).
+          groundedVerdict: askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel }),
           ...(citationGate.stripped.length > 0 ? { strippedCitations: citationGate.stripped } : {}),
           ...(options.withTools ? { toolsUsed } : {}),
           grounded: {
