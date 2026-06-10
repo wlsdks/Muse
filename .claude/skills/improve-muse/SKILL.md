@@ -1,87 +1,68 @@
 ---
 name: improve-muse
-description: Use when beginning a Muse development session, deciding what to build or improve next, or finishing one slice and wanting the next — anytime you would otherwise hand-write a "what should I work on" prompt for the Muse repo. Muse-specific; the daily dev entrypoint.
+description: Use when deciding what to work on next in the Muse repo — at the start of a dev session, after finishing a slice, or when it feels like there is nothing left to do. Muse-specific; the daily dev entrypoint.
 ---
 
-# improve-muse
+# improve-muse — find the next slice
 
 ## Overview
 
-One invocation runs **one verified development slice** over Muse's existing
-harness, and **finds the work itself** — so you never hand-write "what should I
-build" again. Call it again after each slice: it compounds (every fire leaves the
-backlog, golden suite, and rules richer, so the next fire is strictly cheaper).
+One invocation answers ONE question: **"지금 Muse에서 가장 가치 있는 다음
+작업은 무엇인가?"** The deliverable is a short ranked recommendation —
+this skill does NOT build. Once a slice is picked (by Jinan, or by
+standing autonomous instruction), execution follows
+[`harness/dev-loop.md`](../../../harness/dev-loop.md) §3
+(PLAN→BUILD→VERIFY→WRITE-BACK→COMMIT) in the normal conversation flow.
 
-This skill is the thin RUNNER. The contract it executes is
-**[`harness/dev-loop.md`](../../../harness/dev-loop.md)** — read it first; it
-holds the principles, the canon, the full loop, and the anti-patterns. Other
-load-bearing files: [`docs/goals/backlog.md`](../../../docs/goals/backlog.md)
-(the work source), [`harness/AGENTS.md`](../../../harness/AGENTS.md) (roles +
-handoff for the non-trivial path), [`docs/EXPANSION-PLAYBOOK.md`](../../../docs/EXPANSION-PLAYBOOK.md)
-(gap-finding when the backlog is thin).
+**"할 게 없다"는 이 스킬의 유효한 출력이 아니다.** The pipeline below
+cannot return empty: a drained backlog means the recommendation IS a
+refill scout; a blocked item means the recommendation IS the decision
+that unblocks it.
 
-## The loop (one fire — depth in dev-loop.md §3)
+## The pipeline (collect, then rank)
 
-0. **PRE-FLIGHT** — `curl -s localhost:11434/api/tags` (Ollama up?); `git fetch`
-   (reconcile the auto-pushing loop); rebuild touched dep packages (stale dist
-   masquerades as a bug).
-1. **ORIENT (regression-first)** — `pnpm self-eval`. A dropped gate IS the fire:
-   fix it and stop. (Must be green plumbing — see Common Mistakes.)
-2. **FIND WORK (autonomous — never ask the human)** — (a) regression → that.
-   (b) else the top `★ OPEN` item in `docs/goals/backlog.md` — and among
-   `★ OPEN`, a declared PREREQUISITE outranks the feature it unblocks. (c) else run
-   EXPANSION-PLAYBOOK gap-finding (scout subagents) and WRITE the candidates back
-   to the backlog. (d) once ~20-30 labeled trace failures exist, error-analysis
-   outranks (b). The DATA/backlog picks — you do not prompt for direction.
-3. **PLAN** — WHAT + WHY + the gate it strengthens, one line into
-   `harness/handoff-template.md`. Trivial slice → skip (self-gate below).
-4. **BUILD** — one vertical slice, smallest scope, deterministic code (not
-   prompt). Strengthen exactly one gate or add one verb_noun tool.
-5. **VERIFY (fail-closed)** — run `node scripts/pick-evals.mjs` to get the exact
-   battery subset for your diff (it already sets `MUSE_EVAL_REPEAT=3` on
-   grounding/safety, so pass^k is mechanical), run what it prints + invariants
-   (fabrication=0 on real traces too, lint 0/0, changed-package test, `pnpm check`
-   if cross-package). For a fabrication-critical claim the same-model `eval:judge`
-   is **ADVISORY only** (gemma judging gemma on toy fixtures = correlated error) —
-   require a deterministic scorer OR an independent `harness-evaluator` subagent (a
-   separate stronger-model session, write tools removed). No green → not done.
-6. **WRITE-BACK (completion gate — cannot declare done without all four)** —
-   (a) the fixed miss → a STABLE-3/3 golden case; (b) any recurring correction →
-   one line in the matching `.claude/rules/*.md`; (c) chosen + rejected direction
-   + source URL → `backlog.md`, durable fact → MEMORY.md; (d) before→after →
-   self-eval scoreboard. **Prune one stale line for each you add.**
-7. **COMMIT** — one Conventional Commit (commit only) + a short Korean report:
-   what / why+URL / before→after / residual risk.
+1. **ORIENT** — `pnpm self-eval` (a regression auto-wins rank #1);
+   `git log --oneline -5` (what shipped recently);
+   `curl -s localhost:11434/api/tags` (live batteries possible?).
+2. **COLLECT candidates** from every source, in priority order:
+   - (a) self-eval regression → rank #1, stop collecting.
+   - (b) `docs/goals/backlog.md` ★ OPEN — a declared PREREQUISITE
+     outranks the feature it unblocks.
+   - (c) ⏳ blocked-on-Jinan items → "decision-needed" candidates.
+     Surface them with the EXACT question + options; never hide them.
+   - (d) ◦ ready items.
+   - (e) If (a)–(d) yields fewer than 2 actionable candidates → run a
+     gap-scout ([`docs/EXPANSION-PLAYBOOK.md`](../../../docs/EXPANSION-PLAYBOOK.md))
+     and WRITE its findings back to the backlog — the scout output IS
+     the candidate set. This step makes an empty answer impossible.
+3. **RECOMMEND** — the deliverable, then STOP:
+   - 1–3 candidates: what / why (source line in backlog or failing
+     gate) / which gate it strengthens / risk + size.
+   - One line: **"내 추천: …"** with the reason it beats the others.
+   - Decision-needed (⏳) items listed separately as questions with
+     options, so a pick unblocks them.
 
-## Non-negotiable gates
+Building starts only after the pick. An autonomous loop with a standing
+instruction takes the top recommendation as its pick and continues per
+dev-loop.md — the finder/builder split still holds.
 
-- **Autonomous through COMMIT; NEVER push** — push needs Jinan's explicit
-  approval (`commits.md`). This is a hard rule, not a preference.
-- **Find work from data/backlog, never ask "what should I build."** The whole
-  point of this skill is that you stop having to decide.
-- **No "done" without VERIFY green AND WRITE-BACK complete.** "Tested" never
-  means `tsc`-only.
-- `fabrication=0`, `MUSE_LOCAL_ONLY`, draft-first outbound are not negotiable
+## Forbidden outputs (the failures this skill exists to prevent)
+
+| Rationalization | Reality |
+|---|---|
+| "★ OPEN 섹션이 비어 있으니 할 게 없다" | Empty top section ≠ no work. Steps (c)–(e) still produce candidates; a refill scout IS the work. |
+| "남은 건 blocked뿐이라 못 한다" | Surfacing the blocking decision with the exact question IS the recommendation. |
+| "스킬이 호출됐으니 BUILD~COMMIT까지 지금 돌린다" | No — this skill ends at the recommendation. Execution follows dev-loop.md after the pick. |
+| "추천만 하면 되니 self-eval은 생략" | ORIENT is the cheapest, highest-signal step; a regression auto-wins. Never skip it. |
+| "백로그 읽기 귀찮으니 느낌상 가치 높은 걸 추천" | Every candidate must cite real state — a backlog line, a failing gate, or a labeled trace. |
+
+## Hard rules
+
+- Never end with "nothing to do" — fail-closed to the refill scout instead.
+- Never ask "뭘 만들까" as a substitute for running the pipeline; the
+  only question to the human is a SPECIFIC ⏳ fork, with options.
+- This skill writes at most: backlog refill entries. No `src/` changes,
+  no commits, no pushes.
+- Non-negotiables stay with the builder: fabrication=0,
+  `MUSE_LOCAL_ONLY`, draft-first outbound, verify-before-claim
   (`CLAUDE.md` + `.claude/rules/`).
-
-## Self-gate — don't make trivial work ceremony
-
-A one-line / typo / obvious fix SHORT-CIRCUITS the **ceremony**: skip PLAN +
-analyze + subagent dispatch, go straight BUILD → VERIFY → COMMIT. **Short-circuit
-NEVER skips VERIFY or WRITE-BACK** — those hold for every slice. WRITE-BACK is now
-mechanically enforced (the commit-msg guard blocks a `feat`/`fix` that stages no
-test / golden-case / backlog advance unless the message carries `[writeback: n/a]`),
-so "it's trivial" cannot quietly drop the compounding step. If this skill ever makes
-a 3-line fix take 6 steps, fix the skill — don't drop the gates.
-
-## Red flags — STOP
-
-- About to ask the human what to build → No. Read the backlog / self-eval first.
-- About to push → No. Commit only; approval gates push.
-- Clustering `.muse/runs` traces on a cloud model or committing raw trace text →
-  Privacy violation. Cluster on LOCAL gemma4 only; store redacted labels + counts.
-- Trusting the same-model judge as the sole gate on a fabrication-critical claim →
-  Deterministic scorers FIRST; judge is a tie-breaker that itself passed
-  `eval:judge`.
-- "Found 4 failures → here's a taxonomy" on thin data → That's theater. Below
-  ~20-30 real failures, hand-read and fix the obvious one; fall back to backlog.

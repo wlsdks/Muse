@@ -43,9 +43,10 @@ pnpm lint                              # 0 errors / 0 warnings required
 
 These commands are the ground truth. If any fails, stop and triage.
 
-**To pick + ship the next slice, run the `improve-muse` skill** — it finds the
-work (regression → backlog → gap-scout), builds, verifies, and compounds, so you
-never hand-write "what should I build". Contract: [`harness/dev-loop.md`](harness/dev-loop.md).
+**To decide what to work on next, run the `improve-muse` skill** — it finds the
+work (regression → backlog → gap-scout) and ends with a ranked recommendation;
+"nothing to do" is a forbidden output. Building the picked slice follows
+[`harness/dev-loop.md`](harness/dev-loop.md) §3.
 
 ## Non-negotiables
 

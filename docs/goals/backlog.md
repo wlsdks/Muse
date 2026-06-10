@@ -118,6 +118,15 @@
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-10 **improve-muse restructured: finder/recommender, not full build loop** — a real
+  invocation ended with "할 게 없다" (the ★ refill had all shipped; remaining = 1 medium-risk ★ +
+  2 ⏳-on-Jinan), exactly the autonomy-ceiling failure dev-loop.md §5 predicted. Per Jinan's direction
+  the skill now runs ORIENT+FIND only and MUST end with a ranked recommendation ("nothing to do" is a
+  forbidden output — empty backlog ⇒ the refill scout IS the candidate; blocked item ⇒ the surfaced
+  decision IS the recommendation). BUILD→COMMIT stays in dev-loop.md §3 after the pick. GREEN-verified:
+  a fresh subagent following the new skill against the same repo state produced 3 ranked candidates +
+  the source-trust ⏳ as an A/B question + a clear 내 추천, no build, no "nothing to do".
+
 - ✓ 2026-06-09 **pre-push hook fix** — the hook ran `exec pnpm` and blocked the push with
   "pnpm: not found" from a GUI/IDE git client (which spawns hooks with a minimal PATH where an
   nvm/corepack-installed pnpm is absent). Now resolves pnpm (with common-path fallback) and SKIPs
