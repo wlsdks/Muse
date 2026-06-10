@@ -194,6 +194,17 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-11 **Maturity-review do-next batch (#1-#5 ALL shipped)**: ① dead ACT-R wired (recall-hit
+  ledger → Petrov-2006 approximation, hot episode outranks cold; 3fb1b95d). ② multi-hop measured
+  REAL (joint@4 2/6) → deterministic second-hop ships 4/6 with single-hop hit@1 15/15 preserved
+  via augment-never-displace (df9dc99b). ③ contextual chunk annotation (embedText, bare-value
+  probe 5/6→6/6, both rank paths + persisted index; 4f237b95). ④ prompt-budget ENFORCEMENT
+  (priority eviction, opt-in MUSE_PROMPT_TOKEN_BUDGET; 8b5a18ed). ⑤ multi-agent subtract-then-type:
+  race PARKED (wire-compat → sequential, runRace deleted), parseWorkerResult typed boundary on all
+  seams, and the FIRST live orchestration battery (eval:orchestration — injected failure
+  propagates, bounded termination, fan-in survives; PASS on gemma4 in 2.3s).
+  Remaining from the review: block-ablation arm (feeds/reflection) — queued.
+
 - ✓ 2026-06-10 **AUDIT FIX (HIGH-adjacent): non-TTY fail-close unified across ALL actuator gates**
   — the stores/safety audit found web/email/home approval gates lacked the non-interactive deny
   the messaging gate had (outbound-safety rule 2: an undeliverable confirm must deny — a piped

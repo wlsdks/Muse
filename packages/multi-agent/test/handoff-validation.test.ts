@@ -99,3 +99,38 @@ describe("supervisor hand-off fail-close", () => {
     expect(result.selectedAgentId).toBe("fallback");
   });
 });
+
+describe("parseWorkerResult — typed validation at the worker boundary (MAST)", () => {
+  it("accepts a well-formed AgentRunResult", async () => {
+    const { parseWorkerResult } = await import("../src/index.js");
+    const parsed = parseWorkerResult({ response: { id: "r", model: "m", output: "answer" }, runId: "run-1" });
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("rejects malformed shapes with a reason — never lets them flow downstream", async () => {
+    const { parseWorkerResult } = await import("../src/index.js");
+    for (const bad of [undefined, null, "text", {}, { response: {} }, { response: { output: 42 }, runId: "x" }]) {
+      const parsed = parseWorkerResult(bad);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) expect(parsed.reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("sequential: a worker returning a malformed result becomes a FAILED step", async () => {
+    const { MultiAgentOrchestrator } = await import("../src/index.js");
+    const malformed = {
+      canHandle: () => 1,
+      description: "returns garbage",
+      id: "garbage",
+      run: () => Promise.resolve({ broken: true } as never)
+    };
+    const orchestrator = new MultiAgentOrchestrator({ workers: [malformed, workerReturning("solid", "real answer")] });
+    const result = await orchestrator.run(
+      { messages: [{ content: "task", role: "user" }], model: "diagnostic" },
+      { mode: "sequential" }
+    );
+    const statuses = Object.fromEntries(result.results.map((step) => [step.workerId, step.status]));
+    expect(statuses.garbage).toBe("failed");
+    expect(statuses.solid).toBe("completed");
+  });
+});

@@ -51,6 +51,12 @@ export interface MultiAgentRunResult extends AgentRunResult {
   readonly handoffs: readonly HandoffDecision[];
 }
 
+/**
+ * `race` is PARKED (2026-06 maturity review): on a single local GPU "first
+ * useful answer wins" is fiction — Ollama serializes the workers anyway, so
+ * race only added the most complex code path for a latency pessimization.
+ * The wire value stays accepted for compat and resolves to `sequential`.
+ */
 export type OrchestrationMode = "sequential" | "parallel" | "race";
 
 export interface OrchestrationStepResult {
@@ -266,6 +272,10 @@ export class SupervisorAgent {
           }
         });
 
+        const parsedResult = parseWorkerResult(result);
+        if (!parsedResult.ok) {
+          throw new NoAgentWorkerError(parsedResult.reason);
+        }
         const handoff = validateWorkerHandoff(worker.id, result.response.output);
         if (!handoff.ok) {
           throw new NoAgentWorkerError(handoff.reason);
@@ -355,7 +365,8 @@ export class MultiAgentOrchestrator {
       if (mode === "parallel") {
         results = await this.runParallel({ ...input, runId }, selectedWorkers);
       } else if (mode === "race") {
-        results = await this.runRace({ ...input, runId }, selectedWorkers);
+        // parked: resolves to sequential (see OrchestrationMode docs)
+        results = await this.runSequential({ ...input, runId }, selectedWorkers);
       } else {
         results = await this.runSequential({ ...input, runId }, selectedWorkers);
       }
@@ -445,7 +456,15 @@ export class MultiAgentOrchestrator {
 
     for (const worker of workers) {
       try {
-        const result = await worker.run(withSelectedWorker(currentInput, worker));
+        const raw = await worker.run(withSelectedWorker(currentInput, worker));
+        const parsed = parseWorkerResult(raw);
+        if (!parsed.ok) {
+          results.push({ error: parsed.reason, status: "failed", workerId: worker.id });
+          await this.publishWorkerFailure(worker.id, new Error(parsed.reason)).catch(() => undefined);
+          currentInput = addHandoffMessage(currentInput, worker.id, new Error(parsed.reason));
+          continue;
+        }
+        const result = parsed.result;
         const handoff = validateWorkerHandoff(worker.id, result.response.output);
         if (!handoff.ok) {
           results.push({ error: handoff.reason, status: "failed", workerId: worker.id });
@@ -473,7 +492,13 @@ export class MultiAgentOrchestrator {
   private async runParallel(input: AgentRunInput, workers: readonly AgentWorker[]): Promise<readonly OrchestrationStepResult[]> {
     return Promise.all(workers.map(async (worker): Promise<OrchestrationStepResult> => {
       try {
-        const result = await worker.run(withSelectedWorker(input, worker));
+        const raw = await worker.run(withSelectedWorker(input, worker));
+        const parsed = parseWorkerResult(raw);
+        if (!parsed.ok) {
+          await this.publishWorkerFailure(worker.id, new Error(parsed.reason)).catch(() => undefined);
+          return { error: parsed.reason, status: "failed", workerId: worker.id };
+        }
+        const result = parsed.result;
         const handoff = validateWorkerHandoff(worker.id, result.response.output);
         if (!handoff.ok) {
           await this.publishWorkerFailure(worker.id, new Error(handoff.reason)).catch(() => undefined);
@@ -489,63 +514,6 @@ export class MultiAgentOrchestrator {
         return { error: errorMessage(error), status: "failed", workerId: worker.id };
       }
     }));
-  }
-
-  /**
-   * Race mode: kick every selected worker off concurrently and resolve as
-   * soon as one of them completes successfully. The remaining workers keep
-   * running in the background but their outcomes do not appear in the
-   * orchestration response — the goal is "first useful answer wins". If
-   * every worker fails, the collected failures are returned so the upstream
-   * `run()` path can surface them through the existing
-   * `NoAgentWorkerError` flow.
-   */
-  private async runRace(input: AgentRunInput, workers: readonly AgentWorker[]): Promise<readonly OrchestrationStepResult[]> {
-    return new Promise<readonly OrchestrationStepResult[]>((resolve) => {
-      let resolved = false;
-      let pending = workers.length;
-      const failures: OrchestrationStepResult[] = [];
-
-      for (const worker of workers) {
-        void worker.run(withSelectedWorker(input, worker))
-          .then(async (result) => {
-            if (resolved) {
-              return;
-            }
-            // A blank answer must not win the race — "first USEFUL answer
-            // wins". Route it through the failure path instead.
-            const handoff = validateWorkerHandoff(worker.id, result.response.output);
-            if (!handoff.ok) {
-              await this.publishWorkerFailure(worker.id, new Error(handoff.reason)).catch(() => undefined);
-              failures.push({ error: handoff.reason, status: "failed", workerId: worker.id });
-              pending -= 1;
-              if (pending === 0 && !resolved) {
-                resolved = true;
-                resolve(failures);
-              }
-              return;
-            }
-            resolved = true;
-            // Best-effort: a bus publish failure must NOT prevent
-            // resolve() — otherwise resolved=true blocks every
-            // other worker's path too and the race hangs forever.
-            await this.publishWorkerResult(worker.id, result).catch(() => undefined);
-            resolve([{ result, status: "completed", workerId: worker.id }]);
-          })
-          .catch(async (error) => {
-            if (resolved) {
-              return;
-            }
-            await this.publishWorkerFailure(worker.id, error).catch(() => undefined);
-            failures.push({ error: errorMessage(error), status: "failed", workerId: worker.id });
-            pending -= 1;
-            if (pending === 0 && !resolved) {
-              resolved = true;
-              resolve(failures);
-            }
-          });
-      }
-    });
   }
 
   private async publishWorkerResult(workerId: string, result: AgentRunResult): Promise<void> {
@@ -590,6 +558,35 @@ export class MultiAgentOrchestrator {
 
     return worker;
   }
+}
+
+
+export type ParsedWorkerResult =
+  | { readonly ok: true; readonly result: AgentRunResult }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Typed validation of the worker's RESULT OBJECT at the boundary (MAST: an
+ * unvalidated partial result flowing downstream is the dominant multi-agent
+ * bug class). A worker whose run resolves to a malformed shape — not an
+ * AgentRunResult with a string output — is treated exactly like a thrown
+ * failure, never consumed.
+ */
+export function parseWorkerResult(value: unknown): ParsedWorkerResult {
+  if (!value || typeof value !== "object") {
+    return { ok: false, reason: "worker result is not an object" };
+  }
+  const candidate = value as { response?: { output?: unknown }; runId?: unknown };
+  if (!candidate.response || typeof candidate.response !== "object") {
+    return { ok: false, reason: "worker result has no response object" };
+  }
+  if (typeof candidate.response.output !== "string") {
+    return { ok: false, reason: "worker response.output is not a string" };
+  }
+  if (typeof candidate.runId !== "string" || candidate.runId.length === 0) {
+    return { ok: false, reason: "worker result has no runId" };
+  }
+  return { ok: true, result: value as AgentRunResult };
 }
 
 export type WorkerHandoff =
