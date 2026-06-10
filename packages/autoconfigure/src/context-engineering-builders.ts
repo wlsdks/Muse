@@ -10,7 +10,7 @@ import {
   detectCorrections,
   detectUserCommitments,
   inferPreferenceFromCorrection,
-  selectPlanExemplar,
+  selectPlanExemplarByRelevance,
   type ActiveContextProvider,
   type BackgroundReviewInput,
   type EpisodicRecallProvider,
@@ -253,7 +253,9 @@ export function createOllamaEmbedder(model: string): (text: string) => Promise<r
  * miscalibrated threshold. Use this instead of hand-rolling createOllamaEmbedder.
  */
 export function createGateEmbedder(env: NodeJS.ProcessEnv): (text: string) => Promise<readonly number[]> {
-  return createCachingEmbedder(createOllamaEmbedder(env.MUSE_KNOWLEDGE_SEARCH_EMBED_MODEL?.trim() || "nomic-embed-text"));
+  return createCachingEmbedder(createOllamaEmbedder(
+    env.MUSE_KNOWLEDGE_SEARCH_EMBED_MODEL?.trim() || env.MUSE_EMBED_MODEL?.trim() || "nomic-embed-text-v2-moe"
+  ));
 }
 
 export function buildEpisodicRecallProvider(
@@ -548,7 +550,10 @@ export function buildPlanCacheProvider(env: MuseEnvironment): PlanCacheProvider 
         // Store args are JSON-sourced; narrow Record<string,unknown> → JsonObject at the boundary.
         steps: entry.steps.map((step) => ({ args: step.args as JsonObject, description: step.description, tool: step.tool }))
       }));
-      return selectPlanExemplar(entries, prompt);
+      // Embedding-blended reuse so a paraphrased / Korean-particle prompt
+      // still hits a cached plan; degrades to the lexical selector when the
+      // embedder is down (selectPlanExemplarByRelevance is fail-open).
+      return selectPlanExemplarByRelevance(entries, prompt, createGateEmbedder(env));
     },
     recordPlan: async (userId, prompt, steps) => {
       await recordPlanTemplate(file, {
