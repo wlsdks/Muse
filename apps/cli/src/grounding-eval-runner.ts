@@ -1,6 +1,6 @@
 import {
   buildGroundingReverifyPrompt,
-  parseGroundingReverifyVerdict,
+  parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT,
   rankKnowledgeChunks,
   REVERIFY_SYSTEM_PROMPT,
   scoreGroundingEval,
@@ -68,7 +68,8 @@ export function runGroundingEval(corpus: GroundingEvalCorpus, deps: RunGrounding
 export function createQwenReverify(modelProvider: ModelProvider, model: string): GroundingReverify {
   return async ({ answer, evidence, query }) => {
     const response = await modelProvider.generate({
-      maxOutputTokens: 8,
+      maxOutputTokens: 24,
+      responseFormat: REVERIFY_RESPONSE_FORMAT,
       messages: [
         { content: REVERIFY_SYSTEM_PROMPT, role: "system" },
         { content: buildGroundingReverifyPrompt({ answer, evidence, query }), role: "user" }
@@ -76,7 +77,7 @@ export function createQwenReverify(modelProvider: ModelProvider, model: string):
       model,
       temperature: 0
     });
-    return parseGroundingReverifyVerdict(response.output ?? "");
+    return parseGroundingReverifyJson(response.output ?? "");
   };
 }
 

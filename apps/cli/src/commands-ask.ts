@@ -27,7 +27,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyVerdict, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -3227,7 +3227,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const reverify: GroundingReverify | undefined = provider
           ? async ({ answer, evidence, query: q }) => {
               const judged = await provider.generate({
-                maxOutputTokens: 8,
+                maxOutputTokens: 24,
+      responseFormat: REVERIFY_RESPONSE_FORMAT,
                 messages: [
                   { content: REVERIFY_SYSTEM_PROMPT, role: "system" },
                   { content: buildGroundingReverifyPrompt({ answer, evidence, query: q }), role: "user" }
@@ -3235,7 +3236,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
                 model,
                 temperature: 0
               });
-              return parseGroundingReverifyVerdict(judged.output ?? "");
+              return parseGroundingReverifyJson(judged.output ?? "");
             }
           : undefined;
         // The verdict scores the answer's coverage against retrieved evidence. A
@@ -3299,7 +3300,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           // notes-only set above and false-flags "not backed by your notes".
           // Still fabrication-safe: only REAL tool outputs are added, so a claim
           // in none of them (notes OR tool results) stays uncovered → ungrounded.
-          ...agentGroundingSources.map((s) => exactMatch(`tool: ${s.source}`, s.text))
+          // trusted:false — tool output is NOT the user's own data; the
+          // provenance bit feeds groundedOnUntrustedOnly (grounded≠true).
+          ...agentGroundingSources.map((s) => ({ ...exactMatch(`tool: ${s.source}`, s.text), trusted: false }))
         ];
         // The coverage check strips citation markers before scoring, so a LIST
         // answer whose claims live only inside `[task: …]` / `[event: …]` markers

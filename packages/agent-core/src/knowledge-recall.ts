@@ -1036,6 +1036,35 @@ export function parseGroundingReverifyVerdict(output: string): boolean {
   return /^\s*(yes|y|true|supported)\b/iu.test(output.trim());
 }
 
+/**
+ * Schema for Ollama's `format` constrained decoding on the reverify judge —
+ * the verdict can no longer be lost to parse drift (a hedge, an explanation,
+ * an empty completion). Safe here because the judge call carries NO tools
+ * (Ollama can't compose format+tools — #6002; tool calls stay unconstrained).
+ */
+export const REVERIFY_RESPONSE_FORMAT = {
+  properties: { supported: { type: "boolean" } },
+  required: ["supported"],
+  type: "object"
+};
+
+/**
+ * Parse the format-constrained verdict; a non-JSON reply (older runtime, env
+ * without format support) degrades to the legacy YES-word parse. Both layers
+ * fail-close — anything unclear is unsupported.
+ */
+export function parseGroundingReverifyJson(output: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(output.trim());
+    if (parsed && typeof parsed === "object" && "supported" in parsed) {
+      return (parsed as { supported: unknown }).supported === true;
+    }
+    return false;
+  } catch {
+    return parseGroundingReverifyVerdict(output);
+  }
+}
+
 // Month / day names: a correct date answer renders "September" for an evidence
 // "09" token, so they are excluded from the named-entity check below to avoid a
 // needless escalation on a faithful date.

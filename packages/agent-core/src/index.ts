@@ -160,7 +160,9 @@ export {
   renderKnowledgeMatches,
   reorderForLongContext,
   buildGroundingReverifyPrompt,
+  parseGroundingReverifyJson,
   parseGroundingReverifyVerdict,
+  REVERIFY_RESPONSE_FORMAT,
   REVERIFY_SYSTEM_PROMPT,
   segmentClaims,
   selectBestGroundedDraft,
@@ -355,7 +357,7 @@ export {
   type PlanValidationResult,
   type StepExecutionResult
 } from "./plan-execute.js";
-export { renderPlanExemplar, selectPlanExemplar } from "./plan-cache.js";
+export { renderPlanExemplar, selectPlanExemplar, selectPlanExemplarByRelevance } from "./plan-cache.js";
 export type { CachedPlan, PlanCacheProvider, SelectPlanExemplarOptions } from "./plan-cache.js";
 
 export { HookRegistry } from "./hook-registry.js";
