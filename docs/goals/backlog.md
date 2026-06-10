@@ -20,10 +20,11 @@ replay (this commit). Remaining, severity order:
   gate→reverify→citation strips→receipt) now runs on the Ink surface AND chat-repl was refactored
   onto it so the surfaces cannot drift again; groundingFor returns matches; render test pins that
   a fabricated answer is gated before display AND before history commit. (CLI audit #1, HIGH)
-- ★ **MCP/agent calendar delete/update orphans the linked reminder** — loopback-calendar.ts
-  delete/update never runs removeRemindersForEvent/reschedule (CLI-only today): "치과 약속 취소해줘"
-  via chat leaves a pending reminder firing for a cancelled event. Move the two helpers into
-  @muse/mcp and call from the MCP executors (+ API DELETE route). (both audits, HIGH)
+- ✓→Done **calendar↔reminder lifecycle link on EVERY surface** — helpers moved to
+  @muse/mcp (event-reminder-link.ts), wired into the MCP update/delete executors (results carry
+  remindersShifted/remindersRemoved) AND the API DELETE route; CLI re-exports. BONUS: a fired
+  reminder rescheduled into the future resets to pending (audit CLI #3) while a still-past shift
+  never instant-re-fires. 5/5 incl. loopback integration + no-partial-side-effect. (both audits, HIGH)
 - ◦ **Reminders/tasks stores: unserialized RMW** — daemon tick vs chat add loses writes (last-writer-
   wins); adopt atomicWriteFile + withFileMutationQueue + withFileLock (the 19-store pattern);
   fix `${pid}-${Date.now()}` tmp collision. (stores audit #2)
@@ -34,8 +35,6 @@ replay (this commit). Remaining, severity order:
 - ◦ **Chat-only users never get the embedder migration** — refreshStaleNotesIndexForChat doesn't
   treat legacy-model as stale → v2-moe queries ranked against v1 vectors (cross-model cosine noise
   above the 0.5 authoritative floor). Treat model mismatch as stale. (CLI audit #5)
-- ◦ **Rescheduled fired reminder never re-fires** — rescheduleRemindersForEvent keeps status:"fired"
-  while telling the user it shifted; reset to pending when new dueAt is future. (CLI audit #3)
 - ◦ **ask error paths skip the run-log trace** (failed runs are exactly the error-analysis fuel) +
   Ctrl-C still runs the verdict pipeline and logs success:true. try/finally + success:false entries.
   (CLI audit #6/#7)
