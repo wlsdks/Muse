@@ -19,6 +19,7 @@
     "@muse/a2a": "workspace:*",
     "@muse/agent-core": "workspace:*",
     "@muse/autoconfigure": "workspace:*",
+    "@muse/browser": "workspace:*",
     "@muse/calendar": "workspace:*",
     "@muse/macos": "workspace:*",
     "@muse/mcp": "workspace:*",

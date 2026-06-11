@@ -37,6 +37,15 @@ import {
   createMacSpotlightSearchTool,
   createMacSystemSetTool
 } from "@muse/macos";
+import {
+  PuppeteerBrowserController,
+  createBrowserBackTool,
+  createBrowserClickTool,
+  createBrowserOpenTool,
+  createBrowserReadTool,
+  createBrowserTypeTool,
+  type BrowserApprovalGate
+} from "@muse/browser";
 import type { MuseTool } from "@muse/tools";
 import { confirm, isCancel } from "@clack/prompts";
 
@@ -187,6 +196,63 @@ export function buildEmailApprovalGate(deps: {
       ? { approved: true }
       : { approved: false, reason: "user did not confirm" };
   };
+}
+
+/**
+ * Fail-closed draft-first gate for browser page acts (click / type). Same
+ * contract as the messaging/web gates: shows the exact action + target page and
+ * fires ONLY on confirm; in a non-interactive context the confirm can't be
+ * delivered, so the act is DENIED (outbound-safety — a wrong autonomous
+ * click/submit toward a third-party site can't be rolled back).
+ */
+export function buildBrowserApprovalGate(deps: {
+  readonly io: ProgramIO;
+  readonly confirmAction: (message: string) => Promise<boolean>;
+  readonly isInteractive?: () => boolean;
+}): BrowserApprovalGate {
+  const interactive = deps.isInteractive ?? DEFAULT_INTERACTIVE;
+  return async (draft) => {
+    if (!interactive()) {
+      return { approved: false, reason: "non-interactive — browser actions need a live confirm" };
+    }
+    const what = draft.action === "type" ? `Type into ${draft.target}: ${draft.text ?? ""}` : `Click ${draft.target}`;
+    deps.io.stdout(`\n${what}\n(on ${draft.url})\n\n`);
+    return (await deps.confirmAction(draft.action === "type" ? "Type this in the browser?" : "Click this in the browser?"))
+      ? { approved: true }
+      : { approved: false, reason: "user did not confirm" };
+  };
+}
+
+export interface BrowserToolsDeps {
+  readonly io: ProgramIO;
+  readonly confirmAction?: (message: string) => Promise<boolean>;
+  readonly isInteractive?: () => boolean;
+}
+
+/**
+ * Muse's native browser-control tools, available BY DEFAULT under `--with-tools`
+ * (not gated behind `--actuators`): reads/navigation (browser_open/read/back)
+ * are free; the state-changing acts (browser_click/type) carry the draft-first
+ * gate above. One lazy Chrome controller is shared across the tools — Chrome
+ * launches only on first actual use.
+ */
+export function buildBrowserTools(deps: BrowserToolsDeps): MuseTool[] {
+  const confirmAction =
+    deps.confirmAction ??
+    ((message: string) => confirm({ message }).then((answer) => !isCancel(answer) && answer === true));
+  const controller = new PuppeteerBrowserController();
+  const gate = buildBrowserApprovalGate({
+    confirmAction,
+    io: deps.io,
+    ...(deps.isInteractive ? { isInteractive: deps.isInteractive } : {})
+  });
+  return [
+    createBrowserOpenTool({ controller }),
+    createBrowserReadTool({ controller }),
+    createBrowserBackTool({ controller }),
+    createBrowserClickTool({ approvalGate: gate, controller }),
+    createBrowserTypeTool({ approvalGate: gate, controller })
+  ];
 }
 
 export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {

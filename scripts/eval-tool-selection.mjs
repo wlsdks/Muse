@@ -336,6 +336,46 @@ async function buildMacActuatorScenario() {
   }
 }
 
+// Muse's native browser-control tools (@muse/browser) exposed alongside their
+// nearest confusables: web_action (one-shot HTTP submit) and knowledge_search
+// (recall over notes). The model must route "open/read a web page" to
+// browser_open/browser_read, a ref-addressed "click/type on the open page" to
+// browser_click/browser_type, a "submit a form at a URL" to web_action, and a
+// "what did I note" recall to knowledge_search. click/type carry a `ref` that in
+// real use comes from a prior snapshot, so these cases put the ref in the prompt
+// (ArgumentCorrectness), not to imply the model invents it.
+async function buildBrowserScenario() {
+  try {
+    const browser = await import("../packages/browser/dist/index.js");
+    const mcp = await import("../packages/mcp/dist/index.js");
+    const ac = await import("../packages/autoconfigure/dist/index.js");
+    const stubController = {};
+    const allowGate = () => ({ approved: true });
+    const instances = [
+      browser.createBrowserOpenTool({ controller: stubController }),
+      browser.createBrowserReadTool({ controller: stubController }),
+      browser.createBrowserClickTool({ controller: stubController, approvalGate: allowGate }),
+      browser.createBrowserTypeTool({ controller: stubController, approvalGate: allowGate }),
+      mcp.createWebActionTool({ fetchImpl: fetch, approvalGate: {}, actionLogFile: "/tmp/eval-browser.json", userId: "eval" }),
+      ac.createNotesKnowledgeSearchTool({})
+    ];
+    const tools = instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "Open https://news.example.com in the browser and read the page.", expectTool: "browser_open", requireArgs: ["url"], note: "EN open+browse a page → browser_open (NOT web_action)" },
+      { prompt: "브라우저로 이 페이지 열어줘: https://example.com", expectTool: "browser_open", requireArgs: ["url"], note: "KO open a page → browser_open (user's language)" },
+      { prompt: "Read the page that's open in the browser right now.", expectTool: "browser_read", note: "EN re-read current page → browser_read (NOT knowledge_search)" },
+      { prompt: "On the open page, click element ref 3.", expectTool: "browser_click", requireArgs: ["ref"], note: "EN click by ref → browser_click (ref from prompt)" },
+      { prompt: "Type 'wireless mouse' into field ref 2 and submit.", expectTool: "browser_type", requireArgs: ["ref", "text"], note: "EN type into a field by ref → browser_type" },
+      { prompt: "Post a comment on the forum thread saying it works: https://forum.example.com/t/42", expectTool: "web_action", requireArgs: ["summary", "url"], note: "EN one-shot web submit → web_action, NOT browser_open" },
+      { prompt: "What did I note about the Q3 roadmap?", expectTool: "knowledge_search", requireArgs: ["query"], note: "EN recall → knowledge_search, NOT a browser tool" }
+    ];
+    return { label: "browser-control (browser_* confusable set)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "browser-control", skip: `@muse/browser or deps not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 async function ollamaReachable() {
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: AbortSignal.timeout(1500) });
@@ -399,6 +439,7 @@ async function main() {
     await buildTimeToolsExemplarScenario(),
     await buildActuatorScenario(),
     await buildMacActuatorScenario(),
+    await buildBrowserScenario(),
     await buildPersonalCrudScenario(),
     await buildRecallVsCrudScenario()
   ];

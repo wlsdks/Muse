@@ -110,6 +110,9 @@ importers:
       '@muse/autoconfigure':
         specifier: workspace:*
         version: link:../../packages/autoconfigure
+      '@muse/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
       '@muse/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar

@@ -2434,6 +2434,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         io.stderr(actuatorMod.formatActuatorBanner(actuatorMod.summarizeActuators(actuatorEnv)));
         extraTools = actuatorMod.buildActuatorTools({ env: actuatorEnv, io, userId: userKey });
       }
+      // Browser control (Hermes-style browser_*) is available BY DEFAULT under
+      // --with-tools — not gated behind --actuators. Reads/navigation are free;
+      // browser_click/type carry the draft-first confirm. Chrome launches lazily
+      // on first use, so registering the tools costs nothing.
+      if (options.withTools === true) {
+        const actuatorMod = await import("./actuator-tools.js");
+        const browserTools = actuatorMod.buildBrowserTools({ io });
+        extraTools = extraTools ? [...extraTools, ...browserTools] : browserTools;
+      }
       // The agent's `muse.messaging.send` (a default loopback tool whenever a
       // messenger is configured) gets a draft-first confirm gate under --with-tools:
       // show the exact {provider, destination, text} and fire ONLY on confirm,
