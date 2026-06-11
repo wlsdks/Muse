@@ -22,7 +22,11 @@ import type { AgentRunContext, GuardStage, LlmClassificationInputGuardOptions, O
 export function createInjectionInputGuard(): GuardStage {
   return {
     evaluate: (context: AgentRunContext) => {
-      const findings = findInjectionPatterns(joinMessages(context.input.messages));
+      // USER messages only: Muse's own system prompt is trusted-by-construction
+      // and legitimately QUOTES attack strings (the anti-injection guidance), so
+      // scanning it self-blocks every run. Retrieved/embedded content is
+      // defended by escape+wrap+the output gates, not this input guard.
+      const findings = findInjectionPatterns(joinUserMessages(context.input.messages));
 
       if (findings.length === 0) {
         return { allowed: true };
