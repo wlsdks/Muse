@@ -33,6 +33,13 @@ import type {
   TokenLogprob
 } from "./index.js";
 
+// Matches localModelCapabilities().maxInputTokens: when the wire window is
+// smaller than the capability the runtime budgets against, Ollama silently
+// truncates the prompt and returns done_reason:"length" with an EMPTY answer
+// (observed live: an 8K window ate the whole --with-tools prompt and left
+// 1 output token). Override per-install with MUSE_OLLAMA_NUM_CTX.
+export const DEFAULT_OLLAMA_NUM_CTX = 32_768;
+
 export class OllamaProvider extends OpenAICompatibleProvider {
   private readonly nativeBaseUrl: string;
   private readonly nativeFetch: typeof globalThis.fetch;
@@ -52,7 +59,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     this.nativeFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.numCtx = options.numCtx !== undefined && Number.isFinite(options.numCtx) && options.numCtx > 0
       ? Math.trunc(options.numCtx)
-      : 8192;
+      : DEFAULT_OLLAMA_NUM_CTX;
   }
 
   override async listModels(): Promise<readonly ModelInfo[]> {

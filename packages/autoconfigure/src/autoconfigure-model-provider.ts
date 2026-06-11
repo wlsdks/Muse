@@ -1,6 +1,7 @@
 import {
   AnthropicProvider,
   classifyProviderLocality,
+  DEFAULT_OLLAMA_NUM_CTX,
   DiagnosticModelProvider,
   GeminiProvider,
   knownModelPrefixes,
@@ -184,7 +185,7 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
         baseUrl: baseUrl ?? normalizeOllamaBaseUrl(env.OLLAMA_BASE_URL),
         defaultModel,
         models,
-        numCtx: parseInteger(env.MUSE_OLLAMA_NUM_CTX, 8192)
+        numCtx: parseInteger(env.MUSE_OLLAMA_NUM_CTX, DEFAULT_OLLAMA_NUM_CTX)
       });
     case "openai":
       return new OpenAIProvider({

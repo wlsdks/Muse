@@ -102,7 +102,7 @@ describe("OllamaProvider — native /api/chat request wire shape", () => {
         ],
         "model": "qwen3:8b",
         "options": {
-          "num_ctx": 8192,
+          "num_ctx": 32768,
           "num_predict": 50,
           "temperature": 0.4,
         },
@@ -178,10 +178,10 @@ describe("OllamaProvider — native /api/chat request wire shape", () => {
     expect(res.reasoning).toBe("let me think… step 1…");
   });
 
-  it("defaults num_ctx to 8192 and omits optional fields when unset", async () => {
+  it("defaults num_ctx to 32768 (matches localModelCapabilities maxInputTokens — a lower wire window silently truncates the prompt to done_reason:length) and omits optional fields when unset", async () => {
     const p = new OllamaProvider({ fetch: jsonFetch({ message: { content: "ok" } }) });
     await p.generate(userReq());
-    expect(lastBody().options).toEqual({ num_ctx: 8192 });
+    expect(lastBody().options).toEqual({ num_ctx: 32768 });
     expect(lastBody()).not.toHaveProperty("format");
     expect(lastBody()).not.toHaveProperty("tools");
   });
@@ -196,21 +196,21 @@ describe("OllamaProvider — native /api/chat request wire shape", () => {
         tools: [{ description: "w", inputSchema: { type: "object" }, name: "get_weather" }]
       })
     );
-    expect(lastBody().options).toEqual({ num_ctx: 8192, num_predict: 50, temperature: 0.4 });
+    expect(lastBody().options).toEqual({ num_ctx: 32768, num_predict: 50, temperature: 0.4 });
     expect(lastBody().format).toEqual({ type: "object" });
     expect(lastBody().tools).toEqual([
       { function: { description: "w", name: "get_weather", parameters: { type: "object" } }, type: "function" }
     ]);
   });
 
-  it("truncates a fractional numCtx and rejects a non-positive one (falls back to 8192)", async () => {
+  it("truncates a fractional numCtx and rejects a non-positive one (falls back to 32768)", async () => {
     const frac = new OllamaProvider({ fetch: jsonFetch({ message: { content: "ok" } }), numCtx: 16384.9 });
     await frac.generate(userReq());
     expect((lastBody().options as { num_ctx: number }).num_ctx).toBe(16384);
 
     const bad = new OllamaProvider({ fetch: jsonFetch({ message: { content: "ok" } }), numCtx: -5 });
     await bad.generate(userReq());
-    expect((lastBody().options as { num_ctx: number }).num_ctx).toBe(8192);
+    expect((lastBody().options as { num_ctx: number }).num_ctx).toBe(32768);
   });
 
   it("maps assistant tool_calls and tool-role messages into the native shape", async () => {

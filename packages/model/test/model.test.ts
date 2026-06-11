@@ -1339,23 +1339,23 @@ describe("OllamaProvider num_ctx (goal 165)", () => {
     return { bodies, fetch };
   }
 
-  it("defaults num_ctx to 8192 so Muse's rich prompt isn't truncated", async () => {
+  it("defaults num_ctx to 32768 so Muse's rich prompt isn't truncated", async () => {
     const { bodies, fetch } = captureBodyFetch();
     const provider = new OllamaProvider({ baseUrl: "http://o.test/v1", defaultModel: "model-test", fetch, models: ["model-test"] });
     await provider.generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/model-test" });
-    expect((bodies[0]?.options as { num_ctx?: number }).num_ctx).toBe(8192);
+    expect((bodies[0]?.options as { num_ctx?: number }).num_ctx).toBe(32768);
   });
 
   it("honours an explicit numCtx option and ignores non-positive values", async () => {
     const big = captureBodyFetch();
-    const p1 = new OllamaProvider({ baseUrl: "http://o.test/v1", defaultModel: "model-test", fetch: big.fetch, models: ["model-test"], numCtx: 32768 });
+    const p1 = new OllamaProvider({ baseUrl: "http://o.test/v1", defaultModel: "model-test", fetch: big.fetch, models: ["model-test"], numCtx: 16384 });
     await p1.generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/model-test" });
-    expect((big.bodies[0]?.options as { num_ctx?: number }).num_ctx).toBe(32768);
+    expect((big.bodies[0]?.options as { num_ctx?: number }).num_ctx).toBe(16384);
 
     const bad = captureBodyFetch();
     const p2 = new OllamaProvider({ baseUrl: "http://o.test/v1", defaultModel: "model-test", fetch: bad.fetch, models: ["model-test"], numCtx: 0 });
     await p2.generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/model-test" });
-    expect((bad.bodies[0]?.options as { num_ctx?: number }).num_ctx).toBe(8192);
+    expect((bad.bodies[0]?.options as { num_ctx?: number }).num_ctx).toBe(32768);
   });
 
   it("forwards responseFormat to Ollama's native `format` (structured output), and omits it otherwise", async () => {
