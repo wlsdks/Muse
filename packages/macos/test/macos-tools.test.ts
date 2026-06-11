@@ -7,6 +7,7 @@ import {
   createMacClipboardSetTool,
   createMacMediaControlTool,
   createMacMessageSendTool,
+  createMacSayTool,
   createMacScreenshotTool,
   createMacShortcutRunTool,
   createMacSpotlightSearchTool,
@@ -208,21 +209,34 @@ describe("mac_app_read — Tier 0 read", () => {
     expect(await tool.execute({ app: "volume" }, ctx)).toEqual({ app: "volume", muted: false, outputVolume: 45 });
   });
 
-  it("reads battery via pmset (not osascript) and parses percent + charging", async () => {
+  it("reads battery via the shell runner (pmset, not osascript) and parses percent + charging", async () => {
     let osascriptCalled = false;
-    let pmsetArgs: readonly string[] = [];
+    let bin = "";
+    let shellArgs: readonly string[] = [];
     const tool = createMacAppReadTool({
       runner: async () => { osascriptCalled = true; return ok(""); },
-      pmset: async (a) => { pmsetArgs = a; return ok("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1) 95%; charged; 0:00 remaining present: true"); }
+      shell: async (b, a) => { bin = b; shellArgs = a; return ok("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1) 95%; charged; 0:00 remaining present: true"); }
     });
     expect(await tool.execute({ app: "battery" }, ctx)).toEqual({ app: "battery", charging: true, percent: 95, state: "charged" });
-    expect(pmsetArgs).toEqual(["-g", "batt"]);
+    expect(bin).toContain("pmset");
+    expect(shellArgs).toEqual(["-g", "batt"]);
     expect(osascriptCalled).toBe(false);
   });
 
   it("battery on battery power reports charging:false", async () => {
-    const tool = createMacAppReadTool({ pmset: async () => ok("Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1) 62%; discharging; 3:12 remaining present: true") });
+    const tool = createMacAppReadTool({ shell: async () => ok("Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1) 62%; discharging; 3:12 remaining present: true") });
     expect(await tool.execute({ app: "battery" }, ctx)).toEqual({ app: "battery", charging: false, percent: 62, state: "discharging" });
+  });
+
+  it("reads storage via `df -h /` and parses the boot volume totals", async () => {
+    let bin = "";
+    let shellArgs: readonly string[] = [];
+    const tool = createMacAppReadTool({
+      shell: async (b, a) => { bin = b; shellArgs = a; return ok("Filesystem Size Used Avail Capacity iused ifree %iused Mounted on\n/dev/disk3s1s1 926Gi 12Gi 793Gi 2% 459k 4.3G 0% /"); }
+    });
+    expect(await tool.execute({ app: "storage" }, ctx)).toEqual({ app: "storage", available: "793Gi", capacity: "2%", total: "926Gi", used: "12Gi" });
+    expect(bin).toContain("df");
+    expect(shellArgs).toEqual(["-h", "/"]);
   });
 });
 
@@ -311,6 +325,61 @@ describe("mac_system_set — Tier 1 volume / mute / display sleep", () => {
     expect(await tool.execute({ setting: "display_sleep" }, ctx)).toEqual({ set: true, setting: "display_sleep" });
     expect(pmsetArgs).toEqual(["displaysleepnow"]);
     expect(osascriptCalled).toBe(false);
+  });
+
+  it("sleeps the whole Mac via `pmset sleepnow`", async () => {
+    let pmsetArgs: readonly string[] = [];
+    const tool = createMacSystemSetTool({ pmset: async (a) => { pmsetArgs = a; return ok(""); } });
+    expect(await tool.execute({ setting: "sleep" }, ctx)).toEqual({ set: true, setting: "sleep" });
+    expect(pmsetArgs).toEqual(["sleepnow"]);
+  });
+
+  it("toggles Wi-Fi by detecting the interface then setting airport power", async () => {
+    const calls: Array<readonly string[]> = [];
+    const tool = createMacSystemSetTool({
+      networksetup: async (a) => {
+        calls.push(a);
+        return a[0] === "-listallhardwareports"
+          ? ok("Hardware Port: Ethernet\nDevice: en1\n\nHardware Port: Wi-Fi\nDevice: en0\n")
+          : ok("");
+      }
+    });
+    expect(await tool.execute({ setting: "wifi_off" }, ctx)).toEqual({ device: "en0", set: true, setting: "wifi_off" });
+    expect(calls[0]).toEqual(["-listallhardwareports"]);
+    expect(calls[1]).toEqual(["-setairportpower", "en0", "off"]);
+    await tool.execute({ setting: "wifi_on" }, ctx);
+    expect(calls[3]).toEqual(["-setairportpower", "en0", "on"]);
+  });
+
+  it("reports no Wi-Fi interface gracefully", async () => {
+    const tool = createMacSystemSetTool({ networksetup: async () => ok("Hardware Port: Ethernet\nDevice: en1\n") });
+    expect(await tool.execute({ setting: "wifi_on" }, ctx)).toMatchObject({ set: false });
+  });
+});
+
+describe("mac_say — Tier 1 text-to-speech", () => {
+  it("is a well-formed execute tool requiring text", () => {
+    const tool = createMacSayTool();
+    expect(tool.definition.name).toBe("mac_say");
+    expect(tool.definition.risk).toBe("execute");
+    expect((tool.definition.inputSchema as { required: string[] }).required).toEqual(["text"]);
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("rejects empty text WITHOUT spawning say", async () => {
+    let called = false;
+    const tool = createMacSayTool({ runner: async () => { called = true; return ok(""); } });
+    expect(await tool.execute({ text: "  " }, ctx)).toMatchObject({ spoke: false });
+    expect(called).toBe(false);
+  });
+
+  it("speaks the text (and passes -v voice when given)", async () => {
+    let argv: readonly string[] = [];
+    const tool = createMacSayTool({ runner: async (a) => { argv = a; return ok(""); } });
+    expect(await tool.execute({ text: "Build done" }, ctx)).toEqual({ spoke: true });
+    expect(argv).toEqual(["Build done"]);
+    await tool.execute({ text: "Hi", voice: "Samantha" }, ctx);
+    expect(argv).toEqual(["-v", "Samantha", "Hi"]);
   });
 });
 

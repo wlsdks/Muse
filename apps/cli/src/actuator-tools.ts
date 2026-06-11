@@ -31,6 +31,7 @@ import {
   createMacClipboardSetTool,
   createMacMediaControlTool,
   createMacMessageSendTool,
+  createMacSayTool,
   createMacScreenshotTool,
   createMacShortcutRunTool,
   createMacSpotlightSearchTool,
@@ -76,7 +77,7 @@ export function summarizeActuators(env: MuseEnvironment): ActuatorSummary {
   if (macActuatorsEnabled(env)) {
     armed.push(
       "mac_shortcut_run", "mac_app_read", "mac_app_open", "mac_media_control", "mac_system_set",
-      "mac_screenshot", "mac_clipboard_set", "mac_spotlight_search", "mac_message_send"
+      "mac_screenshot", "mac_clipboard_set", "mac_spotlight_search", "mac_say", "mac_message_send"
     );
   }
 
@@ -273,6 +274,7 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
       createMacScreenshotTool(),
       createMacClipboardSetTool(),
       createMacSpotlightSearchTool(),
+      createMacSayTool(),
       // @muse/macos takes the action logger by injection (it never depends on
       // @muse/mcp); the CLI binds it to the same append-only action log the
       // other outbound actuators write.

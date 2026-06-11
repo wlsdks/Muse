@@ -72,6 +72,10 @@ const SHORTCUTS_PATH = "/usr/bin/shortcuts";
 const SCREENCAPTURE_PATH = "/usr/sbin/screencapture";
 const PBCOPY_PATH = "/usr/bin/pbcopy";
 const MDFIND_PATH = "/usr/bin/mdfind";
+const PMSET_PATH = "/usr/bin/pmset";
+const DF_PATH = "/bin/df";
+const SAY_PATH = "/usr/bin/say";
+const NETWORKSETUP_PATH = "/usr/sbin/networksetup";
 const OSASCRIPT_TIMEOUT_MS = 30_000;
 /** A shortcut can do real work (network, HomeKit) — give it a longer leash. */
 const SHORTCUTS_TIMEOUT_MS = 120_000;
@@ -222,8 +226,9 @@ const MAC_OSASCRIPT_READ_APPS = [
   "clipboard", "music", "frontmost_window", "contacts", "mail_unread", "safari_tab", "chrome_tab", "volume"
 ] as const;
 type MacReadApp = (typeof MAC_OSASCRIPT_READ_APPS)[number];
-// …plus `battery`, which reads from the `pmset` shell tool, not osascript.
-const MAC_APP_READ_APPS = [...MAC_OSASCRIPT_READ_APPS, "battery"] as const;
+// …plus shell-backed sources that don't go through osascript.
+const MAC_SHELL_READ_APPS = ["battery", "storage"] as const;
+const MAC_APP_READ_APPS = [...MAC_OSASCRIPT_READ_APPS, ...MAC_SHELL_READ_APPS] as const;
 
 function buildReadScript(app: MacReadApp, query: string): string {
   switch (app) {
@@ -390,15 +395,31 @@ function parseBatteryOutput(stdout: string): JsonObject {
   };
 }
 
+/** Parses `df -h /` (header + one data row) into the boot volume's totals. */
+function parseStorageOutput(stdout: string): JsonObject {
+  const row = stdout.split(/\r?\n/u).map((l) => l.trim()).filter(Boolean)[1] ?? "";
+  const cols = row.split(/\s+/u);
+  // df -h columns: Filesystem Size Used Avail Capacity ...
+  return {
+    app: "storage",
+    available: cols[3] ?? null,
+    capacity: cols[4] ?? null,
+    total: cols[1] ?? null,
+    used: cols[2] ?? null
+  };
+}
+
+type MacShellRead = (typeof MAC_SHELL_READ_APPS)[number];
+
 export interface MacAppReadToolDeps {
   readonly runner?: MacOsascriptRunner;
-  /** Shell runner for the `battery` source (`pmset -g batt`). */
-  readonly pmset?: (args: readonly string[]) => Promise<MacCommandResult>;
+  /** Shell runner for the non-osascript sources (`battery` → pmset, `storage` → df). */
+  readonly shell?: (bin: string, args: readonly string[]) => Promise<MacCommandResult>;
 }
 
 export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
   const runner = deps.runner ?? defaultOsascriptRunner;
-  const pmset = deps.pmset ?? ((args: readonly string[]) => runChild(PMSET_PATH, args, undefined, 10_000));
+  const shell = deps.shell ?? ((bin: string, args: readonly string[]) => runChild(bin, args, undefined, 10_000));
   return {
     definition: {
       description:
@@ -406,16 +427,16 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
         "'clipboard' (clipboard text), 'music' (what Music is playing), 'frontmost_window' (the app + " +
         "window in focus), 'contacts' (look up a person by name — requires `query`), 'mail_unread' (inbox " +
         "unread count + recent subjects), 'safari_tab' / 'chrome_tab' (front browser tab URL + title), " +
-        "'volume' (output volume + muted), 'battery' (charge % + charging). Use when the user asks what's " +
-        "on the clipboard, what song is playing, what page/tab they're on, the volume or battery level, a " +
-        "contact's phone/email, or unread mail. Do NOT use it to send or change anything " +
-        "(mac_message_send / mac_media_control / mac_system_set).",
+        "'volume' (output volume + muted), 'battery' (charge % + charging), 'storage' (disk space free/" +
+        "used). Use when the user asks what's on the clipboard, what song is playing, what page/tab " +
+        "they're on, the volume / battery / free disk space, a contact's phone/email, or unread mail. Do " +
+        "NOT use it to send or change anything (mac_message_send / mac_media_control / mac_system_set).",
       domain: "system",
       inputSchema: {
         additionalProperties: false,
         properties: {
           app: {
-            description: "Which state to read, e.g. 'battery' or 'safari_tab'.",
+            description: "Which state to read, e.g. 'battery' or 'storage'.",
             enum: [...MAC_APP_READ_APPS],
             type: "string"
           },
@@ -430,7 +451,8 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
       keywords: [
         "clipboard", "클립보드", "music", "playing", "song", "노래", "음악",
         "contact", "연락처", "phone", "email", "window", "frontmost", "mail", "unread", "메일", "안읽은",
-        "battery", "배터리", "volume", "볼륨", "tab", "탭", "safari", "사파리", "chrome", "크롬", "browser"
+        "battery", "배터리", "volume", "볼륨", "tab", "탭", "safari", "사파리", "chrome", "크롬", "browser",
+        "storage", "disk", "디스크", "저장공간", "용량"
       ],
       name: "mac_app_read",
       risk: "read"
@@ -440,17 +462,18 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
       if (!MAC_APP_READ_APPS.includes(app as (typeof MAC_APP_READ_APPS)[number])) {
         return { error: `app must be one of: ${MAC_APP_READ_APPS.join(", ")}` };
       }
-      if (app === "battery") {
-        let battResult: MacCommandResult;
+      if (MAC_SHELL_READ_APPS.includes(app as MacShellRead)) {
+        const [bin, argv] = app === "battery" ? [PMSET_PATH, ["-g", "batt"]] : [DF_PATH, ["-h", "/"]];
+        let shellResult: MacCommandResult;
         try {
-          battResult = await pmset(["-g", "batt"]);
+          shellResult = await shell(bin, argv);
         } catch (cause) {
-          return { error: `pmset spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+          return { error: `${app} read spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
         }
-        if (battResult.timedOut || battResult.exitCode !== 0) {
-          return { error: `pmset failed: ${battResult.stderr.trim().slice(0, 200) || "timed out"}` };
+        if (shellResult.timedOut || shellResult.exitCode !== 0) {
+          return { error: `${app} read failed: ${shellResult.stderr.trim().slice(0, 200) || "timed out"}` };
         }
-        return parseBatteryOutput(battResult.stdout);
+        return app === "battery" ? parseBatteryOutput(shellResult.stdout) : parseStorageOutput(shellResult.stdout);
       }
       const query = typeof args["query"] === "string" ? args["query"].trim() : "";
       if (app === "contacts" && query.length === 0) {
@@ -637,35 +660,48 @@ export function createMacMediaControlTool(deps: MacMediaControlToolDeps = {}): M
   };
 }
 
-// ── Tier 1: mac_system_set (volume / mute / display sleep) ─────────────
+// ── Tier 1: mac_system_set (volume / mute / sleep / Wi-Fi) ────────────
 
-const PMSET_PATH = "/usr/bin/pmset";
-const SYSTEM_SETTINGS = ["volume", "mute", "unmute", "display_sleep"] as const;
+const SYSTEM_SETTINGS = ["volume", "mute", "unmute", "display_sleep", "sleep", "wifi_on", "wifi_off"] as const;
 type SystemSetting = (typeof SYSTEM_SETTINGS)[number];
+
+/** Parses `networksetup -listallhardwareports` for the Wi-Fi interface (e.g. 'en0'). */
+function parseWifiDevice(stdout: string): string | undefined {
+  const lines = stdout.split(/\r?\n/u);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/Hardware Port:\s*Wi-Fi/iu.test(lines[i] ?? "")) {
+      const device = /Device:\s*(\S+)/u.exec(lines[i + 1] ?? "");
+      if (device) return device[1];
+    }
+  }
+  return undefined;
+}
 
 export interface MacSystemSetToolDeps {
   readonly osascript?: MacOsascriptRunner;
   readonly pmset?: (args: readonly string[]) => Promise<MacCommandResult>;
+  readonly networksetup?: (args: readonly string[]) => Promise<MacCommandResult>;
 }
 
 export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseTool {
   const osascript = deps.osascript ?? defaultOsascriptRunner;
   const pmset = deps.pmset ?? ((args: readonly string[]) => runChild(PMSET_PATH, args, undefined, 10_000));
+  const networksetup = deps.networksetup ?? ((args: readonly string[]) => runChild(NETWORKSETUP_PATH, args, undefined, 10_000));
   return {
     definition: {
       description:
-        "Change a Mac system setting: `setting` is 'volume' (needs `value` 0–100), 'mute', 'unmute', or " +
-        "'display_sleep' (turn the screen off now). Use when the user asks to set/raise/lower the volume, " +
-        "mute or unmute, or sleep the display — e.g. 'set the volume to 30', 'mute the sound', 'turn the " +
-        "screen off', '볼륨 50으로 해줘', '소리 음소거'. Do NOT use it to control music playback (that is " +
-        "mac_media_control).",
+        "Change a Mac system setting: `setting` is 'volume' (needs `value` 0–100), 'mute', 'unmute', " +
+        "'display_sleep' (screen off now), 'sleep' (put the whole Mac to sleep), 'wifi_on', or 'wifi_off'. " +
+        "Use when the user asks to set/raise/lower the volume, mute/unmute, sleep the screen or the Mac, or " +
+        "turn Wi-Fi on/off — e.g. 'set the volume to 30', 'mute the sound', 'go to sleep', 'turn off wifi', " +
+        "'볼륨 50으로 해줘', '와이파이 꺼줘'. Do NOT use it to control music playback (that is mac_media_control).",
       domain: "system",
       groundedArgs: ["value"],
       inputSchema: {
         additionalProperties: false,
         properties: {
           setting: {
-            description: "Which setting to change, e.g. 'volume'.",
+            description: "Which setting to change, e.g. 'volume' or 'wifi_off'.",
             enum: [...SYSTEM_SETTINGS],
             type: "string"
           },
@@ -677,7 +713,10 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         required: ["setting"],
         type: "object"
       },
-      keywords: ["volume", "볼륨", "소리", "mute", "음소거", "unmute", "sound", "display", "화면", "screen", "절전", "밝기"],
+      keywords: [
+        "volume", "볼륨", "소리", "mute", "음소거", "unmute", "sound", "display", "화면", "screen", "절전",
+        "sleep", "잠자기", "잠들", "wifi", "wi-fi", "와이파이", "네트워크"
+      ],
       name: "mac_system_set",
       risk: "execute"
     },
@@ -686,11 +725,29 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
       if (!SYSTEM_SETTINGS.includes(setting as SystemSetting)) {
         return { set: false, reason: `setting must be one of: ${SYSTEM_SETTINGS.join(", ")}` };
       }
-      if (setting === "display_sleep") {
-        const result = await pmset(["displaysleepnow"]).catch((cause: unknown) => ({ exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause), stdout: "", timedOut: false }));
+      if (setting === "display_sleep" || setting === "sleep") {
+        const argv = setting === "sleep" ? ["sleepnow"] : ["displaysleepnow"];
+        const result = await pmset(argv).catch((cause: unknown) => ({ exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause), stdout: "", timedOut: false }));
         return result.exitCode === 0
           ? { set: true, setting }
           : { reason: `pmset failed: ${result.stderr.trim().slice(0, 200)}`, set: false };
+      }
+      if (setting === "wifi_on" || setting === "wifi_off") {
+        let ports: MacCommandResult;
+        try {
+          ports = await networksetup(["-listallhardwareports"]);
+        } catch (cause) {
+          return { reason: `networksetup spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+        }
+        const device = parseWifiDevice(ports.stdout);
+        if (!device) {
+          return { reason: "no Wi-Fi interface found on this Mac", set: false };
+        }
+        const power = await networksetup(["-setairportpower", device, setting === "wifi_on" ? "on" : "off"])
+          .catch((cause: unknown) => ({ exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause), stdout: "", timedOut: false }));
+        return power.exitCode === 0
+          ? { device, set: true, setting }
+          : { reason: `networksetup failed: ${power.stderr.trim().slice(0, 200)}`, set: false };
       }
       let script: string;
       let echoValue: number | undefined;
@@ -1046,6 +1103,63 @@ export function createMacSpotlightSearchTool(deps: MacSpotlightSearchToolDeps = 
         total: all.length,
         ...(all.length > SPOTLIGHT_MAX_RESULTS ? { truncated: true } : {})
       };
+    }
+  };
+}
+
+// ── Tier 1: mac_say (text-to-speech) ──────────────────────────────────
+
+const SAY_TIMEOUT_MS = 60_000;
+
+export interface MacSayToolDeps {
+  /** Runs `say [-v voice] <text>`. Injected in tests. */
+  readonly runner?: (args: readonly string[]) => Promise<MacCommandResult>;
+}
+
+export function createMacSayTool(deps: MacSayToolDeps = {}): MuseTool {
+  const runner = deps.runner ?? ((args: readonly string[]) => runChild(SAY_PATH, args, undefined, SAY_TIMEOUT_MS));
+  return {
+    definition: {
+      description:
+        "Speak text aloud through the Mac's speakers (text-to-speech). Use when the user asks to say / read " +
+        "something out loud — e.g. 'say hello', 'read this out loud', 'announce that the build is done', " +
+        "'이거 소리내서 읽어줘', '말해줘'. Optionally pass `voice` to pick a named system voice. This SPEAKS " +
+        "text; it does not change any setting.",
+      domain: "system",
+      groundedArgs: ["text"],
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          text: { description: "What to speak aloud, e.g. 'The build finished successfully'.", type: "string" },
+          voice: { description: "Optional system voice name, e.g. 'Samantha'. Omit for the default.", type: "string" }
+        },
+        required: ["text"],
+        type: "object"
+      },
+      keywords: ["say", "speak", "말해", "읽어", "소리내서", "aloud", "announce", "tts", "voice"],
+      name: "mac_say",
+      risk: "execute"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const text = typeof args["text"] === "string" ? args["text"].trim() : "";
+      if (text.length === 0) {
+        return { reason: "mac_say requires non-empty 'text'", spoke: false };
+      }
+      const voice = typeof args["voice"] === "string" && args["voice"].trim().length > 0 ? args["voice"].trim() : undefined;
+      const argv = voice ? ["-v", voice, text] : [text];
+      let result: MacCommandResult;
+      try {
+        result = await runner(argv);
+      } catch (cause) {
+        return { reason: `say spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, spoke: false };
+      }
+      if (result.timedOut) {
+        return { reason: `say timed out after ${SAY_TIMEOUT_MS.toString()}ms`, spoke: false };
+      }
+      if (result.exitCode !== 0) {
+        return { reason: result.stderr.trim().slice(0, 200) || `say exited with code ${result.exitCode?.toString() ?? "null"}`, spoke: false };
+      }
+      return { spoke: true, ...(voice ? { voice } : {}) };
     }
   };
 }

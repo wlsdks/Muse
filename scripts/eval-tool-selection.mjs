@@ -293,6 +293,7 @@ async function buildMacActuatorScenario() {
       mac.createMacScreenshotTool(),
       mac.createMacClipboardSetTool(),
       mac.createMacSpotlightSearchTool(),
+      mac.createMacSayTool(),
       mac.createMacMessageSendTool({ approvalGate: {}, actionLog: async () => {}, userId: "eval" }),
       mcp.createWebActionTool({ fetchImpl: fetch, approvalGate: {}, actionLogFile: "/tmp/eval-mac.json", userId: "eval" }),
       ac.createNotesKnowledgeSearchTool({})
@@ -319,6 +320,10 @@ async function buildMacActuatorScenario() {
       { prompt: "Copy '123 Main St' to my clipboard.", expectTool: "mac_clipboard_set", requireArgs: ["text"], note: "EN set clipboard → mac_clipboard_set (NOT mac_app_read clipboard)" },
       { prompt: "Find the file called budget.xlsx on my Mac.", expectTool: "mac_spotlight_search", requireArgs: ["query"], note: "EN locate a file on disk → mac_spotlight_search (NOT knowledge_search)" },
       { prompt: "내 컴퓨터에서 발표자료 파일 좀 찾아줘.", expectTool: "mac_spotlight_search", requireArgs: ["query"], note: "KO locate a file on disk → mac_spotlight_search (NOT knowledge_search)" },
+      { prompt: "How much free disk space do I have?", expectTool: "mac_app_read", requireArgs: ["app"], note: "EN disk space → mac_app_read(storage)" },
+      { prompt: "와이파이 꺼줘.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "KO turn Wi-Fi off → mac_system_set(wifi_off)" },
+      { prompt: "Put my Mac to sleep.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "EN system sleep → mac_system_set(sleep)" },
+      { prompt: "Read this out loud: the build passed.", expectTool: "mac_say", requireArgs: ["text"], note: "EN speak aloud → mac_say" },
       // knowledge_search must still win for a RECALL question even with spotlight present.
       { prompt: "What did I note about the Q3 roadmap?", expectTool: "knowledge_search", requireArgs: ["query"], note: "EN recall over notes → knowledge_search, NOT mac_spotlight_search" },
       // Negative eager-invocation + injection traps on the mac set.
