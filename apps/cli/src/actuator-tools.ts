@@ -18,6 +18,9 @@ import {
   createEmailReplyTool,
   createEmailSendTool,
   createHomeActionTool,
+  createMacAppReadTool,
+  createMacMessageSendTool,
+  createMacShortcutRunTool,
   createWebActionTool,
   queryContacts,
   type EmailApprovalGate,
@@ -58,7 +61,24 @@ export function summarizeActuators(env: MuseEnvironment): ActuatorSummary {
     unavailable.push({ hint: "set MUSE_HOMEASSISTANT_URL + MUSE_HOMEASSISTANT_TOKEN", name: "home_action" });
   }
 
+  // macOS native-app actuators (Shortcuts run, app read, iMessage send) are an
+  // explicit opt-in power feature (darwin only) — off by default so a stray
+  // box never arms an iMessage send, on when the user sets the flag.
+  if (macActuatorsEnabled(env)) {
+    armed.push("mac_shortcut_run", "mac_app_read", "mac_message_send");
+  }
+
   return { armed, unavailable };
+}
+
+/**
+ * The macOS-actuator opt-in. A power feature (it can run any user Shortcut and
+ * send an iMessage), so it stays dark until explicitly enabled — mirrors the
+ * env-gated posture of the email / smart-home actuators.
+ */
+export function macActuatorsEnabled(env: MuseEnvironment): boolean {
+  const value = env.MUSE_MACOS_ACTUATORS?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
 export function formatActuatorBanner(summary: ActuatorSummary): string {
@@ -219,6 +239,23 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
     });
     tools.push(
       createHomeActionTool({ actionLogFile, approvalGate: homeGate, baseUrl: haUrl, fetchImpl, token: haToken, userId })
+    );
+  }
+
+  if (macActuatorsEnabled(env)) {
+    // Only the third-party send (mac_message_send) needs the draft-first gate;
+    // mac_shortcut_run (local, user-authored) and mac_app_read (read-only) carry
+    // no outbound-to-human risk, so they ride the runtime's execute/localMode
+    // gating like muse.skills.run, with no bespoke per-call confirm.
+    const macMessageGate = buildMessagingApprovalGate({
+      confirmAction,
+      io,
+      ...(deps.isInteractive ? { isInteractive: deps.isInteractive } : {})
+    });
+    tools.push(
+      createMacShortcutRunTool(),
+      createMacAppReadTool(),
+      createMacMessageSendTool({ actionLogFile, approvalGate: macMessageGate, userId })
     );
   }
 

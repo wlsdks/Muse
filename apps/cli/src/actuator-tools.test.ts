@@ -157,6 +157,30 @@ describe("summarizeActuators — armed-state visibility + config hints", () => {
   });
 });
 
+describe("macOS actuators — opt-in via MUSE_MACOS_ACTUATORS", () => {
+  it("are DARK by default — no mac_* tool is built or armed without the flag", () => {
+    const e = env();
+    const built = buildActuatorTools({ confirmAction: async () => true, env: e, io: fakeIo(), userId: "stark" }).map((t) => t.definition.name);
+    expect(built.some((n) => n.startsWith("mac_"))).toBe(false);
+    expect(summarizeActuators(e).armed.some((n) => n.startsWith("mac_"))).toBe(false);
+  });
+
+  it("arm all three when the flag is set, and stay in lockstep (armed == built)", () => {
+    const e = env({ MUSE_MACOS_ACTUATORS: "1" });
+    const built = buildActuatorTools({ confirmAction: async () => true, env: e, io: fakeIo(), userId: "stark" }).map((t) => t.definition.name);
+    expect(built).toEqual(expect.arrayContaining(["mac_shortcut_run", "mac_app_read", "mac_message_send"]));
+    expect([...summarizeActuators(e).armed].sort()).toEqual([...built].sort());
+  });
+
+  it("classify risk correctly: the read is read-risk, the state-changers are execute-risk", () => {
+    const tools = buildActuatorTools({ confirmAction: async () => true, env: env({ MUSE_MACOS_ACTUATORS: "true" }), io: fakeIo(), userId: "stark" });
+    const byName = new Map(tools.map((t) => [t.definition.name, t.definition.risk]));
+    expect(byName.get("mac_app_read")).toBe("read");
+    expect(byName.get("mac_shortcut_run")).toBe("execute");
+    expect(byName.get("mac_message_send")).toBe("execute");
+  });
+});
+
 describe("buildActuatorTools — the agent invokes a wired tool through its clack-confirm gate", () => {
   function runWebAction(confirmAction: () => Promise<boolean>, fetchImpl: typeof fetch) {
     const tools = buildActuatorTools({

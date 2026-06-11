@@ -730,6 +730,20 @@ export {
   type HomeStateToolDeps
 } from "./smart-home-tool.js";
 export {
+  createMacAppReadTool,
+  createMacMessageSendTool,
+  createMacShortcutRunTool,
+  sendImessageWithApproval,
+  type MacAppReadToolDeps,
+  type MacCommandResult,
+  type MacMessageSendToolDeps,
+  type MacOsascriptRunner,
+  type MacShortcutRunToolDeps,
+  type SendImessageOutcome,
+  type SendImessageWithApprovalOptions,
+  type ShortcutsRunner
+} from "./macos-tools.js";
+export {
   runActuatorByName,
   type RunActuatorByNameDeps,
   type RunActuatorResult
