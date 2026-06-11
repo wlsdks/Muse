@@ -88,6 +88,7 @@ describe("describeImage — free-text screen/image description (fail-soft)", () 
       generate: async () => { throw new Error("model offline"); },
       id: "boom",
       listModels: async () => [],
+      // eslint-disable-next-line require-yield
       stream: async function* () { throw new Error("unused"); }
     } as unknown as ModelProvider;
     const result = await describeImage(provider, base);

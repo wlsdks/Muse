@@ -113,7 +113,7 @@ export async function describeImage(
   provider: ModelProvider,
   input: VisionDescribeInput
 ): Promise<VisionDescribeResult> {
-  let text = "";
+  let text: string;
   try {
     const response = await provider.generate({
       maxOutputTokens: 400,

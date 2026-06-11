@@ -45,19 +45,15 @@ export function rankFileCandidates(candidates: readonly FileCandidate[], query: 
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return [];
   const needleWords = needle.split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0);
+  const scoreName = (name: string): number => {
+    if (name === needle) return 100;
+    if (name.startsWith(needle)) return 80;
+    if (name.includes(needle)) return 60;
+    const hits = needleWords.filter((word) => name.includes(word)).length;
+    return hits === needleWords.length && hits > 0 ? 40 : hits > 0 ? 10 + hits : 0;
+  };
   const scored = candidates
-    .map((candidate) => {
-      const name = candidate.name.toLowerCase();
-      let score = 0;
-      if (name === needle) score = 100;
-      else if (name.startsWith(needle)) score = 80;
-      else if (name.includes(needle)) score = 60;
-      else {
-        const hits = needleWords.filter((word) => name.includes(word)).length;
-        score = hits === needleWords.length && hits > 0 ? 40 : hits > 0 ? 10 + hits : 0;
-      }
-      return { candidate, score };
-    })
+    .map((candidate) => ({ candidate, score: scoreName(candidate.name.toLowerCase()) }))
     .filter((entry) => entry.score > 0);
   scored.sort((a, b) => b.score - a.score || b.candidate.modifiedMs - a.candidate.modifiedMs);
   return scored.map((entry) => entry.candidate);
