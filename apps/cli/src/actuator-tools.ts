@@ -14,10 +14,18 @@ import type { MuseEnvironment } from "@muse/autoconfigure";
 import { resolveActionLogFile, resolveContactsFile } from "@muse/autoconfigure";
 import {
   GmailEmailProvider,
+  appendActionLog,
   createEmailForwardTool,
   createEmailReplyTool,
   createEmailSendTool,
   createHomeActionTool,
+  createWebActionTool,
+  queryContacts,
+  type EmailApprovalGate,
+  type MessageApprovalGate,
+  type WebActionApprovalGate
+} from "@muse/mcp";
+import {
   createMacAppOpenTool,
   createMacAppReadTool,
   createMacClipboardSetTool,
@@ -26,13 +34,8 @@ import {
   createMacScreenshotTool,
   createMacShortcutRunTool,
   createMacSpotlightSearchTool,
-  createMacSystemSetTool,
-  createWebActionTool,
-  queryContacts,
-  type EmailApprovalGate,
-  type MessageApprovalGate,
-  type WebActionApprovalGate
-} from "@muse/mcp";
+  createMacSystemSetTool
+} from "@muse/macos";
 import type { MuseTool } from "@muse/tools";
 import { confirm, isCancel } from "@clack/prompts";
 
@@ -270,7 +273,14 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
       createMacScreenshotTool(),
       createMacClipboardSetTool(),
       createMacSpotlightSearchTool(),
-      createMacMessageSendTool({ actionLogFile, approvalGate: macMessageGate, userId })
+      // @muse/macos takes the action logger by injection (it never depends on
+      // @muse/mcp); the CLI binds it to the same append-only action log the
+      // other outbound actuators write.
+      createMacMessageSendTool({
+        actionLog: (entry) => appendActionLog(actionLogFile, entry),
+        approvalGate: macMessageGate,
+        userId
+      })
     );
   }
 

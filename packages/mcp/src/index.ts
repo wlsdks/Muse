@@ -730,32 +730,6 @@ export {
   type HomeStateToolDeps
 } from "./smart-home-tool.js";
 export {
-  createMacAppOpenTool,
-  createMacAppReadTool,
-  createMacClipboardSetTool,
-  createMacMediaControlTool,
-  createMacMessageSendTool,
-  createMacScreenshotTool,
-  createMacShortcutRunTool,
-  createMacSpotlightSearchTool,
-  createMacSystemSetTool,
-  sendImessageWithApproval,
-  type MacAppOpenToolDeps,
-  type MacAppReadToolDeps,
-  type MacClipboardSetToolDeps,
-  type MacCommandResult,
-  type MacMediaControlToolDeps,
-  type MacMessageSendToolDeps,
-  type MacOsascriptRunner,
-  type MacScreenshotToolDeps,
-  type MacShortcutRunToolDeps,
-  type MacSpotlightSearchToolDeps,
-  type MacSystemSetToolDeps,
-  type SendImessageOutcome,
-  type SendImessageWithApprovalOptions,
-  type ShortcutsRunner
-} from "./macos-tools.js";
-export {
   runActuatorByName,
   type RunActuatorByNameDeps,
   type RunActuatorResult

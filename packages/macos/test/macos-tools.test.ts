@@ -1,9 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import { validateToolDefinitions } from "@muse/tools";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   createMacAppOpenTool,
@@ -15,27 +11,17 @@ import {
   createMacShortcutRunTool,
   createMacSpotlightSearchTool,
   createMacSystemSetTool,
+  type MacActionLogEntry,
   type MacCommandResult,
   type MacMessageSendToolDeps,
   type MacOsascriptRunner,
   type ShortcutsRunner
 } from "../src/macos-tools.js";
-import { readActionLog } from "../src/personal-action-log-store.js";
 
 const ctx = { runId: "r", userId: "u1" };
 const ok = (stdout: string): MacCommandResult => ({ exitCode: 0, stderr: "", stdout, timedOut: false });
 const fail = (stderr: string, exitCode = 1): MacCommandResult => ({ exitCode, stderr, stdout: "", timedOut: false });
 const timedOut: MacCommandResult = { exitCode: null, stderr: "", stdout: "", timedOut: true };
-
-let dir: string;
-let actionLogFile: string;
-beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "muse-macos-tool-"));
-  actionLogFile = join(dir, "actions.json");
-});
-afterEach(async () => {
-  await rm(dir, { force: true, recursive: true });
-});
 
 describe("mac_shortcut_run — Tier 1 keystone", () => {
   it("is a well-formed execute tool (validateToolDefinitions-clean, Korean keyword, use-when/not-when)", () => {
@@ -416,16 +402,22 @@ describe("mac_spotlight_search — Tier 0 find files", () => {
 });
 
 describe("mac_message_send — Tier 2 draft-first, fail-closed (outbound-safety)", () => {
-  const deps = (over: Partial<MacMessageSendToolDeps> = {}): MacMessageSendToolDeps => ({
-    actionLogFile,
-    approvalGate: () => ({ approved: true }),
-    runner: async () => ok(""),
-    userId: "u1",
-    ...over
-  });
+  // The action logger is injected (the package never depends on @muse/mcp), so
+  // the contract test records entries in-memory instead of reading a file.
+  function makeSend(over: Partial<MacMessageSendToolDeps> = {}): { tool: ReturnType<typeof createMacMessageSendTool>; logged: MacActionLogEntry[] } {
+    const logged: MacActionLogEntry[] = [];
+    const tool = createMacMessageSendTool({
+      actionLog: async (entry) => { logged.push(entry); },
+      approvalGate: () => ({ approved: true }),
+      runner: async () => ok(""),
+      userId: "u1",
+      ...over
+    });
+    return { logged, tool };
+  }
 
   it("is a well-formed execute tool requiring to+body, grounded recipient, Korean keyword", () => {
-    const tool = createMacMessageSendTool(deps());
+    const { tool } = makeSend();
     expect(tool.definition.name).toBe("mac_message_send");
     expect(tool.definition.risk).toBe("execute");
     const schema = tool.definition.inputSchema as { required: string[] };
@@ -437,58 +429,55 @@ describe("mac_message_send — Tier 2 draft-first, fail-closed (outbound-safety)
 
   it("clarifies an absent recipient WITHOUT sending or logging (recipient resolved, never guessed)", async () => {
     let sent = false;
-    const tool = createMacMessageSendTool(deps({ runner: async () => { sent = true; return ok(""); } }));
+    const { tool, logged } = makeSend({ runner: async () => { sent = true; return ok(""); } });
     expect(await tool.execute({ body: "hi", to: "  " }, ctx)).toMatchObject({ reason: "needs-recipient", sent: false });
     expect(sent).toBe(false);
-    expect(await readActionLog(actionLogFile)).toEqual([]);
+    expect(logged).toEqual([]);
   });
 
   it("rejects an empty body WITHOUT sending", async () => {
     let sent = false;
-    const tool = createMacMessageSendTool(deps({ runner: async () => { sent = true; return ok(""); } }));
+    const { tool } = makeSend({ runner: async () => { sent = true; return ok(""); } });
     expect(await tool.execute({ body: "   ", to: "+14155551212" }, ctx)).toMatchObject({ reason: "empty-body", sent: false });
     expect(sent).toBe(false);
   });
 
   it("a DENIED gate produces no osascript send and logs a refused entry", async () => {
     let sent = false;
-    const tool = createMacMessageSendTool(deps({
+    const { tool, logged } = makeSend({
       approvalGate: () => ({ approved: false, reason: "user declined" }),
       runner: async () => { sent = true; return ok(""); }
-    }));
+    });
     const out = await tool.execute({ body: "ping", to: "+14155551212" }, ctx);
     expect(out).toMatchObject({ reason: "denied", sent: false });
     expect(sent).toBe(false);
-    const log = await readActionLog(actionLogFile);
-    expect(log).toHaveLength(1);
-    expect(log[0]).toMatchObject({ result: "refused" });
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ result: "refused" });
   });
 
   it("a THROWING gate (undeliverable confirm) is treated as denial — no send", async () => {
     let sent = false;
-    const tool = createMacMessageSendTool(deps({
+    const { tool } = makeSend({
       approvalGate: () => { throw new Error("no TTY"); },
       runner: async () => { sent = true; return ok(""); }
-    }));
+    });
     expect(await tool.execute({ body: "ping", to: "+14155551212" }, ctx)).toMatchObject({ reason: "denied", sent: false });
     expect(sent).toBe(false);
   });
 
   it("a watchdog TIMEOUT on the approved send maps to send-failed + a failed log entry", async () => {
-    const tool = createMacMessageSendTool(deps({ runner: async () => timedOut }));
+    const { tool, logged } = makeSend({ runner: async () => timedOut });
     expect(await tool.execute({ body: "ping", to: "+14155551212" }, ctx)).toMatchObject({ reason: "send-failed", sent: false });
-    const log = await readActionLog(actionLogFile);
-    expect(log[0]).toMatchObject({ result: "failed" });
+    expect(logged[0]).toMatchObject({ result: "failed" });
   });
 
   it("a CONFIRMED send fires osascript with the escaped recipient + body and logs performed", async () => {
     let script = "";
-    const tool = createMacMessageSendTool(deps({ runner: async (s) => { script = s; return ok(""); } }));
+    const { tool, logged } = makeSend({ runner: async (s) => { script = s; return ok(""); } });
     const out = await tool.execute({ body: 'say "hi"', to: "jane@icloud.com" }, ctx);
     expect(out).toEqual({ sent: true, to: "jane@icloud.com" });
     expect(script).toContain('buddy "jane@icloud.com"');
     expect(script).toContain('send "say \\"hi\\""'); // body quote escaped for AppleScript
-    const log = await readActionLog(actionLogFile);
-    expect(log[0]).toMatchObject({ result: "performed" });
+    expect(logged[0]).toMatchObject({ result: "performed" });
   });
 });

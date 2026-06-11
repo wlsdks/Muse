@@ -113,6 +113,9 @@ importers:
       '@muse/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
+      '@muse/macos':
+        specifier: workspace:*
+        version: link:../../packages/macos
       '@muse/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -356,6 +359,15 @@ importers:
       testcontainers:
         specifier: ^11.14.0
         version: 11.14.0
+
+  packages/macos:
+    dependencies:
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@muse/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/mcp:
     dependencies:

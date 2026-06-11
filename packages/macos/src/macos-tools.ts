@@ -1,28 +1,28 @@
 /**
- * macOS native-app actuators via AppleScript / Shortcuts — the local
- * actuator family that extends the existing osascript providers
- * (Calendar / Reminders / Notes) into agent-callable tools. darwin-only.
+ * Muse's NATIVE macOS control tools (`@muse/macos`) — in-process
+ * `MuseTool`s that spawn official Apple CLIs directly. NOT MCP-protocol
+ * tools; this package is split out of `@muse/mcp` so native tools and MCP
+ * plumbing are cleanly separated, and it depends only on `@muse/tools` +
+ * `@muse/shared`.
  *
- * Three tiers, each one tool, per `.claude/rules/tool-calling.md` (small,
- * single-purpose, non-confusable):
+ * Nine tools across three risk tiers (per `.claude/rules/tool-calling.md`:
+ * small, single-purpose, non-confusable):
  *
- *   - `mac_shortcut_run` (Tier 1, execute) — run a user-authored
- *     Shortcuts.app workflow. The KEYSTONE: a shortcut can open apps,
- *     set HomeKit scenes, touch files, or hit the web, so one Apple-
- *     sanctioned tool covers a huge surface without bespoke per-app tools.
- *   - `mac_app_read` (Tier 0, read) — read current state of a native app
- *     (clipboard / Music / frontmost window / Contacts / Mail unread).
- *   - `mac_message_send` (Tier 2, execute) — send an iMessage. Governed
- *     by `.claude/rules/outbound-safety.md`: draft-first approval gate,
- *     fail-closed (deny / timeout / throw ⇒ no send), action-logged. The
- *     osascript runner is injected so the contract test asserts the
- *     gate over the real script shape WITHOUT firing a real message.
+ *   - Tier 0 (read): `mac_app_read` (clipboard / Music / frontmost window /
+ *     Contacts / Mail / browser tab / volume / battery), `mac_spotlight_search`.
+ *   - Tier 1 (execute, local): `mac_shortcut_run` (the KEYSTONE — runs any
+ *     user Shortcut), `mac_app_open`, `mac_media_control`, `mac_system_set`,
+ *     `mac_screenshot`, `mac_clipboard_set`.
+ *   - Tier 2 (execute, outbound): `mac_message_send` — iMessage, governed by
+ *     `.claude/rules/outbound-safety.md`: draft-first approval gate, fail-closed
+ *     (deny / timeout / throw ⇒ no send), action-logged. The gate + logger are
+ *     INJECTED so the outbound-safety wiring lives at the CLI boundary and the
+ *     contract test asserts the gate WITHOUT firing a real message.
  *
- * Permissions: the first call to a given app triggers the system
- * Automation consent prompt; until granted, osascript fails — mapped to
- * a typed permission error pointing at System Settings → Privacy &
- * Security → Automation. A 30s watchdog kills a wedged osascript (an
- * unanswered consent prompt) so a tool call never hangs forever.
+ * Permissions: the first call to a given app triggers the system Automation
+ * consent prompt; until granted, osascript fails — mapped to a typed permission
+ * error pointing at System Settings → Privacy & Security → Automation. A 30s
+ * watchdog kills a wedged osascript so a tool call never hangs forever.
  */
 
 import { spawn } from "node:child_process";
@@ -32,8 +32,40 @@ import { join } from "node:path";
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { appendActionLog, type ActionResult } from "./personal-action-log-store.js";
-import type { MessageApprovalGate, MessageDraft } from "./message-send.js";
+/**
+ * Outbound-safety primitives, defined LOCALLY so this package never depends on
+ * `@muse/mcp`. Structurally identical to `@muse/mcp`'s `MessageApprovalGate` /
+ * `ActionLogEntry`, so the CLI passes its existing gate + `appendActionLog`-
+ * backed logger straight in (TypeScript structural typing).
+ */
+export type MacActionResult = "performed" | "refused" | "failed";
+
+export interface MacActionLogEntry {
+  readonly id: string;
+  readonly userId: string;
+  readonly when: string;
+  readonly what: string;
+  readonly why: string;
+  readonly result: MacActionResult;
+  readonly detail?: string;
+}
+
+/** Records an outbound action (sent OR refused) — injected by the CLI. */
+export type MacActionLogger = (entry: MacActionLogEntry) => Promise<void>;
+
+export interface MacApprovalDecision {
+  readonly approved: boolean;
+  readonly reason?: string;
+}
+
+export interface MacMessageDraft {
+  readonly providerId: string;
+  readonly destination: string;
+  readonly text: string;
+}
+
+/** Presents the EXACT iMessage draft to the user; returns approve/deny. */
+export type MacMessageApprovalGate = (draft: MacMessageDraft) => Promise<MacApprovalDecision> | MacApprovalDecision;
 
 const OSASCRIPT_PATH = "/usr/bin/osascript";
 const SHORTCUTS_PATH = "/usr/bin/shortcuts";
@@ -694,8 +726,9 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
 export interface SendImessageWithApprovalOptions {
   readonly to: string;
   readonly body: string;
-  readonly approvalGate: MessageApprovalGate;
-  readonly actionLogFile: string;
+  readonly approvalGate: MacMessageApprovalGate;
+  /** Records the outcome (sent OR refused) — injected by the CLI (outbound-safety Rule 4). */
+  readonly actionLog: MacActionLogger;
   readonly userId: string;
   readonly runner?: MacOsascriptRunner;
   readonly now?: () => Date;
@@ -717,8 +750,8 @@ export async function sendImessageWithApproval(options: SendImessageWithApproval
   const idFactory = options.idFactory ?? (() => `act_${Date.now().toString()}_${Math.random().toString(36).slice(2, 8)}`);
   const runner = options.runner ?? defaultOsascriptRunner;
   const what = `iMessage to ${options.to}`;
-  const log = (result: ActionResult, why: string, detail: string): Promise<void> =>
-    appendActionLog(options.actionLogFile, {
+  const log = (result: MacActionResult, why: string, detail: string): Promise<void> =>
+    options.actionLog({
       detail,
       id: idFactory(),
       result,
@@ -728,7 +761,7 @@ export async function sendImessageWithApproval(options: SendImessageWithApproval
       why
     });
 
-  const draft: MessageDraft = { destination: options.to, providerId: "imessage", text: options.body };
+  const draft: MacMessageDraft = { destination: options.to, providerId: "imessage", text: options.body };
 
   let decision: { approved: boolean; reason?: string };
   try {
@@ -774,8 +807,8 @@ export async function sendImessageWithApproval(options: SendImessageWithApproval
 }
 
 export interface MacMessageSendToolDeps {
-  readonly approvalGate: MessageApprovalGate;
-  readonly actionLogFile: string;
+  readonly approvalGate: MacMessageApprovalGate;
+  readonly actionLog: MacActionLogger;
   readonly userId: string;
   readonly runner?: MacOsascriptRunner;
   readonly now?: () => Date;
@@ -830,7 +863,7 @@ export function createMacMessageSendTool(deps: MacMessageSendToolDeps): MuseTool
         return { detail: "mac_message_send requires a non-empty 'body'.", reason: "empty-body", sent: false };
       }
       const outcome = await sendImessageWithApproval({
-        actionLogFile: deps.actionLogFile,
+        actionLog: deps.actionLog,
         approvalGate: deps.approvalGate,
         body,
         to,

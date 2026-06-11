@@ -281,18 +281,19 @@ async function buildActuatorScenario() {
 // avoid the legitimate "run my routine" ambiguity it shares with shortcut_run.
 async function buildMacActuatorScenario() {
   try {
+    const mac = await import("../packages/macos/dist/index.js");
     const mcp = await import("../packages/mcp/dist/index.js");
     const ac = await import("../packages/autoconfigure/dist/index.js");
     const instances = [
-      mcp.createMacShortcutRunTool(),
-      mcp.createMacAppReadTool(),
-      mcp.createMacAppOpenTool(),
-      mcp.createMacMediaControlTool(),
-      mcp.createMacSystemSetTool(),
-      mcp.createMacScreenshotTool(),
-      mcp.createMacClipboardSetTool(),
-      mcp.createMacSpotlightSearchTool(),
-      mcp.createMacMessageSendTool({ approvalGate: {}, actionLogFile: "/tmp/eval-mac.json", userId: "eval" }),
+      mac.createMacShortcutRunTool(),
+      mac.createMacAppReadTool(),
+      mac.createMacAppOpenTool(),
+      mac.createMacMediaControlTool(),
+      mac.createMacSystemSetTool(),
+      mac.createMacScreenshotTool(),
+      mac.createMacClipboardSetTool(),
+      mac.createMacSpotlightSearchTool(),
+      mac.createMacMessageSendTool({ approvalGate: {}, actionLog: async () => {}, userId: "eval" }),
       mcp.createWebActionTool({ fetchImpl: fetch, approvalGate: {}, actionLogFile: "/tmp/eval-mac.json", userId: "eval" }),
       ac.createNotesKnowledgeSearchTool({})
     ];
