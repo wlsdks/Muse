@@ -8,8 +8,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createMacAppOpenTool,
   createMacAppReadTool,
+  createMacMediaControlTool,
   createMacMessageSendTool,
   createMacShortcutRunTool,
+  createMacSystemSetTool,
   type MacCommandResult,
   type MacMessageSendToolDeps,
   type MacOsascriptRunner,
@@ -203,6 +205,94 @@ describe("mac_app_read — Tier 0 read", () => {
   it("maps an osascript -1743 permission failure to a Privacy & Security hint", async () => {
     const tool = createMacAppReadTool({ runner: async () => fail("execution error: Not authorized to send Apple events (-1743)") });
     expect(await tool.execute({ app: "music" }, ctx)).toMatchObject({ error: expect.stringContaining("Privacy & Security") });
+  });
+});
+
+describe("mac_media_control — Tier 1 Music transport", () => {
+  it("is a well-formed execute tool with an action enum", () => {
+    const tool = createMacMediaControlTool();
+    expect(tool.definition.name).toBe("mac_media_control");
+    expect(tool.definition.risk).toBe("execute");
+    const schema = tool.definition.inputSchema as { required: string[]; properties: { action: { enum: string[] } } };
+    expect(schema.required).toEqual(["action"]);
+    expect(schema.properties.action.enum).toEqual(["play", "pause", "playpause", "next", "previous"]);
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("rejects an unknown action", async () => {
+    const tool = createMacMediaControlTool({ runner: async () => ok("") });
+    expect(await tool.execute({ action: "rewind" }, ctx)).toMatchObject({ controlled: false });
+  });
+
+  it("pause guards on `if it is running` (never spuriously launches Music)", async () => {
+    let script = "";
+    const tool = createMacMediaControlTool({ runner: async (s) => { script = s; return ok("paused"); } });
+    const out = await tool.execute({ action: "pause" }, ctx);
+    expect(out).toEqual({ action: "pause", controlled: true, state: "paused" });
+    expect(script).toContain("if it is running");
+    expect(script).toContain("pause");
+  });
+
+  it("play is allowed to launch Music (no running guard)", async () => {
+    let script = "";
+    const tool = createMacMediaControlTool({ runner: async (s) => { script = s; return ok("playing"); } });
+    await tool.execute({ action: "play" }, ctx);
+    expect(script).not.toContain("if it is running");
+  });
+
+  it("maps next/previous to the AppleScript track verbs", async () => {
+    let script = "";
+    const tool = createMacMediaControlTool({ runner: async (s) => { script = s; return ok("playing"); } });
+    await tool.execute({ action: "next" }, ctx);
+    expect(script).toContain("next track");
+  });
+});
+
+describe("mac_system_set — Tier 1 volume / mute / display sleep", () => {
+  it("is a well-formed execute tool with a setting enum", () => {
+    const tool = createMacSystemSetTool();
+    expect(tool.definition.name).toBe("mac_system_set");
+    expect(tool.definition.risk).toBe("execute");
+    const schema = tool.definition.inputSchema as { required: string[] };
+    expect(schema.required).toEqual(["setting"]);
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("sets the output volume, clamping into 0–100", async () => {
+    let script = "";
+    const tool = createMacSystemSetTool({ osascript: async (s) => { script = s; return ok(""); } });
+    expect(await tool.execute({ setting: "volume", value: 30 }, ctx)).toEqual({ set: true, setting: "volume", value: 30 });
+    expect(script).toBe("set volume output volume 30");
+    const tool2 = createMacSystemSetTool({ osascript: async () => ok("") });
+    expect(await tool2.execute({ setting: "volume", value: 250 }, ctx)).toMatchObject({ value: 100 });
+  });
+
+  it("requires a numeric value for volume", async () => {
+    let called = false;
+    const tool = createMacSystemSetTool({ osascript: async () => { called = true; return ok(""); } });
+    expect(await tool.execute({ setting: "volume" }, ctx)).toMatchObject({ set: false });
+    expect(called).toBe(false);
+  });
+
+  it("mutes and unmutes via output muted", async () => {
+    let script = "";
+    const tool = createMacSystemSetTool({ osascript: async (s) => { script = s; return ok(""); } });
+    await tool.execute({ setting: "mute" }, ctx);
+    expect(script).toBe("set volume output muted true");
+    await tool.execute({ setting: "unmute" }, ctx);
+    expect(script).toBe("set volume output muted false");
+  });
+
+  it("sleeps the display via pmset (not osascript)", async () => {
+    let pmsetArgs: readonly string[] = [];
+    let osascriptCalled = false;
+    const tool = createMacSystemSetTool({
+      osascript: async () => { osascriptCalled = true; return ok(""); },
+      pmset: async (a) => { pmsetArgs = a; return ok(""); }
+    });
+    expect(await tool.execute({ setting: "display_sleep" }, ctx)).toEqual({ set: true, setting: "display_sleep" });
+    expect(pmsetArgs).toEqual(["displaysleepnow"]);
+    expect(osascriptCalled).toBe(false);
   });
 });
 
