@@ -2471,6 +2471,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           onController: (controller) => { browserControllerToRelease = controller; }
         });
         extraTools = extraTools ? [...extraTools, ...browserTools] : browserTools;
+        // file_read rides along by default too: reading the user's own
+        // Downloads/Desktop/Documents is the local-first product's bread and
+        // butter (read-risk, allowlist-rooted, fail-closed outside the roots).
+        const { createFileReadTool } = await import("@muse/mcp");
+        extraTools = [...extraTools, createFileReadTool()];
       }
       // The agent's `muse.messaging.send` (a default loopback tool whenever a
       // messenger is configured) gets a draft-first confirm gate under --with-tools:

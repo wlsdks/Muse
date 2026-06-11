@@ -1115,3 +1115,4 @@ export {
   resolveLearnQueueFile,
   type LearnCorrectionEvent
 } from "./learn-queue.js";
+export * from "./file-read-tool.js";

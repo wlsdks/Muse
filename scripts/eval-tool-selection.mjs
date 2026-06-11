@@ -272,6 +272,34 @@ async function buildActuatorScenario() {
   }
 }
 
+// file_read vs its three confusables: Spotlight (locate a path, don't read),
+// notes recall (Muse's own notes, not disk files), and the no-tool trap
+// (talking ABOUT files/PDFs without asking to read one).
+async function buildFileScenario() {
+  try {
+    const mcp = await import("../packages/mcp/dist/index.js");
+    const mac = await import("../packages/macos/dist/index.js");
+    const ac = await import("../packages/autoconfigure/dist/index.js");
+    const instances = [
+      mcp.createFileReadTool({ extractPdfText: async () => "", fsImpl: { listCandidates: async () => [], readFile: async () => Buffer.from("") } }),
+      mac.createMacSpotlightSearchTool(),
+      ac.createNotesKnowledgeSearchTool({})
+    ];
+    const tools = instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "다운로드 폴더에 있는 invoice.pdf 읽고 요약해줘.", expectTool: "file_read", requireArgs: ["file"], argIncludes: /invoice/i, note: "KO read+summarize a download → file_read" },
+      { prompt: "Read the report.md on my Desktop and tell me the key points.", expectTool: "file_read", requireArgs: ["file"], argIncludes: /report/i, note: "EN read a Desktop file → file_read" },
+      { prompt: "발표자료 키노트 파일이 어디 있는지 위치만 찾아줘.", expectTool: "mac_spotlight_search", note: "KO locate-only → spotlight (NOT file_read)" },
+      { prompt: "지난 회의에서 결정한 내용 내 노트에서 찾아줘.", expectTool: "knowledge_search", note: "KO Muse-notes recall → knowledge_search (NOT file_read)" },
+      { prompt: "맥에서 쓸만한 PDF 뷰어 하나 추천해줘.", expectNoTool: true, note: "KO talking ABOUT PDFs, nothing to read → NO tool" }
+    ];
+    return { label: "file-read (file_read vs spotlight vs notes recall)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "file-read", skip: `deps not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 // The macOS native-app actuator family (mac_shortcut_run / mac_app_read /
 // mac_message_send) exposed ALONGSIDE its nearest confusables: web_action (act
 // on a web page) and knowledge_search (recall over notes). The local model must
@@ -442,6 +470,7 @@ async function main() {
     await buildTimeToolsExemplarScenario(),
     await buildActuatorScenario(),
     await buildMacActuatorScenario(),
+    await buildFileScenario(),
     await buildBrowserScenario(),
     await buildPersonalCrudScenario(),
     await buildRecallVsCrudScenario()

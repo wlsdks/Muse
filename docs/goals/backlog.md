@@ -223,6 +223,20 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## Done (recent — newest first)
 
+- ✓ 2026-06-12 **file_read — "다운로드에 있는 PDF 요약해줘" 원샷** (tool-audit batch #4, the last):
+  ONE read-risk tool, default under --with-tools. The model NAMES the file ("invoice pdf"); code
+  grounds it — Downloads/Desktop/Documents walk (depth 3, no dotfiles), exact>prefix>contains>words
+  ranking, newest-first ties; unmatched ⇒ recent-files list, never a guess; absolute path outside
+  the roots ⇒ refused (muse.fs allowlist posture); >25MB refused; text capped 20K chars. PDF text
+  via lazily-imported pdfjs-dist 6 (Apache-2.0; v6 dropped font-eval entirely). Proof: mcp 1606
+  unit (10 new, TDD); NEW gate `pnpm eval:file-read` — headless Chrome GENERATES a real PDF →
+  real pdfjs extraction → tool round-trip + fail-closed bounds, 6/6; eval:tools new file scenario
+  5/5 STABLE 3/3 (spotlight/notes-recall/no-tool confusables); FULL eval:tools 130/130; LIVE e2e —
+  a real contract PDF in ~/Downloads summarized with all three terms correct. Follow-ups: .docx/
+  .hwp extraction · file kind by content-sniff not extension · file_read content into the
+  grounding-evidence path with a [from FILE] cite.
+
+
 - ✓ 2026-06-11 **mac_screen_read — "지금 화면에 뭐 떠있어?" 원샷** (tool-audit batch #2): screencapture →
   injected LOCAL vision callback (describeImage in agent-core: abstention-prompted free-text, fail-soft,
   never invents) → text; @muse/macos stays model-free (CLI binds gemma4 lazily via a holder ref since
