@@ -8,4 +8,5 @@
 
 export * from "./controller.js";
 export * from "./browser-tools.js";
+export * from "./matcher.js";
 export { PuppeteerBrowserController, type PuppeteerBrowserControllerOptions } from "./puppeteer-controller.js";

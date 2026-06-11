@@ -83,72 +83,75 @@ describe("browser_open / read / back — free (no gate)", () => {
   });
 });
 
-describe("browser_click — draft-first, fail-closed", () => {
-  it("rejects a non-integer ref without clicking", async () => {
+describe("browser_click — deterministic target grounding + draft-first", () => {
+  it("with no target and no ref, asks for a target (no browser touch)", async () => {
     const c = new FakeController();
     const tool = createBrowserClickTool({ approvalGate: allow, controller: c });
-    expect(await tool.execute({ ref: "x" }, ctx)).toMatchObject({ clicked: false });
+    expect(await tool.execute({}, ctx)).toMatchObject({ clicked: false });
     expect(c.calls).toEqual([]);
+  });
+
+  it("resolves a free-text target to an element (code grounds it, not the model)", async () => {
+    const c = new FakeController();
+    const tool = createBrowserClickTool({ approvalGate: allow, controller: c });
+    // 'the Sign in button' resolves to the button named 'Sign in' → click ref 3.
+    expect(await tool.execute({ target: "the Sign in button" }, ctx)).toMatchObject({ clicked: true });
+    expect(c.calls).toEqual(["snapshot", "click:3"]);
+  });
+
+  it("an unmatched target returns the available elements (no click)", async () => {
+    const c = new FakeController();
+    const tool = createBrowserClickTool({ approvalGate: allow, controller: c });
+    const out = await tool.execute({ target: "checkout" }, ctx) as { clicked: boolean; available?: string[] };
+    expect(out.clicked).toBe(false);
+    expect(out.available).toEqual(['button: Sign in']);
+    expect(c.calls).toEqual(["snapshot"]);
   });
 
   it("a DENIED gate produces no click", async () => {
     const c = new FakeController();
     const tool = createBrowserClickTool({ approvalGate: () => ({ approved: false, reason: "declined" }), controller: c });
-    expect(await tool.execute({ ref: 3 }, ctx)).toMatchObject({ clicked: false, reason: "declined" });
-    expect(c.calls).toEqual([]);
+    expect(await tool.execute({ target: "Sign in" }, ctx)).toMatchObject({ clicked: false, reason: "declined" });
+    expect(c.calls).toEqual(["snapshot"]);
   });
 
-  it("a THROWING gate is treated as denial — no click", async () => {
-    const c = new FakeController();
-    const tool = createBrowserClickTool({ approvalGate: () => { throw new Error("no TTY"); }, controller: c });
-    expect(await tool.execute({ ref: 3 }, ctx)).toMatchObject({ clicked: false });
-    expect(c.calls).toEqual([]);
-  });
-
-  it("the gate draft describes the target element + url", async () => {
+  it("the gate draft describes the resolved element + url", async () => {
     const c = new FakeController();
     let seen: { target: string; url: string; action: string } | undefined;
     const tool = createBrowserClickTool({ approvalGate: (d) => { seen = d; return { approved: false }; }, controller: c });
-    await tool.execute({ ref: 3 }, ctx);
+    await tool.execute({ target: "sign in" }, ctx);
     expect(seen).toMatchObject({ action: "click", target: 'button "Sign in"', url: "https://example.test/" });
-  });
-
-  it("a CONFIRMED click acts and returns the new snapshot", async () => {
-    const c = new FakeController();
-    const tool = createBrowserClickTool({ approvalGate: allow, controller: c });
-    expect(await tool.execute({ ref: 3 }, ctx)).toMatchObject({ clicked: true, title: "Example" });
-    expect(c.calls).toEqual(["click:3"]);
   });
 });
 
-describe("browser_type — draft-first, fail-closed", () => {
+describe("browser_type — target grounding + draft-first", () => {
   it("rejects empty text without typing", async () => {
     const c = new FakeController();
     const tool = createBrowserTypeTool({ approvalGate: allow, controller: c });
-    expect(await tool.execute({ ref: 2, text: "" }, ctx)).toMatchObject({ typed: false });
+    expect(await tool.execute({ target: "search", text: "" }, ctx)).toMatchObject({ typed: false });
     expect(c.calls).toEqual([]);
   });
 
   it("a DENIED gate produces no type", async () => {
     const c = new FakeController();
     const tool = createBrowserTypeTool({ approvalGate: () => ({ approved: false }), controller: c });
-    expect(await tool.execute({ ref: 2, text: "hi" }, ctx)).toMatchObject({ typed: false });
-    expect(c.calls).toEqual([]);
+    expect(await tool.execute({ target: "Sign in", text: "hi" }, ctx)).toMatchObject({ typed: false });
+    expect(c.calls).toEqual(["snapshot"]);
   });
 
   it("the gate draft shows the typed text (and ⏎ when submitting)", async () => {
     const c = new FakeController();
     let seen: { text?: string } | undefined;
     const tool = createBrowserTypeTool({ approvalGate: (d) => { seen = d; return { approved: false }; }, controller: c });
-    await tool.execute({ ref: 3, submit: true, text: "laptop" }, ctx);
+    await tool.execute({ submit: true, target: "Sign in", text: "laptop" }, ctx);
     expect(seen?.text).toContain("laptop");
     expect(seen?.text).toContain("submit");
   });
 
-  it("a CONFIRMED type acts with (ref, text, submit) and returns the snapshot", async () => {
+  it("a CONFIRMED type resolves the target and acts with (ref, text, submit)", async () => {
     const c = new FakeController();
     const tool = createBrowserTypeTool({ approvalGate: allow, controller: c });
-    expect(await tool.execute({ ref: 3, submit: true, text: "laptop" }, ctx)).toMatchObject({ typed: true });
-    expect(c.calls).toEqual(["type:3:laptop:true"]);
+    expect(await tool.execute({ submit: true, target: "Sign in", text: "laptop" }, ctx)).toMatchObject({ typed: true });
+    expect(c.calls).toEqual(["snapshot", "type:3:laptop:true"]);
   });
 });

@@ -365,8 +365,8 @@ async function buildBrowserScenario() {
       { prompt: "Open https://news.example.com in the browser and read the page.", expectTool: "browser_open", requireArgs: ["url"], note: "EN open+browse a page → browser_open (NOT web_action)" },
       { prompt: "브라우저로 이 페이지 열어줘: https://example.com", expectTool: "browser_open", requireArgs: ["url"], note: "KO open a page → browser_open (user's language)" },
       { prompt: "Read the page that's open in the browser right now.", expectTool: "browser_read", note: "EN re-read current page → browser_read (NOT knowledge_search)" },
-      { prompt: "On the open page, click element ref 3.", expectTool: "browser_click", requireArgs: ["ref"], note: "EN click by ref → browser_click (ref from prompt)" },
-      { prompt: "Type 'wireless mouse' into field ref 2 and submit.", expectTool: "browser_type", requireArgs: ["ref", "text"], note: "EN type into a field by ref → browser_type" },
+      { prompt: "Click the Sign in button.", expectTool: "browser_click", requireArgs: ["target"], argIncludes: /sign/i, note: "EN natural click → browser_click, target grounded from the prompt (code resolves the element)" },
+      { prompt: "검색창에 '무선 마우스' 입력하고 검색해줘.", expectTool: "browser_type", requireArgs: ["target", "text"], note: "KO natural type+submit → browser_type, target named in words (deterministic grounding)" },
       { prompt: "Post a comment on the forum thread saying it works: https://forum.example.com/t/42", expectTool: "web_action", requireArgs: ["summary", "url"], note: "EN one-shot web submit → web_action, NOT browser_open" },
       { prompt: "What did I note about the Q3 roadmap?", expectTool: "knowledge_search", requireArgs: ["query"], note: "EN recall → knowledge_search, NOT a browser tool" }
     ];
