@@ -5,8 +5,8 @@ import { appendReminderHistory } from "./personal-reminder-history-store.js";
 import {
   filterReminders,
   fireReminder,
+  mutateReminders,
   readReminders,
-  writeReminders,
   type PersistedReminder
 } from "./personal-reminders-store.js";
 import type {
@@ -80,7 +80,6 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
   const errors: string[] = [];
   let delivered = 0;
   const fired: PersistedReminder[] = [];
-  let next: readonly PersistedReminder[] = all;
 
   // Phase D — decide once whether the active-session window allows
   // agent-synthesized notices for this tick. All three pieces must
@@ -110,16 +109,20 @@ export async function runDueReminders(options: RunDueRemindersOptions): Promise<
         text: deliveredText
       });
       const firedAtIso = now().toISOString();
-      const updated = fireReminder(next, reminder.id, firedAtIso);
-      if (updated) {
-        next = updated;
-        // Persist per-delivery, not batched at loop end: a crash
-        // mid-loop must not re-deliver already-sent reminders.
-        await writeReminders(options.file, next);
-        const justFired = updated.find((entry) => entry.id === reminder.id);
-        if (justFired) {
-          fired.push(justFired);
-        }
+      // Persist per-delivery under the cross-process lock, RE-READING the
+      // current file inside it: the loop's in-memory `next` doesn't include a
+      // reminder a chat `add` wrote after this tick started, so a plain write
+      // would clobber it (the reported daemon-vs-chat lost-write). Marking THIS
+      // reminder fired by id merges with concurrent adds instead.
+      let justFired: PersistedReminder | undefined;
+      await mutateReminders(options.file, (current) => {
+        const updated = fireReminder(current, reminder.id, firedAtIso);
+        if (!updated) return current;
+        justFired = updated.find((entry) => entry.id === reminder.id);
+        return updated;
+      });
+      if (justFired) {
+        fired.push(justFired);
       }
       delivered += 1;
       if (options.historyFile) {

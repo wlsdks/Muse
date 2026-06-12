@@ -12,11 +12,11 @@ import {
   fireReminder,
   parseReminderDueAt,
   normalizeReminderRecurrence,
+  mutateReminders,
   readReminders,
   readReminderStatusFilter,
   resolveReminderRef,
   serializeReminderForModel,
-  writeReminders,
   type PersistedReminder
 } from "./personal-reminders-store.js";
 
@@ -153,7 +153,6 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           // telegram chat id), which would mis-route the reminder. Reminders fire
           // on the user's configured default route; per-reminder overrides stay a
           // programmatic-only path (parseReminderVia + the store field).
-          const reminders = await readReminders(file);
           const created: PersistedReminder = {
             createdAt: now().toISOString(),
             dueAt: parsed,
@@ -163,7 +162,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
             ...(recurrence ? { recurrence } : {})
           };
           try {
-            await writeReminders(file, [...reminders, created]);
+            await mutateReminders(file, (current) => [...current, created]);
           } catch (error) {
             return { error: errorMessage(error) };
           }
@@ -324,10 +323,14 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
             dueAt: nextDueAt,
             status: "pending"
           };
-          const next = [...reminders];
-          next[index] = snoozed;
           try {
-            await writeReminders(file, next);
+            await mutateReminders(file, (current) => {
+              const i = current.findIndex((reminder) => reminder.id === resolution.reminder.id);
+              if (i < 0) return current;
+              const updated = [...current];
+              updated[i] = { ...current[i]!, dueAt: nextDueAt, status: "pending" };
+              return updated;
+            });
           } catch (error) {
             return { error: errorMessage(error) };
           }
@@ -385,7 +388,7 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
             return { error: `reminder not found: ${ref}` };
           }
           try {
-            await writeReminders(file, next);
+            await mutateReminders(file, (current) => fireReminder(current, resolution.reminder.id, firedAt) ?? current);
           } catch (error) {
             return { error: errorMessage(error) };
           }
@@ -423,9 +426,8 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           if (resolution.status !== "resolved") {
             return { error: `reminder not found: ${ref}` };
           }
-          const next = reminders.filter((reminder) => reminder.id !== resolution.reminder.id);
           try {
-            await writeReminders(file, next);
+            await mutateReminders(file, (current) => current.filter((reminder) => reminder.id !== resolution.reminder.id));
           } catch (error) {
             return { error: errorMessage(error) };
           }

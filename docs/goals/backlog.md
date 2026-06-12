@@ -180,9 +180,16 @@ replay (this commit). Remaining, severity order:
   remindersShifted/remindersRemoved) AND the API DELETE route; CLI re-exports. BONUS: a fired
   reminder rescheduled into the future resets to pending (audit CLI #3) while a still-past shift
   never instant-re-fires. 5/5 incl. loopback integration + no-partial-side-effect. (both audits, HIGH)
-- ◦ **Reminders/tasks stores: unserialized RMW** — daemon tick vs chat add loses writes (last-writer-
-  wins); adopt atomicWriteFile + withFileMutationQueue + withFileLock (the 19-store pattern);
-  fix `${pid}-${Date.now()}` tmp collision. (stores audit #2)
+- ✓→Done (reminders) **Reminders store unserialized RMW → serialized via mutateReminders** — the
+  daemon firing loop read the reminders once then wrote its in-memory copy per delivery, CLOBBERING a
+  reminder a chat `add` wrote after the tick started (the reported daemon-vs-chat lost write). Added
+  `mutateReminders(file, fn)` = read→fn→write under the cross-process `withFileLock`; converted EVERY
+  RMW site (add, snooze, fire, delete in loopback-reminders + the firing loop's per-delivery write,
+  which now re-reads current and marks fired by id, merging with concurrent adds). TDD 3 (two
+  concurrent adds both persist, mutate returns+persists, serial sequence keeps all); mcp 1651, check
+  0, lint 0. FOLLOW-UP: the TASKS store has the same shape — apply mutateTasks next.
+- ◦ **Tasks store unserialized RMW** — same fix as reminders (mutateTasks + withFileLock at the
+  add/complete/update/delete RMW sites). (stores audit #2, tasks half)
 - ◦ **Calendar store + credential store: corrupt file → silent full wipe** — adopt the sibling
   stores' quarantine-on-corrupt posture + atomic writes. (stores audit #3)
 - ◦ **toolGrounded blanket bypass** — chat gate skipped on ANY tool call even when the tool returned
