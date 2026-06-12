@@ -298,6 +298,7 @@ export {
 export {
   applySkillsContext,
   renderSkillsCatalogSection,
+  selectRelevantSkills,
   type SkillCatalogEntry,
   type SkillCatalogProvider
 } from "./skills-context.js";
