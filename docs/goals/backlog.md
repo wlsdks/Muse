@@ -23,15 +23,22 @@
   prompts. FOLLOW-UP: pre-verify the skill end-to-end (theme → generated prompt →
   registered cron → reported stop method) on a real theme before relying on it.
 
-## ★ Open — chat-gate toolGrounded blanket bypass (PAUSED mid-design, 2026-06-12)
+## Done — chat-gate toolGrounded blanket bypass (2026-06-12)
 
-- ◦ **toolGrounded blanket bypass** — chat gate skipped on ANY tool call even
-  when the tool returned nothing; narrow to non-empty groundingSources, keep
-  number/email checks always-on. Spec (brainstorm + grill-hardened) at
-  `docs/superpowers/specs/2026-06-12-chat-gate-toolgrounded-bypass-design.md`:
-  surfaces tool grounding on the `tool-result` stream event (additive, shared
-  helper) so BOTH chat-repl (run() result) and chat-ink (stream) are gated on
-  one contract. Resume at writing-plans → TDD. (audit CLI #4)
+- ✓→Done **toolGrounded blanket bypass** — the chat gate skipped on ANY tool call
+  (`toolsUsed.length`) even when the tool returned nothing, taking the deterministic
+  value checks down with it — a hole in the fabrication=0 floor on the conversational
+  surface. FIX (spec `docs/superpowers/specs/2026-06-12-chat-gate-toolgrounded-bypass-design.md`,
+  brainstorm+grill-hardened): bypass now keys on **non-empty `toolGroundingSources`**,
+  not "a tool ran"; the value checks (`gateChatAnswerDeterministic`) ALWAYS run with
+  the tool's own output folded into evidence (a value the tool didn't return is caught,
+  a faithful one passes); an empty-result tool falls through to the full gate. Single
+  source of truth `groundingSourceFromExecuted` (agent-core) shared by `run()` + the
+  `tool-result` stream event (additive `grounding` field) so BOTH chat-repl (run result)
+  and chat-ink (stream) gate on one contract. TDD: 4 helper + 2 stream + 3 finalize
+  cases (value-check-survives + empty-result-hole RED→GREEN); `pnpm check` (full tree,
+  2484 cli) + lint 0. Residual (in spec): tool-grounded PROSE fabrication still passes
+  (separate slice, needs judge-vs-tool-evidence). (audit CLI #4)
 
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
@@ -217,8 +224,8 @@ replay (this commit). Remaining, severity order:
   (stores audit #2, tasks half — completes the reminders FOLLOW-UP)
 - ◦ **Calendar store + credential store: corrupt file → silent full wipe** — adopt the sibling
   stores' quarantine-on-corrupt posture + atomic writes. (stores audit #3)
-- ◦ **toolGrounded blanket bypass** — chat gate skipped on ANY tool call even when the tool returned
-  nothing; narrow to non-empty groundingSources, keep number/email checks always-on. (CLI audit #4)
+- ✓→Done **toolGrounded blanket bypass** — fixed; keys on non-empty toolGroundingSources, value checks
+  always-on, single-source helper shared run()+stream. See the Done entry up top. (CLI audit #4)
 - ◦ **Chat-only users never get the embedder migration** — refreshStaleNotesIndexForChat doesn't
   treat legacy-model as stale → v2-moe queries ranked against v1 vectors (cross-model cosine noise
   above the 0.5 authoritative floor). Treat model mismatch as stale. (CLI audit #5)
