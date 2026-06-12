@@ -43,6 +43,22 @@
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
 The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+- ✓→Done **muse.math.evaluate silently truncated a malformed multi-dot number** (EXPANSION gap-scout) —
+  `parseNumber` scans a literal by greedily consuming digits AND dots, then did `Number.parseFloat(literal)`:
+  `parseFloat("1.2.3")` returns 1.2 (stops at the 2nd dot, NOT NaN), so the NaN guard never fired and
+  `evaluate("1.2.3 * 100")` silently returned 120. The math tool's WHOLE contract is an exact digit the
+  local 8B can't compute, and this is the shared core behind the muse.math MCP tool AND the muse ask /
+  chat-repl arithmetic fast-paths — a wrong digit flows into a user answer with NO model in the loop.
+  FIX: one line, `Number.parseFloat(literal)` → strict `Number(literal)` (Number("1.2.3")=NaN → existing
+  `invalid number literal` throw; "5."/".5"/integers/decimals still parse — node-verified no valid number
+  regresses; "1..2" also now rejected). TDD 1 (multi-dot → error + 5./.5 controls) RED→GREEN; mcp 1687,
+  check 0, lint 0. Fable-5 verifier PASS (no valid-input regression, reaches ask/chat fast-path). Matches
+  code-style.md "strict Number() not parseFloat".
+- ◦ **muse.json.query walks the prototype chain** (EXPANSION gap-scout runner-up) — path resolution uses
+  `segment.key in cursor` so a path like `constructor`/`__proto__` on a plain object returns `found:true`
+  with an inherited (often function) value that JSON-serialization silently drops to `{found:true}` (no
+  value), and `__proto__` leaks Object.prototype. FIX: `Object.hasOwn(cursor, segment.key)` (own-property
+  only). Sibling of the fire-4 __proto__ merge fix. 1 line + 1 test.
 - ✓→Done **atomicWriteFile leaked its tmp on failure** (EXPANSION gap-scout runner-up) — `atomicWriteFile`
   (the shared sidecar-store write primitive) opened `<file>.tmp-<pid>-<uuid>`, wrote+fsync+closed it, then
   `fs.rename(tmp, file)`. On ANY failure after the tmp was opened (writeFile/sync error OR the rename
@@ -74,11 +90,29 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   ONLY setter vector here (constructor/prototype create plain own props, no pollution) and the guard
   recurses to every depth. TDD 1 behavioral (JSON.parse'd `__proto__` overrides → prototype intact +
   no injected field + key preserved as data) RED→GREEN; mcp 1679, check 0, lint 0. Fable-5 verifier PASS.
-- ⏳ **ask error-path run-log trace (#6/#7) — DEFERRED (big refactor, needs design)**: writeRunLog(success:true)
-  is inline at the END of the ~2000-line `muse ask` action (commands-ask.ts:3734) with NO enclosing
-  try/catch, so a thrown run leaves no trace (error-analysis fuel lost) + Ctrl-C logs success:true. Same
-  pattern in chat-repl (writeRunLog at 171, happy-path only). A correct fix wraps/extracts the run with a
-  success:false failure-log seam across BOTH surfaces — not a 1-fire slice; deserves a small design.
+- **ask error-path run-log trace (#6/#7) — DECOMPOSED (v1.11.2 decompose-on-defer)**: writeRunLog(success:true)
+  was inline at the END of the ~2000-line `muse ask` action (commands-ask.ts:3734) with NO enclosing
+  try/catch, so a thrown run left no trace (error-analysis fuel lost) + Ctrl-C logged success:true. Same
+  pattern in chat-repl. Split into loop-sized slices with exact seams:
+  - ✓→Done **6a — pure `buildAskRunLog` builder (the shared seam)**: extracted the inline cli.local payload
+    into `buildAskRunLog(params)` in program-helpers.ts (next to writeRunLog), supporting BOTH success and a
+    FAILURE shape (`success:false` + `error`). Wired the live success path (commands-ask.ts:3734) to it
+    (not inert). TDD 3 (success payload + readResponseSuccess lifts true; FAILURE payload lifts false + carries
+    error; confidence/error omitted when absent) RED→GREEN. cli 2528, check 0, lint 0.
+  - ◦ **6b — wrap the ask run in a failure-logging seam (THE fix, dedicated fire)**: extract the 1842 action
+    body into a nested `async function runAskAction(queryParts, options)` (closure vars stay in scope) and
+    register `.action(async (q,o)=>{ try { await runAskAction(q,o) } catch(e){ await writeRunLog(.., buildAskRunLog({..success:false, errorMessage:String(e)})); throw e } })`. RED: a thrown ask run writes a
+    success:false entry. SIZING: the body-extraction is a big MECHANICAL (~2000-line) move — behavior-identical,
+    verify with the full ask suite BEFORE adding the catch; warrants its own focused fire (or human-paired), not
+    bundled. 6a already provides the payload so the catch is one-liner.
+  - ◦ **6c — #7 Ctrl-C/abort does NOT log success:true**: once 6b's catch exists, an AbortError/SIGINT reaching
+    it logs success:false (or skips), never success:true. RED: simulate abort → assert no success:true entry. Small.
+  - ✓→Done **6d — chat-repl failure trace**: `createTuiChatSubmitter` wrote a run-log only on the happy
+    path; a thrown runner left no trace. Added an injectable `runChat` param (default = real local/remote
+    dispatch) + a try/catch that writes a `success:false` entry (response {error, success:false}) best-effort
+    then re-throws the original error. TDD 2 (throwing runner → success:false trace + re-throw; success path
+    unchanged) RED→GREEN. cli 2530, check 0, lint 0. Fable-5 PASS (success path byte-identical, no double-log).
+    Note: done independently of 6b (chat handler is a small fn, no 2000-line extraction needed).
 - ⏳ **calendar credential encryption-at-rest — DEFERRED (architectural cost)**: `FileCalendarCredentialStore`
   stores caldav passwords / google tokens plaintext (0600). The proven envelope lives in `@muse/memory`,
   but `@muse/mcp`→`@muse/calendar` already, and `@muse/memory` pulls `@muse/db`+`@muse/model` — encrypting

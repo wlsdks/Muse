@@ -8,6 +8,10 @@ updated: 2026-06-08
 
 # 개발 루프 — Development Loop
 
+> **HOST-SPECIFIC** — 이 파일은 호스트(Muse) 전용 개발 루프라 레포 밖 경로
+> (`docs/goals/backlog.md`·`.claude/rules/*` 등)를 참조합니다. 하네스를 새 프로젝트로
+> 가져가면 그대로 쓰지 말고 **당신 프로젝트의 루프로 재작성**하세요([INSTALL §1](../INSTALL.md)).
+
 > **이 파일은 "무엇을·어떻게 개발하는가"의 계약입니다.** [`AGENTS.md`](../AGENTS.md)가
 > *역할·핸드오프·게이트*(한 슬라이스를 어떻게 실행하나)라면, 이 파일은 *그 슬라이스를
 > 어떻게 고르고, 검증하고, 학습을 누적하나*입니다. `.claude/skills/improve-muse`가

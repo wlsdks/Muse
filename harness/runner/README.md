@@ -72,7 +72,7 @@ node --test "harness/runner/*.test.mjs"
 
 마지막 측정: **64/64 통과** (적합성 13 + 오케스트레이터 5 + 적대 9 + 훅 6 + 관측 6 + 세션 6 + 메모리 5 + 도구 6 + 다단계 8). 행복경로만이 아니라
 **거부 경로가 전부 초록**일 때만 러너가 "delivered"입니다. CI는
-[`.github/workflows/harness.yml`](../../.github/workflows/harness.yml)가 `harness/**` 변경마다 강제.
+`.github/workflows/harness.yml`(호스트 레포의 CI)가 `harness/**` 변경마다 강제.
 
 **실제 end-to-end(통합 러너, `run.mjs`):** 실제 `claude -p` 3역할로 `count_vowels`·`fizzbuzz`·
 `is_valid_email` 세 작업을 구동 → **3/3 모두 plan→build→evaluate→DONE(PASS)**, 게이트가 코드로
@@ -86,6 +86,8 @@ REQUESTED --plan(계획 게이트)--> PLANNED --build--> BUILT --evaluate(만든
    EVALUATED --rebuild(재시도 캡)--> BUILT
    그 외 모든 전이 --> BLOCKED (fail-closed)
 ```
+
+([LEARN] 큐레이터 단계는 DONE 이후의 비차단 학습 — 상태기계가 강제하는 게이트가 아닙니다.)
 
 ## 한계
 

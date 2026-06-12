@@ -399,3 +399,26 @@
 - **리스크:** playbook=prompt-ranking only(floor 무관). delta===0→decay 잠재이슈 노트(현 미도달). RATCHET: testFiles +다수, fabrication 0, 신규 capability(evidence playbook lifecycle). 교훈: "store write + consume" 슬라이스는 중간 projection layer가 필드를 strip하면 inert — assembled-path 테스트로 end-to-end 증명 필수.
 
 > ✅ **자율 리뷰관문 (fires 25–27, 진안 묻지 않음):** 사이클5 = **논문-근거 3연속**(전부 공개 arXiv, 자체 재구현, Fable scout 발굴+Fable judge 적대검증): 25 HippoRAG PPR 연상recall(2502.14802)·26 BoN-MAV verifier vote(2502.20379)·27 Memp playbook lifecycle(2508.06433). Fable judge가 25·27을 v1 FAIL시키고(누락 floor/inert) 재구현으로 통과 — verify-then-apply가 실제로 작동. **사이클6 방향(스스로): 계속 논문-근거 라운드로빈(서브에이전트·백그라운드 테마 차례) — gap-scout/Fable scout.** fires-25-27 배치는 main clean시 자동 머지.
+
+## [TOOL loop] fire 7 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** 새 v1.11.2 DECOMPOSE-ON-DEFER 가드를 deferred 빅아이템 #6(ask error-path run-log)에 적용 — 4개 loop-sized 슬라이스(6a/6b/6c/6d)로 쪼개 backlog 기록 + 슬라이스 6a ship: 공유 buildAskRunLog 빌더(success/failure payload) 추출 + 성공 경로 배선.
+- **왜:** 최근 3 fire가 모두 scout 보안버그 同KIND라 다양성 가드상 다른 KIND 필요 + 내 v1.11.0 평가의 "큰 항목 rot" 발견을 새 가드로 직접 처방(defer→decompose 파이프라인). #6 핵심(실패 trace)은 ~2000줄 본문 wrap이라 6b를 전용 fire로 정직히 사이징.
+- **리뷰지점:** program-helpers.ts(buildAskRunLog: success/failure 단일 소스) + commands-ask.ts:3734(성공 경로 배선, byte-identical) + program-helpers.test.ts(3 케이스: success payload·failure success:false+error·confidence/error omit) RED→GREEN. backlog #6 분해(6b=2000줄 body extract 전용 fire, 6c=Ctrl-C abort, 6d=chat-repl parity, exact seam). cli 2528·check 0·lint 0. Fable-5 검증자 PASS(성공 written JSONL byte-identical·분해 actionable).
+- **리스크:** 6a의 failure 분기는 테스트됐으나 6b가 catch를 배선하기 전까진 미호출(inert 아님 — 성공 경로는 live, backlog가 6b를 명시). RATCHET: testFiles 888 무변동(기존 파일에 +3 케이스), fabrication 0 유지, decompose-enablement 진척. grounding floor 무관(run-log payload 빌더, 게이트 무변경).
+
+
+## [TOOL loop] fire 8 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** #6 슬라이스 6d — chat-repl 실패 run의 trace 소실 수정. createTuiChatSubmitter가 happy-path에서만 run-log를 썼는데, runner(runLocalChat/apiRequest)가 throw하면 trace 전무. 주입가능 runChat 파라미터(기본=실제 dispatch) + try/catch로 success:false 엔트리 기록 후 원본 에러 re-throw.
+- **왜:** 실패 chat run = error-analysis 연료인데 소실됐음(#6의 chat판). 다양성 가드: 최근 보안×3+decompose×1이라 behavioral-observability fix로 KIND 전환. chat 핸들러는 작은 함수라 6b의 2000줄 추출 없이 직접 wrap 가능 → 6b와 독립.
+- **리뷰지점:** chat-repl.ts createTuiChatSubmitter(DI runner + 실패 try/catch, source 호이스트) + chat-repl.test.ts(throwing runner → .muse/runs에 success:false trace + 원본 re-throw; success 경로 무회귀) RED→GREEN. cli 2530, check 0, lint 0. Fable-5 검증자 PASS(성공 경로 byte-identical·double-log 없음·default 비inert).
+- **리스크:** 거의 없음 — 추가 관측만(실패 trace), 성공 경로 불변, .catch로 로그 실패가 원본 에러 안 가림. RATCHET: testFiles 888 무변동(+2 케이스), fabrication 0 유지. #6 family는 6a(빌더)+6d(chat) Done; 6b(ask body wrap, 전용 fire)+6c(abort) OPEN. grounding floor 무관.
+
+
+## [TOOL loop] fire 9 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.math.evaluate의 parseNumber가 다중-dot 숫자("1.2.3")를 parseFloat로 1.2로 조용히 절단 → "1.2.3 * 100"이 120 반환. 1줄 수정: parseFloat → strict Number (NaN→기존 throw).
+- **왜:** 이 도구의 전체 계약이 "8B가 못 하는 정확한 계산"인데 틀린 숫자가 모델 검증 없이 사용자 답으로 흐름(shared core라 ask/chat arithmetic fast-path까지). EXPANSION 스카웃 발굴. 다양성: 보안×3→decompose→observability 다음 parsing-correctness로 KIND 다양.
+- **리뷰지점:** loopback-math-server.ts:163(parseFloat→Number) + mcp.test.ts(다중-dot→error + 5./.5 컨트롤) RED→GREEN. mcp 1687, check 0, lint 0. Fable-5 검증자 PASS(유효 입력 무회귀 node-검증·shared core 도달·1..2도 수정). runner-up(json.query 프로토타입-체인 walk → Object.hasOwn)을 새 ◦로 backlog 기록.
+- **리스크:** 없음에 가까움 — Number는 parseFloat보다 엄격하나 parseNumber가 이미 digits/dots만 통과시켜 다중-dot 외 발산 없음(검증됨). RATCHET: testFiles 888 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(산술 파서 correctness, 게이트 무변경).
