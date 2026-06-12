@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { askOutcomeLabel } from "./commands-ask.js";
+import { askOutcomeLabel, askWeaknessAxis, recordAskWeakness } from "./commands-ask.js";
 
 describe("askOutcomeLabel (cli.local trace outcome label)", () => {
   it("labels a refusal as abstain regardless of the verdict", () => {
@@ -25,6 +25,41 @@ describe("askOutcomeLabel coverage for the --json verdict field", () => {
     expect(askOutcomeLabel({ refusal: false, verdict: "ungrounded" })).toBe("ungrounded");
     expect(askOutcomeLabel({ refusal: true, verdict: null })).toBe("abstain");
     expect(askOutcomeLabel({ refusal: false, verdict: null })).toBeNull();
+  });
+});
+
+describe("askWeaknessAxis (ask-path failure → weakness fuel)", () => {
+  it("maps a grounding miss (abstain / ungrounded) to grounding-gap", () => {
+    expect(askWeaknessAxis("abstain")).toBe("grounding-gap");
+    expect(askWeaknessAxis("ungrounded")).toBe("grounding-gap");
+  });
+  it("is null for a success or a skipped verdict (not a failure)", () => {
+    expect(askWeaknessAxis("grounded")).toBeNull();
+    expect(askWeaknessAxis(null)).toBeNull();
+  });
+});
+
+describe("recordAskWeakness (feeds the weakness ledger, best-effort)", () => {
+  const deps = (record = vi.fn().mockResolvedValue(undefined)) => ({ recordWeakness: record, weaknessesFile: "/tmp/w.json" });
+
+  it("records a grounding-gap with the query for a failing outcome", async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    await recordAskWeakness("what is my office VPN MTU?", "ungrounded", deps(record));
+    expect(record).toHaveBeenCalledWith("/tmp/w.json", { axis: "grounding-gap", message: "what is my office VPN MTU?" });
+  });
+
+  it("records nothing on a success / skipped outcome or an empty query", async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    await recordAskWeakness("q", "grounded", deps(record));
+    await recordAskWeakness("q", null, deps(record));
+    await recordAskWeakness("   ", "ungrounded", deps(record));
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("swallows a throwing ledger write — never breaks the ask command", async () => {
+    const record = vi.fn().mockRejectedValue(new Error("ledger unwritable"));
+    await expect(recordAskWeakness("q", "abstain", deps(record))).resolves.toBeUndefined();
+    expect(record).toHaveBeenCalledTimes(1);
   });
 });
 

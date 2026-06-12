@@ -604,12 +604,68 @@ export function createStageTimer(now: () => number = () => Date.now()): {
   };
 }
 
+export type AskOutcome = "abstain" | "grounded" | "ungrounded" | null;
+
 export function askOutcomeLabel(args: {
   readonly refusal: boolean;
   readonly verdict: "grounded" | "ungrounded" | null;
-}): "abstain" | "grounded" | "ungrounded" | null {
+}): AskOutcome {
   if (args.refusal) return "abstain";
   return args.verdict;
+}
+
+/**
+ * Whetstone fuel: the weakness axis (if any) an ask OUTCOME signals. `abstain`
+ * (the gate held — couldn't ground the query in the user's corpus) and
+ * `ungrounded` (an answer the rubric flagged as not backed) both mean the agent
+ * couldn't answer this query from the user's own notes — a `grounding-gap`
+ * worth logging as real-usage fuel (mirrors chat-repl's refusal → grounding-gap).
+ * `grounded` and `null` (json/vision skip) are not failures.
+ */
+export function askWeaknessAxis(outcome: AskOutcome): "grounding-gap" | null {
+  return outcome === "abstain" || outcome === "ungrounded" ? "grounding-gap" : null;
+}
+
+export interface AskWeaknessRecorderDeps {
+  readonly recordWeakness: (file: string, signal: { readonly axis: "grounding-gap"; readonly message: string }) => Promise<unknown>;
+  readonly weaknessesFile: string;
+}
+
+/**
+ * Feed an ask-path failure to the weakness ledger so `muse doctor` /
+ * error-analysis can mine real-usage grounding gaps. The ASK path previously
+ * only run-logged its outcome; only chat-repl fed the ledger, so ask misses were
+ * invisible fuel. Best-effort: an empty query or a non-failure outcome records
+ * nothing, and a throwing ledger write is swallowed — a fuel write must never
+ * surface as an ask error. Deps injected for testing; the live caller
+ * (`recordAskWeaknessLive`) lazy-imports @muse/mcp + @muse/autoconfigure.
+ */
+export async function recordAskWeakness(query: string, outcome: AskOutcome, deps: AskWeaknessRecorderDeps): Promise<void> {
+  const axis = askWeaknessAxis(outcome);
+  if (!axis || query.trim().length === 0) {
+    return;
+  }
+  try {
+    await deps.recordWeakness(deps.weaknessesFile, { axis, message: query });
+  } catch {
+    // a ledger write must never break the ask command
+  }
+}
+
+async function recordAskWeaknessLive(query: string, outcome: AskOutcome): Promise<void> {
+  if (askWeaknessAxis(outcome) === null) {
+    return;
+  }
+  try {
+    const { recordWeakness } = await import("@muse/mcp");
+    const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
+    await recordAskWeakness(query, outcome, {
+      recordWeakness,
+      weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
+    });
+  } catch {
+    // lazy-import / path resolution failure is non-fatal
+  }
 }
 
 export interface BestOfRedrawArgs {
@@ -3651,19 +3707,24 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const t = askStages.timings();
         io.stderr(`(timings: ${Object.entries(t).map(([k, v]) => `${k}=${(v / 1000).toFixed(1)}s`).join(" · ")})\n`);
       }
+      const askOutcome = askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel });
       await writeRunLog(io.workspaceDir ?? process.cwd(), {
         message: query,
         model,
         response: {
           timings: askStages.timings(),
           ...(answerLogprobs ? { confidence: summarizeTokenConfidence(answerLogprobs) ?? null } : {}),
-          grounded: askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel }),
+          grounded: askOutcome,
           response: collectedAnswer,
           success: true,
           toolsUsed
         },
         source: "cli.local"
       });
+      // Whetstone fuel: a grounding miss (abstain / ungrounded) on the ASK path
+      // becomes a weakness-ledger entry so doctor / error-analysis can mine
+      // real-usage gaps — previously only chat-repl fed the ledger.
+      await recordAskWeaknessLive(query, askOutcome);
 
       if (options.json) {
         // Emit a single JSON object on stdout — consumers can pipe
@@ -3677,7 +3738,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           answer: collectedAnswer,
           // The gate's verdict, so a JSON consumer can render trust honestly:
           // "grounded" | "ungrounded" | "abstain" | null (verdict didn't run).
-          groundedVerdict: askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel }),
+          groundedVerdict: askOutcome,
           ...(citationGate.stripped.length > 0 ? { strippedCitations: citationGate.stripped } : {}),
           ...(options.withTools ? { toolsUsed } : {}),
           grounded: {

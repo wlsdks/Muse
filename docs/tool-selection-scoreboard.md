@@ -79,3 +79,15 @@ v4 backlog: (1) wire ask-path `ungrounded` → grounding-gap weakness (mirror
 chat-repl); (2) run-log → weakness analyzer surfaced in `muse doctor`; (3) the
 error-analysis report ranking remediable weaknesses. Each verified by a REAL
 `muse ask` that then shows a weakness entry in the ledger.
+
+## v4 Fire 1 — ask-path outcome → weakness ledger (SLICE SHIPPED)
+
+The ASK path now feeds the weakness ledger: `askWeaknessAxis` maps abstain /
+ungrounded → `grounding-gap`, and `recordAskWeakness` (best-effort, lazy-import)
+records it with the query. Wired at the run-log point in commands-ask.ts.
+Previously only chat-repl fed the ledger, so one-shot ask misses were invisible
+fuel. Unit: 5 cases (axis mapping + record/no-record/empty/throws). REAL muse:
+`MUSE_WEAKNESSES_FILE=/tmp/… ask "내 여동생 생일이 언제지?"` → honest abstain AND a
+`grounding-gap` ledger entry {topic:"여동생 생일 언제지", count:1} appeared. First
+real-usage fuel now flows; next slices mine .muse/runs run-logs + rank
+remediable weaknesses.
