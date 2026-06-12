@@ -258,9 +258,19 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   menu triggers are listed. Locked: unit +2, eval 10/10 STABLE 3/3 (hover→browser_hover,
   not click), smoke 16 (hover reveals Billing then clicks it), agent PASS. (Limit: a hover
   trigger that's a bare non-interactive `<div>` without aria-haspopup still isn't listed.)
-- ◦ **more real-web probes** — remaining: native file upload (`<input type=file>` → CDP
-  uploadFile + path arg/tool), cross-origin iframe (per-frame contexts — scope honestly),
-  drag-and-drop / sliders.
+- ✓→Done **form-control labels** (probe batch 5) — a radio/checkbox/labeled input was
+  named by its `value`/`name` attr ("pro"), NOT its VISIBLE label ("Pro plan"), so the
+  model — which refers to controls by their label — couldn't target them. Fix: a form
+  control's name now resolves its accessible label (aria-labelledby → `<label for>` →
+  wrapping `<label>`) before falling back to value/placeholder. Also added `[role=option]`
+  / `[role=switch]` to the snapshot selector (custom listboxes/toggles with JS-delegated
+  handlers, no inline onclick). Verified: radio→"Pro plan", input→"Email address",
+  checkbox→"I agree to terms" all targetable + actionable; range sliders already settable
+  via type/fill. Locked: smoke 17, unit 43, agent PASS.
+- ◦ **keyboard action** — no `browser_key` (Escape to close a modal/dropdown, Tab, arrows,
+  Enter on a focused control). Next batch — modals/keyboard-driven UIs need it.
+- ◦ **more real-web probes** — native file upload (`<input type=file>` → CDP uploadFile +
+  path arg/tool), cross-origin iframe (per-frame contexts — scope honestly), drag-and-drop.
 - ✓→Done **browser_scroll** — the snapshot only saw rendered DOM, so below-the-fold /
   lazy-loaded content (infinite feeds, long lists) was invisible. New read tool scrolls
   (down/up/top/bottom) + settles + re-observes. Unit (enum + reject-unknown + scrolls);

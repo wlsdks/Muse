@@ -231,7 +231,22 @@ export class PuppeteerBrowserController implements BrowserController {
       const selector =
         "a[href], button, input, textarea, select, [role=button], [role=link], [role=textbox], " +
         "[role=combobox], [role=searchbox], [role=checkbox], [role=radio], [role=menuitem], [role=tab], " +
-        "[aria-haspopup], [onclick]";
+        "[role=option], [role=switch], [aria-haspopup], [onclick]";
+      // A form control's accessible name is its VISIBLE label, not its value/name
+      // attr — the model says "Pro plan" / "Email" / "I agree", never "pro". Resolve
+      // aria-labelledby → <label for> → wrapping <label>.
+      const labelFor = (el: Element): string => {
+        const labelledby = el.getAttribute("aria-labelledby");
+        if (labelledby) {
+          const text = labelledby.split(/\s+/).map((id) => el.ownerDocument.getElementById(id)?.textContent ?? "").join(" ").trim();
+          if (text) return text;
+        }
+        if (el.id) {
+          const explicit = el.ownerDocument.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+          if (explicit?.textContent) return explicit.textContent;
+        }
+        return (el.closest("label") as HTMLElement | null)?.textContent ?? "";
+      };
       // Composed-tree walk — open shadow roots AND same-origin iframes are
       // pierced so web-component UIs and embedded forms/widgets (login,
       // checkout, comment boxes) aren't a blank page to the model. Cross-origin
@@ -270,8 +285,10 @@ export class PuppeteerBrowserController implements BrowserController {
         if ((el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true") continue;
         const tag = el.tagName.toLowerCase();
         const htmlEl = el as HTMLElement & { value?: string };
+        const isField = tag === "input" || tag === "textarea" || tag === "select";
         const name = (
           el.getAttribute("aria-label") ||
+          (isField ? labelFor(el) : "") ||
           htmlEl.innerText ||
           htmlEl.value ||
           el.getAttribute("placeholder") ||
@@ -279,7 +296,6 @@ export class PuppeteerBrowserController implements BrowserController {
           el.getAttribute("alt") ||
           ""
         ).trim().replace(/\s+/g, " ").slice(0, maxName);
-        const isField = tag === "input" || tag === "textarea" || tag === "select";
         if (!name && !isField) continue;
         const role =
           el.getAttribute("role") ||
