@@ -60,6 +60,14 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   test fixed → re-verified PASS.
 Every slice ships its eval/test and never weakens the grounding floor. Ranked:
 
+- ✓→Done **mac wifi_status read** (capability-scout): "am I on WiFi? / what network?" was unanswerable
+  — `mac_system_set` could TOGGLE wifi but there was no READ (write/read asymmetry). Added a
+  `wifi_status` shell-read source to the wired `mac_app_read` (networksetup -listallhardwareports →
+  device, -getairportnetwork → {connected, network}), reusing parseWifiDevice. read-only (no
+  -setairportpower). Behavioral parse tests (connected+disconnected) + eval read-vs-write disambig
+  (EN+KO). macos 85·lint 0, Opus-verified. SCOUT NOTE: surface now broadly capable; remaining
+  capability gaps are niche/live-only (running_apps, ip_address) → recommend a theme switch next.
+
 - ✓→Done **mac_screenshot arbitrary-write closed** (EXPANSION-scout): the `path` arg went straight to
   `screencapture -x <path>` with no validation — a model/injection could overwrite ANY writable file
   (e.g. ~/.ssh/authorized_keys) with PNG bytes. Fix: allowlist (~/Desktop, ~/Downloads, tmp), `~`
