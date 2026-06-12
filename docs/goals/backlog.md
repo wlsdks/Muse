@@ -575,6 +575,43 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## Open — agent core
 
+- ✓→Done **Evidence-tallied playbook lifecycle (Memp, arXiv:2508.06433)** — [2026-06-13, cognition
+  loop fire 27, PAPER-GROUNDED, Fable scout+judge] Playbook reward was a clamped NET scalar that
+  conflated "never used" with "used 10× / 5↑5↓"; deprecation needed a near-pure losing streak;
+  probation graduated on a single net-positive bump. Applied Memp's update regimen (public preprint;
+  reimplemented): per-entry outcome TALLIES (`reinforcements`/`decays`) + `wilsonInterval` +
+  `effectiveStrategyReward` (evidence-damped; legacy-identical without a tally) + `planStrategyLifecycle`
+  (deprecate when wilsonUpper<0.4 & n≥5; graduate when probation & wilsonLower>0.5 & n≥3). Wired
+  END-TO-END: `adjustPlaybookReward` (store) writes the tallies; the 4 production projections
+  (`buildPlaybookProvider` + 3 commands-ask mappers) now CARRY them; `scoreStrategy`/`isAvoidedStrategy`/
+  `isInjectableStrategy` consume them on the live `applyPlaybook` ranking path. Fable judge FAILed v1
+  (the lifecycle was INERT — projections stripped the tallies) → completed the wiring + an assembled-path
+  test (confident-bad {0,8} excluded THROUGH the real provider; counterfactual proves the stripped
+  projection let it through). Playbook = prompt-ranking only (floor untouched). agent-core 1805 + autoconfigure 509 + cli 2528 green.
+
+- ✓→Done **Multi-aspect verifier vote on the MoA fallback (BoN-MAV, arXiv:2502.20379)** — [2026-06-13,
+  cognition loop fire 26, PAPER-GROUNDED, Fable scout+judge] When the MoA aggregator threw/returned empty,
+  `orchestrateAnswer` blindly picked the `"thorough"` proposal — even if off-topic while another was on-point;
+  no candidate was ever verified ("Bo-n" without "MAV"). Applied BoN-MAV (public CC-BY; reimplemented): NEW
+  `verifier-vote.ts` — `aggregateVerifierVotes` (binary aspect votes, AggScore=approvals/count, argmax,
+  deterministic tie-break, NaN-guarded) + `DEFAULT_ASPECT_VERIFIERS` (on-topic/substantive/non-hedging —
+  relative ranking, NEVER abstains). Wired into the aggregator-failure fallback only (happy path byte-identical;
+  no grounding/citation/abstention semantics touched). Fable judge PASS — reverted-to-HEAD proved the delta
+  non-vacuous (off-topic thorough vs on-topic skeptic → skeptic). agent-core 1786 green.
+
+- ✓→Done **Associative recall via Personalized PageRank (HippoRAG 2, arXiv:2502.14802)** — [2026-06-13,
+  cognition loop fire 25, PAPER-GROUNDED, Fable scout+judge] Muse recall was isolated (cosine+BM25+ACT-R)
+  with zero graph/spreading-activation structure. Applied HippoRAG 2 (public ICML 2025 preprint;
+  reimplemented, no code copied): NEW `packages/agent-core/src/associative-recall.ts` — `buildNoteLinkGraph`
+  (undirected weighted note graph, edge weight Σ 1/df(sharedToken), df===N excluded) + `personalizedPageRank`
+  (deterministic power iteration, damping 0.5, dangling→teleport, mass-conserving). Wired opt-in into
+  `rankKnowledgeChunksWithHop` (`associative?` flag): seed PPR with primaries, append top **PPR>0**
+  graph-reachable bridges via the fire-22 query-relative-cosine fail-safe path (max-2, primaries
+  byte-identical, flag-off no-op). Floor-safe (no verdict change). Fable judge FAILed v1 (missing PPR>0
+  floor → appended unrelated PPR-0 notes; vacuous integration test) → remediated (PPR>0 floor + a
+  non-vacuous test: bridge absent flag-off / present flag-on via the token chain / unrelated excluded,
+  counterfactual-verified). agent-core 1772 green. NEXT: synonym edges + wire into CLI ask after a live multi-hop battery.
+
 - ✓→Done **No needless judge escalation on sentence-opener connectives** — [2026-06-13, cognition loop
   fire 24, Fable-scout runner-up] `answerAssertsUnsupportedValue` flagged sentence-initial capitalized
   connectives ("However"/"Based"/"Therefore"/"Additionally", all absent from LEXICAL_STOPWORDS) as

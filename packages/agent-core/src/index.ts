@@ -100,8 +100,8 @@ export {
 export type { AmbientSnapshot, AmbientSnapshotProvider } from "./ambient-context.js";
 export { applyVetoAvoidance, renderVetoAvoidanceSection, selectRelevantVetoes } from "./veto-avoidance.js";
 export type { LearnedVeto, VetoAvoidanceProvider } from "./veto-avoidance.js";
-export { applyPlaybook, clampReward, isAvoidedStrategy, isInjectableStrategy, PLAYBOOK_AVOID_BELOW, PLAYBOOK_REWARD_MAX, PLAYBOOK_REWARD_MIN, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, strategyTextSimilarity } from "./playbook.js";
-export type { PlaybookStrategy, PlaybookProvider, RankPlaybookOptions } from "./playbook.js";
+export { applyPlaybook, clampReward, effectiveStrategyReward, isAvoidedStrategy, isInjectableStrategy, planStrategyLifecycle, PLAYBOOK_AVOID_BELOW, PLAYBOOK_REWARD_MAX, PLAYBOOK_REWARD_MIN, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, strategyTextSimilarity, wilsonInterval } from "./playbook.js";
+export type { PlaybookStrategy, PlaybookProvider, RankPlaybookOptions, StrategyLifecycleAction } from "./playbook.js";
 export { classifyCorrectionContradiction, detectApprovals, detectCorrections, distillStrategyFromCorrection } from "./correction-distiller.js";
 export { synthesizePatternSuggestion, type PatternSuggestionInput, type SynthesizePatternSuggestionOptions } from "./pattern-suggestion.js";
 export { inferPreferenceFromCorrection, parseInferredPreference, type InferredPreference, type InferPreferenceOptions } from "./preference-inference.js";
@@ -122,6 +122,12 @@ export { comparableScript, dominantScriptFamily, type ScriptFamily } from "./scr
 export { clusterByTextSimilarity, deltaMergePlaybookStrategies, mergePlaybookStrategies, type MergePlaybookOptions } from "./playbook-merge.js";
 export type { SkillReviewSignal, SkillDraft, DetectSkillCandidatesOptions, DraftSkillOptions, ReviewSkillsOptions, ReviewSkillsResult } from "./skill-review.js";
 
+export {
+  buildNoteLinkGraph,
+  personalizedPageRank,
+  type NoteLinkGraph,
+  type PageRankOptions
+} from "./associative-recall.js";
 export {
   cosineSimilarity,
   EmbeddingEpisodicRecallProvider,
@@ -259,6 +265,12 @@ export {
   type OrchestrationProposal,
   type OrchestrationRole
 } from "./orchestrate.js";
+export {
+  aggregateVerifierVotes,
+  DEFAULT_ASPECT_VERIFIERS,
+  type AspectVerifier,
+  type ScoredCandidate
+} from "./verifier-vote.js";
 export {
   A2A_MAX_CONTENT_CHARS,
   A2ASafetyError,

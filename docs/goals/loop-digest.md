@@ -406,3 +406,27 @@
 - **왜:** judge 신뢰도 측정(내 평가의 "9/9 PASS가 worker-good인지 judge-soft인지 불명" 발견 처리 → worker-good 확인). 그리고 json.query가 `constructor`/`__proto__`/`toString` 경로로 상속 값(함수/Object.prototype)을 tool 결과로 누출하던 실 보안버그(fire-4 __proto__ merge의 sibling) 수정. 드릴은 롤백되니 sweep 문제도 회피.
 - **리뷰지점:** loopback-json-server.ts:88(in→Object.hasOwn) + mcp.test.ts(constructor/__proto__/toString/hasOwnProperty→found:false + own-key positive, discriminating) RED→GREEN. mcp 1688, check 0, lint 0. Fable-5 검증자: 드릴 슬라이스 FAIL(정확) + 실제 fix PASS(walk 닫힘·무회귀·null-proto 안전).
 - **리스크:** 없음에 가까움 — array 분기 무변경, 정상 own 키·JSON.parse'd own __proto__ 데이터 키 정상 resolve(value-agnostic). RATCHET: testFiles 888 무변동(+1 케이스), fabrication 0 유지, JUDGE PASS-rate 드릴 1/1(나쁜 슬라이스 정확히 FAIL). grounding floor 무관(JSON 유틸 보안, 게이트 무변경).
+## [cognition loop] fire 25 — 2026-06-13 · 사이클5 · 테마: 메모리/associative recall (PAPER-GROUNDED, skill v1.11.2)
+
+- **무엇:** **HippoRAG 2 (arXiv:2502.14802, 공개 ICML 2025 preprint)** 적용 — `associative-recall.ts`: note-link 그래프(공유 토큰 edge, 가중치 Σ1/df) + Personalized PageRank(결정적 power iteration). `rankKnowledgeChunksWithHop`에 opt-in `associative` 플래그로 배선(PPR>0 graph-reachable bridge만 append, fire-22 query-cosine fail-safe 경로 재사용).
+- **왜:** Muse recall이 isolated(cosine+BM25+ACT-R)였음 — 그래프/spreading-activation 0. HippoRAG는 PPR로 임베딩이 못 잡는 연상 체인(rare-token chain)을 결정적으로 surface(논문: associative task +7%). 메모리 테마의 **논문-근거 신규 capability**(진안 지시: 공개 논문만, 방법 적용·코드 미복사).
+- **리뷰지점:** 신규 `associative-recall.ts`(buildNoteLinkGraph + personalizedPageRank) + `index.ts` + `knowledge-recall.ts`(opt-in 배선, PPR>0 floor) + 테스트 14. **maker=Sonnet worker / scout+judge=Fable 5**: Fable scout가 WebSearch로 논문 검증·스펙, Fable judge가 **v1 FAIL 적발**(PPR>0 floor 누락 → unrelated PPR-0 노트 append + vacuous 통합테스트) → 정확 처방 → 재구현 + non-vacuous 테스트(bridge flag-off 부재/flag-on 그래프-체인 존재/unrelated 배제, counterfactual 검증). agent-core 1772 green.
+- **리스크:** opt-in·flag-off byte-identical·verdict 무변경(floor-safe). LLM OpenIE/synonym edge는 deferred(결정적 rare-token 그래프로 대체 — PPR 코어가 충실한 부분). CLI ask 배선은 live multi-hop battery 後 follow-up. RATCHET: testFiles +1, fabrication 0 유지, 신규 capability(associative recall) 추가.
+
+> NOTE: 이 fire는 **loop-creator skill v1.11.2로 신규 등록된 cron fecd6aef의 첫 fire** — 논문-근거(arXiv 인용)+공개논문-only+Fable scout/judge 모드의 첫 실증. 사이클5 fires 25-27.
+
+## [cognition loop] fire 26 — 2026-06-13 · 사이클5 · 테마: 멀티에이전트 검증 (PAPER-GROUNDED, skill v1.11.2)
+
+- **무엇:** **BoN-MAV (arXiv:2502.20379, 공개 CC-BY preprint)** 적용 — `verifier-vote.ts`: `aggregateVerifierVotes`(binary aspect 투표 합산, AggScore=approvals/count, argmax, 결정적 tie-break) + `DEFAULT_ASPECT_VERIFIERS`(on-topic/substantive/non-hedging). MoA aggregator 실패 fallback이 "thorough"를 맹목 선택하던 것 → 검증 투표로 best candidate 선택.
+- **왜:** Muse는 "Bo-n"(MoA proposers)만 있고 "MAV"(후보 검증) 없었음 — aggregator throw 시 off-topic "thorough"도 그냥 골랐음. 다중 약한 검증기 투표 합산이 단일 verdict보다 낫다(논문). 멀티에이전트 테마 논문-근거 capability(fire25 메모리와 다른 KIND, 다양성).
+- **리뷰지점:** 신규 `verifier-vote.ts` + `index.ts` + `orchestrate.ts`(fallback 한 줄, happy path 불변) + 테스트 14+. **maker=Sonnet / scout+judge=Fable 5**: Fable judge가 **orchestrate.ts를 HEAD로 revert해 behavior delta가 non-vacuous임 실증**(off-topic thorough vs on-topic skeptic → skeptic 선택, pre-change는 thorough) + honesty-safe(non-hedging은 상대 랭킹, all-hedge도 선택 반환, abstention 미전환, grounding/citation 파일 무수정) 확인 → VERDICT PASS. agent-core 1786 green.
+- **리스크:** fallback 경로만 변경, happy path byte-identical, verdict/floor 무관. LLM aspect verifier + happy-path 적용은 deferred(현 슬라이스는 결정적 AV + 실패경로). RATCHET: testFiles +1(143), fabrication 0 유지, 신규 capability(candidate verification).
+
+## [cognition loop] fire 27 — 2026-06-13 · 사이클5 · 테마: 자기강화/playbook lifecycle (PAPER-GROUNDED) · ⚠️ 3-FIRE 리뷰 관문(자율)
+
+- **무엇:** **Memp (arXiv:2508.06433, 공개 preprint)** 적용 — playbook에 per-entry 결과 tally(reinforcements/decays) + Wilson-interval 게이트 lifecycle(deprecate/graduate). 기존 net-scalar reward("never used"와 "5↑5↓" 혼동)를 evidence 기반으로. 스토어 tally write + 4개 production projection carry + 랭킹 경로 consume까지 END-TO-END.
+- **왜:** ReasoningBank(retrieve)·correction-distiller(build)는 있었지만 Memp의 Update/deprecate regimen 부재 — 자주 실패하는 전략이 영원히 살아남고 1회 reinforce로 졸업. evidence-conditioned로 confidently-bad는 강등, 충분-good만 졸업. 자기강화 테마 논문-근거(fire25 메모리·26 멀티에이전트와 다른 KIND).
+- **리뷰지점:** `playbook.ts`(wilson/effectiveReward/planLifecycle+wiring) + `personal-playbook-store.ts`(tally write) + 4 projection(`context-engineering-builders.ts` + commands-ask ×3) + `decay-contradicted.ts`(real isInjectableStrategy import) + 테스트. **maker=Sonnet / scout+judge=Fable 5**: Fable judge **v1 FAIL**(projection이 tally strip → lifecycle INERT) 적발 → 4 projection carry-through 완성 + **assembled-path 테스트**(confident-bad이 real buildPlaybookProvider 통과 후 ranking서 제외 + counterfactual: stripped면 통과). agent-core 1805·autoconfigure 509·cli 2528 green.
+- **리스크:** playbook=prompt-ranking only(floor 무관). delta===0→decay 잠재이슈 노트(현 미도달). RATCHET: testFiles +다수, fabrication 0, 신규 capability(evidence playbook lifecycle). 교훈: "store write + consume" 슬라이스는 중간 projection layer가 필드를 strip하면 inert — assembled-path 테스트로 end-to-end 증명 필수.
+
+> ✅ **자율 리뷰관문 (fires 25–27, 진안 묻지 않음):** 사이클5 = **논문-근거 3연속**(전부 공개 arXiv, 자체 재구현, Fable scout 발굴+Fable judge 적대검증): 25 HippoRAG PPR 연상recall(2502.14802)·26 BoN-MAV verifier vote(2502.20379)·27 Memp playbook lifecycle(2508.06433). Fable judge가 25·27을 v1 FAIL시키고(누락 floor/inert) 재구현으로 통과 — verify-then-apply가 실제로 작동. **사이클6 방향(스스로): 계속 논문-근거 라운드로빈(서브에이전트·백그라운드 테마 차례) — gap-scout/Fable scout.** fires-25-27 배치는 main clean시 자동 머지.
