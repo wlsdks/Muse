@@ -53,10 +53,22 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   legitimate — incidental characterization, reminders convention is the repo standard). mcp 1718, check 0, lint 0.
   RESIDUAL (non-blocking, one-field follow-up): the llm-judge search branch returns `total: matches.length` (the judge
   caps in code, so there's no pre-slice total) but lacks `shown` for cross-mode consistency.
-- ⏳ **FLAKY: @muse/model web-search-policy.test "property fuzz never throws / valid shape across the corpus"** — failed
-  `pnpm check` once in fire 22, passed on isolated re-run. Either a non-deterministic fuzz (should pin a seed) or a rare
-  latent decideWebSearchPolicy edge the corpus occasionally hits. NEEDS: pin the fast-check seed / capture the
-  counterexample. Separate from the TOOL theme; flag to 진안 / a model-package fire.
+- ✓→Closed (not a bug) **@muse/model web-search-policy.test "property fuzz"** — investigated in fire 23: the "fuzz" is
+  a DETERMINISTIC exhaustive nested loop over a FIXED corpus (enabledOpts × overrideOpts × maxUsesOpts × envWebSearch ×
+  envMaxUses), NOT a randomized fast-check property — it runs the exact same ~10k combinations every time, so it is
+  input-stable (ran 6× isolated, all 322/322 pass). The single fire-22 failure was ENVIRONMENTAL (slow ~10k iterations
+  timing out under the heavy concurrent full-`pnpm check` load, same class as the chat-grounding/playbook-store env
+  flakes), not a latent decideWebSearchPolicy edge. No seed to pin, no counterexample exists. Closed.
+- ✓→Done **muse.search DuckDuckGo redirect was DOUBLE-DECODED** (EXPANSION gap-scout, fire 23; data-integrity +
+  fail-open-to-crash) — `decodeDuckDuckGoRedirect` (loopback-search.ts:369) did `decodeURIComponent(params.get("uddg"))`,
+  but `URLSearchParams.get` ALREADY percent-decodes once. So a literal `%20` in a result URL (DDG sends `%2520`) got
+  corrupted to a space, and a bare `%` in a target (`https://sale.com/100%-off`) made the second decode THROW
+  `URIError: URI malformed`. `parseDuckDuckGoHtml` runs in muse.search's execute() AFTER the fetch try/catch closes
+  (loopback-search.ts:191), so the URIError escaped → the whole search call crashed on an attacker-influenceable result
+  URL. FIX: drop the redundant decode (`return target ? target : raw;`). TDD 2 (literal-`%20`-survives-intact +
+  never-throws-on-bare-`%`) RED→GREEN; the existing redirect tests used single-pass-decoded uddg values so the second
+  decode was idempotent there (which masked the bug). mcp 1720, check 0, lint 0. Fable-5 PASS (RED re-confirmed by
+  stashing src only; no legit double-encoded path exists — DDG encodes the target once with encodeURIComponent).
 - ✓→Done **muse.regex had NO catastrophic-backtracking (ReDoS) guard** (EXPANSION gap-scout; judge-drill target) —
   test/match/replace compiled a user pattern and ran it SYNCHRONOUSLY on up to 50k chars with only a length cap, so a
   nested-unbounded-quantifier pattern ((a+)+, (.*)*, …) HUNG the whole agent process (a sync regex run can't be timed

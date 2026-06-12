@@ -43,6 +43,22 @@ describe("parseDuckDuckGoHtml", () => {
     const rows = parseDuckDuckGoHtml(html, 2);
     expect(rows.map((r) => r.url)).toEqual(["https://1.test", "https://2.test"]);
   });
+
+  it("does NOT double-decode the uddg target — a literal %20 in the real URL survives intact", () => {
+    // DDG percent-encodes the whole target, so a literal `%20` arrives as `%2520`.
+    // URLSearchParams.get() already decodes once → `%20`; a second decode would
+    // corrupt it to a space and hand the model a broken URL.
+    const target = "https://shop.com/p?q=hello%20world";
+    const href = `//duckduckgo.com/l/?uddg=${encodeURIComponent(target)}&rut=y`;
+    expect(parseDuckDuckGoHtml(block(href, "T", "S"), 10)[0]?.url).toBe(target);
+  });
+
+  it("never throws when the decoded target contains a bare percent (URIError otherwise crashes muse.search)", () => {
+    const target = "https://sale.com/100%-off";
+    const href = `https://duckduckgo.com/l/?uddg=${encodeURIComponent(target)}`;
+    expect(() => parseDuckDuckGoHtml(block(href, "T", "S"), 10)).not.toThrow();
+    expect(parseDuckDuckGoHtml(block(href, "T", "S"), 10)[0]?.url).toBe(target);
+  });
 });
 
 describe("parseDuckDuckGoHtml — snippet length is capped (tight context for the local model)", () => {

@@ -569,3 +569,11 @@
 - **왜:** fire-21 runner-up. 모델이 "에피소드가 몇 개인지" 오인. 다른 표면(episodes)·misleading-value KIND. 기존 테스트의 buggy total=1은 incidental characterization(reminders 컨벤션이 repo 표준)이라 갱신 적합.
 - **리뷰지점:** loopback-episodes.ts(list+search total=pre-slice, shown 추가) + loopback-episodes-list-total.test.ts(3 eps, limit 2 → total 3·shown 2) + mcp.test.ts(기존 limited.total 1→3, shown 1) RED→GREEN. mcp 1718, check 0(flaky @muse/model fuzz 재실행 후·무관), lint 0. Fable-5 검증자 PASS(total pre-slice·episode 7/7 무회귀·기존-테스트 변경 LEGITIMATE·llm-judge 분기 수용). 잔여: llm-judge 분기 shown 없음(1필드 후속).
 - **리스크:** 없음에 가까움 — return shape에 shown 추가 + total 의미 수정만, 정렬/필터/limit 무변경. RATCHET: testFiles 895→896(+1 파일), fabrication 0 유지. 부수: @muse/model web-search-policy property-fuzz가 1회 flaky(⏳ backlog 기록·seed 고정 필요). grounding floor 무관(episodes list 값-정확성, 게이트 무변경).
+
+
+## [TOOL loop] fire 23 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.search의 DuckDuckGo 리다이렉트 언랩이 이중 디코드 — decodeDuckDuckGoRedirect(loopback-search.ts:369)가 URLSearchParams.get("uddg")(이미 1회 퍼센트-디코드한 값)에 decodeURIComponent를 또 적용. 리터럴 %20(DDG는 %2520로 전송)을 공백으로 손상시키고, 결과 URL의 맨몸 %(예 100%-off)에서 URIError throw. 수정: 잉여 디코드 제거(return target ? target : raw).
+- **왜:** EXPANSION 코드 gap-scout(신호 스카웃 clean) — data-integrity + fail-open-to-crash. parseDuckDuckGoHtml는 execute()의 fetch try/catch가 닫힌 뒤(191) 호출되어 URIError가 execute()를 탈출 → 공격자-영향 결과 URL 하나로 muse.search 전체 크래시. 다른 표면(search/DDG)·다른 KIND(double-decode)로 다양성. 부수: web-search-policy "fuzz" ⏳를 결정적 fixed-corpus 테스트(fire-22 실패=환경적)로 조사·Closed.
+- **리뷰지점:** loopback-search.ts:369(이중 디코드 제거+WHY 코멘트) + parse-duckduckgo-html.test.ts(리터럴 %20 보존 + 맨몸 % no-throw 2케이스) RED(맨몸 % 케이스 URIError 관측)→GREEN 9/9. mcp 1720, check 0(cli/api green; mcp 격리 184파일 재실행 green — playbook-store 5000ms는 동시-루프 env flake), lint 0. Fable-5 PASS: src만 stash해 RED 독립 재확인, get() 1회 디코드 기계검증, 합법적 이중인코딩 경로 없음(DDG는 encodeURIComponent로 1회 인코딩).
+- **리스크:** 없음에 가까움 — 잉여 디코드 1줄 제거만, 기존 redirect 테스트(single-pass uddg, 둘째 디코드 idempotent) 무회귀; 빈-문자열 target truthiness 동일. RATCHET: testFiles 896 무변동(기존 테스트 파일에 2케이스 추가), fabrication 0 유지. grounding floor 무관(search 결과 URL 무결성·게이트 무변경).
