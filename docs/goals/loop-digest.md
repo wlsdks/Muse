@@ -298,3 +298,25 @@
 - **왜:** 손상(파싱실패/스키마불일치) 읽기가 빈 결과를 반환 → 다음 atomic 쓰기가 손상-하지만-복구가능한 원본을 영구 덮어씀 = 데이터 손실. sibling reminders-store는 이미 quarantine. 쓰기는 이미 atomic이라 빠진 건 quarantine뿐.
 - **리뷰지점:** corrupt-quarantine.ts(신규 헬퍼) + local-provider.ts readAll(parse catch + events 비배열 분기) + credential-store.ts readAll(스키마불일치 + catch). TDD 3건 RED 3/3 → GREEN, calendar 152, check 0, lint 0. Fable-5 검증자 PASS(ENOENT/transient-IO는 미quarantine, predicate 불변=엄격히 더 안전, rename이 0600 보존, 동시성 안전). 부수로 fire-1 backlog write-back이 박은 raw NUL(backlog.md:63) 제거 — byte-hygiene 회귀.
 - **리스크:** local-provider의 per-entry isPersistedEvent flatMap은 여전히 *개별* 손상 이벤트를 조용히 드롭(부분 손실, 로그 없음) — 범위 밖 별도 슬라이스로 backlog 기록. .corrupt-* 파일은 GC 안 됨(복구 자료, 설계상). grounding floor 무관(로컬 디스크 무결성, 모델/egress/게이트 무변경).
+## [cognition loop] fire 19 — 2026-06-13 · 사이클3 · 테마: 메모리/상태일관성 (tool-call dedup)
+
+- **무엇:** `ToolCallDeduplicator`가 모든 completed 결과를 memoize해 READ 결과가 in-loop write 후 stale되던 버그 수정 — 각 엔트리에 `mutating` 플래그, mutating(write/execute) record 시 READ 엔트리 무효화(write 엔트리는 유지=anti-double-write 보존). model-loop 양 record 사이트가 tool risk로 `mutating` 전달.
+- **왜:** `tasks_list → tasks_add → tasks_list`(동일 args)가 add 이전 stale 리스트를 반환 → 에이전트가 낡은 상태로 행동. write 후 read 무효화로 fresh 재실행. (메모리 round-robin 사이클3, gap-scout가 line-297 audit 클러스터의 실 버그 발굴.)
+- **리뷰지점:** `tool-call-deduplicator.ts`(MemoEntry+mutating 무효화) + `model-loop.ts`(2 사이트 risk 룩업) + test +6. **maker=Sonnet worker / judge=Fable 5 서브에이전트**(model:"fable", 새 티어링 첫 적용) — Fable judge가 anti-double-write 보존·not-inert(실 write 툴 risk 흐름)·양 사이트·1738 green을 적대 검증 후 VERDICT PASS.
+- **리스크:** 비차단 nit 2(eviction 테스트 주석 오해소지·loop-level 통합테스트 없음=후속). unknown 툴→mutating false(수용). grounding floor 무관. (사이클3 fires 19-21.)
+
+## [cognition loop] fire 20 — 2026-06-13 · 사이클3 · 테마: grounding/recall provenance (casual over-match)
+
+- **무엇:** `isCasualPromptText`(verified-source footer 억제 게이트)의 social 정규식에서 `말해줘` 제거. "내 일정 말해줘"/"박지훈 전화번호 말해줘"는 recall imperative인데 casual로 오분류 → grounded 답변의 출처 footer가 억제되던 버그.
+- **왜:** 출처 표시는 Muse의 핵심(grounded+cited). "말해줘"는 인사가 아니라 흔한 recall 명령 → 출처 억제는 제품 가치 훼손. casual "농담 말해줘"는 어차피 출처 없어 무해 → 제거가 net win. gap-scout가 line-297 클러스터의 실 버그 발굴.
+- **리뷰지점:** `response-filters-verified-sources.ts`(정규식 1토큰 + WHY 주석) + `is-casual-prompt-text.test.ts`(recall imperative→false 3·social 여전 casual 4·greeting 경계 regression). **maker=Sonnet / judge=Fable 5**: Fable judge가 old-vs-new 시뮬레이션으로 non-vacuous(전엔 true·후엔 false)·over-removal 없음(casual 유지)·유일 consumer가 의도된 효과임 확인 → VERDICT PASS. agent-core 1741 green.
+- **리스크:** 잔여 `전해줘`도 유사 over-match 소지 있으나 빈도 낮아 유지(차후). grounding floor 강화 방향(출처 더 보존). (사이클3 fires 19-21.)
+
+## [cognition loop] fire 21 — 2026-06-13 · 사이클3 · 테마: anti-fabrication arg-grounding (API 정확성) · ⚠️ 3-FIRE 리뷰 관문(자율)
+
+- **무엇:** `groundToolArguments`의 `dropped` 리포트 수정 — string-ARRAY 부분 드롭(일부 fabricated, 일부 grounded) 시 survivor를 keep하면서도 arg name을 `dropped`에 넣던 오보고. 이제 `dropped`=완전 제거된 arg만(부분 정리는 survivor keep + 미보고).
+- **왜:** `dropped` 계약은 "드롭된 arg 이름". 부분-정리된 (살아있는) arg를 dropped로 보고하면 투명성 consumer가 "tags 드롭됨"으로 오인. .args 정리(보호)는 불변 — 리포트 정확성 버그. audit 클러스터의 in-scope 마지막 항목.
+- **리뷰지점:** `tool-argument-grounding.ts`(array 분기 2-way + JSDoc) + `tool-argument-grounding.test.ts`(부분→미보고·전부fabricated→보고+제거·전부grounded→무변경·string regression; **버그 인코딩 테스트 1개 flip**). **maker=Sonnet / judge=Fable 5**: Fable judge가 **test flip이 정당한지**(old가 버그 인코딩, full-removal 테스트는 여전히 dropped 단언) + .args 보호 불변 + 3분기 전수 확인 → VERDICT PASS. agent-core 1746 green.
+- **리스크:** .dropped는 런타임 미사용(agent-runtime:859는 .args만) → API 정확성 fix(저severity but 계약 정합). grounding floor 무관.
+
+> ✅ **자율 리뷰관문 (fires 19–21, 진안 묻지 않음):** 사이클3 — line-295 audit 클러스터의 in-scope 버그 3종 정리: dedup stale-read-after-write(19)·말해줘 casual over-match(20)·groundToolArguments partial-array 오보고(21). 모두 Fable-5 judge 적대검증 PASS. **사이클4 방향(스스로): audit 클러스터 in-scope 소진 — 남은(consent header/web URL/encryption)은 범위밖/동시루프 영역. cycle4=fresh gap-scout(frontier queued: Mem0 UPDATE / ACT-R 후속 등) 또는 미감사 모듈 1개 정밀감사.** fires-19-21 배치는 main clean시 자동 머지.
