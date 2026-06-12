@@ -374,3 +374,11 @@
 - **리스크:** stoplist의 "Given"/"Note" 등이 희귀 고유명사와 충돌 가능하나 fail-open이라 무해(escalation 한 번 덜 탈 뿐). genuine drift 불변. 교훈: fail-open 경로의 "judge 안 불림" 테스트는 throwing judge 말고 verdict-차이/call-count로 검증해야 non-vacuous.
 
 > ✅ **자율 리뷰관문 (fires 22–24, 진안 묻지 않음):** 사이클4 — second-hop CRAG confidence 부풀림(22, Fable scout 발굴, 헤드라인)·weakness-ledger 바운드(23)·sentence-opener 오escalation(24). Fable judge가 22를 revert-counterfactual로 실증 PASS, 24는 vacuous-test 적발→교정. **사이클5 방향(스스로): Fable scout 재가동해 cognition 코어 다음 고가치 슬라이스 발굴(audit 클러스터 소진, 22가 보여준 scout의 가치) — 또는 진안이 원하는 "최신 논문 기반 검증-적용" 쪽으로.** fires-22-24 배치는 main clean시 자동 머지.
+
+
+## [TOOL loop] fire 7 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** 새 v1.11.2 DECOMPOSE-ON-DEFER 가드를 deferred 빅아이템 #6(ask error-path run-log)에 적용 — 4개 loop-sized 슬라이스(6a/6b/6c/6d)로 쪼개 backlog 기록 + 슬라이스 6a ship: 공유 buildAskRunLog 빌더(success/failure payload) 추출 + 성공 경로 배선.
+- **왜:** 최근 3 fire가 모두 scout 보안버그 同KIND라 다양성 가드상 다른 KIND 필요 + 내 v1.11.0 평가의 "큰 항목 rot" 발견을 새 가드로 직접 처방(defer→decompose 파이프라인). #6 핵심(실패 trace)은 ~2000줄 본문 wrap이라 6b를 전용 fire로 정직히 사이징.
+- **리뷰지점:** program-helpers.ts(buildAskRunLog: success/failure 단일 소스) + commands-ask.ts:3734(성공 경로 배선, byte-identical) + program-helpers.test.ts(3 케이스: success payload·failure success:false+error·confidence/error omit) RED→GREEN. backlog #6 분해(6b=2000줄 body extract 전용 fire, 6c=Ctrl-C abort, 6d=chat-repl parity, exact seam). cli 2528·check 0·lint 0. Fable-5 검증자 PASS(성공 written JSONL byte-identical·분해 actionable).
+- **리스크:** 6a의 failure 분기는 테스트됐으나 6b가 catch를 배선하기 전까진 미호출(inert 아님 — 성공 경로는 live, backlog가 6b를 명시). RATCHET: testFiles 888 무변동(기존 파일에 +3 케이스), fabrication 0 유지, decompose-enablement 진척. grounding floor 무관(run-log payload 빌더, 게이트 무변경).

@@ -74,11 +74,25 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   ONLY setter vector here (constructor/prototype create plain own props, no pollution) and the guard
   recurses to every depth. TDD 1 behavioral (JSON.parse'd `__proto__` overrides → prototype intact +
   no injected field + key preserved as data) RED→GREEN; mcp 1679, check 0, lint 0. Fable-5 verifier PASS.
-- ⏳ **ask error-path run-log trace (#6/#7) — DEFERRED (big refactor, needs design)**: writeRunLog(success:true)
-  is inline at the END of the ~2000-line `muse ask` action (commands-ask.ts:3734) with NO enclosing
-  try/catch, so a thrown run leaves no trace (error-analysis fuel lost) + Ctrl-C logs success:true. Same
-  pattern in chat-repl (writeRunLog at 171, happy-path only). A correct fix wraps/extracts the run with a
-  success:false failure-log seam across BOTH surfaces — not a 1-fire slice; deserves a small design.
+- **ask error-path run-log trace (#6/#7) — DECOMPOSED (v1.11.2 decompose-on-defer)**: writeRunLog(success:true)
+  was inline at the END of the ~2000-line `muse ask` action (commands-ask.ts:3734) with NO enclosing
+  try/catch, so a thrown run left no trace (error-analysis fuel lost) + Ctrl-C logged success:true. Same
+  pattern in chat-repl. Split into loop-sized slices with exact seams:
+  - ✓→Done **6a — pure `buildAskRunLog` builder (the shared seam)**: extracted the inline cli.local payload
+    into `buildAskRunLog(params)` in program-helpers.ts (next to writeRunLog), supporting BOTH success and a
+    FAILURE shape (`success:false` + `error`). Wired the live success path (commands-ask.ts:3734) to it
+    (not inert). TDD 3 (success payload + readResponseSuccess lifts true; FAILURE payload lifts false + carries
+    error; confidence/error omitted when absent) RED→GREEN. cli 2528, check 0, lint 0.
+  - ◦ **6b — wrap the ask run in a failure-logging seam (THE fix, dedicated fire)**: extract the 1842 action
+    body into a nested `async function runAskAction(queryParts, options)` (closure vars stay in scope) and
+    register `.action(async (q,o)=>{ try { await runAskAction(q,o) } catch(e){ await writeRunLog(.., buildAskRunLog({..success:false, errorMessage:String(e)})); throw e } })`. RED: a thrown ask run writes a
+    success:false entry. SIZING: the body-extraction is a big MECHANICAL (~2000-line) move — behavior-identical,
+    verify with the full ask suite BEFORE adding the catch; warrants its own focused fire (or human-paired), not
+    bundled. 6a already provides the payload so the catch is one-liner.
+  - ◦ **6c — #7 Ctrl-C/abort does NOT log success:true**: once 6b's catch exists, an AbortError/SIGINT reaching
+    it logs success:false (or skips), never success:true. RED: simulate abort → assert no success:true entry. Small.
+  - ◦ **6d — chat-repl parity**: same happy-path-only writeRunLog at chat-repl.ts:171 → apply the 6b seam +
+    buildAskRunLog. Small, mirrors 6b.
 - ⏳ **calendar credential encryption-at-rest — DEFERRED (architectural cost)**: `FileCalendarCredentialStore`
   stores caldav passwords / google tokens plaintext (0600). The proven envelope lives in `@muse/memory`,
   but `@muse/mcp`→`@muse/calendar` already, and `@muse/memory` pulls `@muse/db`+`@muse/model` — encrypting
