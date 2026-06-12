@@ -267,9 +267,12 @@ excluded when scoring).
   — [in progress 2026-06-12, cognition loop] fire 1: `actrActivation(accessAgesDays,{decay,minAgeDays})`
   = `ln(Σ tⱼ⁻ᵈ)` + 9-case battery SHIPPED in `@muse/memory` (recall-promotion.ts). fire 2: the DATA
   FOUNDATION — `personal-recall-hits-store.ts` now logs a bounded `recentAccessMs` per memory (cap 20,
-  tolerant migration of old records, garbage-sanitizing read). NEXT slice: WIRE — map `recentAccessMs`
-  → per-access ages in the promotion caller, have `scoreRecallHit` use `actrActivation` when the list
-  is present (else fall back to the half-life), behind a measured A/B; then graduate the default.
+  tolerant migration of old records, garbage-sanitizing read). fire 3: WIRED — `recallActivation` +
+  opt-in `useActrRanking` on selectPromotable/selectForgettable ranks by ACT-R (frequency×spacing)
+  while the eligibility GATE stays on the plain recency score (scale-safe); enabled at the `muse memory
+  consolidate`/promote call sites. ⏳ REMAINING (review-gate decision): a measured A/B on whether ACT-R
+  should also drive the eligibility GATE (needs threshold recalibration to the log scale) before
+  graduating — ordering is live now, gate-migration is the open call. Then this item → Done.
 - ◦ **ACE deterministic playbook delta-merge** — replace the LLM-rewrite merge with itemized
   deterministic deltas + an anti-collapse invariant test (+10.6% AppWorld for the pattern). (T1-1)
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting

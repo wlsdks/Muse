@@ -251,8 +251,8 @@ export function registerMemoryCommands(program: Command, io: ProgramIO, helpers:
       const records = await readRecallHits(file);
       const nowMs = Date.now();
       const plan = consolidationPlan(
-        records.map((record) => ({ hits: record.hits, key: record.key, lastHitMs: record.lastHitMs })),
-        { nowMs }
+        records.map((record) => ({ hits: record.hits, key: record.key, lastHitMs: record.lastHitMs, recentAccessMs: record.recentAccessMs })),
+        { nowMs, useActrRanking: true }
       );
       if (options.json) {
         helpers.writeOutput(io, plan);
@@ -588,6 +588,7 @@ export async function promoteRecalledMemories(options: {
   const hits = await options.readHits().catch(() => []);
   const promotable = selectPromotableMemories(hits, {
     nowMs,
+    useActrRanking: true,
     ...(options.minHits !== undefined ? { minHits: options.minHits } : {}),
     ...(options.maxPromoted !== undefined ? { maxPromoted: options.maxPromoted } : {})
   });

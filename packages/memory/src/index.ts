@@ -432,6 +432,7 @@ export {
 export {
   actrActivation,
   consolidationPlan,
+  recallActivation,
   scoreRecallHit,
   selectForgettable,
   selectPromotableMemories,
