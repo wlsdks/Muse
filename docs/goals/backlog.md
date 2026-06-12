@@ -223,6 +223,17 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   honestly skipped. Ref resolution searches EVERY frame (`page.frames()`), so an
   iframe-embedded control is both visible AND clickable. Real-Chrome smoke (local http,
   same-origin iframe button): button appears in the snapshot + cross-frame click succeeds.
+- ✓→Done **empirical real-web hardening (probe → fix → lock)** — a gap-probe of 7 real
+  patterns on puppeteer-core 25.1.0 / Node 24 surfaced 3 bugs, all fixed + locked in
+  smoke:browser (now 12 scenarios): ① a JS dialog (confirm/alert/prompt) BLOCKED the
+  page → the next action hung to the timeout; now auto-accepted (the act was draft-first
+  approved upstream) + reported in the snapshot `dialog` field. ② content inserted by
+  setTimeout/fetch AFTER a click was missed (networkidle returns instantly with no
+  network) → a MutationObserver-based `settleDom` waits for the DOM to go quiet (fast on
+  static pages, capped). ③ disabled controls were listed (wasted clicks) → skipped in the
+  walk. Verified: unit 36, smoke 12/12 exit 0, eval:browser-agent PASS.
+- ◦ **more real-web probes** — next gap-finding passes: native file upload, hover-reveal
+  menus, multi-tab/target=_blank, autocomplete/typeahead, cross-origin iframe (scope honestly).
 - ✓→Done **browser_scroll** — the snapshot only saw rendered DOM, so below-the-fold /
   lazy-loaded content (infinite feeds, long lists) was invisible. New read tool scrolls
   (down/up/top/bottom) + settles + re-observes. Unit (enum + reject-unknown + scrolls);

@@ -57,7 +57,8 @@ function snapshotToJson(snapshot: PageSnapshot, offset = 0): JsonObject {
     total,
     url: snapshot.url,
     ...(start > 0 ? { offset: start } : {}),
-    ...(end < total ? { hasMore: true, nextOffset: end } : {})
+    ...(end < total ? { hasMore: true, nextOffset: end } : {}),
+    ...(snapshot.dialog ? { dialog: snapshot.dialog as unknown as JsonValue } : {})
   };
 }
 

@@ -13,6 +13,9 @@
  *   7. same-origin iframe — embedded controls are observed AND clickable cross-frame
  *   8. element paging  — the controller collects past the 50-element display cap
  *   9. scroll          — scrolling reveals lazily-loaded content
+ *  10. JS dialog       — confirm/alert is auto-handled (no hang) and reported
+ *  11. async-after-act — DOM-stable settle catches content inserted post-click
+ *  12. disabled        — disabled controls are omitted (no wasted clicks)
  *
  * Skips (exit 0) when Chrome is not installed — a skip is not a pass.
  */
@@ -84,6 +87,23 @@ const SCROLL_HTML = `<!doctype html><html><head><title>Scroll</title></head><bod
 });</script>
 </body></html>`;
 
+// A confirm() blocks the page until answered — with no handler the next action
+// hangs to the timeout. The controller auto-accepts (the act was already
+// approved upstream) and reports the dialog.
+const DIALOG_HTML = `<!doctype html><html><head><title>Dialog</title></head><body>
+<button onclick="if(confirm('Delete this item?'))document.title='CONFIRMED'">Delete</button>
+</body></html>`;
+
+// Content inserted 600ms after the click — no network, so networkidle alone
+// misses it; the DOM-stable settle must catch it.
+const AJAX_HTML = `<!doctype html><html><head><title>Ajax</title></head><body>
+<button onclick="setTimeout(() => document.body.insertAdjacentHTML('beforeend','<p>Results loaded</p>'), 600)">Load results</button>
+</body></html>`;
+
+const DISABLED_HTML = `<!doctype html><html><head><title>Disabled</title></head><body>
+<button disabled>Submit</button><button>Active button</button>
+</body></html>`;
+
 function assert(condition, label) {
   if (!condition) throw new Error(`ASSERT FAILED: ${label}`);
   console.log(`  ✓ ${label}`);
@@ -103,6 +123,9 @@ try {
   await writeFile(join(dir, "iframe.html"), IFRAME_HTML);
   await writeFile(join(dir, "paging.html"), PAGING_HTML);
   await writeFile(join(dir, "scroll.html"), SCROLL_HTML);
+  await writeFile(join(dir, "dialog.html"), DIALOG_HTML);
+  await writeFile(join(dir, "ajax.html"), AJAX_HTML);
+  await writeFile(join(dir, "disabled.html"), DISABLED_HTML);
 
   console.log("1) SPA settle — late-rendered content is observed");
   let snap;
@@ -172,6 +195,22 @@ try {
   assert(!snap.elements.some((el) => el.name === "Lazy loaded"), "lazy content absent before scroll");
   snap = await controller.scroll("bottom");
   assert(snap.elements.some((el) => el.name === "Lazy loaded"), "lazy content revealed after scroll");
+
+  console.log("10) JS dialog — confirm() auto-handled (no hang) and reported");
+  snap = await controller.open(pathToFileURL(join(dir, "dialog.html")).href);
+  snap = await controller.click(snap.elements.find((el) => el.name === "Delete").ref);
+  assert(snap.title === "CONFIRMED", "confirm() accepted so the approved action completed (no timeout hang)");
+  assert(snap.dialog?.type === "confirm", "the dialog is reported transparently in the snapshot");
+
+  console.log("11) async-after-action — DOM-stable settle catches post-click content");
+  snap = await controller.open(pathToFileURL(join(dir, "ajax.html")).href);
+  snap = await controller.click(snap.elements.find((el) => el.name === "Load results").ref);
+  assert(snap.text.includes("Results loaded"), "content inserted 600ms after the click is observed");
+
+  console.log("12) disabled controls — omitted so the model never wastes a turn on them");
+  snap = await controller.open(pathToFileURL(join(dir, "disabled.html")).href);
+  assert(!snap.elements.some((el) => el.name === "Submit"), "disabled button is omitted from the element list");
+  assert(snap.elements.some((el) => el.name === "Active button"), "enabled button is still listed");
 
   console.log("\nsmoke:browser PASS");
 } finally {

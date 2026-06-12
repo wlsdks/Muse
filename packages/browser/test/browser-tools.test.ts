@@ -93,6 +93,15 @@ describe("browser_open / read / back — free (no gate)", () => {
   });
 });
 
+describe("dialog passthrough — an auto-handled JS dialog is surfaced to the model", () => {
+  it("includes the dialog {type,message} in the tool output when present", async () => {
+    const snap: PageSnapshot = { ...SNAP, dialog: { message: "Delete this?", type: "confirm" } };
+    const controller = { ...new FakeController(), open: async () => snap } as unknown as BrowserController;
+    const out = await createBrowserOpenTool({ controller }).execute({ url: "https://x.test" }, ctx) as { dialog?: { type: string; message: string } };
+    expect(out.dialog).toEqual({ message: "Delete this?", type: "confirm" });
+  });
+});
+
 describe("browser_scroll — reveal below-the-fold content", () => {
   it("is a well-formed read tool with a direction enum", () => {
     const c = new FakeController();

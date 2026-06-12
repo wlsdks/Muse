@@ -28,6 +28,8 @@ export interface PageSnapshot {
   readonly text: string;
   /** Interactive elements the model can act on, capped. */
   readonly elements: readonly SnapshotElement[];
+  /** A JS dialog (alert/confirm/prompt) that fired and was auto-accepted, if any. */
+  readonly dialog?: { readonly type: string; readonly message: string };
 }
 
 export type ScrollDirection = "down" | "up" | "top" | "bottom";

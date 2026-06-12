@@ -57,6 +57,7 @@ export class PuppeteerBrowserController implements BrowserController {
   private readonly options: PuppeteerBrowserControllerOptions;
   private lastElements = new Map<number, SnapshotElement>();
   private lastUrl = "";
+  private lastDialog: { readonly type: string; readonly message: string } | undefined;
 
   constructor(options: PuppeteerBrowserControllerOptions = {}) {
     this.options = options;
@@ -124,6 +125,17 @@ export class PuppeteerBrowserController implements BrowserController {
     }
     const pages = await this.browser.pages();
     this.page = pages[0] ?? (await this.browser.newPage());
+    // A JS dialog (alert/confirm/prompt/beforeunload) BLOCKS the page until it's
+    // answered — with no handler, the next click/goto hangs to the timeout. The
+    // act that triggers it was already draft-first approved by the human upstream
+    // (outbound-safety), so we ACCEPT to complete that intent, and RECORD the
+    // dialog so the result stays transparent. Registered once per page.
+    if (this.page.listenerCount("dialog") === 0) {
+      this.page.on("dialog", (dialog) => {
+        this.lastDialog = { message: dialog.message(), type: dialog.type() };
+        dialog.accept().catch(() => { /* already handled / page gone */ });
+      });
+    }
     return this.page;
   }
 
@@ -131,9 +143,30 @@ export class PuppeteerBrowserController implements BrowserController {
     return this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
+  /**
+   * Wait for the DOM to stop mutating after an action — catches content inserted
+   * by setTimeout / fetch-then-render that `networkidle` alone misses (a click
+   * that AJAXes in the next step, no network = idle returns immediately). Resolves
+   * as soon as there are no mutations for `quietMs`; returns fast on a static page,
+   * hard-capped so a forever-animating page can't wedge it.
+   */
+  private async settleDom(page: Page): Promise<void> {
+    await page.evaluate((quietMs: number, capMs: number) => new Promise<void>((resolve) => {
+      const target = document.body;
+      if (!target) { resolve(); return; }
+      let quiet: ReturnType<typeof setTimeout>;
+      const finish = (): void => { clearTimeout(quiet); clearTimeout(cap); observer.disconnect(); resolve(); };
+      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(finish, quietMs); });
+      observer.observe(target, { attributes: true, characterData: true, childList: true, subtree: true });
+      quiet = setTimeout(finish, quietMs);
+      const cap = setTimeout(finish, capMs);
+    }), 400, 4_000).catch(() => { /* page navigated away mid-wait */ });
+  }
+
   async open(url: string): Promise<PageSnapshot> {
     const page = await this.ensurePage();
     await page.goto(url, { timeout: this.timeout, waitUntil: "domcontentloaded" });
+    await this.settleDom(page);
     return this.snapshot();
   }
 
@@ -187,6 +220,10 @@ export class PuppeteerBrowserController implements BrowserController {
         // drop position:fixed controls (cookie banners, sticky navs) and
         // shadow-root elements — both must stay visible.
         if (rect.width <= 0 || rect.height <= 0) continue;
+        // Disabled controls aren't actionable — listing them just lets the model
+        // waste a turn clicking something the locator will reject. Skip them (the
+        // page text still mentions them, so context isn't lost).
+        if ((el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true") continue;
         const tag = el.tagName.toLowerCase();
         const htmlEl = el as HTMLElement & { value?: string };
         const name = (
@@ -213,7 +250,11 @@ export class PuppeteerBrowserController implements BrowserController {
       return out;
     }, BROWSER_ELEMENT_CEILING, BROWSER_MAX_NAME)) as SnapshotElement[];
     this.lastElements = new Map(elements.map((element) => [element.ref, element]));
-    return { elements, text, title, url: this.lastUrl };
+    // Surface a dialog that fired since the last observation (auto-accepted), then
+    // clear it so it's reported exactly once.
+    const dialog = this.lastDialog;
+    this.lastDialog = undefined;
+    return { elements, text, title, url: this.lastUrl, ...(dialog ? { dialog } : {}) };
   }
 
   /**
@@ -243,6 +284,7 @@ export class PuppeteerBrowserController implements BrowserController {
     // to the resolved frame so iframe-embedded controls work.
     await frame.locator(selector).setTimeout(this.timeout).click();
     await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* page may not navigate */ });
+    await this.settleDom(page);
     return this.snapshot();
   }
 
@@ -282,6 +324,7 @@ export class PuppeteerBrowserController implements BrowserController {
       await page.keyboard.press("Enter");
       await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* may not navigate */ });
     }
+    await this.settleDom(page);
     return this.snapshot();
   }
 
@@ -301,6 +344,7 @@ export class PuppeteerBrowserController implements BrowserController {
     }, direction);
     // Lazy-loaders fire on scroll — let the new content settle before observing.
     await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* static page */ });
+    await this.settleDom(page);
     return this.snapshot();
   }
 
