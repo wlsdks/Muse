@@ -441,8 +441,13 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   memory consolidate` CLI — the daemon consolidates the PLAYBOOK but never MEMORY. fire 10 shipped
   the brake-first gate `shouldConsolidateMemory({nowMs,lastRunMs,newHitsSinceLastRun,…})` in
   `@muse/memory` (run only when ≥minNewHits material AND ≥minIntervalMs since last run — non-straining;
-  10-case battery). NEXT: WIRE it into the daemon tick — gate a `consolidationPlan` run on idle, then
-  surface promote/fade. (The ACT-R ranking from T2-1 already feeds consolidationPlan via useActrRanking.)
+  10-case battery). fire 11: `planMemoryConsolidationTick(records, state, options)` — the pure
+  decide-and-run unit: counts recall records re-engaged since lastRunMs (the new material), gates on
+  the brake, and only then DELEGATES to consolidationPlan, returning {ran, plan?, nextState} (lastRunMs
+  advanced only when it ran). 7-case battery (incl. plan==consolidationPlan delegation + both brakes).
+  NEXT: thin daemon glue — readRecallHits → planMemoryConsolidationTick → log promote/fade + persist
+  nextState, registered as a daemon tick (mirror playbookConsolidateTick). (ACT-R ranking from T2-1
+  already feeds consolidationPlan via useActrRanking.)
 
 ## Blocked / deferred
 
