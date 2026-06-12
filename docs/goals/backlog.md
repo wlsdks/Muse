@@ -43,6 +43,18 @@
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
 The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+- ✓→Done **muse.fs.stat lied about symlinks** (EXPANSION gap-scout runner-up) — the tool's description
+  promises "Symlinks are reported as kind=symlink without following", but it called `fsLib.stat` (which
+  FOLLOWS the link), so `entryKind`'s `isSymbolicLink()` was always false → a symlink was ALWAYS reported
+  as its target's kind, never `symlink`. The contract was unsatisfiable. FIX: added an optional `lstat?`
+  to the injectable fs seam + wired real `node:fs/promises` lstat into the default; the stat tool now
+  calls `(fsLib.lstat ?? fsLib.stat)(decision.resolved)` (lexical path → lstat sees the link). The
+  realpath-escape guard still runs first (unchanged), so no path guard was weakened. TDD 1 behavioral
+  (lstat→isSymbolicLink → kind=symlink, vs stat-follow → file) RED→GREEN; mcp 1680, check 0, lint 0.
+  Fable-5 verifier PASS (sandbox-compiled HEAD reproduced RED). RESIDUAL: read/list still FOLLOW symlinks
+  on the lexical path (by design — realpath guard prevents escape; a symlink-swap TOCTOU window remains,
+  separate slice). Runner-up still OPEN: `atomicWriteFile` leaks `*.tmp-*` on a write/rename failure (no
+  unlink on the error path — accumulates litter in sidecar store dirs).
 - ✓→Done **muse.json.merge prototype-pollution** (EXPANSION gap-scout, Fable-5) — `deepMerge` did
   `result[key] = …` for every key of model-supplied `overrides`; model args arrive via JSON.parse, which
   makes `"__proto__"` an OWN data key, so `result["__proto__"] = …` hit the Object.prototype SETTER and

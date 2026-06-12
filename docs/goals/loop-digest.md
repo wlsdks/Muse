@@ -336,3 +336,11 @@
 - **왜:** 모델-facing 도구 핸들러의 실제 프로토타입 오염 벡터. signal scout가 clean(0 cluster)이라 tier-2 codebase EXPANSION 스카우트(Fable-5)로 발굴. 큰 리팩터(#6 ask error-path)·architectural(calendar 암호화)·반복(not-when) 회피하고 작고 깨끗한 보안 슬라이스 선택.
 - **리뷰지점:** loopback-json-server.ts deepMerge(__proto__ 분기) + mcp.test.ts(JSON.parse'd __proto__ overrides → 프로토타입 무손상 + 주입 필드 없음 + 키 데이터 보존) TDD 1 RED→GREEN. mcp 1679, check 0, lint 0. Fable-5 검증자 PASS(__proto__가 유일 셋터 벡터·constructor/prototype는 plain own·재귀 모든 깊이 보호). 부수로 #6/#7(big refactor)·calendar 암호화(architectural dep)를 ⏳ DEFERRED로 backlog 기록(WHY 명시).
 - **리스크:** 없음에 가까움 — 정상 merge 의미 불변(키 strict 매칭), __proto__ 키를 충실히 데이터로 보존. grounding floor 무관(JSON 유틸 도구, 게이트 무변경). DEFERRED 2건은 다음 fire가 재선택 안 하도록 사유 기록.
+
+
+## [TOOL loop] fire 5 (v1.10.0, cron 23eff34a) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.fs.stat의 symlink 계약 위반 수정 — 설명은 "symlink를 안 따르고 kind=symlink 보고"인데 fsLib.stat(따라감)을 써 절대 symlink로 못 냄. fs seam에 optional lstat 추가 + 기본 impl 배선 + 도구가 (fsLib.lstat ?? fsLib.stat) 사용.
+- **왜:** 모델-facing 도구의 문서화된 계약이 충족 불가였음(symlink가 항상 target의 kind로 보고). fire-4 EXPANSION 스카우트의 runner-up. signal 보드 clean이라 codebase 갭.
+- **리뷰지점:** loopback-filesystem.ts(lstat seam + 기본 + stat 도구 1줄) + loopback-filesystem.test.ts(lstat→isSymbolicLink → kind=symlink vs stat-follow → file) TDD 1 RED→GREEN. mcp 1680, check 0, lint 0. Fable-5 검증자 PASS(HEAD 샌드박스 컴파일로 RED 재현·realpath escape 가드 무손상·read/list 무변경). lexical path에 lstat이라 escape 가드는 stat 전에 이미 실행됨.
+- **리스크:** read/list는 여전히 lexical path에서 symlink를 따름(설계상; realpath 가드가 escape 차단하나 symlink-swap TOCTOU 창 잔존 → 별도 슬라이스 backlog). runner-up atomicWriteFile tmp 누수 OPEN. grounding floor 무관(fs 메타 도구, 게이트 무변경).
