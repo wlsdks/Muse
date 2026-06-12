@@ -43,6 +43,20 @@
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
 The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+- ✓→Done **muse.episode list/search `total` lied (post-slice count)** (EXPANSION gap-scout runner-up; shipped fire 22) —
+  list/search computed `[...].sort().slice(0, limit)` then returned `total: <sliced>.length`, so `total` was the
+  POST-limit count (50 episodes, limit 10 → total:10) not the real store/match size — misleading the model about how
+  many episodes exist. The sibling reminders.list does it right (total=pre-slice, shown=post-slice). FIX: sort first,
+  `shownList = sorted.slice(0,limit)`, return `shown` + `total = scoped.length` (list) / `matches.length` (search,
+  matches now pre-slice). Mirrors reminders. TDD 2 (3 eps, limit 2 → total 3, shown 2) RED→GREEN; an existing test that
+  incidentally asserted the buggy `limited.total===1` updated to total:3 + shown:1 (Fable-5 judged the change
+  legitimate — incidental characterization, reminders convention is the repo standard). mcp 1718, check 0, lint 0.
+  RESIDUAL (non-blocking, one-field follow-up): the llm-judge search branch returns `total: matches.length` (the judge
+  caps in code, so there's no pre-slice total) but lacks `shown` for cross-mode consistency.
+- ⏳ **FLAKY: @muse/model web-search-policy.test "property fuzz never throws / valid shape across the corpus"** — failed
+  `pnpm check` once in fire 22, passed on isolated re-run. Either a non-deterministic fuzz (should pin a seed) or a rare
+  latent decideWebSearchPolicy edge the corpus occasionally hits. NEEDS: pin the fast-check seed / capture the
+  counterexample. Separate from the TOOL theme; flag to 진안 / a model-package fire.
 - ✓→Done **muse.regex had NO catastrophic-backtracking (ReDoS) guard** (EXPANSION gap-scout; judge-drill target) —
   test/match/replace compiled a user pattern and ran it SYNCHRONOUSLY on up to 50k chars with only a length cap, so a
   nested-unbounded-quantifier pattern ((a+)+, (.*)*, …) HUNG the whole agent process (a sync regex run can't be timed

@@ -7998,7 +7998,8 @@ describe("muse.episode loopback server", () => {
     expect(scoped).toMatchObject({ userId: "stark", total: 2 });
 
     const limited = await connection.callTool!("list", { limit: 1 });
-    expect(limited.total).toBe(1);
+    expect(limited.total).toBe(3); // the REAL store size (was incidentally 1 = the post-limit slice length)
+    expect(limited.shown).toBe(1); // the limit-honored returned count
     expect((limited.episodes as Array<{ id: string }>)[0]!.id).toBe("ep_a");
   });
 

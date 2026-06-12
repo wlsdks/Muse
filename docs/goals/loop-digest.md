@@ -561,3 +561,11 @@
 - **왜:** muse.regex가 nested-unbounded-quantifier 패턴((a+)+ 등)을 동기 실행 → 전체 프로세스 무한 행(SIGKILL 필요). regex_extract는 이미 가드, loopback은 미적용(same-class-different-surface). + judge 신뢰도 측정(드릴 2/2). 'this weekend' semantic 모호성은 ⏳ 진안.
 - **리뷰지점:** tools/index.ts(barrel export) + loopback-regex.ts compile()(가드, new RegExp 前) + loopback-regex.test.ts(6 shape ×3 도구 거부 + benign, SHORT 텍스트라 무행) RED→GREEN. mcp 1716, check 0, lint 0. Fable-5: 드릴 narrow fix FAIL(정확) + 실제 fix PASS(클래스 닫힘·benign false-positive 없음·discriminating).
 - **리스크:** 없음에 가까움 — benign 패턴 false-positive 없음(검증), overlapping-alternation((a|ab)+)은 helper docstring상 범위 밖(기존과 동일). RATCHET: testFiles 893 무변동(+테스트), fabrication 0 유지, JUDGE drill 2/2. grounding floor 무관(regex DoS 가드, 게이트 무변경).
+
+
+## [TOOL loop] fire 22 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.episode list/search의 `total`이 post-limit slice 카운트라 실제 store 크기를 거짓 보고(50개 중 limit 10 → total:10). reminders 컨벤션(total=pre-slice, shown=post-slice)으로 — sort 먼저, shownList=slice, total=scoped.length/matches.length(pre-slice), shown 추가.
+- **왜:** fire-21 runner-up. 모델이 "에피소드가 몇 개인지" 오인. 다른 표면(episodes)·misleading-value KIND. 기존 테스트의 buggy total=1은 incidental characterization(reminders 컨벤션이 repo 표준)이라 갱신 적합.
+- **리뷰지점:** loopback-episodes.ts(list+search total=pre-slice, shown 추가) + loopback-episodes-list-total.test.ts(3 eps, limit 2 → total 3·shown 2) + mcp.test.ts(기존 limited.total 1→3, shown 1) RED→GREEN. mcp 1718, check 0(flaky @muse/model fuzz 재실행 후·무관), lint 0. Fable-5 검증자 PASS(total pre-slice·episode 7/7 무회귀·기존-테스트 변경 LEGITIMATE·llm-judge 분기 수용). 잔여: llm-judge 분기 shown 없음(1필드 후속).
+- **리스크:** 없음에 가까움 — return shape에 shown 추가 + total 의미 수정만, 정렬/필터/limit 무변경. RATCHET: testFiles 895→896(+1 파일), fabrication 0 유지. 부수: @muse/model web-search-policy property-fuzz가 1회 flaky(⏳ backlog 기록·seed 고정 필요). grounding floor 무관(episodes list 값-정확성, 게이트 무변경).
