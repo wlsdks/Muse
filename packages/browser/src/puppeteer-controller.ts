@@ -21,10 +21,10 @@ import {
   ChromeReleaseChannel,
   computeSystemExecutablePath
 } from "@puppeteer/browsers";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 
 import {
-  BROWSER_MAX_ELEMENTS,
+  BROWSER_ELEMENT_CEILING,
   BROWSER_MAX_NAME,
   BROWSER_MAX_TEXT,
   type BrowserController,
@@ -154,13 +154,23 @@ export class PuppeteerBrowserController implements BrowserController {
       const selector =
         "a[href], button, input, textarea, select, [role=button], [role=link], [role=textbox], " +
         "[role=combobox], [role=searchbox], [role=checkbox], [role=radio], [role=menuitem], [role=tab], [onclick]";
-      // Composed-tree walk — open shadow roots are pierced so web-component
-      // UIs aren't a blank page to the model.
+      // Composed-tree walk — open shadow roots AND same-origin iframes are
+      // pierced so web-component UIs and embedded forms/widgets (login,
+      // checkout, comment boxes) aren't a blank page to the model. Cross-origin
+      // frames throw on contentDocument access and are honestly skipped (CDP
+      // can't reach them from this context).
       const nodes: Element[] = [];
       const walk = (root: ParentNode): void => {
         for (const el of Array.from(root.querySelectorAll("*"))) {
           if (el.matches(selector)) nodes.push(el);
           if (el.shadowRoot) walk(el.shadowRoot);
+          const tag = el.tagName.toLowerCase();
+          if (tag === "iframe" || tag === "frame") {
+            try {
+              const doc = (el as HTMLIFrameElement).contentDocument;
+              if (doc) walk(doc);
+            } catch { /* cross-origin — out of scope */ }
+          }
         }
       };
       walk(document);
@@ -200,36 +210,48 @@ export class PuppeteerBrowserController implements BrowserController {
         ref += 1;
       }
       return out;
-    }, BROWSER_MAX_ELEMENTS, BROWSER_MAX_NAME)) as SnapshotElement[];
+    }, BROWSER_ELEMENT_CEILING, BROWSER_MAX_NAME)) as SnapshotElement[];
     this.lastElements = new Map(elements.map((element) => [element.ref, element]));
     return { elements, text, title, url: this.lastUrl };
   }
 
-  private async elementHandle(ref: number) {
+  /**
+   * Resolve a ref to its element AND the frame it lives in. A ref can sit in
+   * the main document, an open shadow root (pierce/), or a same-origin iframe —
+   * so we search every frame, not just the main one, or an iframe-embedded
+   * control would be visible in the snapshot yet un-clickable.
+   */
+  private async resolveRef(ref: number): Promise<{ frame: Frame; selector: string }> {
     const page = await this.ensurePage();
-    // pierce/ resolves refs inside open shadow roots too (a plain CSS
-    // selector stops at the shadow boundary).
-    const handle = await page.$(`pierce/[data-muse-ref="${ref.toString()}"]`);
-    if (!handle) {
-      throw new Error(`no element with ref ${ref.toString()} on the current page — call browser_read again`);
+    const selector = `pierce/[data-muse-ref="${ref.toString()}"]`;
+    for (const frame of page.frames()) {
+      const handle = await frame.$(selector).catch(() => null);
+      if (handle) {
+        await handle.dispose();
+        return { frame, selector };
+      }
     }
-    return handle;
+    throw new Error(`no element with ref ${ref.toString()} on the current page — call browser_read again`);
   }
 
   async click(ref: number): Promise<PageSnapshot> {
     const page = await this.ensurePage();
-    await this.elementHandle(ref);
-    // Locator (not the raw handle): auto-waits for visible/enabled/stable
-    // before acting — the reliable-interaction pattern from the Puppeteer
-    // guide; the handle lookup above keeps the fast "no such ref" error.
-    await page.locator(`pierce/[data-muse-ref="${ref.toString()}"]`).setTimeout(this.timeout).click();
+    const { frame, selector } = await this.resolveRef(ref);
+    // Locator (not a raw handle): auto-waits for visible/enabled/stable before
+    // acting — the reliable-interaction pattern from the Puppeteer guide. Scoped
+    // to the resolved frame so iframe-embedded controls work.
+    await frame.locator(selector).setTimeout(this.timeout).click();
     await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* page may not navigate */ });
     return this.snapshot();
   }
 
   async type(ref: number, text: string, submit: boolean): Promise<PageSnapshot> {
     const page = await this.ensurePage();
-    const handle = await this.elementHandle(ref);
+    const { frame, selector } = await this.resolveRef(ref);
+    const handle = await frame.$(selector);
+    if (!handle) {
+      throw new Error(`no element with ref ${ref.toString()} on the current page — call browser_read again`);
+    }
     const tag = await handle.evaluate((el) => el.tagName.toLowerCase());
     if (tag === "select") {
       // Dropdowns can't be typed into — ground the text to an option in
@@ -249,7 +271,7 @@ export class PuppeteerBrowserController implements BrowserController {
       return this.snapshot();
     }
     try {
-      await page.locator(`pierce/[data-muse-ref="${ref.toString()}"]`).setTimeout(this.timeout).fill(text);
+      await frame.locator(selector).setTimeout(this.timeout).fill(text);
     } catch {
       // Custom widgets that reject fill() still accept raw keystrokes.
       await handle.click({ count: 3 });

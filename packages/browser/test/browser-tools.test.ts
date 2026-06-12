@@ -90,6 +90,36 @@ describe("browser_open / read / back — free (no gate)", () => {
   });
 });
 
+describe("browser_read — paging a long page (no silent truncation)", () => {
+  function bigController(n: number): BrowserController {
+    const elements: SnapshotElement[] = Array.from({ length: n }, (_v, i) => ({ name: `link ${i.toString()}`, ref: i, role: "link" }));
+    const snap: PageSnapshot = { elements, text: "x", title: "Big", url: "https://big.test/" };
+    return {
+      back: async () => snap, click: async () => snap, close: async () => {}, currentUrl: () => "https://big.test/",
+      describeElement: (ref) => elements[ref], disconnect: async () => {}, open: async () => snap,
+      screenshot: async (path) => ({ path }), snapshot: async () => snap, type: async () => snap
+    };
+  }
+
+  it("caps the response at 50 and REPORTS total + nextOffset (nothing silently dropped)", async () => {
+    const tool = createBrowserReadTool({ controller: bigController(60) });
+    const out = await tool.execute({}, ctx) as { elements: unknown[]; total: number; hasMore?: boolean; nextOffset?: number };
+    expect(out.elements).toHaveLength(50);
+    expect(out.total).toBe(60);
+    expect(out.hasMore).toBe(true);
+    expect(out.nextOffset).toBe(50);
+  });
+
+  it("offset reads the next batch and ends cleanly", async () => {
+    const tool = createBrowserReadTool({ controller: bigController(60) });
+    const out = await tool.execute({ offset: 50 }, ctx) as { elements: { ref: number }[]; offset: number; hasMore?: boolean };
+    expect(out.elements).toHaveLength(10);
+    expect(out.offset).toBe(50);
+    expect(out.elements[0]!.ref).toBe(50);
+    expect(out.hasMore).toBeUndefined();
+  });
+});
+
 describe("browser_click — deterministic target grounding + draft-first", () => {
   it("with no target and no ref, asks for a target (no browser touch)", async () => {
     const c = new FakeController();

@@ -218,12 +218,16 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   guards 1622, byte-hygiene 30, precheck:grounding pass^2. Real injections keep trigger→target→noun
   within a clause, so detection is unchanged; only the cross-sentence false combinations are killed.
 
-- ◦ **same-origin iframe piercing** — snapshot stops at iframe boundaries (embedded
-  forms/widgets invisible); walk same-origin frames like shadow roots. Cross-origin
-  stays out (CDP can't without per-frame contexts — scope honestly).
-- ◦ **element paging past the 50 cap** — long pages truncate silently at
-  BROWSER_MAX_ELEMENTS; `browser_read find` mitigates but a `more`/offset arg (or
-  viewport-priority ordering) closes it. Log what was dropped (no silent caps).
+- ✓→Done **same-origin iframe piercing** — the snapshot walk descends into same-origin
+  iframe `contentDocument` (like shadow roots); cross-origin throws on access and is
+  honestly skipped. Ref resolution searches EVERY frame (`page.frames()`), so an
+  iframe-embedded control is both visible AND clickable. Real-Chrome smoke (local http,
+  same-origin iframe button): button appears in the snapshot + cross-frame click succeeds.
+- ✓→Done **element paging past the 50 cap** — no more silent truncation. The controller
+  collects up to BROWSER_ELEMENT_CEILING (200) so grounding matches the WHOLE set in code;
+  every tool RESPONSE shows ≤BROWSER_MAX_ELEMENTS (50) and reports `total` +
+  `hasMore`/`nextOffset`; `browser_read` gained an `offset` arg to page. Unit: 50-cap +
+  total/nextOffset + offset-reads-the-rest; smoke: 61 elements returned (not capped at 50).
 - ✓→Done **agent-level multi-step live battery** — `pnpm eval:browser-agent`: gemma4 drives
   open→type+submit on a local fixture shop (file://, no network) and answers from the rendered
   result; graded on TERMINAL STATE (the page records the query it actually received — a

@@ -15,7 +15,7 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import type { BrowserController, PageSnapshot } from "./controller.js";
+import { BROWSER_MAX_ELEMENTS, type BrowserController, type PageSnapshot } from "./controller.js";
 import { filterElements, matchElement, type MatchIntent } from "./matcher.js";
 
 export interface BrowserActionDraft {
@@ -35,12 +35,29 @@ export interface BrowserApprovalDecision {
 /** Presents the EXACT page action to the user; returns approve/deny. */
 export type BrowserApprovalGate = (draft: BrowserActionDraft) => Promise<BrowserApprovalDecision> | BrowserApprovalDecision;
 
-function snapshotToJson(snapshot: PageSnapshot): JsonObject {
+function elementsJson(elements: readonly PageSnapshot["elements"][number][]): JsonValue {
+  return elements.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue;
+}
+
+/**
+ * A page can carry hundreds of controls, but a low-spec model drowns in them —
+ * so every response shows at most BROWSER_MAX_ELEMENTS and REPORTS the total +
+ * the next offset rather than silently truncating (no silent caps). Grounding
+ * (click/type by target) still matches the WHOLE set in code.
+ */
+function snapshotToJson(snapshot: PageSnapshot, offset = 0): JsonObject {
+  const total = snapshot.elements.length;
+  const start = Math.min(Math.max(0, offset), total);
+  const page = snapshot.elements.slice(start, start + BROWSER_MAX_ELEMENTS);
+  const end = start + page.length;
   return {
-    elements: snapshot.elements.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+    elements: elementsJson(page),
     text: snapshot.text,
     title: snapshot.title,
-    url: snapshot.url
+    total,
+    url: snapshot.url,
+    ...(start > 0 ? { offset: start } : {}),
+    ...(end < total ? { hasMore: true, nextOffset: end } : {})
   };
 }
 
@@ -124,18 +141,20 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
       description:
         "Re-read the page currently open in Muse's browser — returns the title, page text, and the " +
         "interactive elements. Pass `find` to get only the elements matching a description (e.g. 'search', " +
-        "'sign in') instead of the whole list — handy for locating one control. Use to see what's on the " +
-        "page after it changed — e.g. 'what's on the page now?', 'read this page'. Read-only.",
+        "'sign in') instead of the whole list. A long page reports `total` + `hasMore`/`nextOffset`; pass " +
+        "`offset` to read the next batch. Use to see what's on the page after it changed — e.g. 'what's on " +
+        "the page now?', 'read this page'. Read-only.",
       domain: "browser",
       inputSchema: {
         additionalProperties: false,
         properties: {
-          find: { description: "Optional: only return elements whose label matches this, e.g. 'search box'.", type: "string" }
+          find: { description: "Optional: only return elements whose label matches this, e.g. 'search box'.", type: "string" },
+          offset: { description: "Optional: skip this many elements (paging a long page); use the `nextOffset` from a prior read.", type: "number" }
         },
         required: [],
         type: "object"
       },
-      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "브라우저"],
+      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "more", "브라우저"],
       name: "browser_read",
       risk: "read"
     },
@@ -144,14 +163,17 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
         const snapshot = await deps.controller.snapshot();
         const find = typeof args["find"] === "string" ? args["find"].trim() : "";
         if (find.length === 0) {
-          return snapshotToJson(snapshot);
+          const offset = typeof args["offset"] === "number" && Number.isFinite(args["offset"]) ? Math.trunc(args["offset"]) : 0;
+          return snapshotToJson(snapshot, offset);
         }
         const matched = filterElements(snapshot.elements, find);
+        const shown = matched.slice(0, BROWSER_MAX_ELEMENTS);
         return {
-          elements: matched.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+          elements: elementsJson(shown),
           matched: matched.length,
           title: snapshot.title,
-          url: snapshot.url
+          url: snapshot.url,
+          ...(matched.length > shown.length ? { hasMore: true } : {})
         };
       } catch (cause) {
         return errorResult(cause);
