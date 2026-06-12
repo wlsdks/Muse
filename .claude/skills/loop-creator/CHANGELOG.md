@@ -9,6 +9,19 @@
 
 ---
 
+## 1.11.0 — 2026-06-13
+**라이브 평가發 5개 가드**(6 fire 실측 + Osmani/Cherny/Karpathy/Anthropic 2026-06 대조). 메커니즘은
+최상급이나 "게이트의 가장자리" 3곳이 약했음 — 전부 프롬프트/계약 한 줄급으로 수정:
+- **게이트가 최종 diff를 덮음**(§4.5-6, 생성프롬프트 ⑤): write-back/digest 後 staged diff에 lint+byte-hygiene
+  재확인. fire-1이 NUL 바이트를 게이트-後-편집 구멍으로 흘렸고 fire-2가 잡은 *증명된 사고*를 닫음.
+- **decompose-on-defer**(§4.5-7, ②): 큰 항목 defer 시 loop-sized로 쪼개 backlog 기록(Anthropic planner
+  패턴) 또는 "진안 필요" 명시; 2회 defer면 escalate. 작은-버그 편향(defer 일방 ratchet)을 파이프라인으로.
+- **RATCHET 지표**(§4.5-8, ⑤b): 매 fire digest에 스코어보드 델타 1줄, 알림은 추세(Karpathy immutable number).
+- **stale-dist 복구 인코딩**(④): 만진 패키지 빌드-먼저 + check 실패 시 첫 진단은 clean-rebuild 재실행
+  (2/6 fire에서 flake로 진단 사이클 낭비, 이미 MEMORY에 있던 교훈).
+- **judge 실패-드릴 CADENCE**(§4.5-5): 1회→N fire(10)/버전bump마다 재드릴 + digest에 judge PASS-rate.
+데이터 판정: 6 fire는 메커니즘 smoke test엔 충분, 스킬 판정엔 시기상조 — 계측 깔고 ~25–30 fire에 재평가.
+
 ## 1.10.0 — 2026-06-13
 **계획 티어에 Fable 5**(진안 지시): 계획/설계/모호한 포크/적대적 검증(강한-reasoning 티어)은
 **Fable 5(`model:"fable"`)를 가능할 때** 쓰고, 불가하면 **Opus 4.8(1M, `claude-opus-4-8[1m]`)**로
