@@ -123,6 +123,12 @@ export { clusterByTextSimilarity, deltaMergePlaybookStrategies, mergePlaybookStr
 export type { SkillReviewSignal, SkillDraft, DetectSkillCandidatesOptions, DraftSkillOptions, ReviewSkillsOptions, ReviewSkillsResult } from "./skill-review.js";
 
 export {
+  buildNoteLinkGraph,
+  personalizedPageRank,
+  type NoteLinkGraph,
+  type PageRankOptions
+} from "./associative-recall.js";
+export {
   cosineSimilarity,
   EmbeddingEpisodicRecallProvider,
   InMemoryEpisodicRecallProvider,

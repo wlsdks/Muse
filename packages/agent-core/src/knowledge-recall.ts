@@ -16,6 +16,7 @@
 import type { MuseTool } from "@muse/tools";
 
 import { cosineSimilarity } from "./episodic-recall.js";
+import { buildNoteLinkGraph, personalizedPageRank } from "./associative-recall.js";
 
 export interface KnowledgeChunk {
   readonly source: string;
@@ -966,6 +967,72 @@ export function selectBestGroundedDraft(
 
 
 /**
+ * Append up to 2 associative bridges to `primary` using PPR over the
+ * note-link graph (HippoRAG 2, arXiv:2502.14802). Seed weights = primary
+ * match scores; appended bridges carry a query-relative cosine (or 0 on
+ * embed failure). Primary list is never mutated.
+ */
+async function appendAssociativeBridges(
+  query: string,
+  primary: readonly KnowledgeMatch[],
+  notes: readonly KnowledgeChunk[],
+  options: RankKnowledgeOptions
+): Promise<KnowledgeMatch[]> {
+  if (primary.length === 0) {
+    return [...primary];
+  }
+  const keyOf = (chunk: KnowledgeChunk | KnowledgeMatch): string =>
+    `${chunk.source}|${chunk.text}`;
+
+  const graph = buildNoteLinkGraph(notes);
+  const seeds = new Map<string, number>();
+  for (const match of primary) {
+    seeds.set(keyOf(match), Math.max(match.cosine ?? match.score, 0));
+  }
+
+  const pprScores = personalizedPageRank(graph, seeds);
+  const primaryKeys = new Set(primary.map((m) => keyOf(m)));
+
+  // arXiv:2502.14802 §3.2: only nodes genuinely reached by the PPR walk
+  // (score > 0) qualify as bridges; zero-score nodes were never traversed.
+  const bridgeCandidates = [...pprScores.entries()]
+    .filter(([key, score]) => !primaryKeys.has(key) && score > 1e-9)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([key]) => key);
+
+  const inputByKey = new Map<string, KnowledgeChunk>();
+  for (const chunk of notes) {
+    inputByKey.set(keyOf(chunk), chunk);
+  }
+
+  let queryVec: readonly number[] | null = null;
+  try {
+    queryVec = await options.embed(query);
+  } catch {
+    // fail-safe: bridges get cosine=0
+  }
+
+  const additions: KnowledgeMatch[] = [];
+  for (const key of bridgeCandidates) {
+    const chunk = inputByKey.get(key);
+    if (!chunk) continue;
+    let queryCosine = 0;
+    if (queryVec !== null) {
+      try {
+        const chunkVec = await options.embed(chunk.embedText ?? chunk.text);
+        queryCosine = cosineSimilarity(queryVec, chunkVec);
+      } catch {
+        queryCosine = 0;
+      }
+    }
+    additions.push({ cosine: queryCosine, score: queryCosine, source: chunk.source, text: chunk.text });
+  }
+
+  return [...primary, ...additions];
+}
+
+/**
  * Deterministic second-hop retrieval (pseudo-relevance feedback, Rocchio
  * lineage): a two-hop question ("the team of the person who recommended the
  * book") names only hop 1 — the bridging note shares no tokens with the
@@ -977,10 +1044,16 @@ export function selectBestGroundedDraft(
 export async function rankKnowledgeChunksWithHop(
   query: string,
   notes: readonly KnowledgeChunk[],
-  options: RankKnowledgeOptions & { readonly secondHop?: boolean }
+  options: RankKnowledgeOptions & { readonly secondHop?: boolean; readonly associative?: boolean }
 ): Promise<KnowledgeMatch[]> {
   const primary = await rankKnowledgeChunks(query, notes, options);
-  if (options.secondHop !== true || primary.length === 0) {
+  if (options.secondHop !== true && options.associative !== true) {
+    return primary;
+  }
+  if (options.secondHop !== true && options.associative === true) {
+    return appendAssociativeBridges(query, primary, notes, options);
+  }
+  if (primary.length === 0) {
     return primary;
   }
   const keyOf = (match: KnowledgeMatch): string => `${match.source}|${match.text}`;

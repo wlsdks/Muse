@@ -343,3 +343,12 @@
 - **리스크:** stoplist의 "Given"/"Note" 등이 희귀 고유명사와 충돌 가능하나 fail-open이라 무해(escalation 한 번 덜 탈 뿐). genuine drift 불변. 교훈: fail-open 경로의 "judge 안 불림" 테스트는 throwing judge 말고 verdict-차이/call-count로 검증해야 non-vacuous.
 
 > ✅ **자율 리뷰관문 (fires 22–24, 진안 묻지 않음):** 사이클4 — second-hop CRAG confidence 부풀림(22, Fable scout 발굴, 헤드라인)·weakness-ledger 바운드(23)·sentence-opener 오escalation(24). Fable judge가 22를 revert-counterfactual로 실증 PASS, 24는 vacuous-test 적발→교정. **사이클5 방향(스스로): Fable scout 재가동해 cognition 코어 다음 고가치 슬라이스 발굴(audit 클러스터 소진, 22가 보여준 scout의 가치) — 또는 진안이 원하는 "최신 논문 기반 검증-적용" 쪽으로.** fires-22-24 배치는 main clean시 자동 머지.
+
+## [cognition loop] fire 25 — 2026-06-13 · 사이클5 · 테마: 메모리/associative recall (PAPER-GROUNDED, skill v1.11.2)
+
+- **무엇:** **HippoRAG 2 (arXiv:2502.14802, 공개 ICML 2025 preprint)** 적용 — `associative-recall.ts`: note-link 그래프(공유 토큰 edge, 가중치 Σ1/df) + Personalized PageRank(결정적 power iteration). `rankKnowledgeChunksWithHop`에 opt-in `associative` 플래그로 배선(PPR>0 graph-reachable bridge만 append, fire-22 query-cosine fail-safe 경로 재사용).
+- **왜:** Muse recall이 isolated(cosine+BM25+ACT-R)였음 — 그래프/spreading-activation 0. HippoRAG는 PPR로 임베딩이 못 잡는 연상 체인(rare-token chain)을 결정적으로 surface(논문: associative task +7%). 메모리 테마의 **논문-근거 신규 capability**(진안 지시: 공개 논문만, 방법 적용·코드 미복사).
+- **리뷰지점:** 신규 `associative-recall.ts`(buildNoteLinkGraph + personalizedPageRank) + `index.ts` + `knowledge-recall.ts`(opt-in 배선, PPR>0 floor) + 테스트 14. **maker=Sonnet worker / scout+judge=Fable 5**: Fable scout가 WebSearch로 논문 검증·스펙, Fable judge가 **v1 FAIL 적발**(PPR>0 floor 누락 → unrelated PPR-0 노트 append + vacuous 통합테스트) → 정확 처방 → 재구현 + non-vacuous 테스트(bridge flag-off 부재/flag-on 그래프-체인 존재/unrelated 배제, counterfactual 검증). agent-core 1772 green.
+- **리스크:** opt-in·flag-off byte-identical·verdict 무변경(floor-safe). LLM OpenIE/synonym edge는 deferred(결정적 rare-token 그래프로 대체 — PPR 코어가 충실한 부분). CLI ask 배선은 live multi-hop battery 後 follow-up. RATCHET: testFiles +1, fabrication 0 유지, 신규 capability(associative recall) 추가.
+
+> NOTE: 이 fire는 **loop-creator skill v1.11.2로 신규 등록된 cron fecd6aef의 첫 fire** — 논문-근거(arXiv 인용)+공개논문-only+Fable scout/judge 모드의 첫 실증. 사이클5 fires 25-27.
