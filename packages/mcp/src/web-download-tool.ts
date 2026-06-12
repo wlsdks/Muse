@@ -119,11 +119,36 @@ export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
             return { reason: `redirected to a blocked host: ${finalGuard.error}`, saved: false };
           }
         }
-        const buf = Buffer.from(await response.arrayBuffer());
-        if (buf.byteLength > maxBytes) {
-          return { reason: `file is too large (${Math.round(buf.byteLength / 1024 / 1024).toString()}MB > ${Math.round(maxBytes / 1024 / 1024).toString()}MB cap)`, saved: false };
+        const tooLarge = (size: number): JsonObject =>
+          ({ reason: `file is too large (${Math.round(size / 1024 / 1024).toString()}MB > ${Math.round(maxBytes / 1024 / 1024).toString()}MB cap)`, saved: false });
+        // Don't buffer the WHOLE body before the cap check — a multi-GB / never-ending
+        // response would fill RAM despite the cap. Reject early on a Content-Length that
+        // already exceeds it, then read chunk-by-chunk and abort the moment the
+        // accumulated size crosses the cap (the server can lie about Content-Length).
+        const declared = Number(response.headers.get("content-length"));
+        if (Number.isFinite(declared) && declared > maxBytes) {
+          return tooLarge(declared);
         }
-        bytes = buf;
+        const reader = response.body?.getReader();
+        if (!reader) {
+          const buf = Buffer.from(await response.arrayBuffer());
+          if (buf.byteLength > maxBytes) return tooLarge(buf.byteLength);
+          bytes = buf;
+        } else {
+          const chunks: Buffer[] = [];
+          let total = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > maxBytes) {
+              await reader.cancel().catch(() => undefined);
+              return tooLarge(total);
+            }
+            chunks.push(Buffer.from(value));
+          }
+          bytes = Buffer.concat(chunks);
+        }
       } catch (cause) {
         return { reason: `download failed: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
       }

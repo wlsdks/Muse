@@ -51,9 +51,18 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   TOCTOU); a real write error (EACCES/ENOSPC) is re-thrown → surfaces, never looped; bounded at 1000. TDD
   (pre-existing report.pdf intact + new bytes at "report (1).pdf") RED→GREEN; mcp 1698, check 0, lint 0.
   Fable-5 PASS (5 concurrent → 5 unique files; fresh-dir original name unchanged; no-ext/dotfile/multi-dot edges).
-- ◦ **web_download buffers the ENTIRE response body before the size-cap check** (gap-scout runner-up) —
-  `Buffer.from(await response.arrayBuffer())` then `> maxBytes` (web-download-tool.ts:~97), so a multi-GB / never-
-  ending body fills RAM despite the 50MB cap. FIX: Content-Length pre-check + streamed read with early abort.
+- ✓→Done **web_download buffered the ENTIRE response body before the size-cap check** (gap-scout runner-up;
+  shipped fire 17) — `Buffer.from(await response.arrayBuffer())` then `> maxBytes`, so a multi-GB / never-ending
+  body filled RAM despite the 50MB cap (memory-exhaustion DoS). FIX: a Content-Length pre-check (reject before
+  reading if declared > cap) + a streamed `getReader()` read that aborts (`reader.cancel()`) the moment the
+  accumulated size crosses the cap — the server can lie about/omit CL, so the streamed abort is the real defense;
+  a no-body fallback still caps via arrayBuffer. TDD (instrumented 20×100B stream, cap 250B → aborts after ~3
+  chunks, nothing written) RED→GREEN; mcp 1700, check 0, lint 0. Fable-5 PASS (under-cap byte-identical, no false
+  reject on absent/garbage CL).
+- ⏳ **FLAKY: cli chat-grounding.test "fails soft to '' when retrieval throws"** — failed `pnpm check` transiently
+  in fires 16 AND 17 (~5s, Ollama-timing dependent), passes on isolated re-run. Not a loop-slice regression but a
+  real flaky gate. NEEDS: make the test hermetic (it should fail-soft without a live/slow Ollama path) — small fix
+  but on the chat-grounding surface, separate from the TOOL theme; flag to 진안 / a chat-grounding fire.
 - ✓→Done **muse.tasks.update lost-update TOCTOU** (gap-scout runner-up; shipped fire 16) — built a WHOLE stale
   snapshot (`{...tasks[index]}`) outside the write queue and wrote it back inside mutateTasks, so two concurrent
   updates to DIFFERENT fields lost-update (last-writer-wins on the whole object). FIX: build a field-level DELTA

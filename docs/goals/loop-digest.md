@@ -478,3 +478,11 @@
 - **왜:** fire-15 runner-up. 다른 표면(tasks store)·concurrency KIND. complete는 이미 delta 재적용으로 옳게 하는데 update만 누락. τ-bench "no partial side-effects"/AppWorld collateral-damage 클래스.
 - **리뷰지점:** loopback-tasks.ts(patched 전체쓰기 → applyDelta(sets/clears) 재적용) + mcp.test.ts(title+notes 동시 update 둘 다 tasks.json에 persist) RED→GREEN. mcp 1699, check 0(flaky cli chat-grounding 재실행 후·무관), lint 0. Fable-5 검증자 PASS(single-update 1:1 무회귀·applyDelta set-XOR-clear·vanished-task 엣지·/tmp worktree로 RED 재현). 잔여: partial dueAt reschedule이 stale existing-due에 anchor(같은-필드 race만, 수용·pre-existing).
 - **리스크:** 없음에 가까움 — single-update 의미 byte-identical, 타 필드 보존. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(tasks store 동시성, 게이트 무변경).
+
+
+## [TOOL loop] fire 17 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** web_download가 전체 응답 바디를 arrayBuffer()로 버퍼링 後 size-cap 검사 → multi-GB/무한 바디가 cap 무시하고 RAM 채움(memory-exhaustion DoS). fix: Content-Length 사전검사 + getReader() 스트리밍 읽기로 누적 크기가 cap 넘는 순간 reader.cancel()+거부.
+- **왜:** fire-15 runner-up. 다른 KIND(resource-exhaustion/DoS, fire15 overwrite·fire16 concurrency와 구별). 서버가 CL 거짓/생략 가능하니 스트리밍 abort가 실 방어.
+- **리뷰지점:** web-download-tool.ts(CL 사전검사 + getReader 스트림 + 조기 abort + no-body fallback) + web-download-tool.test.ts(계측 20×100B 스트림, cap 250B → ~3청크 後 abort, 미작성) RED→GREEN. mcp 1700, check 0(flaky cli 재실행 후), lint 0. Fable-5 검증자 PASS(under-cap byte-identical·absent/garbage CL 오거부 없음·HEAD 21 pull 재현으로 RED 확인).
+- **리스크:** 없음에 가까움 — under-cap 다운로드는 스트림 재조립이 byte-identical, CL 0/NaN은 스트림으로 폴스루. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. 부수: 2 fire 연속 flaky cli 테스트(chat-grounding "fails soft") ⏳ backlog 기록. grounding floor 무관(다운로드 자원안전, 게이트 무변경).

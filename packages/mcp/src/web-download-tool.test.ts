@@ -143,6 +143,26 @@ describe("web_download tool", () => {
     expect(String(out.reason).toLowerCase()).toMatch(/large|big|size|cap/);
   });
 
+  it("aborts an over-cap body mid-stream — does NOT buffer the whole thing into RAM", async () => {
+    const d = dir();
+    let chunksPulled = 0;
+    // A streamed body (NO content-length) of 20×100B chunks. The OLD code buffered the
+    // whole 2000B via arrayBuffer (draining every chunk) before checking the 250B cap.
+    const fetchImpl = (async () => new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        chunksPulled += 1;
+        if (chunksPulled > 20) { controller.close(); return; }
+        controller.enqueue(new Uint8Array(100));
+      }
+    }))) as unknown as typeof fetch;
+    const tool = createWebDownloadTool({ downloadDir: d, fetchImpl, lookup: publicLookup, maxBytes: 250 });
+    const out = await tool.execute({ url: "https://files.test/huge.bin" }, ctx) as { saved: boolean; reason?: string };
+    expect(out.saved).toBe(false);
+    expect(String(out.reason).toLowerCase()).toMatch(/large|cap/);
+    expect(chunksPulled).toBeLessThan(6); // aborted after ~3 chunks (250/100), NOT all 20
+    expect(existsSync(join(d, "huge.bin"))).toBe(false); // nothing written
+  });
+
   it("a model-named filename is sanitized to a basename (no path escape)", async () => {
     const d = dir();
     const tool = createWebDownloadTool({ downloadDir: d, fetchImpl: fakeFetch(Buffer.from("x")), lookup: publicLookup });
