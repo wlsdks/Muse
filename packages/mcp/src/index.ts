@@ -481,6 +481,7 @@ export {
   type RunDueObjectivesSummary
 } from "./objective-evaluation-loop.js";
 export {
+  findConsent,
   hasConsent,
   readConsents,
   recordConsent,

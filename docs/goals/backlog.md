@@ -570,14 +570,24 @@ HARDEN (make existing tools more reliable):
   →GREEN; mcp 1739, check 0 (playbook-store flake re-run green), lint 0. Fable-5 PASS (RED re-confirmed by stashing src;
   all case variants covered; whitespace/Unicode keys are invalid header names → fail-closed via try/catch, not a bypass;
   consent/veto gates untouched). KIND security, fresh surface.
-- ◦ **performConsentedAction: request.url is NOT bound to the consent scope (credential-exfil vector)** (fire-33
-  verifier finding; SECURITY, larger than the header bug just fixed) — `request.url` is fully caller-controlled and
-  nothing ties it to the consent `scope` string, so a consent recorded for `github:issues:write` will send the scoped
-  Bearer token to ANY url the caller supplies (`https://attacker.example/...`) — credential exfiltration. FIX: bind the
-  scope to an allowed host / URL-prefix and refuse (fail-closed, no HTTP) when `request.url`'s host doesn't match the
-  scope's expected destination. Slice: a scope→host check + 1 test (consent for scope X + url to host Y → refused, no
-  fetch). NEEDS a scope→host mapping decision (how scopes encode their destination) — may need 진안 input on the scope
-  format; decompose if so.
+- ✓→Done **performConsentedAction: request.url destination-binding (credential-exfil guard)** (fire 34; SECURITY —
+  fire-33 verifier finding) — `request.url` was fully caller-controlled with nothing tying it to the consent, so the
+  scoped Bearer token could be sent to ANY url (`https://attacker.example/...`). DESIGN (verified: performConsentedAction
+  + recordConsent have NO production callers — unwired P5-b3 primitive; trust-correct source = the consent RECORD set at
+  grant time, NOT the caller's url, and NOT a non-existent service→host registry): `ScopedConsent` gained an OPTIONAL
+  `allowedHost`; `performConsentedAction` refuses (fail-closed, no HTTP) when a consent's `allowedHost` is set and
+  `new URL(request.url).host` differs OR the url is unparseable; added `findConsent` (returns the record; `hasConsent`
+  delegates). TDD (consent bound to api.test + url to evil.example → refused, 0 HTTP; unparseable url → refused) RED
+  (neutralize the check → token reaches evil.example)→GREEN; mcp 1741, check 0 (all pkgs), lint 0. Fable-5 PASS —
+  including the userinfo bypass `https://api.test@evil.example/` → `host` resolves to `evil.example` → correctly
+  refused; `host` (incl. port) is stricter than `hostname` (fail-closed-safe). KIND security, fresh surface.
+- ◦ **performConsentedAction: make allowedHost MANDATORY / fail-closed-on-absence (fire-34 follow-up)** — the
+  destination-binding is currently enforce-WHEN-PRESENT (optional), so a consent without `allowedHost` still sends the
+  token to any url. Once the (future) grant flows that call `recordConsent` all populate `allowedHost`, flip it: make
+  the field required (or treat absence as refuse) so the binding is fail-closed by construction, not opt-in. Slice =
+  require allowedHost in `isScopedConsent` + refuse on absence in performConsentedAction + update the duplicate test
+  corpus (consent literals live in BOTH src/*.test.ts and test/*.test.ts — ~10 sites). Gated on grant-flow wiring
+  existing first (no production caller today).
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

@@ -40,7 +40,7 @@ const base = (fetchImpl: typeof fetch, over: Partial<PerformConsentedActionOptio
   ...over
 });
 
-const grant = (scope = SCOPE) => recordConsent(consentFile, { grantedAt: "2026-05-31T00:00:00Z", id: "c1", objectiveId: OBJ, scope, userId: "u1" });
+const grant = (scope = SCOPE, allowedHost = "api.test") => recordConsent(consentFile, { allowedHost, grantedAt: "2026-05-31T00:00:00Z", id: "c1", objectiveId: OBJ, scope, userId: "u1" });
 
 describe("performConsentedAction — fail-closed scoped-consent gate (outbound-safety rule 5)", () => {
   it("refuses with NO HTTP when there is no recorded consent (credential never leaves)", async () => {
@@ -58,6 +58,25 @@ describe("performConsentedAction — fail-closed scoped-consent gate (outbound-s
     expect(out).toEqual({ performed: true, status: 201 });
     expect(calls).toHaveLength(1);
     expect((calls[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer svc-token");
+  });
+
+  it("refuses (no HTTP) when request.url host differs from the consent's allowedHost — token bound to its destination", async () => {
+    await grant(SCOPE, "api.test"); // the user consented to act against api.test...
+    const { calls, fetchImpl } = recordingFetch();
+    const out = await performConsentedAction(base(fetchImpl, {
+      request: { body: '{"t":"x"}', method: "POST", url: "https://evil.example/steal" } // ...but the action targets ANOTHER host
+    }));
+    expect(out).toMatchObject({ performed: false });
+    expect((out as { reason: string }).reason).toContain("bound to host api.test");
+    expect(calls).toHaveLength(0); // the scoped credential never leaves to the wrong host
+  });
+
+  it("refuses an unparseable request.url fail-closed (no HTTP)", async () => {
+    await grant();
+    const { calls, fetchImpl } = recordingFetch();
+    const out = await performConsentedAction(base(fetchImpl, { request: { method: "POST", url: "::not a url::" } }));
+    expect(out).toMatchObject({ performed: false });
+    expect(calls).toHaveLength(0);
   });
 
   it("does NOT let caller request.headers override the consent-gated credential (code owns authorization)", async () => {
