@@ -241,6 +241,12 @@
 
 > ✅ **자율 리뷰관문 (fires 13–15, 진안 묻지 않음):** 서브에이전트(#4) 3슬라이스 — 중복역할 dedup(13)·빈 proposer→failedRoles(14)·aggregator 복원력(15). **5대 테마 1바퀴 완주**(메모리1-3·playbook4·grounding진단5-6·멀티에이전트7-9·백그라운드10-12·서브에이전트13-15). maker≠judge 매 fire PASS. **사이클2 방향(스스로 결정): #5 promotion-PERSISTENCE 잔여**(report-only daemon tick → 안전가드 동반 실제 persona graduate)부터 — 이후 gap-scout로 agent-performance levers 등. fires-13-15 배치 머지는 main clean되는 ORIENT에서 자동.
 
+## [cognition loop] fire 16 — 2026-06-13 · 사이클2 · 테마: 백그라운드 consolidation #5 (promotion-persistence)
+
+- **무엇:** 백그라운드 메모리 tick을 report-only → **실제 persona 승격(persist)**으로 업그레이드. `runMemoryConsolidationTick`에 optional `persist` dep 추가; daemon이 기존 `promoteRecalledMemories`에 바인딩(opt-in flag `MUSE_SLEEP_PROMOTE`, 기본 OFF). #5 스레드 완성(gate→planner→glue→persist).
+- **왜:** fire12 tick은 plan을 surface만 했음. 실제 가치=유휴시 가장 recall-useful 메모리를 persona에 graduate(loop-v2 Sleep daemon). brake-and-proof-first: 백그라운드 persona mutation은 전용 flag 뒤 기본 OFF.
+- **리뷰지점:** `apps/cli/src/memory-consolidate-tick.ts`(persist 분기, fail-soft) + `commands-daemon.ts`(MUSE_SLEEP_PROMOTE 게이트 + FileUserMemoryStore/resolveMemoryUserId로 promoteRecalledMemories 바인딩, 수동 경로 미러) + test +5건. judge=Opus(나)가 persist 분기(throw→fail-soft·state 전진)·default-OFF(flag 없으면 persist undefined→report-only)·brake-fail/disabled시 persist 미호출·resolveMemoryUserId 실존 확인 + cli 2520 독립 green.
+- **리스크:** 백그라운드 persona 쓰기지만 **기본 OFF**(opt-in) + idempotent(PROMOTED_ 키만 clear+rewrite)·비파괴(실 user facts 무관)·비-outbound. brake+SELFLEARN 게이트 유지. 라이브 daemon 검증은 미실행(장기 프로세스); persist fn은 수동 promote 경로와 공유돼 이미 검증됨. grounding floor 무관. (사이클2 fires 16-18.)
 ## fire (TOOL loop) — 2026-06-13 · 정직 보고 + backlog hygiene (skill v1.9.0)
 
 - **무엇:** 비싼 build 대신 "둘 다 마르면 정직 보고" 티어 실행 — backlog의 중복 항목(이전 fire들이 PROGRESS 추가하며 남긴 `(orig)` 짝)을 정리하고 TOOL 테마 상태를 정직 기록.
@@ -261,3 +267,18 @@
 - **왜:** real-but-niche 역량(가짜 일감 아님 — busywork 가드는 *지어낸* 일감 금지지 niche 금지가 아님). 진안이 계속 firing = 루프 생산 유지 원함. ip_address는 wifi와 같은 networksetup 패턴이라 배칭.
 - **리뷰지점:** `macos-tools.ts`(parseIpAddressOutput shell 브랜치 + running_apps osascript case, parseWifiDevice 재사용) + test 8 + eval 4. 게이팅 검증자(Opus)가 enum 도달·read-only(set은 로컬 문자열)·무회귀 PASS.
 - **리스크:** ip_address는 Wi-Fi 디바이스만(Ethernet 제외, 스펙대로). macos 94·lint 0. **mac reader 표면 완성** — capability 갭 소진.
+## [cognition loop] fire 17 — 2026-06-13 · 사이클2 · 테마: 자기강화 #2 (correction-polarity 강건화)
+
+- **무엇:** `classifyCorrectionContradiction`의 de-negation 정규식 강건화 — contraction 보조동사(WON'T/CANNOT/CAN'T/WOULDN'T/SHOULDN'T/COULDN'T) + 부정어와 CONTRADICT 사이 0-2개 끼어든 단어("NOT A CONTRADICTION"/"DOESN'T REALLY CONTRADICT") 커버.
+- **왜:** 기존 de-negation은 NOT/NO/NEVER/DOESN'T+직결 CONTRADICT만 잡음 — 모델이 "WON'T CONTRADICT"/"NOT A CONTRADICTION"처럼 답하면 phantom CONTRADICT → 사용자가 가르친 전략을 잘못 decay(자기강화 무결성 훼손). gap-scout가 stale backlog 항목의 실 잔여 갭 발굴.
+- **리뷰지점:** `packages/agent-core/src/correction-distiller.ts`(deNegated 정규식 1개 + 주석) + `correction-distiller.test.ts`(부정형 12+·genuine 5·passthrough). judge=Opus(나)가 genuine contradiction 미-over-strip(CONTRADICT/CONTRADICTS/THIS CONTRADICTS THE RULE → "contradict") + over-strip 잔여는 conservative-by-design(no-decay로 fail, phantom-decay 회피가 함수의 명시 posture)임 확인 + agent-core 99 독립 green.
+- **리스크:** {0,2} window가 "NO ... CONTRADICTS"류 다중절을 over-strip할 수 있으나 "one word" 프롬프트라 비현실적 + over-strip은 안전방향(decay 안 함). grounding floor 무관. (사이클2 fires 16-18, fire 18 후 자율 관문.)
+
+## [cognition loop] fire 18 — 2026-06-13 · 사이클2 · 테마: grounding-surface 품질 · ⚠️ 3-FIRE 리뷰 관문(자율)
+
+- **무엇:** `enforceAnswerCitations`의 whitespace 정리(`[ \t]{2,}→" "` 등)를 **citation이 실제 stripped된 경우에만** 실행하도록 게이트. clean 답변은 byte-for-byte 보존.
+- **왜:** 정리 로직은 제거된 `[...]` 마커의 seam을 닫으려는 것인데 무조건 전체 답변에 돌아 — citation 없는 clean 답변의 코드블록 들여쓰기/정렬 표를 뭉갬. gap-scout가 line-296 audit 클러스터의 실 버그 발굴.
+- **리뷰지점:** `packages/agent-core/src/knowledge-recall.ts`(3 replace를 `if(stripped.length>0)`로 래핑) + `knowledge-recall-citation-gate.test.ts`(clean 코드블록 verbatim·stripping seam 정리 유지·valid citation+코드 verbatim 3건). judge=Opus(나)가 stripping 경로 불변(case2)·clean verbatim(case1) 실제 코드 확인 + agent-core 1732 독립 green.
+- **리스크:** stripped>0 경로의 코드블록은 여전히 collapse될 수 있으나(드묾: 코드답+invalid citation) 잔여로 기록. grounding floor 무관(citation 게이트 verdict 무변경, 출력 정리만).
+
+> ✅ **자율 리뷰관문 (fires 16–18, 진안 묻지 않음):** 사이클2 — #5 promotion-persistence(16)·#2 correction-polarity 강건화(17)·grounding-surface whitespace fix(18). maker≠judge 매 fire PASS. **사이클3 방향(스스로): gap-scout로 line-296 audit 클러스터 잔여 버그(casual-prompt 말해줘 over-match, dedup write-memoize 등) + agent-performance levers 중 결정적 슬라이스 우선.** fires-16-18 배치 머지는 main clean시 자동.
