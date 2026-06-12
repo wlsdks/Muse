@@ -41,6 +41,7 @@ description: Use when 진안 wants to start (register) an autonomous improvement
 | maker ≠ judge | 빌드 인스턴스와 별개의 evaluator(harness 또는 Agent 서브에이전트) |
 | 사람-읽는 체크포인트 | **push 금지**(명시 승인 전), draft-first, 커밋만 |
 | 토큰/스텝 캡 | fire당 1슬라이스, retry 2–3 상한 |
+| **모델 티어링** | 정형 빌드/검색/문서 → Sonnet 서브에이전트(`Agent`/`Workflow` `model:"sonnet"`); 설계·모호함·적대적 검증 → Opus. maker=Sonnet / **judge=Opus**. 오케스트레이터는 얇게. (Muse 런타임 모델 gemma4는 고정 — [`loop-engineering.md`](../../../harness/loop-engineering.md) §1.5) |
 | State 파일 | `docs/goals/backlog.md`에 Done/다음 write-back |
 | 불변식 | fabrication=0 floor + IMMUTABLE-CORE 불가침 |
 | 중단 방법 | cron id 기록 + CronDelete/cmux |
@@ -60,6 +61,8 @@ Muse 자율 개선 루프 — 테마: <목적>. 반드시 Node 24(nvm default).
 ④ 검증(정지조건): 가장 좁은 테스트 → pnpm check → 관련 eval(<해당 eval>) → pnpm lint.
    maker≠judge: 검증은 빌드와 별개 인스턴스/서브에이전트로.
 ⑤ write-back(테스트/eval/backlog Done) 포함 커밋. **push 절대 금지.**
+모델 티어링(토큰 절약): 정형 빌드/검색은 Sonnet 서브에이전트(Agent/Workflow model:"sonnet")로
+위임하고, 이 Opus 컨텍스트는 설계·모호한 포크·적대적 검증만; judge는 worker보다 강한 티어(Opus).
 한 fire에 슬라이스 하나; 막히면 backlog에 블로커 기록 후 멈춤.
 grounding floor(fabrication=0)·IMMUTABLE-CORE 절대 약화 금지.
 무인 실수 방지: diff는 진안이 읽고 머지(comprehension debt 가드).
