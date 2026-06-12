@@ -29,7 +29,7 @@ import { basename, isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
-import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, requestsToolAction, type CasualPromptKind } from "@muse/agent-core";
+import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -651,7 +651,7 @@ export function askWeaknessAxis(
 }
 
 export interface AskWeaknessRecorderDeps {
-  readonly recordWeakness: (file: string, signal: { readonly axis: AskWeaknessAxis; readonly message: string }) => Promise<unknown>;
+  readonly recordWeakness: (file: string, signal: { readonly axis: AskWeaknessAxis; readonly message: string; readonly hint?: string }) => Promise<unknown>;
   readonly weaknessesFile: string;
 }
 
@@ -664,18 +664,18 @@ export interface AskWeaknessRecorderDeps {
  * an ask error. Deps injected for testing; the live caller lazy-imports
  * @muse/mcp + @muse/autoconfigure.
  */
-export async function recordAskWeakness(query: string, axis: AskWeaknessAxis | null, deps: AskWeaknessRecorderDeps): Promise<void> {
+export async function recordAskWeakness(query: string, axis: AskWeaknessAxis | null, deps: AskWeaknessRecorderDeps, hint?: string): Promise<void> {
   if (!axis || query.trim().length === 0) {
     return;
   }
   try {
-    await deps.recordWeakness(deps.weaknessesFile, { axis, message: query });
+    await deps.recordWeakness(deps.weaknessesFile, { axis, message: query, ...(hint ? { hint } : {}) });
   } catch {
     // a ledger write must never break the ask command
   }
 }
 
-async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null): Promise<void> {
+async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null, hint?: string): Promise<void> {
   if (axis === null) {
     return;
   }
@@ -685,7 +685,7 @@ async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null
     await recordAskWeakness(query, axis, {
       recordWeakness,
       weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
-    });
+    }, hint);
   } catch {
     // lazy-import / path resolution failure is non-fatal
   }
@@ -3751,10 +3751,18 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // grounding miss, mirroring chat-repl.
       const askIsActionRequest = requestsToolAction(query);
       const askUnbackedAction = askIsActionRequest && answerClaimsAction(collectedAnswer) && !actionToolRan(toolsUsed);
-      await recordAskWeaknessLive(
-        query,
-        askWeaknessAxis(askOutcome, { claimedUnbackedAction: askUnbackedAction, isActionRequest: askIsActionRequest })
-      );
+      const askAxis = askWeaknessAxis(askOutcome, { claimedUnbackedAction: askUnbackedAction, isActionRequest: askIsActionRequest });
+      let askHint: string | undefined;
+      if (askAxis === "grounding-gap") {
+        const evidenceTexts = [
+          ...scored.map((r) => r.chunk.text),
+          ...openTasks.map((t) => t.title),
+          ...upcomingEvents.map((e) => e.title),
+          ...pendingReminders.map((r) => r.text)
+        ];
+        askHint = worstUnsupportedSentence(reportSentenceGroundedness(collectedAnswer, evidenceTexts));
+      }
+      await recordAskWeaknessLive(query, askAxis, askHint);
 
       if (options.json) {
         // Emit a single JSON object on stdout — consumers can pipe

@@ -70,3 +70,18 @@ export function reportSentenceGroundedness(
 
   return { sentences: labelled, unsupportedCount, unsupportedFraction };
 }
+
+/**
+ * The single most un-groundable sentence (lowest coverage among the
+ * `unsupported` ones) — the actionable pointer for fuel/diagnostics: "this is
+ * the sentence the evidence didn't support". undefined when nothing is
+ * unsupported. Ties resolve to the earliest sentence.
+ */
+export function worstUnsupportedSentence(report: GroundednessReport): string | undefined {
+  let worst: SentenceGroundednessLabel | undefined;
+  for (const label of report.sentences) {
+    if (label.label !== "unsupported") continue;
+    if (worst === undefined || label.coverage < worst.coverage) worst = label;
+  }
+  return worst?.sentence;
+}

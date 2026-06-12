@@ -76,6 +76,20 @@ describe("recordAskWeakness (feeds the weakness ledger by AXIS, best-effort)", (
     await expect(recordAskWeakness("q", "grounding-gap", deps(record))).resolves.toBeUndefined();
     expect(record).toHaveBeenCalledTimes(1);
   });
+
+  it("passes hint to the ledger signal when provided", async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    await recordAskWeakness("q", "grounding-gap", deps(record), "some sentence");
+    expect(record).toHaveBeenCalledWith("/tmp/w.json", { axis: "grounding-gap", message: "q", hint: "some sentence" });
+  });
+
+  it("omits hint key entirely when no hint is passed", async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    await recordAskWeakness("q", "grounding-gap", deps(record));
+    expect(record).toHaveBeenCalledTimes(1);
+    const signal = record.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(signal, "hint")).toBe(false);
+  });
 });
 
 describe("createStageTimer", () => {

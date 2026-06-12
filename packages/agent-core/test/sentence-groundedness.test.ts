@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SENTENCE_GROUNDING_FLOOR,
-  reportSentenceGroundedness
+  reportSentenceGroundedness,
+  worstUnsupportedSentence
 } from "../src/sentence-groundedness.js";
 
 describe("reportSentenceGroundedness", () => {
@@ -109,5 +110,34 @@ describe("reportSentenceGroundedness", () => {
     const report = reportSentenceGroundedness(sentence, evidence, 0.75);
 
     expect(report.sentences[0].label).toBe("unsupported");
+  });
+});
+
+describe("worstUnsupportedSentence", () => {
+  it("returns undefined when all sentences are supported", () => {
+    const report = reportSentenceGroundedness(
+      "The cat sat on the mat. It hunted mice near the barn.",
+      ["The cat sat on the mat and hunted mice near the barn."]
+    );
+    expect(worstUnsupportedSentence(report)).toBeUndefined();
+  });
+
+  it("returns undefined for an empty answer (empty report)", () => {
+    const report = reportSentenceGroundedness("", ["some evidence"]);
+    expect(worstUnsupportedSentence(report)).toBeUndefined();
+  });
+
+  it("returns the lower-coverage unsupported sentence when two differ", () => {
+    // Use a strict floor of 0.9 so even partial matches are unsupported.
+    // s1 "Dragons breathe purple fire." — no tokens in evidence → coverage 0
+    // s2 "Lions hunt zebras and antelope." — lions+hunt in "lions hunt animals" → coverage 0.5
+    // Both < 0.9 floor → unsupported; s1 has lower coverage (0 < 0.5) → s1 is worst
+    const answer = "Dragons breathe purple fire. Lions hunt zebras and antelope.";
+    const evidence = ["lions hunt animals africa"];
+    const report = reportSentenceGroundedness(answer, evidence, 0.9);
+
+    expect(report.sentences.filter((s) => s.label === "unsupported").length).toBe(2);
+    const worst = worstUnsupportedSentence(report);
+    expect(worst).toContain("Dragons");
   });
 });

@@ -370,6 +370,7 @@ export type { CachedPlan, PlanCacheProvider, SelectPlanExemplarOptions } from ".
 export {
   DEFAULT_SENTENCE_GROUNDING_FLOOR,
   reportSentenceGroundedness,
+  worstUnsupportedSentence,
   type GroundednessReport,
   type SentenceGroundedness,
   type SentenceGroundednessLabel

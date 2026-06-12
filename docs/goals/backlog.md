@@ -370,10 +370,16 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ◦ **Split the eval scoreboard into TRAJECTORY vs FINAL-RESPONSE axes** (Google ADK:
   EXACT/IN_ORDER/ANY_ORDER match modes + separate final-response score) so a regression
   localizes to path-vs-answer. Pure refactor of `scripts/eval-harness.mjs`.
-- ◦ **`hallucinations_v1`-style per-sentence groundedness** — finer than the answer-level
-  gate: label each sentence supported/unsupported/contradictory so eval:self-improving
-  reports WHICH sentence was un-groundable. Source: Google ADK eval criteria.
-  — [in progress 2026-06-12, cognition loop fire 5] the LABELER shipped:
+- ✓→Done **`hallucinations_v1`-style per-sentence groundedness** — finer than the answer-level
+  gate: labels each sentence supported/unsupported so the fuel names WHICH sentence was
+  un-groundable. Source: Google ADK eval criteria.
+  [DONE 2026-06-12, cognition loop fire 5+6: labeler + LIVE-wired into the ask grounding-gap
+  fuel HINT. fire 6 added `worstUnsupportedSentence` + wired it so a grounding-gap weakness
+  records the worst un-groundable sentence as its ledger `hint`. LIVE-PROVEN on the assembled
+  CLI: "광합성 화학 반응식" → hint named the exact ungrounded formula sentence; abstains →
+  hint named the refusal sentence. Realized via the real-usage weakness-fuel path (better than
+  the originally-imagined eval:self-improving surface); "contradictory" label (NLI) stays deferred.]
+  — [fire 5] the LABELER shipped:
   `reportSentenceGroundedness(answer, evidence, floor?)` in `@muse/agent-core`
   (`sentence-groundedness.ts`) — pure, reuses the gate's `lexicalTokens` + the
   `splitPreservingSentencePunctuation` splitter; per-sentence supported/unsupported by
