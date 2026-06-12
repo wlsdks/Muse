@@ -160,3 +160,22 @@ describe("createWebReadMcpServer.read (contract-faithful fake fetch)", () => {
     expect(String(out.error)).toMatch(/redirected to a blocked host/i);
   });
 });
+
+describe("extractReadableText — strips nav/footer boilerplate (cleaner grounding evidence)", () => {
+  it("drops <nav> and <footer> content, keeps the article body", () => {
+    const html = [
+      "<html><head><title>Article</title></head><body>",
+      "<nav><a href='/'>Home</a><a href='/about'>About</a><a href='/contact'>Contact</a></nav>",
+      "<article><h1>The Real Headline</h1><p>The substantive article body text.</p></article>",
+      "<footer>Copyright 2026 Example Inc. All rights reserved. Privacy Terms.</footer>",
+      "</body></html>"
+    ].join("");
+    const out = extractReadableText(html);
+    expect(out.text).toContain("The Real Headline");
+    expect(out.text).toContain("substantive article body");
+    expect(out.text).not.toContain("About");
+    expect(out.text).not.toContain("Contact");
+    expect(out.text).not.toContain("All rights reserved");
+    expect(out.text).not.toContain("Privacy Terms");
+  });
+});

@@ -56,9 +56,12 @@ export function extractReadableText(html: string, options: { readonly maxChars?:
   const maxChars = options.maxChars ?? 16_000;
   const title = extractTitle(html);
 
+  // nav/footer are HTML5 boilerplate (menus, copyright, link farms) — dropping
+  // them with script/style sharpens the readable text the model grounds on,
+  // so a summary cites the article, not the site chrome.
   let body = html
     .replace(/<!--[\s\S]*?-->/gu, " ")
-    .replace(/<(script|style|noscript|svg|template|head)[\s\S]*?<\/\1\s*>/giu, " ");
+    .replace(/<(script|style|noscript|svg|template|head|nav|footer)[\s\S]*?<\/\1\s*>/giu, " ");
 
   body = body.replace(LINE_BREAK, "\n").replace(BLOCK_CLOSE, "\n");
   body = body.replace(/<[^>]+>/gu, " ");

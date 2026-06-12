@@ -53,6 +53,12 @@ EXPAND (new reach):
   read-risk, so "what's on my calendar today" works without a configured provider.
 
 HARDEN (make existing tools more reliable):
+- ✓→Done **web_read readability — strip nav/footer boilerplate** — extractReadableText dropped
+  script/style/head but kept <nav> menus and <footer> (copyright/link farms), so a "summarize this
+  URL" answer grounded on site chrome, not the article. Added nav|footer to the element-strip regex
+  (HTML5 boilerplate by definition). TDD 1 (nav+footer dropped, article kept); live on a realistic
+  article shape (nested footer>nav handled) — only the article body survives. mcp 1628, byte-hygiene
+  30, check 0, lint 0.
 - ✓→Done **browser_open scheme guard (no local-file read via file://)** — browser_open passed any
   URL straight to page.goto, so `file:///etc/passwd` (or chrome://, view-source:, javascript:, data:)
   would load+return arbitrary local files — a broader local read than file_read's allowlisted,
