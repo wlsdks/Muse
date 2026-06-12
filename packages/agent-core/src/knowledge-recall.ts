@@ -976,7 +976,7 @@ export function selectBestGroundedDraft(
  */
 export async function rankKnowledgeChunksWithHop(
   query: string,
-  notes: ReadonlyArray<{ readonly source: string; readonly text: string }>,
+  notes: readonly KnowledgeChunk[],
   options: RankKnowledgeOptions & { readonly secondHop?: boolean }
 ): Promise<KnowledgeMatch[]> {
   const primary = await rankKnowledgeChunks(query, notes, options);
@@ -1005,11 +1005,47 @@ export async function rankKnowledgeChunksWithHop(
   // single-hop behavior stays byte-identical.
   const fused = fuseByReciprocalRank(lists);
   const primaryKeys = new Set(primary.map((match) => keyOf(match)));
-  const additions = [...byKey.keys()]
+
+  // Recompute cosine for appended bridges against the ORIGINAL QUERY so
+  // additions carry query-relative confidence, not seed-relative (inflated) cosine.
+  // The caching embedder makes these cache hits — the same texts were already
+  // embedded during the primary and hop ranking passes above.
+  let queryVec: readonly number[] | null = null;
+  try {
+    queryVec = await options.embed(query);
+  } catch {
+    // If the query embed fails, fall back: all additions get cosine=0 (fail-safe below).
+  }
+
+  const inputByKey = new Map<string, KnowledgeChunk>();
+  for (const chunk of notes) {
+    inputByKey.set(`${chunk.source}|${chunk.text}`, chunk);
+  }
+
+  const additionKeys = [...byKey.keys()]
     .filter((key) => !primaryKeys.has(key))
     .sort((a, b) => (fused.get(b) ?? 0) - (fused.get(a) ?? 0))
-    .slice(0, 2)
-    .map((key) => byKey.get(key)!);
+    .slice(0, 2);
+
+  const additions: KnowledgeMatch[] = [];
+  for (const key of additionKeys) {
+    const match = byKey.get(key)!;
+    let queryCosine = 0;
+    if (queryVec !== null) {
+      try {
+        // Prefer the input chunk's embedText (same embedding space used during ranking);
+        // fall back to the match's display text.
+        const inputChunk = inputByKey.get(key);
+        const chunkVec = await options.embed(inputChunk?.embedText ?? match.text);
+        queryCosine = cosineSimilarity(queryVec, chunkVec);
+      } catch {
+        // Fail-safe: an appended bridge must NEVER inflate retrieval confidence.
+        queryCosine = 0;
+      }
+    }
+    additions.push({ ...match, cosine: queryCosine });
+  }
+
   return [...primary, ...additions];
 }
 

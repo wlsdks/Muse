@@ -490,6 +490,18 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## Open — agent core
 
+- ✓→Done **Second-hop retrieval no longer inflates CRAG confidence** — [2026-06-13, cognition loop
+  fire 22, Fable-scout-found] `rankKnowledgeChunksWithHop` appended hop "bridge" matches carrying a
+  SEED-relative cosine, but `KnowledgeMatch.cosine` is contractually "cosine to the QUERY" (the CRAG
+  confidence signal). An inflated bridge (a near-duplicate note ~0.95 to the seed but ~0.48 to the
+  query) flipped a weak retrieval to "confident" → suppressed the LOW-confidence warning + defeated
+  the proactive stay-quiet gate + could fire phantom clarifications. FIX: recompute each appended
+  bridge's cosine against the ORIGINAL query (embed query once via options.embed — cache hit in
+  prod; prefer the chunk's embedText for the consistent space); FAIL-SAFE to cosine:0 on any embed
+  error (a bridge must never RAISE confidence). Verdict logic untouched (input repair, IMMUTABLE-CORE
+  safe). Fable judge reverted-to-HEAD to PROVE the regression bites (0.9997→"confident" pre-fix,
+  0.48→"ambiguous" post). agent-core 1753 green.
+
 - ✓→Done **MoA orchestrator: honest contributor attribution** — [2026-06-12, cognition loop fire 7,
   multi-agent #3] the MoA aggregate path set `contributors = all proposers`, but the field is
   documented as "ids the synthesized answer ACTUALLY drew on" and the aggregator discards off-topic

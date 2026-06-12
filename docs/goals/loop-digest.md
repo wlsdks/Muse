@@ -320,3 +320,10 @@
 - **리스크:** .dropped는 런타임 미사용(agent-runtime:859는 .args만) → API 정확성 fix(저severity but 계약 정합). grounding floor 무관.
 
 > ✅ **자율 리뷰관문 (fires 19–21, 진안 묻지 않음):** 사이클3 — line-295 audit 클러스터의 in-scope 버그 3종 정리: dedup stale-read-after-write(19)·말해줘 casual over-match(20)·groundToolArguments partial-array 오보고(21). 모두 Fable-5 judge 적대검증 PASS. **사이클4 방향(스스로): audit 클러스터 in-scope 소진 — 남은(consent header/web URL/encryption)은 범위밖/동시루프 영역. cycle4=fresh gap-scout(frontier queued: Mem0 UPDATE / ACT-R 후속 등) 또는 미감사 모듈 1개 정밀감사.** fires-19-21 배치는 main clean시 자동 머지.
+
+## [cognition loop] fire 22 — 2026-06-13 · 사이클4 · 테마: grounding/CRAG confidence integrity
+
+- **무엇:** `rankKnowledgeChunksWithHop`의 second-hop "bridge" 매치가 SEED-relative cosine을 달고 append돼 CRAG retrieval-confidence를 부풀리던 버그 수정 — bridge cosine을 **원 query 기준**으로 재계산(query 1회 embed, embedText 우선, 일관 공간), embed 에러 시 **fail-safe cosine:0**(절대 confidence 안 올림).
+- **왜:** `KnowledgeMatch.cosine` 계약 = "query에 대한 절대 cosine"(CRAG 신호). near-dup 노트(seed 0.95/query 0.48)가 약한 retrieval을 "confident"로 뒤집어 → LOW-confidence 경고 억제 + proactive stay-quiet 게이트 무력화 + phantom clarify. "약하면 조용히" 아키텍처의 입력 신호 정합성 복구(verdict 로직 불변=IMMUTABLE-CORE safe).
+- **리뷰지점:** `knowledge-recall.ts`(rankKnowledgeChunksWithHop append 재계산 + fail-safe; primary/score/RRF/cap/no-op 불변) + `two-hop-recall.test.ts`(+7: query-relative cosine·confidence-inflation regression·bridge 유지·primary 불변·embedText 선호·fail-safe·no-op). **maker=Sonnet / judge=Fable 5**: Fable judge가 **소스를 HEAD로 revert해 regression이 진짜 무는지 실증**(pre-fix 0.9997→confident 4 테스트 실패, post 0.48→ambiguous) + fail-OPEN 경로 없음 + verdict 미변경 확인 → VERDICT PASS. agent-core 1753 green, dependent autoconfigure 빌드 OK.
+- **리스크:** 없음 — 입력 복구(verdict 무변경)·fail-safe·prod 추가 라운드트립 없음(caching embedder cache hit). gap-scout(Fable)가 발굴한 실 버그 — maturity-wall에서 진짜 가치 슬라이스. (사이클4 fires 22-24.)
