@@ -31,13 +31,25 @@ EXPAND (new reach):
   Description gains the Word cue. TDD 4 cases (classify/resolve/route/description); eval:file-read
   generates a REAL .docx at runtime (self-contained minimal-zip writer via node:zlib crc32/deflate —
   no committed binary) → mammoth extracts → tool round-trip; eval:tools file scenario 6/6 STABLE 3/3
-  (KO '계약서 워드 파일' → file_read), full 131/131; check 0, lint 0. Follow-up: .xlsx (sheetjs).
+  (KO '계약서 워드 파일' → file_read), full 131/131; check 0, lint 0. Follow-up: .xlsx — see the ⏳ dep-decision blocker in HARDEN.
 - ◦ **browser: save/download a file** — the page has a PDF/image the user wants saved to Downloads;
   draft-first (it writes to disk), allowlist-rooted.
 - ◦ **mac: read Calendar.app / Notes.app / Reminders.app** — osascript readers in the mac family,
   read-risk, so "what's on my calendar today" works without a configured provider.
 
 HARDEN (make existing tools more reliable):
+- ✓→Done **file_read symlink-escape guard** — the absolute-path check was LEXICAL only: a file
+  lexically inside the roots could be a symlink to /etc/passwd, and readFile followed it. Now
+  realpath-verifies the target (and the roots — /tmp is itself a symlink on macOS) before reading;
+  a link resolving outside the roots is refused, a realpath error refuses. Optional fsImpl.realpath
+  (default node realpath; a fake fs with no symlinks is a no-op so existing tests are unchanged).
+  TDD 3 cases (candidate-link escape, absolute-path-link escape, identity still reads) + eval:file-read
+  REAL symlink round-trip (a link under Downloads → outside is refused, target content not returned);
+  mcp 1627, check 0, lint 0.
+- ⏳ **file_read .xlsx — BLOCKED on a dep decision (needs 진안)** — the maintained npm xlsx reader
+  is exceljs (~21MB unpacked) and SheetJS `xlsx` on npm is the old CVE-flagged build. A 21MB dep or a
+  fragile hand-rolled OOXML parser is too much to adopt autonomously; surface the choice. (.docx
+  shipped via mammoth ~2MB, which was proportionate.)
 - ◦ **per-tool not-when audit** — every built-in tool description gets a "use when … ; NOT when …"
   line; measure eager-invocation drop on eval:tools negative cases.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication

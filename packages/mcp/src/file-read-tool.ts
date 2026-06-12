@@ -9,7 +9,7 @@
  * pdfjs-dist (Apache-2.0, Mozilla) with script eval disabled.
  */
 
-import { readdir as nodeReaddir, readFile as nodeReadFile } from "node:fs/promises";
+import { readdir as nodeReaddir, readFile as nodeReadFile, realpath as nodeRealpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve as pathResolve, sep as pathSep } from "node:path";
 
@@ -103,6 +103,13 @@ export interface FileReadFsImpl {
   /** All readable files under the roots (depth-bounded walk). */
   listCandidates(roots: readonly string[]): Promise<readonly FileCandidate[]>;
   readFile(path: string): Promise<Buffer>;
+  /**
+   * Resolve symlinks to the real on-disk path. Optional: when absent (a test
+   * fake with no symlinks), the path is treated as its own realpath. The
+   * default fs provides the real resolver so a symlink under the roots that
+   * points OUTSIDE them is caught before the read.
+   */
+  realpath?(path: string): Promise<string>;
 }
 
 export interface FileReadToolDeps {
@@ -178,7 +185,10 @@ export async function extractDocxTextWithMammoth(data: Buffer): Promise<string> 
 export function createFileReadTool(deps: FileReadToolDeps = {}): MuseTool {
   const roots = (deps.roots ?? [join(homedir(), "Downloads"), join(homedir(), "Desktop"), join(homedir(), "Documents")])
     .map((root) => pathResolve(root));
-  const fsImpl: FileReadFsImpl = deps.fsImpl ?? { listCandidates: walkCandidates, readFile: (path) => nodeReadFile(path) };
+  const fsImpl: FileReadFsImpl = deps.fsImpl ?? { listCandidates: walkCandidates, readFile: (path) => nodeReadFile(path), realpath: (path) => nodeRealpath(path) };
+  // When the fs provides no realpath (a test fake with no symlinks), treat each
+  // path as its own realpath — the symlink-escape guard is a no-op there.
+  const realpathOf = fsImpl.realpath ? (path: string) => fsImpl.realpath!(path) : async (path: string) => path;
   const extractPdf = deps.extractPdfText ?? extractPdfTextWithPdfjs;
   const extractDocx = deps.extractDocxText ?? extractDocxTextWithMammoth;
   const maxTextChars = deps.maxTextChars ?? 20_000;
@@ -230,6 +240,21 @@ export function createFileReadTool(deps: FileReadToolDeps = {}): MuseTool {
             const recent = [...candidates].sort((a, b) => b.modifiedMs - a.modifiedMs).slice(0, RECENT_LIST).map((c) => c.name);
             return { read: false, reason: `no file matching "${query}" — recent files listed`, recent: recent as unknown as JsonValue };
           }
+        }
+        // Symlink-escape guard: a file lexically inside the roots may be a
+        // symlink pointing OUTSIDE them (e.g. ~/Downloads/x → /etc/passwd). The
+        // lexical roots check above only sees the link's own path, so re-check
+        // the REAL path (and realpath the roots too — /tmp is itself a symlink
+        // on macOS) before reading. A realpath error (missing file) refuses.
+        let realTarget: string;
+        try {
+          realTarget = await realpathOf(target.path);
+        } catch {
+          return { read: false, reason: `'${target.name}' could not be resolved on disk` };
+        }
+        const realRoots = await Promise.all(roots.map((root) => realpathOf(root).catch(() => root)));
+        if (!realRoots.some((root) => realTarget === root || realTarget.startsWith(`${root}${pathSep}`))) {
+          return { read: false, reason: `'${target.name}' resolves through a link to outside the readable folders` };
         }
         const data = await fsImpl.readFile(target.path);
         if (data.byteLength > maxFileBytes) {

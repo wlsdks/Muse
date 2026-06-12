@@ -140,6 +140,21 @@ try {
   const docxOut = await tool.execute({ file: "quarterly-review" }, ctx);
   assert(docxOut.read === true && String(docxOut.text).includes("hiring frozen"), "file_read read the .docx end-to-end");
 
+  console.log("2e) REAL symlink escape — a link under Downloads pointing outside the roots is refused");
+  const { symlink, writeFile: wf } = await import("node:fs/promises");
+  const secret = join(dir, "outside-secret.txt"); // already written, outside `downloads`
+  await wf(secret, "TOP SECRET — must never be read via file_read").catch(() => {});
+  const linkPath = join(downloads, "innocent.txt");
+  let linkMade = true;
+  await symlink(secret, linkPath).catch(() => { linkMade = false; });
+  if (linkMade) {
+    const escapeOut = await tool.execute({ file: "innocent" }, ctx);
+    assert(escapeOut.read === false, "a symlink escaping the roots is refused (realpath guard)");
+    assert(!String(escapeOut.text ?? "").includes("TOP SECRET"), "the link target's content was NOT returned");
+  } else {
+    console.log("  ⚠ symlink creation unsupported here — skipping the live symlink case");
+  }
+
   console.log("3) fail-closed bounds");
   const outside = await tool.execute({ file: join(dir, "outside-secret.txt") }, ctx);
   assert(outside.read === false, "absolute path outside the roots is refused");

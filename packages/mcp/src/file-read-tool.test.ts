@@ -184,3 +184,46 @@ describe("file_read — .docx (Word) support", () => {
     expect(tool.definition.description.toLowerCase()).toContain("word");
   });
 });
+
+describe("file_read — symlink escape from the allowlisted roots is refused (realpath guard)", () => {
+  const passwd = "root:x:0:0:root:/root:/bin/sh\n";
+
+  it("a candidate whose realpath escapes the roots is refused (no read of the link target)", async () => {
+    let reads = 0;
+    const symlinkFs = {
+      listCandidates: async (): Promise<readonly FileCandidate[]> => [{ modifiedMs: 1, name: "sneaky", path: "/dl/sneaky" }],
+      readFile: async () => { reads += 1; return Buffer.from(passwd); },
+      realpath: async (p: string) => (p === "/dl/sneaky" ? "/etc/passwd" : p)
+    };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: symlinkFs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "sneaky" }, ctx) as { read: boolean; reason?: string };
+    expect(out.read).toBe(false);
+    expect(String(out.reason).toLowerCase()).toMatch(/link|outside/);
+    expect(reads).toBe(0);
+  });
+
+  it("an ABSOLUTE path that is lexically inside the roots but symlinks outside is refused", async () => {
+    let reads = 0;
+    const symlinkFs = {
+      listCandidates: async (): Promise<readonly FileCandidate[]> => [],
+      readFile: async () => { reads += 1; return Buffer.from(passwd); },
+      realpath: async (p: string) => (p === "/dl/escape" ? "/etc/shadow" : p)
+    };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: symlinkFs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "/dl/escape" }, ctx) as { read: boolean };
+    expect(out.read).toBe(false);
+    expect(reads).toBe(0);
+  });
+
+  it("a real (non-symlink) file under the roots still reads when realpath is identity", async () => {
+    const realFs = {
+      listCandidates: async (): Promise<readonly FileCandidate[]> => [{ modifiedMs: 1, name: "ok.md", path: "/dl/ok.md" }],
+      readFile: async () => Buffer.from("# fine"),
+      realpath: async (p: string) => p
+    };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: realFs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "ok" }, ctx) as { read: boolean; text?: string };
+    expect(out.read).toBe(true);
+    expect(out.text).toContain("fine");
+  });
+});
