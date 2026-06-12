@@ -43,6 +43,18 @@
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
 The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+- ✓→Done **muse.url.parse query map prototype pollution** (EXPANSION gap-scout, live) — the query map was a
+  prototype-bearing `{}`, so an attacker-controlled URL `?__proto__=a` hit the Object.prototype SETTER (param
+  vanished + the object's prototype polluted before serialization) and `?constructor=c` collided with the
+  inherited Object constructor (corrupted to an array via the dedup). Same class as the fire-4 json.merge
+  __proto__ fix, unfixed on the URL surface. FIX (1 line): `const query = Object.create(null)` — null-prototype
+  map, so __proto__/constructor land as plain own DATA keys and the `existing === undefined` dedup works for
+  every key. TDD 1 (__proto__=a → own "a", constructor=c → "c", x="1") RED→GREEN; mcp 1696, check 0, lint 0.
+  Fable-5 PASS (dedup string/array shapes preserved, JSON serializes null-proto own keys, no downstream consumer).
+- ◦ **muse.text.stats whitespace-only short-circuit lies** (gap-scout runner-up) — `stats("\n\n\n")` returns
+  `{characters:0, lines:0}` though the text has 3 chars / 4 lines (loopback-text-utils-server.ts:~20). 1 fix + 1 test.
+- ◦ **muse.url.encode_query encodes a nested object as literal "[object Object]"** via `String(raw)` instead of
+  erroring (loopback-url-server.ts:~74). 1 fix + 1 test.
 - ✓→Done **muse.calendar.add mis-anchored a time-only endsAt** (EXPANSION gap-scout, live EN+KO) — `add`
   resolved `endsAt` with `parseIsoDate(endsAtRaw)` whose default anchor is now(today), so a bare time-of-day
   end ("4pm"/"오후 4시") for a NOT-today event resolved against TODAY while startsAt resolved to tomorrow →

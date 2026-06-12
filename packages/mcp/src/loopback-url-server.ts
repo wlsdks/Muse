@@ -26,7 +26,11 @@ export function createUrlMcpServer(): LoopbackMcpServer {
           } catch (error) {
             return { error: `invalid URL: ${error instanceof Error ? error.message : String(error)}` };
           }
-          const query: Record<string, string | string[]> = {};
+          // Null-prototype map: a `__proto__` or `constructor` query param must land as
+          // a plain DATA key, not hit the prototype setter (pollution + the param vanishing)
+          // or collide with the inherited Object constructor (corrupting the dedup). The
+          // `existing === undefined` check below then works for EVERY key.
+          const query: Record<string, string | string[]> = Object.create(null) as Record<string, string | string[]>;
           for (const [key, value] of parsed.searchParams.entries()) {
             const existing = query[key];
             if (existing === undefined) {

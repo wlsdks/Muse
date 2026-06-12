@@ -1032,6 +1032,18 @@ describe("loopback MCP servers", () => {
     });
   });
 
+  it("muse.url#parse keeps __proto__ / constructor query params as plain data (no prototype pollution)", async () => {
+    const connection = createLoopbackMcpConnection(createUrlMcpServer());
+    // The query map was a prototype-bearing {}, so `__proto__=a` hit the proto setter
+    // (param vanished + object polluted) and `constructor=c` collided with the inherited
+    // Object constructor (corrupted to an array). A null-prototype map keeps them as data.
+    const result = await connection.callTool!("parse", { url: "https://x.com/?__proto__=a&constructor=c&x=1" }) as { query: Record<string, unknown> };
+    const q = result.query;
+    expect(Object.getOwnPropertyDescriptor(q, "__proto__")?.value).toBe("a"); // own data, not the setter
+    expect(q.constructor).toBe("c"); // own "c", not the inherited Object function / a corrupted array
+    expect(q.x).toBe("1");
+  });
+
   it("muse.url#encode_query joins string and array values into urlencoded form", async () => {
     const connection = createLoopbackMcpConnection(createUrlMcpServer());
     const result = await connection.callTool!("encode_query", {

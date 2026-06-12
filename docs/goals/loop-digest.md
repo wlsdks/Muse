@@ -446,3 +446,11 @@
 - **왜:** add(fire 11)·update가 같은 endsAt-anchoring 버그 가족 — add는 고쳤으나 update는 cross-day 이동 시 여전히 OLD 날. 캘린더 reschedule은 핵심 actuator. 검증된 패턴으로 가족 완성.
 - **리뷰지점:** loopback-calendar.ts:365(endAnchorDay로 endsAt anchor) + loopback-calendar-add-anchor.test.ts(Jan-10 이벤트를 June-20 ISO+"5pm"으로 이동 → end가 June 20 17:00, Jan 아님) RED→GREEN. mcp 1695, check 0, lint 0. Fable-5 검증자 PASS(only-endsAt/date-bearing/absent 무회귀·start anchorFor 무손상·over-correction 없음).
 - **리스크:** 없음에 가까움 — moved-time-only endsAt 분기만 변경, 나머지 byte-identical. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. 남은 runner-up: "this weekend" on Sat→today. grounding floor 무관(캘린더 날짜-anchoring, 게이트 무변경).
+
+
+## [TOOL loop] fire 13 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.url.parse가 query map을 프로토타입 보유 {}로 생성 → 공격자 제어 URL의 __proto__/constructor 쿼리 파라미터가 조용히 소실/오염(프로토타입 오염 + dedup corruption). 1줄 fix: Object.create(null) (null-proto map, 모든 키가 own data).
+- **왜:** fire-4 json.merge __proto__의 sibling을 URL 표면에서 발견(라이브 확인). 다양성: fire 11/12 캘린더 다음 non-calendar 보안 표면(URL 파싱)으로 전환. EXPANSION 스카웃.
+- **리뷰지점:** loopback-url-server.ts:29(query map Object.create(null)) + mcp.test.ts(__proto__=a→own "a", constructor=c→"c", x="1") RED→GREEN. mcp 1696, check 0, lint 0. Fable-5 검증자 PASS(dedup string/array 무회귀·JSON이 null-proto own 키 직렬화·downstream 구조 소비자 없음·node로 양쪽 의미 실행 확인). runner-up 2개(text.stats whitespace-only lie, url.encode_query [object Object]) backlog 기록.
+- **리스크:** 없음에 가까움 — null-proto map은 정상 키/dedup 동일, JSON 직렬화 정상. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(URL 파서 보안, 게이트 무변경).
