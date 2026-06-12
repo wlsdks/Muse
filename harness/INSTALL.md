@@ -23,6 +23,9 @@ updated: 2026-06-13
    cp -r harness/core /path/to/your-project/harness/core
    ```
    - `runner/`는 **헤드리스 자동화·게이트 코드 강제가 필요할 때만** 가져갑니다([AGENTS.md §3.5](AGENTS.md)).
+     가져갔다면 `node --test "harness/runner/*.test.mjs"`가 전부 초록인지로 설치를 확인합니다.
+   - 최소 설치에선 코어 문서가 가리키는 `reference/` 링크가 비어 있습니다 — 깊이 참조일 뿐
+     동작엔 지장 없습니다(필요해지면 그때 `reference/`를 추가 복사).
    - **측정 기록은 리셋합니다** — golden-set의 진행표와 harness-acceptance §7.5는 *이 레포의* 실측
      기록이니, 새 프로젝트에선 표를 비우고 그 프로젝트의 실측으로 다시 쌓으세요(틀은 재사용).
    - `dev-loop.md`는 호스트(예: Muse) 전용 개발 루프 — 가져가려면 당신 프로젝트의 루프로 재작성합니다.
@@ -41,6 +44,14 @@ updated: 2026-06-13
 
 3. **프로젝트에 맞추기** — `harness/host/muse-mapping.md`를 복제해 **당신 프로젝트용 매핑**으로 바꿉니다
    (추상 역할 ↔ 당신의 실제 런타임/도구). 이 파일만 프로젝트마다 다르고, 나머지는 그대로 재사용.
+
+4. **(Claude Code 사용 시) 역할 서브에이전트 설치** — 동봉 템플릿을 복사하면 4역할이 실제
+   서브에이전트로 동작합니다(평가자는 쓰기 권한 없음 — 만든 자≠판정하는 자가 도구 권한으로 강제):
+   ```
+   mkdir -p /path/to/your-project/.claude/agents
+   cp harness/templates/claude-code/agents/*.md /path/to/your-project/.claude/agents/
+   ```
+   (이 레포의 라이브 사본은 `.claude/agents/harness-*.md` — 템플릿은 내보내기용 동봉본입니다.)
 
 ## 확인 (활성화됐는지)
 
