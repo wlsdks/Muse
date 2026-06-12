@@ -69,7 +69,7 @@ related: [team-roles.md, handoff-template.md, role-prompts.md, verification-and-
 - **이 스펙이 정의하는 것**: 그 강제·자동 끼움·게이트 통과를 **러너가** 하는 계약.
 - **이제 된 것(2026-05-31)**: 최소 **코드 러너**가 이 계약을 강제합니다 — [`runner/`](runner/)의
   `harness-runner.mjs`(의존성 0)가 상태기계·계획/완료/권한 게이트를 결정론 코드로 거부하고,
-  `conformance.test.mjs`가 §7 거부 매트릭스를 **13/13 통과**(`node --test harness/runner/`). 즉
+  `conformance.test.mjs`가 §7 거부 매트릭스를 **13/13 통과**(`node --test "harness/runner/*.test.mjs"`). 즉
   게이트가 "지시"에서 "코드 강제"로 올라갔습니다.
 - **아직 아닌 것**: 러너를 실제 오케스트레이션 런타임(프로세스 스폰·도구 배선)에 붙이는 것은 호스트
   몫 — 이 러너는 그 위에서 전이 허용을 판정하는 게이트 코어입니다.

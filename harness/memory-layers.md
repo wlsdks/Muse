@@ -79,7 +79,7 @@ related: [context-compaction.md, handoff-template.md, team-roles.md, architectur
 - `decay({at})` — **추론(inference)** 항목만 신뢰도 반감기로 감쇠, 바닥 미만 드롭. 명시 사실/선호는 불변.
 - `promote({minRecalls})` — 자주 회상된 항목을 **항상-켜진 코어**로 승격. `core()`로 조회.
 
-검증: [runner/memory.test.mjs](runner/memory.test.mjs) — `node --test harness/runner/`:
+검증: [runner/memory.test.mjs](runner/memory.test.mjs) — `node --test "harness/runner/*.test.mjs"`:
 쓰기(일회성 드롭·빈 거부)·관련성 읽기+회상·중복 병합·추론 감쇠(반감기·바닥 드롭, 사실 불변)·승격.
 **5/5**(러너 스위트 누적 **50/50**).
 

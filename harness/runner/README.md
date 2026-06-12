@@ -64,8 +64,11 @@ updated: 2026-05-31
 ## 돌리는 법 (의존성 설치 불필요)
 
 ```
-node --test harness/runner/
+node --test "harness/runner/*.test.mjs"
 ```
+
+(디렉터리 인자 형태 `node --test harness/runner/`는 Node 24에서 디렉터리를 엔트리 모듈로
+취급해 깨집니다 — glob 형태가 Node 21+ 전 버전에서 포터블합니다.)
 
 마지막 측정: **64/64 통과** (적합성 13 + 오케스트레이터 5 + 적대 9 + 훅 6 + 관측 6 + 세션 6 + 메모리 5 + 도구 6 + 다단계 8). 행복경로만이 아니라
 **거부 경로가 전부 초록**일 때만 러너가 "delivered"입니다. CI는

@@ -42,7 +42,7 @@ const r = await dispatchTool(p, { kind: 'outbound', recipientResolved: true, con
 
 ## 검증
 
-[runner/hooks.test.mjs](runner/hooks.test.mjs) — `node --test harness/runner/`:
+[runner/hooks.test.mjs](runner/hooks.test.mjs) — `node --test "harness/runner/*.test.mjs"`:
 PreToolUse 거부가 실행을 막음·통과 시 실행+PostToolUse 관측·훅 예외는 fail-closed 차단·다중 훅
 첫 거부 우선·권한 훅(은행/외부전송 차단·read 허용)·PostToolUse 예외는 결과 불변. **6/6.**
 
