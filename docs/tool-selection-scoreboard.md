@@ -153,3 +153,35 @@ behavior-preserving). Unit: the 2494 cli tests (incl. chat-repl) stay green; the
 shared fn was already live-proven last fire (ask --with-tools → calendar.add →
 detected). REAL muse: `muse chat --local "안녕"` responds normally — the
 refactored chat path loads + runs on the assembled binary. No behavior change.
+
+## v4 Fire 7 — ask grounding-gap fuel excludes action requests (SLICE SHIPPED, real-probe finding)
+
+A real `muse ask` probe ("다음 주 화요일에 치과 예약 추가해줘") got labelled
+ungrounded → recorded as a `grounding-gap`. But an action request the ask path
+can't fulfil is no missing note — the user-remediable fuel was polluted with
+"add a note about 치과 예약" nonsense. `askWeaknessAxis` now suppresses
+grounding-gap when `isActionRequest` (requestsToolAction) is true (an action
+request is unbacked-action if it falsely claimed, else not a weakness).
+Unit: 2 cases (suppress + unbacked-action precedence preserved). REAL muse
+BOTH directions: action request → nothing recorded; recall miss (박지훈 전화번호)
+→ still grounding-gap (no over-suppression). cli 2496 pass, lint 0. fa26ba39.
+LESSON: unit tests alone missed this; the real probe caught it (Jinan's point).
+
+## v4 Fire 8 — fuel-quality VALIDATION pass + calendar-evidence lead CLOSED (no slice)
+
+Probed the assembled agent across the false-positive categories to confirm the
+fuel pipeline only records REAL fuel:
+- casual / gratitude ("고마워!"), small-talk ("ㅋㅋㅋ") → nothing recorded ✓
+- meta / capability ("넌 뭘 도와줄 수 있어?"), corpus-overview ("내 노트 몇 개?") → nothing ✓
+- action request ("치과 예약 추가") → nothing (fire-7 fix holds) ✓
+- pure recall miss (은행 비밀번호 / 박지훈 전화번호) → grounding-gap ✓ (the only fuel)
+Pipeline verified-robust. Investigated the one lead (a schedule-recall answer
+that cited `[event: 팀 회의]` yet was labelled ungrounded → false grounding-gap?):
+calendar events ARE in the grounding-evidence set (commands-ask.ts:3489
+`upcomingEvents.map(...event: ...)`). The ungrounded was the NEGATIVE-absence
+claim ("예정된 일정은 없습니다") scoring uncovered — defensible honesty (can't
+prove a negative), NOT a missing-evidence seam bug. Lead closed; do not chase.
+Backlog item 3 (rank remediable weaknesses) is functionally realized by the two
+ranked audience-split selectors (selectRemediableWeaknesses user / 
+selectDevFixableWeaknesses dev) + their doctor surfaces — a merged ranker would
+wrongly conflate audiences. Pipeline COMPLETE; next headroom = accrue real fuel.
