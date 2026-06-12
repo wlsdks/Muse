@@ -212,6 +212,40 @@ export function recallActivation(record: RecallHitLike, nowMs: number, decay?: n
   return actrActivation(ages, decay !== undefined ? { decay } : {});
 }
 
+export const DEFAULT_CONSOLIDATION_MIN_INTERVAL_MS = 6 * 60 * 60_000;
+export const DEFAULT_CONSOLIDATION_MIN_NEW_HITS = 3;
+
+export interface ConsolidationScheduleInput {
+  readonly nowMs: number;
+  /** Epoch-ms of the last consolidation run, or undefined if it has never run. */
+  readonly lastRunMs: number | undefined;
+  /** Recall hits accrued since the last run (the new material to consolidate). */
+  readonly newHitsSinceLastRun: number;
+  /** Brake: don't re-run within this window (default 6h). */
+  readonly minIntervalMs?: number;
+  /** Don't run with fewer than this many new hits (default 3). */
+  readonly minNewHits?: number;
+}
+
+/**
+ * Brake-first gate for a BACKGROUND memory-consolidation tick: run only when
+ * BOTH enough new recall material has accrued (≥ minNewHits) AND enough time has
+ * passed since the last run (≥ minIntervalMs) — so the daemon never churns
+ * consolidation on idle ticks or on near-zero new material (non-straining
+ * background self-learning). A never-run state (lastRunMs undefined) only needs
+ * the material threshold. Pure; non-finite/negative inputs fail safe to false.
+ */
+export function shouldConsolidateMemory(input: ConsolidationScheduleInput): boolean {
+  const minInterval = Number.isFinite(input.minIntervalMs) && (input.minIntervalMs as number) > 0 ? (input.minIntervalMs as number) : DEFAULT_CONSOLIDATION_MIN_INTERVAL_MS;
+  const minNewHits = Number.isFinite(input.minNewHits) && (input.minNewHits as number) > 0 ? Math.trunc(input.minNewHits as number) : DEFAULT_CONSOLIDATION_MIN_NEW_HITS;
+  const newHits = Number.isFinite(input.newHitsSinceLastRun) ? input.newHitsSinceLastRun : 0;
+  if (newHits < minNewHits) return false;
+  if (!Number.isFinite(input.nowMs)) return false;
+  if (input.lastRunMs === undefined) return true;
+  if (!Number.isFinite(input.lastRunMs)) return true;
+  return input.nowMs - input.lastRunMs >= minInterval;
+}
+
 export interface ConsolidationPlan {
   readonly promote: readonly PromotedMemory[];
   readonly fade: readonly ForgettingMemory[];
@@ -231,4 +265,47 @@ export function consolidationPlan(
     fade: selectForgettable(records, options),
     promote: selectPromotableMemories(records, options)
   };
+}
+
+export interface MemoryConsolidationTickState {
+  /** Epoch-ms of the last consolidation run, or undefined if never run. */
+  readonly lastRunMs: number | undefined;
+}
+
+export interface MemoryConsolidationTickResult {
+  /** Did the brake pass (consolidation actually computed this tick)? */
+  readonly ran: boolean;
+  /** The promote/fade plan — present only when `ran`. */
+  readonly plan?: ConsolidationPlan;
+  /** The scheduling state to persist for the next tick (advanced only when it ran). */
+  readonly nextState: MemoryConsolidationTickState;
+}
+
+/**
+ * One background memory-consolidation tick, decided + computed in one pure step:
+ * count the recall records re-engaged since the last run (lastHitMs newer than
+ * lastRunMs — that's the NEW material), gate on shouldConsolidateMemory (the
+ * brake), and only when it passes compute consolidationPlan. Returns the plan +
+ * the next state (lastRunMs advanced ONLY when it ran). The daemon supplies the
+ * records (readRecallHits) and persists nextState; this stays pure + testable.
+ */
+export function planMemoryConsolidationTick(
+  records: readonly RecallHitLike[],
+  state: MemoryConsolidationTickState,
+  options: SelectPromotableOptions & SelectForgettableOptions & { readonly minIntervalMs?: number; readonly minNewHits?: number }
+): MemoryConsolidationTickResult {
+  const sinceMs = state.lastRunMs ?? Number.NEGATIVE_INFINITY;
+  const newHitsSinceLastRun = records.reduce(
+    (n, r) => (Number.isFinite(r.lastHitMs) && r.lastHitMs > sinceMs ? n + 1 : n),
+    0
+  );
+  const go = shouldConsolidateMemory({
+    nowMs: options.nowMs,
+    lastRunMs: state.lastRunMs,
+    newHitsSinceLastRun,
+    ...(options.minIntervalMs !== undefined ? { minIntervalMs: options.minIntervalMs } : {}),
+    ...(options.minNewHits !== undefined ? { minNewHits: options.minNewHits } : {})
+  });
+  if (!go) return { ran: false, nextState: state };
+  return { ran: true, plan: consolidationPlan(records, options), nextState: { lastRunMs: options.nowMs } };
 }
