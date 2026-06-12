@@ -46,6 +46,31 @@ export function safeDownloadName(filename: string | undefined, url: string): str
   return "download.bin";
 }
 
+/**
+ * Write `bytes` under a NON-clobbering name in `dir`: if `<dir>/<name>` already
+ * exists, dedupe like a browser — `name (1).ext`, `name (2).ext`, … — so a download
+ * NEVER silently destroys an unrelated file the user already had. The `wx` flag
+ * (fail if exists) makes the exists-check + create atomic (no TOCTOU race). Returns
+ * the actual name/path used.
+ */
+export async function writeNonClobbering(dir: string, name: string, bytes: Buffer): Promise<{ name: string; path: string }> {
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+  for (let i = 0; i < 1000; i += 1) {
+    const candidate = i === 0 ? name : `${stem} (${i.toString()})${ext}`;
+    const path = pathResolve(dir, candidate);
+    try {
+      await writeFile(path, bytes, { flag: "wx" });
+      return { name: candidate, path };
+    } catch (cause) {
+      if ((cause as { code?: string }).code === "EEXIST") continue; // taken — try the next dedupe suffix
+      throw cause;
+    }
+  }
+  throw new Error(`too many filename collisions for "${name}" in the downloads dir`);
+}
+
 export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
   const downloadDir = deps.downloadDir ?? join(homedir(), "Downloads");
   const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -103,13 +128,13 @@ export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
         return { reason: `download failed: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
       }
       const name = safeDownloadName(typeof args["filename"] === "string" ? args["filename"] : undefined, vetted.url.href);
-      const path = pathResolve(downloadDir, name);
+      let saved: { name: string; path: string };
       try {
-        await writeFile(path, bytes);
+        saved = await writeNonClobbering(downloadDir, name, bytes);
       } catch (cause) {
         return { reason: `could not write to Downloads: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
       }
-      return { bytes: bytes.byteLength, name, path, saved: true };
+      return { bytes: bytes.byteLength, name: saved.name, path: saved.path, saved: true };
     }
   };
 }

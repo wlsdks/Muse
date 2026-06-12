@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -55,6 +55,17 @@ describe("web_download tool", () => {
     expect(out.name).toBe("report.pdf");
     expect(existsSync(out.path)).toBe(true);
     expect(readFileSync(out.path, "utf8")).toBe("PDF-BYTES");
+  });
+
+  it("does NOT clobber an existing file — dedupes like a browser (no silent data loss)", async () => {
+    const d = dir();
+    writeFileSync(join(d, "report.pdf"), "PRECIOUS-USER-FILE", "utf8");
+    const tool = createWebDownloadTool({ downloadDir: d, fetchImpl: fakeFetch(Buffer.from("NEW-WEB-BYTES")), lookup: publicLookup });
+    const out = await tool.execute({ url: "https://files.test/report.pdf" }, ctx) as { saved: boolean; name: string; path: string };
+    expect(out.saved).toBe(true);
+    expect(out.name).toBe("report (1).pdf"); // deduped, not the taken name
+    expect(readFileSync(join(d, "report.pdf"), "utf8")).toBe("PRECIOUS-USER-FILE"); // original UNTOUCHED
+    expect(readFileSync(out.path, "utf8")).toBe("NEW-WEB-BYTES"); // new bytes landed under the deduped name
   });
 
   it("SSRF: a loopback URL is refused without writing", async () => {

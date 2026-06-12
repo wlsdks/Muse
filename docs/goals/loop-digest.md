@@ -462,3 +462,11 @@
 - **왜:** fire-13 runner-up. 다른 표면(url.encode_query)·다른 KIND(input-validation/silent-corruption). 처음 후보였던 text.stats whitespace→zero는 기존 테스트가 "treats whitespace as zero"로 의도 문서화 → clean 버그 아님(진안 판단으로 ⏳ defer); encode_query의 "[object Object]"는 incidental characterization이라 fix 적합.
 - **리뷰지점:** loopback-url-server.ts(isScalar 가드) + mcp.test.ts(중첩객체+배열내객체→error, scalar 컨트롤) + loopback-url.test.ts(incidental obj 케이스를 error 기대로 갱신) RED→GREEN. mcp 1697, check 0(stale-dist 재실행 후), lint 0. Fable-5 검증자 PASS(기존 테스트 변경 LEGITIMATE 판정·커버리지 강화·scalar 무회귀).
 - **리스크:** 없음에 가까움 — scalar/배열/null skip byte-identical, 객체만 거부. RATCHET: testFiles 893 무변동(+1 케이스, 1 갱신), fabrication 0 유지. grounding floor 무관(URL 인코더 입력검증, 게이트 무변경).
+
+
+## [TOOL loop] fire 15 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** web_download가 plain writeFile(flag "w")로 Downloads의 동명 기존 파일을 조용히 덮어씀(되돌릴 수 없는 데이터 손실). writeNonClobbering 헬퍼 — 브라우저처럼 dedupe(name (1).ext) + wx flag(atomic, no TOCTOU). 실 쓰기에러는 re-throw, 1000 바운드.
+- **왜:** AppWorld "collateral damage"(무관 사용자 파일 무경고 파괴). 모듈 헤더는 fail-closed 디스크 약속. EXPANSION 스카웃 라이브 확인. 다양성: 최근 url×2/calendar×2 다음 web_download data-integrity로 표면 전환.
+- **리뷰지점:** web-download-tool.ts(writeNonClobbering 헬퍼 + execute 배선) + web-download-tool.test.ts(기존 report.pdf 보존 + 새 바이트 "report (1).pdf") RED→GREEN. mcp 1698, check 0, lint 0. Fable-5 검증자 PASS(5 동시→5 고유·fresh-dir 원래이름·실에러 re-throw·엣지케이스). runner-up 2개(전체 바디 버퍼링 後 size-cap → 메모리 고갈, tasks.update lost-update TOCTOU) backlog 기록.
+- **리스크:** 없음에 가까움 — fresh dir은 원래 이름 그대로, dedupe는 충돌 시만. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(다운로드 디스크 안전, 게이트 무변경).
