@@ -15,20 +15,8 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { BROWSER_DISPLAY_ELEMENTS, type BrowserController, type PageSnapshot, type SnapshotElement } from "./controller.js";
+import { BROWSER_KEYS, BROWSER_MAX_ELEMENTS, type BrowserController, type BrowserKey, type PageSnapshot } from "./controller.js";
 import { filterElements, matchElement, type MatchIntent } from "./matcher.js";
-
-/**
- * What the MODEL sees: a small, capped element list (context stays cheap) plus
- * an honest "showing N of M" signal when the page has more. The deterministic
- * matcher (resolveTarget / filterElements) still works over the FULL set, so
- * click/type reach an element past the display cap — a long page no longer
- * strands the model at element #40.
- */
-function displayElements(elements: readonly SnapshotElement[]): { shown: SnapshotElement[]; truncated: boolean } {
-  const shown = elements.slice(0, BROWSER_DISPLAY_ELEMENTS);
-  return { shown: [...shown], truncated: elements.length > shown.length };
-}
 
 export interface BrowserActionDraft {
   readonly action: "click" | "type";
@@ -47,18 +35,30 @@ export interface BrowserApprovalDecision {
 /** Presents the EXACT page action to the user; returns approve/deny. */
 export type BrowserApprovalGate = (draft: BrowserActionDraft) => Promise<BrowserApprovalDecision> | BrowserApprovalDecision;
 
-function snapshotToJson(snapshot: PageSnapshot): JsonObject {
-  const { shown, truncated } = displayElements(snapshot.elements);
+function elementsJson(elements: readonly PageSnapshot["elements"][number][]): JsonValue {
+  return elements.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue;
+}
+
+/**
+ * A page can carry hundreds of controls, but a low-spec model drowns in them —
+ * so every response shows at most BROWSER_MAX_ELEMENTS and REPORTS the total +
+ * the next offset rather than silently truncating (no silent caps). Grounding
+ * (click/type by target) still matches the WHOLE set in code.
+ */
+function snapshotToJson(snapshot: PageSnapshot, offset = 0): JsonObject {
+  const total = snapshot.elements.length;
+  const start = Math.min(Math.max(0, offset), total);
+  const page = snapshot.elements.slice(start, start + BROWSER_MAX_ELEMENTS);
+  const end = start + page.length;
   return {
-    elements: shown.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
-    shownElements: shown.length,
+    elements: elementsJson(page),
     text: snapshot.text,
     title: snapshot.title,
-    totalElements: snapshot.elements.length,
-    // No silent caps: when more elements exist than are shown, say so and point
-    // at the remedy (a click/type target still resolves against the full set).
-    ...(truncated ? { hint: `showing ${shown.length.toString()} of ${snapshot.elements.length.toString()} elements — name what you want in browser_click/browser_type (it matches the whole page), or use browser_read find to narrow`, truncated: true } : {}),
-    url: snapshot.url
+    total,
+    url: snapshot.url,
+    ...(start > 0 ? { offset: start } : {}),
+    ...(end < total ? { hasMore: true, nextOffset: end } : {}),
+    ...(snapshot.dialog ? { dialog: snapshot.dialog as unknown as JsonValue } : {})
   };
 }
 
@@ -177,20 +177,21 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
       description:
         "Re-read the page currently open in Muse's browser — returns the title, page text, and the " +
         "interactive elements. Pass `find` to get only the elements matching a description (e.g. 'search', " +
-        "'sign in') instead of the whole list — handy for locating one control. Use to see the TEXT and " +
-        "clickable elements on the page — e.g. 'what's on the page now?', 'read this page'. NOT for " +
-        "describing VISUAL content like a chart, graph, image, or diagram (use browser_look — this returns " +
-        "DOM text, not a picture). Read-only.",
+        "'sign in') instead of the whole list. A long page reports `total` + `hasMore`/`nextOffset`; pass " +
+        "`offset` to read the next batch. Use to see the TEXT and clickable elements after the page changed " +
+        "— e.g. 'what's on the page now?', 'read this page'. NOT for describing VISUAL content like a chart, " +
+        "graph, image, or diagram (use browser_look — this returns DOM text, not a picture). Read-only.",
       domain: "browser",
       inputSchema: {
         additionalProperties: false,
         properties: {
-          find: { description: "Optional: only return elements whose label matches this, e.g. 'search box'.", type: "string" }
+          find: { description: "Optional: only return elements whose label matches this, e.g. 'search box'.", type: "string" },
+          offset: { description: "Optional: skip this many elements (paging a long page); use the `nextOffset` from a prior read.", type: "number" }
         },
         required: [],
         type: "object"
       },
-      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "브라우저"],
+      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "more", "브라우저"],
       name: "browser_read",
       risk: "read"
     },
@@ -199,16 +200,17 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
         const snapshot = await deps.controller.snapshot();
         const find = typeof args["find"] === "string" ? args["find"].trim() : "";
         if (find.length === 0) {
-          return snapshotToJson(snapshot);
+          const offset = typeof args["offset"] === "number" && Number.isFinite(args["offset"]) ? Math.trunc(args["offset"]) : 0;
+          return snapshotToJson(snapshot, offset);
         }
         const matched = filterElements(snapshot.elements, find);
-        const { shown, truncated } = displayElements(matched);
+        const shown = matched.slice(0, BROWSER_MAX_ELEMENTS);
         return {
-          elements: shown.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+          elements: elementsJson(shown),
           matched: matched.length,
           title: snapshot.title,
-          ...(truncated ? { hint: `showing ${shown.length.toString()} of ${matched.length.toString()} matches — narrow the find query`, truncated: true } : {}),
-          url: snapshot.url
+          url: snapshot.url,
+          ...(matched.length > shown.length ? { hasMore: true } : {})
         };
       } catch (cause) {
         return errorResult(cause);
@@ -281,6 +283,122 @@ export function createBrowserLookTool(deps: BrowserLookToolDeps): MuseTool {
         return { described: false, reason: described.error ?? "the vision model could not read the page" };
       }
       return { described: true, text: described.text };
+    }
+  };
+}
+
+const SCROLL_DIRECTIONS = ["down", "up", "top", "bottom"] as const;
+
+export function createBrowserScrollTool(deps: BrowserReadToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "Scroll the page in Muse's browser to reveal content that isn't visible yet — below-the-fold or " +
+        "lazily-loaded items (infinite-scroll feeds, long product lists). `direction` is 'down' / 'up' / " +
+        "'top' / 'bottom'. Use when the page text or elements seem cut off, or the user asks to scroll / see " +
+        "more / go to the bottom — e.g. 'scroll down', '더 아래로', '맨 아래로 가줘'. Returns the page after " +
+        "scrolling (new content included). Read-only.",
+      domain: "browser",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          direction: { description: "Where to scroll: 'down', 'up', 'top', or 'bottom'.", enum: [...SCROLL_DIRECTIONS], type: "string" }
+        },
+        required: ["direction"],
+        type: "object"
+      },
+      keywords: ["browser", "scroll", "스크롤", "down", "아래", "up", "위", "bottom", "맨아래", "more", "더보기", "브라우저"],
+      name: "browser_scroll",
+      risk: "read"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const direction = typeof args["direction"] === "string" ? args["direction"].trim() : "";
+      if (!SCROLL_DIRECTIONS.includes(direction as (typeof SCROLL_DIRECTIONS)[number])) {
+        return { error: `direction must be one of: ${SCROLL_DIRECTIONS.join(", ")}` };
+      }
+      try {
+        return snapshotToJson(await deps.controller.scroll(direction as (typeof SCROLL_DIRECTIONS)[number]));
+      } catch (cause) {
+        return errorResult(cause);
+      }
+    }
+  };
+}
+
+export function createBrowserKeyTool(deps: BrowserReadToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "Press a keyboard key in Muse's browser: 'Escape' (close a modal / dropdown / popup), 'Enter' " +
+        "(confirm the focused control), 'Tab' (move focus to the next field), or an arrow key " +
+        "('ArrowDown' / 'ArrowUp' / 'ArrowLeft' / 'ArrowRight', e.g. to move through a dropdown). Use when a " +
+        "dialog or menu won't go away, or to navigate by keyboard — e.g. 'close this popup', 'press escape', " +
+        "'esc 눌러줘'. Returns the page after the keypress.",
+      domain: "browser",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          key: { description: "Which key to press, e.g. 'Escape' or 'ArrowDown'.", enum: [...BROWSER_KEYS], type: "string" }
+        },
+        required: ["key"],
+        type: "object"
+      },
+      keywords: ["browser", "key", "키", "escape", "esc", "닫", "close", "enter", "tab", "arrow", "화살표", "키보드", "브라우저"],
+      name: "browser_key",
+      risk: "read"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const key = typeof args["key"] === "string" ? args["key"].trim() : "";
+      if (!BROWSER_KEYS.includes(key as BrowserKey)) {
+        return { error: `key must be one of: ${BROWSER_KEYS.join(", ")}` };
+      }
+      try {
+        return snapshotToJson(await deps.controller.pressKey(key as BrowserKey));
+      } catch (cause) {
+        return errorResult(cause);
+      }
+    }
+  };
+}
+
+export function createBrowserHoverTool(deps: BrowserReadToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "Move the mouse over an element in Muse's browser to REVEAL a menu or tooltip that only appears on " +
+        "hover — say WHAT to hover in `target` (the menu label or link text). Use when a dropdown nav or " +
+        "submenu won't show until hovered — e.g. 'hover over Account to see the menu', '계정 메뉴 위에 " +
+        "올려줘'. Returns the page with the now-revealed items (then browser_click one). Read-only — it " +
+        "changes nothing, just reveals.",
+      domain: "browser",
+      groundedArgs: ["target"],
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          target: { description: "What to hover over — the menu label or link text, e.g. 'Account' or 'Products'.", type: "string" }
+        },
+        required: ["target"],
+        type: "object"
+      },
+      keywords: ["browser", "hover", "호버", "메뉴", "menu", "submenu", "tooltip", "올려", "mouseover", "브라우저"],
+      name: "browser_hover",
+      risk: "read"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      let resolved: ResolveResult;
+      try {
+        resolved = await resolveTarget(deps.controller, args, "click");
+      } catch (cause) {
+        return errorResult(cause);
+      }
+      if ("error" in resolved) {
+        return resolved.error;
+      }
+      try {
+        return snapshotToJson(await deps.controller.hover(resolved.ref));
+      } catch (cause) {
+        return errorResult(cause);
+      }
     }
   };
 }

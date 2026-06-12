@@ -28,7 +28,14 @@ export interface PageSnapshot {
   readonly text: string;
   /** Interactive elements the model can act on, capped. */
   readonly elements: readonly SnapshotElement[];
+  /** A JS dialog (alert/confirm/prompt) that fired and was auto-accepted, if any. */
+  readonly dialog?: { readonly type: string; readonly message: string };
 }
+
+export type ScrollDirection = "down" | "up" | "top" | "bottom";
+
+export const BROWSER_KEYS = ["Escape", "Enter", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
+export type BrowserKey = (typeof BROWSER_KEYS)[number];
 
 export interface BrowserController {
   /** Navigate to a URL and return the resulting page snapshot. */
@@ -37,10 +44,26 @@ export interface BrowserController {
   snapshot(): Promise<PageSnapshot>;
   /** Click the element with this ref (from the last snapshot); returns the new snapshot. */
   click(ref: number): Promise<PageSnapshot>;
+  /**
+   * Move the mouse over the element and re-observe — reveals hover-triggered
+   * menus / tooltips (CSS :hover, mouseover handlers) the snapshot can't see
+   * until the pointer is over them.
+   */
+  hover(ref: number): Promise<PageSnapshot>;
   /** Type into the element with this ref; optionally press Enter to submit. */
   type(ref: number, text: string, submit: boolean): Promise<PageSnapshot>;
   /** Go back in history; returns the new snapshot. */
   back(): Promise<PageSnapshot>;
+  /**
+   * Press a keyboard key (Escape / Enter / Tab / arrows) and re-observe — closes
+   * modals & dropdowns (Escape), moves focus (Tab), drives keyboard menus.
+   */
+  pressKey(key: BrowserKey): Promise<PageSnapshot>;
+  /**
+   * Scroll the page and re-observe — reveals below-the-fold and lazily-loaded
+   * content the snapshot can't see until it renders.
+   */
+  scroll(direction: ScrollDirection): Promise<PageSnapshot>;
   /** Capture the page to a .png file. */
   screenshot(path: string): Promise<{ readonly path: string }>;
   /** Capture the current page as a base64 PNG (for the local vision model). */
@@ -60,13 +83,13 @@ export interface BrowserController {
 }
 
 export const BROWSER_MAX_TEXT = 4_000;
-// SCAN/MATCH cap: how many distinct interactive elements the snapshot tags and
-// the deterministic matcher can resolve against. Higher than the display cap so
-// a click/type target on a long page still resolves (the matcher is code, not
-// the model, so a big list costs it nothing).
-export const BROWSER_MAX_ELEMENTS = 150;
-// DISPLAY cap: how many elements are serialised to the MODEL per observation —
-// kept small so the local model's context stays cheap; the snapshot reports the
-// true total + a "showing N of M" hint when it truncates (no silent caps).
-export const BROWSER_DISPLAY_ELEMENTS = 40;
+/** How many elements a single tool RESPONSE shows the model (paging unit). */
+export const BROWSER_MAX_ELEMENTS = 50;
+/**
+ * Hard ceiling on elements the controller collects per snapshot. Grounding
+ * (matchElement) runs over the WHOLE set in code, so it's generous; the model
+ * only ever SEES `BROWSER_MAX_ELEMENTS` of them per response (the tool layer
+ * pages + reports the total, so nothing is silently truncated).
+ */
+export const BROWSER_ELEMENT_CEILING = 200;
 export const BROWSER_MAX_NAME = 120;

@@ -5,8 +5,11 @@ import {
   createBrowserBackTool,
   createBrowserLookTool,
   createBrowserClickTool,
+  createBrowserHoverTool,
+  createBrowserKeyTool,
   createBrowserOpenTool,
   createBrowserReadTool,
+  createBrowserScrollTool,
   createBrowserTypeTool,
   type BrowserApprovalGate
 } from "../src/browser-tools.js";
@@ -27,8 +30,11 @@ class FakeController implements BrowserController {
   async open(url: string): Promise<PageSnapshot> { this.calls.push(`open:${url}`); return SNAP; }
   async snapshot(): Promise<PageSnapshot> { this.calls.push("snapshot"); return SNAP; }
   async click(ref: number): Promise<PageSnapshot> { this.calls.push(`click:${ref.toString()}`); return SNAP; }
+  async hover(ref: number): Promise<PageSnapshot> { this.calls.push(`hover:${ref.toString()}`); return SNAP; }
+  async pressKey(key: string): Promise<PageSnapshot> { this.calls.push(`key:${key}`); return SNAP; }
   async type(ref: number, text: string, submit: boolean): Promise<PageSnapshot> { this.calls.push(`type:${ref.toString()}:${text}:${submit.toString()}`); return SNAP; }
   async back(): Promise<PageSnapshot> { this.calls.push("back"); return SNAP; }
+  async scroll(direction: string): Promise<PageSnapshot> { this.calls.push(`scroll:${direction}`); return SNAP; }
   async screenshot(path: string): Promise<{ readonly path: string }> { this.calls.push("shot"); return { path }; }
   async screenshotBase64(): Promise<string> { this.calls.push("shot-base64"); return "aW1n"; }
   describeElement(ref: number): SnapshotElement | undefined { return this.elements.get(ref); }
@@ -46,11 +52,14 @@ describe("browser tools — well-formed definitions", () => {
       createBrowserOpenTool({ controller: c }),
       createBrowserReadTool({ controller: c }),
       createBrowserBackTool({ controller: c }),
+      createBrowserScrollTool({ controller: c }),
+      createBrowserHoverTool({ controller: c }),
+      createBrowserKeyTool({ controller: c }),
       createBrowserClickTool({ approvalGate: allow, controller: c }),
       createBrowserTypeTool({ approvalGate: allow, controller: c })
     ];
     expect(tools.map((t) => t.definition.name)).toEqual([
-      "browser_open", "browser_read", "browser_back", "browser_click", "browser_type"
+      "browser_open", "browser_read", "browser_back", "browser_scroll", "browser_hover", "browser_key", "browser_click", "browser_type"
     ]);
     for (const tool of tools) {
       expect(tool.definition.domain).toBe("browser");
@@ -89,6 +98,113 @@ describe("browser_open / read / back — free (no gate)", () => {
     expect(await createBrowserReadTool({ controller: c }).execute({}, ctx)).toMatchObject({ title: "Example" });
     expect(await createBrowserBackTool({ controller: c }).execute({}, ctx)).toMatchObject({ title: "Example" });
     expect(c.calls).toEqual(["snapshot", "back"]);
+  });
+});
+
+describe("dialog passthrough — an auto-handled JS dialog is surfaced to the model", () => {
+  it("includes the dialog {type,message} in the tool output when present", async () => {
+    const snap: PageSnapshot = { ...SNAP, dialog: { message: "Delete this?", type: "confirm" } };
+    const controller = { ...new FakeController(), open: async () => snap } as unknown as BrowserController;
+    const out = await createBrowserOpenTool({ controller }).execute({ url: "https://x.test" }, ctx) as { dialog?: { type: string; message: string } };
+    expect(out.dialog).toEqual({ message: "Delete this?", type: "confirm" });
+  });
+});
+
+describe("browser_key — keyboard (Escape/Tab/arrows)", () => {
+  it("is a well-formed read tool with a key enum", () => {
+    const tool = createBrowserKeyTool({ controller: new FakeController() });
+    expect(tool.definition.name).toBe("browser_key");
+    expect(tool.definition.risk).toBe("read");
+    expect((tool.definition.inputSchema as { properties: { key: { enum: string[] } } }).properties.key.enum).toContain("Escape");
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("rejects an unknown key without pressing", async () => {
+    const c = new FakeController();
+    const tool = createBrowserKeyTool({ controller: c });
+    expect(await tool.execute({ key: "F13" }, ctx)).toMatchObject({ error: expect.stringContaining("key must be one of") });
+    expect(c.calls).toEqual([]);
+  });
+
+  it("presses the key and returns the new page", async () => {
+    const c = new FakeController();
+    const tool = createBrowserKeyTool({ controller: c });
+    expect(await tool.execute({ key: "Escape" }, ctx)).toMatchObject({ title: "Example" });
+    expect(c.calls).toEqual(["key:Escape"]);
+  });
+});
+
+describe("browser_hover — reveal hover menus", () => {
+  it("is a well-formed read tool grounding a target", () => {
+    const tool = createBrowserHoverTool({ controller: new FakeController() });
+    expect(tool.definition.name).toBe("browser_hover");
+    expect(tool.definition.risk).toBe("read");
+    expect((tool.definition.inputSchema as { required: string[] }).required).toEqual(["target"]);
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("grounds the target and hovers it, returning the revealed page", async () => {
+    const c = new FakeController();
+    const tool = createBrowserHoverTool({ controller: c });
+    expect(await tool.execute({ target: "Sign in" }, ctx)).toMatchObject({ title: "Example" });
+    // snapshot (to resolve target) then hover the resolved ref
+    expect(c.calls).toEqual(["snapshot", "hover:3"]);
+  });
+});
+
+describe("browser_scroll — reveal below-the-fold content", () => {
+  it("is a well-formed read tool with a direction enum", () => {
+    const c = new FakeController();
+    const tool = createBrowserScrollTool({ controller: c });
+    expect(tool.definition.name).toBe("browser_scroll");
+    expect(tool.definition.risk).toBe("read");
+    expect((tool.definition.inputSchema as { required: string[]; properties: { direction: { enum: string[] } } }).required).toEqual(["direction"]);
+    expect((tool.definition.inputSchema as { properties: { direction: { enum: string[] } } }).properties.direction.enum).toEqual(["down", "up", "top", "bottom"]);
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("rejects an unknown direction without scrolling", async () => {
+    const c = new FakeController();
+    const tool = createBrowserScrollTool({ controller: c });
+    expect(await tool.execute({ direction: "sideways" }, ctx)).toMatchObject({ error: expect.stringContaining("direction must be one of") });
+    expect(c.calls).toEqual([]);
+  });
+
+  it("scrolls and returns the new page snapshot", async () => {
+    const c = new FakeController();
+    const tool = createBrowserScrollTool({ controller: c });
+    expect(await tool.execute({ direction: "bottom" }, ctx)).toMatchObject({ title: "Example" });
+    expect(c.calls).toEqual(["scroll:bottom"]);
+  });
+});
+
+describe("browser_read — paging a long page (no silent truncation)", () => {
+  function bigController(n: number): BrowserController {
+    const elements: SnapshotElement[] = Array.from({ length: n }, (_v, i) => ({ name: `link ${i.toString()}`, ref: i, role: "link" }));
+    const snap: PageSnapshot = { elements, text: "x", title: "Big", url: "https://big.test/" };
+    return {
+      back: async () => snap, click: async () => snap, close: async () => {}, currentUrl: () => "https://big.test/",
+      describeElement: (ref) => elements[ref], disconnect: async () => {}, hover: async () => snap, open: async () => snap,
+      pressKey: async () => snap, screenshot: async (path) => ({ path }), scroll: async () => snap, snapshot: async () => snap, type: async () => snap
+    };
+  }
+
+  it("caps the response at 50 and REPORTS total + nextOffset (nothing silently dropped)", async () => {
+    const tool = createBrowserReadTool({ controller: bigController(60) });
+    const out = await tool.execute({}, ctx) as { elements: unknown[]; total: number; hasMore?: boolean; nextOffset?: number };
+    expect(out.elements).toHaveLength(50);
+    expect(out.total).toBe(60);
+    expect(out.hasMore).toBe(true);
+    expect(out.nextOffset).toBe(50);
+  });
+
+  it("offset reads the next batch and ends cleanly", async () => {
+    const tool = createBrowserReadTool({ controller: bigController(60) });
+    const out = await tool.execute({ offset: 50 }, ctx) as { elements: { ref: number }[]; offset: number; hasMore?: boolean };
+    expect(out.elements).toHaveLength(10);
+    expect(out.offset).toBe(50);
+    expect(out.elements[0]!.ref).toBe(50);
+    expect(out.hasMore).toBeUndefined();
   });
 });
 
@@ -188,28 +304,28 @@ describe("display cap — model sees a small list, matcher sees all (long-page s
     async close(): Promise<void> {}
   }
 
-  it("browser_open caps the DISPLAYED elements and reports the true total", async () => {
+  it("browser_open pages a long element list and reports the true total + nextOffset", async () => {
     const c = new BigController();
     const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://shop.test" }, ctx) as {
-      elements: unknown[]; shownElements: number; totalElements: number; truncated: boolean;
+      elements: unknown[]; total: number; hasMore?: boolean; nextOffset?: number;
     };
-    expect(out.elements.length).toBeLessThanOrEqual(40);
-    expect(out.totalElements).toBe(60);
-    expect(out.truncated).toBe(true);
-    expect(out.shownElements).toBe(out.elements.length);
+    expect(out.elements.length).toBe(50);
+    expect(out.total).toBe(60);
+    expect(out.hasMore).toBe(true);
+    expect(out.nextOffset).toBe(50);
   });
 
-  it("browser_click resolves a target BEYOND the display cap (matcher sees the full set)", async () => {
+  it("browser_click resolves a target BEYOND the first page (matcher sees the full set)", async () => {
     const c = new BigController();
     const out = await createBrowserClickTool({ approvalGate: allow, controller: c }).execute({ target: "Checkout now" }, ctx) as { clicked: boolean };
     expect(out.clicked).toBe(true);
     expect(c.calls).toEqual(["click:55"]);
   });
 
-  it("a small page is not marked truncated", async () => {
+  it("a small page reports no hasMore", async () => {
     const c = new FakeController();
-    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://example.test" }, ctx) as { truncated?: boolean; totalElements?: number };
-    expect(out.truncated).toBeFalsy();
+    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://example.test" }, ctx) as { hasMore?: boolean };
+    expect(out.hasMore).toBeFalsy();
   });
 });
 

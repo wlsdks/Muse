@@ -43,8 +43,11 @@ import {
   createBrowserBackTool,
   createBrowserLookTool,
   createBrowserClickTool,
+  createBrowserHoverTool,
+  createBrowserKeyTool,
   createBrowserOpenTool,
   createBrowserReadTool,
+  createBrowserScrollTool,
   createBrowserTypeTool,
   type BrowserApprovalGate,
   type BrowserController
@@ -267,6 +270,9 @@ export function buildBrowserTools(deps: BrowserToolsDeps): MuseTool[] {
     createBrowserOpenTool({ controller }),
     createBrowserReadTool({ controller }),
     createBrowserBackTool({ controller }),
+    createBrowserScrollTool({ controller }),
+    createBrowserHoverTool({ controller }),
+    createBrowserKeyTool({ controller }),
     createBrowserClickTool({ approvalGate: gate, controller }),
     createBrowserTypeTool({ approvalGate: gate, controller }),
     // browser_look (vision over the page) only when a vision callback is wired.

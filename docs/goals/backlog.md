@@ -380,12 +380,82 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   guards 1622, byte-hygiene 30, precheck:grounding pass^2. Real injections keep trigger→target→noun
   within a clause, so detection is unchanged; only the cross-sentence false combinations are killed.
 
-- ◦ **same-origin iframe piercing** — snapshot stops at iframe boundaries (embedded
-  forms/widgets invisible); walk same-origin frames like shadow roots. Cross-origin
-  stays out (CDP can't without per-frame contexts — scope honestly).
-- ◦ **element paging past the 50 cap** — long pages truncate silently at
-  BROWSER_MAX_ELEMENTS; `browser_read find` mitigates but a `more`/offset arg (or
-  viewport-priority ordering) closes it. Log what was dropped (no silent caps).
+- ✓→Done **same-origin iframe piercing** — the snapshot walk descends into same-origin
+  iframe `contentDocument` (like shadow roots); cross-origin throws on access and is
+  honestly skipped. Ref resolution searches EVERY frame (`page.frames()`), so an
+  iframe-embedded control is both visible AND clickable. Real-Chrome smoke (local http,
+  same-origin iframe button): button appears in the snapshot + cross-frame click succeeds.
+- ✓→Done **empirical real-web hardening (probe → fix → lock)** — a gap-probe of 7 real
+  patterns on puppeteer-core 25.1.0 / Node 24 surfaced 3 bugs, all fixed + locked in
+  smoke:browser (now 12 scenarios): ① a JS dialog (confirm/alert/prompt) BLOCKED the
+  page → the next action hung to the timeout; now auto-accepted (the act was draft-first
+  approved upstream) + reported in the snapshot `dialog` field. ② content inserted by
+  setTimeout/fetch AFTER a click was missed (networkidle returns instantly with no
+  network) → a MutationObserver-based `settleDom` waits for the DOM to go quiet (fast on
+  static pages, capped). ③ disabled controls were listed (wasted clicks) → skipped in the
+  walk. Verified: unit 36, smoke 12/12 exit 0, eval:browser-agent PASS.
+- ✓→Done **new-tab following + autocomplete** (probe batch 2) — a target=_blank link /
+  window.open popup spawned a tab the controller never followed (it kept observing the
+  stale opener; window.open even hung 8s). Fix: arm a `targetcreated` listener BEFORE the
+  click/submit (checking pages() after races and misses it) and adopt the new tab, within
+  a 500ms window so a normal no-new-tab click isn't taxed (2943ms → 1446ms). Autocomplete
+  (type → suggestion) already works via the DOM-stable settle. Locked: smoke 13 (new tab
+  followed) + 14 (autocomplete observed); unit 36, eval:browser-agent PASS.
+- ✓→Done **repeated-control targeting** (probe batch 3, click/select) — a per-row
+  "Add to cart" / repeated "View" was DEDUPED to one entry, so the model could never
+  target the 2nd (product lists, tables, search results — a huge real-web class). Fix:
+  (a) dedup now collapses only TRULY redundant LINKS — same text AND same href (a
+  responsive nav rendered twice); distinct buttons/actions are kept. (b) matcher gained
+  ORDINAL targeting ("the second Add to cart", "2nd View", "last") that picks the Nth
+  among equally-matched controls in DOM order — guarded so a literal label that starts
+  with an ordinal word ("First name") is never mis-stripped (only applies when `rest`
+  truly has >1 match). Custom (non-native) dropdowns + tabs already worked (settle).
+  Locked: matcher unit +5, smoke 15 (repeated buttons distinct + ordinal→Banana), agent
+  battery PASS.
+- ✓→Done **browser_hover** (probe batch 4) — hover-triggered dropdown navs / tooltips were
+  invisible (the submenu only renders on :hover/mouseover). New read-risk `browser_hover`
+  tool grounds a target (the menu label) and moves the pointer over it, then re-observes —
+  the pointer STAYS, so a nested submenu item stays clickable (moving to it keeps :hover).
+  Also added `[aria-haspopup]` to the snapshot selector so explicit (possibly non-link)
+  menu triggers are listed. Locked: unit +2, eval 10/10 STABLE 3/3 (hover→browser_hover,
+  not click), smoke 16 (hover reveals Billing then clicks it), agent PASS. (Limit: a hover
+  trigger that's a bare non-interactive `<div>` without aria-haspopup still isn't listed.)
+- ✓→Done **form-control labels** (probe batch 5) — a radio/checkbox/labeled input was
+  named by its `value`/`name` attr ("pro"), NOT its VISIBLE label ("Pro plan"), so the
+  model — which refers to controls by their label — couldn't target them. Fix: a form
+  control's name now resolves its accessible label (aria-labelledby → `<label for>` →
+  wrapping `<label>`) before falling back to value/placeholder. Also added `[role=option]`
+  / `[role=switch]` to the snapshot selector (custom listboxes/toggles with JS-delegated
+  handlers, no inline onclick). Verified: radio→"Pro plan", input→"Email address",
+  checkbox→"I agree to terms" all targetable + actionable; range sliders already settable
+  via type/fill. Locked: smoke 17, unit 43, agent PASS.
+- ✓→Done **browser_key** (probe batch 6) — no keyboard action meant a modal/dropdown with
+  no visible close control could not be dismissed, and keyboard-driven UIs were unreachable.
+  New read-risk `browser_key` tool presses Escape / Enter / Tab / arrows, then settles +
+  re-observes (Enter wrapped in the new-tab follow). Verified: a modal opened by a button
+  and closable only by Escape is dismissed; Tab fires its handler. Locked: smoke 18, eval
+  11/11 STABLE 3/3 (Escape→browser_key, not click), unit 46, agent PASS.
+- ✓→Done **multi-step agent reliability** (the frontier) — eval:browser-agent was a single
+  1-2-step task; added a genuine multi-step scenario (open → search → CLICK the result →
+  read the DETAIL page → answer the stock count that appears ONLY there). gemma4:12b carries
+  the full chain STABLE 3/3 (terminal state = ended on the detail page; grounded answer = the
+  "7 units" that's unreachable without clicking; fabricating or stopping at the results fails).
+  Proves low-spec multi-step web autonomy is reliable, not just one-shot. The battery is now a
+  scenarios[] array — add a scenario per new capability.
+- ◦ **more real-web probes** — native file upload (`<input type=file>` → CDP uploadFile +
+  path arg/tool), cross-origin iframe (per-frame contexts — scope honestly), drag-and-drop;
+  and harder multi-step chains (3-4 clicks, a form fill across pages).
+- ✓→Done **browser_scroll** — the snapshot only saw rendered DOM, so below-the-fold /
+  lazy-loaded content (infinite feeds, long lists) was invisible. New read tool scrolls
+  (down/up/top/bottom) + settles + re-observes. Unit (enum + reject-unknown + scrolls);
+  eval 9/9 STABLE 3/3 (scroll EN+KO); real-Chrome smoke: a button lazy-appended on scroll
+  is absent before and present after scroll('bottom'). Completes the observation-
+  completeness trio with iframe + paging.
+- ✓→Done **element paging past the 50 cap** — no more silent truncation. The controller
+  collects up to BROWSER_ELEMENT_CEILING (200) so grounding matches the WHOLE set in code;
+  every tool RESPONSE shows ≤BROWSER_MAX_ELEMENTS (50) and reports `total` +
+  `hasMore`/`nextOffset`; `browser_read` gained an `offset` arg to page. Unit: 50-cap +
+  total/nextOffset + offset-reads-the-rest; smoke: 61 elements returned (not capped at 50).
 - ✓→Done **agent-level multi-step live battery** — `pnpm eval:browser-agent`: gemma4 drives
   open→type+submit on a local fixture shop (file://, no network) and answers from the rendered
   result; graded on TERMINAL STATE (the page records the query it actually received — a
