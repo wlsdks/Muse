@@ -179,9 +179,10 @@ HARDEN (make existing tools more reliable):
   line; measure eager-invocation drop on eval:tools negative cases.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator that persists a model-named field; one eval:tool-arg-grounding case each.
-  PROGRESS (loop fire 1, 2026-06-12): `muse.tasks.update.notes` now grounded (was the gap next to
-  add/calendar); Opus gating-verifier confirmed the shared runtime applies it. REMAINING actuators to
-  audit: contacts note, any other update/edit path with free-text the model names.
+  PROGRESS (loop, 2026-06-12): fire 1 `muse.tasks.update.notes` · fire 2 `add_contact.relationship`
+  now grounded (Opus gating-verifier traced BOTH paths — MCP-loopback for tasks, direct-MuseTool for
+  contacts — and confirmed the runtime applies groundedArgs on each). REMAINING actuators to audit:
+  reminders add/update free-text, any other update/edit path with model-named free-text.
 - ✓→Done **content-sniff over extension** — file_read now classifies by CONTENT
   (`sniffFileKind`/`resolveFileKind`): `%PDF` magic always wins (a mislabeled `.txt`-that-is-a-PDF
   routes to the extractor), an extensionless download with text bytes reads (extension-only refused
