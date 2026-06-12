@@ -129,10 +129,25 @@ try {
   const final = longSnap.elements.find((el) => el.name === "Final Checkout");
   assert(final !== undefined, "the 71st element (button after 70 links) is in the scanned set, not truncated away");
 
-  console.log("7) cross-invocation reconnect — a second controller drives the SAME Chrome");
+  console.log("7) same-origin iframe — observe AND act inside the frame");
+  // srcdoc inherits the parent origin (guaranteed same-origin); the &quot;
+  // entities become real quotes when the browser parses the srcdoc, so the
+  // onclick flips the button's own text — a click signal the iframe walk sees.
+  const iframeHtml =
+    `<!doctype html><html><head><title>Outer</title></head><body><h1>Host page</h1>` +
+    `<iframe srcdoc="<button onclick=&quot;this.textContent='Paid'&quot;>Pay now</button>"></iframe>` +
+    `</body></html>`;
+  await writeFile(join(dir, "iframe.html"), iframeHtml);
+  let iframeSnap = await controller.open(pathToFileURL(join(dir, "iframe.html")).href);
+  const payBtn = iframeSnap.elements.find((el) => el.name === "Pay now");
+  assert(payBtn !== undefined, "a button inside a same-origin iframe is listed in the snapshot");
+  iframeSnap = await controller.click(payBtn.ref);
+  assert(iframeSnap.elements.some((el) => el.name === "Paid"), "clicking the iframe-internal button works (frame-aware act flips its text to Paid)");
+
+  console.log("8) cross-invocation reconnect — a second controller drives the SAME Chrome");
   const second = new PuppeteerBrowserController({ headless: true, userDataDir: join(dir, "profile") });
   const reSnap = await second.snapshot();
-  assert(reSnap.url === longSnap.url, "new controller reconnected to the running browser (no profile-lock crash)");
+  assert(reSnap.url === iframeSnap.url, "new controller reconnected to the running browser (no profile-lock crash)");
 
   console.log("\nsmoke:browser PASS");
 } finally {

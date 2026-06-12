@@ -24,8 +24,15 @@ EXPAND (new reach):
   (display cap + true total + match-beyond-cap + small-page-not-truncated); smoke:browser long-page
   case (71st element reachable past the 40 display cap); eval:tools browser 7/7 ×3, eval:browser-agent
   3/3, check 0, lint 0.
-- ◦ **browser: same-origin iframe piercing** — snapshot stops at iframe boundaries (embedded
-  forms/widgets invisible); walk same-origin frames like shadow roots. Cross-origin honestly out.
+- ✓→Done **browser: same-origin iframe piercing (observe + act)** — the snapshot walk now descends
+  into same-origin iframe contentDocuments (like shadow roots; cross-origin throws → skipped), so
+  embedded forms/checkout/widgets are visible. The act path went frame-aware: `locateRef` finds the
+  puppeteer Frame holding a ref (main doc incl. shadow via pierce/, else a child frame) and
+  click/type use `frame.locator` — so a click/type on an element INSIDE an iframe acts in its own
+  frame, not the main one. smoke:browser gains a same-origin srcdoc-iframe case (button listed +
+  clicked inside the frame, text flips Paid); eval:browser-agent 3/3 (act-path refactor no
+  regression); browser unit 37, check 0, lint 0. Cross-origin iframes stay out (CDP needs per-frame
+  contexts — honest scope).
 - ✓→Done **file_read: .docx (Word) extraction** — `docx` FileKind + lazy mammoth (extractRawText,
   injectable like extractPdfText); routes by extension since a .docx is a zip (sniffs unsupported).
   Description gains the Word cue. TDD 4 cases (classify/resolve/route/description); eval:file-read

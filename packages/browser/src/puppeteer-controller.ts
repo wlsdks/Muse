@@ -21,7 +21,7 @@ import {
   ChromeReleaseChannel,
   computeSystemExecutablePath
 } from "@puppeteer/browsers";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type ElementHandle, type Frame, type Page } from "puppeteer-core";
 
 import {
   BROWSER_MAX_ELEMENTS,
@@ -161,6 +161,15 @@ export class PuppeteerBrowserController implements BrowserController {
         for (const el of Array.from(root.querySelectorAll("*"))) {
           if (el.matches(selector)) nodes.push(el);
           if (el.shadowRoot) walk(el.shadowRoot);
+          // Same-origin iframes (embedded forms/checkout/widgets) are walked
+          // like shadow roots; a cross-origin frame throws on contentDocument
+          // and is skipped (honestly out of reach — CDP needs per-frame access).
+          if (el.tagName === "IFRAME") {
+            try {
+              const doc = (el as HTMLIFrameElement).contentDocument;
+              if (doc) walk(doc);
+            } catch { /* cross-origin frame */ }
+          }
         }
       };
       walk(document);
@@ -205,11 +214,34 @@ export class PuppeteerBrowserController implements BrowserController {
     return { elements, text, title, url: this.lastUrl };
   }
 
-  private async elementHandle(ref: number) {
+  /**
+   * The FRAME holding a ref + the selector to use within it. A ref can live in
+   * the main document (incl. open shadow roots, reached with `pierce/`) or in a
+   * same-origin iframe (its own puppeteer Frame). Searching the frames is what
+   * lets click/type reach an element the snapshot found inside an iframe.
+   */
+  private async locateRef(ref: number): Promise<{ frame: Frame; selector: string }> {
     const page = await this.ensurePage();
-    // pierce/ resolves refs inside open shadow roots too (a plain CSS
-    // selector stops at the shadow boundary).
-    const handle = await page.$(`pierce/[data-muse-ref="${ref.toString()}"]`);
+    const plain = `[data-muse-ref="${ref.toString()}"]`;
+    const inMain = await page.$(`pierce/${plain}`);
+    if (inMain) {
+      await inMain.dispose();
+      return { frame: page.mainFrame(), selector: `pierce/${plain}` };
+    }
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      const handle = await frame.$(plain).catch(() => null);
+      if (handle) {
+        await handle.dispose();
+        return { frame, selector: plain };
+      }
+    }
+    throw new Error(`no element with ref ${ref.toString()} on the current page — call browser_read again`);
+  }
+
+  private async elementHandle(ref: number): Promise<ElementHandle<Element>> {
+    const { frame, selector } = await this.locateRef(ref);
+    const handle = await frame.$(selector);
     if (!handle) {
       throw new Error(`no element with ref ${ref.toString()} on the current page — call browser_read again`);
     }
@@ -218,18 +250,23 @@ export class PuppeteerBrowserController implements BrowserController {
 
   async click(ref: number): Promise<PageSnapshot> {
     const page = await this.ensurePage();
-    await this.elementHandle(ref);
+    const { frame, selector } = await this.locateRef(ref);
     // Locator (not the raw handle): auto-waits for visible/enabled/stable
     // before acting — the reliable-interaction pattern from the Puppeteer
-    // guide; the handle lookup above keeps the fast "no such ref" error.
-    await page.locator(`pierce/[data-muse-ref="${ref.toString()}"]`).setTimeout(this.timeout).click();
+    // guide. frame.locator (not page.locator) so an element inside a
+    // same-origin iframe is acted on in its own frame.
+    await frame.locator(selector).setTimeout(this.timeout).click();
     await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* page may not navigate */ });
     return this.snapshot();
   }
 
   async type(ref: number, text: string, submit: boolean): Promise<PageSnapshot> {
     const page = await this.ensurePage();
-    const handle = await this.elementHandle(ref);
+    const { frame, selector } = await this.locateRef(ref);
+    const handle = await frame.$(selector);
+    if (!handle) {
+      throw new Error(`no element with ref ${ref.toString()} on the current page — call browser_read again`);
+    }
     const tag = await handle.evaluate((el) => el.tagName.toLowerCase());
     if (tag === "select") {
       // Dropdowns can't be typed into — ground the text to an option in
@@ -249,7 +286,7 @@ export class PuppeteerBrowserController implements BrowserController {
       return this.snapshot();
     }
     try {
-      await page.locator(`pierce/[data-muse-ref="${ref.toString()}"]`).setTimeout(this.timeout).fill(text);
+      await frame.locator(selector).setTimeout(this.timeout).fill(text);
     } catch {
       // Custom widgets that reject fill() still accept raw keystrokes.
       await handle.click({ count: 3 });
