@@ -418,6 +418,16 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   return only. Other return paths (single / single-survivor / aggregator-empty) were already correct.
   agent-core 1708 green incl. a non-vacuous regression (3 proposers, merge echoes 2 → exactly 2 credited).
 
+- ✓→Done **A2A council: typed + length-bounded response boundary** — [2026-06-12, cognition loop
+  fire 8, multi-agent #3] the council REQUEST hand-off had a typed `parseCouncilRequest`, but the
+  RESPONSE (the direction that flows into the initiator's LOCAL synthesis) was an inline ad-hoc check
+  with NO length bound — a buggy/compromised allowlisted peer could flood local synthesis context
+  (the wire's "bounded compute" goal wasn't enforced on the accepting side). Added a symmetric
+  `parseCouncilResponse` + `MAX_COUNCIL_REASONING_CHARS` (truncate over-long reasoning at the trust
+  seam) wired into `requestCouncilReasoning`. fromPeerId is carried-through (NOT a rejection reason —
+  the judge caught + relaxed an over-strict draft that would have dropped legitimate reasoning when a
+  peer's selfPeerId is unset, which handler.ts emits as ""). a2a 141 green.
+
 ## Blocked / deferred
 
 - ⏳ **Grammar-constrained tool-call decoding** — INFEASIBLE on Ollama today: `format`
