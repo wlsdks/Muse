@@ -601,3 +601,11 @@
 - **왜:** fire-25에서 기록한 최상단 ready ◦(최고가치). date-overflow 클래스를 완전히 닫음. 다양성 가드: 최근 3 fire(23 crash·24 contract-drift·25 overflow)가 same-KIND 3연속 아님 → 허용. undefined 반환은 파일의 reject-don't-roll 철학(227 재검증·"2월 30일" 거부·parseTaskDueAt 2026-02-29 거부)과 일관. 다음 leap year(2032, 3+년 후) 해결보다 fail-safe가 덜 놀람.
 - **리뷰지점:** loopback-relative-time.ts:230-236(en rolled 재검증 month+date) + 750-758(ko koRolled getMonth 재검증, setHours 前) + WHY 코멘트 2 + relative-time-period.test.ts(en/ko feb-29→undefined + mar-5 valid-roll→2027 무회귀가드) RED(둘 다 2029-03-01)→GREEN 47/47. mcp 1725, check 0(전 패키지: agent-core 1831·cli 2535·api 850), lint 0. Fable-5 PASS: src만 stash해 RED 독립 재확인, 파일 내 유일한 +1년 롤 2곳·B는 day≤31 pre-validated라 getMonth-only 충분, 413 테스트(3파일) green.
 - **리스크:** 없음에 가까움 — 롤 사이트 2곳만 재검증 추가, valid 롤(mar 5→2027) 통과 확인, feb-29 BEFORE(올해 leap) 경로 무변경. RATCHET: testFiles 896 무변동(기존 파일 +3케이스), fabrication 0 유지. 잔여: next-leap 해결은 별도 enhancement(◦ 미생성, 진안 선택). grounding floor 무관(시간 파싱 정확성, 게이트 무변경).
+
+
+## [TOOL loop] fire 27 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.math#evaluate가 계약상 유효한 탭/개행 식을 조용히 거부 — SAFE_MATH_PATTERN(L13)은 모든 \s 허용하나 토크나이저 skip()이 리터럴 " "만 스킵. "2 *\t3"/"1000\n+ 2000"가 whitelist 통과 후 탭/개행에서 cursor 정체→"expected number"/"trailing characters" throw. skip()을 모든 \s 스킵(/\s/u.test)으로 정렬.
+- **왜:** EXPANSION 코드 gap-scout(신호 clean). fire 25·26이 둘 다 date-overflow였어서 다양성 가드상 비-date KIND 필수 → input-validation/whitelist↔tokenizer contract-drift(fresh KIND·표면). math fast-path는 muse ask 정확-산술 경로도 공유 → 붙여넣은 다중라인 합계가 조용히 실패. whitelist 자체는 불변이라 받아들이는 문자 집합 무확대(injection 없음).
+- **리뷰지점:** loopback-math-server.ts:174-181(skip() " "→/\s/u + WHY 코멘트) + mcp.test.ts(탭/개행 3케이스 → 6/3000/9, 도구 경로) RED("expected number")→GREEN. mcp 1726, check 0(전 패키지: agent-core 1831·cli 2535·api 850), lint 0. Fable-5 PASS: src만 stash해 RED 독립 재확인, skip()이 유일 whitespace 지점이라 완전, "1 2"/"1\t2" 여전히 error(숫자 연결 안 됨)·whitelist 불변이라 새 문자 도달 불가, 364 math/file 테스트 green.
+- **리스크:** 없음에 가까움 — skip() 1곳만 정렬, 기존 산술(14·div0·1.2.3 거부·5.+.5=5.5) 무회귀, 공백-only 입력 동작 동일(evaluateArithmeticExpression 공유). nit(non-blocking): /\s/u가 NBSP(\u00a0)도 스킵→이제 평가(whitelist \s가 이미 허용했던 것, 의도된 정렬). RATCHET: testFiles 896 무변동(기존 파일 +1케이스), fabrication 0 유지. grounding floor 무관(산술 정확성, 게이트 무변경).

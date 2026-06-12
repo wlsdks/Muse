@@ -901,6 +901,17 @@ describe("loopback MCP servers", () => {
     });
   });
 
+  it("muse.math#evaluate accepts tabs/newlines between tokens — the whitelist admits all whitespace", async () => {
+    const server = createMathMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    // SAFE_MATH_PATTERN admits \s, so a pasted multi-line or tab-separated sum is
+    // contract-valid; the tokenizer's skip() must advance over it, not throw
+    // "expected number" / "trailing characters" on a tab the whitelist let through.
+    expect(await connection.callTool!("evaluate", { expression: "2 *\t3" })).toMatchObject({ result: 6 });
+    expect(await connection.callTool!("evaluate", { expression: "1000\n+ 2000" })).toMatchObject({ result: 3000 });
+    expect(await connection.callTool!("evaluate", { expression: "(1 +\n2) * 3" })).toMatchObject({ result: 9 });
+  });
+
   it("returns a structured error when an unknown tool is called", async () => {
     const server = createMathMcpServer();
     const connection = createLoopbackMcpConnection(server);

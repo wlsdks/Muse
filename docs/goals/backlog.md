@@ -491,6 +491,16 @@ HARDEN (make existing tools more reliable):
   roll sites; getMonth-only suffices for B since day≤31 pre-validated; 413 tests across 3 files green). NOTE: returns
   undefined rather than finding the next leap year (2032) — a fail-safe minimal fix; next-leap resolution is a separate
   enhancement if 진안 wants it.
+- ✓→Done **muse.math#evaluate silently failed on a valid tab/newline expression** (EXPANSION gap-scout, fire 27;
+  input-validation / whitelist↔tokenizer contract drift) — `SAFE_MATH_PATTERN = /^[\s\d+\-*/().,%]+$/u` (line 13) admits
+  ALL whitespace, but the tokenizer's `skip()` only advanced over a literal space `" "`. So a contract-valid `"2 *\t3"`
+  or a pasted multi-line `"1000\n+ 2000"` passed the whitelist, then the tab/newline stalled the cursor and the parser
+  threw "expected number" / "trailing characters" — the math fast-path (also behind `muse ask`'s exact-arithmetic
+  route) silently rejecting input its own contract accepts. FIX: `skip()` advances over any `\s` (`/\s/u.test(...)`),
+  aligning the tokenizer with the whitelist. TDD 1 ("2 *\t3"→6, "1000\n+ 2000"→3000, "(1 +\n2)*3"→9) RED("expected
+  number")→GREEN; mcp 1726, check 0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; "1 2"/"1\t2"
+  still error — no number concatenation; whitelist unchanged so no new chars reachable, no injection; 364 math/file
+  tests green). KIND deliberately non-date after two date-overflow fires.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`
