@@ -259,21 +259,26 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           if ((title === undefined || title.length === 0) && notesArg === undefined && dueArg === undefined && !hasUrgent) {
             return { error: "provide at least one of: dueAt, title, urgent, notes" };
           }
-          const patched: Record<string, unknown> = { ...tasks[index]! };
+          // Build the field-level DELTA (which fields to set / clear), not a whole
+          // stale snapshot — then re-apply it to the FRESH task inside the write queue
+          // (mirror `complete`), so a concurrent change to OTHER fields survives instead
+          // of being clobbered by a last-writer-wins overwrite.
+          const sets: Record<string, unknown> = {};
+          const clears: string[] = [];
           if (title && title.length > 0) {
-            patched.title = title;
+            sets.title = title;
           }
           if (hasUrgent) {
-            if (args["urgent"] === true) patched.urgent = true;
-            else delete patched.urgent;
+            if (args["urgent"] === true) sets.urgent = true;
+            else clears.push("urgent");
           }
           if (notesArg !== undefined) {
-            if (notesArg.length > 0) patched.notes = notesArg;
-            else delete patched.notes;
+            if (notesArg.length > 0) sets.notes = notesArg;
+            else clears.push("notes");
           }
           if (dueArg !== undefined) {
             if (dueArg.length === 0 || dueArg.toLowerCase() === "none") {
-              delete patched.dueAt;
+              clears.push("dueAt");
             } else {
               // A partial reschedule keeps the unspecified half of the deadline:
               // a bare TIME ("오후 6시로") keeps the task's DATE (anchor to its
@@ -290,16 +295,24 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
               // resolves to now-plus-delta rather than a bare date's midnight.
               const isDateOnly = !/^\d{4}-\d{2}-\d{2}T/u.test(dueArg) && !isTimeOnlyPhrase(dueArg)
                 && !hasTimeComponent(dueArg) && isUtcMidnight(new Date(parsed));
-              patched.dueAt = isDateOnly && haveExisting
+              sets.dueAt = isDateOnly && haveExisting
                 ? withTimeOfDay(new Date(parsed), existingDue!).toISOString()
                 : parsed;
             }
           }
-          const updated = patched as unknown as PersistedTask;
+          const applyDelta = (base: PersistedTask): PersistedTask => {
+            const merged: Record<string, unknown> = { ...base, ...sets };
+            for (const key of clears) delete merged[key];
+            return merged as unknown as PersistedTask;
+          };
+          // Fallback for the return value if the task vanished concurrently (i < 0,
+          // no write): reflect the requested change against the snapshot we resolved.
+          let updated = applyDelta(tasks[index]!);
           try {
             await mutateTasks(file, (current) => {
               const i = current.findIndex((task) => task.id === resolution.task.id);
               if (i < 0) return current;
+              updated = applyDelta(current[i]!); // delta onto the FRESH task, not the stale snapshot
               const updatedList = [...current];
               updatedList[i] = updated;
               return updatedList;

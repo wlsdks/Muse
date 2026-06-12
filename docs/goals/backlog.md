@@ -54,9 +54,14 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
 - ◦ **web_download buffers the ENTIRE response body before the size-cap check** (gap-scout runner-up) —
   `Buffer.from(await response.arrayBuffer())` then `> maxBytes` (web-download-tool.ts:~97), so a multi-GB / never-
   ending body fills RAM despite the 50MB cap. FIX: Content-Length pre-check + streamed read with early abort.
-- ◦ **muse.tasks.update lost-update TOCTOU** (gap-scout runner-up) — writes the whole stale pre-read snapshot
-  inside mutateTasks (loopback-tasks.ts:~298), clobbering a concurrent field change; `complete` already re-applies
-  only the delta inside the mutate callback. FIX: mirror `complete` — re-apply the update delta inside mutate.
+- ✓→Done **muse.tasks.update lost-update TOCTOU** (gap-scout runner-up; shipped fire 16) — built a WHOLE stale
+  snapshot (`{...tasks[index]}`) outside the write queue and wrote it back inside mutateTasks, so two concurrent
+  updates to DIFFERENT fields lost-update (last-writer-wins on the whole object). FIX: build a field-level DELTA
+  (sets/clears) and re-apply it onto the FRESH `current[i]` inside the mutate callback (mirror `complete`); single-
+  update semantics 1:1 unchanged. TDD (two concurrent updates to title + notes both persist in tasks.json) RED→GREEN;
+  mcp 1699, check 0, lint 0. Fable-5 PASS (reproduced RED in a /tmp worktree). RESIDUAL (acceptable, pre-existing):
+  a partial dueAt reschedule still anchors to the stale existing-due, so a due-move RACE on the SAME field is
+  last-writer-wins (the cross-field lost-update is fixed); same class as `complete`'s resolve-outside-queue.
 - ✓→Done **muse.url.parse query map prototype pollution** (EXPANSION gap-scout, live) — the query map was a
   prototype-bearing `{}`, so an attacker-controlled URL `?__proto__=a` hit the Object.prototype SETTER (param
   vanished + the object's prototype polluted before serialization) and `?constructor=c` collided with the

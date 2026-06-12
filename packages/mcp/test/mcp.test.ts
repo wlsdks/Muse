@@ -2318,6 +2318,26 @@ describe("muse.tasks loopback server", () => {
     expect(noMatches).toMatchObject({ total: 0 });
   });
 
+  it("update is lost-update-safe — two concurrent updates to DIFFERENT fields both persist", async () => {
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const dir = mkdtempSync(`${tmpdir}/muse-tasks-rmw-`);
+    const file = `${dir}/tasks.json`;
+    let counter = 0;
+    const connection = createLoopbackMcpConnection(createTasksMcpServer({ file, idFactory: () => `task_${(++counter).toString()}` }));
+    await connection.callTool!("add", { title: "Plan trip" });
+    // Two concurrent updates to DIFFERENT fields. Before the fix, each `update` built
+    // its WHOLE stale snapshot outside the write queue and wrote it back, so the later
+    // write reverted the other's change (last-writer-wins → lost update).
+    await Promise.all([
+      connection.callTool!("update", { id: "task_1", title: "Plan trip v2" }),
+      connection.callTool!("update", { id: "task_1", notes: "book flights" })
+    ]);
+    const persisted = JSON.parse(readFileSync(file, "utf8")) as { tasks: { notes?: string; title: string }[] };
+    expect(persisted.tasks[0]!.title).toBe("Plan trip v2"); // the title change survived
+    expect(persisted.tasks[0]!.notes).toBe("book flights"); // AND the notes change (not clobbered)
+  });
+
   it("delete REMOVES a task (by id or title word) — parity with `muse tasks delete`, distinct from complete", async () => {
     const { mkdtempSync } = await import("node:fs");
     const tmpdir = await import("node:os").then((m) => m.tmpdir());

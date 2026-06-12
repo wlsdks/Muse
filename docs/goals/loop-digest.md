@@ -470,3 +470,11 @@
 - **왜:** AppWorld "collateral damage"(무관 사용자 파일 무경고 파괴). 모듈 헤더는 fail-closed 디스크 약속. EXPANSION 스카웃 라이브 확인. 다양성: 최근 url×2/calendar×2 다음 web_download data-integrity로 표면 전환.
 - **리뷰지점:** web-download-tool.ts(writeNonClobbering 헬퍼 + execute 배선) + web-download-tool.test.ts(기존 report.pdf 보존 + 새 바이트 "report (1).pdf") RED→GREEN. mcp 1698, check 0, lint 0. Fable-5 검증자 PASS(5 동시→5 고유·fresh-dir 원래이름·실에러 re-throw·엣지케이스). runner-up 2개(전체 바디 버퍼링 後 size-cap → 메모리 고갈, tasks.update lost-update TOCTOU) backlog 기록.
 - **리스크:** 없음에 가까움 — fresh dir은 원래 이름 그대로, dedupe는 충돌 시만. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(다운로드 디스크 안전, 게이트 무변경).
+
+
+## [TOOL loop] fire 16 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.tasks.update가 전체 stale 스냅샷({...tasks[index]})을 write 큐 밖에서 만들어 그대로 써서, 다른 필드를 바꾸는 두 동시 update가 lost-update(last-writer-wins). fix: 필드-레벨 DELTA(sets/clears) 만들어 mutate 콜백 안에서 fresh current[i]에 재적용(complete 패턴 mirror).
+- **왜:** fire-15 runner-up. 다른 표면(tasks store)·concurrency KIND. complete는 이미 delta 재적용으로 옳게 하는데 update만 누락. τ-bench "no partial side-effects"/AppWorld collateral-damage 클래스.
+- **리뷰지점:** loopback-tasks.ts(patched 전체쓰기 → applyDelta(sets/clears) 재적용) + mcp.test.ts(title+notes 동시 update 둘 다 tasks.json에 persist) RED→GREEN. mcp 1699, check 0(flaky cli chat-grounding 재실행 후·무관), lint 0. Fable-5 검증자 PASS(single-update 1:1 무회귀·applyDelta set-XOR-clear·vanished-task 엣지·/tmp worktree로 RED 재현). 잔여: partial dueAt reschedule이 stale existing-due에 anchor(같은-필드 race만, 수용·pre-existing).
+- **리스크:** 없음에 가까움 — single-update 의미 byte-identical, 타 필드 보존. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(tasks store 동시성, 게이트 무변경).
