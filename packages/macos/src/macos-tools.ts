@@ -1499,7 +1499,10 @@ export function createMacSayTool(deps: MacSayToolDeps = {}): MuseTool {
         return { reason: "mac_say requires non-empty 'text'", spoke: false };
       }
       const voice = typeof args["voice"] === "string" && args["voice"].trim().length > 0 ? args["voice"].trim() : undefined;
-      const argv = voice ? ["-v", voice, text] : [text];
+      // `--` terminates option parsing so a user text like "-0" / "--version" reaches
+      // `say` as the spoken string, not as a flag. `say` supports `--`; mdfind/pbcopy
+      // do not, so this guard stays say-specific.
+      const argv = voice ? ["-v", voice, "--", text] : ["--", text];
       let result: MacCommandResult;
       try {
         result = await runner(argv);

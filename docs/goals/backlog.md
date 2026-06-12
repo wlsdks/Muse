@@ -501,6 +501,22 @@ HARDEN (make existing tools more reliable):
   number")→GREEN; mcp 1726, check 0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; "1 2"/"1\t2"
   still error — no number concatenation; whitelist unchanged so no new chars reachable, no injection; 364 math/file
   tests green). KIND deliberately non-date after two date-overflow fires.
+- ✓→Done **mac_say argv flag-injection** (EXPANSION gap-scout, fire 28; argument injection / fail-open option
+  parsing) — `mac_say` built `argv = voice ? ["-v", voice, text] : [text]`, passing the user's `text` as the first
+  positional with NO `--` option terminator. A text of "-0" / "--version" was reparsed by `say` as a flag (live: `say
+  "-0"` → exit 1 "invalid option"), so a user asking Muse to speak a dash-leading string silently failed. FIX:
+  `["-v", voice, "--", text]` / `["--", text]` — `say` supports `--` (independently live-verified by the Fable-5 judge:
+  `say -- "-0"` → exit 0; mdfind/pbcopy do NOT, so the guard stays say-specific). TDD: leading-dash "-0"/"--version" →
+  argv carries `--` before the text, spoke:true; the existing argv assertion updated (incidental characterization, no
+  masked regression). macos 95/95, check 0 (all pkgs), lint 0. Fable-5 PASS (runner seam contract-faithful; voice not a
+  vector — consumed as the `-v` value, no shell). KIND security (argv injection), fresh surface.
+- ◦ **mac_spotlight_search / muse.notes.save hardening (fire-28 rejected for THIS slice, recorded)** — (1)
+  `mac_spotlight_search` (macos-tools.ts:1439) has the SAME leading-dash argv-injection as mac_say, BUT `mdfind` rejects
+  `--` (`mdfind -- q` → "Unknown option"), so there's no one-line terminator fix — needs query-rewriting/escaping logic
+  (a real ◦, not trivial). (2) `muse.notes.save` (loopback-notes.ts:351-363) does stat-then-writeFile (TOCTOU) so a
+  concurrent create is silently clobbered under overwrite:false; the clean fix is the `wx` open flag, but
+  `nodeWriteFile`/`nodeStat` are top-level `node:fs/promises` imports (not injected), so the race isn't deterministically
+  testable until a writer seam is added — slice = add the injectable writer seam THEN the `wx` fix + race test.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

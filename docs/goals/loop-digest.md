@@ -609,3 +609,11 @@
 - **왜:** EXPANSION 코드 gap-scout(신호 clean). fire 25·26이 둘 다 date-overflow였어서 다양성 가드상 비-date KIND 필수 → input-validation/whitelist↔tokenizer contract-drift(fresh KIND·표면). math fast-path는 muse ask 정확-산술 경로도 공유 → 붙여넣은 다중라인 합계가 조용히 실패. whitelist 자체는 불변이라 받아들이는 문자 집합 무확대(injection 없음).
 - **리뷰지점:** loopback-math-server.ts:174-181(skip() " "→/\s/u + WHY 코멘트) + mcp.test.ts(탭/개행 3케이스 → 6/3000/9, 도구 경로) RED("expected number")→GREEN. mcp 1726, check 0(전 패키지: agent-core 1831·cli 2535·api 850), lint 0. Fable-5 PASS: src만 stash해 RED 독립 재확인, skip()이 유일 whitespace 지점이라 완전, "1 2"/"1\t2" 여전히 error(숫자 연결 안 됨)·whitelist 불변이라 새 문자 도달 불가, 364 math/file 테스트 green.
 - **리스크:** 없음에 가까움 — skip() 1곳만 정렬, 기존 산술(14·div0·1.2.3 거부·5.+.5=5.5) 무회귀, 공백-only 입력 동작 동일(evaluateArithmeticExpression 공유). nit(non-blocking): /\s/u가 NBSP(\u00a0)도 스킵→이제 평가(whitelist \s가 이미 허용했던 것, 의도된 정렬). RATCHET: testFiles 896 무변동(기존 파일 +1케이스), fabrication 0 유지. grounding floor 무관(산술 정확성, 게이트 무변경).
+
+
+## [TOOL loop] fire 28 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** mac_say argv 플래그-인젝션 — `argv = voice ? ["-v",voice,text] : [text]`로 사용자 text를 첫 positional로 넘겨 `--` 옵션 터미네이터 없음. text가 "-0"/"--version"이면 `say`가 플래그로 재해석(라이브: say "-0"→exit 1 invalid option) → dash-시작 문자열 말하기가 조용히 실패. `["-v",voice,"--",text]`/`["--",text]`로 수정(say는 `--` 지원, mdfind/pbcopy는 미지원이라 say-한정 가드).
+- **왜:** EXPANSION 코드 gap-scout(신호 clean). 최근 KIND(date×2·input-validation)와 다른 보안 KIND(argument injection)·fresh 표면(macos). fire-27 runner-up이었고 결정적 테스트 가능(주입 runner seam이 argv 캡처). spotlight는 mdfind가 `--` 거부라 reject(◦ 기록), notes.save TOCTOU는 writer seam 부재로 비결정적 reject(◦ 기록).
+- **리뷰지점:** macos-tools.ts:1501-1505(argv에 `--` + WHY 코멘트) + macos-tools.test.ts(leading-dash "-0"/"--version" → argv가 text 앞 `--` 포함, 기존 argv assertion은 새 shape로 갱신=incidental) RED(2 fail)→GREEN. macos 95/95, check 0(전 패키지: agent-core 1831·cli 2535·api 850), lint 0. Fable-5 PASS: 이 머신에서 `say -- "-0"` exit 0 라이브 독립 검증(취약 실재+fix 정상호출 안 깸), runner seam contract-faithful(spawn·no shell), voice는 -v 값으로 소비라 벡터 아님.
+- **리스크:** 없음에 가까움 — argv 1곳 + 기존 테스트 2 assertion 갱신(masked regression 아님, 의도는 "text+voice 전달"), 정상 text 무영향. nit(non-blocking): voice:"?"는 say가 voice 목록 출력 후 exit 0(cosmetic, injection 아님). RATCHET: testFiles 896 무변동(기존 파일 +1케이스), fabrication 0 유지. grounding floor 무관(actuator argv 안전성, 게이트 무변경).
