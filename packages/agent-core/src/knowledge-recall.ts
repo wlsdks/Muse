@@ -976,7 +976,7 @@ export function selectBestGroundedDraft(
  */
 export async function rankKnowledgeChunksWithHop(
   query: string,
-  notes: ReadonlyArray<{ readonly source: string; readonly text: string }>,
+  notes: readonly KnowledgeChunk[],
   options: RankKnowledgeOptions & { readonly secondHop?: boolean }
 ): Promise<KnowledgeMatch[]> {
   const primary = await rankKnowledgeChunks(query, notes, options);
@@ -1005,11 +1005,47 @@ export async function rankKnowledgeChunksWithHop(
   // single-hop behavior stays byte-identical.
   const fused = fuseByReciprocalRank(lists);
   const primaryKeys = new Set(primary.map((match) => keyOf(match)));
-  const additions = [...byKey.keys()]
+
+  // Recompute cosine for appended bridges against the ORIGINAL QUERY so
+  // additions carry query-relative confidence, not seed-relative (inflated) cosine.
+  // The caching embedder makes these cache hits — the same texts were already
+  // embedded during the primary and hop ranking passes above.
+  let queryVec: readonly number[] | null = null;
+  try {
+    queryVec = await options.embed(query);
+  } catch {
+    // If the query embed fails, fall back: all additions get cosine=0 (fail-safe below).
+  }
+
+  const inputByKey = new Map<string, KnowledgeChunk>();
+  for (const chunk of notes) {
+    inputByKey.set(`${chunk.source}|${chunk.text}`, chunk);
+  }
+
+  const additionKeys = [...byKey.keys()]
     .filter((key) => !primaryKeys.has(key))
     .sort((a, b) => (fused.get(b) ?? 0) - (fused.get(a) ?? 0))
-    .slice(0, 2)
-    .map((key) => byKey.get(key)!);
+    .slice(0, 2);
+
+  const additions: KnowledgeMatch[] = [];
+  for (const key of additionKeys) {
+    const match = byKey.get(key)!;
+    let queryCosine = 0;
+    if (queryVec !== null) {
+      try {
+        // Prefer the input chunk's embedText (same embedding space used during ranking);
+        // fall back to the match's display text.
+        const inputChunk = inputByKey.get(key);
+        const chunkVec = await options.embed(inputChunk?.embedText ?? match.text);
+        queryCosine = cosineSimilarity(queryVec, chunkVec);
+      } catch {
+        // Fail-safe: an appended bridge must NEVER inflate retrieval confidence.
+        queryCosine = 0;
+      }
+    }
+    additions.push({ ...match, cosine: queryCosine });
+  }
+
   return [...primary, ...additions];
 }
 
@@ -1141,6 +1177,22 @@ const VALUE_WORD_STOPLIST = new Set([
   "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
 ]);
 
+// Sentence-opener / connective words a chatty model capitalizes only because
+// they start a sentence — NOT named entities. Excluded so "However, …" /
+// "Based on your notes, …" don't trigger a needless value-escalation judge pass.
+const SENTENCE_OPENER_STOPLIST = new Set([
+  "however", "based", "according", "additionally", "moreover", "furthermore",
+  "therefore", "thus", "hence", "consequently", "meanwhile", "instead",
+  "otherwise", "nonetheless", "nevertheless", "although", "though", "because",
+  "since", "while", "when", "where", "whereas", "also", "finally", "firstly",
+  "secondly", "next", "then", "overall", "generally", "specifically", "note",
+  "here", "there", "currently", "recently", "unfortunately", "fortunately",
+  "importantly", "notably", "similarly", "conversely", "regarding", "given",
+  "considering", "despite", "besides", "alternatively", "basically",
+  "essentially", "ultimately", "first", "second", "third",
+  "yes", "sure", "okay", "well"
+]);
+
 /**
  * The VALUE tokens the answer asserts that the evidence does NOT contain — a
  * pure-digit NUMBER ("MTU 9000" vs the note's "1380"), a whole EMAIL ADDRESS
@@ -1176,7 +1228,7 @@ function answerAssertsUnsupportedValue(answer: string, matches: readonly Knowled
   }
   const namedEntities = (stripped.match(/\b[A-Z][a-zA-Z]{2,}\b/gu) ?? [])
     .map((word) => word.toLowerCase())
-    .filter((word) => !LEXICAL_STOPWORDS.has(word) && !VALUE_WORD_STOPLIST.has(word));
+    .filter((word) => !LEXICAL_STOPWORDS.has(word) && !VALUE_WORD_STOPLIST.has(word) && !SENTENCE_OPENER_STOPLIST.has(word));
   return namedEntities.some((entity) => !evidence.has(entity));
 }
 
