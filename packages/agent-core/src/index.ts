@@ -259,6 +259,7 @@ export {
   type OrchestrationRole
 } from "./orchestrate.js";
 export {
+  A2A_MAX_CONTENT_CHARS,
   A2ASafetyError,
   classifyInbound,
   isA2AEnabled,
