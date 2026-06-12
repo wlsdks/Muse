@@ -147,12 +147,34 @@ export function requestsToolAction(query: string): boolean {
 const KO_ACTION_DONE_RE =
   /(추가했|추가됐|추가되었|추가해\s*[드놨]|등록했|등록됐|등록되었|설정했|설정됐|예약했|예약됐|예약\s*완료|맞췄|맞춰\s*[놨드]|잡았|잡아\s*놨|넣었|넣어\s*놨|생성했|생성됐|완료했|완료됐|완료로\s*표시|추가할게|등록할게|맞춰\s*드릴게|추가해\s*드릴게|예약해\s*드릴게)/u;
 
-/** True when the answer CLAIMS it performed / will perform a tool action — EN or KO. */
+// An OFFER / permission-question ("추가해 드릴까요?", "추가할까요?", "shall I add it?")
+// is NOT a claim that the action happened — the KO interrogative `…까요?`/`…까?`
+// is distinct from the declarative claim/promise `…했/…습니다/…게요`. Without this
+// guard `추가해 드릴까요?` matched `추가해\s*[드놨]` and was logged as a false promise
+// (a spurious unbacked-action). KO-focused: an EN offer ("shall I add") never
+// matched ACTION_PROMISE_RE (which anchors on "I'll/I will"), so it's already excluded.
+const ACTION_OFFER_RE = /(추가|등록|설정|예약|맞춰|잡아|넣어?|만들어?|생성|처리|완료)\s*(해|하|해\s*드릴|드릴)?\s*(까요|까|ㄹ까요|을까요|을까)\s*[?？]?/u;
+
+/** True when the answer CLAIMS it performed / will perform a tool action — EN or KO. NOT a mere offer ("…할까요?"). */
 export function answerClaimsAction(answer: string): boolean {
+  if (ACTION_OFFER_RE.test(answer)) {
+    return false;
+  }
   if (ACTION_PROMISE_RE.test(answer)) {
     return true;
   }
   return new RegExp(`(${KO_ACTION_NOUN})`, "u").test(answer) && KO_ACTION_DONE_RE.test(answer);
+}
+
+// A state-CHANGING tool name: the `.add/.update/.delete/.complete/.save/.create/
+// .remove` actuator verbs, or a `_action` tool. A read/list tool (e.g.
+// `muse.tasks.list`, `knowledge_search`) is NOT one — so "did an actuator run?"
+// stays distinct from "did any tool run?".
+const ACTION_TOOL_RE = /\.(add|update|delete|complete|save|create|remove)\b|_action\b/u;
+
+/** True when at least one STATE-CHANGING (actuator) tool ran — used to tell a real action from a false promise. */
+export function actionToolRan(toolNames: readonly string[]): boolean {
+  return toolNames.some((tool) => ACTION_TOOL_RE.test(tool));
 }
 
 /** True when the prompt asks for a whole-corpus overview/listing, not a specific recall. */

@@ -37,28 +37,34 @@ describe("askWeaknessAxis (ask-path failure → weakness fuel)", () => {
     expect(askWeaknessAxis("grounded")).toBeNull();
     expect(askWeaknessAxis(null)).toBeNull();
   });
+  it("a claimed-but-unbacked action takes precedence (a false promise), even over a grounding miss", () => {
+    expect(askWeaknessAxis("grounded", { claimedUnbackedAction: true })).toBe("unbacked-action");
+    expect(askWeaknessAxis("abstain", { claimedUnbackedAction: true })).toBe("unbacked-action");
+    expect(askWeaknessAxis(null, { claimedUnbackedAction: true })).toBe("unbacked-action");
+  });
 });
 
-describe("recordAskWeakness (feeds the weakness ledger, best-effort)", () => {
+describe("recordAskWeakness (feeds the weakness ledger by AXIS, best-effort)", () => {
   const deps = (record = vi.fn().mockResolvedValue(undefined)) => ({ recordWeakness: record, weaknessesFile: "/tmp/w.json" });
 
-  it("records a grounding-gap with the query for a failing outcome", async () => {
+  it("records the given axis with the query", async () => {
     const record = vi.fn().mockResolvedValue(undefined);
-    await recordAskWeakness("what is my office VPN MTU?", "ungrounded", deps(record));
+    await recordAskWeakness("what is my office VPN MTU?", "grounding-gap", deps(record));
     expect(record).toHaveBeenCalledWith("/tmp/w.json", { axis: "grounding-gap", message: "what is my office VPN MTU?" });
+    await recordAskWeakness("remind me to pay rent", "unbacked-action", deps(record));
+    expect(record).toHaveBeenCalledWith("/tmp/w.json", { axis: "unbacked-action", message: "remind me to pay rent" });
   });
 
-  it("records nothing on a success / skipped outcome or an empty query", async () => {
+  it("records nothing for a null axis or an empty query", async () => {
     const record = vi.fn().mockResolvedValue(undefined);
-    await recordAskWeakness("q", "grounded", deps(record));
     await recordAskWeakness("q", null, deps(record));
-    await recordAskWeakness("   ", "ungrounded", deps(record));
+    await recordAskWeakness("   ", "grounding-gap", deps(record));
     expect(record).not.toHaveBeenCalled();
   });
 
   it("swallows a throwing ledger write — never breaks the ask command", async () => {
     const record = vi.fn().mockRejectedValue(new Error("ledger unwritable"));
-    await expect(recordAskWeakness("q", "abstain", deps(record))).resolves.toBeUndefined();
+    await expect(recordAskWeakness("q", "grounding-gap", deps(record))).resolves.toBeUndefined();
     expect(record).toHaveBeenCalledTimes(1);
   });
 });

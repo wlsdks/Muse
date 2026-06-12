@@ -29,7 +29,7 @@ import { basename, isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
-import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
+import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, requestsToolAction, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -622,26 +622,41 @@ export function askOutcomeLabel(args: {
  * worth logging as real-usage fuel (mirrors chat-repl's refusal → grounding-gap).
  * `grounded` and `null` (json/vision skip) are not failures.
  */
-export function askWeaknessAxis(outcome: AskOutcome): "grounding-gap" | null {
+export type AskWeaknessAxis = "grounding-gap" | "unbacked-action";
+
+/**
+ * Whetstone fuel: the weakness axis (if any) an ask turn signals. Mirrors
+ * chat-repl's precedence — an `unbacked-action` (the answer CLAIMED a tool
+ * action the user asked for, but no actuator ran: a false promise) takes
+ * precedence; otherwise `abstain` / `ungrounded` (couldn't answer from the
+ * user's notes) is a `grounding-gap`. `grounded` / `null` (json/vision skip)
+ * are not failures.
+ */
+export function askWeaknessAxis(
+  outcome: AskOutcome,
+  opts: { readonly claimedUnbackedAction?: boolean } = {}
+): AskWeaknessAxis | null {
+  if (opts.claimedUnbackedAction) {
+    return "unbacked-action";
+  }
   return outcome === "abstain" || outcome === "ungrounded" ? "grounding-gap" : null;
 }
 
 export interface AskWeaknessRecorderDeps {
-  readonly recordWeakness: (file: string, signal: { readonly axis: "grounding-gap"; readonly message: string }) => Promise<unknown>;
+  readonly recordWeakness: (file: string, signal: { readonly axis: AskWeaknessAxis; readonly message: string }) => Promise<unknown>;
   readonly weaknessesFile: string;
 }
 
 /**
  * Feed an ask-path failure to the weakness ledger so `muse doctor` /
- * error-analysis can mine real-usage grounding gaps. The ASK path previously
- * only run-logged its outcome; only chat-repl fed the ledger, so ask misses were
- * invisible fuel. Best-effort: an empty query or a non-failure outcome records
- * nothing, and a throwing ledger write is swallowed — a fuel write must never
- * surface as an ask error. Deps injected for testing; the live caller
- * (`recordAskWeaknessLive`) lazy-imports @muse/mcp + @muse/autoconfigure.
+ * error-analysis can mine real-usage gaps. The ASK path previously only
+ * run-logged its outcome; only chat-repl fed the ledger, so ask misses were
+ * invisible fuel. Best-effort: a null axis or an empty query records nothing,
+ * and a throwing ledger write is swallowed — a fuel write must never surface as
+ * an ask error. Deps injected for testing; the live caller lazy-imports
+ * @muse/mcp + @muse/autoconfigure.
  */
-export async function recordAskWeakness(query: string, outcome: AskOutcome, deps: AskWeaknessRecorderDeps): Promise<void> {
-  const axis = askWeaknessAxis(outcome);
+export async function recordAskWeakness(query: string, axis: AskWeaknessAxis | null, deps: AskWeaknessRecorderDeps): Promise<void> {
   if (!axis || query.trim().length === 0) {
     return;
   }
@@ -652,14 +667,14 @@ export async function recordAskWeakness(query: string, outcome: AskOutcome, deps
   }
 }
 
-async function recordAskWeaknessLive(query: string, outcome: AskOutcome): Promise<void> {
-  if (askWeaknessAxis(outcome) === null) {
+async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null): Promise<void> {
+  if (axis === null) {
     return;
   }
   try {
     const { recordWeakness } = await import("@muse/mcp");
     const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
-    await recordAskWeakness(query, outcome, {
+    await recordAskWeakness(query, axis, {
       recordWeakness,
       weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
     });
@@ -3721,10 +3736,13 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         },
         source: "cli.local"
       });
-      // Whetstone fuel: a grounding miss (abstain / ungrounded) on the ASK path
-      // becomes a weakness-ledger entry so doctor / error-analysis can mine
-      // real-usage gaps — previously only chat-repl fed the ledger.
-      await recordAskWeaknessLive(query, askOutcome);
+      // Whetstone fuel: an ASK failure becomes a weakness-ledger entry so doctor
+      // / error-analysis can mine real-usage gaps — previously only chat-repl fed
+      // the ledger. An UNBACKED-ACTION (the answer claimed a tool action the user
+      // asked for, but no actuator ran — a false promise) takes precedence over a
+      // grounding miss, mirroring chat-repl.
+      const askUnbackedAction = requestsToolAction(query) && answerClaimsAction(collectedAnswer) && !actionToolRan(toolsUsed);
+      await recordAskWeaknessLive(query, askWeaknessAxis(askOutcome, { claimedUnbackedAction: askUnbackedAction }));
 
       if (options.json) {
         // Emit a single JSON object on stdout — consumers can pipe

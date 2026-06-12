@@ -116,3 +116,18 @@ REAL muse: seeded ledger (1 unbacked-action + 1 grounding-gap) → real
 `doctor --weaknesses` lists both cumulatively AND shows ONLY the unbacked-action
 under 🔧 dev-fixable. Closes the error-analysis loop: fuel → ledger → split into
 user-remediable (recap) vs dev-fixable (the loop's targets).
+
+## v4 Fire 4 — ask unbacked-action coverage + answerClaimsAction offer fix (SLICE SHIPPED)
+
+Wired the ASK path's unbacked-action axis (mirrors chat-repl): an answer that
+CLAIMS a tool action the user asked for, with no actuator run, is a false promise
+→ unbacked-action; else the grounding-gap path. Moved `actionToolRan` into
+@muse/agent-core (shared, was chat-repl-local). The REAL run surfaced a
+pre-existing FALSE POSITIVE in answerClaimsAction: an OFFER "…추가해 드릴까요?"
+matched `추가해\s*[드놨]` and was logged as a false promise. Fixed: an
+interrogative `…까요?` offer is excluded (the declarative promise `…게요`/`…했`
+still counts) — improves chat's fuel too. Unit: actionToolRan + offer-vs-promise
++ axis precedence + the run-outcome recorder. REAL muse: (a) ask --with-tools
+"회의 추가해줘" → actuator ran (calendar.add) → NO false entry; (b) pure-RAG
+"알림 추가해줘" → agent OFFERED ("…드릴까요?") → NO spurious unbacked-action (was
+wrongly recorded before the fix).
