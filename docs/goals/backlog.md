@@ -268,10 +268,27 @@ excluded when scoring).
   coverage 13/14 (92.9% ≥ 90% target), wrong-but-confident 0, unnecessary clarifies 0
   (docs/benchmarks/RESULTS-conformal-tools.md). Runtime wiring (set>1 ⇒ clarify-directive)
   is the follow-up once a larger calibration set exists.
-- ◦ **ACT-R base-level activation for recall ranking** — frequency×spacing activation over the
-  existing access logs replaces the single recency half-life; positive+negative unit battery. (T2-1)
-- ◦ **ACE deterministic playbook delta-merge** — replace the LLM-rewrite merge with itemized
-  deterministic deltas + an anti-collapse invariant test (+10.6% AppWorld for the pattern). (T1-1)
+- ✓→Done **ACT-R base-level activation for recall ranking** — frequency×spacing activation over the
+  access logs now drives promotion RANKING (not the single recency half-life). (T2-1)
+  [DONE 2026-06-12, cognition loop fire 1–3 + 진안 review-gate decision: RANKING-ONLY; the
+  gate-scale migration (ACT-R driving eligibility, needs log-scale threshold recalibration + A/B)
+  was deliberately NOT pursued — ranking lift is captured, gate stays on the scale-safe plain score.]
+  — [in progress 2026-06-12, cognition loop] fire 1: `actrActivation(accessAgesDays,{decay,minAgeDays})`
+  = `ln(Σ tⱼ⁻ᵈ)` + 9-case battery SHIPPED in `@muse/memory` (recall-promotion.ts). fire 2: the DATA
+  FOUNDATION — `personal-recall-hits-store.ts` now logs a bounded `recentAccessMs` per memory (cap 20,
+  tolerant migration of old records, garbage-sanitizing read). fire 3: WIRED — `recallActivation` +
+  opt-in `useActrRanking` on selectPromotable/selectForgettable ranks by ACT-R (frequency×spacing)
+  while the eligibility GATE stays on the plain recency score (scale-safe); enabled at the `muse memory
+  consolidate`/promote call sites. ⏳ REMAINING (review-gate decision): a measured A/B on whether ACT-R
+  should also drive the eligibility GATE (needs threshold recalibration to the log scale) before
+  graduating — ordering is live now, gate-migration is the open call. Then this item → Done.
+- ✓→Done **ACE deterministic playbook delta-merge** — itemized deterministic deltas replace the
+  LLM-rewrite first pass + an anti-collapse invariant test (+10.6% AppWorld for the pattern). (T1-1)
+  [DONE 2026-06-12, cognition loop fire 4: `deltaMergePlaybookStrategies` (whitespace-dedup +
+  token-coverage subsumption + non-transitive anti-collapse GUARD) was already implemented & wired
+  ahead of the LLM merge; the MISSING piece — a DIRECT anti-collapse invariant battery — was added
+  (7 cases incl. the non-vacuous property "if it returns a survivor, that survivor token-covers EVERY
+  input", so a learned strategy is never silently dropped). Test-only; agent-core 1691 green.]
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting
   each is verifier-backed (85.36% same-mistake repetition without one, arXiv 2510.18254). (T1-10)
 - (queued behind fuel/prereqs: sleep-time compute · Mem0 UPDATE op · AWM workflow mining ·
@@ -359,9 +376,23 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ◦ **Split the eval scoreboard into TRAJECTORY vs FINAL-RESPONSE axes** (Google ADK:
   EXACT/IN_ORDER/ANY_ORDER match modes + separate final-response score) so a regression
   localizes to path-vs-answer. Pure refactor of `scripts/eval-harness.mjs`.
-- ◦ **`hallucinations_v1`-style per-sentence groundedness** — finer than the answer-level
-  gate: label each sentence supported/unsupported/contradictory so eval:self-improving
-  reports WHICH sentence was un-groundable. Source: Google ADK eval criteria.
+- ✓→Done **`hallucinations_v1`-style per-sentence groundedness** — finer than the answer-level
+  gate: labels each sentence supported/unsupported so the fuel names WHICH sentence was
+  un-groundable. Source: Google ADK eval criteria.
+  [DONE 2026-06-12, cognition loop fire 5+6: labeler + LIVE-wired into the ask grounding-gap
+  fuel HINT. fire 6 added `worstUnsupportedSentence` + wired it so a grounding-gap weakness
+  records the worst un-groundable sentence as its ledger `hint`. LIVE-PROVEN on the assembled
+  CLI: "광합성 화학 반응식" → hint named the exact ungrounded formula sentence; abstains →
+  hint named the refusal sentence. Realized via the real-usage weakness-fuel path (better than
+  the originally-imagined eval:self-improving surface); "contradictory" label (NLI) stays deferred.]
+  — [fire 5] the LABELER shipped:
+  `reportSentenceGroundedness(answer, evidence, floor?)` in `@muse/agent-core`
+  (`sentence-groundedness.ts`) — pure, reuses the gate's `lexicalTokens` + the
+  `splitPreservingSentencePunctuation` splitter; per-sentence supported/unsupported by
+  token-coverage ≥ floor (0.5), reports unsupportedCount + unsupportedFraction. Diagnostic
+  only (no gate verdict changed). 9-case battery. NEXT: WIRE into eval:self-improving's
+  report so a miss names the sentence; "contradictory" label needs NLI (non-deterministic,
+  deferred — supported/unsupported is the deterministic core).
 
 ## Open — dev-loop hardening (from the 2026-06-08 will-it-work review)
 

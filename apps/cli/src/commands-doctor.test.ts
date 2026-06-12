@@ -12,8 +12,11 @@ import {
   notesIndexHealth,
   buildCalibrationReport,
   formatCalibration,
+  formatDevFixableWeaknesses,
+  formatRunOutcomes,
   formatWeaknesses,
   parseAlpha,
+  weaknessFuelCheck,
   parseNotesIndexEmbedModel,
   resolveMuseEnvPath,
   selfLearningCheck,
@@ -70,6 +73,57 @@ describe("formatWeaknesses — the Whetstone ledger as an honest self-report", (
   it("renders a hint line when present", () => {
     const out = formatWeaknesses([{ axis: "grounding-gap", count: 2, firstSeen: "2026-06-01T00:00:00Z", lastSeen: "2026-06-06T00:00:00Z", topic: "rent", hint: "ask the user to add a note" }]);
     expect(out).toContain("ask the user to add a note");
+  });
+});
+
+describe("formatRunOutcomes — the failure-RATE the cumulative ledger lacks", () => {
+  it("reports a fresh-start line when nothing is graded yet", () => {
+    expect(formatRunOutcomes({ labelled: 0, grounded: 0, abstain: 0, ungrounded: 0, failRate: 0, topFailingTopics: [] }))
+      .toContain("no graded runs yet");
+  });
+
+  it("renders the rate, the outcome breakdown, and the top failing topics", () => {
+    const out = formatRunOutcomes({
+      labelled: 4, grounded: 2, abstain: 1, ungrounded: 1, failRate: 0.5,
+      topFailingTopics: [{ topic: "office vpn mtu", count: 2 }, { topic: "dentist", count: 1 }]
+    });
+    expect(out).toContain("4 graded runs");
+    expect(out).toContain("fail-rate 50%");
+    expect(out).toContain("2 grounded · 1 abstain · 1 ungrounded");
+    expect(out).toContain("office vpn mtu (2×)");
+    expect(out).toContain("dentist (1×)");
+  });
+});
+
+describe("weaknessFuelCheck — surface dev-fixable fuel in the default doctor (informational)", () => {
+  it("returns undefined when there's no fuel (plain doctor stays quiet)", () => {
+    expect(weaknessFuelCheck([])).toBeUndefined();
+  });
+  it("is an OK (not warn/fail) info line counting the recurring agent bugs + the top one", () => {
+    const check = weaknessFuelCheck([
+      { topic: "calendar add silent fail", axis: "unbacked-action", count: 4 },
+      { topic: "next friday wrong", axis: "time-parse", count: 3 }
+    ]);
+    expect(check?.status).toBe("ok"); // self-knowledge, not a health failure → won't flip doctor to warn
+    expect(check?.name).toBe("weakness ledger");
+    expect(check?.detail).toContain("2 recurring agent bugs");
+    expect(check?.detail).toContain("calendar add silent fail (unbacked-action 4×)");
+    expect(check?.detail).toContain("+1 more");
+  });
+});
+
+describe("formatDevFixableWeaknesses — the dev loop's own-bug fix list", () => {
+  it("is empty (no noise) when there are no dev-fixable bugs", () => {
+    expect(formatDevFixableWeaknesses([])).toBe("");
+  });
+  it("lists each recurring agent bug with its axis + count", () => {
+    const out = formatDevFixableWeaknesses([
+      { topic: "calendar add silent fail", axis: "unbacked-action", count: 4 },
+      { topic: "next friday wrong", axis: "time-parse", count: 3 }
+    ]);
+    expect(out).toContain("Recurring agent bugs");
+    expect(out).toContain("calendar add silent fail  — unbacked-action (4×)");
+    expect(out).toContain("next friday wrong  — time-parse (3×)");
   });
 });
 

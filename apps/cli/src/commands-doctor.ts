@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { calibrateAbstention } from "@muse/agent-core";
 import { evaluateLocalOnlyPosture, LOCAL_FIRST_DEFAULT_MODEL, mergeModelKeysFromFile, parseBoolean, resolveDefaultModel, resolveEpisodesFile, resolveLearningPauseFile, resolveNotesDir, resolveWeaknessesFile } from "@muse/autoconfigure";
-import { isLearningPaused, parseHomeAlertChecks, readEpisodes, readWeaknesses, webWatchesFromConfig, type WeaknessEntry } from "@muse/mcp";
+import { analyzeRunOutcomes, isLearningPaused, parseHomeAlertChecks, readEpisodes, readWeaknesses, selectDevFixableWeaknesses, webWatchesFromConfig, type DevFixableWeakness, type RunOutcomeEntry, type RunOutcomeSummary, type WeaknessEntry } from "@muse/mcp";
 import type { Command } from "commander";
 
 import { resolveLaunchAgentFile } from "./commands-daemon.js";
@@ -60,6 +60,7 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
     .option("--local", "Probe local-only signals (skip the API daemon)")
     .option("--grounding", "Score the bundled faithfulness + false-refusal corpus on the local model and print the two rates")
     .option("--weaknesses", "Show the Whetstone weakness ledger — what Muse has noticed it can't answer / didn't actually do")
+    .option("--run-outcomes", "Show the grounding failure RATE over recent .muse/runs run-logs (the denominator the weakness ledger lacks) + top failing topics")
     .option("--calibration", "Calibrate the 'I'm not sure' abstention threshold on the bundled edge corpus (conformal coverage guarantee)")
     .option("--alpha <rate>", "Target miss rate for --calibration (default 0.1 → answer ≥90% of answerable items)")
     .option("--watch", "Re-run on a fixed cadence until Ctrl-C (default 5s)")
@@ -74,6 +75,7 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
         readonly local?: boolean;
         readonly grounding?: boolean;
         readonly weaknesses?: boolean;
+        readonly runOutcomes?: boolean;
         readonly calibration?: boolean;
         readonly alpha?: string;
         readonly watch?: boolean;
@@ -94,6 +96,11 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
       // --weaknesses is a read-only view of the Whetstone ledger.
       if (options.weaknesses) {
         await runWeaknessesDoctor(io, options.json === true);
+        return;
+      }
+      // --run-outcomes is a read-only failure-RATE view over the run-logs.
+      if (options.runOutcomes) {
+        await runRunOutcomesDoctor(io, options.json === true);
         return;
       }
       // --calibration is a standalone live mode (Ollama-gated like --grounding).
@@ -497,6 +504,25 @@ interface LocalDoctorReport {
   readonly worst: "ok" | "warn" | "fail";
 }
 
+/**
+ * Surface the dev-fixable weakness fuel as an INFORMATIONAL doctor line (status
+ * "ok" — a recurring agent bug is self-knowledge, not a doctor health failure,
+ * so it never flips `worst` to warn). Returns undefined when there's nothing to
+ * surface, so plain `muse doctor` stays quiet until real fuel accrues. Pure.
+ */
+export function weaknessFuelCheck(devFixable: readonly DevFixableWeakness[]): LocalCheck | undefined {
+  const top = devFixable[0];
+  if (!top) {
+    return undefined;
+  }
+  const more = devFixable.length > 1 ? ` (+${(devFixable.length - 1).toString()} more)` : "";
+  return {
+    detail: `${devFixable.length.toString()} recurring agent bug${devFixable.length === 1 ? "" : "s"} — top: ${top.topic} (${top.axis} ${top.count.toString()}×)${more}. See \`muse doctor --weaknesses\`.`,
+    name: "weakness ledger",
+    status: "ok"
+  };
+}
+
 async function runLocalDoctor(): Promise<LocalDoctorReport> {
   const checks: LocalCheck[] = [];
 
@@ -753,6 +779,18 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     paused: await isLearningPaused(resolveLearningPauseFile(env)).catch(() => false)
   }));
 
+  // Surface the real-usage failure fuel (dev-fixable recurring agent bugs) so a
+  // plain `muse doctor` shows what the agent keeps getting wrong — best-effort,
+  // never fails the doctor on a ledger read.
+  try {
+    const fuel = weaknessFuelCheck(selectDevFixableWeaknesses(await readWeaknesses(resolveWeaknessesFile(env))));
+    if (fuel) {
+      checks.push(fuel);
+    }
+  } catch {
+    // ledger read is best-effort observability — never block the health check
+  }
+
   const worst = checks.reduce<"ok" | "warn" | "fail">((acc, c) => {
     if (c.status === "fail" || acc === "fail") return "fail";
     if (c.status === "warn" || acc === "warn") return "warn";
@@ -983,14 +1021,96 @@ export function formatWeaknesses(entries: readonly WeaknessEntry[]): string {
   return `🪨 Whetstone — what I've noticed I'm weak at (${sorted.length.toString()} topic${sorted.length === 1 ? "" : "s"}):\n${lines.join("\n")}\n`;
 }
 
+/**
+ * Render the dev-fixable callout — Muse's OWN recurring bugs (unbacked-action /
+ * wrong-tool / time-parse), separate from the user-fixable grounding gaps. This
+ * is the dev loop's fix list. Empty list → "" (no noise when there's nothing).
+ * Pure.
+ */
+export function formatDevFixableWeaknesses(list: readonly DevFixableWeakness[]): string {
+  if (list.length === 0) {
+    return "";
+  }
+  const lines = list.map((w) => `  • ${w.topic}  — ${w.axis} (${w.count.toString()}×)`);
+  return `🔧 Recurring agent bugs (dev-fixable — Muse's own, not your notes):\n${lines.join("\n")}\n`;
+}
+
 async function runWeaknessesDoctor(io: ProgramIO, asJson: boolean): Promise<void> {
   const file = resolveWeaknessesFile(process.env as Record<string, string | undefined>);
   const entries = await readWeaknesses(file);
+  const devFixable = selectDevFixableWeaknesses(entries);
   if (asJson) {
-    io.stdout(`${JSON.stringify({ weaknesses: entries }, null, 2)}\n`);
+    io.stdout(`${JSON.stringify({ devFixable, weaknesses: entries }, null, 2)}\n`);
     return;
   }
   io.stdout(formatWeaknesses(entries));
+  io.stdout(formatDevFixableWeaknesses(devFixable));
+}
+
+/**
+ * Render the run-log failure-RATE report. Pure (no I/O) so it is unit-testable;
+ * the rate is the denominator the cumulative weakness ledger lacks — it tells
+ * "improving" from "just more usage".
+ */
+export function formatRunOutcomes(summary: RunOutcomeSummary): string {
+  if (summary.labelled === 0) {
+    return "📉 Run outcomes: no graded runs yet — ask a few grounded questions and check back.\n";
+  }
+  const pct = (n: number): string => `${(n * 100).toFixed(0)}%`;
+  const head = `📉 Run outcomes over ${summary.labelled.toString()} graded run${summary.labelled === 1 ? "" : "s"}: `
+    + `fail-rate ${pct(summary.failRate)} (${summary.grounded} grounded · ${summary.abstain} abstain · ${summary.ungrounded} ungrounded)`;
+  if (summary.topFailingTopics.length === 0) {
+    return `${head}\n`;
+  }
+  const topics = summary.topFailingTopics
+    .map((t) => `  • ${t.topic} (${t.count.toString()}×)`)
+    .join("\n");
+  return `${head}\n  top failing topics:\n${topics}\n`;
+}
+
+/** Read the run-log outcome entries from `.muse/runs/*.jsonl` (best-effort; a missing dir / bad line is skipped). */
+async function readRunOutcomeEntries(workspaceDir: string): Promise<RunOutcomeEntry[]> {
+  const runDir = join(workspaceDir, ".muse", "runs");
+  let files: string[];
+  try {
+    files = (await fs.readdir(runDir)).filter((f) => f.endsWith(".jsonl"));
+  } catch {
+    return [];
+  }
+  const entries: RunOutcomeEntry[] = [];
+  for (const file of files) {
+    let text: string;
+    try {
+      text = await fs.readFile(join(runDir, file), "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n")) {
+      if (line.trim().length === 0) continue;
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (parsed && typeof parsed === "object") {
+          const record = parsed as { grounded?: unknown; message?: unknown };
+          if (typeof record.message === "string") {
+            entries.push({ grounded: typeof record.grounded === "string" ? record.grounded : null, message: record.message });
+          }
+        }
+      } catch {
+        // a malformed run-log line is skipped, never fatal
+      }
+    }
+  }
+  return entries;
+}
+
+async function runRunOutcomesDoctor(io: ProgramIO, asJson: boolean): Promise<void> {
+  const entries = await readRunOutcomeEntries(io.workspaceDir ?? process.cwd());
+  const summary = analyzeRunOutcomes(entries);
+  if (asJson) {
+    io.stdout(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
+  io.stdout(formatRunOutcomes(summary));
 }
 
 /** Parse `--alpha` into a miss-rate in (0,1); default 0.1. Non-numeric / out-of-range → 0.1. */

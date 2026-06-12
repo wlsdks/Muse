@@ -17,6 +17,8 @@ export interface RecallHitLike {
   readonly key: string;
   readonly hits: number;
   readonly lastHitMs: number;
+  /** Epoch-ms of recent accesses (chronological), for ACT-R activation ranking. Optional — legacy records have only lastHitMs. */
+  readonly recentAccessMs?: readonly number[];
 }
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -56,6 +58,12 @@ export interface SelectPromotableOptions {
   /** Cap on promoted memories. Default 3. */
   readonly maxPromoted?: number;
   readonly halfLifeDays?: number;
+  /**
+   * When true, rank by ACT-R base-level activation (frequency×spacing) instead
+   * of the plain recency-weighted score. The eligibility FILTER is unchanged —
+   * only sort order.
+   */
+  readonly useActrRanking?: boolean;
 }
 
 const DEFAULT_MIN_SCORE = 0.5;
@@ -80,12 +88,24 @@ export function selectPromotableMemories(
   const minHits = Number.isFinite(options.minHits) ? Math.max(1, Math.trunc(options.minHits!)) : DEFAULT_MIN_HITS;
   const maxPromoted = Number.isFinite(options.maxPromoted) ? Math.max(1, Math.trunc(options.maxPromoted!)) : DEFAULT_MAX_PROMOTED;
   const minScore = Number.isFinite(options.minScore) ? Math.max(0, options.minScore!) : DEFAULT_MIN_SCORE;
-  return records
+  const nowMs = options.nowMs;
+  const useActr = options.useActrRanking === true;
+  type WithActr = PromotedMemory & { readonly activation: number };
+  const mapped = records
     .filter((record) => Number.isFinite(record.hits) && record.hits >= minHits)
-    .map((record) => ({ hits: record.hits, key: record.key, score: scoreRecallHit(record, options.nowMs, options.halfLifeDays) }))
-    .filter((promoted) => promoted.score >= minScore)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, maxPromoted);
+    .map((record): WithActr => ({
+      hits: record.hits,
+      key: record.key,
+      score: scoreRecallHit(record, nowMs, options.halfLifeDays),
+      activation: useActr ? recallActivation(record, nowMs) : 0
+    }))
+    .filter((promoted) => promoted.score >= minScore);
+  if (useActr) {
+    mapped.sort((left, right) => right.activation - left.activation || right.score - left.score);
+  } else {
+    mapped.sort((left, right) => right.score - left.score);
+  }
+  return mapped.slice(0, maxPromoted).map(({ key, hits, score }) => ({ key, hits, score }));
 }
 
 const DAY_MS_FADE = 24 * 60 * 60_000;
@@ -102,6 +122,12 @@ export interface SelectForgettableOptions {
   readonly minAgeDays?: number;
   /** Cap the fading list. Default 10. */
   readonly maxFading?: number;
+  /**
+   * When true, rank by ACT-R base-level activation (frequency×spacing) instead
+   * of the plain recency-weighted score. The eligibility FILTER is unchanged —
+   * only sort order.
+   */
+  readonly useActrRanking?: boolean;
 }
 
 export interface ForgettingMemory {
@@ -128,16 +154,62 @@ export function selectForgettable(
   const maxScore = Number.isFinite(options.maxScore) ? Math.max(0, options.maxScore!) : DEFAULT_FADE_MAX_SCORE;
   const minAgeDays = Number.isFinite(options.minAgeDays) ? Math.max(0, options.minAgeDays!) : DEFAULT_FADE_MIN_AGE_DAYS;
   const maxFading = Number.isFinite(options.maxFading) ? Math.max(1, Math.trunc(options.maxFading!)) : DEFAULT_MAX_FADING;
-  return records
-    .map((record) => ({
-      ageDays: Math.max(0, (options.nowMs - record.lastHitMs) / DAY_MS_FADE),
+  const nowMs = options.nowMs;
+  const useActr = options.useActrRanking === true;
+  type WithActr = ForgettingMemory & { readonly activation: number };
+  const mapped = records
+    .map((record): WithActr => ({
+      ageDays: Math.max(0, (nowMs - record.lastHitMs) / DAY_MS_FADE),
       hits: Number.isFinite(record.hits) ? Math.max(0, record.hits) : 0,
       key: record.key,
-      score: scoreRecallHit(record, options.nowMs, options.halfLifeDays)
+      score: scoreRecallHit(record, nowMs, options.halfLifeDays),
+      activation: useActr ? recallActivation(record, nowMs) : 0
     }))
-    .filter((memory) => memory.score <= maxScore && memory.ageDays >= minAgeDays)
-    .sort((left, right) => left.score - right.score)
-    .slice(0, maxFading);
+    .filter((memory) => memory.score <= maxScore && memory.ageDays >= minAgeDays);
+  if (useActr) {
+    mapped.sort((left, right) => left.activation - right.activation || left.score - right.score);
+  } else {
+    mapped.sort((left, right) => left.score - right.score);
+  }
+  return mapped.slice(0, maxFading).map(({ key, hits, score, ageDays }) => ({ key, hits, score, ageDays }));
+}
+
+/**
+ * ACT-R base-level activation (Anderson & Schooler 1991): B = ln(Σ_j tⱼ^(-d))
+ * over the age of EACH past access tⱼ (days), decay d (default 0.5). Unlike a
+ * single last-hit half-life, summing over every access captures BOTH frequency
+ * (more terms ⇒ higher B) AND spacing (each access decays on its own clock, so a
+ * memory practised in a distributed way retains activation a massed one loses).
+ * Ages are clamped to `minAgeDays` (default 1/24 ≈ 1h) so a just-now access can't
+ * blow the power term to Infinity; a future-dated access (negative age) clamps too.
+ * Empty access list ⇒ -Infinity (no activation; the caller floors/filters it).
+ */
+export function actrActivation(
+  accessAgesDays: readonly number[],
+  options: { readonly decay?: number; readonly minAgeDays?: number } = {}
+): number {
+  const decay = Number.isFinite(options.decay) && options.decay! > 0 ? options.decay! : 0.5;
+  const minAgeDays = Number.isFinite(options.minAgeDays) && options.minAgeDays! > 0 ? options.minAgeDays! : 1 / 24;
+  let sum = 0;
+  for (const age of accessAgesDays) {
+    if (!Number.isFinite(age)) continue;
+    sum += Math.pow(Math.max(age, minAgeDays), -decay);
+  }
+  return sum <= 0 ? -Infinity : Math.log(sum);
+}
+
+/**
+ * ACT-R activation of a recall record for RANKING: over its recentAccessMs if
+ * present, else over a single access at lastHitMs (recency-only activation — a
+ * graceful fallback that keeps legacy records on the SAME log scale as full
+ * ones, so a mixed set sorts coherently). Uses actrActivation under the hood.
+ */
+export function recallActivation(record: RecallHitLike, nowMs: number, decay?: number): number {
+  const toAgeDays = (ms: number): number => (nowMs - ms) / DAY_MS;
+  const ages = record.recentAccessMs && record.recentAccessMs.length > 0
+    ? record.recentAccessMs.map(toAgeDays)
+    : [toAgeDays(record.lastHitMs)];
+  return actrActivation(ages, decay !== undefined ? { decay } : {});
 }
 
 export interface ConsolidationPlan {

@@ -23,7 +23,7 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly, resolveNotesDir, resolveTasksFile } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { answerClaimsAction, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction } from "@muse/agent-core";
+import { actionToolRan, answerClaimsAction, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction } from "@muse/agent-core";
 
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
 import { countdownDays, detectCountdownQuery, formatCountdown } from "./countdown-query.js";
@@ -47,12 +47,6 @@ import { isTaskCompletionReport, matchCompletedTask } from "./task-completion.js
 import type { ProgramIO } from "./program.js";
 
 const AGENT_MODES: readonly string[] = ["react", "plan_execute"];
-
-// A tool name that actually CHANGES state (added an event, set a reminder,
-// completed a task, posted to the web). Used to tell a real action from a
-// model that only CLAIMED one. Read tools (.list / .get / search) never match.
-const ACTION_TOOL_RE = /\.(add|update|delete|complete|save|create|remove)\b|_action\b/u;
-const actionToolRan = (used: readonly string[]): boolean => used.some((tool) => ACTION_TOOL_RE.test(tool));
 
 export type AgentMode = "react" | "plan_execute";
 

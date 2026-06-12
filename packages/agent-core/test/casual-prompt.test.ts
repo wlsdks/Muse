@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction } from "../src/index.js";
+import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction } from "../src/index.js";
+
+describe("actionToolRan — did a STATE-CHANGING (actuator) tool run?", () => {
+  it("true for an actuator verb tool / _action tool, false for read-only tools or none", () => {
+    expect(actionToolRan(["muse.tasks.add"])).toBe(true);
+    expect(actionToolRan(["muse.calendar.update"])).toBe(true);
+    expect(actionToolRan(["web_action"])).toBe(true);
+    expect(actionToolRan(["muse.tasks.list", "knowledge_search"])).toBe(false);
+    expect(actionToolRan([])).toBe(false);
+  });
+});
 
 describe("classifyCasualPrompt — pure social prompts only (precision-first)", () => {
   it("classifies greetings (EN + KO), tolerating trailing punctuation and repeats", () => {
@@ -214,6 +224,20 @@ describe("answerClaimsAction — the answer CLAIMS a tool action was done, KO + 
   it("still matches the English promise and stays quiet on a plain cited answer", () => {
     expect(answerClaimsAction("I've set a reminder to renew the passport.")).toBe(true);
     expect(answerClaimsAction("Your rent is 1,250,000 KRW [from lease.md].")).toBe(false);
+  });
+
+  it("does NOT treat an OFFER / permission-question as a claim (…드릴까요? is asking, not doing)", () => {
+    // the real-run false positive: an offer matched `추가해\s*[드놨]` and got logged
+    // as a false promise. An interrogative `…까요?` is asking, not claiming.
+    for (const a of [
+      "내일 오후 3시에 '팀 회의' 알림을 추가해 드릴까요?",
+      "치과 예약을 잡아 드릴까요?",
+      "리마인더를 설정해 드릴까요?"
+    ]) {
+      expect(answerClaimsAction(a), a).toBe(false);
+    }
+    // a declarative PROMISE (…게요) is still a claim — the guard only excludes the question form
+    expect(answerClaimsAction("내일 오후 3시에 회의 일정을 추가해 드릴게요.")).toBe(true);
   });
 });
 

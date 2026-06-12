@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { consolidationPlan, scoreRecallHit, selectForgettable, selectPromotableMemories, type RecallHitLike } from "../src/index.js";
+import { consolidationPlan, recallActivation, scoreRecallHit, selectForgettable, selectPromotableMemories, type RecallHitLike } from "../src/index.js";
 
 const NOW = Date.UTC(2026, 4, 1, 0, 0, 0);
 const daysAgo = (d: number): number => NOW - d * 24 * 60 * 60_000;
@@ -126,5 +126,96 @@ describe("consolidationPlan — one sleep pass: promote the salient, name the fa
     // a promoted memory is never also a fade candidate
     const overlap = plan.promote.filter((p) => plan.fade.some((f) => f.key === p.key));
     expect(overlap).toEqual([]);
+  });
+});
+
+describe("ACT-R ranking (useActrRanking)", () => {
+  // Three records all eligible under the default gate (hits >= 3, score >= 0.5).
+  // "spaced" has many distributed accesses so ACT-R activation > "recent" despite a lower plain score.
+  // "recent" has a high plain score (many recent hits) but fewer spaced accesses.
+  // "mid" is in between.
+  const spacedAccessMs = [
+    daysAgo(60), daysAgo(45), daysAgo(30), daysAgo(15), daysAgo(7), daysAgo(3), daysAgo(1)
+  ];
+  const spaced: RecallHitLike = { key: "spaced", hits: 7, lastHitMs: daysAgo(1), recentAccessMs: spacedAccessMs };
+  const recent: RecallHitLike = { key: "recent", hits: 9, lastHitMs: daysAgo(1), recentAccessMs: [daysAgo(2), daysAgo(1)] };
+  const mid: RecallHitLike = { key: "mid", hits: 4, lastHitMs: daysAgo(5), recentAccessMs: [daysAgo(10), daysAgo(5)] };
+
+  it("same SET of keys as without the flag, but ACT-R winner leads", () => {
+    const flagOff = selectPromotableMemories([spaced, recent, mid], { nowMs: NOW });
+    const flagOn = selectPromotableMemories([spaced, recent, mid], { nowMs: NOW, useActrRanking: true });
+
+    const keysOff = new Set(flagOff.map((p) => p.key));
+    const keysOn = new Set(flagOn.map((p) => p.key));
+    expect(keysOn).toEqual(keysOff);
+
+    // "spaced" has the highest ACT-R activation (many distributed accesses) — must be first under ACT-R
+    const actrSpaced = recallActivation(spaced, NOW);
+    const actrRecent = recallActivation(recent, NOW);
+    expect(actrSpaced).toBeGreaterThan(actrRecent);
+    expect(flagOn[0]!.key).toBe("spaced");
+  });
+
+  it("gate invariant: high ACT-R does NOT rescue a below-minScore record", () => {
+    // 2 hits < minHits(3) + lastHitMs old enough the score is near-zero, but recentAccessMs is long
+    const lowScore: RecallHitLike = {
+      key: "low-score",
+      hits: 2,
+      lastHitMs: daysAgo(90),
+      recentAccessMs: Array.from({ length: 20 }, (_, i) => daysAgo(i + 1))
+    };
+    const out = selectPromotableMemories([lowScore, spaced], { nowMs: NOW, useActrRanking: true });
+    const keys = out.map((p) => p.key);
+    expect(keys).not.toContain("low-score");
+    expect(keys).toContain("spaced");
+  });
+
+  it("legacy fallback: a record with no recentAccessMs ranks coherently alongside one with recentAccessMs", () => {
+    const legacy: RecallHitLike = { key: "legacy", hits: 5, lastHitMs: daysAgo(2) };
+    const withHistory: RecallHitLike = { key: "history", hits: 5, lastHitMs: daysAgo(2), recentAccessMs: [daysAgo(5), daysAgo(2)] };
+    const out = selectPromotableMemories([legacy, withHistory], { nowMs: NOW, useActrRanking: true });
+    const keys = out.map((p) => p.key);
+    expect(keys).toContain("legacy");
+    expect(keys).toContain("history");
+    // both present and ordering is finite (no crash, no NaN)
+    for (const p of out) {
+      expect(Number.isFinite(p.score)).toBe(true);
+    }
+  });
+
+  it("regression (flag off): output is identical to score-sorted order", () => {
+    const recs: RecallHitLike[] = [
+      { key: "a", hits: 9, lastHitMs: daysAgo(1) },
+      { key: "b", hits: 6, lastHitMs: daysAgo(3) },
+      { key: "c", hits: 4, lastHitMs: daysAgo(7) }
+    ];
+    const flagOff = selectPromotableMemories(recs, { nowMs: NOW });
+    const explicit = selectPromotableMemories(recs, { nowMs: NOW, useActrRanking: false });
+    // same order and same scores
+    expect(flagOff.map((p) => p.key)).toEqual(explicit.map((p) => p.key));
+    for (let i = 0; i < flagOff.length; i++) {
+      expect(flagOff[i]!.score).toBeCloseTo(explicit[i]!.score, 10);
+    }
+    // scores are descending
+    for (let i = 1; i < flagOff.length; i++) {
+      expect(flagOff[i - 1]!.score).toBeGreaterThanOrEqual(flagOff[i]!.score);
+    }
+  });
+
+  it("selectForgettable with useActrRanking: least-active-first, gate unchanged", () => {
+    // All three are fading candidates: score <= 0.25 AND ageDays >= 30.
+    const idle1: RecallHitLike = { key: "idle1", hits: 1, lastHitMs: daysAgo(120), recentAccessMs: [daysAgo(120)] };
+    const idle2: RecallHitLike = { key: "idle2", hits: 1, lastHitMs: daysAgo(60), recentAccessMs: [daysAgo(60), daysAgo(45)] };
+    const fresh: RecallHitLike = { key: "fresh", hits: 8, lastHitMs: daysAgo(2) }; // gate-excluded: score too high and too recent
+
+    const fading = selectForgettable([idle1, idle2, fresh], { nowMs: NOW, useActrRanking: true });
+
+    // "fresh" must not appear (gate: score > maxScore AND ageDays < minAgeDays)
+    expect(fading.map((m) => m.key)).not.toContain("fresh");
+    // idle1 has lower ACT-R activation (single old access) vs idle2 (two somewhat-older accesses) — idle1 comes first
+    const actrIdle1 = recallActivation(idle1, NOW);
+    const actrIdle2 = recallActivation(idle2, NOW);
+    expect(actrIdle1).toBeLessThan(actrIdle2);
+    expect(fading[0]!.key).toBe("idle1");
   });
 });

@@ -210,7 +210,7 @@ export {
   type AttributedRepairPromptInput,
   type AttributedRepairResult
 } from "./attributed-repair.js";
-export { answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction, type CasualPromptKind } from "./casual-prompt.js";
+export { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction, type CasualPromptKind } from "./casual-prompt.js";
 export { calibrateAbstention, conformalThreshold, empiricalCoverage, type CalibrationResult } from "./conformal.js";
 export { DEFAULT_QUORUM, independentWitnessCount, quorumVerdict, type QuorumVerdict } from "./quorum.js";
 export { overdueContacts, type ContactInteractions, type OverdueContact, type OverdueOptions } from "./relationship-decay.js";
@@ -366,6 +366,15 @@ export {
 } from "./plan-execute.js";
 export { renderPlanExemplar, selectPlanExemplar, selectPlanExemplarByRelevance } from "./plan-cache.js";
 export type { CachedPlan, PlanCacheProvider, SelectPlanExemplarOptions } from "./plan-cache.js";
+
+export {
+  DEFAULT_SENTENCE_GROUNDING_FLOOR,
+  reportSentenceGroundedness,
+  worstUnsupportedSentence,
+  type GroundednessReport,
+  type SentenceGroundedness,
+  type SentenceGroundednessLabel
+} from "./sentence-groundedness.js";
 
 export { HookRegistry } from "./hook-registry.js";
 

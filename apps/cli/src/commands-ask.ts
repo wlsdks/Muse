@@ -29,7 +29,7 @@ import { basename, isAbsolute, join, relative } from "node:path";
 
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
-import { answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, type CasualPromptKind } from "@muse/agent-core";
+import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -604,12 +604,91 @@ export function createStageTimer(now: () => number = () => Date.now()): {
   };
 }
 
+export type AskOutcome = "abstain" | "grounded" | "ungrounded" | null;
+
 export function askOutcomeLabel(args: {
   readonly refusal: boolean;
   readonly verdict: "grounded" | "ungrounded" | null;
-}): "abstain" | "grounded" | "ungrounded" | null {
+}): AskOutcome {
   if (args.refusal) return "abstain";
   return args.verdict;
+}
+
+/**
+ * Whetstone fuel: the weakness axis (if any) an ask OUTCOME signals. `abstain`
+ * (the gate held — couldn't ground the query in the user's corpus) and
+ * `ungrounded` (an answer the rubric flagged as not backed) both mean the agent
+ * couldn't answer this query from the user's own notes — a `grounding-gap`
+ * worth logging as real-usage fuel (mirrors chat-repl's refusal → grounding-gap).
+ * `grounded` and `null` (json/vision skip) are not failures.
+ */
+export type AskWeaknessAxis = "grounding-gap" | "unbacked-action";
+
+/**
+ * Whetstone fuel: the weakness axis (if any) an ask turn signals. Mirrors
+ * chat-repl's precedence — an `unbacked-action` (the answer CLAIMED a tool
+ * action the user asked for, but no actuator ran: a false promise) takes
+ * precedence; otherwise `abstain` / `ungrounded` is a `grounding-gap`.
+ *
+ * A `grounding-gap` is a RECALL knowledge gap (the fix is "add a note"). An
+ * ACTION request (`isActionRequest`) the ask path couldn't fulfil is NOT a
+ * knowledge gap — it's either an unbacked-action (a false claim) or just "ask
+ * couldn't act" (honest offer) — so it must NOT be logged as a grounding-gap, or
+ * it pollutes the user-remediable fuel with "add a note about 치과 예약" nonsense
+ * (a real probe recorded exactly that). `grounded` / `null` are not failures.
+ */
+export function askWeaknessAxis(
+  outcome: AskOutcome,
+  opts: { readonly claimedUnbackedAction?: boolean; readonly isActionRequest?: boolean } = {}
+): AskWeaknessAxis | null {
+  if (opts.claimedUnbackedAction) {
+    return "unbacked-action";
+  }
+  if (opts.isActionRequest) {
+    return null;
+  }
+  return outcome === "abstain" || outcome === "ungrounded" ? "grounding-gap" : null;
+}
+
+export interface AskWeaknessRecorderDeps {
+  readonly recordWeakness: (file: string, signal: { readonly axis: AskWeaknessAxis; readonly message: string; readonly hint?: string }) => Promise<unknown>;
+  readonly weaknessesFile: string;
+}
+
+/**
+ * Feed an ask-path failure to the weakness ledger so `muse doctor` /
+ * error-analysis can mine real-usage gaps. The ASK path previously only
+ * run-logged its outcome; only chat-repl fed the ledger, so ask misses were
+ * invisible fuel. Best-effort: a null axis or an empty query records nothing,
+ * and a throwing ledger write is swallowed — a fuel write must never surface as
+ * an ask error. Deps injected for testing; the live caller lazy-imports
+ * @muse/mcp + @muse/autoconfigure.
+ */
+export async function recordAskWeakness(query: string, axis: AskWeaknessAxis | null, deps: AskWeaknessRecorderDeps, hint?: string): Promise<void> {
+  if (!axis || query.trim().length === 0) {
+    return;
+  }
+  try {
+    await deps.recordWeakness(deps.weaknessesFile, { axis, message: query, ...(hint ? { hint } : {}) });
+  } catch {
+    // a ledger write must never break the ask command
+  }
+}
+
+async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null, hint?: string): Promise<void> {
+  if (axis === null) {
+    return;
+  }
+  try {
+    const { recordWeakness } = await import("@muse/mcp");
+    const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
+    await recordAskWeakness(query, axis, {
+      recordWeakness,
+      weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
+    }, hint);
+  } catch {
+    // lazy-import / path resolution failure is non-fatal
+  }
 }
 
 export interface BestOfRedrawArgs {
@@ -3651,19 +3730,39 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const t = askStages.timings();
         io.stderr(`(timings: ${Object.entries(t).map(([k, v]) => `${k}=${(v / 1000).toFixed(1)}s`).join(" · ")})\n`);
       }
+      const askOutcome = askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel });
       await writeRunLog(io.workspaceDir ?? process.cwd(), {
         message: query,
         model,
         response: {
           timings: askStages.timings(),
           ...(answerLogprobs ? { confidence: summarizeTokenConfidence(answerLogprobs) ?? null } : {}),
-          grounded: askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel }),
+          grounded: askOutcome,
           response: collectedAnswer,
           success: true,
           toolsUsed
         },
         source: "cli.local"
       });
+      // Whetstone fuel: an ASK failure becomes a weakness-ledger entry so doctor
+      // / error-analysis can mine real-usage gaps — previously only chat-repl fed
+      // the ledger. An UNBACKED-ACTION (the answer claimed a tool action the user
+      // asked for, but no actuator ran — a false promise) takes precedence over a
+      // grounding miss, mirroring chat-repl.
+      const askIsActionRequest = requestsToolAction(query);
+      const askUnbackedAction = askIsActionRequest && answerClaimsAction(collectedAnswer) && !actionToolRan(toolsUsed);
+      const askAxis = askWeaknessAxis(askOutcome, { claimedUnbackedAction: askUnbackedAction, isActionRequest: askIsActionRequest });
+      let askHint: string | undefined;
+      if (askAxis === "grounding-gap") {
+        const evidenceTexts = [
+          ...scored.map((r) => r.chunk.text),
+          ...openTasks.map((t) => t.title),
+          ...upcomingEvents.map((e) => e.title),
+          ...pendingReminders.map((r) => r.text)
+        ];
+        askHint = worstUnsupportedSentence(reportSentenceGroundedness(collectedAnswer, evidenceTexts));
+      }
+      await recordAskWeaknessLive(query, askAxis, askHint);
 
       if (options.json) {
         // Emit a single JSON object on stdout — consumers can pipe
@@ -3677,7 +3776,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           answer: collectedAnswer,
           // The gate's verdict, so a JSON consumer can render trust honestly:
           // "grounded" | "ungrounded" | "abstain" | null (verdict didn't run).
-          groundedVerdict: askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel }),
+          groundedVerdict: askOutcome,
           ...(citationGate.stripped.length > 0 ? { strippedCitations: citationGate.stripped } : {}),
           ...(options.withTools ? { toolsUsed } : {}),
           grounded: {

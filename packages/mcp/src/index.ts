@@ -910,14 +910,22 @@ export { removeRemindersForEvent, rescheduleRemindersForEvent, syncRemindersOnEv
 export {
   readWeaknesses,
   recordWeakness,
+  selectDevFixableWeaknesses,
   selectRemediableWeaknesses,
   topicKeyFromMessage,
   upsertWeakness,
   writeWeaknesses,
+  type DevFixableWeakness,
   type RemediableWeakness,
   type WeaknessAxis,
   type WeaknessEntry
 } from "./weakness-ledger.js";
+export {
+  analyzeRunOutcomes,
+  type RunOutcomeEntry,
+  type RunOutcomeSummary,
+  type RunOutcomeTopic
+} from "./run-outcome-analysis.js";
 
 export {
   appendReminderHistory,
