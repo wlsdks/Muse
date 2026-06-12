@@ -55,9 +55,14 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   merges; case-insensitive; no-reader back-compat) RED→GREEN; mcp 1703, check 0, lint 0. Fable-5 PASS (back-compat
   intact, both seams live). RESIDUAL (non-blocking, separate): exact-name-only match (an ALIAS re-add could still
   duplicate); commands-ask read→save isn't atomic across the merge window (only the save is queued).
-- ◦ **loopback-crypto base64/hex decode of non-UTF-8 bytes emits U+FFFD silently** (gap-scout runner-up) — a
-  round-trip of valid-but-non-UTF-8 bytes silently corrupts to replacement chars instead of erroring
-  (loopback-crypto.ts:~86,122). FIX: detect lossy decode (re-encode mismatch) → error. 1 fix + 1 test.
+- ✓→Done **loopback-crypto base64/hex decode of non-UTF-8 bytes emitted U+FFFD silently** (gap-scout runner-up;
+  shipped fire 20) — a valid-FORMAT base64/hex whose decoded BYTES aren't valid UTF-8 (binary, e.g. 0xFF) had
+  `toString("utf8")` silently replace them with U+FFFD — garbled text, no error, against the tool's "decode back to
+  UTF-8" contract. FIX: a `decodeBytesAsUtf8` helper re-encodes the decoded string and compares to the original
+  bytes (valid UTF-8 round-trips exactly; a lossy one doesn't) → `{error: non-UTF-8 (binary) bytes}`. Both base64
+  and hex use it; the format-validation error paths are unchanged (distinct). TDD (base64 "/w=="=0xFF + hex "ff"
+  → error; emoji/héllo/empty still round-trip) RED→GREEN; mcp 1709, check 0, lint 0. Fable-5 PASS (no valid-UTF-8
+  false-reject — emoji/NUL/BOM/literal-U+FFFD all empirically accepted).
 - ✓→Done **web_download silently clobbered an existing file** (EXPANSION gap-scout, live) — wrote bytes with a
   plain `writeFile(path, bytes)` (flag "w"), so downloading a name that already exists in the user's Downloads
   dir SILENTLY OVERWROTE the unrelated existing file (irreversible data loss, not even flagged) — AppWorld

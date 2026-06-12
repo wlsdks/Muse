@@ -545,3 +545,11 @@
 - **왜:** fade가 세 표면 깊이 계산되나 *어디서도 적용 안 됨* = judge가 3 fire 연속 잡은 inert 씨앗 — 이번엔 닫음(신규 inert가 아니라 기존 inert 해소). KIND=메모리관리(fire27 playbook·28 multi-agent·29 calibration과 다름). 망각이 retrieval로 피드백되고 recall이 망각을 되돌리는 게 논문 핵심.
 - **리뷰지점:** personal-recall-hits-store.ts(write/readFadedMemoryKeys)+index.ts(mcp)·provider-paths.ts(resolveFadedMemoriesFile)+context-engineering-builders.ts(autoconfigure)·episodic-recall.ts(fadedKeys+penalty)·commands-memory.ts(write+문구). **maker=Sonnet / judge=Fable 5 PASS**: 세션키 동일성 end-to-end(sessionId 전 hop 동일, file:line 추적)·default-ON reader·실writer·counterfactual robust(FADE_PENALTY=1.0이면 assembled+down-rank 테스트 5/5 fail, tie-break 아닌 strict inequality)·post-gate multiply-only(삭제 없음)·fail-open 3층. mcp1696·agent-core1831·cli2535·check0·lint0.
 - **리스크:** 낮음 — ranking-only+additive+fail-open, down-rank만(삭제 안 함), fabrication 표면은 줄기만 함. 정직한 한계: consolidate는 수동/on-demand라 사이드카가 그때만 갱신 — 데몬 tick 자동갱신은 backlog remainder. RATCHET: testFiles +2(episodic-recall-fade, memory-fade-assembled), fabrication 0 유지, 신규: 닫힌 망각 루프(첫 fade-적용 표면). grounding floor 무관.
+
+
+## [TOOL loop] fire 20 (skill v1.11.2, cron 5388335b) — 2026-06-13 · 테마: TOOL expansion & hardening
+
+- **무엇:** muse.crypto base64/hex decode가 valid-format이지만 비-UTF-8 바이트(binary, 0xFF 등)를 toString("utf8")로 U+FFFD 무성 치환 → garbled 텍스트 무신호. decodeBytesAsUtf8 헬퍼로 re-encode 라운드트립 불일치 감지 → error. base64/hex 둘 다 사용.
+- **왜:** fire-19 runner-up. 도구 설명은 "decode back to UTF-8"인데 binary 입력이 조용히 corrupt. 기존 테스트(1102)가 이미 "malformed → garbled 거부" 하드닝 철학 명시 → 비-UTF-8 바이트에도 동일 적용(의도 문서화 아님). 다른 표면(crypto)·silent-corruption KIND.
+- **리뷰지점:** loopback-crypto.ts(decodeBytesAsUtf8 헬퍼 + base64/hex decode 양쪽) + mcp.test.ts("/w=="=0xFF base64, "ff"=0xFF hex → error; emoji/héllo/empty 라운드트립) RED→GREEN. mcp 1709, check 0, lint 0. Fable-5 검증자 PASS(유효 UTF-8 false-reject 없음·emoji/NUL/BOM/literal-U+FFFD 경험적 검증·포맷검증 별개 보존·HEAD U+FFFD 재현으로 RED).
+- **리스크:** 없음 — UTF-8 encode∘decode는 valid 시퀀스에 항등이라 false-reject 불가, 포맷검증 무변경. RATCHET: testFiles 893 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(crypto decode 입력검증, 게이트 무변경).

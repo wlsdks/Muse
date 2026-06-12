@@ -7,6 +7,20 @@ import type { BuiltinLoopbackOptions, LoopbackMcpServer } from "./loopback.js";
 import { readString } from "./loopback-helpers.js";
 
 /**
+ * Decode bytes to a UTF-8 string, but ERROR (not silently U+FFFD-corrupt) when the
+ * bytes aren't valid UTF-8. `Buffer.toString("utf8")` replaces invalid sequences with
+ * the replacement char, so a base64/hex decode of BINARY data would otherwise return
+ * garbled text with no signal. The re-encode round-trip detects the loss: a valid
+ * UTF-8 string round-trips back to the exact bytes; a lossy one does not.
+ */
+function decodeBytesAsUtf8(buf: Buffer, label: "base64" | "hex"): { output: string } | { error: string } {
+  const output = buf.toString("utf8");
+  return Buffer.from(output, "utf8").equals(buf)
+    ? { output }
+    : { error: `${label} input decodes to non-UTF-8 (binary) bytes — decode returns text only` };
+}
+
+/**
  * `muse.crypto` loopback MCP server — deterministic crypto digests +
  * base64/hex encoding + RFC 4122 v4 UUIDs.
  *
@@ -83,8 +97,8 @@ export function createCryptoMcpServer(options: BuiltinLoopbackOptions = {}): Loo
             if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(text) || text.length % 4 !== 0) {
               return { error: "input is not a valid base64 string" };
             }
-            const decoded = Buffer.from(text, "base64").toString("utf8");
-            return { mode, output: decoded } satisfies JsonObject;
+            const result = decodeBytesAsUtf8(Buffer.from(text, "base64"), "base64");
+            return "error" in result ? result : { mode, output: result.output } satisfies JsonObject;
           } catch (error) {
             return { error: error instanceof Error ? error.message : "base64 failed" };
           }
@@ -119,7 +133,8 @@ export function createCryptoMcpServer(options: BuiltinLoopbackOptions = {}): Loo
             if (!/^[0-9a-fA-F]*$/u.test(text) || text.length % 2 !== 0) {
               return { error: "input is not a valid hex string" };
             }
-            return { mode, output: Buffer.from(text, "hex").toString("utf8") } satisfies JsonObject;
+            const result = decodeBytesAsUtf8(Buffer.from(text, "hex"), "hex");
+            return "error" in result ? result : { mode, output: result.output } satisfies JsonObject;
           } catch (error) {
             return { error: error instanceof Error ? error.message : "hex failed" };
           }

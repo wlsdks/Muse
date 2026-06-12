@@ -1123,6 +1123,22 @@ describe("loopback MCP servers", () => {
     });
   });
 
+  it("muse.crypto base64/hex decode of non-UTF-8 (binary) bytes errors instead of silent U+FFFD garbage", async () => {
+    const connection = createLoopbackMcpConnection(createCryptoMcpServer());
+    // "/w==" is the base64 of the single byte 0xFF — valid base64 FORMAT, but the bytes
+    // are not valid UTF-8, so toString("utf8") used to silently return the U+FFFD char.
+    expect(await connection.callTool!("base64", { text: "/w==", mode: "decode" })).toEqual({
+      error: expect.stringContaining("non-UTF-8")
+    });
+    // "ff" is the hex of the same 0xFF byte.
+    expect(await connection.callTool!("hex", { text: "ff", mode: "decode" })).toEqual({
+      error: expect.stringContaining("non-UTF-8")
+    });
+    // a non-ASCII but VALID UTF-8 string still round-trips (no false reject)
+    const heHex = Buffer.from("héllo", "utf8").toString("hex");
+    expect(await connection.callTool!("hex", { text: heHex, mode: "decode" })).toEqual({ mode: "decode", output: "héllo" });
+  });
+
   it("muse.crypto#hex encodes and decodes UTF-8 and rejects malformed input", async () => {
     const connection = createLoopbackMcpConnection(createCryptoMcpServer());
     expect(await connection.callTool!("hex", { text: "abc" })).toEqual({ mode: "encode", output: "616263" });
