@@ -197,3 +197,10 @@
 > ⚠️ **3-FIRE 리뷰 관문 — fire 10–12 누적. 진안 확인 전 fire 13(새 슬라이스) 시작 금지.**
 
 > ✅ **리뷰 관문 CLEARED (2026-06-12, 진안):** fires 10–12(백그라운드 consolidation: 브레이크→플래너→daemon glue) 승인 + 배치 머지 지시. **fire 13 = 서브에이전트 활용 (#4, 마지막 미착수 테마)** — harness planner→worker→evaluator 실런타임 경계 강화(트이핑 스키마 검증·maker≠judge·중복 서브작업 방지). 5대 테마 1바퀴 완주 진입. fires 13–15가 다음 사이클.
+
+## fire (TOOL loop) — 2026-06-13 · mac_screenshot arbitrary-write closed (FAIL→fix→re-PASS), gate PASS (skill v1.9.0)
+
+- **무엇:** `mac_screenshot`의 무가드 `path`(임의 파일 덮어쓰기)를 닫음 — allowlist(~/Desktop·Downloads·tmp) + ~확장 + basename + parent realpath + **full-target realpath**(symlink-at-target 거부, fail-closed, runner 미호출). 6 행동 테스트.
+- **왜:** EXPANSION scout가 "유일하게 남은 무가드 WRITE 경로"로 발굴(최고 severity 파괴적 write). 보안 sweep 마지막 항목.
+- **리뷰지점:** `macos-tools.ts`(resolveScreenshotPath + injectable realpath) + test 6건. **2-단계 게이트:** 1차 Opus가 *silent* symlink-at-target 잔여(직전 fire 77004a6f가 닫은 class 재도입) FAIL → full-target realpath로 닫음 → 2차 Opus가 변별·무회귀 확인 PASS.
+- **리스크:** realpath→write TOCTOU 잔여(모든 realpath 가드 공통). macos 83·lint 0. 보안 sweep(SSRF×2·symlink·write) 완료 → 다음 fire는 다른 KIND.

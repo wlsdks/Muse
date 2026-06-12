@@ -60,6 +60,15 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   test fixed → re-verified PASS.
 Every slice ships its eval/test and never weakens the grounding floor. Ranked:
 
+- ✓→Done **mac_screenshot arbitrary-write closed** (EXPANSION-scout): the `path` arg went straight to
+  `screencapture -x <path>` with no validation — a model/injection could overwrite ANY writable file
+  (e.g. ~/.ssh/authorized_keys) with PNG bytes. Fix: allowlist (~/Desktop, ~/Downloads, tmp), `~`
+  expand, basename, parent-dir realpath check, AND full-target realpath (a symlink AT an allowed path
+  pointing outside is refused — mirrors the loopback-filesystem fix). fail-closed, runner never called
+  on refusal. 6 behavioral tests (abs-path/traversal/outside-parent/symlink-at-target → refused,
+  allowed/default → ok). FAIL→fix→re-PASS: the first gate caught a SILENT symlink-at-target residual
+  (the prior fire had just closed that exact class) → closed it + tested → re-verified. macos 83·lint 0.
+
 - ✓→Done **loopback-filesystem symlink-escape closed** (EXPANSION-scout runner-up): the MCP
   filesystem server's allowlist checked paths LEXICALLY only — a symlink inside an allowed root
   pointing outside (/allowed/x -> /etc/passwd) passed and was read/listed/statted. Fix: a 2nd gate in

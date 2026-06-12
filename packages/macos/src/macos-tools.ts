@@ -26,9 +26,10 @@
  */
 
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
 
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
@@ -1039,16 +1040,74 @@ export function createMacMessageSendTool(deps: MacMessageSendToolDeps): MuseTool
 
 const SCREENSHOT_TIMEOUT_MS = 15_000;
 
+function tryRealpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+function screenshotAllowedRoots(): readonly string[] {
+  const home = homedir();
+  return [
+    join(home, "Desktop"),
+    join(home, "Downloads"),
+    tryRealpath(tmpdir()),
+    tryRealpath("/tmp")
+  ];
+}
+
+function expandTilde(p: string): string {
+  return p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
+}
+
+function resolveScreenshotPath(
+  raw: string,
+  realpath: (p: string) => string = tryRealpath
+): { ok: true; resolved: string } | { ok: false; error: string } {
+  const expanded = expandTilde(raw.trim());
+  const name = basename(expanded);
+  if (!name || name === "." || name === "..") {
+    return { ok: false, error: `path must include a filename, got: ${raw}` };
+  }
+  const lexicalParent = resolvePath(dirname(expanded));
+  const parent = tryRealpath(lexicalParent);
+  const allowed = screenshotAllowedRoots();
+  const withinRoot = (dir: string): boolean =>
+    allowed.some((root) => dir === root || dir.startsWith(root + "/"));
+  if (!withinRoot(parent)) {
+    return {
+      ok: false,
+      error: `screenshot path must be under ~/Desktop, ~/Downloads, or the system temp dir — got parent: ${parent}`
+    };
+  }
+  const resolved = resolvePath(parent, name);
+  // A pre-existing symlink AT the target is FOLLOWED on write (`screencapture -x`
+  // opens with O_TRUNC), so the parent-dir check alone lets `<allowed>/shot.png ->
+  // /etc/passwd` escape. Realpath the FULL target and re-check the real write
+  // location is still within an allowed root — mirrors the loopback-filesystem
+  // symlink-escape fix. A non-existent target realpaths to itself (no escape).
+  const realTarget = realpath(resolved);
+  if (realTarget !== resolved && !withinRoot(tryRealpath(dirname(realTarget)))) {
+    return { ok: false, error: `screenshot path resolves through a symlink outside the allowed dirs: ${realTarget}` };
+  }
+  return { ok: true, resolved };
+}
+
 export interface MacScreenshotToolDeps {
   /** Runs `screencapture -x <path>`. Injected in tests. */
   readonly runner?: (path: string) => Promise<MacCommandResult>;
   /** Path factory for the default save location (tests inject a fixed one). */
   readonly pathFactory?: () => string;
+  /** Resolves a target's real path (symlink check); injected in tests. */
+  readonly realpath?: (p: string) => string;
 }
 
 export function createMacScreenshotTool(deps: MacScreenshotToolDeps = {}): MuseTool {
   const runner = deps.runner ?? ((path: string) => runChild(SCREENCAPTURE_PATH, ["-x", path], undefined, SCREENSHOT_TIMEOUT_MS));
   const pathFactory = deps.pathFactory ?? (() => join(tmpdir(), `muse-screenshot-${Date.now().toString()}.png`));
+  const realpath = deps.realpath ?? tryRealpath;
   return {
     definition: {
       description:
@@ -1063,7 +1122,7 @@ export function createMacScreenshotTool(deps: MacScreenshotToolDeps = {}): MuseT
         additionalProperties: false,
         properties: {
           path: {
-            description: "Optional .png destination path, e.g. '~/Desktop/shot.png'. Omit for a temp file.",
+            description: "Optional .png destination path under ~/Desktop, ~/Downloads, or /tmp, e.g. '~/Desktop/shot.png'. Omit for a temp file.",
             type: "string"
           }
         },
@@ -1075,10 +1134,19 @@ export function createMacScreenshotTool(deps: MacScreenshotToolDeps = {}): MuseT
       risk: "execute"
     },
     execute: async (args): Promise<JsonObject> => {
-      const path = typeof args["path"] === "string" && args["path"].trim().length > 0 ? args["path"].trim() : pathFactory();
+      let targetPath: string;
+      if (typeof args["path"] === "string" && args["path"].trim().length > 0) {
+        const guard = resolveScreenshotPath(args["path"], realpath);
+        if (!guard.ok) {
+          return { captured: false, reason: guard.error };
+        }
+        targetPath = guard.resolved;
+      } else {
+        targetPath = pathFactory();
+      }
       let result: MacCommandResult;
       try {
-        result = await runner(path);
+        result = await runner(targetPath);
       } catch (cause) {
         return { captured: false, reason: `screencapture spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
       }
@@ -1088,7 +1156,7 @@ export function createMacScreenshotTool(deps: MacScreenshotToolDeps = {}): MuseT
       if (result.exitCode !== 0) {
         return { captured: false, reason: result.stderr.trim().slice(0, 300) || `screencapture exited with code ${result.exitCode?.toString() ?? "null"}` };
       }
-      return { captured: true, path };
+      return { captured: true, path: targetPath };
     }
   };
 }

@@ -518,11 +518,59 @@ describe("mac_screenshot — Tier 1 capture screen", () => {
     expect(captured).toBe("/tmp/fixed.png");
   });
 
-  it("honors a caller-supplied path", async () => {
+  it("honors a caller-supplied path under ~/Desktop (expands ~ and passes resolved path to runner)", async () => {
     let captured = "";
     const tool = createMacScreenshotTool({ runner: async (p) => { captured = p; return ok(""); } });
-    await tool.execute({ path: "~/Desktop/shot.png" }, ctx);
-    expect(captured).toBe("~/Desktop/shot.png");
+    const result = await tool.execute({ path: "~/Desktop/shot.png" }, ctx);
+    expect(result).toMatchObject({ captured: true });
+    expect(captured).not.toBe("~/Desktop/shot.png");
+    expect(captured).toMatch(/\/Desktop\/shot\.png$/);
+  });
+
+  it("refuses and does NOT call runner when path escapes to ~/.ssh/authorized_keys", async () => {
+    let runnerCalled = false;
+    const tool = createMacScreenshotTool({ runner: async () => { runnerCalled = true; return ok(""); } });
+    const result = await tool.execute({ path: "/Users/x/.ssh/authorized_keys" }, ctx);
+    expect(result).toMatchObject({ captured: false });
+    expect(runnerCalled).toBe(false);
+  });
+
+  it("refuses a symlink-at-target whose real path escapes the allowlist (parent passes, target symlinks out)", async () => {
+    // The harder vector: ~/Desktop (allowed parent) contains a pre-placed symlink
+    // shot.png -> /etc/passwd. The parent check passes; only realpathing the FULL
+    // target catches it. Inject a realpath that resolves the target outside.
+    let runnerCalled = false;
+    const tool = createMacScreenshotTool({
+      runner: async () => { runnerCalled = true; return ok(""); },
+      realpath: (p) => (p.endsWith("shot.png") ? "/etc/passwd" : p)
+    });
+    const result = await tool.execute({ path: "~/Desktop/shot.png" }, ctx);
+    expect(result).toMatchObject({ captured: false });
+    expect(runnerCalled).toBe(false);
+  });
+
+  it("refuses and does NOT call runner for a path containing traversal (../../etc/passwd)", async () => {
+    let runnerCalled = false;
+    const tool = createMacScreenshotTool({ runner: async () => { runnerCalled = true; return ok(""); } });
+    const result = await tool.execute({ path: "/tmp/../../etc/passwd" }, ctx);
+    expect(result).toMatchObject({ captured: false });
+    expect(runnerCalled).toBe(false);
+  });
+
+  it("refuses and does NOT call runner for a path whose parent is outside the allowlist", async () => {
+    let runnerCalled = false;
+    const tool = createMacScreenshotTool({ runner: async () => { runnerCalled = true; return ok(""); } });
+    const result = await tool.execute({ path: "/var/www/html/evil.png" }, ctx);
+    expect(result).toMatchObject({ captured: false });
+    expect(runnerCalled).toBe(false);
+  });
+
+  it("allows a path under the system temp dir (resolves symlinks like /tmp → /private/tmp)", async () => {
+    let captured = "";
+    const tool = createMacScreenshotTool({ runner: async (p) => { captured = p; return ok(""); } });
+    const result = await tool.execute({ path: "/tmp/muse-test.png" }, ctx);
+    expect(result).toMatchObject({ captured: true });
+    expect(captured).toMatch(/muse-test\.png$/);
   });
 
   it("maps a nonzero exit to captured:false", async () => {
