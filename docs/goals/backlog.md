@@ -45,6 +45,12 @@
 The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
 Every slice ships its eval/test and never weakens the grounding floor. Ranked:
 
+- ◦ **browser-read returns ungrounded on "open <url> and tell me what the page says"** —
+  SIGNAL-SOURCED (scout-signals: `.muse/runs/` ungrounded ×7, the top failure cluster). The
+  browser_read/browser_look path produces answers the grounding gate rejects — recurring real
+  failure, not a guess. Investigate whether the page text reaches the grounding evidence set;
+  smallest slice = a behavioral test reproducing one ungrounded browse answer + the fix.
+
 EXPAND (new reach):
 - ✓→Done **browser_look — describe the current browser page visually (local vision)** — browser_read
   returns DOM text + elements, so a VISUAL page (chart, graph, map, diagram, image, a rendered error

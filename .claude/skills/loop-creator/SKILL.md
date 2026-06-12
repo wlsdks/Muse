@@ -1,6 +1,6 @@
 ---
 name: loop-creator
-version: 1.7.0
+version: 1.8.0
 description: Use when 진안 wants to start (register) an autonomous improvement loop on the Muse repo — "루프 돌려줘", "loop 등록", "X를 계속 강화하는 루프", or just a theme to iterate on. Generates a principle-compliant recurring loop prompt from its bundled loop-engineering.md contract AND registers the cron itself, then reports the prompt + cron id + how to stop. The autonomous successor to hand-written ad-hoc loop prompts.
 ---
 
@@ -58,11 +58,13 @@ description: Use when 진안 wants to start (register) an autonomous improvement
 1. **기준선 먼저.** `pnpm self-eval` non-zero면 **등록하지 않고** 회귀를 보고한다(아래 상세 불릿)
    — 깨진 기준선 위엔 루프를 안 띄운다. (루프가 *돌 때* 회귀를 만나면 그건 그 fire의 일.)
 2. **테마가 정해졌고 backlog에 그 항목이 있으면** → 가치 우선 top ◦(§2). 끝.
-3. **테마가 없거나 / backlog가 얇거나(≤2) / stale / 부재면 → 지금 알아낸다:**
-   **gap-scout를 *즉시* 돌려**(EXPANSION-PLAYBOOK / 코드·CI·최근 커밋 스캔) 무엇이 가장 가치
-   있는지 발굴하고, 그 결과를 **backlog.md에 써넣은 뒤** 그걸로 테마/슬라이스를 정한다. 이게
-   "스킬 호출되자마자 무엇을 할지 알아보는 1번 작업". **"할 게 없다"는 금지** — 모르면 멈추는
-   게 아니라 스카웃하는 것이다(파일 없음/빈 목록 ≠ 일감 없음).
+3. **테마가 없거나 / backlog가 얇거나(≤2) / stale / 부재면 → 지금 알아낸다** (gap-scout, 순서대로):
+   - **(a) 신호 먼저** — `node scripts/scout-signals.mjs`: `.muse/runs/`의 *실패* 트레이스
+     (ungrounded/failed)를 빈도순 클러스터링 → 진짜 반복 실패가 일감(2026 주류 triage 패턴).
+   - **(b) 신호 깨끗하면** → 코드 확장 gap-scout(EXPANSION-PLAYBOOK) — 새 역량/하드닝 발굴.
+   - **(c) 둘 다 마르면** → **진안에게 정직히 보고하고 멈춘다**(가짜 일감 금지).
+   발굴 결과를 **backlog.md에 써넣고** 그걸로 테마/슬라이스를 정한다. **"할 게 없다"는 금지** —
+   모르면 멈추는 게 아니라 *스카웃*, 그래도 없으면 *멈추되 솔직히*(억지로 지어내지 않음).
 
 보조 입력: [`loop-engineering.md`](references/loop-engineering.md) §1 표·§4 체크리스트,
 `git log --oneline -5`(최근 무엇), 동시 자동-push 루프 여부.

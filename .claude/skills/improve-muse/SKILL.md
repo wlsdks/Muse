@@ -31,10 +31,20 @@ that unblocks it.
    - (c) ⏳ blocked-on-Jinan items → "decision-needed" candidates.
      Surface them with the EXACT question + options; never hide them.
    - (d) ◦ ready items.
-   - (e) If (a)–(d) yields fewer than 2 actionable candidates → run a
-     gap-scout ([`docs/EXPANSION-PLAYBOOK.md`](../../../docs/EXPANSION-PLAYBOOK.md))
-     and WRITE its findings back to the backlog — the scout output IS
-     the candidate set. This step makes an empty answer impossible.
+   - (e) If (a)–(d) yields fewer than 2 actionable candidates → DISCOVER, in
+     this order, and WRITE findings back to the backlog (the scout output IS the
+     candidate set):
+     - (e1) **SIGNAL scout FIRST** — `node scripts/scout-signals.mjs`: clusters
+       the FAILING run-log traces (`.muse/runs/`, the labels Muse already writes)
+       by frequency. A recurring ungrounded / failed query IS the work — real
+       failure beats a guess (the dominant 2026 triage pattern).
+     - (e2) **if signals are clean** → codebase gap-scout
+       ([`docs/EXPANSION-PLAYBOOK.md`](../../../docs/EXPANSION-PLAYBOOK.md)) —
+       proactive expansion/hardening.
+     - (e3) **if BOTH are dry** → honestly report "no high-value work found" +
+       the current state, and stop. **Never invent busywork** (the field's
+       failure mode). "Nothing to do" stays forbidden — but it means "scout, then
+       report honestly", NOT "manufacture work".
 3. **RECOMMEND** — the deliverable, then STOP:
    - 1–3 candidates: what / why (source line in backlog or failing
      gate) / which gate it strengthens / risk + size.

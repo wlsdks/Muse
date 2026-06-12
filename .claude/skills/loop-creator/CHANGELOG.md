@@ -9,6 +9,15 @@
 
 ---
 
+## 1.8.0 — 2026-06-12
+**신호 기반 gap-scout**(진안 지시 — 조사: 2026 주류는 신호-triage 발굴). 발굴(§1.3)을 3단
+사다리로: (a) **신호 먼저** `scripts/scout-signals.mjs`가 `.muse/runs/` 실패 트레이스
+(ungrounded/failed)를 빈도순 클러스터링 → 진짜 반복 실패가 일감, (b) 깨끗하면 코드 확장
+gap-scout, (c) 둘 다 마르면 **정직 보고 후 멈춤(가짜 일감 금지)**. 결정적 코어
+`apps/cli/src/run-log-analysis.ts`(`analyzeRunLogSignals`, 행동 단위테스트 8/8); 실데이터
+1133 트레이스에서 실 실패 클러스터(browser-read ungrounded ×7) 발굴 증명. improve-muse (e)도
+동일 사다리로 갱신.
+
 ## 1.7.0 — 2026-06-12
 **§1을 "DECIDE THE WORK"로 재구성**(진안 지적): 스킬의 1번 작업 = *무엇을 할지 결정*하고,
 모르면 *능동 발굴*. 결정 순서(기준선 회귀 → 테마+backlog top → **테마 없음/얇음/부재면
