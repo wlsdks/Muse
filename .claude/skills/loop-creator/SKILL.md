@@ -35,6 +35,10 @@ description: Use when 진안 wants to start (register) an autonomous improvement
 - **main에 이미 자동 커밋/푸시 루프가 도는지 확인**(`git log --oneline -5`에 loop 커밋이
   연달아 있나). 있으면 신규 루프는 반드시 /tmp worktree에서 — 안 그러면 push가
   non-fast-forward로 충돌한다([[project_worktree_instability]] · [[project_loop_docs_reset]]).
+- **연료 체크 (등록 전 경고).** 테마의 열린 backlog 항목(★/◦)을 센다. **≤2개면 얇음** —
+  루프가 매 fire 거의 gap-scout 리필에 의존하게 되니, 등록 전에 진안에게 그 사실을 알리고
+  *더 넓은 테마*(예: 단일 'browser' 대신 'TOOL expansion & hardening')를 제안한다. 진안이
+  그래도 좁은 테마를 원하면 진행하되, 첫 fire가 gap-scout부터 돈다는 걸 §5 보고에 명시한다.
 
 ### 2. 계약을 채운다 (§4 체크리스트 — 빈 칸은 위험점, 명시)
 각 항목을 이 루프에 맞게 구체화한다. Muse 기본 seam:
