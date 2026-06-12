@@ -17,6 +17,16 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
 Every slice ships its eval/test and never weakens the grounding floor. Ranked:
 
 EXPAND (new reach):
+- ✓→Done **file_read reads IMAGE files via local vision** — file_read classified .png/.jpg/etc. as
+  "unsupported" even though Muse has local vision (describeImage, already used by mac_screen_read). Now
+  an image FileKind (extension + magic-byte sniff: PNG/JPEG/GIF/WEBP) routes the bytes to an injected
+  describeImage callback (the CLI binds it to the assembly's gemma4 via the same lazy holder as
+  mac_screen_read; @muse/mcp stays model-free); absent callback ⇒ refused as before. imageMimeType
+  derives the MIME from extension then magic. Magic-detected images win over a misleading extension.
+  TDD 5 (classify/sniff/route-via-vision/refuse-without-vision/vision-error); eval:file-read image
+  round-trip (routed + mime + refuse-without-vision); LIVE — a real Chrome-rendered receipt PNG read
+  by gemma4 returned "CAFE MUSE / Latte x2 9,000 / Total 9,000 KRW". file_read is now read-any-file
+  (text/pdf/docx/image). mcp 1645, full eval:tools 137/137, check 0, lint 0.
 - ✓→Done **web_read reads PDF URLs (not just HTML)** — `isReadableContentType` rejected
   application/pdf, so "summarize this report.pdf link" failed with "not a readable text page". Now a
   PDF content-type response is read as bytes (10MB cap) and extracted via the same pdfjs already used

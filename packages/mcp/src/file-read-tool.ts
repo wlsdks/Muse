@@ -22,11 +22,16 @@ export interface FileCandidate {
   readonly modifiedMs: number;
 }
 
-export type FileKind = "pdf" | "docx" | "text" | "unsupported";
+export type FileKind = "pdf" | "docx" | "image" | "text" | "unsupported";
 
 const TEXT_EXTENSIONS = new Set([
   "txt", "md", "markdown", "json", "csv", "tsv", "log", "yaml", "yml", "toml", "ini",
   "ts", "tsx", "js", "mjs", "cjs", "py", "rb", "go", "rs", "java", "swift", "sh", "html", "css", "xml"
+]);
+
+const IMAGE_EXTENSIONS = new Map<string, string>([
+  ["png", "image/png"], ["jpg", "image/jpeg"], ["jpeg", "image/jpeg"],
+  ["gif", "image/gif"], ["webp", "image/webp"], ["bmp", "image/bmp"]
 ]);
 
 export function classifyFileKind(name: string): FileKind {
@@ -36,8 +41,20 @@ export function classifyFileKind(name: string): FileKind {
   const ext = lower.includes(".") ? (lower.split(".").pop() ?? "") : "";
   if (ext === "pdf") return "pdf";
   if (ext === "docx") return "docx";
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
   if (TEXT_EXTENSIONS.has(ext)) return "text";
   return "unsupported";
+}
+
+/** MIME type for an image file, from its extension then magic bytes. Default image/png. */
+export function imageMimeType(name: string, data: Buffer): string {
+  const ext = name.toLowerCase().includes(".") ? (name.toLowerCase().split(".").pop() ?? "") : "";
+  const byExt = IMAGE_EXTENSIONS.get(ext);
+  if (byExt) return byExt;
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image/jpeg";
+  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) return "image/gif";
+  if (data.length >= 12 && data.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return "image/png";
 }
 
 /**
@@ -51,6 +68,11 @@ export function sniffFileKind(data: Buffer): FileKind {
   if (data.length >= 4 && data[0] === 0x25 && data[1] === 0x50 && data[2] === 0x44 && data[3] === 0x46) {
     return "pdf";
   }
+  // Image magic bytes: PNG \x89PNG, JPEG \xFF\xD8\xFF, GIF GIF8, WEBP RIFF…WEBP.
+  if (data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) return "image";
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image";
+  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x38) return "image";
+  if (data.length >= 12 && data.subarray(0, 4).toString("latin1") === "RIFF" && data.subarray(8, 12).toString("latin1") === "WEBP") return "image";
   const sample = data.subarray(0, 4096);
   if (sample.includes(0x00)) return "unsupported";
   let printable = 0;
@@ -70,7 +92,9 @@ export function sniffFileKind(data: Buffer): FileKind {
  */
 export function resolveFileKind(name: string, data: Buffer): FileKind {
   const bySniff = sniffFileKind(data);
-  if (bySniff === "pdf") return "pdf";
+  // Magic-detected binary formats win over a misleading extension (a .txt that
+  // is really a PDF or an image must not be read as utf8).
+  if (bySniff === "pdf" || bySniff === "image") return bySniff;
   const byName = classifyFileKind(name);
   if (byName !== "unsupported") return byName;
   return bySniff;
@@ -120,6 +144,12 @@ export interface FileReadToolDeps {
   readonly extractPdfText?: (data: Buffer) => Promise<string>;
   /** DOCX (Word) text extractor; defaults to the lazy mammoth implementation. */
   readonly extractDocxText?: (data: Buffer) => Promise<string>;
+  /**
+   * Local vision callback for IMAGE files (bound by the CLI to the assembly's
+   * multimodal model — @muse/mcp stays model-free). Absent ⇒ image files are
+   * refused ("unsupported") as before.
+   */
+  readonly describeImage?: (input: { readonly imageBase64: string; readonly mimeType: string }) => Promise<{ readonly ok: boolean; readonly text?: string; readonly error?: string }>;
   /** Cap on returned characters. Default 20,000. */
   readonly maxTextChars?: number;
   /** Files larger than this are refused. Default 25MB. */
@@ -197,8 +227,8 @@ export function createFileReadTool(deps: FileReadToolDeps = {}): MuseTool {
     definition: {
       description:
         "Read a document FILE from the user's Downloads, Desktop, or Documents folder and return its text " +
-        "— PDF and Word (.docx) included (text is extracted locally). Say WHICH file in `file` — a filename " +
-        "or part of one ('invoice pdf', 'report.md', '계약서 워드') — and Muse finds the newest match. Use " +
+        "— PDF, Word (.docx), and images (read with the local vision model) included. Say WHICH file in `file` — a filename " +
+        "or part of one ('invoice pdf', 'report.md', '계약서 워드', '영수증 사진') — and Muse finds the newest match. Use " +
         "when the user asks to read / open / summarize a file on their computer — e.g. '다운로드에 있는 " +
         "invoice.pdf 요약해줘', 'read the Word doc on my Desktop'. NOT for the user's Muse notes " +
         "(muse.notes.search) and NOT for just locating a file's path (mac_spotlight_search).",
@@ -263,8 +293,18 @@ export function createFileReadTool(deps: FileReadToolDeps = {}): MuseTool {
         // Classify by CONTENT (with the extension as a hint): an extensionless
         // download or a misnamed file still reads, a binary blob is still refused.
         const kind = resolveFileKind(target.name, data);
+        if (kind === "image") {
+          if (!deps.describeImage) {
+            return { read: false, reason: `'${target.name}' is an image — image reading needs the local vision model, not available in this run` };
+          }
+          const described = await deps.describeImage({ imageBase64: data.toString("base64"), mimeType: imageMimeType(target.name, data) });
+          if (!described.ok || !described.text) {
+            return { read: false, reason: described.error ?? "the vision model could not read the image" };
+          }
+          return { kind: "image", name: target.name, path: target.path, read: true, text: described.text, truncated: false };
+        }
         if (kind === "unsupported") {
-          return { read: false, reason: `'${target.name}' is not a readable document (PDF or text files only)` };
+          return { read: false, reason: `'${target.name}' is not a readable document (PDF, Word, text, or image files only)` };
         }
         const text = kind === "pdf" ? await extractPdf(data) : kind === "docx" ? await extractDocx(data) : data.toString("utf8");
         const truncated = text.length > maxTextChars;

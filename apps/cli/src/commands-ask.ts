@@ -2478,7 +2478,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // web_download saves a file from a public URL into ~/Downloads — the
         // write-side companion to file_read (SSRF-guarded, size-capped,
         // basename-only). file_read can then read/summarize what was saved.
-        extraTools = [...extraTools, createFileReadTool(), createWebDownloadTool({ fetchImpl: globalThis.fetch })];
+        extraTools = [...extraTools, createFileReadTool({
+          // file_read reads an IMAGE file via the same local vision the screen-
+          // read path uses (lazy holder — the assembly/model is bound below).
+          describeImage: async (input) => screenVision.current ? screenVision.current(input) : { error: "the local vision model is not available in this run", ok: false }
+        }), createWebDownloadTool({ fetchImpl: globalThis.fetch })];
       }
       // The agent's `muse.messaging.send` (a default loopback tool whenever a
       // messenger is configured) gets a draft-first confirm gate under --with-tools:

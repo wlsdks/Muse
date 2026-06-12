@@ -40,7 +40,7 @@ describe("classifyFileKind — extension routing", () => {
     expect(classifyFileKind("a.PDF")).toBe("pdf");
     expect(classifyFileKind("notes.md")).toBe("text");
     expect(classifyFileKind("data.json")).toBe("text");
-    expect(classifyFileKind("photo.png")).toBe("unsupported");
+    expect(classifyFileKind("photo.png")).toBe("image");
     expect(classifyFileKind("archive.zip")).toBe("unsupported");
   });
 });
@@ -225,5 +225,55 @@ describe("file_read — symlink escape from the allowlisted roots is refused (re
     const out = await tool.execute({ file: "ok" }, ctx) as { read: boolean; text?: string };
     expect(out.read).toBe(true);
     expect(out.text).toContain("fine");
+  });
+});
+
+describe("file_read — image files via local vision", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+  it("classifyFileKind routes common image extensions", () => {
+    expect(classifyFileKind("receipt.png")).toBe("image");
+    expect(classifyFileKind("PHOTO.JPG")).toBe("image");
+    expect(classifyFileKind("scan.jpeg")).toBe("image");
+    expect(classifyFileKind("logo.webp")).toBe("image");
+  });
+
+  it("sniffFileKind detects PNG/JPEG magic bytes", () => {
+    expect(sniffFileKind(PNG)).toBe("image");
+    expect(sniffFileKind(JPEG)).toBe("image");
+  });
+
+  it("reads an image via the injected vision callback", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "receipt.png", path: "/dl/receipt.png" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => PNG };
+    let seenMime = "";
+    const tool = createFileReadTool({
+      describeImage: async (input) => { seenMime = input.mimeType; return { ok: true, text: "A receipt from Cafe Muse totaling 12,400 KRW." }; },
+      extractPdfText: async () => "",
+      fsImpl: fs,
+      roots: ["/dl"]
+    });
+    const out = await tool.execute({ file: "receipt" }, ctx) as { read: boolean; text?: string };
+    expect(out.read).toBe(true);
+    expect(out.text).toContain("Cafe Muse");
+    expect(seenMime).toBe("image/png");
+  });
+
+  it("an image is refused when no vision callback is wired (describeImage absent)", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "pic.png", path: "/dl/pic.png" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => PNG };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: fs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "pic" }, ctx) as { read: boolean; reason?: string };
+    expect(out.read).toBe(false);
+  });
+
+  it("a vision failure reports read:false with the reason", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "x.jpg", path: "/dl/x.jpg" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => JPEG };
+    const tool = createFileReadTool({ describeImage: async () => ({ ok: false, error: "vision model offline" }), extractPdfText: async () => "", fsImpl: fs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "x" }, ctx) as { read: boolean; reason?: string };
+    expect(out.read).toBe(false);
+    expect(String(out.reason)).toContain("offline");
   });
 });

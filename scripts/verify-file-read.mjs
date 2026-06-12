@@ -155,6 +155,20 @@ try {
     console.log("  ⚠ symlink creation unsupported here — skipping the live symlink case");
   }
 
+  console.log("2f) IMAGE — file_read routes an image to the injected vision callback");
+  const { writeFile: wfi } = await import("node:fs/promises");
+  await wfi(join(downloads, "snap.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]));
+  let sawMime = "";
+  const imgTool = createFileReadTool({
+    roots: [downloads],
+    describeImage: async (input) => { sawMime = input.mimeType; return { ok: true, text: "A scanned receipt for two coffees." }; }
+  });
+  const imgOut = await imgTool.execute({ file: "snap" }, ctx);
+  assert(imgOut.read === true && String(imgOut.text).includes("receipt"), "image routed to vision and described");
+  assert(sawMime === "image/png", "image mime type derived from the .png extension");
+  const noVision = await createFileReadTool({ roots: [downloads] }).execute({ file: "snap" }, ctx);
+  assert(noVision.read === false, "an image is refused when no vision model is wired");
+
   console.log("3) fail-closed bounds");
   const outside = await tool.execute({ file: join(dir, "outside-secret.txt") }, ctx);
   assert(outside.read === false, "absolute path outside the roots is refused");
