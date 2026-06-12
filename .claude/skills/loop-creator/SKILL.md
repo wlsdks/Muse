@@ -1,6 +1,6 @@
 ---
 name: loop-creator
-version: 1.9.0
+version: 1.10.0
 description: Use when 진안 wants to start (register) an autonomous improvement loop on the Muse repo — "루프 돌려줘", "loop 등록", "X를 계속 강화하는 루프", or just a theme to iterate on. Generates a principle-compliant recurring loop prompt from its bundled loop-engineering.md contract AND registers the cron itself, then reports the prompt + cron id + how to stop. The autonomous successor to hand-written ad-hoc loop prompts.
 ---
 
@@ -93,7 +93,7 @@ description: Use when 진안 wants to start (register) an autonomous improvement
 | **이해 표면 (비동기·non-blocking)** | 매 fire가 `docs/goals/loop-digest.md`에 4줄 append(아무때나 읽는 비동기 리뷰 로그) + **N fire(기본 3)마다 막지 않고 PushNotification 알림만 + 계속 진행** — 루프는 절대 안 멈춘다. 검토/머지는 사람의 비동기 선택. §3-2 |
 | **자율성 티어** | **Tier1**(로컬 커밋, push 없음 — 기본) 또는 **Tier2**(`loop/<theme>` 브랜치 push + draft PR, 사람이 머지 — 명시 opt-in). 하드 floor: main 자동머지·자율 outbound·banking·`--no-verify` 절대 불가. §3.5 |
 | 토큰/스텝 캡 | fire당 1슬라이스, retry 2–3 상한, 예산 캡([`loop-budget.md`](../../../harness/loop-budget.md)) |
-| **모델 티어링** | 정형 빌드/검색/문서 → Sonnet 서브에이전트(`Agent`/`Workflow` `model:"sonnet"`); 설계·모호함·적대적 검증 → Opus. maker=Sonnet / **judge=Opus**. 오케스트레이터는 얇게. (Muse 런타임 모델 gemma4는 고정 — [`loop-engineering.md`](references/loop-engineering.md) §1.5) |
+| **모델 티어링** | 정형 빌드/검색/문서 → Sonnet(`model:"sonnet"`); **계획·설계·모호함·적대적 검증 → Fable 5(`model:"fable"`)를 *가능할 때*, 불가하면 Opus 4.8(1M)**. 개발은 Opus/Sonnet 무관. maker=Sonnet / **judge=강한 티어(Fable5 가능 시, 아니면 Opus)**. 오케스트레이터는 얇게. (Muse 런타임 모델 gemma4는 고정 — [`loop-engineering.md`](references/loop-engineering.md) §1.5) |
 | State 파일 | `docs/goals/backlog.md`에 Done/다음 write-back |
 | 불변식 | fabrication=0 floor + IMMUTABLE-CORE 불가침 |
 | 중단 방법 | cron id 기록 + CronDelete/cmux |
@@ -114,7 +114,7 @@ Muse 자율 개선 루프 — 테마: <목적>. 반드시 Node 24(nvm default).
 ⑤ write-back(테스트/eval/backlog Done) 포함 커밋. **자율성: <Tier1=로컬 커밋, push 금지 / Tier2=loop/<theme> 브랜치 push+draft PR, 사람이 머지>.**
 ⑤b 이해 다이제스트: docs/goals/loop-digest.md에 4줄 append(비동기 리뷰 로그). 3 fire마다 막지 않고 PushNotification "N개 쌓였어요" 알림만 + **계속 진행**(루프는 절대 안 멈춤; 검토/머지는 진안의 비동기 선택).
 모델 티어링(토큰 절약): 정형 빌드/검색은 Sonnet 서브에이전트(Agent/Workflow model:"sonnet")로
-위임하고, 이 Opus 컨텍스트는 설계·모호한 포크·④b 적대 검증만; judge는 worker보다 강한 티어(Opus).
+위임하고, 계획/설계/모호한 포크/④b 적대 검증은 **Fable 5(가능 시) 아니면 Opus 4.8(1M)**로; 개발은 Sonnet/Opus 무관; judge는 worker보다 강한 티어(Fable5 가능 시, 아니면 Opus).
 한 fire에 슬라이스 하나; 막히면 backlog에 블로커 기록 후 멈춤.
 예산 캡: harness/loop-budget.md 한도 준수 — 토큰/비용이 캡에 닿으면 fire 중단 후 보고.
 grounding floor(fabrication=0)·IMMUTABLE-CORE 절대 약화 금지. 하드 floor: main 자동머지·자율 outbound·banking·--no-verify 절대 불가.

@@ -56,15 +56,16 @@ Addy: 서브에이전트는 "다른 지시 **그리고 모델**"로 ideation과 
 1. **일상 작업 → 싼 티어(Sonnet).** 기계적 TDD·검색·문서·정형 슬라이스 빌드는
    Sonnet 서브에이전트로 위임(`Agent` 도구 / `Workflow` `agent()`의 `model: "sonnet"`).
    루프 fire의 대부분이 정형이므로 여기서 토큰이 가장 많이 빠진다.
-2. **어려운 곳만 비싼 티어(Opus).** 설계 판단·모호한 포크·적대적 검증·회귀 진단처럼
-   8B/Sonnet이 흔들리는 지점만 Opus(또는 높은 reasoning effort)로 승급.
-3. **maker ≠ judge를 모델 티어로도 구현.** worker=Sonnet, **evaluator=Opus**(더 강한
-   판정자). 토큰을 아끼면서 동시에 검증 품질을 *높인다* — Addy의 "신뢰할 검증자라야
+2. **어려운 곳만 강한 티어 — 계획/설계는 Fable 5 우선.** 설계 판단·계획 수립·모호한
+   포크·회귀 진단은 **Fable 5(`model:"fable"`)를 *가능할 때* 쓰고, 불가하면 Opus 4.8
+   (`claude-opus-4-8[1m]`)로 폴백**. (개발/빌드는 Opus든 Sonnet이든 무관 — 위 1번.)
+3. **maker ≠ judge를 모델 티어로도 구현.** worker=Sonnet, **evaluator=강한 티어**(Fable 5
+   가능 시, 아니면 Opus 4.8 — 더 강한 판정자). 토큰을 아끼면서 동시에 검증 품질을 *높인다* — Addy의 "신뢰할 검증자라야
    손을 뗄 수 있다"와 정확히 일치([`team-roles.md`](../../../../harness/team-roles.md)).
 4. **오케스트레이터는 얇게.** 메인 컨텍스트(Opus)는 *고르고·나눠주고·검증을 읽는*
    역할만; 토큰-무거운 본작업은 싼 티어 서브에이전트로 밀어낸다.
 
-레버는 서브에이전트/Workflow의 `model` 오버라이드(`sonnet`/`opus`/`haiku`)다. 단,
+레버는 서브에이전트/Workflow의 `model` 오버라이드(`fable`/`opus`/`sonnet`/`haiku`)다. 단,
 Muse의 *런타임* 모델(로컬 gemma4:12b, fabrication floor를 도는 모델)은 **고정**이다 —
 티어링은 *개발 루프를 모는 Claude Code 에이전트*의 비용 얘기지, Muse 제품 모델을 바꾸는
 게 아니다([[project_local_first]] · [[project_gemma4_default]]).
@@ -150,7 +151,7 @@ post — outbound-safety.md) · banking/송금 · `--no-verify`/게이트 우회
 - [ ] **이해 표면(비동기·non-blocking)** — 매 fire 다이제스트 + N fire마다 알림(막지 않음, 루프 무한). §3-2.
 - [ ] **자율성 티어 선택** — Tier1(로컬 커밋, 기본) 또는 Tier2(브랜치+draft PR, opt-in). §3.5.
 - [ ] **토큰/스텝 캡** — fire당 1슬라이스, retry 2–3 상한, 예산 캡. [`loop-budget.md`](../../../../harness/loop-budget.md).
-- [ ] **모델 티어링** — 정형 작업 Sonnet, 어려운 곳만 Opus, judge는 worker보다 강한 티어. §1.5.
+- [ ] **모델 티어링** — 정형 작업 Sonnet; **계획/설계는 Fable 5(가능 시) 아니면 Opus 4.8(1M)**; judge는 강한 티어. §1.5.
 - [ ] **State 파일** — 무엇이 Done·다음은 무엇. 디스크에([`backlog.md`](../../../../docs/goals/backlog.md)).
 - [ ] **불변식 불가침** — fabrication=0 floor + IMMUTABLE-CORE는 절대 약화 안 함.
 - [ ] **중단 방법** — cron id 기록, 어떻게 멈추나(CronDelete/cmux), 무인 비용 경계.
