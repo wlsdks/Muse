@@ -32,6 +32,7 @@ import {
   resolveProactiveHistoryFile,
   resolveRemindersFile,
   resolveSuppressedLessonsFile,
+  resolveRecallHitsFile,
   resolveTasksFile,
   type DecayContradictedDeps,
   type DistillQueuedDeps
@@ -81,7 +82,8 @@ import {
   type ChromeSnapshotConnection,
   type ProactiveNoticeSink,
   type WebWatchRunner,
-  readProactiveHistory
+  readProactiveHistory,
+  readRecallHits
 } from "@muse/mcp";
 import type { MuseTool } from "@muse/tools";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -96,6 +98,7 @@ import { DEFAULT_REFLECTION_INTERVAL_MS, resolveReflectionsFile, runReflectionPa
 import { syncEmailsToNotes } from "./email-sync.js";
 import { createIndexedProactiveInvestigator } from "./proactive-notes-recall.js";
 import { consolidatePlaybook } from "./playbook-consolidate.js";
+import { runMemoryConsolidationTick } from "./memory-consolidate-tick.js";
 import type { ProgramIO } from "./program.js";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_EMBED_MODEL } from "./embed-model-default.js";
@@ -1143,6 +1146,18 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         } catch { /* fail-soft — background maintenance must never break the daemon */ }
       };
 
+      let lastMemoryConsolidateMs: number | undefined;
+      const memoryConsolidateTick = async (): Promise<void> => {
+        const nextState = await runMemoryConsolidationTick({
+          enabled: parseBoolean(e.MUSE_SELFLEARN_ENABLED, false),
+          nowMs: Date.now(),
+          lastRunMs: lastMemoryConsolidateMs,
+          readHits: () => readRecallHits(resolveRecallHitsFile(e)),
+          log: (line) => io.stdout(line + "\n")
+        });
+        lastMemoryConsolidateMs = nextState.lastRunMs;
+      };
+
       // Evening recap — a once-a-day proactive digest of what got done today +
       // what's coming up, delivered after MUSE_RECAP_HOUR (default 21:00) and
       // self-deduped to once per calendar day via a sidecar. Off by default;
@@ -1263,6 +1278,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await selfLearnTick();
         await selfLearnDecayTick();
         await playbookConsolidateTick();
+        await memoryConsolidateTick();
         await recapTick();
         await messagingPollTick();
         await conflictWatchTick();

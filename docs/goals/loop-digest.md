@@ -132,3 +132,12 @@
 - **왜:** daemon이 백그라운드로 메모리를 공고화하려면 "지금 돌릴까 + 돌리면 결과" 결정 로직이 필요. 이걸 순수 함수로 빼서 daemon 루프(테스트 어려움) 밖에서 완전 테스트. fire10(게이트)→fire11(tick 플래너)→fire12(daemon 글루).
 - **리뷰지점:** `packages/memory/src/recall-promotion.ts`(순수 플래너 + 2 인터페이스) + `index.ts` + `consolidation-tick.test.ts`(7 케이스). judge=Opus(나)가 플래너가 plan을 **위임**(fabricate 아님 — 케이스6: result.plan == 직접 consolidationPlan 호출의 promoted keys)·stale-material 브레이크(케이스5)·nextState 전진 조건 실제 코드 확인 + 7/7 + memory 372 독립 green.
 - **리스크:** **daemon 미배선**(아직 백그라운드 실행 안 함) → backlog ◦ 유지, fire12가 thin 글루(readRecallHits→플래너→log+persist, playbookConsolidateTick 미러). 순수·additive, grounding floor 무관. (배치 머지 main dirty라 또 deferred.)
+
+## [cognition loop] fire 12 — 2026-06-12 · 테마: agent-core 인지 강화 (백그라운드/sleep consolidation #5) · ⚠️ 3-FIRE 리뷰 관문
+
+- **무엇:** fire10(브레이크)+fire11(플래너)를 **daemon에 배선** — `runMemoryConsolidationTick`(testable sibling fn) readRecallHits→planMemoryConsolidationTick→promote/fade 로그, playbookConsolidateTick 옆에 daemon tick으로 등록. 백그라운드 메모리 공고화가 이제 daemon 스케줄로 **실행됨**(브레이크 게이트). REPORT-ONLY.
+- **왜:** #5 스레드 완성(gate→planner→glue). consolidationPlan이 수동 CLI로만 돌던 걸 daemon이 유휴시 brake-gated로 돌리게. SELFLEARN-gated·fail-soft. (배치 머지도 이번에 main clean돼 fires7-9 완료.)
+- **리뷰지점:** 신규 `apps/cli/src/memory-consolidate-tick.ts`(glue fn) + `commands-daemon.ts`(closure lastRunMs + tick 등록 + 2 import) + 신규 test 4건. judge=Opus(나)가 glue 로직(disabled/throw→fail-soft 무변경·report-only=write API 없음·nextState 전진) 실제 코드 확인 + daemon 등록(SELFLEARN gate·Date.now·readRecallHits 배선·1281 await) 확인 + 4/4 + cli 2515 green.
+- **리스크:** REPORT-ONLY — promotion **persistence**(백그라운드로 persona에 graduate)는 자체 안전가드 동반 다음 슬라이스. 현재 tick은 plan을 surface만, mutate 안 함. mcp tasks/browser·macos 무관. grounding floor 무관.
+
+> ⚠️ **3-FIRE 리뷰 관문 — fire 10–12 누적. 진안 확인 전 fire 13(새 슬라이스) 시작 금지.**

@@ -445,9 +445,13 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   decide-and-run unit: counts recall records re-engaged since lastRunMs (the new material), gates on
   the brake, and only then DELEGATES to consolidationPlan, returning {ran, plan?, nextState} (lastRunMs
   advanced only when it ran). 7-case battery (incl. plan==consolidationPlan delegation + both brakes).
-  NEXT: thin daemon glue — readRecallHits → planMemoryConsolidationTick → log promote/fade + persist
-  nextState, registered as a daemon tick (mirror playbookConsolidateTick). (ACT-R ranking from T2-1
-  already feeds consolidationPlan via useActrRanking.)
+  fire 12: WIRED into the daemon — `runMemoryConsolidationTick` (sibling fn, testable) reads recall
+  hits → planMemoryConsolidationTick → logs promote/fade, registered as a daemon tick next to
+  playbookConsolidateTick (MUSE_SELFLEARN_ENABLED-gated, fail-soft, in-closure lastRunMs). Background
+  memory consolidation now RUNS on the daemon schedule (brake-gated). REPORT-ONLY (logs the plan;
+  cli 2515 green, 4 glue cases). REMAINING sub-slice: promotion-PERSISTENCE (graduate promoted
+  memories into the persona in the background) with its own safety guards — currently the tick
+  surfaces the plan, doesn't mutate. (ACT-R ranking from T2-1 already feeds consolidationPlan via useActrRanking.)
 
 ## Blocked / deferred
 
