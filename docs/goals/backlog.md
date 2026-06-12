@@ -468,6 +468,17 @@ excluded when scoring).
 - ◦ **Per-group abstention threshold at serve time** — `calibrateAbstentionByGroup` now MEASURES the
   per-script-family gap; the follow-up is to SERVE the per-group tau (route a Korean query through the
   hangul threshold, not pooled) once the per-group calibration set is large enough to trust. (next)
+- ✓→Done **MemoryBank Ebbinghaus forgetting loop — close the inert fade seam** — fade was COMPUTED
+  (`selectForgettable`) but applied nowhere (report-only across 3 surfaces, arXiv:2305.10250 Zhong et
+  al. AAAI 2024). [DONE 2026-06-13, cognition loop fire 30: `muse memory consolidate` writes `plan.fade`
+  keys to `~/.muse/memory-fade.json`; the default-ON `StoreBackedEpisodicRecallProvider.resolve` reads
+  it and down-ranks faded sessions ×FADE_PENALTY=0.5 (post-minScore-gate, ranking-only, never deletes);
+  re-recalled memories auto-reinstate via consolidate overwrite + lastHitMs reset. Judge PASS: session-key
+  identity holds end-to-end, counterfactual robust, fail-open 3 layers, fabrication floor intact.]
+- ◦ **MemoryBank daemon auto-refresh** — consolidate is manual/on-demand, so the fade sidecar only
+  refreshes when a human runs it. Wire `writeFadedMemoryKeys` into `memory-consolidate-tick.ts` +
+  `commands-daemon.ts` behind the existing `MUSE_SELFLEARN_ENABLED` gate so fade refreshes automatically
+  on the background tick. (fire-30 remainder; also: FadeMem-style importance term in `selectForgettable`.)
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting
   each is verifier-backed (85.36% same-mistake repetition without one, arXiv 2510.18254). (T1-10)
 - (queued behind fuel/prereqs: sleep-time compute · Mem0 UPDATE op · AWM workflow mining ·
