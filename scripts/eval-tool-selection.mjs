@@ -380,6 +380,8 @@ async function buildMacActuatorScenario() {
       { prompt: "Find the file called budget.xlsx on my Mac.", expectTool: "mac_spotlight_search", requireArgs: ["query"], note: "EN locate a file on disk → mac_spotlight_search (NOT knowledge_search)" },
       { prompt: "내 컴퓨터에서 발표자료 파일 좀 찾아줘.", expectTool: "mac_spotlight_search", requireArgs: ["query"], note: "KO locate a file on disk → mac_spotlight_search (NOT knowledge_search)" },
       { prompt: "How much free disk space do I have?", expectTool: "mac_app_read", requireArgs: ["app"], note: "EN disk space → mac_app_read(storage)" },
+      { prompt: "What reminders do I have for today?", expectTool: "mac_app_read", requireArgs: ["app"], note: "EN read Reminders → mac_app_read(reminders), NOT muse.reminders.list" },
+      { prompt: "오늘 리마인더 목록 보여줘.", expectTool: "mac_app_read", requireArgs: ["app"], note: "KO read Reminders → mac_app_read(reminders), user's language" },
       { prompt: "와이파이 꺼줘.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "KO turn Wi-Fi off → mac_system_set(wifi_off)" },
       { prompt: "Put my Mac to sleep.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "EN system sleep → mac_system_set(sleep)" },
       { prompt: "Read this out loud: the build passed.", expectTool: "mac_say", requireArgs: ["text"], note: "EN speak aloud → mac_say" },

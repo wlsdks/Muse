@@ -131,14 +131,14 @@ EXPAND (new reach):
   web scenario 6/6 STABLE 3/3 (web_download vs web_read vs search vs knowledge_search); LIVE — a real
   http server's file fetched and written to disk with matching bytes. mcp 1638, full eval:tools
   137/137, check 0, lint 0.
-- ◦ **mac: read Calendar.app / Notes.app / Reminders.app** — osascript readers in the mac family,
+- ◦ **mac: read Calendar.app / Notes.app — Reminders DONE** — osascript readers in the mac family,
   read-risk, so "what's on my calendar today" works without a configured provider.
-  BLOCKER (loop fire, gate FAIL → rolled back): a `mac_reminders_read` reader (injectable-runner,
-  8 behavioral tests, build green) was built but **INERT** — defined+exported yet NEVER wired into
-  the model-exposed set (`apps/cli/src/actuator-tools.ts` where sibling mac read tools register),
-  and no `eval:tools` selection case. A "new tool" slice is NOT a tool DEF alone. NEXT slice = the
-  COMPLETE one: reader + **wire into actuator-tools.ts** + **eval-tool-selection.mjs golden case**
-  (model actually SELECTS it) per tool-calling.md. Verifier caught the silent inertness.
+  PROGRESS: **Reminders shipped** as a `reminders` SOURCE on the already-wired `mac_app_read` tool
+  (not a new tool — keeps the exposed set small per tool-calling.md). Reachable (verifier confirmed
+  the built enum the model sees includes `reminders`), behavioral parse test (fake runner), 2
+  eval:tools golden cases (EN+KO select mac_app_read). The earlier INERT attempt (separate unwired
+  tool) was rolled back; this fire did it the COMPLETE way (extend wired tool + eval). REMAINING:
+  Calendar-today + Notes sources on the same mac_app_read pattern (next slice, same shape).
 
 HARDEN (make existing tools more reliable):
 - ✓→Done **regex_extract ReDoS guard** — the tool ran a model/untrusted-supplied regex with no
