@@ -45,7 +45,14 @@ HARDEN (make existing tools more reliable):
   correction. Also fixed classifyFileKind's no-dot bug (`split('.').pop()` returned the whole name).
   TDD 10 cases (sniff + resolve + 2 tool integration); eval:file-read gains the no-ext + mislabeled
   real-file round-trips; mcp 1616, check 0, lint 0.
-- ◦ **web_action URL vetting** — validate/normalize the URL before the one-shot submit (audit LOW tail).
+- ✓→Done **web_action URL vetting (SSRF guard)** — the existing assertPublicHttpUrl guard protected
+  muse.web.read (READ) but NOT web_action (state-changing SUBMIT — the higher-risk tool was the
+  unguarded path). Wired it in BEFORE the approval gate/any HTTP. Split the guard into a sync half
+  (assertPublicHttpUrlSync: protocol + literal loopback/private/link-local IP + blocked host — always
+  on, no DNS) and the async DNS-rebinding layer (opt-in via deps.lookup), so literal SSRF
+  (127.0.0.1, 169.254.169.254 metadata, file://) is always blocked and the happy path needs no
+  resolver. TDD 4 SSRF cases + injected-private-resolver (DNS-rebinding); web_action selection
+  unaffected (eval:tools actuator scenario), mcp 1620, check 0, lint 0, precheck:grounding pass^2.
 
 ## Open — 2026-06-10 full-feature audit (3 reviewers; VERIFIED findings → fix queue)
 

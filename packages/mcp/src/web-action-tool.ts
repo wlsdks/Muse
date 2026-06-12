@@ -13,12 +13,15 @@ import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { performWebActionWithApproval, type WebActionApprovalGate } from "./web-action.js";
+import { assertPublicHttpUrl, assertPublicHttpUrlSync, type HostLookup } from "./web-url-guard.js";
 
 export interface WebActionToolDeps {
   readonly fetchImpl: typeof fetch;
   readonly approvalGate: WebActionApprovalGate;
   readonly actionLogFile: string;
   readonly userId: string;
+  /** DNS resolver for the SSRF guard; defaults to the system lookup (tests inject a fake). */
+  readonly lookup?: HostLookup;
 }
 
 export function createWebActionTool(deps: WebActionToolDeps): MuseTool {
@@ -52,6 +55,16 @@ export function createWebActionTool(deps: WebActionToolDeps): MuseTool {
       // is reported back for clarification — fail-closed, no HTTP fires.
       if (url.length === 0) {
         return { detail: "Which URL should I act on? Give me the exact page/link and I'll confirm the action before sending.", performed: false, reason: "needs-url" };
+      }
+      // SSRF guard BEFORE the approval gate or any HTTP: a state-changing submit
+      // must never reach a loopback/private/link-local host (cloud metadata,
+      // intranet admin) or a non-http(s) scheme. muse.web.read already vets this;
+      // web_action is the higher-risk tool and must not be the unguarded path.
+      // Literal-IP/protocol/blocked-host always (sync); the DNS-rebinding layer
+      // runs when a resolver is wired (deps.lookup).
+      const vetted = deps.lookup ? await assertPublicHttpUrl(url, { lookup: deps.lookup }) : assertPublicHttpUrlSync(url);
+      if (!vetted.ok) {
+        return { detail: vetted.error, performed: false, reason: "unsafe-url" };
       }
       const method = typeof args["method"] === "string" && args["method"].trim().length > 0
         ? args["method"].trim().toUpperCase()
