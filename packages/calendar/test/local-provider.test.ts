@@ -1,6 +1,6 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -33,6 +33,30 @@ describe("LocalCalendarProvider", () => {
     const events = await fresh.listEvents({ from: d("2026-05-15T00:00:00Z"), to: d("2026-05-16T00:00:00Z") });
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ providerId: "local", title: "Standup" });
+  });
+
+  it("a CORRUPT (unparseable) calendar file is QUARANTINED, not silently wiped, on read", async () => {
+    const file = freshFile();
+    writeFileSync(file, "{ this is not json", "utf8"); // a half-written / corrupted store
+    const p = new LocalCalendarProvider({ file, idFactory: seq() });
+    // degrades to empty (so the app keeps working)…
+    expect(await p.listEvents({ from: d("2026-05-15T00:00:00Z"), to: d("2026-05-16T00:00:00Z") })).toEqual([]);
+    // …but the original bytes survive at a `<file>.corrupt-*` sibling for recovery — NOT lost.
+    const siblings = readdirSync(dirname(file)).filter((n) => n.includes("calendar.json.corrupt-"));
+    expect(siblings).toHaveLength(1);
+    expect(readFileSync(join(dirname(file), siblings[0]!), "utf8")).toBe("{ this is not json");
+    // a subsequent write starts a clean store WITHOUT destroying the quarantined original.
+    await p.createEvent({ endsAt: d("2026-05-15T09:30:00Z"), startsAt: d("2026-05-15T09:00:00Z"), title: "Recovered" });
+    expect((await p.listEvents({ from: d("2026-05-15T00:00:00Z"), to: d("2026-05-16T00:00:00Z") })).map((e) => e.title)).toEqual(["Recovered"]);
+    expect(readdirSync(dirname(file)).filter((n) => n.includes(".corrupt-"))).toHaveLength(1); // still exactly one
+  });
+
+  it("a SCHEMA-MISMATCH calendar file (valid JSON, wrong shape) is also quarantined", async () => {
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ events: "not-an-array" }), "utf8");
+    const p = new LocalCalendarProvider({ file, idFactory: seq() });
+    expect(await p.listEvents({ from: d("2026-05-15T00:00:00Z"), to: d("2026-05-16T00:00:00Z") })).toEqual([]);
+    expect(readdirSync(dirname(file)).filter((n) => n.includes(".corrupt-"))).toHaveLength(1);
   });
 
   it("listEvents returns OVERLAPPING events sorted by start (a window between events is empty)", async () => {

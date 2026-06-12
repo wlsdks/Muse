@@ -3,6 +3,8 @@ import { dirname } from "node:path";
 
 import type { JsonObject } from "@muse/shared";
 
+import { quarantineCorruptStore } from "./corrupt-quarantine.js";
+
 export type ProviderCredentials = JsonObject;
 
 export interface CalendarCredentialStore {
@@ -79,6 +81,7 @@ export class FileCalendarCredentialStore implements CalendarCredentialStore {
     try {
       const parsed = JSON.parse(raw) as Partial<PersistedShape>;
       if (!parsed || typeof parsed !== "object" || !parsed.providers || typeof parsed.providers !== "object") {
+        await quarantineCorruptStore(this.file);
         return { providers: emptyProviderMap(), version: 1 };
       }
 
@@ -88,6 +91,7 @@ export class FileCalendarCredentialStore implements CalendarCredentialStore {
       }
       return { providers, version: 1 };
     } catch {
+      await quarantineCorruptStore(this.file);
       return { providers: emptyProviderMap(), version: 1 };
     }
   }

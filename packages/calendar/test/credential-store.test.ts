@@ -34,6 +34,18 @@ describe("FileCalendarCredentialStore", () => {
     expect(await store.load("google")).toBeUndefined();
   });
 
+  it("QUARANTINES a corrupt credentials file instead of silently wiping it", async () => {
+    const file = freshFile();
+    writeFileSync(file, "{ broken json", "utf8"); // a half-written / corrupted store
+    const store = new FileCalendarCredentialStore(file);
+    // degrades to empty so the app keeps working…
+    expect(await store.list()).toEqual([]);
+    expect(await store.load("google")).toBeUndefined();
+    // …but the original bytes survive at a `<file>.corrupt-*` sibling — NOT lost.
+    const siblings = readdirSync(join(file, "..")).filter((n) => n.includes("credentials.json.corrupt-"));
+    expect(siblings).toHaveLength(1);
+  });
+
   it("persists with file mode 0600 and leaves no .tmp- sibling", async () => {
     if (process.platform === "win32") {
       return; // POSIX mode bits are meaningless on Windows.

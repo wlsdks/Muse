@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
+import { quarantineCorruptStore } from "./corrupt-quarantine.js";
 import { CalendarProviderError, CalendarValidationError } from "./errors.js";
 import { expandRecurringEvent } from "./ics-parse.js";
 import type {
@@ -171,10 +172,12 @@ export class LocalCalendarProvider implements CalendarProvider {
     try {
       parsed = JSON.parse(raw) as unknown;
     } catch {
+      await quarantineCorruptStore(this.file);
       return [];
     }
 
     if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { events?: unknown }).events)) {
+      await quarantineCorruptStore(this.file);
       return [];
     }
 
