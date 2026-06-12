@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { attributeContributors, defaultShouldOrchestrate, orchestrateAnswer, type OrchestrateOptions } from "../src/orchestrate.js";
+import { attributeContributors, defaultShouldOrchestrate, dedupeRolesById, orchestrateAnswer, type OrchestrateOptions } from "../src/orchestrate.js";
 
 // A deterministic fake model: a role proposer (system prompt mentions a lens)
 // echoes its role; the aggregator (council synthesis) returns council JSON.
-function fakeProvider(failLenses: readonly string[] = []): OrchestrateOptions["modelProvider"] {
+function fakeProvider(failLenses: readonly string[] = [], emptyLenses: readonly string[] = []): OrchestrateOptions["modelProvider"] {
   return {
     async generate(request) {
       const system = request.messages.find((m) => m.role === "system")?.content ?? "";
@@ -12,6 +12,7 @@ function fakeProvider(failLenses: readonly string[] = []): OrchestrateOptions["m
       if (isProposer) {
         const lens = /practical/u.test(system) ? "practical" : /thorough/u.test(system) ? "thorough" : "skeptic";
         if (failLenses.includes(lens)) throw new Error(`proposer ${lens} failed`);
+        if (emptyLenses.includes(lens)) return { id: "x", model: "fake", output: "" };
         return { id: "x", model: "fake", output: `proposal-from-${lens}` };
       }
       // aggregator (MoA merge) → the single merged answer as plain text
@@ -93,6 +94,93 @@ describe("orchestrateAnswer", () => {
     const res = await orchestrateAnswer(substantive, opts());
     expect(res.failedRoles).toBeUndefined();
   });
+
+  it("empty proposer output → failedRoles, not proposals (MAST failure propagation)", async () => {
+    const res = await orchestrateAnswer(substantive, opts({ modelProvider: fakeProvider([], ["thorough"]) }));
+    expect(res.mode).toBe("orchestrated");
+    // The empty proposer must NOT appear in proposals
+    expect(res.proposals).toHaveLength(2);
+    expect(res.proposals.map((p) => p.id)).not.toContain("thorough");
+    // It must appear in failedRoles
+    expect(res.failedRoles).toEqual(["thorough"]);
+    // The answer still comes from the two good proposers
+    expect(res.answer).toBe("merged best answer");
+  });
+
+  it("whitespace-only proposer output → failedRoles (treated as degraded)", async () => {
+    // Uses a custom provider that returns all-whitespace for the skeptic role
+    const provider: OrchestrateOptions["modelProvider"] = {
+      async generate(request) {
+        const sys = request.messages.find((m) => m.role === "system")?.content ?? "";
+        if (/fact-checker/u.test(sys)) return { id: "x", model: "fake", output: "   " };
+        if (/practical/u.test(sys)) return { id: "x", model: "fake", output: "proposal-from-practical" };
+        if (/thorough/u.test(sys)) return { id: "x", model: "fake", output: "proposal-from-thorough" };
+        return { id: "x", model: "fake", output: "merged best answer" };
+      }
+    };
+    const res = await orchestrateAnswer(substantive, opts({ modelProvider: provider }));
+    expect(res.proposals).toHaveLength(2);
+    expect(res.proposals.map((p) => p.id)).not.toContain("skeptic");
+    expect(res.failedRoles).toContain("skeptic");
+  });
+
+  it("all-empty proposers → fail-close throw", async () => {
+    await expect(
+      orchestrateAnswer(substantive, opts({ modelProvider: fakeProvider([], ["practical", "thorough", "skeptic"]) }))
+    ).rejects.toThrow(/all 3 proposers failed/u);
+  });
+
+  it("regression: all non-empty proposers produce no spurious failedRoles", async () => {
+    const res = await orchestrateAnswer(substantive, opts());
+    expect(res.failedRoles).toBeUndefined();
+    expect(res.proposals).toHaveLength(3);
+  });
+
+  it("aggregator throws → graceful degrade to best single proposal (regression of crash)", async () => {
+    // Aggregator is distinguished by its system prompt containing "candidate answers".
+    const provider: OrchestrateOptions["modelProvider"] = {
+      async generate(request) {
+        const sys = request.messages.find((m) => m.role === "system")?.content ?? "";
+        if (sys.includes("candidate answers")) throw new Error("aggregator flaked");
+        if (/practical/u.test(sys)) return { id: "x", model: "fake", output: "proposal-from-practical" };
+        if (/thorough/u.test(sys)) return { id: "x", model: "fake", output: "proposal-from-thorough" };
+        return { id: "x", model: "fake", output: "proposal-from-skeptic" };
+      }
+    };
+    // Before this fix this would reject; now it must resolve.
+    await expect(
+      orchestrateAnswer(substantive, opts({ modelProvider: provider }))
+    ).resolves.toMatchObject({
+      mode: "orchestrated",
+      answer: "proposal-from-thorough",
+      contributors: ["thorough"]
+    });
+    const res = await orchestrateAnswer(substantive, opts({ modelProvider: provider }));
+    expect(res.proposals.map((p) => p.id)).toEqual(["practical", "thorough", "skeptic"]);
+  });
+
+  it("aggregator returns empty string → fallback to thorough proposal (existing behavior)", async () => {
+    const provider: OrchestrateOptions["modelProvider"] = {
+      async generate(request) {
+        const sys = request.messages.find((m) => m.role === "system")?.content ?? "";
+        if (sys.includes("candidate answers")) return { id: "x", model: "fake", output: "" };
+        if (/practical/u.test(sys)) return { id: "x", model: "fake", output: "proposal-from-practical" };
+        if (/thorough/u.test(sys)) return { id: "x", model: "fake", output: "proposal-from-thorough" };
+        return { id: "x", model: "fake", output: "proposal-from-skeptic" };
+      }
+    };
+    const res = await orchestrateAnswer(substantive, opts({ modelProvider: provider }));
+    expect(res.mode).toBe("orchestrated");
+    expect(res.answer).toBe("proposal-from-thorough");
+    expect(res.contributors).toEqual(["thorough"]);
+  });
+
+  it("aggregator succeeds → normal merged answer flows through (regression)", async () => {
+    const res = await orchestrateAnswer(substantive, opts());
+    expect(res.mode).toBe("orchestrated");
+    expect(res.answer).toBe("merged best answer");
+    expect(res.contributors).toEqual(["practical", "thorough", "skeptic"]);
+  });
 });
 
 describe("attributeContributors", () => {
@@ -163,5 +251,72 @@ describe("orchestrateAnswer — multi-merge attribution", () => {
     const substantive = "에이전트를 병렬화하는 가장 좋은 방법은 무엇인가요?";
     const res = await orchestrateAnswer(substantive, opts({ modelProvider: fakeProvider(["practical", "thorough"]) }));
     expect(res.contributors).toEqual(["skeptic"]);
+  });
+});
+
+describe("dedupeRolesById", () => {
+  it("preserves length and order when all ids are distinct", () => {
+    const roles = [
+      { id: "a", systemPrompt: "A" },
+      { id: "b", systemPrompt: "B" },
+      { id: "c", systemPrompt: "C" }
+    ];
+    const result = dedupeRolesById(roles);
+    expect(result).toHaveLength(3);
+    expect(result.map((r) => r.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps first occurrence and drops later duplicates", () => {
+    const roles = [
+      { id: "a", systemPrompt: "P1" },
+      { id: "b", systemPrompt: "B" },
+      { id: "a", systemPrompt: "P2" }
+    ];
+    const result = dedupeRolesById(roles);
+    expect(result.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(result.find((r) => r.id === "a")?.systemPrompt).toBe("P1");
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(dedupeRolesById([])).toEqual([]);
+  });
+});
+
+describe("orchestrateAnswer — duplicate-role guard", () => {
+  it("dedups duplicate-id roles: only one proposer runs per id, proposals have unique ids", async () => {
+    const invocations: string[] = [];
+    const provider: OrchestrateOptions["modelProvider"] = {
+      async generate(request) {
+        const sys = request.messages.find((m) => m.role === "system")?.content ?? "";
+        if (/dup-role/u.test(sys)) {
+          invocations.push("dup");
+          return { id: "x", model: "fake", output: `proposal-dup-${invocations.length.toString()}` };
+        }
+        if (/other-role/u.test(sys)) {
+          invocations.push("other");
+          return { id: "x", model: "fake", output: "proposal-other" };
+        }
+        // aggregator
+        return { id: "x", model: "fake", output: "merged" };
+      }
+    };
+
+    const roles = [
+      { id: "dup", systemPrompt: "You are dup-role assistant. Answer the user's question directly." },
+      { id: "dup", systemPrompt: "You are dup-role assistant. Answer the user's question directly." },
+      { id: "other", systemPrompt: "You are other-role assistant. Answer the user's question directly." }
+    ];
+
+    const res = await orchestrateAnswer(
+      "How do I parallelize agents effectively?",
+      { model: "fake", modelProvider: provider, roles, shouldOrchestrate: () => true }
+    );
+
+    // exactly 2 proposals: "dup" once + "other"
+    expect(res.proposals).toHaveLength(2);
+    const proposalIds = res.proposals.map((p) => p.id);
+    expect(new Set(proposalIds).size).toBe(proposalIds.length); // all unique
+    expect(proposalIds).toContain("dup");
+    expect(proposalIds).toContain("other");
   });
 });

@@ -57,6 +57,24 @@ export interface OrchestrateOptions extends CouncilModelOptions {
   readonly onProposal?: (proposal: OrchestrationProposal) => void;
 }
 
+/**
+ * Dedupe proposer roles by id (first occurrence wins) — MAST "no duplicated
+ * sub-agent work": two roles with the same id would run a redundant proposer
+ * (wasted inference) AND yield two proposals sharing an id, corrupting
+ * contributor attribution. Order-preserving. Empty/blank-id roles are kept as-is
+ * (id integrity is the caller's; this only collapses exact-id duplicates).
+ */
+export function dedupeRolesById(roles: readonly OrchestrationRole[]): readonly OrchestrationRole[] {
+  const seen = new Set<string>();
+  const out: OrchestrationRole[] = [];
+  for (const role of roles) {
+    if (seen.has(role.id)) continue;
+    seen.add(role.id);
+    out.push(role);
+  }
+  return out;
+}
+
 /** Three complementary lenses — diverse enough to cover, aligned with the grounding edge. */
 export const DEFAULT_ROLES: readonly OrchestrationRole[] = [
   {
@@ -155,7 +173,7 @@ async function runRole(question: string, role: OrchestrationRole, options: Orche
 
 export async function orchestrateAnswer(question: string, options: OrchestrateOptions): Promise<OrchestratedAnswer> {
   const decide = options.shouldOrchestrate ?? defaultShouldOrchestrate;
-  const roleList = options.roles && options.roles.length > 0 ? options.roles : DEFAULT_ROLES;
+  const roleList = dedupeRolesById(options.roles && options.roles.length > 0 ? options.roles : DEFAULT_ROLES);
   const primary = roleList[0];
   if (!primary) throw new Error("orchestrateAnswer requires at least one role");
 
@@ -178,9 +196,13 @@ export async function orchestrateAnswer(question: string, options: OrchestrateOp
   );
   const proposals: OrchestrationProposal[] = [];
   const failedRoles: string[] = [];
+  // An empty/whitespace proposer output is a degraded sub-agent, not a candidate.
   settled.forEach((outcome, index) => {
-    if (outcome.status === "fulfilled") proposals.push(outcome.value);
-    else failedRoles.push(roleList[index]?.id ?? `role-${index.toString()}`);
+    if (outcome.status === "fulfilled" && outcome.value.text.trim().length > 0) {
+      proposals.push(outcome.value);
+    } else {
+      failedRoles.push(roleList[index]?.id ?? `role-${index.toString()}`);
+    }
   });
   // fail-close: every proposer failed → nothing to synthesize, surface it loudly.
   if (proposals.length === 0) {
@@ -195,8 +217,14 @@ export async function orchestrateAnswer(question: string, options: OrchestrateOp
     return { answer: only.text, contributors: [only.id], mode: "orchestrated", proposals, ...degraded };
   }
 
-  // aggregate = merge proposals into the single best answer (keeps detail, drops nonsense).
-  const merged = await aggregate(question, proposals, options);
+  // A flaky aggregator call must degrade like a proposer (allSettled above), not sink the
+  // whole panel — a throw becomes an empty merge, which the fallback below handles.
+  let merged: string;
+  try {
+    merged = await aggregate(question, proposals, options);
+  } catch {
+    merged = "";
+  }
   if (merged.length === 0) {
     // Aggregator returned nothing → fall back to the thorough proposal if present.
     const fallback = proposals.find((p) => p.id === "thorough") ?? proposals[0] ?? { id: primary.id, text: "" };

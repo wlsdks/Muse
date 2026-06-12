@@ -502,6 +502,29 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   memories into the persona in the background) with its own safety guards — currently the tick
   surfaces the plan, doesn't mutate. (ACT-R ranking from T2-1 already feeds consolidationPlan via useActrRanking.)
 
+- ✓→Done **MoA fan-out: no duplicated sub-agent work (dedupe roles by id)** — [2026-06-12, cognition
+  loop fire 13, sub-agents #4] `orchestrateAnswer` ran every role as a parallel proposer without
+  deduping by id — duplicate-id roles ran a redundant sub-agent (wasted inference) AND yielded dup-id
+  proposals that corrupt fire-7's `attributeContributors`/`contributors`. Added pure `dedupeRolesById`
+  (first-wins, order-preserving) at the roleList resolution. MAST "no duplicated sub-agent work".
+  agent-core 1718 green incl. an integration (2 dup-id roles + 1 → exactly 2 proposals, unique ids).
+  DEFAULT_ROLES path unaffected (distinct ids → no-op).
+
+- ✓→Done **MoA fan-out: empty proposer output → failedRoles (failure surfacing)** — [2026-06-12,
+  cognition loop fire 14, sub-agents #4] `orchestrateAnswer` kept EVERY fulfilled proposer as a
+  proposal, even one returning empty/whitespace text (a degraded sub-agent that didn't throw) —
+  polluting the aggregator candidate list + inflating proposals.length. Now a fulfilled-but-empty
+  proposal falls into `failedRoles` like a throw (MAST "failure propagation surfaces"). One-condition
+  change (`&& outcome.value.text.trim().length > 0`); fail-close/single-survivor/aggregate/onProposal
+  unchanged. agent-core 1722 green (empty→failedRoles, whitespace, all-empty fail-close, regression).
+
+- ✓→Done **MoA aggregator failure resilience** — [2026-06-13, cognition loop fire 15, sub-agents #4]
+  the proposers run under allSettled (resilient) but the AGGREGATOR call was unguarded — a flaky
+  local-model aggregator throw REJECTED the whole orchestration, discarding every successful
+  proposer's work. Wrapped `aggregate()` in try/catch → a throw becomes an empty merge → the EXISTING
+  fallback returns the best proposal (the "thorough" one). MAST graceful-degradation / don't-lose-
+  sub-agent-work. agent-core 1725 green (throws→resolves-with-proposal, empty→fallback, success→merged).
+
 ## Blocked / deferred
 
 - ⏳ **Grammar-constrained tool-call decoding** — INFEASIBLE on Ollama today: `format`
