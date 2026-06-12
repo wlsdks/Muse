@@ -557,6 +557,27 @@ HARDEN (make existing tools more reliable):
   falsy-but-valid `[0,false,""]` → `v=0&v=false&v=` still encode — strict null/undefined skip only) RED(`tags=null...`)
   →GREEN; mcp 1738, check 0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; nested object AND array
   still rejected; 0/false/"" still encode; no test pinned the old corrupt output). KIND contract-drift, fresh surface.
+- ✓→Done **performConsentedAction let caller headers override the consent-gated credential** (EXPANSION gap-scout,
+  fire 33; SECURITY — credential-override / fail-open on the outbound-safety seam) — the fetch headers were
+  `{ authorization: \`Bearer ${credential}\`, ...(body?{content-type}), ...request.headers }` with the caller's
+  `request.headers` spread LAST, so `request.headers.authorization: "Bearer attacker"` silently REPLACED the
+  consent-gated token, and the case-variant `{ Authorization: ... }` produced two own keys that `new Headers()` merges
+  into the corrupt `"Bearer svc-token, Bearer attacker"`. Violates outbound-safety.md's "Security is code, not a prompt"
+  — the scoped credential is supposed to be the only Bearer that leaves. FIX: strip every caller header whose
+  `.toLowerCase() === "authorization"` (`callerHeaders`) before spreading, so the code-owned token is unstrippable;
+  non-auth headers (content-type, x-custom) still forward. TDD (lowercase + capitalized override attempts →
+  `new Headers(init.headers).get("authorization") === "Bearer svc-token"`; x-custom still passes) RED("Bearer attacker")
+  →GREEN; mcp 1739, check 0 (playbook-store flake re-run green), lint 0. Fable-5 PASS (RED re-confirmed by stashing src;
+  all case variants covered; whitespace/Unicode keys are invalid header names → fail-closed via try/catch, not a bypass;
+  consent/veto gates untouched). KIND security, fresh surface.
+- ◦ **performConsentedAction: request.url is NOT bound to the consent scope (credential-exfil vector)** (fire-33
+  verifier finding; SECURITY, larger than the header bug just fixed) — `request.url` is fully caller-controlled and
+  nothing ties it to the consent `scope` string, so a consent recorded for `github:issues:write` will send the scoped
+  Bearer token to ANY url the caller supplies (`https://attacker.example/...`) — credential exfiltration. FIX: bind the
+  scope to an allowed host / URL-prefix and refuse (fail-closed, no HTTP) when `request.url`'s host doesn't match the
+  scope's expected destination. Slice: a scope→host check + 1 test (consent for scope X + url to host Y → refused, no
+  fetch). NEEDS a scope→host mapping decision (how scopes encode their destination) — may need 진안 input on the scope
+  format; decompose if so.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

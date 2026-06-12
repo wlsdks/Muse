@@ -60,6 +60,24 @@ describe("performConsentedAction — fail-closed scoped-consent gate (outbound-s
     expect((calls[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer svc-token");
   });
 
+  it("does NOT let caller request.headers override the consent-gated credential (code owns authorization)", async () => {
+    await grant();
+    // lowercase override attempt + a benign custom header that MUST still pass through
+    const lower = recordingFetch(() => new Response("", { status: 200 }));
+    await performConsentedAction(base(lower.fetchImpl, {
+      request: { body: '{"t":"x"}', headers: { authorization: "Bearer attacker", "x-custom": "keep" }, method: "POST", url: "https://api.test/issues" }
+    }));
+    const lowerHeaders = new Headers(lower.calls[0]!.init.headers as HeadersInit);
+    expect(lowerHeaders.get("authorization")).toBe("Bearer svc-token"); // attacker token dropped
+    expect(lowerHeaders.get("x-custom")).toBe("keep"); // non-auth caller headers still forwarded
+    // capitalized variant must not slip through either (Headers would merge to "svc, attacker")
+    const upper = recordingFetch(() => new Response("", { status: 200 }));
+    await performConsentedAction(base(upper.fetchImpl, {
+      request: { body: '{"t":"x"}', headers: { Authorization: "Bearer attacker" }, method: "POST", url: "https://api.test/issues" }
+    }));
+    expect(new Headers(upper.calls[0]!.init.headers as HeadersInit).get("authorization")).toBe("Bearer svc-token");
+  });
+
   it("does NOT broaden consent — a consent for one scope doesn't authorise a different scope", async () => {
     await grant("github:issues:read"); // narrower/other scope
     const { calls, fetchImpl } = recordingFetch();

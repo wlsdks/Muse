@@ -83,13 +83,19 @@ export async function performConsentedAction(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
+  // Strip any caller-supplied authorization header (case-insensitively) so the
+  // consent-gated credential is the ONLY Bearer token that ever leaves — a
+  // request.headers spread must never override or corrupt the code-owned token.
+  const callerHeaders = Object.fromEntries(
+    Object.entries(options.request.headers ?? {}).filter(([key]) => key.toLowerCase() !== "authorization")
+  );
   try {
     response = await options.fetchImpl(options.request.url, {
       body: options.request.body,
       headers: {
         authorization: `Bearer ${options.credential}`,
         ...(options.request.body ? { "content-type": "application/json" } : {}),
-        ...options.request.headers
+        ...callerHeaders
       },
       method: options.request.method ?? "POST",
       signal: controller.signal
