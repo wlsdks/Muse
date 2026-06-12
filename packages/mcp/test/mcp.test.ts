@@ -1876,6 +1876,23 @@ describe("muse.fs loopback server", () => {
     expect(result.truncated).toBe(true);
   });
 
+  it("truncates a multi-byte UTF-8 (Korean) file on a CHARACTER boundary, not mid-codepoint", async () => {
+    // "가나다라" is 12 bytes (3 each); an 8-byte cap lands inside "다". A raw byte
+    // slice would decode to "가나�" — the agent ingesting replacement-char garbage.
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({ "/workspace": "dir", "/workspace/ko.md": "가나다라" }),
+      maxBodyBytes: 8,
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("read", { path: "/workspace/ko.md" });
+    expect(result.bytes).toBe(12);
+    expect(result.truncated).toBe(true);
+    expect(result.content).toBe("가나");
+    expect(result.content as string).not.toContain("�");
+  });
+
   it("lists directory entries with kind classification and respects maxListEntries", async () => {
     const server = createFilesystemMcpServer({
       allowedRoots: ["/workspace"],

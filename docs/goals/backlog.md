@@ -523,6 +523,22 @@ HARDEN (make existing tools more reliable):
   has the SAME leading-dash argv-injection as mac_say (fixed fire 28), BUT `mdfind` rejects `--` (`mdfind -- q` →
   "Unknown option"), so there's no one-line terminator fix — needs query-rewriting/escaping logic (a real ◦, not
   trivial). KIND security (argv injection).
+- ✓→Done **muse.fs read corrupted multi-byte UTF-8 at the truncation edge** (EXPANSION gap-scout, fire 30;
+  encoding round-trip / byte-boundary) — `read` truncated with `buffer.subarray(0, maxBodyBytes).toString("utf8")`,
+  cutting mid-character whenever the 64KB cap lands inside a multi-byte sequence. Korean is 3 bytes/char, so the cap
+  lands mid-char ~2/3 of the time → the agent ingested a U+FFFD replacement char at the truncation tail of every large
+  Korean note (the tool promises "Reads a UTF-8 text file"). FIX: new exported pure helper `utf8SafeSliceEnd(buffer,
+  maxBytes)` backs the cut off to the previous UTF-8 char boundary (walks back over 10xxxxxx continuation bytes); read
+  wires it in. TDD 6 helper unit (fits/Korean-mid/exact-boundary/4-byte-emoji/ASCII-unchanged/non-positive) + 1 e2e
+  (fake-fs "가나다라" maxBodyBytes:8 → "가나", no U+FFFD) RED(reverting wiring → "가나�")→GREEN; mcp 1735, check 0
+  (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed; helper fuzzed 2000+ cases vs an optimal-prefix oracle — never
+  over-shoots the cap, never over-trims a fitting char, longest valid prefix; ASCII test stays green). KIND
+  encoding-boundary, fresh surface — directly fixes garbled tails in 진안's Korean notes.
+- ◦ **loopback-fetch readBodyWithCap same UTF-8 boundary bug (fire-30 sibling, reuse the helper)** — `loopback-fetch.ts`
+  (~line 97-99) decodes a capped HTTP body's truncating chunk WITHOUT boundary backoff, so a size-capped web fetch gets
+  the same U+FFFD tail as the fs read did. FIX: route the final-chunk decode through `utf8SafeSliceEnd` (now exported
+  from loopback-filesystem.ts). Slice: 1 wiring change + 1 test (capped multi-byte body → no replacement char). Same
+  fix shape, fresh surface (web fetch).
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

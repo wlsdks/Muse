@@ -50,6 +50,28 @@ export interface FilesystemMcpServerOptions {
 }
 
 /**
+ * Trim a UTF-8 buffer to at most `maxBytes` WITHOUT splitting a multi-byte
+ * character. A raw `subarray(0, maxBytes).toString("utf8")` emits U+FFFD at the
+ * cut whenever `maxBytes` lands inside a code point (e.g. a 3-byte Korean
+ * syllable — ~2/3 of the time for Korean text), corrupting the truncation tail.
+ * Back the end off to the previous character boundary; the result is ≤ maxBytes
+ * (the cap is a maximum) and decodes cleanly.
+ */
+export function utf8SafeSliceEnd(buffer: Buffer, maxBytes: number): Buffer {
+  if (maxBytes <= 0) return buffer.subarray(0, 0);
+  if (buffer.byteLength <= maxBytes) return buffer;
+  let end = maxBytes;
+  // A UTF-8 continuation byte is 10xxxxxx. While the FIRST excluded byte is a
+  // continuation byte we're mid-character — walk the cut back to its lead byte.
+  while (end > 0) {
+    const b = buffer[end];
+    if (b === undefined || (b & 0xc0) !== 0x80) break;
+    end -= 1;
+  }
+  return buffer.subarray(0, end);
+}
+
+/**
  * Reference loopback server: bounded filesystem reader. Opt-in,
  * allowlist-rooted, body-capped, read-only. Lets Muse inspect files inside
  * an operator-defined workspace without giving it free disk access.
@@ -131,7 +153,7 @@ export function createFilesystemMcpServer(options: FilesystemMcpServerOptions): 
           try {
             const buffer = await fsLib.readFile(decision.resolved);
             const truncated = buffer.byteLength > maxBodyBytes;
-            const slice = truncated ? buffer.subarray(0, maxBodyBytes) : buffer;
+            const slice = truncated ? utf8SafeSliceEnd(buffer, maxBodyBytes) : buffer;
             return {
               bytes: buffer.byteLength,
               content: slice.toString("utf8"),
