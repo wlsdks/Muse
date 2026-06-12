@@ -225,7 +225,7 @@ export function createMacShortcutRunTool(deps: MacShortcutRunToolDeps = {}): Mus
 // osascript-backed read sources (each maps to an AppleScript snippet)…
 const MAC_OSASCRIPT_READ_APPS = [
   "clipboard", "music", "frontmost_window", "contacts", "mail_unread", "safari_tab", "chrome_tab", "volume",
-  "reminders"
+  "reminders", "calendar", "notes"
 ] as const;
 type MacReadApp = (typeof MAC_OSASCRIPT_READ_APPS)[number];
 // …plus shell-backed sources that don't go through osascript.
@@ -338,6 +338,41 @@ function buildReadScript(app: MacReadApp, query: string): string {
         `  return output`,
         `end tell`
       ].join("\n");
+    case "calendar":
+      return [
+        `set todayStart to current date`,
+        `set hours of todayStart to 0`,
+        `set minutes of todayStart to 0`,
+        `set seconds of todayStart to 0`,
+        `set todayEnd to todayStart + (24 * 60 * 60)`,
+        `set output to ""`,
+        `tell application "Calendar"`,
+        `  repeat with aCal in every calendar`,
+        `    set evts to (every event of aCal whose start date >= todayStart and start date < todayEnd)`,
+        `    repeat with e in evts`,
+        `      set eTitle to summary of e`,
+        `      set eStart to (start date of e as text)`,
+        `      set output to output & eTitle & tab & eStart & linefeed`,
+        `    end repeat`,
+        `  end repeat`,
+        `end tell`,
+        `return output`
+      ].join("\n");
+    case "notes":
+      return [
+        `tell application "Notes"`,
+        `  set output to ""`,
+        `  set noteList to every note`,
+        `  set maxCount to 20`,
+        `  set i to 0`,
+        `  repeat with n in noteList`,
+        `    if i >= maxCount then exit repeat`,
+        `    set output to output & (name of n) & linefeed`,
+        `    set i to i + 1`,
+        `  end repeat`,
+        `  return output`,
+        `end tell`
+      ].join("\n");
   }
 }
 
@@ -412,6 +447,27 @@ function parseReadOutput(app: MacReadApp, stdout: string): JsonObject {
         });
       return { app, count: items.length, items };
     }
+    case "calendar": {
+      const items: JsonValue[] = raw
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line): JsonObject => {
+          const [title = "", start = ""] = line.split("\t");
+          return start.length > 0
+            ? { start, title }
+            : { title };
+        });
+      return { app, count: items.length, items };
+    }
+    case "notes": {
+      const items: JsonValue[] = raw
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line): JsonObject => ({ title: line }));
+      return { app, count: items.length, items };
+    }
   }
 }
 
@@ -462,12 +518,15 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
         "window in focus), 'contacts' (look up a person by name — requires `query`), 'mail_unread' (inbox " +
         "unread count + recent subjects), 'safari_tab' / 'chrome_tab' (front browser tab URL + title), " +
         "'volume' (output volume + muted), 'battery' (charge % + charging), 'storage' (disk space free/" +
-        "used), 'reminders' (all incomplete reminders with optional due dates). " +
+        "used), 'reminders' (all incomplete reminders with optional due dates), " +
+        "'calendar' (today's events from Calendar.app with start times), " +
+        "'notes' (recent note titles from Notes.app, up to 20). " +
         "Use when the user asks what's on the clipboard, what song is playing, what page/tab " +
         "they're on, the volume / battery / free disk space, a contact's phone/email, unread mail, " +
-        "or what reminders / to-dos are pending. Do " +
-        "NOT use it to send or change anything (mac_message_send / mac_media_control / mac_system_set). " +
-        "Do NOT use it to ADD a reminder (use muse.reminders.add).",
+        "what reminders / to-dos are pending, what's on their calendar today, or what notes they have. " +
+        "Do NOT use it to send or change anything (mac_message_send / mac_media_control / mac_system_set). " +
+        "Do NOT use it to ADD a reminder (use muse.reminders.add). " +
+        "Do NOT use it to create calendar events or notes.",
       domain: "system",
       inputSchema: {
         additionalProperties: false,
@@ -490,7 +549,9 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
         "contact", "연락처", "phone", "email", "window", "frontmost", "mail", "unread", "메일", "안읽은",
         "battery", "배터리", "volume", "볼륨", "tab", "탭", "safari", "사파리", "chrome", "크롬", "browser",
         "storage", "disk", "디스크", "저장공간", "용량",
-        "reminder", "reminders", "리마인더", "할일", "todo", "to-do", "pending"
+        "reminder", "reminders", "리마인더", "할일", "todo", "to-do", "pending",
+        "calendar", "캘린더", "일정", "schedule", "event", "오늘 일정", "today",
+        "notes", "노트", "메모", "note titles"
       ],
       name: "mac_app_read",
       risk: "read"

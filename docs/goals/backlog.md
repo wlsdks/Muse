@@ -131,14 +131,13 @@ EXPAND (new reach):
   web scenario 6/6 STABLE 3/3 (web_download vs web_read vs search vs knowledge_search); LIVE — a real
   http server's file fetched and written to disk with matching bytes. mcp 1638, full eval:tools
   137/137, check 0, lint 0.
-- ◦ **mac: read Calendar.app / Notes.app — Reminders DONE** — osascript readers in the mac family,
-  read-risk, so "what's on my calendar today" works without a configured provider.
-  PROGRESS: **Reminders shipped** as a `reminders` SOURCE on the already-wired `mac_app_read` tool
-  (not a new tool — keeps the exposed set small per tool-calling.md). Reachable (verifier confirmed
-  the built enum the model sees includes `reminders`), behavioral parse test (fake runner), 2
-  eval:tools golden cases (EN+KO select mac_app_read). The earlier INERT attempt (separate unwired
-  tool) was rolled back; this fire did it the COMPLETE way (extend wired tool + eval). REMAINING:
-  Calendar-today + Notes sources on the same mac_app_read pattern (next slice, same shape).
+- ✓→Done **mac: read Calendar.app / Notes.app / Reminders.app** — all three shipped as SOURCES on
+  the already-wired `mac_app_read` tool (`reminders` incomplete items+due, `calendar` today's events,
+  `notes` recent titles) — not new tools, keeps the exposed set small (tool-calling.md). Each:
+  reachable in the model-facing app enum (verifier confirmed), behavioral parse test (fake osascript
+  runner), eval:tools golden cases (EN+KO). risk=read (snippets never mutate). The earlier INERT
+  separate-tool attempt was rolled back; done the COMPLETE way (extend wired tool + eval). So
+  "what's on my calendar today / what reminders do I have / what notes" works locally.
 
 HARDEN (make existing tools more reliable):
 - ✓→Done **regex_extract ReDoS guard** — the tool ran a model/untrusted-supplied regex with no
