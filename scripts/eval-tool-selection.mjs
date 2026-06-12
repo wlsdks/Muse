@@ -179,6 +179,44 @@ async function buildPersonalCrudScenario() {
   }
 }
 
+// Followup tools (muse.followup.*) vs their closest confusables: tasks and
+// reminders. A followup is an agent-auto-captured "circle back" thread — the
+// model must route viewing/managing those to followup.list/cancel/snooze and
+// NOT route a plain user-added task or timed reminder there. The disambiguation
+// cases are the value: a prompt that's a TASK or REMINDER must NOT land on a
+// followup tool.
+async function buildFollowupScenario() {
+  try {
+    const mcp = await import("../packages/mcp/dist/index.js");
+    const servers = [
+      mcp.createFollowupsMcpServer({ file: "/tmp/eval-followups.json" }),
+      mcp.createTasksMcpServer({ file: "/tmp/eval-followup-tasks.json" }),
+      mcp.createRemindersMcpServer({ file: "/tmp/eval-followup-reminders.json" })
+    ];
+    const interestingNames = new Set(["list", "cancel", "snooze", "add", "delete", "clear"]);
+    const muse = servers.flatMap((s) => mcp.createLoopbackMcpMuseTools(s)).filter((t) => interestingNames.has(t.definition.name.split(".").pop()));
+    const tools = muse.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      // POSITIVE: prompts that SHOULD land on a followup tool
+      { prompt: "What follow-ups are you supposed to check back on?", expectTool: "muse.followup.list", note: "EN list agent-promised follow-ups → followup.list" },
+      { prompt: "팔로업 목록 보여줘", expectTool: "muse.followup.list", note: "KO list follow-ups → followup.list (NOT tasks.list)" },
+      { prompt: "Cancel the follow-up you promised about the report.", expectTool: "muse.followup.cancel", requireArgs: ["id"], note: "EN cancel an agent-captured follow-up → followup.cancel (NOT tasks.delete)" },
+      { prompt: "그 체크인 팔로업 취소해줘.", expectTool: "muse.followup.cancel", requireArgs: ["id"], note: "KO cancel a follow-up commitment → followup.cancel (NOT tasks.delete)" },
+      { prompt: "Push that follow-up to tomorrow morning.", expectTool: "muse.followup.snooze", requireArgs: ["id", "scheduledFor"], note: "EN delay a follow-up → followup.snooze (NOT reminders.snooze)" },
+      { prompt: "팔로업 내일 오전으로 미뤄줘.", expectTool: "muse.followup.snooze", requireArgs: ["id", "scheduledFor"], note: "KO delay a follow-up → followup.snooze (NOT reminders.snooze)" },
+      // DISAMBIGUATION: confusable task/reminder prompts that must NOT route to a followup tool
+      { prompt: "Add 'buy milk' to my tasks.", expectTool: "muse.tasks.add", requireArgs: ["title"], note: "EN user-added task → tasks.add, NOT followup.* (user-entered, not agent-captured)" },
+      { prompt: "우유 사기를 할 일에 추가해줘", expectTool: "muse.tasks.add", requireArgs: ["title"], note: "KO user-added task → tasks.add, NOT followup.list (tasks ≠ followups)" },
+      { prompt: "Remind me tomorrow at 9am to call Sam.", expectTool: "muse.reminders.add", requireArgs: ["text", "dueAt"], note: "EN timed reminder → reminders.add, NOT followup.snooze (reminder = user alarm; followup = agent thread)" },
+      { prompt: "내일 9시에 회의 준비하라고 알림 맞춰줘", expectTool: "muse.reminders.add", requireArgs: ["text", "dueAt"], note: "KO timed reminder → reminders.add, NOT followup.* (알림 ≠ 팔로업)" }
+    ];
+    return { label: "followup-vs-tasks-reminders (followup disambiguation)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "followup-vs-tasks-reminders", skip: `@muse/mcp not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 // The north-star "knows-me" surface: knowledge_search (blended recall over
 // notes / docs / past conversations) exposed ALONGSIDE the structured personal
 // CRUD tools. A recall question ("what did I note about X", "what do you know
@@ -517,6 +555,7 @@ async function main() {
     await buildFileScenario(),
     await buildBrowserScenario(),
     await buildPersonalCrudScenario(),
+    await buildFollowupScenario(),
     await buildRecallVsCrudScenario(),
     await buildWebSearchScenario()
   ];

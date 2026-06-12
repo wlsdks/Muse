@@ -186,7 +186,13 @@ HARDEN (make existing tools more reliable):
   is exceljs (~21MB unpacked) and SheetJS `xlsx` on npm is the old CVE-flagged build. A 21MB dep or a
   fragile hand-rolled OOXML parser is too much to adopt autonomously; surface the choice. (.docx
   shipped via mammoth ~2MB, which was proportionate.)
-- ◦ **per-tool not-when audit** — every built-in tool description gets a "use when … ; NOT when …"
+- ◦ **per-tool not-when audit** — PROGRESS (loop fire): the `followup` tools (list/cancel/snooze)
+  were the ONLY personal-tool family with ZERO not-when clauses → added "use when / NOT when"
+  disambiguating them from tasks/reminders (followup = agent auto-captured thread, not a user item)
+  + buildFollowupScenario in eval-tool-selection.mjs (6 positive + 4 disambiguation cases). Verifier
+  confirmed the disambig cases are discriminating + wired. Other families (tasks/reminders/calendar)
+  already have not-when. REMAINING: spot-audit any other tool families that lack it.
+- ◦ **per-tool not-when audit (orig)** — every built-in tool description gets a "use when … ; NOT when …"
   line; measure eager-invocation drop on eval:tools negative cases.
 - ◦ **tool-arg grounding coverage** — PROGRESS (loop fire): `followup.cancel.reason` now grounded
   (8B can fabricate a cancel reason; server-side default 'agent-cancelled' fallback). Reminders has
