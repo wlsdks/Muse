@@ -121,10 +121,18 @@ try {
   assert(pricing.length === 1, "3 identical nav links collapse to 1");
   assert(snap.elements.some((el) => el.name === "Accept cookies"), "position:fixed button is visible");
 
-  console.log("6) cross-invocation reconnect — a second controller drives the SAME Chrome");
+  console.log("6) long page — matcher reaches past the display cap (strengthening)");
+  const links = Array.from({ length: 70 }, (_, i) => `<a href="#l${i}">Link ${i}</a>`).join("\n");
+  await writeFile(join(dir, "long.html"), `<!doctype html><html><head><title>Long</title></head><body>${links}<button>Final Checkout</button></body></html>`);
+  const longSnap = await controller.open(pathToFileURL(join(dir, "long.html")).href);
+  assert(longSnap.elements.length > 40, "snapshot scanned more than the 40-element display cap");
+  const final = longSnap.elements.find((el) => el.name === "Final Checkout");
+  assert(final !== undefined, "the 71st element (button after 70 links) is in the scanned set, not truncated away");
+
+  console.log("7) cross-invocation reconnect — a second controller drives the SAME Chrome");
   const second = new PuppeteerBrowserController({ headless: true, userDataDir: join(dir, "profile") });
   const reSnap = await second.snapshot();
-  assert(reSnap.url === snap.url, "new controller reconnected to the running browser (no profile-lock crash)");
+  assert(reSnap.url === longSnap.url, "new controller reconnected to the running browser (no profile-lock crash)");
 
   console.log("\nsmoke:browser PASS");
 } finally {

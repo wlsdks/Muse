@@ -11,6 +11,37 @@
 > Priority: ★ = do next · ◦ = ready · ⏳ = blocked (reason noted).
 > Each item: **what** — why (source) — the smallest verifiable slice.
 
+## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
+
+The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+Every slice ships its eval/test and never weakens the grounding floor. Ranked:
+
+EXPAND (new reach):
+- ✓→Done **browser: uncapped deterministic matching, capped display** — scan/match cap raised
+  50→150 (BROWSER_MAX_ELEMENTS), model-facing display capped at 40 (BROWSER_DISPLAY_ELEMENTS) with a
+  truncated/shownElements/totalElements + "showing N of M" hint (no silent caps). click/type/find
+  resolve against the FULL set (matcher is code), so a target past #40 still acts. TDD 3 cases
+  (display cap + true total + match-beyond-cap + small-page-not-truncated); smoke:browser long-page
+  case (71st element reachable past the 40 display cap); eval:tools browser 7/7 ×3, eval:browser-agent
+  3/3, check 0, lint 0.
+- ◦ **browser: same-origin iframe piercing** — snapshot stops at iframe boundaries (embedded
+  forms/widgets invisible); walk same-origin frames like shadow roots. Cross-origin honestly out.
+- ◦ **file_read: .docx / .xlsx extraction** — pdfjs pattern, add a lazy mammoth/xlsx extractor;
+  content-sniff the kind, not just the extension. Real-file round-trip gate like eval:file-read.
+- ◦ **browser: save/download a file** — the page has a PDF/image the user wants saved to Downloads;
+  draft-first (it writes to disk), allowlist-rooted.
+- ◦ **mac: read Calendar.app / Notes.app / Reminders.app** — osascript readers in the mac family,
+  read-risk, so "what's on my calendar today" works without a configured provider.
+
+HARDEN (make existing tools more reliable):
+- ◦ **per-tool not-when audit** — every built-in tool description gets a "use when … ; NOT when …"
+  line; measure eager-invocation drop on eval:tools negative cases.
+- ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
+  boundary) to every actuator that persists a model-named field; one eval:tool-arg-grounding case each.
+- ◦ **content-sniff over extension** — file_read currently routes by extension; a `.txt` that is
+  actually a PDF, or no extension, should sniff magic bytes.
+- ◦ **web_action URL vetting** — validate/normalize the URL before the one-shot submit (audit LOW tail).
+
 ## Open — 2026-06-10 full-feature audit (3 reviewers; VERIFIED findings → fix queue)
 
 FIXED already: actuator non-TTY fail-close (d7112db9) · hybrid-MMR scale bug · write-run cache

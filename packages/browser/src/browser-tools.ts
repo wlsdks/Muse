@@ -15,8 +15,20 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import type { BrowserController, PageSnapshot } from "./controller.js";
+import { BROWSER_DISPLAY_ELEMENTS, type BrowserController, type PageSnapshot, type SnapshotElement } from "./controller.js";
 import { filterElements, matchElement, type MatchIntent } from "./matcher.js";
+
+/**
+ * What the MODEL sees: a small, capped element list (context stays cheap) plus
+ * an honest "showing N of M" signal when the page has more. The deterministic
+ * matcher (resolveTarget / filterElements) still works over the FULL set, so
+ * click/type reach an element past the display cap — a long page no longer
+ * strands the model at element #40.
+ */
+function displayElements(elements: readonly SnapshotElement[]): { shown: SnapshotElement[]; truncated: boolean } {
+  const shown = elements.slice(0, BROWSER_DISPLAY_ELEMENTS);
+  return { shown: [...shown], truncated: elements.length > shown.length };
+}
 
 export interface BrowserActionDraft {
   readonly action: "click" | "type";
@@ -36,10 +48,16 @@ export interface BrowserApprovalDecision {
 export type BrowserApprovalGate = (draft: BrowserActionDraft) => Promise<BrowserApprovalDecision> | BrowserApprovalDecision;
 
 function snapshotToJson(snapshot: PageSnapshot): JsonObject {
+  const { shown, truncated } = displayElements(snapshot.elements);
   return {
-    elements: snapshot.elements.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+    elements: shown.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+    shownElements: shown.length,
     text: snapshot.text,
     title: snapshot.title,
+    totalElements: snapshot.elements.length,
+    // No silent caps: when more elements exist than are shown, say so and point
+    // at the remedy (a click/type target still resolves against the full set).
+    ...(truncated ? { hint: `showing ${shown.length.toString()} of ${snapshot.elements.length.toString()} elements — name what you want in browser_click/browser_type (it matches the whole page), or use browser_read find to narrow`, truncated: true } : {}),
     url: snapshot.url
   };
 }
@@ -147,10 +165,12 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
           return snapshotToJson(snapshot);
         }
         const matched = filterElements(snapshot.elements, find);
+        const { shown, truncated } = displayElements(matched);
         return {
-          elements: matched.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+          elements: shown.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
           matched: matched.length,
           title: snapshot.title,
+          ...(truncated ? { hint: `showing ${shown.length.toString()} of ${matched.length.toString()} matches — narrow the find query`, truncated: true } : {}),
           url: snapshot.url
         };
       } catch (cause) {

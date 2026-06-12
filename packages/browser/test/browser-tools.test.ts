@@ -162,3 +162,50 @@ describe("browser_type — target grounding + draft-first", () => {
     expect(c.calls).toEqual(["snapshot", "type:3:laptop:true"]);
   });
 });
+
+describe("display cap — model sees a small list, matcher sees all (long-page strengthening)", () => {
+  const manyElements: SnapshotElement[] = Array.from({ length: 60 }, (_, i) => ({
+    name: i === 55 ? "Checkout now" : `Item ${i.toString()}`,
+    ref: i,
+    role: i === 55 ? "button" : "link"
+  }));
+  const bigSnap: PageSnapshot = { elements: manyElements, text: "shop", title: "Shop", url: "https://shop.test/" };
+
+  class BigController implements BrowserController {
+    calls: string[] = [];
+    async open(): Promise<PageSnapshot> { return bigSnap; }
+    async snapshot(): Promise<PageSnapshot> { return bigSnap; }
+    async click(ref: number): Promise<PageSnapshot> { this.calls.push(`click:${ref.toString()}`); return bigSnap; }
+    async type(): Promise<PageSnapshot> { return bigSnap; }
+    async back(): Promise<PageSnapshot> { return bigSnap; }
+    async screenshot(path: string): Promise<{ readonly path: string }> { return { path }; }
+    describeElement(ref: number): SnapshotElement | undefined { return manyElements[ref]; }
+    currentUrl(): string { return "https://shop.test/"; }
+    async disconnect(): Promise<void> {}
+    async close(): Promise<void> {}
+  }
+
+  it("browser_open caps the DISPLAYED elements and reports the true total", async () => {
+    const c = new BigController();
+    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://shop.test" }, ctx) as {
+      elements: unknown[]; shownElements: number; totalElements: number; truncated: boolean;
+    };
+    expect(out.elements.length).toBeLessThanOrEqual(40);
+    expect(out.totalElements).toBe(60);
+    expect(out.truncated).toBe(true);
+    expect(out.shownElements).toBe(out.elements.length);
+  });
+
+  it("browser_click resolves a target BEYOND the display cap (matcher sees the full set)", async () => {
+    const c = new BigController();
+    const out = await createBrowserClickTool({ approvalGate: allow, controller: c }).execute({ target: "Checkout now" }, ctx) as { clicked: boolean };
+    expect(out.clicked).toBe(true);
+    expect(c.calls).toEqual(["click:55"]);
+  });
+
+  it("a small page is not marked truncated", async () => {
+    const c = new FakeController();
+    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://example.test" }, ctx) as { truncated?: boolean; totalElements?: number };
+    expect(out.truncated).toBeFalsy();
+  });
+});

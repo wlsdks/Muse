@@ -58,5 +58,13 @@ export interface BrowserController {
 }
 
 export const BROWSER_MAX_TEXT = 4_000;
-export const BROWSER_MAX_ELEMENTS = 50;
+// SCAN/MATCH cap: how many distinct interactive elements the snapshot tags and
+// the deterministic matcher can resolve against. Higher than the display cap so
+// a click/type target on a long page still resolves (the matcher is code, not
+// the model, so a big list costs it nothing).
+export const BROWSER_MAX_ELEMENTS = 150;
+// DISPLAY cap: how many elements are serialised to the MODEL per observation —
+// kept small so the local model's context stays cheap; the snapshot reports the
+// true total + a "showing N of M" hint when it truncates (no silent caps).
+export const BROWSER_DISPLAY_ELEMENTS = 40;
 export const BROWSER_MAX_NAME = 120;
