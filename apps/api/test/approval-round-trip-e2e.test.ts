@@ -46,6 +46,7 @@ const autoRunVia = (actionLogFile: string, fetchImpl: typeof fetch) =>
       actionLogFile,
       emailApprovalGate: () => ({ approved: true }),
       fetchImpl,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
       userId: "telegram:42",
       webApprovalGate: () => ({ approved: true }),
     });

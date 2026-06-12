@@ -56,7 +56,7 @@ function run(tool: ReturnType<typeof createWebActionTool>) {
 describe("P17 seam — the agent invokes the gated web_action tool", () => {
   it("CONFIRM: an agent run calls web_action and the request fires once", async () => {
     const { fetchImpl, calls } = recordingFetch();
-    await run(createWebActionTool({ actionLogFile: logFile(), approvalGate: approve, fetchImpl, userId: "stark" }));
+    await run(createWebActionTool({ actionLogFile: logFile(), approvalGate: approve, fetchImpl, lookup: async () => [{ address: "93.184.216.34", family: 4 }], userId: "stark" }));
     expect(calls).toEqual(["https://book.test/reserve"]);
   });
 

@@ -182,9 +182,10 @@ describe("macOS actuators — opt-in via MUSE_MACOS_ACTUATORS", () => {
 });
 
 describe("buildActuatorTools — the agent invokes a wired tool through its clack-confirm gate", () => {
+  const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
   function runWebAction(confirmAction: () => Promise<boolean>, fetchImpl: typeof fetch) {
     const tools = buildActuatorTools({
-      isInteractive: () => true, confirmAction, env: env(), fetchImpl, io: fakeIo(), userId: "stark" });
+      isInteractive: () => true, confirmAction, env: env(), fetchImpl, io: fakeIo(), lookup: publicLookup, userId: "stark" });
     return createAgentRuntime({
       maxToolCalls: 1,
       modelProvider: sequenceProvider([

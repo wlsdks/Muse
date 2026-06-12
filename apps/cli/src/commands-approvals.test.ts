@@ -133,6 +133,7 @@ describe("approvePendingApproval — re-run completion", () => {
       fetchImpl,
       id: "go",
       io: fakeIo(),
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
       pendingFile: f
     });
     expect(result.status).toBe("ran");

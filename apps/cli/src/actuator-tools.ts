@@ -22,6 +22,7 @@ import {
   createWebActionTool,
   queryContacts,
   type EmailApprovalGate,
+  type HostLookup,
   type MessageApprovalGate,
   type WebActionApprovalGate
 } from "@muse/mcp";
@@ -132,6 +133,8 @@ export interface ActuatorToolsDeps {
   /** Injectable TTY check so tests exercise the non-interactive fail-close. */
   readonly isInteractive?: () => boolean;
   readonly fetchImpl?: typeof fetch;
+  /** DNS resolver for the web_action SSRF guard; defaults to the system lookup (tests inject a fake public resolver). */
+  readonly lookup?: HostLookup;
   /**
    * Local vision callback for mac_screen_read (bound by the CLI to the
    * assembly's model AFTER assembly creation — hence resolved lazily at
@@ -295,7 +298,7 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
     ...(deps.isInteractive ? { isInteractive: deps.isInteractive } : {}),
     prompt: "Perform this web action?"
   });
-  tools.push(createWebActionTool({ actionLogFile, approvalGate: webGate, fetchImpl, userId }));
+  tools.push(createWebActionTool({ actionLogFile, approvalGate: webGate, fetchImpl, ...(deps.lookup ? { lookup: deps.lookup } : {}), userId }));
 
   const gmailToken = env.MUSE_GMAIL_TOKEN?.trim();
   if (gmailToken) {

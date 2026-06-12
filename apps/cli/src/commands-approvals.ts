@@ -9,6 +9,7 @@
  */
 
 import { resolvePendingApprovalsFile } from "@muse/autoconfigure";
+import type { HostLookup } from "@muse/mcp";
 import { clearPendingApproval, listPendingApprovals, type PendingApproval } from "@muse/messaging";
 import type { JsonObject } from "@muse/shared";
 import type { Command } from "commander";
@@ -37,6 +38,8 @@ export async function approvePendingApproval(opts: {
   /** Injectable TTY check (tests). Headless approve stays fail-close per outbound-safety. */
   readonly isInteractive?: () => boolean;
   readonly fetchImpl?: typeof fetch;
+  /** DNS resolver for the web_action SSRF guard (tests inject a fake public resolver). */
+  readonly lookup?: HostLookup;
   readonly now?: () => Date;
 }): Promise<ApproveResult> {
   const id = opts.id.trim();
@@ -51,7 +54,8 @@ export async function approvePendingApproval(opts: {
     userId: entry.userId ?? `${entry.providerId}:${entry.source}`,
     ...(opts.confirmAction ? { confirmAction: opts.confirmAction } : {}),
     ...(opts.isInteractive ? { isInteractive: opts.isInteractive } : {}),
-    ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {})
+    ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+    ...(opts.lookup ? { lookup: opts.lookup } : {})
   });
   const tool = tools.find((t) => t.definition.name === entry.tool);
   if (!tool) {
