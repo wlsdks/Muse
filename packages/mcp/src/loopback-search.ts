@@ -94,11 +94,17 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
     tools: [
       {
         description:
-          "Search the public web. Returns up to maxResults rows of { title, url, snippet }. " +
+          "Search the PUBLIC WEB and return up to maxResults rows of { title, url, snippet }. Use when the " +
+          "user wants fresh / current / external information that isn't in their own notes and isn't at a " +
+          "URL they already gave — e.g. 'search the web for the best noise-cancelling headphones', 'what " +
+          "did Apple announce today?', '오늘 환율 검색해줘', '최신 뉴스 찾아봐'. NOT for the user's own notes " +
+          "(use knowledge_search) and NOT for reading a specific page whose URL the user already named (use " +
+          "web_read / browser_open). " +
           (searxngUrl
-            ? "Primary backend: SearXNG (self-hosted aggregator, ~200 upstream engines, no API key). Falls back to DuckDuckGo HTML if SearXNG fails. "
-            : "Backed by DuckDuckGo's HTML endpoint — no API key required. ") +
-          "Use this when the model doesn't have a native web_search tool (local Qwen / Llama / etc.).",
+            ? "Primary backend: SearXNG (self-hosted, ~200 engines, no API key); falls back to DuckDuckGo HTML. "
+            : "Backed by DuckDuckGo's HTML endpoint — no API key required. "),
+        domain: "web",
+        keywords: ["search", "검색", "찾아봐", "찾아줘", "web", "웹", "google", "구글", "online", "온라인", "latest", "최신", "news", "뉴스", "현재", "지금"],
         execute: async (args): Promise<JsonObject> => {
           const query = readString(args, "query");
           if (!query || query.length === 0) {
@@ -190,8 +196,8 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
         },
         inputSchema: buildJsonToolSchema(
           {
-            query: { type: "string" },
-            time_range: { type: "string", enum: ["day", "week", "month", "year"] }
+            query: { type: "string", description: "What to search the web for, e.g. 'best noise-cancelling headphones 2026'." },
+            time_range: { type: "string", enum: ["day", "week", "month", "year"], description: "Optional recency filter, e.g. 'day' for today's news." }
           },
           ["query"]
         ),
@@ -279,7 +285,7 @@ async function querySearxng(args: QuerySearxngArgs): Promise<readonly SearchResu
       if (typeof row.url !== "string" || typeof row.title !== "string") continue;
       const snippet = typeof row.content === "string" ? row.content : "";
       out.push({
-        snippet: sanitizeSearchField(snippet),
+        snippet: capSnippet(snippet),
         title: sanitizeSearchField(row.title),
         url: sanitizeSearchField(row.url)
       });
@@ -308,6 +314,19 @@ function sanitizeSearchField(raw: string): string {
   return stripUntrustedTerminalChars(raw).replace(/\s+/gu, " ").trim();
 }
 
+// A search result is for TRIAGE (pick a URL to read), not the full text. Some
+// engines return a whole paragraph as the snippet; 10 uncapped paragraphs blow
+// the local model's context. Cap to ~280 chars on a word boundary.
+const MAX_SNIPPET_CHARS = 280;
+
+function capSnippet(raw: string): string {
+  const clean = sanitizeSearchField(raw);
+  if (clean.length <= MAX_SNIPPET_CHARS) return clean;
+  const slice = clean.slice(0, MAX_SNIPPET_CHARS);
+  const lastSpace = slice.lastIndexOf(" ");
+  return `${(lastSpace > MAX_SNIPPET_CHARS - 40 ? slice.slice(0, lastSpace) : slice).trimEnd()}…`;
+}
+
 /**
  * Regex-extract result rows from DuckDuckGo's html.duckduckgo.com/html/
  * markup. Two stable class names since 2019:
@@ -323,7 +342,7 @@ export function parseDuckDuckGoHtml(html: string, max: number): readonly SearchR
   while ((match = blockRe.exec(html)) !== null && out.length < max) {
     const href = sanitizeSearchField(decodeDuckDuckGoRedirect(match[1] ?? ""));
     const title = sanitizeSearchField(stripTags(match[2] ?? ""));
-    const snippet = sanitizeSearchField(stripTags(match[3] ?? ""));
+    const snippet = capSnippet(stripTags(match[3] ?? ""));
     if (href && title) {
       out.push({ snippet, title, url: href });
     }

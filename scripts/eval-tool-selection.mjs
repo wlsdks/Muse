@@ -188,6 +188,33 @@ async function buildPersonalCrudScenario() {
 // STABLE 5/5 by probe before landing (the ambiguous "when was my dentist appt"
 // — knowledge_search's corpus includes calendar, so either tool is defensible —
 // is deliberately EXCLUDED rather than over-fit to one answer).
+// muse.search (web search) vs its confusables: knowledge_search (the user's OWN
+// notes) and muse.web.read (read a SPECIFIC URL already given). "search the web
+// for X" must route to web search, not notes recall or a URL read.
+async function buildWebSearchScenario() {
+  try {
+    const mcp = await import("../packages/mcp/dist/index.js");
+    const ac = await import("../packages/autoconfigure/dist/index.js");
+    const search = mcp.createLoopbackMcpMuseTools(mcp.createSearchMcpServer())[0];
+    const webRead = mcp.createLoopbackMcpMuseTools(mcp.createWebReadMcpServer())[0];
+    const download = mcp.createWebDownloadTool({ fetchImpl: fetch });
+    const instances = [search, webRead, download, ac.createNotesKnowledgeSearchTool({})];
+    const tools = instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "Search the web for the best noise-cancelling headphones in 2026.", expectTool: "muse.search.search", requireArgs: ["query"], note: "EN web search -> muse.search (NOT notes/url-read)" },
+      { prompt: "오늘 비트코인 시세 웹에서 검색해줘.", expectTool: "muse.search.search", requireArgs: ["query"], note: "KO web search -> muse.search (user's language)" },
+      { prompt: "내 노트에서 Q3 로드맵 관련 내가 적은 내용 찾아줘.", expectTool: "knowledge_search", requireArgs: ["query"], note: "KO notes recall -> knowledge_search, NOT web search" },
+      { prompt: "Read https://example.com/article and summarize what it says.", expectTool: "muse.web.read", note: "read a specific URL -> web_read, NOT web search" },
+      { prompt: "Download https://example.com/report.pdf and save it to my downloads.", expectTool: "web_download", requireArgs: ["url"], note: "SAVE a file from a URL -> web_download (NOT read/search)" },
+      { prompt: "이 파일 다운받아줘: https://files.example.com/budget.xlsx", expectTool: "web_download", requireArgs: ["url"], note: "KO download a file -> web_download (user's language)" }
+    ];
+    return { label: "web-search (muse.search vs web_read vs web_download vs knowledge_search)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "web-search", skip: `deps not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 async function buildRecallVsCrudScenario() {
   try {
     const mcp = await import("../packages/mcp/dist/index.js");
@@ -290,6 +317,7 @@ async function buildFileScenario() {
     const cases = [
       { prompt: "다운로드 폴더에 있는 invoice.pdf 읽고 요약해줘.", expectTool: "file_read", requireArgs: ["file"], argIncludes: /invoice/i, note: "KO read+summarize a download → file_read" },
       { prompt: "Read the report.md on my Desktop and tell me the key points.", expectTool: "file_read", requireArgs: ["file"], argIncludes: /report/i, note: "EN read a Desktop file → file_read" },
+      { prompt: "다운로드에 있는 계약서 워드 파일 열어서 핵심 조건 요약해줘.", expectTool: "file_read", requireArgs: ["file"], note: "KO read a .docx Word file → file_read" },
       { prompt: "발표자료 키노트 파일이 어디 있는지 위치만 찾아줘.", expectTool: "mac_spotlight_search", note: "KO locate-only → spotlight (NOT file_read)" },
       { prompt: "지난 회의에서 결정한 내용 내 노트에서 찾아줘.", expectTool: "knowledge_search", note: "KO Muse-notes recall → knowledge_search (NOT file_read)" },
       { prompt: "맥에서 쓸만한 PDF 뷰어 하나 추천해줘.", expectNoTool: true, note: "KO talking ABOUT PDFs, nothing to read → NO tool" }
@@ -385,6 +413,7 @@ async function buildBrowserScenario() {
     const instances = [
       browser.createBrowserOpenTool({ controller: stubController }),
       browser.createBrowserReadTool({ controller: stubController }),
+      browser.createBrowserLookTool({ controller: stubController, describeImage: async () => ({ ok: true, text: "x" }) }),
       browser.createBrowserScrollTool({ controller: stubController }),
       browser.createBrowserHoverTool({ controller: stubController }),
       browser.createBrowserKeyTool({ controller: stubController }),
@@ -399,6 +428,8 @@ async function buildBrowserScenario() {
       { prompt: "Open https://news.example.com in the browser and read the page.", expectTool: "browser_open", requireArgs: ["url"], note: "EN open+browse a page → browser_open (NOT web_action)" },
       { prompt: "브라우저로 이 페이지 열어줘: https://example.com", expectTool: "browser_open", requireArgs: ["url"], note: "KO open a page → browser_open (user's language)" },
       { prompt: "Read the page that's open in the browser right now.", expectTool: "browser_read", note: "EN re-read current page → browser_read (NOT knowledge_search)" },
+      { prompt: "이 페이지에 있는 차트가 뭘 보여주는지 설명해줘.", expectTool: "browser_look", note: "KO describe a chart on the page → browser_look (visual, NOT browser_read text)" },
+      { prompt: "What does the graph on this page show?", expectTool: "browser_look", note: "EN visual graph question → browser_look (NOT browser_read)" },
       { prompt: "Scroll down to see more of the page.", expectTool: "browser_scroll", requireArgs: ["direction"], note: "EN scroll → browser_scroll (reveal below-the-fold)" },
       { prompt: "맨 아래로 스크롤해줘.", expectTool: "browser_scroll", requireArgs: ["direction"], note: "KO scroll to bottom → browser_scroll (user's language)" },
       { prompt: "Hover over the Account menu to reveal it.", expectTool: "browser_hover", requireArgs: ["target"], note: "EN hover to reveal a menu → browser_hover (NOT click)" },
@@ -480,7 +511,8 @@ async function main() {
     await buildFileScenario(),
     await buildBrowserScenario(),
     await buildPersonalCrudScenario(),
-    await buildRecallVsCrudScenario()
+    await buildRecallVsCrudScenario(),
+    await buildWebSearchScenario()
   ];
   // Optional substring filter (MUSE_EVAL_SCENARIO) so a single scenario can be
   // iterated live without paying for the whole suite each run.

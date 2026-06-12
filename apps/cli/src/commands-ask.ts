@@ -2468,14 +2468,24 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const actuatorMod = await import("./actuator-tools.js");
         const browserTools = actuatorMod.buildBrowserTools({
           io,
-          onController: (controller) => { browserControllerToRelease = controller; }
+          onController: (controller) => { browserControllerToRelease = controller; },
+          // browser_look reads the page visually via the same local vision the
+          // screen-read/file-read paths use (lazy holder; model bound below).
+          describeImage: async (input) => screenVision.current ? screenVision.current(input) : { error: "the local vision model is not available in this run", ok: false }
         });
         extraTools = extraTools ? [...extraTools, ...browserTools] : browserTools;
         // file_read rides along by default too: reading the user's own
         // Downloads/Desktop/Documents is the local-first product's bread and
         // butter (read-risk, allowlist-rooted, fail-closed outside the roots).
-        const { createFileReadTool } = await import("@muse/mcp");
-        extraTools = [...extraTools, createFileReadTool()];
+        const { createFileReadTool, createWebDownloadTool } = await import("@muse/mcp");
+        // web_download saves a file from a public URL into ~/Downloads — the
+        // write-side companion to file_read (SSRF-guarded, size-capped,
+        // basename-only). file_read can then read/summarize what was saved.
+        extraTools = [...extraTools, createFileReadTool({
+          // file_read reads an IMAGE file via the same local vision the screen-
+          // read path uses (lazy holder — the assembly/model is bound below).
+          describeImage: async (input) => screenVision.current ? screenVision.current(input) : { error: "the local vision model is not available in this run", ok: false }
+        }), createWebDownloadTool({ fetchImpl: globalThis.fetch })];
       }
       // The agent's `muse.messaging.send` (a default loopback tool whenever a
       // messenger is configured) gets a draft-first confirm gate under --with-tools:

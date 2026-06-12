@@ -9,7 +9,7 @@
  * pdfjs-dist (Apache-2.0, Mozilla) with script eval disabled.
  */
 
-import { readdir as nodeReaddir, readFile as nodeReadFile } from "node:fs/promises";
+import { readdir as nodeReaddir, readFile as nodeReadFile, realpath as nodeRealpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve as pathResolve, sep as pathSep } from "node:path";
 
@@ -22,18 +22,82 @@ export interface FileCandidate {
   readonly modifiedMs: number;
 }
 
-export type FileKind = "pdf" | "text" | "unsupported";
+export type FileKind = "pdf" | "docx" | "image" | "text" | "unsupported";
 
 const TEXT_EXTENSIONS = new Set([
   "txt", "md", "markdown", "json", "csv", "tsv", "log", "yaml", "yml", "toml", "ini",
   "ts", "tsx", "js", "mjs", "cjs", "py", "rb", "go", "rs", "java", "swift", "sh", "html", "css", "xml"
 ]);
 
+const IMAGE_EXTENSIONS = new Map<string, string>([
+  ["png", "image/png"], ["jpg", "image/jpeg"], ["jpeg", "image/jpeg"],
+  ["gif", "image/gif"], ["webp", "image/webp"], ["bmp", "image/bmp"]
+]);
+
 export function classifyFileKind(name: string): FileKind {
-  const ext = name.toLowerCase().split(".").pop() ?? "";
+  // A name with no dot has no extension — `split(".").pop()` would return the
+  // whole name, so guard that explicitly (an extensionless file is "unknown").
+  const lower = name.toLowerCase();
+  const ext = lower.includes(".") ? (lower.split(".").pop() ?? "") : "";
   if (ext === "pdf") return "pdf";
+  if (ext === "docx") return "docx";
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
   if (TEXT_EXTENSIONS.has(ext)) return "text";
   return "unsupported";
+}
+
+/** MIME type for an image file, from its extension then magic bytes. Default image/png. */
+export function imageMimeType(name: string, data: Buffer): string {
+  const ext = name.toLowerCase().includes(".") ? (name.toLowerCase().split(".").pop() ?? "") : "";
+  const byExt = IMAGE_EXTENSIONS.get(ext);
+  if (byExt) return byExt;
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image/jpeg";
+  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) return "image/gif";
+  if (data.length >= 12 && data.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return "image/png";
+}
+
+/**
+ * Classify by CONTENT, not name — so a misnamed `.txt` that is really a PDF, or
+ * an extensionless download, still routes correctly. `%PDF` magic → pdf; a head
+ * sample that is NUL-free and overwhelmingly printable (ASCII or UTF-8) → text;
+ * anything else → unsupported (binary).
+ */
+export function sniffFileKind(data: Buffer): FileKind {
+  if (data.length === 0) return "unsupported";
+  if (data.length >= 4 && data[0] === 0x25 && data[1] === 0x50 && data[2] === 0x44 && data[3] === 0x46) {
+    return "pdf";
+  }
+  // Image magic bytes: PNG \x89PNG, JPEG \xFF\xD8\xFF, GIF GIF8, WEBP RIFF…WEBP.
+  if (data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) return "image";
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image";
+  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x38) return "image";
+  if (data.length >= 12 && data.subarray(0, 4).toString("latin1") === "RIFF" && data.subarray(8, 12).toString("latin1") === "WEBP") return "image";
+  const sample = data.subarray(0, 4096);
+  if (sample.includes(0x00)) return "unsupported";
+  let printable = 0;
+  for (const byte of sample) {
+    if (byte === 0x09 || byte === 0x0a || byte === 0x0d || (byte >= 0x20 && byte <= 0x7e) || byte >= 0x80) {
+      printable += 1;
+    }
+  }
+  return printable / sample.length >= 0.85 ? "text" : "unsupported";
+}
+
+/**
+ * The kind actually used to read a file: PDF magic always wins (catch a
+ * mislabeled .txt), then a trusted text/pdf extension, then — for an unknown or
+ * missing extension — whatever the bytes say. Extension is the fast path; the
+ * sniff is the correction.
+ */
+export function resolveFileKind(name: string, data: Buffer): FileKind {
+  const bySniff = sniffFileKind(data);
+  // Magic-detected binary formats win over a misleading extension (a .txt that
+  // is really a PDF or an image must not be read as utf8).
+  if (bySniff === "pdf" || bySniff === "image") return bySniff;
+  const byName = classifyFileKind(name);
+  if (byName !== "unsupported") return byName;
+  return bySniff;
 }
 
 /**
@@ -63,6 +127,13 @@ export interface FileReadFsImpl {
   /** All readable files under the roots (depth-bounded walk). */
   listCandidates(roots: readonly string[]): Promise<readonly FileCandidate[]>;
   readFile(path: string): Promise<Buffer>;
+  /**
+   * Resolve symlinks to the real on-disk path. Optional: when absent (a test
+   * fake with no symlinks), the path is treated as its own realpath. The
+   * default fs provides the real resolver so a symlink under the roots that
+   * points OUTSIDE them is caught before the read.
+   */
+  realpath?(path: string): Promise<string>;
 }
 
 export interface FileReadToolDeps {
@@ -71,6 +142,14 @@ export interface FileReadToolDeps {
   readonly fsImpl?: FileReadFsImpl;
   /** PDF text extractor; defaults to the lazy pdfjs-dist implementation. */
   readonly extractPdfText?: (data: Buffer) => Promise<string>;
+  /** DOCX (Word) text extractor; defaults to the lazy mammoth implementation. */
+  readonly extractDocxText?: (data: Buffer) => Promise<string>;
+  /**
+   * Local vision callback for IMAGE files (bound by the CLI to the assembly's
+   * multimodal model — @muse/mcp stays model-free). Absent ⇒ image files are
+   * refused ("unsupported") as before.
+   */
+  readonly describeImage?: (input: { readonly imageBase64: string; readonly mimeType: string }) => Promise<{ readonly ok: boolean; readonly text?: string; readonly error?: string }>;
   /** Cap on returned characters. Default 20,000. */
   readonly maxTextChars?: number;
   /** Files larger than this are refused. Default 25MB. */
@@ -127,22 +206,32 @@ export async function extractPdfTextWithPdfjs(data: Buffer, maxPages = 50): Prom
   }
 }
 
+export async function extractDocxTextWithMammoth(data: Buffer): Promise<string> {
+  const mammoth = await import("mammoth");
+  const result = await mammoth.extractRawText({ buffer: data });
+  return result.value.replace(/[ \t]+/g, " ").trim();
+}
+
 export function createFileReadTool(deps: FileReadToolDeps = {}): MuseTool {
   const roots = (deps.roots ?? [join(homedir(), "Downloads"), join(homedir(), "Desktop"), join(homedir(), "Documents")])
     .map((root) => pathResolve(root));
-  const fsImpl: FileReadFsImpl = deps.fsImpl ?? { listCandidates: walkCandidates, readFile: (path) => nodeReadFile(path) };
+  const fsImpl: FileReadFsImpl = deps.fsImpl ?? { listCandidates: walkCandidates, readFile: (path) => nodeReadFile(path), realpath: (path) => nodeRealpath(path) };
+  // When the fs provides no realpath (a test fake with no symlinks), treat each
+  // path as its own realpath — the symlink-escape guard is a no-op there.
+  const realpathOf = fsImpl.realpath ? (path: string) => fsImpl.realpath!(path) : async (path: string) => path;
   const extractPdf = deps.extractPdfText ?? extractPdfTextWithPdfjs;
+  const extractDocx = deps.extractDocxText ?? extractDocxTextWithMammoth;
   const maxTextChars = deps.maxTextChars ?? 20_000;
   const maxFileBytes = deps.maxFileBytes ?? 25 * 1024 * 1024;
   return {
     definition: {
       description:
         "Read a document FILE from the user's Downloads, Desktop, or Documents folder and return its text " +
-        "— PDFs included (text is extracted locally). Say WHICH file in `file` — a filename or part of one " +
-        "('invoice pdf', 'report.md') — and Muse finds the newest match. Use when the user asks to read / " +
-        "open / summarize a file on their computer — e.g. '다운로드에 있는 invoice.pdf 요약해줘', 'read the " +
-        "report on my Desktop'. NOT for the user's Muse notes (muse.notes.search) and NOT for just locating " +
-        "a file's path (mac_spotlight_search).",
+        "— PDF, Word (.docx), and images (read with the local vision model) included. Say WHICH file in `file` — a filename " +
+        "or part of one ('invoice pdf', 'report.md', '계약서 워드', '영수증 사진') — and Muse finds the newest match. Use " +
+        "when the user asks to read / open / summarize a file on their computer — e.g. '다운로드에 있는 " +
+        "invoice.pdf 요약해줘', 'read the Word doc on my Desktop'. NOT for the user's Muse notes " +
+        "(muse.notes.search) and NOT for just locating a file's path (mac_spotlight_search).",
       domain: "files",
       groundedArgs: ["file"],
       inputSchema: {
@@ -182,15 +271,42 @@ export function createFileReadTool(deps: FileReadToolDeps = {}): MuseTool {
             return { read: false, reason: `no file matching "${query}" — recent files listed`, recent: recent as unknown as JsonValue };
           }
         }
-        const kind = classifyFileKind(target.name);
-        if (kind === "unsupported") {
-          return { read: false, reason: `'${target.name}' is not a readable document (PDF or text files only)` };
+        // Symlink-escape guard: a file lexically inside the roots may be a
+        // symlink pointing OUTSIDE them (e.g. ~/Downloads/x → /etc/passwd). The
+        // lexical roots check above only sees the link's own path, so re-check
+        // the REAL path (and realpath the roots too — /tmp is itself a symlink
+        // on macOS) before reading. A realpath error (missing file) refuses.
+        let realTarget: string;
+        try {
+          realTarget = await realpathOf(target.path);
+        } catch {
+          return { read: false, reason: `'${target.name}' could not be resolved on disk` };
+        }
+        const realRoots = await Promise.all(roots.map((root) => realpathOf(root).catch(() => root)));
+        if (!realRoots.some((root) => realTarget === root || realTarget.startsWith(`${root}${pathSep}`))) {
+          return { read: false, reason: `'${target.name}' resolves through a link to outside the readable folders` };
         }
         const data = await fsImpl.readFile(target.path);
         if (data.byteLength > maxFileBytes) {
           return { read: false, reason: `'${target.name}' is too large (${Math.round(data.byteLength / 1024 / 1024).toString()}MB > 25MB)` };
         }
-        const text = kind === "pdf" ? await extractPdf(data) : data.toString("utf8");
+        // Classify by CONTENT (with the extension as a hint): an extensionless
+        // download or a misnamed file still reads, a binary blob is still refused.
+        const kind = resolveFileKind(target.name, data);
+        if (kind === "image") {
+          if (!deps.describeImage) {
+            return { read: false, reason: `'${target.name}' is an image — image reading needs the local vision model, not available in this run` };
+          }
+          const described = await deps.describeImage({ imageBase64: data.toString("base64"), mimeType: imageMimeType(target.name, data) });
+          if (!described.ok || !described.text) {
+            return { read: false, reason: described.error ?? "the vision model could not read the image" };
+          }
+          return { kind: "image", name: target.name, path: target.path, read: true, text: described.text, truncated: false };
+        }
+        if (kind === "unsupported") {
+          return { read: false, reason: `'${target.name}' is not a readable document (PDF, Word, text, or image files only)` };
+        }
+        const text = kind === "pdf" ? await extractPdf(data) : kind === "docx" ? await extractDocx(data) : data.toString("utf8");
         const truncated = text.length > maxTextChars;
         return {
           name: target.name,

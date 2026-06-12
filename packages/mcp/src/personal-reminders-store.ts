@@ -21,6 +21,7 @@ import { dirname } from "node:path";
 import type { JsonObject } from "@muse/shared";
 
 import { formatDueLocal } from "./local-due-format.js";
+import { withFileLock } from "./encrypted-file.js";
 import { parseTaskDueAt } from "./personal-tasks-store.js";
 
 export interface ReminderVia {
@@ -96,6 +97,26 @@ export async function readReminders(file: string): Promise<readonly PersistedRem
   return (parsed as { reminders: unknown[] }).reminders.flatMap((entry): readonly PersistedReminder[] =>
     isPersistedReminder(entry) ? [entry] : []
   );
+}
+
+/**
+ * Serialized read-modify-write: run `fn` over the current reminders and persist
+ * its result under a CROSS-PROCESS file lock, so the daemon's firing loop and a
+ * chat `add` (separate processes) can't both read the same list, each append,
+ * and clobber the other (last-writer-wins lost the unseen write). Returns the
+ * persisted list. Every RMW caller must go through this, never read+write
+ * directly.
+ */
+export async function mutateReminders(
+  file: string,
+  fn: (current: readonly PersistedReminder[]) => readonly PersistedReminder[] | Promise<readonly PersistedReminder[]>
+): Promise<readonly PersistedReminder[]> {
+  return withFileLock(file, async () => {
+    const current = await readReminders(file);
+    const next = await fn(current);
+    await writeReminders(file, next);
+    return next;
+  });
 }
 
 export async function writeReminders(file: string, reminders: readonly PersistedReminder[]): Promise<void> {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createBrowserBackTool,
+  createBrowserLookTool,
   createBrowserClickTool,
   createBrowserHoverTool,
   createBrowserKeyTool,
@@ -35,6 +36,7 @@ class FakeController implements BrowserController {
   async back(): Promise<PageSnapshot> { this.calls.push("back"); return SNAP; }
   async scroll(direction: string): Promise<PageSnapshot> { this.calls.push(`scroll:${direction}`); return SNAP; }
   async screenshot(path: string): Promise<{ readonly path: string }> { this.calls.push("shot"); return { path }; }
+  async screenshotBase64(): Promise<string> { this.calls.push("shot-base64"); return "aW1n"; }
   describeElement(ref: number): SnapshotElement | undefined { return this.elements.get(ref); }
   currentUrl(): string { return "https://example.test/"; }
   async disconnect(): Promise<void> { this.calls.push("disconnect"); }
@@ -88,7 +90,7 @@ describe("browser_open / read / back — free (no gate)", () => {
     const out = await tool.execute({ url: "https://example.test" }, ctx) as { url: string; title: string; elements: unknown[] };
     expect(out).toMatchObject({ title: "Example", url: "https://example.test/" });
     expect(out.elements).toEqual([{ name: "Sign in", ref: 3, role: "button" }]);
-    expect(c.calls).toEqual(["open:https://example.test"]);
+    expect(c.calls).toEqual(["open:https://example.test/"]);
   });
 
   it("read and back return snapshots", async () => {
@@ -276,5 +278,126 @@ describe("browser_type — target grounding + draft-first", () => {
     const tool = createBrowserTypeTool({ approvalGate: allow, controller: c });
     expect(await tool.execute({ submit: true, target: "Sign in", text: "laptop" }, ctx)).toMatchObject({ typed: true });
     expect(c.calls).toEqual(["snapshot", "type:3:laptop:true"]);
+  });
+});
+
+describe("display cap — model sees a small list, matcher sees all (long-page strengthening)", () => {
+  const manyElements: SnapshotElement[] = Array.from({ length: 60 }, (_, i) => ({
+    name: i === 55 ? "Checkout now" : `Item ${i.toString()}`,
+    ref: i,
+    role: i === 55 ? "button" : "link"
+  }));
+  const bigSnap: PageSnapshot = { elements: manyElements, text: "shop", title: "Shop", url: "https://shop.test/" };
+
+  class BigController implements BrowserController {
+    calls: string[] = [];
+    async open(): Promise<PageSnapshot> { return bigSnap; }
+    async snapshot(): Promise<PageSnapshot> { return bigSnap; }
+    async click(ref: number): Promise<PageSnapshot> { this.calls.push(`click:${ref.toString()}`); return bigSnap; }
+    async type(): Promise<PageSnapshot> { return bigSnap; }
+    async back(): Promise<PageSnapshot> { return bigSnap; }
+    async screenshot(path: string): Promise<{ readonly path: string }> { return { path }; }
+    async screenshotBase64(): Promise<string> { return "aW1n"; }
+    describeElement(ref: number): SnapshotElement | undefined { return manyElements[ref]; }
+    currentUrl(): string { return "https://shop.test/"; }
+    async disconnect(): Promise<void> {}
+    async close(): Promise<void> {}
+  }
+
+  it("browser_open pages a long element list and reports the true total + nextOffset", async () => {
+    const c = new BigController();
+    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://shop.test" }, ctx) as {
+      elements: unknown[]; total: number; hasMore?: boolean; nextOffset?: number;
+    };
+    expect(out.elements.length).toBe(50);
+    expect(out.total).toBe(60);
+    expect(out.hasMore).toBe(true);
+    expect(out.nextOffset).toBe(50);
+  });
+
+  it("browser_click resolves a target BEYOND the first page (matcher sees the full set)", async () => {
+    const c = new BigController();
+    const out = await createBrowserClickTool({ approvalGate: allow, controller: c }).execute({ target: "Checkout now" }, ctx) as { clicked: boolean };
+    expect(out.clicked).toBe(true);
+    expect(c.calls).toEqual(["click:55"]);
+  });
+
+  it("a small page reports no hasMore", async () => {
+    const c = new FakeController();
+    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://example.test" }, ctx) as { hasMore?: boolean };
+    expect(out.hasMore).toBeFalsy();
+  });
+});
+
+describe("browser_open — scheme guard (http/https only; no local-file read via file://)", () => {
+  it("refuses file:// without touching the browser (file_read is the bounded local path)", async () => {
+    const c = new FakeController();
+    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "file:///etc/passwd" }, ctx) as { error?: string };
+    expect(out.error).toBeTruthy();
+    expect(String(out.error).toLowerCase()).toMatch(/http|scheme|file/);
+    expect(c.calls).toEqual([]);
+  });
+
+  it("refuses chrome:// / view-source: / javascript: / data: schemes", async () => {
+    const c = new FakeController();
+    for (const url of ["chrome://settings", "view-source:https://x.test", "javascript:alert(1)", "data:text/html,<h1>x</h1>"]) {
+      const out = await createBrowserOpenTool({ controller: c }).execute({ url }, ctx) as { error?: string };
+      expect(out.error).toBeTruthy();
+    }
+    expect(c.calls).toEqual([]);
+  });
+
+  it("still opens a normal https URL", async () => {
+    const c = new FakeController();
+    const out = await createBrowserOpenTool({ controller: c }).execute({ url: "https://example.test" }, ctx) as { title?: string };
+    expect(out.title).toBe("Example");
+    expect(c.calls).toEqual(["open:https://example.test/"]);
+  });
+
+  it("accepts a bare host and normalizes it to https", async () => {
+    const c = new FakeController();
+    await createBrowserOpenTool({ controller: c }).execute({ url: "example.com" }, ctx);
+    expect(c.calls).toEqual(["open:https://example.com/"]);
+  });
+});
+
+describe("browser_look — describe the current page visually (local vision)", () => {
+  it("is a well-formed READ tool", () => {
+    const c = new FakeController();
+    const tool = createBrowserLookTool({ controller: c, describeImage: async () => ({ ok: true, text: "x" }) });
+    expect(tool.definition.name).toBe("browser_look");
+    expect(tool.definition.risk).toBe("read");
+    expect(tool.definition.domain).toBe("browser");
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("captures the page and returns the vision description", async () => {
+    const c = new FakeController();
+    let seenMime = "";
+    const tool = createBrowserLookTool({
+      controller: c,
+      describeImage: async (input) => { seenMime = input.mimeType; return { ok: true, text: "A line chart trending upward, titled Revenue." }; }
+    });
+    const out = await tool.execute({}, ctx) as { described: boolean; text?: string };
+    expect(out.described).toBe(true);
+    expect(out.text).toContain("line chart");
+    expect(seenMime).toBe("image/png");
+    expect(c.calls).toContain("shot-base64");
+  });
+
+  it("passes an optional question to the vision model", async () => {
+    const c = new FakeController();
+    let q = "";
+    const tool = createBrowserLookTool({ controller: c, describeImage: async (input) => { q = input.question ?? ""; return { ok: true, text: "ok" }; } });
+    await tool.execute({ question: "what does the error banner say?" }, ctx);
+    expect(q).toBe("what does the error banner say?");
+  });
+
+  it("a vision failure reports described:false with the reason", async () => {
+    const c = new FakeController();
+    const tool = createBrowserLookTool({ controller: c, describeImage: async () => ({ ok: false, error: "vision offline" }) });
+    const out = await tool.execute({}, ctx) as { described: boolean; reason?: string };
+    expect(out.described).toBe(false);
+    expect(String(out.reason)).toContain("offline");
   });
 });

@@ -66,7 +66,14 @@ function isBlockedHostname(hostname: string): boolean {
  * public addresses. Use BEFORE fetching, and again on the final URL after
  * any redirect (a 3xx Location can point at a private host).
  */
-export async function assertPublicHttpUrl(rawUrl: string, options: { readonly lookup?: HostLookup } = {}): Promise<UrlGuardResult> {
+/**
+ * The DNS-free half of the guard: protocol + LITERAL loopback/private/link-local
+ * IP + blocked hostname. Catches every SSRF vector a model emits as a literal
+ * (`http://127.0.0.1`, `http://169.254.169.254`, `file://…`) with no async cost,
+ * so a caller that can't await DNS still gets the core protection. The resolved-
+ * IP (DNS-rebinding) layer is `assertPublicHttpUrl`.
+ */
+export function assertPublicHttpUrlSync(rawUrl: string): UrlGuardResult {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -83,6 +90,14 @@ export async function assertPublicHttpUrl(rawUrl: string, options: { readonly lo
   if ((url.hostname.includes(":") || ipv4ToParts(hostname)) && isPrivateAddress(hostname)) {
     return { ok: false, error: `refusing to read a private/loopback address: ${url.hostname}` };
   }
+  return { ok: true, url };
+}
+
+export async function assertPublicHttpUrl(rawUrl: string, options: { readonly lookup?: HostLookup } = {}): Promise<UrlGuardResult> {
+  const sync = assertPublicHttpUrlSync(rawUrl);
+  if (!sync.ok) return sync;
+  const url = sync.url;
+  const hostname = url.hostname.replace(/^\[|\]$/gu, "");
   const lookup = options.lookup ?? defaultLookup;
   try {
     const records = await lookup(hostname);

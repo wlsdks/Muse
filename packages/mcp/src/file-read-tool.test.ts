@@ -5,6 +5,8 @@ import {
   classifyFileKind,
   createFileReadTool,
   rankFileCandidates,
+  resolveFileKind,
+  sniffFileKind,
   type FileCandidate
 } from "./file-read-tool.js";
 
@@ -38,7 +40,7 @@ describe("classifyFileKind — extension routing", () => {
     expect(classifyFileKind("a.PDF")).toBe("pdf");
     expect(classifyFileKind("notes.md")).toBe("text");
     expect(classifyFileKind("data.json")).toBe("text");
-    expect(classifyFileKind("photo.png")).toBe("unsupported");
+    expect(classifyFileKind("photo.png")).toBe("image");
     expect(classifyFileKind("archive.zip")).toBe("unsupported");
   });
 });
@@ -46,7 +48,11 @@ describe("classifyFileKind — extension routing", () => {
 describe("file_read tool — bounded, fail-closed resolution", () => {
   const fakeFs = {
     listCandidates: async () => candidates,
-    readFile: async (path: string) => Buffer.from(path.endsWith(".md") ? "# Report\nAll good." : "%PDF"),
+    readFile: async (path: string) => {
+      if (path.endsWith(".md")) return Buffer.from("# Report\nAll good.");
+      if (path.endsWith(".png")) return Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x0d, 0x0a]); // real PNG header (NUL → binary)
+      return Buffer.from("%PDF-1.4 ...");
+    },
     stat: async () => ({ mtimeMs: 300, size: 1000 })
   };
 
@@ -95,5 +101,179 @@ describe("file_read tool — bounded, fail-closed resolution", () => {
     const out = await tool.execute({ file: "holiday-photo" }, ctx) as { read: boolean; reason?: string };
     expect(out.read).toBe(false);
     expect(out.reason).toContain("photo.png");
+  });
+});
+
+describe("sniffFileKind — content classification by magic bytes / printable ratio", () => {
+  it("recognizes a PDF by its %PDF magic regardless of name", () => {
+    expect(sniffFileKind(Buffer.from("%PDF-1.7\n..."))).toBe("pdf");
+  });
+
+  it("treats high-printable UTF-8 content as text", () => {
+    expect(sniffFileKind(Buffer.from("# Title\n한국어도 OK\nplain text body"))).toBe("text");
+  });
+
+  it("treats NUL-containing / binary content as unsupported", () => {
+    expect(sniffFileKind(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02]))).toBe("unsupported"); // PNG header + NUL
+    expect(sniffFileKind(Buffer.from([0x00, 0x01, 0x02, 0x03]))).toBe("unsupported");
+  });
+
+  it("empty data is unsupported", () => {
+    expect(sniffFileKind(Buffer.from(""))).toBe("unsupported");
+  });
+});
+
+describe("resolveFileKind — extension + content, magic wins on mismatch", () => {
+  it("a .txt whose bytes are actually a PDF routes to pdf", () => {
+    expect(resolveFileKind("invoice.txt", Buffer.from("%PDF-1.4 ..."))).toBe("pdf");
+  });
+
+  it("a NO-extension file with text bytes reads as text (extension allowlist would have refused)", () => {
+    expect(resolveFileKind("README", Buffer.from("just some notes"))).toBe("text");
+  });
+
+  it("a known text extension is trusted even with odd content", () => {
+    expect(resolveFileKind("script.ts", Buffer.from("const x = 1;"))).toBe("text");
+  });
+
+  it("an unknown extension with binary bytes stays unsupported", () => {
+    expect(resolveFileKind("blob.dat", Buffer.from([0x00, 0xff, 0x00]))).toBe("unsupported");
+  });
+});
+
+describe("file_read tool — content-sniff integration", () => {
+  it("reads a no-extension file whose bytes are text (was refused by extension-only)", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "meeting-notes", path: "/dl/meeting-notes" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => Buffer.from("Q3 plan: ship the thing") };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: fs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "meeting-notes" }, ctx) as { read: boolean; text?: string };
+    expect(out.read).toBe(true);
+    expect(out.text).toContain("Q3 plan");
+  });
+
+  it("routes a mislabeled .txt-that-is-a-PDF through the extractor", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "scan.txt", path: "/dl/scan.txt" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => Buffer.from("%PDF-1.5 binary...") };
+    const tool = createFileReadTool({ extractPdfText: async () => "EXTRACTED PDF", fsImpl: fs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "scan.txt" }, ctx) as { read: boolean; text?: string };
+    expect(out).toMatchObject({ read: true, text: "EXTRACTED PDF" });
+  });
+});
+
+describe("file_read — .docx (Word) support", () => {
+  it("classifyFileKind routes .docx", () => {
+    expect(classifyFileKind("contract.docx")).toBe("docx");
+    expect(classifyFileKind("CONTRACT.DOCX")).toBe("docx");
+  });
+
+  it("resolveFileKind: a .docx (a zip → sniffs unsupported) routes by extension", () => {
+    const zipMagic = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x01]); // PK.. + NUL → sniff says unsupported
+    expect(resolveFileKind("report.docx", zipMagic)).toBe("docx");
+  });
+
+  it("routes a .docx through the injected docx extractor", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "report.docx", path: "/dl/report.docx" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => Buffer.from([0x50, 0x4b, 0x03, 0x04]) };
+    const tool = createFileReadTool({ extractDocxText: async () => "WORD BODY TEXT", extractPdfText: async () => "", fsImpl: fs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "report" }, ctx) as { read: boolean; text?: string; path?: string };
+    expect(out).toMatchObject({ path: "/dl/report.docx", read: true, text: "WORD BODY TEXT" });
+  });
+
+  it("the tool description mentions Word documents (selection cue)", () => {
+    const tool = createFileReadTool({ extractDocxText: async () => "", extractPdfText: async () => "", fsImpl: { listCandidates: async () => [], readFile: async () => Buffer.from("") }, roots: ["/dl"] });
+    expect(tool.definition.description.toLowerCase()).toContain("word");
+  });
+});
+
+describe("file_read — symlink escape from the allowlisted roots is refused (realpath guard)", () => {
+  const passwd = "root:x:0:0:root:/root:/bin/sh\n";
+
+  it("a candidate whose realpath escapes the roots is refused (no read of the link target)", async () => {
+    let reads = 0;
+    const symlinkFs = {
+      listCandidates: async (): Promise<readonly FileCandidate[]> => [{ modifiedMs: 1, name: "sneaky", path: "/dl/sneaky" }],
+      readFile: async () => { reads += 1; return Buffer.from(passwd); },
+      realpath: async (p: string) => (p === "/dl/sneaky" ? "/etc/passwd" : p)
+    };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: symlinkFs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "sneaky" }, ctx) as { read: boolean; reason?: string };
+    expect(out.read).toBe(false);
+    expect(String(out.reason).toLowerCase()).toMatch(/link|outside/);
+    expect(reads).toBe(0);
+  });
+
+  it("an ABSOLUTE path that is lexically inside the roots but symlinks outside is refused", async () => {
+    let reads = 0;
+    const symlinkFs = {
+      listCandidates: async (): Promise<readonly FileCandidate[]> => [],
+      readFile: async () => { reads += 1; return Buffer.from(passwd); },
+      realpath: async (p: string) => (p === "/dl/escape" ? "/etc/shadow" : p)
+    };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: symlinkFs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "/dl/escape" }, ctx) as { read: boolean };
+    expect(out.read).toBe(false);
+    expect(reads).toBe(0);
+  });
+
+  it("a real (non-symlink) file under the roots still reads when realpath is identity", async () => {
+    const realFs = {
+      listCandidates: async (): Promise<readonly FileCandidate[]> => [{ modifiedMs: 1, name: "ok.md", path: "/dl/ok.md" }],
+      readFile: async () => Buffer.from("# fine"),
+      realpath: async (p: string) => p
+    };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: realFs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "ok" }, ctx) as { read: boolean; text?: string };
+    expect(out.read).toBe(true);
+    expect(out.text).toContain("fine");
+  });
+});
+
+describe("file_read — image files via local vision", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+  it("classifyFileKind routes common image extensions", () => {
+    expect(classifyFileKind("receipt.png")).toBe("image");
+    expect(classifyFileKind("PHOTO.JPG")).toBe("image");
+    expect(classifyFileKind("scan.jpeg")).toBe("image");
+    expect(classifyFileKind("logo.webp")).toBe("image");
+  });
+
+  it("sniffFileKind detects PNG/JPEG magic bytes", () => {
+    expect(sniffFileKind(PNG)).toBe("image");
+    expect(sniffFileKind(JPEG)).toBe("image");
+  });
+
+  it("reads an image via the injected vision callback", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "receipt.png", path: "/dl/receipt.png" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => PNG };
+    let seenMime = "";
+    const tool = createFileReadTool({
+      describeImage: async (input) => { seenMime = input.mimeType; return { ok: true, text: "A receipt from Cafe Muse totaling 12,400 KRW." }; },
+      extractPdfText: async () => "",
+      fsImpl: fs,
+      roots: ["/dl"]
+    });
+    const out = await tool.execute({ file: "receipt" }, ctx) as { read: boolean; text?: string };
+    expect(out.read).toBe(true);
+    expect(out.text).toContain("Cafe Muse");
+    expect(seenMime).toBe("image/png");
+  });
+
+  it("an image is refused when no vision callback is wired (describeImage absent)", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "pic.png", path: "/dl/pic.png" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => PNG };
+    const tool = createFileReadTool({ extractPdfText: async () => "", fsImpl: fs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "pic" }, ctx) as { read: boolean; reason?: string };
+    expect(out.read).toBe(false);
+  });
+
+  it("a vision failure reports read:false with the reason", async () => {
+    const cands: FileCandidate[] = [{ modifiedMs: 1, name: "x.jpg", path: "/dl/x.jpg" }];
+    const fs = { listCandidates: async () => cands, readFile: async () => JPEG };
+    const tool = createFileReadTool({ describeImage: async () => ({ ok: false, error: "vision model offline" }), extractPdfText: async () => "", fsImpl: fs, roots: ["/dl"] });
+    const out = await tool.execute({ file: "x" }, ctx) as { read: boolean; reason?: string };
+    expect(out.read).toBe(false);
+    expect(String(out.reason)).toContain("offline");
   });
 });

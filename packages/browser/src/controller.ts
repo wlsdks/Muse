@@ -66,6 +66,8 @@ export interface BrowserController {
   scroll(direction: ScrollDirection): Promise<PageSnapshot>;
   /** Capture the page to a .png file. */
   screenshot(path: string): Promise<{ readonly path: string }>;
+  /** Capture the current page as a base64 PNG (for the local vision model). */
+  screenshotBase64(): Promise<string>;
   /** The element a ref points at in the last snapshot (for the approval draft). */
   describeElement(ref: number): SnapshotElement | undefined;
   /** The current page URL (for the approval draft). */

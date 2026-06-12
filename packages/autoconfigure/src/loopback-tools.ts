@@ -29,6 +29,7 @@ import {
   createStatusMcpServer,
   createTasksMcpServer,
   createTasksRegistryMcpServer,
+  createSearchMcpServer,
   createWebReadMcpServer,
   type MessageApprovalGate
 } from "@muse/mcp";
@@ -93,6 +94,7 @@ export interface LoopbackToolsBundle {
   readonly status: readonly MuseTool[];
   readonly webRead: readonly MuseTool[];
   readonly math: readonly MuseTool[];
+  readonly search: readonly MuseTool[];
 }
 
 export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle {
@@ -229,8 +231,16 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
   // Readable web-page reader — `muse.web.read`. Default-on perception so
   // "summarize this URL" works without a running Chrome or a per-host
   // fetch allowlist; SSRF-guarded to public hosts inside the server.
+  // web_read describes an IMAGE URL with the local vision model when one is
+  // wired (the same model the assembly resolved) — @muse/mcp stays model-free.
+  const webReadVision = deps.modelProvider && deps.defaultModel
+    ? async (input: { readonly imageBase64: string; readonly mimeType: string }) => {
+        const { describeImage } = await import("@muse/agent-core");
+        return describeImage(deps.modelProvider!, { imageBase64: input.imageBase64, mimeType: input.mimeType, model: deps.defaultModel! });
+      }
+    : undefined;
   const webRead = parseBoolean(env.MUSE_WEB_READ_ENABLED, true)
-    ? createLoopbackMcpMuseTools(createWebReadMcpServer())
+    ? createLoopbackMcpMuseTools(createWebReadMcpServer(webReadVision ? { describeImage: webReadVision } : {}))
     : [];
 
   // Deterministic arithmetic — `muse.math.evaluate`. Default-on: a local 8B is
@@ -239,6 +249,21 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
   // always-erroring tool), so it's always safe to expose.
   const math = parseBoolean(env.MUSE_MATH_ENABLED, true)
     ? createLoopbackMcpMuseTools(createMathMcpServer())
+    : [];
+
+  // Web search — `muse.search`. Default-on with a zero-config DuckDuckGo
+  // fallback (no API key); a self-hosted SearXNG instance takes over when
+  // MUSE_SEARXNG_URL is set. A JARVIS-class assistant on a local model has no
+  // built-in web_search, so without this it can't answer "what did Apple
+  // announce today?". Read-only + outbound to the public web like muse.web.read
+  // (MUSE_LOCAL_ONLY governs cloud-LLM egress, not reading the web).
+  const searxngUrl = env.MUSE_SEARXNG_URL?.trim();
+  const searxngEngines = env.MUSE_SEARXNG_ENGINES?.trim();
+  const search = parseBoolean(env.MUSE_SEARCH_ENABLED, true)
+    ? createLoopbackMcpMuseTools(createSearchMcpServer({
+        ...(searxngUrl && searxngUrl.length > 0 ? { searxngUrl } : {}),
+        ...(searxngEngines && searxngEngines.length > 0 ? { searxngEngines } : {})
+      }))
     : [];
 
   return {
@@ -254,6 +279,7 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
     proactive,
     reminders,
     status,
+    search,
     tasks,
     tasksRegistry,
     webRead

@@ -11,6 +11,183 @@
 > Priority: ★ = do next · ◦ = ready · ⏳ = blocked (reason noted).
 > Each item: **what** — why (source) — the smallest verifiable slice.
 
+## Done — loop infrastructure (2026-06-12, 진안-directed)
+
+- ✓→Done **loop-engineering contract + loop-creator skill** — distilled Addy
+  Osmani's "Loop Engineering" into `harness/loop-engineering.md` (6 primitives →
+  Muse seams · verifiable stopping condition `/goal` · 3 failure-mode guards:
+  unattended-verification / comprehension-debt / cognitive-surrender) and a
+  generative `.claude/skills/loop-creator/SKILL.md` that fills the checklist,
+  generates a principle-compliant recurring loop prompt, and registers the cron
+  itself (delegating scheduling to `/loop`). Replaces hand-written ad-hoc loop
+  prompts. FOLLOW-UP: pre-verify the skill end-to-end (theme → generated prompt →
+  registered cron → reported stop method) on a real theme before relying on it.
+
+## ★ Open — chat-gate toolGrounded blanket bypass (PAUSED mid-design, 2026-06-12)
+
+- ◦ **toolGrounded blanket bypass** — chat gate skipped on ANY tool call even
+  when the tool returned nothing; narrow to non-empty groundingSources, keep
+  number/email checks always-on. Spec (brainstorm + grill-hardened) at
+  `docs/superpowers/specs/2026-06-12-chat-gate-toolgrounded-bypass-design.md`:
+  surfaces tool grounding on the `tool-result` stream event (additive, shared
+  helper) so BOTH chat-repl (run() result) and chat-ink (stream) are gated on
+  one contract. Resume at writing-plans → TDD. (audit CLI #4)
+
+## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
+
+The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+Every slice ships its eval/test and never weakens the grounding floor. Ranked:
+
+EXPAND (new reach):
+- ✓→Done **browser_look — describe the current browser page visually (local vision)** — browser_read
+  returns DOM text + elements, so a VISUAL page (chart, graph, map, diagram, image, a rendered error
+  dialog) was invisible to the model. New browser_look captures the page (controller.screenshotBase64,
+  added to the BrowserController interface) and describes it with the local vision model (injected
+  describeImage; the CLI binds it via the same screenVision holder as mac_screen_read — omitted when no
+  model). Completes "vision everywhere": screen (mac_screen_read) · local image (file_read) · image URL
+  (web_read) · browser page (browser_look). Sharpened browser_read with a not-when line (visual content
+  → browser_look) so the model doesn't default to text-read. TDD 4 (well-formed, capture+describe+mime,
+  question passthrough, vision-error); eval:tools browser scenario 9/9 STABLE 3/3 (browser_look vs
+  browser_read on chart/graph prompts); eval:browser-agent 1/1 (act-path untouched); LIVE — a real
+  Chrome page captured and described via gemma4, no error. browser 41, full eval:tools 138/139 (1
+  known synthetic flake), check 0, lint 0.
+- ✓→Done **web_read describes IMAGE URLs via local vision** — web_read read HTML and PDF URLs but
+  rejected image content-types ("not a readable text page"), even though file_read reads LOCAL images
+  via vision. Now an image/* response is read as bytes (10MB cap) and described by an injected
+  describeImage callback (autoconfigure binds it from the assembly's gemma4 in buildLoopbackTools —
+  @muse/mcp stays model-free); absent model ⇒ refused as before. HTML/PDF paths unchanged. Completes
+  the symmetry: file_read (local text/pdf/docx/image) ↔ web_read (URL html/pdf/image). TDD 3 (image
+  via injected vision + mime, refuse-without-vision, HTML still text); an existing non-readable test
+  moved to application/zip so it still exercises that path; LIVE — a real image URL routed through
+  web_read's vision path returned a description (no error). mcp 1648 + autoconfigure 505, check 0,
+  lint 0, precheck:grounding pass^2.
+- ✓→Done **file_read reads IMAGE files via local vision** — file_read classified .png/.jpg/etc. as
+  "unsupported" even though Muse has local vision (describeImage, already used by mac_screen_read). Now
+  an image FileKind (extension + magic-byte sniff: PNG/JPEG/GIF/WEBP) routes the bytes to an injected
+  describeImage callback (the CLI binds it to the assembly's gemma4 via the same lazy holder as
+  mac_screen_read; @muse/mcp stays model-free); absent callback ⇒ refused as before. imageMimeType
+  derives the MIME from extension then magic. Magic-detected images win over a misleading extension.
+  TDD 5 (classify/sniff/route-via-vision/refuse-without-vision/vision-error); eval:file-read image
+  round-trip (routed + mime + refuse-without-vision); LIVE — a real Chrome-rendered receipt PNG read
+  by gemma4 returned "CAFE MUSE / Latte x2 9,000 / Total 9,000 KRW". file_read is now read-any-file
+  (text/pdf/docx/image). mcp 1645, full eval:tools 137/137, check 0, lint 0.
+- ✓→Done **web_read reads PDF URLs (not just HTML)** — `isReadableContentType` rejected
+  application/pdf, so "summarize this report.pdf link" failed with "not a readable text page". Now a
+  PDF content-type response is read as bytes (10MB cap) and extracted via the same pdfjs already used
+  by file_read (injectable `extractPdfText`, default lazy pdfjs); HTML still routes through the text
+  extractor. One-step "summarize this PDF link" instead of download-then-read. TDD 2 (PDF via injected
+  extractor, HTML still uses text path); LIVE — a real Chrome-generated PDF fetched through web_read's
+  pdfjs path returns the body text. mcp 1640, check 0, lint 0.
+- ✓→Done **web search wired into the default agent (muse.search)** — `muse.search` (web search, zero-config
+  DuckDuckGo fallback, SearXNG when MUSE_SEARXNG_URL is set) existed + was tested but was ONLY reachable
+  behind the opt-in MUSE_LOOPBACK_MCP_ENABLED flag, so by default the agent could not answer fresh-web
+  questions. Added it to the always-on buildLoopbackTools bundle (MUSE_SEARCH_ENABLED opt-out), gave the
+  tool KO+EN keywords + use-when/not-when + an example schema (it had none, so it ranked 0 under the diet
+  cap). TDD 3 (bundle present / default-on / opt-out) + eval:tools web-search scenario 4/4 STABLE 3/3
+  (muse.search vs knowledge_search vs web_read); LIVE: `muse ask --with-tools` searched the web and
+  answered with puppeteer 25.1.0. autoconfigure 505, full eval:tools 135/135, check 0, lint 0.
+- ✓→Done **browser: uncapped deterministic matching, capped display** — scan/match cap raised
+  50→150 (BROWSER_MAX_ELEMENTS), model-facing display capped at 40 (BROWSER_DISPLAY_ELEMENTS) with a
+  truncated/shownElements/totalElements + "showing N of M" hint (no silent caps). click/type/find
+  resolve against the FULL set (matcher is code), so a target past #40 still acts. TDD 3 cases
+  (display cap + true total + match-beyond-cap + small-page-not-truncated); smoke:browser long-page
+  case (71st element reachable past the 40 display cap); eval:tools browser 7/7 ×3, eval:browser-agent
+  3/3, check 0, lint 0.
+- ✓→Done **browser: same-origin iframe piercing (observe + act)** — the snapshot walk now descends
+  into same-origin iframe contentDocuments (like shadow roots; cross-origin throws → skipped), so
+  embedded forms/checkout/widgets are visible. The act path went frame-aware: `locateRef` finds the
+  puppeteer Frame holding a ref (main doc incl. shadow via pierce/, else a child frame) and
+  click/type use `frame.locator` — so a click/type on an element INSIDE an iframe acts in its own
+  frame, not the main one. smoke:browser gains a same-origin srcdoc-iframe case (button listed +
+  clicked inside the frame, text flips Paid); eval:browser-agent 3/3 (act-path refactor no
+  regression); browser unit 37, check 0, lint 0. Cross-origin iframes stay out (CDP needs per-frame
+  contexts — honest scope).
+- ✓→Done **file_read: .docx (Word) extraction** — `docx` FileKind + lazy mammoth (extractRawText,
+  injectable like extractPdfText); routes by extension since a .docx is a zip (sniffs unsupported).
+  Description gains the Word cue. TDD 4 cases (classify/resolve/route/description); eval:file-read
+  generates a REAL .docx at runtime (self-contained minimal-zip writer via node:zlib crc32/deflate —
+  no committed binary) → mammoth extracts → tool round-trip; eval:tools file scenario 6/6 STABLE 3/3
+  (KO '계약서 워드 파일' → file_read), full 131/131; check 0, lint 0. Follow-up: .xlsx — see the ⏳ dep-decision blocker in HARDEN.
+- ✓→Done **web_download — save a file from a URL to Downloads** — chose the URL-based design over
+  browser-element download (no controller interface change, no live Chrome, fully deterministic
+  verification). New `web_download` tool: SSRF-guarded (loopback/internal refused via the shared
+  assertPublicHttpUrl), 50MB size cap, basename-only filename (`safeDownloadName` — no path escape).
+  The write-side companion to file_read; file_read then reads/summarizes what was saved. Wired
+  default-on under --with-tools next to file_read. TDD 9 (safeDownloadName 3 + tool 6: well-formed,
+  download+write, SSRF refuse, non-http refuse, size cap no-write, filename sanitize); eval:tools
+  web scenario 6/6 STABLE 3/3 (web_download vs web_read vs search vs knowledge_search); LIVE — a real
+  http server's file fetched and written to disk with matching bytes. mcp 1638, full eval:tools
+  137/137, check 0, lint 0.
+- ◦ **mac: read Calendar.app / Notes.app / Reminders.app** — osascript readers in the mac family,
+  read-risk, so "what's on my calendar today" works without a configured provider.
+
+HARDEN (make existing tools more reliable):
+- ✓→Done **regex_extract ReDoS guard** — the tool ran a model/untrusted-supplied regex with no
+  backtracking protection; a nested-quantifier pattern like `(a+)+$` against just 50 chars hung the
+  whole agent for ~90s (measured by the RED test). JS regex can't be timed out on the main thread,
+  so added `hasNestedUnboundedQuantifier` (the safe-regex star-height heuristic, escape-aware proper
+  paren matching) and reject the pattern BEFORE compile. Catches the common catastrophic class
+  ((a+)+, (.*)*, ([a-z]+){2,}); overlapping-alternation ReDoS ((a|ab)+) is out of scope (still
+  bounded by the 100k input cap) — documented honestly. TDD 5 (flags nested shapes, accepts ordinary
+  patterns the model writes, escaped parens, tool rejects-not-hangs, normal extract still works);
+  tools 242, byte-hygiene 30, check 0, lint 0.
+- ✓→Done **muse.search snippet length cap** — result snippets were sanitized but not LENGTH-bounded, so a
+  SearXNG/DDG engine returning a full paragraph × up to 10 rows blew the local 8B's context. Added a 280-char
+  word-boundary cap (`capSnippet`) on both the DDG and SearXNG paths; titles/urls untouched. A search result is
+  for TRIAGE (pick a URL to read), not the full text. TDD 1 (long snippet capped, short snippet + title intact);
+  mcp 1629, byte-hygiene 30, check 0, lint 0.
+- ✓→Done **web_read readability — strip nav/footer boilerplate** — extractReadableText dropped
+  script/style/head but kept <nav> menus and <footer> (copyright/link farms), so a "summarize this
+  URL" answer grounded on site chrome, not the article. Added nav|footer to the element-strip regex
+  (HTML5 boilerplate by definition). TDD 1 (nav+footer dropped, article kept); live on a realistic
+  article shape (nested footer>nav handled) — only the article body survives. mcp 1628, byte-hygiene
+  30, check 0, lint 0.
+- ✓→Done **browser_open scheme guard (no local-file read via file://)** — browser_open passed any
+  URL straight to page.goto, so `file:///etc/passwd` (or chrome://, view-source:, javascript:, data:)
+  would load+return arbitrary local files — a broader local read than file_read's allowlisted,
+  symlink-guarded path, and a prompt-injection exfil vector. Now `normalizeBrowserUrl` accepts only
+  http(s) (bare host → https; host:port preserved) and refuses every other scheme. TDD 4 cases;
+  eval:browser-agent migrated to a loopback http server (was file://) and still 3/3; smoke unaffected
+  (uses the controller directly). mcp/browser 37, check 0, lint 0.
+- ✓→Done **command_injection pattern over-fired on legit loopback URLs** — dropped the bare `http`
+  trigger so the pattern requires a command VERB (curl|wget|fetch) near an internal host. "open
+  http://localhost:3000 in the browser" / "내 dev 서버 http://127.0.0.1:8080 열어줘" no longer trip the
+  input guard (it was blocking the whole turn); curl/wget/fetch-toward-internal still fire. TDD 3
+  false-positive + 3 true-positive cases; eval:browser-agent reverted off the [::1] workaround back
+  to 127.0.0.1 and still 3/3 (proves the guard fix end-to-end); policy 129, byte-hygiene 30, check 0,
+  lint 0, precheck:grounding pass^2.
+- ✓→Done **file_read symlink-escape guard** — the absolute-path check was LEXICAL only: a file
+  lexically inside the roots could be a symlink to /etc/passwd, and readFile followed it. Now
+  realpath-verifies the target (and the roots — /tmp is itself a symlink on macOS) before reading;
+  a link resolving outside the roots is refused, a realpath error refuses. Optional fsImpl.realpath
+  (default node realpath; a fake fs with no symlinks is a no-op so existing tests are unchanged).
+  TDD 3 cases (candidate-link escape, absolute-path-link escape, identity still reads) + eval:file-read
+  REAL symlink round-trip (a link under Downloads → outside is refused, target content not returned);
+  mcp 1627, check 0, lint 0.
+- ⏳ **file_read .xlsx — BLOCKED on a dep decision (needs 진안)** — the maintained npm xlsx reader
+  is exceljs (~21MB unpacked) and SheetJS `xlsx` on npm is the old CVE-flagged build. A 21MB dep or a
+  fragile hand-rolled OOXML parser is too much to adopt autonomously; surface the choice. (.docx
+  shipped via mammoth ~2MB, which was proportionate.)
+- ◦ **per-tool not-when audit** — every built-in tool description gets a "use when … ; NOT when …"
+  line; measure eager-invocation drop on eval:tools negative cases.
+- ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
+  boundary) to every actuator that persists a model-named field; one eval:tool-arg-grounding case each.
+- ✓→Done **content-sniff over extension** — file_read now classifies by CONTENT
+  (`sniffFileKind`/`resolveFileKind`): `%PDF` magic always wins (a mislabeled `.txt`-that-is-a-PDF
+  routes to the extractor), an extensionless download with text bytes reads (extension-only refused
+  it), a NUL/binary blob is still refused. Extension stays the fast path; the sniff is the
+  correction. Also fixed classifyFileKind's no-dot bug (`split('.').pop()` returned the whole name).
+  TDD 10 cases (sniff + resolve + 2 tool integration); eval:file-read gains the no-ext + mislabeled
+  real-file round-trips; mcp 1616, check 0, lint 0.
+- ✓→Done **web_action URL vetting (SSRF guard)** — the existing assertPublicHttpUrl guard protected
+  muse.web.read (READ) but NOT web_action (state-changing SUBMIT — the higher-risk tool was the
+  unguarded path). Wired it in BEFORE the approval gate/any HTTP. Split the guard into a sync half
+  (assertPublicHttpUrlSync: protocol + literal loopback/private/link-local IP + blocked host — always
+  on, no DNS) and the async DNS-rebinding layer (opt-in via deps.lookup), so literal SSRF
+  (127.0.0.1, 169.254.169.254 metadata, file://) is always blocked and the happy path needs no
+  resolver. TDD 4 SSRF cases + injected-private-resolver (DNS-rebinding); web_action selection
+  unaffected (eval:tools actuator scenario), mcp 1620, check 0, lint 0, precheck:grounding pass^2.
+
 ## Open — 2026-06-10 full-feature audit (3 reviewers; VERIFIED findings → fix queue)
 
 FIXED already: actuator non-TTY fail-close (d7112db9) · hybrid-MMR scale bug · write-run cache
@@ -25,9 +202,19 @@ replay (this commit). Remaining, severity order:
   remindersShifted/remindersRemoved) AND the API DELETE route; CLI re-exports. BONUS: a fired
   reminder rescheduled into the future resets to pending (audit CLI #3) while a still-past shift
   never instant-re-fires. 5/5 incl. loopback integration + no-partial-side-effect. (both audits, HIGH)
-- ◦ **Reminders/tasks stores: unserialized RMW** — daemon tick vs chat add loses writes (last-writer-
-  wins); adopt atomicWriteFile + withFileMutationQueue + withFileLock (the 19-store pattern);
-  fix `${pid}-${Date.now()}` tmp collision. (stores audit #2)
+- ✓→Done (reminders) **Reminders store unserialized RMW → serialized via mutateReminders** — the
+  daemon firing loop read the reminders once then wrote its in-memory copy per delivery, CLOBBERING a
+  reminder a chat `add` wrote after the tick started (the reported daemon-vs-chat lost write). Added
+  `mutateReminders(file, fn)` = read→fn→write under the cross-process `withFileLock`; converted EVERY
+  RMW site (add, snooze, fire, delete in loopback-reminders + the firing loop's per-delivery write,
+  which now re-reads current and marks fired by id, merging with concurrent adds). TDD 3 (two
+  concurrent adds both persist, mutate returns+persists, serial sequence keeps all); mcp 1651, check
+  0, lint 0. FOLLOW-UP: the TASKS store has the same shape — apply mutateTasks next.
+- ✓→Done (tasks) **Tasks store unserialized RMW → serialized via mutateTasks** — same fix as
+  reminders: `mutateTasks(file, fn)` = read→fn→write under the cross-process `withFileLock`;
+  converted EVERY RMW site (add/complete/update/delete in loopback-tasks). mutate-tasks.test.ts
+  proves two concurrent adds both persist (lost-update gone). mcp build + 1654 tests green, lint 0.
+  (stores audit #2, tasks half — completes the reminders FOLLOW-UP)
 - ◦ **Calendar store + credential store: corrupt file → silent full wipe** — adopt the sibling
   stores' quarantine-on-corrupt posture + atomic writes. (stores audit #3)
 - ◦ **toolGrounded blanket bypass** — chat gate skipped on ANY tool call even when the tool returned
