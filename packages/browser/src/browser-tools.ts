@@ -15,7 +15,7 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import type { BrowserController, PageSnapshot } from "./controller.js";
+import { BROWSER_MAX_ELEMENTS, type BrowserController, type PageSnapshot } from "./controller.js";
 import { filterElements, matchElement, type MatchIntent } from "./matcher.js";
 
 export interface BrowserActionDraft {
@@ -35,12 +35,29 @@ export interface BrowserApprovalDecision {
 /** Presents the EXACT page action to the user; returns approve/deny. */
 export type BrowserApprovalGate = (draft: BrowserActionDraft) => Promise<BrowserApprovalDecision> | BrowserApprovalDecision;
 
-function snapshotToJson(snapshot: PageSnapshot): JsonObject {
+function elementsJson(elements: readonly PageSnapshot["elements"][number][]): JsonValue {
+  return elements.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue;
+}
+
+/**
+ * A page can carry hundreds of controls, but a low-spec model drowns in them —
+ * so every response shows at most BROWSER_MAX_ELEMENTS and REPORTS the total +
+ * the next offset rather than silently truncating (no silent caps). Grounding
+ * (click/type by target) still matches the WHOLE set in code.
+ */
+function snapshotToJson(snapshot: PageSnapshot, offset = 0): JsonObject {
+  const total = snapshot.elements.length;
+  const start = Math.min(Math.max(0, offset), total);
+  const page = snapshot.elements.slice(start, start + BROWSER_MAX_ELEMENTS);
+  const end = start + page.length;
   return {
-    elements: snapshot.elements.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+    elements: elementsJson(page),
     text: snapshot.text,
     title: snapshot.title,
-    url: snapshot.url
+    total,
+    url: snapshot.url,
+    ...(start > 0 ? { offset: start } : {}),
+    ...(end < total ? { hasMore: true, nextOffset: end } : {})
   };
 }
 
@@ -124,18 +141,20 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
       description:
         "Re-read the page currently open in Muse's browser — returns the title, page text, and the " +
         "interactive elements. Pass `find` to get only the elements matching a description (e.g. 'search', " +
-        "'sign in') instead of the whole list — handy for locating one control. Use to see what's on the " +
-        "page after it changed — e.g. 'what's on the page now?', 'read this page'. Read-only.",
+        "'sign in') instead of the whole list. A long page reports `total` + `hasMore`/`nextOffset`; pass " +
+        "`offset` to read the next batch. Use to see what's on the page after it changed — e.g. 'what's on " +
+        "the page now?', 'read this page'. Read-only.",
       domain: "browser",
       inputSchema: {
         additionalProperties: false,
         properties: {
-          find: { description: "Optional: only return elements whose label matches this, e.g. 'search box'.", type: "string" }
+          find: { description: "Optional: only return elements whose label matches this, e.g. 'search box'.", type: "string" },
+          offset: { description: "Optional: skip this many elements (paging a long page); use the `nextOffset` from a prior read.", type: "number" }
         },
         required: [],
         type: "object"
       },
-      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "브라우저"],
+      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "more", "브라우저"],
       name: "browser_read",
       risk: "read"
     },
@@ -144,14 +163,17 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
         const snapshot = await deps.controller.snapshot();
         const find = typeof args["find"] === "string" ? args["find"].trim() : "";
         if (find.length === 0) {
-          return snapshotToJson(snapshot);
+          const offset = typeof args["offset"] === "number" && Number.isFinite(args["offset"]) ? Math.trunc(args["offset"]) : 0;
+          return snapshotToJson(snapshot, offset);
         }
         const matched = filterElements(snapshot.elements, find);
+        const shown = matched.slice(0, BROWSER_MAX_ELEMENTS);
         return {
-          elements: matched.map((element) => ({ name: element.name, ref: element.ref, role: element.role })) as unknown as JsonValue,
+          elements: elementsJson(shown),
           matched: matched.length,
           title: snapshot.title,
-          url: snapshot.url
+          url: snapshot.url,
+          ...(matched.length > shown.length ? { hasMore: true } : {})
         };
       } catch (cause) {
         return errorResult(cause);
@@ -175,6 +197,44 @@ export function createBrowserBackTool(deps: BrowserReadToolDeps): MuseTool {
     execute: async (): Promise<JsonObject> => {
       try {
         return snapshotToJson(await deps.controller.back());
+      } catch (cause) {
+        return errorResult(cause);
+      }
+    }
+  };
+}
+
+const SCROLL_DIRECTIONS = ["down", "up", "top", "bottom"] as const;
+
+export function createBrowserScrollTool(deps: BrowserReadToolDeps): MuseTool {
+  return {
+    definition: {
+      description:
+        "Scroll the page in Muse's browser to reveal content that isn't visible yet — below-the-fold or " +
+        "lazily-loaded items (infinite-scroll feeds, long product lists). `direction` is 'down' / 'up' / " +
+        "'top' / 'bottom'. Use when the page text or elements seem cut off, or the user asks to scroll / see " +
+        "more / go to the bottom — e.g. 'scroll down', '더 아래로', '맨 아래로 가줘'. Returns the page after " +
+        "scrolling (new content included). Read-only.",
+      domain: "browser",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          direction: { description: "Where to scroll: 'down', 'up', 'top', or 'bottom'.", enum: [...SCROLL_DIRECTIONS], type: "string" }
+        },
+        required: ["direction"],
+        type: "object"
+      },
+      keywords: ["browser", "scroll", "스크롤", "down", "아래", "up", "위", "bottom", "맨아래", "more", "더보기", "브라우저"],
+      name: "browser_scroll",
+      risk: "read"
+    },
+    execute: async (args): Promise<JsonObject> => {
+      const direction = typeof args["direction"] === "string" ? args["direction"].trim() : "";
+      if (!SCROLL_DIRECTIONS.includes(direction as (typeof SCROLL_DIRECTIONS)[number])) {
+        return { error: `direction must be one of: ${SCROLL_DIRECTIONS.join(", ")}` };
+      }
+      try {
+        return snapshotToJson(await deps.controller.scroll(direction as (typeof SCROLL_DIRECTIONS)[number]));
       } catch (cause) {
         return errorResult(cause);
       }
