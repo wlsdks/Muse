@@ -2,6 +2,9 @@
 
 > comprehension-debt 가드(harness 루프-엔지니어링 §3-2). 진안이 머지 전 읽는 곳.
 > 한 fire = 4줄: 무엇 / 왜 / 리뷰지점 / 리스크. 3 fire마다 리뷰 관문.
+> 각 fire 헤더에 `(skill vX.Y.Z)` 스탬프 — 나중에 fire 결과 ↔ 스킬 버전 대조용
+> ([loop-creator CHANGELOG](../../.claude/skills/loop-creator/CHANGELOG.md)).
+> 이력: fire 1–2 = v1.5.1 · fire 3(리뷰 관문) = v1.6.0 산출 · fire 4+ = v1.6.0.
 
 ---
 

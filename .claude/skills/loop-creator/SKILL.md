@@ -1,7 +1,15 @@
 ---
 name: loop-creator
+version: 1.6.0
 description: Use when 진안 wants to start (register) an autonomous improvement loop on the Muse repo — "루프 돌려줘", "loop 등록", "X를 계속 강화하는 루프", or just a theme to iterate on. Generates a principle-compliant recurring loop prompt from its bundled loop-engineering.md contract AND registers the cron itself, then reports the prompt + cron id + how to stop. The autonomous successor to hand-written ad-hoc loop prompts.
 ---
+
+> **Versioning.** This skill carries a `version` (above). On any change to the
+> skill or its `references/loop-engineering.md` contract, **bump it** (patch =
+> wording, minor = new guard/behavior) and add a `CHANGELOG.md` entry. Stamp the
+> current version into each `loop-digest.md` fire entry (`(skill vX.Y.Z)`) so that
+> after many loops we can correlate fire OUTCOMES ↔ skill version and improve.
+> History: [`CHANGELOG.md`](CHANGELOG.md).
 
 # loop-creator — 원칙을 지키는 자율 루프를 생성하고 등록한다
 
