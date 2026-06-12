@@ -43,6 +43,17 @@
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
 The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+- ✓→Done **web_download post-redirect SSRF re-check** (EXPANSION-scouted): the SSRF guard ran only
+  on the INITIAL url, so a public URL redirecting to a private/link-local host (169.254.169.254
+  metadata, 127.0.0.1) was followed and WRITTEN TO DISK. Now re-applies assertPublicHttpUrl to the
+  final `response.url` AFTER fetch, BEFORE any write (mirrors loopback-web-read + fetch-readable-url —
+  web_download was the only fetch path missing it). Behavioral test (redirect→private = refused +
+  nothing written) RED→GREEN; Opus security-grade verifier PASS. mcp 1668·lint 0.
+- ◦ **SSRF DNS-rebinding: wire a `lookup` at the web-tool call sites** — production (commands-ask.ts)
+  passes no lookup, so the public-URL guards run sync-only: they catch LITERAL private IPs but NOT a
+  redirect/URL to a public hostname that *resolves* to a private IP. Pre-existing across all web
+  fetch tools (initial + redirect guards). Slice = inject a real DNS lookup at the call sites so the
+  async guard resolves+checks. (surfaced by the web_download SSRF fire)
 Every slice ships its eval/test and never weakens the grounding floor. Ranked:
 
 - ✓→Dropped (NOISE, fire 6) **browser-read ungrounded ×7** — the scout's first hit turned out to

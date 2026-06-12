@@ -87,6 +87,15 @@ export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
         if (!response.ok) {
           return { reason: `download failed: HTTP ${response.status.toString()}`, saved: false };
         }
+        // A redirect chain can land on a private host the first guard never saw.
+        if (response.url && response.url !== vetted.url.href) {
+          const finalGuard = deps.lookup
+            ? await assertPublicHttpUrl(response.url, { lookup: deps.lookup })
+            : assertPublicHttpUrlSync(response.url);
+          if (!finalGuard.ok) {
+            return { reason: `redirected to a blocked host: ${finalGuard.error}`, saved: false };
+          }
+        }
         const buf = Buffer.from(await response.arrayBuffer());
         if (buf.byteLength > maxBytes) {
           return { reason: `file is too large (${Math.round(buf.byteLength / 1024 / 1024).toString()}MB > ${Math.round(maxBytes / 1024 / 1024).toString()}MB cap)`, saved: false };

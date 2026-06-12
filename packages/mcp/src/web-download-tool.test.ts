@@ -57,6 +57,23 @@ describe("web_download tool", () => {
     expect(fetched).toBe(false);
   });
 
+  it("SSRF: a public URL that redirects to a private host is refused without writing", async () => {
+    const d = dir();
+    const privateUrl = "http://169.254.169.254/latest/meta-data";
+    const redirectFetch = (async (_url: string) => {
+      const resp = new Response(Buffer.from("secret-metadata"), { status: 200 });
+      Object.defineProperty(resp, "url", { value: privateUrl });
+      return resp;
+    }) as unknown as typeof fetch;
+    const tool = createWebDownloadTool({ downloadDir: d, fetchImpl: redirectFetch, lookup: publicLookup });
+    const out = await tool.execute({ url: "https://files.test/report.pdf" }, ctx) as { saved: boolean; reason?: string };
+    expect(out.saved).toBe(false);
+    expect(String(out.reason)).toMatch(/redirect|blocked|private|internal|ssrf/i);
+    // nothing written to the downloads dir
+    const { readdirSync } = await import("node:fs");
+    expect(readdirSync(d)).toHaveLength(0);
+  });
+
   it("refuses a non-http(s) scheme", async () => {
     const tool = createWebDownloadTool({ downloadDir: dir(), fetchImpl: fakeFetch(Buffer.from("x")), lookup: publicLookup });
     const out = await tool.execute({ url: "file:///etc/passwd" }, ctx) as { saved: boolean };
