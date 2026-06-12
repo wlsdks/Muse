@@ -143,3 +143,13 @@ real fuel accrues. Unit: 2 cases (empty → undefined; counts + top + "+N more")
 REAL muse: `doctor --local` with a seeded unbacked-action shows "✓ weakness
 ledger: 1 recurring agent bug — top: …" and stays SILENT on an empty ledger.
 Pipeline payoff now proactively visible.
+
+## v4 Fire 6 — DRY: chat-repl uses the shared actionToolRan (SLICE SHIPPED)
+
+Last fire moved actionToolRan into @muse/agent-core for the ask path but left
+chat-repl's identical local copy (ACTION_TOOL_RE dup = drift). Removed the local
+copy; chat-repl now imports the shared actionToolRan (identical regex →
+behavior-preserving). Unit: the 2494 cli tests (incl. chat-repl) stay green; the
+shared fn was already live-proven last fire (ask --with-tools → calendar.add →
+detected). REAL muse: `muse chat --local "안녕"` responds normally — the
+refactored chat path loads + runs on the assembled binary. No behavior change.
