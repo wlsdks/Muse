@@ -133,6 +133,12 @@ EXPAND (new reach):
   137/137, check 0, lint 0.
 - ◦ **mac: read Calendar.app / Notes.app / Reminders.app** — osascript readers in the mac family,
   read-risk, so "what's on my calendar today" works without a configured provider.
+  BLOCKER (loop fire, gate FAIL → rolled back): a `mac_reminders_read` reader (injectable-runner,
+  8 behavioral tests, build green) was built but **INERT** — defined+exported yet NEVER wired into
+  the model-exposed set (`apps/cli/src/actuator-tools.ts` where sibling mac read tools register),
+  and no `eval:tools` selection case. A "new tool" slice is NOT a tool DEF alone. NEXT slice = the
+  COMPLETE one: reader + **wire into actuator-tools.ts** + **eval-tool-selection.mjs golden case**
+  (model actually SELECTS it) per tool-calling.md. Verifier caught the silent inertness.
 
 HARDEN (make existing tools more reliable):
 - ✓→Done **regex_extract ReDoS guard** — the tool ran a model/untrusted-supplied regex with no
