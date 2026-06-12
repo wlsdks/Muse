@@ -575,6 +575,24 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## Open — agent core
 
+- ✓→Done **Council consensus-outlier screen (MoA deception robustness, arXiv:2503.05856)** — [2026-06-13,
+  cognition loop fire 28, PAPER-GROUNDED, Fable scout+judge] An A2A council peer is an EXTERNAL untrusted
+  agent; a deceptive/off-topic peer's reasoning flowed straight into `synthesizeCouncilAnswer`'s synthesis
+  prompt and the reverify judge then PASSED it (the lie IS the cited evidence — GROUNDED≠TRUE at the
+  council hand-off). Added pure `screenCouncilOutliers` (per-member mean pairwise Jaccard support over
+  CJK-aware `lexicalTokens`; quarantine below absFloor AND relFloor×median, panel≥3, majority-preserving
+  cap floor((n-1)/2)), run inside `synthesizeCouncilAnswer` after dedupe (prompt + validPeerIds from `kept`;
+  `CouncilAnswer.excludedPeers`). Subtractive on untrusted input; reverify/id-gate/floor unchanged.
+  Scout avoided the DEAD `orchestrateAnswer` seam (zero prod callers) → wired the LIVE council. Fable judge
+  FAILed v1 (inline `\w+` tokenizer ASCII-only → broken for Korean, Muse's primary language: deceptive
+  Korean peer never screened) → fixed to CJK-aware `lexicalTokens` + jaccard(∅)→0 + Korean tests
+  (counterfactual: 9 tests fail on the old tokenizer). agent-core 1815 green.
+- ◦ **Council screen: cross-lingual similarity** — the fire-28 outlier screen uses lexical Jaccard, so a
+  legitimate minority-LANGUAGE peer among a different-language majority has structurally-0 token overlap and
+  is wrongly quarantined (documented limitation). Homogeneous-language panels (the common case) + the
+  security-critical deceptive-peer case work. FIX needs an embedding-based cross-lingual similarity fallback
+  (or a script-disjoint exception) — deferred (needs the embedder at the council seam).
+
 - ✓→Done **Evidence-tallied playbook lifecycle (Memp, arXiv:2508.06433)** — [2026-06-13, cognition
   loop fire 27, PAPER-GROUNDED, Fable scout+judge] Playbook reward was a clamped NET scalar that
   conflated "never used" with "used 10× / 5↑5↓"; deprecation needed a near-pure losing streak;

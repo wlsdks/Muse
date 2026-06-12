@@ -249,12 +249,15 @@ export {
   parseCouncilAnswer,
   produceCouncilReasoning,
   produceGroundedCouncilReasoning,
+  screenCouncilOutliers,
   synthesizeCouncilAnswer,
   verifyCouncilGrounding,
   type CouncilAbstentionOptions,
   type CouncilAnswer,
   type CouncilModelOptions,
-  type CouncilUtterance
+  type CouncilScreenResult,
+  type CouncilUtterance,
+  type OutlierScreenOptions
 } from "./council.js";
 export {
   DEFAULT_ROLES,

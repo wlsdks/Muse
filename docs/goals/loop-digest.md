@@ -422,3 +422,10 @@
 - **왜:** 이 도구의 전체 계약이 "8B가 못 하는 정확한 계산"인데 틀린 숫자가 모델 검증 없이 사용자 답으로 흐름(shared core라 ask/chat arithmetic fast-path까지). EXPANSION 스카웃 발굴. 다양성: 보안×3→decompose→observability 다음 parsing-correctness로 KIND 다양.
 - **리뷰지점:** loopback-math-server.ts:163(parseFloat→Number) + mcp.test.ts(다중-dot→error + 5./.5 컨트롤) RED→GREEN. mcp 1687, check 0, lint 0. Fable-5 검증자 PASS(유효 입력 무회귀 node-검증·shared core 도달·1..2도 수정). runner-up(json.query 프로토타입-체인 walk → Object.hasOwn)을 새 ◦로 backlog 기록.
 - **리스크:** 없음에 가까움 — Number는 parseFloat보다 엄격하나 parseNumber가 이미 digits/dots만 통과시켜 다중-dot 외 발산 없음(검증됨). RATCHET: testFiles 888 무변동(+1 케이스), fabrication 0 유지. grounding floor 무관(산술 파서 correctness, 게이트 무변경).
+
+## [cognition loop] fire 28 — 2026-06-13 · 사이클6 · 테마: 멀티에이전트 robustness (PAPER-GROUNDED)
+
+- **무엇:** **MoA deception robustness (arXiv:2503.05856, 공개)** 적용 — `screenCouncilOutliers`: 패널 합의 대비 outlier(기만/off-topic) peer를 합성 前 격리(per-member 평균 pairwise Jaccard support, absFloor AND relFloor×median, panel≥3, majority-preserving cap). `synthesizeCouncilAnswer`에 dedupe 後 배선(prompt+validPeerIds는 kept만, excludedPeers 추가). DEAD `orchestrateAnswer` 회피, LIVE council seam.
+- **왜:** A2A peer는 외부 untrusted agent — 기만 peer reasoning이 합성에 흘러들면 reverify judge가 "거짓이 곧 인용 증거"라 PASS(GROUNDED≠TRUE 구멍, 6번째 표면). 멀티에이전트 robustness(fire25-27과 다른 KIND).
+- **리뷰지점:** `council.ts`(screen fn + 배선) + `index.ts` + `council.test.ts`. **maker=Sonnet / scout+judge=Fable 5**: scout가 inert seam(orchestrateAnswer dead) 회피 확인. judge **v1 FAIL** — 인라인 `\w+` 토크나이저가 ASCII-only라 **한국어(Muse 주언어)에서 깨짐**(기만 한국어 peer 영영 미screen) 실증 → CJK-aware `lexicalTokens` 재사용 + jaccard(∅)→0 + 한국어 테스트로 수정(counterfactual: old 토크나이저면 9 테스트 fail). agent-core 1815 green.
+- **리스크:** **문서화된 한계** — cross-LANGUAGE 패널(EN 다수 속 정당 KO peer)은 token overlap 0이라 오격리(동종 패널·기만-peer 보안케이스는 정상). embedding 기반 cross-lingual 유사도 필요 → backlog ◦. 격리는 subtractive(floor/reverify 불변). RATCHET: testFiles +0(기존 파일), fabrication 0, 신규 방어 표면(council outlier). 교훈: 유사도/토크나이저 슬라이스는 영어 테스트만으로 green이어도 한국어에서 깨질 수 있음 — CJK 테스트 필수.
