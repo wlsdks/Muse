@@ -49,11 +49,15 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   final `response.url` AFTER fetch, BEFORE any write (mirrors loopback-web-read + fetch-readable-url —
   web_download was the only fetch path missing it). Behavioral test (redirect→private = refused +
   nothing written) RED→GREEN; Opus security-grade verifier PASS. mcp 1668·lint 0.
-- ◦ **SSRF DNS-rebinding: wire a `lookup` at the web-tool call sites** — production (commands-ask.ts)
-  passes no lookup, so the public-URL guards run sync-only: they catch LITERAL private IPs but NOT a
-  redirect/URL to a public hostname that *resolves* to a private IP. Pre-existing across all web
-  fetch tools (initial + redirect guards). Slice = inject a real DNS lookup at the call sites so the
-  async guard resolves+checks. (surfaced by the web_download SSRF fire)
+- ✓→Done **SSRF DNS-rebinding closed** — the web fetch tools (web_download, web_action) had a
+  `deps.lookup ? async : sync` bypass: with no lookup wired (production), the SYNC guard ran, catching
+  only LITERAL private IPs, not a public hostname that *resolves* to a private IP (rebinding). Fix:
+  drop the bypass, always call `assertPublicHttpUrl` (its defaultLookup = node:dns/promises resolves +
+  checks) — so the no-lookup production path now catches rebinding. Hermetic tests: injected
+  privateLookup→refused + a dns-stubbed no-lookup test that the verifier confirmed discriminates the
+  fix (reverting the bypass makes it fail). web_action fixed too. (loopback-web-read was already
+  correct.) mcp 1670·lint 0. Note: this fire FAILED first (test proved NXDOMAIN not rebinding) →
+  test fixed → re-verified PASS.
 Every slice ships its eval/test and never weakens the grounding floor. Ranked:
 
 - ✓→Dropped (NOISE, fire 6) **browser-read ungrounded ×7** — the scout's first hit turned out to

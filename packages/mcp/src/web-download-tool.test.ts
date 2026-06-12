@@ -3,9 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { validateToolDefinitions } from "@muse/tools";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createWebDownloadTool, safeDownloadName } from "./web-download-tool.js";
+
+// Stub the system DNS resolver so the NO-lookup production path (which falls back
+// to the guard's defaultLookup = node:dns/promises) hermetically resolves a
+// public-looking hostname to a PRIVATE IP — the DNS-rebinding case. Only the
+// no-lookup/hostname test hits this; every other test injects an explicit lookup
+// (or uses a literal IP caught before DNS), so this stub doesn't affect them.
+vi.mock("node:dns/promises", () => ({
+  lookup: async () => [{ address: "169.254.169.254", family: 4 }],
+}));
 
 const ctx = { runId: "r", userId: "u1" };
 const dir = () => mkdtempSync(join(tmpdir(), "muse-dl-"));
@@ -53,6 +62,41 @@ describe("web_download tool", () => {
     let fetched = false;
     const tool = createWebDownloadTool({ downloadDir: d, fetchImpl: (async () => { fetched = true; return new Response("x"); }) as unknown as typeof fetch });
     const out = await tool.execute({ url: "http://127.0.0.1/secret" }, ctx) as { saved: boolean; reason?: string };
+    expect(out.saved).toBe(false);
+    expect(fetched).toBe(false);
+  });
+
+  it("SSRF (DNS-rebinding): a public-looking hostname whose lookup RESOLVES to a private IP is refused", async () => {
+    // The rebinding defence: a public-looking name (not a literal private IP, so the
+    // sync guard would wave it through) whose DNS resolves to a private address. The
+    // async guard resolves via `lookup` and refuses on the resolved-private record.
+    const d = dir();
+    let fetched = false;
+    const privateLookup = async () => [{ address: "10.0.0.5", family: 4 }];
+    const tool = createWebDownloadTool({
+      downloadDir: d,
+      fetchImpl: (async () => { fetched = true; return new Response("secret"); }) as unknown as typeof fetch,
+      lookup: privateLookup
+    });
+    const out = await tool.execute({ url: "https://files.example.com/report.pdf" }, ctx) as { saved: boolean; reason?: string };
+    expect(out.saved).toBe(false);            // resolved to a private IP → refused
+    expect(fetched).toBe(false);              // refused before any fetch/write
+    expect(existsSync(join(d, "report.pdf"))).toBe(false);
+  });
+
+  it("SSRF (DNS-rebinding): the NO-lookup PRODUCTION path resolves via defaultLookup (dns stubbed → private) and refuses", async () => {
+    // This is the actual fix: production wires no `lookup`, so the guard must fall
+    // back to defaultLookup (node:dns/promises, stubbed above → 169.254.169.254) and
+    // STILL catch the rebinding. Before the fix this path used the sync guard and
+    // the file was written.
+    const d = dir();
+    let fetched = false;
+    const tool = createWebDownloadTool({
+      downloadDir: d,
+      fetchImpl: (async () => { fetched = true; return new Response("secret"); }) as unknown as typeof fetch
+      // NO lookup — production call-site shape; defaultLookup (stubbed) resolves private
+    });
+    const out = await tool.execute({ url: "https://evil.rebind.example/secret" }, ctx) as { saved: boolean; reason?: string };
     expect(out.saved).toBe(false);
     expect(fetched).toBe(false);
   });
