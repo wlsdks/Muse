@@ -129,9 +129,9 @@ describe("createWebReadMcpServer.read (contract-faithful fake fetch)", () => {
   it("rejects a non-readable content-type", async () => {
     const server = createWebReadMcpServer({
       lookup: publicLookup,
-      fetch: async () => new Response("PNG", { status: 200, headers: { "content-type": "image/png" } })
+      fetch: async () => new Response("ZIPDATA", { status: 200, headers: { "content-type": "application/zip" } })
     });
-    const out = await callRead(server, "https://example.com/img.png");
+    const out = await callRead(server, "https://example.com/archive.zip");
     expect(String(out.error)).toMatch(/not a readable text page/i);
   });
 
@@ -201,5 +201,39 @@ describe("createWebReadMcpServer.read — PDF URLs are extracted, not rejected",
     const out = await callRead(server, "https://example.com/a");
     expect(String(out.text)).toContain("html body");
     expect(String(out.text)).not.toContain("SHOULD NOT BE USED");
+  });
+});
+
+describe("createWebReadMcpServer.read — image URLs are described via local vision", () => {
+  it("reads an image response via the injected vision callback (content-type image/png)", async () => {
+    let seenMime = "";
+    const server = createWebReadMcpServer({
+      lookup: publicLookup,
+      describeImage: async (input) => { seenMime = input.mimeType; return { ok: true, text: "A bar chart showing Q3 revenue up 18%." }; },
+      fetch: async () => new Response(new Uint8Array(Buffer.from([0x89, 0x50, 0x4e, 0x47])), { status: 200, headers: { "content-type": "image/png" } })
+    });
+    const out = await callRead(server, "https://files.example.com/chart.png");
+    expect(out.error).toBeUndefined();
+    expect(String(out.text)).toContain("bar chart");
+    expect(seenMime).toBe("image/png");
+  });
+
+  it("refuses an image URL when no vision callback is wired", async () => {
+    const server = createWebReadMcpServer({
+      lookup: publicLookup,
+      fetch: async () => new Response(new Uint8Array([0xff, 0xd8, 0xff]), { status: 200, headers: { "content-type": "image/jpeg" } })
+    });
+    const out = await callRead(server, "https://files.example.com/photo.jpg");
+    expect(String(out.error)).toMatch(/image|vision|not a readable/i);
+  });
+
+  it("still routes HTML through the text extractor when a vision callback is present", async () => {
+    const server = createWebReadMcpServer({
+      lookup: publicLookup,
+      describeImage: async () => ({ ok: true, text: "SHOULD NOT BE USED" }),
+      fetch: async () => htmlResponse("<title>Doc</title><p>html body</p>")
+    });
+    const out = await callRead(server, "https://example.com/a");
+    expect(String(out.text)).toContain("html body");
   });
 });

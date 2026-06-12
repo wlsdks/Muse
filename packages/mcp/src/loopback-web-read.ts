@@ -24,10 +24,26 @@ export interface WebReadMcpServerOptions {
   readonly extractPdfText?: (data: Buffer) => Promise<string>;
   /** Byte cap for a PDF body (larger than the text cap — PDFs are bigger). Default 10MB. */
   readonly pdfMaxBytes?: number;
+  /**
+   * Local vision callback for IMAGE URLs (bound by the assembly to its
+   * multimodal model). Absent ⇒ an image URL is refused, as before.
+   */
+  readonly describeImage?: (input: { readonly imageBase64: string; readonly mimeType: string }) => Promise<{ readonly ok: boolean; readonly text?: string; readonly error?: string }>;
+  /** Byte cap for an image body. Default 10MB. */
+  readonly imageMaxBytes?: number;
 }
 
 function isPdfContentType(contentType: string | null): boolean {
   return contentType !== null && contentType.toLowerCase().includes("application/pdf");
+}
+
+const IMAGE_CONTENT_TYPES = /^image\/(png|jpe?g|gif|webp|bmp)\b/u;
+
+function imageMimeFromContentType(contentType: string | null): string | undefined {
+  if (contentType === null) return undefined;
+  const m = IMAGE_CONTENT_TYPES.exec(contentType.toLowerCase().trim());
+  if (!m) return undefined;
+  return contentType.toLowerCase().includes("jpg") ? "image/jpeg" : `image/${(m[1] ?? "").replace("jpg", "jpeg")}`;
 }
 
 async function readBytesCapped(response: Response, maxBytes: number): Promise<{ readonly bytes: Buffer; readonly truncated: boolean }> {
@@ -87,6 +103,7 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const extractPdf = options.extractPdfText ?? extractPdfTextWithPdfjs;
   const pdfMaxBytes = options.pdfMaxBytes ?? 10 * 1024 * 1024;
+  const imageMaxBytes = options.imageMaxBytes ?? 10 * 1024 * 1024;
 
   return {
     description: "Built-in readable web-page reader (loopback MCP, SSRF-guarded, public hosts only).",
@@ -145,6 +162,20 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
             } catch (error) {
               return { error: `could not extract PDF text: ${error instanceof Error ? error.message : String(error)}` };
             }
+          }
+          // An image URL ("what's in this chart.png?") is described by the local
+          // vision model — the web analog of file_read reading a local image.
+          const imageMime = imageMimeFromContentType(contentType);
+          if (imageMime !== undefined) {
+            if (!options.describeImage) {
+              return { error: `image URL needs the local vision model, not available in this run (content-type: ${contentType})` };
+            }
+            const { bytes } = await readBytesCapped(response, imageMaxBytes);
+            const described = await options.describeImage({ imageBase64: bytes.toString("base64"), mimeType: imageMime });
+            if (!described.ok || !described.text) {
+              return { error: described.error ?? "the vision model could not read the image" };
+            }
+            return { text: described.text, title: "", truncated: false, url: response.url || guard.url.toString() } satisfies JsonObject;
           }
           if (!isReadableContentType(contentType)) {
             return { error: `not a readable text page (content-type: ${contentType})` };

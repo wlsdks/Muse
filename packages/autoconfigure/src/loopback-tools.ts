@@ -231,8 +231,16 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
   // Readable web-page reader — `muse.web.read`. Default-on perception so
   // "summarize this URL" works without a running Chrome or a per-host
   // fetch allowlist; SSRF-guarded to public hosts inside the server.
+  // web_read describes an IMAGE URL with the local vision model when one is
+  // wired (the same model the assembly resolved) — @muse/mcp stays model-free.
+  const webReadVision = deps.modelProvider && deps.defaultModel
+    ? async (input: { readonly imageBase64: string; readonly mimeType: string }) => {
+        const { describeImage } = await import("@muse/agent-core");
+        return describeImage(deps.modelProvider!, { imageBase64: input.imageBase64, mimeType: input.mimeType, model: deps.defaultModel! });
+      }
+    : undefined;
   const webRead = parseBoolean(env.MUSE_WEB_READ_ENABLED, true)
-    ? createLoopbackMcpMuseTools(createWebReadMcpServer())
+    ? createLoopbackMcpMuseTools(createWebReadMcpServer(webReadVision ? { describeImage: webReadVision } : {}))
     : [];
 
   // Deterministic arithmetic — `muse.math.evaluate`. Default-on: a local 8B is

@@ -17,6 +17,16 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
 Every slice ships its eval/test and never weakens the grounding floor. Ranked:
 
 EXPAND (new reach):
+- ✓→Done **web_read describes IMAGE URLs via local vision** — web_read read HTML and PDF URLs but
+  rejected image content-types ("not a readable text page"), even though file_read reads LOCAL images
+  via vision. Now an image/* response is read as bytes (10MB cap) and described by an injected
+  describeImage callback (autoconfigure binds it from the assembly's gemma4 in buildLoopbackTools —
+  @muse/mcp stays model-free); absent model ⇒ refused as before. HTML/PDF paths unchanged. Completes
+  the symmetry: file_read (local text/pdf/docx/image) ↔ web_read (URL html/pdf/image). TDD 3 (image
+  via injected vision + mime, refuse-without-vision, HTML still text); an existing non-readable test
+  moved to application/zip so it still exercises that path; LIVE — a real image URL routed through
+  web_read's vision path returned a description (no error). mcp 1648 + autoconfigure 505, check 0,
+  lint 0, precheck:grounding pass^2.
 - ✓→Done **file_read reads IMAGE files via local vision** — file_read classified .png/.jpg/etc. as
   "unsupported" even though Muse has local vision (describeImage, already used by mac_screen_read). Now
   an image FileKind (extension + magic-byte sniff: PNG/JPEG/GIF/WEBP) routes the bytes to an injected
