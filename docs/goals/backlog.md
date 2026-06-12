@@ -225,19 +225,12 @@ HARDEN (make existing tools more reliable):
   + buildFollowupScenario in eval-tool-selection.mjs (6 positive + 4 disambiguation cases). Verifier
   confirmed the disambig cases are discriminating + wired. Other families (tasks/reminders/calendar)
   already have not-when. REMAINING: spot-audit any other tool families that lack it.
-- ◦ **per-tool not-when audit (orig)** — every built-in tool description gets a "use when … ; NOT when …"
-  line; measure eager-invocation drop on eval:tools negative cases.
-- ◦ **tool-arg grounding coverage** — PROGRESS (loop fire): `followup.cancel.reason` now grounded
-  (8B can fabricate a cancel reason; server-side default 'agent-cancelled' fallback). Reminders has
-  NO fabricable free-text field (text=user-stated, dueAt=time, recurrence=enum) — honestly pivoted.
-  Done so far: tasks add/update, add_contact, calendar, followup.cancel. Behavioral drop test +
-  verifier traced the wired path. Remaining: audit other actuators' optional free-text fields.
-- ◦ **tool-arg grounding coverage (orig)** — extend `groundedArgs` (the deterministic anti-fabrication
-  boundary) to every actuator that persists a model-named field; one eval:tool-arg-grounding case each.
-  PROGRESS (loop, 2026-06-12): fire 1 `muse.tasks.update.notes` · fire 2 `add_contact.relationship`
-  now grounded (Opus gating-verifier traced BOTH paths — MCP-loopback for tasks, direct-MuseTool for
-  contacts — and confirmed the runtime applies groundedArgs on each). REMAINING actuators to audit:
-  reminders add/update free-text, any other update/edit path with model-named free-text.
+- ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
+  boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
+  DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`
+  (location/notes), `followup.cancel` (reason) — each Opus-verifier-traced to the runtime grounding.
+  REMAINING: spot-audit other update/edit paths' optional free-text (reminders has none fabricable —
+  text=user-stated, dueAt=time, recurrence=enum).
 - ✓→Done **content-sniff over extension** — file_read now classifies by CONTENT
   (`sniffFileKind`/`resolveFileKind`): `%PDF` magic always wins (a mislabeled `.txt`-that-is-a-PDF
   routes to the extractor), an extensionless download with text bytes reads (extension-only refused
