@@ -434,7 +434,7 @@ export {
   type PlanValidationResult,
   type StepExecutionResult
 } from "./plan-execute.js";
-export { renderPlanExemplar, selectPlanExemplar, selectPlanExemplarByRelevance, selectSuccessfulPlanSteps } from "./plan-cache.js";
+export { exemplarFitsToolset, renderPlanExemplar, selectPlanExemplar, selectPlanExemplarByRelevance, selectSuccessfulPlanSteps } from "./plan-cache.js";
 export type { CachedPlan, PlanCacheProvider, SelectPlanExemplarOptions } from "./plan-cache.js";
 
 export {

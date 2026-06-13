@@ -41,7 +41,7 @@ import {
  * are pinned to a single attempt (no double-act).
  */
 const PLAN_STEP_MAX_ATTEMPTS = 2;
-import { renderPlanExemplar, selectSuccessfulPlanSteps, type PlanCacheProvider } from "./plan-cache.js";
+import { exemplarFitsToolset, renderPlanExemplar, selectSuccessfulPlanSteps, type PlanCacheProvider } from "./plan-cache.js";
 import { latestUserPrompt, metadataString } from "./runtime-helpers.js";
 import {
   blockedToolResult,
@@ -380,11 +380,16 @@ async function generatePlan(
   // Agentic Plan Caching (arXiv 2506.14852): inject a similar past plan as a
   // few-shot exemplar so the small local model plans better in one shot.
   // Fail-open — a cache miss/error just means no exemplar.
+  // RAP (arXiv:2402.03610): gate on toolset-fit — a stale exemplar whose steps
+  // reference a tool absent from this turn's registered tools is withheld
+  // (treated as a cache miss). Injecting it would teach the model to emit an
+  // unregistered-tool plan, burning the single PLAN_REPAIR_MAX_ROUNDS round.
   let priorPlanExemplar: string | undefined;
   if (runner.planCacheProvider && userId) {
+    const currentToolNames = new Set((request.tools ?? []).map((t) => t.name));
     try {
       const similar = await runner.planCacheProvider.findSimilarPlan(userId, userPrompt);
-      if (similar) {
+      if (similar && exemplarFitsToolset(similar, currentToolNames)) {
         priorPlanExemplar = renderPlanExemplar(similar);
       }
     } catch {

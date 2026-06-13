@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPlanExemplar, selectPlanExemplar, selectSuccessfulPlanSteps, type CachedPlan } from "../src/index.js";
+import { exemplarFitsToolset, renderPlanExemplar, selectPlanExemplar, selectSuccessfulPlanSteps, type CachedPlan } from "../src/index.js";
 
 const plan = (prompt: string, tool: string): CachedPlan => ({
   prompt,
@@ -75,5 +75,41 @@ describe("renderPlanExemplar — format a past plan as a planning few-shot", () 
     expect(out).toContain("summarize notes");
     expect(out).toContain("notes_search");
     expect(out).toContain("\"tool\"");
+  });
+});
+
+describe("exemplarFitsToolset — RAP retrieval-side toolset-fit gate (arXiv:2402.03610)", () => {
+  const twoStepPlan: CachedPlan = {
+    prompt: "search the web and save notes",
+    steps: [
+      { args: { query: "weather" }, description: "search", tool: "web_search" },
+      { args: { content: "sunny" }, description: "save", tool: "notes_add" }
+    ]
+  };
+
+  it("positive: all exemplar tools present in availableToolNames → true", () => {
+    const available = new Set(["web_search", "notes_add", "calendar_add"]);
+    expect(exemplarFitsToolset(twoStepPlan, available)).toBe(true);
+  });
+
+  it("negative (discriminator): one tool absent from availableToolNames → false", () => {
+    // web_search NOT registered in this turn; notes_add is.
+    const available = new Set(["notes_add", "calendar_add"]);
+    expect(exemplarFitsToolset(twoStepPlan, available)).toBe(false);
+  });
+
+  it("empty-steps exemplar → false (no steps to validate = no fit)", () => {
+    const emptyPlan: CachedPlan = { prompt: "something", steps: [] };
+    const available = new Set(["web_search", "notes_add"]);
+    expect(exemplarFitsToolset(emptyPlan, available)).toBe(false);
+  });
+
+  it("counterfactual: same exemplar, toolset WITH the tool → true; WITHOUT → false", () => {
+    const singleStepPlan: CachedPlan = {
+      prompt: "search web",
+      steps: [{ args: {}, description: "search", tool: "web_search" }]
+    };
+    expect(exemplarFitsToolset(singleStepPlan, new Set(["web_search", "notes_add"]))).toBe(true);
+    expect(exemplarFitsToolset(singleStepPlan, new Set(["notes_add"]))).toBe(false);
   });
 });

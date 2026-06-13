@@ -130,6 +130,29 @@ export async function selectPlanExemplarByRelevance(
   return best;
 }
 
+/**
+ * RAP (arXiv:2402.03610): retrieved experience is useful only when it
+ * corresponds to the agent's CURRENT situation — here, the available tool set.
+ * A cached plan whose steps reference a tool absent from the current turn's
+ * registered tools cannot be validly executed, so injecting it as a planning
+ * exemplar steers the local model toward an unregistered tool (→ validatePlan
+ * failure, PLAN_REPAIR_MAX_ROUNDS=1 wasted). Gate the exemplar on toolset-fit
+ * before injection; a mismatch is treated as a cache miss (fail-open).
+ *
+ * Distinct from the write-side fix (backlog d, recording only successful steps):
+ * this is the RETRIEVAL side — withhold a stale exemplar whose tools no longer
+ * match the current turn's context.
+ */
+export function exemplarFitsToolset(
+  plan: CachedPlan,
+  availableToolNames: ReadonlySet<string>
+): boolean {
+  if (plan.steps.length === 0) {
+    return false;
+  }
+  return plan.steps.every((step) => availableToolNames.has(step.tool));
+}
+
 const MAX_EXEMPLAR_CHARS = 800;
 
 export function renderPlanExemplar(plan: CachedPlan): string {

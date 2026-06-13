@@ -123,6 +123,88 @@ describe("Agentic Plan Caching wired into plan-execute (arXiv 2506.14852)", () =
   });
 });
 
+// RAP toolset-fit gate (arXiv:2402.03610): a stale exemplar whose tool is not
+// registered in the current turn must be withheld (treated as a cache miss).
+describe("RAP exemplar toolset-fit gate — retrieval-side withheld when tool unavailable (arXiv:2402.03610)", () => {
+  // Runtime exposes only notes_search. The cached plan references web_search (stale).
+  function runtimeNotesOnly(provider: ModelProvider, planCacheProvider: PlanCacheProvider) {
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: { description: "Search notes", inputSchema: { type: "object" }, name: "notes_search", risk: "read" as const },
+        execute: async () => ({ hits: ["note"] })
+      }
+    ]);
+    return createAgentRuntime({ modelProvider: provider, planCacheProvider, toolRegistry });
+  }
+
+  const staleCached: CachedPlan = {
+    prompt: "search the web for weather",
+    steps: [{ args: { query: "weather" }, description: "search web", tool: "web_search" }]
+  };
+
+  it("stale exemplar (tool not in current turn) → planning prompt omits the exemplar", async () => {
+    const requests: ModelRequest[] = [];
+    const provider: PlanCacheProvider = {
+      findSimilarPlan: async () => staleCached,
+      recordPlan: async () => undefined
+    };
+    const runtime = runtimeNotesOnly(
+      sequenceProvider([
+        planResponse([{ args: { query: "weather" }, description: "find notes", tool: "notes_search" }]),
+        answerResponse("Here is the weather info.")
+      ], (request) => requests.push(request)),
+      provider
+    );
+
+    await runtime.run({
+      messages: [{ content: "search web for weather", role: "user" }],
+      metadata: { agentMode: "plan_execute", userId: "stark" },
+      model: "provider/model",
+      runId: "rap-stale-withheld"
+    });
+
+    const planningSystem = requests[0]?.messages.find((m) => m.role === "system")?.content ?? "";
+    // The stale exemplar must NOT appear in the planning prompt.
+    expect(planningSystem).not.toContain("[Similar Past Plan]");
+    expect(planningSystem).not.toContain("web_search");
+  });
+
+  it("non-vacuity: same exemplar but current tools include the tool → exemplar IS injected", async () => {
+    // Runtime now exposes web_search (the tool the exemplar uses).
+    const toolRegistry = new ToolRegistry([
+      {
+        definition: { description: "Search web", inputSchema: { type: "object" }, name: "web_search", risk: "read" as const },
+        execute: async () => ({ results: [] })
+      }
+    ]);
+    const requests: ModelRequest[] = [];
+    const provider: PlanCacheProvider = {
+      findSimilarPlan: async () => staleCached,
+      recordPlan: async () => undefined
+    };
+    const runtime = createAgentRuntime({
+      modelProvider: sequenceProvider([
+        planResponse([{ args: { query: "weather" }, description: "search web", tool: "web_search" }]),
+        answerResponse("Weather found.")
+      ], (request) => requests.push(request)),
+      planCacheProvider: provider,
+      toolRegistry
+    });
+
+    await runtime.run({
+      messages: [{ content: "search web for weather", role: "user" }],
+      metadata: { agentMode: "plan_execute", userId: "stark" },
+      model: "provider/model",
+      runId: "rap-fit-injected"
+    });
+
+    const planningSystem = requests[0]?.messages.find((m) => m.role === "system")?.content ?? "";
+    // Tool is registered → exemplar IS present.
+    expect(planningSystem).toContain("[Similar Past Plan]");
+    expect(planningSystem).toContain("web_search");
+  });
+});
+
 // AWM outcome-conditioning: only steps from a SUCCESSFUL trajectory are cached.
 describe("AWM outcome-conditioned plan caching (arXiv:2409.07429)", () => {
   // Two tools: step_ok always succeeds; step_fail returns an effect-failed output.
