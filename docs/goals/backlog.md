@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ decompose @muse/cli: extracted weather+headlines external-data cluster (resolveTodayWeatherLine/formatWeatherLine/resolveTodayFeedHeadlines/formatHeadlines + cap) commands-today -> commands-today-feeds.ts (1397->1327 LOC; re-export keeps 2626 tests green) — codebase-quality fire 48
 - ✓ cohere @muse/autoconfigure: deduped local isRecord type-guard onto canonical @muse/shared isRecord (byte-identical; dups 4->3; voice/agent-core remain hard) — codebase-quality fire 47
 - ✓ reminders.fire no-collateral-damage: a failed fire (ambiguous word OR unknown ref) now asserted to flip NO reminder's status (all stay pending, deep-equal) — mutation-verified (guess-fire makes only this test RED, clear/snooze tests stay green); COMPLETES the reminders destructive-verb no-collateral parity (clear ✓83, snooze ✓84, fire ✓85) — tool-hardening fire 85
 
