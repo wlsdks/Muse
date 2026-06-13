@@ -66,12 +66,14 @@
 ## GROUNDING INTEGRITY theme — open
 
 - ◦ untrusted-only provenance e2e firing-rate (ask AND chat) — the untrusted-only cue on both the ask (`untrustedOnlyGroundingNotice`, fire 1) and chat (`untrustedOnlyChatNotice`, fire 3) surfaces is unit-pinned, but production firing depends on the model citing tool sources as `[from <src>]`. Measure/repair the real firing rate via `eval:grounding-delta` on a `--with-tools` poisoned-source case; if firing is too low, make the cue depend on tool-only grounding directly (toolGrounded + no trusted-note coverage) rather than citation presence. (scouted grounding-integrity fire 1, broadened fire 3)
+- ◦ council/reflection judge k-sample self-consistency — verifyCouncilGrounding/verifyReflectionsGrounding gate on a SINGLE judge call, unlike recall's `verifyGroundingWithReverify` (reverifySamples k with dissent→fail-close). A flaky YES on a borderline synthesis/reflection survives. Add opt-in k-sampling with all-must-agree (pass^k) to both, mirroring the recall reverify path. (scouted grounding-integrity fire 4)
 
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
 - ✓ untrusted-only provenance marker on grounded ask answers — wired the dead `groundedOnUntrustedOnly` grounded≠true mitigation into the `muse ask` verdict path (re-export + `untrustedOnlyGroundingNotice` + verdict wiring); faithful answers resting only on untrusted MCP/web sources now surface a scrutiny cue, label stays "grounded", floor untouched — grounding-integrity fire 1
 - ✓ distill-queue drain-idempotency + grounding-fence invariants pinned — the unattended distill-consumer's "dud/fail-soft event is drained not jammed, writes zero fabricated strategies" safety guarantees were untested; added 2 mutation-verified OUTCOME tests over the real file-backed stores — grounding-integrity fire 2
 - ✓ untrusted-only provenance parity on the chat surface — extended fire 1's defense to `finalizeGatedChatAnswer` (every conversational surface's shared pipeline): toolEvidence now tagged `trusted:false` + `untrustedOnlyChatNotice` cue when a faithful chat answer rests only on untrusted tool sources; purely additive, fabrication floor untouched — grounding-integrity fire 3
+- ✓ fail-close empty-evidence on council + reflection judge gates — verifyCouncilGrounding/verifyReflectionsGrounding called the judge with empty evidence and KEPT the claim on YES (fail-OPEN floor leak, no deterministic pre-gate); now fail-close without consulting the judge when evidence is empty (red-without-fix verified) — grounding-integrity fire 4
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
 - ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
