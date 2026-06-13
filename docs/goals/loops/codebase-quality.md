@@ -237,3 +237,35 @@ ratchet: testFiles 928 · fabrication 0 · groundedSurfaces 27 · isRecord dups 
   fire's own commit (`git show <commit>` / merge-base), never `git diff main`.** Cron ④b line fixed.
 - **Risk:** none. Remaining isRecord dedup (8 defs in tools/auth/voice/model/agent-core/
   autoconfigure/api) recorded as a follow-up backlog ◦.
+
+## fire 14 · 2026-06-13 · loop-creator v1.14.0 · e13d7304
+meta: value-class=refactor · pkg=@muse/cli · kind=decompose · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 930 · fabrication 0 · groundedSurfaces 27 · commands-doctor 1234→1121 LOC
+- **What:** first decompose of the god-file commands-doctor.ts (orig review finding #3) — extracted
+  the 5 config/env classifiers (resolveMuseEnvPath, classifyMcpServersField, classifyWebWatchConfig,
+  classifyHomeAlertsConfig, resolveDoctorWatchIntervalMs) into a cohesive sibling
+  commands-doctor-config.ts (deps: isRecord@shared + webWatchesFromConfig/parseHomeAlertChecks@mcp).
+  import+re-export; dropped the now-orphaned mcp imports; added a config-module test (5).
+- **Why:** decompose KIND (first time) + finding #3 (oversized CLI). Unblocked by fire 13
+  (isRecord→shared removed the entangling dep).
+- **Review point:** ④b judged the COMMIT (`git show e13d7304`, the fixed diff-base) → PASS:
+  byte-identical bodies, closed deps, no cycle/orphan, 3 files, cli build 0 / lint 0 / 77 doctor
+  tests / 5 config tests. chat-ink-render full-check failure was a CPU-contention flake (40/40 isolated).
+- **Risk:** none. commands-doctor still ~1121 LOC — the check-cluster (modelEnvCheck/localOnlyCheck/
+  notesIndexHealth/… returning LocalCheck) is a follow-up decompose ◦.
+
+## fire 15 · 2026-06-13 · loop-creator v1.14.0 · 2d9754e9
+meta: value-class=refactor · pkg=@muse/cli · kind=decompose · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 931 · fabrication 0 · groundedSurfaces 27 · commands-doctor 1121→1073 LOC
+- **What:** continued the commands-doctor decompose — extracted the 3 PURE health checks
+  (messagingConfigCheck, notesIndexHealth, episodeIndexHealth) into sibling commands-doctor-checks.ts
+  (zero imports). import+re-export; fixed 2 misplaced JSDocs (notesIndexHealth's was stacked above
+  messagingConfigCheck; removal also restored embedModelCheck's doc placement). Added checks test (10).
+- **Why:** decompose KIND (finding #3, oversized CLI); pure subset = clean closed set (the heavier
+  check-orchestration cluster with runtime deps stays — deferred).
+- **Review point:** ④b judged the commit (`git show 2d9754e9`) → PASS: byte-identical bodies, docs
+  correctly paired + embedModelCheck doc preserved, zero imports/no cycle, 3 files, cli build 0 /
+  lint 0 / pnpm check 0 (clean) / 85 doctor+checks tests.
+- **Risk:** none. commands-doctor still ~1073 LOC — the LocalCheck-orchestration cluster
+  (modelEnvCheck/localOnlyCheck/ollamaPerf/selfLearning/embedModelCheck, mixed w/ runtime deps) is a
+  further decompose ◦ (needs runtime-dep handling).
