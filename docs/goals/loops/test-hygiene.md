@@ -85,3 +85,11 @@ ratchet: testFiles 941→942 (새 파일 1) · netCoverage +2 branch (tomorrow·
 - **왜:** judge가 rubber-stamp가 아니라 진짜 가짜를 잡는지 주기적 검증(maker≠judge 보상통제). + day-hint는 채팅 확인 메시지에 노출되는 시간 표기.
 - **어떻게-증명(MUTATION-FIRST):** 드릴 — inert 테스트가 mutation-immune임을 결정적으로 보임. 슬라이스 — `days===1`→`days===999` 시 tomorrow RED, `in ${days} days`→`days+1` 시 in-3-days RED(judge 독립 재현), 복원 2/2 GREEN. TZ-robust(judge가 12개 zone+DST 검증). ④b judge **VERDICT: PASS**(단 내 3번째 케이스 unparseable-echo는 `formatReminderDueLocal` 별칭으로 이미 정밀 커버 → judge 지적 후 **중복 케이스 제거**, 위생 루프가 중복 안 싣도록).
 - **리스크:** 내 슬라이스 mcp green + judge PASS. 단 full `pnpm check`는 **무관·진짜 회귀로 red** — `apps/cli/src/actuator-tools.test.ts`의 add_contact arg-grounding 2케이스 실패(사용자가 *말한* 전화번호가 드롭됨). 격리+클린리빌드 후에도 fail = stale-dist 아님. ★원인 커밋 `5ec47842 fix(agent-core): groundToolArguments... (cognition loop fire 21)` — anti-fabrication 게이트가 grounded 값을 과드롭하는 **핵심-edge 회귀**. cognition 루프 도메인이라 내가 그들 의도적 변경을 안 고침(blocker로 backlog 기록, 소유 루프가 수정). 내 mcp 추가는 독립적이라 커밋·머지(main 이미 red).
+
+## fire 10 · 2026-06-13 · skill v1.14.0 · d09f864c
+meta: kind=prune · pkg=@muse/model · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 943→942 (−1 중복 삭제, judge 승인) · netCoverage 0 (499 경계 src/로 이식) · fabrication 0 · pnpm check FULL GREEN
+- **무엇:** model 이중-실행 중복 제거 — `isRetryableHttpStatus`를 두 파일이 테스트(`src/provider-base.test.ts` 8케이스 + `test/is-retryable-http-status.test.ts` 4케이스, 둘 다 돎). 더 완전한 `src/`(>=600·non-finite·ModelProviderError 추가)를 남기고 lesser `test/` 삭제. 단 `test/`만 가진 유니크 케이스 `499→false`(5xx 하한 경계)를 먼저 `src/`의 4xx 리스트에 **이식**.
+- **왜:** 같은 함수를 두 파일이 매 run 중복 테스트(model double-run). fire-4 교훈: lesser 파일도 유니크 경계를 가질 수 있어 case-by-case 대조 필수.
+- **어떻게-증명(MUTATION-FIRST PRUNE):** `status >= 500`→`>= 499` 변형 시 이식한 499 케이스가 RED(삭제 파일이 지키던 하한 경계를 src/가 그대로 잡음), 복원 8/8 green. ④b judge가 삭제 파일의 *모든* assertion이 src/에 subsumed + 양쪽 경계(499 하한·600 상한) mutation-caught 재확인 후 **VERDICT: PASS**.
+- **리스크:** 소스 무변경. ★LESSON: `pnpm check` 전 whole-tree `rm -rf dist tsconfig.tsbuildinfo`는 빌드-순서 race 유발(의존 패키지가 dep dist를 test 중 못 찾아 "Failed to resolve @muse/model" 4파일 false-fail) → `pnpm -r build` 먼저 OR `rm` 없이 `pnpm check`만. 재실행으로 GREEN 확정([[project_stale_dist_from_loop]]).
