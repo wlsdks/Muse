@@ -175,6 +175,7 @@
 - ◦ NOTE (surfaces fire 15 scout): desktop MuseDesktopCore pure-module vein is thinning — VoiceGate/CompanionPrefs/Sprite*/Localization/AnswerPresentation all verified correct. Next `desktop` turn should rotate to web/cli unless a fresh defect surfaces.
 - ✓ web Calendar `dayLabel` derived "tomorrow" as now+86.4M ms, mislabeling events on DST-transition days (23h/25h) + corrupting byDay grouping; derive from the calendar date `new Date(y,m,d+1)` (DST-safe) — surfaces fire 16
 - ◦ NOTE (surfaces fire 16 scout): web `@muse/web` genuine-defect vein also thinning — formatters/guards/a11y/empty-states largely correct after fires 1/4/7/10/13/16. Lean to `cli` next; revisit web for clear-value UX/capability adds.
+- ✓ `muse tasks list` --help said "newest-first" but the list sorts by due date (compareTasksByDueDate, intentional) — corrected the description to "by due date (soonest first; undated last)"; +JUDGE-DRILL (verifier FAILed an order-only inert test, PASSed the real description RED→GREEN lock) — surfaces fire 17
 - ✓ `upcoming_birthdays` agent tool — conversational "whose birthday is coming up?" (resolveUpcomingBirthdays was CLI/brief-only, no agent tool) — tool-hardening fire 47
 - ✓ `on_this_day_notes` agent tool — conversational date-cued note recall (muse on-this-day was CLI-only; pure recall logic moved to @muse/mcp, CLI re-exports) — tool-hardening fire 48
 - ✓ `feeds_search` agent tool — conversational watched-feed archive search (CLI-only + only knowledge_search covered it, off by default → default-posture gap) — tool-hardening fire 49

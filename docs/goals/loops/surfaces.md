@@ -147,3 +147,12 @@ ratchet: testFiles 955 (+1) · web tests 27/27 (+3) · fabrication 0 · self-eva
 - **왜**: 실제 입력(America/Los_Angeles, spring-forward 전야)에서 Sun Mar 8 이벤트가 "tomorrow" 대신 generic, Mon Mar 9가 잘못 "tomorrow"로. 좁지만 실제(DST 존, 연 ~2일) 버그.
 - **리뷰지점**: `Date(y,m,d+1)`은 오버플로(월말/연말) 정규화 + 로컬존 존중. 테스트는 `process.env.TZ` 고정(@muse/web은 node타입 없어 `declare const process`로 타입만 충족, 런타임 node) + fake timers. Today/generic 분기 무변.
 - **리스크**: 없음(derivation 1줄 + export, byDay 소비자 transitively 수혜, 독립 Opus judge가 *derivation만 revert*로 DST RED 입증·TZ pin 유효·build green 검증 후 PASS, web 27/27).
+
+## fire 17 · 2026-06-13 · skill v1.14.0 · <commit> · ★JUDGE-DRILL
+meta: surface=cli · value-class=micro-fix · pkg=@muse/cli · kind=help-vs-behavior+judge-drill · verdict=PASS · firesSinceDrill=0 (reset)
+ratchet: cli tests 2618/2618 (tasks +2) · fabrication 0 · self-eval exit 0 · ★verifier 신뢰성 재입증(inert order-only→FAIL, real description-lock→PASS)
+
+- **무엇**: `muse tasks list` `.description()`이 "newest-first"라 했지만 코드는 due-date 정렬(`compareTasksByDueDate`, 의도적) — help-vs-behavior 모순. description을 "by due date (soonest first; undated last)"로 교정. **이 fire는 JUDGE-DRILL**(allPASS≥8): 먼저 *순서-only inert 테스트*(리스트 순서만 검증 → 구-help 그대로여도 통과) 주입 → 독립 Opus judge가 description revert로 **FAIL 입증** → 롤백 → 진짜 테스트(`.description()`이 /due date/ 포함·/newest-first/ 불포함 = RED→GREEN 락 + 순서 보조)로 교체 → judge PASS.
+- **왜**: consecutive allPASS=8로 검증자 신뢰성 재점검 필요(maker=judge 보상통제). 동시에 help-text 거짓은 실제 사용자-노출 모순.
+- **리뷰지점**: 락은 `.description()`(=`--help` 출력) 문자열 — 내부 상수 아닌 사용자 표면. 새 텍스트는 `compareTasksByDueDate`(soonest-first·undated-last)와 정확히 일치(새 거짓 아님). 순서 테스트만으로는 help-fix를 못 잠금(드릴이 입증).
+- **리스크**: 없음(description 1줄 + 2 테스트, 다른 명령 무변, 독립 Opus judge 2회(inert FAIL→real PASS, 둘 다 revert로 실증) 검증, cli 2618/2618).

@@ -324,3 +324,56 @@ describe("formatOpenLoops — Zeigarnik open-loops readout (C4)", () => {
     expect(out).toContain("--due");
   });
 });
+
+describe("muse tasks list — help text describes the actual order", () => {
+  const prev = process.env.MUSE_TASKS_FILE;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.MUSE_TASKS_FILE;
+    else process.env.MUSE_TASKS_FILE = prev;
+  });
+
+  function listCommand(): Command {
+    const io = { stderr: () => {}, stdout: () => {} };
+    const helpers: TasksCommandHelpers = {
+      apiRequest: async () => { throw new Error("unused"); },
+      writeOutput: () => {}
+    };
+    const program = new Command();
+    registerTasksCommands(program, io, helpers);
+    const tasks = program.commands.find((c) => c.name() === "tasks");
+    const list = tasks?.commands.find((c) => c.name() === "list");
+    if (!list) throw new Error("tasks list command not registered");
+    return list;
+  }
+
+  // RED→GREEN lock for the fix itself: the --help text must state the real
+  // sort (by due date) and not the false "newest-first" it used to claim.
+  it("description states the real sort (by due date), not the false 'newest-first'", () => {
+    const description = listCommand().description();
+    expect(description).toMatch(/due date/i);
+    expect(description).not.toMatch(/newest-first/i);
+  });
+
+  it("and the --local --json order matches that claim (soonest-due first)", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-tasks-order-")), "tasks.json");
+    process.env.MUSE_TASKS_FILE = file;
+    // A is created earlier but due SOONER; B is newest but due LATER.
+    const seed: PersistedTask[] = [
+      { createdAt: "2026-06-10T00:00:00.000Z", dueAt: "2026-06-15T00:00:00.000Z", id: "A", status: "open", title: "a" },
+      { createdAt: "2026-06-13T00:00:00.000Z", dueAt: "2026-06-20T00:00:00.000Z", id: "B", status: "open", title: "b" }
+    ];
+    await writeTasks(file, seed);
+    const out: string[] = [];
+    const io = { stderr: () => {}, stdout: (m: string) => out.push(m) };
+    const helpers: TasksCommandHelpers = {
+      apiRequest: async () => { throw new Error("apiRequest must not be called in --local mode"); },
+      writeOutput: (_io, value) => out.push(JSON.stringify(value))
+    };
+    const program = new Command();
+    program.exitOverride();
+    registerTasksCommands(program, io, helpers);
+    await program.parseAsync(["node", "muse", "tasks", "list", "--local", "--json"]);
+    const payload = JSON.parse(out.join("")) as { tasks: { id: string }[] };
+    expect(payload.tasks.map((t) => t.id)).toEqual(["A", "B"]);
+  });
+});

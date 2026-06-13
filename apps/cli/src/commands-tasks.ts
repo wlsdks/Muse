@@ -174,7 +174,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
 
   tasks
     .command("list")
-    .description("List tasks newest-first, filter by status (--local skips the API)")
+    .description("List tasks by due date (soonest first; undated last), filter by status (--local skips the API)")
     .option("--status <status>", "Status filter: open (default), done, or all", "open")
     .option("--search <text>", "Only tasks whose title or notes contains this text (case-insensitive)")
     .option("--tag <label>", "Only tasks carrying this tag (case-insensitive)")
