@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -46,6 +46,10 @@ import { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingAction
 export { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy };
 import { diversifyAskChunks, notesGroundingFraming } from "@muse/recall";
 export { diversifyAskChunks, notesGroundingFraming };
+import { askOutcomeLabel, askWeaknessAxis, createStageTimer, recordAskWeakness, recordAskWeaknessResolved } from "@muse/recall";
+import type { AskWeaknessAxis } from "@muse/recall";
+export { askOutcomeLabel, askWeaknessAxis, createStageTimer, recordAskWeakness, recordAskWeaknessResolved };
+export type { AskOutcome, AskWeaknessAxis, AskWeaknessRecorderDeps, AskWeaknessResolverDeps } from "@muse/recall";
 export type { FileEntry, IndexChunk, ScoredChunk } from "@muse/recall";
 import type { FileEntry, IndexChunk } from "@muse/recall";
 
@@ -112,104 +116,6 @@ export const ACTION_GUIDE =
 
 
 
-/**
- * The outcome label lifted onto a cli.local run-log trace. A refusal is an
- * `abstain` (the gate held — distinct from an answer that failed the rubric),
- * otherwise the rubric verdict passes through; `null` means the verdict never
- * ran this turn (json mode / vision skip).
- */
-/**
- * Wall-clock stage accumulator for the ask pipeline — the first per-stage
- * latency breakdown (retrieval vs generation vs verdict), recorded onto the
- * run-log trace so the next performance lever is data-driven, not assumed.
- */
-export function createStageTimer(now: () => number = () => Date.now()): {
-  readonly mark: (stage: string) => void;
-  readonly timings: () => Record<string, number>;
-} {
-  const startedAt = now();
-  let last = startedAt;
-  const stages: Record<string, number> = {};
-  return {
-    mark: (stage) => {
-      const at = now();
-      stages[stage] = (stages[stage] ?? 0) + (at - last);
-      last = at;
-    },
-    timings: () => ({ ...stages, totalMs: now() - startedAt })
-  };
-}
-
-export type AskOutcome = "abstain" | "grounded" | "ungrounded" | null;
-
-export function askOutcomeLabel(args: {
-  readonly refusal: boolean;
-  readonly verdict: "grounded" | "ungrounded" | null;
-}): AskOutcome {
-  if (args.refusal) return "abstain";
-  return args.verdict;
-}
-
-/**
- * Whetstone fuel: the weakness axis (if any) an ask OUTCOME signals. `abstain`
- * (the gate held — couldn't ground the query in the user's corpus) and
- * `ungrounded` (an answer the rubric flagged as not backed) both mean the agent
- * couldn't answer this query from the user's own notes — a `grounding-gap`
- * worth logging as real-usage fuel (mirrors chat-repl's refusal → grounding-gap).
- * `grounded` and `null` (json/vision skip) are not failures.
- */
-export type AskWeaknessAxis = "grounding-gap" | "unbacked-action";
-
-/**
- * Whetstone fuel: the weakness axis (if any) an ask turn signals. Mirrors
- * chat-repl's precedence — an `unbacked-action` (the answer CLAIMED a tool
- * action the user asked for, but no actuator ran: a false promise) takes
- * precedence; otherwise `abstain` / `ungrounded` is a `grounding-gap`.
- *
- * A `grounding-gap` is a RECALL knowledge gap (the fix is "add a note"). An
- * ACTION request (`isActionRequest`) the ask path couldn't fulfil is NOT a
- * knowledge gap — it's either an unbacked-action (a false claim) or just "ask
- * couldn't act" (honest offer) — so it must NOT be logged as a grounding-gap, or
- * it pollutes the user-remediable fuel with "add a note about 치과 예약" nonsense
- * (a real probe recorded exactly that). `grounded` / `null` are not failures.
- */
-export function askWeaknessAxis(
-  outcome: AskOutcome,
-  opts: { readonly claimedUnbackedAction?: boolean; readonly isActionRequest?: boolean } = {}
-): AskWeaknessAxis | null {
-  if (opts.claimedUnbackedAction) {
-    return "unbacked-action";
-  }
-  if (opts.isActionRequest) {
-    return null;
-  }
-  return outcome === "abstain" || outcome === "ungrounded" ? "grounding-gap" : null;
-}
-
-export interface AskWeaknessRecorderDeps {
-  readonly recordWeakness: (file: string, signal: { readonly axis: AskWeaknessAxis; readonly message: string; readonly hint?: string }) => Promise<unknown>;
-  readonly weaknessesFile: string;
-}
-
-/**
- * Feed an ask-path failure to the weakness ledger so `muse doctor` /
- * error-analysis can mine real-usage gaps. The ASK path previously only
- * run-logged its outcome; only chat-repl fed the ledger, so ask misses were
- * invisible fuel. Best-effort: a null axis or an empty query records nothing,
- * and a throwing ledger write is swallowed — a fuel write must never surface as
- * an ask error. Deps injected for testing; the live caller lazy-imports
- * @muse/mcp + @muse/autoconfigure.
- */
-export async function recordAskWeakness(query: string, axis: AskWeaknessAxis | null, deps: AskWeaknessRecorderDeps, hint?: string): Promise<void> {
-  if (!axis || query.trim().length === 0) {
-    return;
-  }
-  try {
-    await deps.recordWeakness(deps.weaknessesFile, { axis, message: query, ...(hint ? { hint } : {}) });
-  } catch {
-    // a ledger write must never break the ask command
-  }
-}
 
 async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null, hint?: string): Promise<void> {
   if (axis === null) {
@@ -227,27 +133,6 @@ async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null
   }
 }
 
-export interface AskWeaknessResolverDeps {
-  readonly recordWeaknessResolved: (file: string, message: string) => Promise<unknown>;
-  readonly weaknessesFile: string;
-}
-
-/**
- * Feed a successful grounded answer to the weakness ledger's BKT mastery estimator so
- * topics the user asks about repeatedly, but that Muse now answers correctly, can
- * graduate out of the recap/doctor nudge list. Best-effort — a throwing ledger write
- * must never break the ask command. Deps injected for testing.
- */
-export async function recordAskWeaknessResolved(query: string, deps: AskWeaknessResolverDeps): Promise<void> {
-  if (query.trim().length === 0) {
-    return;
-  }
-  try {
-    await deps.recordWeaknessResolved(deps.weaknessesFile, query);
-  } catch {
-    // a ledger write must never break the ask command
-  }
-}
 
 async function recordAskWeaknessResolvedLive(query: string): Promise<void> {
   try {
@@ -353,6 +238,23 @@ export async function groundingVerdictNotice(
     : verifyGrounding(answer, matches, query);
   if (verification.verdict !== "ungrounded") return undefined;
   return `\n⚠️  Grounding check: this answer's claims aren't fully backed by your notes (${verification.reason}) — treat as unverified.\n`;
+}
+
+/**
+ * grounded≠true SOURCE-TRUST marker. Distinct from `groundingVerdictNotice`,
+ * which flags an UNGROUNDED answer: this fires on a GROUNDED (faithful) answer
+ * whose every resolving citation points ONLY at untrusted provenance (MCP/web
+ * tool output, `trusted:false`). Source veracity is unknowable on a fixed local
+ * model, so we surface the untrusted-only provenance as a scrutiny cue rather
+ * than letting a poisonable tool-fetched claim be handed over as plain "grounded".
+ * A single trusted backing source clears it (see `groundedOnUntrustedOnly`).
+ */
+export function untrustedOnlyGroundingNotice(
+  answer: string,
+  matches: readonly KnowledgeMatch[]
+): string | undefined {
+  if (!groundedOnUntrustedOnly(answer, matches)) return undefined;
+  return `\n⚠️  Source check: this answer is faithful to its sources, but rests ONLY on tool-fetched data (not your own notes) — verify before trusting.\n`;
 }
 
 
@@ -661,8 +563,6 @@ export async function userHasOtherPersonalData(
 /** S2 warm honesty (B2): the deterministic, on-brand close on an honest refusal. */
 export const WARM_REFUSAL_CLOSE =
   "(I'd rather tell you that than guess — add a note on this and I'll have it next time.)";
-
-
 
 
 interface NotesIndex {
@@ -1248,6 +1148,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // down — degrade to "no notes grounding" and still answer
       // from tasks + calendar + memory + general knowledge.
       let scored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
+      // Pre-gap-cut top-K: used for the confidence verdict so a gap-cut that
+      // trims scored to 1 chunk doesn't flip "ambiguous"→"confident" by making
+      // runnerUp=0 (the floor violation). The PROMPT WINDOW stays gap-cut-trimmed
+      // (scored); only the verdict input reverts to the untrimmed distribution.
+      let preGapScored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
       let notesUnavailable = false;
       let queryVec: number[] | undefined;
       // The "open to verify" target for an AD-HOC grounding source whose receipt
@@ -1280,6 +1185,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           file: f.path,
           score: cosine(queryVec!, chunk.embedding)
         })));
+        preGapScored = [...allScored].sort((a, b) => b.score - a.score).slice(0, topK);
         // RAG-Fusion (arXiv:2402.03367): for a compound question each clause
         // gets its own embedding → its own cosine ranking over the same chunk
         // set → all rankings (full-query + per-clause + lexical) fused via RRF.
@@ -1823,7 +1729,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const contextChunks = reorderForLongContext(scored);
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
-      const notesFraming = notesGroundingFraming(scored, query);
+      const notesFraming = notesGroundingFraming(scored, query, preGapScored.length > 0 ? preGapScored : undefined);
       const contextBlock = notesUnavailable
         ? "(notes search unavailable this turn — answer from the other grounding sources)"
         : contextChunks.length === 0
@@ -2664,6 +2570,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         }
         if (imageAttachments.length === 0) {
           groundedVerdictLabel = verdictNotice ? "ungrounded" : "grounded";
+        }
+        // grounded≠true: a faithful answer (no verdictNotice) can still rest only
+        // on untrusted tool-fetched sources. The label stays "grounded" (it IS
+        // faithful), but surface the untrusted-only provenance as a scrutiny cue.
+        const untrustedNotice = !verdictNotice && imageAttachments.length === 0
+          ? untrustedOnlyGroundingNotice(verdictAnswer, scoredMatches)
+          : undefined;
+        if (untrustedNotice && !options.json) {
+          io.stderr(untrustedNotice);
         }
         if (verdictNotice && !options.json) {
           io.stderr(verdictNotice);
