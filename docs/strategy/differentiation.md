@@ -7,6 +7,12 @@
 > hermes ([nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent), MIT) ·
 > openclaw ([docs.openclaw.ai](https://docs.openclaw.ai/concepts/memory), MIT) — both
 > free to study; we apply published mechanisms (cited), never copy proprietary code.
+>
+> **Mechanically defended (fire 13):** the deterministic proof batteries below
+> (`eval:memory-poisoning` L2 · `eval:receipt-drift` L4 · `eval:action-log-tamper` L5
+> · `eval:policy-symmetry` L6) are bundled as `pnpm eval:differentiation` and counted
+> by the `differentiationBatteries` ratchet in `pnpm self-eval` — delete a proof and
+> the build fails, so the edge evidence can never silently rot.
 
 ## Levers (newest first)
 
