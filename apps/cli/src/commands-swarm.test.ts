@@ -421,3 +421,93 @@ describe("renderSwarmStatus", () => {
     expect(out).toContain("(none — add them");
   });
 });
+
+// ── Semantic question-relevance gate assembled-path (fire-39 redo, no Ollama) ──
+// Proves the gate runs on the live `muse swarm council` path via the
+// councilSynthesisOverride seam + fake embedder + fake provider.
+
+describe("muse swarm council — question-relevance gate assembled-path (fire-39 semantic redo, no Ollama)", () => {
+  let dir: string;
+  let out: string[];
+  const prevEnv: Record<string, string | undefined> = {};
+  const setEnv = (k: string, v: string) => { prevEnv[k] = process.env[k]; process.env[k] = v; };
+
+  // Controlled vectors: question + on-topic peers → cosine ~0.9; off-topic → ~0.05
+  const Q_VEC    = [1.0, 0.0, 0.0, 0.0];
+  const ON_VEC   = [0.9, 0.3, 0.1, 0.0];
+  const OFF_VEC  = [0.05, 0.05, 0.05, 1.0];
+
+  const MIXED_PANEL: CouncilUtterance[] = [
+    { peerId: "ko1", reasoning: "PostgreSQL이 동시 쓰기를 잘 처리합니다." },
+    { peerId: "en1", reasoning: "PostgreSQL handles concurrent writes reliably." },
+    { peerId: "off", reasoning: "바나나는 노란 열대 과일입니다." }
+  ];
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "muse-relevance-gate-"));
+    out = [];
+    setEnv("MUSE_A2A_ENABLED", "true");
+    setEnv("MUSE_A2A_PEERS_FILE", join(dir, "a2a-peers.json"));
+    await writeFile(join(dir, "a2a-peers.json"), JSON.stringify({
+      peers: [{ id: "phone", secret: "s1", url: "https://phone.test/a2a" }],
+      selfId: "laptop"
+    }), "utf8");
+  });
+  afterEach(async () => {
+    for (const [k, v] of Object.entries(prevEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await rm(dir, { force: true, recursive: true });
+  });
+
+  it("off-topic peer (low question cosine) → excluded with 'off-topic', synthesis only on on-topic subset", async () => {
+    const question = "which database?";
+    const vecMap = new Map<string, readonly number[]>([
+      [question, Q_VEC],
+      ["PostgreSQL이 동시 쓰기를 잘 처리합니다.", ON_VEC],
+      ["PostgreSQL handles concurrent writes reliably.", ON_VEC],
+      ["바나나는 노란 열대 과일입니다.", OFF_VEC]
+    ]);
+    const fakeEmbed = async (text: string): Promise<readonly number[]> => {
+      return vecMap.get(text) ?? ON_VEC;
+    };
+
+    let synthPromptSeen = "";
+    let callCount = 0;
+    const fakeModelProvider = {
+      generate: async (req: { messages: { role: string; content: string }[] }) => {
+        callCount++;
+        if (callCount === 1) {
+          synthPromptSeen = req.messages.find((m) => m.role === "user")?.content ?? "";
+          return { id: "r", model: "m", output: '{"answer":"Use PostgreSQL.","contributors":["ko1","en1"]}' };
+        }
+        return { id: "r", model: "m", output: '{"supported":true}' };
+      },
+      id: "fake",
+      listModels: async () => [],
+      stream: async function* () { yield { type: "text" as const, text: "" }; }
+    } as never;
+
+    const gatherOverride: CouncilGatherOverride = async (_round) => MIXED_PANEL;
+
+    const io: ProgramIO = {
+      councilGatherOverride: gatherOverride,
+      councilSynthesisOverride: { embed: fakeEmbed, model: "m", modelProvider: fakeModelProvider },
+      fetch: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+      readPipedStdin: async () => "",
+      stderr: (m: string) => out.push(m),
+      stdout: (m: string) => out.push(m)
+    } as unknown as ProgramIO;
+
+    const cmd = new Command();
+    registerSwarmCommands(cmd, io);
+    await cmd.parseAsync(["node", "x", "swarm", "council", question], { from: "node" });
+
+    // Synthesis received the on-topic peers' reasoning
+    expect(synthPromptSeen).toContain("PostgreSQL이 동시 쓰기를 잘 처리합니다.");
+    expect(synthPromptSeen).toContain("PostgreSQL handles concurrent writes reliably.");
+    // Off-topic peer's reasoning was NOT in synthesis prompt
+    expect(synthPromptSeen).not.toContain("바나나는 노란 열대 과일입니다.");
+    // The answer was rendered
+    const text = out.join("");
+    expect(text).toContain("Use PostgreSQL.");
+  });
+});

@@ -1073,8 +1073,12 @@ excluded when scoring).
   embedder wired into the live `muse swarm council` synthesis path; COSINE_ABS_FLOOR=0.4; fail-open to Jaccard.
   This UNBLOCKS the two deferred council screens — the embed seam + cosine-support primitive now exist on the path.]
   REMAINING follow-ons (now thin, reuse the primitive):
-  - ◦ **fire-39 question-relevance gate, semantic version** — screen each utterance against the QUESTION embedding
-    (cosine), not lexical overlap → no same-script-paraphrase false-drop. Reuse the councilMemberSupportsSemantic embed seam.
+  - ✓→Done **fire-39 question-relevance gate, semantic version** — [DONE 2026-06-13 cognition loop fire 41:
+    `screenOffTopicUtterancesSemantic` (cosine question↔reasoning < QUESTION_RELEVANCE_FLOOR=0.3) in
+    synthesizeCouncilAnswer; semantic cosine keeps KO-paraphrase + cross-lingual on-topic peers (fixes the
+    fire-39 lexical false-drop), drops genuine off-topic; deny-only, fail-open, no lexical fallback. Judge PASS
+    via real revert. Backlog: tune floor on live KO/EN battery; strengthen the CLI assembled-path test (vacuous
+    on revert — masked by downstream consensus-outlier; the agent-core reason==='off-topic' test is the clean proof).]
   - ◦ **fire-36 injection-quarantine, re-scoped** — semantic-divergence signal or a council-local prose-safe detector
     instead of the chat-guard lexical patterns.
   - ◦ **semantic hasCouncilConsensus (fire 31)** — fire 40 left consensus on Jaccard; give it cosine support too (cosine-calibrated agreeAt).

@@ -257,7 +257,9 @@ export {
   parseCouncilAnswer,
   produceCouncilReasoning,
   produceGroundedCouncilReasoning,
+  QUESTION_RELEVANCE_FLOOR,
   screenCouncilOutliers,
+  screenOffTopicUtterancesSemantic,
   synthesizeCouncilAnswer,
   verifyCouncilGrounding,
   type CouncilAbstentionOptions,
@@ -265,7 +267,9 @@ export {
   type CouncilModelOptions,
   type CouncilScreenResult,
   type CouncilUtterance,
-  type OutlierScreenOptions
+  type OutlierScreenOptions,
+  type RelevanceScreenOptions,
+  type RelevanceScreenResult
 } from "./council.js";
 export {
   DEFAULT_ROLES,
