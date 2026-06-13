@@ -25,7 +25,7 @@
 
 ## test-hygiene theme — open (low-quality/flaky tests to fix, coverage gaps to fill)
 
-- ◦ **flaky timeout: `@muse/mcp` `playbook-store.test.ts > "recordPlaybookStrategy applies weighted eviction: a reinforced old entry survives an overflow of neutral ones"`** — sits on the 5000ms vitest boundary: times out under `pnpm check` load, passes (~3.3s) in isolation. A flaky test is worse than no test (it red-herrings every full-tree run). Slice: either give it an explicit longer `timeout` (if the slow eviction loop is intrinsic), or speed the setup (fewer `recordPlaybookStrategy` awaits / shared fixture) so it clears 5000ms with margin. Verify by running `pnpm --filter @muse/mcp test` 3× green. (found test-hygiene fire 1)
+- ◦ **machine-load timeouts under concurrent loops** — with ~6 loop worktrees running vitest at once, *trivial* tests (`@muse/agent-core sanitizeFollowupSummary` — a one-line `.replace`; `@muse/mcp` plan-cache `caps at MAX_PLAN_CACHE_ENTRIES`) hit the 5000ms vitest default and time out under CPU starvation, reddening full `pnpm check`. NOT a test-quality issue (functions are linear) — an environment/oversubscription artifact (plan-cache passes in 1.3s isolated). Candidate slice: raise the global vitest `testTimeout` (e.g. 5000→15000ms) in the shared vitest config so concurrent-loop load can't manufacture false failures — weigh against masking a *real* future slowdown. (observed test-hygiene fire 2)
 
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
@@ -38,6 +38,7 @@
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" (list filtered only by status/dueWithinDays; tags first-class but unfilterable) — tool-hardening fire 51
 - ✓ `overdue_contacts` agent tool — "who haven't I talked to in a while?" relationship-decay nudge (overdueContacts was CLI-only; tool placed in @muse/autoconfigure to avoid a new dep edge, interactionsFromEvents moved there, CLI re-exports) — tool-hardening fire 52
 - ✓ ADD coverage: `interactionsFromEvents` invalid-`startsAt` drop branch (`Number.isFinite(event.ms)`) — was uncovered by both autoconfigure + CLI tests; mutation-proven (RED on filter removal) — test-hygiene fire 1
+- ✓ FIX flaky timeout: `@muse/mcp playbook-store "weighted eviction"` was intrinsically ~5.1s (121 sequential recordPlaybookStrategy disk writes) → rewrote setup to 1 writePlaybook pre-seed + 1 record overflow (285ms), same assertions, mutation-proven (FIFO mutant → RED) — test-hygiene fire 2
 - ✓ `muse.tasks.search` matches tags — a task tagged "work" (word not in title/notes) is now found by searching "work" (completes the fire-51 tag story: list FILTERS by tag, search now FINDS by tag) + JUDGE-DRILL (verifier caught a deliberately-inert version) — tool-hardening fire 53
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" was inexpressible (list filtered only by status/dueWithinDays, search ignores tags) though tags are first-class + CLI `--tag` exists; added optional `tag` (case-insensitive exact, both branches) — tool-hardening fire 51
 
