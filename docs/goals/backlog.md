@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ cohere @muse/autoconfigure: deduped local isRecord type-guard onto canonical @muse/shared isRecord (byte-identical; dups 4->3; voice/agent-core remain hard) — codebase-quality fire 47
 - ◦ reminders.snooze no-collateral test: snooze (a MUTATE) has the SAME resolveReminderRef ambiguous/not-found branches as clear, but its no-mutation invariant is UNtested — a guess-and-snooze-first-candidate mutation triggers NO test failure (found mutating-the-wrong-block during fire 83). Add an OUTCOME test: a failed snooze (ambiguous word / unknown ref) leaves every reminder's dueAt unchanged. Mirror fire 83's clear test.
 
 - ✓ decompose @muse/macos: moved capture tools (createMacScreenshotTool/createMacScreenReadTool + 4 type interfaces + consts) macos-tools -> macos-screen-tools.ts (1297->1143 LOC; re-export keeps 109 tests green; COMPLETES the capture-cluster decompose fires 43/45/46, 1519->1143 across the thread) — codebase-quality fire 46
