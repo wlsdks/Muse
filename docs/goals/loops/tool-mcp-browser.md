@@ -125,3 +125,23 @@ ratchet: testFiles +0 (browser-tools.test.ts +3 cases, 75 total) · @muse/browse
   mis-selection 안 냄(97% 통과, browser 셀렉션 전부 green).
 - **리스크:** cross-origin iframe 링크는 여전히 범위 밖(CDP가 page context서 도달 불가, 불변).
   url은 additive/optional이라 dedup·비링크 컨트롤·act 경로 불변, 보안 surface 무변경.
+
+## fire 7 · 2026-06-13 · skill v1.14.0 · (this commit)
+
+meta: value-class=wiring · pkg=@muse/autoconfigure · kind=B-mcp · verdict=PASS · firesSinceDrill=7
+
+ratchet: testFiles +1 (official-mcp-credentials.test.ts; mcp-stack-official-presets +8) · @muse/autoconfigure 567 tests pass · fabrication 0 · pnpm check 0 · lint 0/0
+
+- **무엇:** fire 3가 토글을 배선했지만 `preset.create()`에 headers가 없어 사용자가 손으로
+  `~/.muse/mcp.json`에 Authorization을 써야 했음. 이제 새 `official-mcp-credentials.ts`가
+  `GITHUB_MCP_TOKEN`/`NOTION_MCP_TOKEN` env → `~/.muse/mcp-credentials.json` 순(기존
+  readCredentialsSync env-wins-then-file 시드, model/messaging 키와 동일 패턴)으로 토큰을 해석해
+  `Authorization: Bearer <token>` 주입. 자격증명 없으면 preset 미활성+미allowlist(fail-closed,
+  blank-auth half-connection 없음). secret은 직렬화/로그 가능 safe-config에 절대 안 남음.
+- **왜:** 외부 MCP를 실제로 인증해 쓰게 만드는 마지막 조각(헤드라인 요청 완성). 보안: 키체인은 아직
+  없어 기존 파일 시드 재사용(judge가 새 평문 경로 아님을 확인), secret 미로그.
+- **리뷰지점:** judge가 resolver를 상수 헤더로 neuter해 5 RED 재확인; secret-leak 테스트가 토큰 AND
+  "Bearer"를 모두 잡음(RED-able 검증); 작업 트리가 정확히 4 슬라이스 파일뿐(동시 루프 stash 오염 0).
+- **리스크:** Notion hosted 엔드포인트는 OAuth-선호(Bearer 거부시 향후 OAuth 분기 필요, 현재는
+  토큰 없으면 클린 fail-close). 파일경로 whitespace-only 토큰 미트림(cosmetic, upstream 인증 실패,
+  누출 없음) + 네이티브 키체인 백엔드 = backlog 후속 ◦.
