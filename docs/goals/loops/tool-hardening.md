@@ -765,3 +765,12 @@ ratchet: testFiles 952 유지(personal-followups-store.test +4 케이스) · fab
 - **왜:** 이 resolver는 **destructive cancel/snooze를 게이트** → 만약 regex 매칭으로 회귀하면 ".*" 같은 ref가 모든 followup match→엉뚱한 commitment cancel(injection). 안전-관련 회귀 가드. mutation 검증: `.includes`→`new RegExp(needle).test` 시 정확히 2 injection-guard 테스트 RED.
 - **리뷰지점:** personal-followups-store.test.ts +4(determinate 단언, tautology 아님), src 무변경(복원 byte-clean). mcp 1854, lint clean. pnpm check messaging "caps to 200" flake(isolated 368 green, 부하 아티팩트, 무관). Opus judge PASS 5/5(mutation 독립 재실행 teeth+드릴 closure 확인).
 - **리스크:** 없음 — test-only additive(약화 0, src 불변), 회귀 보호만. 드릴 src 복원 검증(includes literal 확인).
+
+
+## fire 73 · 2026-06-13 · skill v1.14.0 · (no-slice)
+meta: value-class=exhaustion-report · pkg=none · kind=vein-mature-honest-close(2nd consecutive clean scout) · verdict=NO-SLICE · firesSinceDrill=1
+ratchet: testFiles 954 유지 · fabrication 0 유지 · eval:tools 99%(macos 42/42)·선택/correctness/outbound vein worked — 지표 무변동, 정직 종료
+- **무엇:** 슬라이스 없음(honest-close). 스카웃: mac clipboard READ는 `mac_app_read(app='clipboard')`가 이미 커버(전용 도구=중복, tool-calling.md 위반 회피), mac_app_read는 14 read-state 포괄; 신호 보드 clean(0 failure cluster); riskFromMcpAnnotations 정밀 재검토.
+- **왜:** fires 55-72로 TOOL 선택/correctness/outbound-safety vein 성숙(eval 99%, 모든 mutating 도구 word-ref+ambiguous-clarify, recipient 해소 email 패리티, browser_key gate, time-arg/literal-match guard). 이번이 2번째 연속 clean 스카웃(fire 71 표면 covered) → EXHAUSTION 규칙: 3번째 스카웃 금지, value-class 상향/honest-close. 상향 후보(새-도구·논문-capability·undo) 전부 차단/dry: 새-도구 vein은 fire 69 스카웃 "no gap"+clipboard 커버, 논문은 Ollama format+tools 비조합, undo는 veto가 objective-scoped라 conversational-undo와 mechanism mismatch.
+- **리뷰지점:** 코드 변경 0. backlog에 ★진안 vein-status 블로커 기록 — 남은 고가치 레버 3개(email/handle grounding=agent-core-hot, riskFromMcpAnnotations=security-posture 진안-decision, undo/veto=design 진안-decision)가 전부 진안 unblock 필요. 다음 fire는 진안 unblock 시 그 항목, 아니면 lower-value 파리티/coverage 또는 재-honest-close.
+- **리스크:** 없음 — 코드 무변경, 회귀 0. "할 게 없다" 아님: 철저 스카웃 후 고가치 vein이 진안-blocked임을 정직 보고(EXHAUSTION 규칙 준수). 루프는 다음 fire 계속.
