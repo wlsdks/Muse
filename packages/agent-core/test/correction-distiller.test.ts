@@ -350,17 +350,17 @@ describe("distillStrategyFromCorrection — corrected exchange → one generaliz
     it("redacts every transcript value through the supplied redactor", async () => {
       const { provider, last } = capturingProvider("strategy: x");
       await distillStrategyFromCorrection(
-        { correction: "corr", priorAnswer: "ans", request: "req" },
+        { correction: "no — use bullet points", priorAnswer: "ans", request: "req" },
         { model: "m", modelProvider: provider, redact: (s) => `[R:${s}]` }
       );
-      expect(last().messages[1]!.content).toBe("user asked: [R:req]\nassistant answered: [R:ans]\nuser corrected: [R:corr]");
+      expect(last().messages[1]!.content).toBe("user asked: [R:req]\nassistant answered: [R:ans]\nuser corrected: [R:no — use bullet points]");
     });
 
     it("omits the 'user asked' line when the exchange carries no request", async () => {
       const { provider, last } = capturingProvider("strategy: x");
-      await distillStrategyFromCorrection({ correction: "틀렸어", priorAnswer: "ans" }, { model: "m", modelProvider: provider });
+      await distillStrategyFromCorrection({ correction: "틀렸어, 표로 정리해줘", priorAnswer: "ans" }, { model: "m", modelProvider: provider });
       const transcript = last().messages[1]!.content;
-      expect(transcript).toBe("assistant answered: ans\nuser corrected: 틀렸어");
+      expect(transcript).toBe("assistant answered: ans\nuser corrected: 틀렸어, 표로 정리해줘");
       expect(transcript).not.toContain("user asked:");
     });
   });
