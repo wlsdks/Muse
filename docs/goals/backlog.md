@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ isRecord dedup @muse/auth + JUDGE-DRILL (verifier caught gutted fabrication-WHY) — codebase-quality fire 17
+
 - ⚠ **differentiation loop commits raw zero-width/homoglyph bytes** → recurring @muse/shared byte-hygiene gate failures (fire 16 fixed 2: eval-policy-symmetry.mjs + differentiation.md). Their injection-test fixtures/journal should use \uNNNN escapes. Cross-loop — their process to fix.
 - ✓ isRecord dedup @muse/tools (2 defs) + byte-hygiene regression fix (2 files) — codebase-quality fire 16
 
