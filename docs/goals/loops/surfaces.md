@@ -67,7 +67,7 @@ ratchet: testFiles 932 (+1) · web tests 19/19 (+2) · fabrication 0 · self-eva
 - **리뷰지점**: i18n 불변식 유지 — `memory.updated`를 en/ko 양쪽에 추가(키셋 패리티), 둘 다 `{when}` 토큰(토큰 패리티), 빈값 없음. 헬퍼는 fire 4 `formatTaskDate`와 동일한 추출 패턴.
 - **리스크**: 없음(subtitle 2줄 + 신규 키 + 헬퍼 + JSX 호출, tsc+vite clean, 독립 Opus judge가 양 로케일·불변식·구-코드 RED 검증 후 PASS, web 19/19 + strings parity).
 
-## fire 8 · 2026-06-13 · skill v1.14.0 · <commit> · ★JUDGE-DRILL
+## fire 8 · 2026-06-13 · skill v1.14.0 · bbccd21d · ★JUDGE-DRILL
 meta: surface=desktop · value-class=micro-fix · pkg=apps/desktop(MuseDesktopCore) · kind=multiline-receipt-strip+judge-drill · verdict=PASS · firesSinceDrill=0 (reset)
 ratchet: desktop swift tests 49/49 (+1) · fabrication 0 · self-eval exit 0 · ★verifier 신뢰성 입증(inert→FAIL, real→PASS)
 
