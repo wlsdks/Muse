@@ -148,7 +148,7 @@ ratchet: testFiles 955 (+1) · web tests 27/27 (+3) · fabrication 0 · self-eva
 - **리뷰지점**: `Date(y,m,d+1)`은 오버플로(월말/연말) 정규화 + 로컬존 존중. 테스트는 `process.env.TZ` 고정(@muse/web은 node타입 없어 `declare const process`로 타입만 충족, 런타임 node) + fake timers. Today/generic 분기 무변.
 - **리스크**: 없음(derivation 1줄 + export, byDay 소비자 transitively 수혜, 독립 Opus judge가 *derivation만 revert*로 DST RED 입증·TZ pin 유효·build green 검증 후 PASS, web 27/27).
 
-## fire 17 · 2026-06-13 · skill v1.14.0 · <commit> · ★JUDGE-DRILL
+## fire 17 · 2026-06-13 · skill v1.14.0 · 9af2e5d6 · ★JUDGE-DRILL
 meta: surface=cli · value-class=micro-fix · pkg=@muse/cli · kind=help-vs-behavior+judge-drill · verdict=PASS · firesSinceDrill=0 (reset)
 ratchet: cli tests 2618/2618 (tasks +2) · fabrication 0 · self-eval exit 0 · ★verifier 신뢰성 재입증(inert order-only→FAIL, real description-lock→PASS)
 
