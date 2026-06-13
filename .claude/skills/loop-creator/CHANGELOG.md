@@ -9,6 +9,21 @@
 
 ---
 
+## 1.13.0 — 2026-06-13
+**복잡-코딩 escalation 티어링 + MD 본문 정리**(진안 지시).
+- **복잡한 비즈니스 코드 → Opus 4.8**(§1.5-2, 표). 정형·기계적(깨끗한 단일-파일)만 Sonnet; 여러
+  파일 수정·아키텍처·레이어드 의존성·낯설거나 얽힌 코드·red 테스트 디버깅은 Opus로 escalate.
+  *기계적 escalation 신호*(자기-난이도-판정보다 나음): **N개+ 파일을 만지거나 / 현재 red 테스트면 Opus.**
+  근거(2026 웹 합의): Sonnet이 대부분 코딩 기본(SWE-bench↑·토큰 30%↓)이나 복잡/고위험은 frontier로
+  escalate가 표준; 복잡한 작업에서 싼 모델 "almost right"의 재작업 비용이 frontier 1콜을 초과 →
+  escalation이 오히려 경제적. 출처: NxCode "Opus or Sonnet for Coding 2026"
+  (nxcode.io/resources/news/claude-opus-or-sonnet-for-coding-decision-guide-2026) · Unblocked "Model
+  Routing for Coding Agents" (getunblocked.com/blog/model-routing-coding-agents) · arXiv 2604.07494
+  "Triage: Routing SE Tasks to Cost-Effective LLM Tiers via Code Quality Signals".
+- **MD 본문 정리**(진안 지시 "뭐때문에 뭐 했다는 로그에만, 스킬은 깨끗"): SKILL.md·loop-engineering.md
+  §4.5에서 provenance(날짜 헤더·"라이브 dogfood/냉정 평가에서 추가"·fire-N 실측·incident 블로우)를 제거,
+  각 가드를 *crisp 규칙 + 짧은 why*만 남김. 이력/근거는 이 CHANGELOG에만.
+
 ## 1.12.0 — 2026-06-13
 **Fable-5 완전 제거 + 28-fire 냉정 평가 3대 개선**(진안 지시). 배경: 28 fire(v1.11.2) 실측 후 Opus
 적대 평가가 B(B-flat) — floor(안전)는 A급이나 ceiling(생성 가치)이 `@muse/mcp` micro-fix 모노컬처에
