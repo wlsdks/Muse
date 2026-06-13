@@ -127,6 +127,8 @@
 
 ## GROUNDING INTEGRITY theme — open
 
+- ◦ VEIN STATUS (fire 16): the deterministic grounded≠true fail-open vein is effectively exhausted (precision/recall/groundedness triad complete; all 3 judge gates empty-evidence-closed; provenance+conflict+date guards shipped). Next high-value moves are NOT more fail-open hunting but: (a) track citation precision/recall + faithfulness as a `muse doctor --grounding` / self-eval metric over a fixture corpus; (b) pivot value-class to retrieval QUALITY (recall@k / rerank) or chat-surface parity of the ask cues; (c) honest wind-down. Pick one next fire.
+
 
 - ◦ untrusted-only provenance e2e firing-rate (ask AND chat) — the untrusted-only cue on both the ask (`untrustedOnlyGroundingNotice`, fire 1) and chat (`untrustedOnlyChatNotice`, fire 3) surfaces is unit-pinned, but production firing depends on the model citing tool sources as `[from <src>]`. Measure/repair the real firing rate via `eval:grounding-delta` on a `--with-tools` poisoned-source case; if firing is too low, make the cue depend on tool-only grounding directly (toolGrounded + no trusted-note coverage) rather than citation presence. (scouted grounding-integrity fire 1, broadened fire 3)
 - ◦ broaden source-conflict value extraction — the `label: value` regex truncates values at comma/period (`Address: 12 Baker St, London` → only "12 Baker St"), a partial false-negative. Broaden extraction (handle comma-bearing values like addresses) without re-introducing the prose/clock-time false positives. (noted fires 7-9)
@@ -148,6 +150,7 @@
 - ✓ date-drift guard on the sync chat gate — the chat gate guarded IP/number/email/identifier but not DATES; valueNumbers drops month/day so a same-year drifted ISO date (2026-09-13 vs -14) passed; added answerAssertsUnsupportedDate (ISO-only, evidence-must-have-a-date so false-refusal≈0) before the number guard — grounding-integrity fire 13
 - ✓ ALCE per-citation support precision (arXiv:2305.14627) — added reportCitationPrecision: scores each cited sentence against ONLY its cited source's text (right-source/wrong-claim), distinct from existence (enforceAnswerCitations) and union-groundedness; diagnostic primitive, existence-only mutation verified — grounding-integrity fire 14
 - ✓ ALCE citation-precision wired to the live ask path — citationPrecisionNotice surfaces a 'right source, wrong claim' cue (a [from src] citation resolving to a note that doesn't support its sentence) on grounded ask answers, alongside the untrusted/conflict cues — grounding-integrity fire 15
+- ✓ ALCE citation RECALL (arXiv:2305.14627) — reportCitationRecall flags groundable-but-uncited claims (a claim in evidence with no [from] marker), complement to precision; wired to ask as citationRecallNotice; completes the precision/recall/groundedness triad — grounding-integrity fire 16
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
 - ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
