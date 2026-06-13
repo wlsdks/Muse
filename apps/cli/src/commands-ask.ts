@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, detectEvidenceContradictions, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type ContradictionPair, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
+import { assessContextSufficiency, buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, detectEvidenceContradictions, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type ContradictionPair, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -605,6 +605,31 @@ export function renderAskStreamError(params: {
   return { stderr: `\n(error: ${params.error})\n` };
 }
 
+/**
+ * Decides the set-level sufficiency advisory for an answered query, applying
+ * every emission gate so the call site is a trivial `if (line) stderr(line)`.
+ * ADVISORY-ONLY — never blocks an answer or touches the citation gate. Returns
+ * undefined (no advisory) when: JSON output is requested, the answer is itself
+ * a refusal (no double caveat), the query is single-intent (multi-part gate),
+ * a clause is missing its embedding (fail-open), or every part is covered.
+ */
+export function sufficiencyAdvisory(params: {
+  readonly json: boolean;
+  readonly answer: string;
+  readonly subQueries: readonly string[];
+  readonly subQueryVecs: readonly (readonly number[])[];
+  readonly evidenceVecs: readonly (readonly number[])[];
+}): string | undefined {
+  const { json, answer, subQueries, subQueryVecs, evidenceVecs } = params;
+  if (json || answerIsRefusal(answer)) return undefined;
+  if (subQueries.length < 2 || subQueryVecs.length !== subQueries.length) return undefined;
+  const subQueriesWithVecs = subQueries.map((text, i) => ({ text, vec: subQueryVecs[i]! }));
+  const verdict = assessContextSufficiency(subQueriesWithVecs, evidenceVecs);
+  if (verdict.sufficient || verdict.uncovered.length === 0) return undefined;
+  const quoted = verdict.uncovered.map((u) => `"${u}"`).join(", ");
+  return `Your notes cover part of this, but I found nothing on: ${quoted} — that part may be unverified.`;
+}
+
 export function registerAskCommand(program: Command, io: ProgramIO): void {
   program
     .command("ask")
@@ -1061,6 +1086,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // runnerUp=0 (the floor violation). The PROMPT WINDOW stays gap-cut-trimmed
       // (scored); only the verdict input reverts to the untrimmed distribution.
       let preGapScored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
+      // Hoisted for the set-level sufficiency advisory: clause texts paired with
+      // their embeddings so the advisory can check coverage per sub-query.
+      let subqueryEmbeddings: ReadonlyArray<readonly number[]> = [];
+      let splitClauses: readonly string[] = [];
       let notesUnavailable = false;
       let queryVec: number[] | undefined;
       // The "open to verify" target for an AD-HOC grounding source whose receipt
@@ -1102,14 +1131,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // both. Fail-open: any embed error leaves clause vectors empty and the
         // path is byte-identical to a non-compound query. Per-chunk `score`
         // stays the full-query cosine so classifyRetrievalConfidence is unchanged.
-        let subqueryEmbeddings: ReadonlyArray<readonly number[]> = [];
         try {
           const clauses = splitCompoundQuery(query);
           if (clauses.length >= 2) {
+            splitClauses = clauses;
             subqueryEmbeddings = await Promise.all(clauses.map((c) => embed(c, embedModel)));
           }
         } catch {
           subqueryEmbeddings = [];
+          splitClauses = [];
         }
         // Hybrid (cosine + lexical + per-clause RRF) MMR selection so a query's
         // distinctive keywords surface the answer-bearing note even when
@@ -2614,6 +2644,21 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           const offered = clarification.sources.map((s) => `[${s}]`).join(", ");
           io.stderr(`\n⚖️ Your notes gave a few equally-strong but different matches — did you mean ${offered}? Re-ask naming one for a single grounded answer.\n`);
         }
+      }
+
+      // Set-level sufficiency advisory (arXiv:2411.06037): when a multi-part
+      // query has sub-queries with no covering passage, name the uncovered parts
+      // so the user knows which half is unverified. ADVISORY-ONLY — never blocks
+      // the answer or changes the citation gate. Fail-open (empty vecs → no-op).
+      const sufficiencyLine = sufficiencyAdvisory({
+        answer: collectedAnswer,
+        evidenceVecs: scored.map((r) => r.chunk.embedding as readonly number[]),
+        json: Boolean(options.json),
+        subQueries: splitClauses,
+        subQueryVecs: subqueryEmbeddings
+      });
+      if (sufficiencyLine) {
+        io.stderr(`\n⚠️ ${sufficiencyLine}\n`);
       }
 
       // S2 warm honesty (B2): when Muse honestly refuses AND the user has
