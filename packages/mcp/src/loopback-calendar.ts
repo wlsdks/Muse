@@ -347,6 +347,16 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           const anchorFor = (raw: string): (() => Date) =>
             isTimeOnlyPhrase(raw) ? () => startOfLocalDay(resolved.event.startsAt) : () => new Date();
           const resolvedStartsAt = startsAtRaw ? parseIsoDate(startsAtRaw, anchorFor(startsAtRaw)) : undefined;
+          // A provided-but-unparseable startsAt must ERROR, not silently drop the move
+          // and report success (the sibling `add` tool already errors on this) — else
+          // "move my dentist to flurbsday" reports done while nothing moved.
+          if (startsAtRaw !== undefined && resolvedStartsAt === undefined) {
+            return {
+              error:
+                `startsAt could not be parsed (got ${JSON.stringify(startsAtRaw)}) — the event was NOT moved. ` +
+                `Use an ISO-8601 timestamp or a phrase like "tomorrow 2pm" / "내일 오후 3시".`
+            };
+          }
           // A DATE-only reschedule ("월요일로 옮겨줘") keeps the event's time-of-day —
           // otherwise the resolver defaults it to midnight and a 2pm event lands at
           // 9am. A full ISO (has a `T`) or any phrase that names a time is left as-is.
@@ -366,11 +376,22 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           // event's ORIGINAL day — else "move it to Monday, ending 5pm" lands the end
           // back on the old day. anchorFor uses the old event day, so override here.
           const endAnchorDay = newStartsAt ?? resolved.event.startsAt;
-          const newEndsAt = endsAtRaw
+          const resolvedEndsAt = endsAtRaw
             ? parseIsoDate(endsAtRaw, isTimeOnlyPhrase(endsAtRaw) ? () => startOfLocalDay(endAnchorDay) : () => new Date())
-            : newStartsAt && durationMs > 0
-              ? new Date(newStartsAt.getTime() + durationMs)
-              : undefined;
+            : undefined;
+          // Same as startsAt: a provided-but-unparseable endsAt must error, not be
+          // silently dropped (which would also leave the end un-shifted while the start
+          // moved — an end-before-start event).
+          if (endsAtRaw !== undefined && resolvedEndsAt === undefined) {
+            return {
+              error:
+                `endsAt could not be parsed (got ${JSON.stringify(endsAtRaw)}) — the event was NOT changed. ` +
+                `Use an ISO-8601 timestamp or a phrase like "5pm" / "오후 5시".`
+            };
+          }
+          // Moving only the start preserves the event's DURATION (shift the end by the
+          // same delta); an explicit endsAt overrides that.
+          const newEndsAt = resolvedEndsAt ?? (newStartsAt && durationMs > 0 ? new Date(newStartsAt.getTime() + durationMs) : undefined);
           const update: CalendarEventUpdate = {
             ...(readString(args, "title") ? { title: readString(args, "title")! } : {}),
             ...(newStartsAt ? { startsAt: newStartsAt } : {}),

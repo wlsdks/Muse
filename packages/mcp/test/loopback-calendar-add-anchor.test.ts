@@ -73,3 +73,33 @@ describe("muse.calendar.update — moving to a new day re-anchors a time-only en
     expect(c.endsAt.getTime()).toBeGreaterThan(c.startsAt.getTime());
   });
 });
+
+describe("muse.calendar.update — a provided-but-unparseable time errors, never a silent no-op success", () => {
+  function harness() {
+    const existing = { endsAt: new Date(2026, 0, 10, 16, 0), id: "e1", providerId: "local", startsAt: new Date(2026, 0, 10, 15, 0), title: "Standup" };
+    let updateCalls = 0;
+    const registry = {
+      createEvent: async () => ({}),
+      deleteEvent: async () => undefined,
+      listEvents: async () => [existing],
+      updateEvent: async () => { updateCalls += 1; return existing; }
+    } as unknown as Parameters<typeof createCalendarMcpServer>[0]["registry"];
+    const server = createCalendarMcpServer({ registry });
+    const update = server.tools.find((t) => t.name === "update")!;
+    return { update, updateCalls: () => updateCalls };
+  }
+
+  it("an unparseable startsAt returns an error and does NOT call updateEvent (no silent-drop success)", async () => {
+    const h = harness();
+    const result = await h.update.execute({ id: "e1", startsAt: "flurbsday" }) as Record<string, unknown>;
+    expect(result.error).toContain("startsAt could not be parsed");
+    expect(h.updateCalls()).toBe(0); // the move was refused, not silently dropped while reporting done
+  });
+
+  it("an unparseable endsAt returns an error and does NOT call updateEvent (no end-before-start)", async () => {
+    const h = harness();
+    const result = await h.update.execute({ endsAt: "flurbsday", id: "e1", startsAt: "2026-06-20T15:00:00" }) as Record<string, unknown>;
+    expect(result.error).toContain("endsAt could not be parsed");
+    expect(h.updateCalls()).toBe(0);
+  });
+});

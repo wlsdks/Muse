@@ -671,6 +671,31 @@ HARDEN (make existing tools more reliable):
   path for the write (read+append+write on the raw array, validate only on the READ-for-consumers path) — bigger than
   one filter line. Slice: add a raw passthrough reader + wire the append/patch RMWs + a forward-compat test (seed an
   entry with an extra field, append another, assert the first survives byte-identical). Two stores share the KIND+shape.
+  BLOCKERS (fire-40 eval, NOT a clean single fix — needs a design decision): (a) the action-log is a HASH-CHAIN
+  (`prevHash: chainTipHash(existing)`), so preserving an unvalidatable forward-version entry breaks the typed
+  chain-hash computation — raw preservation + chain integrity conflict; (b) "corrupt entry (drop is correct)" vs
+  "forward-version entry (preserve)" are INDISTINGUISHABLE to `isActionLogEntry`, so preserve-unknown also re-persists
+  genuine garbage — a real preserve-vs-drop judgment, not a mechanical fix. The objectives store (no hash chain) is the
+  cleaner first target IF the preserve-unknown policy is decided. 진안 input on the policy + chain handling.
+- ✓→Done **muse.calendar.update silently dropped an unparseable startsAt/endsAt and reported success** (EXPANSION
+  gap-scout, fire 40; missing-validation) — `resolvedStartsAt = startsAtRaw ? parseIsoDate(...) : undefined` returns
+  undefined for an unresolvable phrase, then the spread `...(newStartsAt ? {startsAt} : {})` omitted the move and
+  `update` called `registry.updateEvent` + returned `{event}` SUCCESS — so "move my dentist to flurbsday" reported done
+  while nothing moved. The sibling `add` already errors on this exact condition; a parseable start + unparseable end
+  also moved the start but left the end (end-before-start risk). FIX: error (mirroring `add`) when a raw startsAt/endsAt
+  was PROVIDED but parses to undefined, BEFORE updateEvent (omitted args unaffected; valid phrases still parse). TDD
+  (startsAt:"flurbsday" → error + updateEvent NOT called; valid-start + endsAt:"flurbsday" → error + no call — the
+  τ-bench no-partial-side-effect property) RED(remove guards → updateEvent called, success)→GREEN; mcp 1752, check 0
+  (all pkgs), lint 0. Fable-5 PASS (omitted untouched, newEndsAt fallback algebraically identical, no partial state).
+  KIND missing-validation, fresh surface. (Side effect, per the slice's intent: an empty-string "" startsAt/endsAt now
+  errors too, consistent with `add`.)
+- ◦ **calendar.add silently coerces an unparseable endsAt to start+60min (fire-40 runner-up)** — `add`'s endsAt
+  fallback (`(endsAtRaw && isTimeOnlyPhrase ? ... : parseIsoDate(endsAtRaw)) ?? new Date(startsAt+60min)`) means a
+  PROVIDED-but-unparseable endsAt silently becomes a 1-hour default instead of erroring — the same family as the update
+  fix. Lower urgency (endsAt is optional with a sensible default, vs update's success-while-noop), and erroring needs to
+  preserve the omitted-endsAt→default path. Slice: error only when `endsAtRaw !== undefined && parse === undefined` +
+  test. Also (fire-40 verifier nit): a non-string startsAt (numeric epoch) is silently ignored via readString→undefined
+  on BOTH add and update — string-but-unparseable is fixed, wrong-TYPE is not; fold into the same slice if worth it.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`
