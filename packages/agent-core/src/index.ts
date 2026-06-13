@@ -225,6 +225,8 @@ export {
   type CitationRecallReport
 } from "./citation-recall.js";
 export { detectPolarityMismatch, POLARITY_OVERLAP_FLOOR } from "./polarity-mismatch.js";
+export { detectNumericMismatch } from "./numeric-mismatch.js";
+export { detectHedgeOverclaim, HEDGE_OVERLAP_FLOOR } from "./hedge-overclaim.js";
 export {
   scoreGroundingEval,
   type GroundingCaseOutcome,
