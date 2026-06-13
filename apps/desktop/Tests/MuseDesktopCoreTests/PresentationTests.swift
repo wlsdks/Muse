@@ -110,6 +110,27 @@ final class SpriteLibraryTests: XCTestCase {
         }
     }
 
+    func testPaletteCoversEveryGlyphInTheGrid() {
+        // The renderer silently skips any glyph with no palette entry
+        // (SpriteRenderer continues past it), so a typo'd / forgotten palette key
+        // would render a transparent HOLE. Every built-in must cover its grid,
+        // and a sprite that references an undefined key must be rejected.
+        for sprite in SpriteLibrary.all + [MuseSprite.default] {
+            XCTAssertTrue(sprite.paletteCoversGrid(), "\(sprite.name ?? "?") has an unmapped glyph")
+        }
+        let undefinedInRows = Sprite(
+            width: 2, height: 1, rows: ["XX"],
+            palette: [PaletteEntry(key: ".", hex: "#00000000")]
+        )
+        XCTAssertFalse(undefinedInRows.paletteCoversGrid())
+        let undefinedInAnimationRow = Sprite(
+            width: 2, height: 1, rows: [".."],
+            palette: [PaletteEntry(key: ".", hex: "#00000000")],
+            openMouthRow: "ZX"
+        )
+        XCTAssertFalse(undefinedInAnimationRow.paletteCoversGrid())
+    }
+
     func testDefaultIsAriaAndNamedResolves() {
         XCTAssertEqual(SpriteLibrary.default.name, "aria")
         XCTAssertEqual(SpriteLibrary.named("celestial").name, "celestial")

@@ -65,6 +65,16 @@ public struct Sprite: Codable, Sendable, Equatable {
         return true
     }
 
+    /// Every glyph in the grid (and the animation override rows) must have a
+    /// palette entry. The renderer silently skips an unmapped glyph, so without
+    /// this a typo'd / forgotten palette key renders a transparent HOLE — this
+    /// rejects such a sprite on the `--render-json` drop-in path instead.
+    public func paletteCoversGrid() -> Bool {
+        let keys = Set(paletteMap().keys)
+        let lines = rows + [closedEyesRow, openMouthRow].compactMap { $0 }
+        return lines.allSatisfy { $0.allSatisfy { keys.contains($0) } }
+    }
+
     public static func decode(_ data: Data) throws -> Sprite {
         try JSONDecoder().decode(Sprite.self, from: data)
     }

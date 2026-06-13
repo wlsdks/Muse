@@ -336,7 +336,12 @@ async function buildWeekAgendaScenario() {
       { prompt: "What did I miss — anything overdue?", expectTool: "today_brief", note: "overdue triage → today_brief (week_agenda is forward-only, has no overdue concept)" },
       { prompt: "Show just my calendar events for this week.", expectTool: "muse.calendar.list", note: "events-only → calendar.list (NOT week_agenda)" },
       { prompt: "What tasks are due this week?", expectTool: "muse.tasks.list", note: "due tasks only → tasks.list (NOT week_agenda)" },
-      { prompt: "List just my reminders due this week.", expectTool: "muse.reminders.list", note: "reminders-only → reminders.list (NOT week_agenda, which now also merges reminders)" }
+      { prompt: "List just my reminders due this week.", expectTool: "muse.reminders.list", note: "reminders-only → reminders.list (NOT week_agenda, which now also merges reminders)" },
+      // IrrelAcc: today_brief's primary keyword "today"/"오늘" is an eager-invocation
+      // trap — a CASUAL mention of today (not a "what's on my plate" request) must
+      // fire NO tool, not today_brief.
+      { prompt: "고마워, 오늘 도움 많이 됐어!", expectNoTool: true, note: "KO closing thanks mentioning '오늘' → NO tool (NOT today_brief — not a plate/agenda request)" },
+      { prompt: "I'm in such a good mood today.", expectNoTool: true, note: "EN casual 'today' statement → NO tool (NOT today_brief)" }
     ];
     return { label: "week-agenda (merged week vs today_brief vs calendar/tasks list)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
   } catch (error) {

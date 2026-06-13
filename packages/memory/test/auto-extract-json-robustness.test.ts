@@ -41,6 +41,13 @@ describe("extractJsonObject", () => {
     expect(out?.facts).toEqual({ motto: "hi {there}" });
   });
 
+  it("treats an escaped quote inside a string as literal, so a following brace stays in-string (balanced-block escape handling)", () => {
+    // Prose forces the slow balanced-block scan. The \" must NOT end the
+    // string early — otherwise the following } would mis-close the block.
+    const out = extractJsonObject('Prefix prose. {"facts":{"note":"say \\" then } close"}} trailing');
+    expect(out?.facts).toEqual({ note: 'say " then } close' });
+  });
+
   it("returns undefined for empty / non-object output", () => {
     expect(extractJsonObject("")).toBeUndefined();
     expect(extractJsonObject("not json at all")).toBeUndefined();

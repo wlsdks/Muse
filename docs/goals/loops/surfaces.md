@@ -255,3 +255,12 @@ ratchet: web unit 36/36 (+2) · muse-console e2e 1/1 · testFiles 979 · fabrica
 - **왜**: title은 다수 스크린리더가 안 읽고 터치엔 절대 안 뜸 → 제품 최빈 액션(메시지 전송)의 이름이 사실상 없음. aria-label이 robust한 정식 접근명. Opus scout가 web 최고가치 a11y 갭으로 식별(fire 26 desktop core엔 동급 미테스트 분기 없음).
 - **리뷰지점**: ariaLabel undefined→React가 attr 생략(텍스트 버튼은 children 이름 유지, 빈 attr 덮어쓰기 없음 — 둘째 단위테스트로 실증). mic은 recording 상태 추적(title와 동일). title 보존(시각 툴팁). e2e가 렌더된 Send/mic의 aria-label을 toHaveAttribute로 단언(call-site 배선 검증, prop 존재만 아님).
 - **리스크**: 없음(ui.tsx Button + Chat 3 call-site + 2 테스트만; 타 Button 호출부는 ariaLabel 미전달→무변; 독립 Opus judge가 양 레이어 mutation-test(forwarding/call-site 제거→RED)로 비-vacuous·RED-before·undefined-omit·무부수효과 검증 후 PASS, web 36/36·e2e 라운드트립 유지).
+
+## fire 29 · 2026-06-14 · skill v1.14.0 · 561bde6c
+meta: surface=desktop · value-class=new-capability · pkg=apps/desktop(MuseDesktopCore) · kind=sprite-palette-coverage-guard · verdict=PASS · firesSinceDrill=3
+ratchet: desktop swift tests 61/61 (+1) · testFiles 980 · fabrication 0 · self-eval exit 0 · 표면 균형 web10·desktop9·cli10
+
+- **무엇**: `SpriteRenderer`가 팔레트에 없는 glyph를 조용히 `continue`(투명 처리) → JSON 아티스트 스프라이트의 오타/누락 키가 투명 HOLE로 렌더. `--render-json` 유일 검증 `isRectangular()`는 치수만 보고 팔레트 커버리지는 안 봄. `Sprite.paletteCoversGrid()` 추가(grid + 애니 오버라이드 행의 모든 glyph가 팔레트 키에 있어야, 렌더러가 쓰는 동일 `paletteMap` 사용) + `--render-json` 가드에 배선(exit 2, 명확한 메시지).
+- **왜**: 스프라이트는 "아티스트/JSON 드롭인으로 교체"가 명시 목적인데, 조용한 렌더 홀은 그 경로의 silent-corruption. desktop 표면(최저 8) + new-capability로 다양성.
+- **리뷰지점**: 검증이 렌더러와 *동일한* paletteMap(prefix(1) Character) 사용 → 실제 그릴 수 있는 것과 정확히 일치(근사 아님). 빈 rows의 allSatisfy vacuous-true는 isRectangular(width>0,height>0)가 먼저 걸러 무해. 가드는 isRectangular 後·renderPNG 前. paletteMap/isRectangular 본문 무변.
+- **리스크**: 없음(순수 스프라이트-데이터 검증, network/grounding 무접촉; 독립 Opus judge가 mutation-test(`return true`→테스트 RED)로 비-vacuous·RED-before·glyph-vs-key 의미 일치·가드 배선·무부수효과 검증 후 PASS, swift 61/61).
