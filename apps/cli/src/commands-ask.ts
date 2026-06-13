@@ -876,11 +876,12 @@ export async function groundingVerdictNotice(
   answer: string,
   matches: readonly KnowledgeMatch[],
   query: string,
-  reverify?: GroundingReverify
+  reverify?: GroundingReverify,
+  reverifySamples?: number
 ): Promise<string | undefined> {
   if (answerIsRefusal(answer)) return undefined;
   const verification = reverify
-    ? await verifyGroundingWithReverify(answer, matches, query, reverify)
+    ? await verifyGroundingWithReverify(answer, matches, query, reverify, { reverifySamples })
     : verifyGrounding(answer, matches, query);
   if (verification.verdict !== "ungrounded") return undefined;
   return `\n⚠️  Grounding check: this answer's claims aren't fully backed by your notes (${verification.reason}) — treat as unverified.\n`;
@@ -3597,7 +3598,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // and its "unverified" warning would be misleading. Skip it.
         let verdictNotice = imageAttachments.length > 0
           ? undefined
-          : await groundingVerdictNotice(verdictAnswer, scoredMatches, query, reverify);
+          : await groundingVerdictNotice(verdictAnswer, scoredMatches, query, reverify, 3);
         // Best-of-N resample (--best-of): when the first draft fails the
         // verdict, redraw fresh drafts and let the DETERMINISTIC verifier pick
         // the best grounded survivor; the full (reverify-backed) gate then
@@ -3610,7 +3611,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           const survivor = await drawBestGroundedRedraft({
             attempts: bestOfTotal - 1,
             clean: (draft) => enforceAnswerCitations(stripEchoedCiteAs(draft), citationAllowed).text,
-            confirm: (verdictText) => groundingVerdictNotice(verdictText, scoredMatches, query, reverify),
+            confirm: (verdictText) => groundingVerdictNotice(verdictText, scoredMatches, query, reverify, 3),
             draw: async () => {
               const drawn = await provider.generate({
                 messages: [

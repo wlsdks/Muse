@@ -1033,6 +1033,49 @@ excluded when scoring).
   punctuation_obfuscation, tool_spoofing, few_shot_poisoning, history_poisoning, command_injection, plus role_override
   MINUS its debug-mode subpattern, system_delimiter for literal control tokens). Reuse the screenCouncilInfection
   mechanism design (it passed). (fire 36 deferred — mechanism done, calibration is the work.)
+- ✓→Done **ISR-LLM pre-execution plan validation + repair** — the runtime plan gate validated only
+  step-count + tool-registered, not arguments, so a plan with a later missing-arg step executed earlier
+  (possibly writing) steps first → partial side effects + dead run (arXiv:2308.13724 ISR-LLM). [DONE
+  2026-06-13, cognition loop fire 37: `validatePlan` gains `toolSchemas` and flags missing-required-args
+  (reusing validateRequiredToolArguments/coerceToolArguments at plan time) + exact-duplicate steps;
+  `dedupeExactSteps`; `streamPlanExecute` dedupes → validates → one verifier-backed repair round
+  (PLAN_REPAIR_MAX_ROUNDS=1, re-call generatePlan with the validator errors, re-validate) → else throws.
+  Judge PASS via real revert (no-partial-side-effects test fails 6 ways without the arg-check); registered
+  in reflection-guard. Validation runs before any tool executes; back-compat preserved.]
+- ◦ **Plan-validation remainder** — (a) `plan-repaired` PlanExecuteStreamEvent so eval:plan-quality/traces
+  can count runtime repair rate (deferred — strict event union needs downstream changes); (b) ordering/
+  dependency validation (a step consuming a prior step's output); (c) write-step precondition checks;
+  (d) plan-cache hygiene — cache the REPAIRED plan, never the invalid original. (fire 37 remainder, arXiv:2308.13724)
+- ✓→Done **Self-consistency consensus for the grounding reverify judge** — the live default-on
+  `verifyGroundingWithReverify` decided weak→grounded upgrades on a SINGLE high-variance judge sample
+  (arXiv:2510.27106 Rating Roulette: LLM judges "almost arbitrary in the worst case"). [DONE 2026-06-13,
+  cognition loop fire 38: `judgeConsensus` (unanimous fail-close, length>0 && every-YES) + `reverifySamples`
+  (clamp 1–5, default 1) k-sample the judge in all 3 branches; CLI live sites pass k=3 (arXiv:2203.11171
+  Self-Consistency). Strictly more conservative — can only convert a single-sample PASS→FAIL on disagreement,
+  never admit a new grounded verdict (judge PASS, proven across all 3 branches via real revert). Fabrication=0
+  strengthened; default-1 byte-identical back-compat.]
+- ◦ **Reverify consensus remainder** — (a) CI-SC confidence-weighted early-exit consensus (arXiv:2511.12309)
+  to cut samples once the outcome is decided; (b) extend k-sample consensus to the `--verify-claims` per-claim
+  judge (`verifyGroundingPerClaim`, same single-sample shape); (c) adaptive k by band width (wider weak margin
+  ⇒ more samples). (fire 38 remainder, arXiv:2510.27106 / 2203.11171)
+- ⏳ **Council question-relevance gate — DEFERRED on lexical-signal unfitness (fire 39)** — the MECHANISM
+  is sound (screenOffTopicUtterances inside synthesizeCouncilAnswer, deny-only, majority-cap, fail-open,
+  cross-script guard, non-inert + judge-confirmed live on the synthesis prompt path; MAST FM-2.3/FM-3.2,
+  arXiv:2503.13657). The BLOCKER is the SIGNAL: a lexical question↔reasoning token-overlap false-drops honest
+  SAME-SCRIPT paraphrase/synonym peers (judge: 5/5 realistic on-topic KO+EN peers dropped; the damning case —
+  a correct paraphrase "임대료 125만원" dropped while a literal-echo peer with the WRONG number "월세 130만원"
+  kept, because it mimicked surface tokens). Korean agglutinative tokenization makes synonyms share 0 tokens by
+  construction. Dropping an honest/dissenting voice is a real harm even though downstream gates protect
+  fabrication=0. The cross-SCRIPT case is already guarded (dominantScriptFamily) but same-script paraphrase is not.
+- ⏳⏳ **ROOT-CAUSE (2 council-screening defers: fire 36 injection + fire 39 relevance) — build the SEMANTIC
+  SIMILARITY primitive for the council path FIRST** — both deferred council screens failed for the SAME reason:
+  a lexical/pattern signal over-screens Muse's multilingual + paraphrase content (lexical token overlap conflates
+  "different words" with "off-topic"/"malicious"; chat-guard injection patterns over-fire on model prose). The
+  unblocking PREREQUISITE is an embedding-cosine semantic-similarity helper on the council path (question↔reasoning
+  and peer↔peer), which BOTH the relevance gate AND a re-scoped injection/outlier screen can then use prose-safely.
+  This needs the embedder wired into the council path (it isn't today). Until that exists, do NOT attempt more
+  lexical council-screening slices. (escalated: 2 defers, same root — steer cycle 10 to the semantic primitive or
+  off the council surface entirely.)
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting
   each is verifier-backed (85.36% same-mistake repetition without one, arXiv 2510.18254). (T1-10)
 - (queued behind fuel/prereqs: sleep-time compute · Mem0 UPDATE op · AWM workflow mining ·

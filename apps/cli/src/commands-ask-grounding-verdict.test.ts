@@ -143,3 +143,30 @@ describe("groundingVerdictNotice — with injected weak-verdict re-verification"
     expect(notice).toBeDefined();
   });
 });
+
+describe("groundingVerdictNotice — reverifySamples=3 live-site contract", () => {
+  const weakMatches = [match("notes/vpn.md", "The office VPN needs MTU 1380 on wg0 to stop handshake drops.", 0.5)];
+  const weakAnswer = "The VPN MTU is 1380 on wg0 [from notes/vpn.md].";
+  const query = "what MTU for the office VPN";
+
+  it("live site (reverifySamples=3): YES-then-NO judge on a weak-band answer → warns (dissent caught)", async () => {
+    let calls = 0;
+    const yesNo = async () => { calls += 1; return calls === 1; };
+    const notice = await groundingVerdictNotice(weakAnswer, weakMatches, query, yesNo, 3);
+    expect(notice).toBeDefined();
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("live site (reverifySamples=3): all-YES judge on a weak-band answer → stays silent (unanimous pass)", async () => {
+    let calls = 0;
+    const allYes = async () => { calls += 1; return true; };
+    const notice = await groundingVerdictNotice(weakAnswer, weakMatches, query, allYes, 3);
+    expect(notice).toBeUndefined();
+    expect(calls).toBe(3);
+  });
+
+  it("live site: single-sample (reverifySamples=1, default) all-YES → stays silent (back-compat)", async () => {
+    const notice = await groundingVerdictNotice(weakAnswer, weakMatches, query, async () => true, 1);
+    expect(notice).toBeUndefined();
+  });
+});

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildGroundingReverifyPrompt,
+  judgeConsensus,
   parseGroundingReverifyVerdict,
   REVERIFY_SYSTEM_PROMPT,
   segmentClaims,
@@ -326,5 +327,120 @@ describe("verifyGroundingPerClaim — surgically drop only the unsupported claim
     const out = await verifyGroundingPerClaim("Mina owns pricing and the budget was 2,000,000 KRW", ev, "q", async () => { throw new Error("judge down"); });
     expect(out.dropped).toBe(0);
     expect(out.answer).toContain("2,000,000");
+  });
+});
+
+// --- judgeConsensus pure helper (arXiv:2203.11171 self-consistency; arXiv:2510.27106 intra-rater variance) ---
+
+describe("judgeConsensus — unanimous fail-close aggregator", () => {
+  it("unanimous-pass: all-true → true", () => {
+    expect(judgeConsensus([true, true, true], "unanimous-pass")).toBe(true);
+  });
+
+  it("unanimous-pass: any-false → false", () => {
+    expect(judgeConsensus([true, false, true], "unanimous-pass")).toBe(false);
+  });
+
+  it("unanimous-pass: empty → false", () => {
+    expect(judgeConsensus([], "unanimous-pass")).toBe(false);
+  });
+
+  it("unanimous-keep: all-true → true", () => {
+    expect(judgeConsensus([true, true], "unanimous-keep")).toBe(true);
+  });
+
+  it("unanimous-keep: any-false → false", () => {
+    expect(judgeConsensus([true, false], "unanimous-keep")).toBe(false);
+  });
+
+  it("unanimous-keep: empty → false", () => {
+    expect(judgeConsensus([], "unanimous-keep")).toBe(false);
+  });
+});
+
+// --- reverifySamples consensus sampling: counterfactual non-vacuity tests ---
+// A YES-then-NO fake judge proves that dissent (k=3) yields `ungrounded`
+// while a single-sample (k=1) all-YES fake yields `grounded`.
+
+describe("verifyGroundingWithReverify — reverifySamples=3 catches judge dissent (self-consistency gate)", () => {
+  // Weak-band fixture: answer and match where base verdict is "weak".
+  const weakMatches = [match("notes/vpn.md", "The office VPN needs MTU 1380 on wg0 to stop handshake drops.", 0.5)];
+  const weakAnswer = "The VPN MTU is 1380 on wg0 [from notes/vpn.md].";
+  const query = "what MTU for the office VPN";
+
+  it("weak-band: YES-then-NO judge with k=3 → ungrounded (dissent caught)", async () => {
+    let calls = 0;
+    const yesNo = async () => { calls += 1; return calls === 1; };
+    const out = await verifyGroundingWithReverify(weakAnswer, weakMatches, query, yesNo, { reverifySamples: 3 });
+    expect(out.verdict).toBe("ungrounded");
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("weak-band: all-YES judge with k=1 → grounded (back-compat single-sample)", async () => {
+    const out = await verifyGroundingWithReverify(weakAnswer, weakMatches, query, async () => true, { reverifySamples: 1 });
+    expect(out.verdict).toBe("grounded");
+  });
+
+  it("weak-band: all-YES judge with k=3 → grounded (unanimous pass)", async () => {
+    let calls = 0;
+    const allYes = async () => { calls += 1; return true; };
+    const out = await verifyGroundingWithReverify(weakAnswer, weakMatches, query, allYes, { reverifySamples: 3 });
+    expect(out.verdict).toBe("grounded");
+    expect(calls).toBe(3);
+  });
+
+  it("weak-band: reverifySamples absent (default 1) → existing behaviour byte-identical", async () => {
+    const out = await verifyGroundingWithReverify(weakAnswer, weakMatches, query, async () => true);
+    expect(out.verdict).toBe("grounded");
+  });
+
+  // Low-coverage branch (cross-lingual fixture): confident retrieval but below coverage floor.
+  it("low-coverage: YES-then-NO judge with k=3 → ungrounded (dissent caught)", async () => {
+    const lowCovMatches = [match("notes/net.md", "The office WiFi password is hunter2-blue.", 0.72)];
+    const krAnswer = "당신의 와이파이 비밀번호는 hunter2-blue입니다 [from notes/net.md].";
+    const krQuery = "내 와이파이 비밀번호";
+    let calls = 0;
+    const yesNo = async () => { calls += 1; return calls === 1; };
+    const out = await verifyGroundingWithReverify(krAnswer, lowCovMatches, krQuery, yesNo, { reverifySamples: 3 });
+    expect(out.verdict).toBe("ungrounded");
+  });
+
+  it("low-coverage: all-YES judge with k=3 → grounded (unanimous pass)", async () => {
+    const lowCovMatches = [match("notes/net.md", "The office WiFi password is hunter2-blue.", 0.72)];
+    const krAnswer = "당신의 와이파이 비밀번호는 hunter2-blue입니다 [from notes/net.md].";
+    const krQuery = "내 와이파이 비밀번호";
+    const out = await verifyGroundingWithReverify(krAnswer, lowCovMatches, krQuery, async () => true, { reverifySamples: 3 });
+    expect(out.verdict).toBe("grounded");
+  });
+
+  // Value-check branch (grounded but asserts unsupported value).
+  it("value-check: YES-then-NO judge with k=3 → ungrounded (dissent caught)", async () => {
+    const confidentMatches = [match("notes/vpn.md", "The office VPN needs MTU 1380 on wg0 to stop handshake drops.", 0.72)];
+    const wrongValueAnswer = "The office VPN uses MTU 9000 on wg0 [from notes/vpn.md].";
+    let calls = 0;
+    const yesNo = async () => { calls += 1; return calls === 1; };
+    const out = await verifyGroundingWithReverify(wrongValueAnswer, confidentMatches, query, yesNo, { reverifySamples: 3 });
+    expect(out.verdict).toBe("ungrounded");
+  });
+
+  it("value-check: all-YES judge with k=3 → grounded (unanimous keep)", async () => {
+    const confidentMatches = [match("notes/vpn.md", "The office VPN needs MTU 1380 on wg0 to stop handshake drops.", 0.72)];
+    const wrongValueAnswer = "The office VPN uses MTU 9000 on wg0 [from notes/vpn.md].";
+    const out = await verifyGroundingWithReverify(wrongValueAnswer, confidentMatches, query, async () => true, { reverifySamples: 3 });
+    expect(out.verdict).toBe("grounded");
+  });
+
+  it("reverifySamples clamped to 5 (does not exceed 5 calls)", async () => {
+    let calls = 0;
+    const allYes = async () => { calls += 1; return true; };
+    await verifyGroundingWithReverify(weakAnswer, weakMatches, query, allYes, { reverifySamples: 10 });
+    expect(calls).toBeLessThanOrEqual(5);
+  });
+
+  it("reverifySamples clamped to 1 minimum (0 treated as 1)", async () => {
+    let calls = 0;
+    const allYes = async () => { calls += 1; return true; };
+    await verifyGroundingWithReverify(weakAnswer, weakMatches, query, allYes, { reverifySamples: 0 });
+    expect(calls).toBe(1);
   });
 });
