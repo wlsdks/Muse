@@ -125,3 +125,11 @@ ratchet: testFiles 949→949 (재작성, 파일수 불변) · netCoverage 0 (동
 - **왜:** flaky 테스트는 동시-루프 부하 시 full check를 red로 오염. KIND 다양성(최근 3 fire 모두 prune)상 FIX 필수. fire-2 playbook-store와 동일 패턴.
 - **어떻게-증명(MUTATION-FIRST):** cap slice를 `slice(len-MAX)`→`slice(0,MAX)`(oldest 유지)로 변형 시 재작성 테스트 RED(`'e0'≠'e5'`); ④b judge가 2차 mutation(cap 제거→length 205)도 잡힘 + seed가 충실(e0..e203+record=205→cap e5..e204, 원본과 동일 end-state) + 204 seed 전부 read-back(quarantine 안 됨) 재확인 후 **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경. ★LESSON(강화): `pnpm check` 전 `pnpm -r build`나 `rm -rf dist` 절대 금지 — 더블 빌드가 stale-dist resolve 실패(mcp 4파일) + eslint stale-타입 false-positive(unused var) + **OOM SIGABRT(134)**까지 유발. `pnpm check` 단독만 → 클린 GREEN. [[project_stale_dist_from_loop]]
+
+## fire 15 · 2026-06-13 · skill v1.14.0 · ce3e3855
+meta: kind=prune · pkg=@muse/tools · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 952→951 (−1 중복 삭제, judge 승인) · netCoverage +3 (test 보안 케이스 src로 이식) · fabrication 0 · 슬라이스 격리 green+judge PASS (full check는 무관 부하-flake)
+- **무엇:** 마지막 tools 이중-실행 `muse-tools-data` 쌍 정리(4 도구: math/hash/csv/base64). 더 완전한 `src/`(20→23) 유지, lesser `test/`(17) 삭제. ★사전 전수 대조로 test 유니크 3개(보안)를 한 번에 이식: CsvParse 200k·Base64 500k DoS 경계 + padBase64 %4===3 패딩-복원. (multi-dot·modulo는 src가 이미 커버 확인 — 불필요 이식 회피.)
+- **왜:** tools 4쌍 이중-실행 정리 완결(helpers·time·text·data). test의 DoS 경계 케이스("mutation-surfaced gap")는 src가 없던 진짜 보안 커버 — 보존 필수.
+- **어떻게-증명(MUTATION-FIRST PRUNE):** CsvParse 200k 경계 무력화(`>MAX`→`>999999999`) 시 RED; Base64 500k도 동일 메커니즘(judge 독립 확인). padBase64는 Node Buffer가 unpadded 관대 디코드라 mutation-immune(decode round-trip은 src url-safe가 커버, encode 출력은 assert) — 무해한 over-preservation. ④b judge **1차 PASS**(사전 전수 대조로 FAIL-재작업 회피, time/text 교훈): 17→23 전 행동 생존 + trailing-tokens는 다른 스위트가 커버 + 양쪽 DoS mutation-caught 확인.
+- **리스크:** 소스 무변경. full `pnpm check` red지만 **무관 일시 아티팩트** — (1차) judge 서브에이전트의 동시 tools-mutation 빌드가 agent-core 테스트와 레이스("Failed to resolve @muse/tools"), (2차) apps/cli Ink-render `"echoes typed command"`가 동시-루프 부하서 5735ms timeout(다른 테스트 → 일시적). 둘 다 본 슬라이스·tools와 무관. LESSON: judge가 같은 패키지 dist를 mutation-churn하는 동안 full check를 돌리면 resolve 레이스 — judge 완료 후 check.
