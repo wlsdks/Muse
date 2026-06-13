@@ -867,6 +867,108 @@ excluded when scoring).
   refreshes when a human runs it. Wire `writeFadedMemoryKeys` into `memory-consolidate-tick.ts` +
   `commands-daemon.ts` behind the existing `MUSE_SELFLEARN_ENABLED` gate so fade refreshes automatically
   on the background tick. (fire-30 remainder; also: FadeMem-style importance term in `selectForgettable`.)
+- ✓→Done **ReConcile consensus-gated council rounds** — `muse swarm council` ran a fixed round count
+  blind to convergence (MAST step-repetition + termination-unawareness, arXiv:2309.13007 Chen/Saha/Bansal
+  ACL 2024). [DONE 2026-06-13, cognition loop fire 31: `hasCouncilConsensus` (every member's mean pairwise
+  Jaccard support ≥ DEFAULT_COUNCIL_AGREE_AT=0.16) added to the debate loop condition; `--rounds` default
+  bumped 1→2 (required — the loop is dormant at 1) so an agreed panel stops at round 1 and only a contested
+  panel spends the (previously dormant) debate round, bounded by the unchanged cap 3. Single gather-closure
+  seam → the assembled-path test drives the real production loop. Judge PASS: both counterfactuals
+  non-vacuous, refactor behavior-preserving, floor-safe (gate only shortens; dedupe/screen/id-gate/reverify
+  unchanged).]
+- ◦ **Council cross-lingual consensus (KO/EN agreeing panel)** — `hasCouncilConsensus` uses Jaccard token
+  overlap, so a genuinely-agreeing KO+EN panel scores support ~0 → falsely "diverged" → wastes one bounded
+  round (no floor violation; cap holds). Same CJK hazard family as fire-28's outlier screen. Needs an
+  embedding-based cross-lingual similarity to fix both. (judge-flagged fire 31)
+- ◦ **Stabilize mcp playbook-store weighted-eviction test flake** — `playbook-store.test.ts:309`
+  (recordPlaybookStrategy weighted eviction, added fire 27) times out at the 5000ms per-test default under
+  full-suite parallel load; passes 1696/1696 in isolation. Raise the per-test timeout or reduce its async
+  file-write count. (judge-flagged fire 31; same family as the cli chat-grounding concurrency flake)
+- ✓→Done **BKT weakness resolution — close the Whetstone loop** — the weakness ledger was append-only
+  (nothing recorded a gap got FIXED), so `muse recap` nagged about already-remediated grounding gaps for
+  30 days (arXiv:2105.00385 Bayesian Knowledge Tracing, pyBKT EDM'21). [DONE 2026-06-13, cognition loop
+  fire 32: `WeaknessEntry.pKnown` BKT mastery estimate raised by the grounding gate's own SUCCESS verdicts
+  (`muse ask` grounded non-action → `recordWeaknessResolved`); `selectRemediableWeaknesses` drops mastered
+  (pKnown≥0.95) entries. One grounded answer does NOT clear a weakness (needs 3 — slip/guess noise, pass^k
+  spirit). Judge PASS: writer default-ON, reader = the selector recap reads, BKT math recomputed exact,
+  both counterfactuals non-vacuous, answer path byte-identical, legacy entries unaffected.]
+- ◦ **Doctor weakness nudge uses a different selector** — `muse doctor`'s fuel/--weaknesses nudge calls
+  `selectDevFixableWeaknesses` (DEV_FIXABLE_AXES excludes grounding-gap), so BKT mastery (fire 32) doesn't
+  affect it, and doctor's raw `formatWeaknesses` inventory still lists mastered topics (honest dump, not a
+  nag). If desired, apply `!isMasteredWeakness` to the doctor inventory view too. (judge-flagged fire 32)
+- ◦ **Whetstone resolution — remaining axes & decay** — fire 32 closed grounding-gap resolution only.
+  Remainder: dev-axis resolution (clear `unbacked-action`/`wrong-tool` when the tool later succeeds);
+  chat-path resolution (needs chat's wrong-value check as the success signal — chat has no grounded label);
+  BKT+Forget P(F)>0 mastery decay for long-idle topics (pairs with fire 30's fade); surface the stored
+  `hint` in the recap nudge line. (fire 32 remainder, arXiv:2105.00385)
+- ✓→Done **MemRL two-phase value-aware playbook retrieval** — `scoreStrategy` blended RAW unbounded
+  token-overlap relevance with a bounded ±2.5 reward, so fire-27's Memp tallies vanished on verbose
+  queries and leaked past relevance on sparse ones (arXiv:2601.03192 MemRL, Zhang et al. 2026). [DONE
+  2026-06-13, cognition loop fire 33: two-phase `rankEligible` — Phase A relevance gates eligibility
+  (relevanceOnly>minScore, k1=2·topK), Phase B z-score-normalized `0.5·rel̂+0.5·Q̂−reflected` re-ranks
+  among candidates so utility can never lift an off-topic strategy into the prompt. scoreStrategy removed;
+  both lexical + embed rankers rewired. Judge PASS via real revert: raw blend fails the verbose-include,
+  sparse-exclude, and applyPlaybook-render tests. Selection-only, floor untouched.]
+- ◦ **Playbook recency-floor score-scale mix** — recency-floor top-ups (below-minScore banks) carry
+  raw-composite scores into the final sort alongside Phase-B z-scores, so a top-up can render ABOVE a
+  higher-value Phase-B pick in the [Learned Strategies] block ORDER (membership is correct; ordering only).
+  Normalize top-ups onto the composite scale or append them after Phase-B picks. (judge-flagged fire 33)
+- ◦ **MemRL remainder** — (a) Q-update EMA `Q ← Q + α(r−Q)` as an alternative to net tallies in
+  adjustPlaybookReward; (b) close the bandit loop with automatic per-turn reinforcement from turn outcome
+  (today reward writes are manual CLI + correction-decay only — the real cold-start fix); (c) λ sensitivity
+  A/B (eval:playbook-rank) before tuning off the paper's 0.5; (d) tuned δ for the cosine channel.
+  (fire 33 remainder, arXiv:2601.03192)
+- ✓→Done **Compaction-fidelity: salient detail retention** — conversation compaction dropped
+  numbers/dates/decisions, duplicated the summary each round, and wiped a designed-but-dead StructuredFact
+  field (arXiv:2511.17208 Zhou & Han, non-compressive detail retention). [DONE 2026-06-13, cognition loop
+  fire 34: `salient-facts.ts` extracts VERBATIM NUMERIC/DECISION/ENTITY facts from user/assistant turns only
+  (tool excluded), merges newest-wins into one `[Key details]` block in the compaction summary, and persists
+  them instead of wiping. PROVABLY non-truncating: numeric = maximal-token-or-drop via a complete
+  continuation-char set (digits∪separators∪scale-words∪Sino-Korean numerals, 4-way boundary guard); decision
+  = fit-or-drop (no mid-sentence cut that would invert a Korean sentence-final negation). 5 adversarial judge
+  FAIL rounds hardened the floor before PASS. Floor-strengthening (the chat number-value gate regains the
+  true value post-compaction), additive, answer path byte-identical.]
+- ◦ **Faithful KO numeric parser for salient facts** — fire 34's regex extractor DROPS (safely) what it
+  can't parse faithfully: Latin-unit numbers (`42 people`), and KO multi-segment compounds (`3억 5천만원` =
+  350,000,000, space-separated). A real Korean numeral parser (arabic + hangul numerals 영일이…, compound
+  scales 천/만/억/조, spacing) would extract these whole. Until then they're omitted, not truncated.
+  (fire 34 remainder, arXiv:2511.17208)
+- ◦ **Compaction legacy-line dedup** — fire 34 deduped only the `[Key details]` block; the legacy
+  "Tools kept / Recent user topics / [Pinned entities]" lines still accumulate one copy per compaction round
+  in `buildCompactionSummaryText`. Strip-and-re-emit them the same way. (fire 34 remainder)
+- ✓→Done **RAG-Fusion compound-query retrieval** — headline `muse ask` embedded the question once, so a
+  compound question blended between topics and dropped one answer chunk at topK=3 (half-answer/false-refusal
+  on a fully-covered corpus). [DONE 2026-06-13, cognition loop fire 35: `splitCompoundQuery` deterministically
+  splits KO/EN coordinated questions into 2–3 clauses (each ≥2 content tokens, else []); `diversifyAskChunks`
+  fuses each clause's cosine ranking into the existing RRF (arXiv:2402.03367 RAG-Fusion). Pure selection over
+  the user's own chunks — per-chunk score stays full-query cosine so confidence is never inflated; fail-open;
+  byte-identical when not compound. Judge PASS via real revert (non-vacuity test fails when fusion ignored).]
+- ◦ **Fusion must-refuse verdict assertion** — `commands-ask-fusion.test.ts`'s must-refuse-compound case
+  asserts only per-chunk score equality, not the `classifyRetrievalConfidence` verdict (the judge verified the
+  verdict invariant manually; it's deterministic given unchanged scores). Add the explicit `verdict` assertion
+  for defense-in-depth. (judge-flagged fire 35, low priority)
+- ◦ **RAG-Fusion remainder** — (a) LLM-backed decomposition (full RQ-RAG, arXiv:2404.00610) for implicit
+  compounds the deterministic splitter misses, gated like chat's `needsContextualRewrite`; (b) port the
+  knowledge-recall second-hop PRF to the headline ask path for sequential bridge-entity questions; (c) extend
+  the multi-hop A/B battery with compound-question joint@K cases to measure the live delta. (fire 35 remainder)
+- ⏳ **Council hand-off injection quarantine — DEFERRED on detector calibration (fire 36)** — the
+  MECHANISM is sound and was built + judge-confirmed (screenCouncilInfection at the council hand-off,
+  fail-close all-infected→null, non-inert on the live `muse swarm council` path, cuts the Prompt-Infection
+  self-replication channel before the round-2 debate digest / synthesis — arXiv:2410.07283 Lee & Tiwari
+  2024). The BLOCKER is detector CALIBRATION: reusing `@muse/policy`'s `sharedInjectionPatterns` (tuned for
+  hostile USER input) to screen fluent MODEL reasoning over-quarantines honest/dissenting peers — across 4
+  adversarial judge rounds, FPs surfaced in `environment_extraction` (`env` in "envision"), `credential_extraction`
+  (`token`+"give"), `prompt_override` (bare "from now on"), `sandbox_escape` ("without an approval check"),
+  `cross_user_access` ("another" matches unanchored `other`), `training_data_extraction` ("print internal
+  context"), and `role_override`'s debug-mode subpattern ("enable debug mode for this test"). Over-quarantine =
+  silently dropping an honest peer = unacceptable (corrupts deliberation, subtle censorship). Whack-a-mole on
+  subpatterns did not converge (each round found a new FP). PATH FORWARD (dedicated slice): build a council-LOCAL,
+  prose-safe pattern set anchored to literal-attack token SEQUENCES (not single common words), empirically
+  calibrated against a LARGE corpus of (legitimate model reasoning, genuine injection) pairs; the survived-all-4-rounds
+  clean families are a starting core (korean_role_override, korean_prompt_extraction, multilingual_prompt_leak,
+  punctuation_obfuscation, tool_spoofing, few_shot_poisoning, history_poisoning, command_injection, plus role_override
+  MINUS its debug-mode subpattern, system_delimiter for literal control tokens). Reuse the screenCouncilInfection
+  mechanism design (it passed). (fire 36 deferred — mechanism done, calibration is the work.)
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting
   each is verifier-backed (85.36% same-mistake repetition without one, arXiv 2510.18254). (T1-10)
 - (queued behind fuel/prereqs: sleep-time compute · Mem0 UPDATE op · AWM workflow mining ·

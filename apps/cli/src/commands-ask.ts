@@ -27,7 +27,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -691,6 +691,41 @@ async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null
   }
 }
 
+export interface AskWeaknessResolverDeps {
+  readonly recordWeaknessResolved: (file: string, message: string) => Promise<unknown>;
+  readonly weaknessesFile: string;
+}
+
+/**
+ * Feed a successful grounded answer to the weakness ledger's BKT mastery estimator so
+ * topics the user asks about repeatedly, but that Muse now answers correctly, can
+ * graduate out of the recap/doctor nudge list. Best-effort — a throwing ledger write
+ * must never break the ask command. Deps injected for testing.
+ */
+export async function recordAskWeaknessResolved(query: string, deps: AskWeaknessResolverDeps): Promise<void> {
+  if (query.trim().length === 0) {
+    return;
+  }
+  try {
+    await deps.recordWeaknessResolved(deps.weaknessesFile, query);
+  } catch {
+    // a ledger write must never break the ask command
+  }
+}
+
+async function recordAskWeaknessResolvedLive(query: string): Promise<void> {
+  try {
+    const { recordWeaknessResolved } = await import("@muse/mcp");
+    const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
+    await recordAskWeaknessResolved(query, {
+      recordWeaknessResolved,
+      weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
+    });
+  } catch {
+    // lazy-import / path resolution failure is non-fatal
+  }
+}
+
 export interface BestOfRedrawArgs {
   /** How many fresh drafts to draw (the n-1 of --best-of n). */
   readonly attempts: number;
@@ -1292,7 +1327,7 @@ const ASK_MMR_LAMBDA = 0.7;
  * ABSOLUTE cosine `score`, so the CRAG confidence framing is unchanged.
  * Without a query (or with no content tokens) it is the prior cosine MMR.
  */
-export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: number, lambda = ASK_MMR_LAMBDA, query?: string): ScoredChunk[] {
+export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: number, lambda = ASK_MMR_LAMBDA, query?: string, subqueryEmbeddings?: ReadonlyArray<readonly number[]>): ScoredChunk[] {
   const sorted = [...candidates].sort((a, b) => b.score - a.score);
   if (topK <= 0 || sorted.length <= topK) {
     return sorted.slice(0, Math.max(0, topK));
@@ -1300,13 +1335,27 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
   const queryTokens = query ? lexicalTokens(query) : new Set<string>();
   if (queryTokens.size > 0) {
     const keyOf = (i: number): string => String(i);
+    // Full-query cosine ranking (list #0) + lexical ranking (list #1) are
+    // always present. Sub-query cosine rankings (one per clause) are appended
+    // when supplied — RAG-Fusion (arXiv:2402.03367): each variant produces an
+    // independent ranking, all fused via RRF so a chunk top-ranked by ANY
+    // clause surfaces into the selection window.
     const cosRanked = sorted
       .map((c, i) => ({ i, s: c.score }))
       .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
     const lexRanked = sorted
       .map((c, i) => ({ i, s: lexicalOverlap(queryTokens, c.chunk.text) }))
       .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
-    const fused = fuseByReciprocalRank([cosRanked, lexRanked]);
+    const rankingLists: Array<readonly string[]> = [cosRanked, lexRanked];
+    if (subqueryEmbeddings && subqueryEmbeddings.length > 0) {
+      for (const subVec of subqueryEmbeddings) {
+        const subRanked = sorted
+          .map((c, i) => ({ i, s: cosine(subVec, c.chunk.embedding) }))
+          .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
+        rankingLists.push(subRanked);
+      }
+    }
+    const fused = fuseByReciprocalRank(rankingLists);
     const maxFused = Math.max(1e-9, ...fused.values());
     const order = selectByMmr(
       sorted.map((c, i) => ({ key: keyOf(i), relevance: (fused.get(keyOf(i)) ?? 0) / maxFused, embedding: c.chunk.embedding })),
@@ -2203,11 +2252,28 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           file: f.path,
           score: cosine(queryVec!, chunk.embedding)
         })));
-        // Hybrid (cosine + lexical RRF) MMR selection so a query's
+        // RAG-Fusion (arXiv:2402.03367): for a compound question each clause
+        // gets its own embedding → its own cosine ranking over the same chunk
+        // set → all rankings (full-query + per-clause + lexical) fused via RRF.
+        // A blended full-query embedding alone can sit between two topics so
+        // one answer-bearing chunk falls out of topK; per-clause rankings rescue
+        // both. Fail-open: any embed error leaves clause vectors empty and the
+        // path is byte-identical to a non-compound query. Per-chunk `score`
+        // stays the full-query cosine so classifyRetrievalConfidence is unchanged.
+        let subqueryEmbeddings: ReadonlyArray<readonly number[]> = [];
+        try {
+          const clauses = splitCompoundQuery(query);
+          if (clauses.length >= 2) {
+            subqueryEmbeddings = await Promise.all(clauses.map((c) => embed(c, embedModel)));
+          }
+        } catch {
+          subqueryEmbeddings = [];
+        }
+        // Hybrid (cosine + lexical + per-clause RRF) MMR selection so a query's
         // distinctive keywords surface the answer-bearing note even when
         // nomic's compressed cosine ranks it below near-misses — and the
         // grounding stays diverse, not three near-duplicate chunks.
-        scored = diversifyAskChunks(allScored, topK, ASK_MMR_LAMBDA, query);
+        scored = diversifyAskChunks(allScored, topK, ASK_MMR_LAMBDA, query, subqueryEmbeddings);
         // Graph-augmented recall (HippoRAG / GraphRAG, Edge et al. 2024): pull in
         // chunks from notes 1-hop LINKED from the CONFIDENT matches — the
         // answer-bearing note the question's note links to (a [[wiki-link]]) but
@@ -3769,6 +3835,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         askHint = worstUnsupportedSentence(reportSentenceGroundedness(collectedAnswer, evidenceTexts));
       }
       await recordAskWeaknessLive(query, askAxis, askHint);
+      if (askOutcome === "grounded" && !askIsActionRequest) {
+        await recordAskWeaknessResolvedLive(query);
+      }
 
       if (options.json) {
         // Emit a single JSON object on stdout — consumers can pipe
