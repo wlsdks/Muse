@@ -35,7 +35,7 @@ import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
 import { acquireOllamaLease, evaluateArithmeticExpression, fetchReadableUrl, listReflections, parseReminderDueAt, readActionLog, readContacts, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type ActionLogEntry, type Contact, type MessageApprovalGate, type PersistedReminder, type PersistedTask } from "@muse/mcp";
 import { redactSecretsInText } from "@muse/shared";
-import { allUserMemoryFacts, buildDiskContents, buildActionContextBlock, buildCalendarContextBlock, buildEpisodeContextBlock, buildFeedContextBlock, buildGitContextBlock, buildMemoryContextBlock, buildNoteContextBlock, buildShellContextBlock, buildReminderContextBlock, buildTaskContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
+import { allUserMemoryFacts, buildDiskContents, buildActionContextBlock, buildCalendarContextBlock, buildContactContextBlock, buildEpisodeContextBlock, buildFeedContextBlock, buildGitContextBlock, buildMemoryContextBlock, buildNoteContextBlock, buildShellContextBlock, buildReminderContextBlock, buildTaskContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
 export { allUserMemoryFacts, buildDiskContents, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
 import { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, urlGroundingSource } from "@muse/recall";
 export { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, urlGroundingSource };
@@ -1817,26 +1817,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           // contacts file missing or unreadable — silently skip
         }
       }
-      const contactBlock = matchedContacts.length === 0
-        ? "(no matching contacts)"
-        : matchedContacts
-          .map((c, i) => {
-            const birthday = formatContactBirthday(c.birthday);
-            const connections = c.connections && c.connections.length > 0
-              ? c.connections.map((e) => `${e.as ?? "connected to"} ${e.to}`).join("; ")
-              : undefined;
-            const fields = [
-              c.relationship ? `your ${c.relationship}` : undefined,
-              c.email ? `email ${c.email}` : undefined,
-              c.phone ? `phone ${c.phone}` : undefined,
-              c.handle ? `handle ${c.handle}` : undefined,
-              birthday ? `birthday ${birthday}` : undefined,
-              connections ? `connections: ${connections}` : undefined,
-              c.about ? `notes: ${c.about}` : undefined
-            ].filter((f): f is string => f !== undefined).join(", ");
-            return `<<contact ${(i + 1).toString()} — ${c.id}>>\n${c.name}${fields ? ` — ${fields}` : ""}\n[contact: ${c.name}]\n<<end>>`;
-          })
-          .join("\n\n");
+      const contactBlock = buildContactContextBlock(matchedContacts);
 
       // User-memory grounding (B3): facts the user told Muse to remember
       // ("I'm allergic to penicillin") are injected into the PERSONA so the model
