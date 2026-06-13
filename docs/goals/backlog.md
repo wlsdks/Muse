@@ -1329,6 +1329,8 @@ excluded when scoring).
   (g) extend write-precondition to non-string args (empty array / `{}` on a write — fire 21 covered string args).
 - ✓ Plan-validation remainder (b) ordering/dependency validation — agent-core-cognition fire 8
 - ✓ Plan-validation remainder (c) write-step precondition checks (ISR-LLM arXiv:2308.13724) — a write/execute step with an unfilled-placeholder arg is rejected before any tool runs (no partial side-effect) — agent-core-cognition fire 21
+- ✓ Playbook staleness re-probation gate (SSGM arXiv:2603.11768) — a once-reinforced strategy gone cold (>120d, sparse) is withheld from injection until re-reinforced — agent-core-cognition fire 22
+- ◦ **Playbook staleness-gate remainder** — tune PLAYBOOK_STALE_AFTER_DAYS (120) + the tally<3 sparsity bar on real reinforcement-interval data (chosen from SSGM framing + synthetic fixtures; a rarely-triggered useful/seasonal strategy could be withheld until re-reinforced — reversible + re-distillable so safe-direction, but untuned). Optionally a `muse doctor` "N strategies withheld as stale" surface. (fire 22 remainder, arXiv:2603.11768)
 - ✓ Playbook temporal reward discounting (Discounted-UCB arXiv:0805.3415) — agent-core-cognition fire 9
 - ◦ **Playbook recency-discount remainder** — (a) carry recency anchors into the `@muse/recall` non-embed
   `selectPlaybookSection` path too (this slice scoped to the agent-runtime applyPlaybook path); (b) tune
