@@ -304,3 +304,21 @@ ratchet: testFiles 931 · differentiationBatteries 4→5 (fire-13 ratchet 자동
   통과 judge 확인. mcp src byte-clean(git status 2파일). lint:pass·self-eval differentiationBatteries=5.
 - **리스크/residual (비차단)**: 배터리는 *consented-action seam*을 증명; ambiguous-recipient
   (P13 contacts clarify)는 별 seam이라 미포함(outbound-safety의 다른 rule). 향후 L7 확장 여지.
+
+## fire 15 · 2026-06-13 · skill v1.14.0 · `<pending-commit>`
+meta: value-class=new-capability · pkg=scripts(@muse/mcp proof) · kind=adversarial-proof-battery(L7-widen) · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 935 · differentiationBatteries 5→6 (fire-13 ratchet 자동) · fabrication 0 · 소유-루프 파일 미수정
+
+- **무엇**: L7 widening(outbound-safety 규칙3 = 수신자는 *해석*되지 *추측*되지 않음). 새
+  결정적 배터리 `scripts/eval-recipient-resolution.mjs`(`pnpm eval:recipient-resolution`).
+  @muse/mcp `resolveContact` 구동: 단일→resolved(identifier=실제 주소), **다중→ambiguous
+  (후보 전부, best-guess 안 함)**, no-match/empty→unknown, relationship("manager")은
+  identifier 아님. fire 14 residual을 닫음.
+- **왜 (어떤 경쟁 레버 대비)**: 잘못된 자율 전송은 롤백 못 하는 outbound 실수. 경쟁사
+  autonomy-first는 "Alex에게 보내"를 best-match로 자율 전송(엉뚱한 Alex). Muse는
+  ambiguous→clarify로 사용자가 수신자를 고르게 함. L7과 같은 축·다른 벡터(비중복).
+- **리뷰지점**: 배터리 PASS 9/9. ④b 독립 Opus judge 4/4 PASS + falsification 재현
+  (`if (pool.length === 1)`→`>= 1`(best-guess) → 배터리 exit 1, ambiguous 2건 ✗ → Edit 복원).
+  mcp src 0줄(git status 2파일). lint:pass · self-eval differentiationBatteries=6.
+- **리스크/residual (비차단)**: clarify-directive 실제 발화는 agent-core wiring(미포함, seam
+  증명에 집중). 다음은 fresh 축 또는 정직히 thinning 판단.

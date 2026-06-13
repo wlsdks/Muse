@@ -39,6 +39,14 @@ vectors (no-consent / scope-mismatch / host-mismatch / veto / timeout) make ZERO
 external effect (fetch never called) while only a recorded scoped consent sends the
 credential. Imports `@muse/mcp` read-only; engine untouched; folded into the
 `differentiationBatteries` ratchet (4→5).
+>
+> **Widened (fire 15) — recipient is resolved, never guessed (rule 3):**
+> `scripts/eval-recipient-resolution.mjs` (`pnpm eval:recipient-resolution`) proves
+> `resolveContact` (`@muse/mcp`) resolves a unique match, returns `ambiguous` with ALL
+> candidates on multiple matches (never silently best-guesses one), and `unknown` on
+> no match / empty query / a relationship word — so "message Alex" with two Alexes
+> clarifies instead of auto-sending to the wrong one. Falsifying `=== 1`→`>= 1`
+> (best-guess) makes the battery fail; ratchet (5→6).
 
 ### L6 — Safety guards are deterministic, model-independent, multilingual code over the live turn — not output-only, English-only, or a bolt-on (fire 12)
 
