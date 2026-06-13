@@ -138,3 +138,12 @@ ratchet: desktop swift tests 51/51 (+1) · fabrication 0 · self-eval exit 0 · 
 - **왜**: CLI의 문서화된 `findOllamaModelTag`(`commands-doctor.ts:646` `<base>`=`<base>:latest`)와 desktop이 불일치하던 cross-surface parity 버그. 현재 상수(`gemma4:12b`, 태그됨)엔 미발현이나 bare 이름(`ollama/gemma4` config 형태)·`:latest` 기록 시 라이브 버그.
 - **리뷰지점**: `withLatest`는 콜론 없을 때만 `:latest` 부가 → 태그된 이름 불변. sized-only(`gemma4:12b`만 있을 때 bare `gemma4`)는 여전히 missing(false-positive 없음). hasPrefix는 raw model 사용.
 - **리스크**: 없음(parse 1함수, 독립 Opus judge가 전 케이스(bare↔latest·sized·quant·substring trap)·revert로 RED·CLI 규칙 일치 검증 후 PASS, 51/51).
+
+## fire 16 · 2026-06-13 · skill v1.14.0 · <commit>
+meta: surface=web · value-class=micro-fix · pkg=@muse/web · kind=dst-relative-date · verdict=PASS · firesSinceDrill=8 (다음 fire=17 → JUDGE-DRILL: allPASS≥8)
+ratchet: testFiles 955 (+1) · web tests 27/27 (+3) · fabrication 0 · self-eval exit 0 · ⚠️web 결함 vein도 얇아짐(scout) → cli 위주 권장
+
+- **무엇**: Calendar `dayLabel`이 "tomorrow"를 `now + 86_400_000`(고정 24h)로 유도 → DST 전환일(23h/25h)에 실제 다음 캘린더 날짜를 빗나가 이벤트 오라벨(+byDay 그룹핑 오염). `new Date(y, m, d+1)`(캘린더-날짜 유도, DST-safe)로 수정 + 테스트 위해 export.
+- **왜**: 실제 입력(America/Los_Angeles, spring-forward 전야)에서 Sun Mar 8 이벤트가 "tomorrow" 대신 generic, Mon Mar 9가 잘못 "tomorrow"로. 좁지만 실제(DST 존, 연 ~2일) 버그.
+- **리뷰지점**: `Date(y,m,d+1)`은 오버플로(월말/연말) 정규화 + 로컬존 존중. 테스트는 `process.env.TZ` 고정(@muse/web은 node타입 없어 `declare const process`로 타입만 충족, 런타임 node) + fake timers. Today/generic 분기 무변.
+- **리스크**: 없음(derivation 1줄 + export, byDay 소비자 transitively 수혜, 독립 Opus judge가 *derivation만 revert*로 DST RED 입증·TZ pin 유효·build green 검증 후 PASS, web 27/27).
