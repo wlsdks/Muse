@@ -1,5 +1,8 @@
 # Muse dev backlog — the living ledger
 
+- ✓ mac_message_send ambiguous clarify names the candidate contacts (email parity) — the model asks "Jane Park or Jane Doe?" instead of a vague "which one?" on an irreversible send — tool-hardening fire 68
+
+- ✓ dead-code apps/api: removed dead compatRecord fn + de-exported internal-only sanitizeConfigValue (knip-verified, barrel re-export false-positives left alone) — codebase-quality fire 24
 - ✓ mac_message_send resolves a NAME → number from the contacts graph (Rule 3 parity with email; "text Jane" now completes, ambiguous/unknown fail closed, resolved-not-guessed) — tool-hardening fire 67
 - ✓ Phase 3 sub-slice 3b: moved buildNoteContextBlock (<<note N>> grounding block) commands-ask -> @muse/recall/present.ts (+test moved); 3a+3b relocate the whole note-block concern out of CLI — codebase-quality fire 23
 - ✓ Phase 3 sub-slice 3a: relocated escapeSystemPromptMarkers (injection defense) apps/cli -> @muse/recall (+test moved, commands-ask rewired); unblocks 3b — codebase-quality fire 22
@@ -131,6 +134,7 @@
 - ✓ desktop `stripCitationsForSpeech` spoke leaked source file paths aloud — the receipt-strip regex `\s*📎[^\n]*` only removed the multi-line receipt's HEADER line; widened to `\s*📎[\s\S]*` (trailing receipts) so the whole block is dropped from speech (+JUDGE-DRILL: verifier proved it FAILs an inert test, PASSes the real RED→GREEN one) — surfaces fire 8
 - ✓ `muse remind list --search <text>` free-text filter (sibling parity with `tasks list`; reminders-list had only --status/--local/--json despite reminders carrying a searchable `text`); pure `filterRemindersBySearch` + total recompute across local/API/fallback paths — surfaces fire 9
 - ✓ web Today `timeUntil` showed "in 0m"/"0분 후" for events 0–29s away (`Math.round` to 0 minutes); now-guard widened to `ms<0 || min===0` so the rounds-to-zero window reads "now"/"지금" — surfaces fire 10
+- ✓ desktop `MusePresenter.present` returned `speechText: ""` (not nil) for a receipt/citation-only answer that strips to empty — the consumer's `if let speech` then animated the orb "speaking" + spoke an empty utterance; collapse empty stripped speech to nil (honors the documented nil⇒silent contract) — surfaces fire 11
 - ✓ `upcoming_birthdays` agent tool — conversational "whose birthday is coming up?" (resolveUpcomingBirthdays was CLI/brief-only, no agent tool) — tool-hardening fire 47
 - ✓ `on_this_day_notes` agent tool — conversational date-cued note recall (muse on-this-day was CLI-only; pure recall logic moved to @muse/mcp, CLI re-exports) — tool-hardening fire 48
 - ✓ `feeds_search` agent tool — conversational watched-feed archive search (CLI-only + only knowledge_search covered it, off by default → default-posture gap) — tool-hardening fire 49
