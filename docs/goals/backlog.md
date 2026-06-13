@@ -25,7 +25,13 @@
 
 - ⏳ `math_eval` robustness — VERIFIED NOT A BUG (fire 52): both evaluateArithmetic copies (tools + mcp) reject malformed input by throwing→error (no crash); commas are intentionally stripped. No slice. (closes the fire-51 LANE-A candidate)
 
+## GROUNDING INTEGRITY theme — open
+
+- ◦ untrusted-only provenance e2e firing-rate — the `untrustedOnlyGroundingNotice` wiring (grounding-integrity fire 1) is unit-pinned, but production firing depends on the model citing tool sources as `[from tool: <src>]`. Measure/repair the real firing rate via `eval:grounding-delta` on a `--with-tools` poisoned-source case. (scouted grounding-integrity fire 1)
+
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
+
+- ✓ untrusted-only provenance marker on grounded ask answers — wired the dead `groundedOnUntrustedOnly` grounded≠true mitigation into the `muse ask` verdict path (re-export + `untrustedOnlyGroundingNotice` + verdict wiring); faithful answers resting only on untrusted MCP/web sources now surface a scrutiny cue, label stays "grounded", floor untouched — grounding-integrity fire 1
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
 - ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
