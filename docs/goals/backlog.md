@@ -743,6 +743,18 @@ HARDEN (make existing tools more reliable):
   fired=0)→GREEN; mcp 1776, check 0 (all pkgs), lint 0. Opus PASS (JSON injective incl. quote/bracket injection;
   entries-not-keys persisted so backward-compatible; reachable — calendar event ids are provider-reported/untrusted).
   KIND dedup, fresh surface. (Fable-5 was unavailable this fire; scout + judge ran on Opus 4.8 per the fallback.)
+- ✓→Done **objective verdict parser leaked a NESTED outcome → FALSE autonomous `met`** (EXPANSION gap-scout, fire 44;
+  parsing-bug / safety — false-positive completion) — `balancedJsonCandidates` (objective-evaluator.ts:79-110) pushed
+  every balanced `{...}` span starting at every `{` WITHOUT advancing past a consumed span, so a NESTED object was
+  re-extracted as its own candidate. `parseObjectiveVerdict` takes the LAST candidate with a recognized `outcome`, so
+  `{"plan":{"outcome":"met"},"note":"not yet"}` leaked the inner `{"outcome":"met"}` → returned `met` — the one outcome
+  the module promises "never a false met" (it's autonomous: `runDueObjectives` calls `act()` + flips status:done on a
+  `met` verdict). FIX: after pushing a balanced span ending at `j`, set `i = j` so only TOP-LEVEL objects are verdict
+  candidates; a nested-only outcome is ambiguous ⇒ the conservative `unmet`. TDD (nested-only met → unmet; nested-in-
+  array → unmet; top-level unmet + nested met → unmet) RED(remove i=j → false met)→GREEN; mcp 1778, check 0 (all pkgs),
+  lint 0. Opus PASS (separate top-level objects still both extracted; brace-in-string/escaped-quote unaffected; the
+  evaluator SYSTEM_PROMPT demands a TOP-LEVEL `{outcome,reason}` so a nested-only reply is off-spec → unmet is correct,
+  not a dropped legit verdict). KIND parsing-bug, fresh surface — directly on the fabrication=0 / autonomous-safety edge.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

@@ -97,6 +97,12 @@ function balancedJsonCandidates(text: string): string[] {
         depth -= 1;
         if (depth === 0) {
           out.push(text.slice(i, j + 1));
+          // Skip the consumed span so a NESTED object is NOT re-extracted as its
+          // own candidate — otherwise `{"plan":{"outcome":"met"},"note":"not yet"}`
+          // leaks an inner `{"outcome":"met"}` and parseObjectiveVerdict returns a
+          // FALSE `met` (an autonomous false completion). Only TOP-LEVEL objects
+          // are verdict candidates; a nested-only outcome is ambiguous ⇒ unmet.
+          i = j;
           break;
         }
       }
