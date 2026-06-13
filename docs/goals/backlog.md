@@ -1,8 +1,9 @@
 # Muse dev backlog — the living ledger
 
+- ✓ decompose @muse/multi-agent: worker-result cluster (parseWorkerResult/validateWorkerHandoff/createWorkerResult + types) index.ts -> worker-result.ts (825->767 LOC) — codebase-quality fire 27
 - ✓ eval:tools field-targeted time-arg correctness — new argFieldMatches scorer + 5 calendar/reminder add cases now assert dueAt/startsAt carries the PHRASE (re-arms the *Iso precompute regression that whole-args argMatches couldnt catch) — tool-hardening fire 69
 - ⏳ FINDING (fire 69) — followup scenario 60% (pre-existing, NOT mine): the model mis-selects followup.cancel/snooze as followup.list (4 cases FAIL 0/3). A real tool-SELECTION gap on the followup surface — followup.cancel/snooze descriptions need disambiguation from followup.list (the 8B cannot tell "cancel/delay a commitment" from "list commitments"). Candidate slice: sharpen followup.cancel/snooze "use when/not when" + an eval re-verify. (surfaced by the fire-69 argFieldIncludes live run; my 5 timed cases all PASS 3/3)
-
+- ✓ Phase 3 cont.: extracted inline taskBlock -> buildTaskContextBlock in @muse/recall (+5-case test); ask god-file shrinks, presentation lives in recall — codebase-quality fire 26
 - ✓ JUDGE-DRILL (3rd, verifier FAILed a gutted injection-guard JSDoc) + decompose commands-doctor env-posture trio (LocalCheck/modelEnvCheck/localOnlyCheck) -> commands-doctor-checks.ts (980->939 LOC) — codebase-quality fire 25
 - ✓ mac_message_send ambiguous clarify names the candidate contacts (email parity) — the model asks "Jane Park or Jane Doe?" instead of a vague "which one?" on an irreversible send — tool-hardening fire 68
 
@@ -141,6 +142,7 @@
 - ✓ `muse remind list --search <text>` free-text filter (sibling parity with `tasks list`; reminders-list had only --status/--local/--json despite reminders carrying a searchable `text`); pure `filterRemindersBySearch` + total recompute across local/API/fallback paths — surfaces fire 9
 - ✓ web Today `timeUntil` showed "in 0m"/"0분 후" for events 0–29s away (`Math.round` to 0 minutes); now-guard widened to `ms<0 || min===0` so the rounds-to-zero window reads "now"/"지금" — surfaces fire 10
 - ✓ desktop `MusePresenter.present` returned `speechText: ""` (not nil) for a receipt/citation-only answer that strips to empty — the consumer's `if let speech` then animated the orb "speaking" + spoke an empty utterance; collapse empty stripped speech to nil (honors the documented nil⇒silent contract) — surfaces fire 11
+- ✓ `muse checkins list --status` swallowed typos (`fierd`→"No fierd check-ins.", exit 0, indistinguishable from a real empty result) unlike the strict `tasks list --status`; added enum {scheduled,fired,all} validation → stderr error + exit 1 + did-you-mean — surfaces fire 12
 - ✓ `upcoming_birthdays` agent tool — conversational "whose birthday is coming up?" (resolveUpcomingBirthdays was CLI/brief-only, no agent tool) — tool-hardening fire 47
 - ✓ `on_this_day_notes` agent tool — conversational date-cued note recall (muse on-this-day was CLI-only; pure recall logic moved to @muse/mcp, CLI re-exports) — tool-hardening fire 48
 - ✓ `feeds_search` agent tool — conversational watched-feed archive search (CLI-only + only knowledge_search covered it, off by default → default-posture gap) — tool-hardening fire 49
