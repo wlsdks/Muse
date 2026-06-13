@@ -873,3 +873,12 @@ ratchet: testFiles 970 유지(+1 케이스 mcp.test snooze no-collateral) · fab
 - **왜:** fire 83에서 snooze의 동일 ambiguous 블록(284)을 변조했을 때 무 RED → snooze no-mutation 미검증 확정(backlog ◦로 기록했던 항목). snooze는 row-count가 아닌 dueAt를 mutate하므로 total로는 약함 → dueAt 값 deep-equal로 검증(fixed now면 guess-snooze가 08:10Z로 튀어 seed 12/13/14와 구별 → 결정적 포착).
 - **리뷰지점:** mcp.test.ts 새 it(snooze, 4906~). **mutation-verified 독립 teeth**: snooze ambiguous를 guess-snooze로 변조(snooze-고유 `const index=findIndex` 다음줄로 정밀 타깃) → **새 테스트만 RED**(1/1862), fire 83 clear 테스트 포함 1861 green → snooze 고유 경로 커버 입증. 복원 GREEN(1862), pnpm check exit=0, lint clean. ④b judge PASS 5/5(mutation 독립 REPRODUCE, fire 83과 구별 가치 확인).
 - **리스크:** 없음 — test-only(src 무변경, 변조 복원됨), 순수 additive. **남은 sibling:** `fire` verb(ambiguous@380, pending→fired flip)도 동일 무-mutation 불변 미검증 → backlog ◦로 parity 완성 후보.
+
+
+## fire 85 · 2026-06-14 · skill v1.14.0 · 00b91511(sweep)
+meta: value-class=hardening · pkg=@muse/mcp(test) · kind=no-collateral-damage(reminders.fire 실패 시 status 불변, mutation-verified; PARITY 완성) · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 970 유지(+1 케이스 mcp.test fire no-collateral) · fabrication 0 유지 · eval 무변동(destructive-verb safety invariant PARITY 완결)
+- **무엇:** reminders.fire(status pending→fired flip) 실패(ambiguous/unknown ref) 시 **모든 status 불변(all "pending")** OUTCOME 테스트. dentist×2+milk seed → fire "dentist"→multiple+2 candidates+statusByText all-pending / fire "passport"→not found+all-pending. **reminders destructive-verb no-collateral PARITY 완성**(clear✓83·snooze✓84·fire✓85 = resolveReminderRef 쓰는 3 verb 전부).
+- **왜:** fire 84 mutation-discovery로 fire verb가 마지막 미검증 sibling 확정. fire는 row(clear)·dueAt(snooze) 아닌 **status**를 mutate → status 값 deep-equal로 검증. "linking/lifecycle → audit ALL ops, rot은 silent"(memory) — 2/3만 audit하면 latent 갭.
+- **리뷰지점:** mcp.test.ts 새 it(fire, 4945~). **mutation-verified 독립 teeth**: fire ambiguous를 guess-fire로 변조(fire-고유 `const next=fireReminder` 다음줄 타깃) → **새 테스트만 RED**(1/1863), clear·snooze 테스트 1862 green → fire 고유 경로 입증. 복원 GREEN(1863), pnpm check exit=0, lint clean. ④b judge PASS 5/5(mutation 독립 REPRODUCE, parity-completion 정당·3에서 정확히 멈춤). **⚠️ 패키징 사고:** 미커밋 test 편집이 동시 codebase-quality 루프의 `git add -A` merge(`00b91511`)에 쓸려 들어감 — test code는 거기에, 이 fire는 write-back만 별도 커밋. 향후 edit 직후 즉시 stage 교훈.
+- **리스크:** 없음 — test-only(src 무변경, 변조 복원됨), 순수 additive. no-collateral KIND 소진(3 verb 완결) → fire 86+ 강제 KIND 다양화.
