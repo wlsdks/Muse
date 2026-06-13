@@ -12,3 +12,12 @@ ratchet: testFiles 918 (added 2 cases to existing file) · fabrication 0 · web 
 - **왜**: 채팅 답변에 연락처가 자주 등장하는데 안전한 `mailto:`/`tel:`까지 무력화돼 UX 손실이었다. 안전 스킴만 허용 + 위험 스킴 명시 차단 테스트로 보안 불변식(실행 가능한 URL 주입 0)을 *유지하면서* 표면을 강화.
 - **리뷰지점**: 스킴 allowlist는 정규식 `^(https?:\/\/|mailto:|tel:)/i` 한 줄 — 새 스킴 추가 시 *반드시* 비실행(inert) 스킴인지 확인하고 차단 테스트를 함께 추가할 것. `data:`/`vbscript:`는 영구 차단.
 - **리스크**: 없음(순수 렌더러 단일-줄 변경, 독립 Opus 적대 judge가 bypass probe 포함 PASS, 무관 마크다운 기능 13종 무변).
+
+## fire 2 · 2026-06-13 · skill v1.14.0 · <commit>
+meta: surface=desktop · value-class=micro-fix · pkg=apps/desktop(MuseDesktopCore) · kind=stale-default-model · verdict=PASS · firesSinceDrill=2
+ratchet: desktop swift tests 46/46 (added 2) · fabrication 0 · self-eval exit 0 · consecutive allPASS=2
+
+- **무엇**: macOS desktop 컴패니언이 health-check·온보딩하던 기본 모델이 구식 `qwen3:8b`였다 → 정규 기본값 `gemma4:12b`로 수정(`OllamaHealth.requiredModel`). `.notRunning` 안내(KO+EN)는 모델명을 하드코딩하던 걸 `\(OllamaHealth.requiredModel)` 보간으로 바꿔 다시 drift하지 않게.
+- **왜**: CLI 정규 기본은 `LOCAL_FIRST_DEFAULT_MODEL = ollama/gemma4:12b`([[project_gemma4_default]])인데 desktop만 qwen3:8b를 확인·안내 → 사용자가 틀린 모델을 pull하거나 영영 modelMissing으로 보이는 실제 버그.
+- **리뷰지점**: desktop은 Ollama `/api/tags`에 맞춰 **bare 태그**(`ollama/` 접두 없이 `gemma4:12b`)를 쓴다. 남은 desktop의 `qwen` 참조는 비-버그(parse doc 예시 + `.qwen3TTS_0_6b` TTS 음성모델).
+- **리스크**: 없음(MuseDesktopCore 2-파일 미세 변경, `.modelMissing`/`parse` 무변, 독립 Opus judge가 정규 기본·bare태그·누락참조 검증 후 PASS, 46/46).

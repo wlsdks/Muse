@@ -11,7 +11,7 @@ public enum OllamaStatus: Equatable, Sendable {
 }
 
 public enum OllamaHealth {
-    public static let requiredModel = "qwen3:8b"
+    public static let requiredModel = "gemma4:12b"
     public static let baseURL = "http://localhost:11434"
 
     /// Live check: is Ollama up and does it have `model`? Localhost only (no

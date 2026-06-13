@@ -27,4 +27,24 @@ final class OllamaHealthTests: XCTestCase {
     func testUnparseableButReachableAssumesOk() {
         XCTAssertEqual(OllamaHealth.parse(Data("not json".utf8), model: "qwen3:8b"), .ok)
     }
+
+    func testRequiredModelIsCurrentDefault() {
+        // Must match the CLI's LOCAL_FIRST_DEFAULT_MODEL (ollama/gemma4:12b),
+        // bare tag — else the companion health-checks/onboards a stale model.
+        XCTAssertEqual(OllamaHealth.requiredModel, "gemma4:12b")
+    }
+
+    func testNotRunningGuidanceNamesTheRequiredModel() {
+        for lang in [ResolvedLanguage.korean, .english] {
+            let guidance = lang.ollamaGuidance(.notRunning)
+            XCTAssertTrue(
+                guidance.contains(OllamaHealth.requiredModel),
+                "\(lang) not-running guidance should tell the user to pull the required model"
+            )
+            XCTAssertFalse(
+                guidance.contains("qwen3:8b"),
+                "\(lang) guidance must not name the stale qwen3:8b model"
+            )
+        }
+    }
 }
