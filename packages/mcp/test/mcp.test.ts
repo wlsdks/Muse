@@ -4942,6 +4942,38 @@ describe("muse.reminders loopback server", () => {
     expect(await dueByText()).toEqual(original);
   });
 
+  it("a failed fire (ambiguous word OR unknown ref) flips NO reminder's status — all stay pending", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-rem-fire-"));
+    let counter = 0;
+    const connection = createLoopbackMcpConnection(
+      createRemindersMcpServer({ file: join(dir, "reminders.json"), idFactory: () => `rem_${++counter}` })
+    );
+    await connection.callTool!("add", { dueAt: "2026-05-12T09:00:00Z", text: "dentist appointment" });
+    await connection.callTool!("add", { dueAt: "2026-05-13T09:00:00Z", text: "dentist follow-up" });
+    await connection.callTool!("add", { dueAt: "2026-05-14T09:00:00Z", text: "buy milk" });
+
+    const statusByText = async (): Promise<Record<string, string>> => {
+      const all = await connection.callTool!("list", { status: "all" });
+      return Object.fromEntries((all.reminders as Array<{ text: string; status: string }>).map((r) => [r.text, r.status]));
+    };
+    const allPending = { "dentist appointment": "pending", "dentist follow-up": "pending", "buy milk": "pending" };
+    expect(await statusByText()).toEqual(allPending);
+
+    // An ambiguous WORD ("dentist" matches two) must return candidates, not fire a guess.
+    const ambiguous = await connection.callTool!("fire", { id: "dentist" });
+    expect(ambiguous).toMatchObject({ error: expect.stringContaining("multiple") });
+    expect((ambiguous.candidates as unknown[]).length).toBe(2);
+    expect(await statusByText()).toEqual(allPending);
+
+    // An unknown ref must error WITHOUT flipping any status to fired.
+    const unknown = await connection.callTool!("fire", { id: "passport" });
+    expect(unknown).toMatchObject({ error: expect.stringContaining("not found") });
+    expect(await statusByText()).toEqual(allPending);
+  });
+
   it("search greps reminder text case-insensitively, defaulting to status=all", async () => {
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");

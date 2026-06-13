@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ cohere @muse/autoconfigure: deduped local isRecord type-guard onto canonical @muse/shared isRecord (byte-identical; dups 4->3; voice/agent-core remain hard) — codebase-quality fire 47
 - ◦ reminders.fire no-collateral test: the `fire` verb (pending→fired flip) shares clear/snooze's resolveReminderRef ambiguous@380/not-found branches; its no-mutation invariant is the last untested sibling. Add an OUTCOME test: a failed fire (ambiguous word / unknown ref) flips NO reminder's status. Mirror fire 84's snooze test — completes reminders destructive-verb parity (clear ✓83, snooze ✓84, fire ◦).
 
 - ✓ decompose @muse/macos: moved capture tools (createMacScreenshotTool/createMacScreenReadTool + 4 type interfaces + consts) macos-tools -> macos-screen-tools.ts (1297->1143 LOC; re-export keeps 109 tests green; COMPLETES the capture-cluster decompose fires 43/45/46, 1519->1143 across the thread) — codebase-quality fire 46
