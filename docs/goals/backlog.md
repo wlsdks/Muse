@@ -731,6 +731,18 @@ HARDEN (make existing tools more reliable):
   (randomUUID + orphan cleanup). The queue masks the in-process collision on the fixed paths, but the CLI's direct
   `writeCheckins` (cancel/snooze, unqueued + cross-process) can still hit the same-ms ENOENT + orphan. FIX: adopt
   `atomicWriteFile`. Joins the appendReminderHistory tmp-write ◦ (same one-line swap, resource-leak KIND).
+- ✓→Done **proactive-notice firedKey separator-injection collision (a real notice silently suppressed)** (EXPANSION
+  gap-scout, fire 43; dedup / key-collision) — `firedKey` built the dedup key as `${kind} ${id} ${startIso}` (space-join
+  of free-form fields). `id` is a provider event / task id (untrusted, can contain spaces), so two DISTINCT
+  {kind,id,startIso} tuples collide on one key (id="a b"+startIso="X" vs id="a"+startIso="b X" both → "calendar a b X");
+  the dedup `seen.has(key) → continue` then SILENTLY SUPPRESSES a legitimate second proactive notice — violating the
+  module's own "fires at most once per {kind,id,startIso} tuple" contract. FIX: `JSON.stringify([kind,id,startIso])`
+  (unambiguous; JSON escapes field boundaries — injective). In-memory key (rebuilt each run from the entries sidecar),
+  so NO persisted migration. TDD: unit (collision pair → distinct keys; same tuple → same key) + e2e (crafted colliding
+  sidecar entry → runDueProactiveNotices fires the new event, summary.fired===1) RED(space-join → suppressed,
+  fired=0)→GREEN; mcp 1776, check 0 (all pkgs), lint 0. Opus PASS (JSON injective incl. quote/bracket injection;
+  entries-not-keys persisted so backward-compatible; reachable — calendar event ids are provider-reported/untrusted).
+  KIND dedup, fresh surface. (Fable-5 was unavailable this fire; scout + judge ran on Opus 4.8 per the fallback.)
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

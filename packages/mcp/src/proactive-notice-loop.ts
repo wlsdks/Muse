@@ -171,8 +171,12 @@ function isProactiveFiredEntry(value: unknown): value is ProactiveFiredEntry {
     && typeof candidate.firedAt === "string";
 }
 
-function firedKey(entry: { readonly kind: string; readonly id: string; readonly startIso: string }): string {
-  return `${entry.kind} ${entry.id} ${entry.startIso}`;
+export function firedKey(entry: { readonly kind: string; readonly id: string; readonly startIso: string }): string {
+  // Encode the tuple UNAMBIGUOUSLY (not a space-join): `id` is free-form (a provider
+  // event / task id, can contain spaces), so `${kind} ${id} ${startIso}` lets two
+  // distinct {kind,id,startIso} tuples collide on one key — the dedup would then
+  // silently SUPPRESS a legitimate second notice. JSON escapes the field boundaries.
+  return JSON.stringify([entry.kind, entry.id, entry.startIso]);
 }
 
 /**
