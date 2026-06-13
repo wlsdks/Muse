@@ -963,3 +963,12 @@ ratchet: testFiles 977 유지 · fabrication 0 유지 · 코드 변경 0(EXHAUST
 - **왜:** fresh-handler 버그 vein이 fires 87-93(contacts·calendar·time·on_this_day·home_action 5 버그 + drill 1)에서 productive였으나 이제 **고갈** — 3 scout(87/89/92) + tight scout(94) + 직접 grep이 표면 well-hardened 확정. EXHAUSTION 규칙: value-class 상향(bug-hunt scout) 시도 → dry. "할 게 없다" 아님: 6 fire 연속 genuine 수정 후의 정직한 maturity.
 - **리뷰지점:** 코드 변경 0. 미수행 옵션: (a) DRY-refactor(rollover 가드 3-copy → 공유 helper) = risky(보안 date 파서 3개 fiddly rewire) + codebase-quality territory(backlog ◦ 유지). (b) week-agenda daysUntil 정수-가드 = scout가 non-user-reachable·not-a-bug 판정("could be stricter" 안티패턴). 둘 다 이 fire 슬라이스로 부적합.
 - **리스크:** 없음 — 코드 무변경. 다음 fire: 진안 unblock 레버(email/handle grounding=agent-core-hot, MCP-risk posture, undo/veto) 또는 새 신호(.muse/runs 실패 클러스터) 또는 재-fresh-scout(다른 표면). vein 고갈 backlog 기록.
+
+
+## fire 95 · 2026-06-14 · skill v1.14.0 · 13d6c45c
+meta: value-class=micro-fix(real precision bug) · pkg=@muse/tools · kind=substring-false-positive-fix(mutation-intent gate가 단어 중간 substring 매치) · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 978 유지(+3 case tools.test) · fabrication 0 유지 · eval 무변동(노출 게이트는 eval 시나리오 미경유)
+- **무엇:** isWorkspaceMutationPrompt(write 도구 노출 게이트 = workspace && mutation && target hint)의 hasWorkspaceHint/hasMutationTargetHint가 `normalized.includes(hint)`(substring) → **짧은 hint이 무관 영단어 중간 매치**: "pr"(pull request)→approve/price/surprise, "spec"→special/inspect/respect, "repo"→report, "event"→prevent. promptHasHint 헬퍼(`(?<![a-z])${hint}s?(?![a-z])` /u — standalone 토큰, plural·KO 조사 허용, latin 단어 중간 거부)로 수정.
+- **왜:** write 도구 과노출 = distractor↑ → "fewer distractors = better one-shot selection"(같은 파일 relevance-filter tokeniser 주석이 word-boundary로 이미 보호하는 목표) 훼손. mutation-intent gate만 substring으로 남아있던 불일치. fresh 표면(도구 노출/투영 레이어, @muse/tools — per-handler bug과 다른 패키지·KIND). 3-way AND가 완화하나 "Delete the special surprise gift"는 pre-fix 3조건 모두 통과(오분류 실증).
+- **리뷰지점:** index.ts promptHasHint + hasWorkspaceHint/hasMutationTargetHint 적용(mutationPatterns·koreanMutationHints·exceptions·multi-word/KO hint은 substring 유지). 테스트 RED("Delete the special surprise gift" expected true→false)→GREEN + 회귀가드(spec/endpoint·plural tickets·KO PR에·기존 issue/task). 첫 회귀 테스트(close=non-mutation 가정 오류)는 delete로 수정 후 amend. 전 196 pass, pnpm check exit=0, lint clean. ④b judge PASS 5/5(전 토큰 형태 probe: plural/digit-suffix/hyphen/조사 정확, under-match 없음).
+- **리스크:** 없음 — 게이트가 더 엄격(false workspace-mutation 감소), 기존 true 케이스 전부 유지(under-expose 없음). 교훈: hint 매칭은 substring 아닌 토큰-경계(짧은 abbrev는 단어 중간 매치).

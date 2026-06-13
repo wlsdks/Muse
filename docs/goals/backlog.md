@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ mutation-intent substring false-positive: isWorkspaceMutationPrompt matched workspace/target hints with normalized.includes(hint), so "pr"/"spec"/"repo"/"event" substring-matched approve/special/report/prevent and over-exposed workspace write tools (more distractors) — now whole-token via (?<![a-z])hint s?(?![a-z]) keeping plural + KO-particle (PR에); the relevance filter already used word boundaries — tool-hardening fire 95
+
 - ✓ decompose @muse/memory: extracted JSON-extraction cluster (extractJsonObject + tryParseObject + findBalancedBraceBlocks) memory-auto-extract -> memory-extract-json.ts (770->697 LOC; re-export keeps barrel+cli+tests green) — codebase-quality fire 56
 - ⚠ tool-hardening fresh-handler bug vein EXHAUSTED (fire 94 honest-close): fires 87-93 fixed 6 real bugs (contacts update data-loss, calendar/time rollover, on_this_day boundary, home_action fail-close bypass). fire 94 verified web_action/remember_fact/mac_spotlight/scheduler(none)/skills/feeds/objectives/helpers/relative-time all clean (4 scouts + direct grep). Next candidates by value-class: (a) 진안-blocked levers — email/handle arg-grounding (agent-core HOT), MCP-risk-annotation posture, undo/veto tool; (b) DRY-extract the 3-copy rollover guard (codebase-quality territory, touches security date parsers); (c) re-scout a different surface or wait for a .muse/runs failure cluster.
 
