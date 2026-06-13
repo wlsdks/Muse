@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildSwarmSkillDraft, gatherCouncil, registerSwarmCommands, renderCouncilResult, renderPending, renderShareDraft, type CouncilGatherOverride } from "./commands-swarm.js";
 import type { ProgramIO } from "./program.js";
+import type { CouncilUtterance } from "@muse/agent-core";
 
 describe("gatherCouncil + renderCouncilResult", () => {
   const peer = (id: string) => ({ id, secret: "s", url: `https://${id}/a2a` });
@@ -321,6 +322,84 @@ describe("muse swarm council — ReConcile consensus gate (assembled-path, no Ol
   });
 });
 
+// ── Semantic outlier screen assembled-path — swarm council with injected embed ──
+// Proves the live wiring: councilSynthesisOverride + councilGatherOverride together
+// exercise the full synthesis path (including screenCouncilOutliers) without Ollama.
+
+describe("muse swarm council — semantic outlier screen assembled-path (fire-28 fix, no Ollama)", () => {
+  let dir: string;
+  let out: string[];
+  const prevEnv: Record<string, string | undefined> = {};
+  const setEnv = (k: string, v: string) => { prevEnv[k] = process.env[k]; process.env[k] = v; };
+
+  const AGREE_VEC = [1, 0.1, 0.1, 0.0];
+
+  const KO_EN_PANEL: CouncilUtterance[] = [
+    { peerId: "ko1", reasoning: "PostgreSQL이 동시 쓰기를 잘 처리합니다." },
+    { peerId: "ko2", reasoning: "관계형 무결성 때문에 PostgreSQL을 선택해야 합니다." },
+    { peerId: "en",  reasoning: "PostgreSQL handles concurrent writes reliably." }
+  ];
+
+  beforeEach(async () => {
+    dir = await (await import("node:fs/promises")).mkdtemp((await import("node:path")).join((await import("node:os")).tmpdir(), "muse-semantic-"));
+    out = [];
+    setEnv("MUSE_A2A_ENABLED", "true");
+    setEnv("MUSE_A2A_PEERS_FILE", (await import("node:path")).join(dir, "a2a-peers.json"));
+    await (await import("node:fs/promises")).writeFile(
+      (await import("node:path")).join(dir, "a2a-peers.json"),
+      JSON.stringify({ peers: [{ id: "phone", secret: "s1", url: "https://phone.test/a2a" }, { id: "server", secret: "s2", url: "https://server.test/a2a" }], selfId: "laptop" }),
+      "utf8"
+    );
+  });
+  afterEach(async () => {
+    for (const [k, v] of Object.entries(prevEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await (await import("node:fs/promises")).rm(dir, { force: true, recursive: true });
+  });
+
+  it("KO+EN agreeing panel reaches synthesis with no false quarantine in excludedPeers", async () => {
+    // All three peers get the same vector → cosine ~1.0 → all KEPT (no false quarantine)
+    const fakeEmbed = async (_text: string): Promise<readonly number[]> => AGREE_VEC;
+    let synthPromptSeen = "";
+    let callCount = 0;
+    const fakeModelProvider = {
+      generate: async (req: { messages: { role: string; content: string }[] }) => {
+        callCount++;
+        if (callCount === 1) {
+          // Synthesis call
+          synthPromptSeen = req.messages.find((m) => m.role === "user")?.content ?? "";
+          return { id: "r", model: "m", output: '{"answer":"Use PostgreSQL for concurrent writes.","contributors":["ko1","ko2","en"]}' };
+        }
+        // Reverify call — return supported=true
+        return { id: "r", model: "m", output: '{"supported":true}' };
+      },
+      id: "fake",
+      listModels: async () => [],
+      stream: async function* () { yield { type: "text" as const, text: "" }; }
+    } as never;
+
+    const gatherOverride: CouncilGatherOverride = async (_round) => KO_EN_PANEL;
+
+    const io: ProgramIO = {
+      councilGatherOverride: gatherOverride,
+      councilSynthesisOverride: { embed: fakeEmbed, model: "m", modelProvider: fakeModelProvider },
+      fetch: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+      readPipedStdin: async () => "",
+      stderr: (m: string) => out.push(m),
+      stdout: (m: string) => out.push(m)
+    } as unknown as ProgramIO;
+    const cmd = new Command();
+    registerSwarmCommands(cmd, io);
+    await cmd.parseAsync(["node", "x", "swarm", "council", "which database?"], { from: "node" });
+
+    const text = out.join("");
+    expect(text).toContain("Use PostgreSQL for concurrent writes.");
+    // EN peer's reasoning appeared in synthesis prompt (not quarantined)
+    expect(synthPromptSeen).toContain("PostgreSQL handles concurrent writes reliably.");
+    // No false exclusion of the EN peer
+    expect(text).not.toContain("excludedPeers"); // JSON not surfaced in render
+  });
+});
+
 describe("renderSwarmStatus", () => {
   it("shows on/off hints, peers, and the pending count", async () => {
     const { renderSwarmStatus } = await import("./commands-swarm.js");
@@ -340,5 +419,95 @@ describe("renderSwarmStatus", () => {
     expect(out).toContain("Grounded council (self-abstain when your notes can't ground a take): OFF");
     expect(out).toContain("selfId unset");
     expect(out).toContain("(none — add them");
+  });
+});
+
+// ── Semantic question-relevance gate assembled-path (fire-39 redo, no Ollama) ──
+// Proves the gate runs on the live `muse swarm council` path via the
+// councilSynthesisOverride seam + fake embedder + fake provider.
+
+describe("muse swarm council — question-relevance gate assembled-path (fire-39 semantic redo, no Ollama)", () => {
+  let dir: string;
+  let out: string[];
+  const prevEnv: Record<string, string | undefined> = {};
+  const setEnv = (k: string, v: string) => { prevEnv[k] = process.env[k]; process.env[k] = v; };
+
+  // Controlled vectors: question + on-topic peers → cosine ~0.9; off-topic → ~0.05
+  const Q_VEC    = [1.0, 0.0, 0.0, 0.0];
+  const ON_VEC   = [0.9, 0.3, 0.1, 0.0];
+  const OFF_VEC  = [0.05, 0.05, 0.05, 1.0];
+
+  const MIXED_PANEL: CouncilUtterance[] = [
+    { peerId: "ko1", reasoning: "PostgreSQL이 동시 쓰기를 잘 처리합니다." },
+    { peerId: "en1", reasoning: "PostgreSQL handles concurrent writes reliably." },
+    { peerId: "off", reasoning: "바나나는 노란 열대 과일입니다." }
+  ];
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "muse-relevance-gate-"));
+    out = [];
+    setEnv("MUSE_A2A_ENABLED", "true");
+    setEnv("MUSE_A2A_PEERS_FILE", join(dir, "a2a-peers.json"));
+    await writeFile(join(dir, "a2a-peers.json"), JSON.stringify({
+      peers: [{ id: "phone", secret: "s1", url: "https://phone.test/a2a" }],
+      selfId: "laptop"
+    }), "utf8");
+  });
+  afterEach(async () => {
+    for (const [k, v] of Object.entries(prevEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await rm(dir, { force: true, recursive: true });
+  });
+
+  it("off-topic peer (low question cosine) → excluded with 'off-topic', synthesis only on on-topic subset", async () => {
+    const question = "which database?";
+    const vecMap = new Map<string, readonly number[]>([
+      [question, Q_VEC],
+      ["PostgreSQL이 동시 쓰기를 잘 처리합니다.", ON_VEC],
+      ["PostgreSQL handles concurrent writes reliably.", ON_VEC],
+      ["바나나는 노란 열대 과일입니다.", OFF_VEC]
+    ]);
+    const fakeEmbed = async (text: string): Promise<readonly number[]> => {
+      return vecMap.get(text) ?? ON_VEC;
+    };
+
+    let synthPromptSeen = "";
+    let callCount = 0;
+    const fakeModelProvider = {
+      generate: async (req: { messages: { role: string; content: string }[] }) => {
+        callCount++;
+        if (callCount === 1) {
+          synthPromptSeen = req.messages.find((m) => m.role === "user")?.content ?? "";
+          return { id: "r", model: "m", output: '{"answer":"Use PostgreSQL.","contributors":["ko1","en1"]}' };
+        }
+        return { id: "r", model: "m", output: '{"supported":true}' };
+      },
+      id: "fake",
+      listModels: async () => [],
+      stream: async function* () { yield { type: "text" as const, text: "" }; }
+    } as never;
+
+    const gatherOverride: CouncilGatherOverride = async (_round) => MIXED_PANEL;
+
+    const io: ProgramIO = {
+      councilGatherOverride: gatherOverride,
+      councilSynthesisOverride: { embed: fakeEmbed, model: "m", modelProvider: fakeModelProvider },
+      fetch: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+      readPipedStdin: async () => "",
+      stderr: (m: string) => out.push(m),
+      stdout: (m: string) => out.push(m)
+    } as unknown as ProgramIO;
+
+    const cmd = new Command();
+    registerSwarmCommands(cmd, io);
+    await cmd.parseAsync(["node", "x", "swarm", "council", question], { from: "node" });
+
+    // Synthesis received the on-topic peers' reasoning
+    expect(synthPromptSeen).toContain("PostgreSQL이 동시 쓰기를 잘 처리합니다.");
+    expect(synthPromptSeen).toContain("PostgreSQL handles concurrent writes reliably.");
+    // Off-topic peer's reasoning was NOT in synthesis prompt
+    expect(synthPromptSeen).not.toContain("바나나는 노란 열대 과일입니다.");
+    // The answer was rendered
+    const text = out.join("");
+    expect(text).toContain("Use PostgreSQL.");
   });
 });

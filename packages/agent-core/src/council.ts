@@ -20,6 +20,7 @@
 import type { ModelMessage, ModelProvider, ModelRequest } from "@muse/model";
 import { redactSecretsInText } from "@muse/shared";
 
+import { cosineSimilarity } from "./episodic-recall.js";
 import { iterateJsonObjectCandidates } from "./json-array-scan.js";
 import {
   classifyRetrievalConfidence,
@@ -60,6 +61,12 @@ export interface OutlierScreenOptions {
   readonly absFloor?: number;
   /** Suspect only when support is also below relFloor × median(support). Default 0.5. */
   readonly relFloor?: number;
+  /**
+   * Precomputed per-member support values (e.g. from `councilMemberSupportsSemantic`).
+   * When provided, these replace the internally-computed Jaccard supports and the
+   * caller-supplied `absFloor` applies (or `COSINE_ABS_FLOOR` when not set).
+   */
+  readonly precomputedSupports?: readonly number[];
 }
 
 export interface CouncilScreenResult {
@@ -83,6 +90,57 @@ export function councilMemberSupports(utterances: readonly CouncilUtterance[]): 
       if (j !== i) {
         sum += jaccardSimilarity(tokens[i] ?? new Set<string>(), tokens[j] ?? new Set<string>());
       }
+    }
+    return sum / (n - 1);
+  });
+}
+
+/**
+ * Embedding cosine threshold for the semantic outlier screen (arXiv:2507.14649 — Cleanse:
+ * semantic consistency over embedding space instead of surface lexical overlap). These
+ * replace the Jaccard absFloor (0.08) when a `councilMemberSupportsSemantic` vector is
+ * fed to `screenCouncilOutliers`.
+ *
+ * Jaccard lives in ~[0, 0.2] for council text; nomic cosine lives in ~[0.1, 0.9].
+ * At cosine ~0.9 two texts agree (cross-lingual or paraphrase); ~0.1 they are
+ * semantically unrelated. Setting the floor at 0.4 keeps agreeing peers (cosine ≥ 0.6+)
+ * and quarantines genuine outliers (cosine ≤ 0.2). A single threshold applies to both
+ * directions — proven by the fake-embedder test pairs; tune on a live KO/EN battery
+ * (backlog item: calibrate COSINE_ABS_FLOOR on real nomic council runs).
+ */
+export const COSINE_ABS_FLOOR = 0.4;
+
+/**
+ * Each member's mean pairwise embedding cosine-similarity to all OTHER members.
+ * Implements the Cleanse semantic consistency signal (arXiv:2507.14649, Joo & Cho 2025):
+ * embedding space catches cross-lingual and paraphrase agreement that Jaccard misses.
+ *
+ * n===1 → [1] (sole speaker trivially agrees with no one).
+ * An empty vector (length 0) or a failed embed → that member's support = 0, mirroring
+ * the empty-Jaccard silent-peer rule — a failed embed cannot claim agreement.
+ * Never throws: embed errors are caught per-member; a failing member gets support 0.
+ */
+export async function councilMemberSupportsSemantic(
+  utterances: readonly CouncilUtterance[],
+  embed: (text: string) => Promise<readonly number[]>
+): Promise<number[]> {
+  const n = utterances.length;
+  if (n === 0) return [];
+  const vecs: (readonly number[])[] = await Promise.all(
+    utterances.map(async (u) => {
+      if (u.reasoning.trim().length === 0) return [];
+      try { return await embed(u.reasoning); } catch { return []; }
+    })
+  );
+  return utterances.map((_, i) => {
+    if (n === 1) return 1;
+    const vi = vecs[i] ?? [];
+    if (vi.length === 0) return 0;
+    let sum = 0;
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const vj = vecs[j] ?? [];
+      sum += vj.length === 0 ? 0 : cosineSimilarity(vi, vj);
     }
     return sum / (n - 1);
   });
@@ -124,14 +182,19 @@ export function screenCouncilOutliers(
   options?: OutlierScreenOptions
 ): CouncilScreenResult {
   const minPanel = options?.minPanel ?? 3;
-  const absFloor = options?.absFloor ?? 0.08;
   const relFloor = options?.relFloor ?? 0.5;
 
   const n = utterances.length;
   if (n < minPanel) return { kept: [...utterances], excluded: [] };
 
-  // Compute mean pairwise Jaccard support for each member (reuse shared helper).
-  const supports = councilMemberSupports(utterances);
+  const usePrecomputed = options?.precomputedSupports !== undefined;
+  // When precomputed cosine supports are injected, use COSINE_ABS_FLOOR as the default
+  // (cosine ~[0.1, 0.9] vs Jaccard ~[0, 0.2]; the Jaccard floor of 0.08 would be
+  // nearly inert on cosine values).
+  const absFloor = options?.absFloor ?? (usePrecomputed ? COSINE_ABS_FLOOR : 0.08);
+  const supports = usePrecomputed
+    ? (options.precomputedSupports as readonly number[])
+    : councilMemberSupports(utterances);
 
   // Median of supports.
   const sorted = [...supports].sort((a, b) => a - b);
@@ -172,6 +235,100 @@ export function screenCouncilOutliers(
   return { kept, excluded };
 }
 
+/**
+ * Cosine floor for the QUESTION↔ANSWER relevance gate (arXiv:2503.13657 — MAST FM-2.3
+ * task derailment; arXiv:2507.14649 — semantic consistency signal).
+ *
+ * Set LOWER than the peer-peer outlier floor (COSINE_ABS_FLOOR = 0.4) because a
+ * question and its on-topic answer are NOT paraphrases of each other — the embedding
+ * space places them closer than random but still well below same-meaning pairs.
+ * nomic question↔relevant-answer cosine is typically ~0.35–0.6; off-topic ~0.05–0.25.
+ * A floor of 0.3 keeps all on-topic peers (incl. KO paraphrase + cross-lingual EN)
+ * while dropping genuinely unrelated utterances. Tune on a live KO/EN battery
+ * (backlog: calibrate on real nomic council runs — smoke:live stalls prevent live check).
+ */
+export const QUESTION_RELEVANCE_FLOOR = 0.3;
+
+export interface RelevanceScreenResult {
+  readonly kept: readonly CouncilUtterance[];
+  readonly excluded: readonly { readonly peerId: string; readonly reason: "off-topic" }[];
+}
+
+export interface RelevanceScreenOptions {
+  /** Minimum panel size before any exclusion is attempted. Default 2. */
+  readonly minPanel?: number;
+}
+
+/**
+ * Semantic question-relevance gate (arXiv:2503.13657 — MAST FM-2.3 task derailment;
+ * arXiv:2507.14649 — embedding cosine as semantic consistency signal): drop peer
+ * utterances whose reasoning is semantically unrelated to the council question BEFORE
+ * synthesis — quarantining derailed or off-topic peers that would steer the answer.
+ *
+ * Unlike fire-39's lexical approach, embedding cosine natively handles KO paraphrase
+ * (same meaning, zero token overlap) and cross-lingual peers (KO question + EN on-topic
+ * answer) — no script-family guard needed; the semantic signal IS the fix.
+ *
+ * Fail-open: empty question / n < minPanel / no embed / embed error → all kept.
+ * Majority-preserving: never drops below ceil(n/2).
+ * Deterministic given the embed function; order-stable; never throws.
+ */
+export async function screenOffTopicUtterancesSemantic(
+  question: string,
+  utterances: readonly CouncilUtterance[],
+  embed: (text: string) => Promise<readonly number[]>,
+  options?: RelevanceScreenOptions
+): Promise<RelevanceScreenResult> {
+  const minPanel = options?.minPanel ?? 2;
+  const allKept: RelevanceScreenResult = { excluded: [], kept: utterances };
+
+  if (question.trim().length === 0 || utterances.length < minPanel) return allKept;
+
+  let qVec: readonly number[];
+  try { qVec = await embed(question); } catch { return allKept; }
+  if (qVec.length === 0) return allKept;
+
+  const relevances: number[] = await Promise.all(
+    utterances.map(async (u) => {
+      if (u.reasoning.trim().length === 0) return 0;
+      try {
+        const uVec = await embed(u.reasoning);
+        return uVec.length === 0 ? 0 : cosineSimilarity(qVec, uVec);
+      } catch {
+        return 0;
+      }
+    })
+  );
+
+  // Candidates: peers whose question-relevance is below the floor.
+  type Candidate = { index: number; relevance: number };
+  const candidates: Candidate[] = [];
+  for (let i = 0; i < utterances.length; i++) {
+    if ((relevances[i] ?? 1) < QUESTION_RELEVANCE_FLOOR) {
+      candidates.push({ index: i, relevance: relevances[i] ?? 0 });
+    }
+  }
+
+  // Majority-preserving cap: never drop below ceil(n/2).
+  const maxExclude = utterances.length - Math.ceil(utterances.length / 2);
+  // Sort by relevance ASC (lowest first); ties preserve input order.
+  candidates.sort((a, b) => a.relevance !== b.relevance ? a.relevance - b.relevance : a.index - b.index);
+  const toExclude = new Set(candidates.slice(0, maxExclude).map((c) => c.index));
+
+  const kept: CouncilUtterance[] = [];
+  const excluded: { peerId: string; reason: "off-topic" }[] = [];
+  for (let i = 0; i < utterances.length; i++) {
+    const u = utterances[i];
+    if (u === undefined) continue;
+    if (toExclude.has(i)) {
+      excluded.push({ peerId: u.peerId, reason: "off-topic" });
+    } else {
+      kept.push(u);
+    }
+  }
+  return { excluded, kept };
+}
+
 export interface CouncilModelOptions {
   readonly modelProvider: Pick<ModelProvider, "generate">;
   readonly model: string;
@@ -185,6 +342,13 @@ export interface CouncilModelOptions {
    * Omitted ⇒ id-gate only (back-compat).
    */
   readonly reverify?: GroundingReverify;
+  /**
+   * Optional embedder for semantic outlier screening (arXiv:2507.14649 — Cleanse).
+   * When provided, `screenCouncilOutliers` uses embedding cosine instead of Jaccard
+   * so cross-lingual and paraphrase agreement is not falsely quarantined.
+   * Omitted ⇒ Jaccard path (back-compat, all existing callers unchanged).
+   */
+  readonly embed?: (text: string) => Promise<readonly number[]>;
 }
 
 const REASONING_SYSTEM_PROMPT =
@@ -344,12 +508,37 @@ export async function synthesizeCouncilAnswer(
   const usable = dedupeUtterancesByPeer(utterances.filter((u) => u.peerId.length > 0 && u.reasoning.trim().length > 0));
   if (question.trim().length === 0 || usable.length === 0) return null;
 
-  // Consensus-outlier screen (arXiv:2503.05856): quarantine divergent peers before
-  // aggregation so a deceptive/broken member can't steer synthesis.
-  const { kept, excluded } = screenCouncilOutliers(usable);
+  // Question-relevance gate (arXiv:2503.13657 — MAST FM-2.3 task derailment;
+  // arXiv:2507.14649 — semantic cosine signal): drop off-topic peers before synthesis.
+  // Semantic cosine natively handles KO paraphrase + cross-lingual on-topic peers
+  // (no lexical token overlap needed). Skipped entirely when no embed — no lexical fallback
+  // (the lexical gate was the fire-39 false-drop failure; absence is correct here).
+  const offTopicExcluded: { peerId: string; reason: "off-topic" }[] = [];
+  let onTopic: readonly CouncilUtterance[] = usable;
+  if (options.embed) {
+    const rel = await screenOffTopicUtterancesSemantic(question, usable, options.embed);
+    onTopic = rel.kept.length > 0 ? rel.kept : usable;
+    offTopicExcluded.push(...rel.excluded);
+  }
+
+  // Consensus-outlier screen (arXiv:2503.05856 + arXiv:2507.14649): quarantine divergent
+  // peers before aggregation. When an embedder is injected, use semantic cosine support
+  // (Cleanse) so cross-lingual/paraphrase-agreeing peers are not falsely quarantined.
+  // Falls back to Jaccard when the embedder is absent or throws (fail-open).
+  const forOutlier = onTopic.length > 0 ? onTopic : usable;
+  let screenOpts: OutlierScreenOptions | undefined;
+  if (options.embed) {
+    try {
+      const semanticSupports = await councilMemberSupportsSemantic(forOutlier, options.embed);
+      screenOpts = { precomputedSupports: semanticSupports };
+    } catch {
+      // fall through — Jaccard path
+    }
+  }
+  const { kept, excluded: outlierExcluded } = screenCouncilOutliers(forOutlier, screenOpts);
   // Never screen the entire panel away (the majority cap should prevent it, but
   // fall back to usable as a hard safety net).
-  const forSynthesis = kept.length > 0 ? kept : usable;
+  const forSynthesis = kept.length > 0 ? kept : forOutlier;
 
   const messages: readonly ModelMessage[] = [
     { content: SYNTHESIS_SYSTEM_PROMPT, role: "system" },
@@ -368,7 +557,8 @@ export async function synthesizeCouncilAnswer(
     return null;
   }
   const council = parseCouncilAnswer(output, new Set(forSynthesis.map((u) => u.peerId)));
-  const excludedPeers = excluded.length > 0 ? excluded : undefined;
+  const allExcluded = [...offTopicExcluded, ...outlierExcluded];
+  const excludedPeers = allExcluded.length > 0 ? allExcluded : undefined;
   const withExcluded = council && excludedPeers ? { ...council, excludedPeers } : council;
   if (!withExcluded || !options.reverify) return withExcluded;
   const reverified = await verifyCouncilGrounding(withExcluded, question, forSynthesis, options.reverify);
