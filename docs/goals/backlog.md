@@ -1,5 +1,12 @@
 # Muse dev backlog — the living ledger
 
+## ◦ Open — @muse/recall extraction (codebase-quality loop)
+
+- ◦ **Relocate `RecallHit` type into @muse/recall** (PREREQUISITE for the graph-connections move) — `RecallHit` lives in apps/cli/src/commands-recall.ts and is imported by ~10 CLI files; moving `buildAskConnections` needs it in the package. Slice: define RecallHit in @muse/recall, re-export from commands-recall.ts (IndexChunk pattern, fire 2e). Then a follow-up moves `buildAskConnections`.
+- ◦ **Move `selectGraphConnections` + `NoteLinkGraph`** — needs NoteLinkGraph + resolveNoteId/noteLinkView/linkExpandRefs relocated from apps/cli/src/notes-links.ts (own multi-step). Defer until the notes-link graph types have a package home.
+- ◦ **Phase 3: `runGroundedRecall` pipeline + API route** — the contract closer (extract registerAskCommand pipeline behind a seam, wire apps/api ask route, CLI↔API parity test). Design-sensitive; small verified steps only.
+
+
 > ⚠ BLOCKER (codebase-quality fire 5, 2026-06-13): `apps/cli/src/commands-daemon.test.ts` 28/71 FAILED on main (proactive: fired N/N, message length, dest dedup). PRE-EXISTING + EXTERNAL — present with my fire-5 changes stashed; my slice is comment-only in packages/*. Belongs to the concurrent **tool-hardening** loop (daemon/proactive domain, auto-pushes main). NOT fixed here (cross-loop collision risk). main has a real daemon regression to resolve.
 
 
@@ -24,6 +31,34 @@
 ## TOOL theme — open (CLI-only capabilities lacking an agent tool)
 
 - ⏳ `math_eval` robustness — VERIFIED NOT A BUG (fire 52): both evaluateArithmetic copies (tools + mcp) reject malformed input by throwing→error (no crash); commas are intentionally stripped. No slice. (closes the fire-51 LANE-A candidate)
+- ⏳ **PRE-EXISTING daemon test regression on `main` (cli/daemon owners — NOT differentiation)** — `apps/cli/src/commands-daemon.test.ts:119` "`--once` delivers an imminent task" fails: expected output to match `/proactive: fired 1\/1 imminent/` but got `muse daemon — provider=telegram, dest…`. Reproduces on a CLEAN `origin/main` checkout WITHOUT any local change AND after a full `pnpm build` (not stale dist) — so it landed via a merged commit (P43-5 double-booking / P37-23 email ingestion area). Flagged by differentiation fire 4 (whose own slice is isolated to @muse/autoconfigure + passes). The daemon/cli loop or 진안 should fix; `pnpm self-eval` does not catch it (it doesn't run the cli vitest suite).
+
+## test-hygiene theme — open (low-quality/flaky tests to fix, coverage gaps to fill)
+
+- ◦ **machine-load timeouts under concurrent loops** — with ~6 loop worktrees running vitest at once, *trivial* tests (`@muse/agent-core sanitizeFollowupSummary` — a one-line `.replace`; `@muse/mcp` plan-cache `caps at MAX_PLAN_CACHE_ENTRIES`) hit the 5000ms vitest default and time out under CPU starvation, reddening full `pnpm check`. NOT a test-quality issue (functions are linear) — an environment/oversubscription artifact (plan-cache passes in 1.3s isolated). Candidate slice: raise the global vitest `testTimeout` (e.g. 5000→15000ms) in the shared vitest config so concurrent-loop load can't manufacture false failures — weigh against masking a *real* future slowdown. (observed test-hygiene fire 2)
+
+### Full-suite AUDIT findings (4-agent review, 2026-06-13 — ranked PRUNE + ADD fuel)
+
+**PRUNE — duplicate / double-running tests (highest value: real redundancy):**
+- ◦ ★ **`packages/a2a` double-runs every test** — no `vitest.config.ts`, so 6 `src/*.test.ts` (agent-card·council-wire·handler·peer-config·receive-quarantine·signing) run ALONGSIDE their fuller `test/*.test.ts` twins. Fix: delete the 6 subsumed `src/` copies (PRUNE each with mutation proof the `test/` twin still catches it) — `transport.test.ts`(src) vs `transport-receive.test.ts`(test) differ, verify before touching. (audit a2a)
+- ◦ **`packages/tools` src/test twins** — `src/muse-tools-{data,helpers,text,time}.test.ts` duplicate richer `test/` counterparts (vitest.config excludes `dist/**` but not `src/**`). KEEP `src/muse-tools-regex.test.ts` (no `test/` twin — migrate, don't delete). (audit tools)
+- ◦ **`packages/model` src dupes** — `src/index.test.ts` (type-only asserts, compile-time-guaranteed) + `src/provider-base.test.ts` (`isRetryableHttpStatus` re-covered by `test/is-retryable-http-status.test.ts`). MIGRATE `src/provider-wire.test.ts` to `test/` (high-value, no twin — don't delete). (audit model)
+- ◦ **`packages/autoconfigure`** — `src/response-filters.test.ts` (⊂ `test/response-filters.test.ts`), `src/provider-utils.test.ts` (mostly ⊂ test/ — but verify `stringField` has a `test/` home first). (audit autoconfigure)
+- ◦ **`@muse/agent-core` constant tautologies** — `followup-detector.test.ts:20`, `followup-llm-detector.test.ts:148`, `sentence-groundedness.test.ts:101` assert `CONST === <math literal>` (no behavior, no cross-module parity); behavior already pinned by sibling tests. PRUNE. (audit agent-core)
+- ◦ **`@muse/agent-core` duplicate describe blocks** — `agent-runtime.test.ts` `validatePlan` (299–382) ⊂ `plan-execute-validation.test.ts`; `StepBudgetTracker` (149–195) ⊂ `step-budget.test.ts`. PRUNE the agent-runtime copies. (audit agent-core)
+- ◦ **`@muse/mcp`** — `test/loopback-helpers.test.ts` ⊂ the fuller `src/loopback-helpers.test.ts` (delete the weaker `test/` one); `mcp.test.ts` has a few `toBeDefined()`-only lines redundant with the assertion right after. (audit mcp)
+
+**ADD — genuinely uncovered high-value (security / grounding first):**
+- ◦ ★ **`createCitationStreamFilter` (agent-core, knowledge-recall/response path) has ZERO tests** — the grounding floor's STREAMING citation gate (the fix behind [[project_injection_defense]]'s "fabricated [from X] no longer flashes"); no regression test exists. (audit agent-core)
+- ◦ ★ **`assertPublicHttpUrlSync` (mcp/web-url-guard.ts) — SSRF guard sync path untested** — `file://`, `http://127.0.0.1`, `http://[::1]`, `http://metadata.internal` must block without DNS; none asserted (async twin is tested). Security gate. (audit mcp)
+- ◦ **`groundToolArguments` nested-object multi-hop branch** (agent-core) — anti-fabrication gate untested on nested mixed grounded/fabricated leaves. (audit agent-core)
+- ◦ **`createLlmClassificationInputGuard` provider-throws fail-close** (agent-core/guards.ts) — classifier-outage path asserts no `GUARD_ERROR`/fail-close at unit level. (audit agent-core)
+- ◦ **`createToolResultQualityAuditFilter` early-return branches** (agent-core) — empty toolsUsed / empty verifiedSources / empty-remainder pass-throughs uncovered. (audit agent-core)
+- ◦ **`formatDueLocal`/`relativeDueHint` (mcp/local-due-format.ts)** — today/tomorrow/in-N-days/NaN branches untested (drives task `dueAtLocal` shown to the model). (audit mcp)
+- ◦ **`muse config show` (cli/commands-config.ts)** — user-facing read path, zero tests (only set/unset tested); `loadImageAttachment` + `muse auth rotate-jwt` command-wiring also uncovered. (audit cli)
+- ◦ **`SchedulerExecutionError` (scheduler) + `withFileLock` stale-lock-steal (mcp/encrypted-file.ts) + `KyselyMcpServerStore` CRUD** — exported, no direct test (Kysely needs Testcontainers or an honest "integration-only" note). (audit mcp/scheduler)
+
+> AUDIT VERDICT: suite is broadly HEALTHY (policy/recall/memory cleanest; security paths well-covered). Rot concentrates in (1) `src/`+`test/` double-running in a2a/tools/model, (2) a few constant tautologies + promoted-then-not-pruned duplicate blocks in agent-core. Biggest real gap: the streaming citation gate. ~15 PRUNE + ~10 ADD items → the loop now has genuine PRUNE fuel (fires 1-3 were add/fix/add because no prune candidate had been scouted yet).
 
 ## GROUNDING INTEGRITY theme — open
 
@@ -32,6 +67,7 @@
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
 - ✓ untrusted-only provenance marker on grounded ask answers — wired the dead `groundedOnUntrustedOnly` grounded≠true mitigation into the `muse ask` verdict path (re-export + `untrustedOnlyGroundingNotice` + verdict wiring); faithful answers resting only on untrusted MCP/web sources now surface a scrutiny cue, label stays "grounded", floor untouched — grounding-integrity fire 1
+- ✓ distill-queue drain-idempotency + grounding-fence invariants pinned — the unattended distill-consumer's "dud/fail-soft event is drained not jammed, writes zero fabricated strategies" safety guarantees were untested; added 2 mutation-verified OUTCOME tests over the real file-backed stores — grounding-integrity fire 2
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
 - ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
@@ -44,6 +80,9 @@
 - ✓ `find_contact` hardening — surfaces `about`/`connections` (recall material the handler dropped, e.g. "allergic to nuts") so "what do I know about Bob?" answers from the tool; reverse-lookup by phone/email/@handle locked + advertised — tool-hardening fire 50
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" (list filtered only by status/dueWithinDays; tags first-class but unfilterable) — tool-hardening fire 51
 - ✓ `overdue_contacts` agent tool — "who haven't I talked to in a while?" relationship-decay nudge (overdueContacts was CLI-only; tool placed in @muse/autoconfigure to avoid a new dep edge, interactionsFromEvents moved there, CLI re-exports) — tool-hardening fire 52
+- ✓ ADD coverage: `interactionsFromEvents` invalid-`startsAt` drop branch (`Number.isFinite(event.ms)`) — was uncovered by both autoconfigure + CLI tests; mutation-proven (RED on filter removal) — test-hygiene fire 1
+- ✓ FIX flaky timeout: `@muse/mcp playbook-store "weighted eviction"` was intrinsically ~5.1s (121 sequential recordPlaybookStrategy disk writes) → rewrote setup to 1 writePlaybook pre-seed + 1 record overflow (285ms), same assertions, mutation-proven (FIFO mutant → RED) — test-hygiene fire 2
+- ✓ ADD coverage: `formatCoarseAge` ≥2-year branch (`.toFixed(0)` whole years) in @muse/recall — only the <2y 1-decimal path was tested; mutation-proven (toFixed(1) mutant → '2.2y'≠'2y' RED) — test-hygiene fire 3
 - ✓ `muse.tasks.search` matches tags — a task tagged "work" (word not in title/notes) is now found by searching "work" (completes the fire-51 tag story: list FILTERS by tag, search now FINDS by tag) + JUDGE-DRILL (verifier caught a deliberately-inert version) — tool-hardening fire 53
 - ✓ `week_agenda` agent tool — "what's my week look like?" ONE merged view of events+tasks+birthdays by day (muse week was CLI-only; groupWeekAgenda moved to @muse/autoconfigure, CLI re-exports) — tool-hardening fire 54
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" was inexpressible (list filtered only by status/dueWithinDays, search ignores tags) though tags are first-class + CLI `--tag` exists; added optional `tag` (case-insensitive exact, both branches) — tool-hardening fire 51
@@ -54,10 +93,11 @@
 - ✓ browser act-path ambiguous-target fail-close — element matcher silently clicked/typed the FIRST of several tied "best" matches (two "Delete" buttons → guessed); now `matchElementResult` → `ambiguous` refuses `browser_click`/`browser_type` BEFORE snapshot-mutation/approval-gate, returns candidates + ordinal hint (closes an outbound-safety fail-open hole) — tool-mcp-browser fire 1
 - ✓ official-public-MCP preset registry (axis B) — `packages/mcp/src/official-mcp-presets.ts`: curated `createGitHubMcpServer` (`https://api.githubcopilot.com/mcp/`) + `createNotionMcpServer` (`https://mcp.notion.com/mcp`) streamable factories, each carrying an official anyone-may-connect provenance URL + a FAIL-CLOSE `toolRisk` classifier (read tools listed, every write/unknown → `write`) + `withOfficialMcpRisk` projection (domain `external`); wired through the existing `allowedServerNames` allowlist; contract-faithful transport-fake test proves allowlisted connects/read-surfaces & non-allowlisted refuses & write stays gated — tool-mcp-browser fire 2
 - ✓ external-MCP presets wired LIVE (axis B, opt-in, write-gated) — per-server env toggles (`MUSE_GITHUB_MCP_ENABLED`/`MUSE_NOTION_MCP_ENABLED`, derived `MUSE_<NAME>_MCP_ENABLED`) register the dormant preset into `assembleMcpStack` + strict allowlist ONLY when set (default OFF), and `withOfficialMcpRisk(withChromeDevToolsRisk(toMuseTools()))` in the live projection re-stamps write/unknown external tools to `write` so they hit `toolApprovalGate` (the toggle alone would be fail-OPEN — shipped coupled). No secret, autoConnect false; 10 behavioural cases (off⇒absent, on⇒read usable, on⇒write gated). Mirrors the chrome-devtools precedent exactly — tool-mcp-browser fire 3
+- ✓ `muse doctor` surfaces embedder OLLAMA_BASE_URL locality — `evaluateLocalOnlyPosture` now flags status `fail` when local-only is on but OLLAMA_BASE_URL is off-box (a localhost lmstudio chat + remote embedder no longer reports a false "🔒 ok"); same base resolution as the fire-4 runtime guard so doctor and runtime never diverge — differentiation fire 5
 
 ## ◦ Open — differentiation (vs hermes/openclaw — `differentiation` loop)
 
-- ◦ **`muse doctor` reports embedder OLLAMA_BASE_URL locality** — fire 4 closed the runtime egress gap (the embedder now fail-closes on a remote base under local-only), but `evaluateLocalOnlyPosture` / `muse doctor` still only re-runs the chat router, so the doctor posture never surfaces the embedder's base URL — a reporting blind spot. Slice: extend the posture snapshot to classify the embedder's `OLLAMA_BASE_URL` too. Source: differentiation fire 4 residual.
+- ◦ **Extract a shared `resolveEmbedderBase()` helper** — fire 5's doctor posture and fire 4's runtime guard each resolve the embedder base with their own string literal (`OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434"` + trailing-slash strip). They must move together or doctor↔runtime diverge; a shared helper makes the parity structural instead of convention-enforced. Source: differentiation fire 5 residual (Opus judge).
 
 ### tool-mcp-browser theme — axis B (external official-public MCP) remaining sub-slices
 

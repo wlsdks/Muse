@@ -38,4 +38,25 @@ describe("evaluateLocalOnlyPosture — single source of truth for doctor + setup
     expect(p).toMatchObject({ enabled: true, status: "ok" });
     expect(p.detail).toContain("default");
   });
+
+  // The embedder reads OLLAMA_BASE_URL independently of the chat model, so a
+  // LOCAL non-ollama chat (lmstudio) + a REMOTE OLLAMA_BASE_URL passes the chat
+  // router gate (which only checks OLLAMA_BASE_URL when the CHAT provider is
+  // ollama) while the embedder would egress the user's text — fire 4 fail-closes
+  // that at runtime, but doctor must SURFACE it (not report a false "🔒 ok").
+  it("ON + a LOCAL lmstudio chat but a REMOTE OLLAMA_BASE_URL ⇒ fail (embedder egress surfaced)", () => {
+    const p = evaluateLocalOnlyPosture({ MUSE_MODEL: "lmstudio/llama", OLLAMA_BASE_URL: "http://192.168.1.50:11434" });
+    expect(p).toMatchObject({ enabled: true, status: "fail" });
+    expect(p.detail).toContain("OLLAMA_BASE_URL");
+  });
+
+  it("ON + a LOCAL lmstudio chat + a LOOPBACK OLLAMA_BASE_URL ⇒ ok (embedder stays on-box)", () => {
+    const p = evaluateLocalOnlyPosture({ MUSE_MODEL: "lmstudio/llama", OLLAMA_BASE_URL: "http://127.0.0.1:11434" });
+    expect(p).toMatchObject({ enabled: true, status: "ok" });
+  });
+
+  it("explicit OFF (opt-out) + a remote OLLAMA_BASE_URL ⇒ NOT flagged by the embedder check (opt-out preserved)", () => {
+    const p = evaluateLocalOnlyPosture({ MUSE_LOCAL_ONLY: "false", MUSE_MODEL: "ollama/llama3.2", OLLAMA_BASE_URL: "http://192.168.1.50:11434" });
+    expect(p).toMatchObject({ enabled: false, status: "ok" });
+  });
 });
