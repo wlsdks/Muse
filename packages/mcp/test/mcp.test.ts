@@ -8901,6 +8901,15 @@ describe("muse.history loopback server", () => {
     const badSince = await conn.callTool!("recent", { sinceIso: "not-an-iso" });
     expect(badSince).toMatchObject({ error: expect.stringContaining("parseable ISO timestamp") });
   });
+
+  it("a fractional limit < 1 falls back to the default feed, NOT an empty one", async () => {
+    const { createHistoryMcpServer, createLoopbackMcpConnection } = await import("../src/index.js");
+    const conn = createLoopbackMcpConnection(createHistoryMcpServer(await seedFiles()));
+    const full = await conn.callTool!("recent", {});
+    const fractional = await conn.callTool!("recent", { limit: 0.5 });
+    expect(full.total as number).toBeGreaterThan(0);
+    expect(fractional.total).toBe(full.total); // 0.5 → fallback (20), same feed; the bug returned 0
+  });
 });
 
 describe("proactive-history rotation on capacity (goal 079)", () => {

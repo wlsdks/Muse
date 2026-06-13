@@ -31,11 +31,18 @@ export interface HistoryMcpServerOptions {
   readonly episodesFile?: string;
 }
 
-function clampLimit(raw: unknown, fallback: number, cap: number): number {
-  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+export function clampLimit(raw: unknown, fallback: number, cap: number): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
     return fallback;
   }
-  return Math.min(cap, Math.trunc(raw));
+  // Truncate BEFORE the positivity check: a sub-1 fractional limit
+  // (Math.trunc(0.5) === 0) means "no meaningful count" exactly like 0 or a
+  // negative, so it must take the fallback — not slice the feed to empty.
+  const truncated = Math.trunc(raw);
+  if (truncated <= 0) {
+    return fallback;
+  }
+  return Math.min(cap, truncated);
 }
 
 export function createHistoryMcpServer(options: HistoryMcpServerOptions): LoopbackMcpServer {

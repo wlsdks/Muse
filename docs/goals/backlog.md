@@ -588,6 +588,17 @@ HARDEN (make existing tools more reliable):
   require allowedHost in `isScopedConsent` + refuse on absence in performConsentedAction + update the duplicate test
   corpus (consent literals live in BOTH src/*.test.ts and test/*.test.ts — ~10 sites). Gated on grant-flow wiring
   existing first (no production caller today).
+- ✓→Done **muse.history.recent returned an EMPTY feed for a fractional limit < 1** (EXPANSION gap-scout, fire 35;
+  boundary-condition / silent-failure) — `clampLimit` (loopback-history.ts:34) checked `raw <= 0` BEFORE truncating, so
+  `limit: 0.5` passed the guard then `Math.trunc(0.5) === 0` → `Math.min(cap, 0) === 0` → the activity feed sliced to
+  empty, so "what did I do last night?" with a model-emitted fractional limit silently answered "nothing happened"
+  (`{entries: [], total: 0}`). 0 and negatives already correctly took the fallback (20). FIX: truncate BEFORE the
+  positivity check so a sub-1 fractional joins 0/negatives in taking the fallback (self-consistent with history's own
+  contract — NOT the proactive sibling's clamp-to-1, which has a different undefined→store-default contract). Exported
+  `clampLimit` for direct unit testing. TDD 5 unit (0.5/0.999→20, 0/-5→20, 2.9→2, 1.5→1, 50→50, 500→200 cap,
+  string/NaN/Inf→20) + 1 e2e (recent({limit:0.5}).total === recent({}).total, not 0) RED(0.5→empty)→GREEN; mcp 1747,
+  check 0 (all pkgs), lint 0. Fable-5 PASS (RED reproduced "expected 0 to be 5"; exact 1.0→1 boundary verified; valid
+  integer limits unchanged; export not in barrel — no collision). KIND boundary, fresh surface.
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`
