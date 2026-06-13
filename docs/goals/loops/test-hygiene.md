@@ -77,3 +77,11 @@ ratchet: testFiles 938→938 (케이스 +1, 파일수 불변) · netCoverage +1 
 - **왜:** 이 필터는 grounding 인접 정직성 게이트 — 사과-only 응답을 내용 없는 가짜 '결과 정리' 헤더로 바꾸면 사용자를 오도. fire 6의 2개 게이트 + 이번 1개 분기로 필터 분기 커버 완결.
 - **어떻게-증명(MUTATION-FIRST):** `if (rest.length === 0) return response`를 `if (false)`로 변형 시 새 케이스만 RED(출력이 '조회한 결과를 정리해드릴게요.\\n\\n' 빈 헤더로 둔갑), 복원 4/4 GREEN. ④b judge가 케이스가 `!leadingApology`가 아닌 정확히 `rest===0` 분기를 침(extractApologyLead가 전체 문단 반환→rest="") + 형제/통합 테스트 미커버 재확인 후 **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경. ★LESSON(반복): byte-hygiene 위반을 *문서화*할 때 raw 바이트를 또 붙여넣지 말 것 — 저널/backlog에도 escape 텍스트(`\\u200b`)만. fire 7이 differentiation 실수를 고치며 같은 실수를 저질러 fire 8이 self-fix.
+
+## fire 9 · 2026-06-13 · skill v1.14.0 · 9e1b6732 · JUDGE-DRILL + add
+meta: kind=add · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=0 (드릴 후 리셋)
+ratchet: testFiles 941→942 (새 파일 1) · netCoverage +2 branch (tomorrow·in-N-days) · fabrication 0 · pnpm check RED(무관 회귀, 아래)
+- **무엇:** (A) **JUDGE-DRILL**(연속 allPASS≥8 트리거) — 고의 inert 테스트(`formatCoarseAge`가 무엇을 반환하든 통과하는 `typeof==="string"`) 주입 → 변형(formatCoarseAge→"WRONG") 하에서도 통과(mutation-immune) 확인 → ④b judge가 **VERDICT: FAIL**(inert, 행동 미핀)로 정확히 잡음 → `git restore` 롤백. judge 신뢰성 입증. (B) 진짜 슬라이스: `formatDueLocal`(mcp)의 day-granularity 분기(tomorrow·in-N-days) 분기-정밀 커버 추가(`local-due-format.test.ts`). 기존엔 느슨한 OR-regex뿐.
+- **왜:** judge가 rubber-stamp가 아니라 진짜 가짜를 잡는지 주기적 검증(maker≠judge 보상통제). + day-hint는 채팅 확인 메시지에 노출되는 시간 표기.
+- **어떻게-증명(MUTATION-FIRST):** 드릴 — inert 테스트가 mutation-immune임을 결정적으로 보임. 슬라이스 — `days===1`→`days===999` 시 tomorrow RED, `in ${days} days`→`days+1` 시 in-3-days RED(judge 독립 재현), 복원 2/2 GREEN. TZ-robust(judge가 12개 zone+DST 검증). ④b judge **VERDICT: PASS**(단 내 3번째 케이스 unparseable-echo는 `formatReminderDueLocal` 별칭으로 이미 정밀 커버 → judge 지적 후 **중복 케이스 제거**, 위생 루프가 중복 안 싣도록).
+- **리스크:** 내 슬라이스 mcp green + judge PASS. 단 full `pnpm check`는 **무관·진짜 회귀로 red** — `apps/cli/src/actuator-tools.test.ts`의 add_contact arg-grounding 2케이스 실패(사용자가 *말한* 전화번호가 드롭됨). 격리+클린리빌드 후에도 fail = stale-dist 아님. ★원인 커밋 `5ec47842 fix(agent-core): groundToolArguments... (cognition loop fire 21)` — anti-fabrication 게이트가 grounded 값을 과드롭하는 **핵심-edge 회귀**. cognition 루프 도메인이라 내가 그들 의도적 변경을 안 고침(blocker로 backlog 기록, 소유 루프가 수정). 내 mcp 추가는 독립적이라 커밋·머지(main 이미 red).
