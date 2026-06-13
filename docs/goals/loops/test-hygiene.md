@@ -198,3 +198,11 @@ ratchet: testFiles 970 (케이스 +1, 파일수 불변) · netCoverage +1 branch
 - **왜:** "새 transform 섹션은 *조용히 가장 먼저 버려지지 않는다*"는 설계 불변식(코드 주석 명시) — grounding/runtime trimming 경로(CLAUDE.md "context 작으면 trimming"). 새 섹션이 priority 미등록이어도 중간에 위치해야 active-context/memory 같은 핵심 전에 안 버려짐.
 - **어떻게-증명(MUTATION-FIRST ADD):** `DEFAULT_SECTION_PRIORITY` 55→0 변형 시 unknown이 최우선-eviction 되어 drop 순서 뒤집힘(RED); 55→100 변형 시 unknown이 episodic보다 sticky해져 episodic이 대신 드롭(RED). 양 boundary가 55를 (50,60) 사이로 bracket — 각각 새 테스트만 RED, 다른 4개 무영향. 독립 ④b Opus judge가 양 mutation 재현 + fallback 미커버 + 순서/값 정확성 확인 → **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경, full check GREEN. 미지-섹션 우선순위는 새 transform 추가 시 회귀하기 쉬운 조용한 동작 — 이제 양방향 pin.
+
+## fire 24 · 2026-06-14 · skill v1.14.0 · 196fb1b6
+meta: kind=prune · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 972→971 (−1 strict-superset 삭제, 이식 불필요) · netCoverage 0 (진짜 중복) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `undo-action` **clean PRUNE**(fire 20·22 vein, 3번째 mcp 쌍, 이번엔 fire17처럼 strict-superset이라 이식 0) — 콜로케이트 `src/`(4케이스)가 thinner `test/`(3케이스)의 **strict superset**. src/ case1은 runDueObjectives→performConsentedAction→undo→재-tick 풀 e2e(reversible-reverse·veto-record·performed-log+detail 전부), case2 veto-overrides-consent-direct, case3 irreversible+veto, case4 hasVeto scope-exactness(src 유니크). test/ 3케이스는 src가 없는 행동 0 → test/ 삭제.
+- **왜:** outbound 자율행동 undo/veto(outbound-safety.md #4 "reversible-where-possible + veto") — 두 파일 중복 실행. src/가 모든 행동 더 강하게 커버.
+- **어떻게-증명(MUTATION-FIRST PRUNE):** 생존 src/ cite — recordVeto no-op化 시 src/ 3/4 RED; reverse() 제거 시 reversible case RED; veto scope 오염 시 fail-close 통합 2케이스 RED. ④b 독립 Opus judge가 삭제본 3개 행동(reversible-reverse+detail·irreversible·veto-overrides-consent fail-close) 전수 매핑(전부 equal-or-stronger, MISSING 없음) + 3 mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경, 삭제 1파일(−83L)뿐. consent/veto fail-close 커버 손실 0(judge 명시 확인). mcp dist 클린리빌드 1회. 남은 mcp 동명 쌍 11개.
