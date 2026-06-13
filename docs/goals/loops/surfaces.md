@@ -111,3 +111,12 @@ ratchet: cli tests 2593/2593 (checkins +4) · fabrication 0 · self-eval exit 0 
 - **왜**: sibling `tasks list --status`는 `assertTaskStatusInput`으로 엄격 검증("타이포가 조용히 틀린 리스트를 반환 않게")하는데 checkins만 누락 — 5개 스케줄 있는 사용자가 "없음"으로 오인하는 실제 버그(cross-surface 불일치).
 - **리뷰지점**: 기본 "scheduled"(생략 시)·대소문자(FIRED→fired) 정상 허용, 미지값만 거부. 검증을 파일 읽기 전에 둬 나쁜 status는 IO도 안 함. scan/snooze/cancel·happy/json 경로 무변.
 - **리스크**: 없음(import+const+검증 14줄, 독립 Opus judge가 revert로 RED 입증·enum 전체·--json·collateral 검증 후 PASS, checkins 4/4 · cli 2593/2593).
+
+## fire 13 · 2026-06-13 · skill v1.14.0 · <commit>
+meta: surface=web · value-class=micro-fix · pkg=@muse/web · kind=a11y-decorative-icon · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 947 (+1) · web tests 24/24 (+1) · fabrication 0 · self-eval exit 0
+
+- **무엇**: 공유 `base` SVG 팩토리(`ui.tsx`)가 만드는 모든 아이콘에 `aria-hidden`/`focusable`이 없어, 스크린리더가 장식 아이콘을 미명명 graphic으로 노출(특히 title로 이름 붙은 아이콘-only 버튼에서 중복 announce). `aria-hidden="true" focusable={false}` 추가 → 전 `Icon.*` 상속.
+- **왜**: 앱 전 아이콘이 장식용(가시 텍스트 옆 또는 title 가진 아이콘-only 버튼 안) — AT에서 숨기는 게 WCAG 정답. 한 팩토리 수정으로 전 뷰의 아이콘이 한 번에 고쳐지는 최고 적용범위 슬라이스.
+- **리뷰지점**: 아이콘-only 컨트롤(Tasks check/trash·Chat volume/mic/send·Calendar/Notes/Autonomy/Reminders trash)은 전부 `title`로 접근명 보유 → aria-hidden이 유일 이름을 제거하지 않음. `Spinner`(자체 aria-label `<span>`)는 무변, 앱에 다른 `<svg>` 없음.
+- **리스크**: 없음(팩토리 2줄, 표현용 속성이라 레이아웃 무영향, 독립 Opus judge가 전 call-site 장식성·stash로 RED·collateral 검증 후 PASS, web 24/24).
