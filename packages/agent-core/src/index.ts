@@ -212,6 +212,12 @@ export {
   type SufficiencyVerdict
 } from "./knowledge-recall.js";
 export {
+  reportCitationPrecision,
+  DEFAULT_CITATION_PRECISION_FLOOR,
+  type CitationPrecisionPair,
+  type CitationPrecisionReport
+} from "./citation-precision.js";
+export {
   scoreGroundingEval,
   type GroundingCaseOutcome,
   type GroundingEvalCase,
