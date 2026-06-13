@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ decompose @muse/cli: moved notes-index embed-model pair (parseNotesIndexEmbedModel/readNotesIndexEmbedModel) commands-doctor -> commands-doctor-checks.ts (810->785 LOC) — codebase-quality fire 37
 - ✓ KO followup.cancel selection FIXED 0/3→3/3 STABLE (was a persistent 3x weakness, fires 71/75) — "그 체크인 팔로업 취소해줘" mis-routed to followup.list; fixed by description disambiguation (list "NOT when" excludes cancel/delay intent + cancel leads with "취소해줘 means THIS tool not list") — tool-hardening fire 76 (resolves the fire-75 KO-cancel FINDING)
 
 - ✓ Phase 3 cont.: extracted inline episodeBlock -> buildEpisodeContextBlock in @muse/recall (escapes untrusted summary; +injection-defense test) — codebase-quality fire 36
