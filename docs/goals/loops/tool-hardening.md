@@ -900,3 +900,12 @@ ratchet: testFiles 970 유지(+1 케이스 contacts-tool update-preserves) · fa
 - **왜:** Opus correctness-bug 스카웃(미-examined 핸들러 대상, EXHAUSTION→value-class 상향)이 발굴한 real 버그. "save Bob's new email" 같은 update-by-chat에서 발화(production 배선: autoconfigure:754·commands-ask:1627 둘 다 real addContact+reader). about은 타입 주석(:54-57)이 "grounding evidence … cite"라 명시 → **grounding-floor-adjacent 데이터 손실**(silent·irreversible). no-collateral/selection coverage와 다른 KIND(real fix, fire-80 계열).
 - **리뷰지점:** contacts-tool.ts 머지에 `existing?.about/aliases/connections` 3 spread 추가(전부 existing? guard → fresh add는 no-op·byte-identical). 테스트 RED("expected undefined to be 'allergic to nuts'")→GREEN, 전 suite 1864 green, pnpm check exit=0, lint clean. ④b judge PASS 5/5(자체 pre-fix revert로 검증, over-reach/fabrication 없음·schema에 clear 입력 없으니 preserve가 유일한 non-lossy). 스카웃 negative: followups/history/week-agenda/contacts-other 핸들러는 correct.
 - **리스크:** 없음 — update-merge만 변경(validation/dedup/fresh-add 불변), aliases 보존은 outbound-safety rule 3(recipient 해소)을 도움. **교훈 적용:** fix+test 빌드 통과 즉시 커밋(sweep 방지).
+
+
+## fire 88 · 2026-06-14 · skill v1.14.0 · 5e35f693(merge-resolve)
+meta: value-class=regression-fix(conflicted-main 머지 해소) · pkg=docs/INDEX(공유) · kind=broken-main-triage(동시 루프 머지 충돌) · verdict=N/A(결정적 검증) · firesSinceDrill=6
+ratchet: testFiles 972 유지 · fabrication 0 유지 · 회귀 해소(self-eval green·pnpm check exit=0)
+- **무엇:** fire 시작 시 main이 **conflicted merge IN PROGRESS**(동시 codebase-quality 루프가 남김) — INDEX.md에 `<<<<<<< / >>>>>>>` 마커, unmerged paths로 모든 루프의 커밋/머지 차단. INDEX 충돌(codebase-quality·tool-mcp-browser 두 row를 양쪽 갱신)을 **max-fire per row**로 해소(codebase-quality 49/c99be00d, tool-mcp-browser 22), backlog.md는 union auto-merge 확인, 머지 완료(5e35f693).
+- **왜:** ① 규칙 "회귀가 있으면 그게 이번 이터레이션". 깨진 공유 main은 후속 모든 커밋의 base가 되어 전파되므로 최우선 해소. 새 hardening 슬라이스보다 우선(한 fire 한 슬라이스 = 이번엔 회귀 해소).
+- **리뷰지점:** INDEX 해소 = 두 충돌 row를 각 루프의 최신 fire로(48 vs 49→49, 21 vs 22→22). 머지된 코드(commands-export.ts de-export = codebase-quality fire 49의 자체-judged 작업)는 내 작업 아님. 검증: 마커 0(git grep)·self-eval green(testFiles 972)·**pnpm check exit=0**(머지 semantic conflict 없음). behavioral slice 아니므로 ④b judge 불요.
+- **리스크:** 없음 — docs 충돌 해소 + 이미-judged 코드 머지 완료. 교훈: 공유 main 워크트리에서 동시 루프 머지가 충돌을 남기면 regression-first로 즉시 해소(전파 방지).
