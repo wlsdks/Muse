@@ -3131,7 +3131,13 @@ describe("muse.tasks loopback server", () => {
         "2026-09-31",
         "2026-11-31",
         "2026-00-10",
-        "2026-13-01"
+        "2026-13-01",
+        // The impossible date carried on a FULL ISO datetime — the shape the
+        // chat model actually emits for a reminder. The date-only forms above
+        // can't catch a "full datetimes are valid, skip the day-check" shortcut;
+        // these do (Date silently rolls "2026-02-30T..." to Mar 2 ~2 days off).
+        "2026-02-30T09:00:00Z",
+        "2026-04-31T23:59:59Z"
       ]) {
         expect(parseTaskDueAt(bad, now)).toBeInstanceOf(Error);
         expect(parseReminderDueAt(bad, now)).toBeInstanceOf(Error);
