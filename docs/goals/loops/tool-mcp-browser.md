@@ -201,3 +201,21 @@ ratchet: testFiles +1 (official-mcp-posture.test.ts 8 + doctor +5) · @muse/auto
 - **리스크:** doctor가 enabled+strict-allowlist-제외를 "blocked"로 표시하나 assembleMcpStack은 turnkey
   프리셋을 allowlist에 자동추가 → 런타임보다 약간 엄격(cosmetic follow-up ◦ 기록). posture는 env-only
   (연결 프로브 아님, 연결성 아닌 *적격성* 보고 — 의도).
+
+## fire 11 · 2026-06-13 · skill v1.14.0 · (this commit)
+
+meta: value-class=micro-fix · pkg=@muse/browser · kind=C-browser · verdict=PASS · firesSinceDrill=3
+
+ratchet: testFiles +0 (browser-tools.test.ts +1 + smoke 10b) · @muse/browser 85 tests pass · fabrication 0 · eval:browser-agent 1/1 LIVE · smoke 10b LIVE (real Chrome prompt) · lint 0/0
+
+- **무엇:** 네이티브 JS prompt() 다이얼로그가 bare dialog.accept() = 빈 문자열 제출로 페이지의 defaultValue를
+  폐기하던 버그 수정. 이제 prompt는 다이얼로그 자신의 defaultValue로 수락(절대 텍스트 발명 안 함) + 제출
+  텍스트를 PageSnapshot.dialog.response로 노출. alert/confirm/beforeunload는 불변(bare accept).
+- **왜:** "쿠폰 적용"·"제안된 수량 입력" 같은 액션이 prompt(msg, default) 페이지에서 빈값을 보내 승인된
+  행동이 garbage로 진행되고 모델은 무엇이 보내졌는지 몰랐음. fires 1·4·6·9(요소 grounding·nav-status)와
+  구별되는 auto-accept 다이얼로그 응답 경로.
+- **리뷰지점:** judge가 (1)증거가 REAL 경로임 확인 — 라이브 smoke 10b가 실제 Chrome에서 prompt 픽스처를
+  구동하고 page가 캡처한 값(document.title=code:+prompt())을 readback(hand-injection 아님) (2)handler revert해
+  10b RED 재현 (3)defaultValue만 사용=텍스트 미발명(fabrication-into-world 구멍 없음) (4)alert/confirm 불변.
+- **리스크:** default 없는 prompt(msg)는 defaultValue="" → 여전히 빈값(불변)이나 response:""로 투명 기록.
+  파괴적 confirm()은 여전히 blind-accept(트리거 클릭이 이미 draft-first 승인됨 — 다이얼로그 재게이팅은 별도 큰 건).
