@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ dead-code @muse/calendar: de-exported 2 internal-only retry-options interfaces (CalDAVRetryOptions/GoogleCalendarRetryOptions) — knip-clean, grep-verified no external importer; FRESH package — codebase-quality fire 40
 - ✓ decompose @muse/cli: moved last doctor classifier embedModelCheck + formatBytes -> commands-doctor-checks.ts + relocated fire-37 orphaned JSDoc (785->739 LOC; FINISHES doctor decompose) — codebase-quality fire 39
 - ✓ destructive-intent selection probe + coverage: KO/EN delete/clear/cancel intents → tasks.delete/reminders.clear/calendar.delete one-shot (all STABLE 3/3) — PROBED the fire-76 KO-verb mis-route across all 4 destructive surfaces and CONFIRMED it was followup.cancel-specific (not systemic); calendar.delete uses the same "취소" verb yet selects correctly — tool-hardening fire 77
 - ✓ Phase 3 cont.: extracted inline feedBlock -> buildFeedContextBlock in @muse/recall (escapes title+summary; +test); escapeSystemPromptMarkers now used EXCLUSIVELY in @muse/recall — codebase-quality fire 38
