@@ -22,6 +22,7 @@
 
 - ◦ `week_agenda` agent tool — "what's my week look like?" — `muse week` (apps/cli/commands-week.ts) aggregates events+tasks+birthdays+weather by day but has no agent tool. DECOMPOSED (needs the same kind of pure-aggregator move as on-this-day/overdue: extract a `selectWeek`-style pure function to a package autoconfigure imports, then wire a tool). 1–2 slices. (scouted fire 48/52)
 - ⏳ `math_eval` robustness — VERIFIED NOT A BUG (fire 52): both evaluateArithmetic copies (tools + mcp) reject malformed input by throwing→error (no crash); commas are intentionally stripped. No slice. (closes the fire-51 LANE-A candidate)
+- ⏳ **PRE-EXISTING daemon test regression on `main` (cli/daemon owners — NOT differentiation)** — `apps/cli/src/commands-daemon.test.ts:119` "`--once` delivers an imminent task" fails: expected output to match `/proactive: fired 1\/1 imminent/` but got `muse daemon — provider=telegram, dest…`. Reproduces on a CLEAN `origin/main` checkout WITHOUT any local change AND after a full `pnpm build` (not stale dist) — so it landed via a merged commit (P43-5 double-booking / P37-23 email ingestion area). Flagged by differentiation fire 4 (whose own slice is isolated to @muse/autoconfigure + passes). The daemon/cli loop or 진안 should fix; `pnpm self-eval` does not catch it (it doesn't run the cli vitest suite).
 
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
@@ -36,10 +37,11 @@
 - ✓ `egressGuards` self-eval ratchet — local-by-construction moat (cloud egress refused in code) promoted to a deterministic scoreboard regression gate, mirroring the grounding ratchet (a structural edge hermes/openclaw can't copy) — differentiation fire 1
 - ✓ `egressGuards` ratchet widened to the voice egress guard — mic audio's cloud STT/TTS path now ratcheted too (drop the MUSE_LOCAL_ONLY voice cloud-key-ignore → self-eval exits 1); value 5→6 — differentiation fire 2
 - ✓ `eval:memory-poisoning` adversarial proof battery — proves Muse drops a model-asserted/poisoned claim at WRITE time (`dropModelAssertedValues`) that rivals' frequency-promotion (OpenClaw dreaming minRecallCount 3) would promote; deterministic, no Ollama — differentiation fire 3
+- ✓ embedder local-only egress gap CLOSED — `createOllamaEmbedder` followed `OLLAMA_BASE_URL` with no local-only check (chat router only gates it for providerId ollama; daemon bypassed the router), so a remote `OLLAMA_BASE_URL` egressed the user's raw note/memory/episode text under MUSE_LOCAL_ONLY; added construction-time fail-close + 6 behavioural tests + folded the throw into the egressGuards ratchet (6→7) — differentiation fire 4
 
 ## ◦ Open — differentiation (vs hermes/openclaw — `differentiation` loop)
 
-- ◦ **Add the localhost-only embeddings guard to the `egressGuards` ratchet** — fire 2 covered model-router + voice; the embeddings localhost-only guard (architecture.md: "embeddings are already localhost-only") is still uncounted. Slice: locate the guard (no `*embed*.ts` file matched — likely in memory/recall/knowledge index), add a stable marker so dropping it also fails `self-eval`. Source: differentiation fire 2 residual.
+- ◦ **`muse doctor` reports embedder OLLAMA_BASE_URL locality** — fire 4 closed the runtime egress gap (the embedder now fail-closes on a remote base under local-only), but `evaluateLocalOnlyPosture` / `muse doctor` still only re-runs the chat router, so the doctor posture never surfaces the embedder's base URL — a reporting blind spot. Slice: extend the posture snapshot to classify the embedder's `OLLAMA_BASE_URL` too. Source: differentiation fire 4 residual.
 
 ## Done — loop infrastructure (2026-06-12, 진안-directed)
 

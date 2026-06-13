@@ -10,6 +10,29 @@
 
 ## Levers (newest first)
 
+### L3 — The embedder is fail-close localhost under local-only, not localhost-by-default (fire 4)
+
+A latent hole in the L1 moat: `createOllamaEmbedder` (`@muse/autoconfigure`) read
+`OLLAMA_BASE_URL` and POSTed the user's raw note / memory / episode text to
+`${base}/api/embeddings` with **no local-only check**. The chat-model router's
+`classifyProviderLocality` gate only derives `effectiveBaseUrl` from
+`OLLAMA_BASE_URL` when the *chat* provider id is `ollama` — so a localhost
+LM-Studio / openai-compatible chat model + a **remote** `OLLAMA_BASE_URL`
+diverge: the chat gate passes while the embedder silently egresses private text,
+and the daemon enrich path calls the embedder without touching the router at all.
+So architecture.md's "embeddings are already localhost-only" was *false* for a
+remote `OLLAMA_BASE_URL`. Fixed with a construction-time fail-close
+(`MUSE_LOCAL_ONLY` default-on + non-loopback base → `throw LocalOnlyViolationError`,
+reusing `@muse/model`'s `isLoopbackUrl`), a single chokepoint covering all three
+embedder call sites + the daemon bypass; loopback / unset pass, `MUSE_LOCAL_ONLY=false`
+preserves opt-out. A cloud-default rival sends embeddings to an external API by
+design and has no structural reason to fail-close this — the same asymmetry as L1.
+
+**Shipped:** the embedder guard (`context-engineering-builders.ts`) + 6 behavioural
+tests (remote+local-only → throw AND fetch never called; loopback/opt-out pass);
+the new throw site is folded into the `egressGuards` ratchet (6→7) so deleting it
+fails `pnpm self-eval`.
+
 ### L2 — Memory promotion is gated on provenance at WRITE time, not frequency at PROMOTE time (fire 3)
 
 OpenClaw's "Dreaming" consolidation promotes short-term signals into durable

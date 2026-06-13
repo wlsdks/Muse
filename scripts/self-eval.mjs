@@ -219,7 +219,8 @@ function main() {
   const egressSources = [
     "packages/model/src/local-only-policy.ts",
     "packages/autoconfigure/src/autoconfigure-model-provider.ts",
-    "packages/autoconfigure/src/registry-builders/voice.ts"
+    "packages/autoconfigure/src/registry-builders/voice.ts",
+    "packages/autoconfigure/src/context-engineering-builders.ts"
   ]
     .map((rel) => join(ROOT, rel))
     .filter((p) => existsSync(p))

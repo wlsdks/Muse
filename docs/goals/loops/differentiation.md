@@ -80,3 +80,29 @@ ratchet: testFiles 912 · new deterministic battery eval:memory-poisoning (no Ol
   inline 합성(결정적 unit 증명엔 적합하나, 주입이 실제 hit를 만든다까진 증명 안 함).
   ② 배터리는 dist 빌드 의존(package.json 스크립트가 처리; bare `node`는 src 편집 後
   수동 rebuild 필요). → CI 번들 편입 시 명시.
+
+## fire 4 · 2026-06-13 · skill v1.14.0 · `<pending-commit>`
+meta: value-class=new-capability · pkg=@muse/autoconfigure · kind=egress-gap-closure(fail-close) · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 914→915 · egressGuards 6→7 (embedder guard folded in) · fabrication 0 · grounding floor 강화
+
+- **무엇**: L1 해자의 **실제 egress 갭**을 닫음. `createOllamaEmbedder`
+  (`@muse/autoconfigure/context-engineering-builders.ts`)가 `OLLAMA_BASE_URL`을
+  local-only 게이트 없이 따라 사용자 노트/메모리/episode **평문**을 remote
+  `/api/embeddings`로 보낼 수 있었다. construction-time fail-close 추가
+  (`MUSE_LOCAL_ONLY` 기본 ON + non-loopback → `throw LocalOnlyViolationError`,
+  @muse/model의 `isLoopbackUrl` 재사용); 3개 호출부 + daemon 우회를 단일 chokepoint로 커버.
+  새 throw를 egressGuards ratchet에 편입(6→7)해 가드 자체를 self-protect.
+- **왜 (어떤 경쟁 레버 대비)**: chat 라우터는 `providerId==="ollama"`일 때만
+  OLLAMA_BASE_URL을 검사 → localhost LM-Studio/openai-compatible chat + remote
+  OLLAMA_BASE_URL이 **분기**해 chat 게이트를 통과하지만 embedder는 egress; daemon
+  enrich 경로는 라우터를 아예 우회. architecture.md의 "embeddings localhost-only"
+  주장이 remote OLLAMA_BASE_URL엔 거짓이었음. cloud-default 경쟁사는 임베딩을 외부
+  API로 보내는 게 기본이라 이 fail-close를 할 구조적 동기가 없음(L1과 같은 비대칭).
+- **리뷰지점**: TDD RED→GREEN. 행동 테스트 6 케이스(remote+local-only → throw
+  **AND fetch 0회**=평문 미전송; loopback/미설정/localhost/opt-out 통과; remote+
+  local-only=false → 실제 remote POST 확인). ④b 독립 Opus judge **5/5 PASS**:
+  갭 진짜(파일:라인 확인)·가드 줄 제거 falsification 재현(fail-close 단언 2건 FAIL)·
+  over-block 0·autoconfigure 519/519·불변식 *강화*. lint:pass.
+- **리스크/residual (비차단)**: `muse doctor`/`evaluateLocalOnlyPosture`가 아직
+  embedder의 OLLAMA_BASE_URL 로컬리티를 리포트 안 함(런타임 egress는 차단되나 doctor
+  맹점) → 후속 ◦. architecture.md 주석도 이 enforcement 지점을 반영하면 좋음.
