@@ -909,3 +909,12 @@ ratchet: testFiles 972 유지 · fabrication 0 유지 · 회귀 해소(self-eval
 - **왜:** ① 규칙 "회귀가 있으면 그게 이번 이터레이션". 깨진 공유 main은 후속 모든 커밋의 base가 되어 전파되므로 최우선 해소. 새 hardening 슬라이스보다 우선(한 fire 한 슬라이스 = 이번엔 회귀 해소).
 - **리뷰지점:** INDEX 해소 = 두 충돌 row를 각 루프의 최신 fire로(48 vs 49→49, 21 vs 22→22). 머지된 코드(commands-export.ts de-export = codebase-quality fire 49의 자체-judged 작업)는 내 작업 아님. 검증: 마커 0(git grep)·self-eval green(testFiles 972)·**pnpm check exit=0**(머지 semantic conflict 없음). behavioral slice 아니므로 ④b judge 불요.
 - **리스크:** 없음 — docs 충돌 해소 + 이미-judged 코드 머지 완료. 교훈: 공유 main 워크트리에서 동시 루프 머지가 충돌을 남기면 regression-first로 즉시 해소(전파 방지).
+
+
+## fire 89 · 2026-06-14 · skill v1.14.0 · b4d189be
+meta: value-class=micro-fix(real correctness bug) · pkg=@muse/mcp · kind=validation-gap-fix(calendar parseIsoDate 불가능 날짜 silent 롤오버) · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 972 유지(+2 케이스 calendar-add-anchor) · fabrication 0 유지 · eval 무변동(handler correctness)
+- **무엇:** calendar의 parseIsoDate(add/update/availability/conflicts의 날짜 파서)가 date-headed 값에 `new Date()` 후 non-NaN이면 반환 → `new Date("2026-02-30")`=Mar 2 silent 롤오버 → 이벤트가 ~2일 어긋나게 생성(에러 없이 잘못된 날 confirm). Y-M-D를 Date.UTC로 round-trip해 불가능 날짜 거부(parseTaskDueAt 미러) → undefined → add 핸들러가 에러, createEvent 미호출.
+- **왜:** fire 87 패턴(sibling hardened, this missed) — parseTaskDueAt(:282-294)엔 이 가드가 있으나 calendar의 별도 파서 parseIsoDate는 누락. fire 82는 tasks/reminders 가드를 *테스트*했고, calendar는 가드 *자체*가 없었음(real bug, coverage 아님). correctness-bug 스카웃이 비-examined 핸들러에서 발굴(2연속 real fix: 87 contacts·89 calendar).
+- **리뷰지점:** loopback-calendar.ts parseIsoDate에 Date.UTC round-trip probe(15줄). 테스트 RED("expected {event} to have property error" — Mar 2 이벤트 생성)→GREEN + 정상/full-ISO/leap(2028-02-29) 수용 케이스. 전 suite 1867, pnpm check exit=0, lint clean. ④b judge PASS 5/5(16 날짜 자체 probe, TZ-boundary month-end false-reject 없음 확인 — probe는 regex Y-M-D digits만 UTC 검증, parsed local과 비교 안 함).
+- **리스크:** 없음 — parseIsoDate만 변경(non-date-headed phrase는 resolveRelativeTimePhrase로 unchanged, 핸들러 불변). 스카웃 negative: browser/macos/cli-actuators/tasks/reminders/episodes/history/search/fetch/web-read/notes 모두 correct-hardened. 교훈: fix+test 빌드 통과 즉시 커밋(sweep 방지).
