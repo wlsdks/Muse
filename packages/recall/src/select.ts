@@ -1,4 +1,5 @@
-import { cosineSimilarity, lexicalOverlap } from "@muse/agent-core";
+import { cosineSimilarity, lexicalOverlap, lexicalTokens } from "@muse/agent-core";
+import type { Contact } from "@muse/mcp";
 
 /**
  * SB-1: rank past-session episode summaries against the query so `muse ask`
@@ -114,4 +115,93 @@ export function selectMemoryFacts(
     .sort((a, b) => b.score - a.score)
     .slice(0, max)
     .map((scored) => scored.fact);
+}
+
+const BIRTHDAY_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+/**
+ * Render a contact's stored birthday (`MM-DD` or `YYYY-MM-DD`) as a readable
+ * "March 14" (+ ", 1990" when a year is present) so `muse ask` can ground
+ * "when is X's birthday?" on it. Returns undefined for an absent / malformed
+ * value (no fabricated date).
+ */
+export function formatContactBirthday(raw: string | undefined): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const match = /^(?:(\d{4})-)?(\d{2})-(\d{2})$/u.exec(raw.trim());
+  if (!match) {
+    return undefined;
+  }
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return undefined;
+  }
+  const label = `${BIRTHDAY_MONTHS[month - 1] ?? ""} ${day.toString()}`;
+  return match[1] ? `${label}, ${match[1]}` : label;
+}
+
+/**
+ * The grounding-EVIDENCE text for a matched contact — the contact's name plus
+ * EVERY field the prompt block renders: relationship/role (P37-20), connections/
+ * edges (P37-21), email/phone/handle/birthday/aliases. The grounding rubric scores
+ * an answer's coverage against this; if a field the model can answer from (a role,
+ * an edge) is rendered in the block but MISSING here, a correct "your manager is
+ * Dana" / "Bob works with Alice" answer scores ~zero coverage and false-flags
+ * "unverified". So this MUST mirror the block render. Only REAL contact data, so a
+ * fabricated role/edge stays uncovered → still flagged.
+ */
+export function contactGroundingEvidence(contact: Contact): string {
+  const connections = (contact.connections ?? []).map((e) => `${e.as ?? "connected to"} ${e.to}`);
+  const fields = [
+    contact.relationship,
+    contact.email,
+    contact.phone,
+    contact.handle,
+    formatContactBirthday(contact.birthday),
+    ...(contact.aliases ?? []),
+    ...connections,
+    contact.about
+  ].filter((f): f is string => typeof f === "string" && f.length > 0).join(" ");
+  return `${contact.name} ${fields}`.trim();
+}
+
+/**
+ * Relevance of a contact to the question, for `muse ask` grounding (B3
+ * perception): how many query tokens match a token of the contact's name,
+ * aliases, handle, or email. 0 ⇒ NOT injected — so we ground only on the people
+ * the question is actually about, never dump the whole address book at the
+ * small local model.
+ */
+export function contactMatchScore(contact: Contact, queryTokens: ReadonlySet<string>): number {
+  if (queryTokens.size === 0) {
+    return 0;
+  }
+  const hay = new Set<string>();
+  const add = (text: string | undefined): void => {
+    if (text) {
+      for (const tok of lexicalTokens(text)) {
+        hay.add(tok);
+      }
+    }
+  };
+  add(contact.name);
+  add(contact.handle);
+  add(contact.email);
+  add(contact.relationship);
+  add(contact.about);
+  for (const alias of contact.aliases ?? []) {
+    add(alias);
+  }
+  let score = 0;
+  for (const tok of queryTokens) {
+    if (hay.has(tok)) {
+      score += 1;
+    }
+  }
+  return score;
 }
