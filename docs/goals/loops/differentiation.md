@@ -149,7 +149,7 @@ ratchet: testFiles 922 · egressGuards 7 (불변) · fabrication 0 · grounding 
   충분히 팠으니(L1/L3 4 fire) 다른 moat 축(grounding/"shows its work")의 새 레버로
   다양화 권장.
 
-## fire 8 · 2026-06-13 · skill v1.14.0 · `<pending-commit>`
+## fire 8 · 2026-06-13 · skill v1.14.0 · `33c3390d`
 meta: value-class=new-capability · pkg=@muse/recall · kind=citation-honesty(shows-its-work) · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles 922 · new battery eval:receipt-drift (no Ollama) · recall 88/88 (backward-compat) · fabrication 0 · grounding 엔진 미수정
 
