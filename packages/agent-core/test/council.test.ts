@@ -5,7 +5,10 @@ import {
   abstainIfUngrounded,
   buildCouncilPrompt,
   buildDebateQuestion,
+  classifyCouncilConsensus,
   dedupeUtterancesByPeer,
+  DEFAULT_COUNCIL_AGREE_AT,
+  DEFAULT_COUNCIL_AGREE_AT_COSINE,
   hasCouncilConsensus,
   hasCouncilConsensusSemantic,
   parseCouncilAnswer,
@@ -117,7 +120,7 @@ describe("synthesizeCouncilAnswer — grounded final answer", () => {
 
   it("grounds the answer against ONLY the usable member ids (drops an invented contributor)", async () => {
     const out = await synthesizeCouncilAnswer("Q?", members, opts('{"answer":"go A","contributors":["alice","INVENTED"]}'));
-    expect(out).toEqual({ answer: "go A", contributors: ["alice"] });
+    expect(out).toMatchObject({ answer: "go A", contributors: ["alice"] });
   });
 
   it("fail-soft: a throwing provider yields null", async () => {
@@ -297,5 +300,97 @@ describe("hasCouncilConsensusSemantic — semantic consensus gate (arXiv:2309.13
     const throwEmbed = async (_text: string): Promise<readonly number[]> => { throw new Error("embed down"); };
     const panel = [utt("a", "abc"), utt("b", "def")];
     await expect(hasCouncilConsensusSemantic(panel, throwEmbed)).resolves.toBe(false);
+  });
+});
+
+// ── classifyCouncilConsensus — ConfMAD advisory (arXiv:2509.14034) ──
+
+describe("classifyCouncilConsensus — aggregate confidence advisory (arXiv:2509.14034)", () => {
+  const floor = 0.5;
+
+  it("[0.6,0.55,0.5] floor 0.5 → strong (median 0.55 ≥ floor)", () => {
+    expect(classifyCouncilConsensus([0.6, 0.55, 0.5], { floor })).toBe("strong");
+  });
+
+  it("[0.05,0.04,0.03] floor 0.5 → weak (median 0.04 < floor)", () => {
+    expect(classifyCouncilConsensus([0.05, 0.04, 0.03], { floor })).toBe("weak");
+  });
+
+  it("[0.9] (solo) → strong", () => {
+    expect(classifyCouncilConsensus([0.9], { floor })).toBe("strong");
+  });
+
+  it("[] (empty) → strong", () => {
+    expect(classifyCouncilConsensus([], { floor })).toBe("strong");
+  });
+
+  // MEDIAN-not-min counterfactual: [0.0,0.6,0.6] → median=0.6 → strong.
+  // A min-based impl would see min=0.0 and return "weak" — this pins MEDIAN.
+  it("[0.0,0.6,0.6] floor 0.5 → strong (median 0.6 ≥ floor; min impl would say weak)", () => {
+    expect(classifyCouncilConsensus([0.0, 0.6, 0.6], { floor })).toBe("strong");
+  });
+
+  // Floor-source selection: Jaccard values near DEFAULT_COUNCIL_AGREE_AT (0.16).
+  it("Jaccard-range supports with Jaccard floor → strong; same numbers with cosine floor → weak", () => {
+    const jaccard = [0.18, 0.17, 0.19]; // median 0.18 ≥ DEFAULT_COUNCIL_AGREE_AT(0.16) → strong
+    expect(classifyCouncilConsensus(jaccard, { floor: DEFAULT_COUNCIL_AGREE_AT })).toBe("strong");
+    // median 0.18 < DEFAULT_COUNCIL_AGREE_AT_COSINE(0.5) → weak
+    expect(classifyCouncilConsensus(jaccard, { floor: DEFAULT_COUNCIL_AGREE_AT_COSINE })).toBe("weak");
+  });
+});
+
+// ── synthesizeCouncilAnswer — consensus field wire-in (assembled-path) ──
+
+describe("synthesizeCouncilAnswer — consensus field wire-in (assembled-path, no Ollama)", () => {
+  // Fake embedder returning identical vectors → cosine ≈ 1 → strong consensus.
+  const agreeEmbed = async (_text: string): Promise<readonly number[]> => [1, 0, 0];
+
+  const members = [
+    utt("alice", "plan A is the safest and most reliable option"),
+    utt("bob", "plan A is the right choice given its safety record"),
+    utt("carol", "plan A offers the best safety guarantees")
+  ];
+  const providerOutput = '{"answer":"go with plan A","contributors":["alice","bob","carol"]}';
+
+  it("near-identical vectors (embed) → consensus field is 'strong'", async () => {
+    const result = await synthesizeCouncilAnswer("Q?", members, {
+      ...opts(providerOutput),
+      embed: agreeEmbed
+    });
+    expect(result).not.toBeNull();
+    expect(result!.consensus).toBe("strong");
+  });
+
+  it("orthogonal vectors (embed) → consensus field is 'weak' (non-vacuity: responds to support distribution)", async () => {
+    // Three mutually-orthogonal vectors: every pairwise cosine = 0.
+    // Mean support per member = 0 → median = 0 < cosine floor 0.5 → weak.
+    const vec3 = async (text: string): Promise<readonly number[]> =>
+      text.startsWith("alpha") ? [1, 0, 0] :
+      text.startsWith("beta")  ? [0, 1, 0] :
+                                 [0, 0, 1];
+    const divergingMembers = [
+      utt("alice", "alpha alpha alpha"),
+      utt("bob",   "beta beta beta"),
+      utt("carol", "gamma gamma gamma")
+    ];
+    const result = await synthesizeCouncilAnswer("Q?", divergingMembers, {
+      ...opts('{"answer":"uncertain","contributors":["alice","bob","carol"]}'),
+      embed: vec3
+    });
+    expect(result).not.toBeNull();
+    expect(result!.consensus).toBe("weak");
+  });
+
+  // Advisory-only: excludedPeers and contributors unchanged when consensus is added.
+  it("consensus field does not alter contributors or excludedPeers (advisory-only, back-compat)", async () => {
+    const result = await synthesizeCouncilAnswer("Q?", members, {
+      ...opts(providerOutput),
+      embed: agreeEmbed
+    });
+    expect(result).not.toBeNull();
+    expect(result!.contributors).toEqual(["alice", "bob", "carol"]);
+    expect(result!.excludedPeers).toBeUndefined();
+    // answer text must be the synthesised answer unchanged
+    expect(result!.answer).toBe("go with plan A");
   });
 });
