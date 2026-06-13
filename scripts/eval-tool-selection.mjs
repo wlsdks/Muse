@@ -232,7 +232,9 @@ async function buildContactsScenario() {
       { prompt: "Whose birthday is coming up this week?", expectTool: "upcoming_birthdays", note: "EN list of upcoming birthdays (no name) → upcoming_birthdays" },
       { prompt: "이번 주에 생일인 사람 있어?", expectTool: "upcoming_birthdays", note: "KO list of upcoming birthdays → upcoming_birthdays (NOT find_contact — no name given)" },
       { prompt: "What's Jane Doe's email address?", expectTool: "find_contact", requireArgs: ["name"], note: "EN named-person lookup → find_contact (NOT upcoming_birthdays)" },
-      { prompt: "Bob 생일이 언제야?", expectTool: "find_contact", requireArgs: ["name"], note: "KO named-person birthday → find_contact, NOT upcoming_birthdays (a specific person, the list tool can't answer)" }
+      { prompt: "Bob 생일이 언제야?", expectTool: "find_contact", requireArgs: ["name"], note: "KO named-person birthday → find_contact, NOT upcoming_birthdays (a specific person, the list tool can't answer)" },
+      { prompt: "Who is +1 415 555 0101?", expectTool: "find_contact", requireArgs: ["name"], argIncludes: /415|555|0101/, note: "EN reverse lookup by PHONE → find_contact, identifier passed as the name arg (ArgumentCorrectness)" },
+      { prompt: "Whose email is bob@acme.com?", expectTool: "find_contact", requireArgs: ["name"], argIncludes: /bob@acme/i, note: "EN reverse lookup by EMAIL → find_contact, the email passed as the name arg" }
     ];
     return { label: "contacts (find-one vs upcoming-birthdays-list)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
   } catch (error) {
