@@ -270,6 +270,7 @@ export {
   produceCouncilReasoning,
   produceGroundedCouncilReasoning,
   QUESTION_RELEVANCE_FLOOR,
+  rankUtterancesBySupport,
   screenCouncilOutliers,
   screenOffTopicUtterancesSemantic,
   synthesizeCouncilAnswer,
