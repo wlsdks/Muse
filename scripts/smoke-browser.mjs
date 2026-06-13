@@ -30,6 +30,10 @@
  *                        evaluate which has no higher-level timeout) fails fast
  *                        within the bound, not after puppeteer's silent 180s
  *                        default — a stuck page can't wedge the agent
+ *  22. browser_wait     — content inserted AFTER open()'s settle (a quiet page,
+ *                        then a delayed timer) is missed by a bare read but
+ *                        waited-for by waitFor(text|selector); an unmet
+ *                        condition reports matched=false (no fabricated success)
  *
  * Skips (exit 0) when Chrome is not installed — a skip is not a pass.
  */
@@ -122,6 +126,19 @@ const PROMPT_HTML = `<!doctype html><html><head><title>Prompt</title></head><bod
 const AJAX_HTML = `<!doctype html><html><head><title>Ajax</title></head><body>
 <button onclick="setTimeout(() => document.body.insertAdjacentHTML('beforeend','<p>Results loaded</p>'), 600)">Load results</button>
 </body></html>`;
+
+// The page is QUIET at load (real text + a control already present, so it is
+// NOT looksUnsettled and the settle/retry path can't help), then a delayed
+// timer inserts the awaited content LATER — well after open()'s 400ms-quiet
+// settle has already returned. A bare read right after open misses it; only
+// browser_wait, which polls until the text/selector appears, catches it.
+const WAIT_HTML = `<!doctype html><html><head><title>Order</title></head><body>
+<h1>Checkout</h1><p>Processing your order, please wait. This page has plenty of static text already on it.</p>
+<button>Cancel</button>
+<div id="status"></div>
+<script>setTimeout(() => {
+  document.getElementById("status").innerHTML = '<p class="result">Order confirmed #A12</p>';
+}, 2500);</script></body></html>`;
 
 const DISABLED_HTML = `<!doctype html><html><head><title>Disabled</title></head><body>
 <button disabled>Submit</button><button>Active button</button>
@@ -225,6 +242,7 @@ try {
   await writeFile(join(dir, "dialog.html"), DIALOG_HTML);
   await writeFile(join(dir, "prompt.html"), PROMPT_HTML);
   await writeFile(join(dir, "ajax.html"), AJAX_HTML);
+  await writeFile(join(dir, "wait.html"), WAIT_HTML);
   await writeFile(join(dir, "disabled.html"), DISABLED_HTML);
   await writeFile(join(dir, "newtab.html"), NEWTAB_HTML);
   await writeFile(join(dir, "newtab-target.html"), NEWTAB_TARGET_HTML);
@@ -388,6 +406,24 @@ try {
   assert(snap.httpStatus === 200, "a 200 IS captured by the controller (real path)");
   assert(Object.keys(statusFields(snap)).length === 0, "but statusFields stays SILENT on a 200 — no false alarm to the model");
   assert(snap.text.includes("The real content"), "the 200 page content flows normally");
+
+  console.log("22) browser_wait — content that appears AFTER the settle is waited-for, then read (honest no-match on a timeout)");
+  snap = await controller.open(pathToFileURL(join(dir, "wait.html")).href);
+  // open()'s settle returns while the page is quiet, BEFORE the 2.5s insert — so
+  // a bare read here genuinely misses the awaited content (proves the gap is real).
+  assert(!snap.text.includes("Order confirmed"), "the delayed content is absent right after open (settle/retry can't catch it — real gap)");
+  const waitText = await controller.waitFor({ text: "Order confirmed" });
+  assert(waitText.matched === true, "waitFor(text) polls until the late content appears (matched=true)");
+  assert(waitText.snapshot.text.includes("Order confirmed #A12"), "the awaited text is now in the re-read snapshot");
+  // a CSS selector for the same late element resolves too (re-open for a fresh, quiet page)
+  snap = await controller.open(pathToFileURL(join(dir, "wait.html")).href);
+  const waitSel = await controller.waitFor({ selector: ".result" });
+  assert(waitSel.matched === true, "waitFor(selector) resolves once the late element renders");
+  // a condition that never holds reports matched=false (no fabricated success), with the live page intact
+  snap = await controller.open(pathToFileURL(join(dir, "wait.html")).href);
+  const waitMiss = await controller.waitFor({ text: "this string never appears on the page", timeoutMs: 1500 });
+  assert(waitMiss.matched === false, "an unmet condition times out to matched=false (honest, not a fabricated success)");
+  assert(waitMiss.snapshot.text.includes("Checkout"), "the live page is still returned on a timeout so the model can report what IS there");
 
   console.log("21) protocol-timeout — a CDP call that never returns fails fast, not after 180s");
   await writeFile(join(dir, "hang.html"), HANG_HTML);

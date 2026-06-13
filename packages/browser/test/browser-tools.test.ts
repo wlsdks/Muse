@@ -11,10 +11,11 @@ import {
   createBrowserReadTool,
   createBrowserScrollTool,
   createBrowserTypeTool,
+  createBrowserWaitTool,
   statusFields,
   type BrowserApprovalGate
 } from "../src/browser-tools.js";
-import type { BrowserController, PageSnapshot, SnapshotElement } from "../src/controller.js";
+import type { BrowserController, PageSnapshot, SnapshotElement, WaitCondition, WaitOutcome } from "../src/controller.js";
 
 const ctx = { runId: "r", userId: "u1" };
 
@@ -42,6 +43,11 @@ class FakeController implements BrowserController {
   async type(ref: number, text: string, submit: boolean): Promise<PageSnapshot> { this.calls.push(`type:${ref.toString()}:${text}:${submit.toString()}`); return SNAP; }
   async back(): Promise<PageSnapshot> { this.calls.push("back"); return SNAP; }
   async scroll(direction: string): Promise<PageSnapshot> { this.calls.push(`scroll:${direction}`); return SNAP; }
+  waitOutcome: WaitOutcome = { matched: true, snapshot: SNAP };
+  async waitFor(condition: WaitCondition): Promise<WaitOutcome> {
+    this.calls.push(`wait:${condition.selector ?? condition.text ?? ""}:${(condition.timeoutMs ?? "").toString()}`);
+    return this.waitOutcome;
+  }
   async screenshot(path: string): Promise<{ readonly path: string }> { this.calls.push("shot"); return { path }; }
   async screenshotBase64(): Promise<string> { this.calls.push("shot-base64"); return "aW1n"; }
   describeElement(ref: number): SnapshotElement | undefined { return this.elements.get(ref); }
@@ -53,20 +59,21 @@ class FakeController implements BrowserController {
 const allow: BrowserApprovalGate = () => ({ approved: true });
 
 describe("browser tools — well-formed definitions", () => {
-  it("all five tools are validateToolDefinitions-clean with the browser domain", () => {
+  it("all tools are validateToolDefinitions-clean with the browser domain", () => {
     const c = new FakeController();
     const tools = [
       createBrowserOpenTool({ controller: c }),
       createBrowserReadTool({ controller: c }),
       createBrowserBackTool({ controller: c }),
       createBrowserScrollTool({ controller: c }),
+      createBrowserWaitTool({ controller: c }),
       createBrowserHoverTool({ controller: c }),
       createBrowserKeyTool({ controller: c }),
       createBrowserClickTool({ approvalGate: allow, controller: c }),
       createBrowserTypeTool({ approvalGate: allow, controller: c })
     ];
     expect(tools.map((t) => t.definition.name)).toEqual([
-      "browser_open", "browser_read", "browser_back", "browser_scroll", "browser_hover", "browser_key", "browser_click", "browser_type"
+      "browser_open", "browser_read", "browser_back", "browser_scroll", "browser_wait", "browser_hover", "browser_key", "browser_click", "browser_type"
     ]);
     for (const tool of tools) {
       expect(tool.definition.domain).toBe("browser");
@@ -78,6 +85,7 @@ describe("browser tools — well-formed definitions", () => {
     expect(createBrowserOpenTool({ controller: c }).definition.risk).toBe("read");
     expect(createBrowserReadTool({ controller: c }).definition.risk).toBe("read");
     expect(createBrowserBackTool({ controller: c }).definition.risk).toBe("read");
+    expect(createBrowserWaitTool({ controller: c }).definition.risk).toBe("read");
     expect(createBrowserClickTool({ approvalGate: allow, controller: c }).definition.risk).toBe("execute");
     expect(createBrowserTypeTool({ approvalGate: allow, controller: c }).definition.risk).toBe("execute");
   });
@@ -108,6 +116,48 @@ describe("browser_open / read / back — free (no gate)", () => {
     expect(await createBrowserReadTool({ controller: c }).execute({}, ctx)).toMatchObject({ title: "Example" });
     expect(await createBrowserBackTool({ controller: c }).execute({}, ctx)).toMatchObject({ title: "Example" });
     expect(c.calls).toEqual(["snapshot", "back"]);
+  });
+});
+
+describe("browser_wait — wait for async content, honest matched signal", () => {
+  it("rejects a call with neither forText nor selector without touching the browser", async () => {
+    const c = new FakeController();
+    const out = await createBrowserWaitTool({ controller: c }).execute({}, ctx);
+    expect(out).toMatchObject({ error: expect.stringContaining("forText") });
+    expect(c.calls).toEqual([]);
+  });
+
+  it("waits for a text substring and returns matched:true with the settled page", async () => {
+    const c = new FakeController();
+    const out = await createBrowserWaitTool({ controller: c }).execute({ forText: "results" }, ctx) as { matched: boolean; title: string };
+    expect(out.matched).toBe(true);
+    expect(out.title).toBe("Example");
+    expect(c.calls).toEqual(["wait:results:"]);
+  });
+
+  it("passes a selector and a bounded timeout through to the controller", async () => {
+    const c = new FakeController();
+    await createBrowserWaitTool({ controller: c }).execute({ selector: ".search-result", timeoutMs: 8000 }, ctx);
+    expect(c.calls).toEqual(["wait:.search-result:8000"]);
+  });
+
+  it("a timeout reports matched:false + timedOut + an honesty note, never a fabricated success", async () => {
+    const c = new FakeController();
+    c.waitOutcome = { matched: false, snapshot: SNAP };
+    const out = await createBrowserWaitTool({ controller: c }).execute({ forText: "never appears" }, ctx) as {
+      matched: boolean; timedOut?: boolean; note?: string; title: string;
+    };
+    expect(out.matched).toBe(false);
+    expect(out.timedOut).toBe(true);
+    expect(out.note).toContain("did not appear");
+    // the live page is still returned so the model can report what IS there
+    expect(out.title).toBe("Example");
+  });
+
+  it("prefers selector over forText when both are given", async () => {
+    const c = new FakeController();
+    await createBrowserWaitTool({ controller: c }).execute({ forText: "ignored", selector: "#results" }, ctx);
+    expect(c.calls).toEqual(["wait:#results:"]);
   });
 });
 

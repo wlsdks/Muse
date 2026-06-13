@@ -31,7 +31,9 @@ import {
   type BrowserKey,
   type PageSnapshot,
   type ScrollDirection,
-  type SnapshotElement
+  type SnapshotElement,
+  type WaitCondition,
+  type WaitOutcome
 } from "./controller.js";
 import { looksUnsettled, matchOption } from "./matcher.js";
 
@@ -67,6 +69,14 @@ const NEW_TAB_WINDOW_MS = 500;
 // an unsettled snapshot (no elements, stub text) waits and retries, max twice.
 const SETTLE_RETRIES = 2;
 const SETTLE_DELAY_MS = 700;
+// browser_wait bounds: a sensible default for async content (most fetch-render
+// resolves well under this) and a hard ceiling so a never-arriving condition
+// can't wedge the agent. The effective wait is also clamped below the CDP
+// protocol ceiling so the waitForFunction roundtrip never out-races its own
+// timeout (which would surface as a protocol error, not an honest no-match).
+const WAIT_DEFAULT_MS = 10_000;
+const WAIT_MAX_MS = 30_000;
+const WAIT_MIN_MS = 500;
 
 export class PuppeteerBrowserController implements BrowserController {
   private browser: Browser | undefined;
@@ -504,6 +514,47 @@ export class PuppeteerBrowserController implements BrowserController {
     await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* static page */ });
     await this.settleDom(page);
     return this.snapshot();
+  }
+
+  async waitFor(condition: WaitCondition): Promise<WaitOutcome> {
+    const page = await this.ensurePage();
+    const selector = condition.selector?.trim();
+    const text = condition.text?.trim();
+    const requested = condition.timeoutMs;
+    const bound = requested === undefined || !Number.isFinite(requested) ? WAIT_DEFAULT_MS : requested;
+    // Keep the poll's own timeout under the CDP ceiling so the waitForFunction
+    // roundtrip can't out-race protocolTimeout (that would throw a protocol
+    // error instead of resolving as an honest no-match).
+    const timeout = Math.min(Math.max(Math.trunc(bound), WAIT_MIN_MS), WAIT_MAX_MS, this.protocolTimeout - 1_000);
+    let matched = true;
+    try {
+      // ONE waitForFunction handles both modes: a selector must match a VISIBLE
+      // element (rect > 0, not display:none), or the substring must appear in
+      // the body's innerText. Polling (not a static check) is what makes this
+      // catch content that arrives AFTER the initial settle.
+      await page.waitForFunction(
+        (sel: string | null, needle: string | null) => {
+          if (sel) {
+            const el = document.querySelector(sel);
+            if (!el) return false;
+            const rect = (el as HTMLElement).getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }
+          if (needle) return (document.body?.innerText ?? "").includes(needle);
+          return true;
+        },
+        { polling: 200, timeout },
+        selector ?? null,
+        text ?? null
+      );
+    } catch {
+      // TimeoutError (or page navigated away mid-wait): the condition never
+      // held within the bound. Report it honestly rather than throwing — the
+      // model gets matched=false plus the live page, not a fabricated success.
+      matched = false;
+    }
+    await this.settleDom(page);
+    return { matched, snapshot: await this.snapshot() };
   }
 
   async screenshot(path: string): Promise<{ readonly path: string }> {
