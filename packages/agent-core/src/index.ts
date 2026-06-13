@@ -129,7 +129,9 @@ export {
   type PageRankOptions
 } from "./associative-recall.js";
 export {
+  applyLateralInhibition,
   cosineSimilarity,
+  EPISODIC_INHIBITION_STRENGTH,
   EmbeddingEpisodicRecallProvider,
   InMemoryEpisodicRecallProvider,
   renderEpisodicSection,
@@ -153,6 +155,7 @@ export {
   decideRecallClarification,
   bm25Scores,
   createKnowledgeSearchTool,
+  detectEvidenceContradictions,
   edgeLoadByRelevance,
   enforceAnswerCitations,
   explainGroundingVerdict,
@@ -193,6 +196,7 @@ export {
   type GroundingRubric,
   type GroundingVerdict,
   type GroundingVerification,
+  type ContradictionPair,
   type KnowledgeChunk,
   type PerClaimRefinement,
   type PerClaimVerdict,
