@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, detectEvidenceContradictions, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type ContradictionPair, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, detectEvidenceContradictions, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type ContradictionPair, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -35,7 +35,7 @@ import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
 import { acquireOllamaLease, evaluateArithmeticExpression, fetchReadableUrl, formatDueLocal, listReflections, parseReminderDueAt, readActionLog, readContacts, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type ActionLogEntry, type Contact, type MessageApprovalGate, type PersistedReminder, type PersistedTask } from "@muse/mcp";
 import { redactSecretsInText } from "@muse/shared";
-import { allUserMemoryFacts, buildDiskContents, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
+import { allUserMemoryFacts, buildDiskContents, buildNoteContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, escapeSystemPromptMarkers, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
 export { allUserMemoryFacts, buildDiskContents, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
 import { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, urlGroundingSource } from "@muse/recall";
 export { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, urlGroundingSource };
@@ -66,13 +66,13 @@ import { filterLiveEpisodeEntries, filterLiveNoteIndexFiles } from "./commands-r
 import { linkExpandRefs, noteLinkView, resolveNoteId, type NoteLinkGraph } from "./notes-links.js";
 import { formatConnectionsSection } from "./commands-today.js";
 import { embed } from "./embed.js";
+import { rankPlaybookEntriesByRelevance } from "./playbook-embed-rank.js";
 import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpisodeIndex, saveEpisodeIndex } from "./episode-index.js";
 import { readClipboardText } from "./clipboard-reader.js";
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
 import { countdownDays, detectCountdownQuery, formatCountdown } from "./countdown-query.js";
 import { detectDateDiffQuery, formatDateDiff } from "./date-diff-query.js";
-import { escapeSystemPromptMarkers } from "./prompt-escape.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
 import { convertUnit, detectUnitConversion, formatConversion } from "./unit-conversion.js";
 import { detectPercentageQuery, formatPercentage } from "./percentage-query.js";
@@ -193,43 +193,6 @@ export function untrustedOnlyGroundingNotice(
   return `\n⚠️  Source check: this answer is faithful to its sources, but rests ONLY on tool-fetched data (not your own notes) — verify before trusting.\n`;
 }
 
-/**
- * Build the <<note N>> context block from ranked note chunks, annotating any
- * detected value-conflict pair so the model receives reconciliation as DATA
- * rather than relying on a prompt instruction alone (arXiv:2504.19413,
- * Chhikara et al. 2025 — Mem0 contradiction-resolution, applied read-time).
- *
- * ADDITIVE ONLY: both notes always appear; the aIndex note carries a neutral ⚠
- * marker referencing bIndex by 1-based position. No recency claim is made —
- * score reflects query relevance, not recency. Never drops, reorders, or
- * rewrites any note.
- *
- * `contradictions` is pre-computed by `detectEvidenceContradictions` over the
- * same `chunks` array. `notesDir` is used only to relativize source paths.
- */
-export function buildNoteContextBlock(
-  chunks: ReadonlyArray<{ readonly chunk: { readonly text: string }; readonly file: string; readonly score: number }>,
-  contradictions: readonly ContradictionPair[],
-  notesDir: string
-): string {
-  if (chunks.length === 0) return "(no relevant notes found)";
-
-  // Build a map: chunk index → 1-based label of the note it conflicts with.
-  const conflictMarker = new Map<number, number>();
-  for (const cp of contradictions) {
-    conflictMarker.set(cp.aIndex, cp.bIndex + 1);
-  }
-
-  return chunks.map((r, i) => {
-    const src = relativizeNoteSource(r.file, notesDir);
-    const body = escapeSystemPromptMarkers(r.chunk.text);
-    const otherNoteNum = conflictMarker.get(i);
-    const marker = otherNoteNum !== undefined
-      ? `\n[⚠ this note and note ${otherNoteNum.toString()} give DIFFERENT values for what looks like the same point — treat as possibly-conflicting; do not assume either is current]`
-      : "";
-    return `<<note ${(i + 1).toString()} — ${src}>>\n${body}${marker}\n[from ${src}]\n<<end>>`;
-  }).join("\n\n");
-}
 
 
 
@@ -1958,18 +1921,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // adds a local nomic pass per strategy); fail-soft back to lexical.
         if (process.env.MUSE_PLAYBOOK_EMBED_RANK === "true") {
           const embedModel = process.env.MUSE_PLAYBOOK_EMBED_MODEL?.trim() || DEFAULT_EMBED_MODEL;
-          const mapped = entries.map((entry) => ({
-            text: entry.text,
-            ...(entry.tag ? { tag: entry.tag } : {}),
-            ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),
-            ...(entry.probation ? { probation: true } : {}),
-            ...(typeof entry.reinforcements === "number" ? { reinforcements: entry.reinforcements } : {}),
-            ...(typeof entry.decays === "number" ? { decays: entry.decays } : {}),
-            ...(entry.lastReinforcedAt ? { lastReinforcedAt: entry.lastReinforcedAt } : {}),
-            ...(entry.createdAt ? { createdAt: entry.createdAt } : {})
-          }));
-          const ranked = await rankPlaybookStrategiesByRelevance(
-            mapped, query, (text) => embed(text, embedModel), topK === undefined ? undefined : { topK }
+          const ranked = await rankPlaybookEntriesByRelevance(
+            entries, query, (text) => embed(text, embedModel), topK, Date.now()
           );
           playbookSection = renderPlaybookSection(ranked);
           appliedStrategy = playbookSection ? ranked[0]?.text : undefined;

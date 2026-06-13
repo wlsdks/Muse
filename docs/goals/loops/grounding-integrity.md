@@ -74,3 +74,11 @@ ratchet: recall +2 tests (15 pass) · cli 2591 pass · lint 0/0 · fabrication 0
 - 진짜 fix: fire 8의 conflict cue를 **chat 표면으로 확장**(every-surface parity) — `conflictCueFromMatches(matches)`(recall, KnowledgeMatch형→hits) + finalizeGatedChatAnswer에서 사용자 자신의 grounding(args.matches)에 적용해 모순 시 답에 append. ask(fire8)+chat 둘 다 이제 모순 표면화.
 - 리뷰지점: conflict 있을 때만 append(fire7 hardening이 오발 차단), gate 결정/untrusted cue/receipt 불변. 합성은 recall 단위테스트, CLI glue는 thin append. 독립 Opus judge 5/5 PASS(cli 2591 green).
 - 리스크: 없음 수준. v1 regex comma-truncation false-negative는 여전(허용). chat도 ask와 동일 caveat.
+
+## fire 10 · 2026-06-13 · skill v1.14.0 · 9c7d9b0a
+meta: value-class=reliability-coverage · pkg=@muse/mcp · kind=B · verdict=PASS · firesSinceDrill=1
+ratchet: mcp +2 tests (9 pass; full mcp 1835 pass) · lint 0/0 · fabrication 0 · isolated-mutation verified (RATCHET: A·A·A→B 다양성 복귀, pkg mcp)
+- 무엇: reflections 스토어(무인 dreaming) cap trim을 **insertion-order→createdAtMs(recency)**로 수정. `listReflections`는 newest-first by createdAtMs인데 trim은 `slice(length-MAX)`(삽입 순서)라 cap이 표시 순서와 불일치 — backfill/out-of-order 배치가 더 새로운 insight를 evict하고 stale 유지.
+- 왜: 무인 학습-상태 위생 — 모순된 eviction은 grounded 자기지식을 조용히 잘못 버림. 단 현재 단일 호출자는 monotonic ts라 그 경로로는 오늘 미발현 → 공개 @muse/mcp 스토어에 monotonicity 계약 없어 ANY-writer hardening(judge가 정직히 caveat). floor 아님, learned-state hygiene.
+- 리뷰지점: `[...].sort(desc by createdAtMs).slice(0,MAX)` newest N 유지, over-cap에서만 작동(under-cap 불변), listReflections 재정렬하므로 저장순서 무관. backfill 테스트가 isolated insertion-order mutation에서만 red(1/9)로 trim 로직 격리 증명, 독립 Opus judge 5/5 PASS(mcp 1835 green).
+- 리스크: 없음 수준(persistence-only, 절대 fabricate 안 함). 단순 hardening(라이브 버그 아님)이라 가치는 중간.

@@ -21,6 +21,7 @@ import {
   createHomeActionTool,
   createWebActionTool,
   queryContacts,
+  resolveContact,
   type EmailApprovalGate,
   type HostLookup,
   type MessageApprovalGate,
@@ -372,12 +373,25 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
       createMacClipboardSetTool(),
       createMacSpotlightSearchTool(),
       createMacSayTool(),
-      // @muse/macos takes the action logger by injection (it never depends on
-      // @muse/mcp); the CLI binds it to the same append-only action log the
-      // other outbound actuators write.
+      // @muse/macos takes the action logger AND the recipient resolver by
+      // injection (it never depends on @muse/mcp); the CLI binds the logger to
+      // the same append-only action log the other outbound actuators write, and
+      // resolves a NAME → number from the contacts graph here (Rule 3: resolved,
+      // never guessed) — bringing iMessage to email's recipient-resolution parity.
       createMacMessageSendTool({
         actionLog: (entry) => appendActionLog(actionLogFile, entry),
         approvalGate: macMessageGate,
+        resolveRecipient: async (name) => {
+          const resolution = resolveContact(await queryContacts(resolveContactsFile(env)), name);
+          if (resolution.status === "ambiguous") {
+            return { matchCount: resolution.matches.length, status: "ambiguous" };
+          }
+          if (resolution.status === "unknown") {
+            return { status: "unknown" };
+          }
+          const recipient = resolution.contact.phone ?? resolution.contact.email;
+          return recipient ? { name: resolution.contact.name, recipient, status: "resolved" } : { status: "unknown" };
+        },
         userId
       })
     );

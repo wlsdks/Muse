@@ -797,8 +797,8 @@ describe("mac_message_send — Tier 2 draft-first, fail-closed (outbound-safety)
     expect(tool.definition.name).toBe("mac_message_send");
     expect(tool.definition.risk).toBe("execute");
     const schema = tool.definition.inputSchema as { required: string[] };
-    expect(schema.required).toEqual(["to", "body"]);
-    expect(tool.definition.groundedArgs).toEqual(["to"]);
+    expect(schema.required).toEqual(["body"]);
+    expect(tool.definition.groundedArgs).toEqual(["to", "recipientName"]);
     expect(tool.definition.keywords).toContain("아이메시지");
     expect(validateToolDefinitions([tool])).toEqual([]);
   });
@@ -855,6 +855,55 @@ describe("mac_message_send — Tier 2 draft-first, fail-closed (outbound-safety)
     expect(script).toContain('buddy "jane@icloud.com"');
     expect(script).toContain('send "say \\"hi\\""'); // body quote escaped for AppleScript
     expect(logged[0]).toMatchObject({ result: "performed" });
+  });
+
+  it("resolves a NAME via the contacts graph → sends to the resolved number (Rule 3: resolved, never guessed)", async () => {
+    let script = "";
+    const { tool, logged } = makeSend({
+      resolveRecipient: (name) => name === "Jane" ? { name: "Jane Park", recipient: "+14155550101", status: "resolved" } : { status: "unknown" },
+      runner: async (s) => { script = s; return ok(""); }
+    });
+    const out = await tool.execute({ body: "running late", recipientName: "Jane" }, ctx);
+    expect(out).toMatchObject({ sent: true, to: "+14155550101" });
+    expect(script).toContain('buddy "+14155550101"');
+    expect(logged[0]).toMatchObject({ result: "performed" });
+  });
+
+  it("an AMBIGUOUS name fails closed — no osascript send, nothing logged", async () => {
+    let sent = false;
+    const { tool, logged } = makeSend({
+      resolveRecipient: () => ({ matchCount: 2, status: "ambiguous" }),
+      runner: async () => { sent = true; return ok(""); }
+    });
+    const out = await tool.execute({ body: "hi", recipientName: "Jane" }, ctx);
+    expect(out).toMatchObject({ reason: "ambiguous-recipient", sent: false });
+    expect(sent).toBe(false);
+    expect(logged).toEqual([]);
+  });
+
+  it("an UNKNOWN name fails closed (resolver consulted) — needs-recipient, no send", async () => {
+    let sent = false;
+    let resolverCalled = false;
+    const { tool } = makeSend({
+      resolveRecipient: () => { resolverCalled = true; return { status: "unknown" }; },
+      runner: async () => { sent = true; return ok(""); }
+    });
+    expect(await tool.execute({ body: "hi", recipientName: "Ghost" }, ctx)).toMatchObject({ reason: "needs-recipient", sent: false });
+    expect(resolverCalled).toBe(true);
+    expect(sent).toBe(false);
+  });
+
+  it("an explicit `to` is used as-is — name resolution is NOT consulted (back-compat)", async () => {
+    let resolverCalled = false;
+    let script = "";
+    const { tool } = makeSend({
+      resolveRecipient: () => { resolverCalled = true; return { status: "unknown" }; },
+      runner: async (s) => { script = s; return ok(""); }
+    });
+    const out = await tool.execute({ body: "hi", to: "+14155551212" }, ctx);
+    expect(out).toMatchObject({ sent: true, to: "+14155551212" });
+    expect(resolverCalled).toBe(false);
+    expect(script).toContain('buddy "+14155551212"');
   });
 });
 
