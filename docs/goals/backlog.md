@@ -24,6 +24,11 @@
 ## TOOL theme — open (CLI-only capabilities lacking an agent tool)
 
 - ⏳ `math_eval` robustness — VERIFIED NOT A BUG (fire 52): both evaluateArithmetic copies (tools + mcp) reject malformed input by throwing→error (no crash); commas are intentionally stripped. No slice. (closes the fire-51 LANE-A candidate)
+- ⏳ **PRE-EXISTING daemon test regression on `main` (cli/daemon owners — NOT differentiation)** — `apps/cli/src/commands-daemon.test.ts:119` "`--once` delivers an imminent task" fails: expected output to match `/proactive: fired 1\/1 imminent/` but got `muse daemon — provider=telegram, dest…`. Reproduces on a CLEAN `origin/main` checkout WITHOUT any local change AND after a full `pnpm build` (not stale dist) — so it landed via a merged commit (P43-5 double-booking / P37-23 email ingestion area). Flagged by differentiation fire 4 (whose own slice is isolated to @muse/autoconfigure + passes). The daemon/cli loop or 진안 should fix; `pnpm self-eval` does not catch it (it doesn't run the cli vitest suite).
+
+## test-hygiene theme — open (low-quality/flaky tests to fix, coverage gaps to fill)
+
+- ◦ **machine-load timeouts under concurrent loops** — with ~6 loop worktrees running vitest at once, *trivial* tests (`@muse/agent-core sanitizeFollowupSummary` — a one-line `.replace`; `@muse/mcp` plan-cache `caps at MAX_PLAN_CACHE_ENTRIES`) hit the 5000ms vitest default and time out under CPU starvation, reddening full `pnpm check`. NOT a test-quality issue (functions are linear) — an environment/oversubscription artifact (plan-cache passes in 1.3s isolated). Candidate slice: raise the global vitest `testTimeout` (e.g. 5000→15000ms) in the shared vitest config so concurrent-loop load can't manufacture false failures — weigh against masking a *real* future slowdown. (observed test-hygiene fire 2)
 
 ## GROUNDING INTEGRITY theme — open
 
@@ -32,17 +37,22 @@
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
 - ✓ untrusted-only provenance marker on grounded ask answers — wired the dead `groundedOnUntrustedOnly` grounded≠true mitigation into the `muse ask` verdict path (re-export + `untrustedOnlyGroundingNotice` + verdict wiring); faithful answers resting only on untrusted MCP/web sources now surface a scrutiny cue, label stays "grounded", floor untouched — grounding-integrity fire 1
+- ✓ distill-queue drain-idempotency + grounding-fence invariants pinned — the unattended distill-consumer's "dud/fail-soft event is drained not jammed, writes zero fabricated strategies" safety guarantees were untested; added 2 mutation-verified OUTCOME tests over the real file-backed stores — grounding-integrity fire 2
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
 - ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
 
 - ✓ web Markdown link-scheme allowlist widened to `mailto:`/`tel:` (model-reply contact links now clickable; `javascript:`/`data:`/`vbscript:` still blocked, adversarial test added) — surfaces fire 1
+- ✓ desktop companion stale default model: `OllamaHealth.requiredModel` qwen3:8b→gemma4:12b + `.notRunning` guidance interpolates requiredModel (was health-checking/onboarding the wrong model vs CLI's gemma4:12b default) — surfaces fire 2
 - ✓ `upcoming_birthdays` agent tool — conversational "whose birthday is coming up?" (resolveUpcomingBirthdays was CLI/brief-only, no agent tool) — tool-hardening fire 47
 - ✓ `on_this_day_notes` agent tool — conversational date-cued note recall (muse on-this-day was CLI-only; pure recall logic moved to @muse/mcp, CLI re-exports) — tool-hardening fire 48
 - ✓ `feeds_search` agent tool — conversational watched-feed archive search (CLI-only + only knowledge_search covered it, off by default → default-posture gap) — tool-hardening fire 49
 - ✓ `find_contact` hardening — surfaces `about`/`connections` (recall material the handler dropped, e.g. "allergic to nuts") so "what do I know about Bob?" answers from the tool; reverse-lookup by phone/email/@handle locked + advertised — tool-hardening fire 50
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" (list filtered only by status/dueWithinDays; tags first-class but unfilterable) — tool-hardening fire 51
 - ✓ `overdue_contacts` agent tool — "who haven't I talked to in a while?" relationship-decay nudge (overdueContacts was CLI-only; tool placed in @muse/autoconfigure to avoid a new dep edge, interactionsFromEvents moved there, CLI re-exports) — tool-hardening fire 52
+- ✓ ADD coverage: `interactionsFromEvents` invalid-`startsAt` drop branch (`Number.isFinite(event.ms)`) — was uncovered by both autoconfigure + CLI tests; mutation-proven (RED on filter removal) — test-hygiene fire 1
+- ✓ FIX flaky timeout: `@muse/mcp playbook-store "weighted eviction"` was intrinsically ~5.1s (121 sequential recordPlaybookStrategy disk writes) → rewrote setup to 1 writePlaybook pre-seed + 1 record overflow (285ms), same assertions, mutation-proven (FIFO mutant → RED) — test-hygiene fire 2
+- ✓ ADD coverage: `formatCoarseAge` ≥2-year branch (`.toFixed(0)` whole years) in @muse/recall — only the <2y 1-decimal path was tested; mutation-proven (toFixed(1) mutant → '2.2y'≠'2y' RED) — test-hygiene fire 3
 - ✓ `muse.tasks.search` matches tags — a task tagged "work" (word not in title/notes) is now found by searching "work" (completes the fire-51 tag story: list FILTERS by tag, search now FINDS by tag) + JUDGE-DRILL (verifier caught a deliberately-inert version) — tool-hardening fire 53
 - ✓ `week_agenda` agent tool — "what's my week look like?" ONE merged view of events+tasks+birthdays by day (muse week was CLI-only; groupWeekAgenda moved to @muse/autoconfigure, CLI re-exports) — tool-hardening fire 54
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" was inexpressible (list filtered only by status/dueWithinDays, search ignores tags) though tags are first-class + CLI `--tag` exists; added optional `tag` (case-insensitive exact, both branches) — tool-hardening fire 51
@@ -52,10 +62,11 @@
 - ✓ embedder local-only egress gap CLOSED — `createOllamaEmbedder` followed `OLLAMA_BASE_URL` with no local-only check (chat router only gates it for providerId ollama; daemon bypassed the router), so a remote `OLLAMA_BASE_URL` egressed the user's raw note/memory/episode text under MUSE_LOCAL_ONLY; added construction-time fail-close + 6 behavioural tests + folded the throw into the egressGuards ratchet (6→7) — differentiation fire 4
 - ✓ browser act-path ambiguous-target fail-close — element matcher silently clicked/typed the FIRST of several tied "best" matches (two "Delete" buttons → guessed); now `matchElementResult` → `ambiguous` refuses `browser_click`/`browser_type` BEFORE snapshot-mutation/approval-gate, returns candidates + ordinal hint (closes an outbound-safety fail-open hole) — tool-mcp-browser fire 1
 - ✓ official-public-MCP preset registry (axis B) — `packages/mcp/src/official-mcp-presets.ts`: curated `createGitHubMcpServer` (`https://api.githubcopilot.com/mcp/`) + `createNotionMcpServer` (`https://mcp.notion.com/mcp`) streamable factories, each carrying an official anyone-may-connect provenance URL + a FAIL-CLOSE `toolRisk` classifier (read tools listed, every write/unknown → `write`) + `withOfficialMcpRisk` projection (domain `external`); wired through the existing `allowedServerNames` allowlist; contract-faithful transport-fake test proves allowlisted connects/read-surfaces & non-allowlisted refuses & write stays gated — tool-mcp-browser fire 2
+- ✓ `muse doctor` surfaces embedder OLLAMA_BASE_URL locality — `evaluateLocalOnlyPosture` now flags status `fail` when local-only is on but OLLAMA_BASE_URL is off-box (a localhost lmstudio chat + remote embedder no longer reports a false "🔒 ok"); same base resolution as the fire-4 runtime guard so doctor and runtime never diverge — differentiation fire 5
 
 ## ◦ Open — differentiation (vs hermes/openclaw — `differentiation` loop)
 
-- ◦ **`muse doctor` reports embedder OLLAMA_BASE_URL locality** — fire 4 closed the runtime egress gap (the embedder now fail-closes on a remote base under local-only), but `evaluateLocalOnlyPosture` / `muse doctor` still only re-runs the chat router, so the doctor posture never surfaces the embedder's base URL — a reporting blind spot. Slice: extend the posture snapshot to classify the embedder's `OLLAMA_BASE_URL` too. Source: differentiation fire 4 residual.
+- ◦ **Extract a shared `resolveEmbedderBase()` helper** — fire 5's doctor posture and fire 4's runtime guard each resolve the embedder base with their own string literal (`OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434"` + trailing-slash strip). They must move together or doctor↔runtime diverge; a shared helper makes the parity structural instead of convention-enforced. Source: differentiation fire 5 residual (Opus judge).
 
 ### tool-mcp-browser theme — axis B (external official-public MCP) remaining sub-slices
 

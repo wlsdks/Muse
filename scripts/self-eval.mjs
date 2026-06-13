@@ -85,6 +85,32 @@ export function countPromptCases(batterySource) {
 }
 
 /**
+ * Count the egress guards that enforce Muse's SECOND moat — local-by-construction
+ * ("cloud egress refused in code", MUSE_LOCAL_ONLY on by default). Unlike the
+ * grounding moat, this one had NO scoreboard ratchet: a commit that silently
+ * drops a provider id from the gated CLOUD_PROVIDER_IDS set (so it escapes
+ * classifyProviderLocality) OR deletes a fail-close `throw new LocalOnlyViolationError`
+ * enforcement site passed a green `pnpm check`. Counting both stable markers in
+ * the combined policy + router source turns "cloud egress refused in code" from a
+ * tested property into a numeric invariant — detectRegressions fails self-eval the
+ * moment the guard count falls. Deterministic (no Ollama); pairs with
+ * countGroundedSurfaces. Rivals whose default is cloud cannot ship such a gate —
+ * it would block their own product.
+ *
+ * Three stable markers, one per egress surface: gated cloud provider ids
+ * (the model router), `throw new LocalOnlyViolationError` (router enforcement),
+ * and the voice registry forcing the OpenAI key to undefined under
+ * MUSE_LOCAL_ONLY (so mic audio can never reach a cloud STT/TTS API).
+ */
+export function countEgressGuards(combinedSource) {
+  const gatedIds = combinedSource.match(/CLOUD_PROVIDER_IDS[^=]*=\s*new Set\(\[([^\]]*)\]/u);
+  const ids = gatedIds ? (gatedIds[1].match(/"[^"]+"/gu) ?? []).length : 0;
+  const throwSites = (combinedSource.match(/throw new LocalOnlyViolationError\(/gu) ?? []).length;
+  const voiceGuards = (combinedSource.match(/parseBoolean\(env\.MUSE_LOCAL_ONLY,\s*true\)\s*\?\s*undefined/gu) ?? []).length;
+  return ids + throwSites + voiceGuards;
+}
+
+/**
  * Regressions between the previous scoreboard entry and the current one: a
  * boolean gate that went pass→fail, or a numeric gate whose value dropped.
  * No previous entry ⇒ nothing to regress against.
@@ -190,6 +216,17 @@ function main() {
   const corpusPath = join(ROOT, "apps/cli/src/grounding-eval-corpus.ts");
   const corpusSrc = existsSync(corpusPath) ? readFileSync(corpusPath, "utf8") : "";
   gates.groundedCases = { status: "pass", value: countGroundedCases(corpusSrc) };
+  const egressSources = [
+    "packages/model/src/local-only-policy.ts",
+    "packages/autoconfigure/src/autoconfigure-model-provider.ts",
+    "packages/autoconfigure/src/registry-builders/voice.ts",
+    "packages/autoconfigure/src/context-engineering-builders.ts"
+  ]
+    .map((rel) => join(ROOT, rel))
+    .filter((p) => existsSync(p))
+    .map((p) => readFileSync(p, "utf8"))
+    .join("\n");
+  gates.egressGuards = { status: "pass", value: countEgressGuards(egressSources) };
   for (const [gateName, batteryFile] of [
     ["toolCases", "scripts/eval-tool-selection.mjs"],
     ["adversarialCases", "scripts/eval-adversarial.mjs"],

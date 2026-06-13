@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  countEgressGuards,
   countGroundedCases,
   countGroundedSurfaces,
   countTestFileNames,
@@ -93,6 +94,54 @@ test("summarize flags regressions and renders gate values", () => {
   const entry = { at: "now", gates: { lint: { status: "pass" }, testFiles: { status: "pass", value: 42 } } };
   assert.match(summarize(entry, []), /\[self-eval ok\].*lint:pass.*testFiles=42/u);
   assert.match(summarize(entry, ["lint: pass→fail"]), /REGRESSION \(1\).*lint: pass→fail/u);
+});
+
+test("countEgressGuards counts gated cloud ids + LocalOnlyViolationError throw sites (local-by-construction ratchet)", () => {
+  const combined = [
+    '/** Provider ids that ALWAYS reach a third-party cloud LLM API. */',
+    'const CLOUD_PROVIDER_IDS = new Set(["openai", "anthropic", "gemini", "openrouter"]);',
+    "export function classifyProviderLocality(providerId, baseUrl) {",
+    "  if (CLOUD_PROVIDER_IDS.has(providerId)) { return \"cloud\"; }",
+    "}",
+    "// enforcement: the model router refuses to start against cloud under local-only",
+    "      throw new LocalOnlyViolationError(providerId, effectiveBaseUrl);",
+  ].join("\n");
+  // 4 gated cloud ids + 1 throw site = 5 egress guards
+  assert.equal(countEgressGuards(combined), 5);
+  assert.equal(countEgressGuards(""), 0);
+});
+
+test("countEgressGuards: dropping a gated cloud id OR an enforcement throw is a numeric regression", () => {
+  const full = 'const CLOUD_PROVIDER_IDS = new Set(["openai", "anthropic", "gemini", "openrouter"]);\nthrow new LocalOnlyViolationError(a, b);';
+  // a provider id silently removed from the gated set → escapes classifyProviderLocality
+  const droppedId = 'const CLOUD_PROVIDER_IDS = new Set(["openai", "anthropic", "gemini"]);\nthrow new LocalOnlyViolationError(a, b);';
+  // the enforcement throw deleted → the router stops refusing cloud egress
+  const droppedThrow = 'const CLOUD_PROVIDER_IDS = new Set(["openai", "anthropic", "gemini", "openrouter"]);';
+  assert.equal(countEgressGuards(full), 5);
+  assert.equal(countEgressGuards(droppedId), 4);
+  assert.equal(countEgressGuards(droppedThrow), 4);
+  const prev = { gates: { egressGuards: { status: "pass", value: countEgressGuards(full) } } };
+  const curr = { gates: { egressGuards: { status: "pass", value: countEgressGuards(droppedId) } } };
+  assert.deepEqual(detectRegressions(prev, curr), ["egressGuards: 5→4"]);
+});
+
+test("countEgressGuards also counts the voice local-only cloud-key-ignore guard", () => {
+  // the autoconfigure voice registry forces the OpenAI key to undefined under
+  // MUSE_LOCAL_ONLY, killing every cloud STT/TTS branch — an egress guard.
+  const voiceGuard = "  const openAiKey = parseBoolean(env.MUSE_LOCAL_ONLY, true)\n    ? undefined\n    : env.OPENAI_API_KEY;";
+  assert.equal(countEgressGuards(voiceGuard), 1);
+  // combined with policy + router: 4 cloud ids + 1 throw + 1 voice guard = 6
+  const combined = [
+    'const CLOUD_PROVIDER_IDS = new Set(["openai", "anthropic", "gemini", "openrouter"]);',
+    "throw new LocalOnlyViolationError(providerId, baseUrl);",
+    voiceGuard
+  ].join("\n");
+  assert.equal(countEgressGuards(combined), 6);
+  // deleting the voice guard is a numeric regression
+  const withoutVoice = 'const CLOUD_PROVIDER_IDS = new Set(["openai", "anthropic", "gemini", "openrouter"]);\nthrow new LocalOnlyViolationError(a, b);';
+  const prev = { gates: { egressGuards: { status: "pass", value: countEgressGuards(combined) } } };
+  const curr = { gates: { egressGuards: { status: "pass", value: countEgressGuards(withoutVoice) } } };
+  assert.deepEqual(detectRegressions(prev, curr), ["egressGuards: 6→5"]);
 });
 
 test("countPromptCases counts prompt-bearing battery cases (ratchet for every golden set)", async () => {

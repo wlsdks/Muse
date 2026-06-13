@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { CorrectionExchange, DistilledStrategy } from "@muse/agent-core";
-import { enqueueLearnEvent, readPlaybook, recordPlaybookStrategy } from "@muse/mcp";
+import { enqueueLearnEvent, readPendingLearnEvents, readPlaybook, recordPlaybookStrategy } from "@muse/mcp";
 import type { ModelProvider } from "@muse/model";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -73,5 +73,45 @@ describe("distillQueuedCorrections — bank dedup consolidates a repeated correc
     const bank = await readPlaybook(playbookFile);
     expect(bank).toHaveLength(2); // the distinct lesson was added
     expect(bank.some((e) => e.text.includes("CC the project lead"))).toBe(true);
+  });
+});
+
+describe("distillQueuedCorrections — drain-idempotency + grounding fence (the unattended-consumer safety invariants)", () => {
+  // A dud event (no real correction) must be DRAINED, not jammed: the consumer
+  // runs every idle tick, so a dud left pending would be re-processed forever.
+  // It must also write ZERO strategies — a non-corrective signal never fabricates
+  // a "lesson". `distill` is injected to throw, proving the empty event is fenced
+  // out BEFORE any (costly) distill call.
+  it("an empty-correction event is drained from the queue and writes no strategy (no jam, no fabrication)", async () => {
+    const queueFile = freshFile("learnq");
+    const playbookFile = freshFile("playbook");
+    await seedCorrection(queueFile, "   ");
+
+    const recorded = await distillQueuedCorrections({
+      distill: async () => { throw new Error("distill must not run for an empty correction"); },
+      model: "m", modelProvider, playbookFile, queueFile
+    });
+
+    expect(recorded).toBe(0);
+    expect(await readPlaybook(playbookFile)).toHaveLength(0); // nothing fabricated
+    expect(await readPendingLearnEvents(queueFile)).toHaveLength(0); // drained, not re-queued
+  });
+
+  // A real correction whose distiller fail-soft returns nothing (NONE) must ALSO
+  // drain the event and write nothing — the fail-soft path is the other way a
+  // tick can produce no lesson, and it must not jam the queue either.
+  it("a fail-soft distiller (returns undefined) drains the event and writes no strategy", async () => {
+    const queueFile = freshFile("learnq");
+    const playbookFile = freshFile("playbook");
+    await seedCorrection(queueFile, "you keep emailing before 9am — wait until business hours");
+
+    const recorded = await distillQueuedCorrections({
+      distill: async () => undefined,
+      model: "m", modelProvider, playbookFile, queueFile
+    });
+
+    expect(recorded).toBe(0);
+    expect(await readPlaybook(playbookFile)).toHaveLength(0);
+    expect(await readPendingLearnEvents(queueFile)).toHaveLength(0); // drained despite no lesson
   });
 });

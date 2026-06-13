@@ -23,6 +23,8 @@ import {
   resolveTasksFile,
   type MuseEnvironment
 } from "./index.js";
+import { isLoopbackUrl } from "@muse/model";
+
 import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
 import { createModelProvider } from "./autoconfigure-model-provider.js";
 
@@ -124,6 +126,14 @@ export function evaluateLocalOnlyPosture(env: Readonly<Record<string, string | u
       // Runs the SAME fail-close the runtime does at boot, so the report
       // and the actual startup outcome can never diverge.
       createModelProvider(env);
+      // The embedder reads OLLAMA_BASE_URL independently of the chat model, so a
+      // loopback chat model + a remote OLLAMA_BASE_URL clears createModelProvider
+      // yet egresses the user's note/memory text. Mirror the embedder's own
+      // construction-time fail-close so doctor surfaces it instead of reporting ok.
+      const embedBase = (env.OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434").replace(/\/+$/u, "");
+      if (!isLoopbackUrl(embedBase)) {
+        return { detail: `🔒 on, but OLLAMA_BASE_URL points off-box (${embedBase}) — the embedder fails closed, so recall/memory embedding refuses; point OLLAMA_BASE_URL at localhost`, enabled, status: "fail" };
+      }
       return { detail: "🔒 on (default) — cloud LLM + voice egress blocked (fail-closed to local)", enabled, status: "ok" };
     } catch (cause) {
       return { detail: cause instanceof Error ? cause.message : "cloud provider selected under local-only", enabled, status: "fail" };

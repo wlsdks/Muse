@@ -51,8 +51,8 @@ public enum ResolvedLanguage: String, Sendable {
             return ""
         case .notRunning:
             return self == .korean
-                ? "Muse의 로컬 AI(Ollama)가 안 켜져 있어요. ollama.com에서 설치한 뒤, 터미널에서 `ollama pull qwen3:8b` 후 Ollama를 실행해 주세요."
-                : "Muse's local AI (Ollama) isn't running. Install it from ollama.com, then run `ollama pull qwen3:8b` and start Ollama."
+                ? "Muse의 로컬 AI(Ollama)가 안 켜져 있어요. ollama.com에서 설치한 뒤, 터미널에서 `ollama pull \(OllamaHealth.requiredModel)` 후 Ollama를 실행해 주세요."
+                : "Muse's local AI (Ollama) isn't running. Install it from ollama.com, then run `ollama pull \(OllamaHealth.requiredModel)` and start Ollama."
         case .modelMissing(let model):
             return self == .korean
                 ? "AI 모델이 아직 없어요. 터미널에서 `ollama pull \(model)` 을 실행해 주세요 (최초 1회)."
