@@ -219,3 +219,12 @@ ratchet: desktop swift tests 59/59 (+4) · testFiles 972 · fabrication 0 · sel
 - **왜**: 두 사이트가 갈라지면 메뉴 체크마크와 실제 해석 언어가 desync. 단일 source-of-truth + 헤드리스 테스트 가능 = fire 22(SpeakerSelection 추출) 패턴. cli format-vein·web pure-a11y vein 고갈 상태에서 표면 최저(desktop) + non-micro-fix value-class로 RATCHET 충족.
 - **리뷰지점**: fromPersisted body는 추출식과 byte-동일(behavior-preserving, case-fold/trim 안 끼움). "ko"→.system 정확(레거시 short-code 투기적 추가 안 함 — writer는 항상 `lang.rawValue` 정식값만 영속). resolveLanguage/ResolvedLanguage/CompanionPrefs/메뉴 배선 무변, 라운드트립 닫힘.
 - **리스크**: 없음(순수 UI 파싱, VoiceGate/egress/grounding 무접촉; 독립 Opus judge가 RED-before(HEAD~1 fromPersisted=0)·behavior-preserving·진리표 완전성·비투기성·무부수효과 검증 후 PASS, swift build clean·59/59).
+
+## fire 25 · 2026-06-14 · skill v1.14.0 · e609adc5
+meta: surface=web · value-class=new-capability · pkg=@muse/web · kind=a11y-combobox-pattern · verdict=PASS · firesSinceDrill=8
+ratchet: web unit 34/34 (+4) · palette e2e 2/2 (+1) · testFiles 974 · fabrication 0 · self-eval exit 0 · 표면 균형 web9·desktop7·cli9
+
+- **무엇**: ⌘K CommandPalette가 `role="dialog"`만 있어 ArrowUp/Down으로 하이라이트가 움직여도 스크린리더가 아무것도 안 읽었다(fire 21 NOTE 지목). WAI-ARIA combobox-with-listbox-popup 패턴 추가 — input=`role=combobox`(aria-controls/aria-activedescendant/aria-autocomplete/aria-expanded), 리스트=`role=listbox`, 각 항목=`role=option`+`aria-selected`. 신규 export `COMMAND_LIST_ID`+`commandOptionId`로 id 파생.
+- **왜**: 키보드 구동 런처의 정식 a11y 패턴은 combobox+activedescendant(포커스는 input에 유지). 모두 기존 `index` 상태(이미 `.active` 클래스 구동)에 바인딩 — purely additive, 필터/키보드/클릭/포커스 무변. fire 24 refactor 다음이라 value-class를 new-capability로 + 표면 web(21 이후 미접촉)로 다양화.
+- **리뷰지점**: 정확한 combobox 모델(포커스 input 고정, options에 .focus() 안 함). `aria-activedescendant`는 빈 리스트에서 undefined→React가 attr 생략(empty-case 테스트가 실제 HTML로 검증). 정확히 하나 aria-selected=true. `<button role=option>`은 implicit role 오버라이드로 valid. 동적 ArrowDown→activedescendant 이동은 renderToStaticMarkup 불가라 Playwright e2e로 검증.
+- **리스크**: 없음(순수 presentational a11y, network/grounding 무접촉; 독립 Opus judge가 RED-before(HEAD attr=0)·combobox 정확성·behavior-preserving·동적 e2e·무부수효과 검증 후 PASS, web build typecheck·unit 34/34·e2e 2/2).
