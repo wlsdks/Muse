@@ -767,6 +767,18 @@ HARDEN (make existing tools more reliable):
   correctly FAILED it (empirically probed fired[0].id==="fu_recent", flagged the test as count-only, derived the sort
   fix) → rolled back → real fix + PASS. Judge drill 4/4 (fire 10 json.query, 21 regex, 31 fetch, 45 followups). KIND
   sort-ordering, fresh surface. (Fable-5 unavailable; scout + both judge passes ran on Opus 4.8 per the fallback.)
+- ✓→Done **runDueObjectives left backoffBaseMs/backoffMaxMs un-NaN-guarded → objective spins every tick** (EXPANSION
+  gap-scout, fire 46; missing-validation / NaN-poison) — `maxPerTick`/`maxAttempts` are `Number.isFinite`-guarded (the
+  file's own comment names this class) but `const base = options.backoffBaseMs ?? DEFAULT; const cap = options.backoffMaxMs
+  ?? DEFAULT` used bare `??`, which does NOT catch NaN/Infinity. A non-finite backoff → `delay = Math.min(cap, NaN*…) =
+  NaN` → `new Date(nowMs + NaN).toISOString()` throws RangeError → the sibling-protecting catch swallows it → the
+  objective never gets a new nextEvalAt and re-evaluates EVERY tick forever (backoff defeated, the exact failure the
+  comment claims to prevent). FIX: mirror the guard — `Number.isFinite(base) ? base : DEFAULT` for BOTH base and cap. TDD
+  (backoffBaseMs:NaN → retried + valid nextEvalAt = nowMs+60_000, not errored; backoffMaxMs:NaN → also guarded) RED(bare
+  ?? → RangeError, retried empty)→GREEN; mcp 1780, check 0 (all pkgs), lint 0. Opus PASS (NaN/Inf/undefined caught,
+  finite incl 0 preserved, base+cap symmetric; verifier nit "cap not independently tested" addressed with a cap-NaN
+  case). KIND missing-validation; same file + NaN-poison class as fire 39 (nextEvalAt) — completes the file's guard
+  symmetry. (Fable-5 unavailable; scout + judge on Opus 4.8.)
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

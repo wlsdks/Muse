@@ -70,8 +70,12 @@ export async function runDueObjectives(options: RunDueObjectivesOptions): Promis
   // default for non-finite values, matching the scheduler's guard.
   const max = Math.max(1, Number.isFinite(options.maxPerTick) ? Math.trunc(options.maxPerTick!) : DEFAULT_MAX_PER_TICK);
   const maxAttempts = Math.max(1, Number.isFinite(options.maxAttempts) ? Math.trunc(options.maxAttempts!) : DEFAULT_MAX_ATTEMPTS);
-  const base = options.backoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS;
-  const cap = options.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
+  // Same NaN/Infinity guard as max/maxAttempts above (`??` does NOT catch NaN): a
+  // non-finite backoff makes `delay` NaN, then `new Date(nowMs + NaN).toISOString()`
+  // throws — the catch swallows it, the objective never gets a new nextEvalAt and
+  // re-evaluates EVERY tick (backoff defeated). Fall back to the default.
+  const base = Number.isFinite(options.backoffBaseMs) ? options.backoffBaseMs! : DEFAULT_BACKOFF_BASE_MS;
+  const cap = Number.isFinite(options.backoffMaxMs) ? options.backoffMaxMs! : DEFAULT_BACKOFF_MAX_MS;
 
   const nowMs = now().getTime();
   const all = await readObjectives(options.file);
