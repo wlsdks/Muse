@@ -655,3 +655,12 @@ ratchet: testFiles 무변동(기존 smart-home-tool.test.ts +3 it) · fabricatio
 - **왜:** read-tool wrap vein 얇아져 Opus scout가 **액추에이터-하드닝 sub-vein**(state-changing 도구의 optional arg가 만드는 fail-open blast radius) 발굴. cold file(6/1 이후 무변경)·@muse/mcp(agent-core churn 회피)·단일파일·결정적 테스트. fail-open→fail-closed 보안 고가치, KIND=security-fix.
 - **리뷰지점:** smart-home-tool.ts(data/entity 파싱 後·performHomeActionWithApproval 前 target-presence 가드) + smart-home-tool.test.ts(+3: entity-less→performed:false+calls0, scene+entity 발사, data area_id 발사) RED(entity-less→performed:true 실증)→GREEN 1825. check의 @muse/messaging 실패는 동시-load flake(격리 368 green). lint 0. Opus PASS 6/6: behavioral RED→GREEN 독립 재현·fail-closed 순서·positive control 실증·over-strict 아님·risk:execute/approval 무변경.
 - **리스크:** 없음 — fail-closed 추가만(정상 entity/scene/script/data-target 발사 유지, 실 디바이스 제어는 항상 target 보유라 false-reject 없음), CONFIRM/DENY/format/5xx 무회귀. follow-up(minor): 빈 data-target(data:{entity_id:""})은 !==undefined 통과 — 비현실적 우회(bare-service under-spec이 현실 경로). MUSE_LOCAL_ONLY·fabrication·banking 무관.
+
+
+## fire 61 · 2026-06-13 · skill v1.14.0 · (vein thinning — honest close, no slice)
+meta: value-class=exhaustion-report · pkg=none · kind=vein-thinning-honest-close · verdict=NO-SLICE · firesSinceDrill=8
+ratchet: testFiles 무변동 · fabrication 0 유지 · eval 무변경
+- **무엇:** TOOL 슬라이스 없음. 적대 Opus scout가 cold MCP/도구 표면을 철저히 sweep → 전부 correct/covered, 남은 건 description-only(avoid-list)거나 hot agent-core. EXHAUSTION 규칙(억지 약슬라이스 금지)대로 정직한 vein-thinning 종료 + 블로커 기록.
+- **왜:** ~14 substantive fire 후 깨끗한 고가치 단일파일 vein 고갈. scout 검증: ToolOutputSanitizer(50k cap·injection-defang) 커버, messaging send-gate 견고, official-MCP preset fail-close, loopback 서버들 검증됨. 구조적 타깃(DefaultToolFilter·capToolOutput)은 @muse/agent-core(hot, 동시 루프 충돌).
+- **리뷰지점:** 코드 변경 0(backlog 블로커 + 이 저널). ★실 발견: `riskFromMcpAnnotations`(transport.ts:254)가 annotation 없는 외부 MCP 도구를 "read" 기본값 → approval 우회 = MCP 스펙 위반 fail-open. 단 fix(gated 기본값)는 un-annotated read 도구 over-gating 트레이드오프라 **진안-결정 보안-포스처**(autonomous behavior change 부적절). opt-in 외부 MCP(allowlist) 스코프, official preset은 known 서버 re-stamp.
+- **리스크:** 없음 — 코드 무변경(회귀 0). 정직 종료가 EXHAUSTION 규칙의 의도(스카웃 더 하드하게가 아니라 value-class 올리거나 정직 보고). 루프는 다음 fire 계속 — 진안이 테마 pivot 또는 MCP-risk 포스처 결정 가능.
