@@ -8,10 +8,12 @@ import type { ApiClient } from "../api/client.js";
 import type { Translate } from "../i18n/index.js";
 import type { CalendarEventsResponse } from "../api/types.js";
 
-function dayLabel(iso: string, t: Translate, locale: string): string {
+export function dayLabel(iso: string, t: Translate, locale: string): string {
   const d = new Date(iso);
   const today = new Date();
-  const tomorrow = new Date(today.getTime() + 86_400_000);
+  // Derive "tomorrow" from the calendar date, not now + 24h: a DST-transition
+  // day is 23h/25h, so a fixed-ms offset overshoots/undershoots the real next day.
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
   if (d.toDateString() === today.toDateString()) return t("calendar.today");
   if (d.toDateString() === tomorrow.toDateString()) return t("calendar.tomorrow");
   return d.toLocaleDateString(locale, { day: "numeric", month: "short", weekday: "short" });
