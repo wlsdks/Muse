@@ -179,6 +179,9 @@ export function renderCouncilResult(question: string, utterances: readonly Counc
   if (answer.contributors.length > 0) {
     lines.push(`   — drawn from: ${answer.contributors.join(", ")}`);
   }
+  if (answer.consensus === "weak") {
+    lines.push("   ⚠ weak consensus — the council did not strongly agree; treat with extra caution.");
+  }
   return lines.join("\n");
 }
 

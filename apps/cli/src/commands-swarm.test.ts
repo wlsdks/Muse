@@ -42,6 +42,16 @@ describe("gatherCouncil + renderCouncilResult", () => {
     expect(out).toContain("drawn from: laptop, phone");
     expect(renderCouncilResult("q", us, null)).toContain("couldn't synthesise");
   });
+
+  it("weak consensus → renders advisory line; strong or omitted → does not", () => {
+    const us = [{ peerId: "a", reasoning: "x" }, { peerId: "b", reasoning: "y" }];
+    const weakOut = renderCouncilResult("q?", us, { answer: "x", contributors: [], consensus: "weak" });
+    expect(weakOut).toContain("weak consensus");
+    const strongOut = renderCouncilResult("q?", us, { answer: "x", contributors: [], consensus: "strong" });
+    expect(strongOut).not.toContain("weak consensus");
+    const noFieldOut = renderCouncilResult("q?", us, { answer: "x", contributors: [] });
+    expect(noFieldOut).not.toContain("weak consensus");
+  });
 });
 
 const SHARED = "swarm-secret";

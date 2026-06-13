@@ -47,12 +47,41 @@ export interface CouncilUtterance {
   readonly reasoning: string;
 }
 
+export type CouncilConsensusStrength = "strong" | "weak";
+
+/**
+ * Classify the panel's aggregate consensus strength from the per-member support
+ * distribution (ConfMAD, arXiv:2509.14034 — Lin & Hooi EMNLP'25: carry a confidence
+ * signal through multi-agent aggregation rather than treating all consensus as equally
+ * trustworthy). ADVISORY-ONLY per arXiv:2511.07784 (consensus masks flawed reasoning;
+ * agreement is a confidence signal, never a truth signal — this result must never gate
+ * or alter the synthesized answer).
+ *
+ * MEDIAN not min: robust against one low-but-surviving member after the outlier screen.
+ * Mirrors screenCouncilOutliers' median use. Solo/empty panel → "strong" (no disagreement
+ * possible).
+ */
+export function classifyCouncilConsensus(
+  supports: readonly number[],
+  opts: { readonly floor: number }
+): CouncilConsensusStrength {
+  if (supports.length <= 1) return "strong";
+  const sorted = [...supports].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 0
+    ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+    : (sorted[mid] ?? 0);
+  return median < opts.floor ? "weak" : "strong";
+}
+
 export interface CouncilAnswer {
   readonly answer: string;
   /** Peer ids whose reasoning the answer drew on — always a subset of the inputs. */
   readonly contributors: readonly string[];
   /** Peers quarantined by the consensus-outlier screen before synthesis (arXiv:2503.05856). Omitted when none. */
   readonly excludedPeers?: readonly { readonly peerId: string; readonly reason: string }[];
+  /** Advisory signal: "weak" when the panel's median pairwise support fell below the floor (ConfMAD arXiv:2509.14034). Never alters the answer. */
+  readonly consensus?: CouncilConsensusStrength;
 }
 
 export interface OutlierScreenOptions {
@@ -622,6 +651,13 @@ export async function synthesizeCouncilAnswer(
   }
   const ordered = rankUtterancesBySupport(forSynthesis, keptSupports);
 
+  // ConfMAD advisory (arXiv:2509.14034): carry the panel's aggregate confidence signal
+  // forward. Floor source must match support source: cosine floor for embed, Jaccard
+  // floor otherwise. Advisory-only per arXiv:2511.07784 — never gates or alters the answer.
+  const consensus = classifyCouncilConsensus(keptSupports, {
+    floor: options.embed ? DEFAULT_COUNCIL_AGREE_AT_COSINE : DEFAULT_COUNCIL_AGREE_AT
+  });
+
   const messages: readonly ModelMessage[] = [
     { content: SYNTHESIS_SYSTEM_PROMPT, role: "system" },
     { content: buildCouncilPrompt(question, ordered), role: "user" }
@@ -641,10 +677,12 @@ export async function synthesizeCouncilAnswer(
   const council = parseCouncilAnswer(output, new Set(forSynthesis.map((u) => u.peerId)));
   const allExcluded = [...offTopicExcluded, ...outlierExcluded];
   const excludedPeers = allExcluded.length > 0 ? allExcluded : undefined;
-  const withExcluded = council && excludedPeers ? { ...council, excludedPeers } : council;
+  const withExcluded = council
+    ? { ...council, consensus, ...(excludedPeers ? { excludedPeers } : {}) }
+    : council;
   if (!withExcluded || !options.reverify) return withExcluded;
   const reverified = await verifyCouncilGrounding(withExcluded, question, forSynthesis, options.reverify, options.reverifySamples);
-  return reverified && excludedPeers ? { ...reverified, excludedPeers } : reverified;
+  return reverified ? { ...reverified, consensus, ...(excludedPeers ? { excludedPeers } : {}) } : reverified;
 }
 
 /**
