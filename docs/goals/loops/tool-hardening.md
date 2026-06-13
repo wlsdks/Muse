@@ -1008,3 +1008,12 @@ ratchet: testFiles 980→981(+day-recap-tool.test) · fabrication 0 유지 · ev
 - **왜:** EXPANSION scout가 today_brief-class 비대칭 발굴(recap 집계가 `muse recap` CLI+저녁 daemon엔 있으나 agent 도구 미배선). **person-dossier는 REJECT**(find_contact과 confusable). day_recap의 **carve가 make-or-break**(today_brief=forward / recent_actions=Muse 행동 / tasks.list=단일 — "did/done/뭐 했" 겹침). sharp description carve("for what MUSE did use recent_actions, NOT this") + 키워드 겹침 회피로 해소.
 - **리뷰지점:** day-recap-tool.ts+index.ts(배선+export)+day-recap-tool.test(602 green)+eval scenario(day_recap+today_brief+recent_actions+tasks.list 동시 노출). **carve 6/6 STABLE 3/3**(회고→day_recap, "내 대신 뭐 했어"→recent_actions 안 cross). pnpm check exit=0, lint clean. ④b judge PASS 5/5(carve eval 독립 RE-RAN, discriminator 무-bleed). **⚠️ vitest-no-typecheck 트랩:** e21cb3e1을 빌드 전 커밋해 타입 에러 3개(optional dueAt/completedAt/firedAt non-null) 포함 → 06626072로 fix. 교훈: ④ 규칙대로 커밋 전 build.
 - **리스크:** 거의 없음 — read-only(mutation 0), agent-core 무관, recent_actions/today_brief 선택 무회귀(carve 검증). EXPANSION 검증 통과(inert 아님).
+
+
+## fire 100 · 2026-06-14 · skill v1.14.0 · 2a4d05e0
+meta: value-class=hardening · pkg=scripts(eval infra) · kind=irrelevance-coverage(day_recap IrrelAcc, fire-99 triad 완성) · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles 984 유지(scripts-only) · fabrication 0 유지 · eval:tools day-recap 6→**8/8 STABLE 3/3**(day_recap IrrelAcc)
+- **무엇:** day-recap 시나리오에 day_recap IrrelAcc 네거티브 2건 — KO "오늘 하루 진짜 길었다…"·EN "Today was rough, honestly" → casual day remark이 NO tool(day_recap over-fire 안 함). 전부 PASS 3/3.
+- **왜:** fire 99가 day_recap을 selection+confusability로 ship했으나 IrrelAcc 누락. day_recap 키워드에 **"오늘 하루"가 literal 포함**(day-recap-tool.ts:87) = 최고빈도 casual 충돌어("오늘 하루 길었어"). agent-testing.md triad 완성(fire 98 today_brief 패턴 미러). KIND=irrelevance-coverage(fire 99 capability-extension과 구별).
+- **리뷰지점:** eval buildDayRecapScenario +2 expectNoTool(순수 additive). strict noTool scorer. 8/8 STABLE 3/3(day_recap selection+recent_actions/today_brief carve+casual-day 무발화 동시 검증). lint clean, harness 17. ④b judge PASS 5/5(fair·literal-keyword-collision teeth·accepted fire-98 precedent). scripts-only라 pnpm check 무관.
+- **리스크:** 없음 — scripts-only, 순수 additive. GREEN-on-arrival이나 literal 키워드 충돌("오늘 하루")이라 description/keyword 저하 regression 가드. firesSinceDrill=8(드릴 fire 102 근접).
