@@ -4903,6 +4903,45 @@ describe("muse.reminders loopback server", () => {
     expect(await connection.callTool!("list", { status: "all" })).toMatchObject({ total: 3 });
   });
 
+  it("a failed snooze (ambiguous word OR unknown ref) bumps NO reminder's dueAt — the store is left intact", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-rem-snooze-"));
+    let counter = 0;
+    const connection = createLoopbackMcpConnection(
+      // A FIXED now so that, had a guess-and-snooze regression fired, the bumped
+      // dueAt would land on this now-anchored value — distinct from every seeded
+      // dueAt, so the unchanged-assertion below would catch it.
+      createRemindersMcpServer({ file: join(dir, "reminders.json"), idFactory: () => `rem_${++counter}`, now: () => new Date("2026-05-11T08:00:00Z") })
+    );
+    await connection.callTool!("add", { dueAt: "2026-05-12T09:00:00Z", text: "dentist appointment" });
+    await connection.callTool!("add", { dueAt: "2026-05-13T09:00:00Z", text: "dentist follow-up" });
+    await connection.callTool!("add", { dueAt: "2026-05-14T09:00:00Z", text: "buy milk" });
+
+    const dueByText = async (): Promise<Record<string, string>> => {
+      const all = await connection.callTool!("list", { status: "all" });
+      return Object.fromEntries((all.reminders as Array<{ text: string; dueAt: string }>).map((r) => [r.text, r.dueAt]));
+    };
+    const original = {
+      "dentist appointment": "2026-05-12T09:00:00.000Z",
+      "dentist follow-up": "2026-05-13T09:00:00.000Z",
+      "buy milk": "2026-05-14T09:00:00.000Z"
+    };
+    expect(await dueByText()).toEqual(original);
+
+    // An ambiguous WORD ("dentist" matches two) must return candidates, not snooze a guess.
+    const ambiguous = await connection.callTool!("snooze", { id: "dentist" });
+    expect(ambiguous).toMatchObject({ error: expect.stringContaining("multiple") });
+    expect((ambiguous.candidates as unknown[]).length).toBe(2);
+    expect(await dueByText()).toEqual(original);
+
+    // An unknown ref must error WITHOUT bumping any dueAt.
+    const unknown = await connection.callTool!("snooze", { id: "passport" });
+    expect(unknown).toMatchObject({ error: expect.stringContaining("not found") });
+    expect(await dueByText()).toEqual(original);
+  });
+
   it("search greps reminder text case-insensitively, defaulting to status=all", async () => {
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
