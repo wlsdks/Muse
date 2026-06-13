@@ -972,3 +972,12 @@ ratchet: testFiles 978 유지(+3 case tools.test) · fabrication 0 유지 · eva
 - **왜:** write 도구 과노출 = distractor↑ → "fewer distractors = better one-shot selection"(같은 파일 relevance-filter tokeniser 주석이 word-boundary로 이미 보호하는 목표) 훼손. mutation-intent gate만 substring으로 남아있던 불일치. fresh 표면(도구 노출/투영 레이어, @muse/tools — per-handler bug과 다른 패키지·KIND). 3-way AND가 완화하나 "Delete the special surprise gift"는 pre-fix 3조건 모두 통과(오분류 실증).
 - **리뷰지점:** index.ts promptHasHint + hasWorkspaceHint/hasMutationTargetHint 적용(mutationPatterns·koreanMutationHints·exceptions·multi-word/KO hint은 substring 유지). 테스트 RED("Delete the special surprise gift" expected true→false)→GREEN + 회귀가드(spec/endpoint·plural tickets·KO PR에·기존 issue/task). 첫 회귀 테스트(close=non-mutation 가정 오류)는 delete로 수정 후 amend. 전 196 pass, pnpm check exit=0, lint clean. ④b judge PASS 5/5(전 토큰 형태 probe: plural/digit-suffix/hyphen/조사 정확, under-match 없음).
 - **리스크:** 없음 — 게이트가 더 엄격(false workspace-mutation 감소), 기존 true 케이스 전부 유지(under-expose 없음). 교훈: hint 매칭은 substring 아닌 토큰-경계(짧은 abbrev는 단어 중간 매치).
+
+
+## fire 96 · 2026-06-14 · skill v1.14.0 · (no-slice)
+meta: value-class=exhaustion-report · pkg=none · kind=tool-delivery-layer-examined-clean(fire-95가 유일 버그 수정 후) · verdict=NO-SLICE · firesSinceDrill=4
+ratchet: testFiles 978 유지 · fabrication 0 유지 · 코드 변경 0(EXHAUSTION honest-close)
+- **무엇:** 슬라이스 없음(honest-close). fire 95가 연 도구-전달/노출 레이어 vein을 thorough 검사 — 전부 clean: (1) @muse/tools 노출(select/blockReason·relevance filter tokenMatchesKeywordWord word-boundary+≤3suffix+Korean-containment·comparator+relevanceScore·maxTools); (2) MCP 투영 createLoopbackMcpMuseTools(risk 충실 복사, mutating-verb 도구 중 write 주석 누락 0); (3) MCP allowlist McpManager register+connect(둘 다 enforce, terminal denial).
+- **왜:** fire 94가 per-handler vein 고갈 → fire 95가 도구-전달 레이어로 피벗해 mutation-intent substring 버그 발굴+수정. fire 96이 그 vein 나머지를 검사 → clean. maxTools-NaN edge는 numberMetadata(`Number.isFinite?value:undefined`, runtime-helpers:101)가 upstream 방어 = reachable 아님("could be stricter" not-a-bug). exception hints(unassigned·미할당·Korean 포맷어)는 long/Korean이라 substring 무해 → fire-95 fix 완전했음 확인.
+- **리뷰지점:** 코드 변경 0. 미수행: maxTools-NaN defense-in-depth(public API 견고성이나 defended upstream + could-be-stricter → not-a-bug 판정). 두 vein(per-handler·delivery) 모두 examined+clean = 테마 genuine maturity(87-95에서 6 real 버그 수정).
+- **리스크:** 없음 — 코드 무변경. 다음 후보: 진안-blocked 레버(MCP-risk-annotation posture·undo/veto·email/handle grounding=agent-core-hot) / 외부-MCP 도구 투영 schema 심화 검사 / .muse/runs 신호 대기 / 다른 표면. vein 고갈 backlog 기록.

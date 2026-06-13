@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ⚠ tool-hardening delivery-layer vein EXHAUSTED (fire 96 honest-close): fire 95 fixed the one bug (mutation-intent substring false-positive); fire 96 verified the rest of the tool-delivery/security layer clean — @muse/tools exposure (select/relevance filter/comparator/maxTools), MCP projection (createLoopbackMcpMuseTools risk mapping), MCP allowlist (McpManager register+connect). Both veins now examined (per-handler fire 94, delivery fire 95/96). Next candidates: 진안-blocked levers (MCP-risk-annotation default posture, undo/veto tool, email/handle arg-grounding=agent-core HOT); external-MCP tool projection schema (deeper); or a new .muse/runs failure cluster.
+
 - ✓ mutation-intent substring false-positive: isWorkspaceMutationPrompt matched workspace/target hints with normalized.includes(hint), so "pr"/"spec"/"repo"/"event" substring-matched approve/special/report/prevent and over-exposed workspace write tools (more distractors) — now whole-token via (?<![a-z])hint s?(?![a-z]) keeping plural + KO-particle (PR에); the relevance filter already used word boundaries — tool-hardening fire 95
 
 - ✓ decompose @muse/memory: extracted JSON-extraction cluster (extractJsonObject + tryParseObject + findBalancedBraceBlocks) memory-auto-extract -> memory-extract-json.ts (770->697 LOC; re-export keeps barrel+cli+tests green) — codebase-quality fire 56
