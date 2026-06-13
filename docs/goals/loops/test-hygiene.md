@@ -117,3 +117,11 @@ ratchet: testFiles 946→945 (−1 중복 삭제, judge 승인) · netCoverage 0
 - **왜:** 같은 도구 중복 스위트. column-union/empty-fill은 `deriveMarkdownTableColumns`의 merge-across-rows + `undefined→""` 분기 — src/의 동일-키 derived 케이스가 안 치던 진짜 가드.
 - **어떻게-증명(MUTATION-FIRST PRUNE):** ZWJ — `countGraphemes→text.length` 시 RED(UTF-16 과카운트); union — `deriveMarkdownTableColumns` 첫 행만(`index<1`) 시 RED(c 컬럼 손실). 복원 20/20 green. ★④b judge **1차 FAIL**로 내가 놓친 column-union/empty-fill 손실을 잡음(src의 derived 케이스는 동일-키라 union 미커버) → 이식 → 2차 judge 전수 sweep 표로 14→20 확인 후 **VERDICT: PASS**.
 - **리스크:** 소스 무변경. full `pnpm check`는 **무관 부하-flake**로 red — `@muse/messaging pending-approval-store "caps to 200 most recent"`가 동시-루프 부하서 5028ms timeout(격리 3.04s pass). fire-2 playbook-store와 동일 부류(200 순차 write, slow-ish) → de-flake 후보로 backlog 기록(이번 슬라이스와 무관·pre-existing). LESSON: 독립 스위트 prune은 사람이 유니크를 놓침 — judge가 3 fire 연속(4·12·13) 실제 손실 잡음.
+
+## fire 14 · 2026-06-13 · skill v1.14.0 · d3bb59ce
+meta: kind=fix(flaky) · pkg=@muse/messaging · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 949→949 (재작성, 파일수 불변) · netCoverage 0 (동작 보존) · fabrication 0 · pnpm check FULL GREEN (단독)
+- **무엇:** fire 13이 발견한 flaky 테스트 수정 — `pending-approval-store.test.ts > "caps to 200 most recent"`가 **205회 순차 디스크 write**로 ~3.0s(부하 시 5028ms timeout). setup을 **`fs.writeFile`로 e0..e203(204개) 1회 seed(`{pending:[...]}`) + `recordPendingApproval(e204)` 1회로 cap 트리거**로 재작성. 205 writes → 2 ops, 동일 assertion(length 200, [0]=e5, [last]=e204). 3040ms→73ms.
+- **왜:** flaky 테스트는 동시-루프 부하 시 full check를 red로 오염. KIND 다양성(최근 3 fire 모두 prune)상 FIX 필수. fire-2 playbook-store와 동일 패턴.
+- **어떻게-증명(MUTATION-FIRST):** cap slice를 `slice(len-MAX)`→`slice(0,MAX)`(oldest 유지)로 변형 시 재작성 테스트 RED(`'e0'≠'e5'`); ④b judge가 2차 mutation(cap 제거→length 205)도 잡힘 + seed가 충실(e0..e203+record=205→cap e5..e204, 원본과 동일 end-state) + 204 seed 전부 read-back(quarantine 안 됨) 재확인 후 **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. ★LESSON(강화): `pnpm check` 전 `pnpm -r build`나 `rm -rf dist` 절대 금지 — 더블 빌드가 stale-dist resolve 실패(mcp 4파일) + eslint stale-타입 false-positive(unused var) + **OOM SIGABRT(134)**까지 유발. `pnpm check` 단독만 → 클린 GREEN. [[project_stale_dist_from_loop]]
