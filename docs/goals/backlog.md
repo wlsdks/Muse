@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ⚠ tool-hardening fresh-handler bug vein EXHAUSTED (fire 94 honest-close): fires 87-93 fixed 6 real bugs (contacts update data-loss, calendar/time rollover, on_this_day boundary, home_action fail-close bypass). fire 94 verified web_action/remember_fact/mac_spotlight/scheduler(none)/skills/feeds/objectives/helpers/relative-time all clean (4 scouts + direct grep). Next candidates by value-class: (a) 진안-blocked levers — email/handle arg-grounding (agent-core HOT), MCP-risk-annotation posture, undo/veto tool; (b) DRY-extract the 3-copy rollover guard (codebase-quality territory, touches security date parsers); (c) re-scout a different surface or wait for a .muse/runs failure cluster.
+
 - ✓ home_action empty-target fail-close bypass: the whole-domain guard only checked target KEY PRESENCE, so an empty target (data:{target:{}} / {entity_id:[]} / {entity_id:''}) bypassed it and a confirmed service call blasted every device in the domain (light.turn_off → all lights) — now requires a CONCRETE non-empty target; createHomeActionTool had zero tests, added the fail-close battery (fetch-spy + approving gate) — tool-hardening fire 93
 
 - ✓ on_this_day Jan-1 boundary: selectOnThisDay projected a prior-year note's month-day into now's year only, so a Dec-31 note never surfaced within a ±window of a Jan-1 now (the true 1-day anniversary read as ~364 days) — now min-gap across year before/of/after; fixes a silent grounded-recall miss on the on_this_day tool + CLI + morning-brief — tool-hardening fire 92 (JUDGE-DRILL fire)
