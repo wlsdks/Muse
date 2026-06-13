@@ -755,6 +755,18 @@ HARDEN (make existing tools more reliable):
   lint 0. Opus PASS (separate top-level objects still both extracted; brace-in-string/escaped-quote unaffected; the
   evaluator SYSTEM_PROMPT demands a TOP-LEVEL `{outcome,reason}` so a nested-only reply is off-spec → unmet is correct,
   not a dropped legit verdict). KIND parsing-bug, fresh surface — directly on the fabrication=0 / autonomous-safety edge.
+- ✓→Done **runDueFollowups fired an arbitrary file-order slice, starving the most-overdue followup** (EXPANSION
+  gap-scout, fire 45; sort-ordering + the ~10-fire JUDGE FAILURE DRILL) — the due selection was
+  `all.filter(scheduled && scheduledFor<=now).slice(0, max)` with NO sort, so when a backlog exceeds `maxPerTick` (a
+  daemon catching up after downtime), the FILE-FIRST commitments fire and the genuinely most-overdue self-followup is
+  deferred tick after tick. The sibling `compareFollowupsByScheduledFor` (soonest-first) existed but was never applied.
+  FIX: `.sort(compareFollowupsByScheduledFor)` before `.slice(0, max)` (soonest-scheduledFor = most-overdue for past
+  times). TDD (3 distinct-due followups, oldest written LAST, maxPerTick:1 → fired[0].id==="fu_oldest" + the other two
+  stay scheduled) RED(no sort → fires file-first "fu_recent")→GREEN; mcp 1779, check 0 (all pkgs), lint 0. JUDGE DRILL:
+  an inert slice (comment-only code + a test asserting just `delivered===1`) was planted FIRST; the Opus verifier
+  correctly FAILED it (empirically probed fired[0].id==="fu_recent", flagged the test as count-only, derived the sort
+  fix) → rolled back → real fix + PASS. Judge drill 4/4 (fire 10 json.query, 21 regex, 31 fetch, 45 followups). KIND
+  sort-ordering, fresh surface. (Fable-5 unavailable; scout + both judge passes ran on Opus 4.8 per the fallback.)
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

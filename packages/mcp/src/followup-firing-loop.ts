@@ -28,6 +28,7 @@ import type { MessagingProviderRegistry } from "@muse/messaging";
 
 import { sendWithRetry } from "./messaging-retry.js";
 import {
+  compareFollowupsByScheduledFor,
   markFollowupFired,
   readFollowups,
   type PersistedFollowup
@@ -85,8 +86,12 @@ export async function runDueFollowups(options: RunDueFollowupsOptions): Promise<
   const max = Math.max(1, requested);
   const all = await readFollowups(options.file);
   const cutoffMs = now().getTime();
+  // Sort soonest-scheduledFor-first (= most-overdue-first for past times) BEFORE the
+  // per-tick cap, so when a backlog exceeds maxPerTick the genuinely most-overdue
+  // commitments win the budget instead of an arbitrary file-order slice starving them.
   const due = all
     .filter((entry) => entry.status === "scheduled" && Date.parse(entry.scheduledFor) <= cutoffMs)
+    .sort(compareFollowupsByScheduledFor)
     .slice(0, max);
 
   if (due.length === 0) {
