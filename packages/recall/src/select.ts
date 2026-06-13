@@ -155,6 +155,43 @@ export function formatContactBirthday(raw: string | undefined): string | undefin
   return match[1] ? `${label}, ${match[1]}` : label;
 }
 
+/** Build the <<contact N>> grounding block from matched contacts. Pure. */
+export function buildContactContextBlock(
+  contacts: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly relationship?: string;
+    readonly email?: string;
+    readonly phone?: string;
+    readonly handle?: string;
+    readonly birthday?: string;
+    readonly connections?: readonly { readonly as?: string; readonly to: string }[];
+    readonly about?: string;
+  }[]
+): string {
+  if (contacts.length === 0) {
+    return "(no matching contacts)";
+  }
+  return contacts
+    .map((c, i) => {
+      const birthday = formatContactBirthday(c.birthday);
+      const connections = c.connections && c.connections.length > 0
+        ? c.connections.map((e) => `${e.as ?? "connected to"} ${e.to}`).join("; ")
+        : undefined;
+      const fields = [
+        c.relationship ? `your ${c.relationship}` : undefined,
+        c.email ? `email ${c.email}` : undefined,
+        c.phone ? `phone ${c.phone}` : undefined,
+        c.handle ? `handle ${c.handle}` : undefined,
+        birthday ? `birthday ${birthday}` : undefined,
+        connections ? `connections: ${connections}` : undefined,
+        c.about ? `notes: ${c.about}` : undefined
+      ].filter((f): f is string => f !== undefined).join(", ");
+      return `<<contact ${(i + 1).toString()} — ${c.id}>>\n${c.name}${fields ? ` — ${fields}` : ""}\n[contact: ${c.name}]\n<<end>>`;
+    })
+    .join("\n\n");
+}
+
 /**
  * The grounding-EVIDENCE text for a matched contact — the contact's name plus
  * EVERY field the prompt block renders: relationship/role (P37-20), connections/

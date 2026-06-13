@@ -769,3 +769,21 @@ ratchet: testFiles 960 · fabrication 0 · groundedSurfaces 27 · ask god-file: 
   weekday-WHY comment); structural type accepts CalendarEvent[]; TZ-robust test (asserts structure not the locale
   string); recall 217 + cli 2625 (one Ink approval-box test was a CPU-contention flake — passed isolated).
 - **Risk:** low — pure relocation; CalendarEvent stays in commands-ask (source fetch).
+
+## fire 42 · 2026-06-14 · loop-creator v1.14.0 · f1615b6c
+meta: value-class=refactor · pkg=@muse/recall · kind=compose · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 964 · fabrication 0 · groundedSurfaces 27 · ask god-file: 10th inline block extracted
+- **What:** Phase 3 continuation — extracted the inline `contactBlock` builder (`<<contact N>>` grounding block,
+  the most field-rich one) into a pure `buildContactContextBlock(contacts)` in @muse/recall/**select.ts** (beside
+  formatContactBirthday, which it calls — same-module, no new import; like fire-30's buildMemoryContextBlock).
+  Structural input type covers the 9 contact fields used (id/name/relationship/email/phone/handle/birthday/
+  connections/about). Body byte-identical incl. the fields-join + the `as ?? "connected to"` connection fallback.
+  5-case OUTCOME test added. formatContactBirthday import stays in commands-ask (still re-exported there).
+- **Why:** finishes the substantial ask-block extraction — 10 of ~12 blocks now in recall (task/reminder/memory/
+  shell/git/action/episode/feed/calendar/contact); only the note-block wrapper (already delegates to
+  buildNoteContextBlock) + trivial cases remain. compose@recall 4/8.
+- **Review point:** 4b judge — contactBlock body byte-identical (the 7-field optional list + filter+join, the
+  `<<contact N — id>>` header, the `[contact: name]` citation [name not id], the `as ?? "connected to"` fallback);
+  placed in select.ts beside formatContactBirthday (no new import); structural type accepts Contact[]; new test
+  pins fields-order + the connection fallback; recall 227 + cli 2625 green.
+- **Risk:** low — pure relocation; Contact/contactMatchScore/contactGroundingEvidence stay in commands-ask (source fetch).
