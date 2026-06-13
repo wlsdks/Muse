@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ mac_message_send resolves a NAME → number from the contacts graph (Rule 3 parity with email; "text Jane" now completes, ambiguous/unknown fail closed, resolved-not-guessed) — tool-hardening fire 67
+
 - ✓ Phase 3 sub-slice 3a: relocated escapeSystemPromptMarkers (injection defense) apps/cli -> @muse/recall (+test moved, commands-ask rewired); unblocks 3b — codebase-quality fire 22
 - ✓ browser_key Enter gated — the one state-changing key (confirm/submit a focused control) now carries the SAME draft-first approval gate as browser_click/type; navigation keys (Escape/Tab/arrows) stay free, Enter fails closed with no gate (closed an ungated submit primitive bypassing outbound-safety) — tool-hardening fire 66
 - ✓ isRecord dedup @muse/model + @muse/api -> @muse/shared re-export (dups 5->3) — codebase-quality fire 21
