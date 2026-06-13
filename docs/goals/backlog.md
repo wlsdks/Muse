@@ -1,5 +1,8 @@
 # Muse dev backlog — the living ledger
 
+- ✓ resolveFollowupRef literal-match regression guard (4 mutation-verified tests: ".*"/"." refs → not-found, not match-all) — guards a regex-injection vector on a resolver that gates destructive cancel/snooze + JUDGE-DRILL (vacuous tautology version → verifier FAILed it 5/5, rolled back, teeth-bearing replacement shipped) — tool-hardening fire 72
+
+- ✓ Phase 3 cont.: batched shellBlock+gitBlock -> buildShellContextBlock/buildGitContextBlock in @muse/recall (structural git input type, +test) — codebase-quality fire 32
 - ✓ IrrelAcc guard: a followup STATUS QUESTION with a resolvable word → followup.list NOT the destructive cancel (protects against over-firing now that word-ref made cancel one-shot-selectable, fires 67-70) — tool-hardening fire 71
 - ⏳ FINDING (fire 71) — KO followup.cancel "그 체크인 팔로업 취소해줘" flaky 0/3 (was 3/3 fire 70): the 8B leans followup.list (the referent "그 체크인 팔로업" reads as a lookup) under concurrent-loop load; INDEPENDENT of the fire-71 slice (eval cases are zero-shot). Borderline KO-cancel selection — candidate: sharpen followup.cancel KO disambiguation, but verify it is not just machine-load (re-run when loops quiet).
 
@@ -120,6 +123,7 @@
 
 ## GROUNDING INTEGRITY theme — open
 
+
 - ◦ untrusted-only provenance e2e firing-rate (ask AND chat) — the untrusted-only cue on both the ask (`untrustedOnlyGroundingNotice`, fire 1) and chat (`untrustedOnlyChatNotice`, fire 3) surfaces is unit-pinned, but production firing depends on the model citing tool sources as `[from <src>]`. Measure/repair the real firing rate via `eval:grounding-delta` on a `--with-tools` poisoned-source case; if firing is too low, make the cue depend on tool-only grounding directly (toolGrounded + no trusted-note coverage) rather than citation presence. (scouted grounding-integrity fire 1, broadened fire 3)
 - ◦ broaden source-conflict value extraction — the `label: value` regex truncates values at comma/period (`Address: 12 Baker St, London` → only "12 Baker St"), a partial false-negative. Broaden extraction (handle comma-bearing values like addresses) without re-introducing the prose/clock-time false positives. (noted fires 7-9)
 
@@ -138,6 +142,8 @@
 - ✓ empty-evidence fail-close on the PRIMARY reverify gate — verifyGroundingWithReverify escalated to the judge with evidence="" (high-cosine empty-text match → confidence>0), and a YES upgraded a fabrication to grounded — the floor leak f4 closed for council/reflection, still open on the main recall/ask/chat gate; now fail-closes without consulting the judge (strictly tightens, isolated-removal verified) — grounding-integrity fire 11
 - ✓ enricher CRAG gate fail-open fixed — the ambient "Related:" brief enricher classified confidence on `[top]` only, zeroing the runner-up and disabling the near-tie margin guard, so an ambiguous recall rode into the daily brief as confident; now classifies the full post-exclusion candidate list via pure selectEnricherLine (isolated-mutation verified) — grounding-integrity fire 12
 - ✓ date-drift guard on the sync chat gate — the chat gate guarded IP/number/email/identifier but not DATES; valueNumbers drops month/day so a same-year drifted ISO date (2026-09-13 vs -14) passed; added answerAssertsUnsupportedDate (ISO-only, evidence-must-have-a-date so false-refusal≈0) before the number guard — grounding-integrity fire 13
+- ✓ ALCE per-citation support precision (arXiv:2305.14627) — added reportCitationPrecision: scores each cited sentence against ONLY its cited source's text (right-source/wrong-claim), distinct from existence (enforceAnswerCitations) and union-groundedness; diagnostic primitive, existence-only mutation verified — grounding-integrity fire 14
+- ✓ ALCE citation-precision wired to the live ask path — citationPrecisionNotice surfaces a 'right source, wrong claim' cue (a [from src] citation resolving to a note that doesn't support its sentence) on grounded ask answers, alongside the untrusted/conflict cues — grounding-integrity fire 15
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
 - ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
@@ -1276,6 +1282,8 @@ excluded when scoring).
 - ✓ a2a council per-peer straggler timeout (MAST arXiv:2503.13657 termination) — hung peer no longer blocks the whole council — agent-core-cognition fire 11
 - ✓ Commitment semantic near-duplicate collapse (SemDeDup arXiv:2303.09540) — daemon no longer schedules duplicate check-ins for one loop — agent-core-cognition fire 12
 - ✓ Set-level semantic sufficiency advisory (Sufficient Context arXiv:2411.06037) — multi-part ask names the uncovered part instead of fabricating it — agent-core-cognition fire 13
+- ✓ Outcome-conditioned plan-cache storage (Agent Workflow Memory arXiv:2409.07429) — cache records only succeeded steps, never teaches the model a failed tool sequence — agent-core-cognition fire 14
+- ◦ **Plan-cache exemplar-quality remainder** — (a) live A/B: does success-filtering raise one-shot plan validity? (plan-quality battery, needs a live eval); (b) annotate per-step success in renderPlanExemplar for a richer exemplar signal. (fire 14 remainder, arXiv:2409.07429)
 - ◦ **Context-sufficiency remainder** — (a) tune coverAt (0.55=DEFAULT_CONFIDENT_AT) on a REAL nomic multi-part corpus (tests use synthetic orthogonal vectors; real-world discriminating power unproven); (b) feed coveredFraction into classifyRetrievalConfidence as a set-level demotion (confident→ambiguous when insufficient) — a GATING change, needs its own floor proof; (c) wire the advisory into the `muse chat` grounding path (chat-grounding.ts), currently ask-only. (fire 13 remainder, arXiv:2411.06037)
 - ◦ **Commitment dedup remainder** — (a) tune COMMITMENT_DEDUP_COSINE (0.86) on a REAL nomic-embed-text-v2-moe corpus (current tests use synthetic stub vectors; the threshold's discriminating power is unproven on real embeddings — A/B like eval:embedder-ab); (b) wire collapseNearDuplicateCommitments into the chat-ink.ts recap-count path (currently over-counts open loops) and the `muse commitments scan` list; (c) staleness/expiry pass for old commitments + cross-session dedup vs already-tracked tasks. (fire 12 remainder, arXiv:2303.09540)
 - ◦ **a2a council timeout remainder** — (a) wire an env override `MUSE_A2A_COUNCIL_TIMEOUT_MS` (needs A2AEnv widened in transport.ts) + thread `timeoutMs` through the commands-swarm requestReasoning closure; (fire 11 remainder)

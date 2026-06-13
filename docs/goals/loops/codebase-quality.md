@@ -589,3 +589,21 @@ ratchet: testFiles 950 · fabrication 0 · groundedSurfaces 27 · commands-docto
   the launchctl-fallback readOllamaPerfEnv); re-export keeps commands-doctor-perf test green (2599 cli); no new
   static import in the sibling; OllamaPerfEnv move-without-re-export safe (no external importer).
 - **Risk:** low — pure relocation; ollama-perf is advisory (warn, never fail), no floor path.
+
+## fire 32 · 2026-06-13 · loop-creator v1.14.0 · cf1177d5
+meta: value-class=refactor · pkg=@muse/recall · kind=compose · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 953 · fabrication 0 · groundedSurfaces 27 · ask god-file: 2 more inline blocks extracted
+- **What:** Phase 3 continuation — BATCHED two homogeneous inline block-builders out of commands-ask.ts into
+  pure fns in @muse/recall/present.ts: `buildShellContextBlock(commands: readonly string[])` (the `<<command N>>`
+  block) + `buildGitContextBlock(commits: readonly {hash,subject}[])` (the `<<commit N>>` block). Both raw
+  (no escaping), zero new deps. gitBlock used the CLI-local `GitCommit` type → I used a minimal STRUCTURAL input
+  type `{readonly hash; readonly subject}` so recall stays independent of apps/cli (GitCommit[] is assignable).
+  Both inline exprs became one-line calls; 5-case OUTCOME test added. selectShellCommands/selectGitCommits/GitCommit
+  stay used in commands-ask (the source-fetch) → no orphans.
+- **Why:** continues moving the ask pipeline's inline blocks to recall (presentation layer); batching two
+  trivial same-shape builders in one slice (allowed homogeneous batching). 5 of ~12 blocks now extracted
+  (task/reminder/memory/shell/git). compose@recall ~4/8 (within ceiling).
+- **Review point:** 4b judge — both bodies byte-identical (the <<command>>/<<commit — hash>>/[commit: subject]
+  templates, subject-not-hash citation); structural git input type accepts GitCommit[] (no cli→recall dep);
+  new test real OUTCOME (exact strings + subject-not-hash citation); recall 185 + cli 2610 green; no orphans.
+- **Risk:** low — pure presentation relocation; grounding gate consumes both block strings identically.
