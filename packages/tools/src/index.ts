@@ -267,80 +267,7 @@ export function createDefaultToolExposurePolicy(options: DefaultToolExposurePoli
   return new DefaultToolExposurePolicy(options);
 }
 
-export interface ToolArgumentValidation {
-  readonly ok: boolean;
-  readonly missing: readonly string[];
-}
-
-/**
- * Deterministic pre-execute check of a model's tool arguments against the
- * tool's input schema. Enforces ONLY the schema's `required` list — the
- * highest-value, lowest-false-reject rule: a missing required argument would
- * otherwise reach the tool's `execute()` as `undefined` and crash or
- * misbehave (a top small-model failure mode). Anything else (extra props,
- * loose types) passes; the runtime returns the missing list to the model so it
- * re-calls correctly. A schema that isn't an object schema with a `required`
- * array imposes no constraint.
- */
-/**
- * Lossless, unambiguous scalar coercion of a model's tool arguments to the
- * types the schema declares — the deterministic "repair" half of tool-calling
- * (Structured Reflection, arXiv:2509.18847: a right value in the wrong JSON
- * type invalidates an otherwise-correct call). Only safe, reversible cases:
- *   - number/integer param + clean numeric string → number ("5" → 5)
- *   - boolean param + "true"/"false" string → boolean
- *   - string param + number/boolean value → its string form
- * Everything else (objects, arrays, non-numeric strings, partial parses) is
- * left untouched, so a genuine mismatch still surfaces rather than being
- * masked by a lossy guess.
- */
-export function coerceToolArguments(inputSchema: JsonValue | undefined, args: JsonObject): JsonObject {
-  if (!isRecord(inputSchema) || inputSchema.type !== "object" || !isRecord(inputSchema.properties)) {
-    return args;
-  }
-  const properties = inputSchema.properties;
-  const out: Record<string, JsonValue> = { ...args };
-  for (const [key, value] of Object.entries(args)) {
-    const propSchema = properties[key];
-    const declared = isRecord(propSchema) && typeof propSchema.type === "string" ? propSchema.type : undefined;
-    if (declared === undefined) continue;
-    const coerced = coerceScalar(value, declared);
-    if (coerced !== undefined) out[key] = coerced;
-  }
-  return out;
-}
-
-function coerceScalar(value: JsonValue, declared: string): JsonValue | undefined {
-  if ((declared === "number" || declared === "integer") && typeof value === "string") {
-    const trimmed = value.trim();
-    const pattern = declared === "integer" ? /^-?\d+$/u : /^-?\d+(\.\d+)?$/u;
-    if (pattern.test(trimmed)) {
-      const n = Number(trimmed);
-      if (Number.isFinite(n)) return n;
-    }
-    return undefined;
-  }
-  if (declared === "boolean" && typeof value === "string") {
-    const lower = value.trim().toLowerCase();
-    if (lower === "true") return true;
-    if (lower === "false") return false;
-    return undefined;
-  }
-  if (declared === "string" && (typeof value === "number" || typeof value === "boolean")) {
-    return String(value);
-  }
-  return undefined;
-}
-
-export function validateRequiredToolArguments(inputSchema: JsonValue | undefined, args: JsonObject): ToolArgumentValidation {
-  if (!isRecord(inputSchema) || inputSchema.type !== "object" || !Array.isArray(inputSchema.required)) {
-    return { missing: [], ok: true };
-  }
-  const missing = inputSchema.required.filter(
-    (name): name is string => typeof name === "string" && (args[name] === undefined || args[name] === null)
-  );
-  return { missing, ok: missing.length === 0 };
-}
+export { coerceToolArguments, validateRequiredToolArguments, type ToolArgumentValidation } from "./tools-argument-validation.js";
 
 export function filterToolsForContext(
   tools: readonly MuseTool[],
@@ -524,8 +451,25 @@ export function isWorkspaceMutationPrompt(prompt: string | undefined | null): bo
 }
 
 
+/**
+ * Match a hint against the (lowercased) prompt. A single ASCII word/abbrev is
+ * matched as a STANDALONE token — not embedded in the middle of an English word
+ * — so a short hint like "pr" (pull request), "spec", "repo", or "event" does
+ * NOT substring-match "approve"/"special"/"report"/"prevent" and over-expose
+ * write tools (the relevance-filter tokeniser already learned this lesson). A
+ * trailing plural 's' and a directly-attached Korean particle ("PR에") still
+ * match. Multi-word / hyphenated / non-ASCII (Korean) hints keep substring
+ * matching — they do not collide inside other words the same way.
+ */
+function promptHasHint(normalized: string, hint: string): boolean {
+  if (/^[a-z0-9]+$/u.test(hint)) {
+    return new RegExp(`(?<![a-z])${hint}s?(?![a-z])`, "u").test(normalized);
+  }
+  return normalized.includes(hint);
+}
+
 function hasWorkspaceHint(normalized: string): boolean {
-  return workspaceHints.some((hint) => normalized.includes(hint));
+  return workspaceHints.some((hint) => promptHasHint(normalized, hint));
 }
 
 function hasMutationHint(normalized: string): boolean {
@@ -542,7 +486,7 @@ function hasMutationHint(normalized: string): boolean {
 }
 
 function hasMutationTargetHint(normalized: string): boolean {
-  return mutationTargetHints.some((hint) => normalized.includes(hint))
+  return mutationTargetHints.some((hint) => promptHasHint(normalized, hint))
     || mutationTargetPatterns.some((pattern) => pattern.test(normalized));
 }
 
