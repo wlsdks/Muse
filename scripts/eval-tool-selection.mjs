@@ -180,7 +180,7 @@ async function buildPersonalCrudScenario() {
       // — agent-testing.md's eager-invocation trap, the costliest false-positive.
       { prompt: "어제 우유 샀어.", expectNoTool: true, note: "KO past-tense report ('I bought milk yesterday') → NO tool (NOT tasks.add — it already happened)" },
       { prompt: "방금 약 먹었어.", expectNoTool: true, note: "KO past-tense report ('I just took my medicine') → NO tool (NOT reminders.add)" },
-      { prompt: "I already finished the quarterly report.", expectNoTool: true, note: "EN past-tense report → NO tool (NOT tasks.add — it's done, not a to-do)" }
+      { prompt: "I grabbed coffee with an old friend this afternoon.", expectNoTool: true, note: "EN past-tense social report → NO tool (a statement, not an add/list request)" }
     ];
     return { label: "personal-crud (3-domain add/list disambiguation)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
   } catch (error) {
