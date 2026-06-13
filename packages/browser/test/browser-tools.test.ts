@@ -216,6 +216,13 @@ describe("dialog passthrough — an auto-handled JS dialog is surfaced to the mo
     const out = await createBrowserOpenTool({ controller }).execute({ url: "https://x.test" }, ctx) as { dialog?: { type: string; message: string } };
     expect(out.dialog).toEqual({ message: "Delete this?", type: "confirm" });
   });
+
+  it("surfaces a prompt dialog's submitted response so the model knows what text was sent", async () => {
+    const snap: PageSnapshot = { ...SNAP, dialog: { message: "Enter coupon code", response: "SAVE10", type: "prompt" } };
+    const controller = { ...new FakeController(), open: async () => snap } as unknown as BrowserController;
+    const out = await createBrowserOpenTool({ controller }).execute({ url: "https://x.test" }, ctx) as { dialog?: { type: string; message: string; response?: string } };
+    expect(out.dialog).toEqual({ message: "Enter coupon code", response: "SAVE10", type: "prompt" });
+  });
 });
 
 describe("browser_key — keyboard (Escape/Tab/arrows)", () => {
