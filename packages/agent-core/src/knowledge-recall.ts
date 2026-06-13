@@ -846,6 +846,12 @@ export interface VerifyGroundingOptions {
   readonly coverageFloor?: number;
   /** Min query-token coverage by the evidence for a grounded verdict (default 0.34). */
   readonly answerabilityFloor?: number;
+  /**
+   * Number of judge samples to draw for each reverify call (1–5, default 1).
+   * Unanimous agreement required to PASS (self-consistency, arXiv:2203.11171).
+   * Default 1 preserves byte-identical behaviour for all existing callers.
+   */
+  readonly reverifySamples?: number;
 }
 
 const DEFAULT_COVERAGE_FLOOR = 0.5;
@@ -1189,6 +1195,24 @@ export interface GroundingReverifyInput {
  */
 export type GroundingReverify = (input: GroundingReverifyInput) => Promise<boolean>;
 
+/**
+ * How k judge verdicts are collapsed into one decision.
+ * - "unanimous-pass"  — upgrade to `grounded` ONLY if every sample agrees (YES).
+ * - "unanimous-keep"  — keep `grounded` ONLY if every sample agrees (YES).
+ * Both are the SAME reducer; the two names document call-site intent and leave
+ * room for future divergence (arXiv:2203.11171 self-consistency; arXiv:2510.27106
+ * "Rating Roulette" — single-judge verdicts have near-arbitrary intra-rater variance).
+ */
+export type JudgeConsensusMode = "unanimous-pass" | "unanimous-keep";
+
+/**
+ * Aggregate k boolean judge verdicts by a fail-close unanimous rule.
+ * Returns true ONLY when every sample is true (empty → false).
+ */
+export function judgeConsensus(verdicts: readonly boolean[], _mode: JudgeConsensusMode): boolean {
+  return verdicts.length > 0 && verdicts.every((v) => v);
+}
+
 export const REVERIFY_SYSTEM_PROMPT =
   "You are a strict grounding judge. Given a user QUESTION, an ANSWER, and the EVIDENCE the answer was drawn from, decide whether the EVIDENCE actually supports the ANSWER's factual claims. The QUESTION, ANSWER, and EVIDENCE may be in DIFFERENT languages — judge whether the underlying FACTS match (a value, number, name, or term that appears in the EVIDENCE supports the same fact in the ANSWER even when the surrounding words are translated), NOT whether the wording matches. A value the EVIDENCE does NOT contain is still unsupported, in any language. Reply with a single word: YES if the evidence supports it, NO if it does not or you are unsure. Do not explain.";
 
@@ -1332,14 +1356,27 @@ export async function verifyGroundingWithReverify(
 ): Promise<GroundingVerification> {
   const base = verifyGrounding(answer, matches, query, options);
   const evidence = matches.map((m) => m.text).join("\n");
+  const samples = Math.min(5, Math.max(1, options?.reverifySamples ?? 1));
+
+  /** Collect up to `samples` verdicts, short-circuiting on the first false (unanimous). */
+  async function collectVerdicts(input: GroundingReverifyInput): Promise<boolean[]> {
+    const verdicts: boolean[] = [];
+    for (let i = 0; i < samples; i++) {
+      const v = await reverify(input);
+      verdicts.push(v);
+      if (!v) break;
+    }
+    return verdicts;
+  }
+
   if (base.verdict === "weak") {
-    let supported: boolean;
+    let verdicts: boolean[];
     try {
-      supported = await reverify({ answer, evidence, query });
+      verdicts = await collectVerdicts({ answer, evidence, query });
     } catch {
       return { ...base, reason: "weak retrieval + re-verification failed — fail-closed to ungrounded", verdict: "ungrounded" };
     }
-    return supported
+    return judgeConsensus(verdicts, "unanimous-pass")
       ? { ...base, reason: "weak retrieval upheld by re-verification", verdict: "grounded" }
       : { ...base, reason: "weak retrieval rejected by re-verification", verdict: "ungrounded" };
   }
@@ -1352,24 +1389,24 @@ export async function verifyGroundingWithReverify(
   // rejected (it stays "NO" in any language). Fail-closed to the original ungrounded
   // verdict if there is no judge or it errors.
   if (base.verdict === "ungrounded" && base.rubric.confidence > 0 && base.invalidCitations.length === 0) {
-    let supported: boolean;
+    let verdicts: boolean[];
     try {
-      supported = await reverify({ answer, evidence, query });
+      verdicts = await collectVerdicts({ answer, evidence, query });
     } catch {
       return base;
     }
-    return supported
+    return judgeConsensus(verdicts, "unanimous-pass")
       ? { ...base, reason: "low coverage upheld by re-verification", verdict: "grounded" }
       : { ...base, reason: "low coverage rejected by re-verification", verdict: "ungrounded" };
   }
   if (base.verdict === "grounded" && answerAssertsUnsupportedValue(answer, matches)) {
-    let supported: boolean;
+    let verdicts: boolean[];
     try {
-      supported = await reverify({ answer, evidence, query });
+      verdicts = await collectVerdicts({ answer, evidence, query });
     } catch {
       return base;
     }
-    return supported
+    return judgeConsensus(verdicts, "unanimous-keep")
       ? base
       : { ...base, reason: "answer asserts a value the evidence does not support", verdict: "ungrounded" };
   }

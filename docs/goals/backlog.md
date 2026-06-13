@@ -594,6 +594,18 @@ excluded when scoring).
   can count runtime repair rate (deferred — strict event union needs downstream changes); (b) ordering/
   dependency validation (a step consuming a prior step's output); (c) write-step precondition checks;
   (d) plan-cache hygiene — cache the REPAIRED plan, never the invalid original. (fire 37 remainder, arXiv:2308.13724)
+- ✓→Done **Self-consistency consensus for the grounding reverify judge** — the live default-on
+  `verifyGroundingWithReverify` decided weak→grounded upgrades on a SINGLE high-variance judge sample
+  (arXiv:2510.27106 Rating Roulette: LLM judges "almost arbitrary in the worst case"). [DONE 2026-06-13,
+  cognition loop fire 38: `judgeConsensus` (unanimous fail-close, length>0 && every-YES) + `reverifySamples`
+  (clamp 1–5, default 1) k-sample the judge in all 3 branches; CLI live sites pass k=3 (arXiv:2203.11171
+  Self-Consistency). Strictly more conservative — can only convert a single-sample PASS→FAIL on disagreement,
+  never admit a new grounded verdict (judge PASS, proven across all 3 branches via real revert). Fabrication=0
+  strengthened; default-1 byte-identical back-compat.]
+- ◦ **Reverify consensus remainder** — (a) CI-SC confidence-weighted early-exit consensus (arXiv:2511.12309)
+  to cut samples once the outcome is decided; (b) extend k-sample consensus to the `--verify-claims` per-claim
+  judge (`verifyGroundingPerClaim`, same single-sample shape); (c) adaptive k by band width (wider weak margin
+  ⇒ more samples). (fire 38 remainder, arXiv:2510.27106 / 2203.11171)
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting
   each is verifier-backed (85.36% same-mistake repetition without one, arXiv 2510.18254). (T1-10)
 - (queued behind fuel/prereqs: sleep-time compute · Mem0 UPDATE op · AWM workflow mining ·
