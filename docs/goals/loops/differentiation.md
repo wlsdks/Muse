@@ -284,7 +284,7 @@ ratchet: testFiles 930 · self-eval +1 gate (differentiationBatteries=4) + eval:
 - **리스크/residual (비차단)**: 마커가 문자열 리터럴에도 매칭 가능하나 방향이 *over-count*라
   floor 약화 없음(judge 관찰). 차별 vein이 두터워졌으니 다음은 fresh L7 또는 또 다른 컨솔리데이션.
 
-## fire 14 · 2026-06-13 · skill v1.14.0 · `<pending-commit>`
+## fire 14 · 2026-06-13 · skill v1.14.0 · `5fbe73ea`
 meta: value-class=new-capability · pkg=scripts(@muse/mcp proof) · kind=adversarial-proof-battery · verdict=PASS · firesSinceDrill=5
 ratchet: testFiles 931 · differentiationBatteries 4→5 (fire-13 ratchet 자동 카운트) · fabrication 0 · 소유-루프 파일 미수정
 
