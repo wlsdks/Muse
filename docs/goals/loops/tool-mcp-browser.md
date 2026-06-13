@@ -219,3 +219,23 @@ ratchet: testFiles +0 (browser-tools.test.ts +1 + smoke 10b) · @muse/browser 85
   10b RED 재현 (3)defaultValue만 사용=텍스트 미발명(fabrication-into-world 구멍 없음) (4)alert/confirm 불변.
 - **리스크:** default 없는 prompt(msg)는 defaultValue="" → 여전히 빈값(불변)이나 response:""로 투명 기록.
   파괴적 confirm()은 여전히 blind-accept(트리거 클릭이 이미 draft-first 승인됨 — 다이얼로그 재게이팅은 별도 큰 건).
+
+## fire 12 · 2026-06-13 · skill v1.14.0 · (this commit)
+
+meta: value-class=new-capability · pkg=@muse/mcp+@muse/autoconfigure · kind=B-mcp · verdict=PASS · firesSinceDrill=4
+
+ratchet: testFiles +0 (existing preset/cred/posture tests +cases; mcp 14, autoconfigure 43, doctor 90) · fabrication 0 · pnpm check 0 · lint 0/0
+
+- **무엇:** 외부-MCP 레지스트리 EXPANSION — Linear을 3번째 공식 공개 프리셋으로 추가
+  (mcp.linear.app/mcp, provenance linear.app/docs/mcp, OAuth2.1 + Bearer 개인 API키). 전체 기계장치
+  재사용(레지스트리 팩토리 + fail-close linearMcpToolRisk[23 read 도구→read, create/update/unknown→write]
+  + 자동파생 MUSE_LINEAR_MCP_ENABLED + LINEAR_MCP_TOKEN + doctor posture). 자격증명 resolver 하드닝:
+  presetEnvTokenKey()가 Object.hasOwn(OFFICIAL_MCP_PRESETS,name) gated로 <NAME>_MCP_TOKEN 자동파생.
+- **왜:** GitHub/Notion 외 실용 통합 추가 — 사용자가 env var 하나로 Linear 워크스페이스 연결(읽기 자유,
+  쓰기 draft-first 게이트, doctor 감사). 레지스트리가 진짜 확장 가능함을 입증.
+- **리뷰지점:** judge가 (1)Linear provenance를 Linear 자체 문서로 확인(공식 호스티드·anyone-may-connect·
+  Bearer) (2)linearMcpToolRisk를 always-read로 깨 RED 재현, unknown→write 최강 fail-close (3)자격증명
+  auto-derive가 큐레이트 프리셋명에 gated(arbitrary name은 ambient 토큰 안 읽음 — env-exfil 차단,
+  gitlab→undefined 테스트) (4)secret 미동봉.
+- **리스크:** Linear read-도구 목록을 단일 공식 페이지서 못 얻어 제3자 분석(Fiberplane) 참조 — 단
+  fail-close라 stale read-list는 over-gate만(절대 under-gate 아님), 안전 회귀 불가.
