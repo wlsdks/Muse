@@ -81,7 +81,7 @@ ratchet: testFiles 912 · new deterministic battery eval:memory-poisoning (no Ol
   ② 배터리는 dist 빌드 의존(package.json 스크립트가 처리; bare `node`는 src 편집 後
   수동 rebuild 필요). → CI 번들 편입 시 명시.
 
-## fire 4 · 2026-06-13 · skill v1.14.0 · `<pending-commit>`
+## fire 4 · 2026-06-13 · skill v1.14.0 · `ee50c9d5`
 meta: value-class=new-capability · pkg=@muse/autoconfigure · kind=egress-gap-closure(fail-close) · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles 914→915 · egressGuards 6→7 (embedder guard folded in) · fabrication 0 · grounding floor 강화
 
@@ -106,3 +106,25 @@ ratchet: testFiles 914→915 · egressGuards 6→7 (embedder guard folded in) ·
 - **리스크/residual (비차단)**: `muse doctor`/`evaluateLocalOnlyPosture`가 아직
   embedder의 OLLAMA_BASE_URL 로컬리티를 리포트 안 함(런타임 egress는 차단되나 doctor
   맹점) → 후속 ◦. architecture.md 주석도 이 enforcement 지점을 반영하면 좋음.
+
+## fire 5 · 2026-06-13 · skill v1.14.0 · `54c5237f`
+meta: value-class=wiring · pkg=@muse/autoconfigure · kind=posture-transparency · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 915 · egressGuards 7 (리포팅 추가, throw 아님→불변) · fabrication 0 · grounding floor 유지
+
+- **무엇**: fire 4의 embedder fail-close를 `muse doctor` posture에 노출(L3 완성).
+  `evaluateLocalOnlyPosture`(`setup-status.ts`)가 chat 라우터(`createModelProvider`)만
+  재실행해 embedder base를 안 봐서 — local-only ON + **remote OLLAMA_BASE_URL**이면
+  런타임은 fail-close되는데 doctor는 "🔒 ok"로 거짓 안심을 줬다. local-only ON 브랜치에
+  embedder base 로컬리티 검사 추가(`isLoopbackUrl`, fire-4 가드와 동일한 base 해석) →
+  off-box면 status `"fail"` + OLLAMA_BASE_URL 안내.
+- **왜 (어떤 경쟁 레버 대비)**: "shows its work"를 claim-grounding에서 **정직한
+  egress-posture 리포팅**으로 확장. doctor가 런타임과 갈라지지 않게(같은 base 해석) —
+  cloud-default 경쟁사는 보여줄 egress posture 자체가 없다.
+- **리뷰지점**: TDD RED(remote 케이스 ok→fail 안 됨)→GREEN. 분기 정확: remote 케이스가
+  `MUSE_MODEL=lmstudio/llama`(LOCAL chat)라 chat 라우터는 통과하고 embedder 체크가
+  발화(ollama chat이면 라우터가 먼저 throw해 무의미 — 회피). posture↔런타임 base 해석
+  parity 확인. ④b 독립 Opus judge **5/5 PASS** + 체크 제거 falsification 재현.
+  autoconfigure 522/522 · lint:pass · self-eval 회귀 0.
+- **리스크/residual (비차단)**: posture와 런타임 가드가 base 해석을 손으로 일치시킴(두
+  string 리터럴) — 향후 embedder base 해석 변경 시 둘 다 같이 움직여야 함;
+  `resolveEmbedderBase()` 공유 헬퍼로 구조화하면 convention→structural(별도 ◦ 가능).

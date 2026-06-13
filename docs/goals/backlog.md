@@ -24,6 +24,7 @@
 ## TOOL theme — open (CLI-only capabilities lacking an agent tool)
 
 - ⏳ `math_eval` robustness — VERIFIED NOT A BUG (fire 52): both evaluateArithmetic copies (tools + mcp) reject malformed input by throwing→error (no crash); commas are intentionally stripped. No slice. (closes the fire-51 LANE-A candidate)
+- ⏳ **PRE-EXISTING daemon test regression on `main` (cli/daemon owners — NOT differentiation)** — `apps/cli/src/commands-daemon.test.ts:119` "`--once` delivers an imminent task" fails: expected output to match `/proactive: fired 1\/1 imminent/` but got `muse daemon — provider=telegram, dest…`. Reproduces on a CLEAN `origin/main` checkout WITHOUT any local change AND after a full `pnpm build` (not stale dist) — so it landed via a merged commit (P43-5 double-booking / P37-23 email ingestion area). Flagged by differentiation fire 4 (whose own slice is isolated to @muse/autoconfigure + passes). The daemon/cli loop or 진안 should fix; `pnpm self-eval` does not catch it (it doesn't run the cli vitest suite).
 
 ## GROUNDING INTEGRITY theme — open
 
@@ -53,10 +54,11 @@
 - ✓ embedder local-only egress gap CLOSED — `createOllamaEmbedder` followed `OLLAMA_BASE_URL` with no local-only check (chat router only gates it for providerId ollama; daemon bypassed the router), so a remote `OLLAMA_BASE_URL` egressed the user's raw note/memory/episode text under MUSE_LOCAL_ONLY; added construction-time fail-close + 6 behavioural tests + folded the throw into the egressGuards ratchet (6→7) — differentiation fire 4
 - ✓ browser act-path ambiguous-target fail-close — element matcher silently clicked/typed the FIRST of several tied "best" matches (two "Delete" buttons → guessed); now `matchElementResult` → `ambiguous` refuses `browser_click`/`browser_type` BEFORE snapshot-mutation/approval-gate, returns candidates + ordinal hint (closes an outbound-safety fail-open hole) — tool-mcp-browser fire 1
 - ✓ official-public-MCP preset registry (axis B) — `packages/mcp/src/official-mcp-presets.ts`: curated `createGitHubMcpServer` (`https://api.githubcopilot.com/mcp/`) + `createNotionMcpServer` (`https://mcp.notion.com/mcp`) streamable factories, each carrying an official anyone-may-connect provenance URL + a FAIL-CLOSE `toolRisk` classifier (read tools listed, every write/unknown → `write`) + `withOfficialMcpRisk` projection (domain `external`); wired through the existing `allowedServerNames` allowlist; contract-faithful transport-fake test proves allowlisted connects/read-surfaces & non-allowlisted refuses & write stays gated — tool-mcp-browser fire 2
+- ✓ `muse doctor` surfaces embedder OLLAMA_BASE_URL locality — `evaluateLocalOnlyPosture` now flags status `fail` when local-only is on but OLLAMA_BASE_URL is off-box (a localhost lmstudio chat + remote embedder no longer reports a false "🔒 ok"); same base resolution as the fire-4 runtime guard so doctor and runtime never diverge — differentiation fire 5
 
 ## ◦ Open — differentiation (vs hermes/openclaw — `differentiation` loop)
 
-- ◦ **`muse doctor` reports embedder OLLAMA_BASE_URL locality** — fire 4 closed the runtime egress gap (the embedder now fail-closes on a remote base under local-only), but `evaluateLocalOnlyPosture` / `muse doctor` still only re-runs the chat router, so the doctor posture never surfaces the embedder's base URL — a reporting blind spot. Slice: extend the posture snapshot to classify the embedder's `OLLAMA_BASE_URL` too. Source: differentiation fire 4 residual.
+- ◦ **Extract a shared `resolveEmbedderBase()` helper** — fire 5's doctor posture and fire 4's runtime guard each resolve the embedder base with their own string literal (`OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434"` + trailing-slash strip). They must move together or doctor↔runtime diverge; a shared helper makes the parity structural instead of convention-enforced. Source: differentiation fire 5 residual (Opus judge).
 
 ### tool-mcp-browser theme — axis B (external official-public MCP) remaining sub-slices
 
