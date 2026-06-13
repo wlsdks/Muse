@@ -323,7 +323,7 @@ ratchet: testFiles 935 · differentiationBatteries 5→6 (fire-13 ratchet 자동
 - **리스크/residual (비차단)**: clarify-directive 실제 발화는 agent-core wiring(미포함, seam
   증명에 집중). 다음은 fresh 축 또는 정직히 thinning 판단.
 
-## fire 16 · 2026-06-13 · skill v1.14.0 · `<pending-commit>`
+## fire 16 · 2026-06-13 · skill v1.14.0 · `1f4b4b1d`
 meta: value-class=research(EXHAUSTION) · pkg=docs · kind=vein-exhaustion-record · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles 939 · differentiationBatteries 6 (불변) · fabrication 0 · 코드 슬라이스 없음(정직한 고갈)
 
