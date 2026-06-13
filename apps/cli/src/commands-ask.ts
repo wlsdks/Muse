@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -2523,16 +2523,31 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           } else if (shouldSuggestRepair({ evidenceCount: scoredMatches.length, json: Boolean(options.json), repairRequested: Boolean(options.repair), verdictFired: true })) {
             io.stderr("(Re-run with --repair and I'll rewrite this using only your notes — shown only if it then checks out.)\n");
           }
-        } else if (options.verifyClaims && reverify && !options.json && !answerIsRefusal(collectedAnswer)) {
-          // --verify-claims: per-claim ISSUP refinement of an answer the whole-
-          // answer gate just PASSED (no verdictNotice). One fabricated clause can
-          // ride through because it barely dents whole-answer coverage — re-judge
-          // each atomic claim and surface only the trustworthy subset. Gated on a
-          // PASSING answer so it can only tighten, never manufacture a refusal;
-          // fail-open per claim inside verifyGroundingPerClaim.
-          const refinement = await verifyGroundingPerClaim(verdictAnswer, scoredMatches, query, reverify);
-          if (refinement.dropped > 0 && !options.json) {
-            io.stderr(`\n🔬 Per-claim check — I can only ground part of that:\n${refinement.answer}\n`);
+        } else if (reverify && !options.json && !answerIsRefusal(collectedAnswer)) {
+          // Per-claim ISSUP refinement (MiniCheck, arXiv:2404.10774): DEFAULT-ON on
+          // the grounded-PASS branch. A single fabricated sentence can ride through
+          // whole-answer scoring; the semantic cosine pre-filter (screenClaimsBySemanticSupport)
+          // cheaply marks only SUSPECT claims for the LLM judge — non-suspect claims
+          // skip the model call entirely. Runs only after the whole-answer gate PASSED
+          // (no verdictNotice) so it can only TIGHTEN, never manufacture a refusal.
+          // FAIL-OPEN at both layers: screen error → suspect:false; judge error → keep.
+          // --verify-claims forces all-claims judging (bypasses the cheap screen).
+          const claimsToCheck = segmentClaims(verdictAnswer);
+          if (claimsToCheck.length > 1) {
+            const evidenceTexts = scoredMatches.map((m) => m.text);
+            let suspectClaims: ReadonlySet<string> | undefined;
+            if (!options.verifyClaims) {
+              const screens = await screenClaimsBySemanticSupport(
+                claimsToCheck,
+                evidenceTexts,
+                (t) => embed(t, embedModel)
+              );
+              suspectClaims = new Set(screens.filter((s) => s.suspect).map((s) => s.claim));
+            }
+            const refinement = await verifyGroundingPerClaim(verdictAnswer, scoredMatches, query, reverify, { suspectClaims });
+            if (refinement.dropped > 0) {
+              io.stderr(`\n🔬 Per-claim check — I can only ground part of that:\n${refinement.answer}\n`);
+            }
           }
         }
 
