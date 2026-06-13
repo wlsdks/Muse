@@ -4,6 +4,8 @@
 
 - ✓ Relocate RecallHit into @muse/recall + move buildAskConnections — codebase-quality fire 9
 - ◦ **Move `selectGraphConnections` + `NoteLinkGraph`** — needs NoteLinkGraph + resolveNoteId/noteLinkView/linkExpandRefs relocated from apps/cli/src/notes-links.ts (own multi-step). Defer until the notes-link graph types have a package home.
+- ◦ **Split notes-links.ts (graph-query vs link-editing) → graph subset to @muse/recall** — notes-links.ts is pure (only dep levenshteinDistance, now @muse/shared) but TIGHTLY COUPLED: graph-query (NoteLinkGraph/noteLinkView/resolveNoteId/linkExpandRefs/linkedFromResults — what selectGraphConnections needs) shares internals (extractWikiLinks/noteLinkKey/buildNoteLinkGraph) with link-EDITING (planLinkFixes/rewriteWikiLinkReferences/auditNoteGraph, used by commands-notes). Clean split is a dedicated decompose; LOWER priority than Phase 3 (selectGraphConnections is a CLI --connect footer, not the recall pipeline). — codebase-quality fire 11 defer
+
 - ◦ **Phase 3: `runGroundedRecall` pipeline + API route** — the contract closer (extract registerAskCommand pipeline behind a seam, wire apps/api ask route, CLI↔API parity test). Design-sensitive; small verified steps only.
 
 
