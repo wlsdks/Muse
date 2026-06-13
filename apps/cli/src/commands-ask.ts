@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, selectByScoreGap, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -1035,6 +1035,11 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
   if (topK <= 0 || sorted.length <= topK) {
     return sorted.slice(0, Math.max(0, topK));
   }
+  // Adaptive-k: trim to the natural score-distribution knee before MMR so a cliff-
+  // shaped distribution (one strong hit + low-scoring decoys) doesn't pad the
+  // grounding block with near-miss fabrication surface (arXiv:2506.08479).
+  // Trim-only (Math.min keeps it ≤ topK); min:1 always retains the top match.
+  const effectiveK = Math.min(topK, selectByScoreGap(sorted.map((c) => c.score), { min: 1, max: topK }));
   const queryTokens = query ? lexicalTokens(query) : new Set<string>();
   if (queryTokens.size > 0) {
     const keyOf = (i: number): string => String(i);
@@ -1063,14 +1068,14 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
     const order = selectByMmr(
       sorted.map((c, i) => ({ key: keyOf(i), relevance: (fused.get(keyOf(i)) ?? 0) / maxFused, embedding: c.chunk.embedding })),
       lambda,
-      topK
+      effectiveK
     );
     return order.map((k) => sorted[Number(k)]!);
   }
   const order = selectByMmr(
     sorted.map((c, i) => ({ key: String(i), relevance: c.score, embedding: c.chunk.embedding })),
     lambda,
-    topK
+    effectiveK
   );
   return order.map((k) => sorted[Number(k)]!);
 }
@@ -1258,10 +1263,18 @@ export function shouldWarmClose(answer: string, noteFileCount: number): boolean 
  * `none` keeps the plain header (the "no relevant notes" block already shows).
  * Pure + exported for direct unit coverage.
  */
-export function notesGroundingFraming(scored: readonly ScoredChunk[], query?: string): { readonly verdict: RetrievalConfidence; readonly header: string; readonly guidance?: string } {
-  const cosineVerdict = scored.length === 0
+export function notesGroundingFraming(
+  scored: readonly ScoredChunk[],
+  query?: string,
+  // Verdict is derived from this when supplied — the pre-gap-cut top-K so a
+  // gap-cut that trims the prompt window to k=1 doesn't make runnerUp=0 and
+  // flip "ambiguous"→"confident" (floor violation). Prompt window stays trimmed.
+  verdictInput?: readonly ScoredChunk[]
+): { readonly verdict: RetrievalConfidence; readonly header: string; readonly guidance?: string } {
+  const verdictSet = verdictInput ?? scored;
+  const cosineVerdict = verdictSet.length === 0
     ? "none"
-    : classifyRetrievalConfidence(scored.map((s) => ({ cosine: s.score, source: s.file, score: s.score, text: s.chunk.text })));
+    : classifyRetrievalConfidence(verdictSet.map((s) => ({ cosine: s.score, source: s.file, score: s.score, text: s.chunk.text })));
   // nomic's cosine space is compressed, so a genuinely-relevant note can sit
   // just below the confident cosine threshold and get falsely flagged LOW —
   // a soft false-refusal ("verify, may not be in your notes") on a correctly
@@ -1273,7 +1286,7 @@ export function notesGroundingFraming(scored: readonly ScoredChunk[], query?: st
   // is preserved (and the citation gate is the hard backstop regardless).
   const queryTokens = query ? lexicalTokens(query) : new Set<string>();
   const strongLexical = queryTokens.size >= 2
-    && scored.some((s) => lexicalOverlap(queryTokens, s.chunk.text) >= 2);
+    && verdictSet.some((s) => lexicalOverlap(queryTokens, s.chunk.text) >= 2);
   const verdict: RetrievalConfidence = cosineVerdict === "ambiguous" && strongLexical ? "confident" : cosineVerdict;
   if (verdict === "ambiguous") {
     return {
@@ -1923,6 +1936,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // down — degrade to "no notes grounding" and still answer
       // from tasks + calendar + memory + general knowledge.
       let scored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
+      // Pre-gap-cut top-K: used for the confidence verdict so a gap-cut that
+      // trims scored to 1 chunk doesn't flip "ambiguous"→"confident" by making
+      // runnerUp=0 (the floor violation). The PROMPT WINDOW stays gap-cut-trimmed
+      // (scored); only the verdict input reverts to the untrimmed distribution.
+      let preGapScored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
       let notesUnavailable = false;
       let queryVec: number[] | undefined;
       // The "open to verify" target for an AD-HOC grounding source whose receipt
@@ -1955,6 +1973,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           file: f.path,
           score: cosine(queryVec!, chunk.embedding)
         })));
+        preGapScored = [...allScored].sort((a, b) => b.score - a.score).slice(0, topK);
         // RAG-Fusion (arXiv:2402.03367): for a compound question each clause
         // gets its own embedding → its own cosine ranking over the same chunk
         // set → all rankings (full-query + per-clause + lexical) fused via RRF.
@@ -2498,7 +2517,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const contextChunks = reorderForLongContext(scored);
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
-      const notesFraming = notesGroundingFraming(scored, query);
+      const notesFraming = notesGroundingFraming(scored, query, preGapScored.length > 0 ? preGapScored : undefined);
       const contextBlock = notesUnavailable
         ? "(notes search unavailable this turn — answer from the other grounding sources)"
         : contextChunks.length === 0

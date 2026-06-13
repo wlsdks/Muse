@@ -176,6 +176,7 @@ export {
   segmentClaims,
   selectBestGroundedDraft,
   selectByMarginalValue,
+  selectByScoreGap,
   selectByMmr,
   verifyGrounding,
   verifyGroundingPerClaim,
