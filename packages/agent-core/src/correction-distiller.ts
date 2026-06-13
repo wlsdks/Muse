@@ -15,6 +15,7 @@ import { redactSecretsInText } from "@muse/shared";
 
 import type { SessionTurnLine } from "./episodic-summariser.js";
 import { cosineSimilarity } from "./episodic-recall.js";
+import { lexicalTokens } from "./knowledge-recall.js";
 import { comparableScript } from "./script-family.js";
 import { validateMergeCoverage } from "./skill-merge-gate.js";
 
@@ -62,6 +63,40 @@ const CORRECTION_PATTERNS: readonly RegExp[] = [
 
 function isCorrectionTurn(text: string): boolean {
   return CORRECTION_PATTERNS.some((re) => re.test(text));
+}
+
+// Minimum meaningful-token count for residual content after marker removal.
+// Floor = 2: a single stop-word slip-through could pass a floor of 1; two
+// distinct content tokens reliably signal a directive (e.g. "use bullet points").
+const DIRECTIVE_RESIDUAL_FLOOR = 2;
+
+/**
+ * NEMORI (arXiv:2508.03341, Ma/Nan/Wu/Chen 2025) seed-informativeness gate:
+ * a correction that is ALL marker, NO directive, does not deserve to seed a
+ * generalised strategy — a contentless experience shouldn't become memory.
+ *
+ * Strips every matched CORRECTION_PATTERN span from the correction text, then
+ * tokenises the residual with the same CJK-aware lexicalTokens used elsewhere.
+ * Returns true iff the residual carries ≥ DIRECTIVE_RESIDUAL_FLOOR content
+ * tokens — i.e. the correction contains a directive beyond the bare marker.
+ *
+ * Fail-open: no CORRECTION_PATTERN matched → residual = full text → rich →
+ * true (today's behavior, no over-gating). This is distinct from:
+ *   - the support gate (strategy↔correction cosine, parity with preference twin)
+ *   - the gist/verbatim ceiling (strategy vs source at distill time)
+ *   - the polarity gate (strategy↔correction NLI contradict/agree/unrelated)
+ * Those gates grade the DISTILLED STRATEGY. This gate grades the SEED's own
+ * informational content before any model call is made.
+ */
+export function hasDistillableDirective(correction: string): boolean {
+  // Strip every matched marker span; accumulate residual.
+  let residual = correction;
+  for (const pattern of CORRECTION_PATTERNS) {
+    // Use the global flag so repeated matches within one correction are all removed.
+    const globalPattern = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g");
+    residual = residual.replace(globalPattern, " ");
+  }
+  return lexicalTokens(residual).size >= DIRECTIVE_RESIDUAL_FLOOR;
 }
 
 export interface DetectCorrectionsOptions {
@@ -208,6 +243,11 @@ export async function distillStrategyFromCorrection(
   exchange: CorrectionExchange,
   options: DistillStrategyOptions
 ): Promise<DistilledStrategy | undefined> {
+  // NEMORI seed-informativeness gate (arXiv:2508.03341): a contentless correction
+  // — all marker, no directive — doesn't deserve to seed a strategy. Short-circuit
+  // here, before the model call, so no inference is wasted and no ungrounded
+  // confident strategy escapes into the playbook.
+  if (!hasDistillableDirective(exchange.correction)) return undefined;
   const redact = options.redact ?? redactSecretsInText;
   const transcript = [
     exchange.request ? `user asked: ${redact(exchange.request)}` : undefined,

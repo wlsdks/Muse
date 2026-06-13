@@ -156,6 +156,7 @@ import {
 import { createAuthService } from "./auth-wiring.js";
 import { createOverdueContactsTool, interactionsFromEvents } from "./relationship-tool.js";
 import { createWeekAgendaTool } from "./week-agenda-tool.js";
+import { createTodayBriefTool } from "./today-brief-tool.js";
 import { createResponseFilters } from "./response-filters.js";
 import { createMessagingPollDispatchers } from "./messaging-poll-dispatchers.js";
 import { createSkillRuntime } from "./skills-runtime.js";
@@ -748,6 +749,26 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         return { birthdays, events, reminders, tasks };
       }
     })],
+    () => [createTodayBriefTool({
+      todayInput: async () => {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        const events = calendarRegistry
+          ? (await calendarRegistry.listEvents({ from: startOfToday, to: endOfToday }).catch(() => [])).map((e) => ({ startsAtIso: e.startsAt.toISOString(), title: e.title }))
+          : [];
+        const tasks = (await readTasks(tasksFile).catch(() => []))
+          .filter((task) => task.status === "open" && typeof task.dueAt === "string")
+          .map((task) => ({ dueAt: task.dueAt!, title: task.title }));
+        const reminders = (await readReminders(resolveRemindersFile(env)).catch(() => []))
+          .filter((reminder) => reminder.status === "pending" && typeof reminder.dueAt === "string")
+          .map((reminder) => ({ dueAt: reminder.dueAt, text: reminder.text }));
+        const followups = (await readFollowups(resolveFollowupsFile(env)).catch(() => []))
+          .filter((followup) => followup.status === "scheduled" && typeof followup.scheduledFor === "string")
+          .map((followup) => ({ scheduledFor: followup.scheduledFor, summary: followup.summary }));
+        return { events, followups, reminders, tasks };
+      }
+    })],
     () => [
       createContactsFindTool({ contacts: () => queryContacts(resolveContactsFile(env)) }),
       createUpcomingBirthdaysTool({ contacts: () => queryContacts(resolveContactsFile(env)) }),
@@ -1054,6 +1075,7 @@ export {
 
 export { createOverdueContactsTool, interactionsFromEvents, type EventMentionLike, type OverdueContactsToolDeps } from "./relationship-tool.js";
 export { createWeekAgendaTool, groupWeekAgenda, type WeekAgendaInput, type WeekAgendaToolDeps, type WeekDay } from "./week-agenda-tool.js";
+export { createTodayBriefTool, composeTodayBrief, type TodayBrief, type TodayBriefInput, type TodayBriefToolDeps } from "./today-brief-tool.js";
 export { readFeedKnowledgeEntries } from "./feeds-knowledge-source.js";
 export { resolveDefaultUserId } from "./user-id.js";
 
