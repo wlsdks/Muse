@@ -1,5 +1,8 @@
 # Muse dev backlog — the living ledger
 
+- ✓ calendar read-verb selection coverage: golden eval scenario for list/availability/conflicts (7 KO+EN cases, all PASS 3/3) — confirmed the local model selects them robustly (no mis-route); structural-regression guard + documented negative result — tool-hardening fire 86
+
+- ✓ decompose @muse/cli: extracted weather+headlines external-data cluster (resolveTodayWeatherLine/formatWeatherLine/resolveTodayFeedHeadlines/formatHeadlines + cap) commands-today -> commands-today-feeds.ts (1397->1327 LOC; re-export keeps 2626 tests green) — codebase-quality fire 48
 - ✓ cohere @muse/autoconfigure: deduped local isRecord type-guard onto canonical @muse/shared isRecord (byte-identical; dups 4->3; voice/agent-core remain hard) — codebase-quality fire 47
 - ✓ reminders.fire no-collateral-damage: a failed fire (ambiguous word OR unknown ref) now asserted to flip NO reminder's status (all stay pending, deep-equal) — mutation-verified (guess-fire makes only this test RED, clear/snooze tests stay green); COMPLETES the reminders destructive-verb no-collateral parity (clear ✓83, snooze ✓84, fire ✓85) — tool-hardening fire 85
 
@@ -1344,6 +1347,8 @@ excluded when scoring).
 - ✓ Plan-validation remainder (b) ordering/dependency validation — agent-core-cognition fire 8
 - ✓ Plan-validation remainder (c) write-step precondition checks (ISR-LLM arXiv:2308.13724) — a write/execute step with an unfilled-placeholder arg is rejected before any tool runs (no partial side-effect) — agent-core-cognition fire 21
 - ✓ Playbook staleness re-probation gate (SSGM arXiv:2603.11768) — a once-reinforced strategy gone cold (>120d, sparse) is withheld from injection until re-reinforced — agent-core-cognition fire 22
+- ✓ Correction-distillation gist gate (SIB arXiv:2603.01455 + ReasoningBank 2509.25140) — a near-verbatim restatement of the correction (cosine ≥0.92) is dropped before playbook promotion, completing the support gate into a [0.50,0.92) grounded-AND-abstracted band — agent-core-cognition fire 23
+- ◦ **Distillation gist-gate remainder** — tune DEFAULT_STRATEGY_VERBATIM_CEILING (0.92) on real nomic-embed distributions (chosen from synthetic fixtures; a short correction's valid concise generalization could score ≥0.92 and be dropped — subtractive + re-distillable so safe-direction, but untuned); calibrate against eval:self-improving / verify-pattern-suggestion. (fire 23 remainder, arXiv:2603.01455)
 - ◦ **Playbook staleness-gate remainder** — tune PLAYBOOK_STALE_AFTER_DAYS (120) + the tally<3 sparsity bar on real reinforcement-interval data (chosen from SSGM framing + synthetic fixtures; a rarely-triggered useful/seasonal strategy could be withheld until re-reinforced — reversible + re-distillable so safe-direction, but untuned). Optionally a `muse doctor` "N strategies withheld as stale" surface. (fire 22 remainder, arXiv:2603.11768)
 - ✓ Playbook temporal reward discounting (Discounted-UCB arXiv:0805.3415) — agent-core-cognition fire 9
 - ◦ **Playbook recency-discount remainder** — (a) carry recency anchors into the `@muse/recall` non-embed

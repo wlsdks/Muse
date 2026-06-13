@@ -182,6 +182,36 @@ async function buildPersonalCrudScenario() {
   }
 }
 
+// Calendar READ verbs exposed together — list (show events), availability (find
+// free gaps) and conflicts (find overlaps) are three distinct read intents the
+// model must keep apart: "when am I free?" is availability (NOT list-the-events-
+// and-make-the-user-scan), "any double-bookings?" is conflicts (NOT list), and
+// "show my schedule" is list. They share the calendar domain + Korean 일정 vocab,
+// so keeping them apart is the value. Selection-only (empty stub registry).
+async function buildCalendarReadScenario() {
+  try {
+    const mcp = await import("../packages/mcp/dist/index.js");
+    const stubCalendar = { createEvent: async () => ({}), deleteEvent: async () => undefined, listEvents: async () => [], updateEvent: async () => ({}) };
+    const server = mcp.createCalendarMcpServer({ registry: stubCalendar });
+    const interesting = new Set(["list", "availability", "conflicts"]);
+    const muse = mcp.createLoopbackMcpMuseTools(server).filter((t) => interesting.has(t.definition.name.split(".").pop()));
+    const tools = muse.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "이번 주 언제 시간 비어 있어?", expectTool: "muse.calendar.availability", note: "KO find free time → availability (NOT list)" },
+      { prompt: "내일 오후에 30분짜리 빈 슬롯 있나 봐줘", expectTool: "muse.calendar.availability", note: "KO free-gap lookup → availability" },
+      { prompt: "When am I free tomorrow afternoon?", expectTool: "muse.calendar.availability", note: "EN free time → availability (NOT list)" },
+      { prompt: "이번 주에 겹치는 일정 있어?", expectTool: "muse.calendar.conflicts", note: "KO overlapping events → conflicts (NOT list/availability)" },
+      { prompt: "Do I have any double-booked meetings this week?", expectTool: "muse.calendar.conflicts", note: "EN double-booking → conflicts" },
+      { prompt: "이번 주 일정 보여줘", expectTool: "muse.calendar.list", note: "KO show the schedule → list (NOT availability/conflicts)" },
+      { prompt: "Show my calendar for next week.", expectTool: "muse.calendar.list", note: "EN list events → list" }
+    ];
+    return { label: "calendar-read (list vs availability vs conflicts)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "calendar-read", skip: `@muse/mcp not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 // Notes file tools (muse.notes.save / append) vs their closest confusables:
 // tasks and reminders. A note is durable markdown written to a FILE at a path;
 // the model must keep a "write this in my notes file" intent on notes.* and a
@@ -850,6 +880,7 @@ async function main() {
     await buildFileScenario(),
     await buildBrowserScenario(),
     await buildPersonalCrudScenario(),
+    await buildCalendarReadScenario(),
     await buildContactsScenario(),
     await buildObjectivesScenario(),
     await buildActionsScenario(),
