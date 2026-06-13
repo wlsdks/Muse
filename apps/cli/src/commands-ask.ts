@@ -548,8 +548,6 @@ export const WARM_REFUSAL_CLOSE =
   "(I'd rather tell you that than guess — add a note on this and I'll have it next time.)";
 
 
-
-
 interface NotesIndex {
   readonly version: 1;
   readonly model: string;
@@ -1133,6 +1131,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // down — degrade to "no notes grounding" and still answer
       // from tasks + calendar + memory + general knowledge.
       let scored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
+      // Pre-gap-cut top-K: used for the confidence verdict so a gap-cut that
+      // trims scored to 1 chunk doesn't flip "ambiguous"→"confident" by making
+      // runnerUp=0 (the floor violation). The PROMPT WINDOW stays gap-cut-trimmed
+      // (scored); only the verdict input reverts to the untrimmed distribution.
+      let preGapScored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
       let notesUnavailable = false;
       let queryVec: number[] | undefined;
       // The "open to verify" target for an AD-HOC grounding source whose receipt
@@ -1165,6 +1168,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           file: f.path,
           score: cosine(queryVec!, chunk.embedding)
         })));
+        preGapScored = [...allScored].sort((a, b) => b.score - a.score).slice(0, topK);
         // RAG-Fusion (arXiv:2402.03367): for a compound question each clause
         // gets its own embedding → its own cosine ranking over the same chunk
         // set → all rankings (full-query + per-clause + lexical) fused via RRF.
@@ -1708,7 +1712,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const contextChunks = reorderForLongContext(scored);
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
-      const notesFraming = notesGroundingFraming(scored, query);
+      const notesFraming = notesGroundingFraming(scored, query, preGapScored.length > 0 ? preGapScored : undefined);
       const contextBlock = notesUnavailable
         ? "(notes search unavailable this turn — answer from the other grounding sources)"
         : contextChunks.length === 0

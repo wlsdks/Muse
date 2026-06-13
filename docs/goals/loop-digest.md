@@ -855,3 +855,14 @@
 - **왜:** fire-39 lexical 게이트가 정직한 KO-패러프레이즈+cross-lingual on-topic peer를 false-drop(5/5)해 defer됨. 의미 cosine은 표면형 무관 → 패러프레이즈(0 토큰겹침)+다국어 답변도 질문과 high cosine → KEEP. fire-40 primitive가 깔려 이제 thin 슬라이스. 2연속 council-screening defer 중 relevance 절반 언블록 완료.
 - **리뷰지점:** council.ts(screenOffTopicUtterancesSemantic+QUESTION_RELEVANCE_FLOOR)+index.ts·council.test.ts·commands-swarm.test.ts. **maker=Sonnet / judge=Opus 4.8(Fable5 세션 미가용) PASS**: THE FIX 실증(built dist — KO 패러프레이즈+EN cross-lingual KEPT, off-topic DROPPED, 동일 floor 0.3); non-inert 실제-revert(keep-all → agent-core 5 테스트 fail 포함 assembled-path reason==='off-topic'); floor 0.3 방어가능(terse cosine~0.3 peer KEEP, majority-cap+fail-open+deny-only 경계); test-seam이 REAL synthesizeCouncilAnswer 구동; fail-open(빈질문/n<2/no-embed-skip/throw→all kept). agent-core 1936·cli 2555·check 0·lint 0.
 - **리스크:** 낮음 — deny-only selection(질문-무관 peer만 제거, 콘텐츠 추가 0), 의미 cosine이 cross-lingual/패러프레이즈 네이티브(fire-39 false-drop 해소), 다운스트림 outlier+RGV+citation 게이트 後 불변, 임베딩 LOCAL. **backlog:** QUESTION_RELEVANCE_FLOOR=0.3 live KO/EN battery 튜닝(smoke:live stall 미검증); CLI assembled-path 테스트가 revert서 vacuous(downstream consensus-outlier가 마스킹) — agent-core 테스트가 clean 증명, CLI 테스트 강화. RATCHET: testFiles +0(다수 케이스), fabrication 0, fire-39 relevance 언블록 완료(남음: fire-36 injection 재스코프·semantic consensus). grounding floor 무관.
+# Loop digest — MIGRATED (legacy)
+
+> 이 파일은 v1.14.0에서 **per-loop 저널로 이주**되었습니다. 동시 4개 루프가 하나의
+> append 파일을 공유하면 매 fire 머지 충돌 + 버전↔산출 상관 오염이 생겨, 루프별 저널로 분리했습니다.
+>
+> - TOOL 하드닝 루프 → [`loops/tool-hardening.md`](loops/tool-hardening.md)
+> - cognition 루프 → [`loops/cognition.md`](loops/cognition.md)
+> - 규약 → [`loops/README.md`](loops/README.md) · 인덱스 → [`loops/INDEX.md`](loops/INDEX.md)
+>
+> **아직 이 파일에 쓰는 루프(v1.14.0 이전 프롬프트)는 재등록 필요.** 그때까지의 신규 append는
+> 아래에 미이주 상태로 쌓이니, 재등록 후 해당 per-loop 저널로 옮기세요.

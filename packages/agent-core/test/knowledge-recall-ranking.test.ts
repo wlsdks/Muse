@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { edgeLoadByRelevance, fuseByReciprocalRank, reorderForLongContext, selectByMarginalValue, selectByMmr } from "../src/knowledge-recall.js";
+import { edgeLoadByRelevance, fuseByReciprocalRank, reorderForLongContext, selectByMarginalValue, selectByMmr, selectByScoreGap } from "../src/knowledge-recall.js";
 
 describe("selectByMarginalValue — Charnov MVT give-up-at-R* stopping rule for the cited-source count", () => {
   it("stops early on a sharp relevance cliff (one source far above the mean)", () => {
@@ -117,5 +117,52 @@ describe("reorderForLongContext (lost-in-the-middle edge-loading)", () => {
     expect(reorderForLongContext([])).toEqual([]);
     expect(scores(reorderForLongContext(mk([7])))).toEqual([7]);
     expect(scores(reorderForLongContext(mk([9, 1])))).toEqual([9, 1]);
+  });
+});
+
+describe("selectByScoreGap — Adaptive-k knee detection (arXiv:2506.08479)", () => {
+  it("cliff: dominant gap after first score → k=1", () => {
+    // gaps: 0.44 (index 0) >> 0.03 (index 1) → knee at index 0.
+    expect(selectByScoreGap([0.62, 0.18, 0.15])).toBe(1);
+  });
+
+  it("flat-near: all tiny gaps → earliest index wins ties → k=1", () => {
+    // gaps=0.02, 0.01, 0.02 — tie → earliest (index 0) → k=1.
+    expect(selectByScoreGap([0.55, 0.53, 0.52, 0.50], { max: 4 })).toBe(1);
+    // min=4 forces keep-all regardless of gap.
+    expect(selectByScoreGap([0.55, 0.53, 0.52, 0.50], { min: 4, max: 4 })).toBe(4);
+  });
+
+  it("min/max clamp: result stays within [min, max]", () => {
+    expect(selectByScoreGap([0.9, 0.1, 0.09], { min: 2, max: 3 })).toBe(2);
+    expect(selectByScoreGap([0.9, 0.1, 0.09], { min: 1, max: 2 })).toBe(1);
+  });
+
+  it("empty list → 0", () => {
+    expect(selectByScoreGap([])).toBe(0);
+  });
+
+  it("single element → 1", () => {
+    expect(selectByScoreGap([0.7])).toBe(1);
+  });
+
+  it("two elements with a gap → k=1", () => {
+    expect(selectByScoreGap([0.8, 0.2])).toBe(1);
+  });
+
+  it("NON-VACUITY: gap-cut, MVT mean-cut, and fixed-k all return different values on the same input", () => {
+    // [0.91, 0.89, 0.88, 0.87] — nearly-flat cluster of four:
+    //   gap-cut: gaps=0.02(idx 0), 0.01(idx 1), 0.01(idx 2) → largest at idx 0 → k=1
+    //   MVT: R*=0.8875; 0.91 and 0.89 >= R*, 0.88 < R* → MVT k=2
+    //   fixed k=4
+    // All three differ — confirms gap-cut is a distinct statistic from both MVT and fixed.
+    const dist = [0.91, 0.89, 0.88, 0.87];
+    const gapK = selectByScoreGap(dist, { min: 1, max: 4 });
+    const mvtK = selectByMarginalValue(dist, { min: 1, max: 4 });
+    expect(gapK).toBe(1);
+    expect(mvtK).toBe(2);
+    expect(gapK).not.toBe(mvtK);
+    expect(gapK).not.toBe(4);
+    expect(mvtK).not.toBe(4);
   });
 });

@@ -276,6 +276,40 @@ export function selectByMarginalValue(
 }
 
 /**
+ * Adaptive-k passage selection by largest consecutive score gap (arXiv:2506.08479,
+ * Taguchi/Maekawa/Bhutani, EMNLP 2025). The largest drop between adjacent ranked
+ * scores marks the "natural knee" — everything above the knee is genuinely relevant,
+ * everything below is near-miss padding that widens the fabrication surface for the
+ * local 12B. `scoresDescending` MUST be sorted high→low (caller's contract —
+ * not re-sorted here). Returns k = (index of largest gap) + 1, clamped to [min, max].
+ * Ties → earliest index (smaller k, more conservative). Deterministic, no tuning
+ * constant, never throws.
+ */
+export function selectByScoreGap(
+  scoresDescending: readonly number[],
+  options?: { readonly min?: number; readonly max?: number }
+): number {
+  const n = scoresDescending.length;
+  if (n === 0) return 0;
+  const min = Math.max(1, Math.trunc(finiteOr(options?.min, 1)));
+  const rawMax = Math.trunc(finiteOr(options?.max, n));
+  const max = Math.max(min, Math.min(n, rawMax));
+  if (n <= min) return n;
+  // Compute consecutive gaps and find the largest.
+  let largestGap = -Infinity;
+  let gapIndex = 0; // index i where gap g_i = scores[i] - scores[i+1] is largest
+  for (let i = 0; i < n - 1; i++) {
+    const g = scoresDescending[i]! - scoresDescending[i + 1]!;
+    if (g > largestGap) {
+      largestGap = g;
+      gapIndex = i;
+    }
+  }
+  const k = gapIndex + 1;
+  return Math.min(max, Math.max(min, k));
+}
+
+/**
  * Rank `chunks` from multiple sources by cosine similarity to `query`.
  * Returns the top-K matches (each carrying its `source`), highest
  * score first. Empty query / corpus → no matches; sub-threshold
