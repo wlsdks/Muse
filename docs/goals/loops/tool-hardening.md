@@ -936,3 +936,21 @@ ratchet: testFiles 974 유지(scripts-only) · fabrication 0 유지 · eval:tool
 - **왜:** personal-crud에 positive intent만 있고 over-invocation 네거티브 0. agent-testing.md 명시 우선 dimension("most suites skip; we do not"). write 도구 over-fire = phantom task/event/reminder = spurious state = 최고비용 false-positive. **teeth 입증:** borderline 프로브("I already finished the quarterly report" — task-noun+완료 암시)가 tasks.list over-fire(0/3) → abstention은 description-의존(무조건 아님). fire-70 교훈대로 그 unfair 케이스는 clean social report로 교체(over-strict 기대 금지).
 - **리뷰지점:** eval buildPersonalCrudScenario +3 expectNoTool 케이스(순수 additive). ④b judge PASS 5/5(fair expectation·strict noTool teeth·KIND-diverse). **⚠️ sweep 재발:** probe/replace 중 동시 codebase-quality 머지(`062936da`)가 미커밋 2 KO 케이스를 쓸어담음 → EN swap만 내 커밋 7e026b87에; net 3 케이스 모두 main(검증). 교훈: "즉시 커밋"도 probe 사이클 중 sweep 못 막음 — 공유 main의 구조적 한계, net-correct면 수용.
 - **리스크:** 없음 — scripts-only, 순수 additive. firesSinceDrill=9 → **fire 92 = JUDGE-DRILL**(10).
+
+
+## fire 92 · 2026-06-14 · skill v1.14.0 · dfedca87
+meta: value-class=micro-fix(real correctness bug) · pkg=@muse/mcp · kind=JUDGE-DRILL(vacuous gibberish FAIL 확인)+date-window-boundary-fix(on_this_day Jan-1 경계 miss) · verdict=PASS · firesSinceDrill=0(드릴 완료, 리셋)
+ratchet: testFiles 976 유지(+1 케이스 on-this-day boundary) · fabrication 0 유지 · eval 무변동(grounded-recall correctness)
+- **무엇:** (A) JUDGE-DRILL — 고의 vacuous IrrelAcc 케이스("asdfgh qwerty…" gibberish, "더 많은 커버리지" 위장, 현실 over-invocation 무관·no teeth) 주입 → ④b judge **VERDICT: FAIL**(3항목: 비현실·no teeth·churn) → git restore. (B) 진짜 fix — selectOnThisDay(on_this_day_notes 도구 + `muse on-this-day` CLI + morning-brief)가 prior-year 노트 month-day를 now.year로만 투영 → **Jan-1 경계 깨짐**: Dec-31 노트가 Jan-1 now에서 ~364일로 계산돼 1일 anniversary가 silent miss. year before/of/after 투영 후 min gap으로 수정.
+- **왜:** firesSinceDrill 10 → 드릴 미루기 불가(롤백 경로 재검증). 실수정: tight scout(fresh 핸들러 proactive/context/dev-utility/aggregators 한정, budget-efficient)가 발굴. grounded-recall 표면의 silent miss(New-Year's-Eve 노트가 1월 초에 안 뜸). 주석은 "handles year boundaries cleanly" 거짓 주장했음. KIND=date-window-boundary(rollover/IrrelAcc와 구별).
+- **리뷰지점:** on-this-day-tool.ts window-gap 계산만 변경(prior-year filter·sort·yearsAgo 불변). 테스트 RED("expected +0 to be 1", Dec-31 drop)→GREEN + far-July negative(@window7 무매치). **직접 검증:** src fix stash→RED, 복원→GREEN(1869). pnpm check: apps/cli chat-ink-render 74s 부하 timeout flake(isolated 2631 green, 무관). ④b judge PASS 5/5(exhaustive sweep: 전 day×month-day → 0 spurious·0 missed, min-of-3는 wrap-around 정확).
+- **리스크:** 없음 — window-gap만 변경, mid-year 무변동. 드릴+실수정 같은 fire(드릴 규약). firesSinceDrill=0. scout는 fix까지 적용(maker)했으나 ④b judge는 별개 fresh 인스턴스(maker≠judge 유지).
+
+
+## fire 93 · 2026-06-14 · skill v1.14.0 · b9d6460a
+meta: value-class=micro-fix(real security bug) · pkg=@muse/mcp · kind=fail-close-bypass-fix(home_action empty-target가 whole-domain 가드 우회) · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 976 유지(+createHomeActionTool 첫 테스트 3 it) · fabrication 0 유지 · eval 무변동(security fail-close)
+- **무엇:** home_action(risk:execute)의 fail-close 가드 — 타깃 없는 서비스 콜은 HA의 whole-domain 경로(light.turn_off=온 집 소등, lock.unlock=전 잠금 해제). 가드의 dataHasTarget이 **키 존재만** 검사 → empty target(`{target:{}}`/`{entity_id:[]}`/`{entity_id:""}`)이 우회 → 승인된 서비스 콜이 도메인 전체 blast. **concrete(non-empty 문자열/배열) 타깃 요구**로 수정(top-level + nested target).
+- **왜:** home 도구는 어느 prior scout도 examine 안 한 fresh 표면(genuinely un-examined). createHomeActionTool은 **테스트 전무**. outbound-safety의 fail-close 우회 = 高harm 보안 홀(되돌릴 수 없는 whole-domain 액션). KIND=fail-close-bypass(rollover/IrrelAcc/recall과 구별).
+- **리뷰지점:** smart-home-tool.ts dataHasTarget만 변경(service-format·entityId·performHomeActionWithApproval 불변). 테스트 = **승인 게이트 + fetch 스파이**(가드만이 콜 차단 가능): empty-target RED("expected performed:true,status:200" — 승인 액션이 fetch escape)→GREEN(calls=[]) + no-target refuse + concrete entity proceed. 첫 weak 시도(performed:false만)는 throwing-gate가 catch→false-green이라 fetch-spy로 강화. 전 suite 1872, pnpm check exit=0, lint clean. ④b judge PASS 5/5(pre-fix revert로 RED 재현, 전 HA 타깃 shape over-rejection 없음 확인).
+- **리스크:** 없음 — 가드를 더 fail-closed로(legitimate concrete 타깃은 전부 통과 확인). 교훈: fail-close 가드는 키 존재가 아닌 concrete 값 검사여야(empty가 우회). fetch-spy + 승인-게이트가 보안 fail-close의 올바른 teeth(performed:false만으론 false-green).
