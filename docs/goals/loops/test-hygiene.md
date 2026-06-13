@@ -190,3 +190,11 @@ ratchet: testFiles 966→965 (−1 통합, 유니크 assert 1 이식) · netCove
 - **왜:** outbound 액추에이터 디스패처(outbound-safety.md 핵심) — 두 파일 중복 실행. src/는 fail-close·action-log까지 더 강하나, test/의 "detail이 HTTP status 노출" assert만 src/에 없었음(손실 금지).
 - **어떻게-증명(MUTATION-FIRST):** `web-action.ts:173`의 `server rejected (HTTP ${status})`에서 status 텍스트 제거 시 이식한 assert만 RED(`'server rejected' to contain 'HTTP 500'`), 나머지 11 green → 진짜 가드 + 유일성. 복원+클린리빌드 12/12 green. ④b 독립 Opus judge가 삭제본 5개 행동 전수 매핑(전부 equal-or-stronger, fail-close/approval/action-log 손실 0) + mutation 재현 → **VERDICT: PASS**.
 - **리스크:** 소스(비-test) 무변경. 변경 −58L(test/ 삭제) +1L(이식) 2건뿐. mcp dist 클린리빌드 1회. 남은 mcp 동명 쌍 12개.
+
+## fire 23 · 2026-06-14 · skill v1.14.0 · 4ff1310e
+meta: kind=add · pkg=@muse/agent-core · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 970 (케이스 +1, 파일수 불변) · netCoverage +1 branch (DEFAULT_SECTION_PRIORITY fallback) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `enforceSystemPromptBudget`(prompt-budget.ts, 시스템프롬프트 토큰예산 eviction)의 **미지(未知) 섹션 mid-priority 기본값(`DEFAULT_SECTION_PRIORITY=55`)** 커버 추가. 기존 enforce 테스트 4개는 전부 *알려진* 섹션 id(active-context·feeds·episodic-recall)만 써서 `?? DEFAULT_SECTION_PRIORITY` fallback이 미커버였음. skills(50)<unknown(55)<episodic-recall(60)로 2/3 드롭 시 skills→unknown 순 evict, episodic 생존.
+- **왜:** "새 transform 섹션은 *조용히 가장 먼저 버려지지 않는다*"는 설계 불변식(코드 주석 명시) — grounding/runtime trimming 경로(CLAUDE.md "context 작으면 trimming"). 새 섹션이 priority 미등록이어도 중간에 위치해야 active-context/memory 같은 핵심 전에 안 버려짐.
+- **어떻게-증명(MUTATION-FIRST ADD):** `DEFAULT_SECTION_PRIORITY` 55→0 변형 시 unknown이 최우선-eviction 되어 drop 순서 뒤집힘(RED); 55→100 변형 시 unknown이 episodic보다 sticky해져 episodic이 대신 드롭(RED). 양 boundary가 55를 (50,60) 사이로 bracket — 각각 새 테스트만 RED, 다른 4개 무영향. 독립 ④b Opus judge가 양 mutation 재현 + fallback 미커버 + 순서/값 정확성 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경, full check GREEN. 미지-섹션 우선순위는 새 transform 추가 시 회귀하기 쉬운 조용한 동작 — 이제 양방향 pin.
