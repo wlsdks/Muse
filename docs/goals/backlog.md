@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ Decompose commands-doctor health-check trio (messagingConfigCheck/notesIndexHealth/episodeIndexHealth) → commands-doctor-checks.ts — codebase-quality fire 15
+
 - ◦ **Decompose commands-doctor check-cluster → sibling** — fire 14 extracted config-classifiers; the LocalCheck-returning health checks (modelEnvCheck/localOnlyCheck/ollamaPerfPostureCheck/selfLearningCheck/notesIndexHealth/episodeIndexHealth/embedModelCheck…) are a further cohesive cluster to extract (commands-doctor still ~1121 LOC).
 - ✓ Decompose commands-doctor config-classifiers → commands-doctor-config.ts — codebase-quality fire 14
 
