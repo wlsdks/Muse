@@ -18,6 +18,11 @@
 > blocks below are pre-v1.14.0 history — kept for dedup, condensable when loops are paused. Convention:
 > [`loops/README.md`](loops/README.md).)
 
+## TOOL theme — open (CLI-only capabilities lacking an agent tool)
+
+- ◦ `week_agenda` agent tool — "what's my week look like?" — `muse week` (apps/cli/commands-week.ts) aggregates events+tasks+birthdays+weather by day but has no agent tool. DECOMPOSED (needs the same kind of pure-aggregator move as on-this-day/overdue: extract a `selectWeek`-style pure function to a package autoconfigure imports, then wire a tool). 1–2 slices. (scouted fire 48/52)
+- ⏳ `math_eval` robustness — VERIFIED NOT A BUG (fire 52): both evaluateArithmetic copies (tools + mcp) reject malformed input by throwing→error (no crash); commas are intentionally stripped. No slice. (closes the fire-51 LANE-A candidate)
+
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
@@ -26,6 +31,8 @@
 - ✓ `on_this_day_notes` agent tool — conversational date-cued note recall (muse on-this-day was CLI-only; pure recall logic moved to @muse/mcp, CLI re-exports) — tool-hardening fire 48
 - ✓ `feeds_search` agent tool — conversational watched-feed archive search (CLI-only + only knowledge_search covered it, off by default → default-posture gap) — tool-hardening fire 49
 - ✓ `find_contact` hardening — surfaces `about`/`connections` (recall material the handler dropped, e.g. "allergic to nuts") so "what do I know about Bob?" answers from the tool; reverse-lookup by phone/email/@handle locked + advertised — tool-hardening fire 50
+- ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" (list filtered only by status/dueWithinDays; tags first-class but unfilterable) — tool-hardening fire 51
+- ✓ `overdue_contacts` agent tool — "who haven't I talked to in a while?" relationship-decay nudge (overdueContacts was CLI-only; tool placed in @muse/autoconfigure to avoid a new dep edge, interactionsFromEvents moved there, CLI re-exports) — tool-hardening fire 52
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" was inexpressible (list filtered only by status/dueWithinDays, search ignores tags) though tags are first-class + CLI `--tag` exists; added optional `tag` (case-insensitive exact, both branches) — tool-hardening fire 51
 
 ## Done — loop infrastructure (2026-06-12, 진안-directed)
