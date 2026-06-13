@@ -244,6 +244,31 @@ async function buildContactsScenario() {
   }
 }
 
+// Relationship-maintenance nudge (overdue_contacts — "who've I lost touch
+// with?") vs looking up ONE specific person (find_contact). The value is the
+// discrimination: a "who haven't I talked to in a while?" intent is a LIST of
+// drifting ties, not a named-person lookup.
+async function buildOverdueScenario() {
+  try {
+    const ac = await import("../packages/autoconfigure/dist/index.js");
+    const mcp = await import("../packages/mcp/dist/index.js");
+    const instances = [
+      ac.createOverdueContactsTool({ interactions: () => [] }),
+      mcp.createContactsFindTool({ contacts: () => [] })
+    ];
+    const tools = instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "Who haven't I talked to in a while?", expectTool: "overdue_contacts", note: "EN relationship-decay nudge → overdue_contacts (NOT find_contact — no name)" },
+      { prompt: "누구한테 연락이 뜸했지?", expectTool: "overdue_contacts", note: "KO who've I lost touch with → overdue_contacts" },
+      { prompt: "What's Bob's email address?", expectTool: "find_contact", requireArgs: ["name"], note: "EN named-person lookup → find_contact (NOT overdue_contacts)" }
+    ];
+    return { label: "overdue-contacts (relationship nudge vs find-one)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "overdue-contacts", skip: `@muse/autoconfigure not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 // Date-cued note recall (on_this_day_notes) vs a general note keyword search
 // (muse.notes.search). Both read notes, but one is an ANNIVERSARY look-back
 // ("what did I write on this day in past years?") and the other a content
@@ -685,6 +710,7 @@ async function main() {
     await buildBrowserScenario(),
     await buildPersonalCrudScenario(),
     await buildContactsScenario(),
+    await buildOverdueScenario(),
     await buildOnThisDayScenario(),
     await buildFeedsScenario(),
     await buildNotesScenario(),
