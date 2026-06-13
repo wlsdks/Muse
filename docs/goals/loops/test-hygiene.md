@@ -239,3 +239,11 @@ ratchet: testFiles 978 (케이스 +1, 파일수 불변) · netCoverage +1 branch
 - **왜:** 작은 로컬 모델이 JSON을 prose로 감싸 내보낼 때 slow-path가 마지막 균형 블록을 추출 — 값에 escape된 따옴표+중괄호가 있으면 escape 처리 없이는 블록 경계가 깨져 추출 실패(grounding 입력 유실).
 - **어떻게-증명(MUTATION-FIRST ADD):** prose wrapper로 slow-path 강제 + 값에 `\"`+`}`. `escape = true`→`false` 변형 시 `\"`가 문자열을 조기 종료 → 뒤 `}`가 블록 조기-마감 → 파싱 블록 없음 → undefined로 새 테스트만 RED(다른 10 + 자매 parse suite 8 green = 유일 sentinel). ④b 독립 Opus judge가 slow-path 강제 확인 + mutation 재현(유일 sentinel) + escape 분기 미커버 + 기대값 정확성 확인 → **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경, full check GREEN. JS 문자열 `\\"`→실제 `\"`(JSON escape) 주의. 새 머지된 모듈(memory-extract-json.ts)의 가장 까다로운 분기를 pin.
+
+## fire 29 · 2026-06-14 · skill v1.14.0 · 848bd205
+meta: kind=prune · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 980→979 (−1 strict-subset 삭제) · netCoverage 0 (진짜 중복) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `loopback-helpers` **clean PRUNE**(4번째 mcp 쌍) — 6 shared tool-arg shape reader(readString/readStringArray/readBoolean/readJsonObject/errorMessage/buildJsonToolSchema)를 thinner 콜로케이트 test/(65L)와 fuller src/(95L)가 둘 다 실행. src/가 test/의 superset(6 헬퍼 전부 동등-이상 + 유니크: empty-string readString·all-non-string→[]·errorMessage(undefined)·**fresh-required-array 방어적-복사 가드**) → test/ 삭제, 이식 0.
+- **왜:** 같은 6 헬퍼 두 파일 중복 실행. src/가 모든 행동 더 강하게 커버 + test/엔 없는 방어적-복사 가드까지.
+- **어떻게-증명(MUTATION-FIRST PRUNE):** 생존 src/ cite — readBoolean을 `typeof==="boolean"`→`!=="undefined"`로 변형 시 src/ readBoolean 케이스 RED(나머지 13 green). ④b 독립 Opus judge가 삭제본 6 헬퍼 전 행동 전수 매핑(전부 equal-or-stronger, MISSING 없음) + 5 mutation으로 8 케이스 RED(live 확인) → **VERDICT: PASS**.
+- **리스크:** 소스 무변경, 삭제 1파일(−65L)뿐. mcp dist 클린리빌드 1회. 남은 mcp 동명 쌍 10개.
