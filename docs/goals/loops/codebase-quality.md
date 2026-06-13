@@ -61,3 +61,22 @@ ratchet: testFiles 913 · fabrication 0 · groundedSurfaces 27 · cli goal-id ma
 - **Risk:** none — no code touched; behavior/grounding trivially preserved. Remaining
   goal-id markers in packages/* (autoconfigure 3, recall 2, mcp 2, agent-core 1) are a
   future comment-hygiene ◦.
+
+## fire 4 · 2026-06-13 · loop-creator v1.14.0 · (this commit)
+meta: value-class=refactor · pkg=@muse/recall · kind=cohere · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 914 · fabrication 0 · groundedSurfaces 27 · recall tests 76/7 files
+- **What:** moved the ask-outcome + weakness-ledger cluster into new `recall/weakness.ts`:
+  createStageTimer, AskOutcome+askOutcomeLabel, AskWeaknessAxis+askWeaknessAxis,
+  AskWeaknessRecorderDeps+recordAskWeakness, AskWeaknessResolverDeps+recordAskWeaknessResolved.
+  Fixed a misplaced askOutcomeLabel JSDoc en route. commands-ask.ts imports + re-exports.
+  commands-ask.ts 2,940 → 2,825 LOC.
+- **Why:** continues @muse/recall extraction (project_recall_extraction "weakness ledger").
+  The deps-injected/pure subset moves cleanly; the two autoconfigure-lazy-import Live
+  wrappers (recordAskWeakness*Live) STAY in the CLI so recall gains no autoconfigure dep
+  (deps stay agent-core+mcp; weakness.ts has zero imports).
+- **Review point:** independent Opus adversarial judge PASS — byte-identical bodies,
+  layering NOT inverted (recall deps unchanged, Live wrappers stayed), best-effort
+  try/catch intact, fabrication untouched, exactly 4 files, full pnpm check 0 (no flakes).
+- **Risk:** none — pure/injected move + comment fix. Remaining recall TODO: model-backed
+  wrappers (drawBestGroundedRedraft/groundingVerdictNotice — need runtime injection design),
+  graph connections, then Phase 3 pipeline+API.
