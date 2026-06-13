@@ -21,6 +21,7 @@
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
+- ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
 
 ## Done — loop infrastructure (2026-06-12, 진안-directed)
 
