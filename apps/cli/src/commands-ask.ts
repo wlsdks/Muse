@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -238,6 +238,23 @@ export async function groundingVerdictNotice(
     : verifyGrounding(answer, matches, query);
   if (verification.verdict !== "ungrounded") return undefined;
   return `\n⚠️  Grounding check: this answer's claims aren't fully backed by your notes (${verification.reason}) — treat as unverified.\n`;
+}
+
+/**
+ * grounded≠true SOURCE-TRUST marker. Distinct from `groundingVerdictNotice`,
+ * which flags an UNGROUNDED answer: this fires on a GROUNDED (faithful) answer
+ * whose every resolving citation points ONLY at untrusted provenance (MCP/web
+ * tool output, `trusted:false`). Source veracity is unknowable on a fixed local
+ * model, so we surface the untrusted-only provenance as a scrutiny cue rather
+ * than letting a poisonable tool-fetched claim be handed over as plain "grounded".
+ * A single trusted backing source clears it (see `groundedOnUntrustedOnly`).
+ */
+export function untrustedOnlyGroundingNotice(
+  answer: string,
+  matches: readonly KnowledgeMatch[]
+): string | undefined {
+  if (!groundedOnUntrustedOnly(answer, matches)) return undefined;
+  return `\n⚠️  Source check: this answer is faithful to its sources, but rests ONLY on tool-fetched data (not your own notes) — verify before trusting.\n`;
 }
 
 
@@ -546,8 +563,6 @@ export async function userHasOtherPersonalData(
 /** S2 warm honesty (B2): the deterministic, on-brand close on an honest refusal. */
 export const WARM_REFUSAL_CLOSE =
   "(I'd rather tell you that than guess — add a note on this and I'll have it next time.)";
-
-
 
 
 interface NotesIndex {
@@ -1133,6 +1148,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // down — degrade to "no notes grounding" and still answer
       // from tasks + calendar + memory + general knowledge.
       let scored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
+      // Pre-gap-cut top-K: used for the confidence verdict so a gap-cut that
+      // trims scored to 1 chunk doesn't flip "ambiguous"→"confident" by making
+      // runnerUp=0 (the floor violation). The PROMPT WINDOW stays gap-cut-trimmed
+      // (scored); only the verdict input reverts to the untrimmed distribution.
+      let preGapScored: Array<{ chunk: IndexChunk; file: string; score: number }> = [];
       let notesUnavailable = false;
       let queryVec: number[] | undefined;
       // The "open to verify" target for an AD-HOC grounding source whose receipt
@@ -1165,6 +1185,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           file: f.path,
           score: cosine(queryVec!, chunk.embedding)
         })));
+        preGapScored = [...allScored].sort((a, b) => b.score - a.score).slice(0, topK);
         // RAG-Fusion (arXiv:2402.03367): for a compound question each clause
         // gets its own embedding → its own cosine ranking over the same chunk
         // set → all rankings (full-query + per-clause + lexical) fused via RRF.
@@ -1708,7 +1729,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       const contextChunks = reorderForLongContext(scored);
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
-      const notesFraming = notesGroundingFraming(scored, query);
+      const notesFraming = notesGroundingFraming(scored, query, preGapScored.length > 0 ? preGapScored : undefined);
       const contextBlock = notesUnavailable
         ? "(notes search unavailable this turn — answer from the other grounding sources)"
         : contextChunks.length === 0
@@ -2549,6 +2570,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         }
         if (imageAttachments.length === 0) {
           groundedVerdictLabel = verdictNotice ? "ungrounded" : "grounded";
+        }
+        // grounded≠true: a faithful answer (no verdictNotice) can still rest only
+        // on untrusted tool-fetched sources. The label stays "grounded" (it IS
+        // faithful), but surface the untrusted-only provenance as a scrutiny cue.
+        const untrustedNotice = !verdictNotice && imageAttachments.length === 0
+          ? untrustedOnlyGroundingNotice(verdictAnswer, scoredMatches)
+          : undefined;
+        if (untrustedNotice && !options.json) {
+          io.stderr(untrustedNotice);
         }
         if (verdictNotice && !options.json) {
           io.stderr(verdictNotice);

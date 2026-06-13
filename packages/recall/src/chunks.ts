@@ -1,4 +1,4 @@
-import { classifyRetrievalConfidence, cosineSimilarity, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, selectByMmr, type RetrievalConfidence } from "@muse/agent-core";
+import { classifyRetrievalConfidence, cosineSimilarity, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, selectByMmr, selectByScoreGap, type RetrievalConfidence } from "@muse/agent-core";
 
 export interface IndexChunk {
   readonly file: string;
@@ -39,6 +39,11 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
   if (topK <= 0 || sorted.length <= topK) {
     return sorted.slice(0, Math.max(0, topK));
   }
+  // Adaptive-k: trim to the natural score-distribution knee before MMR so a cliff-
+  // shaped distribution (one strong hit + low-scoring decoys) doesn't pad the
+  // grounding block with near-miss fabrication surface (arXiv:2506.08479).
+  // Trim-only (Math.min keeps it ≤ topK); min:1 always retains the top match.
+  const effectiveK = Math.min(topK, selectByScoreGap(sorted.map((c) => c.score), { min: 1, max: topK }));
   const queryTokens = query ? lexicalTokens(query) : new Set<string>();
   if (queryTokens.size > 0) {
     const keyOf = (i: number): string => String(i);
@@ -67,14 +72,14 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
     const order = selectByMmr(
       sorted.map((c, i) => ({ key: keyOf(i), relevance: (fused.get(keyOf(i)) ?? 0) / maxFused, embedding: c.chunk.embedding })),
       lambda,
-      topK
+      effectiveK
     );
     return order.map((k) => sorted[Number(k)]!);
   }
   const order = selectByMmr(
     sorted.map((c, i) => ({ key: String(i), relevance: c.score, embedding: c.chunk.embedding })),
     lambda,
-    topK
+    effectiveK
   );
   return order.map((k) => sorted[Number(k)]!);
 }
@@ -88,10 +93,18 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
  * `none` keeps the plain header (the "no relevant notes" block already shows).
  * Pure + exported for direct unit coverage.
  */
-export function notesGroundingFraming(scored: readonly ScoredChunk[], query?: string): { readonly verdict: RetrievalConfidence; readonly header: string; readonly guidance?: string } {
-  const cosineVerdict = scored.length === 0
+export function notesGroundingFraming(
+  scored: readonly ScoredChunk[],
+  query?: string,
+  // Verdict is derived from this when supplied — the pre-gap-cut top-K so a
+  // gap-cut that trims the prompt window to k=1 doesn't make runnerUp=0 and
+  // flip "ambiguous"→"confident" (floor violation). Prompt window stays trimmed.
+  verdictInput?: readonly ScoredChunk[]
+): { readonly verdict: RetrievalConfidence; readonly header: string; readonly guidance?: string } {
+  const verdictSet = verdictInput ?? scored;
+  const cosineVerdict = verdictSet.length === 0
     ? "none"
-    : classifyRetrievalConfidence(scored.map((s) => ({ cosine: s.score, source: s.file, score: s.score, text: s.chunk.text })));
+    : classifyRetrievalConfidence(verdictSet.map((s) => ({ cosine: s.score, source: s.file, score: s.score, text: s.chunk.text })));
   // nomic's cosine space is compressed, so a genuinely-relevant note can sit
   // just below the confident cosine threshold and get falsely flagged LOW —
   // a soft false-refusal ("verify, may not be in your notes") on a correctly
@@ -103,7 +116,7 @@ export function notesGroundingFraming(scored: readonly ScoredChunk[], query?: st
   // is preserved (and the citation gate is the hard backstop regardless).
   const queryTokens = query ? lexicalTokens(query) : new Set<string>();
   const strongLexical = queryTokens.size >= 2
-    && scored.some((s) => lexicalOverlap(queryTokens, s.chunk.text) >= 2);
+    && verdictSet.some((s) => lexicalOverlap(queryTokens, s.chunk.text) >= 2);
   const verdict: RetrievalConfidence = cosineVerdict === "ambiguous" && strongLexical ? "confident" : cosineVerdict;
   if (verdict === "ambiguous") {
     return {
