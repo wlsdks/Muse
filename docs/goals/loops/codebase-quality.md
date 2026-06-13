@@ -536,3 +536,21 @@ ratchet: testFiles 947 · fabrication 0 · groundedSurfaces 27 · ask god-file: 
   both moved); PersistedReminder retained (pendingReminders local); new test real OUTCOME (fails if citation
   embeds id); recall 169 + cli 2593 green.
 - **Risk:** low — pure presentation relocation; grounding gate consumes the block string identically.
+
+## fire 29 · 2026-06-13 · loop-creator v1.14.0 · 305fa9e2
+meta: value-class=refactor · pkg=@muse/cli · kind=decompose · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 947 · fabrication 0 · groundedSurfaces 27 · commands-doctor.ts 939->899 LOC
+- **What:** continued the commands-doctor decompose (fire 25) — moved two more pure LocalCheck classifiers,
+  `selfLearningCheck` (verifiable-autonomy B1 check) + `weaknessFuelCheck` (informational dev-fixable fuel
+  line), from commands-doctor.ts to the sibling commands-doctor-checks.ts (verbatim, with their load-bearing
+  JSDocs). The sibling gained a `type DevFixableWeakness` import (@muse/mcp). commands-doctor imports both
+  back (runLocalDoctor uses them at 650/660) + re-exports (commands-doctor.test imports them). DevFixableWeakness
+  stays in commands-doctor (formatDevFixableWeaknesses at 854 uses it) → no orphan.
+- **Why:** diversity — compose@recall was 4/8; this is decompose@cli (the proven fire-25 sibling pattern),
+  continuing to shrink the doctor god-file (939→899). The two classifiers are pure (selfLearningCheck: state→
+  LocalCheck; weaknessFuelCheck: DevFixableWeakness[]→LocalCheck|undefined) — clean cohesive batch.
+- **Review point:** 4b judge — both bodies byte-identical (esp. the 4-branch selfLearning state logic + the
+  weaknessFuel undefined-when-empty + the informational status:"ok" rationale); re-export keeps the 226
+  commands-doctor test cases green; DevFixableWeakness retained in commands-doctor; LocalDoctorReport interface
+  (between them) untouched.
+- **Risk:** low — pure relocation of two tested pure classifiers; no IO, no floor path.
