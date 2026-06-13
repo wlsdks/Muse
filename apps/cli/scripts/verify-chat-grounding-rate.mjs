@@ -12,11 +12,12 @@
  * Exit 0 if both rates clear their threshold; exit 1 on a regression; skip
  * (exit 0) when local Ollama / the embed model is unreachable. LOCAL OLLAMA ONLY.
  */
+import { DEFAULT_EMBED_MODEL } from "../dist/embed-model-default.js";
 import { createOllamaEmbedder } from "@muse/autoconfigure";
 import { CHAT_GROUNDING_EVAL_CORPUS, CHAT_GROUNDING_THRESHOLDS, runChatGroundingEval } from "../dist/chat-grounding-eval.js";
 import { renderGroundingEvalReport } from "../dist/grounding-eval-runner.js";
 
-const embedModel = process.argv[2] ?? "nomic-embed-text";
+const embedModel = process.argv[2] ?? DEFAULT_EMBED_MODEL;
 const baseUrl = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
 
 async function reachable() {
