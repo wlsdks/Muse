@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, detectEvidenceContradictions, enforceAnswerCitations, explainGroundingVerdict, groundedOnUntrustedOnly, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type ContradictionPair, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -193,8 +193,43 @@ export function untrustedOnlyGroundingNotice(
   return `\n⚠️  Source check: this answer is faithful to its sources, but rests ONLY on tool-fetched data (not your own notes) — verify before trusting.\n`;
 }
 
+/**
+ * Build the <<note N>> context block from ranked note chunks, annotating any
+ * detected value-conflict pair so the model receives reconciliation as DATA
+ * rather than relying on a prompt instruction alone (arXiv:2504.19413,
+ * Chhikara et al. 2025 — Mem0 contradiction-resolution, applied read-time).
+ *
+ * ADDITIVE ONLY: both notes always appear; the aIndex note carries a neutral ⚠
+ * marker referencing bIndex by 1-based position. No recency claim is made —
+ * score reflects query relevance, not recency. Never drops, reorders, or
+ * rewrites any note.
+ *
+ * `contradictions` is pre-computed by `detectEvidenceContradictions` over the
+ * same `chunks` array. `notesDir` is used only to relativize source paths.
+ */
+export function buildNoteContextBlock(
+  chunks: ReadonlyArray<{ readonly chunk: { readonly text: string }; readonly file: string; readonly score: number }>,
+  contradictions: readonly ContradictionPair[],
+  notesDir: string
+): string {
+  if (chunks.length === 0) return "(no relevant notes found)";
 
+  // Build a map: chunk index → 1-based label of the note it conflicts with.
+  const conflictMarker = new Map<number, number>();
+  for (const cp of contradictions) {
+    conflictMarker.set(cp.aIndex, cp.bIndex + 1);
+  }
 
+  return chunks.map((r, i) => {
+    const src = relativizeNoteSource(r.file, notesDir);
+    const body = escapeSystemPromptMarkers(r.chunk.text);
+    const otherNoteNum = conflictMarker.get(i);
+    const marker = otherNoteNum !== undefined
+      ? `\n[⚠ this note and note ${otherNoteNum.toString()} give DIFFERENT values for what looks like the same point — treat as possibly-conflicting; do not assume either is current]`
+      : "";
+    return `<<note ${(i + 1).toString()} — ${src}>>\n${body}${marker}\n[from ${src}]\n<<end>>`;
+  }).join("\n\n");
+}
 
 
 
@@ -1640,6 +1675,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
       const notesFraming = notesGroundingFraming(scored, query, preGapScored.length > 0 ? preGapScored : undefined);
+      // Detect value-conflicts between retrieved notes (arXiv:2504.19413) so
+      // reconciliation arrives as DATA, not a fragile prompt instruction.
+      // Fail-open: any embed error → no annotations → today's behaviour.
+      const noteContradictions: readonly ContradictionPair[] = notesUnavailable || contextChunks.length < 2
+        ? []
+        : await detectEvidenceContradictions(
+            contextChunks.map((r) => ({ score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text })),
+            (t) => embed(t, embedModel)
+          ).catch(() => []);
       const contextBlock = notesUnavailable
         ? "(notes search unavailable this turn — answer from the other grounding sources)"
         : contextChunks.length === 0
@@ -1651,10 +1695,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           // copies the whole line, leaking the label into the answer ("…1380.
           // cite as: [from vpn.md]") — visible on the demo. The source is shown
           // relative to the notes dir (clean + locatable), not the absolute path.
-          : contextChunks.map((r, i) => {
-            const src = relativizeNoteSource(r.file, notesDir);
-            return `<<note ${(i + 1).toString()} — ${src}>>\n${escapeSystemPromptMarkers(r.chunk.text)}\n[from ${src}]\n<<end>>`;
-          }).join("\n\n");
+          : buildNoteContextBlock(contextChunks, noteContradictions, notesDir);
 
       // Pull open tasks as a second grounding source. Real JARVIS
       // questions ("what should I focus on today?", "what's left
