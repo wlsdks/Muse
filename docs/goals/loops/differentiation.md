@@ -107,7 +107,7 @@ ratchet: testFiles 914→915 · egressGuards 6→7 (embedder guard folded in) ·
   embedder의 OLLAMA_BASE_URL 로컬리티를 리포트 안 함(런타임 egress는 차단되나 doctor
   맹점) → 후속 ◦. architecture.md 주석도 이 enforcement 지점을 반영하면 좋음.
 
-## fire 5 · 2026-06-13 · skill v1.14.0 · `<pending-commit>`
+## fire 5 · 2026-06-13 · skill v1.14.0 · `54c5237f`
 meta: value-class=wiring · pkg=@muse/autoconfigure · kind=posture-transparency · verdict=PASS · firesSinceDrill=5
 ratchet: testFiles 915 · egressGuards 7 (리포팅 추가, throw 아님→불변) · fabrication 0 · grounding floor 유지
 
