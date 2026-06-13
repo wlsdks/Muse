@@ -2045,3 +2045,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ 2026-06-08 `feat/grounding-ci-gate`: fabrication=0 grounded-surface ratchet (self-eval)
   · live pre-push grounding tripwire (`precheck:grounding`) · grounding-delta benchmark
   (`eval:grounding-delta`, Δ+0.94 gate ON vs OFF on gemma4) · self-eval ENOENT fix.
+- ✓ cli `muse followup list` lacked the sibling `--search` text filter (tasks/remind/contacts all have it) → added `--search` (case-insensitive substring on summary, composes after --status, total recomputed) — surfaces fire 23
