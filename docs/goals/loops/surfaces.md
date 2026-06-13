@@ -166,7 +166,7 @@ ratchet: cli tests 2619/2619 (today +1) · fabrication 0 · self-eval exit 0 · 
 - **리뷰지점**: floor(1.4)=1→"1 day", floor(7.4)=7→"7 days", floor(0)=0→"0 days"(정상 영어). empty-episode·truncation 무변.
 - **리스크**: 없음(포매터 1줄, 독립 Opus judge가 전 버킷·revert로 RED→GREEN·collateral 검증 후 PASS, today 62/62 · cli 2619/2619).
 
-## fire 19 · 2026-06-14 · skill v1.14.0 · <commit>
+## fire 19 · 2026-06-14 · skill v1.14.0 · 45310010
 meta: surface=cli · value-class=new-capability · pkg=@muse/cli · kind=sibling-parity-flag · verdict=PASS · firesSinceDrill=2
 ratchet: cli tests 2625/2625 (contacts +2) · fabrication 0 · self-eval exit 0 · value-class 다양화(format 버그→capability add, vein 신호 따라 행동 갭으로 전환)
 
