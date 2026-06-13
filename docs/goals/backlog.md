@@ -1,7 +1,7 @@
 # Muse dev backlog — the living ledger
 
 - ✓ add_contact update data-loss: an update-in-place ("save Bob's new email") silently dropped about/aliases/connections (only 5 of 8 persisted fields were carried into the wholesale id-replace) — now preserved from the existing contact; about is cited grounding evidence so this was grounding-floor-adjacent silent loss — tool-hardening fire 87
-
+- ✓ dead-code @muse/cli: de-exported 3 internal-only commands-export helpers (defaultNotesDir/defaultExportOutput/resolveExportPassphrase) — knip-clean, grep-verified no external importer; + JUDGE-DRILL (6th, judge FAILed a load-bearing security-WHY comment removal) — codebase-quality fire 49
 - ✓ calendar read-verb selection coverage: golden eval scenario for list/availability/conflicts (7 KO+EN cases, all PASS 3/3) — confirmed the local model selects them robustly (no mis-route); structural-regression guard + documented negative result — tool-hardening fire 86
 
 - ✓ decompose @muse/cli: extracted weather+headlines external-data cluster (resolveTodayWeatherLine/formatWeatherLine/resolveTodayFeedHeadlines/formatHeadlines + cap) commands-today -> commands-today-feeds.ts (1397->1327 LOC; re-export keeps 2626 tests green) — codebase-quality fire 48
@@ -2035,6 +2035,7 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   detector (additive — verifyGrounding/the gate untouched), agent-core, 7/7 tests. Live
   gate unchanged (eval:grounding-delta still Δ+0.94). The grounded≠true mitigation now has
   a foundation; wiring it through tool-output-evidence → recall → answer-marker is the next ★.
+- ✓ weakness-ledger concurrent-write lost-update — grounding-integrity fire 23 (`f5d9eb01`): the lone self-improvement store doing bare RMW + non-atomic write now serialized via withFileMutationQueue + atomicWriteFile (sibling-pattern parity, 11/11). 2 OUTCOME concurrency tests.
 - ✓ 2026-06-08 third `improve-muse` fire — **grounded≠true boundary NAMED**:
   `packages/agent-core/src/grounded-not-true.test.ts` (3 cases, deterministic) locks that the
   gate marks a false-but-source-supported answer "grounded" (faithfulness is to the source,
