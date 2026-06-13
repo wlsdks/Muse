@@ -563,6 +563,24 @@ excluded when scoring).
   compounds the deterministic splitter misses, gated like chat's `needsContextualRewrite`; (b) port the
   knowledge-recall second-hop PRF to the headline ask path for sequential bridge-entity questions; (c) extend
   the multi-hop A/B battery with compound-question joint@K cases to measure the live delta. (fire 35 remainder)
+- ⏳ **Council hand-off injection quarantine — DEFERRED on detector calibration (fire 36)** — the
+  MECHANISM is sound and was built + judge-confirmed (screenCouncilInfection at the council hand-off,
+  fail-close all-infected→null, non-inert on the live `muse swarm council` path, cuts the Prompt-Infection
+  self-replication channel before the round-2 debate digest / synthesis — arXiv:2410.07283 Lee & Tiwari
+  2024). The BLOCKER is detector CALIBRATION: reusing `@muse/policy`'s `sharedInjectionPatterns` (tuned for
+  hostile USER input) to screen fluent MODEL reasoning over-quarantines honest/dissenting peers — across 4
+  adversarial judge rounds, FPs surfaced in `environment_extraction` (`env` in "envision"), `credential_extraction`
+  (`token`+"give"), `prompt_override` (bare "from now on"), `sandbox_escape` ("without an approval check"),
+  `cross_user_access` ("another" matches unanchored `other`), `training_data_extraction` ("print internal
+  context"), and `role_override`'s debug-mode subpattern ("enable debug mode for this test"). Over-quarantine =
+  silently dropping an honest peer = unacceptable (corrupts deliberation, subtle censorship). Whack-a-mole on
+  subpatterns did not converge (each round found a new FP). PATH FORWARD (dedicated slice): build a council-LOCAL,
+  prose-safe pattern set anchored to literal-attack token SEQUENCES (not single common words), empirically
+  calibrated against a LARGE corpus of (legitimate model reasoning, genuine injection) pairs; the survived-all-4-rounds
+  clean families are a starting core (korean_role_override, korean_prompt_extraction, multilingual_prompt_leak,
+  punctuation_obfuscation, tool_spoofing, few_shot_poisoning, history_poisoning, command_injection, plus role_override
+  MINUS its debug-mode subpattern, system_delimiter for literal control tokens). Reuse the screenCouncilInfection
+  mechanism design (it passed). (fire 36 deferred — mechanism done, calibration is the work.)
 - ◦ **Reflection-schedule guard** — one test enumerating retry/reflection call-sites, asserting
   each is verifier-backed (85.36% same-mistake repetition without one, arXiv 2510.18254). (T1-10)
 - (queued behind fuel/prereqs: sleep-time compute · Mem0 UPDATE op · AWM workflow mining ·
