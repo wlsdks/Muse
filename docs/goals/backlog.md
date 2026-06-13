@@ -38,10 +38,11 @@
 - ✓ `egressGuards` ratchet widened to the voice egress guard — mic audio's cloud STT/TTS path now ratcheted too (drop the MUSE_LOCAL_ONLY voice cloud-key-ignore → self-eval exits 1); value 5→6 — differentiation fire 2
 - ✓ `eval:memory-poisoning` adversarial proof battery — proves Muse drops a model-asserted/poisoned claim at WRITE time (`dropModelAssertedValues`) that rivals' frequency-promotion (OpenClaw dreaming minRecallCount 3) would promote; deterministic, no Ollama — differentiation fire 3
 - ✓ embedder local-only egress gap CLOSED — `createOllamaEmbedder` followed `OLLAMA_BASE_URL` with no local-only check (chat router only gates it for providerId ollama; daemon bypassed the router), so a remote `OLLAMA_BASE_URL` egressed the user's raw note/memory/episode text under MUSE_LOCAL_ONLY; added construction-time fail-close + 6 behavioural tests + folded the throw into the egressGuards ratchet (6→7) — differentiation fire 4
+- ✓ `muse doctor` surfaces embedder OLLAMA_BASE_URL locality — `evaluateLocalOnlyPosture` now flags status `fail` when local-only is on but OLLAMA_BASE_URL is off-box (a localhost lmstudio chat + remote embedder no longer reports a false "🔒 ok"); same base resolution as the fire-4 runtime guard so doctor and runtime never diverge — differentiation fire 5
 
 ## ◦ Open — differentiation (vs hermes/openclaw — `differentiation` loop)
 
-- ◦ **`muse doctor` reports embedder OLLAMA_BASE_URL locality** — fire 4 closed the runtime egress gap (the embedder now fail-closes on a remote base under local-only), but `evaluateLocalOnlyPosture` / `muse doctor` still only re-runs the chat router, so the doctor posture never surfaces the embedder's base URL — a reporting blind spot. Slice: extend the posture snapshot to classify the embedder's `OLLAMA_BASE_URL` too. Source: differentiation fire 4 residual.
+- ◦ **Extract a shared `resolveEmbedderBase()` helper** — fire 5's doctor posture and fire 4's runtime guard each resolve the embedder base with their own string literal (`OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434"` + trailing-slash strip). They must move together or doctor↔runtime diverge; a shared helper makes the parity structural instead of convention-enforced. Source: differentiation fire 5 residual (Opus judge).
 
 ## Done — loop infrastructure (2026-06-12, 진안-directed)
 
