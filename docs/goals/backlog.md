@@ -286,6 +286,8 @@
 
 ## ◦ Open — tool-mcp-browser axis C (browser)
 
+- ◦ (scout finding, fire 21) browser `<select>` dropdown selection is ALREADY handled — browser_type on a role=combobox/<select> grounds the text to an option via matchOption (fail-close: unmatchable option refused, options listed), confirmed in puppeteer-controller.ts type(). NOT a gap; future scouts skip it. **Browser micro-fix vein is thinning** (fires 1/4/6/9/11/13/15/16/17/18 covered ambiguity/non-typeable/link-url/nav-status/prompt/CDP-timeout/wait/linkCount/fill-form; select handled). Remaining candidate distinct C gaps to verify next: same-origin iframe read · file upload · a real CDP error-surfacing edge. If next 2 scouts also come up clean, rotate value-class per EXHAUSTION. (fire 21 deferred its code slice — API was rate-limiting subagent dispatch, so an independent ④b judge couldn't run; no unverified code committed.)
+
 - ◦ doctor posture allowlist display nuance — `describeOfficialMcpPosture` reports `blocked` for an enabled preset absent from a NON-empty allowlist, but `assembleMcpStack` auto-adds a turnkey-enabled preset to the allowlist so it isn't actually denied at assembly; align the doctor detail to the assembled reality (report it as allowed-via-turnkey-auto-add) so the audit matches runtime. (fire-10 follow-up, cosmetic)
 
 
