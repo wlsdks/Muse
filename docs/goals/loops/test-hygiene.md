@@ -214,3 +214,11 @@ ratchet: testFiles 973→972 (−1 통합, 유니크 케이스 2 이식) · netC
 - **왜:** 같은 모듈 두 파일 중복 실행 + test/의 web-search 정책 배선 커버가 약했음("정의됨"만). 이식으로 settings/override→정책 배선을 값으로 pin(강화).
 - **어떻게-증명(MUTATION-FIRST):** `settings: ctx.settings`→`{}` 변형 시 VALUE 케이스만 RED(maxUses 4→5); `override: ctx.override`→`undefined` 변형 시 override 케이스만 RED(enabled false→true) — 각 배선 독립 pin. ④b 독립 Opus judge가 삭제본 6개 행동 전수 매핑(전부 equal-or-stronger, MISSING 없음) + case4-SKIP 타당성(model=dead input) 소스 확인 + 양 mutation 재현 → **VERDICT: PASS**.
 - **리스크:** 소스(비-test) 무변경. 변경 −64L(src/ 삭제) +17L(이식 2케이스) 2건. agent-core dist 클린리빌드 1회.
+
+## fire 26 · 2026-06-14 · skill v1.14.0 · 6312e8c0
+meta: kind=add · pkg=@muse/memory · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 976 (케이스 +1, 파일수 불변) · netCoverage +1 branch (hardBudget≤0 no-user 가드) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `trimConversationMessages`(memory-token-trim.ts, 컨텍스트 트리밍)의 **hardBudget≤0 fail-safe의 no-user 서브분기** 커버 추가. 예산이 비양수면 마지막 user 메시지만 남기되 — **user가 없거나(lastUserIndex<0) 단일 메시지면 전체 유지**. 기존 2케이스는 "user 있음→마지막만"·"단일→그대로"만 커버, "user 없음+다중→전체 유지"(`lastUserIndex>=0` 가드)는 미커버였음.
+- **왜:** 트리밍은 provider 직전 마지막 sanitiser(CLAUDE.md "context 작으면 trimming"). 예산 고갈 + user 부재 시 `messages[-1]`=undefined를 앵커로 잡으면 빈/깨진 대화가 provider로 감 — 가드가 그걸 막음(KIND 다양성: 23 ADD·24·25 PRUNE라 이번 필수 ADD, FIX vein 고갈).
+- **어떻게-증명(MUTATION-FIRST ADD):** `lastUserIndex >= 0 &&` 제거 시 no-user 케이스가 `[undefined]`를 keep → `estimateMessageTokens`에서 `undefined.role` 크래시(RED). 새 테스트만 RED, 다른 14 green = 진짜 미커버. ④b 독립 Opus judge가 mutation 재현(크래시 확인) + 서브분기 미커버 + 기대값(`["s","aaaa","bbbb"]`)·triggeredBy 정확성 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경, full check GREEN. memory는 ADD 첫 터치 패키지(5 테스트파일로 잘 커버됐으나 이 edge 서브분기는 빠져 있었음).
