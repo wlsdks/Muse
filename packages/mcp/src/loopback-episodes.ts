@@ -72,12 +72,12 @@ export function createEpisodesMcpServer(options: EpisodesMcpServerOptions): Loop
             : Math.min(maxListEntries, 10);
           const all = await readEpisodes(file);
           const scoped = userId ? all.filter((e) => e.userId === userId) : all;
-          const sorted = [...scoped]
-            .sort((left, right) => right.endedAt.localeCompare(left.endedAt))
-            .slice(0, limit);
+          const sorted = [...scoped].sort((left, right) => right.endedAt.localeCompare(left.endedAt));
+          const shownList = sorted.slice(0, limit);
           return {
-            episodes: sorted.map(serializeEpisode) as JsonValue,
-            total: sorted.length,
+            episodes: shownList.map(serializeEpisode) as JsonValue,
+            shown: shownList.length, // returned count
+            total: scoped.length, // the REAL store size, NOT the post-limit slice (parity with reminders.list)
             ...(userId ? { userId } : {})
           };
         },
@@ -143,13 +143,14 @@ export function createEpisodesMcpServer(options: EpisodesMcpServerOptions): Loop
               }
               return false;
             })
-            .sort((left, right) => right.endedAt.localeCompare(left.endedAt))
-            .slice(0, limit);
+            .sort((left, right) => right.endedAt.localeCompare(left.endedAt));
+          const shownList = matches.slice(0, limit);
           return {
-            episodes: matches.map(serializeEpisode) as JsonValue,
+            episodes: shownList.map(serializeEpisode) as JsonValue,
             mode: "substring",
             query,
-            total: matches.length,
+            shown: shownList.length, // returned count
+            total: matches.length, // the full match count, NOT the post-limit slice
             ...(userId ? { userId } : {})
           };
         },

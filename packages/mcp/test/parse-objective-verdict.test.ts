@@ -34,4 +34,17 @@ describe("parseObjectiveVerdict", () => {
   it("takes the LAST balanced JSON candidate when several are present", () => {
     expect(parseObjectiveVerdict('first {"outcome":"unmet"} then {"outcome":"met"}')).toEqual({ outcome: "met" });
   });
+
+  it("does NOT leak a NESTED outcome as a verdict — no false `met` from a nested object", () => {
+    // The top-level object has no `outcome`; the only `outcome:met` is NESTED. A
+    // nested-only verdict is ambiguous ⇒ the conservative `unmet` safe default,
+    // never a false autonomous completion.
+    expect(parseObjectiveVerdict('{"plan":{"outcome":"met"},"note":"actually not yet"}')).toEqual({ outcome: "unmet" });
+    expect(parseObjectiveVerdict('{"steps":[{"outcome":"met"}],"done":false}')).toEqual({ outcome: "unmet" });
+  });
+
+  it("still reads a TOP-LEVEL outcome even when the object also has a nested outcome", () => {
+    // The top-level outcome is the real verdict; a nested one must not override it.
+    expect(parseObjectiveVerdict('{"outcome":"unmet","detail":{"outcome":"met"}}')).toEqual({ outcome: "unmet" });
+  });
 });

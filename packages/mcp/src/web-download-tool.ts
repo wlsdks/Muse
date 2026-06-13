@@ -46,6 +46,31 @@ export function safeDownloadName(filename: string | undefined, url: string): str
   return "download.bin";
 }
 
+/**
+ * Write `bytes` under a NON-clobbering name in `dir`: if `<dir>/<name>` already
+ * exists, dedupe like a browser — `name (1).ext`, `name (2).ext`, … — so a download
+ * NEVER silently destroys an unrelated file the user already had. The `wx` flag
+ * (fail if exists) makes the exists-check + create atomic (no TOCTOU race). Returns
+ * the actual name/path used.
+ */
+export async function writeNonClobbering(dir: string, name: string, bytes: Buffer): Promise<{ name: string; path: string }> {
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+  for (let i = 0; i < 1000; i += 1) {
+    const candidate = i === 0 ? name : `${stem} (${i.toString()})${ext}`;
+    const path = pathResolve(dir, candidate);
+    try {
+      await writeFile(path, bytes, { flag: "wx" });
+      return { name: candidate, path };
+    } catch (cause) {
+      if ((cause as { code?: string }).code === "EEXIST") continue; // taken — try the next dedupe suffix
+      throw cause;
+    }
+  }
+  throw new Error(`too many filename collisions for "${name}" in the downloads dir`);
+}
+
 export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
   const downloadDir = deps.downloadDir ?? join(homedir(), "Downloads");
   const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -94,22 +119,47 @@ export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
             return { reason: `redirected to a blocked host: ${finalGuard.error}`, saved: false };
           }
         }
-        const buf = Buffer.from(await response.arrayBuffer());
-        if (buf.byteLength > maxBytes) {
-          return { reason: `file is too large (${Math.round(buf.byteLength / 1024 / 1024).toString()}MB > ${Math.round(maxBytes / 1024 / 1024).toString()}MB cap)`, saved: false };
+        const tooLarge = (size: number): JsonObject =>
+          ({ reason: `file is too large (${Math.round(size / 1024 / 1024).toString()}MB > ${Math.round(maxBytes / 1024 / 1024).toString()}MB cap)`, saved: false });
+        // Don't buffer the WHOLE body before the cap check — a multi-GB / never-ending
+        // response would fill RAM despite the cap. Reject early on a Content-Length that
+        // already exceeds it, then read chunk-by-chunk and abort the moment the
+        // accumulated size crosses the cap (the server can lie about Content-Length).
+        const declared = Number(response.headers.get("content-length"));
+        if (Number.isFinite(declared) && declared > maxBytes) {
+          return tooLarge(declared);
         }
-        bytes = buf;
+        const reader = response.body?.getReader();
+        if (!reader) {
+          const buf = Buffer.from(await response.arrayBuffer());
+          if (buf.byteLength > maxBytes) return tooLarge(buf.byteLength);
+          bytes = buf;
+        } else {
+          const chunks: Buffer[] = [];
+          let total = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > maxBytes) {
+              await reader.cancel().catch(() => undefined);
+              return tooLarge(total);
+            }
+            chunks.push(Buffer.from(value));
+          }
+          bytes = Buffer.concat(chunks);
+        }
       } catch (cause) {
         return { reason: `download failed: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
       }
       const name = safeDownloadName(typeof args["filename"] === "string" ? args["filename"] : undefined, vetted.url.href);
-      const path = pathResolve(downloadDir, name);
+      let saved: { name: string; path: string };
       try {
-        await writeFile(path, bytes);
+        saved = await writeNonClobbering(downloadDir, name, bytes);
       } catch (cause) {
         return { reason: `could not write to Downloads: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
       }
-      return { bytes: bytes.byteLength, name, path, saved: true };
+      return { bytes: bytes.byteLength, name: saved.name, path: saved.path, saved: true };
     }
   };
 }

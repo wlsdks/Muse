@@ -32,6 +32,14 @@ export interface ScopedConsent {
    * is NOT covered — consent is never broadened implicitly.
    */
   readonly scope: string;
+  /**
+   * Optional destination host the user consented the action to reach, e.g.
+   * `api.github.com`. When set, `performConsentedAction` refuses (fail-closed,
+   * no HTTP) any request whose URL host differs — binding the scoped credential
+   * to its destination so a caller-controlled URL can't exfiltrate it. (Optional
+   * for now; once every grant flow records it, the check can be made mandatory.)
+   */
+  readonly allowedHost?: string;
   /** ISO timestamp the consent was recorded. */
   readonly grantedAt: string;
   /** Optional human note ("approved in chat 2026-05-19"). */
@@ -104,8 +112,21 @@ export async function hasConsent(
   file: string,
   query: { readonly userId: string; readonly objectiveId: string; readonly scope: string }
 ): Promise<boolean> {
+  return (await findConsent(file, query)) !== undefined;
+}
+
+/**
+ * Returns the matching consent RECORD (or undefined), so a caller that
+ * needs more than a yes/no — e.g. the destination-host binding in
+ * `performConsentedAction` — can read it. Same fail-closed read semantics
+ * as `hasConsent`: any read/parse problem yields undefined.
+ */
+export async function findConsent(
+  file: string,
+  query: { readonly userId: string; readonly objectiveId: string; readonly scope: string }
+): Promise<ScopedConsent | undefined> {
   const all = await readConsents(file);
-  return all.some(
+  return all.find(
     (c) => c.userId === query.userId && c.objectiveId === query.objectiveId && c.scope === query.scope
   );
 }
@@ -117,6 +138,7 @@ export function serializeConsent(consent: ScopedConsent): JsonObject {
     objectiveId: consent.objectiveId,
     scope: consent.scope,
     userId: consent.userId,
+    ...(consent.allowedHost ? { allowedHost: consent.allowedHost } : {}),
     ...(consent.note ? { note: consent.note } : {})
   };
 }
@@ -131,6 +153,7 @@ function isScopedConsent(value: unknown): value is ScopedConsent {
     typeof c.userId === "string" &&
     typeof c.objectiveId === "string" &&
     typeof c.scope === "string" &&
+    (c.allowedHost === undefined || typeof c.allowedHost === "string") &&
     typeof c.grantedAt === "string"
   );
 }

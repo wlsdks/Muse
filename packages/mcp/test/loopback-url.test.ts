@@ -72,8 +72,28 @@ describe("muse.url#encode_query", () => {
 
   it("stringifies non-string scalars and skips null / undefined values", () => {
     expect(
-      tool("encode_query").execute({ params: { n: 5, bool: true, nul: null, und: undefined, obj: { x: 1 } } }),
-    ).toEqual({ query: "n=5&bool=true&obj=%5Bobject+Object%5D" });
+      tool("encode_query").execute({ params: { n: 5, bool: true, nul: null, und: undefined } }),
+    ).toEqual({ query: "n=5&bool=true" });
+    // A nested object is NOT a scalar — it must error, not encode "[object Object]"
+    // (covered end-to-end in mcp.test.ts). Asserting the rejection here too keeps this
+    // unit honest about what encode_query accepts.
+    expect(tool("encode_query").execute({ params: { obj: { x: 1 } } })).toEqual({
+      error: expect.stringContaining("string/number/boolean"),
+    });
+  });
+
+  it("skips null / undefined ARRAY items (matching the scalar branch), never encodes them as 'null'", () => {
+    // The scalar branch skips null/undefined (above); the array branch must too —
+    // otherwise ["a", null, "b"] silently emits a corrupt tags=null param.
+    expect(tool("encode_query").execute({ params: { tags: ["a", null, undefined, "b"] } })).toEqual({
+      query: "tags=a&tags=b",
+    });
+    // a nested object inside an array is still rejected (not skipped)
+    expect(tool("encode_query").execute({ params: { tags: ["a", { x: 1 }] } })).toEqual({
+      error: expect.stringContaining("string/number/boolean"),
+    });
+    // falsy-but-VALID scalars (0, false, "") must still encode — the skip is strict null/undefined only
+    expect(tool("encode_query").execute({ params: { v: [0, false, ""] } })).toEqual({ query: "v=0&v=false&v=" });
   });
 
   it("percent-encodes reserved characters (space, &, =) in values", () => {

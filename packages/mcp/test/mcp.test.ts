@@ -901,6 +901,17 @@ describe("loopback MCP servers", () => {
     });
   });
 
+  it("muse.math#evaluate accepts tabs/newlines between tokens — the whitelist admits all whitespace", async () => {
+    const server = createMathMcpServer();
+    const connection = createLoopbackMcpConnection(server);
+    // SAFE_MATH_PATTERN admits \s, so a pasted multi-line or tab-separated sum is
+    // contract-valid; the tokenizer's skip() must advance over it, not throw
+    // "expected number" / "trailing characters" on a tab the whitelist let through.
+    expect(await connection.callTool!("evaluate", { expression: "2 *\t3" })).toMatchObject({ result: 6 });
+    expect(await connection.callTool!("evaluate", { expression: "1000\n+ 2000" })).toMatchObject({ result: 3000 });
+    expect(await connection.callTool!("evaluate", { expression: "(1 +\n2) * 3" })).toMatchObject({ result: 9 });
+  });
+
   it("returns a structured error when an unknown tool is called", async () => {
     const server = createMathMcpServer();
     const connection = createLoopbackMcpConnection(server);
@@ -971,6 +982,16 @@ describe("loopback MCP servers", () => {
     });
   });
 
+  it("muse.json#query resolves OWN keys only — an inherited prototype key never leaks", async () => {
+    const connection = createLoopbackMcpConnection(createJsonMcpServer());
+    expect(await connection.callTool!("query", { value: { a: 1 }, path: "a" })).toEqual({ found: true, value: 1 });
+    // `key in cursor` walked the prototype chain, so these leaked an inherited value
+    // (a function / Object.prototype) into the tool result — must be found:false.
+    for (const proto of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(await connection.callTool!("query", { value: { a: 1 }, path: proto })).toEqual({ found: false, value: null });
+    }
+  });
+
   it("muse.json#merge deep-merges objects with override-wins semantics", async () => {
     const connection = createLoopbackMcpConnection(createJsonMcpServer());
     expect(
@@ -1022,6 +1043,18 @@ describe("loopback MCP servers", () => {
     });
   });
 
+  it("muse.url#parse keeps __proto__ / constructor query params as plain data (no prototype pollution)", async () => {
+    const connection = createLoopbackMcpConnection(createUrlMcpServer());
+    // The query map was a prototype-bearing {}, so `__proto__=a` hit the proto setter
+    // (param vanished + object polluted) and `constructor=c` collided with the inherited
+    // Object constructor (corrupted to an array). A null-prototype map keeps them as data.
+    const result = await connection.callTool!("parse", { url: "https://x.com/?__proto__=a&constructor=c&x=1" }) as { query: Record<string, unknown> };
+    const q = result.query;
+    expect(Object.getOwnPropertyDescriptor(q, "__proto__")?.value).toBe("a"); // own data, not the setter
+    expect(q.constructor).toBe("c"); // own "c", not the inherited Object function / a corrupted array
+    expect(q.x).toBe("1");
+  });
+
   it("muse.url#encode_query joins string and array values into urlencoded form", async () => {
     const connection = createLoopbackMcpConnection(createUrlMcpServer());
     const result = await connection.callTool!("encode_query", {
@@ -1030,6 +1063,22 @@ describe("loopback MCP servers", () => {
     expect(result).toEqual({ query: "name=muse+jarvis&tags=a&tags=b" });
     expect(await connection.callTool!("encode_query", { params: "nope" })).toEqual({
       error: "params must be a JSON object"
+    });
+  });
+
+  it("muse.url#encode_query rejects a nested object value instead of silently encoding '[object Object]'", async () => {
+    const connection = createLoopbackMcpConnection(createUrlMcpServer());
+    // String({nested:1}) === "[object Object]" — a silently corrupt query param. Must error.
+    expect(await connection.callTool!("encode_query", { params: { a: { nested: 1 } } })).toEqual({
+      error: expect.stringContaining("string/number/boolean")
+    });
+    // an object INSIDE an array value is also rejected (not "[object Object]")
+    expect(await connection.callTool!("encode_query", { params: { a: ["ok", { bad: 1 }] } })).toEqual({
+      error: expect.stringContaining("string/number/boolean")
+    });
+    // scalars + scalar arrays still encode fine (no regression)
+    expect(await connection.callTool!("encode_query", { params: { arr: [1, 2], b: true, n: 5 } })).toEqual({
+      query: "arr=1&arr=2&b=true&n=5"
     });
   });
 
@@ -1083,6 +1132,22 @@ describe("loopback MCP servers", () => {
       mode: "decode",
       output: ""
     });
+  });
+
+  it("muse.crypto base64/hex decode of non-UTF-8 (binary) bytes errors instead of silent U+FFFD garbage", async () => {
+    const connection = createLoopbackMcpConnection(createCryptoMcpServer());
+    // "/w==" is the base64 of the single byte 0xFF — valid base64 FORMAT, but the bytes
+    // are not valid UTF-8, so toString("utf8") used to silently return the U+FFFD char.
+    expect(await connection.callTool!("base64", { text: "/w==", mode: "decode" })).toEqual({
+      error: expect.stringContaining("non-UTF-8")
+    });
+    // "ff" is the hex of the same 0xFF byte.
+    expect(await connection.callTool!("hex", { text: "ff", mode: "decode" })).toEqual({
+      error: expect.stringContaining("non-UTF-8")
+    });
+    // a non-ASCII but VALID UTF-8 string still round-trips (no false reject)
+    const heHex = Buffer.from("héllo", "utf8").toString("hex");
+    expect(await connection.callTool!("hex", { text: heHex, mode: "decode" })).toEqual({ mode: "decode", output: "héllo" });
   });
 
   it("muse.crypto#hex encodes and decodes UTF-8 and rejects malformed input", async () => {
@@ -1283,6 +1348,30 @@ describe("muse.fetch loopback server", () => {
     const result = await connection.callTool!("get", { url: "https://api.example.test/" });
     expect(result.body).toHaveLength(50);
     expect(result.truncated).toBe(true);
+  });
+
+  it("truncates a multi-byte UTF-8 body on a character boundary — no U+FFFD at the cut", async () => {
+    // "가나다라" is 12 bytes (3/char); an 8-byte cap lands inside "다". A raw
+    // non-streaming decode of the cut chunk flushes the partial sequence to a
+    // replacement char ("가나�"); the stream-flag decode drops it → "가나".
+    const fakeFetch = (async () =>
+      new Response("가나다라", { headers: {}, status: 200 })) as unknown as typeof globalThis.fetch;
+    const server = createFetchMcpServer({ allowedHosts: ["api.example.test"], fetch: fakeFetch, maxBodyBytes: 8 });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("get", { url: "https://api.example.test/" });
+    expect(result.truncated).toBe(true);
+    expect(result.body).toBe("가나");
+    expect(result.body as string).not.toContain("�");
+  });
+
+  it("drops a first character split by the cap rather than emitting U+FFFD (cap < one char)", async () => {
+    const fakeFetch = (async () =>
+      new Response("가나", { headers: {}, status: 200 })) as unknown as typeof globalThis.fetch;
+    const server = createFetchMcpServer({ allowedHosts: ["api.example.test"], fetch: fakeFetch, maxBodyBytes: 2 });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("get", { url: "https://api.example.test/" });
+    expect(result.truncated).toBe(true);
+    expect(result.body).toBe(""); // 2 bytes is mid-"가" → dropped, not "�"
   });
 
   it("forwards caller-supplied headers (string values only)", async () => {
@@ -1811,6 +1900,23 @@ describe("muse.fs loopback server", () => {
     expect(result.truncated).toBe(true);
   });
 
+  it("truncates a multi-byte UTF-8 (Korean) file on a CHARACTER boundary, not mid-codepoint", async () => {
+    // "가나다라" is 12 bytes (3 each); an 8-byte cap lands inside "다". A raw byte
+    // slice would decode to "가나�" — the agent ingesting replacement-char garbage.
+    const server = createFilesystemMcpServer({
+      allowedRoots: ["/workspace"],
+      fs: fakeFs({ "/workspace": "dir", "/workspace/ko.md": "가나다라" }),
+      maxBodyBytes: 8,
+      path: posixPath
+    });
+    const connection = createLoopbackMcpConnection(server);
+    const result = await connection.callTool!("read", { path: "/workspace/ko.md" });
+    expect(result.bytes).toBe(12);
+    expect(result.truncated).toBe(true);
+    expect(result.content).toBe("가나");
+    expect(result.content as string).not.toContain("�");
+  });
+
   it("lists directory entries with kind classification and respects maxListEntries", async () => {
     const server = createFilesystemMcpServer({
       allowedRoots: ["/workspace"],
@@ -2278,6 +2384,26 @@ describe("muse.tasks loopback server", () => {
 
     const noMatches = await connection.callTool!("search", { query: "nonexistent" });
     expect(noMatches).toMatchObject({ total: 0 });
+  });
+
+  it("update is lost-update-safe — two concurrent updates to DIFFERENT fields both persist", async () => {
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const tmpdir = await import("node:os").then((m) => m.tmpdir());
+    const dir = mkdtempSync(`${tmpdir}/muse-tasks-rmw-`);
+    const file = `${dir}/tasks.json`;
+    let counter = 0;
+    const connection = createLoopbackMcpConnection(createTasksMcpServer({ file, idFactory: () => `task_${(++counter).toString()}` }));
+    await connection.callTool!("add", { title: "Plan trip" });
+    // Two concurrent updates to DIFFERENT fields. Before the fix, each `update` built
+    // its WHOLE stale snapshot outside the write queue and wrote it back, so the later
+    // write reverted the other's change (last-writer-wins → lost update).
+    await Promise.all([
+      connection.callTool!("update", { id: "task_1", title: "Plan trip v2" }),
+      connection.callTool!("update", { id: "task_1", notes: "book flights" })
+    ]);
+    const persisted = JSON.parse(readFileSync(file, "utf8")) as { tasks: { notes?: string; title: string }[] };
+    expect(persisted.tasks[0]!.title).toBe("Plan trip v2"); // the title change survived
+    expect(persisted.tasks[0]!.notes).toBe("book flights"); // AND the notes change (not clobbered)
   });
 
   it("delete REMOVES a task (by id or title word) — parity with `muse tasks delete`, distinct from complete", async () => {
@@ -7207,6 +7333,34 @@ describe("runDueFollowups", () => {
     expect(summary).toMatchObject({ delivered: 2, due: 2 });
   });
 
+  it("fires the most-overdue followup first under a tight maxPerTick", async () => {
+    const { runDueFollowups } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-followup-order-"));
+    const file = join(dir, "followups.json");
+    // The OLDEST-due (most overdue) entry is written LAST in file order.
+    writeFileSync(file, JSON.stringify({
+      followups: [
+        { createdAt: "2026-05-10T00:00:00Z", id: "fu_recent", scheduledFor: "2026-05-11T07:30:00Z", status: "scheduled", summary: "recent", userId: "stark" },
+        { createdAt: "2026-05-10T00:00:00Z", id: "fu_mid", scheduledFor: "2026-05-11T07:15:00Z", status: "scheduled", summary: "mid", userId: "stark" },
+        { createdAt: "2026-05-10T00:00:00Z", id: "fu_oldest", scheduledFor: "2026-05-11T07:00:00Z", status: "scheduled", summary: "oldest", userId: "stark" }
+      ]
+    }), "utf8");
+    const summary = await runDueFollowups({
+      destination: "@me", file, maxPerTick: 1, model: "gemini-2.0-flash",
+      modelProvider: { generate: async () => ({ output: "Following up." }) },
+      now: () => new Date("2026-05-11T08:00:00Z"), providerId: "telegram",
+      registry: { send: async () => ({ destination: "@me", messageId: "ok", providerId: "telegram" }) } as unknown as Parameters<typeof runDueFollowups>[0]["registry"]
+    });
+    expect(summary.delivered).toBe(1);
+    expect(summary.fired[0]?.id).toBe("fu_oldest"); // the most-overdue, NOT the file-first fu_recent
+    const { readFollowups } = await import("../src/index.js");
+    const remaining = (await readFollowups(file)).filter((f) => f.status === "scheduled").map((f) => f.id).sort();
+    expect(remaining).toEqual(["fu_mid", "fu_recent"]); // the less-overdue two stay scheduled (not starved-wrong)
+  });
+
   it("a non-finite maxPerTick (NaN from a typo'd env knob) falls back to the default, not silently zero", async () => {
     const { runDueFollowups } = await import("../src/index.js");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
@@ -7924,7 +8078,8 @@ describe("muse.episode loopback server", () => {
     expect(scoped).toMatchObject({ userId: "stark", total: 2 });
 
     const limited = await connection.callTool!("list", { limit: 1 });
-    expect(limited.total).toBe(1);
+    expect(limited.total).toBe(3); // the REAL store size (was incidentally 1 = the post-limit slice length)
+    expect(limited.shown).toBe(1); // the limit-honored returned count
     expect((limited.episodes as Array<{ id: string }>)[0]!.id).toBe("ep_a");
   });
 
@@ -8424,6 +8579,29 @@ describe("muse.status loopback server", () => {
     }
   });
 
+  it("notes_index returns each file's byte size — the description promises 'relative path + size'", async () => {
+    const { createStatusMcpServer, createLoopbackMcpConnection } = await import("../src/index.js");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const notesDir = mkdtempSync(join(tmpdir(), "muse-notes-index-"));
+    writeFileSync(join(notesDir, "a.md"), "hello", "utf8"); // 5 bytes
+    writeFileSync(join(notesDir, "b.md"), "héllo", "utf8"); // 6 bytes (é encodes to 2)
+    const prev = process.env.MUSE_NOTES_DIR;
+    process.env.MUSE_NOTES_DIR = notesDir;
+    try {
+      const connection = createLoopbackMcpConnection(createStatusMcpServer({}));
+      const out = (await connection.callTool!("notes_index", {})) as { files: { name: string; size: number }[]; total: number };
+      expect(out.total).toBe(2);
+      const bySize = Object.fromEntries(out.files.map((f) => [f.name, f.size]));
+      expect(bySize["a.md"]).toBe(5);
+      expect(bySize["b.md"]).toBe(6); // the size field is the contract the description promises
+    } finally {
+      if (prev === undefined) delete process.env.MUSE_NOTES_DIR;
+      else process.env.MUSE_NOTES_DIR = prev;
+    }
+  });
+
   it("snapshot surfaces reminders / followups / episodes / patterns summaries from their respective stores", async () => {
     const { createStatusMcpServer, createLoopbackMcpConnection } = await import("../src/index.js");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
@@ -8750,6 +8928,15 @@ describe("muse.history loopback server", () => {
 
     const badSince = await conn.callTool!("recent", { sinceIso: "not-an-iso" });
     expect(badSince).toMatchObject({ error: expect.stringContaining("parseable ISO timestamp") });
+  });
+
+  it("a fractional limit < 1 falls back to the default feed, NOT an empty one", async () => {
+    const { createHistoryMcpServer, createLoopbackMcpConnection } = await import("../src/index.js");
+    const conn = createLoopbackMcpConnection(createHistoryMcpServer(await seedFiles()));
+    const full = await conn.callTool!("recent", {});
+    const fractional = await conn.callTool!("recent", { limit: 0.5 });
+    expect(full.total as number).toBeGreaterThan(0);
+    expect(fractional.total).toBe(full.total); // 0.5 → fallback (20), same feed; the bug returned 0
   });
 });
 

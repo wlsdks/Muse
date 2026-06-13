@@ -70,15 +70,26 @@ export async function runDueObjectives(options: RunDueObjectivesOptions): Promis
   // default for non-finite values, matching the scheduler's guard.
   const max = Math.max(1, Number.isFinite(options.maxPerTick) ? Math.trunc(options.maxPerTick!) : DEFAULT_MAX_PER_TICK);
   const maxAttempts = Math.max(1, Number.isFinite(options.maxAttempts) ? Math.trunc(options.maxAttempts!) : DEFAULT_MAX_ATTEMPTS);
-  const base = options.backoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS;
-  const cap = options.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
+  // Same NaN/Infinity guard as max/maxAttempts above (`??` does NOT catch NaN): a
+  // non-finite backoff makes `delay` NaN, then `new Date(nowMs + NaN).toISOString()`
+  // throws — the catch swallows it, the objective never gets a new nextEvalAt and
+  // re-evaluates EVERY tick (backoff defeated). Fall back to the default.
+  const base = Number.isFinite(options.backoffBaseMs) ? options.backoffBaseMs! : DEFAULT_BACKOFF_BASE_MS;
+  const cap = Number.isFinite(options.backoffMaxMs) ? options.backoffMaxMs! : DEFAULT_BACKOFF_MAX_MS;
 
   const nowMs = now().getTime();
   const all = await readObjectives(options.file);
   const due = all
-    .filter(
-      (o) => o.status === "active" && (!o.nextEvalAt || Date.parse(o.nextEvalAt) <= nowMs)
-    )
+    .filter((o) => {
+      if (o.status !== "active") return false;
+      if (!o.nextEvalAt) return true;
+      const nextMs = Date.parse(o.nextEvalAt);
+      // An unparseable nextEvalAt yields NaN; `NaN <= nowMs` is false, which would
+      // freeze the objective FOREVER (never evaluated, never escalated — the same
+      // NaN-poison class the maxPerTick guard above handles). Fail open to
+      // evaluation; the backoff path then rewrites a valid timestamp (self-heal).
+      return !Number.isFinite(nextMs) || nextMs <= nowMs;
+    })
     .slice(0, max);
 
   if (due.length === 0) {

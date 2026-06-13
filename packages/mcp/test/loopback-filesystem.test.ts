@@ -1,6 +1,40 @@
 import { describe, expect, it } from "vitest";
 
-import { createFilesystemMcpServer } from "../src/loopback-filesystem.js";
+import { createFilesystemMcpServer, utf8SafeSliceEnd } from "../src/loopback-filesystem.js";
+
+describe("utf8SafeSliceEnd — trims to maxBytes on a character boundary (no mid-codepoint cut)", () => {
+  it("returns the whole buffer when it fits", () => {
+    const buf = Buffer.from("hello");
+    expect(utf8SafeSliceEnd(buf, 50).toString("utf8")).toBe("hello");
+  });
+
+  it("backs a cut that lands mid-character off to the previous boundary (Korean, 3 bytes/char)", () => {
+    const buf = Buffer.from("가나다라"); // 12 bytes, 3 each
+    // 8 lands inside "다" (bytes 6-8) → back off to end of "나" (byte 6)
+    expect(utf8SafeSliceEnd(buf, 8).toString("utf8")).toBe("가나");
+    expect(utf8SafeSliceEnd(buf, 8).toString("utf8")).not.toContain("�");
+  });
+
+  it("keeps a char that ends exactly on the cap (exact boundary)", () => {
+    const buf = Buffer.from("가나다라");
+    expect(utf8SafeSliceEnd(buf, 6).toString("utf8")).toBe("가나"); // byte 6 is a lead byte
+  });
+
+  it("handles a 4-byte emoji straddling the cap", () => {
+    const buf = Buffer.from("ab😀cd"); // 'a''b' = 2, 😀 = 4 (bytes 2-5), 'c''d' = 2
+    expect(utf8SafeSliceEnd(buf, 4).toString("utf8")).toBe("ab"); // 4 lands inside the emoji
+    expect(utf8SafeSliceEnd(buf, 6).toString("utf8")).toBe("ab😀"); // emoji fully fits
+  });
+
+  it("does NOT touch an ASCII cut (byte boundary == char boundary)", () => {
+    const buf = Buffer.from("x".repeat(200));
+    expect(utf8SafeSliceEnd(buf, 50).toString("utf8")).toBe("x".repeat(50));
+  });
+
+  it("returns empty for a non-positive cap", () => {
+    expect(utf8SafeSliceEnd(Buffer.from("가"), 0).byteLength).toBe(0);
+  });
+});
 
 const ALLOWED_ROOT = "/workspace";
 

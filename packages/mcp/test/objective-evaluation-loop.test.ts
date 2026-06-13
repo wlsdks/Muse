@@ -61,6 +61,39 @@ describe("runDueObjectives — standing-objective re-evaluation engine", () => {
     expect(await byId("o1")).toMatchObject({ resolution: "the repo was deleted", status: "escalated" });
   });
 
+  it("an unparseable nextEvalAt does NOT freeze the objective — it is due now and self-heals", async () => {
+    await addObjective(file, obj({ nextEvalAt: "not-a-date" })); // poisoned timestamp (hand-edit / foreign writer)
+    let evaluated = 0;
+    const summary = await run({ backoffBaseMs: 1000, evaluate: async () => { evaluated += 1; return { outcome: "unmet" }; } });
+    expect(evaluated).toBe(1); // the poisoned objective was evaluated, not silently frozen forever
+    expect(summary.retried).toEqual(["o1"]);
+    const after = await byId("o1");
+    // the loop rewrote a VALID, parseable nextEvalAt — the poison self-healed
+    expect(Number.isFinite(Date.parse(after!.nextEvalAt!))).toBe(true);
+    expect(Date.parse(after!.nextEvalAt!)).toBe(nowMs + 1000);
+  });
+
+  it("a non-finite backoffBaseMs (NaN from a typo'd knob) falls back to the default backoff, not a RangeError spin", async () => {
+    await addObjective(file, obj());
+    const summary = await run({ backoffBaseMs: Number.NaN, evaluate: async () => ({ outcome: "unmet" }) });
+    expect(summary.retried).toEqual(["o1"]); // backed off (retried), NOT swallowed into errors
+    expect(summary.errors).toEqual([]);
+    const after = await byId("o1");
+    expect(after?.status).toBe("active");
+    // a VALID, parseable nextEvalAt (= nowMs + DEFAULT_BACKOFF_BASE_MS, attempts 1 → base * 2^0).
+    // Old code: NaN delay → new Date(nowMs+NaN).toISOString() throws → caught → nextEvalAt unchanged → spins.
+    expect(Number.isFinite(Date.parse(after!.nextEvalAt!))).toBe(true);
+    expect(Date.parse(after!.nextEvalAt!)).toBe(nowMs + 60_000);
+  });
+
+  it("a non-finite backoffMaxMs (NaN cap) is also guarded — Math.min(NaN, x) would poison the delay", async () => {
+    await addObjective(file, obj());
+    const summary = await run({ backoffBaseMs: 1000, backoffMaxMs: Number.NaN, evaluate: async () => ({ outcome: "unmet" }) });
+    expect(summary.retried).toEqual(["o1"]); // cap fell back to its default → delay = min(default, 1000) = 1000
+    expect(summary.errors).toEqual([]);
+    expect(Date.parse((await byId("o1"))!.nextEvalAt!)).toBe(nowMs + 1000);
+  });
+
   it("UNMET: backs off with an exponential nextEvalAt and stays active (never spins)", async () => {
     await addObjective(file, obj());
     const summary = await run({ backoffBaseMs: 1000, evaluate: async () => ({ outcome: "unmet" }) });

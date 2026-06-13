@@ -172,7 +172,10 @@ function evaluateArithmetic(expression: string): number {
   }
 
   function skip(): void {
-    while (cursor < stripped.length && stripped[cursor] === " ") {
+    // Skip ANY whitespace SAFE_MATH_PATTERN admits (\s), not just a literal space —
+    // otherwise a contract-valid "2 *\t3" or a pasted multi-line sum passes the
+    // whitelist then stalls the cursor on the tab/newline and throws.
+    while (cursor < stripped.length && /\s/u.test(stripped[cursor] ?? "")) {
       cursor += 1;
     }
   }

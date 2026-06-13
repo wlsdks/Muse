@@ -43,6 +43,132 @@
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
 The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing tools.
+- ✓→Done **muse.episode list/search `total` lied (post-slice count)** (EXPANSION gap-scout runner-up; shipped fire 22) —
+  list/search computed `[...].sort().slice(0, limit)` then returned `total: <sliced>.length`, so `total` was the
+  POST-limit count (50 episodes, limit 10 → total:10) not the real store/match size — misleading the model about how
+  many episodes exist. The sibling reminders.list does it right (total=pre-slice, shown=post-slice). FIX: sort first,
+  `shownList = sorted.slice(0,limit)`, return `shown` + `total = scoped.length` (list) / `matches.length` (search,
+  matches now pre-slice). Mirrors reminders. TDD 2 (3 eps, limit 2 → total 3, shown 2) RED→GREEN; an existing test that
+  incidentally asserted the buggy `limited.total===1` updated to total:3 + shown:1 (Fable-5 judged the change
+  legitimate — incidental characterization, reminders convention is the repo standard). mcp 1718, check 0, lint 0.
+  RESIDUAL (non-blocking, one-field follow-up): the llm-judge search branch returns `total: matches.length` (the judge
+  caps in code, so there's no pre-slice total) but lacks `shown` for cross-mode consistency.
+- ✓→Closed (not a bug) **@muse/model web-search-policy.test "property fuzz"** — investigated in fire 23: the "fuzz" is
+  a DETERMINISTIC exhaustive nested loop over a FIXED corpus (enabledOpts × overrideOpts × maxUsesOpts × envWebSearch ×
+  envMaxUses), NOT a randomized fast-check property — it runs the exact same ~10k combinations every time, so it is
+  input-stable (ran 6× isolated, all 322/322 pass). The single fire-22 failure was ENVIRONMENTAL (slow ~10k iterations
+  timing out under the heavy concurrent full-`pnpm check` load, same class as the chat-grounding/playbook-store env
+  flakes), not a latent decideWebSearchPolicy edge. No seed to pin, no counterexample exists. Closed.
+- ✓→Done **muse.search DuckDuckGo redirect was DOUBLE-DECODED** (EXPANSION gap-scout, fire 23; data-integrity +
+  fail-open-to-crash) — `decodeDuckDuckGoRedirect` (loopback-search.ts:369) did `decodeURIComponent(params.get("uddg"))`,
+  but `URLSearchParams.get` ALREADY percent-decodes once. So a literal `%20` in a result URL (DDG sends `%2520`) got
+  corrupted to a space, and a bare `%` in a target (`https://sale.com/100%-off`) made the second decode THROW
+  `URIError: URI malformed`. `parseDuckDuckGoHtml` runs in muse.search's execute() AFTER the fetch try/catch closes
+  (loopback-search.ts:191), so the URIError escaped → the whole search call crashed on an attacker-influenceable result
+  URL. FIX: drop the redundant decode (`return target ? target : raw;`). TDD 2 (literal-`%20`-survives-intact +
+  never-throws-on-bare-`%`) RED→GREEN; the existing redirect tests used single-pass-decoded uddg values so the second
+  decode was idempotent there (which masked the bug). mcp 1720, check 0, lint 0. Fable-5 PASS (RED re-confirmed by
+  stashing src only; no legit double-encoded path exists — DDG encodes the target once with encodeURIComponent).
+- ✓→Done **muse.regex had NO catastrophic-backtracking (ReDoS) guard** (EXPANSION gap-scout; judge-drill target) —
+  test/match/replace compiled a user pattern and ran it SYNCHRONOUSLY on up to 50k chars with only a length cap, so a
+  nested-unbounded-quantifier pattern ((a+)+, (.*)*, …) HUNG the whole agent process (a sync regex run can't be timed
+  out on the main thread; the scout had to SIGKILL it). regex_extract already guards this; the loopback surface never
+  got it (same-class-different-surface miss). FIX: export the proven `hasNestedUnboundedQuantifier` from @muse/tools +
+  reject in compile() before new RegExp (one guard covers all three tools). TDD 6 catastrophic shapes ×3 tools rejected
+  + benign not-rejected, RED→GREEN; mcp 1716, check 0, lint 0. Fable-5 PASS. Also the v1.11.2 JUDGE FAILURE DRILL: a
+  narrow `includes("+)+")` guard + non-discriminating test was planted FIRST; the verifier correctly FAILED it (caught
+  (.*)*/([a-z]+)*/([a-z]+){2,} slipping through + the non-discriminating test) → rolled back → real fix applied. Judge
+  drill 2/2 (fire 10 json.query + fire 21 regex).
+- ⏳ **'this weekend' on a Saturday resolves to TODAY (possibly past) — NOT a clean bug (semantic, needs 진안)** —
+  loopback-relative-time.ts:477 `delta = (6-getDay()+7)%7` gives 0 on Sat (today) but 6 on Sun (next Sat, skipping
+  today). Whether "this weekend" on Sat/Sun means today or next weekend is genuinely ambiguous (like text.stats), and
+  the existing weekend test uses a Wednesday reference so the edge is untested-not-documented. Deferred to 진안.
+- ✓→Done **add_contact silently DUPLICATED on re-add** (EXPANSION gap-scout, live) — the tool's description
+  promises "Add (or update)", but execute always did `id: idFactory()` + save, so a re-add of an existing NAME got
+  a fresh id and APPENDED (the store's addContact is id-idempotent only). The duplicate then made the name resolve
+  AMBIGUOUS forever (find_contact returns candidates, never a person) — breaking outbound-safety rule 3 (recipient
+  must resolve unambiguously) AND remove_contact was equally ambiguous (can't clean up by name). FIX: an optional
+  `contacts?` reader on ContactsAddToolDeps; on an exact case-insensitive name match, reuse the existing id + merge
+  (new field wins, unmentioned preserved) so an id-idempotent save REPLACES. Wired through BOTH production seams —
+  autoconfigure (already addContact-idempotent) + commands-ask vision-auto (CHANGED from a raw read+append
+  `writeContacts` to the store's addContact + reader, so it's now id-idempotent + queued). TDD 3 (re-add reuses id +
+  merges; case-insensitive; no-reader back-compat) RED→GREEN; mcp 1703, check 0, lint 0. Fable-5 PASS (back-compat
+  intact, both seams live). RESIDUAL (non-blocking, separate): exact-name-only match (an ALIAS re-add could still
+  duplicate); commands-ask read→save isn't atomic across the merge window (only the save is queued).
+- ✓→Done **loopback-crypto base64/hex decode of non-UTF-8 bytes emitted U+FFFD silently** (gap-scout runner-up;
+  shipped fire 20) — a valid-FORMAT base64/hex whose decoded BYTES aren't valid UTF-8 (binary, e.g. 0xFF) had
+  `toString("utf8")` silently replace them with U+FFFD — garbled text, no error, against the tool's "decode back to
+  UTF-8" contract. FIX: a `decodeBytesAsUtf8` helper re-encodes the decoded string and compares to the original
+  bytes (valid UTF-8 round-trips exactly; a lossy one doesn't) → `{error: non-UTF-8 (binary) bytes}`. Both base64
+  and hex use it; the format-validation error paths are unchanged (distinct). TDD (base64 "/w=="=0xFF + hex "ff"
+  → error; emoji/héllo/empty still round-trip) RED→GREEN; mcp 1709, check 0, lint 0. Fable-5 PASS (no valid-UTF-8
+  false-reject — emoji/NUL/BOM/literal-U+FFFD all empirically accepted).
+- ✓→Done **web_download silently clobbered an existing file** (EXPANSION gap-scout, live) — wrote bytes with a
+  plain `writeFile(path, bytes)` (flag "w"), so downloading a name that already exists in the user's Downloads
+  dir SILENTLY OVERWROTE the unrelated existing file (irreversible data loss, not even flagged) — AppWorld
+  "collateral damage" class, against the module's own fail-closed-disk promise. FIX: a new `writeNonClobbering`
+  helper dedupes like a browser (`name (1).ext`, `(2)`, …) using the `wx` flag (atomic exists-check+create, no
+  TOCTOU); a real write error (EACCES/ENOSPC) is re-thrown → surfaces, never looped; bounded at 1000. TDD
+  (pre-existing report.pdf intact + new bytes at "report (1).pdf") RED→GREEN; mcp 1698, check 0, lint 0.
+  Fable-5 PASS (5 concurrent → 5 unique files; fresh-dir original name unchanged; no-ext/dotfile/multi-dot edges).
+- ✓→Done **web_download buffered the ENTIRE response body before the size-cap check** (gap-scout runner-up;
+  shipped fire 17) — `Buffer.from(await response.arrayBuffer())` then `> maxBytes`, so a multi-GB / never-ending
+  body filled RAM despite the 50MB cap (memory-exhaustion DoS). FIX: a Content-Length pre-check (reject before
+  reading if declared > cap) + a streamed `getReader()` read that aborts (`reader.cancel()`) the moment the
+  accumulated size crosses the cap — the server can lie about/omit CL, so the streamed abort is the real defense;
+  a no-body fallback still caps via arrayBuffer. TDD (instrumented 20×100B stream, cap 250B → aborts after ~3
+  chunks, nothing written) RED→GREEN; mcp 1700, check 0, lint 0. Fable-5 PASS (under-cap byte-identical, no false
+  reject on absent/garbage CL).
+- ✓→Done **FLAKY cli chat-grounding.test "fails soft when retrieval throws" — made hermetic (fire 18)** — failed `pnpm check` transiently
+  in fires 16 AND 17 (~5s, Ollama-timing dependent), passes on isolated re-run. Not a loop-slice regression but a
+  real flaky gate. NEEDS: make the test hermetic (it should fail-soft without a live/slow Ollama path) — small fix
+  but on the chat-grounding surface, separate from the TOOL theme; flag to 진안 / a chat-grounding fire. RESOLVED: added an optional injectable `searchRecall` DI seam to
+  groundChatTurn/retrieveChatGrounding (production default = real recall); the test now injects a sync-throwing
+  recall + MUSE_CHAT_AUTO_REINDEX=0 → NO network, runs in ms (was ~5s), and asserts `called===true` (strictly
+  stronger). Fable-5 PASS (production unchanged, fail-soft still exercised). cli 2530, check 0 first-try, lint 0.
+- ✓→Done **muse.tasks.update lost-update TOCTOU** (gap-scout runner-up; shipped fire 16) — built a WHOLE stale
+  snapshot (`{...tasks[index]}`) outside the write queue and wrote it back inside mutateTasks, so two concurrent
+  updates to DIFFERENT fields lost-update (last-writer-wins on the whole object). FIX: build a field-level DELTA
+  (sets/clears) and re-apply it onto the FRESH `current[i]` inside the mutate callback (mirror `complete`); single-
+  update semantics 1:1 unchanged. TDD (two concurrent updates to title + notes both persist in tasks.json) RED→GREEN;
+  mcp 1699, check 0, lint 0. Fable-5 PASS (reproduced RED in a /tmp worktree). RESIDUAL (acceptable, pre-existing):
+  a partial dueAt reschedule still anchors to the stale existing-due, so a due-move RACE on the SAME field is
+  last-writer-wins (the cross-field lost-update is fixed); same class as `complete`'s resolve-outside-queue.
+- ✓→Done **muse.url.parse query map prototype pollution** (EXPANSION gap-scout, live) — the query map was a
+  prototype-bearing `{}`, so an attacker-controlled URL `?__proto__=a` hit the Object.prototype SETTER (param
+  vanished + the object's prototype polluted before serialization) and `?constructor=c` collided with the
+  inherited Object constructor (corrupted to an array via the dedup). Same class as the fire-4 json.merge
+  __proto__ fix, unfixed on the URL surface. FIX (1 line): `const query = Object.create(null)` — null-prototype
+  map, so __proto__/constructor land as plain own DATA keys and the `existing === undefined` dedup works for
+  every key. TDD 1 (__proto__=a → own "a", constructor=c → "c", x="1") RED→GREEN; mcp 1696, check 0, lint 0.
+  Fable-5 PASS (dedup string/array shapes preserved, JSON serializes null-proto own keys, no downstream consumer).
+- ⏳ **muse.text.stats whitespace→zero — NOT a clean bug (documented behavior, needs 진안)** — `stats("   ")` returns
+  `{characters:0, lines:0, words:0}` but an existing test (mcp.test.ts "treats whitespace as zero") DOCUMENTS this as
+  intended. Unlike encode_query's incidental "[object Object]", the whitespace→zero is a named design choice — changing
+  it alters documented behavior. Deferred to 진안: is whitespace-only meant to count as zero, or report factual chars/lines?
+- ✓→Done **muse.url.encode_query encoded a nested object as "[object Object]"** (gap-scout runner-up; shipped fire 14) —
+  `String(raw)` coerced a nested object/array value to the literal "[object Object]" — a silently-corrupt query param.
+  FIX: an isScalar guard returns `{error: must be string/number/boolean}` for a non-scalar value or array item (scalars,
+  scalar arrays, null/undefined skipping unchanged). TDD (nested-object value + object-in-array → error; scalar control
+  encodes) RED→GREEN; updated an existing unit that incidentally characterized the "[object Object]" output (Fable-5
+  judged the change legitimate — the test's intent was scalars). mcp 1697, check 0, lint 0.
+- ✓→Done **muse.calendar.add mis-anchored a time-only endsAt** (EXPANSION gap-scout, live EN+KO) — `add`
+  resolved `endsAt` with `parseIsoDate(endsAtRaw)` whose default anchor is now(today), so a bare time-of-day
+  end ("4pm"/"오후 4시") for a NOT-today event resolved against TODAY while startsAt resolved to tomorrow →
+  the LocalCalendarProvider INVALID_TIME_RANGE guard rejected it ("endsAt must be at or after startsAt").
+  The sibling `update` already anchors a time-only end to the event day (`anchorFor`); `add` never did. FIX
+  (1 expr): anchor a time-only endsAt to the resolved START's day — `isTimeOnlyPhrase(endsAtRaw) ?
+  parseIsoDate(endsAtRaw, () => startOfLocalDay(startsAt)) : parseIsoDate(endsAtRaw)`. Date-bearing/ISO/absent
+  endsAt unchanged. TDD 2 (EN "tomorrow 3pm"+"4pm", KO "다음 주 월요일 오후 3시"+"오후 4시" → end on start's
+  day 16:00, no error) RED→GREEN via a registry mirroring the provider guard; mcp 1694, check 0, lint 0.
+  Fable-5 PASS (no regression on other endsAt shapes; guard untouched).
+- ✓→Done **muse.calendar.update cross-day move anchored a time-only endsAt to the OLD day** (gap-scout runner-up; shipped fire 12) —
+  update's `anchorFor` uses `resolved.event.startsAt` (the original day), so "move it to Monday, ending 5pm"
+  lands the end on the original day, not Monday. FIX: anchor the time-only endsAt to `newStartsAt` when the
+  start moved. 1 expr + 1 test. (Sibling of the add fix above.)
+- ◦ **relative-time "this weekend" asked ON a Saturday resolves to today 09:00 (possibly past)** (runner-up) —
+  loopback-relative-time.ts:~477 delta `% 7` = 0 with no roll-forward (unlike the bare-weekday handler that
+  forces delta=7). FIX: roll forward to next Saturday when today is already Sat. 1 line + 1 test.
 - ✓→Done **muse.math.evaluate silently truncated a malformed multi-dot number** (EXPANSION gap-scout) —
   `parseNumber` scans a literal by greedily consuming digits AND dots, then did `Number.parseFloat(literal)`:
   `parseFloat("1.2.3")` returns 1.2 (stops at the 2nd dot, NOT NaN), so the NaN guard never fired and
@@ -54,7 +180,7 @@ The loop's standing focus: EXPAND Muse's own tool surface + HARDEN the existing 
   regresses; "1..2" also now rejected). TDD 1 (multi-dot → error + 5./.5 controls) RED→GREEN; mcp 1687,
   check 0, lint 0. Fable-5 verifier PASS (no valid-input regression, reaches ask/chat fast-path). Matches
   code-style.md "strict Number() not parseFloat".
-- ◦ **muse.json.query walks the prototype chain** (EXPANSION gap-scout runner-up) — path resolution uses
+- ✓→Done **muse.json.query walked the prototype chain** (EXPANSION gap-scout runner-up; shipped fire 10) — path resolution uses
   `segment.key in cursor` so a path like `constructor`/`__proto__` on a plain object returns `found:true`
   with an inherited (often function) value that JSON-serialization silently drops to `{found:true}` (no
   value), and `__proto__` leaks Object.prototype. FIX: `Object.hasOwn(cursor, segment.key)` (own-property
@@ -327,6 +453,332 @@ HARDEN (make existing tools more reliable):
   + buildFollowupScenario in eval-tool-selection.mjs (6 positive + 4 disambiguation cases). Verifier
   confirmed the disambig cases are discriminating + wired. Other families (tasks/reminders/calendar)
   already have not-when. REMAINING: spot-audit any other tool families that lack it.
+- ✓→Done **muse.status.notes_index promised "size" but never returned it** (EXPANSION gap-scout, fire 24;
+  tool-contract output drift) — the tool description says "Returns relative path + size — no contents. Use this as a
+  discovery surface before deciding to embed/search", but `execute` mapped each file to `{ name }` ONLY — `size` was
+  silently absent, so the model couldn't use size (the embedding-cost signal the description sells) to decide what to
+  embed. FIX: map to `{ name, size: await fileSize(pathJoin(dir, e.name)) }` reusing the pre-existing `fileSize` helper
+  (returns `number | undefined`, swallows a TOCTOU-delete so one racing file can't blank the index); map became
+  `Promise.all`. TDD 1 (2 .md files of 5 + 6 bytes → each entry's size === byte length) RED(size undefined)→GREEN; mcp
+  1721, check 0 (all pkgs green), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; total/error-path untouched; no
+  other test pinned the old `{name}`-only shape — the tool output was previously untested). Picked over the tasks.search
+  total runner-up for KIND diversity (fire 22 was the episode total-post-slice, same KIND).
+- ◦ **muse.tasks.search `total` is post-slice (capped at 50)** (EXPANSION gap-scout fire-24 runner-up; misleading-value,
+  diversity-deferred) — `loopback-tasks.ts:406-411`: matches are `…sort().slice(0,50)` then `total: matches.length`, so
+  `total` caps at 50 not the true match count — and unlike the SAME file's `list` tool (which reports pre-slice `total`
+  + `shown`), search is internally inconsistent and has no `shown`. Distinct from the contested followups.total: here
+  `list` vs `search` in ONE module disagree. Only test uses 2 tasks (total 1/0), so the cap is undocumented. FIX: pre-
+  slice `total = filtered.length`, return the 50-cap slice + add `shown`. Slice: 1 file + 1 test (51 matching tasks →
+  total 51, shown 50). NOT this fire (same KIND as the fire-22 episode total fix — pick a different KIND first).
+- ✓→Done **bare day-of-month roll silently overflowed to a WRONG date** (EXPANSION gap-scout, fire 25;
+  data-integrity / silent-wrong-value) — `resolveRelativeTimePhrase`'s `dayOfMonthMatch` branch
+  (loopback-relative-time.ts:537-541) rolled a past/absent day forward with a SINGLE `new Date(y, month+1, dom)` and no
+  re-validation, so a short +1 month overflowed: "the 31st" late on Jan 31 → `new Date(2026,1,31)` = Feb 31 → silently
+  **March 3** (not March 31); "the 30th"→Mar 2, "the 29th"→Mar 1. The file's own comment promised "the next month that
+  has it". That wrong date persisted into a reminder/task. FIX: bounded loop (ahead 1..12) advancing month-by-month,
+  re-checking `getDate()===dom && getTime()>reference` each step, `return getDate()===dom ? finiteDate : undefined`. TDD
+  3 (the 31st/30th/29th @ Jan, each → March same-day) RED(getDate 3≠31)→GREEN; relative-time file 44/44, mcp 1722, check
+  0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; loop terminates, returns first future occurrence,
+  final guard rejects nothing valid; no existing test documented the overflow).
+- ✓→Done **relative-time SIBLING year-roll overflows** (fire 26; completes the fire-25 date-overflow class) — both
+  +1-year roll sites skipped re-validation: (A) `resolveAbsoluteMonthDate` (loopback-relative-time.ts:230-236) and (B)
+  the Korean `koAbsDate` roll (~750-758) — "feb 29" / "2월 29일" asked in a leap year AFTER it passed (ref 2028-06-01)
+  rolled into the non-leap next year where `new Date(2029,1,29)` silently became **Mar 1, 2029** (a date the user never
+  asked for, persisted into a reminder/task). FIX: re-check the rolled date's month/day and return undefined (fail-safe)
+  instead of a wrong date — consistent with the file's reject-don't-roll philosophy for impossible dates. TDD 3 (en + ko
+  feb-29 → undefined; mar-5 valid-roll → 2027 no-regression guard) RED(both gave 2029-03-01)→GREEN; relative-time 47/47,
+  mcp 1725, check 0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; both are the ONLY two +1-year
+  roll sites; getMonth-only suffices for B since day≤31 pre-validated; 413 tests across 3 files green). NOTE: returns
+  undefined rather than finding the next leap year (2032) — a fail-safe minimal fix; next-leap resolution is a separate
+  enhancement if 진안 wants it.
+- ✓→Done **muse.math#evaluate silently failed on a valid tab/newline expression** (EXPANSION gap-scout, fire 27;
+  input-validation / whitelist↔tokenizer contract drift) — `SAFE_MATH_PATTERN = /^[\s\d+\-*/().,%]+$/u` (line 13) admits
+  ALL whitespace, but the tokenizer's `skip()` only advanced over a literal space `" "`. So a contract-valid `"2 *\t3"`
+  or a pasted multi-line `"1000\n+ 2000"` passed the whitelist, then the tab/newline stalled the cursor and the parser
+  threw "expected number" / "trailing characters" — the math fast-path (also behind `muse ask`'s exact-arithmetic
+  route) silently rejecting input its own contract accepts. FIX: `skip()` advances over any `\s` (`/\s/u.test(...)`),
+  aligning the tokenizer with the whitelist. TDD 1 ("2 *\t3"→6, "1000\n+ 2000"→3000, "(1 +\n2)*3"→9) RED("expected
+  number")→GREEN; mcp 1726, check 0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; "1 2"/"1\t2"
+  still error — no number concatenation; whitelist unchanged so no new chars reachable, no injection; 364 math/file
+  tests green). KIND deliberately non-date after two date-overflow fires.
+- ✓→Done **mac_say argv flag-injection** (EXPANSION gap-scout, fire 28; argument injection / fail-open option
+  parsing) — `mac_say` built `argv = voice ? ["-v", voice, text] : [text]`, passing the user's `text` as the first
+  positional with NO `--` option terminator. A text of "-0" / "--version" was reparsed by `say` as a flag (live: `say
+  "-0"` → exit 1 "invalid option"), so a user asking Muse to speak a dash-leading string silently failed. FIX:
+  `["-v", voice, "--", text]` / `["--", text]` — `say` supports `--` (independently live-verified by the Fable-5 judge:
+  `say -- "-0"` → exit 0; mdfind/pbcopy do NOT, so the guard stays say-specific). TDD: leading-dash "-0"/"--version" →
+  argv carries `--` before the text, spoke:true; the existing argv assertion updated (incidental characterization, no
+  masked regression). macos 95/95, check 0 (all pkgs), lint 0. Fable-5 PASS (runner seam contract-faithful; voice not a
+  vector — consumed as the `-v` value, no shell). KIND security (argv injection), fresh surface.
+- ✓→Done **muse.notes.save TOCTOU clobber** (fire 29; data-integrity / TOCTOU) — save did stat-then-writeFile, so a
+  concurrent create landing between the stat and `nodeWriteFile(..., "utf8")` (flag `w`) was silently CLOBBERED under
+  overwrite:false. FIX: write create-exclusive under !overwrite (`{ encoding: "utf8", flag: "wx" }`) so a stale probe +
+  concurrent create yields EEXIST → "already exists" error instead of a clobber; added an injectable `probeExists` option
+  (defaults to the prior stat-based check, byte-identical) so the TOCTOU window is deterministically testable. TDD 2
+  (injected absent-probe + real pre-existing file → "already exists" + content unchanged; overwrite:true still replaces)
+  RED(reverting wx → file clobbered to "CLOBBER")→GREEN; mcp 1728, check 0 (all pkgs), lint 0. Fable-5 PASS
+  (contract-faithful real-fs write, only the probe injected; EEXIST mapping scoped to !overwrite so EACCES still surfaces
+  as "cannot write note"; atomic guarantee is in `wx`, not the probe). KIND TOCTOU, fresh surface.
+- ◦ **mac_spotlight_search argv-injection (fire-28 rejected, recorded)** — `mac_spotlight_search` (macos-tools.ts:1439)
+  has the SAME leading-dash argv-injection as mac_say (fixed fire 28), BUT `mdfind` rejects `--` (`mdfind -- q` →
+  "Unknown option"), so there's no one-line terminator fix — needs query-rewriting/escaping logic (a real ◦, not
+  trivial). KIND security (argv injection).
+- ✓→Done **muse.fs read corrupted multi-byte UTF-8 at the truncation edge** (EXPANSION gap-scout, fire 30;
+  encoding round-trip / byte-boundary) — `read` truncated with `buffer.subarray(0, maxBodyBytes).toString("utf8")`,
+  cutting mid-character whenever the 64KB cap lands inside a multi-byte sequence. Korean is 3 bytes/char, so the cap
+  lands mid-char ~2/3 of the time → the agent ingested a U+FFFD replacement char at the truncation tail of every large
+  Korean note (the tool promises "Reads a UTF-8 text file"). FIX: new exported pure helper `utf8SafeSliceEnd(buffer,
+  maxBytes)` backs the cut off to the previous UTF-8 char boundary (walks back over 10xxxxxx continuation bytes); read
+  wires it in. TDD 6 helper unit (fits/Korean-mid/exact-boundary/4-byte-emoji/ASCII-unchanged/non-positive) + 1 e2e
+  (fake-fs "가나다라" maxBodyBytes:8 → "가나", no U+FFFD) RED(reverting wiring → "가나�")→GREEN; mcp 1735, check 0
+  (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed; helper fuzzed 2000+ cases vs an optimal-prefix oracle — never
+  over-shoots the cap, never over-trims a fitting char, longest valid prefix; ASCII test stays green). KIND
+  encoding-boundary, fresh surface — directly fixes garbled tails in 진안's Korean notes.
+- ✓→Done **loopback-fetch readBodyWithCap U+FFFD at the truncation tail** (fire 31; encoding-boundary + the ~10-fire
+  JUDGE FAILURE DRILL) — `readBodyWithCap` decoded the truncating chunk with a NON-streaming `decoder.decode(head)`,
+  flushing a partial multi-byte sequence at the cap to U+FFFD (a Korean body got "가나�"). KEY: the correct fix is NOT
+  `utf8SafeSliceEnd(head)` as this ◦ originally guessed — that helper treats `head` as a standalone buffer and misreads
+  leading continuation bytes when an earlier full chunk left pending bytes in the STREAMING decoder. The right fix is
+  `decoder.decode(head, { stream: true })` + never flushing on the truncated branch (the `if (!truncated)` guard already
+  skips the flush), so the partial char straddling the cap is buffered and dropped. TDD 2 ("가나다라" cap 8 → "가나";
+  "가나" cap 2 → "") RED("가나�")→GREEN; mcp 1737, check 0 (all pkgs), lint 0. JUDGE DRILL: an inert slice (comment-only
+  code change + a declaration-only test asserting just truncated:true/length>0) was planted FIRST; the Fable-5 verifier
+  correctly FAILED it (traced result.body="가나�", flagged the test as declaration-only, AND independently derived the
+  stream-flag fix) → rolled back → real fix applied + PASS. Judge drill 3/3 (fire 10 json.query, fire 21 regex, fire 31
+  fetch). Optional follow-up (verifier note): a multi-chunk-stream test would pin the cross-chunk decoder-state case
+  (currently proven ad hoc, not by a committed test).
+- ✓→Done **muse.url.encode_query encoded null/undefined ARRAY items as "null"/"undefined"** (EXPANSION gap-scout,
+  fire 32; contract-output-drift / inconsistent null handling) — the array branch guard
+  `if (item !== null && item !== undefined && !isScalar(item)) return error` let a null/undefined item FALL THROUGH to
+  `search.append(key, String(item))`, so `{tags:["a",null,"b"]}` emitted a corrupt `tags=a&tags=null&tags=b`. The SCALAR
+  branch one line below explicitly skips null/undefined (and a unit test pins that skip as the contract) — so the array
+  branch was internally inconsistent. FIX: `if (item === null || item === undefined) continue;` before the object check,
+  matching the scalar branch. TDD (`["a",null,undefined,"b"]` → `tags=a&tags=b`; nested-object-in-array still rejected;
+  falsy-but-valid `[0,false,""]` → `v=0&v=false&v=` still encode — strict null/undefined skip only) RED(`tags=null...`)
+  →GREEN; mcp 1738, check 0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed by stashing src; nested object AND array
+  still rejected; 0/false/"" still encode; no test pinned the old corrupt output). KIND contract-drift, fresh surface.
+- ✓→Done **performConsentedAction let caller headers override the consent-gated credential** (EXPANSION gap-scout,
+  fire 33; SECURITY — credential-override / fail-open on the outbound-safety seam) — the fetch headers were
+  `{ authorization: \`Bearer ${credential}\`, ...(body?{content-type}), ...request.headers }` with the caller's
+  `request.headers` spread LAST, so `request.headers.authorization: "Bearer attacker"` silently REPLACED the
+  consent-gated token, and the case-variant `{ Authorization: ... }` produced two own keys that `new Headers()` merges
+  into the corrupt `"Bearer svc-token, Bearer attacker"`. Violates outbound-safety.md's "Security is code, not a prompt"
+  — the scoped credential is supposed to be the only Bearer that leaves. FIX: strip every caller header whose
+  `.toLowerCase() === "authorization"` (`callerHeaders`) before spreading, so the code-owned token is unstrippable;
+  non-auth headers (content-type, x-custom) still forward. TDD (lowercase + capitalized override attempts →
+  `new Headers(init.headers).get("authorization") === "Bearer svc-token"`; x-custom still passes) RED("Bearer attacker")
+  →GREEN; mcp 1739, check 0 (playbook-store flake re-run green), lint 0. Fable-5 PASS (RED re-confirmed by stashing src;
+  all case variants covered; whitespace/Unicode keys are invalid header names → fail-closed via try/catch, not a bypass;
+  consent/veto gates untouched). KIND security, fresh surface.
+- ✓→Done **performConsentedAction: request.url destination-binding (credential-exfil guard)** (fire 34; SECURITY —
+  fire-33 verifier finding) — `request.url` was fully caller-controlled with nothing tying it to the consent, so the
+  scoped Bearer token could be sent to ANY url (`https://attacker.example/...`). DESIGN (verified: performConsentedAction
+  + recordConsent have NO production callers — unwired P5-b3 primitive; trust-correct source = the consent RECORD set at
+  grant time, NOT the caller's url, and NOT a non-existent service→host registry): `ScopedConsent` gained an OPTIONAL
+  `allowedHost`; `performConsentedAction` refuses (fail-closed, no HTTP) when a consent's `allowedHost` is set and
+  `new URL(request.url).host` differs OR the url is unparseable; added `findConsent` (returns the record; `hasConsent`
+  delegates). TDD (consent bound to api.test + url to evil.example → refused, 0 HTTP; unparseable url → refused) RED
+  (neutralize the check → token reaches evil.example)→GREEN; mcp 1741, check 0 (all pkgs), lint 0. Fable-5 PASS —
+  including the userinfo bypass `https://api.test@evil.example/` → `host` resolves to `evil.example` → correctly
+  refused; `host` (incl. port) is stricter than `hostname` (fail-closed-safe). KIND security, fresh surface.
+- ◦ **performConsentedAction: make allowedHost MANDATORY / fail-closed-on-absence (fire-34 follow-up)** — the
+  destination-binding is currently enforce-WHEN-PRESENT (optional), so a consent without `allowedHost` still sends the
+  token to any url. Once the (future) grant flows that call `recordConsent` all populate `allowedHost`, flip it: make
+  the field required (or treat absence as refuse) so the binding is fail-closed by construction, not opt-in. Slice =
+  require allowedHost in `isScopedConsent` + refuse on absence in performConsentedAction + update the duplicate test
+  corpus (consent literals live in BOTH src/*.test.ts and test/*.test.ts — ~10 sites). Gated on grant-flow wiring
+  existing first (no production caller today).
+- ✓→Done **muse.history.recent returned an EMPTY feed for a fractional limit < 1** (EXPANSION gap-scout, fire 35;
+  boundary-condition / silent-failure) — `clampLimit` (loopback-history.ts:34) checked `raw <= 0` BEFORE truncating, so
+  `limit: 0.5` passed the guard then `Math.trunc(0.5) === 0` → `Math.min(cap, 0) === 0` → the activity feed sliced to
+  empty, so "what did I do last night?" with a model-emitted fractional limit silently answered "nothing happened"
+  (`{entries: [], total: 0}`). 0 and negatives already correctly took the fallback (20). FIX: truncate BEFORE the
+  positivity check so a sub-1 fractional joins 0/negatives in taking the fallback (self-consistent with history's own
+  contract — NOT the proactive sibling's clamp-to-1, which has a different undefined→store-default contract). Exported
+  `clampLimit` for direct unit testing. TDD 5 unit (0.5/0.999→20, 0/-5→20, 2.9→2, 1.5→1, 50→50, 500→200 cap,
+  string/NaN/Inf→20) + 1 e2e (recent({limit:0.5}).total === recent({}).total, not 0) RED(0.5→empty)→GREEN; mcp 1747,
+  check 0 (all pkgs), lint 0. Fable-5 PASS (RED reproduced "expected 0 to be 5"; exact 1.0→1 boundary verified; valid
+  integer limits unchanged; export not in barrel — no collision). KIND boundary, fresh surface.
+- ✓→Done **browser_read `find` pagination was a dead-end / loop trap** (EXPANSION gap-scout, fire 36;
+  contract-output-drift) — the tool description promises "A long page reports total + hasMore/nextOffset; pass offset to
+  read the next batch", and the no-find branch (snapshotToJson) honours it, but the FIND branch did
+  `matched.slice(0, BROWSER_MAX_ELEMENTS)` (always from 0, ignoring the documented `offset` arg) and returned only
+  `{ hasMore: true }` with NO `nextOffset`. So when >50 elements matched, the local 8B was told hasMore, followed the
+  protocol (`find` + `offset`), and got the SAME first 50 back forever — a loop trap. FIX: align the find branch with
+  snapshotToJson — clamp offset, slice `[start, start+MAX)`, emit `offset`/`hasMore`/`nextOffset`. TDD (60 matches:
+  find→50 + nextOffset:50; find+offset:50→10, offset:50, ref continuity) RED(force start=0 → offset:50 returned the
+  first 50 again)→GREEN; browser 58, check 0 (all pkgs), lint 0. Fable-5 PASS (RED re-confirmed; past-end clamps to
+  empty, negative clamps to 0, contiguous pages no dupes/skips, filterElements order-stable; only consumer is the CLI
+  tool registration — opaque JSON to the model). KIND contract-drift, fresh surface (browser). Minor pre-existing nit
+  (out of scope): the find branch names the count `matched` while no-find uses `total`.
+- ✓→Done **dismissPattern lost-update race (user veto could be silently dropped)** (EXPANSION gap-scout, fire 37;
+  lost-update / concurrent RMW missing serialisation) — `dismissPattern` did an UNSERIALISED read→append→write on
+  patterns-fired.json while its sibling `recordPatternFired` already wraps the identical RMW in `withFileMutationQueue`.
+  Concurrent in-process dismissals/fires read the same snapshot → last write clobbers the rest → a lost dismissal means
+  Muse keeps suggesting a pattern the user explicitly vetoed (learned-avoidance dropped — the trust failure proactivity
+  exists to avoid); same-ms writes also crashed on the `tmp-${pid}-${Date.now()}` rename (ENOENT). FIX: wrap the body in
+  the per-file queue (mirrors recordPatternFired); deleted a stale JSDoc that falsely claimed "the daemon is the only
+  writer… we accept that [clobber] trade". TDD (Promise.all of 12 dismiss + 13 fire on one file → all 25 present, all 12
+  dismissals survive) RED(revert queue → ENOENT/lost record)→GREEN; mcp 1748, check 0 (messaging pending-approval flake
+  unrelated, isolated 17/17), lint 0. Fable-5 PASS (read inside critical section; no nested-queue deadlock; non-flaky).
+- ◦ **patterns-fired (and sibling stores) lack CROSS-PROCESS write serialisation (fire-37 verifier finding)** —
+  `withFileMutationQueue` serialises only WITHIN one process, but the motivating race is the CLI `muse pattern dismiss`
+  vs the proactive daemon — TWO OS processes writing the SAME patterns-fired.json. Atomic rename prevents corruption but
+  NOT a cross-process clobber (a dismissal landing between the daemon's read and write is still lost). This is
+  pre-existing and shared by every store on the queue. FIX (if it ever bites): a file lock (lockfile / flock) around the
+  RMW. Slice = a cross-process lock primitive + wire the patterns-fired RMWs + a two-process race test (spawn). Larger;
+  gated on whether single-user concurrency is real enough to justify the complexity.
+- ✓→Done **writeFollowupLlmBudget hand-rolled write (same-ms ENOENT crash + orphaned tmp)** (EXPANSION gap-scout,
+  fire 38; resource-leak / race-induced crash) — `writeFollowupLlmBudget` hand-rolled `tmp-${pid}-${Date.now()}` then
+  open/write/sync/rename with NO catch-cleanup, while the SAME package's `atomicWriteFile` already fixes exactly this
+  class (randomUUID tmp + fsync + 0o600 + orphan cleanup) and the module already imports `withFileMutationQueue` from it.
+  Two same-ms writers → identical tmp → the slower rename ENOENT-crashes; any write/rename failure orphans the tmp
+  (UNCONDITIONALLY real, independent of concurrency). FIX: replace the body with `atomicWriteFile(file, payload)` (byte-
+  identical payload, same fsync/0o600 durability). TDD (frozen Date.now → 2 concurrent writes both resolve + no `.tmp-`
+  orphan) RED(ENOENT rename on `budget.json.tmp-<pid>-1700000000000`)→GREEN; mcp 1749, check 0 (all pkgs), lint 0.
+  Fable-5 PASS (durability preserved; both defects closed; the one production caller composes inside its queue). The
+  collision is defense-in-depth (writeFollowupLlmBudget is a public export) but the orphan defect was unconditionally
+  real. KIND resource-leak, fresh surface.
+- ◦ **appendReminderHistory hand-rolls the same tmp write (fire-38 runner-up)** — `personal-reminder-history-store.ts`
+  (~line 64-68) hand-rolls `tmp-${pid}-${Date.now()}` with NO fsync and no leak cleanup. Same one-line `atomicWriteFile`
+  adoption. Lower urgency: it sits inside the mutation queue so the in-process collision is unreachable and the fsync gap
+  isn't behaviorally testable — but adopting the shared primitive removes the orphan-on-failure leak + the fsync gap.
+  Slice: swap to atomicWriteFile + a no-orphan-on-injected-failure test (or accept it's covered by the primitive's tests).
+- ◦ **cleanupFollowupTempFiles is dead-wired (fire-37/38 runner-up, NOT a crisp fix)** — `personal-followups-store.ts`
+  `cleanupFollowupTempFiles` docstring claims "Called by readFollowups" but has ZERO production callers (only a test), so
+  crash-orphaned followup tmp files accumulate forever. The naive wiring (call it from readFollowups) is NOT objectively
+  correct — readFollowups runs unqueued from the list tool, so cleanup could unlink an in-flight atomicWriteFile tmp
+  before its rename and kill a concurrent write; the safe fix needs an mtime age-gate whose threshold is a judgment call.
+  Real leak but needs a design decision — record, don't auto-pick.
+- ✓→Done **active objective with an unparseable nextEvalAt was silently frozen forever** (EXPANSION gap-scout, fire 39;
+  silent-failure / NaN-poisoned date comparison) — the `due` filter was
+  `o.status === "active" && (!o.nextEvalAt || Date.parse(o.nextEvalAt) <= nowMs)`; a non-ISO nextEvalAt makes
+  `Date.parse` → NaN, `NaN <= nowMs` → false, and `!o.nextEvalAt` is false (truthy string), so the objective is EXCLUDED
+  from `due` on EVERY tick forever — never evaluated, never escalated (contradicts the module's "never silently dropped"
+  contract; the same file already guards this exact NaN-poison class for maxPerTick). Reachable via a hand-edited /
+  foreign-written objectives.json (isStandingObjective never validates nextEvalAt). FIX: fail-open to evaluation when
+  unparseable (`!Number.isFinite(nextMs) || nextMs <= nowMs`); the backoff path then rewrites a valid ISO (self-heal).
+  TDD (nextEvalAt:"not-a-date" → evaluated once, retried, persisted nextEvalAt now parseable === nowMs+1000)
+  RED(excluded → evaluated 0)→GREEN; mcp 1750, check 0 (all pkgs), lint 0. Fable-5 PASS (future-valid still excluded so
+  cooldown intact; no legitimate non-ISO sentinel — "never" is status not a magic string; self-heals after one eval).
+  KIND silent-failure, fresh surface.
+- ◦ **append-only stores silently DESTROY a forward-version entry on the next write (fire-39 runner-up)** —
+  `appendActionLog` (personal-action-log-store.ts:212-221) and `addObjective`/`patchObjective`
+  (personal-objectives-store.ts:97-130) round-trip through a validation-FILTERING read (`readActionLog`/`readObjectives`
+  flatMap-drop entries failing `isActionLogEntry`/`isStandingObjective`), so any stored entry a newer schema wrote (e.g.
+  a forward `result` value or unknown field) is permanently ERASED by the next unrelated append — violating the
+  documented "APPEND-ONLY… preserved verbatim / never silently destroyed (quarantine)" contract. FIX needs a RAW-read
+  path for the write (read+append+write on the raw array, validate only on the READ-for-consumers path) — bigger than
+  one filter line. Slice: add a raw passthrough reader + wire the append/patch RMWs + a forward-compat test (seed an
+  entry with an extra field, append another, assert the first survives byte-identical). Two stores share the KIND+shape.
+  BLOCKERS (fire-40 eval, NOT a clean single fix — needs a design decision): (a) the action-log is a HASH-CHAIN
+  (`prevHash: chainTipHash(existing)`), so preserving an unvalidatable forward-version entry breaks the typed
+  chain-hash computation — raw preservation + chain integrity conflict; (b) "corrupt entry (drop is correct)" vs
+  "forward-version entry (preserve)" are INDISTINGUISHABLE to `isActionLogEntry`, so preserve-unknown also re-persists
+  genuine garbage — a real preserve-vs-drop judgment, not a mechanical fix. The objectives store (no hash chain) is the
+  cleaner first target IF the preserve-unknown policy is decided. 진안 input on the policy + chain handling.
+- ✓→Done **muse.calendar.update silently dropped an unparseable startsAt/endsAt and reported success** (EXPANSION
+  gap-scout, fire 40; missing-validation) — `resolvedStartsAt = startsAtRaw ? parseIsoDate(...) : undefined` returns
+  undefined for an unresolvable phrase, then the spread `...(newStartsAt ? {startsAt} : {})` omitted the move and
+  `update` called `registry.updateEvent` + returned `{event}` SUCCESS — so "move my dentist to flurbsday" reported done
+  while nothing moved. The sibling `add` already errors on this exact condition; a parseable start + unparseable end
+  also moved the start but left the end (end-before-start risk). FIX: error (mirroring `add`) when a raw startsAt/endsAt
+  was PROVIDED but parses to undefined, BEFORE updateEvent (omitted args unaffected; valid phrases still parse). TDD
+  (startsAt:"flurbsday" → error + updateEvent NOT called; valid-start + endsAt:"flurbsday" → error + no call — the
+  τ-bench no-partial-side-effect property) RED(remove guards → updateEvent called, success)→GREEN; mcp 1752, check 0
+  (all pkgs), lint 0. Fable-5 PASS (omitted untouched, newEndsAt fallback algebraically identical, no partial state).
+  KIND missing-validation, fresh surface. (Side effect, per the slice's intent: an empty-string "" startsAt/endsAt now
+  errors too, consistent with `add`.)
+- ◦ **calendar.add silently coerces an unparseable endsAt to start+60min (fire-40 runner-up)** — `add`'s endsAt
+  fallback (`(endsAtRaw && isTimeOnlyPhrase ? ... : parseIsoDate(endsAtRaw)) ?? new Date(startsAt+60min)`) means a
+  PROVIDED-but-unparseable endsAt silently becomes a 1-hour default instead of erroring — the same family as the update
+  fix. Lower urgency (endsAt is optional with a sensible default, vs update's success-while-noop), and erroring needs to
+  preserve the omitted-endsAt→default path. Slice: error only when `endsAtRaw !== undefined && parse === undefined` +
+  test. Also (fire-40 verifier nit): a non-string startsAt (numeric epoch) is silently ignored via readString→undefined
+  on BOTH add and update — string-but-unparseable is fixed, wrong-TYPE is not; fold into the same slice if worth it.
+- ✓→Done **appendReminderHistory persisted secrets to the plaintext audit log unscrubbed** (EXPANSION gap-scout,
+  fire 41; SECRET-LEAK / data-integrity) — `appendReminderHistory` appended the raw `entry` to reminder-history.json
+  while the SIBLING proactive-history store deliberately scrubs at the persist chokepoint
+  (`redactSecretsInText(title/text/error)`). So a reminder "rotate key sk-proj-…" is DELIVERED scrubbed (the delivery
+  path scrubs only the copy it SENDS) but ARCHIVED VERBATIM; `error` can also quote an upstream response body (e.g. a
+  Telegram bot token). FIX: scrub `text` + `error` at the chokepoint (`{ ...entry, text: redactSecretsInText(text),
+  ...(error ? { error: redactSecretsInText(error) } : {}) }`) — exact parity with the proactive sibling, so every caller
+  inherits it. TDD (text with sk-proj key + error with telegram token → read-back has `[redacted-openai-key]` /
+  `[redacted-telegram-bot-token]`, raw tokens absent) RED(raw entry → plaintext key persisted)→GREEN; mcp 1753, check 0
+  (all pkgs), lint 0. Fable-5 PASS (text+error = full secret-bearing set; destination non-secret by the messaging
+  contract; chokepoint inherited by both call sites). KIND secret-leak, fresh surface — directly on Muse's "it can't
+  tell anyone" identity.
+- ◦ **reminder daemon prints raw error strings to daemon.out.log (fire-41 verifier finding; secret-leak)** —
+  `runDueReminders` returns raw `errors` strings (reminder-firing-loop.ts:~140 — the same upstream error that can quote
+  a Telegram/Slack token), and the daemon prints them to stdout, which the macOS LaunchAgent persists to
+  `daemon.out.log` (commands-daemon.ts:~486). Reminder TEXT is not echoed there (only error strings), but a
+  token-quoting send failure archives the raw token in that log. FIX: apply `redactSecretsInText` at the daemon's
+  error-print seam (and/or scrub the `errors` array in the summary). Slice: 1 wrap + 1 test (a secret-bearing error →
+  the printed/returned string is redacted). Fresh surface (daemon stdout).
+- ✓→Done **commitment check-ins lost-update / stale-snapshot write** (EXPANSION gap-scout, fire 42; data-integrity /
+  lost-update) — `appendCheckins` did an UNQUEUED read→append→write, and `runDueCheckins` read `all` (snapshot), awaited
+  multi-second network sends, then wrote `all.map(...)` (the STALE pre-send snapshot) — so a check-in appended (chat-turn
+  hook) or cancelled DURING the send window was clobbered: a fresh check-in vanished, a CANCELLED nudge RESURRECTED and
+  re-fired (trust failure — the user silenced it). Siblings (followups/objectives) use `withFileMutationQueue`; this
+  store predates the pattern. FIX: wrap `appendCheckins` in the per-file queue; make the fired-status write re-read the
+  FRESH store inside the queue and patch ONLY the fired ids, not the stale `all`. TDD (registry.send appends a check-in
+  mid-send → it survives + the fired one is marked; 2 concurrent appendCheckins both persist) RED(stale write clobbers +
+  ENOENT)→GREEN; mcp 1773, check 0 (all pkgs), lint 0. Fable-5 PASS (re-read inside queue, patch-by-id, cancel-not-
+  resurrected by construction, no deadlock — send loop OUTSIDE the queue; scope honest: fixes IN-PROCESS races,
+  cross-process CLI-cancel-vs-daemon is the existing file-lock ◦). KIND lost-update, fresh surface.
+- ◦ **commitment-checkin keeps a bespoke writeFileAtomic (pid+Date.now tmp) (fire-42 verifier nit)** — the store's local
+  `writeFileAtomic` (line ~226) still uses `${file}.tmp-${pid}-${Date.now()}` instead of the shared `atomicWriteFile`
+  (randomUUID + orphan cleanup). The queue masks the in-process collision on the fixed paths, but the CLI's direct
+  `writeCheckins` (cancel/snooze, unqueued + cross-process) can still hit the same-ms ENOENT + orphan. FIX: adopt
+  `atomicWriteFile`. Joins the appendReminderHistory tmp-write ◦ (same one-line swap, resource-leak KIND).
+- ✓→Done **proactive-notice firedKey separator-injection collision (a real notice silently suppressed)** (EXPANSION
+  gap-scout, fire 43; dedup / key-collision) — `firedKey` built the dedup key as `${kind} ${id} ${startIso}` (space-join
+  of free-form fields). `id` is a provider event / task id (untrusted, can contain spaces), so two DISTINCT
+  {kind,id,startIso} tuples collide on one key (id="a b"+startIso="X" vs id="a"+startIso="b X" both → "calendar a b X");
+  the dedup `seen.has(key) → continue` then SILENTLY SUPPRESSES a legitimate second proactive notice — violating the
+  module's own "fires at most once per {kind,id,startIso} tuple" contract. FIX: `JSON.stringify([kind,id,startIso])`
+  (unambiguous; JSON escapes field boundaries — injective). In-memory key (rebuilt each run from the entries sidecar),
+  so NO persisted migration. TDD: unit (collision pair → distinct keys; same tuple → same key) + e2e (crafted colliding
+  sidecar entry → runDueProactiveNotices fires the new event, summary.fired===1) RED(space-join → suppressed,
+  fired=0)→GREEN; mcp 1776, check 0 (all pkgs), lint 0. Opus PASS (JSON injective incl. quote/bracket injection;
+  entries-not-keys persisted so backward-compatible; reachable — calendar event ids are provider-reported/untrusted).
+  KIND dedup, fresh surface. (Fable-5 was unavailable this fire; scout + judge ran on Opus 4.8 per the fallback.)
+- ✓→Done **objective verdict parser leaked a NESTED outcome → FALSE autonomous `met`** (EXPANSION gap-scout, fire 44;
+  parsing-bug / safety — false-positive completion) — `balancedJsonCandidates` (objective-evaluator.ts:79-110) pushed
+  every balanced `{...}` span starting at every `{` WITHOUT advancing past a consumed span, so a NESTED object was
+  re-extracted as its own candidate. `parseObjectiveVerdict` takes the LAST candidate with a recognized `outcome`, so
+  `{"plan":{"outcome":"met"},"note":"not yet"}` leaked the inner `{"outcome":"met"}` → returned `met` — the one outcome
+  the module promises "never a false met" (it's autonomous: `runDueObjectives` calls `act()` + flips status:done on a
+  `met` verdict). FIX: after pushing a balanced span ending at `j`, set `i = j` so only TOP-LEVEL objects are verdict
+  candidates; a nested-only outcome is ambiguous ⇒ the conservative `unmet`. TDD (nested-only met → unmet; nested-in-
+  array → unmet; top-level unmet + nested met → unmet) RED(remove i=j → false met)→GREEN; mcp 1778, check 0 (all pkgs),
+  lint 0. Opus PASS (separate top-level objects still both extracted; brace-in-string/escaped-quote unaffected; the
+  evaluator SYSTEM_PROMPT demands a TOP-LEVEL `{outcome,reason}` so a nested-only reply is off-spec → unmet is correct,
+  not a dropped legit verdict). KIND parsing-bug, fresh surface — directly on the fabrication=0 / autonomous-safety edge.
+- ✓→Done **runDueFollowups fired an arbitrary file-order slice, starving the most-overdue followup** (EXPANSION
+  gap-scout, fire 45; sort-ordering + the ~10-fire JUDGE FAILURE DRILL) — the due selection was
+  `all.filter(scheduled && scheduledFor<=now).slice(0, max)` with NO sort, so when a backlog exceeds `maxPerTick` (a
+  daemon catching up after downtime), the FILE-FIRST commitments fire and the genuinely most-overdue self-followup is
+  deferred tick after tick. The sibling `compareFollowupsByScheduledFor` (soonest-first) existed but was never applied.
+  FIX: `.sort(compareFollowupsByScheduledFor)` before `.slice(0, max)` (soonest-scheduledFor = most-overdue for past
+  times). TDD (3 distinct-due followups, oldest written LAST, maxPerTick:1 → fired[0].id==="fu_oldest" + the other two
+  stay scheduled) RED(no sort → fires file-first "fu_recent")→GREEN; mcp 1779, check 0 (all pkgs), lint 0. JUDGE DRILL:
+  an inert slice (comment-only code + a test asserting just `delivered===1`) was planted FIRST; the Opus verifier
+  correctly FAILED it (empirically probed fired[0].id==="fu_recent", flagged the test as count-only, derived the sort
+  fix) → rolled back → real fix + PASS. Judge drill 4/4 (fire 10 json.query, 21 regex, 31 fetch, 45 followups). KIND
+  sort-ordering, fresh surface. (Fable-5 unavailable; scout + both judge passes ran on Opus 4.8 per the fallback.)
+- ✓→Done **runDueObjectives left backoffBaseMs/backoffMaxMs un-NaN-guarded → objective spins every tick** (EXPANSION
+  gap-scout, fire 46; missing-validation / NaN-poison) — `maxPerTick`/`maxAttempts` are `Number.isFinite`-guarded (the
+  file's own comment names this class) but `const base = options.backoffBaseMs ?? DEFAULT; const cap = options.backoffMaxMs
+  ?? DEFAULT` used bare `??`, which does NOT catch NaN/Infinity. A non-finite backoff → `delay = Math.min(cap, NaN*…) =
+  NaN` → `new Date(nowMs + NaN).toISOString()` throws RangeError → the sibling-protecting catch swallows it → the
+  objective never gets a new nextEvalAt and re-evaluates EVERY tick forever (backoff defeated, the exact failure the
+  comment claims to prevent). FIX: mirror the guard — `Number.isFinite(base) ? base : DEFAULT` for BOTH base and cap. TDD
+  (backoffBaseMs:NaN → retried + valid nextEvalAt = nowMs+60_000, not errored; backoffMaxMs:NaN → also guarded) RED(bare
+  ?? → RangeError, retried empty)→GREEN; mcp 1780, check 0 (all pkgs), lint 0. Opus PASS (NaN/Inf/undefined caught,
+  finite incl 0 preserved, base+cap symmetric; verifier nit "cap not independently tested" addressed with a cap-NaN
+  case). KIND missing-validation; same file + NaN-poison class as fire 39 (nextEvalAt) — completes the file's guard
+  symmetry. (Fable-5 unavailable; scout + judge on Opus 4.8.)
 - ◦ **tool-arg grounding coverage** — extend `groundedArgs` (the deterministic anti-fabrication
   boundary) to every actuator persisting model-named free-text; one behavioral drop test each.
   DONE: `tasks.add` (notes/tags), `tasks.update` (notes), `add_contact` (relationship), `calendar`

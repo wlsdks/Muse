@@ -624,9 +624,21 @@ describe("mac_say — Tier 1 text-to-speech", () => {
     let argv: readonly string[] = [];
     const tool = createMacSayTool({ runner: async (a) => { argv = a; return ok(""); } });
     expect(await tool.execute({ text: "Build done" }, ctx)).toEqual({ spoke: true });
-    expect(argv).toEqual(["Build done"]);
+    expect(argv).toEqual(["--", "Build done"]);
     await tool.execute({ text: "Hi", voice: "Samantha" }, ctx);
-    expect(argv).toEqual(["-v", "Samantha", "Hi"]);
+    expect(argv).toEqual(["-v", "Samantha", "--", "Hi"]);
+  });
+
+  it("inserts a '--' option terminator so leading-dash text is not reparsed as a say flag", async () => {
+    // Without the terminator a text of "-0" / "--version" is consumed by `say` as an
+    // option (say "-0" → exit 1 "invalid option"); `say` supports `--` (mdfind/pbcopy
+    // do not, so this guard is say-specific). The user value must reach say as text.
+    let argv: readonly string[] = [];
+    const tool = createMacSayTool({ runner: async (a) => { argv = a; return ok(""); } });
+    expect(await tool.execute({ text: "-0" }, ctx)).toEqual({ spoke: true });
+    expect(argv).toEqual(["--", "-0"]);
+    await tool.execute({ text: "--version", voice: "Samantha" }, ctx);
+    expect(argv).toEqual(["-v", "Samantha", "--", "--version"]);
   });
 });
 

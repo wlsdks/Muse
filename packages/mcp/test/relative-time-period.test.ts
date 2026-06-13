@@ -146,6 +146,23 @@ describe("resolveRelativeTimePhrase — bare day-of-month ('the 25th', 'on the 1
     expect(resolveRelativeTimePhrase("the 0th", now)).toBeUndefined();
   });
 
+  it("rolls a day absent from the next month onto the month that HAS it — no JS Date overflow", () => {
+    // "the 31st" late on Jan 31 must land on March 31, NOT March 3
+    // (new Date(2026, 1, 31) overflows Feb → March 3). getDate is the discriminator.
+    const r31 = resolveRelativeTimePhrase("the 31st", () => new Date(2026, 0, 31, 22, 0, 0, 0))!;
+    expect(r31).toBeDefined();
+    expect(r31.getMonth()).toBe(2); // March
+    expect(r31.getDate()).toBe(31);
+    // "the 30th" on Jan 30 → Feb has no 30th → March 30 (old code gave March 2)
+    const r30 = resolveRelativeTimePhrase("the 30th", () => new Date(2026, 0, 30, 22, 0, 0, 0))!;
+    expect(r30.getMonth()).toBe(2);
+    expect(r30.getDate()).toBe(30);
+    // "the 29th" on Jan 29 2026 (non-leap) → March 29 (old code gave March 1)
+    const r29 = resolveRelativeTimePhrase("the 29th", () => new Date(2026, 0, 29, 22, 0, 0, 0))!;
+    expect(r29.getMonth()).toBe(2);
+    expect(r29.getDate()).toBe(29);
+  });
+
   it("does NOT regress weekday / duration phrases sharing nearby grammar", () => {
     expect(resolveRelativeTimePhrase("next monday", now)!.getDay()).toBe(1);
     expect(Math.round((resolveRelativeTimePhrase("in 2 weeks", now)!.getTime() - now().getTime()) / 86_400_000)).toBe(14);
@@ -287,5 +304,29 @@ describe("resolveRelativeTimePhrase — a BARE duration ('2 hours', '30 minutes'
   it("still rejects an unknown unit and keeps a bare hour as a clock time (no false positive)", () => {
     expect(resolveRelativeTimePhrase("3 horses", now)).toBeUndefined();
     expect(resolveRelativeTimePhrase("5", now)!.getHours()).toBe(5); // bare number = 24h clock hour, NOT 5 of a unit
+  });
+});
+
+describe("resolveRelativeTimePhrase — Feb 29 year-roll must not overflow into a wrong date", () => {
+  // The single +1-year roll built new Date(year+1, monthIndex, day) with no
+  // re-check, so "feb 29" asked after it passed in a leap year silently became
+  // March 1 of the (non-leap) next year. Fail safe: return undefined, never a
+  // date the user did not ask for.
+  it("en: 'feb 29' after it passed in a leap year does NOT become March 1 next year", () => {
+    // ref 2028-06-01 (2028 leap; Feb 29 2028 already passed) → roll would give
+    // new Date(2029,1,29) = Feb 29 2029 → 2029 non-leap → March 1.
+    expect(resolveRelativeTimePhrase("feb 29", () => new Date(2028, 5, 1, 12, 0, 0, 0))).toBeUndefined();
+  });
+
+  it("ko: '2월 29일' after it passed in a leap year does NOT become March 1 next year", () => {
+    expect(resolveRelativeTimePhrase("2월 29일", () => new Date(2028, 5, 1, 12, 0, 0, 0))).toBeUndefined();
+  });
+
+  it("a valid day still rolls a year forward when this year's has passed (no false undefined)", () => {
+    const r = resolveRelativeTimePhrase("mar 5", () => new Date(2026, 5, 1, 12, 0, 0, 0))!;
+    expect(r).toBeDefined();
+    expect(r.getMonth()).toBe(2); // March
+    expect(r.getDate()).toBe(5);
+    expect(r.getFullYear()).toBe(2027); // rolled to next year, day intact
   });
 });

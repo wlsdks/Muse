@@ -10,7 +10,7 @@
  * faked — never a fake "did the thing" flag.
  */
 
-import { hasConsent } from "./personal-consent-store.js";
+import { findConsent } from "./personal-consent-store.js";
 import { hasVeto } from "./personal-veto-store.js";
 
 export interface ConsentedActionRequest {
@@ -68,28 +68,53 @@ export async function performConsentedAction(
     }
   }
 
-  const consented = await hasConsent(options.consentFile, {
+  const consent = await findConsent(options.consentFile, {
     objectiveId: options.objectiveId,
     scope: options.scope,
     userId: options.userId
   });
-  if (!consented) {
+  if (!consent) {
     // Fail-closed: no recorded consent ⇒ the credential is never
     // resolved, no request is ever made.
     return { performed: false, reason: `no recorded consent for scope ${options.scope}` };
+  }
+
+  // Bind the scoped credential to the destination the user consented to: when
+  // the consent records an allowedHost, a caller-controlled request.url must not
+  // be able to send the token to an arbitrary host (credential exfiltration).
+  // Fail-closed on mismatch OR an unparseable URL — no HTTP, the token never leaves.
+  if (consent.allowedHost !== undefined) {
+    let requestHost: string;
+    try {
+      requestHost = new URL(options.request.url).host;
+    } catch {
+      return { performed: false, reason: `invalid request url: ${options.request.url}` };
+    }
+    if (requestHost !== consent.allowedHost) {
+      return {
+        performed: false,
+        reason: `consent for scope ${options.scope} is bound to host ${consent.allowedHost}, not ${requestHost}`
+      };
+    }
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_CONSENTED_ACTION_TIMEOUT_MS;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
+  // Strip any caller-supplied authorization header (case-insensitively) so the
+  // consent-gated credential is the ONLY Bearer token that ever leaves — a
+  // request.headers spread must never override or corrupt the code-owned token.
+  const callerHeaders = Object.fromEntries(
+    Object.entries(options.request.headers ?? {}).filter(([key]) => key.toLowerCase() !== "authorization")
+  );
   try {
     response = await options.fetchImpl(options.request.url, {
       body: options.request.body,
       headers: {
         authorization: `Bearer ${options.credential}`,
         ...(options.request.body ? { "content-type": "application/json" } : {}),
-        ...options.request.headers
+        ...callerHeaders
       },
       method: options.request.method ?? "POST",
       signal: controller.signal

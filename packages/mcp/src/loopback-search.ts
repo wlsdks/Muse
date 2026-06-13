@@ -366,5 +366,8 @@ function decodeDuckDuckGoRedirect(raw: string): string {
   if (queryStart < 0) return raw;
   const params = new URLSearchParams(raw.slice(queryStart + 1));
   const target = params.get("uddg");
-  return target ? decodeURIComponent(target) : raw;
+  // URLSearchParams.get() already percent-decodes once; a second decodeURIComponent
+  // corrupts a literal `%20` in the target and THROWS URIError on a bare `%`
+  // (e.g. `100%-off`), crashing the whole muse.search call.
+  return target ? target : raw;
 }
