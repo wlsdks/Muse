@@ -1,5 +1,9 @@
 # Muse dev backlog — the living ledger
 
+- ◦ **Consolidate remaining 8 isRecord dups → @muse/shared** — tools(×2)/auth/voice/model/agent-core/autoconfigure/api each hand-roll isRecord; migrate per-package (re-export the exported ones). fire 13 did @muse/shared canonical + apps/cli (3). 
+- ✓ isRecord canonical → @muse/shared + apps/cli 3 dups consolidated — codebase-quality fire 13
+
+
 ## ◦ Open — @muse/recall extraction (codebase-quality loop)
 
 - ✓ Relocate RecallHit into @muse/recall + move buildAskConnections — codebase-quality fire 9
@@ -53,7 +57,7 @@
 
 **ADD — genuinely uncovered high-value (security / grounding first):**
 - ◦ ★ **`createCitationStreamFilter` (agent-core, knowledge-recall/response path) has ZERO tests** — the grounding floor's STREAMING citation gate (the fix behind [[project_injection_defense]]'s "fabricated [from X] no longer flashes"); no regression test exists. (audit agent-core)
-- ◦ ★ **`assertPublicHttpUrlSync` (mcp/web-url-guard.ts) — SSRF guard sync path untested** — `file://`, `http://127.0.0.1`, `http://[::1]`, `http://metadata.internal` must block without DNS; none asserted (async twin is tested). Security gate. (audit mcp)
+- ✓ DONE (fire 5) **`assertPublicHttpUrlSync` SSRF sync gate** — covered: file://·malformed·localhost·metadata.internal·127.0.0.1·[::1]·169.254 all blocked, public https passes; each guard clause mutation-pinned.
 - ◦ **`groundToolArguments` nested-object multi-hop branch** (agent-core) — anti-fabrication gate untested on nested mixed grounded/fabricated leaves. (audit agent-core)
 - ◦ **`createLlmClassificationInputGuard` provider-throws fail-close** (agent-core/guards.ts) — classifier-outage path asserts no `GUARD_ERROR`/fail-close at unit level. (audit agent-core)
 - ◦ **`createToolResultQualityAuditFilter` early-return branches** (agent-core) — empty toolsUsed / empty verifiedSources / empty-remainder pass-throughs uncovered. (audit agent-core)
@@ -82,6 +86,7 @@
 - ✓ desktop companion stale default model: `OllamaHealth.requiredModel` qwen3:8b→gemma4:12b + `.notRunning` guidance interpolates requiredModel (was health-checking/onboarding the wrong model vs CLI's gemma4:12b default) — surfaces fire 2
 - ✓ `muse find` empty-state named only tasks/reminders/contacts though it also searches calendar; extracted drift-proof `formatNoMatches` (derives from DOMAIN_LABELS) so the no-match message matches the command's real scope — surfaces fire 3
 - ✓ web Tasks view rendered task dates in the runtime-default locale (lone view not threading `useI18n().locale`); extracted `formatTaskDate(iso, locale)` + wired locale so KO users see KO-formatted dates like every other view — surfaces fire 4
+- ✓ desktop `MuseBridge.parseAnswer` leaked raw JSON to the bubble (and spoke it aloud) when `chat --json` returned valid JSON with an empty `response`; now returns "" on decode-success so the silent "nothing in your notes" UX fires, cleanAnswer fallback reserved for genuinely non-JSON output — surfaces fire 5
 - ✓ `upcoming_birthdays` agent tool — conversational "whose birthday is coming up?" (resolveUpcomingBirthdays was CLI/brief-only, no agent tool) — tool-hardening fire 47
 - ✓ `on_this_day_notes` agent tool — conversational date-cued note recall (muse on-this-day was CLI-only; pure recall logic moved to @muse/mcp, CLI re-exports) — tool-hardening fire 48
 - ✓ `feeds_search` agent tool — conversational watched-feed archive search (CLI-only + only knowledge_search covered it, off by default → default-posture gap) — tool-hardening fire 49
@@ -92,8 +97,10 @@
 - ✓ FIX flaky timeout: `@muse/mcp playbook-store "weighted eviction"` was intrinsically ~5.1s (121 sequential recordPlaybookStrategy disk writes) → rewrote setup to 1 writePlaybook pre-seed + 1 record overflow (285ms), same assertions, mutation-proven (FIFO mutant → RED) — test-hygiene fire 2
 - ✓ ADD coverage: `formatCoarseAge` ≥2-year branch (`.toFixed(0)` whole years) in @muse/recall — only the <2y 1-decimal path was tested; mutation-proven (toFixed(1) mutant → '2.2y'≠'2y' RED) — test-hygiene fire 3
 - ✓ PRUNE a2a double-run: deleted 5 subsumed `src/*.test.ts` (peer-config·receive-quarantine·signing·council-wire·handler), migrated 2 unique security cases to the `test/` twins; testFiles 924→919; mutation-proven, 3 judge rounds (2 caught real loss) — test-hygiene fire 4
+- ✓ ADD SSRF coverage: `assertPublicHttpUrlSync` sync gate (mcp/web-url-guard.ts) had zero direct tests — 5 cases (protocol/blocked-host/private-addr/ok), each guard clause mutation-pinned — test-hygiene fire 5
 - ✓ `muse.tasks.search` matches tags — a task tagged "work" (word not in title/notes) is now found by searching "work" (completes the fire-51 tag story: list FILTERS by tag, search now FINDS by tag) + JUDGE-DRILL (verifier caught a deliberately-inert version) — tool-hardening fire 53
 - ✓ `week_agenda` agent tool — "what's my week look like?" ONE merged view of events+tasks+birthdays by day (muse week was CLI-only; groupWeekAgenda moved to @muse/autoconfigure, CLI re-exports) — tool-hardening fire 54
+- ✓ `list_objectives` agent tool — "what objectives are you tracking for me?" lists Muse's live standing objectives (active/escalated); were CLI/passive-only, no agent tool — tool-hardening fire 59
 - ✓ `web_action` method validation — a model-emitted GET (read verb) for a book/post intent silently reported performed:true (false success); a garbage verb hit fetch opaquely. Now an allow-set {POST,PUT,PATCH,DELETE} shared by schema enum + handler, fail-closed before approval/HTTP — tool-hardening fire 58
 - ✓ `web_action` SSRF-after-redirect closed — the state-changing web actuator followed a 3xx (body included on 307/308) to a private/loopback host the URL guard never vetted; now `redirect:"manual"` + fail-closed on 3xx (the read path already re-checked; the write path didn't) — tool-hardening fire 55
 - ✓ `muse.tasks.list` tag filter — "show my tasks tagged work" was inexpressible (list filtered only by status/dueWithinDays, search ignores tags) though tags are first-class + CLI `--tag` exists; added optional `tag` (case-insensitive exact, both branches) — tool-hardening fire 51
