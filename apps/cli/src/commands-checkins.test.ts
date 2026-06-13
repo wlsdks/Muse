@@ -3,10 +3,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readCheckins } from "@muse/mcp";
+import { readCheckins, writeCheckins, type PersistedCheckin } from "@muse/mcp";
 import { Command } from "commander";
 
 import { checkinsFile, registerCheckinsCommands, scanSessionCheckins } from "./commands-checkins.js";
+
+function checkin(overrides: Partial<PersistedCheckin>): PersistedCheckin {
+  return {
+    id: "c",
+    userId: "stark",
+    commitment: "x",
+    question: "x",
+    dueAtIso: "2026-05-22T12:00:00.000Z",
+    createdAt: "2026-05-22T00:00:00.000Z",
+    status: "scheduled",
+    sourceKey: "x",
+    ...overrides
+  };
+}
 
 async function runCheckins(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
@@ -47,6 +61,47 @@ describe("checkins list --status — strict validation (sibling parity with `tas
     const r = await runCheckins(["list", "--status", "fired"]);
     expect(r.exitCode).toBeUndefined();
     expect(r.stderr).toBe("");
+  });
+});
+
+describe("checkins list --search — filter by question text (sibling parity with followup/tasks/remind)", () => {
+  const prevEnv = process.env.MUSE_CHECKINS_FILE;
+  beforeEach(() => {
+    process.env.MUSE_CHECKINS_FILE = join(mkdtempSync(join(tmpdir(), "muse-checkins-")), "checkins.json");
+  });
+  afterEach(() => {
+    if (prevEnv === undefined) delete process.env.MUSE_CHECKINS_FILE;
+    else process.env.MUSE_CHECKINS_FILE = prevEnv;
+  });
+
+  async function seed(): Promise<void> {
+    await writeCheckins(checkinsFile(), [
+      checkin({ id: "a", question: "Following up — you'd call the DENTIST. How did it go?", sourceKey: "a" }),
+      checkin({ id: "b", question: "Following up — you'd email Bob. How did it go?", sourceKey: "b" })
+    ]);
+  }
+
+  it("keeps only check-ins whose question matches (case-insensitive), dropping the rest", async () => {
+    await seed();
+    const r = await runCheckins(["list", "--search", "dentist"]);
+    expect(r.stdout).toContain("[a]");
+    expect(r.stdout).not.toContain("[b]");
+    expect(r.stdout).not.toContain("email Bob");
+  });
+
+  it("reflects the filtered count in --json (total is the matched count, not the full set)", async () => {
+    await seed();
+    const r = await runCheckins(["list", "--search", "dentist", "--json"]);
+    const payload = JSON.parse(r.stdout);
+    expect(payload.checkins.map((c: PersistedCheckin) => c.id)).toEqual(["a"]);
+    expect(payload.total).toBe(1);
+  });
+
+  it("absent --search lists everything (no filtering)", async () => {
+    await seed();
+    const r = await runCheckins(["list", "--status", "all", "--json"]);
+    const payload = JSON.parse(r.stdout);
+    expect(payload.total).toBe(2);
   });
 });
 

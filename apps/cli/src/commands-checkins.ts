@@ -94,7 +94,8 @@ export function registerCheckinsCommands(program: Command, io: ProgramIO): void 
     .description("List scheduled / fired check-ins")
     .option("--status <s>", "scheduled (default) | fired | all", "scheduled")
     .option("--json", "Print the raw payload")
-    .action(async (options: { readonly status: string; readonly json?: boolean }) => {
+    .option("--search <text>", "Only check-ins whose question contains this text (case-insensitive)")
+    .action(async (options: { readonly status: string; readonly json?: boolean; readonly search?: string }) => {
       const status = options.status.trim().toLowerCase();
       // Validate like `tasks list` — a typo'd --status must error loudly, not
       // silently filter to an empty (misleading-as-"no check-ins") result.
@@ -106,7 +107,9 @@ export function registerCheckinsCommands(program: Command, io: ProgramIO): void 
         return;
       }
       const all = await readCheckins(checkinsFile()).catch(() => []);
-      const scoped = status === "all" ? all : all.filter((c) => c.status === status);
+      const byStatus = status === "all" ? all : all.filter((c) => c.status === status);
+      const query = options.search?.trim().toLowerCase();
+      const scoped = query ? byStatus.filter((c) => c.question.toLowerCase().includes(query)) : byStatus;
       if (options.json) {
         io.stdout(`${JSON.stringify({ checkins: scoped, status, total: scoped.length }, null, 2)}\n`);
         return;
