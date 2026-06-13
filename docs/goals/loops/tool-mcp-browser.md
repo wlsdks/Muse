@@ -46,3 +46,24 @@ ratchet: testFiles +1 (official-mcp-presets.test.ts, 11 cases) · @muse/mcp 1810
   contract-faithful transport fake로 실제 McpManager register/connect/projection 경로 검증(fake 레지스트리 아님).
 - **리스크:** 라이브 배선은 다음 ◦ 슬라이스들(backlog 5건 decompose: env 토글·투영 경로 적용·키체인 자격증명·
   draft-first write e2e·doctor provenance). web-search-policy fuzz 타임아웃은 무관 패키지 기존 flake(격리 44/44).
+
+## fire 3 · 2026-06-13 · skill v1.14.0 · (this commit)
+
+meta: value-class=wiring · pkg=@muse/autoconfigure · kind=B-mcp · verdict=PASS · firesSinceDrill=3
+
+ratchet: testFiles +1 (mcp-stack-official-presets.test.ts, 10 cases) · @muse/autoconfigure 532 tests pass · fabrication 0 · eval:agent LIVE (ran-cases PASS, wrapper-timeout not a fail) · lint 0/0
+
+- **무엇:** fire 2의 휴면 외부-MCP 프리셋 레지스트리를 **opt-in 연결 가능**하게 배선. per-server
+  env 토글(`MUSE_GITHUB_MCP_ENABLED`/`MUSE_NOTION_MCP_ENABLED`, `MUSE_<NAME>_MCP_ENABLED` 파생)이
+  set일 때만 `assembleMcpStack` externalServerInputs + strict allowlist에 등록(기본 OFF), 그리고
+  라이브 투영에 `withOfficialMcpRisk(withChromeDevToolsRisk(toMuseTools()))` 합성으로 write/unknown
+  외부 도구를 `write`로 재스탬프 → `toolApprovalGate` 도달. @muse/autoconfigure만 수정.
+- **왜:** 토글만 켜고 risk 재스탬프 없으면 외부 write 도구가 `read`로 투영돼 **fail-OPEN** — 두
+  스텝은 반드시 커플링해 함께 출하해야 안전. chrome-devtools 선례를 정확히 미러. 진안의 외부 MCP
+  연동 요청을 실제 사용 가능 상태로 끌어올림(read 자유, write draft-first 게이트).
+- **리뷰지점:** judge가 등록 루프를 neuter해 5/10 RED 재확인; `index.ts:750` 합성 호출이 실제
+  agent-runtime resolveToolRisk→approvalGate에 도달함을 chrome 선례로 추적; 빈 allowlist allow-all
+  유지(enable이 strict로 안 뒤집힘) 확인.
+- **리스크:** 자격증명 해석(키체인 PAT/OAuth)·draft-first write e2e·doctor provenance는 남은 ◦.
+  `pnpm check` SIGABRT는 무관 @muse/memory 병렬-부하 flake(격리 417/417). eval:agent는 로컬모델
+  바운드로 wrapper 타임아웃(만진 코드가 tool selection 무관이라 직교).
