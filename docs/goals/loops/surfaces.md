@@ -201,3 +201,12 @@ ratchet: desktop swift tests 55/55 (+4) · fabrication 0 · self-eval exit 0 · 
 - **왜**: 음성 on/off/system/qwen 라우팅이 AppKit에 인라인·미테스트였고 무음 토글이 너무 좁았다. 추출로 헤드리스 테스트 가능 + 흔한 falsy 표기 수용(env-falsy 관행)으로 실제 사용자 의도 반영.
 - **리뷰지점**: 구-계약 보존("0"→silent·"system"→system·unset→qwen·silence 우선), TTS 매치는 trim/소문자 superset(회귀 아님). `"1"`/`"true"`/`""`는 qwen(과확장 아님). 추출은 dead-code 아님(SpeakerFactory가 실사용).
 - **리스크**: 없음(신규 코어 파일 + 팩토리 body + 신규 테스트, Speaker 프로토콜·3 impl 무변, 독립 Opus judge가 mutation(falsy set→["0"])로 RED 입증·parity·exhaustive switch 검증 후 PASS, swift build clean·55/55).
+
+## fire 23 · 2026-06-14 · skill v1.14.0 · 5274893c
+meta: surface=cli · value-class=new-capability · pkg=@muse/cli · kind=list-search-flag-parity · verdict=PASS · firesSinceDrill=6
+ratchet: cli tests 2627 (+1) · fabrication 0 · self-eval exit 0 · 표면 균형 web8·desktop6·cli9
+
+- **무엇**: `muse followup list`에 `--search <text>` 추가 — sibling list 명령(tasks/remind/contacts)은 모두 텍스트 필터가 있는데 followup만 없었다. followup 레코드의 검색가능 필드 `summary`에 대소문자 무시 부분일치; `--status` 필터+정렬 後 적용, `total`은 매치 수로 재계산. json·formatted 경로 모두 `matched` 사용.
+- **왜**: format/validation vein이 마른 cli 표면(fire 18 NOTE)에서 micro-fix 대신 sibling-parity new-capability로 전환 — 실사용 가치(특정 followup 찾기) + RATCHET이 요구한 value-class 상향(micro-fix→new-capability).
+- **리뷰지점**: query=`options.search?.trim().toLowerCase()` falsy(absent/`""`)면 필터 미적용(matched===sorted, formatted 경로 무회귀). `--status` 검증(fire 14)이 먼저 early-return. remind의 trim+lowercase-substring 패턴과 동형. show/snooze/cancel 무변.
+- **리스크**: 없음(list action 한정 +7/-4 + 신규 테스트, 독립 Opus judge가 RED-before(commander unknown-option)·composition·total 재계산·무회귀 검증 후 PASS, cli 2627/2627·self-eval exit 0).
