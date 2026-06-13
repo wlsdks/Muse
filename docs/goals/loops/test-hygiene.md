@@ -174,3 +174,11 @@ ratchet: testFiles 960→959 (−1 통합, 유니크 케이스 1 이식) · netC
 - **왜:** 파일 무결성의 기반 프리미티브(모든 store가 의존)인데 두 파일 중복 실행. 진안 "중복 제거" — 단 양쪽 유니크(test/ 3개 보안·src/ 1개 동시성)는 손실 금지.
 - **어떻게-증명(MUTATION-FIRST):** 이식한 동시성 케이스 — tmp명에서 `-${randomUUID()}` 제거(same-pid 충돌 재현) 시 그 케이스만 RED(정확히 `ENOENT ... rename race.json.tmp-<pid>`), 나머지 9 green → 진짜 회귀 가드 + 유일성 증명. 복원+클린리빌드 10/10 green. ④b 독립 Opus judge가 삭제본 7개 행동 전수 매핑(전부 equal-or-stronger) + mutation 재현 → **VERDICT: PASS**.
 - **리스크:** 소스(비-test) 무변경. 변경 −68L(src/ 삭제) +8L(이식) 2건뿐. mcp dist 클린리빌드 1회 필요(stale-dist 패턴 [[project_stale_dist_from_loop]]). 남은 mcp 동명 쌍 13개 — 각각 subset/complementary 판별 후 처리.
+
+## fire 21 · 2026-06-14 · skill v1.14.0 · 679cd3c5
+meta: kind=add · pkg=@muse/resilience · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 964 (케이스 +1, 파일수 불변) · netCoverage +2 branch (multiplier·maxDelay floor-clamp) · fabrication 0 · resilience 26/26 green + lint 0
+- **무엇:** `computeRetryDelay`(resilience/index.ts)의 **오설정 knob floor-clamp 2개** 커버 추가 — `multiplier=Math.max(1,…)`(multiplier<1은 backoff를 *축소*시켜 실패 provider 폭격) + `maxDelay=Math.max(initial,…)`(maxDelayMs<initialDelayMs는 첫 delay를 floor 아래로 cap). 기존 테스트는 전부 multiplier≥2·maxDelayMs>initial이라 두 clamp 미커버. 한 테스트 2 assert(동종 floor-guard 배칭).
+- **왜:** 결정적 retry/stop-condition 정책 코드(CLAUDE.md "policy/budget/stop은 결정적 코드"). NaN 가드와 같은 오설정-방어 계열인데 — multiplier<1이면 재시도 간격이 *줄어* 실패 중인 provider를 더 때림(조용한 회귀 가능).
+- **어떻게-증명(MUTATION-FIRST ADD):** multiplier `Math.max(1,…)` 제거 시 0.5→`100*0.5²=25`로 multiplier-assert만 RED; maxDelay `Math.max(initial,…)` 제거 시 50으로 cap→maxDelay-assert만 RED. 각 assert가 자기 clamp만 잡음(독립·비-동어반복), 다른 25 green. 독립 ④b Opus judge가 양 mutation 재현 + 양 clamp 미커버 + 값(둘 다 100) 정확성 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경, resilience 격리 green. ★`pnpm check` red 1건은 **무관 환경**(apps/api `messaging-webhooks` buildServer 20s timeout, 격리 4/4 8.6s — fire 18과 동일 부하 아티팩트, backlog既기록).
