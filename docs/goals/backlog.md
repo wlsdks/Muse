@@ -1,5 +1,9 @@
 # Muse dev backlog — the living ledger
 
+- ◦ **Decompose commands-doctor check-cluster → sibling** — fire 14 extracted config-classifiers; the LocalCheck-returning health checks (modelEnvCheck/localOnlyCheck/ollamaPerfPostureCheck/selfLearningCheck/notesIndexHealth/episodeIndexHealth/embedModelCheck…) are a further cohesive cluster to extract (commands-doctor still ~1121 LOC).
+- ✓ Decompose commands-doctor config-classifiers → commands-doctor-config.ts — codebase-quality fire 14
+
+
 - ◦ **Consolidate remaining 8 isRecord dups → @muse/shared** — tools(×2)/auth/voice/model/agent-core/autoconfigure/api each hand-roll isRecord; migrate per-package (re-export the exported ones). fire 13 did @muse/shared canonical + apps/cli (3). 
 - ✓ isRecord canonical → @muse/shared + apps/cli 3 dups consolidated — codebase-quality fire 13
 
@@ -78,6 +82,7 @@
 - ✓ distill-queue drain-idempotency + grounding-fence invariants pinned — the unattended distill-consumer's "dud/fail-soft event is drained not jammed, writes zero fabricated strategies" safety guarantees were untested; added 2 mutation-verified OUTCOME tests over the real file-backed stores — grounding-integrity fire 2
 - ✓ untrusted-only provenance parity on the chat surface — extended fire 1's defense to `finalizeGatedChatAnswer` (every conversational surface's shared pipeline): toolEvidence now tagged `trusted:false` + `untrustedOnlyChatNotice` cue when a faithful chat answer rests only on untrusted tool sources; purely additive, fabrication floor untouched — grounding-integrity fire 3
 - ✓ fail-close empty-evidence on council + reflection judge gates — verifyCouncilGrounding/verifyReflectionsGrounding called the judge with empty evidence and KEPT the claim on YES (fail-OPEN floor leak, no deterministic pre-gate); now fail-close without consulting the judge when evidence is empty (red-without-fix verified) — grounding-integrity fire 4
+- ✓ learn-queue lost-update fix — markLearnEventsDone (read-modify-write) and enqueueLearnEvent (appendFile) ran without a mutex, so a correction enqueued during a drain was clobbered (silently never learned, unattended path); wrapped BOTH in the shared per-file withFileMutationQueue (red-without-fix verified; wrapping only the drain is insufficient) — grounding-integrity fire 5
 
 <!-- Going-forward: `- ✓ <item title> — <slug> fire N` so the scout dedups without the verbose block. -->
 - ✓ Adaptive-k score-gap recall cutoff (trim grounding-window decoys, floor-neutral; arXiv:2506.08479) — agent-core-cognition fire 1
@@ -87,6 +92,7 @@
 - ✓ `muse find` empty-state named only tasks/reminders/contacts though it also searches calendar; extracted drift-proof `formatNoMatches` (derives from DOMAIN_LABELS) so the no-match message matches the command's real scope — surfaces fire 3
 - ✓ web Tasks view rendered task dates in the runtime-default locale (lone view not threading `useI18n().locale`); extracted `formatTaskDate(iso, locale)` + wired locale so KO users see KO-formatted dates like every other view — surfaces fire 4
 - ✓ desktop `MuseBridge.parseAnswer` leaked raw JSON to the bubble (and spoke it aloud) when `chat --json` returned valid JSON with an empty `response`; now returns "" on decode-success so the silent "nothing in your notes" UX fires, cleanAnswer fallback reserved for genuinely non-JSON output — surfaces fire 5
+- ✓ `muse contacts birthdays --within` swallowed bad input (`abc`→silent default 30, `-5`→"next -5 days") unlike its MCP tool twin (1..365 clamp) and sibling CLI flags; now rejects non-finite/<1 with exit 1 + clamps to 1..365 — surfaces fire 6
 - ✓ `upcoming_birthdays` agent tool — conversational "whose birthday is coming up?" (resolveUpcomingBirthdays was CLI/brief-only, no agent tool) — tool-hardening fire 47
 - ✓ `on_this_day_notes` agent tool — conversational date-cued note recall (muse on-this-day was CLI-only; pure recall logic moved to @muse/mcp, CLI re-exports) — tool-hardening fire 48
 - ✓ `feeds_search` agent tool — conversational watched-feed archive search (CLI-only + only knowledge_search covered it, off by default → default-posture gap) — tool-hardening fire 49
@@ -100,6 +106,7 @@
 - ✓ ADD SSRF coverage: `assertPublicHttpUrlSync` sync gate (mcp/web-url-guard.ts) had zero direct tests — 5 cases (protocol/blocked-host/private-addr/ok), each guard clause mutation-pinned — test-hygiene fire 5
 - ✓ `muse.tasks.search` matches tags — a task tagged "work" (word not in title/notes) is now found by searching "work" (completes the fire-51 tag story: list FILTERS by tag, search now FINDS by tag) + JUDGE-DRILL (verifier caught a deliberately-inert version) — tool-hardening fire 53
 - ✓ `week_agenda` agent tool — "what's my week look like?" ONE merged view of events+tasks+birthdays by day (muse week was CLI-only; groupWeekAgenda moved to @muse/autoconfigure, CLI re-exports) — tool-hardening fire 54
+- ✓ `home_action` blast-radius guard — an entity-less service call (e.g. `light.turn_off` with no entity) is HA's "apply to EVERY device in the domain" path (whole-house off / every-lock unlock); now fail-closed unless entity or a data target (entity_id/area_id/device_id/target) resolves a scope — tool-hardening fire 60
 - ✓ `list_objectives` agent tool — "what objectives are you tracking for me?" lists Muse's live standing objectives (active/escalated); were CLI/passive-only, no agent tool — tool-hardening fire 59
 - ✓ `web_action` method validation — a model-emitted GET (read verb) for a book/post intent silently reported performed:true (false success); a garbage verb hit fetch opaquely. Now an allow-set {POST,PUT,PATCH,DELETE} shared by schema enum + handler, fail-closed before approval/HTTP — tool-hardening fire 58
 - ✓ `web_action` SSRF-after-redirect closed — the state-changing web actuator followed a 3xx (body included on 307/308) to a private/loopback host the URL guard never vetted; now `redirect:"manual"` + fail-closed on 3xx (the read path already re-checked; the write path didn't) — tool-hardening fire 55
