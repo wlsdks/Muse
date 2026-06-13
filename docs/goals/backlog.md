@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ browser_key Enter gated — the one state-changing key (confirm/submit a focused control) now carries the SAME draft-first approval gate as browser_click/type; navigation keys (Escape/Tab/arrows) stay free, Enter fails closed with no gate (closed an ungated submit primitive bypassing outbound-safety) — tool-hardening fire 66
 - ✓ add_contact `phone` arg-grounding — a model-fabricated phone the user never stated is dropped before the contact-store write (the highest-harm contact fabrication: a wrong number reaches a stranger); grounded via the real runtime `groundToolArguments` proved in apps/cli — tool-hardening fire 65
 - ✓ comment-hygiene: stripped 5 forbidden goal/task-id markers (adapter-ollama/weather-tool/loopback-calendar/history-routes/commands-pattern), WHY preserved — codebase-quality fire 20
 - ✓ recent_actions `result` outcome filter (filter-BEFORE-limit so an old refusal/failure surfaces for "did you refuse anything?") + JUDGE-DRILL (inert/declaration-only/stub slice → verifier FAILed 4/4) — tool-hardening fire 64
