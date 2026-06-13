@@ -94,7 +94,7 @@ ratchet: testFiles 943 (+1) · web tests 23/23 (+4) · fabrication 0 · self-eva
 - **리뷰지점**: `min===0`은 정확히 [0,30s)만 잡음(30s→"in 1m", 90s→"in 2m"). past(ms<0)·NaN·분/시/일 버킷 무변. 순수 함수라 export·min-선계산 부작용 없음.
 - **리스크**: 없음(timeUntil 1함수 + export + 4 테스트, 호출부 시그니처 무변, 독립 Opus judge가 경계워크·flakiness(10s+ 여유)·RED-before 검증 후 PASS, web 23/23).
 
-## fire 11 · 2026-06-13 · skill v1.14.0 · <commit>
+## fire 11 · 2026-06-13 · skill v1.14.0 · 75bae0b4
 meta: surface=desktop · value-class=micro-fix · pkg=apps/desktop(MuseDesktopCore) · kind=nil-vs-empty-contract · verdict=PASS · firesSinceDrill=3
 ratchet: desktop swift tests 50/50 (+1) · fabrication 0 · self-eval exit 0
 
