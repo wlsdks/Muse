@@ -17,6 +17,7 @@
  * (exit 0) when local Ollama / the embed model is unreachable. LOCAL OLLAMA ONLY.
  */
 import { createMuseRuntimeAssembly, createOllamaEmbedder } from "@muse/autoconfigure";
+import { DEFAULT_EMBED_MODEL } from "../dist/embed-model-default.js";
 import { GROUNDING_EVAL_CORPUS } from "../dist/grounding-eval-corpus.js";
 import {
   createQwenReverify,
