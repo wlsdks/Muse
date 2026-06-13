@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ decompose @muse/model: extracted OpenAI response-field parsers (readOpenAIContent/parseOpenAIToolCalls/parseToolArguments/parseOpenAIUsage) provider-openai -> provider-openai-parse.ts (608->544 LOC; no cycle — deps all imported; +10-case test) — codebase-quality fire 62
 - ⚠ tool-hardening EXPANSION digest-vein EXHAUSTED (fire 101 honest-close): 2 wins shipped (today_brief fire 97, day_recap fire 99) completing the temporal-digest family (week/today-forward/today-retrospective); week_agenda was fire 79. Remaining candidates all rejected: morning_brief (`muse brief`) confusable with today_brief; muse status already an agent tool (muse.status.snapshot); person-dossier confusable with find_contact. Bug-hunt veins also exhausted (per-handler fire 94, delivery fire 96). Next: a non-temporal EXPANSION scout (only if a genuine non-confusable capability gap exists), 진안-blocked levers (MCP-risk-annotation posture, undo/veto, email/handle grounding=agent-core HOT), or a new .muse/runs failure cluster.
 
 - ✓ day_recap IrrelAcc: 2 negatives (casual "오늘 하루"/"today" remarks → NO tool) complete day_recap's agent-testing.md triad (selection+confusability fire 99, irrelevance here) — guards the literal keyword "오늘 하루" (a high-frequency casual phrase) from over-firing the tool — tool-hardening fire 100
