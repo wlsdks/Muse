@@ -1,5 +1,6 @@
 # Muse dev backlog — the living ledger
 
+- ✓ Phase 3 cont.: extracted inline episodeBlock -> buildEpisodeContextBlock in @muse/recall (escapes untrusted summary; +injection-defense test) — codebase-quality fire 36
 - ✓ IrrelAcc destructive over-firing parity: a status QUESTION mentioning a task/reminder by a resolvable word → tasks.list/reminders.list NOT the destructive delete/clear (extends fire 71's followup guard to the sibling destructive tools) — tool-hardening fire 75
 - ✓ dead-code @muse/cli: de-exported 4 internal-only program-helpers (parseSseEvent/readSseField/readResponseRunId/promptPassword) — knip-clean, grep-verified no external importer — codebase-quality fire 35
 - ✓ literal-match injection guards on the 3 remaining destructive-gating word-ref resolvers (resolveReminderRef/TaskRef/EventByRef) — ".*"/"." refs → not-found not match-all; completes the safety parity fire 72 started (followup), so a future regex-refactor on ANY of the 4 resolvers is caught — tool-hardening fire 74
