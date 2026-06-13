@@ -27,7 +27,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, fuseByReciprocalRank, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategies, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, selectByMmr, selectByScoreGap, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch, type RetrievalConfidence } from "@muse/agent-core";
+import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, enforceAnswerCitations, explainGroundingVerdict, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, rankPlaybookStrategiesByRelevance, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify, type KnowledgeMatch } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, reportSentenceGroundedness, requestsToolAction, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
@@ -35,8 +35,19 @@ import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
 import { acquireOllamaLease, evaluateArithmeticExpression, fetchReadableUrl, formatDueLocal, listReflections, parseReminderDueAt, readActionLog, readContacts, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type ActionLogEntry, type Contact, type MessageApprovalGate, type PersistedReminder, type PersistedTask } from "@muse/mcp";
 import { redactSecretsInText } from "@muse/shared";
-import { collectCitedNoteAges, filterNotesByScope, formatCoarseAge, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, recentFeedHeadlines, relativizeNoteSource, relevantSnippet } from "@muse/recall";
-export { collectCitedNoteAges, filterNotesByScope, formatCoarseAge, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, recentFeedHeadlines, relativizeNoteSource, relevantSnippet };
+import { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
+export { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
+export type { MemoryFact } from "@muse/recall";
+import { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, urlGroundingSource } from "@muse/recall";
+export { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, urlGroundingSource };
+import { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource } from "@muse/recall";
+export { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource };
+import { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy } from "@muse/recall";
+export { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy };
+import { diversifyAskChunks, notesGroundingFraming } from "@muse/recall";
+export { diversifyAskChunks, notesGroundingFraming };
+export type { FileEntry, IndexChunk, ScoredChunk } from "@muse/recall";
+import type { FileEntry, IndexChunk } from "@muse/recall";
 
 import { parseGitReflog, selectGitCommits, type GitCommit } from "./git-reflog.js";
 import { parseShellHistory, selectShellCommands } from "./shell-history.js";
@@ -70,138 +81,7 @@ import { withSigintAbort } from "./sigint-abort.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 import { DEFAULT_EMBED_MODEL, resolveIndexModel } from "./embed-model-default.js";
 
-/**
- * SB-1: rank past-session episode summaries against the query so `muse ask`
- * grounds on the user's own history, not just notes. Pure + cosine-based;
- * caller supplies the already-embedded query vector. Top-K, descending score.
- */
-const EPISODE_IMPORTANCE_WEIGHT = 0.15;
-const EPISODE_RECENCY_WEIGHT = 0.15;
-const EPISODE_RECENCY_HALF_LIFE_DAYS = 7;
-const MS_PER_DAY = 86_400_000;
 
-/**
- * Recency component of the Generative Agents retrieval score (arXiv
- * 2304.03442): an exponential decay over the episode's age, 1.0 for a
- * just-ended session and halving every `EPISODE_RECENCY_HALF_LIFE_DAYS`.
- * Returns 0 when there's no usable timestamp (backward-compatible: an
- * episode with no `endedAt` adds no recency bump). A future timestamp is
- * clamped to age 0 so a skewed clock can't inflate the score past 1.
- */
-function episodeRecencyScore(endedAt: string | undefined, nowMs: number): number {
-  if (!endedAt) {
-    return 0;
-  }
-  const t = Date.parse(endedAt);
-  if (!Number.isFinite(t)) {
-    return 0;
-  }
-  const ageDays = Math.max(0, (nowMs - t) / MS_PER_DAY);
-  return Math.pow(0.5, ageDays / EPISODE_RECENCY_HALF_LIFE_DAYS);
-}
-
-export function rankEpisodeHits(
-  queryVec: readonly number[],
-  episodes: ReadonlyArray<{ readonly id: string; readonly summary: string; readonly embedding: readonly number[]; readonly importance?: number; readonly endedAt?: string }>,
-  topK: number,
-  nowMs: number = Date.now()
-): Array<{ id: string; summary: string; score: number }> {
-  if (topK <= 0) {
-    return [];
-  }
-  // Generative Agents (arXiv 2304.03442) ranks memories by relevance +
-  // importance + RECENCY. Relevance is the cosine; importance and recency are
-  // small bounded ADDITIVE bumps, so among similar-relevance episodes the more
-  // important / more recent one wins, while an unscored, timestamp-less corpus
-  // still ranks exactly by cosine as before (both bumps are 0).
-  return episodes
-    .map((ep) => {
-      const importance = typeof ep.importance === "number" && Number.isFinite(ep.importance)
-        ? Math.min(10, Math.max(1, ep.importance))
-        : 0;
-      const importanceBump = importance === 0 ? 0 : EPISODE_IMPORTANCE_WEIGHT * (importance / 10);
-      const recencyBump = EPISODE_RECENCY_WEIGHT * episodeRecencyScore(ep.endedAt, nowMs);
-      return { id: ep.id, score: cosine(queryVec, ep.embedding) + importanceBump + recencyBump, summary: ep.summary };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
-}
-
-
-export interface MemoryFact {
-  readonly key: string;
-  readonly value: string;
-}
-
-/**
- * EVERY askable remembered fact (facts + plain preferences; the internal `veto:`
- * / `goal:` slots are persona machinery). buildMusePersona lists ALL of these to
- * the model, so it can cite ANY — they are therefore ALL the citation gate's
- * allowed memory sources AND the verdict's evidence, regardless of which the
- * current query lexically matched (a query "allergic" needn't token-match a fact
- * keyed `allergy_penicillin` for the model — which has it from the persona — to
- * cite it honestly).
- */
-export function allUserMemoryFacts(
-  memory: { readonly facts: Readonly<Record<string, string>>; readonly preferences: Readonly<Record<string, string>> }
-): readonly MemoryFact[] {
-  return [
-    ...Object.entries(memory.facts ?? {}),
-    ...Object.entries(memory.preferences ?? {}).filter(([key]) => !key.startsWith("veto:") && !key.startsWith("goal:"))
-  ].map(([key, value]) => ({ key, value }));
-}
-
-/**
- * Render a remembered fact as a NATURAL phrase for the model + judge: facts are
- * auto-extracted under machine keys with boolean-ish values (`allergy_penicillin:
- * "yes"`), which the small re-verify judge can't connect to "allergic to
- * penicillin". Underscore-join the key into words and drop a bare yes/true value
- * so the evidence reads as the topic itself ("allergy penicillin"); a real value
- * is kept ("favorite color: blue").
- */
-export function renderMemoryFact(fact: MemoryFact): string {
-  const topic = fact.key.replace(/[_-]+/gu, " ").trim();
-  const value = fact.value.trim();
-  return value === "" || /^(?:yes|true)$/iu.test(value) ? topic : `${topic}: ${value}`;
-}
-
-/**
- * The remembered facts most relevant to the question — token overlap on
- * `key value`. Used to EMPHASISE the on-topic facts in their own grounding block
- * (with the `[memory: <topic>]` hint); the gate/verdict still allow the full set.
- */
-export function selectMemoryFacts(
-  memory: { readonly facts: Readonly<Record<string, string>>; readonly preferences: Readonly<Record<string, string>> },
-  queryTokens: ReadonlySet<string>,
-  max = 5
-): readonly MemoryFact[] {
-  if (queryTokens.size === 0) {
-    return [];
-  }
-  return allUserMemoryFacts(memory)
-    .map((fact) => ({ fact, score: lexicalOverlap(queryTokens as Set<string>, `${fact.key} ${fact.value}`) }))
-    .filter((scored) => scored.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, max)
-    .map((scored) => scored.fact);
-}
-
-// Precision-first refusal markers (EN + KO). A refusal grounds NO claim, so
-// ANY citation the small model tacks onto it ("…I don't have that. cite as:
-// [from preferences.md]") is spurious — and the followable Sources footer
-// must never present a source "to verify" for an answer that asserts nothing.
-// Kept high-precision (clear no-information phrases only) so a real cited
-// answer never matches; the rare partial answer ("I don't have X, but [from
-// Y]…") is the accepted precision-first cost (it loses Y's footer link).
-const REFUSAL_MARKERS: readonly string[] = [
-  "i'm not sure", "i am not sure", "i don't have", "i do not have",
-  "don't have access", "do not have access", "no information",
-  "none of the provided context", "couldn't find", "could not find",
-  "i don't know", "i do not know", "not in your notes", "nothing in your notes",
-  "don't have that information", "do not have that information",
-  "모르", "없습니다", "없어요", "없어", "정보가 없", "찾을 수 없", "알 수 없",
-  "저장하고 있지 않", "가지고 있지 않", "접근할 수 없"
-];
 
 // Instant, on-brand replies for a PURE social prompt — so a bare "hi" / "thanks"
 // gets a clean conversational line instead of the empty-corpus on-ramp + a
@@ -230,53 +110,7 @@ export const ACTION_GUIDE =
   "Reads stay silent; writes/sends always ask first.";
 
 
-/**
- * Note evidence the grounding VERDICT scores against, augmented for the agent
- * (`--with-tools`) path. The chat-only path's `scored` top-K IS exactly what
- * grounded the answer; but the agent can pull a chunk via `knowledge_search`
- * (often on a reformulated query) that the CLI's pre-retrieval top-K missed, so
- * scoring the agent's answer against `scored` alone would false-flag a
- * legitimately grounded answer "treat as unverified". This adds the FULL text
- * of every note the answer actually CITES (each already gate-validated against
- * the live corpus) so a cited note is always covered. Additive only: it can
- * prevent a false "ungrounded", never cause a false "grounded" — a drifted
- * value that appears in no cited note still scores uncovered. Pure + exported.
- */
-export function augmentNoteEvidenceWithCited(
-  baseNotes: readonly KnowledgeMatch[],
-  citedSources: readonly string[],
-  liveNotes: readonly { readonly source: string; readonly chunks: readonly { readonly text: string }[] }[]
-): KnowledgeMatch[] {
-  const out: KnowledgeMatch[] = baseNotes.map((m) => ({ ...m }));
-  const seen = new Set(out.map((m) => `${m.source} ${m.text}`));
-  const cited = new Set(citedSources);
-  for (const note of liveNotes) {
-    if (!cited.has(note.source)) continue;
-    for (const chunk of note.chunks) {
-      const key = `${note.source} ${chunk.text}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ cosine: 1, score: 1, source: note.source, text: chunk.text });
-    }
-  }
-  return out;
-}
 
-/**
- * Whether to nudge the user toward `--repair` after an ungrounded verdict. Only
- * when: the verdict actually fired, `--repair` wasn't already requested, we're
- * not in `--json`, and there IS retrieved evidence to rewrite from (with no
- * evidence the repair would just refuse, so the tip would mislead). Surfaces the
- * constructive-repair capability exactly when it can help. Pure + exported.
- */
-export function shouldSuggestRepair(args: {
-  readonly verdictFired: boolean;
-  readonly repairRequested: boolean;
-  readonly json: boolean;
-  readonly evidenceCount: number;
-}): boolean {
-  return args.verdictFired && !args.repairRequested && !args.json && args.evidenceCount > 0;
-}
 
 /**
  * The outcome label lifted onto a cli.local run-log trace. A refusal is an
@@ -469,69 +303,10 @@ export async function drawBestGroundedRedraft(args: BestOfRedrawArgs): Promise<s
   return (await args.confirm(args.expand(survivor))) === undefined ? survivor : undefined;
 }
 
-/**
- * Whether to surface the "Removed N citation(s) … treat those claims as
- * unverified" notice. Fires only when the gate actually stripped something AND
- * the answer makes claims to doubt — NOT on a REFUSAL (which asserts nothing, so
- * "treat those claims as unverified" is nonsensical) and NOT on an ACTION request
- * (the model citing a tool name is a harmless quirk). The spurious citation is
- * stripped from the text either way; this gates only the user-facing warning.
- */
-export function shouldWarnStrippedCitations(args: {
-  readonly strippedCount: number;
-  readonly json: boolean;
-  readonly isActionRequest: boolean;
-  readonly isRefusal: boolean;
-}): boolean {
-  return args.strippedCount > 0 && !args.json && !args.isActionRequest && !args.isRefusal;
-}
 
-// Unmistakable intent words for the OPT-IN perception sources. Precision-first:
-// a git-specific token (commit/git/branch/…), never the ambiguous "work on", so
-// a non-git refusal ("what's my rent?") never gets a spurious --git tip.
-const GIT_INTENT_RE = /\b(commit|commits|committed|committing|git|branch|branches|rebase|rebased|repo|repository|codebase|pull request)\b/iu;
-const SHELL_INTENT_RE = /\b(command|commands|terminal|shell|bash|zsh|cli command|docker|kubectl)\b/iu;
 
-/**
- * On a REFUSAL, surface the opt-in perception source that would likely answer
- * the question — so an undiscoverable `--git` / `--shell` flag becomes findable
- * (a user asking "what did I commit?" otherwise just gets "not in your notes" and
- * never learns Muse can read their git history). Precision-first: only an
- * unmistakable intent fires, and only when the matching flag is NOT already on.
- * Pure + exported.
- */
-export function suggestOptInSource(
-  query: string,
-  enabled: { readonly git: boolean; readonly shell: boolean }
-): string | undefined {
-  if (!enabled.git && GIT_INTENT_RE.test(query)) {
-    return "(tip: add --git to also ground on your recent git commits in this repo)";
-  }
-  if (!enabled.shell && SHELL_INTENT_RE.test(query)) {
-    return "(tip: add --shell to also ground on your recent shell-history commands)";
-  }
-  return undefined;
-}
 
-// The citation instructions injected into the --with-tools agent system prompt.
-// NOTE: the injection-input-guard scans the WHOLE composed prompt (system role
-// included), so these lines must carry NO credential word (token / secret /
-// password / api key) near an extraction verb — "copy an existing `cite as:`
-// token, or a name shown…" once matched the `credential_extraction` pattern
-// ("token … shown") and false-blocked EVERY grounded --with-tools query. Use
-// "tag", never "token", and keep this dependency-free guard in the test.
-// The note marker hands the small model a copy-ready `cite as: [from FILE]`
-// token; qwen3:8b often copies the WHOLE line, leaking the "cite as:" label into
-// the answer ("…MTU 1380. cite as: [from vpn.md]") — visible on the demo (the
-// front door). Strip a "cite as:" that immediately precedes a real citation
-// bracket; deterministic, only touches the echoed label, never the citation
-// itself. (The chat path streams live, so the label can still flash there — the
-// known streaming limitation; buffered / --with-tools / demo paths are clean.)
-const ECHOED_CITE_AS_RE = /\bcite\s+as:?\s*(?=\[(?:from|task|event|reminder|session|feed|contact|command|commit|memory|action)\b)/giu;
 
-export function stripEchoedCiteAs(answer: string): string {
-  return answer.replace(ECHOED_CITE_AS_RE, "");
-}
 
 export const CITATION_INSTRUCTION_LINES: readonly string[] = [
   "When a fact comes from a note, END that sentence with that note's `[from …]` tag, copied VERBATIM — the bracket exactly as printed under the passage, the name unchanged.",
@@ -553,15 +328,6 @@ export const REASONING_PRINCIPLE_LINES: readonly string[] = [
   "You may surface a non-obvious angle or gently question an assumption, but offer it as a question to check, NOT a verdict — state as FACT only what the context supports, and say you are not sure about the rest."
 ];
 
-/**
- * True when the answer is essentially a refusal / "I'm not sure" with no
- * grounded claim — used to deterministically drop any citation the model
- * spuriously attached to it. Pure + exported for direct coverage.
- */
-export function answerIsRefusal(answer: string): boolean {
-  const lower = answer.toLowerCase();
-  return REFUSAL_MARKERS.some((m) => lower.includes(m));
-}
 
 /**
  * Output-side grounding VERDICT for the chat-only recall wedge — the rubric
@@ -589,208 +355,10 @@ export async function groundingVerdictNotice(
   return `\n⚠️  Grounding check: this answer's claims aren't fully backed by your notes (${verification.reason}) — treat as unverified.\n`;
 }
 
-/**
- * Whether a `--file` payload is BINARY (a PDF, image, archive, office doc…)
- * rather than readable text. Reading such a file as UTF-8 yields garbled bytes,
- * and grounding on that garbage makes the small model HALLUCINATE plausible
- * content and cite it `[from <file>]` — a fabrication. So we refuse to ground on
- * it. Heuristic (deterministic, no deps): a NUL byte is the canonical binary
- * signal (text never contains one); failing that, a high ratio of U+FFFD
- * replacement chars from a lossy UTF-8 decode means the bytes were not text.
- * Only the first ~8 KB is inspected — enough to classify, cheap on a big file.
- */
-export function looksLikeBinaryContent(bytes: Uint8Array): boolean {
-  const sample = bytes.subarray(0, 8192);
-  if (sample.length === 0) {
-    return false;
-  }
-  for (const byte of sample) {
-    if (byte === 0) {
-      return true;
-    }
-  }
-  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(sample);
-  let replacements = 0;
-  for (const char of decoded) {
-    if (char === "�") {
-      replacements += 1;
-    }
-  }
-  return replacements / decoded.length > 0.1;
-}
 
-/**
- * The cite label for a `--url`-grounded answer: the page's host (`www.` stripped),
- * so the model cites `[from example.com]` and the gate validates it like a note
- * source. Falls back to the raw URL if it can't be parsed.
- */
-export function urlGroundingSource(finalUrl: string): string {
-  try {
-    return new URL(finalUrl).hostname.replace(/^www\./u, "");
-  } catch {
-    return finalUrl;
-  }
-}
 
-/**
- * Select the passages of an ad-hoc `--file` to ground on: split into passages,
- * rank by lexical overlap with the question (file order breaks ties), and keep
- * the strongest up to `charBudget` so a large file never blows the small
- * model's context. Returned in ORIGINAL file order (so the model reads them
- * top-to-bottom). A tiny file → every passage; an empty file → none.
- */
-export function selectFilePassages(
-  raw: string,
-  query: string,
-  charBudget = 6000
-): readonly { readonly chunkIndex: number; readonly text: string }[] {
-  const qTokens = lexicalTokens(query);
-  const ranked = chunkText(raw, 1200)
-    .map((text, chunkIndex) => ({ chunkIndex, ov: lexicalOverlap(qTokens, text), text }))
-    .sort((a, b) => b.ov - a.ov || a.chunkIndex - b.chunkIndex);
-  const picked: { chunkIndex: number; text: string }[] = [];
-  let budget = charBudget;
-  for (const passage of ranked) {
-    if (budget <= 0) {
-      break;
-    }
-    picked.push({ chunkIndex: passage.chunkIndex, text: passage.text });
-    budget -= passage.text.length;
-  }
-  return picked.sort((a, b) => a.chunkIndex - b.chunkIndex);
-}
 
-/**
- * The action-log entries most relevant to the question, for `muse ask`
- * transparency grounding ("did you send that? / what have you done?"). Matches
- * by query-token overlap against each entry's `what` text; newest-first on a
- * tie, capped. 0-overlap entries are dropped so an unrelated question grounds on
- * nothing (→ honest refusal). Pure + testable.
- */
-export function selectGroundingActions(
-  entries: readonly ActionLogEntry[],
-  query: string,
-  max = 5
-): readonly ActionLogEntry[] {
-  const queryTokens = lexicalTokens(query);
-  if (queryTokens.size === 0) {
-    return [];
-  }
-  return entries
-    .map((entry, index) => ({ entry, index, score: lexicalOverlap(queryTokens, entry.what) }))
-    .filter((scored) => scored.score > 0)
-    .sort((a, b) => b.score - a.score || b.index - a.index)
-    .slice(0, max)
-    .map((scored) => scored.entry);
-}
 
-const BIRTHDAY_MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"
-];
-
-/**
- * Render a contact's stored birthday (`MM-DD` or `YYYY-MM-DD`) as a readable
- * "March 14" (+ ", 1990" when a year is present) so `muse ask` can ground
- * "when is X's birthday?" on it. Returns undefined for an absent / malformed
- * value (no fabricated date).
- */
-export function formatContactBirthday(raw: string | undefined): string | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  const match = /^(?:(\d{4})-)?(\d{2})-(\d{2})$/u.exec(raw.trim());
-  if (!match) {
-    return undefined;
-  }
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
-    return undefined;
-  }
-  const label = `${BIRTHDAY_MONTHS[month - 1] ?? ""} ${day.toString()}`;
-  return match[1] ? `${label}, ${match[1]}` : label;
-}
-
-/**
- * Relevance of a contact to the question, for `muse ask` grounding (B3
- * perception): how many query tokens match a token of the contact's name,
- * aliases, handle, or email. 0 ⇒ NOT injected — so we ground only on the people
- * the question is actually about, never dump the whole address book at the
- * small local model.
- */
-/**
- * The most query-relevant PROBATION strategy (one the daemon distilled UNATTENDED
- * from a past correction — recorded but NEVER injected) to surface as a recall-time
- * suggestion, so a correction resurfaces the moment its topic recurs. Ranks the
- * probation entries by lexical overlap with the query; returns the top one, or
- * undefined when none is relevant. Pure (no injection — surface-only). Exported for
- * direct coverage.
- */
-export function selectProbationSuggestion(
-  entries: readonly { readonly id: string; readonly text: string; readonly probation?: boolean }[],
-  query: string
-): { readonly text: string; readonly id: string } | undefined {
-  const queryToks = lexicalTokens(query);
-  return entries
-    .filter((e) => e.probation === true && typeof e.text === "string" && lexicalOverlap(queryToks, e.text) > 0)
-    .sort((a, b) => lexicalOverlap(queryToks, b.text) - lexicalOverlap(queryToks, a.text))
-    .map((e) => ({ id: e.id, text: e.text }))[0];
-}
-
-/**
- * The grounding-EVIDENCE text for a matched contact — the contact's name plus
- * EVERY field the prompt block renders: relationship/role (P37-20), connections/
- * edges (P37-21), email/phone/handle/birthday/aliases. The grounding rubric scores
- * an answer's coverage against this; if a field the model can answer from (a role,
- * an edge) is rendered in the block but MISSING here, a correct "your manager is
- * Dana" / "Bob works with Alice" answer scores ~zero coverage and false-flags
- * "unverified". So this MUST mirror the block render. Only REAL contact data, so a
- * fabricated role/edge stays uncovered → still flagged.
- */
-export function contactGroundingEvidence(contact: Contact): string {
-  const connections = (contact.connections ?? []).map((e) => `${e.as ?? "connected to"} ${e.to}`);
-  const fields = [
-    contact.relationship,
-    contact.email,
-    contact.phone,
-    contact.handle,
-    formatContactBirthday(contact.birthday),
-    ...(contact.aliases ?? []),
-    ...connections,
-    contact.about
-  ].filter((f): f is string => typeof f === "string" && f.length > 0).join(" ");
-  return `${contact.name} ${fields}`.trim();
-}
-
-export function contactMatchScore(contact: Contact, queryTokens: ReadonlySet<string>): number {
-  if (queryTokens.size === 0) {
-    return 0;
-  }
-  const hay = new Set<string>();
-  const add = (text: string | undefined): void => {
-    if (text) {
-      for (const tok of lexicalTokens(text)) {
-        hay.add(tok);
-      }
-    }
-  };
-  add(contact.name);
-  add(contact.handle);
-  add(contact.email);
-  add(contact.relationship);
-  add(contact.about);
-  for (const alias of contact.aliases ?? []) {
-    add(alias);
-  }
-  let score = 0;
-  for (const tok of queryTokens) {
-    if (hay.has(tok)) {
-      score += 1;
-    }
-  }
-  return score;
-}
 
 const IMAGE_MIME_BY_EXT: Readonly<Record<string, string>> = {
   ".bmp": "image/bmp",
@@ -987,110 +555,8 @@ export function selectGraphConnections(
   return out.slice(0, Math.max(1, limit));
 }
 
-/** Render the explicit-link neighbours as a scannable footer (empty when none). */
-export function formatGraphLinksSection(links: readonly string[]): string {
-  if (links.length === 0) {
-    return "";
-  }
-  const lines = links.map((id) => `  ↔ ${id}`);
-  return `\n🔗 Linked notes (your [[wiki-links]]):\n${lines.join("\n")}\n`;
-}
 
-interface IndexChunk {
-  readonly file: string;
-  readonly chunkIndex: number;
-  readonly text: string;
-  readonly embedding: number[];
-}
 
-interface FileEntry {
-  readonly path: string;
-  readonly chunks: readonly IndexChunk[];
-}
-
-interface ScoredChunk {
-  readonly chunk: IndexChunk;
-  readonly file: string;
-  readonly score: number;
-}
-
-const ASK_MMR_LAMBDA = 0.7;
-
-/**
- * Pick the top-K note chunks to ground on. When a `query` is supplied,
- * selection is HYBRID — the embedding-cosine rank is fused with a lexical
- * keyword-overlap rank via Reciprocal Rank Fusion (Cormack et al., SIGIR
- * 2009), the same hybrid the `knowledge_search` path already uses (P23).
- * The headline `muse ask` path was embedding-ONLY, so a query with strong
- * distinctive terms ("WireGuard", "MTU") could rank the one answer-bearing
- * note below near-misses on nomic's compressed cosine and fall out of the
- * default top-K — a FALSE REFUSAL on a question the corpus answers. The
- * fused relevance is normalised to [0,1] before MMR so the diversity term
- * (cosine-similarity scale) stays comparable; each returned chunk keeps its
- * ABSOLUTE cosine `score`, so the CRAG confidence framing is unchanged.
- * Without a query (or with no content tokens) it is the prior cosine MMR.
- */
-export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: number, lambda = ASK_MMR_LAMBDA, query?: string, subqueryEmbeddings?: ReadonlyArray<readonly number[]>): ScoredChunk[] {
-  const sorted = [...candidates].sort((a, b) => b.score - a.score);
-  if (topK <= 0 || sorted.length <= topK) {
-    return sorted.slice(0, Math.max(0, topK));
-  }
-  // Adaptive-k: trim to the natural score-distribution knee before MMR so a cliff-
-  // shaped distribution (one strong hit + low-scoring decoys) doesn't pad the
-  // grounding block with near-miss fabrication surface (arXiv:2506.08479).
-  // Trim-only (Math.min keeps it ≤ topK); min:1 always retains the top match.
-  const effectiveK = Math.min(topK, selectByScoreGap(sorted.map((c) => c.score), { min: 1, max: topK }));
-  const queryTokens = query ? lexicalTokens(query) : new Set<string>();
-  if (queryTokens.size > 0) {
-    const keyOf = (i: number): string => String(i);
-    // Full-query cosine ranking (list #0) + lexical ranking (list #1) are
-    // always present. Sub-query cosine rankings (one per clause) are appended
-    // when supplied — RAG-Fusion (arXiv:2402.03367): each variant produces an
-    // independent ranking, all fused via RRF so a chunk top-ranked by ANY
-    // clause surfaces into the selection window.
-    const cosRanked = sorted
-      .map((c, i) => ({ i, s: c.score }))
-      .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
-    const lexRanked = sorted
-      .map((c, i) => ({ i, s: lexicalOverlap(queryTokens, c.chunk.text) }))
-      .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
-    const rankingLists: Array<readonly string[]> = [cosRanked, lexRanked];
-    if (subqueryEmbeddings && subqueryEmbeddings.length > 0) {
-      for (const subVec of subqueryEmbeddings) {
-        const subRanked = sorted
-          .map((c, i) => ({ i, s: cosine(subVec, c.chunk.embedding) }))
-          .filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => keyOf(x.i));
-        rankingLists.push(subRanked);
-      }
-    }
-    const fused = fuseByReciprocalRank(rankingLists);
-    const maxFused = Math.max(1e-9, ...fused.values());
-    const order = selectByMmr(
-      sorted.map((c, i) => ({ key: keyOf(i), relevance: (fused.get(keyOf(i)) ?? 0) / maxFused, embedding: c.chunk.embedding })),
-      lambda,
-      effectiveK
-    );
-    return order.map((k) => sorted[Number(k)]!);
-  }
-  const order = selectByMmr(
-    sorted.map((c, i) => ({ key: String(i), relevance: c.score, embedding: c.chunk.embedding })),
-    lambda,
-    effectiveK
-  );
-  return order.map((k) => sorted[Number(k)]!);
-}
-
-/**
- * First-run on-ramp: a brand-new user with an EMPTY notes corpus gets an
- * honest refusal from `muse ask`, but a refusal with no guidance leaves them
- * stuck ("it knows nothing and won't tell me how to teach it"). When the
- * corpus has ZERO notes, point them at the concrete ways to add one. Returns
- * undefined once any note exists, so a normal no-match answer is never
- * cluttered. The count MUST be the note FILES on disk, not the indexed/live
- * chunk count — when embedding is down (Ollama unreachable) the index has 0
- * live chunks even though the user has notes, and telling them "your corpus
- * is empty" then is a false message. Pure + exported for direct coverage.
- */
 /**
  * Count note files (`.md/.markdown/.txt/.pdf`) actually present under the
  * notes dir, recursively — the true "does the user have a corpus" signal,
@@ -1126,17 +592,6 @@ export async function listNoteFiles(dir: string, max = 40): Promise<string[]> {
   return out.sort((a, b) => a.localeCompare(b)).slice(0, max);
 }
 
-/** Render a corpus-overview reply: the note inventory + how to use it. Pure. */
-export function formatCorpusOverview(noteFiles: readonly string[], totalCount: number): string {
-  const lines = noteFiles.map((file) => `  • ${file}`);
-  const more = totalCount > noteFiles.length ? [`  … and ${(totalCount - noteFiles.length).toString()} more`] : [];
-  return [
-    `You have ${totalCount.toString()} note${totalCount === 1 ? "" : "s"}. I answer specific questions from them — here's what you've got:`,
-    ...lines,
-    ...more,
-    "Ask me anything in them and I'll quote the source."
-  ].join("\n");
-}
 
 export async function notesCorpusFileCount(dir: string): Promise<number> {
   let count = 0;
@@ -1161,44 +616,7 @@ export async function notesCorpusFileCount(dir: string): Promise<number> {
   return count;
 }
 
-/**
- * Whether this query EXPLICITLY supplied its own grounding source — a `--file`,
- * `--url`, `--git`, or `--shell`. When it did, the empty-notes on-ramp is
- * irrelevant noise (the user told Muse exactly what to ground on). Pure + exported.
- */
-export function queryHasAdHocGrounding(options: {
-  readonly file?: string;
-  readonly url?: string;
-  readonly clipboard?: boolean;
-  readonly git?: boolean;
-  readonly shell?: boolean;
-}): boolean {
-  return Boolean(
-    (options.file && options.file.trim().length > 0)
-    || (options.url && options.url.trim().length > 0)
-    || options.clipboard
-    || options.git
-    || options.shell
-  );
-}
 
-export function corpusOnboardingHint(noteFileCount: number, hasOtherPersonalData = false): string | undefined {
-  // The first-run notes on-ramp. Suppressed once the user has notes OR any other
-  // personal data (contacts / tasks / reminders / remembered facts) — otherwise
-  // it both NAGS to "add notes" and falsely claims "Muse only answers from notes"
-  // on the very same turn it answered from your address book. A genuinely empty
-  // Muse still gets the hint.
-  if (noteFileCount > 0 || hasOtherPersonalData) {
-    return undefined;
-  }
-  return [
-    "(your notes corpus is empty — Muse only answers from notes you've added.",
-    "   • try a sample first:   muse demo",
-    "   • add one file:         muse read <file> --save-to-notes <id>",
-    "   • add a whole folder:   muse read <dir> --save-to-notes <prefix>",
-    "   • keep it live:         muse watch-folder --ingest --path <dir>)"
-  ].join("\n");
-}
 
 /**
  * Whether the user has ANY personal data Muse can ground on besides notes —
@@ -1243,60 +661,6 @@ export async function userHasOtherPersonalData(
 /** S2 warm honesty (B2): the deterministic, on-brand close on an honest refusal. */
 export const WARM_REFUSAL_CLOSE =
   "(I'd rather tell you that than guess — add a note on this and I'll have it next time.)";
-
-/**
- * Whether to append the warm refusal close: ONLY when the answer is an honest
- * refusal AND the user already has notes. An EMPTY corpus gets the on-ramp
- * hint instead (so the two never double up), and a real cited answer never
- * gets it. Pure + exported for direct coverage.
- */
-export function shouldWarmClose(answer: string, noteFileCount: number): boolean {
-  return noteFileCount > 0 && answerIsRefusal(answer);
-}
-
-/**
- * CRAG confidence gate for `muse ask`'s notes grounding — the headline-surface
- * embodiment of Muse's identity ("says I'm not sure instead of making things
- * up"). The chunk score IS the absolute cosine, so we grade the top match: a
- * CONFIDENT hit is framed for citation; a merely AMBIGUOUS (weak near-miss) set
- * is flagged LOW-confidence so the small model is told NOT to cite it as fact;
- * `none` keeps the plain header (the "no relevant notes" block already shows).
- * Pure + exported for direct unit coverage.
- */
-export function notesGroundingFraming(
-  scored: readonly ScoredChunk[],
-  query?: string,
-  // Verdict is derived from this when supplied — the pre-gap-cut top-K so a
-  // gap-cut that trims the prompt window to k=1 doesn't make runnerUp=0 and
-  // flip "ambiguous"→"confident" (floor violation). Prompt window stays trimmed.
-  verdictInput?: readonly ScoredChunk[]
-): { readonly verdict: RetrievalConfidence; readonly header: string; readonly guidance?: string } {
-  const verdictSet = verdictInput ?? scored;
-  const cosineVerdict = verdictSet.length === 0
-    ? "none"
-    : classifyRetrievalConfidence(verdictSet.map((s) => ({ cosine: s.score, source: s.file, score: s.score, text: s.chunk.text })));
-  // nomic's cosine space is compressed, so a genuinely-relevant note can sit
-  // just below the confident cosine threshold and get falsely flagged LOW —
-  // a soft false-refusal ("verify, may not be in your notes") on a correctly
-  // cited answer, which erodes the trust edge. A STRONG lexical match (≥2
-  // distinct query content tokens present in a grounded chunk) is a
-  // high-precision signal that the corpus really does cover the question, so
-  // it upgrades an ambiguous cosine verdict to confident. A must-refuse
-  // question shares no content tokens, so it stays LOW/none — fabrication=0
-  // is preserved (and the citation gate is the hard backstop regardless).
-  const queryTokens = query ? lexicalTokens(query) : new Set<string>();
-  const strongLexical = queryTokens.size >= 2
-    && verdictSet.some((s) => lexicalOverlap(queryTokens, s.chunk.text) >= 2);
-  const verdict: RetrievalConfidence = cosineVerdict === "ambiguous" && strongLexical ? "confident" : cosineVerdict;
-  if (verdict === "ambiguous") {
-    return {
-      guidance: "The USER NOTES below are only WEAK matches (low retrieval confidence). Do NOT present them as established fact; if they do not clearly answer the question, say you are not sure rather than cite a weak match.",
-      header: "=== USER NOTES (LOW confidence — weak matches; verify, do not cite as fact) ===",
-      verdict
-    };
-  }
-  return { header: "=== USER NOTES (top relevant chunks) ===", verdict };
-}
 
 
 interface NotesIndex {
@@ -1373,62 +737,8 @@ export function resolveAskMaxTools(env: Record<string, string | undefined>): num
   return 10;
 }
 
-export function composeChatSystemContent(systemPrompt: string, playbookSection: string | undefined): string {
-  return playbookSection && playbookSection.trim().length > 0 ? `${playbookSection}\n\n${systemPrompt}` : systemPrompt;
-}
 
-/**
- * ReasoningBank (arXiv 2509.25140): rank the playbook entries by relevance to
- * the current question and render only the top-K as `[Learned Strategies]`,
- * instead of dumping the whole bank at the small local model. Deterministic;
- * empty bank ⇒ undefined (no block).
- */
-export function selectPlaybookSection(
-  entries: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly reinforcements?: number; readonly decays?: number }[],
-  queryText: string,
-  topK?: number
-): string | undefined {
-  const ranked = rankPlaybookStrategies(
-    entries.map((entry) => ({
-      text: entry.text,
-      ...(entry.tag ? { tag: entry.tag } : {}),
-      ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),
-      ...(typeof entry.reinforcements === "number" ? { reinforcements: entry.reinforcements } : {}),
-      ...(typeof entry.decays === "number" ? { decays: entry.decays } : {})
-    })),
-    queryText,
-    topK === undefined ? undefined : { topK }
-  );
-  return renderPlaybookSection(ranked);
-}
 
-/**
- * The single learned strategy that most shaped this answer — the top-ranked
- * injectable entry (S6 "I learned this about you"). Same ranking + exclusions as
- * `selectPlaybookSection` (avoided/probation never injected), so this is exactly
- * the strategy at the head of the `[Learned Strategies]` block. Undefined when
- * nothing injectable. The caller still gates the surfaced beat on real relevance
- * to the question, so a recency-floor pick never overclaims "applied".
- */
-export function topAppliedStrategy(
-  entries: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly probation?: boolean; readonly reinforcements?: number; readonly decays?: number }[],
-  queryText: string,
-  topK?: number
-): string | undefined {
-  const ranked = rankPlaybookStrategies(
-    entries.map((entry) => ({
-      text: entry.text,
-      ...(entry.tag ? { tag: entry.tag } : {}),
-      ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),
-      ...(entry.probation ? { probation: true } : {}),
-      ...(typeof entry.reinforcements === "number" ? { reinforcements: entry.reinforcements } : {}),
-      ...(typeof entry.decays === "number" ? { decays: entry.decays } : {})
-    })),
-    queryText,
-    topK === undefined ? undefined : { topK }
-  );
-  return ranked[0]?.text;
-}
 
 /**
  * Drain the chat-only fast-path model stream. A provider `error`
@@ -1995,7 +1305,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // distinctive keywords surface the answer-bearing note even when
         // nomic's compressed cosine ranks it below near-misses — and the
         // grounding stays diverse, not three near-duplicate chunks.
-        scored = diversifyAskChunks(allScored, topK, ASK_MMR_LAMBDA, query, subqueryEmbeddings);
+        scored = diversifyAskChunks(allScored, topK, undefined, query, subqueryEmbeddings);
         // Graph-augmented recall (HippoRAG / GraphRAG, Edge et al. 2024): pull in
         // chunks from notes 1-hop LINKED from the CONFIDENT matches — the
         // answer-bearing note the question's note links to (a [[wiki-link]]) but
@@ -2362,7 +1672,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // messenger is configured) gets a draft-first confirm gate under --with-tools:
       // show the exact {provider, destination, text} and fire ONLY on confirm,
       // fail-closed in a non-TTY. Without this gate the send fail-closes entirely
-      // (P41-11). Built independently of --actuators so a benign "send X" isn't
+      // Built independently of --actuators so a benign "send X" isn't
       // blocked by the actuator tool descriptions' injection-guard false-positive.
       let messagingApprovalGate: MessageApprovalGate | undefined;
       if (options.withTools === true) {
@@ -3483,7 +2793,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // notes, close with one on-brand line so the refusal feels cared-for,
       // not blocked. Empty corpus gets the on-ramp hint instead; a real cited
       // answer gets nothing. Deterministic line, no note pointer (so it can't
-      // reintroduce the spurious-citation-on-a-refusal confusion P34-11 fixed).
+      // reintroduce the spurious-citation-on-a-refusal confusion that was fixed).
       if (!options.json && shouldWarmClose(collectedAnswer, noteFileCount)) {
         io.stderr(`\n${WARM_REFUSAL_CLOSE}\n`);
       }
@@ -3508,7 +2818,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         io.stderr(`\n💡 Applied a preference you taught me: "${appliedStrategy}". (Not right? \`muse playbook undo\`.)\n`);
       }
 
-      // Felt self-learning (P43-1): when a topic the user CORRECTED resurfaces,
+      // Felt self-learning: when a topic the user CORRECTED resurfaces,
       // surface the strategy the daemon distilled from that correction — recorded
       // unattended but still on PROBATION (not applied) — so the user is reminded
       // at the relevant moment and can choose to apply it. Surface-only: it never

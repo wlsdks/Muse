@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createFollowupCaptureHook,
+  sanitizeFollowupSummary,
   type CapturedFollowup
 } from "../src/followup-capture-hook.js";
 import type { AgentRunContext, AgentRunInput } from "../src/types.js";
@@ -228,24 +229,20 @@ describe("createFollowupCaptureHook", () => {
 
 describe("sanitizeFollowupSummary (direct unit tests)", () => {
   it("strips ESC / BEL / NUL / DEL / C1 high-set bytes", async () => {
-    const { sanitizeFollowupSummary } = await import("../src/index.js");
     expect(sanitizeFollowupSummary("a\x1bb\x07c\x00d\x7fe\x9bf")).toBe("abcdef");
   });
 
   it("preserves newline + tab + multi-byte Unicode", async () => {
-    const { sanitizeFollowupSummary } = await import("../src/index.js");
     expect(sanitizeFollowupSummary("line1\nline2\tindented")).toBe("line1\nline2\tindented");
     expect(sanitizeFollowupSummary("Q3 메모 보내기")).toBe("Q3 메모 보내기");
   });
 
   it("caps to 160 chars", async () => {
-    const { sanitizeFollowupSummary } = await import("../src/index.js");
     const big = "x".repeat(500);
     expect(sanitizeFollowupSummary(big).length).toBe(160);
   });
 
   it("drops a lone high surrogate when the 160-char cap lands inside a surrogate pair (goal-451/499 sibling)", async () => {
-    const { sanitizeFollowupSummary } = await import("../src/index.js");
     // "x" * 159 + "😀" + filler — "😀" is a high+low surrogate pair
     // at indices 159 and 160. slice(0, 160) keeps the high surrogate
     // at index 159 as an orphan. The persisted summary must drop it

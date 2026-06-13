@@ -621,13 +621,25 @@ export {
   type WorldTimeToolDeps
 } from "./world-time.js";
 export { createRememberFactTool, type RememberFactStore } from "./remember-fact-tool.js";
+export { createFeedsSearchTool, type FeedEntryLike, type FeedsSearchToolDeps } from "./feeds-search-tool.js";
+export {
+  collectDatedNotes,
+  createOnThisDayTool,
+  extractNoteDate,
+  selectOnThisDay,
+  type DatedNote,
+  type OnThisDayHit,
+  type OnThisDayToolDeps
+} from "./on-this-day-tool.js";
 export {
   createContactsAddTool,
   createContactsFindTool,
   createContactsRemoveTool,
+  createUpcomingBirthdaysTool,
   type ContactsAddToolDeps,
   type ContactsFindToolDeps,
-  type ContactsRemoveToolDeps
+  type ContactsRemoveToolDeps,
+  type UpcomingBirthdaysToolDeps
 } from "./contacts-tool.js";
 export {
   addContact,
