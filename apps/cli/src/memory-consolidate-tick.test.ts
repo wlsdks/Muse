@@ -25,6 +25,28 @@ function makeFadingHits(n: number, nowMs: number): readonly RecallHitLike[] {
   }));
 }
 
+// Fade-eligible fixture where last-hit RECENCY and ACT-R ACTIVATION disagree:
+// 10 single-recent-access records (their last hit is recent-ish → highest recency
+// score) + 1 SPACED record S (3 accesses, oldest last-hit → low recency score but
+// HIGH ACT-R activation from frequency×spacing). With the default fade cap (10) and
+// 11 eligible, the two rankings drop a DIFFERENT record: recency excludes r0 (most
+// recent last hit) and keeps S; ACT-R excludes S (highest activation) and keeps r0.
+function makeRecencyVsActrHits(nowMs: number): readonly RecallHitLike[] {
+  const singles = Array.from({ length: 10 }, (_, i) => ({
+    hits: 1,
+    key: `r${i.toString()}`,
+    lastHitMs: nowMs - (43 + i) * DAY_MS,
+    recentAccessMs: [nowMs - (43 + i) * DAY_MS]
+  }));
+  const spaced = {
+    hits: 3,
+    key: "S",
+    lastHitMs: nowMs - 90 * DAY_MS,
+    recentAccessMs: [nowMs - 300 * DAY_MS, nowMs - 180 * DAY_MS, nowMs - 90 * DAY_MS]
+  };
+  return [...singles, spaced];
+}
+
 describe("runMemoryConsolidationTick", () => {
   it("enabled + brake passes — logs promote/fade counts and returns nextState with lastRunMs=nowMs", async () => {
     const nowMs = Date.now();
@@ -227,6 +249,31 @@ describe("runMemoryConsolidationTick", () => {
     const state = await runMemoryConsolidationTick(deps);
     expect(persistFade).not.toHaveBeenCalled();
     expect(state.lastRunMs).toBe(recentRunMs);
+  });
+
+  it("useActrRanking ranks the capped fade set by ACT-R activation, not last-hit recency (matches the manual path)", async () => {
+    const nowMs = Date.now();
+    let persisted: readonly string[] | undefined;
+    const persistFade = vi.fn(async (keys: readonly string[]) => { persisted = keys; });
+    const readHits = vi.fn(async () => makeRecencyVsActrHits(nowMs));
+    const deps: MemoryConsolidationTickDeps = {
+      enabled: true,
+      lastRunMs: undefined,
+      log: () => {},
+      minIntervalMs: 1,
+      minNewHits: 1,
+      nowMs,
+      useActrRanking: true,
+      persistFade,
+      readHits
+    };
+    await runMemoryConsolidationTick(deps);
+    expect(persistFade).toHaveBeenCalledTimes(1);
+    expect(persisted).toHaveLength(10); // default fade cap; 11 eligible → 1 dropped
+    // ACT-R keeps the high-activation spaced record S (drops the most-recent single r0);
+    // recency-only would do the opposite. This asserts the daemon now ranks like the manual path.
+    expect(persisted).toContain("r0");
+    expect(persisted).not.toContain("S");
   });
 
   it("persistFade throws + brake passes — fail-soft: no throw, state advances", async () => {

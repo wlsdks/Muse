@@ -1082,6 +1082,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
           lastRunMs: lastMemoryConsolidateMs,
           readHits: () => readRecallHits(resolveRecallHitsFile(e)),
           log: (line) => io.stdout(line + "\n"),
+          useActrRanking: true, // rank fade/promote by ACT-R activation like the manual path
           persistFade: (fadeKeys) => writeFadedMemoryKeys(resolveFadedMemoriesFile(e), fadeKeys, Date.now()),
           ...(persist !== undefined ? { persist } : {})
         });

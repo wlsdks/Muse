@@ -8,6 +8,11 @@ export interface MemoryConsolidationTickDeps {
   readonly log: (line: string) => void;
   readonly minIntervalMs?: number;
   readonly minNewHits?: number;
+  /** Rank the promote/fade plan by ACT-R base-level activation (frequency×spacing
+   *  over every access) instead of last-hit recency alone — so the BACKGROUND tick
+   *  ranks consistently with the manual `muse memory consolidate` (which sets it).
+   *  Sort-order only; the eligibility filter is unchanged. Default off (legacy). */
+  readonly useActrRanking?: boolean;
   /** When provided AND the brake passes, actually persist promotions (graduate the
    *  top recalled memories into the persona). Absent ⇒ report-only (just log the plan).
    *  Returns the promoted count for the log. */
@@ -38,7 +43,8 @@ export async function runMemoryConsolidationTick(deps: MemoryConsolidationTickDe
   const result = planMemoryConsolidationTick(records, { lastRunMs: deps.lastRunMs }, {
     nowMs: deps.nowMs,
     ...(deps.minIntervalMs !== undefined ? { minIntervalMs: deps.minIntervalMs } : {}),
-    ...(deps.minNewHits !== undefined ? { minNewHits: deps.minNewHits } : {})
+    ...(deps.minNewHits !== undefined ? { minNewHits: deps.minNewHits } : {}),
+    ...(deps.useActrRanking !== undefined ? { useActrRanking: deps.useActrRanking } : {})
   });
   if (result.ran && result.plan) {
     if (deps.persist) {
