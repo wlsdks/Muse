@@ -31,12 +31,22 @@ interface LiteralDate {
 function parseLiteralDate(raw: string, now: Date): LiteralDate | null {
   const s = raw.trim().toLowerCase().replace(/(\d+)(?:st|nd|rd|th)\b/gu, "$1");
   const atMidnight = (y: number, m: number, d: number): Date => new Date(y, m, d);
+  // A user-supplied y/m/d that ISN'T a real calendar date (Feb 30, Apr 31, a
+  // non-leap Feb 29) — `new Date` silently rolls it into the next month, so an
+  // impossible date would yield a confident wrong count over a date the user never
+  // typed. Round-trip the components and return null instead → falls through to
+  // recall (the documented precision-first behavior), never a fabricated answer.
+  const realDate = (y: number, m: number, d: number): Date | null => {
+    const dt = new Date(y, m, d);
+    return dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() === d ? dt : null;
+  };
   if (s === "today") return { date: atMidnight(now.getFullYear(), now.getMonth(), now.getDate()), hadYear: true };
   if (s === "tomorrow") return { date: new Date(atMidnight(now.getFullYear(), now.getMonth(), now.getDate()).getTime() + DAY_MS), hadYear: true };
   if (s === "yesterday") return { date: new Date(atMidnight(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - DAY_MS), hadYear: true };
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/u.exec(s);
   if (iso) {
-    return { date: atMidnight(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])), hadYear: true };
+    const date = realDate(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return date ? { date, hadYear: true } : null;
   }
   // "Month Day[, Year]" or "Day Month [Year]"
   const monthDay = /^([a-z]+)\s+(\d{1,2})(?:,?\s+(\d{4}))?$/u.exec(s);
@@ -48,7 +58,8 @@ function parseLiteralDate(raw: string, now: Date): LiteralDate | null {
     const month = MONTHS[parts.month];
     if (month === undefined || parts.day < 1 || parts.day > 31) return null;
     const hadYear = parts.year !== undefined;
-    return { date: atMidnight(hadYear ? Number(parts.year) : now.getFullYear(), month, parts.day), hadYear };
+    const date = realDate(hadYear ? Number(parts.year) : now.getFullYear(), month, parts.day);
+    return date ? { date, hadYear } : null;
   }
   return null;
 }
