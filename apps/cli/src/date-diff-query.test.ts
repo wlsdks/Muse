@@ -26,6 +26,30 @@ describe("detectDateDiffQuery — exact day count between two literal dates", ()
     expect(r.to.getFullYear()).toBe(2027);
   });
 
+  it("returns null when the cross-year roll would land on an impossible date (Feb 29 → non-leap year)", () => {
+    // A year-less "February 29" that sorts before the start rolls forward one
+    // year; if that next year isn't a leap year the old code silently rolled
+    // Feb 29 → Mar 1 and gave a confident wrong count over a date never typed.
+    const leapNow = new Date("2028-01-01T12:00:00"); // Feb 29 2028 parses as valid
+    expect(detectDateDiffQuery("how many days from March 1 to February 29", leapNow)).toBeNull();
+  });
+
+  it("returns null for an IMPOSSIBLE calendar date — never silently rolls it into the next month", () => {
+    // Feb 30 / Apr 31 / non-leap Feb 29 don't exist; the old guard only checked
+    // day 1–31, so `new Date(2026,1,30)` rolled to Mar 2 and the fast-path gave a
+    // confident wrong count over a date the user never typed. Now it falls through
+    // to recall (null), the documented precision-first behavior.
+    expect(detectDateDiffQuery("how many days between February 1 and February 30", now)).toBeNull();
+    expect(detectDateDiffQuery("how many days between April 1 and April 31", now)).toBeNull();
+    expect(detectDateDiffQuery("how many days between 2026-02-01 and 2026-02-30", now)).toBeNull();
+    expect(detectDateDiffQuery("how many days between January 1 and February 29", now)).toBeNull(); // 2026 is not a leap year
+  });
+
+  it("still accepts a real leap day in a leap year", () => {
+    const leapNow = new Date("2028-01-01T12:00:00");
+    expect(detectDateDiffQuery("how many days between February 1 and February 29", leapNow)!.days).toBe(28); // 2028 IS a leap year
+  });
+
   it("returns null for non-difference questions (recall is never hijacked)", () => {
     expect(detectDateDiffQuery("how many days until Christmas?", now)).toBeNull(); // a countdown, not a difference
     expect(detectDateDiffQuery("how many people are coming?", now)).toBeNull();

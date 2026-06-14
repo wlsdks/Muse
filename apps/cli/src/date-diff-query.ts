@@ -15,6 +15,18 @@
 
 const DAY_MS = 86_400_000;
 
+/**
+ * Build a calendar date ONLY if y/m/d is a real date — `new Date(y,m,d)` silently
+ * rolls an impossible date (Feb 30, a non-leap Feb 29) into the next month, so we
+ * round-trip the components and return null instead. Used by the literal parser
+ * AND the cross-year roll, so neither emits a confident count over a date the
+ * user never typed (the fast-path bypasses the grounding gate — precision-first).
+ */
+function realDate(y: number, m: number, d: number): Date | null {
+  const dt = new Date(y, m, d);
+  return dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() === d ? dt : null;
+}
+
 const MONTHS: Record<string, number> = {
   january: 0, jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3,
   may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7,
@@ -36,7 +48,8 @@ function parseLiteralDate(raw: string, now: Date): LiteralDate | null {
   if (s === "yesterday") return { date: new Date(atMidnight(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - DAY_MS), hadYear: true };
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/u.exec(s);
   if (iso) {
-    return { date: atMidnight(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])), hadYear: true };
+    const date = realDate(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return date ? { date, hadYear: true } : null;
   }
   // "Month Day[, Year]" or "Day Month [Year]"
   const monthDay = /^([a-z]+)\s+(\d{1,2})(?:,?\s+(\d{4}))?$/u.exec(s);
@@ -48,7 +61,8 @@ function parseLiteralDate(raw: string, now: Date): LiteralDate | null {
     const month = MONTHS[parts.month];
     if (month === undefined || parts.day < 1 || parts.day > 31) return null;
     const hadYear = parts.year !== undefined;
-    return { date: atMidnight(hadYear ? Number(parts.year) : now.getFullYear(), month, parts.day), hadYear };
+    const date = realDate(hadYear ? Number(parts.year) : now.getFullYear(), month, parts.day);
+    return date ? { date, hadYear } : null;
   }
   return null;
 }
@@ -83,7 +97,14 @@ export function detectDateDiffQuery(query: string, now: Date): DateDiffResult | 
   }
   let to = b.date;
   if (to.getTime() < a.date.getTime() && !a.hadYear && !b.hadYear) {
-    to = new Date(b.date.getFullYear() + 1, b.date.getMonth(), b.date.getDate()); // Dec → Jan span
+    // Dec → Jan span: roll the end forward a year — but a year-less Feb 29 rolled
+    // into a non-leap year is impossible, so decline (null) rather than let
+    // `new Date` silently roll it to Mar 1 and report a count for a date never typed.
+    const rolled = realDate(b.date.getFullYear() + 1, b.date.getMonth(), b.date.getDate());
+    if (!rolled) {
+      return null;
+    }
+    to = rolled;
   }
   const days = Math.round(Math.abs(to.getTime() - a.date.getTime()) / DAY_MS);
   return { unit, days, from: a.date, to };
