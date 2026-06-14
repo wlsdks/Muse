@@ -58,6 +58,17 @@ describe("sendMcpError", () => {
     expect(captured.payload).toEqual({ code: "MCP_OPERATION_FAILED", message: "MCP operation failed" });
     expect(JSON.stringify(captured.payload)).not.toContain("postgres"); // no leak
   });
+
+  it("does not leak a NON-Error thrown value (a raw string) either — generic 500, the raw value never reaches the payload", () => {
+    // The else-branch handles ANY non-McpRegistryError throwable. A raw string
+    // throwable must still get the hardcoded generic message — never stringified
+    // into the payload — so a thrown secret-bearing string can't reach the client.
+    const { captured, r } = reply();
+    sendMcpError(r, "raw string with /secret/path");
+    expect(captured.status).toBe(500);
+    expect(captured.payload).toEqual({ code: "MCP_OPERATION_FAILED", message: "MCP operation failed" });
+    expect(JSON.stringify(captured.payload)).not.toContain("/secret/path");
+  });
 });
 
 describe("response shapers", () => {
