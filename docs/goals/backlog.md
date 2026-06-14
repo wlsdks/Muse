@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ DINCO preference-confidence calibration (arXiv:2509.25532): inferred persona traits now distractor-normalize their verbalized confidence (cal=c_orig/(c_orig+Σc_distractors)) — a trait that doesn't dominate self-generated incompatible alternatives is dropped, survivors get the less-saturated value; opt-in (prod sets it), fail-soft, applied after the accept gates — agent-core-cognition fire 36
+
 - ✓ outcome-quality episode write-admission (selective addition, arXiv:2505.16067): captureEndOfSessionEpisode now refuses to store an ERROR-PRONE session (corrections > approvals) so its botched outcome can't replay via experience-following; the lesson survives (corrections distilled to playbook separately); subtractive, default-admit on tie/no-signal — agent-core-cognition fire 35
 
 - ✓ commissive-force self-followup gate (arXiv:2502.14321): the capture hook now queues a followup only when a first-person commitment ("I'll … tomorrow") governs the time phrase's sentence, not a bare description ("your meeting is tomorrow") — stops spurious reminders the assistant never promised; opt-in (hook sets requireCommissive), EN-only, subtractive — agent-core-cognition fire 34
