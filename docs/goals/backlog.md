@@ -243,6 +243,7 @@
 - ✓ DONE (fire 5) **`assertPublicHttpUrlSync` SSRF sync gate** — covered: file://·malformed·localhost·metadata.internal·127.0.0.1·[::1]·169.254 all blocked, public https passes; each guard clause mutation-pinned.
 - ◦ **`groundToolArguments` nested-object multi-hop branch** (agent-core) — anti-fabrication gate untested on nested mixed grounded/fabricated leaves. (audit agent-core)
 - ◦ **`createLlmClassificationInputGuard` provider-throws fail-close** (agent-core/guards.ts) — classifier-outage path asserts no `GUARD_ERROR`/fail-close at unit level. (audit agent-core)
+- ◦ **tool-failure-streak: streaming-loop assembled coverage + LIMIT tuning** (agent-core) — fire 42 wired the circuit breaker into BOTH executeModelLoop and executeStreamingModelLoop but only the non-streaming path has an assembled end-to-end test (streaming wiring is line-identical, so not inert, but untested at the seam); add a streaming assembled test. Also TOOL_FAILURE_STREAK_LIMIT=3 is a fixed default not yet tuned on a real failing-tool corpus. (agent-core-cognition fire 42 caveat)
 - ✓ DONE (fire 8) **`createToolResultQualityAuditFilter` empty-remainder branch** — `rest.length===0` (apology IS the whole output) pinned; filter no longer turns an apology-only answer into an empty result header. Filter branch coverage complete.
 - ⓘ AUDIT FALSE-POSITIVES verified (don't re-scout): `createCitationStreamFilter` (in apps/cli, already tested — fire 6); `SchedulerExecutionError` throw-conditions (scheduler dispatcher timeout/retry/clamp all covered in scheduler.test.ts — fire 8); `groundToolArguments` nested-object branch (function only handles string + string-array, no nested-object traversal exists; 20 cases already cover string/array — fire 8).
 - ◦ **`formatDueLocal`/`relativeDueHint` (mcp/local-due-format.ts)** — today/tomorrow/in-N-days/NaN branches untested (drives task `dueAtLocal` shown to the model). (audit mcp)
@@ -263,6 +264,7 @@
 
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
+- ✓ tool-failure-streak circuit breaker — a tool failing (status≠"completed") 3× in a row is withheld from activeTools for the next turn (model keeps other tools → clean synthesis, not burned maxToolCalls); deterministic status-count, complementary to the stall detector + dedup; wired into both model loops (AgentErrorTaxonomy arXiv:2509.25370) — agent-core-cognition fire 42
 - ✓ hedge-overclaim (certainty escalation) grounding guard — token coverage ignored modal certainty so a categorical claim grounded in hedged evidence (may→does); added detectHedgeOverclaim + fail-close (FActScore arXiv:2305.14251). Completes the sentence-vs-evidence semantic guard trio (negation/numeric/hedge) — grounding-integrity fire 22
 
 - ✓ numeric/unit mismatch grounding guard — token coverage missed unit swaps (5 g vs 5 mg) and ≥3-digit magnitude errors; added detectNumericMismatch + fail-close in reportSentenceGroundedness (FactCC arXiv:1910.12840; guard-removal verified) — grounding-integrity fire 21
