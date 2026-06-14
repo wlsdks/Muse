@@ -274,7 +274,9 @@ export {
 } from "./proactive-recall-gate.js";
 export {
   buildReflectionUserMessage,
+  collapseNearDuplicateReflections,
   parseReflections,
+  REFLECTION_DEDUP_COSINE,
   REFLECTION_GROUNDING_QUERY,
   synthesizeReflections,
   verifyReflectionsGrounding,

@@ -19,6 +19,7 @@
 import type { ModelMessage, ModelProvider, ModelRequest } from "@muse/model";
 import { redactSecretsInText } from "@muse/shared";
 
+import { cosineSimilarity } from "./episodic-recall.js";
 import { type GroundingReverify, judgeConsensus } from "./knowledge-recall.js";
 import { extractJsonArray } from "./plan-execute.js";
 
@@ -62,10 +63,25 @@ export interface SynthesizeReflectionsOptions {
    * `reverifySamples`. Clamped to [1,5]. Default 1 (single judge, back-compat).
    */
   readonly reverifySamples?: number;
+  /**
+   * Optional embedder for semantic near-duplicate collapse: after the grounded
+   * (and RGV-verified) reflections are settled, two insights that are paraphrases
+   * of one theme are merged into one (their sources UNIONed). Omitted ⇒ no
+   * collapse (back-compat). See `collapseNearDuplicateReflections`.
+   */
+  readonly embed?: (text: string) => Promise<readonly number[]>;
 }
 
 const DEFAULT_MAX_REFLECTIONS = 5;
 const DEFAULT_MIN_SUPPORT = 2;
+
+/**
+ * Cosine floor for treating two synthesised insights as the SAME theme. High
+ * (0.86): only genuine paraphrases ("prefers morning meetings" / "likes
+ * scheduling meetings in the morning") collapse; two distinct insights about the
+ * user score well below and both survive.
+ */
+export const REFLECTION_DEDUP_COSINE = 0.86;
 
 const REFLECTION_SYSTEM_PROMPT =
   "You are Muse, reflecting privately over the user's own recent episodes and notes to consolidate memory. " +
@@ -166,9 +182,12 @@ export async function synthesizeReflections(
     ...(options.maxReflections !== undefined ? { maxReflections: options.maxReflections } : {}),
     minSupport
   });
-  if (!options.reverify) return reflections;
+  if (!options.reverify) {
+    return options.embed ? collapseNearDuplicateReflections(reflections, options.embed) : reflections;
+  }
   const sources = new Map(usable.map((i) => [i.id, i.text]));
-  return verifyReflectionsGrounding(reflections, sources, options.reverify, options.reverifySamples);
+  const verified = await verifyReflectionsGrounding(reflections, sources, options.reverify, options.reverifySamples);
+  return options.embed ? collapseNearDuplicateReflections(verified, options.embed) : verified;
 }
 
 export const REFLECTION_GROUNDING_QUERY = "What genuinely recurs about this user across these items?";
@@ -218,4 +237,71 @@ export async function verifyReflectionsGrounding(
     if (supported) kept.push(reflection);
   }
   return kept;
+}
+
+/**
+ * Semantic near-duplicate collapse over already-grounded reflections (SemDeDup,
+ * arXiv:2303.09540): the 12B often emits two paraphrases of one theme ("prefers
+ * morning meetings" / "likes scheduling meetings in the morning"). Both pass the
+ * id-citation + RGV gates, so both would persist and skew the retrieved
+ * self-model — and the store's only dedup is LEXICAL (a normalised-string Set),
+ * which paraphrase evades (the cumulative lesson: lexical loses to semantic on the
+ * model-prose distribution). This greedy single pass embeds each insight and
+ * merges one whose insight is cosine ≥ `threshold` to an already-kept one: the
+ * higher-`supportCount` insight is the representative, and the dropped one's
+ * `sourceIds` are UNIONed into it — no grounding is lost (support can only grow),
+ * nothing is invented. Input order is preserved.
+ *
+ * SUBTRACTIVE + grounding-safe: it removes a redundant copy and merges valid
+ * sources; it never adds a claim, drops a surviving insight's source, or touches
+ * the citation/answer/grounding gate. Fail-soft: an embedder that throws, or an
+ * insight whose embedding is empty, returns/keeps that reflection unchanged.
+ * Pure over the injected embedder + exported for direct coverage.
+ */
+export async function collapseNearDuplicateReflections(
+  reflections: readonly Reflection[],
+  embed: (text: string) => Promise<readonly number[]>,
+  options: { readonly threshold?: number } = {}
+): Promise<Reflection[]> {
+  if (reflections.length < 2) return [...reflections];
+  const threshold = options.threshold ?? REFLECTION_DEDUP_COSINE;
+  let vectors: (readonly number[])[];
+  try {
+    vectors = await Promise.all(reflections.map((r) => embed(r.insight)));
+  } catch {
+    return [...reflections];
+  }
+
+  interface Cluster {
+    insight: string;
+    sourceIds: string[];
+    repSupport: number;
+    vec: readonly number[];
+  }
+  const clusters: Cluster[] = [];
+  for (let i = 0; i < reflections.length; i += 1) {
+    const r = reflections[i]!;
+    const vec = vectors[i] ?? [];
+    // An insight with no usable embedding can't be compared — keep it as its own
+    // cluster (fail-soft, never merged away on a zero vector).
+    const match = vec.length === 0
+      ? undefined
+      : clusters.find((c) => c.vec.length > 0 && cosineSimilarity(vec, c.vec) >= threshold);
+    if (!match) {
+      clusters.push({ insight: r.insight, repSupport: r.supportCount, sourceIds: [...r.sourceIds], vec });
+      continue;
+    }
+    match.sourceIds.push(...r.sourceIds);
+    // The higher-support insight becomes the cluster's representative (its text +
+    // embedding); a tie keeps the earlier one (first-seen).
+    if (r.supportCount > match.repSupport) {
+      match.insight = r.insight;
+      match.repSupport = r.supportCount;
+      match.vec = vec;
+    }
+  }
+  return clusters.map((c) => {
+    const sourceIds = [...new Set(c.sourceIds)];
+    return { insight: c.insight, sourceIds, supportCount: sourceIds.length };
+  });
 }

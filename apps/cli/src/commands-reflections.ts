@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import { buildGroundingReverifyPrompt, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, REVERIFY_SYSTEM_PROMPT, synthesizeReflections, type GroundingReverify, type Reflection, type ReflectionInput } from "@muse/agent-core";
 import type { ModelProvider } from "@muse/model";
-import { createMuseRuntimeAssembly, resolveEpisodesFile } from "@muse/autoconfigure";
+import { createGateEmbedder, createMuseRuntimeAssembly, resolveEpisodesFile } from "@muse/autoconfigure";
 import {
   addReflections,
   listReflections,
@@ -35,6 +35,8 @@ export interface ReflectionPassOptions {
   readonly modelProvider: Pick<ModelProvider, "generate">;
   readonly now?: () => number;
   readonly genId?: () => string;
+  /** Embedder for semantic near-duplicate collapse of synthesised insights. */
+  readonly embed?: (text: string) => Promise<readonly number[]>;
 }
 
 /**
@@ -61,7 +63,12 @@ export async function runReflectionPass(inputs: readonly ReflectionInput[], opti
     });
     return parseGroundingReverifyJson(judged.output ?? "");
   };
-  const fresh = await synthesizeReflections(usable, { model: options.model, modelProvider: options.modelProvider, reverify });
+  const fresh = await synthesizeReflections(usable, {
+    model: options.model,
+    modelProvider: options.modelProvider,
+    reverify,
+    ...(options.embed ? { embed: options.embed } : {})
+  });
   return addReflections(
     options.reflectionsFile,
     reflectionsToStore(fresh, options.now?.() ?? Date.now(), options.genId ?? (() => randomUUID()))
@@ -162,7 +169,7 @@ export function registerReflectionsCommand(program: Command, io: ProgramIO): voi
         io.stdout("Not enough past sessions to reflect over yet — keep using Muse and try again.\n");
         return;
       }
-      const added = await runReflectionPass(inputs, { model, modelProvider: assembly.modelProvider, reflectionsFile: resolveReflectionsFile() });
+      const added = await runReflectionPass(inputs, { model, modelProvider: assembly.modelProvider, reflectionsFile: resolveReflectionsFile(), embed: createGateEmbedder(process.env) });
       io.stdout(added > 0
         ? `🌙 Added ${added.toString()} new reflection(s). See them: muse reflections\n`
         : "No new grounded reflections this pass (nothing recurring across your sessions, or already noted).\n");
