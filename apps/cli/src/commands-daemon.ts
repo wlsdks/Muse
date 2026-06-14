@@ -33,6 +33,7 @@ import {
   resolveRemindersFile,
   resolveSuppressedLessonsFile,
   resolveRecallHitsFile,
+  resolveFadedMemoriesFile,
   resolveTasksFile,
   type DecayContradictedDeps,
   type DistillQueuedDeps
@@ -84,7 +85,8 @@ import {
   type ProactiveNoticeSink,
   type WebWatchRunner,
   readProactiveHistory,
-  readRecallHits
+  readRecallHits,
+  writeFadedMemoryKeys
 } from "@muse/mcp";
 import type { MuseTool } from "@muse/tools";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -1080,6 +1082,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
           lastRunMs: lastMemoryConsolidateMs,
           readHits: () => readRecallHits(resolveRecallHitsFile(e)),
           log: (line) => io.stdout(line + "\n"),
+          persistFade: (fadeKeys) => writeFadedMemoryKeys(resolveFadedMemoriesFile(e), fadeKeys, Date.now()),
           ...(persist !== undefined ? { persist } : {})
         });
         lastMemoryConsolidateMs = nextState.lastRunMs;

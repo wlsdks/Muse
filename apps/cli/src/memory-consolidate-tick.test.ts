@@ -12,6 +12,19 @@ function makeHits(n: number, nowMs: number): readonly RecallHitLike[] {
   }));
 }
 
+const DAY_MS = 24 * 60 * 60_000;
+
+// Fade-eligible fixture: low tally (1 hit) AND last hit ≥ 30 days ago → its
+// recency-weighted score decays at/below the fade floor and ageDays ≥ minAge, so
+// selectForgettable returns these keys. (makeHits above are all recent ⇒ 0 fading.)
+function makeFadingHits(n: number, nowMs: number): readonly RecallHitLike[] {
+  return Array.from({ length: n }, (_, i) => ({
+    hits: 1,
+    key: `stale-${i.toString()}`,
+    lastHitMs: nowMs - (300 + i) * DAY_MS
+  }));
+}
+
 describe("runMemoryConsolidationTick", () => {
   it("enabled + brake passes — logs promote/fade counts and returns nextState with lastRunMs=nowMs", async () => {
     const nowMs = Date.now();
@@ -169,6 +182,70 @@ describe("runMemoryConsolidationTick", () => {
     const state = await runMemoryConsolidationTick(deps);
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatch(/consolidate-memory:/);
+    expect(state.lastRunMs).toBe(nowMs);
+  });
+
+  it("persistFade provided + brake passes — called once with the COMPUTED fade keys (matches the logged fade count, >0)", async () => {
+    const nowMs = Date.now();
+    const logs: string[] = [];
+    let persisted: readonly string[] | undefined;
+    const persistFade = vi.fn(async (keys: readonly string[]) => { persisted = keys; });
+    const readHits = vi.fn(async () => makeFadingHits(3, nowMs));
+    const deps: MemoryConsolidationTickDeps = {
+      enabled: true,
+      lastRunMs: undefined,
+      log: (line) => logs.push(line),
+      minIntervalMs: 1,
+      minNewHits: 1,
+      nowMs,
+      persistFade,
+      readHits
+    };
+    const state = await runMemoryConsolidationTick(deps);
+    expect(persistFade).toHaveBeenCalledTimes(1);
+    const logged = Number(/(\d+) fading/.exec(logs[0] ?? "")?.[1]);
+    expect(logged).toBeGreaterThan(0); // the fixture really does fade — non-vacuous
+    expect(persisted).toHaveLength(logged); // persisted the REAL computed fade set, not a constant
+    expect(persisted).toContain("stale-0");
+    expect(state.lastRunMs).toBe(nowMs);
+  });
+
+  it("persistFade provided but brake fails — persistFade NOT called, state unchanged", async () => {
+    const nowMs = Date.now();
+    const recentRunMs = nowMs - 60_000;
+    const persistFade = vi.fn(async () => {});
+    const readHits = vi.fn(async () => makeFadingHits(3, nowMs));
+    const deps: MemoryConsolidationTickDeps = {
+      enabled: true,
+      lastRunMs: recentRunMs,
+      log: () => {},
+      minIntervalMs: 6 * 60 * 60 * 1000,
+      nowMs,
+      persistFade,
+      readHits
+    };
+    const state = await runMemoryConsolidationTick(deps);
+    expect(persistFade).not.toHaveBeenCalled();
+    expect(state.lastRunMs).toBe(recentRunMs);
+  });
+
+  it("persistFade throws + brake passes — fail-soft: no throw, state advances", async () => {
+    const nowMs = Date.now();
+    const logs: string[] = [];
+    const persistFade = vi.fn(async (): Promise<void> => { throw new Error("sidecar write error"); });
+    const readHits = vi.fn(async () => makeFadingHits(3, nowMs));
+    const deps: MemoryConsolidationTickDeps = {
+      enabled: true,
+      lastRunMs: undefined,
+      log: (line) => logs.push(line),
+      minIntervalMs: 1,
+      minNewHits: 1,
+      nowMs,
+      persistFade,
+      readHits
+    };
+    const state = await runMemoryConsolidationTick(deps);
+    expect(persistFade).toHaveBeenCalledTimes(1);
     expect(state.lastRunMs).toBe(nowMs);
   });
 

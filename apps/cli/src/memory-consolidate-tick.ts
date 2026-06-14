@@ -12,6 +12,11 @@ export interface MemoryConsolidationTickDeps {
    *  top recalled memories into the persona). Absent ⇒ report-only (just log the plan).
    *  Returns the promoted count for the log. */
   readonly persist?: () => Promise<{ readonly promoted: number }>;
+  /** When provided AND the brake passes, persist the COMPUTED fade keys to the
+   *  recall down-ranking sidecar — so the background tick keeps fade fresh, not
+   *  only when a human runs `muse memory consolidate`. Ranking-only + fail-soft;
+   *  independent of `persist` (promotions). Absent ⇒ fade stays report-only. */
+  readonly persistFade?: (fadeKeys: readonly string[]) => Promise<void>;
 }
 
 /**
@@ -42,6 +47,9 @@ export async function runMemoryConsolidationTick(deps: MemoryConsolidationTickDe
       deps.log(`[${new Date(deps.nowMs).toISOString()}] consolidate-memory: ${promoted.toString()} promoted (persisted), ${result.plan.fade.length.toString()} fading`);
     } else {
       deps.log(`[${new Date(deps.nowMs).toISOString()}] consolidate-memory: ${result.plan.promote.length.toString()} promotable, ${result.plan.fade.length.toString()} fading (report-only)`);
+    }
+    if (deps.persistFade) {
+      try { await deps.persistFade(result.plan.fade.map((f) => f.key)); } catch { /* fail-soft */ }
     }
   }
   return result.nextState;
