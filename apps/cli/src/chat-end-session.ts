@@ -27,6 +27,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  classifyEpisodeAdmissionQuality,
   extractCurrentSessionTurns,
   peakEndDigest,
   summariseSession,
@@ -117,6 +118,19 @@ export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOpt
   if (range.turns.length < minTurnLines) {
     return {
       reason: `current session has ${range.turns.length.toString()} turn line(s), below threshold ${minTurnLines.toString()}`,
+      status: "skipped"
+    };
+  }
+
+  // Outcome-quality write-admission (selective addition, arXiv:2505.16067): an
+  // error-prone session (user corrected the assistant more than they approved)
+  // must not become a stored episode — agents experience-follow, so its botched
+  // outcome would later replay as cited [session: …] context. The correction's
+  // LESSON is separately distilled to the playbook, so nothing learned is lost.
+  const admission = classifyEpisodeAdmissionQuality(range.turns);
+  if (!admission.admit) {
+    return {
+      reason: `error-prone session (${admission.corrections.toString()} correction(s) > ${admission.approvals.toString()} approval(s)) — episode not admitted to avoid experience-following error propagation`,
       status: "skipped"
     };
   }
