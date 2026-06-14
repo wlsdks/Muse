@@ -344,3 +344,11 @@ ratchet: testFiles 1005→1004 (−1 통합) · netCoverage +1 (draft-first 더 
 - **왜:** 같은 모듈 두 파일 double-run. src/가 보안(SSRF·redirect·redaction·429) 훨씬 풍부하나, draft-first(게이트가 *전송 전 정확한 내용*을 사용자에게 보임 — outbound-safety의 1번 규칙)는 test/만 검증했음. 조용히 떨어뜨리면 마지막 보호선 손실.
 - **어떻게-증명(MUTATION-FIRST):** (A) gate에 넘기는 summary를 "MUTANT"로 변형 → 이식한 draft-first 케이스만 RED(`expected 'MUTANT' to be 'Book a table, 7pm'`), 나머지 1853 green. (B) `redactSecretsInText` 우회 변형 → 생존 src "scrubs secrets" 케이스 RED(삭제본 case7이 덮던 redaction이 여전히 가드됨). ④b 독립 Opus judge가 삭제본 7 행동 전수 매핑(전부 equal-or-stronger, DROPPED 없음) + 두 mutation 재현(의도한 케이스만 적중) → **VERDICT: PASS**.
 - **리스크:** 소스 무변경(grounding/eval 신호 영향 0). 변경 −97L(test/ 삭제) +13L(draft-first 이식+`WebActionRequest` import). draft-first는 outbound-safety 불변식이라 단순 동등이식이 아니라 더 강한 형태로 보존. anthropic-key redaction은 mcp.test.ts:9282에도 독립 커버 존재(judge 확인). 남은 mcp 동명 쌍 5개.
+
+## fire 42 · 2026-06-14 · skill v1.14.0 · c45af7fb
+meta: kind=add · pkg=@muse/tools · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1007 (케이스 +1, 파일수 불변) · netCoverage +1 branch (isFinite-false 분기) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `coerceToolArguments`→`coerceScalar`(tools-argument-validation.ts, tool-arg "repair")의 **`Number.isFinite(n)` 가드 분기** 커버 추가. 패턴은 통과하나 오버플로하는 숫자열(`"9".repeat(400)` — `/^-?\d+$/` 매치하지만 `Number()`가 ±Infinity, > MAX_VALUE)을 문자열 그대로 남김(비유한수로 강제하지 않음). integer/number/음수 3 케이스.
+- **왜:** tool-calling 신뢰성(tool-calling.md #1 — 로컬 8B가 인자를 한 방에). 가드 없으면 거대 정수열이 Infinity로 강제돼 execute()에 비유한수가 도달(math/indexing/slice 깨짐) — Structured Reflection(arXiv:2509.18847) "lossy guess로 진짜 불일치를 가리지 말라"의 정확한 사례. 기존 coerce 테스트(339-374)는 작은 clean 값만 써 isFinite-false 분기 미커버.
+- **어떻게-증명(MUTATION-FIRST ADD):** 가드 제거(`if (Number.isFinite(n)) return n;`→`return n;`) 시 새 케이스만 RED(`expected { count: Infinity } to deeply equal { count: "999…" }`, 218 green). 사전 node로 `"9".repeat(400)`가 양 패턴 매치 + Number→Infinity + isFinite false 확인(regex 거부 아님 — isFinite 분기 정확 타격). ④b 독립 Opus judge가 mutation 재현(오직 그 케이스) + 사전 미커버 + outcome-based 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. coerceScalar는 결정적 repair 헬퍼(tool 선택/스키마 경로 아님) → eval:tools 신호 무영향(LOCAL-OLLAMA, 미실행). KIND/pkg(add@tools)가 최근 mcp-prune 연속(40/41)에서 다양화. 남은 후보: coerceScalar boolean 대문자/혼합("True"→미강제) 경계, validateRequired null-vs-undefined.

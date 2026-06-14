@@ -2204,3 +2204,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ web Tasks "Your tasks" count badge showed the server total while the list is the fire-34 search-filtered subset (badge read "12" over 2 visible rows) → count={list.length} so it follows the rendered list; tasks e2e asserts 2→1 on search — surfaces fire 40
 - ✓ cli `checkins scan` parsed --slot-hour/--max-per-day via bare Number() (no validation) → --slot-hour abc = NaN silently scheduled an Invalid-Date check-in; added up-front validation (slot-hour [0,23], max-per-day ≥1) rejecting bad input with exit 1 + no scan — surfaces fire 41
 - ✓ web-action double-run consolidated (draft-first migrated, test/ deleted) — test-hygiene fire 41
+- ✓ coerceScalar isFinite guard covered (overflow numeric string not coerced to Infinity) — test-hygiene fire 42
