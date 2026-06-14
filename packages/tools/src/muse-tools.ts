@@ -20,6 +20,7 @@ import {
   createSlugifyTool,
   createTextStatsTool
 } from "./muse-tools-text.js";
+import { createLunarDateTool } from "./muse-tools-lunar.js";
 import { createUnitConvertTool } from "./muse-tools-units.js";
 
 /**
@@ -51,6 +52,7 @@ export function createMuseTools(options: MuseToolFactoryOptions = {}): readonly 
     createTextStatsTool(),
     createMathEvalTool(),
     createUnitConvertTool(),
+    createLunarDateTool(now),
     createJsonQueryTool(),
     createSlugifyTool(),
     createUrlPartsTool(),
