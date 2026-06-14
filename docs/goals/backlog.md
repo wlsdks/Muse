@@ -2208,3 +2208,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ web Messaging compose form (outbound surface) had visible To/Message labels not tied to their input/textarea (no htmlFor/id, WCAG 1.3.1) → associated label↔control; messaging e2e now drives the form via getByLabel (draft-first gate unchanged) — surfaces fire 42
 - ✓ web-action double-run consolidated (draft-first migrated, test/ deleted) — test-hygiene fire 41
 - ✓ coerceScalar isFinite guard covered (overflow numeric string not coerced to Infinity) — test-hygiene fire 42
+- ✓ provider-utils clampPositive double-run consolidated into src (base-10 pinning migrated, test/ deleted); JUDGE-DRILL passed (judge caught planted inert ADD) — test-hygiene fire 43
