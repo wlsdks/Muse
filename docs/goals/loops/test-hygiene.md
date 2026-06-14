@@ -408,3 +408,11 @@ ratchet: testFiles 1019→1018 (−1 통합) · netCoverage +3 branch (5-30s·30
 - **왜:** 같은 함수 double-run 제거 + 동시에 test/-only였던 3 분기(5-30s/30s+/NaN)를 single home으로 회수. 순수 삭제였으면 그 3 분기 커버 손실(특히 NaN→unknown은 관측성 대시보드가 Invalid-Date 런을 30s+로 오분류 안 하게 막는 가드).
 - **어떻게-증명(MUTATION-FIRST consolidate):** (A) isFinite NaN 가드 제거 시 NaN 케이스 RED(unknown 3→0, 30s+로 샘); (B) `<30_000`→`<300_000` 시 all-4-buckets 케이스 RED(60s런이 30s+ 이탈); (C) `<5_000`→`<50_000` 시도 5-30s 경계 격리 확인. 각 분기 mutation-killing. ④b 독립 Opus judge가 삭제본 3 행동 전수 매핑(5-30s/30s+/NaN 모두 src에 present) + 각 mutation 격리 + 나머지 7 aggregation 테스트 무회귀 확인 → **VERDICT: PASS**.
 - **리스크:** 소스 무변경. 케이스 net +2(1→3 latency), 파일 −1. dist 컴파일 테스트가 vitest에 잡혀 실패시 2건 표시(src+dist, 동일 테스트 — apps/api 기존 dist-test double-run 이슈, 본 슬라이스 무관). 남은 apps/api 쌍: compat-parsers(11/8)·mcp-routes-parsers(6/4) — 다음 prune 후보.
+
+## fire 50 · 2026-06-14 · skill v1.14.0 · d9963a35
+meta: kind=add · pkg=@muse/observability · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1020 (케이스 +1, 파일수 불변) · netCoverage +1 branch (stddev floor mean-scaling arm) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `PromptDriftDetector.evaluate`(observability/observability-prompt-drift.ts)의 **flat-baseline stddev floor의 mean-scaling arm** 커버. floor = `Math.max(mean*0.01, 1)`이라 baseline 분산 0일 때 effective σ가 baseline 크기에 비례(평균의 1%). 기존 flat 테스트는 mean=100(`max(100*0.01,1)=1`)이라 두 arm이 1로 degenerate → `mean*0.01` arm 미커버. 큰 flat baseline(mean 1000→floor 10) + +1.5% shift로 drift 없음 검증(1.5σ < 2σ).
+- **왜:** 거짓 drift 알람 방지(정책/알림 correctness). floor가 평균에 비례 안 하면(bare-1) 자연스럽게 큰-but-안정적 프롬프트 길이가 작은 상대 변동에도 15σ로 false-alarm. floor가 1%로 스케일해야 large-magnitude 안정 baseline이 비례적으로 큰 shift에서만 알람.
+- **어떻게-증명(MUTATION-FIRST ADD):** `mean*0.01` arm 제거(`Math.max(0,1)`=bare-1) 시 새 케이스만 RED(+1.5%가 15σ→input_length drift, σ=1), 기존 mean=100 케이스는 green 유지(degenerate boundary라 scaling arm 미커버 입증). 사전 node로 1.5σ vs 15σ 확인. ④b 독립 Opus judge가 mutation 격리(오직 새 케이스) + 비중복(mean=100 green) + floor 분기 도달(early-return/minSamples gate 아님) 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. KIND/pkg(add@observability)가 fires 48/49(apps/api prune)에서 다양화 — observability는 루프 첫 접촉(신규 패키지). prompt-drift는 src+test/ 두 테스트 파일이 같은 모듈 커버(다른 basename이라 동명쌍 아님; 향후 consolidate 후보일 수 있으나 상보적). 남은 observability 후보: budget-tracker month-rollover, slo-alert cooldown/min-sample.

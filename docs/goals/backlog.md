@@ -2255,3 +2255,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ computeApproximateTokens CJK bucketing covered for Chinese/Hiragana/Katakana (not just Hangul → multilingual trim-budget accuracy) — test-hygiene fire 47
 - ✓ mcp-routes-shapers sendMcpError double-run consolidated into src (non-Error-throwable leak-safety case migrated+hardened, test/ deleted) — test-hygiene fire 48
 - ✓ compat-run-aggregations latencyDistribution double-run consolidated into src; recovered 5-30s/30s+/NaN branches that were test/-only — test-hygiene fire 49
+- ✓ PromptDriftDetector stddev-floor mean-scaling arm covered (1% of baseline → no false drift alarm on large stable lengths) — test-hygiene fire 50
