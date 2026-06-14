@@ -44,6 +44,7 @@ export {
 } from "./agent-initiated-notice.js";
 export {
   extractFollowupPromises,
+  hasCommissiveForce,
   type ExtractFollowupPromisesOptions,
   type FollowupPromise
 } from "./followup-detector.js";
