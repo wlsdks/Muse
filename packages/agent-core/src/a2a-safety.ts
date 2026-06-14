@@ -42,6 +42,15 @@ const SHAREABLE_KINDS: ReadonlySet<string> = new Set<A2APayloadKind>([
  */
 export const A2A_MAX_CONTENT_CHARS = 65_536;
 
+/**
+ * Upper bound on the envelope LABEL (a short tag, not a body). The content bound
+ * above guards the payload, but `label` flows into the same quarantine store
+ * unbounded — so an allowlisted-but-compromised peer (its HMAC verifies) could
+ * flood the store via the label alone. A tag well under this; fail-closed on size
+ * at the inter-agent boundary (MAST inter-agent-misalignment, arXiv:2503.13657).
+ */
+export const A2A_MAX_LABEL_CHARS = 512;
+
 export interface A2AOutbound {
   readonly kind: A2APayloadKind;
   /** The skill markdown / strategy text / reasoning utterance. NEVER a note, fact, or credential. */
@@ -123,7 +132,10 @@ function isEnvelope(value: unknown): value is A2AEnvelope {
   return typeof e.kind === "string"
     && typeof e.content === "string"
     && typeof e.fromPeerId === "string"
-    && typeof e.redacted === "boolean";
+    && typeof e.redacted === "boolean"
+    // label is optional, but when present it MUST be a string — a non-string label
+    // (array/object) would otherwise slip past the type-guard into the store.
+    && (e.label === undefined || typeof e.label === "string");
 }
 
 /**
@@ -150,6 +162,12 @@ export function classifyInbound(message: unknown, allowedPeers: ReadonlySet<stri
     return {
       disposition: "reject",
       reason: `inbound content exceeds the ${A2A_MAX_CONTENT_CHARS.toString()}-char limit (${message.content.length.toString()}) — refused as untrusted oversized payload`
+    };
+  }
+  if (message.label !== undefined && message.label.length > A2A_MAX_LABEL_CHARS) {
+    return {
+      disposition: "reject",
+      reason: `inbound label exceeds the ${A2A_MAX_LABEL_CHARS.toString()}-char limit (${message.label.length.toString()}) — refused as untrusted oversized label`
     };
   }
   return {
