@@ -16,7 +16,10 @@ const LENGTH: Record<string, number> = { m: 1, km: 1000, cm: 0.01, mm: 0.001, um
 const MASS: Record<string, number> = { g: 1, kg: 1000, mg: 0.001, t: 1_000_000, lb: 453.59237, oz: 28.349523125, st: 6350.29318 };
 const VOLUME: Record<string, number> = { l: 1, ml: 0.001, kl: 1000, gal: 3.785411784, qt: 0.946352946, pt: 0.473176473, cup: 0.2365882365, floz: 0.0295735295625, tbsp: 0.01478676478, tsp: 0.00492892159 };
 
-const CATEGORIES: ReadonlyArray<Record<string, number>> = [LENGTH, MASS, VOLUME];
+const SPEED: Record<string, number> = { "m/s": 1, "km/h": 1000 / 3600, mph: 1609.344 / 3600, "ft/s": 0.3048, kn: 1852 / 3600 };
+const TIME: Record<string, number> = { s: 1, ms: 0.001, min: 60, h: 3600, day: 86_400, week: 604_800 };
+
+const CATEGORIES: ReadonlyArray<Record<string, number>> = [LENGTH, MASS, VOLUME, SPEED, TIME];
 const TEMPERATURE = new Set(["c", "f", "k"]);
 
 const UNIT_ALIASES: Record<string, string> = {
@@ -32,7 +35,13 @@ const UNIT_ALIASES: Record<string, string> = {
   litre: "l", litres: "l", liter: "l", liters: "l", millilitre: "ml", millilitres: "ml", milliliter: "ml", milliliters: "ml",
   gallon: "gal", gallons: "gal", quart: "qt", quarts: "qt", pint: "pt", pints: "pt",
   cups: "cup", "fluid ounce": "floz", "fluid ounces": "floz", tablespoon: "tbsp", tablespoons: "tbsp", teaspoon: "tsp", teaspoons: "tsp",
-  celsius: "c", centigrade: "c", "°c": "c", fahrenheit: "f", "°f": "f", kelvin: "k", "°k": "k"
+  celsius: "c", centigrade: "c", "°c": "c", fahrenheit: "f", "°f": "f", kelvin: "k", "°k": "k",
+  kph: "km/h", kmh: "km/h", "kilometers per hour": "km/h", "kilometres per hour": "km/h",
+  "miles per hour": "mph", "metres per second": "m/s", "meters per second": "m/s", mps: "m/s",
+  "feet per second": "ft/s", knot: "kn", knots: "kn",
+  second: "s", seconds: "s", sec: "s", secs: "s", millisecond: "ms", milliseconds: "ms",
+  minute: "min", minutes: "min", mins: "min", hour: "h", hours: "h", hr: "h", hrs: "h",
+  days: "day", weeks: "week"
 };
 
 function normalizeUnit(raw: string): string {
@@ -71,7 +80,7 @@ export function createUnitConvertTool(): MuseTool {
   return {
     definition: {
       description:
-        "Converts a quantity between physical units of the SAME kind — length (m, km, cm, mi, ft, in, yd), mass (g, kg, lb, oz, t), volume (l, ml, gal, cup, floz, tbsp, tsp), or temperature (c, f, k). Returns the EXACT converted value (e.g. 5 mi = 8.04672 km). USE WHEN the user asks to convert a measurement ('how many km is 5 miles?', '섭씨 20도는 화씨로?', 'convert 2 cups to ml'). Do NOT use for an arithmetic expression with operators (use math_eval) or for live/market data like CURRENCY exchange rates (use the web search tool — this tool only does fixed physical units).",
+        "Converts a quantity between physical units of the SAME kind — length (m, km, cm, mi, ft, in, yd), mass (g, kg, lb, oz, t), volume (l, ml, gal, cup, floz, tbsp, tsp), temperature (c, f, k), speed (m/s, km/h, mph, kn, ft/s), or time duration (s, min, h, day, week). Returns the EXACT converted value (e.g. 5 mi = 8.04672 km, 100 km/h = 62.137 mph). USE WHEN the user asks to convert a measurement ('how many km is 5 miles?', '섭씨 20도는 화씨로?', '100 km/h는 몇 mph?', 'convert 90 minutes to hours'). Do NOT use for an arithmetic expression with operators (use math_eval) or for live/market data like CURRENCY exchange rates (use the web search tool — this tool only does fixed physical units).",
       domain: "core",
       inputSchema: {
         additionalProperties: false,

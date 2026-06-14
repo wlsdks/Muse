@@ -18,6 +18,19 @@ describe("convertUnit", () => {
     expect(convertUnit(1, "gal", "l")).toBeCloseTo(3.785411784, 9);
   });
 
+  it("converts speed (km/h ↔ mph ↔ m/s)", () => {
+    expect(convertUnit(100, "km/h", "mph")).toBeCloseTo(62.137119, 5);
+    expect(convertUnit(60, "mph", "km/h")).toBeCloseTo(96.56064, 5);
+    expect(convertUnit(10, "m/s", "km/h")).toBeCloseTo(36, 9);
+  });
+
+  it("converts time durations (min ↔ h ↔ day ↔ week)", () => {
+    expect(convertUnit(90, "min", "h")).toBeCloseTo(1.5, 9);
+    expect(convertUnit(2, "day", "h")).toBeCloseTo(48, 9);
+    expect(convertUnit(1, "week", "day")).toBeCloseTo(7, 9);
+    expect(convertUnit(1.5, "hours", "minutes")).toBeCloseTo(90, 9);
+  });
+
   it("converts temperature with the OFFSET (not a pure factor)", () => {
     expect(convertUnit(0, "c", "f")).toBeCloseTo(32, 9);
     expect(convertUnit(100, "c", "f")).toBeCloseTo(212, 9);
