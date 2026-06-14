@@ -45,6 +45,18 @@ describe("PromptDriftDetector", () => {
     expect(d.evaluate().map((a) => a.type)).toEqual(["input_length"]);
   });
 
+  it("the flat-baseline stddev floor SCALES with the mean (1% of baseline) — a small RELATIVE shift on a LARGE flat baseline is not a false alarm", () => {
+    // The floor is Math.max(mean*0.01, 1), NOT a bare 1. For a large flat
+    // baseline (mean 1000 → floor 10), a +1.5% shift is only 1.5σ < the 2σ
+    // threshold → no drift. The earlier flat case uses mean 100 where the floor
+    // degenerates to 1, so it never exercised the mean*0.01 arm. A bare-1 floor
+    // would score this 15σ and false-alarm on naturally large-but-stable lengths.
+    const d = detector();
+    for (let i = 0; i < 10; i += 1) d.recordInput(1000); // zero-variance baseline, mean 1000 → σ floor 10
+    for (let i = 0; i < 10; i += 1) d.recordInput(1015); // +1.5%: 1.5σ once the floor scales with the mean
+    expect(d.evaluate()).toEqual([]);
+  });
+
   it("ignores non-finite / negative samples and evaluates input + output independently", () => {
     const d = detector();
     d.recordInput(Number.NaN);
