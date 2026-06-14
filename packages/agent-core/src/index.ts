@@ -275,6 +275,7 @@ export {
 export {
   buildReflectionUserMessage,
   collapseNearDuplicateReflections,
+  filterReflectionsAgainstStore,
   parseReflections,
   REFLECTION_DEDUP_COSINE,
   REFLECTION_GROUNDING_QUERY,

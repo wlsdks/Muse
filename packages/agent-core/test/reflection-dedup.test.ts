@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   collapseNearDuplicateReflections,
+  filterReflectionsAgainstStore,
   REFLECTION_DEDUP_COSINE,
   synthesizeReflections,
   type Reflection
@@ -98,6 +99,48 @@ describe("collapseNearDuplicateReflections (SemDeDup arXiv:2303.09540)", () => {
   it("exports a sane default cosine floor", () => {
     expect(REFLECTION_DEDUP_COSINE).toBeGreaterThan(0.8);
     expect(REFLECTION_DEDUP_COSINE).toBeLessThan(1);
+  });
+});
+
+describe("filterReflectionsAgainstStore (Mem0 NOOP arXiv:2504.19413) — cross-tick write dedup", () => {
+  it("drops a fresh insight that paraphrases one ALREADY in the store", async () => {
+    const out = await filterReflectionsAgainstStore(
+      [reflection(MORNING_B, ["e3", "e4"]), reflection(EMAILS, ["e5", "e6"])],
+      [MORNING_A], // already stored — MORNING_B is its paraphrase
+      stubEmbed
+    );
+    expect(out.map((r) => r.insight)).toEqual([EMAILS]); // the paraphrase is NOOP-dropped, the distinct one survives
+  });
+
+  it("keeps everything when nothing in the store matches", async () => {
+    const out = await filterReflectionsAgainstStore(
+      [reflection(MORNING_A, ["e1", "e2"])],
+      [EMAILS], // orthogonal stored insight
+      stubEmbed
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it("empty store / empty fresh is a no-op pass-through", async () => {
+    expect(await filterReflectionsAgainstStore([reflection(MORNING_A, ["e1"])], [], stubEmbed)).toHaveLength(1);
+    expect(await filterReflectionsAgainstStore([], [MORNING_A], stubEmbed)).toHaveLength(0);
+  });
+
+  it("fail-soft: an embedder that throws keeps all fresh reflections (store dedup falls back to lexical)", async () => {
+    const throwing = async (): Promise<readonly number[]> => {
+      throw new Error("embedder down");
+    };
+    const out = await filterReflectionsAgainstStore([reflection(MORNING_B, ["e3"])], [MORNING_A], throwing);
+    expect(out).toHaveLength(1);
+  });
+
+  it("a fresh insight with no embedding is kept (never NOOP-dropped on a zero vector)", async () => {
+    const out = await filterReflectionsAgainstStore(
+      [reflection("unembeddable", ["e3"])],
+      [MORNING_A],
+      async (text) => (text === "unembeddable" ? [] : VECS[text] ?? [0, 0, 1])
+    );
+    expect(out).toHaveLength(1);
   });
 });
 

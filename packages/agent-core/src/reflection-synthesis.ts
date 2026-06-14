@@ -305,3 +305,52 @@ export async function collapseNearDuplicateReflections(
     return { insight: c.insight, sourceIds, supportCount: sourceIds.length };
   });
 }
+
+/**
+ * Cross-pass write-time NOOP dedup (Mem0, arXiv:2504.19413): the "dreaming" pass
+ * re-synthesises reflections every tick over an OVERLAPPING recent-episode window,
+ * so a paraphrase of an ALREADY-STORED insight ("works late on Tuesdays" vs
+ * "Tuesday evenings are your most productive") is generated again and again. The
+ * store's only write-dedup is LEXICAL (a normalised-string Set) which paraphrase
+ * evades, so the persisted self-model ACCRETES near-duplicates over time (a
+ * MAST step-repetition across background passes). `collapseNearDuplicateReflections`
+ * dedups WITHIN one batch; this drops a fresh insight semantically equivalent
+ * (cosine ≥ `threshold`) to one ALREADY in the store — Mem0's NOOP operation
+ * ("ADD only when no semantically equivalent memory exists"). Input order
+ * preserved.
+ *
+ * SUBTRACTIVE + grounding-safe: it only DROPS a redundant new insight on the
+ * write path (the existing stored copy, already grounded, remains); it never
+ * adds a claim, mutates the store, or touches a gate. Runs AFTER the id-citation
+ * + RGV gates. Fail-soft: an embedder that throws, or a fresh/stored insight with
+ * no embedding, keeps the fresh reflection (never drops on a zero vector). Pure
+ * over the injected embedder + exported for direct coverage.
+ */
+export async function filterReflectionsAgainstStore(
+  fresh: readonly Reflection[],
+  storedInsights: readonly string[],
+  embed: (text: string) => Promise<readonly number[]>,
+  options: { readonly threshold?: number } = {}
+): Promise<Reflection[]> {
+  if (fresh.length === 0 || storedInsights.length === 0) return [...fresh];
+  const threshold = options.threshold ?? REFLECTION_DEDUP_COSINE;
+  let freshVecs: (readonly number[])[];
+  let storedVecs: (readonly number[])[];
+  try {
+    freshVecs = await Promise.all(fresh.map((r) => embed(r.insight)));
+    storedVecs = await Promise.all(storedInsights.map((s) => embed(s)));
+  } catch {
+    return [...fresh];
+  }
+  const comparableStored = storedVecs.filter((v) => v.length > 0);
+  if (comparableStored.length === 0) return [...fresh];
+  const out: Reflection[] = [];
+  for (let i = 0; i < fresh.length; i += 1) {
+    const vec = freshVecs[i] ?? [];
+    // A fresh insight with no usable embedding can't be compared — keep it
+    // (fail-soft, never NOOP-dropped on a zero vector).
+    const isDuplicate = vec.length > 0 && comparableStored.some((s) => cosineSimilarity(vec, s) >= threshold);
+    if (!isDuplicate) out.push(fresh[i]!);
+  }
+  return out;
+}
