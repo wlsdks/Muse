@@ -345,3 +345,12 @@ ratchet: cli tests 2659 (+3) · testFiles 999 · fabrication 0 · self-eval exit
 - **왜**: recipient 해석을 프로그램이 점검(자동화/스크립팅)할 기계가독 출력 — 안전-인접 가치. cli 표면(웹 과집중 해소) + new-capability(consistency-patch 아님). desktop core 포화·cli list 일관성 마감 後 발굴.
 - **리뷰지점**: exit code가 양 모드 동일(`process.exitCode=1`이 json 분기 밖, ambiguous/none early-return 전에 실행). human 경로 byte-동일 → 기존 human resolve 테스트 통과. resolveContact 로직 무변 → never-guess 불변식 유지(ambiguous가 단일 recipient로 붕괴 안 함). 빈 쿼리 usage는 json화 안 함.
 - **리스크**: 없음(resolve action 한정 +19/-6 + 신규 3 테스트; resolveContact·send 경로 무접촉; 독립 Opus judge가 RED-before·비-vacuous·양모드 exit 보존·human/safety 로직 무회귀 검증 후 PASS, cli 2659/2659·self-eval exit 0).
+
+## fire 39 · 2026-06-14 · skill v1.14.0 · d8adae52
+meta: surface=web · value-class=micro-fix · pkg=@muse/web · kind=calendar-event-range-validation · verdict=PASS · firesSinceDrill=4
+ratchet: web unit 44/44 (+4) · calendar e2e 1/1 · testFiles 1002 · fabrication 0 · self-eval exit 0 · 표면 균형 web16·desktop10·cli13
+
+- **무엇**: Calendar 새 이벤트 Add 버튼이 비-빈 필드만으로 활성 → End가 Start보다 이르거나 같은 backwards/zero-length 이벤트 생성 가능(startsAtIso>endsAtIso POST, "10:00–09:00" 렌더). 순수 export `canAddEvent(title,start,end)`(비-빈 AND strict end>start) 추출, Add 버튼을 이걸로 게이트.
+- **왜**: 상태변경 mutation의 데이터-무결성 버그(a11y/cosmetic 아님) — CLI `block`은 이미 end>start 검증. Opus scout가 최고가치로 식별(desktop core 포화, 이건 진짜 버그).
+- **리뷰지점**: strict `new Date(end)>new Date(start)`(equal=zero-length도 false), 비-빈 short-circuit으로 NaN 비교 회피. dayLabel 패턴 동형 export. e2e가 backwards range→Add disabled, valid→re-enable+POST(judge가 old non-empty 가드로 revert→toBeDisabled RED으로 비-vacuous 입증). mutation onClick·event list·fire36 라벨 무변.
+- **리스크**: 없음(Calendar 신규 fn + 1줄 배선 + 2 테스트; 순수 클라 UX 가드(서버 권위 주장 아님), egress/IMMUTABLE-CORE 무접촉; 독립 Opus judge가 RED-before·e2e 비-vacuous·correctness·무회귀 검증 후 PASS, web 44/44·calendar e2e 1/1).
