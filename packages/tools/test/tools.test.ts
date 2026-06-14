@@ -756,12 +756,13 @@ describe("createMuseTools", () => {
     return tool;
   }
 
-  it("registers twenty-one zero-IO ambient utility tools", () => {
+  it("registers twenty-two zero-IO ambient utility tools", () => {
     const tools = createMuseTools();
     expect(tools.map((tool) => tool.definition.name).sort()).toEqual([
       "base64",
       "cron_for_datetime",
       "csv_parse",
+      "epoch_convert",
       "hash_text",
       "json_query",
       "korean_number",

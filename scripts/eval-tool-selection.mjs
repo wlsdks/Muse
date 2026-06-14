@@ -193,9 +193,12 @@ async function buildKoreanNumberScenario() {
     const toolDefs = kn.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
     const byName = new Set(toolDefs.map((t) => t.name));
     const cases = [
-      { prompt: "12345678을 한국식 만/억 단위로 읽어줘", expectTool: "korean_number", requireArgs: ["value"], note: "KO format a number in Korean myriad units → korean_number" },
-      { prompt: "50000000원은 몇 만원이야?", expectTool: "korean_number", requireArgs: ["value"], note: "KO amount → Korean 만 units → korean_number" },
-      { prompt: "Write 120000000 in Korean number units (만/억).", expectTool: "korean_number", requireArgs: ["value"], note: "EN Korean-unit formatting → korean_number" },
+      { prompt: "12345678을 한국식 만/억 단위로 읽어줘", expectTool: "korean_number", requireArgs: ["value"], note: "KO format a number in Korean myriad units → korean_number (forward)" },
+      { prompt: "50000000원은 몇 만원이야?", expectTool: "korean_number", requireArgs: ["value"], note: "KO amount → Korean 만 units → korean_number (forward)" },
+      { prompt: "Write 120000000 in Korean number units (만/억).", expectTool: "korean_number", requireArgs: ["value"], note: "EN Korean-unit formatting → korean_number (forward)" },
+      // reverse direction: a Korean amount expression → the integer
+      { prompt: "1억 2천만이 숫자로 얼마야?", expectTool: "korean_number", requireArgs: ["value"], note: "KO Korean amount → digits → korean_number (reverse)" },
+      { prompt: "5400만원은 정확히 숫자로 몇이야?", expectTool: "korean_number", requireArgs: ["value"], note: "KO Korean amount with 원 → digits → korean_number (reverse)" },
       // confusable neighbours: physical-unit conversion and arithmetic are NOT this tool
       { prompt: "5 miles is how many kilometers?", expectTool: "unit_convert", note: "physical-unit conversion → unit_convert (NOT korean_number)" },
       { prompt: "What is 1234 multiplied by 5678?", expectTool: "math_eval", note: "arithmetic → math_eval (NOT korean_number)" },
@@ -205,6 +208,29 @@ async function buildKoreanNumberScenario() {
     return { label: "korean-number (만/억 grouping vs unit_convert/math_eval)", tools: toolDefs, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
   } catch (error) {
     return { label: "korean-number", skip: `not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
+async function buildEpochConvertScenario() {
+  try {
+    const tools = await import("../packages/tools/dist/muse-tools.js");
+    const now = () => new Date("2026-06-14T00:00:00Z");
+    const picked = tools.createMuseTools({ now }).filter((t) => ["epoch_convert", "time_now", "time_diff"].includes(t.definition.name));
+    const toolDefs = picked.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(toolDefs.map((t) => t.name));
+    const cases = [
+      { prompt: "What date is the unix timestamp 1718000000?", expectTool: "epoch_convert", requireArgs: ["value"], note: "epoch → date → epoch_convert" },
+      { prompt: "1600000000 epoch을 날짜로 바꿔줘", expectTool: "epoch_convert", requireArgs: ["value"], note: "KO epoch → date → epoch_convert" },
+      { prompt: "What's the unix timestamp for 2026-06-14T12:00:00Z?", expectTool: "epoch_convert", requireArgs: ["value"], note: "date → epoch (other direction) → epoch_convert" },
+      // confusable neighbours: current time and duration are the time_* tools, NOT epoch
+      { prompt: "What time is it right now?", expectTool: "time_now", note: "current instant → time_now (NOT epoch_convert)" },
+      { prompt: "How many hours between 9:00 and 17:30 today?", expectTool: "time_diff", note: "duration between two times → time_diff (NOT epoch_convert)" },
+      // IrrelAcc: a number in a musing is not a conversion request
+      { prompt: "이 로그 파일 줄 수가 1718000줄이나 되네.", expectNoTool: true, note: "KO musing with a big number → NO tool (not a timestamp conversion)" }
+    ];
+    return { label: "epoch-convert (unix timestamp vs time_now/time_diff)", tools: toolDefs, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "epoch-convert", skip: `not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
   }
 }
 
@@ -1238,6 +1264,7 @@ async function main() {
     await buildLunarScenario(),
     await buildLunarToSolarScenario(),
     await buildKoreanNumberScenario(),
+    await buildEpochConvertScenario(),
     await buildTimeToolsScenario(),
     await buildTimeToolsExemplarScenario(),
     await buildActuatorScenario(),
