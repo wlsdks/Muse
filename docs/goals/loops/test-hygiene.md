@@ -296,3 +296,11 @@ ratchet: testFiles 997 (케이스 +1, 파일수 불변) · netCoverage +1 branch
 - **왜:** 예산 게이트가 읽는 status(돈-인접). ordering 버그면 새 달이 이전 달 exceeded로 잘못 보고 → 정상 예산을 차단. 문서화된 미묘 edge.
 - **어떻게-증명(MUTATION-FIRST ADD):** 검증을 resetIfNewMonth보다 *앞으로* swap 시 새 테스트만 RED(`'exceeded' to be 'ok'`, 나머지 6 green). ④b 독립 Opus judge가 mutation 재현 + ordering 미커버 + 기대값(120→exceeded·June NaN→ok·currentCost 0) 정확성 확인 → **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경, full check GREEN. 새 머지 모듈(budget-tracker)의 문서화 ordering edge를 pin.
+
+## fire 36 · 2026-06-14 · skill v1.14.0 · 9a68156f
+meta: kind=prune · pkg=@muse/autoconfigure · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 998→997 (−1 strict-subset 삭제) · netCoverage 0 (진짜 중복) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** autoconfigure 동명 쌍 `response-filters` **clean PRUNE**(autoconfigure 첫 쌍) — `responseLocales`(MUSE_RESPONSE_LOCALES→{ko,en} 파싱, grounding 인접 로케일 게이트)를 콜로케이트 src/(5케이스, responseLocales만)·test/(12케이스, responseLocales 4 + createResponseFilters 8)가 둘 다 실행. test/가 src/ responseLocales 전부 동등-이상(default/single/case-whitespace/mixed-drop/fallback) → src/ 삭제, 이식 0.
+- **왜:** 같은 모듈 두 파일 중복. test/가 responseLocales 전부 + createResponseFilters까지 더 강하게 커버.
+- **어떻게-증명(MUTATION-FIRST PRUNE):** ★fire-33 교훈 적용 — src case5의 "   "(공백) sub-case가 distinct branch인지 직접 검증. parseCsv("   ")=undefined → `?? ["ko","en"]` default(unset과 *동일* branch); "english"/"fr,de"는 size===0 fallback("fr,english"가 커버). "   "만 RED시키는 single-line mutation 없음 → 진짜 redundant. 생존 test/ cite: ko/en 인식 제한 제거 시 2케이스 RED, size===0 fallback 제거 시 fallback RED. ④b 독립 Opus judge가 parseCsv 분석 확인 + 5 케이스 전수 매핑(MISSING 없음) + mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경, 삭제 1파일(−32L)뿐. autoconfigure dist 클린리빌드 1회. (fire-33는 leadMinutes가 진짜 gap이었고, 이번 "   "는 진짜 redundant — 매번 mutation으로 직접 판별이 정답.)
