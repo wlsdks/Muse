@@ -328,3 +328,11 @@ ratchet: testFiles 1001 (케이스 +1, 파일수 불변) · netCoverage +1 branc
 - **왜:** Muse 핵심 edge(grounded≠true). 신뢰 note + 오염가능 tool 소스가 섞인 답변에서 whole-answer 게이트가 놓치는 per-claim 위험을 표면화 — 이게 회귀하면 poisoned tool claim이 조용히 "grounded"로 넘어감. grounding 경로 contract 최우선.
 - **어떻게-증명(MUTATION-FIRST ADD):** ★사전 probe(dist 직접 실행)로 mixed 시나리오가 per-claim 통지를 내는지 확인 후 작성. per-claim 블록 제거 시 mixed 답변이 undefined 반환 → 새 테스트만 RED(6 green). ④b 독립 Opus judge가 소스 trace로 2번째 분기 적중(whole-answer 아님) 확인 + 미커버 + mutation 재현 → **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경(grounding eval 신호 영향 0). probe-first로 dependency-coupled 분기(agent-core groundedOnUntrustedOnly/untrustedOnlySentences)를 검증 후 안정적 assert(template text + claim, exact-truncation 회피). 남은 후보: citationPrecision/Recall 80-char 절단(향후 ADD).
+
+## fire 40 · 2026-06-14 · skill v1.14.0 · 6effb6fb
+meta: kind=prune(consolidate) · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 1003→1002 (−1 통합, 유니크 케이스 2 이식) · netCoverage 0 (overlap 제거) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `web-action-tool` **통합**(8번째 mcp 쌍) — web_action execute-risk outbound 도구를 콜로케이트 src/(12케이스, SSRF×4·DNS-rebinding·method-validation 보안 풍부)·test/(5케이스)가 둘 다 실행. src/가 test/ 행동 동등-이상(reject-empty/needs-url·confirmed POST-uppercased·denied→reason) — 2개 빼고. test/ 유니크 2개(tool-calling 신뢰성: validateToolDefinitions-clean+additionalProperties:false+한국어 선택 키워드 "예약" · description "use when/do not read/payments")만 이식, test/ 삭제.
+- **왜:** 같은 도구 두 파일 중복. src/가 보안(SSRF) 훨씬 강하나, test/의 tool-calling 신뢰성(스키마 clean·키워드·use-when/not — tool-calling.md #1 관심사)은 src에 없었음.
+- **어떻게-증명(MUTATION-FIRST):** "예약" 키워드 제거 시 migrated case1 RED; description "do not use to read" 약화 시 migrated case2 RED — 각 자기 케이스만. ④b 독립 Opus judge가 삭제본 5 행동 전수 매핑(전부 equal-or-stronger, MISSING 없음 — needs-url/method-uppercase/denied 既커버 확인) + 2 mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 변경 −77L(test/ 삭제) +18L(이식 2케이스+`@muse/tools` import). @muse/tools는 mcp package.json에 이미 있음(test 파일은 vitest 컴파일이라 tsconfig refs 무관, pnpm check FULL GREEN). 남은 mcp 동명 쌍 6개.
