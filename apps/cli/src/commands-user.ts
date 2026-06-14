@@ -68,7 +68,9 @@ export async function inferSessionPreferences(
   const embed = options.embed ?? createGateEmbedder(process.env);
   const added: string[] = [];
   for (const exchange of exchanges) {
-    const pref = await inferPreferenceFromCorrection(exchange, { model, modelProvider, embed });
+    // calibrateConfidence: distractor-normalize the verbalized confidence so an
+    // over-confident one-shot trait is dropped / decays sooner (DINCO arXiv:2509.25532).
+    const pref = await inferPreferenceFromCorrection(exchange, { calibrateConfidence: true, embed, model, modelProvider });
     if (!pref) continue;
     // Supersede by category: a new style/format preference replaces the prior
     // one of the same category (id `pref-<category>`), so a changed mind

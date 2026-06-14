@@ -109,7 +109,7 @@ export { applyPlaybook, clampReward, effectiveStrategyReward, isAvoidedStrategy,
 export type { PlaybookStrategy, PlaybookProvider, RankPlaybookOptions, StrategyLifecycleAction } from "./playbook.js";
 export { classifyCorrectionContradiction, classifyEpisodeAdmissionQuality, DEFAULT_STRATEGY_VERBATIM_CEILING, detectApprovals, detectCorrections, distillStrategyFromCorrection, hasDistillableDirective } from "./correction-distiller.js";
 export { synthesizePatternSuggestion, type PatternSuggestionInput, type SynthesizePatternSuggestionOptions } from "./pattern-suggestion.js";
-export { inferPreferenceFromCorrection, parseInferredPreference, type InferredPreference, type InferPreferenceOptions } from "./preference-inference.js";
+export { calibratePreferenceConfidence, DEFAULT_PREFERENCE_DISTRACTOR_FLOOR, inferPreferenceFromCorrection, parseInferredPreference, type InferredPreference, type InferPreferenceOptions } from "./preference-inference.js";
 export type {
   ApprovalExchange,
   ClassifyContradictionOptions,
