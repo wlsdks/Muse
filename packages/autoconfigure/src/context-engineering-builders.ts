@@ -11,6 +11,7 @@ import {
   detectCorrections,
   detectUserCommitments,
   inferPreferenceFromCorrection,
+  selectOpenCommitments,
   selectPlanExemplarByRelevance,
   type ActiveContextProvider,
   type BackgroundReviewInput,
@@ -372,9 +373,11 @@ export async function scanCommitmentsFromTurns(
     readonly embed?: (text: string) => Promise<readonly number[]>;
   }
 ): Promise<readonly PersistedCheckin[]> {
-  const raw = detectUserCommitments(userTurns);
-  if (raw.length === 0) return [];
   const embedder = options.embed ?? createGateEmbedder(process.env);
+  // π-Bench (arXiv:2605.14678): drop commitments the user already discharged
+  // later in the conversation BEFORE near-duplicate collapse + scheduling.
+  const raw = await selectOpenCommitments(userTurns, embedder).catch(() => detectUserCommitments(userTurns));
+  if (raw.length === 0) return [];
   const collapsed = await collapseNearDuplicateCommitments(raw, embedder).catch(() => raw);
   const commitments = collapsed.map((c) => c.text);
   const existing = await readCheckins(options.file).catch(() => []);

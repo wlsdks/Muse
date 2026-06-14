@@ -50,8 +50,10 @@ export {
 } from "./followup-detector.js";
 export {
   COMMITMENT_DEDUP_COSINE,
+  COMMITMENT_DISCHARGE_COSINE,
   collapseNearDuplicateCommitments,
   detectUserCommitments,
+  selectOpenCommitments,
   type CommitmentKind,
   type DetectUserCommitmentsOptions,
   type UserCommitment
