@@ -26,6 +26,17 @@ describe("computeApproximateTokens — bucket ratios", () => {
     expect(computeApproximateTokens("일이삼사오")).toBe(3); // (10+1)/3 = 3
   });
 
+  it("buckets the OTHER CJK scripts — Chinese ideographs, Hiragana, Katakana — at the CJK ratio (not the /3 other bucket)", () => {
+    // The Hangul case above is one of FOUR ranges isCjkCodePoint spans: Chinese
+    // ideographs (U+4E00–9FFF), Hiragana (U+3040–309F), and Katakana (U+30A0–30FF)
+    // must also use the ~3-chars/2-tokens CJK ratio. If any range regressed, those
+    // chars would fall to the /3 "other" bucket and the trim budget would
+    // UNDER-count multilingual text (here each would collapse to 1 token).
+    expect(computeApproximateTokens("中文字")).toBe(2);     // 3 ideographs: floor((6+1)/3)=2 (other → 1)
+    expect(computeApproximateTokens("ひらがな")).toBe(3);   // 4 hiragana:   floor((8+1)/3)=3 (other → 1)
+    expect(computeApproximateTokens("カタカナ")).toBe(3);   // 4 katakana:   floor((8+1)/3)=3 (other → 1)
+  });
+
   it("buckets emoji 1:1 (each pictograph counts as one token)", () => {
     expect(computeApproximateTokens("😀")).toBe(1);
     expect(computeApproximateTokens("😀😀😀")).toBe(3);

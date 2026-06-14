@@ -271,3 +271,164 @@ ratchet: testFiles 989 (케이스 +1, 파일수 불변) · netCoverage +2 (neste
 - **왜:** 토큰 회계(cost/usage 추적). 중첩 추출이 flat-read로 회귀하면 캐시/추론 토큰이 조용히 0/undefined — 비용 부정확. `toEqual` 전체-객체로 4필드 모두 pin.
 - **어떻게-증명(MUTATION-FIRST ADD):** `value.prompt_tokens_details`→`value`(cached flat read) 시 cachedInputTokens undefined → 새 테스트 RED; `value.completion_tokens_details`→`value` 시 reasoningTokens undefined → RED. 각 mutation이 새 테스트만 RED(나머지 11 green = 미커버). ④b 독립 Opus judge가 양 mutation 재현 + 미커버(flat-only 기존) + 기대값 정확성 확인 → **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경. ★`pnpm check` 1차 SIGABRT 134(동시-루프 OOM/abort) — 재실행 시 FULL GREEN(2641 cli pass). 부하 아티팩트, 본 슬라이스 무관([[project_stale_dist_from_loop]] 부류). provider-openai-parse 모듈 커버 완료(4 함수 전 분기).
+
+## fire 33 · 2026-06-14 · skill v1.14.0 · 06b53b5c
+meta: kind=prune(consolidate) · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 993→992 (−1 통합, 유니크 task 케이스 3 이식) · netCoverage 0 (overlap 제거, task 가드 보강) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `briefing-imminent` **통합**(6번째 mcp 쌍) — deriveBriefingImminent(task)+deriveCalendarBriefingImminent(calendar)를 콜로케이트 src/(4케이스)·test/(8케이스)가 둘 다 실행. test/가 calendar 전부 + task positive/done/no-due/proactive/far 동등-이상. src/ 유니크 task 3개(past-due `dueMs<nowMs` 하한·unparseable `Number.isNaN(dueMs)`·finite leadMinutes 창 축소)만 test/로 이식, src/ 삭제.
+- **왜:** proactive 임박 브리핑(task+calendar) 두 파일 중복. test/가 calendar superset이나 task의 하한/NaN/custom-lead는 미커버였음 — fail-soft 가드 손실 금지.
+- **어떻게-증명(MUTATION-FIRST):** 하한 `dueMs<nowMs` 제거 시 past 누출 RED; NaN 가드 제거 시 unparseable 누출 RED; cutoff가 custom lead 무시(`DEFAULT_LEAD_MINUTES`) 시 leadMinutes:30 케이스 RED. ★judge가 leadMinutes를 "equivalent"로 통과시켰으나 maker가 gap 발견(test/의 유일 lead 테스트=NaN→120이 "lead 하드코딩 120" mutation과 일치해 못 잡음) → 보수적으로 추가 이식+mutation 증명. ④b 독립 Opus judge가 삭제본 전 행동 매핑(MISSING 없음) + 2 mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 변경 −89L(src/ 삭제) +12L(이식 3케이스). mcp dist 클린리빌드 1회. 교훈: judge가 "equivalent"라 해도 mutation으로 직접 검증(coincidental-default가 mutation을 가릴 수 있음). 남은 mcp 동명 쌍 8개.
+
+## fire 34 · 2026-06-14 · skill v1.14.0 · 39f030ce
+meta: kind=prune · pkg=@muse/messaging · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 994→993 (−1 subset 삭제, 1 assert 강화-이식) · netCoverage 0 (진짜 중복) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** messaging 동명 쌍 `pending-approval-store` **PRUNE**(messaging 2번째 쌍) — 승인대기 액션 store(record/read/list/clear)를 콜로케이트 src/(6케이스)·test/(17케이스)가 둘 다 실행. test/가 src/ superset(record+list·expired-filter+strict-> boundary·channel-scope+newest-sort·clearById 3케이스·tolerant read+quarantine·filterUnexpired pure+immutability+200-cap). src/ case1 re-run-args round-trip은 verbatim filter라 mutation-비검출이나, 손실 0 위해 test/ worklist 케이스에 `toMatchObject({tool,arguments})` 강화-이식 후 src/ 삭제.
+- **왜:** 같은 store 두 파일 중복. test/가 모든 행동 더 강하게 커버. re-run payload round-trip(승인 시 액션 재실행)은 store의 핵심이라 명시 assert 보존.
+- **어떻게-증명(MUTATION-FIRST PRUNE):** 생존 test/ cite — isPendingApproval arguments 검증 제거 시 "drops malformed" RED; expired-filter 제거/sort 역전 시 worklist+boundary+sort 4케이스 RED. ④b 독립 Opus judge가 삭제본 6 케이스 전수 매핑(전부 equal-or-stronger, MISSING 없음) + 3 mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경, 삭제 1파일(−91L) + test/ 강화(+9L). messaging dist 클린리빌드 1회. 남은 messaging 동명 쌍 2개(channel-approval-gate·provider-helpers).
+
+## fire 35 · 2026-06-14 · skill v1.14.0 · 4f983165
+meta: kind=add · pkg=@muse/observability · verdict=PASS · firesSinceDrill=0 (★JUDGE-DRILL 완료 리셋)
+ratchet: testFiles 997 (케이스 +1, 파일수 불변) · netCoverage +1 branch (reset-before-validity ordering) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **★JUDGE-DRILL(연속 allPASS=8 도달, 미루기 불가):** budget-tracker에 type/enum-only inert ADD 주입(status∈{ok,warning,exceeded}·currentCost typeof number만 assert — 타입시스템이 보장, 어떤 mutation도 RED 안 됨). 독립 ④b Opus judge가 **VERDICT: FAIL**(2 mutation 모두 green 유지 + sibling 테스트가 실제 행동 이미 커버 지적) → 제거. maker≠judge 게이트 신뢰성 재확인 → 카운터 0 리셋.
+- **무엇(진짜 슬라이스):** `MonthlyBudgetTracker.recordCost`(budget-tracker.ts, 비용/예산 정책)의 **reset-before-validity ordering** 커버 추가. recordCost는 resetIfNewMonth를 비-유효 cost 검증보다 *먼저* 실행 — 새 달 첫 op이 NaN/음수 cost면 이전 달의 "exceeded"가 아니라 fresh $0 달의 "ok"를 반환해야 함. 기존 테스트는 같은-달 내 비-유효 cost·currentCost/snapshot 경유 roll만 — 이 ordering edge 미커버.
+- **왜:** 예산 게이트가 읽는 status(돈-인접). ordering 버그면 새 달이 이전 달 exceeded로 잘못 보고 → 정상 예산을 차단. 문서화된 미묘 edge.
+- **어떻게-증명(MUTATION-FIRST ADD):** 검증을 resetIfNewMonth보다 *앞으로* swap 시 새 테스트만 RED(`'exceeded' to be 'ok'`, 나머지 6 green). ④b 독립 Opus judge가 mutation 재현 + ordering 미커버 + 기대값(120→exceeded·June NaN→ok·currentCost 0) 정확성 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경, full check GREEN. 새 머지 모듈(budget-tracker)의 문서화 ordering edge를 pin.
+
+## fire 36 · 2026-06-14 · skill v1.14.0 · 9a68156f
+meta: kind=prune · pkg=@muse/autoconfigure · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 998→997 (−1 strict-subset 삭제) · netCoverage 0 (진짜 중복) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** autoconfigure 동명 쌍 `response-filters` **clean PRUNE**(autoconfigure 첫 쌍) — `responseLocales`(MUSE_RESPONSE_LOCALES→{ko,en} 파싱, grounding 인접 로케일 게이트)를 콜로케이트 src/(5케이스, responseLocales만)·test/(12케이스, responseLocales 4 + createResponseFilters 8)가 둘 다 실행. test/가 src/ responseLocales 전부 동등-이상(default/single/case-whitespace/mixed-drop/fallback) → src/ 삭제, 이식 0.
+- **왜:** 같은 모듈 두 파일 중복. test/가 responseLocales 전부 + createResponseFilters까지 더 강하게 커버.
+- **어떻게-증명(MUTATION-FIRST PRUNE):** ★fire-33 교훈 적용 — src case5의 "   "(공백) sub-case가 distinct branch인지 직접 검증. parseCsv("   ")=undefined → `?? ["ko","en"]` default(unset과 *동일* branch); "english"/"fr,de"는 size===0 fallback("fr,english"가 커버). "   "만 RED시키는 single-line mutation 없음 → 진짜 redundant. 생존 test/ cite: ko/en 인식 제한 제거 시 2케이스 RED, size===0 fallback 제거 시 fallback RED. ④b 독립 Opus judge가 parseCsv 분석 확인 + 5 케이스 전수 매핑(MISSING 없음) + mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경, 삭제 1파일(−32L)뿐. autoconfigure dist 클린리빌드 1회. (fire-33는 leadMinutes가 진짜 gap이었고, 이번 "   "는 진짜 redundant — 매번 mutation으로 직접 판별이 정답.)
+
+## fire 37 · 2026-06-14 · skill v1.14.0 · baaed7e9
+meta: kind=add · pkg=@muse/memory · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 998 (케이스 +1, 파일수 불변) · netCoverage +1 branch (DECISION_HINTS break) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `scoreMessageContent`(message-importance.ts, 트리밍/compaction 중요도 스코어)의 **DECISION_HINTS `break`** 커버 추가. 결정-힌트 루프는 첫 매치서 +0.2 후 break — 여러 결정어가 있어도 +0.2 *한 번*(누적 아님). 기존 decision-vocab 테스트는 전부 단일-힌트 메시지라 break 미커버.
+- **왜:** 트리밍 중요도 정확도(여러 결정어 메시지가 과대-점수 받으면 안 됨). 이미 exhaustively 커버된 모듈(plain-assistant bonus·matchableHint≥3·per-role exact·unknown-role·recency 등 prior loop가 pin)에서 남은 분기.
+- **어떻게-증명(MUTATION-FIRST ADD):** "we decided and agreed on the plan"(decided+agreed 둘 다 hint)이 base 0.1+user 0.2+decision 0.2=**0.5**. `break` 제거 시 누적되어 0.7 → 새 테스트만 RED(17 green = 미커버). ④b 독립 Opus judge가 mutation 재현 + 미커버(기존 split-combine 테스트는 동등성만 assert, cap값 아님) + 0.5 산술 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경, full check GREEN. ★신호: message-importance는 prior loop가 거의 완전 커버 — 성숙 모듈 ADD vein 희박, break 같은 잔여 분기만 남음.
+
+## fire 38 · 2026-06-14 · skill v1.14.0 · 0141d676
+meta: kind=prune(consolidate) · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 999→998 (−1 통합, 유니크 케이스 1 이식) · netCoverage 0 (overlap 제거) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `objective-evaluation-loop` **통합**(7번째 mcp 쌍) — standing-objective 재평가 엔진 `runDueObjectives`를 콜로케이트 src/(6케이스)·test/(10케이스)가 둘 다 실행. test/가 src/ 행동 전부 동등-이상(met→act+done·unmet→backoff·unmeetable→escalate+sink·maxAttempts·fail-open throwing-evaluator+sibling) 1개 빼고 커버. src/ 유니크 1개("act() throws on MET → fired 아님·done 아님·active 유지")만 이식, src/ 삭제.
+- **왜:** 같은 엔진 두 파일 중복. ★중요 fail-open: 조건은 met이나 act()(메신저)가 실패하면 objective를 done 마킹하면 안 됨(안 그러면 액션 영영 재시도 안 함). test/엔 이 act-throws 케이스 없었음.
+- **어떻게-증명(MUTATION-FIRST):** act() 호출을 status:"done"+fired.push *뒤로* 이동(act 던져도 이미 done) 시 이식 케이스 RED(`fired ['o1'] != []`). ★judge가 contested claim 2개(escalate-sink·throwing-evaluator) test/ line 52-61·132에서 실제 assert됨을 소스 읽어 검증. ④b 독립 Opus judge가 6 행동 전수 매핑(MISSING 없음) + mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 변경 −180L(src/ 삭제) +12L(이식 1케이스). ★교훈: src 6케이스 중 5개가 test/에 既커버(특히 throwing-evaluator·escalate-sink) — "유니크처럼 보임"을 케이스 단위로 test/ 실제 assert와 대조해야(swarm/briefing처럼 과대-이식 회피). 남은 mcp 동명 쌍 7개.
+
+## fire 39 · 2026-06-14 · skill v1.14.0 · fc42e46b
+meta: kind=add · pkg=@muse/recall · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 1001 (케이스 +1, 파일수 불변) · netCoverage +1 branch (per-claim untrusted) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `untrustedOnlyGroundingNotice`(grounding-notices.ts, 새 머지 grounding 표면)의 **per-claim untrusted-source 분기** 커버 추가. 두 분기 중 (1)whole-answer 게이트(전 인용 untrusted)는 기존 테스트 커버, (2)MIXED 답변 per-claim(전체 게이트는 trusted 1개로 통과하나 특정 claim이 poisonable tool 소스에만 의존 — grounded≠true 핵심 edge)은 미커버였음.
+- **왜:** Muse 핵심 edge(grounded≠true). 신뢰 note + 오염가능 tool 소스가 섞인 답변에서 whole-answer 게이트가 놓치는 per-claim 위험을 표면화 — 이게 회귀하면 poisoned tool claim이 조용히 "grounded"로 넘어감. grounding 경로 contract 최우선.
+- **어떻게-증명(MUTATION-FIRST ADD):** ★사전 probe(dist 직접 실행)로 mixed 시나리오가 per-claim 통지를 내는지 확인 후 작성. per-claim 블록 제거 시 mixed 답변이 undefined 반환 → 새 테스트만 RED(6 green). ④b 독립 Opus judge가 소스 trace로 2번째 분기 적중(whole-answer 아님) 확인 + 미커버 + mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경(grounding eval 신호 영향 0). probe-first로 dependency-coupled 분기(agent-core groundedOnUntrustedOnly/untrustedOnlySentences)를 검증 후 안정적 assert(template text + claim, exact-truncation 회피). 남은 후보: citationPrecision/Recall 80-char 절단(향후 ADD).
+
+## fire 40 · 2026-06-14 · skill v1.14.0 · 6effb6fb
+meta: kind=prune(consolidate) · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 1003→1002 (−1 통합, 유니크 케이스 2 이식) · netCoverage 0 (overlap 제거) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `web-action-tool` **통합**(8번째 mcp 쌍) — web_action execute-risk outbound 도구를 콜로케이트 src/(12케이스, SSRF×4·DNS-rebinding·method-validation 보안 풍부)·test/(5케이스)가 둘 다 실행. src/가 test/ 행동 동등-이상(reject-empty/needs-url·confirmed POST-uppercased·denied→reason) — 2개 빼고. test/ 유니크 2개(tool-calling 신뢰성: validateToolDefinitions-clean+additionalProperties:false+한국어 선택 키워드 "예약" · description "use when/do not read/payments")만 이식, test/ 삭제.
+- **왜:** 같은 도구 두 파일 중복. src/가 보안(SSRF) 훨씬 강하나, test/의 tool-calling 신뢰성(스키마 clean·키워드·use-when/not — tool-calling.md #1 관심사)은 src에 없었음.
+- **어떻게-증명(MUTATION-FIRST):** "예약" 키워드 제거 시 migrated case1 RED; description "do not use to read" 약화 시 migrated case2 RED — 각 자기 케이스만. ④b 독립 Opus judge가 삭제본 5 행동 전수 매핑(전부 equal-or-stronger, MISSING 없음 — needs-url/method-uppercase/denied 既커버 확인) + 2 mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 변경 −77L(test/ 삭제) +18L(이식 2케이스+`@muse/tools` import). @muse/tools는 mcp package.json에 이미 있음(test 파일은 vitest 컴파일이라 tsconfig refs 무관, pnpm check FULL GREEN). 남은 mcp 동명 쌍 6개.
+
+## fire 41 · 2026-06-14 · skill v1.14.0 · ef3ca554
+meta: kind=prune(consolidate) · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 1005→1004 (−1 통합) · netCoverage +1 (draft-first 더 강해짐) − 6 중복(double-run) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `web-action`(performWebActionWithApproval, outbound-safety 코어) **통합**(9번째 mcp 쌍) — 콜로케이트 src/(14케이스: SSRF redirect·429 retry·timeout·redaction 풍부)·test/(7케이스)가 둘 다 같은 모듈 실행. src/가 test/ 7행동을 전수 동등-이상 커버, 단 하나 — test/ case1의 **draft-first**(승인 게이트가 정확한 action=summary를 본다, outbound-safety rule 1)만 src에 없었음. 그 한 assert만 src에 이식(이제 summary만이 아니라 request 전체를 toEqual로 검증 — 더 강함) 후 test/ 삭제.
+- **왜:** 같은 모듈 두 파일 double-run. src/가 보안(SSRF·redirect·redaction·429) 훨씬 풍부하나, draft-first(게이트가 *전송 전 정확한 내용*을 사용자에게 보임 — outbound-safety의 1번 규칙)는 test/만 검증했음. 조용히 떨어뜨리면 마지막 보호선 손실.
+- **어떻게-증명(MUTATION-FIRST):** (A) gate에 넘기는 summary를 "MUTANT"로 변형 → 이식한 draft-first 케이스만 RED(`expected 'MUTANT' to be 'Book a table, 7pm'`), 나머지 1853 green. (B) `redactSecretsInText` 우회 변형 → 생존 src "scrubs secrets" 케이스 RED(삭제본 case7이 덮던 redaction이 여전히 가드됨). ④b 독립 Opus judge가 삭제본 7 행동 전수 매핑(전부 equal-or-stronger, DROPPED 없음) + 두 mutation 재현(의도한 케이스만 적중) → **VERDICT: PASS**.
+- **리스크:** 소스 무변경(grounding/eval 신호 영향 0). 변경 −97L(test/ 삭제) +13L(draft-first 이식+`WebActionRequest` import). draft-first는 outbound-safety 불변식이라 단순 동등이식이 아니라 더 강한 형태로 보존. anthropic-key redaction은 mcp.test.ts:9282에도 독립 커버 존재(judge 확인). 남은 mcp 동명 쌍 5개.
+
+## fire 42 · 2026-06-14 · skill v1.14.0 · c45af7fb
+meta: kind=add · pkg=@muse/tools · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1007 (케이스 +1, 파일수 불변) · netCoverage +1 branch (isFinite-false 분기) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `coerceToolArguments`→`coerceScalar`(tools-argument-validation.ts, tool-arg "repair")의 **`Number.isFinite(n)` 가드 분기** 커버 추가. 패턴은 통과하나 오버플로하는 숫자열(`"9".repeat(400)` — `/^-?\d+$/` 매치하지만 `Number()`가 ±Infinity, > MAX_VALUE)을 문자열 그대로 남김(비유한수로 강제하지 않음). integer/number/음수 3 케이스.
+- **왜:** tool-calling 신뢰성(tool-calling.md #1 — 로컬 8B가 인자를 한 방에). 가드 없으면 거대 정수열이 Infinity로 강제돼 execute()에 비유한수가 도달(math/indexing/slice 깨짐) — Structured Reflection(arXiv:2509.18847) "lossy guess로 진짜 불일치를 가리지 말라"의 정확한 사례. 기존 coerce 테스트(339-374)는 작은 clean 값만 써 isFinite-false 분기 미커버.
+- **어떻게-증명(MUTATION-FIRST ADD):** 가드 제거(`if (Number.isFinite(n)) return n;`→`return n;`) 시 새 케이스만 RED(`expected { count: Infinity } to deeply equal { count: "999…" }`, 218 green). 사전 node로 `"9".repeat(400)`가 양 패턴 매치 + Number→Infinity + isFinite false 확인(regex 거부 아님 — isFinite 분기 정확 타격). ④b 독립 Opus judge가 mutation 재현(오직 그 케이스) + 사전 미커버 + outcome-based 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. coerceScalar는 결정적 repair 헬퍼(tool 선택/스키마 경로 아님) → eval:tools 신호 무영향(LOCAL-OLLAMA, 미실행). KIND/pkg(add@tools)가 최근 mcp-prune 연속(40/41)에서 다양화. 남은 후보: coerceScalar boolean 대문자/혼합("True"→미강제) 경계, validateRequired null-vs-undefined.
+
+## fire 43 · 2026-06-14 · skill v1.14.0 · dc435984
+meta: kind=prune(consolidate) · pkg=@muse/autoconfigure · verdict=PASS · firesSinceDrill=0 (★JUDGE-DRILL 완료 리셋)
+ratchet: testFiles 1008→1007 (−1 통합) · netCoverage 0 (subset 제거 + 더 richer 이식) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇(★JUDGE-DRILL fire):** 먼저 고의 inert ADD 주입(`coerceToolArguments`가 `toBeTypeOf("object")`+`toHaveProperty` 3개만 검증 — `{...args}` spread라 coercion 깨져도 항상 통과). 별개 Opus ④b judge가 no-op-coercion mutation 돌려 "planted만 green, 진짜 coerce 테스트는 RED" 확인 → **FAIL** 판정(inert/tautological). 롤백 후 진짜 슬라이스: autoconfigure 동명 쌍 `provider-utils` **통합** — test/(clampPositive만 5케이스, base-10 parseInt 핀닝 유니크)·src/(clampPositive 2 약한 케이스 + readCredentialsSync 4 + stringField 2)가 clampPositive를 double-run. test/의 richer 5를 src로 이식(단일 홈)하고 test/ 삭제.
+- **왜:** ⑴ JUDGE-DRILL 하드-카운터(firesSinceDrill 8, 연속 allPASS 7→8 cadence) — maker≠judge 보상통제가 살아있음을 증명(judge가 inert를 실제로 잡나). ⑵ clampPositive 중복 실행 제거. src/가 readCredentialsSync/stringField 유니크라 src를 홈으로, test/의 유니크 base-10 핀닝을 이식해 보존.
+- **어떻게-증명:** [드릴] no-op coercion(`const coerced = undefined`) 시 planted inert 케이스 green 유지(진짜 2 케이스만 RED) → judge가 독립 재현해 FAIL. [진짜] 통합 src 블록에 mutation 2개: parseInt radix 제거 → base-10 케이스 RED(이식된 유니크 커버가 src에서 live); 비양수 가드 제거 → 비양수 fallback 케이스 RED. ④b judge가 삭제본 6 행동 전수 매핑(base-10 verbatim 이식, DROPPED 없음) + 2 mutation 재현 + readCredentialsSync/stringField intact → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 드릴은 커밋 안 됨(롤백). 통합으로 clampPositive 단일 홈(src), 11케이스 127ms. 남은 동명 쌍: agent-core/model/messaging은 대부분 complementary(양쪽 substantial, subset 아님 — council 66/50, correction-distiller 21/63). clean-subset prune vein 고갈 신호 — 다음은 ADD/FIX 우선.
+
+## fire 44 · 2026-06-14 · skill v1.14.0 · 4cace6bf
+meta: kind=add · pkg=@muse/recall · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 1009 (케이스 +1, 파일수 불변) · netCoverage +1 branch (importance bump) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `rankEpisodeHits`(recall/select.ts, 에피소드 recall 랭킹)의 **importance bump 분기** 커버 추가. Generative Agents(arXiv:2304.03442) 점수 = cosine + importance + recency 가산 bump인데, 기존 3 테스트(cosine·topK=0·recency)는 importance-free 에피소드만 써 importance 항이 항상 0이라 미커버. 동일 cosine([1,0,0])·무타임스탬프 두 에피소드를 importance 1 vs 10로, 고importance를 입력 2번째에 배치.
+- **왜:** grounding/recall 랭킹 경로(에피소드 회상이 cited recall의 근거). importance bump가 회귀하면 "중요한 과거 세션"이 동률 relevance에서 안 떠 사용자 이력 grounding이 약해짐. 3 가산 항 중 하나가 dead-to-coverage였음.
+- **어떻게-증명(MUTATION-FIRST ADD):** importanceBump=0 변형 시 새 케이스만 RED(`expected 'trivial' to be 'important'` — bump 없으면 stable sort가 입력순 유지해 2번째 'important'가 안 올라옴, 8 green). cosine 동일+recency 0(무 endedAt)이라 importance가 유일 차별자 — 입력순/cosine confound 없음(2번째 배치로 stable-sort 방어). ④b 독립 Opus judge가 mutation 재현(오직 그 케이스) + 격리 검증(confound 없음, V8 stable sort) + 사전 미커버 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. rankEpisodeHits는 순수 랭킹 헬퍼(런타임 LLM grounding 게이트 아님) → eval:agent 신호 무영향(test-only). KIND/pkg(add@recall)가 fire 43(prune@autoconfigure)·41(prune@mcp)에서 다양화. 남은 select.ts 후보: episodeRecencyScore 미래-타임스탬프 클램프(Math.max(0)), formatContactBirthday 하한 경계(month<1/day<1).
+
+## fire 45 · 2026-06-14 · skill v1.14.0 · 998603a5
+meta: kind=add · pkg=@muse/agent-core · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 1012 (케이스 +1, 파일수 불변) · netCoverage +1 branch (tie-break) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `worstUnsupportedSentence`(agent-core/sentence-groundedness.ts, grounding 진단)의 **동률 tie-break 분기** 커버. 동률 coverage에서 strict `<`가 FIRST 문장을 유지("ties resolve to earliest" 계약) — 진단 포인터가 문장 순서와 무관하게 결정적. 기존 3 케이스(all-supported→undefined·empty→undefined·서로 다른 coverage 0 vs 0.5)는 동률을 안 먹여 이 분기 미커버. 완전 fabricated 두 문장(둘 다 coverage 0) → earliest("Dragons") 반환 검증.
+- **왜:** worstUnsupportedSentence는 un-groundable claim의 진단/연료 포인터(self-improvement fuel). tie-break가 회귀하면(< → <=) 같은 답변에서 가리키는 문장이 순서 따라 바뀌어 진단이 비결정적 — 재현 가능한 grounding 진단 계약.
+- **어떻게-증명(MUTATION-FIRST ADD):** `<` → `<=` 변형 시 새 케이스만 RED(`expected 'Unicorns…' to contain 'Dragons'` — 동률에서 later 문장으로 교체됨, 12 green). 두 문장이 evidence("lions hunt animals africa")와 토큰 0 공유 → 둘 다 coverage 0 진짜 동률(report.unsupported===2 동시 assert). ④b 독립 Opus judge가 mutation 재현(오직 그 케이스) + tie 진위(둘 다 0) + 사전 미커버 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. worstUnsupportedSentence는 순수 진단 헬퍼(런타임 LLM 게이트 아님) → eval 신호 무영향. KIND/pkg(add@agent-core)가 새 패키지로 다양화 — 단 최근 3 = add/prune/add라 ADD 3회째(judge가 약하게 지적); 다음 fire는 prune/fix 우선. 남은 후보: groundToolArguments는 19케이스로 매우 풍부, sentence-groundedness reportSentenceGroundedness floor 경계는 커버됨.
+
+## fire 46 · 2026-06-14 · skill v1.14.0 · c8ebc826
+meta: kind=add · pkg=@muse/recall · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 1015 (케이스 +1, 파일수 불변) · netCoverage +1 (formatContactBirthday 하한 가드 month<1/day<1) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `formatContactBirthday`(recall/select.ts, 연락처 생일 grounding)의 **하한 경계 가드** 커버. 기존 malformed 테스트는 "99-99"(상한: month>12 AND day>31)만 먹여 하한(month<1/day<1) 미커버. "00-15"→month 0→BIRTHDAY_MONTHS[-1]→빈 월(" 15"), "03-00"→"March 0" — grounding 블록에 쓰레기 날짜 렌더됨. 새 케이스가 00-15/2026-00-15/03-00 모두 undefined 검증.
+- **왜:** grounding-integrity 플로어(소스에 fabricated/garbage 날짜 금지). 하한 가드 회귀 시 malformed 생일이 정상 날짜처럼 grounding 블록에 들어가 "X의 생일은 ?월 15일" 류 쓰레기 근거 생성. no-garbage-source 계약.
+- **어떻게-증명(MUTATION-FIRST ADD):** 하한 둘 제거(`month<1 || ... || day<1 ||` → 상한만) 시 새 케이스만 RED(`expected ' 15' to be undefined`, 기존 "99-99"는 green 유지=하한 진짜 미커버), 262 green. ④b 독립 Opus judge가 두 서브분기(month<1·day<1) 각각 독립 격리 mutation + regex가 numeric 체크 도달 + 사전 미커버 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. ★다양성 주의: recall 2회 연속(44,46)·ADD 3회 연속(44,45,46) — ratchet(pkg,KIND≥6/8)은 recall-add 3/8로 미발동이나 judge가 집중 지적. **다음 fire는 반드시 다른 패키지+다른 KIND**(mcp/cli/messaging/shared 등 + prune 후보 재탐색 or fix). prune/fix vein은 fire45에서 고갈 확인 → ADD 위주 불가피하나 패키지 분산 필요.
+
+## fire 47 · 2026-06-14 · skill v1.14.0 · d4848df9
+meta: kind=add · pkg=@muse/memory · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 1016 (케이스 +1, 파일수 불변) · netCoverage +1 (CJK 3개 서브레인지 버킷팅) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `computeApproximateTokens`(memory/token-estimator.ts, 트림 예산용 토큰 추정)의 **isCjkCodePoint 4개 레인지 중 비-Hangul 3개**(중국어 표의문자 U+4E00–9FFF·히라가나 U+3040–309F·가타카나 U+30A0–30FF) 버킷팅 커버. 기존 CJK 테스트는 Hangul(한/안녕/일이삼사오)만 써 나머지 3 레인지 미커버. CJK는 ~3자/2토큰 비율 floor((n*2+1)/3); 레인지 회귀 시 /3 "other" 버킷으로 떨어져 다국어 텍스트가 과소계수→트림 예산 초과. 中文字=2/ひらがな=3/カタカナ=3 검증.
+- **왜:** 트림 예산 게이트(contract priority 트리밍)의 정확도. 누군가 isCjkCodePoint 리팩터로 한 레인지를 빠뜨리면 중국어/일본어 대화가 실제보다 작게 계수돼 트림이 컨텍스트를 넘기거나 잘못 예산. 다국어 토큰-예산 정확성 계약.
+- **어떻게-증명(MUTATION-FIRST ADD):** 3개 레인지 각각 독립 제거 mutation → 해당 스크립트 assertion만 RED(중국어→`expected 1 to be 2`, 히라가나/가타카나→`expected 1 to be 3`; other 버킷으로 collapse), 기존 Hangul 케이스는 매번 green(426 pass). ④b 독립 Opus judge가 3 레인지 각각 격리 재현 + 산술 검증(other 버킷 값 다름) + 사전 미커버(Hangul만) 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. 테스트 문자열은 CJK 문자(raw control/zero-width 아님)→byte-hygiene 무관. ★다양성: ADD 4연속(44-47)이나 패키지는 memory(신규, 최근 미접촉)로 분산 — judge 수용하되 5연속 ADD면 prune/fix vein 재확인 권고. 이번 fire 광범위 스카웃(mcp weather·model local-only·shared crypto·memory message-importance/recall-promotion·messaging retry)으로 코드베이스 exhaustive 커버 재확인 — clean-subset prune·slow-test fix vein 고갈; 남은 가치는 미묘한 분기 ADD.
+
+## fire 48 · 2026-06-14 · skill v1.14.0 · e4348500
+meta: kind=prune(consolidate) · pkg=@muse/api · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 1018→1017 (−1 통합) · netCoverage 0 (overlap 제거 + 유니크 케이스 이식·강화) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** apps/api 동명 쌍 `mcp-routes-shapers` **통합** — 콜로케이트 src/(9케이스: sendMcpError + 7개 shaper)·test/(3케이스: sendMcpError만)가 sendMcpError를 double-run. test/ 3 중 2개(409·Error-500-no-leak)는 src/가 이미 커버, 유니크 1개(NON-Error 던져진 값=raw string → generic 500, raw값 누출 안 함)만 src로 이식(원본보다 강화: `not.toContain("/secret/path")` 누출 assert 추가) 후 test/ 삭제. ★4연속 ADD 후 KIND 다양화(prune) + 새 패키지(apps/api, 루프 첫 접촉).
+- **왜:** 같은 함수 두 파일 중복 실행. sendMcpError의 else-분기는 ANY non-McpRegistryError를 받는데(하드코딩 generic msg, .message 미접근), src/는 Error만 테스트해 non-Error throwable의 누출-안전이 미커버였음 — 보안(내부정보 네트워크 누출 방지) 계약의 빈틈.
+- **어떻게-증명(MUTATION-FIRST consolidate):** else-분기를 non-Error만 누출(`message: error instanceof Error ? "MCP operation failed" : String(error)`)로 변형 시 이식한 non-Error 케이스만 RED(`message: "raw string with /secret/path"` 누출), Error-500 케이스는 green 유지 → 이식 케이스가 non-Error 경로의 유일 가드(Error 케이스와 비중복). ④b 독립 Opus judge가 삭제본 3 행동 전수 매핑(409·Error-500 생존, non-Error 이식·강화, DROPPED 없음) + mutation 격리(non-Error만 red) + 사전 미커버(src 원본은 Error만) 확인 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 누출-방지 보안 불변식 보존(강화). ★발견: 최근 머지가 새 동명 쌍 유입(apps/api 4개·mcp consented-action/email-send 등) — prune vein이 apps/api·신규 코드로 부분 재개통. 단 대부분 complementary(agent-core council 66/50 등); apps/api compat-parsers·mcp-routes 계열이 다음 prune 후보. 남은 apps/api 쌍: compat-parsers(11/8)·compat-run-aggregations(8/3)·mcp-routes-parsers(6/4).
+
+## fire 49 · 2026-06-14 · skill v1.14.0 · 5246c6af
+meta: kind=prune(consolidate) · pkg=@muse/api · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 1019→1018 (−1 통합) · netCoverage +3 branch (5-30s·30s+·NaN을 single home으로 회수) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** apps/api 동명 쌍 `compat-run-aggregations` **통합**(2번째 apps/api 쌍) — 콜로케이트 src/(8케이스: latencyDistribution + 7 aggregation)·test/(3케이스: latencyDistribution만)가 double-run. ★단순 subset 아님: src/의 단일 latency 케이스는 0-1s·1-5s·missing만 커버, 삭제 대상 test/가 **5-30s·30s+ 4버킷 전부 + NaN(Invalid-Date 뺄셈→unknown) 분기**를 추가 커버 — 즉 그 3 분기는 double-run 파일에만 있었음. src/ 약한 케이스를 test/의 richer 3케이스(all-4-buckets·missing·NaN, src의 run() 헬퍼로)로 교체 후 test/ 삭제.
+- **왜:** 같은 함수 double-run 제거 + 동시에 test/-only였던 3 분기(5-30s/30s+/NaN)를 single home으로 회수. 순수 삭제였으면 그 3 분기 커버 손실(특히 NaN→unknown은 관측성 대시보드가 Invalid-Date 런을 30s+로 오분류 안 하게 막는 가드).
+- **어떻게-증명(MUTATION-FIRST consolidate):** (A) isFinite NaN 가드 제거 시 NaN 케이스 RED(unknown 3→0, 30s+로 샘); (B) `<30_000`→`<300_000` 시 all-4-buckets 케이스 RED(60s런이 30s+ 이탈); (C) `<5_000`→`<50_000` 시도 5-30s 경계 격리 확인. 각 분기 mutation-killing. ④b 독립 Opus judge가 삭제본 3 행동 전수 매핑(5-30s/30s+/NaN 모두 src에 present) + 각 mutation 격리 + 나머지 7 aggregation 테스트 무회귀 확인 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 케이스 net +2(1→3 latency), 파일 −1. dist 컴파일 테스트가 vitest에 잡혀 실패시 2건 표시(src+dist, 동일 테스트 — apps/api 기존 dist-test double-run 이슈, 본 슬라이스 무관). 남은 apps/api 쌍: compat-parsers(11/8)·mcp-routes-parsers(6/4) — 다음 prune 후보.
+
+## fire 50 · 2026-06-14 · skill v1.14.0 · d9963a35
+meta: kind=add · pkg=@muse/observability · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1020 (케이스 +1, 파일수 불변) · netCoverage +1 branch (stddev floor mean-scaling arm) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `PromptDriftDetector.evaluate`(observability/observability-prompt-drift.ts)의 **flat-baseline stddev floor의 mean-scaling arm** 커버. floor = `Math.max(mean*0.01, 1)`이라 baseline 분산 0일 때 effective σ가 baseline 크기에 비례(평균의 1%). 기존 flat 테스트는 mean=100(`max(100*0.01,1)=1`)이라 두 arm이 1로 degenerate → `mean*0.01` arm 미커버. 큰 flat baseline(mean 1000→floor 10) + +1.5% shift로 drift 없음 검증(1.5σ < 2σ).
+- **왜:** 거짓 drift 알람 방지(정책/알림 correctness). floor가 평균에 비례 안 하면(bare-1) 자연스럽게 큰-but-안정적 프롬프트 길이가 작은 상대 변동에도 15σ로 false-alarm. floor가 1%로 스케일해야 large-magnitude 안정 baseline이 비례적으로 큰 shift에서만 알람.
+- **어떻게-증명(MUTATION-FIRST ADD):** `mean*0.01` arm 제거(`Math.max(0,1)`=bare-1) 시 새 케이스만 RED(+1.5%가 15σ→input_length drift, σ=1), 기존 mean=100 케이스는 green 유지(degenerate boundary라 scaling arm 미커버 입증). 사전 node로 1.5σ vs 15σ 확인. ④b 독립 Opus judge가 mutation 격리(오직 새 케이스) + 비중복(mean=100 green) + floor 분기 도달(early-return/minSamples gate 아님) 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. KIND/pkg(add@observability)가 fires 48/49(apps/api prune)에서 다양화 — observability는 루프 첫 접촉(신규 패키지). prompt-drift는 src+test/ 두 테스트 파일이 같은 모듈 커버(다른 basename이라 동명쌍 아님; 향후 consolidate 후보일 수 있으나 상보적). 남은 observability 후보: budget-tracker month-rollover, slo-alert cooldown/min-sample.
+
+## fire 51 · 2026-06-14 · skill v1.14.0 · fbf7c7db
+meta: kind=prune(consolidate) · pkg=@muse/api · verdict=PASS · firesSinceDrill=0 (★JUDGE-DRILL 완료 리셋)
+ratchet: testFiles 1023→1022 (−1 통합) · netCoverage +4 branch (whitespace-trim·extended-rejection·non-string·array-drop을 single home으로 회수) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇(★JUDGE-DRILL fire):** 먼저 고의 inert ADD 주입(observability drift 테스트에 `Array.isArray(anomalies)`+`length>=0`만 검증 — drift 로직 깨져도 항상 통과). 별개 Opus ④b judge가 broken-detection mutation 돌려 "planted만 green, 진짜 drift 9개 RED" 확인 → **FAIL** 판정(inert). 롤백 후 진짜 슬라이스: apps/api 동명 쌍 `compat-parsers` 통합(3번째 apps/api) — src/(readQueryInteger+coerceStringSet+9 parser)·test/(그 2개만)가 double-run. ★fire49처럼 test/가 더 richer: whitespace-trim·extended-rejection(5.9/1e3/1_000/Infinity/NaN/abc/space)·non-string·array-drop이 double-run 파일에만. src/ 약한 2케이스를 test/의 8 richer로 교체 후 test/ 삭제.
+- **왜:** ⑴ JUDGE-DRILL 하드-카운터(8-gap: 43→51) — maker≠judge 보상통제 재검증(judge가 inert 잡나). ⑵ double-run 제거 + test/-only 4 분기를 single home으로 회수. 순수 삭제였으면 untrusted-input 정규화 경계(strict integer parse·non-string 거부)의 보안성 커버 손실.
+- **어떻게-증명:** [드릴] broken-detection(threshold 무조건 undefined) 시 planted inert 케이스 green 유지(진짜 9개만 RED) → judge 독립 재현 FAIL. [진짜] (A) lenient parseInt 변형 시 extended-rejection 케이스 RED(`"20x" expected 20 to be 30`); (B) array string-filter 제거 시 array-drops-non-string RED(`item.trim is not a function`). ④b judge가 삭제본 전 행동 매핑(4 test/-only 모두 present) + 2 mutation 격리 + 나머지 9 parser 무회귀 확인 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 케이스 net +6(2→8), 파일 −1. apps/api 남은 동명 쌍: mcp-routes-parsers(complementary 확인 — test/는 parseMcpSecurityPolicyInput, src/는 다른 parser, 동일함수 아님 → prune 불가). apps/api prune vein 이제 거의 소진(3 consolidate 완료). 다음은 ADD 위주 복귀.
+
+## fire 52 · 2026-06-14 · skill v1.14.0 · c249c6d2
+meta: kind=add · pkg=@muse/messaging · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 1024 (케이스 +1, 파일수 불변) · netCoverage +1 branch (default-case null/undefined 필터; 3-cap 공동검증) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** `summarizeToolDraft`(messaging/channel-approval-gate.ts, 채널 승인 프롬프트의 사람-읽는 draft 렌더)의 **default-case null/undefined 값 필터 + 3-entry cap** 커버. 기존 default 테스트는 비-object 2개만 써 (a)`.slice(0,3)` cap·(b)`v!==null&&v!==undefined` 필터 미실행. `{a:1,b:null,c:3,d:undefined,e:5,f:6}` → 정확히 `"a=1, c=3, e=5"`(b/d=null/undefined 드롭, f=cap 드롭) 검증.
+- **왜:** 승인 게이트 UX(outbound-safety) — 사용자가 risky tool 승인/거부 판단하려 읽는 draft가 unbounded arg dump면 신호가 묻힘. null/undefined 필터 + 3-cap이 prompt를 signal-dense하게 유지. 정책/게이트 경로(contract priority).
+- **어떻게-증명(MUTATION-FIRST ADD):** (A) `.slice(0,3)`→`.slice(0,10)` 시 RED(`f=6` 누출 → `"a=1, c=3, e=5, f=6"`); (B) null/undefined 필터 제거 시 RED(undefined `d` 누출). 둘 다 exact `toBe`로 격리. 기존 line-108 default 테스트는 두 mutation 모두 green 유지(미커버 입증). ④b 독립 Opus judge가 두 분기 격리 재현 + 비중복 + exact assertion 확인 → **VERDICT: PASS**.
+- **리스크:** 테스트-only, 소스 무변경. ★judge 발견: 3-cap은 별도 `test/channel-approval-draft.test.ts`가 이미 커버(중복) — 단 **null/undefined 필터 분기는 이 테스트가 유일 가드**라 net-new 커버리지 진짜. KIND/pkg(add@messaging)가 첫 messaging 접촉으로 다양화(fires 49/51 apps/api prune·50 observability add에서). 향후: channel-approval-draft 두 테스트 파일(src+test/, 다른 basename) consolidate 후보일 수 있음.

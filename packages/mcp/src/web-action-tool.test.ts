@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { createWebActionTool } from "./web-action-tool.js";
 import type { WebActionApprovalGate } from "./web-action.js";
+import { validateToolDefinitions } from "@muse/tools";
+
 import { readActionLog } from "./personal-action-log-store.js";
 
 function recordingFetch(): { fetchImpl: typeof fetch; calls: { url: string; method: string }[] } {
@@ -38,6 +40,22 @@ describe("createWebActionTool", () => {
     expect(tool.definition.risk).toBe("execute");
     expect(tool.definition.inputSchema.required).toEqual(["summary"]);
     expect(tool.definition.inputSchema.properties).toHaveProperty("url");
+  });
+
+  it("its inputSchema is validateToolDefinitions-clean + closed (additionalProperties:false) and carries the Korean selection keyword 예약", () => {
+    const { fetchImpl } = recordingFetch();
+    const tool = createWebActionTool({ actionLogFile: logFile(), approvalGate: approve, fetchImpl, userId: "stark" });
+    expect((tool.definition.inputSchema as { additionalProperties: boolean }).additionalProperties).toBe(false);
+    expect(tool.definition.keywords).toContain("예약");
+    expect(validateToolDefinitions([tool])).toEqual([]);
+  });
+
+  it("its description tells the model when to use it AND when NOT (read / payments)", () => {
+    const { fetchImpl } = recordingFetch();
+    const d = createWebActionTool({ actionLogFile: logFile(), approvalGate: approve, fetchImpl, userId: "stark" }).definition.description.toLowerCase();
+    expect(d).toContain("use when");
+    expect(d).toContain("do not use to read");
+    expect(d).toContain("payments");
   });
 
   it("CONFIRM: performs the request and reports performed", async () => {

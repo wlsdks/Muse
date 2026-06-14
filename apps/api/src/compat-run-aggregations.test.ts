@@ -97,12 +97,32 @@ describe("dailyUsage", () => {
 });
 
 describe("latencyDistribution", () => {
-  it("buckets run latency and counts a run with missing timestamps as unknown", () => {
-    const runs = [
-      run({ completedAt: new Date("2026-05-30T00:00:00.500Z"), createdAt: new Date("2026-05-30T00:00:00Z"), id: "x", startedAt: new Date("2026-05-30T00:00:00.000Z") }), // 0.5s
-      run({ completedAt: new Date("2026-05-30T00:00:03Z"), createdAt: new Date("2026-05-30T00:00:00Z"), id: "y", startedAt: new Date("2026-05-30T00:00:00Z") }), // 3s
-      run({ createdAt: new Date("2026-05-30T00:00:00Z"), id: "z" }) // no timestamps → unknown
-    ];
-    expect(latencyDistribution(runs)).toEqual({ "0-1s": 1, "1-5s": 1, "30s+": 0, "5-30s": 0, unknown: 1 });
+  const start = new Date("2026-05-20T00:00:00.000Z");
+
+  it("buckets a clean spread of finite latencies across ALL FOUR ranges", () => {
+    expect(latencyDistribution([
+      run({ id: "fast", createdAt: start, startedAt: start, completedAt: new Date(start.getTime() + 500) }),    // 0.5s
+      run({ id: "med1", createdAt: start, startedAt: start, completedAt: new Date(start.getTime() + 2_000) }),  // 2s   → 1-5s
+      run({ id: "med2", createdAt: start, startedAt: start, completedAt: new Date(start.getTime() + 10_000) }), // 10s  → 5-30s
+      run({ id: "slow", createdAt: start, startedAt: start, completedAt: new Date(start.getTime() + 60_000) })  // 60s  → 30s+
+    ])).toEqual({ "0-1s": 1, "1-5s": 1, "5-30s": 1, "30s+": 1, unknown: 0 });
+  });
+
+  it("counts a run missing startedAt or completedAt as unknown (existing contract)", () => {
+    expect(latencyDistribution([
+      run({ id: "no-end", createdAt: start, startedAt: start }),       // completedAt defaults null
+      run({ id: "no-start", createdAt: start, completedAt: start })    // startedAt defaults null
+    ])).toEqual({ "0-1s": 0, "1-5s": 0, "5-30s": 0, "30s+": 0, unknown: 2 });
+  });
+
+  it("routes an Invalid-Date startedAt/completedAt subtraction (NaN) to unknown — NOT silently the 30s+ bucket", () => {
+    const invalid = new Date(Number.NaN);
+    const buckets = latencyDistribution([
+      run({ id: "bad-end", createdAt: start, startedAt: start, completedAt: invalid }),
+      run({ id: "bad-start", createdAt: start, startedAt: invalid, completedAt: start }),
+      run({ id: "both-bad", createdAt: start, startedAt: invalid, completedAt: invalid })
+    ]);
+    expect(buckets.unknown, "NaN latency must NOT inflate 30s+; it belongs in unknown").toBe(3);
+    expect(buckets["30s+"]).toBe(0);
   });
 });

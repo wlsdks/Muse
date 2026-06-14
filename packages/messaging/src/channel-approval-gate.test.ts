@@ -112,6 +112,15 @@ describe("summarizeToolDraft", () => {
     expect(draft).not.toContain("nested");
   });
 
+  it("caps the generic key=value draft at 3 scalar entries and drops null/undefined values (bounded, signal-dense approval prompt)", () => {
+    // The approval prompt the user reads to approve/deny must stay concise: an
+    // unknown tool with many args shows only the first 3 non-null/undefined
+    // SCALAR entries, never an unbounded dump that buries the decision. Here b
+    // (null) + d (undefined) are dropped → [a, c, e, f] → the 3-cap drops f.
+    const draft = summarizeToolDraft("some_tool", { a: 1, b: null, c: 3, d: undefined, e: 5, f: 6 });
+    expect(draft).toBe("a=1, c=3, e=5");
+  });
+
   it("returns empty string when there are no arguments", () => {
     expect(summarizeToolDraft("email_send", undefined)).toBe("");
   });
