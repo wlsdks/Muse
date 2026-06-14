@@ -122,6 +122,7 @@ async function buildUnitConvertScenario() {
       { prompt: "Convert 2 cups to milliliters.", expectTool: "unit_convert", requireArgs: ["value", "from", "to"], note: "EN volume conversion → unit_convert" },
       { prompt: "100 km/h는 몇 mph야?", expectTool: "unit_convert", requireArgs: ["value", "from", "to"], note: "KO speed conversion → unit_convert (NOT math_eval)" },
       { prompt: "How many hours is 90 minutes?", expectTool: "unit_convert", requireArgs: ["value", "from", "to"], note: "EN time-duration conversion → unit_convert (NOT time_diff — a unit conversion, not two timestamps)" },
+      { prompt: "30평은 몇 제곱미터야?", expectTool: "unit_convert", requireArgs: ["value", "from", "to"], note: "KO area conversion incl. the Korean 평 → unit_convert (the 12B mis-recalls 1평=3.3058㎡)" },
       // confusable neighbours
       { prompt: "What is 18 times 7?", expectTool: "math_eval", requireArgs: ["expression"], note: "EN arithmetic → math_eval (NOT unit_convert — operators, not units)" },
       { prompt: "오늘 달러 환율 얼마야?", expectTool: "muse.search.search", requireArgs: ["query"], note: "KO live CURRENCY rate → web search (NOT unit_convert — needs live data)" },
@@ -131,6 +132,33 @@ async function buildUnitConvertScenario() {
     return { label: "unit-convert (physical units vs math_eval/web + statement IrrelAcc)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
   } catch (error) {
     return { label: "unit-convert", skip: `not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
+// lunar_date (Korean 음력 calendar date for a solar date) vs time_now (the current
+// solar date/time). The carve is the 음력/lunar marker — "오늘 음력 며칠?" is
+// lunar_date; "오늘 며칠?" / "지금 몇 시?" is time_now.
+async function buildLunarScenario() {
+  try {
+    const lunar = await import("../packages/tools/dist/muse-tools-lunar.js");
+    const time = await import("../packages/tools/dist/muse-tools-time.js");
+    const now = () => new Date("2026-06-19T03:00:00Z");
+    const instances = [lunar.createLunarDateTool(now), time.createTimeNowTool(now)];
+    const tools = instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema }));
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "오늘 음력으로 며칠이야?", expectTool: "lunar_date", note: "KO today's LUNAR date → lunar_date (NOT time_now — 음력)" },
+      { prompt: "2026년 9월 25일은 음력으로 며칠이야?", expectTool: "lunar_date", requireArgs: ["date"], note: "KO a specific solar date → lunar (with date arg) → lunar_date" },
+      { prompt: "What's today's date in the Korean lunar calendar?", expectTool: "lunar_date", note: "EN lunar-calendar query → lunar_date" },
+      // confusable neighbour: the SOLAR current date/time is time_now, not lunar
+      { prompt: "오늘 며칠이야?", expectTool: "time_now", note: "KO today's SOLAR date → time_now (NOT lunar_date — no 음력)" },
+      { prompt: "지금 몇 시야?", expectTool: "time_now", note: "KO current clock time → time_now (NOT lunar_date)" },
+      // IrrelAcc: a holiday greeting mentioning 설날 is not a date query
+      { prompt: "설날 잘 보냈어?", expectNoTool: true, note: "KO 'did you have a good Lunar New Year?' → NO tool (a greeting, NOT a lunar-date lookup)" }
+    ];
+    return { label: "lunar-date (Korean lunar vs solar time_now)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "lunar-date", skip: `not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
   }
 }
 
@@ -1161,6 +1189,7 @@ async function main() {
     { label: "synthetic", tools: SYNTHETIC_TOOLS, cases: SYNTHETIC_CASES },
     await buildRealScenario(),
     await buildUnitConvertScenario(),
+    await buildLunarScenario(),
     await buildTimeToolsScenario(),
     await buildTimeToolsExemplarScenario(),
     await buildActuatorScenario(),

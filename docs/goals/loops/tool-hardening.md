@@ -1233,3 +1233,21 @@ ratchet: testFiles 1005 유지(units.test +2 케이스) · fabrication 0 유지 
 - **왜:** unit_convert 완성도 — 그 두 변환은 실 유저 쿼리이고 사전엔 {error}였음(judge가 pre-commit CATEGORIES=[LENGTH,MASS,VOLUME]로 확인). 12B는 0.621 km/h↔mph factor 반올림 → 결정적 도구가 grounding. TIME-duration이 time_diff(2 timestamp)와 혼동 위험 있었으나 eval로 unit_convert 선택 확인(time_diff/time_add는 timestamp 연산, pure duration-unit 변환 아님).
 - **리뷰지점:** muse-tools-units.ts(SPEED/TIME map + alias + description) + units.test(+2) + eval(+2 케이스). 209 green·내 파일 lint clean·**eval unit-convert STABLE 3/3 ×8**(speed/time 포함 전 카테고리 selection + math_eval/web 비교차 + IrrelAcc). ④b Opus judge PASS 8/8 — crux #2(factor 전수 독립 검증: 100km/h→62.1371mph·90min→1.5h·1week→7day, lying 없음)·#3(cross-category leak 없음: km/h→km/kg·min→m throws, m=metre/min=minute 별 키)·#5(model selects 3/3 time-tool 혼동 없음) 무자비 검증.
 - **리스크:** 없음 — 순수 read 도구 확장(기존 카테고리 무회귀), factor judge 전수 검증, cross-category→error. DATA(byte) 카테고리는 1000/1024 ambiguity로 의도적 제외. 다음: 추가 유틸 갭(area? 단 저빈도) 또는 진안 방향. pnpm check red는 동시 루프 미커밋 noise.
+
+
+## fire 125 · 2026-06-14 · skill v1.14.0 · 5212008f
+meta: value-class=hardening(area+평 카테고리, user-specific grounding) · pkg=@muse/tools(+scripts eval) · kind=unit_convert에 AREA + 한국 평 추가 · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 1006 유지(units.test +1 케이스) · fabrication 0 유지 · eval:tools unit-convert +1 케이스(STABLE 3/3 ×9)
+- **무엇:** unit_convert에 AREA 카테고리(m2/km2/cm2/mm2/ha/ft2/in2/yd2/acre/**평**) 추가. 평(平)은 진안(Korean 유저)의 일상 면적 단위("30평 아파트는 몇 ㎡?")인데 12B가 1평=400/121=3.305785㎡ factor를 부정확 recall → 결정적 도구가 grounding. 정확 factor(평=400/121, 반올림 아님) + alias(제곱미터/sqm/sqft/pyeong 등). description+JSDoc 갱신.
+- **왜:** 3연속 unit fire(123 EXPANSION·124 speed/time·125 area)지만 각각 distinct 카테고리·distinct 가치(outbound trilogy 유사) — 평은 generic padding 아닌 **user-specific grounding 승리**(진안이 실제 쓰는 단위, 모델 unreliable). @muse/tools 2/8(ratchet 무관). 핵심 위험(모델이 평을 단위로 인식?)은 eval로 반증 — "30평은 몇 제곱미터" → unit_convert 3/3.
+- **리뷰지점:** muse-tools-units.ts(AREA map 평=400/121 + alias + description) + units.test(+1 area/평 round-trip) + eval(+1 평 케이스). 210 green·내 파일 lint clean·**eval unit-convert STABLE 3/3 ×9**(평 포함 전 카테고리 + 비교차 + IrrelAcc). ④b Opus judge PASS 8/8 — crux #1(**평 factor 정확히 400/121, full float 3.3057851239669422, 반올림/오류 없음**)·#2(전 area factor 정확)·#3(cross-cat leak 없음: 평→km·m2→m throws, m2≠m 별 키)·#5(model selects 평 3/3) 무자비 검증, "genuine user-specific value, not padding".
+- **리스크:** 없음 — 순수 read 확장(기존 카테고리 무회귀), 평 factor judge full-float 검증(grounded lie 회피), cross-cat→error. unit_convert 이제 7 카테고리(length/mass/volume/temp/speed/time/area). 다음: unit 작업 충분 — 다음 fire는 다른 KIND/value-class 또는 진안 방향. pnpm check red는 동시 루프 미커밋 noise.
+
+
+## fire 126 · 2026-06-14 · skill v1.14.0 · 4fad0320
+meta: value-class=new-capability(EXPANSION) · pkg=@muse/tools(+scripts eval) · kind=lunar_date 한국 음력 calendar 도구(solar→lunar) · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 1006→1007(+muse-tools-lunar.test) · fabrication 0 유지 · eval:tools +1 시나리오(lunar-date 6 케이스 STABLE 3/3)
+- **무엇:** fire-125 노트(unit 충분, 다른 KIND)대로 새 도메인 EXPANSION: `lunar_date`(solar→한국 음력). Node Intl의 ICU `dangi` 캘린더가 authority → custom 알고리즘 불필요(grounded-lie 위험 0). Asia/Seoul tz(음력 day boundary), 윤달("6bis"→leap) 표기. now 주입(time_now 패턴). lunar→solar(생일용)는 backlog ◦.
+- **왜:** 진안(Korean)은 음력 생일/명절(설날·추석)을 쓰는데 12B는 음력 계산 **불가**(추측) — 결정적 도구가 유일한 grounded 답. 평(125)과 같은 user-specific grounding 승리, 단 fresh KIND(calendar≠unit, 3연속 unit 후 다양화). Intl 검증으로 정확성 확보(custom 코드 없음).
+- **리뷰지점:** muse-tools-lunar.ts(solarToLunar Intl dangi + 도구) + lunar.test(설날/추석/윤달/KST boundary) + muse-tools.ts(배선) + tools.test(inventory 18→19) + eval(buildLunarScenario). 218 green·내 파일 lint clean·**eval lunar-date STABLE 3/3 ×6**(음력 selection 3 + 양력→time_now carve 2 + 설날 greeting IrrelAcc). ④b Opus judge PASS 9/9 — crux #1(음력 7날짜 전부 exact: 설날/추석 2025+2026·단오·윤6월, lying 없음)·#3(KST boundary 정확: 2026-02-16 23:00KST→음12/29 not 1/1)·#6(model selects 3/3, time_now carve) 무자비 검증.
+- **리스크:** 없음 — 순수 read 도구, ICU가 변환 authority(no grounded lie), bad input→error. EXPANSION 2개 연속(unit_convert·lunar_date)으로 ratchet "EXPANSION 0" 우려 완전 해소. 다음: lunar→solar follow-up 또는 진안 방향. pnpm check red는 동시 루프 미커밋 noise.
