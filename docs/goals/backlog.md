@@ -2238,3 +2238,5 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ cli notes link graph keyed backlinks/targets by raw target.toLowerCase() while keyToId uses noteLinkKey → [[b.md]] reported broken + b.md orphaned by `notes audit`; routed 4 sites through noteLinkKey(target) — surfaces fire 48
 - ◦ note-bridges.ts:50 resolvedAdjacency has the identical raw target.toLowerCase() keying bug (GraphRAG bridge/betweenness drops extension-qualified [[note.md]] edges) — fix via noteLinkKey(target) + a bridges test (surfaces fire 48 follow-up)
 - ✓ cli note-bridges resolvedAdjacency keyed targets by raw target.toLowerCase() (vs keyToId's noteLinkKey) → [[b.md]] bridge edges dropped from betweenness; routed through noteLinkKey(target) — surfaces fire 49 (completes fire 48)
+- ✓ web introduced shared safeDateTime() (src/lib/datetime.ts) NaN-guarding inline date renders; adopted at 3 standalone sites (Today/Reminders/Autonomy) — surfaces fire 50
+- ◦ adopt safeDateTime at the 6 separator-wrapped/presence-guarded inline date sites (Messaging:103, Activity:43/60, Today:119, Autonomy:85, Memory:17) — needs dangling-"·" handling (surfaces fire 50 follow-up)
