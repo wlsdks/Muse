@@ -742,7 +742,7 @@ describe("createMuseTools", () => {
     return tool;
   }
 
-  it("registers eighteen zero-IO ambient utility tools", () => {
+  it("registers nineteen zero-IO ambient utility tools", () => {
     const tools = createMuseTools();
     expect(tools.map((tool) => tool.definition.name).sort()).toEqual([
       "base64",
@@ -751,6 +751,7 @@ describe("createMuseTools", () => {
       "hash_text",
       "json_query",
       "kv_summarize",
+      "lunar_date",
       "markdown_table",
       "math_eval",
       "next_weekday_date",
