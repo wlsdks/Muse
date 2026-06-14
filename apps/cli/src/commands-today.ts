@@ -59,7 +59,7 @@ import { embed } from "./embed.js";
 import { defaultEpisodeIndexFile, loadEpisodeIndex } from "./episode-index.js";
 import { formatLocalDate, formatLocalDateTime as shortDateTimeBrief } from "./human-formatters.js";
 import { formatHeadlines, formatWeatherLine, resolveTodayFeedHeadlines, resolveTodayWeatherLine } from "./commands-today-feeds.js";
-export { DEFAULT_TODAY_HEADLINES_CAP, formatHeadlines, formatWeatherLine, resolveTodayFeedHeadlines, resolveTodayWeatherLine } from "./commands-today-feeds.js";
+export { formatHeadlines, formatWeatherLine, resolveTodayFeedHeadlines, resolveTodayWeatherLine } from "./commands-today-feeds.js";
 import { formatNoteFocusSection, selectNoteFocus, type NoteMtime } from "./note-focus.js";
 import { loadActivePersonaPreamble } from "./persona-store.js";
 import type { ProgramIO } from "./program.js";
