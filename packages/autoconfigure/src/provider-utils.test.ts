@@ -43,15 +43,33 @@ describe("stringField", () => {
   });
 });
 
-describe("clampPositive", () => {
-  it("returns the parsed integer when value is a positive integer string", () => {
-    expect(clampPositive("42", 10)).toBe(42);
-    expect(clampPositive("  7  ", 10)).toBe(7);
-  });
-  it("falls back when value is undefined / non-numeric / non-positive", () => {
-    expect(clampPositive(undefined, 10)).toBe(10);
+describe("clampPositive (env-numeric context-window guard)", () => {
+  it("returns the fallback when the env var is unset", () => {
+    expect(clampPositive(undefined, 20)).toBe(20);
     expect(clampPositive("not a number", 10)).toBe(10);
-    expect(clampPositive("0", 10)).toBe(10);
-    expect(clampPositive("-5", 10)).toBe(10);
+  });
+
+  it("returns a valid positive integer (whitespace-trimmed)", () => {
+    expect(clampPositive("12", 20)).toBe(12);
+    expect(clampPositive("42", 10)).toBe(42);
+    expect(clampPositive("  7  ", 20)).toBe(7);
+  });
+
+  it("falls back for non-positive values", () => {
+    expect(clampPositive("0", 20)).toBe(20);
+    expect(clampPositive("-5", 20)).toBe(20);
+  });
+
+  it("falls back for non-numeric / empty / whitespace (env misconfig)", () => {
+    expect(clampPositive("abc", 20)).toBe(20);
+    expect(clampPositive("", 20)).toBe(20);
+    expect(clampPositive("   ", 20)).toBe(20);
+  });
+
+  it("uses base-10 parseInt semantics (pins behaviour vs a future Number() refactor)", () => {
+    expect(clampPositive("12.9", 20)).toBe(12);   // truncated, not 13
+    expect(clampPositive("12abc", 20)).toBe(12);  // lenient prefix parse
+    expect(clampPositive("1e3", 20)).toBe(1);     // NOT 1000 (parseInt stops at 'e')
+    expect(clampPositive("0x10", 20)).toBe(20);   // base-10 → "0" → ≤0 → fallback, NOT 16
   });
 });
