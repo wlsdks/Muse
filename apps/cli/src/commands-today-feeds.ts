@@ -34,7 +34,7 @@ export function formatWeatherLine(weather: string | undefined): string {
   return `\nWeather: ${weather.trim()}\n`;
 }
 
-export const DEFAULT_TODAY_HEADLINES_CAP = 5;
+const DEFAULT_TODAY_HEADLINES_CAP = 5;
 
 /**
  * Recent feed headlines for the brief: entries published within the
