@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ⚠ pattern-offer entity-coverage gate BLOCKED (fire 41, rolled back): ECC (arXiv:2207.02263) entity-coverage as a HARD post-hoc drop on the proactive offer is mismatched — (1) an offer LEGITIMATELY adds action verbs ("draft now?"/"초안 잡을까요") absent from the facts, so coverage-of-all-tokens over-drops valid offers (broke 3 existing pattern-suggestion tests); (2) lexicalTokens does WHOLE-token matching → KO particle attachment ("월요일마다"≠"월요일") breaks coverage (the cumulative lexical-on-KO lesson). Needs entity-vs-verb separation (NER) or CJK-bigram + closed-cluster-entity-set matching, only flagging a NET-NEW entity in neither facts nor fallback — a >1-fire redesign. The number-guard already covers the numeric drift class. Decompose before retry.
+
 - ✓ playbook drop empty-text strategies (JUDGE-DRILL fire 40): a blank high-reward strategy ranked first and surfaced as the "applied strategy" beat (topAppliedStrategy reads ranked[0].text, bypassing renderPlaybookSection's empty filter); dropEmptyTextStrategies filters blanks before rankEligible — subtractive — agent-core-cognition fire 40
 
 - ✓ tool-loop no-progress stall early-exit (arXiv:2505.17616): when the last 3 consecutive READ observations are near-identical (token-Jaccard ≥0.92), executeModelLoop/executeStreamingModelLoop withhold tools for the next turn → clean synthesis instead of burning maxToolCalls on spin; write/execute resets the window; literal-repetition (lexical) detection distinct from exact-dedup — agent-core-cognition fire 39
