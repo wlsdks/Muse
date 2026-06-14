@@ -326,6 +326,7 @@
 
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
+- ✓ ACT-R ranking on the daemon consolidation tick (arXiv:2604.02280 / ACT-R) — the manual `muse memory consolidate` ranked promote/fade by ACT-R activation (frequency×spacing) but the background daemon tick fell back to last-hit recency; since the lists are capped (fade 10 / promote 3) the weaker signal chose a different SET, and the fade set is persisted to the recall down-ranking sidecar. Threaded useActrRanking through runMemoryConsolidationTick + set true at the daemon call; records carry real recentAccessMs so ACT-R is non-degenerate; revert-proof reds exactly the capped-set test — agent-core-cognition fire 61
 - ✓ A2A inbound label trust-boundary bound (MAST arXiv:2503.13657) — classifyInbound bounded content but the symmetric label field was neither length-bounded nor type-checked in isEnvelope, yet flows into the same quarantine store; an allowlisted-but-compromised peer could flood via an unbounded/non-string label. Added A2A_MAX_LABEL_CHARS=512 reject + isEnvelope string|undefined label guard; inbound-only, strengthens the inert guarantee; revert-proof reds exactly the 2 new tests — agent-core-cognition fire 60
 - ◦ **A2A outbound label length bound (follow-on, fire-60 judge note)** — prepareOutbound redacts the label but doesn't length-bound it (the inbound bound landed fire 60); a symmetric outbound A2A_MAX_LABEL_CHARS check is a minor follow-on (local-origin, lower risk).
 - ✓ council cross-lingual outlier-screen fix locked + JUDGE-DRILL (Cleanse arXiv:2507.14649) — discriminating 5-peer EN/KO test proves screenCouncilOutliers' semantic precomputedSupports keep a legit Korean peer that lexical Jaccard wrongly excludes while still quarantining a deceptive peer (non-vacuous; revert-proof reds exactly it); same fire ran the JUDGE-DRILL (inert deprioritizeUntaggedReflected → independent Opus judge FAILED it → rolled back) — agent-core-cognition fire 59
@@ -1456,10 +1457,8 @@ excluded when scoring).
   among candidates so utility can never lift an off-topic strategy into the prompt. scoreStrategy removed;
   both lexical + embed rankers rewired. Judge PASS via real revert: raw blend fails the verbose-include,
   sparse-exclude, and applyPlaybook-render tests. Selection-only, floor untouched.]
-- ◦ **Playbook recency-floor score-scale mix** — recency-floor top-ups (below-minScore banks) carry
-  raw-composite scores into the final sort alongside Phase-B z-scores, so a top-up can render ABOVE a
-  higher-value Phase-B pick in the [Learned Strategies] block ORDER (membership is correct; ordering only).
-  Normalize top-ups onto the composite scale or append them after Phase-B picks. (judge-flagged fire 33)
+- ✓ **Playbook recency-floor score-scale mix** — FIXED fire 58 (this exact bug): fillers now scored
+  minSelectedScore−rank, strictly below every Phase-B pick. (judge-flagged fire 33 → agent-core-cognition fire 58)
 - ◦ **MemRL remainder** — (a) Q-update EMA `Q ← Q + α(r−Q)` as an alternative to net tallies in
   adjustPlaybookReward; (b) close the bandit loop with automatic per-turn reinforcement from turn outcome
   (today reward writes are manual CLI + correction-decay only — the real cold-start fix); (c) λ sensitivity
