@@ -177,6 +177,61 @@ export function strategyTextSimilarity(a: string, b: string): number {
   return intersection / (ta.size + tb.size - intersection);
 }
 
+/**
+ * Cosine floor for crediting a feedback cue to the strategy it implicates. A
+ * strategy TEXT is a terse distilled imperative ("Ask before deleting files");
+ * the request CUE is conversational user prose ("hey can you double-check with me
+ * first next time?") — DIFFERENT distributions, so lexical Jaccard mis-credits or
+ * no-credits a paraphrase / cross-lingual pair. 0.55 mirrors the commitment
+ * -discharge cue↔text floor; a genuine implication clears it, an incidental
+ * overlap does not.
+ */
+export const DEFAULT_PLAYBOOK_CREDIT_COSINE = 0.55;
+
+/**
+ * SEMANTIC credit assignment for the playbook RL loop (fair credit assignment —
+ * Memory-R2 arXiv:2605.21768; mis-credited reward replays its error via
+ * experience-following — arXiv:2505.16067). Given the existing strategies and a
+ * feedback cue, return the id of the strategy the cue most plausibly implicates
+ * by embedding cosine (≥ `threshold`), or undefined when nothing clears the floor.
+ * Replaces the cross-distribution lexical Jaccard the credit step used (the
+ * cumulative lesson: semantic beats lexical on model-prose / paraphrase /
+ * multilingual). Fail-soft: an embedder that throws, an empty cue/candidate set,
+ * or a zero embedding ⇒ undefined, so the caller falls back to its lexical path
+ * (never worse than today). Pure over the injected embedder + exported for
+ * direct coverage.
+ */
+export async function selectCreditTargetSemantic(
+  candidates: readonly { readonly id: string; readonly text: string }[],
+  cue: string,
+  embed: (text: string) => Promise<readonly number[]>,
+  threshold: number = DEFAULT_PLAYBOOK_CREDIT_COSINE
+): Promise<string | undefined> {
+  if (candidates.length === 0 || cue.trim().length === 0) return undefined;
+  let cueVec: readonly number[];
+  try {
+    cueVec = await embed(cue);
+  } catch {
+    return undefined;
+  }
+  if (cueVec.length === 0) return undefined;
+  let best: { readonly id: string; readonly sim: number } | undefined;
+  for (const candidate of candidates) {
+    let vec: readonly number[];
+    try {
+      vec = await embed(candidate.text);
+    } catch {
+      return undefined;
+    }
+    if (vec.length === 0) continue;
+    const sim = cosineSimilarity(cueVec, vec);
+    if (sim >= threshold && (!best || sim > best.sim)) {
+      best = { id: candidate.id, sim };
+    }
+  }
+  return best?.id;
+}
+
 /** Reward bounds — net outcome signal per strategy, clamped so one streak can't dominate ranking. */
 export const PLAYBOOK_REWARD_MIN = -5;
 export const PLAYBOOK_REWARD_MAX = 5;

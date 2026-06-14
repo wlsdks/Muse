@@ -140,6 +140,10 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
     const res = await distillSessionCorrections({
       model: "m",
       modelProvider: stub("strategy: unused\ntag: -"),
+      // Credit assignment now embeds the cue+strategies (semantic), so inject a
+      // deterministic stub (mirrors the decay test): the 회의록 strategy matches
+      // the cue (request "회의록 정리해줘"), the email one is orthogonal.
+      embed: async (text: string) => text.includes("회의록") ? [1, 0, 0] : [0, 1, 0],
       playbookFile: file,
       readBoundaries: async () => boundaries,
       readLines: async () => [
@@ -153,5 +157,32 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
     const saved = await queryPlaybook(file, "stark");
     expect(saved.find((e) => e.id === "pb_good")!.reward).toBe(1); // approved → reinforced
     expect(saved.find((e) => e.id === "pb_email")!.reward).toBeUndefined(); // unrelated → never touched
+  });
+
+  it("SEMANTIC credit: reward lands on the strategy the cue MEANS, not the lexical decoy (Memory-R2 2605.21768)", async () => {
+    const file = await tmpPlaybook();
+    // pb_true is the genuine match but shares ~no tokens with the cue; pb_decoy
+    // shares tokens (회의록/정리) but is semantically the wrong strategy. Lexical
+    // Jaccard would credit pb_decoy; semantic cosine credits pb_true.
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_true", text: "노트는 핵심만 추려서 쓴다", userId: "stark" });
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_decoy", text: "회의록 정리 회의록 정리", userId: "stark" });
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: stub("strategy: unused\ntag: -"),
+      // The cue ("회의록 정리해줘 … 완벽해 …") and pb_true ("…핵심만…") both map to
+      // [1,0,0]; pb_decoy (lexically-overlapping) is orthogonal [0,1,0].
+      embed: async (text: string) => (text.includes("핵심") || text.includes("완벽해") ? [1, 0, 0] : [0, 1, 0]),
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      readLines: async () => [
+        { content: "회의록 정리해줘", role: "user" },
+        { content: "정리했습니다", role: "assistant" },
+        { content: "완벽해! 딱 좋아", role: "user" } // approval
+      ]
+    });
+    expect(res.reinforced.map((r) => r.text)).toContain("노트는 핵심만 추려서 쓴다");
+    const saved = await queryPlaybook(file, "stark");
+    expect(saved.find((e) => e.id === "pb_true")!.reward).toBe(1); // semantic match → reinforced
+    expect(saved.find((e) => e.id === "pb_decoy")!.reward).toBeUndefined(); // lexical decoy → NOT credited
   });
 });
