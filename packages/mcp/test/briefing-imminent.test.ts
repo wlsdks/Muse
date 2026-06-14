@@ -64,14 +64,22 @@ describe("deriveBriefingImminent — task imminence", () => {
     expect(out).toEqual([{ kind: "task", startsAt: new Date("2026-05-31T13:00:00Z"), title: "ship the report" }]);
   });
 
-  it("skips a done task, a task with no dueAt, a proactive:false task, and a due-out-of-window task", async () => {
+  it("skips done, no-dueAt, proactive:false, out-of-window (future) AND past-due (before now) AND unparseable-dueAt tasks", async () => {
     await writeTasks(file, [
       task({ id: "done", status: "done" }),
       task({ id: "no-due", dueAt: undefined }),
       task({ id: "opted-out", proactive: false }),
-      task({ id: "far", dueAt: "2026-05-31T20:00:00Z" })
+      task({ id: "far", dueAt: "2026-05-31T20:00:00Z" }), // after now+lead → upper-bound skip
+      task({ id: "past", dueAt: "2026-05-31T11:00:00Z" }), // before now → lower-bound skip
+      task({ id: "bad", dueAt: "not-a-date" }) // unparseable dueAt → NaN guard skip
     ]);
     expect(await deriveBriefingImminent(file, { now: NOW })).toEqual([]);
+  });
+
+  it("applies a finite custom leadMinutes to the window (30-min lead excludes a +60-min task the default 120 would include)", async () => {
+    await writeTasks(file, [task({ dueAt: "2026-05-31T13:00:00Z" })]); // +60 min from NOW
+    expect(await deriveBriefingImminent(file, { leadMinutes: 30, now: NOW })).toEqual([]); // 30-min window excludes +60
+    expect(await deriveBriefingImminent(file, { now: NOW })).toHaveLength(1); // default 120 includes it
   });
 
   it("returns [] for a missing tasks file (fail-soft)", async () => {

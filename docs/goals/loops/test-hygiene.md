@@ -271,3 +271,11 @@ ratchet: testFiles 989 (케이스 +1, 파일수 불변) · netCoverage +2 (neste
 - **왜:** 토큰 회계(cost/usage 추적). 중첩 추출이 flat-read로 회귀하면 캐시/추론 토큰이 조용히 0/undefined — 비용 부정확. `toEqual` 전체-객체로 4필드 모두 pin.
 - **어떻게-증명(MUTATION-FIRST ADD):** `value.prompt_tokens_details`→`value`(cached flat read) 시 cachedInputTokens undefined → 새 테스트 RED; `value.completion_tokens_details`→`value` 시 reasoningTokens undefined → RED. 각 mutation이 새 테스트만 RED(나머지 11 green = 미커버). ④b 독립 Opus judge가 양 mutation 재현 + 미커버(flat-only 기존) + 기대값 정확성 확인 → **VERDICT: PASS**.
 - **리스크:** 테스트-only, 소스 무변경. ★`pnpm check` 1차 SIGABRT 134(동시-루프 OOM/abort) — 재실행 시 FULL GREEN(2641 cli pass). 부하 아티팩트, 본 슬라이스 무관([[project_stale_dist_from_loop]] 부류). provider-openai-parse 모듈 커버 완료(4 함수 전 분기).
+
+## fire 33 · 2026-06-14 · skill v1.14.0 · 06b53b5c
+meta: kind=prune(consolidate) · pkg=@muse/mcp · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 993→992 (−1 통합, 유니크 task 케이스 3 이식) · netCoverage 0 (overlap 제거, task 가드 보강) · fabrication 0 · pnpm check FULL GREEN + lint 0
+- **무엇:** mcp 동명 쌍 `briefing-imminent` **통합**(6번째 mcp 쌍) — deriveBriefingImminent(task)+deriveCalendarBriefingImminent(calendar)를 콜로케이트 src/(4케이스)·test/(8케이스)가 둘 다 실행. test/가 calendar 전부 + task positive/done/no-due/proactive/far 동등-이상. src/ 유니크 task 3개(past-due `dueMs<nowMs` 하한·unparseable `Number.isNaN(dueMs)`·finite leadMinutes 창 축소)만 test/로 이식, src/ 삭제.
+- **왜:** proactive 임박 브리핑(task+calendar) 두 파일 중복. test/가 calendar superset이나 task의 하한/NaN/custom-lead는 미커버였음 — fail-soft 가드 손실 금지.
+- **어떻게-증명(MUTATION-FIRST):** 하한 `dueMs<nowMs` 제거 시 past 누출 RED; NaN 가드 제거 시 unparseable 누출 RED; cutoff가 custom lead 무시(`DEFAULT_LEAD_MINUTES`) 시 leadMinutes:30 케이스 RED. ★judge가 leadMinutes를 "equivalent"로 통과시켰으나 maker가 gap 발견(test/의 유일 lead 테스트=NaN→120이 "lead 하드코딩 120" mutation과 일치해 못 잡음) → 보수적으로 추가 이식+mutation 증명. ④b 독립 Opus judge가 삭제본 전 행동 매핑(MISSING 없음) + 2 mutation 재현 → **VERDICT: PASS**.
+- **리스크:** 소스 무변경. 변경 −89L(src/ 삭제) +12L(이식 3케이스). mcp dist 클린리빌드 1회. 교훈: judge가 "equivalent"라 해도 mutation으로 직접 검증(coincidental-default가 mutation을 가릴 수 있음). 남은 mcp 동명 쌍 8개.
