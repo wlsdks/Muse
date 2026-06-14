@@ -45,6 +45,10 @@ test("calendar creates and deletes an event", async ({ page }) => {
   // a screen reader announces "Start"/"End" — not two unlabeled date fields.
   await page.getByLabel("Title").fill("Review");
   await page.getByLabel("Start").fill("2026-06-01T10:00");
+  // An end BEFORE the start is a backwards event — the Add button must stay disabled.
+  await page.getByLabel("End").fill("2026-06-01T09:00");
+  await expect(page.getByRole("button", { name: "Add", exact: true })).toBeDisabled();
+  // A valid range re-enables it.
   await page.getByLabel("End").fill("2026-06-01T11:00");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect.poll(() => posted).toMatchObject({ title: "Review" });

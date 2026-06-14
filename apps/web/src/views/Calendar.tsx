@@ -19,6 +19,15 @@ export function dayLabel(iso: string, t: Translate, locale: string): string {
   return d.toLocaleDateString(locale, { day: "numeric", month: "short", weekday: "short" });
 }
 
+export function canAddEvent(title: string, start: string, end: string): boolean {
+  if (title.trim().length === 0 || start.length === 0 || end.length === 0) {
+    return false;
+  }
+  // End must be strictly after start — a backwards or zero-length event is
+  // meaningless data the user would otherwise silently persist.
+  return new Date(end).getTime() > new Date(start).getTime();
+}
+
 export function CalendarView({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
   const qc = useQueryClient();
@@ -61,7 +70,7 @@ export function CalendarView({ client }: { client: ApiClient }) {
     byDay.set(k, [...(byDay.get(k) ?? []), e]);
   }
 
-  const canAdd = title.trim().length > 0 && start.length > 0 && end.length > 0;
+  const canAdd = canAddEvent(title, start, end);
 
   return (
     <div className="content-narrow">
