@@ -1035,3 +1035,21 @@ ratchet: testFiles 984→985(+today-brief in-progress 케이스) · fabrication 
 - **왜:** firesSinceDrill 10 → 드릴 미루기 불가(confusability 바 재검증, maker≠judge 보상통제). 실수정: fire 101서 "could be richer"로 deferred했으나 재평가 — 도구 목적("plate right now")상 진행 중 항목 누락은 cosmetic 아닌 **완성도 버그**(fire 101 EXPANSION-vein-exhausted honest-close를 부분 refute — shipped 도구에 genuine 갭 있었음).
 - **리뷰지점:** today-brief-tool.ts(events 루프 + endsAtIso? + composeTodayBrief)+index.ts(배선 endsAtIso 매핑, e.endsAt optional 조건부)+test(in-progress RED→GREEN, finished 제외). branches mutually-exclusive(ms>=now vs ms<now, no double-push), end==now strict drop, no-endsAtIso→drop(pre-fix 동작). 빌드 후 커밋(fire 99 교훈). 604 green, pnpm check exit=0, lint clean. ④b judge PASS 5/5(crux #2 over-inclusion 없음 확인). ⚠️ sweep 재발(동시 codebase-quality merge 7ad46190가 미커밋 fix 포착).
 - **리스크:** 없음 — events 처리만 변경(overdue/today partition·description·keywords 불변→selection 무회귀), endsAtIso optional(기존 caller/eval 무파손), read-only.
+
+
+## fire 103 · 2026-06-14 · skill v1.14.0 · 0d94ee1e
+meta: value-class=micro-fix(regression-correction of fire 102) · pkg=@muse/autoconfigure · kind=today_brief all-day 이벤트 mis-render fix · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles 985→986(+all-day 케이스) · fabrication 0 유지 · eval 무변동(aggregator-only, description/keywords 불변)
+- **무엇:** fire 102가 추가한 in-progress 분기(`start<now<end` → "(now)")가 **all-day 이벤트를 오분류**: allDay 이벤트는 start=자정<now<end=하루끝이라 그 분기에 빠져 "00:00 <title> (now)"로 렌더 — 생일/공휴일/여행이 흔한 all-day인데 가짜 timed 항목이 됨. fix: TodayBriefInput.events에 `allDay?` 추가, composeTodayBrief가 allDay면 timed 로직 *전에* "📅 <title> (all day)"로 렌더+continue(자정 start로 정렬→오늘 항목 최상단). 배선(index.ts ~759)이 CalendarEvent.allDay → `allDay:true` 매핑.
+- **왜:** fire 102 in-progress fix가 노출한 직접 회귀(just-shipped 변경의 textbook follow-up 하드닝, value churn 아님). all-day는 calendar의 1급 이벤트 종류(allDay:boolean required)이고 "지금 내 plate"에서 "00:00 (now)"는 명백히 오해유발 — cosmetic 아닌 correctness.
+- **리뷰지점:** today-brief-tool.ts(allDay 분기 timed 로직 위, continue) + index.ts(배선 conditional spread) + test(RED: "00:00 (now)" → GREEN: "📅 (all day)", NOT 00:00·NOT (now)). 빌드 후 즉시 커밋(fire 99 교훈, sweep 회피 — 이번엔 0d94ee1e 안 쓸림). 605 green, pnpm check exit=0, lint clean. ④b Opus judge PASS 6/6(crux #1 pre-fix가 진짜 "00:00 (now)" 냈는지·#5 ratchet 3/8 same-pkg 미달 확인).
+- **리스크:** 없음 — allDay 이벤트 렌더 경로만 분기(timed/in-progress/upcoming·overdue partition·description·keywords 불변→selection 무회귀), allDay optional(기존 caller/eval 무파손), read-only.
+
+
+## fire 104 · 2026-06-14 · skill v1.14.0 · b2cfefd4
+meta: value-class=hardening(latent parity bug in sibling tool) · pkg=@muse/autoconfigure · kind=week_agenda all-day 이벤트 mis-render fix(today_brief parity) · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 987→988(+week-agenda all-day 케이스) · fabrication 0 유지 · eval 무변동(렌더 fix, selection/schema 불변)
+- **무엇:** week_agenda가 today_brief와 **동일한 all-day 결함** 보유 — groupWeekAgenda가 모든 이벤트를 무조건 `toTimeString().slice(0,5)` HH:MM로 렌더하고, 배선(index.ts:740)이 CalendarEvent.allDay를 드롭 → date-only 휴일/여행이 "00:00 Christmas"(가짜 시계시각)로 표시. 14일 span이라 single-day today_brief보다 all-day 노출 多. fix: WeekAgendaInput.events에 `allDay?` 추가, allDay면 "📅 <title> (all day)"로 렌더(자정 ms로 그날 최상단 정렬), 배선이 allDay 매핑.
+- **왜:** parity 결함 — fire 102/103이 today_brief의 all-day/in-progress를 고쳤으나 쌍둥이 week_agenda는 미수정으로 동일 버그 잔존. scout가 mcp 도구들(interactionsFromEvents·overdue IrrelAcc) clean 확인 후 이걸 최고가치로 PICK. "같은 결함을 존재하는 모든 곳에서 고친다"는 정당 hardening(가짜 vein churn 아님), value-class=hardening·다른 파일.
+- **리뷰지점:** week-agenda-tool.ts(allDay 분기 else 보존) + index.ts:740(배선 conditional spread) + test(RED: "00:00 Christmas" → GREEN: "📅 (all day)"·NOT 00:00·"15:00 Standup" 유지=timed 불변 증명). 빌드 후 즉시 커밋(sweep 회피, b2cfefd4 안 쓸림). 606 green, pnpm check exit=0, lint clean. ④b Opus judge PASS 6/6 — crux #5 KIND-monotony 정밀검토(3연속 event-render fire) 후 ratchet 4/8 same-pkg·2/8 micro-fix 미tripped + latent parity 정당 판정. tasks/reminders/birthdays/bucketing/clamp/sort 불변 확인.
+- **리스크:** 없음 — allDay 이벤트 렌더 경로만 분기(timed/task/reminder/birthday·day-window·정렬 불변→selection 무회귀), allDay optional(기존 caller/eval 무파손), read-only. ★다음 fire 주의: all-day/event-render vein 양 digest 도구서 고갈 — 105는 반드시 다른 vein(non-temporal EXPANSION scout·다른 패키지 hardening·.muse/runs 신호).

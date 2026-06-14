@@ -1,3 +1,4 @@
+import { finiteOr } from "@muse/shared";
 import { annotateNoteChunks, chunkText, classifyRetrievalConfidence, edgeLoadByRelevance, rankKnowledgeChunksWithHop, renderKnowledgeMatches, type KnowledgeChunk, type KnowledgeMatch } from "@muse/agent-core";
 import type { NotesProvider, TasksProvider } from "@muse/mcp";
 import type { MuseTool } from "@muse/tools";
@@ -36,7 +37,7 @@ export interface CalendarEventSource {
   listEvents(range: { readonly from: Date; readonly to: Date }): Promise<readonly CalendarEventLike[]> | readonly CalendarEventLike[];
 }
 
-export interface ContactLike {
+interface ContactLike {
   readonly id: string;
   readonly name: string;
   readonly email?: string;
@@ -120,7 +121,7 @@ export interface EpisodesKnowledgeSource {
   recentEpisodes(limit: number): Promise<readonly EpisodeSummaryLike[]> | readonly EpisodeSummaryLike[];
 }
 
-export interface UserMemoryFactLike {
+interface UserMemoryFactLike {
   /** Stable key for the fact/preference, e.g. "dentist" — used in the citation. */
   readonly key: string;
   /** The remembered value. */
@@ -176,9 +177,6 @@ export interface AssembleKnowledgeCorpusOptions {
 
 const DAY_MS = 86_400_000;
 
-function finiteOr(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
 
 /**
  * Build a citation `source` label: the stable type prefix (kept so the
