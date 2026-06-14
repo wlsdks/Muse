@@ -272,7 +272,7 @@ function extractApiErrorEnvelope(
  * undici stack trace whenever the API server isn't running — which for a
  * personal-mode CLI is the most common state.
  */
-export function friendlyFetchError(baseUrl: string, error: unknown): Error {
+function friendlyFetchError(baseUrl: string, error: unknown): Error {
   const cause = isRecord(error) && isRecord(error.cause) ? error.cause : undefined;
   const code = cause && typeof cause.code === "string" ? cause.code : undefined;
   if (code === "ECONNREFUSED") {
@@ -388,7 +388,7 @@ export function unsetConfigValue(
   return { config: rest, wasSet };
 }
 
-export function isNodeError(value: unknown): value is NodeJS.ErrnoException {
+function isNodeError(value: unknown): value is NodeJS.ErrnoException {
   return value instanceof Error && "code" in value;
 }
 
