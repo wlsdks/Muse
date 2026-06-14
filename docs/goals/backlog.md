@@ -314,6 +314,7 @@
 
 ## ✓ Fixed (dedup ledger — one line each; detail in the per-loop journal)
 
+- ✓ MemoryBank daemon fade auto-refresh (FadeMem arXiv:2305.10250) — the daemon consolidate tick computed the Ebbinghaus fade plan every run but only logged it (sidecar refreshed only on the manual `muse memory consolidate`); added a fail-soft ranking-only persistFade seam to runMemoryConsolidationTick + wired the daemon to writeFadedMemoryKeys with the manual path's exact write behind MUSE_SELFLEARN_ENABLED, so recall down-ranking stays fresh on the background tick; revert-proof reds exactly the 2 call-dependent tests — agent-core-cognition fire 57
 - ✓ tool-failure-streak streaming-seam coverage — closed the fire-42 caveat: the circuit breaker is wired into executeStreamingModelLoop (async-generator path, line-identical to the tested non-streaming twin) but was untested at the seam; added an outcome-graded streaming test (12 flaky turns, distinct errors defeat the stall detector + unique args defeat the dedup → executes exactly LIMIT=3 then withheld, not maxToolCalls=10); revert-proof on model-loop.ts:294 reds ONLY this test — agent-core-cognition fire 56
 - ✓ council dissent-surfacing advisory (Hear Both Sides arXiv:2603.20640) — selectDissentingExclusions surfaces a consensus-outlier the majority outvoted whose reasoning semantically diverges from the answer (cosine <0.35) as one "⚠ dissent set aside" caution; renderCouncilResult was dropping excludedPeers → silently-buried minority now visible; advisory-only (never re-admits/alters answer), semantic, fail-soft — agent-core-cognition fire 54
 - ✓ episode-write salience admission gate (SSGM arXiv:2603.11768) — isEpisodeWorthRetaining drops an episode only when BOTH content-thin (<5 distinct tokens) AND model-self-rated trivial (importance≤1), activating the previously-inert self-rated importance signal at admission so idle greetings don't dilute recall; fail-open, subtractive (fabrication=0 strengthened), distinct from fire-35; wired into captureEndOfSessionEpisode — agent-core-cognition fire 53
@@ -1394,10 +1395,9 @@ excluded when scoring).
   it and down-ranks faded sessions ×FADE_PENALTY=0.5 (post-minScore-gate, ranking-only, never deletes);
   re-recalled memories auto-reinstate via consolidate overwrite + lastHitMs reset. Judge PASS: session-key
   identity holds end-to-end, counterfactual robust, fail-open 3 layers, fabrication floor intact.]
-- ◦ **MemoryBank daemon auto-refresh** — consolidate is manual/on-demand, so the fade sidecar only
-  refreshes when a human runs it. Wire `writeFadedMemoryKeys` into `memory-consolidate-tick.ts` +
-  `commands-daemon.ts` behind the existing `MUSE_SELFLEARN_ENABLED` gate so fade refreshes automatically
-  on the background tick. (fire-30 remainder; also: FadeMem-style importance term in `selectForgettable`.)
+- ◦ **MemoryBank fade importance term** — FadeMem-style importance weight in `selectForgettable` so a
+  high-importance memory resists fading even when idle (currently fade is purely recency×tally). Daemon
+  auto-refresh of the sidecar now DONE (fire 57); this is the remaining fire-30 sub-item.
 - ✓→Done **ReConcile consensus-gated council rounds** — `muse swarm council` ran a fixed round count
   blind to convergence (MAST step-repetition + termination-unawareness, arXiv:2309.13007 Chen/Saha/Bansal
   ACL 2024). [DONE 2026-06-13, cognition loop fire 31: `hasCouncilConsensus` (every member's mean pairwise
