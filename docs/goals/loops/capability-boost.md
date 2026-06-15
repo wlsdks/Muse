@@ -51,3 +51,11 @@ ratchet: testFiles 1045 · fabrication 0 · eval:multihop hit@4 40% (baseline, u
 - 왜: ask 인라인 recall이 rankKnowledgeChunks보다 풍부(graph/cache/preGap/per-clause) → 순진한 전환은 4기능 회귀. measure-first가 빌드 전 차단(notes-prefix ROI 0와 같은 패턴 — 측정이 헛다리를 막은 2번째 사례).
 - 리뷰지점: 1b′=인라인 cosine 재사용 second-hop, graph-expansion과 공존, AUGMENT-never-displace, weak일 때만. 다음 fire(신선)가 1b′ 빌드.
 - 리스크: ask recall wedge-critical — second-hop도 single-hop 보존(append-only). 세션 cron 컨텍스트 누적 中 → 빌드 fire는 신선 세션 권장.
+
+## fire 3 · 2026-06-16 · skill loop-creator · (this commit)
+meta: value-class=new-capability/wiring · pkg=@muse/recall+apps/cli · kind=capability · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 1045 · fabrication 0 · eval:multihop hit@4 40%→80% (AUGMENT arm)
+- 무엇: ask 인라인 recall에 second-hop AUGMENT(`secondHopAugmentChunks` @muse/recall chunks.ts +5 tests; commands-ask.ts wiring, MUSE_RECALL_SECOND_HOP gated; verify-multihop.mjs AUGMENT arm). 첫 실제 capability 빌드(fire 1·2는 decompose/measure). worker(Opus)+judge(별개 Opus) maker≠judge.
+- 왜: two-hop 질문이 single-hop으로 bridged note 못 닿음(measure ROI+); 1a 전환 폐기(4 divergence) 후 1b′ 직접 추가로 회피. eval:multihop 40→80% 검증.
+- 리뷰지점: single-hop 회귀 0(hit@1 1/5 동일, mutation test로 never-displace 증명). default-off staging → 1c에서 promotion + same-base A/B control(judge flag). org.md 1/5 여전 miss.
+- 리스크: default-off라 프로덕션 미활성(1c promotion 후속); eval 두 arm 다른 base ranker(builder 정직 공개). 세션-cron 컨텍스트 누적 → 빌드를 worker 격리로 우회(이번 fire 검증).

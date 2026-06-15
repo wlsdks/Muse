@@ -85,6 +85,69 @@ export function diversifyAskChunks(candidates: readonly ScoredChunk[], topK: num
 }
 
 /**
+ * Second-hop AUGMENT for `muse ask`'s inline notes recall. A two-hop question
+ * ("내 매니저의 상사 누구야") names only the hop-1 entity; the answer note shares
+ * no token with the query, so single-shot recall measured hit@4 2/5 on the
+ * two-hop battery. From the top single-hop seed(s) we re-rank the SAME in-memory
+ * chunks by cosine to the seed CHUNK's embedding (the bridge entity lives in the
+ * seed's text — pseudo-relevance feedback, Rocchio lineage), take the best
+ * chunk(s) not already present, recompute their cosine against the ORIGINAL
+ * query vector (query-relative confidence, never seed-relative inflation), and
+ * APPEND up to `cap` of them.
+ *
+ * SAFETY (mirrors rankKnowledgeChunksWithHop):
+ * - AUGMENT, never displace: returns only the NEW chunks to append; the caller's
+ *   `scored` array is untouched, so single-hop ranking stays byte-identical.
+ * - Zero model calls — all embeddings are the ones already loaded in memory; no
+ *   re-embed, so latency is a handful of cosine dot-products.
+ * - Fabrication-safe: every appended chunk is a real retrieved note; the
+ *   downstream citation gate still runs.
+ * Pure + exported for direct unit coverage.
+ */
+export function secondHopAugmentChunks(
+  queryVec: readonly number[],
+  cosine: (a: readonly number[], b: readonly number[]) => number,
+  allScored: readonly ScoredChunk[],
+  seeds: readonly ScoredChunk[],
+  present: readonly ScoredChunk[],
+  cap = 2
+): ScoredChunk[] {
+  if (cap <= 0 || seeds.length === 0 || allScored.length === 0) {
+    return [];
+  }
+  const keyOf = (s: ScoredChunk): string => `${s.file}|${s.chunk.chunkIndex}|${s.chunk.text}`;
+  const presentKeys = new Set(present.map(keyOf));
+  // Reciprocal-rank fuse the per-seed hop rankings so a chunk surfaced by
+  // multiple seeds (the shared bridge target) ranks first.
+  const lists: Array<readonly string[]> = [];
+  const byKey = new Map<string, ScoredChunk>();
+  for (const seed of seeds.slice(0, 2)) {
+    const ranked = allScored
+      .map((c) => ({ c, hop: cosine(seed.chunk.embedding, c.chunk.embedding) }))
+      .filter((x) => x.hop > 0)
+      .sort((a, b) => b.hop - a.hop)
+      .map((x) => {
+        const key = keyOf(x.c);
+        if (!byKey.has(key)) byKey.set(key, x.c);
+        return key;
+      });
+    lists.push(ranked);
+  }
+  if (lists.length === 0) return [];
+  const fused = fuseByReciprocalRank(lists);
+  const additionKeys = [...byKey.keys()]
+    .filter((key) => !presentKeys.has(key))
+    .sort((a, b) => (fused.get(b) ?? 0) - (fused.get(a) ?? 0))
+    .slice(0, cap);
+  // Recompute each addition's score against the ORIGINAL query (query-relative),
+  // never the seed-relative hop cosine that surfaced it.
+  return additionKeys.map((key) => {
+    const c = byKey.get(key)!;
+    return { chunk: c.chunk, file: c.file, score: cosine(queryVec, c.chunk.embedding) };
+  });
+}
+
+/**
  * CRAG confidence gate for `muse ask`'s notes grounding — the headline-surface
  * embodiment of Muse's identity ("says I'm not sure instead of making things
  * up"). The chunk score IS the absolute cosine, so we grade the top match: a

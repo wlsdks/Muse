@@ -22,6 +22,8 @@ import { rankKnowledgeChunks } from "../packages/agent-core/dist/index.js";
 import { createOllamaEmbedder } from "../packages/autoconfigure/dist/index.js";
 import { DEFAULT_EMBED_MODEL } from "../apps/cli/dist/embed-model-default.js";
 import { scoreRetrievalRecall } from "../apps/cli/dist/embedder-ab.js";
+import { diversifyAskChunks, secondHopAugmentChunks } from "../packages/recall/dist/index.js";
+import { cosine } from "../apps/cli/dist/commands-notes-rag.js";
 
 const OLLAMA_BASE = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
 try {
@@ -79,8 +81,39 @@ console.log(`eval:multihop — single-hop ranker on ${cases.length} two-hop quer
 console.log(`  hit@1 = ${r.hit1}/${r.total}   hit@${topK} = ${r.hitK}/${r.total}`);
 if (r.misses && r.misses.length > 0) console.log(`  missed: ${r.misses.join(" · ")}`);
 const pct = (r.hitK / r.total) * 100;
+
+// AUGMENT arm: replicate the `muse ask` INLINE recall path on the SAME corpus —
+// per-chunk cosine over the in-memory IndexChunk[] → diversifyAskChunks (hybrid
+// MMR) → secondHopAugmentChunks (the slice-1b′ second-hop AUGMENT). This proves
+// the helper's lift on the inline path the production surface actually runs,
+// not the rankKnowledgeChunks engine the single-hop arm above measures.
+const toIndexChunks = async () => {
+  const out = [];
+  for (const n of notes) {
+    out.push({ file: n.source, chunkIndex: 0, text: n.text, embedding: await embed(n.text) });
+  }
+  return out;
+};
+const indexChunks = await toIndexChunks();
+const augmentRank = async (query) => {
+  const queryVec = await embed(query);
+  const allScored = indexChunks.map((chunk) => ({ chunk, file: chunk.file, score: cosine(queryVec, chunk.embedding) }));
+  let scored = diversifyAskChunks(allScored, topK, undefined, query);
+  const additions = secondHopAugmentChunks(queryVec, cosine, allScored, scored.slice(0, 2), scored, 2);
+  for (const add of additions) if (!scored.includes(add)) scored = [...scored, add];
+  return scored.map((s) => ({ source: s.file, text: s.chunk.text, cosine: s.score, score: s.score }));
+};
+const ra = await scoreRetrievalRecall(cases, augmentRank);
+
+console.log(`\neval:multihop (AUGMENT arm) — ask INLINE path + second-hop on the same ${cases.length} queries`);
+console.log(`  hit@1 = ${ra.hit1}/${ra.total}   hit@${topK} = ${ra.hitK}/${ra.total}`);
+if (ra.misses && ra.misses.length > 0) console.log(`  missed: ${ra.misses.join(" · ")}`);
+const pctA = (ra.hitK / ra.total) * 100;
+
 console.log(
-  pct >= 80
-    ? `\nVERDICT: single-hop already serves two-hop at personal scale (hit@${topK} ${pct.toFixed(0)}%) → multi-hop decomposition is LOW ROI.`
-    : `\nVERDICT: single-hop misses bridged notes (hit@${topK} ${pct.toFixed(0)}%) → multi-hop decomposition has ROI.`
+  pctA > pct
+    ? `\nVERDICT: second-hop AUGMENT lifts the inline path (hit@${topK} ${pct.toFixed(0)}% → ${pctA.toFixed(0)}%) — positive ROI, AUGMENT-only (single-hop order unchanged).`
+    : pct >= 80
+      ? `\nVERDICT: single-hop already serves two-hop at personal scale (hit@${topK} ${pct.toFixed(0)}%) → multi-hop decomposition is LOW ROI.`
+      : `\nVERDICT: single-hop misses bridged notes (hit@${topK} ${pct.toFixed(0)}%); AUGMENT arm hit@${topK} ${pctA.toFixed(0)}%.`
 );

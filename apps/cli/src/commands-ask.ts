@@ -43,7 +43,7 @@ import { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource } 
 export { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource };
 import { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy } from "@muse/recall";
 export { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy };
-import { diversifyAskChunks, notesGroundingFraming } from "@muse/recall";
+import { diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks } from "@muse/recall";
 import { groundedSourceSummary, optionalGroundingSections } from "@muse/recall";
 import { citationPrecisionNotice, citationRecallNotice, untrustedOnlyGroundingNotice } from "@muse/recall";
 
@@ -1093,6 +1093,28 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           }
         } catch {
           // graph expansion is best-effort — a malformed graph never fails the ask
+        }
+        // Second-hop AUGMENT (pseudo-relevance feedback): a two-hop question
+        // ("내 매니저의 상사 누구야") names only the hop-1 entity, so the answer
+        // note shares no token with the query and single-hop recall misses it
+        // (measured hit@4 2/5 on the two-hop battery). From the top seed(s) we
+        // re-rank the SAME in-memory chunks by cosine to the SEED's embedding
+        // (no re-embed — the bridge entity lives in the seed text) and APPEND
+        // the best non-present chunk(s), scored against the ORIGINAL query.
+        // AUGMENT-only: `scored`'s single-hop order is byte-identical; appended
+        // bridges carry their real (low) query-relative cosine so the
+        // confidence verdict (keyed on the TOP match) is unchanged. Default-OFF
+        // behind MUSE_RECALL_SECOND_HOP (zero model calls, but gated so the
+        // happy path is unchanged until the live measure promotes it).
+        if (process.env.MUSE_RECALL_SECOND_HOP === "true" && queryVec && scored.length > 0) {
+          try {
+            const additions = secondHopAugmentChunks(queryVec, cosine, allScored, scored.slice(0, 2), scored, 2);
+            for (const add of additions) {
+              if (!scored.includes(add)) scored = [...scored, add];
+            }
+          } catch {
+            // second-hop is best-effort — never fails the ask
+          }
         }
       } catch (cause) {
         notesUnavailable = true;
