@@ -43,3 +43,11 @@ ratchet: testFiles 1045 · fabrication 0 · eval:multihop hit@4 40% (baseline, u
 - 왜: ORIENT로 ask가 `rankKnowledgeChunks`를 안 쓰고 자체 인라인 recall(commands-ask.ts:1001-1078)임을 확인 → multi-hop = 라이브러리화+second-hop = >1 fire wedge-critical. 등록 세션이 무거워 풀 빌드 부적합, 분해가 정직한 산출(다음 fire 신선 컨텍스트가 1a 빌드).
 - 리뷰지점: 1a 전환이 single-hop hit@1 동등(회귀 0)인지 measure-first 먼저; 1b secondHop 트리거는 weak-grounding일 때만(속도).
 - 리스크: ask recall은 wedge-critical — 전환 시 hybrid/diversify/MMR/RRF 동작 보존 필수. self-eval green(회귀 0) 유지.
+
+## fire 2 · 2026-06-16 · skill loop-creator · (this commit)
+meta: value-class=wiring(measure-first redesign) · pkg=apps/cli · kind=measure · verdict=N/A(measure) · firesSinceDrill=2
+ratchet: testFiles 1045 · fabrication 0 · eval:multihop hit@4 40% (baseline, unchanged)
+- 무엇: slice 1a(ask 인라인→rankKnowledgeChunks 전환)를 measure-first(Sonnet 독립 분석)로 검증 → 4 divergence 발견(graph-expansion 손실/re-embed 느림/preGapScored 손실/per-clause RRF 손실). 1a 폐기, "ask 인라인에 직접 second-hop AUGMENT"(1b′)로 재설계, backlog 갱신. 코드 변경 없음.
+- 왜: ask 인라인 recall이 rankKnowledgeChunks보다 풍부(graph/cache/preGap/per-clause) → 순진한 전환은 4기능 회귀. measure-first가 빌드 전 차단(notes-prefix ROI 0와 같은 패턴 — 측정이 헛다리를 막은 2번째 사례).
+- 리뷰지점: 1b′=인라인 cosine 재사용 second-hop, graph-expansion과 공존, AUGMENT-never-displace, weak일 때만. 다음 fire(신선)가 1b′ 빌드.
+- 리스크: ask recall wedge-critical — second-hop도 single-hop 보존(append-only). 세션 cron 컨텍스트 누적 中 → 빌드 fire는 신선 세션 권장.

@@ -1,10 +1,10 @@
 # Muse dev backlog — the living ledger
 
 - ★ multi-hop recall wiring — DECOMPOSED (capability-boost fire 1): ask의 notes recall이 `rankKnowledgeChunks(WithHop)`을 안 쓰고 자체 인라인 cosine+hybrid(`apps/cli/src/commands-ask.ts:1001-1078`, seedMatches@1078)임을 확인. `rankKnowledgeChunksWithHop`(`packages/agent-core/src/knowledge-recall.ts:1144`, secondHop+associative, AUGMENT-never-displace)은 완전 빌드+테스트됐고 `knowledge-corpus.ts:485/582`가 `MUSE_RECALL_SECOND_HOP` env-gated로 호출하나 ask 경로 미적용. 측정 ROI 양성(`eval:multihop` single-hop two-hop hit@4 2/5=40%). >1 fire wedge-critical이라 loop-sized 슬라이스로 분해:
-  - (1a) ask 인라인 recall(1001-1078)을 `rankKnowledgeChunks` 라이브러리 호출로 전환 — single-hop 동등(hit 유지=회귀 0) baseline; 전환 전후 hit@1 동등을 measure-first로 먼저 확인. hybrid/diversify/MMR/per-clause RRF 동작 보존 필수.
-  - (1b) 전환 경로를 `rankKnowledgeChunksWithHop`으로 + secondHop을 "single-hop confidence weak일 때만" 켜기(속도 보존, weak-grounding 트리거); `eval:multihop` hit@4 40%→≥80% 가드.
-  - (1c) `eval:multihop`을 ranker-단위가 아닌 ask 전체 경로(end-to-end) 검증으로 확장 + CI 가드 등록.
-  순서 1a→1b→1c, 각 fire 한 슬라이스(1a가 회귀-0 baseline이라 먼저).
+  - ✗ (1a) ask 인라인→`rankKnowledgeChunks` 전환 — **폐기(capability-boost fire 2 measure-first)**: Sonnet 독립 분석이 4 divergence를 찾음 — ① graph-link expansion(`commands-ask.ts:1077-1096` linkExpandRefs/HippoRAG)이 `rankKnowledgeChunks`에 없어 CRITICAL recall 손실, ② `rankKnowledgeChunks`는 chunk마다 re-embed(IndexChunk.embedding 캐시 미사용)→N배 느림, ③ preGapScored(confidence verdict용 untrimmed 분포) 손실→ambiguous→confident 오판, ④ per-clause RRF(diversifyAskChunks의 N+2 fusion)가 `rankKnowledgeChunks`엔 2-list만. ask 인라인이 더 풍부 → 순진한 전환은 4기능 회귀. 전환 접근 폐기.
+  - (1b′ NEW) **ask 인라인 경로에 직접 second-hop AUGMENT** (전환 없이): confident seedMatch의 text로 인라인 cosine 재query → 추가 chunk를 `scored`에 AUGMENT-never-displace(max 2, query-relative cosine 재계산), graph-expansion(1077-1096)과 공존, single-hop confidence weak일 때만 발동(속도). `rankKnowledgeChunksWithHop`의 fuse 로직을 인라인에 이식하지 말고 인라인 cosine 재사용.
+  - (1c) `eval:multihop`을 ask end-to-end 경로 검증으로 확장(현재 ranker-단위) + hit@4 40%→≥80% 가드 + CI 등록.
+  순서 1b′(빌드)→1c(가드). 1b′가 wedge-critical이라 다음 fire는 신선 컨텍스트에서.
 
 - ⚠ pattern-offer entity-coverage gate BLOCKED (fire 41, rolled back): ECC (arXiv:2207.02263) entity-coverage as a HARD post-hoc drop on the proactive offer is mismatched — (1) an offer LEGITIMATELY adds action verbs ("draft now?"/"초안 잡을까요") absent from the facts, so coverage-of-all-tokens over-drops valid offers (broke 3 existing pattern-suggestion tests); (2) lexicalTokens does WHOLE-token matching → KO particle attachment ("월요일마다"≠"월요일") breaks coverage (the cumulative lexical-on-KO lesson). Needs entity-vs-verb separation (NER) or CJK-bigram + closed-cluster-entity-set matching, only flagging a NET-NEW entity in neither facts nor fallback — a >1-fire redesign. The number-guard already covers the numeric drift class. Decompose before retry.
 
