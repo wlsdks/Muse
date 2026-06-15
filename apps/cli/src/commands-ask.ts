@@ -63,6 +63,8 @@ import { parseShellHistory, selectShellCommands } from "./shell-history.js";
 
 import { resolveReflectionsFile } from "./commands-reflections.js";
 import { routeAskTierModel } from "./ask-tier-models.js";
+import { shouldDecompose } from "@muse/multi-agent";
+import { runDecomposedAgentAsk } from "./ask-decompose.js";
 
 export { resolveAskTierModels, routeAskTierModel, type AskTierModels } from "./ask-tier-models.js";
 import { parseBoundedInt } from "./parse-bounded-int.js";
@@ -1944,31 +1946,55 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           process.exitCode = 1;
           return;
         }
+        // Recall is read-only for durable memory: never let the agent save
+        // its own assertions as "facts you told me" (provenance fabrication).
+        // Two vectors, both closed: the remember_fact TOOL (forbidden) and
+        // the after-complete auto-extract HOOK (skipped) — see
+        // RECALL_FORBIDDEN_TOOL_NAMES and readSkipAutoExtract.
+        const askMetadata = {
+          userId: userKey,
+          forbiddenToolNames: [...RECALL_FORBIDDEN_TOOL_NAMES],
+          skipUserMemoryAutoExtract: true,
+          ...(resolveAskMaxTools(process.env) !== undefined ? { maxTools: resolveAskMaxTools(process.env) } : {}),
+          ...(useActuators ? { localMode: true } : {}),
+          ...(options.notesOnly ? { allowedToolNames: [...NOTES_ONLY_TOOL_ALLOWLIST] } : {}),
+          ...(webSearchPolicy ? { webSearchPolicy } : {})
+        };
+        // Lead-worker fan-out: a complex multi-task request (never an image
+        // ask) is split into independent sub-tasks, each its own run, then
+        // synthesized. Merged grounding sources still flow through the citation
+        // gate below, so a fabricated citation in the combined answer is
+        // stripped exactly as on the single-run path.
+        const useDecomposition = imageAttachments.length === 0 && shouldDecompose(query).decompose;
         try {
-          const result = await assembly.agentRuntime.run({
-            messages: [
-              { content: systemPrompt, role: "system" },
-              { content: query, role: "user", ...(imageAttachments.length > 0 ? { attachments: imageAttachments } : {}) }
-            ],
-            metadata: {
-              userId: userKey,
-              // Recall is read-only for durable memory: never let the agent save
-              // its own assertions as "facts you told me" (provenance fabrication).
-              // Two vectors, both closed: the remember_fact TOOL (forbidden) and
-              // the after-complete auto-extract HOOK (skipped) — see
-              // RECALL_FORBIDDEN_TOOL_NAMES and readSkipAutoExtract.
-              forbiddenToolNames: [...RECALL_FORBIDDEN_TOOL_NAMES],
-              skipUserMemoryAutoExtract: true,
-              ...(resolveAskMaxTools(process.env) !== undefined ? { maxTools: resolveAskMaxTools(process.env) } : {}),
-              ...(useActuators ? { localMode: true } : {}),
-              ...(options.notesOnly ? { allowedToolNames: [...NOTES_ONLY_TOOL_ALLOWLIST] } : {}),
-              ...(webSearchPolicy ? { webSearchPolicy } : {})
-            },
-            model
-          });
-          collectedAnswer = result.response.output ?? "";
-          toolsUsed = result.toolsUsed ?? [];
-          agentGroundingSources = result.groundingSources ?? [];
+          if (useDecomposition) {
+            const decomposed = await runDecomposedAgentAsk({
+              metadata: askMetadata,
+              model,
+              query,
+              runner: assembly.agentRuntime,
+              systemPrompt
+            });
+            collectedAnswer = decomposed.answer;
+            toolsUsed = [...decomposed.toolsUsed];
+            agentGroundingSources = [...decomposed.groundingSources];
+            if (!options.json && decomposed.decomposed) {
+              const capNote = decomposed.reason.includes("capped") ? " — extra items were dropped" : "";
+              io.stderr(`(decomposed into ${decomposed.subtaskCount} sub-tasks${capNote})\n`);
+            }
+          } else {
+            const result = await assembly.agentRuntime.run({
+              messages: [
+                { content: systemPrompt, role: "system" },
+                { content: query, role: "user", ...(imageAttachments.length > 0 ? { attachments: imageAttachments } : {}) }
+              ],
+              metadata: askMetadata,
+              model
+            });
+            collectedAnswer = result.response.output ?? "";
+            toolsUsed = result.toolsUsed ?? [];
+            agentGroundingSources = result.groundingSources ?? [];
+          }
         } catch (cause) {
           await browserControllerToRelease?.disconnect().catch(() => { /* best-effort */ });
           // Same --json contract as the chat-only path: an agent

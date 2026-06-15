@@ -26,6 +26,16 @@ export type {
   TieredTask
 } from "./tiering.js";
 export { classifyTier, planTieredRun } from "./tiering.js";
+export type { DecomposeDecision, DecomposeSignals, Subtask } from "./decompose-trigger.js";
+export { decomposeRequest, shouldDecompose } from "./decompose-trigger.js";
+export type {
+  LeadWorkerDeps,
+  LeadWorkerResult,
+  SubtaskExecution,
+  SubtaskOutput,
+  SubtaskStatus
+} from "./lead-worker.js";
+export { runLeadWorkerTask } from "./lead-worker.js";
 
 export interface AgentWorker {
   readonly id: string;
