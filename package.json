@@ -74,6 +74,7 @@
     "eval:conformal-tools": "pnpm --filter @muse/model build && node scripts/eval-conformal-tools.mjs",
     "eval:orchestration": "pnpm --filter @muse/model build && pnpm --filter @muse/multi-agent build && node scripts/verify-orchestration.mjs",
     "eval:decomposition": "pnpm --filter @muse/model build && pnpm --filter @muse/multi-agent build && node scripts/verify-decomposition.mjs",
+    "eval:multihop": "pnpm --filter @muse/cli build && pnpm --filter @muse/agent-core build && pnpm --filter @muse/autoconfigure build && node scripts/verify-multihop.mjs",
     "smoke:browser": "pnpm --filter @muse/browser build && node scripts/smoke-browser.mjs",
     "eval:file-read": "pnpm --filter @muse/mcp build && node scripts/verify-file-read.mjs",
     "eval:browser-agent": "pnpm --filter @muse/browser build && pnpm --filter \"@muse/autoconfigure...\" build && node scripts/eval-browser-agent.mjs"
