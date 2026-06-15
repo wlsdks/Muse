@@ -59,3 +59,11 @@ ratchet: testFiles 1045 · fabrication 0 · eval:multihop hit@4 40%→80% (AUGME
 - 왜: two-hop 질문이 single-hop으로 bridged note 못 닿음(measure ROI+); 1a 전환 폐기(4 divergence) 후 1b′ 직접 추가로 회피. eval:multihop 40→80% 검증.
 - 리뷰지점: single-hop 회귀 0(hit@1 1/5 동일, mutation test로 never-displace 증명). default-off staging → 1c에서 promotion + same-base A/B control(judge flag). org.md 1/5 여전 miss.
 - 리스크: default-off라 프로덕션 미활성(1c promotion 후속); eval 두 arm 다른 base ranker(builder 정직 공개). 세션-cron 컨텍스트 누적 → 빌드를 worker 격리로 우회(이번 fire 검증).
+
+## fire 4 · 2026-06-16 · skill loop-creator · (this commit)
+meta: value-class=wiring(promotion+eval) · pkg=@muse/recall+apps/cli · kind=capability-promotion · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 1045 · fabrication 0 · eval:multihop 3-arm inline-no-hop 60%→inline+hop 80%(same-base)
+- 무엇: second-hop을 confidence-gated default-ON promotion(`shouldSecondHop`: confident면 skip); verify-multihop 3-arm same-base A/B(control/+hop/engine); eval:multihop을 eval:agent CI 번들 추가(fail-close). measure-first가 ungated single-hop 노이즈(15/15 append) 발견→gated 결정. 일회성 measure 스크립트는 drop(verify-multihop 3-arm이 영구 가드).
+- 왜: 1b′ default-off는 dead feature(judge flag); default-on이 가치지만 ungated는 single-hop 오염→confidence-gate. latency negligible(0.05ms).
+- 리뷰지점: worker+별개 Opus judge PASS. 정답 top-1 15/15 유지; hop 경로 verdict weak-cap(grounded 불가)→fabrication 0; 13/15 ambiguous append는 4 containment로 무해. structural 안전(confidence cap), gate 자체는 약함(2/15 protect).
+- 리스크: 미래에 hop이 grounded verdict 도달하면 unsafe(현재 구조적 차단). org.md 1/5 여전 miss. 연속 allPASS=2(fire 3·4), firesSinceDrill=4 — JUDGE-DRILL 카운터 <임계.

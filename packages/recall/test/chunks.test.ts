@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks, type ScoredChunk } from "@muse/recall";
+import { diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks, shouldSecondHop, type ScoredChunk } from "@muse/recall";
 
 const mk = (id: string, text: string, score: number, embedding: number[]): ScoredChunk => ({
   chunk: { file: `${id}.md`, chunkIndex: 0, text, embedding },
@@ -80,6 +80,38 @@ describe("secondHopAugmentChunks", () => {
     expect(secondHopAugmentChunks(queryVec, cosine, [mgr], [mgr], [], 0)).toEqual([]);
     expect(secondHopAugmentChunks(queryVec, cosine, [mgr], [], [])).toEqual([]);
     expect(secondHopAugmentChunks(queryVec, cosine, [], [mgr], [])).toEqual([]);
+  });
+});
+
+describe("shouldSecondHop (promotion gate)", () => {
+  // OUTCOME: a settled CONFIDENT single-hop match must NOT trigger the hop
+  // (appending bridges only muddies a context that already answers); a
+  // weak/uncertain match MAY, so a possible bridge can surface (AUGMENT-only +
+  // citation gate are the backstop).
+  it("skips the hop when the single-hop match is confident", () => {
+    expect(shouldSecondHop("confident")).toBe(false);
+  });
+  it("fires the hop when the match is ambiguous (weak/uncertain)", () => {
+    expect(shouldSecondHop("ambiguous")).toBe(true);
+  });
+  it("fires the hop when nothing confident was retrieved", () => {
+    expect(shouldSecondHop("none")).toBe(true);
+  });
+
+  it("end-to-end: confident verdict suppresses the bridge append, ambiguous keeps it", () => {
+    const queryVec = [1, 0, 0];
+    const seed = mk("mgr", "my manager is Dana", 0.9, [0.9, 0.6, 0]);
+    const bridge = mk("org", "Dana reports to Sarah", 0.1, [0.05, 0.95, 0]);
+    const allScored = [seed, bridge];
+    const present = [seed];
+    const additions = secondHopAugmentChunks(queryVec, cosine, allScored, [seed], present);
+    expect(additions.map((s) => s.file)).toContain("org.md");
+    // gate ON the confident verdict ⇒ the caller would never apply those appends
+    const gatedConfident = shouldSecondHop("confident") ? additions : [];
+    expect(gatedConfident).toEqual([]);
+    // gate ON the ambiguous verdict ⇒ the appends survive
+    const gatedAmbiguous = shouldSecondHop("ambiguous") ? additions : [];
+    expect(gatedAmbiguous.map((s) => s.file)).toContain("org.md");
   });
 });
 

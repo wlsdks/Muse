@@ -27,6 +27,7 @@ const BATTERIES = [
   "eval-plan-quality.mjs", // PlanQuality: valid/complete/ordered/efficient plans
   "verify-orchestration.mjs", // live multi-agent: failure propagation + bounded termination + fan-in (MAST seams)
   "../apps/cli/scripts/verify-vision-actions.mjs", // grounded vision: image → routed action
+  "verify-multihop.mjs", // second-hop AUGMENT: same-base inline+hop vs no-hop, fail-close on regression
 ];
 
 const results = [];

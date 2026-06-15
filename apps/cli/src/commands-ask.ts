@@ -43,7 +43,7 @@ import { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource } 
 export { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource };
 import { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy } from "@muse/recall";
 export { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy };
-import { diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks } from "@muse/recall";
+import { diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks, shouldSecondHop } from "@muse/recall";
 import { groundedSourceSummary, optionalGroundingSections } from "@muse/recall";
 import { citationPrecisionNotice, citationRecallNotice, untrustedOnlyGroundingNotice } from "@muse/recall";
 
@@ -1074,9 +1074,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // confidence verdict — keyed on the TOP match — is unchanged; best-effort
         // (never fails the ask). The link graph is built from the SAME index
         // bodies, so note ids match the relativized sources exactly.
+        const singleHopVerdict = classifyRetrievalConfidence(
+          scored.map((s) => ({ cosine: s.score, score: s.score, source: relativizeNoteSource(s.file, notesDir), text: s.chunk.text }))
+        );
         try {
           const seedMatches = scored.map((s) => ({ cosine: s.score, score: s.score, source: relativizeNoteSource(s.file, notesDir), text: s.chunk.text }));
-          if (classifyRetrievalConfidence(seedMatches) === "confident") {
+          if (singleHopVerdict === "confident") {
             const noteBodies = scopedNoteFiles
               .map((f) => ({ body: f.chunks.map((c) => c.text).join("\n"), id: relativizeNoteSource(f.path, notesDir) }));
             const seen = new Set(seedMatches.map((m) => m.source));
@@ -1097,16 +1100,21 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // Second-hop AUGMENT (pseudo-relevance feedback): a two-hop question
         // ("내 매니저의 상사 누구야") names only the hop-1 entity, so the answer
         // note shares no token with the query and single-hop recall misses it
-        // (measured hit@4 2/5 on the two-hop battery). From the top seed(s) we
-        // re-rank the SAME in-memory chunks by cosine to the SEED's embedding
+        // (measured hit@4 2/5 → 4/5 on the two-hop battery). From the top seed(s)
+        // we re-rank the SAME in-memory chunks by cosine to the SEED's embedding
         // (no re-embed — the bridge entity lives in the seed text) and APPEND
         // the best non-present chunk(s), scored against the ORIGINAL query.
         // AUGMENT-only: `scored`'s single-hop order is byte-identical; appended
         // bridges carry their real (low) query-relative cosine so the
-        // confidence verdict (keyed on the TOP match) is unchanged. Default-OFF
-        // behind MUSE_RECALL_SECOND_HOP (zero model calls, but gated so the
-        // happy path is unchanged until the live measure promotes it).
-        if (process.env.MUSE_RECALL_SECOND_HOP === "true" && queryVec && scored.length > 0) {
+        // confidence verdict (keyed on the TOP match) is unchanged. Cost-measured
+        // (slice-1c): wall-clock ~0 (in-memory cosine, zero re-embed), but
+        // UNGATED it fires on every single-hop query and appends only-irrelevant
+        // chunks. So it is CONFIDENCE-GATED — promoted to DEFAULT-ON but the hop
+        // is SKIPPED when the single-hop match is confident (already settled;
+        // appending bridges would only muddy it). `MUSE_RECALL_SECOND_HOP=false`
+        // is an explicit override; the citation gate is the hard backstop.
+        const secondHopEnabled = process.env.MUSE_RECALL_SECOND_HOP !== "false";
+        if (secondHopEnabled && shouldSecondHop(singleHopVerdict) && queryVec && scored.length > 0) {
           try {
             const additions = secondHopAugmentChunks(queryVec, cosine, allScored, scored.slice(0, 2), scored, 2);
             for (const add of additions) {

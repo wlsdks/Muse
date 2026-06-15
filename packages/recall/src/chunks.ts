@@ -148,6 +148,25 @@ export function secondHopAugmentChunks(
 }
 
 /**
+ * Promotion gate for the second-hop AUGMENT (slice-1c). Live measurement
+ * (`scripts/measure-second-hop-cost.mjs`) showed the hop's wall-clock cost is
+ * ~0 (in-memory cosine, zero re-embed) but UNGATED it fires on every single-hop
+ * query and appends only-irrelevant chunks — the wedge risk. The honest finding
+ * is that on a personal-scale corpus no in-memory score signal cleanly
+ * separates "single-hop answer already present" from "two-hop bridge needed"
+ * (verdicts are mostly ambiguous for both; append-score ranges overlap). So the
+ * implementable protection is the CRAG verdict: a CONFIDENT single-hop match is
+ * settled — appending bridges only muddies a context that already answers the
+ * question — so the hop is SKIPPED. When the verdict is NOT confident the
+ * answer is uncertain anyway, AUGMENT-never-displace keeps the single-hop order
+ * byte-identical, and the citation gate is the hard backstop, so the hop may
+ * fire to surface a possible bridge. Pure + exported for direct unit coverage.
+ */
+export function shouldSecondHop(verdict: RetrievalConfidence): boolean {
+  return verdict !== "confident";
+}
+
+/**
  * CRAG confidence gate for `muse ask`'s notes grounding — the headline-surface
  * embodiment of Muse's identity ("says I'm not sure instead of making things
  * up"). The chunk score IS the absolute cosine, so we grade the top match: a
