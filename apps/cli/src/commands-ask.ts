@@ -1441,6 +1441,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // path. The home-wide sandbox supersedes the old 3-folder file_read.
         const { createFsReadTools, createFsWriteTools, pathSafetyOptionsFromEnv } = await import("@muse/fs");
         const { createWebDownloadTool } = await import("@muse/mcp");
+        const { isWebEgressAllowed } = await import("@muse/model");
         // Sandbox overrides: MUSE_FS_ROOTS narrows the allow-root (default home),
         // MUSE_FS_DENY adds deny prefixes on top of the credential defaults.
         const fsSandbox = pathSafetyOptionsFromEnv(process.env);
@@ -1465,7 +1466,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             io
           })
         });
-        extraTools = [...extraTools, ...fsReadTools, ...fsWriteTools, createWebDownloadTool({ fetchImpl: globalThis.fetch })];
+        // web_download reaches the public web, so the master web-egress switch
+        // (airplane mode) removes it; fs tools are local and unaffected.
+        const webDownloadTools = isWebEgressAllowed(process.env)
+          ? [createWebDownloadTool({ fetchImpl: globalThis.fetch })]
+          : [];
+        extraTools = [...extraTools, ...fsReadTools, ...fsWriteTools, ...webDownloadTools];
       }
       // The agent's `muse.messaging.send` (a default loopback tool whenever a
       // messenger is configured) gets a draft-first confirm gate under --with-tools:

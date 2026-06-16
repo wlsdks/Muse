@@ -1,4 +1,4 @@
-import { evaluateLocalOnlyPosture, LOCAL_FIRST_DEFAULT_MODEL, parseBoolean, resolveDefaultModel } from "@muse/autoconfigure";
+import { evaluateLocalOnlyPosture, evaluateWebEgressStatus, LOCAL_FIRST_DEFAULT_MODEL, parseBoolean, resolveDefaultModel } from "@muse/autoconfigure";
 import type { DevFixableWeakness } from "@muse/mcp";
 import { promises as fs } from "node:fs";
 import { DEFAULT_EMBED_MODEL } from "./commands-notes-rag.js";
@@ -98,6 +98,12 @@ export function modelEnvCheck(env: Record<string, string | undefined>): LocalChe
 export function localOnlyCheck(env: Record<string, string | undefined>): LocalCheck {
   const posture = evaluateLocalOnlyPosture(env);
   return { detail: posture.detail, name: "local-only", status: posture.status };
+}
+
+/** Web-egress master switch (MUSE_WEB_EGRESS) posture — orthogonal to local-only. */
+export function webEgressCheck(env: Record<string, string | undefined>): LocalCheck {
+  const posture = evaluateWebEgressStatus(env);
+  return { detail: posture.detail, name: "web-egress", status: posture.status };
 }
 
 /**

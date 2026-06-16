@@ -81,6 +81,16 @@ describe("buildActuatorTools — env-driven actuator selection", () => {
     expect(tools.map((t) => t.definition.name).sort()).toEqual(["email_forward", "email_reply", "email_send", "web_action"]);
   });
 
+  it("drops web_action when MUSE_WEB_EGRESS=false (airplane mode)", () => {
+    const tools = buildActuatorTools({ confirmAction: async () => true, env: env({ MUSE_WEB_EGRESS: "false" }), io: fakeIo(), userId: "stark" });
+    expect(tools.map((t) => t.definition.name)).not.toContain("web_action");
+  });
+
+  it("keeps web_action under local-only (web egress is orthogonal)", () => {
+    const tools = buildActuatorTools({ confirmAction: async () => true, env: env({ MUSE_LOCAL_ONLY: "true" }), io: fakeIo(), userId: "stark" });
+    expect(tools.map((t) => t.definition.name)).toContain("web_action");
+  });
+
   it("adds home_action only when both Home Assistant env vars are set", () => {
     const partial = buildActuatorTools({
       confirmAction: async () => true,
@@ -132,6 +142,12 @@ describe("summarizeActuators — armed-state visibility + config hints", () => {
   it("requires BOTH Home Assistant vars to arm home_action", () => {
     const summary = summarizeActuators(env({ MUSE_HOMEASSISTANT_URL: "http://ha.local:8123" }));
     expect(summary.armed).not.toContain("home_action");
+  });
+
+  it("does not arm web_action when web egress is off, and hints why", () => {
+    const summary = summarizeActuators(env({ MUSE_WEB_EGRESS: "off" }));
+    expect(summary.armed).not.toContain("web_action");
+    expect(summary.unavailable.find((u) => u.name === "web_action")?.hint).toContain("MUSE_WEB_EGRESS");
   });
 
   it("the armed set always equals the names buildActuatorTools actually constructs (no drift)", () => {
