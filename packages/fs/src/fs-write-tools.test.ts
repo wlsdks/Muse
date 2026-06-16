@@ -80,6 +80,34 @@ describe("applyEdit / applyEdits (pure, no disk)", () => {
     it("still refuses a genuinely absent old_string", () => {
       expect(applyEdit("abc\n", { new_string: "z", old_string: "totally missing line" }).ok).toBe(false);
     });
+
+    it("repairs a model that double-escaped newlines as literal \\n in old_string", () => {
+      // A small local model often emits "a\\nb" (backslash-n text) instead of a
+      // real newline in its tool-call JSON; exact + line-block both miss. The
+      // deterministic repair un-escapes and retries — old AND new together.
+      const file = "export function add(a, b) {\n  return a - b;\n}\n";
+      const out = applyEdit(file, {
+        new_string: "export function add(a, b) {\\n  return a + b;\\n}",
+        old_string: "export function add(a, b) {\\n  return a - b;\\n}"
+      });
+      expect(out).toMatchObject({ fuzzy: true, ok: true });
+      if (out.ok) {
+        expect(out.content).toContain("return a + b;");
+        expect(out.content).not.toContain("return a - b;");
+        expect(out.content).not.toContain("\\n");
+      }
+    });
+
+    it("does NOT un-escape when the literal-\\n old_string already matches verbatim", () => {
+      // The file genuinely contains a backslash-n (e.g. a regex source) — the
+      // exact pass matches first, so the repair never rewrites it.
+      const file = 'const re = "\\\\n";\n';
+      const out = applyEdit(file, { new_string: 'const re = "\\\\t";', old_string: 'const re = "\\\\n";' });
+      expect(out.ok).toBe(true);
+      if (out.ok) {
+        expect((out as { fuzzy?: boolean }).fuzzy).toBeUndefined();
+      }
+    });
   });
 });
 
@@ -200,6 +228,33 @@ describe("file_write / file_edit / file_multi_edit — gated writes", () => {
       const tool = createFileEditTool(opts(allow));
       const out = (await tool.execute({ new_string: "b", old_string: "a", path: join(root, "missing.ts") }, ctx)) as JsonObject;
       expect(out["written"]).toBe(false);
+    });
+
+    describe("read-before-edit grounding gate (wasPathRead)", () => {
+      it("fail-closes an edit to a file that was never read this session", async () => {
+        await writeFile(join(root, "c.ts"), "const PORT = 3000;");
+        const tool = createFileEditTool({ ...opts(allow), wasPathRead: () => false });
+        const out = (await tool.execute({ new_string: "const PORT = 8080;", old_string: "const PORT = 3000;", path: join(root, "c.ts") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(false);
+        expect(String(out["reason"])).toMatch(/read|ungrounded/iu);
+        expect(await readFile(join(root, "c.ts"), "utf8")).toBe("const PORT = 3000;");
+      });
+
+      it("applies the edit once the path is in the read set", async () => {
+        await writeFile(join(root, "c.ts"), "const PORT = 3000;");
+        const tool = createFileEditTool({ ...opts(allow), wasPathRead: () => true });
+        const out = (await tool.execute({ new_string: "const PORT = 8080;", old_string: "const PORT = 3000;", path: join(root, "c.ts") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(true);
+        expect(await readFile(join(root, "c.ts"), "utf8")).toBe("const PORT = 8080;");
+      });
+
+      it("keys the read check on the resolved canonical path (what file_read records)", async () => {
+        await writeFile(join(root, "c.ts"), "const PORT = 3000;");
+        const seen: string[] = [];
+        const tool = createFileEditTool({ ...opts(allow), wasPathRead: (p) => { seen.push(p); return true; } });
+        await tool.execute({ new_string: "const PORT = 8080;", old_string: "const PORT = 3000;", path: join(root, "c.ts") }, ctx);
+        expect(seen.some((p) => p.endsWith("c.ts"))).toBe(true);
+      });
     });
   });
 

@@ -1448,8 +1448,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // web_download saves a file from a public URL into ~/Downloads — the
         // write-side companion to file_read (SSRF-guarded, size-capped,
         // basename-only). file_read can then read/summarize what was saved.
+        // Read-before-edit grounding: file_edit / file_multi_edit fail-close on a
+        // file this run never read (Muse mutates only what it has actually seen).
+        const fsReadPaths = new Set<string>();
         const fsReadTools = createFsReadTools({
           ...fsSandbox,
+          onPathRead: (canonicalPath) => fsReadPaths.add(canonicalPath),
           // file_read reads an IMAGE file via the same local vision the screen-
           // read path uses (lazy holder — the assembly/model is bound below).
           describeImage: async (input) => screenVision.current ? screenVision.current(input) : { error: "the local vision model is not available in this run", ok: false }
@@ -1461,6 +1465,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const { confirm: fsConfirm, isCancel: fsIsCancel } = await import("@clack/prompts");
         const fsWriteTools = createFsWriteTools({
           ...fsSandbox,
+          wasPathRead: (canonicalPath) => fsReadPaths.has(canonicalPath),
           approvalGate: actuatorMod.buildFsWriteApprovalGate({
             confirmAction: (message: string) => fsConfirm({ message }).then((answer) => !fsIsCancel(answer) && answer === true),
             io

@@ -189,5 +189,33 @@ describe("file_read / file_list / file_grep", () => {
       const out = (await tool.execute({ path: root, pattern: "(" }, ctx)) as JsonObject;
       expect(String(out["error"])).toContain("invalid regular expression");
     });
+
+    it("defaults the scope to a configured root when path is omitted (not the home dir)", async () => {
+      await writeFile(join(root, "x.md"), "the dentist appointment");
+      const tool = createFileGrepTool(opts());
+      const out = (await tool.execute({ pattern: "dentist" }, ctx)) as JsonObject;
+      expect(out["refused"]).not.toBe(true);
+      const files = out["files"] as string[];
+      expect(files.some((p) => p.endsWith("x.md"))).toBe(true);
+    });
+  });
+
+  describe("file_read onPathRead (read-before-edit grounding)", () => {
+    it("reports the resolved canonical path on a successful read", async () => {
+      await writeFile(join(root, "todo.md"), "line1\nline2");
+      const seen: string[] = [];
+      const tool = createFileReadTool({ baseDir: root, roots: [root], onPathRead: (p) => seen.push(p) });
+      const out = (await tool.execute({ path: join(root, "todo.md") }, ctx)) as JsonObject;
+      expect(out["read"]).toBe(true);
+      expect(seen.some((p) => p.endsWith("todo.md"))).toBe(true);
+    });
+
+    it("does NOT report a path on a failed read (nothing to ground an edit on)", async () => {
+      const seen: string[] = [];
+      const tool = createFileReadTool({ baseDir: root, roots: [root], onPathRead: (p) => seen.push(p) });
+      const out = (await tool.execute({ path: join(root, "missing.md") }, ctx)) as JsonObject;
+      expect(out["read"]).toBe(false);
+      expect(seen).toHaveLength(0);
+    });
   });
 });

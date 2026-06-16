@@ -43,6 +43,14 @@ export type FsWriteApprovalGate = (draft: FsWriteDraft) => Promise<FsWriteApprov
 export interface FsWriteToolsOptions extends PathSafetyOptions {
   /** REQUIRED — no gate means no write can ever happen (fail-close). */
   readonly approvalGate: FsWriteApprovalGate;
+  /**
+   * Read-before-edit grounding: when provided, file_edit / file_multi_edit
+   * fail-close on a target whose resolved path this returns `false` for — Muse
+   * only MUTATES a file it has actually read this session (the actuator analog
+   * of "every claim cites a source"). Absent ⇒ no gate (fail-open, back-compat).
+   * The CLI wires it to a per-run set that `file_read`'s `onPathRead` fills.
+   */
+  readonly wasPathRead?: (canonicalPath: string) => boolean;
 }
 
 export interface FsEditSpec {
@@ -148,6 +156,36 @@ function findFuzzyBlock(
   return { ok: false, reason: "none" };
 }
 
+/** Exact (then unique line-block) match of `oldString`; null when neither hits. */
+function matchAndReplace(content: string, oldString: string, newString: string, replaceAll: boolean): EditOutcome | null {
+  const matches = countOccurrences(content, oldString);
+  if (matches > 1 && !replaceAll) {
+    return { ok: false, reason: `old_string matches ${matches.toString()} places — pass replace_all or use a longer, unique old_string` };
+  }
+  if (matches >= 1) {
+    const next = replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString);
+    return { content: next, ok: true };
+  }
+  // Exact match failed — fall back to a whitespace/punctuation-tolerant
+  // line-block match (replace_all has no meaning for a single unique block).
+  const fuzzy = findFuzzyBlock(content, oldString);
+  if (!fuzzy.ok) {
+    return fuzzy.reason === "ambiguous"
+      ? { ok: false, reason: `old_string fuzzily matches multiple places — use a longer, unique old_string` }
+      : null;
+  }
+  return { content: content.slice(0, fuzzy.start) + newString + content.slice(fuzzy.end), fuzzy: true, ok: true };
+}
+
+/**
+ * Un-escape the JSON whitespace escapes a small model commonly DOUBLE-escapes —
+ * it emits the two characters `\` `n` in its tool-call JSON instead of a real
+ * newline, so the parsed old_string carries a literal `\n` that matches nothing.
+ */
+function unescapeWhitespace(text: string): string {
+  return text.replace(/\\r\\n|\\n|\\r|\\t/gu, (seq) => (seq === "\\t" ? "\t" : seq === "\\r" ? "\r" : "\n"));
+}
+
 /** Apply ONE edit to `content`, validating uniqueness. Pure — never touches disk. */
 export function applyEdit(content: string, spec: FsEditSpec): EditOutcome {
   if (spec.old_string.length === 0) {
@@ -156,25 +194,24 @@ export function applyEdit(content: string, spec: FsEditSpec): EditOutcome {
   if (spec.old_string === spec.new_string) {
     return { ok: false, reason: "old_string and new_string are identical — nothing to change" };
   }
-  const matches = countOccurrences(content, spec.old_string);
-  if (matches > 1 && spec.replace_all !== true) {
-    return { ok: false, reason: `old_string matches ${matches.toString()} places — pass replace_all or use a longer, unique old_string` };
+  const replaceAll = spec.replace_all === true;
+  const direct = matchAndReplace(content, spec.old_string, spec.new_string, replaceAll);
+  if (direct) {
+    return direct;
   }
-  if (matches >= 1) {
-    const next = spec.replace_all === true
-      ? content.split(spec.old_string).join(spec.new_string)
-      : content.replace(spec.old_string, spec.new_string);
-    return { content: next, ok: true };
+  // Exact + line-block both missed. If old_string carries literal `\n`/`\t`
+  // escapes (a double-escaping local model), un-escape old AND new together and
+  // retry once — only adopted when the repaired form actually matches, so a
+  // verbatim backslash-n in source (which the exact pass already caught) is never
+  // rewritten and we never guess a location.
+  const repairedOld = unescapeWhitespace(spec.old_string);
+  if (repairedOld !== spec.old_string) {
+    const repaired = matchAndReplace(content, repairedOld, unescapeWhitespace(spec.new_string), replaceAll);
+    if (repaired?.ok) {
+      return { ...repaired, fuzzy: true };
+    }
   }
-  // Exact match failed — fall back to a whitespace/punctuation-tolerant
-  // line-block match (replace_all has no meaning for a single unique block).
-  const fuzzy = findFuzzyBlock(content, spec.old_string);
-  if (!fuzzy.ok) {
-    return fuzzy.reason === "ambiguous"
-      ? { ok: false, reason: `old_string fuzzily matches multiple places — use a longer, unique old_string` }
-      : { ok: false, reason: `old_string not found: ${JSON.stringify(spec.old_string.slice(0, 80))}` };
-  }
-  return { content: content.slice(0, fuzzy.start) + spec.new_string + content.slice(fuzzy.end), fuzzy: true, ok: true };
+  return { ok: false, reason: `old_string not found: ${JSON.stringify(spec.old_string.slice(0, 80))}` };
 }
 
 /** Apply edits in order on the evolving content; the first failure aborts (atomic). */
@@ -315,6 +352,13 @@ function editExecutor(
       safe = await resolveSafePath(path, options, await policy);
     } catch (error) {
       return refusal(error, path);
+    }
+    if (options.wasPathRead && !options.wasPathRead(safe)) {
+      return {
+        path: safe,
+        reason: "ungrounded edit — read the file with file_read before editing it (Muse only modifies a file it has actually read)",
+        written: false
+      };
     }
     let original: string;
     try {

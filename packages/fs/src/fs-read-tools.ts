@@ -68,6 +68,12 @@ export interface FsReadToolsOptions extends PathSafetyOptions {
   readonly maxTextChars?: number;
   /** Files larger than this are refused. Default 25MB. */
   readonly maxFileBytes?: number;
+  /**
+   * Called with the resolved canonical path on every SUCCESSFUL read. The CLI
+   * wires it to a per-run set so the write tools' read-before-edit gate
+   * (`wasPathRead`) can require a prior read before mutating that file.
+   */
+  readonly onPathRead?: (canonicalPath: string) => void;
 }
 
 function looksLikePath(input: string): boolean {
@@ -207,6 +213,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
           if (!described.ok || !described.text) {
             return { path: safe, read: false, reason: described.error ?? "the vision model could not read the image" };
           }
+          options.onPathRead?.(safe);
           return { kind: "image", path: safe, read: true, source: safe, text: described.text, truncated: false };
         }
         if (kind === "unsupported") {
@@ -216,6 +223,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
         if (kind === "pdf" || kind === "docx") {
           const extracted = kind === "pdf" ? await extractPdf(data) : await extractDocx(data);
           const truncated = extracted.length > maxTextChars;
+          options.onPathRead?.(safe);
           return { kind, path: safe, read: true, source: safe, text: truncated ? extracted.slice(0, maxTextChars) : extracted, truncated };
         }
 
@@ -238,6 +246,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
           text = text.slice(0, maxTextChars);
           truncated = true;
         }
+        options.onPathRead?.(safe);
         return { kind: "text", numbered, path: safe, read: true, source: safe, text, totalLines, truncated };
       } catch (error) {
         return { ...refusalResult(error, input), read: false };
@@ -358,7 +367,11 @@ export function createFileGrepTool(options: FsReadToolsOptions = {}, policyPromi
       } catch (error) {
         return { error: `invalid regular expression: ${error instanceof Error ? error.message : String(error)}` };
       }
-      const scopeArg = asString(args["path"]) || homedir();
+      // No `path`: default to a configured allow-root so a narrowed sandbox
+      // (a project workspace) is searched, not the home dir — which would fall
+      // outside `roots` and dead-end the agent. Unset roots ⇒ home (recall default).
+      const defaultScope = options.roots?.[0] ?? homedir();
+      const scopeArg = asString(args["path"]) || defaultScope;
       const fileGlob = asString(args["glob"]) || "**/*";
       const mode = args["mode"] === "content" ? "content" : "files";
       const resolved = await policy;
