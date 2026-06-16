@@ -283,13 +283,15 @@ export {
   collectSetupStatusJson,
   countNotes,
   evaluateLocalOnlyPosture,
+  evaluateWebEgressStatus,
   readMcpEntryCount,
   readMessagingProviderState,
   readModelKeyState,
   readTaskCount,
   statBytes,
   type LocalOnlyStatusSnapshot,
-  type SetupStatusSnapshot
+  type SetupStatusSnapshot,
+  type WebEgressStatusSnapshot
 } from "./setup-status.js";
 
 export {

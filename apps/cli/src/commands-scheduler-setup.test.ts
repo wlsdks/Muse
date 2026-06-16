@@ -90,6 +90,7 @@ function baseSnap(): SetupStatusSnapshot {
       local: { file: "/c/calendar.json", status: "info" }
     },
     localOnly: { detail: "off (no cloud credentials configured)", enabled: false, status: "ok" },
+    webEgress: { detail: "on", enabled: true, status: "ok" },
     mcp: { externalServerCount: 0, file: "/c/mcp.json", status: "info" },
     messaging: { providers: [], status: "info" },
     model: { keysFile: "/c/models.json", providerKeys: [], status: "ok" },

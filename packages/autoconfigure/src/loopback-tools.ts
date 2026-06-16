@@ -37,6 +37,7 @@ import type { NotesProviderRegistry, TasksProviderRegistry } from "@muse/mcp";
 import type { CalendarProviderRegistry } from "@muse/calendar";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import type { MuseTool } from "@muse/tools";
+import { isWebEgressAllowed } from "@muse/model";
 import type { ModelProvider } from "@muse/model";
 
 import { parseBoolean, parseInteger } from "./env-parsers.js";
@@ -99,6 +100,10 @@ export interface LoopbackToolsBundle {
 
 export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle {
   const { env } = deps;
+  // Master web-egress switch (airplane mode). When off, every web-reaching
+  // tool is removed regardless of its own enable flag. Independent of
+  // MUSE_LOCAL_ONLY (which governs cloud-LLM egress, not reading the web).
+  const webEgress = isWebEgressAllowed(env);
   const llmJudge = deps.modelProvider && deps.defaultModel
     ? { model: deps.defaultModel, modelProvider: deps.modelProvider }
     : {};
@@ -239,7 +244,7 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
         return describeImage(deps.modelProvider!, { imageBase64: input.imageBase64, mimeType: input.mimeType, model: deps.defaultModel! });
       }
     : undefined;
-  const webRead = parseBoolean(env.MUSE_WEB_READ_ENABLED, true)
+  const webRead = webEgress && parseBoolean(env.MUSE_WEB_READ_ENABLED, true)
     ? createLoopbackMcpMuseTools(createWebReadMcpServer(webReadVision ? { describeImage: webReadVision } : {}))
     : [];
 
@@ -259,7 +264,7 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
   // (MUSE_LOCAL_ONLY governs cloud-LLM egress, not reading the web).
   const searxngUrl = env.MUSE_SEARXNG_URL?.trim();
   const searxngEngines = env.MUSE_SEARXNG_ENGINES?.trim();
-  const search = parseBoolean(env.MUSE_SEARCH_ENABLED, true)
+  const search = webEgress && parseBoolean(env.MUSE_SEARCH_ENABLED, true)
     ? createLoopbackMcpMuseTools(createSearchMcpServer({
         ...(searxngUrl && searxngUrl.length > 0 ? { searxngUrl } : {}),
         ...(searxngEngines && searxngEngines.length > 0 ? { searxngEngines } : {})

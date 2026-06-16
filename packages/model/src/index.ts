@@ -462,3 +462,9 @@ export {
   LocalOnlyViolationError,
   type ProviderLocality
 } from "./local-only-policy.js";
+
+export {
+  evaluateWebEgressPosture,
+  isWebEgressAllowed,
+  type WebEgressPosture
+} from "./web-egress-policy.js";

@@ -287,6 +287,21 @@ they never enter the registry (model can't select them). The
 `decideWebSearchPolicy` seam (already in `web-search-policy.ts`) is the
 enforcement point.
 
+**SHIPPED (2026-06-16).** Investigation showed Muse already treats web
+reading as independent of `MUSE_LOCAL_ONLY` by design (loopback-tools.ts:
+"MUSE_LOCAL_ONLY governs cloud-LLM egress, not reading the web"), so web
+search/read already worked under local-only — the decoupling was de-facto
+true. The missing piece was the *off* side: a strict user had no single
+way to kill ALL web egress. Implemented `isWebEgressAllowed(env)` in
+`@muse/model` (`web-egress-policy.ts`, default ON, `MUSE_WEB_EGRESS` falsy
+→ off, orthogonal to `MUSE_LOCAL_ONLY`) as a master switch that drops
+`muse.search` + `web_read` + `web_download` + `web_action` together when
+off — airplane mode. Surfaced in `muse doctor` / setup-status as a distinct
+`web-egress` posture line. `MUSE_LOCAL_ONLY` is NOT flipped; the contract
+holds. Verified: model policy unit tests, actuator gating tests, full
+`pnpm check` + `pnpm lint` green, and a dist-level functional check of all
+four env combinations.
+
 ## 7. Grounding integration (strengthens the core edge)
 
 CLAUDE.md requires every change to STRENGTHEN the grounding/citation edge.

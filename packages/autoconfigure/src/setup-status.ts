@@ -25,7 +25,7 @@ import {
   resolveTasksFile,
   type MuseEnvironment
 } from "./index.js";
-import { isLoopbackUrl } from "@muse/model";
+import { evaluateWebEgressPosture, isLoopbackUrl } from "@muse/model";
 
 import { resolveEmbedderBase } from "./embedder-base.js";
 import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
@@ -102,6 +102,30 @@ export interface SetupStatusSnapshot {
   };
   readonly actuators: ActuatorReadinessSnapshot;
   readonly localOnly: LocalOnlyStatusSnapshot;
+  readonly webEgress: WebEgressStatusSnapshot;
+}
+
+/**
+ * Web-egress posture (MUSE_WEB_EGRESS) — the master switch for reaching the
+ * public web (search / web read / download / web action). Orthogonal to
+ * localOnly: a user can keep the local-LLM guarantee AND search the web (the
+ * default), or turn this off for a true zero-outbound posture.
+ */
+export interface WebEgressStatusSnapshot {
+  readonly enabled: boolean;
+  readonly status: "ok";
+  readonly detail: string;
+}
+
+export function evaluateWebEgressStatus(env: Readonly<Record<string, string | undefined>>): WebEgressStatusSnapshot {
+  const { enabled } = evaluateWebEgressPosture(env);
+  return {
+    detail: enabled
+      ? "🌐 on (default) — web search / read / download available (independent of local-only)"
+      : "✈️ off — all web egress blocked (MUSE_WEB_EGRESS); the local-LLM guarantee is unaffected",
+    enabled,
+    status: "ok"
+  };
 }
 
 /**
@@ -344,6 +368,7 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
   const credentialsStatus = credentialsBytes !== undefined ? "ok" : "info";
   return {
     localOnly: evaluateLocalOnlyPosture(env),
+    webEgress: evaluateWebEgressStatus(env),
     calendar: {
       credentials: {
         file: credentialsFile,

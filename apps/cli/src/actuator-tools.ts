@@ -29,6 +29,7 @@ import {
   type WebActionApprovalGate
 } from "@muse/mcp";
 import { defaultFileReadRoots, type FsWriteApprovalGate } from "@muse/fs";
+import { isWebEgressAllowed } from "@muse/model";
 import {
   createMacAppOpenTool,
   createMacAppReadTool,
@@ -76,8 +77,12 @@ export interface ActuatorSummary {
  * a capability the agent can't actually use.
  */
 export function summarizeActuators(env: MuseEnvironment): ActuatorSummary {
-  const armed: string[] = ["web_action"];
+  const webEgress = isWebEgressAllowed(env);
+  const armed: string[] = webEgress ? ["web_action"] : [];
   const unavailable: { name: string; hint: string }[] = [];
+  if (!webEgress) {
+    unavailable.push({ hint: "web egress is off (unset MUSE_WEB_EGRESS)", name: "web_action" });
+  }
 
   if (env.MUSE_GMAIL_TOKEN?.trim()) {
     armed.push("email_send", "email_reply", "email_forward");
@@ -346,13 +351,17 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
   const actionLogFile = resolveActionLogFile(env);
   const tools: MuseTool[] = [];
 
-  const webGate = buildWebApprovalGate({
-    confirmAction,
-    io,
-    ...(deps.isInteractive ? { isInteractive: deps.isInteractive } : {}),
-    prompt: "Perform this web action?"
-  });
-  tools.push(createWebActionTool({ actionLogFile, approvalGate: webGate, fetchImpl, ...(deps.lookup ? { lookup: deps.lookup } : {}), userId }));
+  // web_action reaches the public web — the master web-egress switch (airplane
+  // mode) drops it, independent of MUSE_LOCAL_ONLY (which governs cloud-LLM egress).
+  if (isWebEgressAllowed(env)) {
+    const webGate = buildWebApprovalGate({
+      confirmAction,
+      io,
+      ...(deps.isInteractive ? { isInteractive: deps.isInteractive } : {}),
+      prompt: "Perform this web action?"
+    });
+    tools.push(createWebActionTool({ actionLogFile, approvalGate: webGate, fetchImpl, ...(deps.lookup ? { lookup: deps.lookup } : {}), userId }));
+  }
 
   const gmailToken = env.MUSE_GMAIL_TOKEN?.trim();
   if (gmailToken) {
