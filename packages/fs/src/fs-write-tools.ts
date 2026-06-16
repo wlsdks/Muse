@@ -68,7 +68,85 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-type EditOutcome = { readonly ok: true; readonly content: string } | { readonly ok: false; readonly reason: string };
+type EditOutcome = { readonly ok: true; readonly content: string; readonly fuzzy?: boolean } | { readonly ok: false; readonly reason: string };
+
+const UNICODE_FOLDS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/gu, "-"],
+  [/[\u2018\u2019\u201A\u201B]/gu, "'"],
+  [/[\u201C\u201D\u201E\u201F]/gu, '"'],
+  [/[\u00A0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000]/gu, " "]
+]
+
+function foldUnicode(line: string): string {
+  let out = line.trim();
+  for (const [pattern, replacement] of UNICODE_FOLDS) {
+    out = out.replace(pattern, replacement);
+  }
+  return out;
+}
+
+/**
+ * Progressive line-block relaxations, exact-first — the same ladder Codex's
+ * `seek_sequence` uses so a recalled snippet still lands when it differs from
+ * disk only by trailing whitespace, indentation, or typographic punctuation.
+ * Level 0 (identity) is covered by the exact substring pass, so the fuzzy
+ * fallback starts at trailing-whitespace.
+ */
+const LINE_RELAXATIONS: ReadonlyArray<(line: string) => string> = [
+  (line) => line.replace(/\s+$/u, ""),
+  (line) => line.trim(),
+  foldUnicode
+];
+
+/**
+ * When exact matching fails, find a UNIQUE contiguous block of file lines that
+ * matches `oldString`'s lines under the most exact relaxation that yields any
+ * match. Returns char offsets into `content`, or a reason. Uniqueness is
+ * required at each level (we never guess a location), keeping Muse's
+ * no-partial-side-effects posture stricter than Codex's first-match seek.
+ */
+function findFuzzyBlock(
+  content: string,
+  oldString: string
+): { readonly ok: true; readonly start: number; readonly end: number } | { readonly ok: false; readonly reason: "none" | "ambiguous" } {
+  const contentLines = content.split("\n");
+  let pattern = oldString.split("\n");
+  if (pattern.length > 1 && pattern[pattern.length - 1] === "") {
+    pattern = pattern.slice(0, -1);
+  }
+  if (pattern.length === 0 || pattern.length > contentLines.length) {
+    return { ok: false, reason: "none" };
+  }
+  for (const relax of LINE_RELAXATIONS) {
+    const relaxedPattern = pattern.map((line) => relax(line));
+    const hits: number[] = [];
+    for (let i = 0; i + pattern.length <= contentLines.length; i += 1) {
+      let matched = true;
+      for (let j = 0; j < pattern.length; j += 1) {
+        if (relax(contentLines[i + j]!) !== relaxedPattern[j]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) {
+        hits.push(i);
+      }
+    }
+    if (hits.length === 1) {
+      const startLine = hits[0]!;
+      let start = 0;
+      for (let k = 0; k < startLine; k += 1) {
+        start += contentLines[k]!.length + 1;
+      }
+      const matchedText = contentLines.slice(startLine, startLine + pattern.length).join("\n");
+      return { end: start + matchedText.length, ok: true, start };
+    }
+    if (hits.length > 1) {
+      return { ok: false, reason: "ambiguous" };
+    }
+  }
+  return { ok: false, reason: "none" };
+}
 
 /** Apply ONE edit to `content`, validating uniqueness. Pure — never touches disk. */
 export function applyEdit(content: string, spec: FsEditSpec): EditOutcome {
@@ -79,16 +157,24 @@ export function applyEdit(content: string, spec: FsEditSpec): EditOutcome {
     return { ok: false, reason: "old_string and new_string are identical — nothing to change" };
   }
   const matches = countOccurrences(content, spec.old_string);
-  if (matches === 0) {
-    return { ok: false, reason: `old_string not found: ${JSON.stringify(spec.old_string.slice(0, 80))}` };
-  }
   if (matches > 1 && spec.replace_all !== true) {
     return { ok: false, reason: `old_string matches ${matches.toString()} places — pass replace_all or use a longer, unique old_string` };
   }
-  const next = spec.replace_all === true
-    ? content.split(spec.old_string).join(spec.new_string)
-    : content.replace(spec.old_string, spec.new_string);
-  return { content: next, ok: true };
+  if (matches >= 1) {
+    const next = spec.replace_all === true
+      ? content.split(spec.old_string).join(spec.new_string)
+      : content.replace(spec.old_string, spec.new_string);
+    return { content: next, ok: true };
+  }
+  // Exact match failed — fall back to a whitespace/punctuation-tolerant
+  // line-block match (replace_all has no meaning for a single unique block).
+  const fuzzy = findFuzzyBlock(content, spec.old_string);
+  if (!fuzzy.ok) {
+    return fuzzy.reason === "ambiguous"
+      ? { ok: false, reason: `old_string fuzzily matches multiple places — use a longer, unique old_string` }
+      : { ok: false, reason: `old_string not found: ${JSON.stringify(spec.old_string.slice(0, 80))}` };
+  }
+  return { content: content.slice(0, fuzzy.start) + spec.new_string + content.slice(fuzzy.end), fuzzy: true, ok: true };
 }
 
 /** Apply edits in order on the evolving content; the first failure aborts (atomic). */

@@ -167,6 +167,17 @@ the `edits[]` array shape (only `file_multi_edit` has it). If the eval
 shows gemma4 can't separate them reliably, the fallback is to merge — but
 we ship split first and let the eval decide.
 
+**Edit robustness (Codex parity, 2026-06-16).** A comparison against Codex's
+`apply_patch` (`seek_sequence.rs`) showed our exact-only matcher was the one
+place Muse trailed Codex. `applyEdit` now matches exact-first, then on a 0-hit
+falls back through the same progressive line-block ladder — trailing-whitespace
+→ trim-both-sides → Unicode-fold (typographic dashes/quotes/odd spaces) — so a
+recalled snippet still lands despite indentation/whitespace/smart-quote drift.
+Muse keeps a stricter posture than Codex's first-match seek: a fuzzy match must
+be UNIQUE or it's refused (never guess a location). Still TODO vs Codex:
+multi-file / delete / rename in one operation, and `.gitignore`-aware
+list/grep (§11).
+
 ## 4. NEW guard: path sandbox (deterministic, fail-close)
 
 **Decided scope: whole home dir (`~`) allowed, governed by a deny-list.**
