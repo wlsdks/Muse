@@ -33,6 +33,54 @@ describe("applyEdit / applyEdits (pure, no disk)", () => {
     expect(applyEdits("a b", [{ new_string: "A", old_string: "a" }, { new_string: "B", old_string: "b" }])).toEqual({ content: "A B", ok: true });
     expect(applyEdits("a b", [{ new_string: "A", old_string: "a" }, { new_string: "Z", old_string: "missing" }]).ok).toBe(false);
   });
+
+  describe("fuzzy fallback (Codex-style, exact-first)", () => {
+    it("prefers an exact match and does NOT mark it fuzzy", () => {
+      const out = applyEdit("  const x = 1;\n", { new_string: "  const x = 2;", old_string: "  const x = 1;" });
+      expect(out.ok).toBe(true);
+      expect((out as { fuzzy?: boolean }).fuzzy).toBeUndefined();
+    });
+
+    it("matches a multi-line block despite leading-indentation drift", () => {
+      // File is tab-indented; the model recalled the block with 2-space indent —
+      // not a contiguous substring, but a line-block match after trimming.
+      const file = "if (x) {\n\t\tdoThing();\n\t\tlog();\n}\n";
+      const out = applyEdit(file, { new_string: "  doThing();\n  log2();", old_string: "  doThing();\n  log();" });
+      expect(out).toMatchObject({ fuzzy: true, ok: true });
+      if (out.ok) {
+        expect(out.content).toContain("log2();");
+        expect(out.content).not.toContain("log();");
+      }
+    });
+
+    it("matches despite trailing whitespace in the recalled old_string", () => {
+      // Pattern has a trailing space the file line lacks → not a substring.
+      const out = applyEdit("alpha\nbeta\n", { new_string: "ALPHA", old_string: "alpha   " });
+      expect(out).toMatchObject({ fuzzy: true, ok: true });
+      if (out.ok) {
+        expect(out.content).toBe("ALPHA\nbeta\n");
+      }
+    });
+
+    it("matches across a typographic-quote difference", () => {
+      const file = "const msg = “hello”;\n";
+      const out = applyEdit(file, { new_string: 'const msg = "bye";', old_string: 'const msg = "hello";' });
+      expect(out).toMatchObject({ fuzzy: true, ok: true });
+    });
+
+    it("refuses a fuzzy match that is NOT unique (no guessing)", () => {
+      const file = "  return 1;\n  return 1;\n";
+      const out = applyEdit(file, { new_string: "return 2;", old_string: "return 1;" });
+      expect(out.ok).toBe(false);
+      if (!out.ok) {
+        expect(out.reason).toMatch(/multiple|unique/u);
+      }
+    });
+
+    it("still refuses a genuinely absent old_string", () => {
+      expect(applyEdit("abc\n", { new_string: "z", old_string: "totally missing line" }).ok).toBe(false);
+    });
+  });
 });
 
 describe("file_write / file_edit / file_multi_edit — gated writes", () => {
