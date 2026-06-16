@@ -638,10 +638,24 @@ LOCAL 12B completing a MULTI-STEP computer task end-to-end, not more primitives.
   system lines to the SHIPPED wording: `MUSE_EVAL_REPEAT=3 eval:edit-run-verify` = **3/3** both times
   (was 1/3). CLI tsc 0, lint 0. NOT a brittle hack — general agent guidance, the same persistence every
   harness uses. Report-only eval per 진안.
-- ◦ NEXT ◦ secondary: `run_command` args-packing repair (split a single `args` element like `-e "x"`
-  that carries a flag+value) — observed once, model recovered, low priority until it actually fails a
-  run. And: exercise multi-FILE navigation + a non-trivial bug in the loop eval (current fixture is one
-  file, one line) to find the next real ceiling now that persistence is wired.
+- ★ FRONTIER FOUND ① **multi-file loop = 0/3 — a general shell (run_command) makes the 12B abandon the
+  structured file tools** (2026-06-16, `scripts/eval-multifile-fix.mjs` + `eval:multifile-fix`, a
+  RED ceiling-probe). Harder fixture: a buggy `multiply` among add/subtract/divide across src/ files,
+  where `add` and `multiply` share `return a + b;` so a bare edit is AMBIGUOUS. With the SHIPPED
+  persistence prompt, pass^3 = **0/3** — the model runs the test, greps to locate the file, then
+  reaches for SHELL idioms via run_command to inspect/navigate (`cat src/math.mjs`, `ls -l`,
+  `find . -R`) — flailing on cwd/relative paths — and NEVER reaches a successful file_edit. TWO general
+  prompt nudges were tried and IGNORED (persistence; an explicit "inspect with file_read, not the
+  shell" line) — so this is a tool-SELECTION bias, not a prompt-tweakable gap, and it also bypasses the
+  read-before-edit gate (the model "reads" via `cat`). The simpler one-file loop stays 3/3; the gap is
+  specifically the general-shell-vs-structured-file-tools competition on a small model. REAL LEVERS
+  (design decisions, NOT another prompt line): (a) tool DISCIPLINE — don't expose a general shell
+  alongside the file tools for an edit task, or split by phase; (b) sandbox run_command's cwd to the
+  workspace + deny file-content shell utils (cat/ls/find) so file_read/file_grep are the only inspect
+  path; (c) DECOMPOSE — a "locate+fix" sub-step (file tools only) then a "run the test" sub-step. Pick
+  one with 진안 — each is a real slice, and the probe is the gate that proves it.
+- ◦ secondary: `run_command` args-packing repair (split a single `args` element like `-e "x"` that
+  carries a flag+value) — observed once, model recovered, low priority until it actually fails a run.
 
 ## ★ Open — TOOL expansion & hardening (loop theme, 진안-directed 2026-06-12)
 
