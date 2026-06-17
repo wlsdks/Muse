@@ -122,7 +122,7 @@ try {
 
     const readPaths = new Set();
     const readOpts = { baseDir: dir, docRoots: [dir], onPathRead: (p) => readPaths.add(p), roots: [dir] };
-    const writeOpts = { approvalGate: () => ({ approved: true }), baseDir: dir, roots: [dir], wasPathRead: (p) => readPaths.has(p) };
+    const writeOpts = { approvalGate: () => ({ approved: true }), baseDir: dir, checkEditIntegrity: true, roots: [dir], wasPathRead: (p) => readPaths.has(p) };
     const assembly = createMuseRuntimeAssembly({
       extraTools: [
         createFileGrepTool(readOpts),

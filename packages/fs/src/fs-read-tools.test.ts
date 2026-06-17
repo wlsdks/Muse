@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { JsonObject } from "@muse/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createFileGrepTool, createFileListTool, createFileReadTool } from "./fs-read-tools.js";
+import { compileGrepPattern, createFileGrepTool, createFileListTool, createFileReadTool } from "./fs-read-tools.js";
 
 const ctx = { runId: "test-run" };
 
@@ -184,10 +184,16 @@ describe("file_read / file_list / file_grep", () => {
       expect(matches[0]?.text).toContain("dentist");
     });
 
-    it("rejects an invalid regular expression", async () => {
+    it("degrades a malformed regex to a LITERAL search instead of dead-ending", async () => {
+      // A small model routinely emits an invalid regex; a hard error makes it
+      // loop and never reach file_edit. "(" is invalid as a regex → searched
+      // literally so the file containing a "(" is still found.
+      await writeFile(join(root, "code.js"), "fn(a, b);\n");
       const tool = createFileGrepTool(opts());
-      const out = (await tool.execute({ path: root, pattern: "(" }, ctx)) as JsonObject;
-      expect(String(out["error"])).toContain("invalid regular expression");
+      const out = (await tool.execute({ mode: "content", path: root, pattern: "(" }, ctx)) as JsonObject;
+      expect(out["error"]).toBeUndefined();
+      const matches = out["matches"] as Array<{ text: string }>;
+      expect(matches.some((m) => m.text.includes("fn(a, b)"))).toBe(true);
     });
 
     it("content mode marks the matched file READ (grounds a grep→edit loop, like file_read's partial view)", async () => {
@@ -233,5 +239,29 @@ describe("file_read / file_list / file_grep", () => {
       expect(out["read"]).toBe(false);
       expect(seen).toHaveLength(0);
     });
+  });
+});
+
+describe("compileGrepPattern — never throws, degrades gracefully", () => {
+  it("compiles a valid regex normally", () => {
+    expect(compileGrepPattern("foo\\d+").test("foo123")).toBe(true);
+  });
+
+  it("tolerates a lone } (fatal under the u flag) by matching it literally", () => {
+    // `function multiply.*}` — a lone `}` is 'Lone quantifier brackets' under /u;
+    // the non-unicode fallback compiles it and matches the literal brace.
+    const re = compileGrepPattern("multiply.*}");
+    expect(re.test("function multiply(a, b) { return a + b; }")).toBe(true);
+  });
+
+  it("falls back to a LITERAL search for an unsalvageable regex", () => {
+    // "(" cannot compile under any flag → escaped to match the literal char.
+    const re = compileGrepPattern("(");
+    expect(re.test("fn(a)")).toBe(true);
+    expect(re.test("no paren here")).toBe(false);
+  });
+
+  it("never throws for a pile of metacharacters", () => {
+    expect(() => compileGrepPattern("*+?{[(\\")).not.toThrow();
   });
 });

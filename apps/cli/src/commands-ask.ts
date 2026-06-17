@@ -1466,6 +1466,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const fsWriteTools = createFsWriteTools({
           ...fsSandbox,
           wasPathRead: (canonicalPath) => fsReadPaths.has(canonicalPath),
+          checkEditIntegrity: true,
           approvalGate: actuatorMod.buildFsWriteApprovalGate({
             confirmAction: (message: string) => fsConfirm({ message }).then((answer) => !fsIsCancel(answer) && answer === true),
             io

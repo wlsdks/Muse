@@ -668,11 +668,27 @@ LOCAL 12B completing a MULTI-STEP computer task end-to-end, not more primitives.
     content-mode grep marks the files it returned content from as READ (consistent with file_read,
     which already marks a path read after an offset/limit PARTIAL view) — files-mode (no content
     shown) does NOT. Wired in production via createFsReadTools (not probe-only); fs 102 green (+2).
-  - ◦ RESIDUAL (the next frontier, distinct lever): pass^3 is **2/3, NOT stable** — one run the 12B
-    botched the EDIT itself (emptied `multiply` → `""`), a stochastic edit-CORRECTNESS/scoping failure,
-    not the tool-selection bias lever (a) fixed. Candidate next lever: a deterministic edit-integrity
-    gate (reject an edit that empties/syntactically-breaks a function, or that deletes more than it
-    adds without intent). The probe stays RED report-only documenting this residual.
+  - ◑ edit-integrity gate + file_grep regex robustness SHIPPED (2026-06-17). Two MORE deterministic
+    dead-end classes eliminated: (1) `checkEditIntegrity` (packages/fs/src/edit-integrity.ts, opt-in
+    via FsWriteToolsOptions.checkEditIntegrity, ON in commands-ask + eval) fail-closes file_edit on a
+    DESTRUCTIVE edit — deleting a top-level definition (the `multiply → ""` botch) or unbalancing
+    ()[]{} (string/comment-stripped, regression-only) — turning a silent corruption into a guided
+    retry; (2) `compileGrepPattern` (fs-read-tools.ts) makes file_grep NEVER throw — a small model's
+    invalid regex (a lone `}` fatal under /u, double-escaped `\\`) was crashing every grep and the
+    model looped on it without ever editing; now it degrades strict-u → no-flag → LITERAL substring.
+    fs 122 green (+22). Both PROVEN by traces: no more emptied-function corruption, no more
+    "invalid regular expression" dead-end.
+  - ⚠ RESIDUAL = a 12B MULTI-STEP-COHERENCE CEILING, not a deterministic bug (pass^5 = **3/5**, was
+    0/3). With every FIXABLE dead-end removed, the remaining failures are model-reliability on the
+    DELIBERATELY-ambiguous fixture (add & multiply share `return a + b;`): mode B — file_edit with an
+    ambiguous old_string that matches both → no-op (run 3); mode C — the model greps, ALREADY HAS the
+    buggy line in hand, but never constructs the file_edit and gives up after ~5 grep steps (run 5,
+    debug3). gemma4 degrades after 2-3 dependent steps (tool-calling.md). NOT closeable by another
+    write-path gate without OVERFITTING the fixture. The genuine next lever is (c) DECOMPOSE — a
+    constrained "now produce the file_edit" sub-step with only the edit tool + the file in context
+    (tool-calling.md #1/#5: fewer competing options per turn) — a BIG slice that may still not be
+    deterministic. Candidate marginal lever for mode B only: actionable ambiguous-match refusal
+    (occurrence line numbers + "add the enclosing `function` line"). Probe stays RED report-only.
 - ◦ secondary: `run_command` args-packing repair (split a single `args` element like `-e "x"` that
   carries a flag+value) — observed once, model recovered, low priority until it actually fails a run.
 

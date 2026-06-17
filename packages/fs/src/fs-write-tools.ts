@@ -19,6 +19,7 @@ import { dirname } from "node:path";
 import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
+import { checkEditIntegrity } from "./edit-integrity.js";
 import { isPathSafetyError, resolvePolicy, resolveSafePath, type PathSafetyOptions, type ResolvedPolicy } from "./fs-path-safety.js";
 
 const PREVIEW_CHARS = 400;
@@ -51,6 +52,14 @@ export interface FsWriteToolsOptions extends PathSafetyOptions {
    * The CLI wires it to a per-run set that `file_read`'s `onPathRead` fills.
    */
   readonly wasPathRead?: (canonicalPath: string) => boolean;
+  /**
+   * Edit-integrity grounding: when true, file_edit / file_multi_edit fail-close
+   * on a destructive edit (deletes a definition / unbalances delimiters) BEFORE
+   * writing, so a small model's botched edit becomes a guided retry instead of a
+   * corrupted file. Absent/false ⇒ no check (back-compat). The CLI turns it on
+   * for the agent write path.
+   */
+  readonly checkEditIntegrity?: boolean;
 }
 
 export interface FsEditSpec {
@@ -376,6 +385,12 @@ function editExecutor(
     }
     if (outcome.content === original) {
       return { path: safe, reason: "edits produced no change", written: false };
+    }
+    if (options.checkEditIntegrity) {
+      const integrity = checkEditIntegrity(original, outcome.content);
+      if (!integrity.ok) {
+        return { path: safe, reason: integrity.reason ?? "edit failed an integrity check", written: false };
+      }
     }
     const draft: FsWriteDraft = {
       action,

@@ -322,6 +322,32 @@ export function createFileListTool(options: FsReadToolsOptions = {}, policyPromi
   };
 }
 
+/**
+ * Compile the model's `pattern` into a RegExp that NEVER throws. A small model
+ * routinely emits an INVALID regex — a literal `}`/`{` (fatal under the `u`
+ * flag's "lone quantifier brackets") or a DOUBLE-ESCAPED backslash (`\\}` where
+ * it meant `\}`) — and a hard "invalid regular expression" error dead-ends the
+ * agent: it loops on broken patterns and never reaches file_edit (observed in
+ * eval:multifile-fix). So degrade gracefully — strict unicode first (valid
+ * patterns are unchanged), then non-unicode (Annex B tolerates a lone `{`/`}`,
+ * which is exactly the observed fatal case), and finally a LITERAL substring
+ * (every regex metachar escaped) so a structurally-broken pattern still
+ * searches for the text the model typed instead of dead-ending it.
+ */
+export function compileGrepPattern(pattern: string): RegExp {
+  try {
+    return new RegExp(pattern, "u");
+  } catch {
+    // u-mode is strict: a lone `{`/`}` (an unescaped literal brace) is fatal.
+  }
+  try {
+    return new RegExp(pattern, "");
+  } catch {
+    // Structurally invalid (unbalanced (), trailing \) — fall through to literal.
+  }
+  return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "");
+}
+
 export function createFileGrepTool(options: FsReadToolsOptions = {}, policyPromise?: Promise<ResolvedPolicy>): MuseTool {
   const policy = policyPromise ?? resolvePolicy(options);
   const baseDir = options.baseDir ?? process.cwd();
@@ -361,12 +387,7 @@ export function createFileGrepTool(options: FsReadToolsOptions = {}, policyPromi
       if (patternText.length > GREP_MAX_PATTERN_LENGTH) {
         return { error: `pattern exceeds ${GREP_MAX_PATTERN_LENGTH.toString()} characters` };
       }
-      let regex: RegExp;
-      try {
-        regex = new RegExp(patternText, "u");
-      } catch (error) {
-        return { error: `invalid regular expression: ${error instanceof Error ? error.message : String(error)}` };
-      }
+      const regex = compileGrepPattern(patternText);
       // No `path`: default to a configured allow-root so a narrowed sandbox
       // (a project workspace) is searched, not the home dir — which would fall
       // outside `roots` and dead-end the agent. Unset roots ⇒ home (recall default).
