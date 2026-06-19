@@ -6,6 +6,6 @@ export * from "./weakness.js";
 export * from "./verdict.js";
 export * from "./hit.js";
 export * from "./conflict.js";
-export * from "./injection.js";
+export { MEMORY_INJECTION_PATTERNS, isMemoryInjection, defangMemoryInjection, neutralizeInjectionSpans } from "@muse/agent-core";
 export * from "./prompt-escape.js";
 export * from "./grounding-notices.js";

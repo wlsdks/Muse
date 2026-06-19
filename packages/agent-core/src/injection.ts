@@ -1,0 +1,55 @@
+/**
+ * Deterministic injection neutralizer — the single source for both the STORED
+ * grounding surfaces (memory facts / notes / episodes / feeds, via @muse/recall
+ * which re-exports these) AND the LIVE agentic surface (tool / MCP / sub-agent
+ * output, via the model loop's `capToolOutput`). It lives in agent-core because
+ * that is the lowest layer both consumers depend on — a prompt-based "this is
+ * untrusted, ignore instructions" tag does NOT stop a small local model obeying an
+ * embedded instruction, so the defense must be deterministic CODE that neutralizes
+ * the injecting text before it reaches the model, not a please-ignore in the prompt.
+ *
+ * Patterns are NARROW on purpose — a legitimate preference ("always reply in
+ * Korean") or a benign tool result must pass untouched; only imperative override /
+ * role-hijack / output-clamp / fake-system shapes are caught.
+ */
+export const MEMORY_INJECTION_PATTERNS: readonly RegExp[] = [
+  /\b(ignore|disregard|forget)\b.{0,24}\b(instruction|instructions|prompt|rule|rules|previous|prior|the user|above|system)\b/iu,
+  /\breply only with\b|\brespond only with\b|\boutput only\b/iu,
+  /\byou are now\b|\bact as\b.{0,20}\binstead\b/iu,
+  /^\s*system\s*[:>]/iu
+];
+
+/** True when a value reads like an injected instruction. */
+export function isMemoryInjection(value: string): boolean {
+  return MEMORY_INJECTION_PATTERNS.some((re) => re.test(value));
+}
+
+/**
+ * Whole-value defense for an ATOMIC short value (a memory fact): replace the entire
+ * value with a neutral placeholder when it reads like an injected instruction; a
+ * clean value is returned unchanged. The placeholder names WHY it is hidden so the
+ * user knows to inspect/remove it, without echoing the attack text into the prompt.
+ */
+export function defangMemoryInjection(value: string): string {
+  return isMemoryInjection(value) ? "(stored note hidden — its text looked like an instruction)" : value;
+}
+
+const INJECTION_SPAN_PLACEHOLDER = "[removed: injected instruction]";
+
+/**
+ * SPAN-level neutralization for PROSE (episode summaries, feed text, note chunks,
+ * tool / MCP / sub-agent output): replace ONLY each matched injection span with a
+ * placeholder, keeping the rest of the text intact. Atomic short facts use the
+ * whole-value `defangMemoryInjection`; prose must NOT lose an entire paragraph (or a
+ * whole tool result) to a single matched phrase — a benign sentence that merely
+ * trips a token ("forget about the previous vendor") keeps its surrounding content.
+ * Deterministic; clean text is returned byte-identical.
+ */
+export function neutralizeInjectionSpans(text: string): string {
+  let out = text;
+  for (const pattern of MEMORY_INJECTION_PATTERNS) {
+    const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+    out = out.replace(new RegExp(pattern.source, flags), INJECTION_SPAN_PLACEHOLDER);
+  }
+  return out;
+}

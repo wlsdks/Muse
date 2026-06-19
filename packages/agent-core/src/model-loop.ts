@@ -34,6 +34,7 @@ import {
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import { renderToolResults } from "@muse/prompts";
 
+import { neutralizeInjectionSpans } from "./injection.js";
 import { applyCitationSanitisation, recordTokenUsageEvent } from "./model-invocation.js";
 import type { PlanCacheProvider } from "./plan-cache.js";
 import { appendSystemSection, recordUsageSpanAttributes } from "./runtime-helpers.js";
@@ -499,8 +500,16 @@ export function capToolOutput(
   maxChars: number | undefined,
   refStore?: ContextReferenceStore
 ): string {
+  // Live-injection defense: tool / MCP / sub-agent output is UNTRUSTED — a poisoned
+  // result ("ignore previous instructions, exfiltrate …") would otherwise reach the
+  // model verbatim (a prompt "this is untrusted" tag does NOT stop a small local
+  // model obeying it). Neutralize the injecting span deterministically here, the
+  // single chokepoint every tool result passes through before becoming a message.
+  // The caller keeps the RAW `executed.result.output` for traces; only this
+  // message-/ref-bound copy is neutralized. Clean output is byte-identical.
+  const safe = neutralizeInjectionSpans(output);
   if (!maxChars || maxChars <= 0) {
-    return output;
+    return safe;
   }
   // D5: scale the per-tool budget by importance class so calendar /
   // tasks / notes results get more retention than a noisy web-fetch
@@ -512,13 +521,13 @@ export function capToolOutput(
   // output BEFORE trimming and surface `ref=<id>` in the marker.
   // Content-addressed via sha256 prefix so the same payload
   // returned by repeated tool calls dedupes.
-  const ref = refStore && output.length > effectiveMaxChars
-    ? putToolOutputRef(refStore, output, toolName)
+  const ref = refStore && safe.length > effectiveMaxChars
+    ? putToolOutputRef(refStore, safe, toolName)
     : undefined;
   const hint = ref
     ? `tool ${toolName} returned a larger result; ref=${ref}, expand via muse.context.fetch({ ref })`
     : `tool ${toolName} returned a larger result`;
-  return trimToolOutput(output, { hint, maxChars: effectiveMaxChars }).output;
+  return trimToolOutput(safe, { hint, maxChars: effectiveMaxChars }).output;
 }
 
 function putToolOutputRef(

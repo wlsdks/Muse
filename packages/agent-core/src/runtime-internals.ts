@@ -1,6 +1,7 @@
 import type { AgentSpecResolution } from "@muse/agent-specs";
 import type { ModelMessage, ModelResponse, ModelToolCall } from "@muse/model";
 import type { ToolExecutionResult } from "@muse/tools";
+import { neutralizeInjectionSpans } from "./injection.js";
 import { normalizeSourceUrl } from "./internals.js";
 import type { PlanStep, StepExecutionResult } from "./plan-execute.js";
 import { toAgentSpecRunReport } from "./runtime-helpers.js";
@@ -77,7 +78,7 @@ export function planExecuteIntermediateMessages(
     toolCalls: executed.map((entry) => entry.executed.toolCall)
   };
   const toolMessages: ModelMessage[] = executed.map((entry) => ({
-    content: entry.executed.result.output,
+    content: neutralizeInjectionSpans(entry.executed.result.output),
     name: entry.executed.toolCall.name,
     role: "tool",
     toolCallId: entry.executed.toolCall.id

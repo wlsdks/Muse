@@ -1,8 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 
-import { citedSourcesIn, lexicalOverlap, lexicalTokens, type ContradictionPair } from "@muse/agent-core";
-import { neutralizeInjectionSpans } from "./injection.js";
+import { citedSourcesIn, lexicalOverlap, lexicalTokens, neutralizeInjectionSpans, type ContradictionPair } from "@muse/agent-core";
 import { escapeSystemPromptMarkers } from "./prompt-escape.js";
 import { formatDueLocal, type PersistedReminder, type PersistedTask } from "@muse/mcp";
 

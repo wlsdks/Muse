@@ -2,6 +2,7 @@ import type { ModelMessage, ModelTool } from "@muse/model";
 import { isRecord, type JsonObject, type JsonValue } from "@muse/shared";
 import { coerceToolArguments, validateRequiredToolArguments } from "@muse/tools";
 
+import { neutralizeInjectionSpans } from "./injection.js";
 import { extractFirstJsonArray, iterateJsonArrayCandidates } from "./json-array-scan.js";
 
 /**
@@ -617,7 +618,10 @@ export function renderPlanResultSummary(results: readonly StepExecutionResult[])
       } else if (!result.output || result.output.trim().length === 0) {
         body = "[데이터 없음] 이 단계는 결과를 반환하지 않았습니다.";
       } else {
-        body = result.output;
+        // Live-injection defense: plan-execute synthesis feeds step tool output to
+        // the model — neutralize an injected instruction the same way capToolOutput
+        // does for the model-loop path (this is the plan-execute sibling chokepoint).
+        body = neutralizeInjectionSpans(result.output);
       }
       return `${header}\n${body}`;
     })

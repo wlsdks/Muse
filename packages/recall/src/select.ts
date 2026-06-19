@@ -1,7 +1,5 @@
-import { chunkText, cosineSimilarity, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, type KnowledgeMatch } from "@muse/agent-core";
+import { chunkText, cosineSimilarity, defangMemoryInjection, lexicalOverlap, lexicalTokens, rankPlaybookStrategies, renderPlaybookSection, type KnowledgeMatch } from "@muse/agent-core";
 import type { ActionLogEntry, Contact } from "@muse/mcp";
-
-import { defangMemoryInjection } from "./injection.js";
 
 /**
  * SB-1: rank past-session episode summaries against the query so `muse ask`
