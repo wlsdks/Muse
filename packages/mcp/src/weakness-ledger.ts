@@ -30,7 +30,7 @@ export const BKT_GUESS = 0.2;
 export const BKT_SLIP = 0.1;
 export const WEAKNESS_MASTERED_AT = 0.95;
 
-export type WeaknessAxis = "grounding-gap" | "misgrounding" | "unbacked-action" | "wrong-tool" | "time-parse" | "other";
+export type WeaknessAxis = "grounding-gap" | "misgrounding" | "source-conflict" | "unbacked-action" | "wrong-tool" | "time-parse" | "other";
 
 export interface WeaknessEntry {
   readonly axis: WeaknessAxis;

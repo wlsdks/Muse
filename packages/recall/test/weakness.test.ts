@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { askOutcomeLabel, askWeaknessAxis, createStageTimer, misgroundedOutcome, recordAskWeakness, recordAskWeaknessResolved } from "@muse/recall";
+import { askOutcomeLabel, askWeaknessAxis, contestedOutcome, createStageTimer, misgroundedOutcome, recordAskWeakness, recordAskWeaknessResolved } from "@muse/recall";
 
 describe("askOutcomeLabel", () => {
   it("maps a refusal to abstain, else passes the verdict through", () => {
@@ -24,6 +24,24 @@ describe("askWeaknessAxis", () => {
     expect(askWeaknessAxis("misgrounded")).toBe("misgrounding");
     expect(askWeaknessAxis("misgrounded", { isActionRequest: true })).toBe("misgrounding");
     expect(askWeaknessAxis("misgrounded", { claimedUnbackedAction: true })).toBe("unbacked-action");
+  });
+  it("maps a contested outcome to the source-conflict axis (the user's OWN sources disagree → user-remediable, not Muse's bug)", () => {
+    expect(askWeaknessAxis("contested")).toBe("source-conflict");
+    expect(askWeaknessAxis("contested", { claimedUnbackedAction: true })).toBe("unbacked-action");
+  });
+});
+
+describe("contestedOutcome", () => {
+  it("downgrades a grounded verdict to contested when the grounding sources disagree on a field", () => {
+    expect(contestedOutcome({ outcome: "grounded", hasSourceConflict: true })).toBe("contested");
+  });
+  it("leaves a grounded verdict alone when there is no source conflict", () => {
+    expect(contestedOutcome({ outcome: "grounded", hasSourceConflict: false })).toBe("grounded");
+  });
+  it("never relabels a non-grounded outcome (only a confident grounded answer can rest on a disputed source)", () => {
+    expect(contestedOutcome({ outcome: "ungrounded", hasSourceConflict: true })).toBe("ungrounded");
+    expect(contestedOutcome({ outcome: "abstain", hasSourceConflict: true })).toBe("abstain");
+    expect(contestedOutcome({ outcome: null, hasSourceConflict: true })).toBeNull();
   });
 });
 

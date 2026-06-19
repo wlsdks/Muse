@@ -6,6 +6,7 @@ const ungrounded = (message: string): RunLogEvent => ({ grounded: "ungrounded", 
 const grounded = (message: string): RunLogEvent => ({ grounded: "grounded", message, success: true });
 const failed = (message: string): RunLogEvent => ({ grounded: null, message, success: false });
 const misgrounded = (message: string): RunLogEvent => ({ answer: "the deadline is March 3", grounded: "misgrounded", message, success: true });
+const contested = (message: string): RunLogEvent => ({ answer: "the deadline is March 3", grounded: "contested", message, success: true });
 
 describe("isFailureEvent (what counts as a signal worth turning into work)", () => {
   it("treats an ungrounded answer (the 'I'm not sure' / fabrication-caught outcome) as a failure", () => {
@@ -40,6 +41,17 @@ describe("isFailureEvent (what counts as a signal worth turning into work)", () 
 
   it("does NOT treat a misgrounded EMPTY answer as a failure (no claim to be wrong about)", () => {
     expect(isFailureEvent({ answer: "", grounded: "misgrounded", message: "x", success: true })).toBe(false);
+  });
+
+  it("treats a contested NON-EMPTY answer (grounded on sources that disagree) as a failure, clustered under its own kind", () => {
+    expect(isFailureEvent(contested("when is the project deadline"))).toBe(true);
+    const clusters = analyzeRunLogSignals([
+      contested("when is the project deadline"),
+      contested("when is the project deadline?"),
+      grounded("what time is it"),
+    ]);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toMatchObject({ count: 2, kind: "contested" });
   });
 });
 

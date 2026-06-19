@@ -20,7 +20,7 @@ export function createStageTimer(now: () => number = () => Date.now()): {
   };
 }
 
-export type AskOutcome = "abstain" | "grounded" | "misgrounded" | "ungrounded" | null;
+export type AskOutcome = "abstain" | "grounded" | "misgrounded" | "contested" | "ungrounded" | null;
 
 /**
  * The outcome label lifted onto a cli.local run-log trace. A refusal is an
@@ -75,6 +75,22 @@ export function misgroundedOutcome(args: {
 }
 
 /**
+ * Downgrade a `grounded` verdict to `contested` when the answer's OWN grounding
+ * sources disagree on a field (`detectSourceConflict` fired). The gate matched the
+ * claim to a real source, but two of the user's sources give different values, so
+ * the answer rests on a disputed fact — it cannot be confidently "grounded"
+ * (GROUNDED != TRUE: the cited source may be the wrong half of a conflict). Only a
+ * `grounded` outcome can be downgraded; every other outcome is already honest and
+ * passes through. Pure — relabels the TRACE for fuel, NOT the user-facing answer.
+ */
+export function contestedOutcome(args: {
+  readonly outcome: AskOutcome;
+  readonly hasSourceConflict: boolean;
+}): AskOutcome {
+  return args.outcome === "grounded" && args.hasSourceConflict ? "contested" : args.outcome;
+}
+
+/**
  * Whetstone fuel: the weakness axis (if any) an ask OUTCOME signals. `abstain`
  * (the gate held — couldn't ground the query in the user's corpus) and
  * `ungrounded` (an answer the rubric flagged as not backed) both mean the agent
@@ -82,7 +98,7 @@ export function misgroundedOutcome(args: {
  * worth logging as real-usage fuel (mirrors chat-repl's refusal → grounding-gap).
  * `grounded` and `null` (json/vision skip) are not failures.
  */
-export type AskWeaknessAxis = "grounding-gap" | "misgrounding" | "unbacked-action";
+export type AskWeaknessAxis = "grounding-gap" | "misgrounding" | "source-conflict" | "unbacked-action";
 
 /**
  * Whetstone fuel: the weakness axis (if any) an ask turn signals. Mirrors
@@ -110,6 +126,9 @@ export function askWeaknessAxis(
   }
   if (outcome === "misgrounded") {
     return "misgrounding";
+  }
+  if (outcome === "contested") {
+    return "source-conflict";
   }
   if (opts.isActionRequest) {
     return null;

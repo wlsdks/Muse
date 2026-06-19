@@ -17,7 +17,7 @@ export interface RunLogEvent {
   readonly success?: boolean | null;
 }
 
-export type FailureKind = "ungrounded" | "failed" | "misgrounded";
+export type FailureKind = "ungrounded" | "failed" | "misgrounded" | "contested";
 
 export interface FailureCluster {
   /** Normalized representative of the failing message — the candidate work's subject. */
@@ -29,7 +29,7 @@ export interface FailureCluster {
   readonly examples: readonly string[];
 }
 
-const NOT_GROUNDED = new Set(["ungrounded", "weak", "misgrounded"]);
+const NOT_GROUNDED = new Set(["ungrounded", "weak", "misgrounded", "contested"]);
 
 /** The grounding verdict carried by an event, lowercased, or undefined if unlabeled. */
 function groundingVerdict(grounded: unknown): string | undefined {
@@ -63,7 +63,10 @@ export function isFailureEvent(event: RunLogEvent): boolean {
 
 function failureKind(event: RunLogEvent): FailureKind {
   if (event.success === false) return "failed";
-  return groundingVerdict(event.grounded) === "misgrounded" ? "misgrounded" : "ungrounded";
+  const verdict = groundingVerdict(event.grounded);
+  if (verdict === "misgrounded") return "misgrounded";
+  if (verdict === "contested") return "contested";
+  return "ungrounded";
 }
 
 /** Collapse a message to a clustering key so the SAME question (modulo case /

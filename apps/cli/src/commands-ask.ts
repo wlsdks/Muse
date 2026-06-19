@@ -49,7 +49,7 @@ import { citationPrecisionNotice, citationRecallNotice, untrustedOnlyGroundingNo
 
 export { citationPrecisionNotice, citationRecallNotice, untrustedOnlyGroundingNotice } from "@muse/recall";
 export { diversifyAskChunks, notesGroundingFraming };
-import { askOutcomeLabel, askWeaknessAxis, createStageTimer, misgroundedOutcome, recordAskWeakness, recordAskWeaknessResolved } from "@muse/recall";
+import { askOutcomeLabel, askWeaknessAxis, contestedOutcome, createStageTimer, misgroundedOutcome, recordAskWeakness, recordAskWeaknessResolved } from "@muse/recall";
 import type { AskWeaknessAxis } from "@muse/recall";
 export { askOutcomeLabel, askWeaknessAxis, createStageTimer, recordAskWeakness, recordAskWeaknessResolved };
 import { drawBestGroundedRedraft, groundingVerdictNotice } from "@muse/recall";
@@ -2733,9 +2733,20 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           askUnsupportedFraction = assertiveUnsupportedFraction(askGroundedReport);
         }
       }
-      const askOutcome = askGroundedReport
+      // Source-conflict (contested): if the answer's OWN grounding sources disagree
+      // on a field (notes / episodes / remembered facts), a "grounded" verdict rests
+      // on a disputed fact — the cited source may be the wrong half (GROUNDED != TRUE).
+      // Downgrade the trace to "contested". Computed ONCE here and reused for the
+      // user-facing cue below.
+      const askSourceConflictCue = groundingConflictCue(
+        scored.map((r) => ({ file: r.file, text: r.chunk.text })),
+        episodeHits.map((e) => ({ id: e.id, summary: e.summary })),
+        matchedMemories
+      );
+      const askMisgroundedOutcome = askGroundedReport
         ? misgroundedOutcome({ outcome: baseOutcome, unsupportedFraction: askUnsupportedFraction })
         : baseOutcome;
+      const askOutcome = contestedOutcome({ outcome: askMisgroundedOutcome, hasSourceConflict: Boolean(askSourceConflictCue) });
       await writeRunLog(io.workspaceDir ?? process.cwd(), buildAskRunLog({
         query,
         model,
@@ -2810,12 +2821,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // grounded≠true: if two of the sources backing this answer DISAGREE on a
         // field, surface it — the receipt would otherwise vouch for whichever one
         // got cited. Independent of --connect (a safety cue, not the opt-in footer).
-        const conflictCue = groundingConflictCue(
-          scored.map((r) => ({ file: r.file, text: r.chunk.text })),
-          episodeHits.map((e) => ({ id: e.id, summary: e.summary })),
-          matchedMemories
-        );
-        if (conflictCue) io.stderr(`${conflictCue}\n`);
+        // Reuse the cue already computed for the contested-outcome downgrade above.
+        if (askSourceConflictCue) io.stderr(`${askSourceConflictCue}\n`);
         // SB-3: a readable second-brain provenance footer the user can
         // scan — reuses the grounding already ranked this turn (no extra
         // search), only the strongest hits, shared formatter with `today`.
