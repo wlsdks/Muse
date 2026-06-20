@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 18 · 2026-06-21 · skill v2.0 · <commit-pending> (fs credential deny-list — common cred/key files; 3-fire merge)
+## fire 18 · 2026-06-21 · skill v2.0 · c204778f (fs credential deny-list — common cred/key files; 3-fire merge)
 meta: value-class=new-capability · pkg=@muse/fs · kind=security/credential-deny · verdict=PASS · firesSinceDrill=8
 ratchet: testFiles 1071→1071 (+2 it.each fs-path-safety, mutation-valid) · fabrication 0 · @muse/fs 격리 143 · eval:computer-task 무관(cred 미사용) · pnpm check=박스포화(web-search fuzz 9.6s, 격리 green) · lint clean
 - 무엇: §3.6 credential 보호 sibling-audit — resolveSafePath(모든 fs도구 공유) deny-list가 .ssh/.env/*.pem/*secret*/id_rsa는 막으나 probe로 **.npmrc(npm토큰)·.netrc·.pgpass·.pypirc·*.pfx·*.jks** 읽기/쓰기 가능 발견(`.p12`은 "secret" 이름일때만). FIX(BASENAME leaf-only): `/^\.(npmrc|netrc|pgpass|pypirc)$/` + `/\.(p12|pfx|jks|keystore)$/`. `.key`는 Keynote 충돌로 제외(slides.key 허용 유지).
