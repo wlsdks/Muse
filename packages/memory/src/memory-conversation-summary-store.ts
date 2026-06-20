@@ -15,6 +15,10 @@
  * Re-exported from the memory barrel for backwards compatibility.
  */
 
+import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+
 import type { ConversationSummaryTable, MuseDatabase } from "@muse/db";
 import type { Insertable, Kysely, Selectable } from "kysely";
 import type {
@@ -87,6 +91,136 @@ export class InMemoryConversationSummaryStore implements ConversationSummaryStor
     return filtered
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, limit);
+  }
+}
+
+interface SerializedConversationSummary {
+  readonly sessionId: string;
+  readonly narrative: string;
+  readonly facts: readonly { readonly key: string; readonly value: string; readonly category: FactCategory; readonly extractedAt: string }[];
+  readonly summarizedUpToIndex: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly userId?: string;
+}
+
+function serializeSummary(s: RequiredConversationSummary): SerializedConversationSummary {
+  return {
+    createdAt: s.createdAt.toISOString(),
+    facts: s.facts.map((f) => ({ category: f.category, extractedAt: f.extractedAt.toISOString(), key: f.key, value: f.value })),
+    narrative: s.narrative,
+    sessionId: s.sessionId,
+    summarizedUpToIndex: s.summarizedUpToIndex,
+    updatedAt: s.updatedAt.toISOString(),
+    ...(s.userId ? { userId: s.userId } : {})
+  };
+}
+
+function deserializeSummary(r: SerializedConversationSummary): RequiredConversationSummary {
+  return {
+    createdAt: new Date(r.createdAt),
+    facts: (r.facts ?? []).map((f) => ({ category: f.category, extractedAt: new Date(f.extractedAt), key: f.key, value: f.value })),
+    narrative: r.narrative,
+    sessionId: r.sessionId,
+    summarizedUpToIndex: r.summarizedUpToIndex,
+    updatedAt: new Date(r.updatedAt),
+    ...(r.userId ? { userId: r.userId } : {})
+  };
+}
+
+/**
+ * File-backed conversation-summary store — the CLI has no Postgres, so without
+ * this it falls back to `InMemoryConversationSummaryStore`, which is empty at the
+ * start of every `muse ask`/`muse chat` PROCESS. That makes the "default-on"
+ * cross-session episodic recall a no-op (nothing survives between invocations)
+ * AND starves the recall-hit-driven fade/promotion consolidation of fuel. This
+ * persists summaries to a JSON file (mirrors `FileBeliefProvenanceStore`), so a
+ * summary saved in one session is recalled in the next. Same normalize-on-save
+ * semantics as the in-memory store; Dates round-trip via ISO strings.
+ */
+export function defaultConversationSummaryFile(): string {
+  const fromEnv = process.env.MUSE_CONVERSATION_SUMMARY_FILE?.trim();
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  return join(homedir(), ".muse", "conversation-summaries.json");
+}
+
+export class FileConversationSummaryStore implements ConversationSummaryStore {
+  private readonly file: string;
+  private readonly now: () => Date;
+  constructor(options: { readonly file?: string; readonly now?: () => Date } = {}) {
+    this.file = options.file && options.file.trim().length > 0 ? options.file : defaultConversationSummaryFile();
+    this.now = options.now ?? (() => new Date());
+  }
+
+  private async readMap(): Promise<Map<string, RequiredConversationSummary>> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.file, "utf8");
+    } catch {
+      return new Map();
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return new Map(); // corrupt ⇒ degrade to empty, never throw (recall is best-effort)
+    }
+    const list = parsed && typeof parsed === "object" && Array.isArray((parsed as { summaries?: unknown }).summaries)
+      ? (parsed as { summaries: SerializedConversationSummary[] }).summaries
+      : [];
+    const map = new Map<string, RequiredConversationSummary>();
+    for (const entry of list) {
+      if (entry && typeof entry.sessionId === "string" && entry.sessionId.length > 0) {
+        map.set(entry.sessionId, deserializeSummary(entry));
+      }
+    }
+    return map;
+  }
+
+  private async writeMap(map: Map<string, RequiredConversationSummary>): Promise<void> {
+    const payload = `${JSON.stringify({ summaries: [...map.values()].map(serializeSummary) }, null, 2)}\n`;
+    const tmp = `${this.file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
+    await fs.mkdir(dirname(this.file), { recursive: true });
+    const handle = await fs.open(tmp, "w", 0o600);
+    try {
+      await handle.writeFile(payload, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(tmp, this.file);
+    await fs.chmod(this.file, 0o600).catch(() => undefined);
+  }
+
+  async get(sessionId: string): Promise<ConversationSummary | undefined> {
+    return (await this.readMap()).get(sessionId);
+  }
+
+  async save(summary: ConversationSummary): Promise<ConversationSummary> {
+    const map = await this.readMap();
+    const existing = map.get(summary.sessionId);
+    const now = this.now();
+    const normalized = normalizeConversationSummary(summary, {
+      createdAt: existing?.createdAt ?? summary.createdAt ?? now,
+      updatedAt: summary.updatedAt ?? now
+    });
+    map.set(normalized.sessionId, normalized);
+    await this.writeMap(map);
+    return normalized;
+  }
+
+  async delete(sessionId: string): Promise<boolean> {
+    const map = await this.readMap();
+    if (!map.delete(sessionId)) return false;
+    await this.writeMap(map);
+    return true;
+  }
+
+  async listAll(options: ConversationSummaryListOptions = {}): Promise<readonly ConversationSummary[]> {
+    const limit = clampListLimit(options.limit);
+    const all = [...(await this.readMap()).values()];
+    const filtered = options.userId ? all.filter((entry) => entry.userId === options.userId) : all;
+    return filtered.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, limit);
   }
 }
 

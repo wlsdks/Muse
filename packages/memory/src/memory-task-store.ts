@@ -18,6 +18,10 @@
  * Re-exported from the memory barrel for backwards compatibility.
  */
 
+import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+
 import type { MuseDatabase } from "@muse/db";
 import type { Insertable, Kysely } from "kysely";
 import type {
@@ -115,6 +119,12 @@ export class InMemoryTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaint
     this.removeActiveIndexFor(taskId);
   }
 
+  /** All currently-held task states (read-only snapshot) — lets a file-backed
+   *  wrapper persist the result after delegating an operation here. */
+  entries(): readonly TaskState[] {
+    return [...this.tasks.values()];
+  }
+
   purgeExpired(now = new Date()): number {
     const ids = [...this.tasks.values()]
       .filter((state) => this.isExpired(state, now))
@@ -176,6 +186,163 @@ export class TaskMemoryQualityError extends Error {
       .join("; ")}`);
     this.name = "TaskMemoryQualityError";
     this.report = report;
+  }
+}
+
+interface SerializedTaskState {
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly goal: string;
+  readonly userId?: string;
+  readonly status?: string;
+  readonly plan: readonly { readonly step: string; readonly status?: string; readonly updatedAt?: string }[];
+  readonly decisions: readonly { readonly summary: string; readonly reason?: string; readonly decidedAt?: string }[];
+  readonly blockers: readonly { readonly description: string; readonly owner?: string; readonly createdAt?: string }[];
+  readonly metadata: Readonly<Record<string, string>>;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+function serializeTaskState(s: TaskState): SerializedTaskState {
+  return {
+    blockers: (s.blockers ?? []).map((b) => ({ description: b.description, ...(b.owner ? { owner: b.owner } : {}), ...(b.createdAt ? { createdAt: b.createdAt.toISOString() } : {}) })),
+    createdAt: (s.createdAt ?? new Date()).toISOString(),
+    decisions: (s.decisions ?? []).map((d) => ({ summary: d.summary, ...(d.reason ? { reason: d.reason } : {}), ...(d.decidedAt ? { decidedAt: d.decidedAt.toISOString() } : {}) })),
+    goal: s.goal,
+    metadata: s.metadata ?? {},
+    plan: (s.plan ?? []).map((p) => ({ step: p.step, ...(p.status ? { status: p.status } : {}), ...(p.updatedAt ? { updatedAt: p.updatedAt.toISOString() } : {}) })),
+    sessionId: s.sessionId,
+    taskId: s.taskId,
+    updatedAt: (s.updatedAt ?? s.createdAt ?? new Date()).toISOString(),
+    ...(s.status ? { status: s.status } : {}),
+    ...(s.userId ? { userId: s.userId } : {})
+  };
+}
+
+function deserializeTaskState(r: SerializedTaskState): TaskState {
+  return {
+    blockers: (r.blockers ?? []).map((b): TaskBlocker => ({ description: b.description, ...(b.owner ? { owner: b.owner } : {}), ...(b.createdAt ? { createdAt: new Date(b.createdAt) } : {}) })),
+    decisions: (r.decisions ?? []).map((d): TaskDecision => ({ summary: d.summary, ...(d.reason ? { reason: d.reason } : {}), ...(d.decidedAt ? { decidedAt: new Date(d.decidedAt) } : {}) })),
+    goal: r.goal,
+    plan: (r.plan ?? []).map((p): TaskPlanItem => ({ step: p.step, ...(p.status ? { status: p.status as TaskPlanItem["status"] } : {}), ...(p.updatedAt ? { updatedAt: new Date(p.updatedAt) } : {}) })),
+    sessionId: r.sessionId,
+    taskId: r.taskId,
+    ...(r.metadata ? { metadata: r.metadata } : {}),
+    ...(r.status ? { status: r.status as TaskStatus } : {}),
+    ...(r.userId ? { userId: r.userId } : {}),
+    ...(r.createdAt ? { createdAt: new Date(r.createdAt) } : {}),
+    ...(r.updatedAt ? { updatedAt: new Date(r.updatedAt) } : {})
+  };
+}
+
+export function defaultTaskMemoryFile(): string {
+  const fromEnv = process.env.MUSE_TASK_MEMORY_FILE?.trim();
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  return join(homedir(), ".muse", "task-memory.json");
+}
+
+async function readTaskStates(file: string): Promise<readonly TaskState[]> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return []; // corrupt ⇒ empty, never throw (task recall is best-effort)
+  }
+  const list = parsed && typeof parsed === "object" && Array.isArray((parsed as { tasks?: unknown }).tasks)
+    ? (parsed as { tasks: SerializedTaskState[] }).tasks
+    : [];
+  return list.filter((entry) => entry && typeof entry.taskId === "string" && entry.taskId.length > 0).map(deserializeTaskState);
+}
+
+async function writeTaskStates(file: string, tasks: readonly TaskState[]): Promise<void> {
+  const payload = `${JSON.stringify({ tasks: tasks.map(serializeTaskState) }, null, 2)}\n`;
+  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
+  await fs.mkdir(dirname(file), { recursive: true });
+  const handle = await fs.open(tmp, "w", 0o600);
+  try {
+    await handle.writeFile(payload, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await fs.rename(tmp, file);
+  await fs.chmod(file, 0o600).catch(() => undefined);
+}
+
+/**
+ * File-backed task-memory store — like the conversation-summary store, the CLI
+ * has no Postgres, so without this it falls back to `InMemoryTaskMemoryStore`,
+ * which is empty at the start of every `muse ask`/`chat` PROCESS — in-progress
+ * task state (goal/plan/decisions/blockers) never survives between invocations.
+ * Delegates ALL semantics (normalize, active-session index, retention/expiry,
+ * trim) to a freshly-hydrated `InMemoryTaskMemoryStore` and persists its entries
+ * after each op, so the file is the only added surface. Dates (top-level +
+ * nested plan/decisions/blockers) round-trip via ISO. Mirrors
+ * `FileConversationSummaryStore`.
+ */
+export class FileTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaintenance {
+  private readonly file: string;
+  private readonly options: { readonly maxTasks?: number; readonly retentionMs?: number };
+  constructor(options: { readonly file?: string; readonly maxTasks?: number; readonly retentionMs?: number } = {}) {
+    this.file = options.file && options.file.trim().length > 0 ? options.file : defaultTaskMemoryFile();
+    this.options = {
+      ...(options.maxTasks !== undefined ? { maxTasks: options.maxTasks } : {}),
+      ...(options.retentionMs !== undefined ? { retentionMs: options.retentionMs } : {})
+    };
+  }
+
+  private async hydrate(): Promise<InMemoryTaskMemoryStore> {
+    const mem = new InMemoryTaskMemoryStore(this.options);
+    for (const task of await readTaskStates(this.file)) {
+      mem.save(task); // rebuilds the active-session index + honours retention/trim; normalize preserves stored dates
+    }
+    return mem;
+  }
+
+  async save(state: TaskState): Promise<void> {
+    const mem = await this.hydrate();
+    mem.save(state);
+    await writeTaskStates(this.file, mem.entries());
+  }
+
+  async findById(taskId: string): Promise<TaskState | undefined> {
+    const mem = await this.hydrate();
+    const found = mem.findById(taskId); // may clear an expired task as a side effect
+    await writeTaskStates(this.file, mem.entries());
+    return found;
+  }
+
+  async findActiveBySession(sessionId: string, userId?: string): Promise<TaskState | undefined> {
+    const mem = await this.hydrate();
+    const found = mem.findActiveBySession(sessionId, userId);
+    await writeTaskStates(this.file, mem.entries());
+    return found;
+  }
+
+  async clear(taskId: string): Promise<void> {
+    const mem = await this.hydrate();
+    mem.clear(taskId);
+    await writeTaskStates(this.file, mem.entries());
+  }
+
+  async purgeExpired(now?: Date): Promise<number> {
+    const mem = await this.hydrate();
+    const purged = now ? mem.purgeExpired(now) : mem.purgeExpired();
+    await writeTaskStates(this.file, mem.entries());
+    return purged;
+  }
+
+  async purgeTerminalOlderThan(cutoff: Date): Promise<number> {
+    const mem = await this.hydrate();
+    const purged = mem.purgeTerminalOlderThan(cutoff);
+    await writeTaskStates(this.file, mem.entries());
+    return purged;
   }
 }
 

@@ -885,6 +885,7 @@ export {
   listReflections,
   readReflections,
   scoreReflectionRetention,
+  selectReflectionsForRecall,
   selectRetainedReflections,
   type NewReflection,
   type ReflectionRetentionOptions,

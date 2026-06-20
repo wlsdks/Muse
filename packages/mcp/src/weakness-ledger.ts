@@ -433,18 +433,25 @@ export async function recordWeaknessResolved(
     // away by a subsequent grounded answer, so both raise BKT mastery. A dev-fixable
     // actuator axis (time-parse/wrong-tool/unbacked-action) is a code bug, not a
     // knowledge gap a grounded success can fix, so it is NOT resolved here.
-    const existing = entries.find((e) => GROUNDED_SUCCESS_RESOLVABLE_AXES.has(e.axis) && e.topic === topic);
-    if (!existing) {
-      return undefined;
-    }
+    //
+    // A topic can carry BOTH resolvable rows at once (grounding-gap + misgrounding —
+    // upsertWeakness keys by (axis, topic)); bump EVERY matching row, not just the
+    // first-sorted one, else the misgrounding axis stays stuck below mastery forever
+    // and the doctor/nudge nag a topic Muse already re-learned (a one-way ratchet).
     const resolvedAt = nowIso ?? new Date().toISOString();
-    const updated: WeaknessEntry = {
-      ...existing,
-      pKnown: bktUpdate(existing.pKnown, true),
-      lastResolved: resolvedAt
-    };
-    const next = entries.map((e) => (e === existing ? updated : e));
+    let firstUpdated: WeaknessEntry | undefined;
+    const next = entries.map((e) => {
+      if (!GROUNDED_SUCCESS_RESOLVABLE_AXES.has(e.axis) || e.topic !== topic) {
+        return e;
+      }
+      const updated: WeaknessEntry = { ...e, pKnown: bktUpdate(e.pKnown, true), lastResolved: resolvedAt };
+      firstUpdated ??= updated;
+      return updated;
+    });
+    if (!firstUpdated) {
+      return undefined; // no resolvable row on this topic — no write (no partial side-effect)
+    }
     await writeWeaknesses(file, next);
-    return updated;
+    return firstUpdated;
   });
 }

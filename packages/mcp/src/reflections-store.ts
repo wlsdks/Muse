@@ -158,7 +158,27 @@ export async function addReflections(
   });
 }
 
-/** Pure: reflections newest-first. */
+/** Pure: reflections newest-first. For the user-facing `muse reflections` listing. */
 export function listReflections(entries: readonly StoredReflection[]): readonly StoredReflection[] {
   return [...entries].sort((a, b) => b.createdAtMs - a.createdAtMs);
+}
+
+/**
+ * Order reflections for the ASK-grounding RECALL surface by the SAME salience+recency
+ * score that governs retention (`scoreReflectionRetention`), not pure recency. The
+ * retention pass deliberately KEEPS a high-support old insight over a thinner newer
+ * one — but `listReflections` (newest-first) would then bury that kept insight below
+ * newer ones, so it never reaches the top-K injected into the prompt (retention ≠
+ * display). This closes that gap: a recurring, well-grounded insight surfaces for
+ * recall. Same sort as `selectRetainedReflections` (recency tie-break). Pure;
+ * `listReflections` stays recency-ordered for the display path.
+ */
+export function selectReflectionsForRecall(
+  entries: readonly StoredReflection[],
+  nowMs: number,
+  options: ReflectionRetentionOptions = {}
+): readonly StoredReflection[] {
+  return [...entries].sort(
+    (a, b) => scoreReflectionRetention(b, nowMs, options) - scoreReflectionRetention(a, nowMs, options) || b.createdAtMs - a.createdAtMs
+  );
 }

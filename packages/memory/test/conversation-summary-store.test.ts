@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import {
   InMemoryConversationSummaryStore,
@@ -103,5 +103,60 @@ describe("createConversationSummaryInsert / mapConversationSummaryRow", () => {
     } as Parameters<typeof mapConversationSummaryRow>[0]);
     expect(mapped.facts).toEqual([{ category: "GENERAL", extractedAt: new Date("2026-01-01T00:00:00Z"), key: "k", value: "v" }]);
     expect(mapped.userId).toBe("u");
+  });
+});
+
+import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { FileConversationSummaryStore } from "../src/memory-conversation-summary-store.js";
+
+describe("FileConversationSummaryStore — cross-session persistence (the CLI default-store fix)", () => {
+  let dirs: string[] = [];
+  const freshFile = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-summary-"));
+    dirs.push(dir);
+    return join(dir, "conversation-summaries.json");
+  };
+
+  it("a summary saved by one instance is recalled by a FRESH instance on the same file (in-memory would lose it)", async () => {
+    const file = freshFile();
+    const s1 = new FileConversationSummaryStore({ file, now: () => new Date(1000) });
+    await s1.save(summary("sess-1", {
+      narrative: "user prefers morning meetings",
+      summarizedUpToIndex: 3,
+      userId: "u1",
+      facts: [{ key: "tz", value: "KST", category: "GENERAL", extractedAt: new Date(500) }]
+    }));
+
+    // a brand-new instance = a new `muse ask`/`chat` PROCESS reading the same file
+    const s2 = new FileConversationSummaryStore({ file });
+    const got = await s2.get("sess-1");
+    expect(got?.narrative).toBe("user prefers morning meetings");
+    expect(got?.createdAt instanceof Date).toBe(true);     // Date round-trips via ISO
+    expect(got?.createdAt.getTime()).toBe(1000);
+    expect(got?.facts[0]?.value).toBe("KST");
+    expect(got?.facts[0]?.extractedAt.getTime()).toBe(500); // nested fact Date round-trips
+
+    const all = await s2.listAll({ userId: "u1" });
+    expect(all).toHaveLength(1);
+  });
+
+  it("delete persists across instances; a missing file reads as empty (best-effort, never throws)", async () => {
+    const file = freshFile();
+    const s1 = new FileConversationSummaryStore({ file });
+    await s1.save(summary("sess-x", { narrative: "to be removed" }));
+    expect(await new FileConversationSummaryStore({ file }).delete("sess-x")).toBe(true);
+    expect(await new FileConversationSummaryStore({ file }).get("sess-x")).toBeUndefined();
+
+    // unwritten file ⇒ empty, no throw
+    expect(await new FileConversationSummaryStore({ file: join(tmpdir(), `muse-absent-${Date.now().toString()}.json`) }).listAll()).toEqual([]);
+  });
+
+  afterAll(async () => {
+    await Promise.all(dirs.map((d) => rm(d, { force: true, recursive: true })));
+    dirs = [];
   });
 });

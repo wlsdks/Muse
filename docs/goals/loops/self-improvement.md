@@ -231,3 +231,63 @@ ratchet: testFiles=1070 · fabrication 0 · gates: recall 366/366 + autoconfigur
 - **리뷰지점:** ④b 독립 Opus PASS(bug real·outcome-discriminating: origin이 tie 결정 요인, mutation RED·diversity OK) + judge가 형제 2곳 적발 → *같은 fire에 함께 패치*(형제-완전성). 두 fix 모두 mutation-verified.
 - **리스크:** 낮음 — 조건부 spread(origin 있을 때만), 8개 기존 필드 불변, 랭킹 페널티 복원만(fabrication 무관). input 타입 widening은 back-compat(optional).
 - **lesson(정직성 정정):** fire-17에서 Finding 2를 "hallucination"이라 기각한 건 **내 오류** — `context-engineering-builders.ts`를 @muse/agent-core에서만 찾고 @muse/autoconfigure를 안 봄. 교훈: 감사 cite가 "없는 파일"로 보여도 *전 패키지 grep*으로 확인 후 기각(잘못된 패키지에서 못 찾은 것일 수 있음). 그리고 형제-감사는 grep 범위를 @muse/recall까지 — selector를 먹이는 모든 패키지를 봐야 함(judge가 내 누락을 잡음).
+
+## fire 19 · 2026-06-21 · skill v2.0.0 · `932c3020`
+meta: value-class=new-capability · pkg=@muse/memory + @muse/autoconfigure · kind=audit-fix/store-persistence · verdict=PASS · firesSinceDrill=9
+ratchet: testFiles=1071 · fabrication 0 · gates: memory 482 + autoconfigure 615 + cli build clean + check(잔여 실패=flaky model property-fuzz[격리시 16/16 통과]+1 saturation api timeout, 무관; byte-hygiene 0=다른 루프가 commands-logo 수정) + self-eval ok + lint · merge-to-main: n/a (fire 19 ≠ ×3, next at 21)
+
+- **무엇:** 감사 #3(가장 명백한 inert) 수정 — CLI의 ConversationSummaryStore가 InMemory(DB 없음)라 매 프로세스 empty여서, 런타임 save 경로가 쓴 summary가 소실 + default-on cross-session recall이 항상 empty + fade/promotion 연료 고갈. `FileConversationSummaryStore`(JSON·atomic·0o600·ISO date round-trip·missing/corrupt→empty) 추가 + no-DB factory 기본을 File로(PERSIST=false면 InMemory). FileUserMemoryStore 패턴 미러.
+- **왜:** "default-on cross-session 기억"이 CLI에선 신기루였음(감사 Agent B #1). 이제 한 세션이 쓴 summary를 다음 세션이 실제로 recall → 진짜 cross-session 자기개선 + consolidation 연료 복구. 진안 "자기개선이 진짜 되는지"의 직접 답: inert를 실재로.
+- **리뷰지점:** ④b 독립 Opus PASS — outcome genuine(fresh instance가 prev write를 recall, InMemory는 불가, mutation: rename 무력화→RED)·dates+nested fact dates round-trip·InMemory와 semantics parity·robust(missing/corrupt→empty, atomic)·factory flip 안전(API서버 db→Kysely 불변, store-factories 테스트 갱신=계약변경 반영). 다양성: @muse/memory(fresh pkg) store-backend. nit 수정: 테스트 category를 유효 FactCategory(GENERAL)로.
+- **리스크:** 낮음 — 순수 storage backend(claim 생성 없음, fabrication 무관), 로컬 파일 no-egress(local-by-construction), read-modify-write race는 single-user CLI라 수용가능(기존 매-프로세스-소실보다 엄격히 개선). 형제 createTaskMemoryStore는 backlog 기록(judge 적발).
+- **lesson:** "default-on" 플래그가 켜져도 백엔드가 비영속(InMemory)이면 기능은 死 — 메커니즘 검증 시 *플래그뿐 아니라 store 백엔드가 프로세스 간 살아남는지*까지 확인. 형제-감사는 같은 factory의 다른 store(taskMemory)도 enumerate.
+
+## fire 20 · 2026-06-21 · skill v2.0.0 · (JUDGE-DRILL — no code, verifier proven)
+meta: value-class=drill · pkg=@muse/agent-core(drill target) · kind=judge-drill/verifier-proof · verdict=DRILL-PASS · firesSinceDrill=0 (reset)
+ratchet: testFiles=1071 (unchanged — drill rolled back) · fabrication 0 · gates: self-eval ok · merge-to-main: n/a (fire 20 ≠ ×3, next at 21)
+
+- **무엇:** firesSinceDrill=10 트리거 → JUDGE-DRILL 강제 수행. 고의 나쁜-슬라이스 주입: `isEpisodeNovelVsRecent`에 `caseSensitive?` 옵션을 *선언만 하고 본문 미read*(config-only/declared-unused) + "옵션을 수용한다"만 단언하는 non-discriminating 테스트(빈 recents라 옵션 무관하게 true). 빌드·테스트 green으로 "통과"처럼 보이게 함정 설치.
+- **왜:** Opus가 maker=judge 천장이라, 검증자가 여전히 나쁜 슬라이스를 잡는지 주기적 증명 필요(JUDGE-DRILL 하드-카운터). 검증자가 rubber-stamp로 퇴화하면 루프 전체 품질게이트가 무력화.
+- **리뷰지점:** ④b 독립 Opus judge(drill임을 모른 채 정상 검증)가 **정확히 FAIL** — 구체적 위반 명시: "caseSensitive는 line 221 선언만·본문 222-238 미read; lexicalTokenList가 knowledge-recall:109에서 이미 lowercase라 case-sensitivity moot; 테스트는 빈 recents에 양 옵션 모두 true 단언=옵션 삭제해도 green인 non-discriminating 가짜 테스트". 올바른 버전이 뭘 해야 하는지까지 제시. → 검증자 신뢰성 입증, 즉시 `git restore` 롤백(워크트리 clean).
+- **리스크:** 없음(드릴 롤백, 코드 무변경). 진짜-fix는 taskMemory File-backing이 적합하나(judge-flagged 형제) nested-dated 배열 3종 직렬화+purge maintenance로 >1-fire라 backlog ◦로 decompose(post-drill add-on 아닌 fresh fire 권장).
+- **lesson:** JUDGE-DRILL이 작동함 — config-only/declared-unused + non-discriminating 테스트(빈 입력에 옵션 무관 동일 결과)는 검증자가 mutation-관점("옵션 삭제해도 green이면 가짜")으로 잡는다. 같은 함정 패턴(선언만 한 옵션, 빈-입력 단언)을 진짜 슬라이스에서도 self-check.
+
+## fire 21 · 2026-06-21 · skill v2.0.0 · `4926fce8`
+meta: value-class=new-capability · pkg=@muse/memory + @muse/autoconfigure · kind=store-persistence/audit-fix-sibling · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles=1071 · fabrication 0 · gates: memory 484 + autoconfigure 618 + pnpm check EXIT=0 (model property-fuzz flaky 이번엔 통과; byte-hygiene 0) + self-eval ok + lint · merge-to-main: fires 19-21 (this fire, ×3)
+
+- **무엇:** fire-19 형제(④b-flagged) 완성 — `createTaskMemoryStore`가 no-DB에서 InMemory 기본이라 in-progress 작업상태(goal/plan/decisions/blockers)가 매 CLI 프로세스 소실되던 걸 `FileTaskMemoryStore`로 영속. **wrap-delegate-persist** 설계(파일→InMemory rehydrate[active-index 재구축+retention/trim, normalize가 timestamp 보존]→위임→entries() 영속). nested Dates(plan/decisions/blockers + top-level) ISO round-trip, atomic·0o600·missing/corrupt→empty. factory no-DB 기본 File(PERSIST=false escape).
+- **왜:** fire-19가 conversation-summary를 영속시킨 것과 같은 갭이 task-memory에도 있었음(judge가 fire-19에서 적발). 이제 진행 중 작업이 세션 간 살아남음 = 진짜 cross-session 자기개선.
+- **리뷰지점:** ④b 독립 Opus PASS — **retention-trap 반박**(normalizeTaskState가 `updatedAt ?? createdAt ?? now`로 보존 → rehydrate가 expiry 안 리셋; purge 테스트가 직접 증명) · outcome+mutation 진짜(fresh instance가 findById/findActiveBySession로 회수, 4개 nested Date exact getTime, rename 무력화→RED) · assembly 테스트 갱신 정당(PERSIST=false로 wiring만 검증·real ~/.muse 회피). 다양성: @muse/memory store-persistence(fire-19와 same kind·다른 store).
+- **리스크:** 낮음 — 순수 storage(fabrication 무관), 로컬 파일 no-egress, wrap이 InMemory 로직 100% 재사용(재구현 최소). nit(judge, 비차단): RMW race(single-user CLI 수용)·read시 expiry-clear 영속 위해 write-back.
+- **lesson:** wrap-delegate-persist = 복잡한 in-memory store(dual-index+retention+trim)를 File-back하는 안전 패턴 — 로직 재구현 대신 rehydrate→delegate→persist(단 normalize가 timestamp 보존하는지 먼저 확인, 안 그러면 retention 리셋 버그). 같은 factory의 형제 store(user/summary/task) 모두 File-default로 수렴.
+
+## fire 22 · 2026-06-21 · skill v2.0.0 · `6a99f621`
+meta: value-class=new-capability · pkg=@muse/autoconfigure (test) · kind=cross-turn-measurement/verification · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles=1072 · fabrication 0 · gates: autoconfigure 620/620 isolated (full check SIGTERM on apps/cli = 박스 포화, AssertionError 0·crash-marker 0; test-only라 cli 무영향) + self-eval ok + lint · merge-to-main: n/a (fire 22 ≠ ×3, next at 24)
+
+- **무엇:** 감사 #1(최대 갭: "자기개선이 실제로 돕는다는 end-to-end 증거 전무")의 **landable 절반** — `experience-recall-cross-session.test.ts`: session1이 FileConversationSummaryStore에 경험 저장 → session2(fresh instance, 파일만이 연결) `StoreBackedEpisodicRecallProvider`(주입 stub embed)가 **실제로 recall**; empty-store/unrelated-query는 recall 안 함. deterministic(Ollama 없음)·CI-gated.
+- **왜:** fires 19/21로 store가 영속하게 됐으니, 이제 "이전 세션 경험이 다음 세션에서 회수된다"는 cross-turn 메커니즘을 model 없이 증명 가능. 고정 모델에서 자기개선=experience-indexed retrieval이므로 retrieval-level 증명이 정당한 측정(answer-text 단언은 brittle anti-pattern). 진안 "자기개선이 진짜 되는지"의 결정론적 답.
+- **리뷰지점:** ④b 독립 Opus PASS — not-a-tautology(두 store가 in-memory state 공유 0·파일만 연결, mutation: 영속 무력화→양성 RED) · stub embed discriminating(cosine 0.577 vs 0, minScore 0.1 non-cheating) · framing honest(retrieval 증명이지 answer-quality 아님 명시) · no vacuous green(양성 `.some(Dana Kim)`이 load-bearing). 다양성: cross-cutting verification(fresh kind).
+- **리스크:** 낮음 — test-only(src 무변경, fabrication/grounding 무관), 로컬 파일. LIVE answer-quality delta는 backlog ◦로 남김(smoke:live가 이 박스서 stall). nit(judge): similarity 핀·userId-isolation 케이스=다음.
+- **lesson:** LIVE eval이 박스 stall로 막힐 때, 그 측정의 *결정론적 핵심*(여기선 persist→retrieve chain)을 주입식 의존성(embed)으로 model 없이 증명하면 landable + CI-gated로 더 강한 게이트가 됨. "skip은 pass 아님"을 deterministic로 우회.
+
+## fire 23 · 2026-06-21 · skill v2.0.0 · `602b675b`
+meta: value-class=wiring · pkg=@muse/mcp (+@muse/cli) · kind=reflection-store recall-ordering · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles=1071 · fabrication 0 · gates: mcp 1884 + cli build clean + check(유일 실패=1 api timeout saturation, AssertionError 0·model-fuzz 0·내 패키지 FAIL 0) + self-eval ok + lint · merge-to-main: n/a (fire 23 ≠ ×3, next at 24)
+
+- **무엇:** fire-11 retention(salience-aware)의 follow-up 갭 닫음 — ask-grounding RECALL이 `listReflections`(newest-first) `.slice(0,5)`라 retain된 high-support old insight가 묻혀 프롬프트에 못 닿던 걸, `selectReflectionsForRecall`(scoreReflectionRetention=recency+salience 재사용) 정렬로 교체. listReflections는 `muse reflections` 디스플레이용 newest-first 유지.
+- **왜:** retention≠display 갭 — 보존은 salience-aware인데 표면화는 recency-only라 보존의 의도(고-support insight 살림)가 grounding 표면에 반영 안 됨. 동일 score로 retention과 display 신호를 일치시켜 닫음. fire-19/21/22(영속+증명)에 이은 reflection 표면 정합.
+- **리뷰지점:** ④b 독립 Opus PASS — outcome real(현실값 21d/sup3=1.216 > 1d/sup1=1.177도 flip, mutation: recency-only→RED) · salience-vs-relevance 정직(old도 query-filter 없는 top-5였으니 새 off-topic 리스크 없음, new가 retention과 정합·salience는 +1로 saturate해 ancient가 무한 우세 못함) · sibling-complete(ask=유일 recall; commands-brief는 자체 supportCount selector·display/synthesis 경로 정확). 다양성: @muse/mcp reflection(fresh pkg).
+- **리스크:** 낮음 — 이미 RGV-grounded reflection 재정렬만(fabrication 무관), listReflections 불변(디스플레이 무영향), Date.now()는 정상 런타임. nit(judge): selectRetained와 sort 식 중복(무해, 독립가변 유지).
+- **lesson:** 메커니즘을 표면별로 형제-감사 — RETENTION을 salience-aware로 고치면 그 결과를 *소비하는* RECALL/DISPLAY 표면도 같은 신호를 쓰는지 확인(retain≠surface). 보존정책과 표면화정책의 신호 일치가 핵심.
+
+## fire 24 · 2026-06-21 · skill v2.0.0 · `35bd3dd9`
+meta: value-class=new-capability · pkg=@muse/skills · kind=skill-authoring dedup (research-grounded) · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles=1071 · fabrication 0 · gates: skills 70/70 + cli build clean + check(유일 실패=model web-search-policy property-fuzz=fires 19/21 동일 flaky, 격리 16/16 통과; +1 api timeout saturation; skills 무관) + self-eval ok + lint · merge-to-main: fires 22-24 (this fire, ×3)
+
+- **무엇:** Skill 작성 write-time SUBSUMPTION dedup — `writeOrPatch`가 name+description Jaccard만 보고 **body 미비교**라, fresh name이지만 procedure-body가 기존 스킬의 부분집합인 draft가 near-dup으로 author되던 걸(curator가 나중 idle비용 정리), `skillBodyIsSubsumed`(directional containment |draft∩existing|/|draft| ≥0.85)로 write 시점 skip.
+- **왜:** Voyager skill-library novelty gate(arXiv:2305.16291) — 스킬 추가를 라이브러리 novelty로 게이트. directional이라 richer SUPERSET 신규는 절대 억제 안 함, fail-open(빈 body→write 허용), non-destructive(skip, mutate 없음).
+- **리뷰지점:** verify-before-build이 seam 비어있음 확인(writeOrPatch가 정말 body 무시). ④b 독립 Opus PASS — outcome real(테스트의 name+desc Jaccard=0.0 확인→새 body 경로 진짜 행사, mutation: gate 제거→skip 테스트 RED) · false-skip bounded(짧은 draft 꼬리만, 0.85 보수적, recoverable·non-destructive) · sibling-complete(writeOrPatch 단일 write seam·consolidate는 post-hoc). 다양성: @muse/skills authoring-dedup(fire15는 eviction, 다른 kind).
+- **리스크:** 낮음 — subtractive(redundant write 보류만, fabrication 무관), risk-scan quarantine 먼저 실행 불변, enforceCap 우회 없음. nit(judge): consolidate umbrella write의 저확률 subsumption-skip 상호작용 → backlog ◦.
+- **lesson:** 연구-스카웃 pick은 빌드 전 seam 비어있음을 코드로 확인(fires 14/16 stale 교훈) — 이번엔 reflection-synthesis "≥2 source" 후보가 *이미 빌드됨*(DEFAULT_MIN_SUPPORT=2)이라 스카웃이 그 표면 기각하고 빈 seam(skill body dedup)으로 정확히 안내. 대칭 Jaccard match는 directional subset 관계를 표현 못 함 → containment가 별도 신호.
