@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 9 · 2026-06-21 · skill v2.0 · <commit-pending> (hallucinated-tool nearest-name suggestion; 3-fire merge)
+## fire 9 · 2026-06-21 · skill v2.0 · 2d0f57ab (hallucinated-tool nearest-name suggestion; 3-fire merge)
 meta: value-class=new-capability · pkg=@muse/tools · kind=tool-error-recovery · verdict=PASS · firesSinceDrill=9
 ratchet: testFiles 1067→1067 (+2 cases tools.test, mutation-valid) · fabrication 0 · eval:computer-task PASS(무회귀) · eval:multifile-fix 여전히 FAIL(다중 stochastic 모드, 노출/이 fix로 미flip) · pnpm check exit 0 · lint clean
 - 무엇: MUSE_TASK_DEBUG로 multifile 트레이스 → 모델이 read→read→edit로 **버그 실제 수정(test-passes=true)** 하나 테스트 실행에서 `run_command` 대신 `node_run`을 **환각** → bare "tool not found"로 stuck. FIX(`executor.ts` `nearestToolName`): not-found 시 토큰-공유 최다 등록도구 제안("Did you mean 'run_command'?"). 결정론, not-found 분기만, 실패-에러 텍스트만.
