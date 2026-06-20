@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { addReflections, listReflections, MAX_REFLECTIONS, readReflections, selectRetainedReflections, type NewReflection, type StoredReflection } from "../src/reflections-store.js";
+import { addReflections, listReflections, MAX_REFLECTIONS, readReflections, selectReflectionsForRecall, selectRetainedReflections, type NewReflection, type StoredReflection } from "../src/reflections-store.js";
 
 let dir: string;
 let file: string;
@@ -145,5 +145,24 @@ describe("reflections-store — salience-weighted eviction (Generative Agents ar
     const stored = await readReflections(file);
     expect(stored).toHaveLength(MAX_REFLECTIONS);
     expect(stored.some((r) => r.id === "proven")).toBe(true); // salience saved it; pure recency would have dropped it
+  });
+});
+
+describe("selectReflectionsForRecall — salience+recency for the ask-grounding surface", () => {
+  const now = 1_700_000_000_000;
+  const DAY = 86_400_000;
+  const recentThin: StoredReflection = { createdAtMs: now, id: "recent", insight: "minor recent note", sourceIds: ["ep-9"], supportCount: 0 };
+  const oldHighSupport: StoredReflection = { createdAtMs: now - 40 * DAY, id: "old", insight: "recurring well-grounded insight", sourceIds: ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "e10"], supportCount: 10 };
+
+  it("surfaces a high-support OLD insight above a thin RECENT one (which listReflections would bury)", () => {
+    const entries = [recentThin, oldHighSupport];
+    expect(selectReflectionsForRecall(entries, now)[0]?.id).toBe("old");   // salience wins for recall
+    expect(listReflections(entries)[0]?.id).toBe("recent");               // display path stays newest-first
+  });
+
+  it("with EQUAL support, falls back to recency (newest first)", () => {
+    const older: StoredReflection = { createdAtMs: now - DAY, id: "a", insight: "x", sourceIds: [], supportCount: 2 };
+    const newer: StoredReflection = { createdAtMs: now, id: "b", insight: "y", sourceIds: [], supportCount: 2 };
+    expect(selectReflectionsForRecall([older, newer], now)[0]?.id).toBe("b");
   });
 });
