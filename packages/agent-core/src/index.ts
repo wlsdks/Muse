@@ -187,6 +187,7 @@ export {
   rankKnowledgeChunksWithHop,
   renderKnowledgeMatches,
   reorderForLongContext,
+  buildGroundingReverify,
   buildGroundingReverifyPrompt,
   parseGroundingReverifyJson,
   parseGroundingReverifyVerdict,

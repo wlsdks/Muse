@@ -57,6 +57,12 @@ const REFLECTION_SURFACES = [
     retryMarker: "synthesizeReflection",
     surface: "in-chat /reflect cross-session insight",
     verifierMarker: "opts.reverify("
+  },
+  {
+    file: "packages/mcp/src/proactive-notice-loop.ts",
+    retryMarker: "synthesizeNoticeText",
+    surface: "proactive Phase D synthesized notice (unasked push)",
+    verifierMarker: "options.reverify("
   }
 ];
 

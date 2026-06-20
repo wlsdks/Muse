@@ -1359,6 +1359,39 @@ export function parseGroundingReverifyJson(output: string): boolean {
   }
 }
 
+/**
+ * Build the canonical one-shot grounding judge ({@link GroundingReverify}) from a
+ * minimal text-generation provider — the SAME reverify the reflection + proactive-
+ * notice faithfulness gates inject, so every "free LLM prose over a known source"
+ * surface verifies identically. Relies on the free-text YES/NO fallback in
+ * {@link parseGroundingReverifyJson}, so it works even with a narrow provider that
+ * has no structured-output capability. Pure over the provider.
+ */
+export function buildGroundingReverify(
+  provider: {
+    generate(request: {
+      readonly model: string;
+      readonly messages: readonly { readonly role: "system" | "user" | "assistant"; readonly content: string }[];
+      readonly maxOutputTokens?: number;
+      readonly temperature?: number;
+    }): Promise<{ readonly output?: string }>;
+  },
+  model: string
+): GroundingReverify {
+  return async ({ answer, evidence, query }) => {
+    const judged = await provider.generate({
+      maxOutputTokens: 24,
+      messages: [
+        { content: REVERIFY_SYSTEM_PROMPT, role: "system" },
+        { content: buildGroundingReverifyPrompt({ answer, evidence, query }), role: "user" }
+      ],
+      model,
+      temperature: 0
+    });
+    return parseGroundingReverifyJson(judged.output ?? "");
+  };
+}
+
 // Month / day names: a correct date answer renders "September" for an evidence
 // "09" token, so they are excluded from the named-entity check below to avoid a
 // needless escalation on a faithful date.
