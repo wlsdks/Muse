@@ -31,8 +31,16 @@ ratchet: testFiles 1066→1067 · fabrication 0 · groundedSurfaces=28 (no drop)
 ## fire 3 · 2026-06-21 · skill v2.0.0 · 0f301103
 meta: value-class=capability · pkg=@muse/cli · kind=vision-routing-grounding · verdict=PASS · firesSinceDrill=3
 ratchet: testFiles 1067 · fabrication 0 · groundedSurfaces=28 (no drop) · groundedCases=45 · differentiationBatteries=6 · cli 2794 PASS(+4 신규) · check 2794 · eval:vision-grounding 3/3 라이브 PASS · mutation-first 양방향 RED 확인
-merge: main FF 성공 (fires 1·2·3 origin/main 안착)
+merge: main FF 스킵 (origin/main 고경쟁 — ~8 동시 루프가 main을 계속 밀어 FF 재시도도 짐; fire 3 작업은 브랜치에 안전, 다음 3배수 fire에서 재시도). lesson: 고경쟁 main에선 ⑤c FF가 자주 스킵 — 브랜치가 진짜 산출, main 머지는 best-effort
 - 무엇: vision --apply가 한 필드라도 unverified면 전체 거부하던 것을 field-level partial-apply로 — un-grounded OPTIONAL 필드는 드롭하고 grounded 코어 적용, REQUIRED 필드 unverified면 전체 fail-close. splitUnverified+dropUnverifiedOptional, REQUIRED_FIELDS는 KIND_EXTRACT 스키마에서 파생.
 - 왜: grounded merchant+total인데 hallucinated date(optional) 하나로 영수증 노트 전체가 막히던 usability+grounding-completeness 갭. fabrication=0 보존: dropUnverifiedOptional이 surviving source 필드로 재구성+shapeVisionAction 재실행해 파생 문자열(note/path/draftText)이 드롭 값 없이 재생성 → un-grounded 값은 절대 영속 안 됨, grounded 형제만 적용. 입력단(fire1·2)에서 라우팅/적용단으로 다운스트림 이동(다양성). arXiv:2404.18930.
 - 리뷰지점: 독립 적응형 judge가 모든 kind의 persist 경로 추적해 드롭 값이 자기 슬롯에 안 남음 확인, required-map 파생+route-gate 일치 검증, mutation 양방향 RED 실증. eval:vision-grounding 라이브 3/3.
 - 리스크: 낮음(cosmetic) — contact의 유일 연락처가 드롭되면 route:none·fields:{} 되어 오해성 "✅ Done:added:false" 출력(스토어가 fail-close라 fabrication/부분쓰기 없음). → backlog ◦.
+
+## fire 4 · 2026-06-21 · skill v2.0.0 · 5b66ce16
+meta: value-class=hardening · pkg=@muse/cli · kind=vision-extraction-grounding · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 1067 · fabrication 0 · groundedSurfaces=28 (no drop) · groundedCases=45 · differentiationBatteries=6 · vision-actions 26 PASS(+신규) · @muse/model 격리 325 PASS(check의 model 실패는 박스포화 flake) · mutation-first 2 RED 확인 · eval:vision-grounding 워커 미보고(judge가 self-eval+200k 퍼즈로 대체검증)
+- 무엇: fieldIsGrounded가 hallucinated 짧은 숫자값(≤3자리)을 그 digit-run이 증거 어디든(할인%·시각·주소) 있으면 grounded로 오판하던 것을, weak-numeric 가드로 fail-close. hasTextToken 추가 → ≥4자리 significant run도 없고 텍스트/CJK 토큰도 없는 값은 word-token 분기 전에 false 반환(우회 불가).
+- 왜: 오판된 값이 unverified에서 빠져 grounded 취급→partial-apply(fire 3) 경로로 영속되던 fabrication-floor 누수. grounding 게이트 자체를 조이는 hardening(추출-vs-증거 일관성, arXiv:2404.18930). 입력(fire1·2)→라우팅(fire3)→추출-grounding 정밀도로 다양성 이동.
+- 리뷰지점: 독립 적응형 judge가 200k 퍼즈로 strictly-stricter 증명(NEW가 OLD보다 더 ground 0건), over-drop 없음(12,400→digitRuns 분리자정규화로 12400≥4 → 가드 미도달; 2026·phone·text 모두 ground), 가드 우회불가(weakNumericOnly return이 wordTokens보다 앞), mutation revert→2 RED. gate-level OUTCOME(짧은 hallucinated total이 unverified에 안착) 검증.
+- 리스크: 낮음(fail-close) — 진짜 작은 숫자 필드(실제 ₩500 total, 수량 "2")도 항상 unverified로 드롭됨(안전하나 usability론 fail-close). 진짜 해결은 field-role 의미 필요(아래 ◦).
