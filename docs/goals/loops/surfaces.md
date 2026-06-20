@@ -471,3 +471,12 @@ ratchet: cli tests 2684 (+1) · testFiles 1024 · fabrication 0 · self-eval exi
 - **왜**: `muse calendar add`가 휴일에 잡힌 모든 미팅마다 거짓 double-book 경고 — 실 false-positive. fire 48 scout runner-up. cli지만 note-link와 다른 KIND(calendar conflict)로 다양성.
 - **리뷰지점**: judge가 HEAD~1로 RED 실증("⚠ overlaps Holiday (12:00 AM–12:00 AM)"). 비-vacuous(timed Standup은 여전히 경고 — 전체 비활성 아님). CalendarEvent.allDay 필수 필드라 call-site 실값 전달 → 런타임 live(inert 아님). identity filter 생존. detectCalendarConflicts 무변·mcp 타입 무변(cross-package ripple 0). 기존 timed-conflict 테스트 무회귀.
 - **리스크**: 없음(param 확장 + 2 가드 + 신규 테스트; 순수 함수; 독립 Opus judge가 RED·non-vacuous·live-at-runtime·tsc-clean·무회귀 검증 후 PASS, cli 2684/2684).
+
+## fire 53 · 2026-06-20 · skill v2.0.0 · 4a337c3b
+meta: surface=web · value-class=micro-fix · pkg=@muse/web · kind=a11y-accessible-name · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 1058 (+1) · web tests 50/50 (+2) · fabrication 0 · self-eval exit 0 · 표면 균형 web23·desktop12·cli18
+
+- **무엇**: Tasks 뷰의 완료-체크박스 버튼 2개(open=자식 없는 빈 `<button>`, done=아이콘-only)가 `title`만 있고 `aria-label`이 없어 스크린리더엔 이름 없는 "button"으로만 읽혔다. 체크박스를 pure `TaskCheckbox({status,onComplete})` 컴포넌트로 추출(`formatTaskDate` 선례) + 양쪽에 `aria-label`(기존 title과 동일 i18n 키) 추가. 페이지 주 컨트롤이 보조기술/터치에 보이게.
+- **왜**: `title`은 여러 스크린리더가 안 읽고 터치/모바일에선 안 뜨는 비신뢰 접근명. open 버튼은 자식이 아예 없어 접근명 0. 앱의 다른 모든 버튼은 title+aria-label 페어 컨벤션을 이미 따르는데 이 2개만 회귀 — 컨벤션 일치 수정.
+- **리뷰지점**: mutation-first RED 실증(aria-label 없을 때 2/2 FAIL, 렌더 마크업 `title="done"`에 aria-label 부재 확인). aria-label은 신뢰 i18n 상수(XSS/스킴 무접촉, React JSX 이스케이프). 추출은 className·title·disabled·Icon.check·onClick(`complete.mutate(task.id)`) 동작 byte-동일 보존. 형제-감사: 웹 전체에서 접근명 누락 버튼은 이 2개뿐(App.tsx cmd-trigger는 가시 텍스트 자식으로 접근명 있음 — judge 확인).
+- **리스크**: 없음(단일 pure-component 변경, web build tsc+vite 통과, web 50/50, self-eval exit 0, 독립 Opus ④b judge가 mutation 이빨(각 assertion 자기 버튼 바인딩)·XSS 불변식·동작보존·i18n 검증 후 PASS).

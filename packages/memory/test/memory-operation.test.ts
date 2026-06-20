@@ -26,6 +26,11 @@ describe("classifyMemoryOperation (Mem0 arXiv 2504.19413)", () => {
       expect(classifyMemoryOperation("Seoul", t)).toBe("delete");
     }
   });
+  it("NOOP (not DELETE) when a retraction targets a key that was NEVER stored — nothing to delete", () => {
+    for (const t of ["none", "unknown", "없음", "", "  "]) {
+      expect(classifyMemoryOperation(undefined, t)).toBe("noop");
+    }
+  });
 });
 
 function extractorStub(output: string): ModelProvider {
@@ -88,6 +93,16 @@ describe("auto-extract applies Mem0 operations", () => {
     const prov = await run(store, { facts: { "home city": "Seoul" }, preferences: {}, vetoes: [], goals: [] });
     expect(await prov.query("u1")).toEqual([]); // re-confirmation → no new learn event (was a spurious ADD before the store normalized)
     expect(store.findByUserId("u1")?.facts.home_city).toBe("Seoul");
+  });
+
+  it("NOOP: a retraction for a key that was NEVER stored does NOT call forget (no spurious delete write)", async () => {
+    const store = new InMemoryUserMemoryStore();
+    let forgetCalls = 0;
+    const realForget = store.forget.bind(store);
+    store.forget = (...args: Parameters<typeof realForget>) => { forgetCalls += 1; return realForget(...args); };
+    await run(store, { facts: { home_city: "unknown" }, preferences: {}, vetoes: [], goals: [] });
+    expect(forgetCalls).toBe(0); // never-stored key → NOOP, not a forget() write
+    expect((await store.findByUserId("u1"))?.facts.home_city).toBeUndefined();
   });
 
   it("DELETE: a FACT retraction does NOT wipe a same-key PREFERENCE (namespace-scoped)", async () => {

@@ -149,7 +149,9 @@ const RETRACTION_TOKENS = new Set(["", "none", "n/a", "na", "null", "nil", "unkn
  */
 export function classifyMemoryOperation(existing: string | undefined, incoming: string): MemoryOperation {
   if (RETRACTION_TOKENS.has(incoming.trim().toLowerCase())) {
-    return "delete";
+    // A retraction for a key that was never stored has nothing to drop — NOOP,
+    // not a spurious DELETE that calls forget() on a non-existent key.
+    return existing === undefined ? "noop" : "delete";
   }
   if (existing === undefined) {
     return "add";
