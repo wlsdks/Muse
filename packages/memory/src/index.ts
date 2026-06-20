@@ -245,6 +245,8 @@ export const DEFAULT_TASK_MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 export {
   buildConversationSummaryUpsertQuery,
   createConversationSummaryInsert,
+  defaultConversationSummaryFile,
+  FileConversationSummaryStore,
   InMemoryConversationSummaryStore,
   KyselyConversationSummaryStore,
   mapConversationSummaryRow

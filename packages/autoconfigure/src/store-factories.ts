@@ -19,6 +19,7 @@ import type { MuseDatabase } from "@muse/db";
 import type { Kysely } from "kysely";
 
 import {
+  FileConversationSummaryStore,
   InMemoryConversationSummaryStore,
   InMemoryTaskMemoryStore,
   FileUserMemoryStore,
@@ -148,8 +149,22 @@ export function createTaskMemoryStore(db: Kysely<MuseDatabase> | undefined, env:
     });
 }
 
-export function createConversationSummaryStore(db: Kysely<MuseDatabase> | undefined): ConversationSummaryStore {
-  return db ? new KyselyConversationSummaryStore(db) : new InMemoryConversationSummaryStore();
+export function createConversationSummaryStore(
+  db: Kysely<MuseDatabase> | undefined,
+  env?: MuseEnvironment
+): ConversationSummaryStore {
+  if (db) return new KyselyConversationSummaryStore(db);
+  // DB-less daily-driver (CLI): a JSON file at ~/.muse/conversation-summaries.json.
+  // Persistence is what makes cross-session episodic recall actually work — an
+  // in-memory store is empty at the start of every process, so summaries written
+  // in one `muse ask`/`chat` would never be recalled in the next (and the
+  // recall-hit-fed fade/promotion consolidation would starve). Opt out via
+  // MUSE_CONVERSATION_SUMMARY_PERSIST=false (tests wanting a clean slate).
+  if (env?.MUSE_CONVERSATION_SUMMARY_PERSIST === "false") {
+    return new InMemoryConversationSummaryStore();
+  }
+  const file = env?.MUSE_CONVERSATION_SUMMARY_FILE?.trim();
+  return new FileConversationSummaryStore(file && file.length > 0 ? { file } : {});
 }
 
 export function createUserMemoryStore(

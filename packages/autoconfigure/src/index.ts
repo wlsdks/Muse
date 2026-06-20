@@ -535,7 +535,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     resetTimeoutMs: parseInteger(env.MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS, 30_000)
   });
   const modelProvider = createModelProvider(env);
-  const conversationSummaryStore = createConversationSummaryStore(db);
+  const conversationSummaryStore = createConversationSummaryStore(db, env);
   const taskMemoryStore = createTaskMemoryStore(db, env);
   const userMemoryStore = createUserMemoryStore(db, env);
   const sessionTagStore = createSessionTagStore(db);
