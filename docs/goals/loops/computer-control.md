@@ -5,6 +5,33 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 18 · 2026-06-21 · skill v2.0 · c204778f (fs credential deny-list — common cred/key files; 3-fire merge)
+meta: value-class=new-capability · pkg=@muse/fs · kind=security/credential-deny · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles 1071→1071 (+2 it.each fs-path-safety, mutation-valid) · fabrication 0 · @muse/fs 격리 143 · eval:computer-task 무관(cred 미사용) · pnpm check=박스포화(web-search fuzz 9.6s, 격리 green) · lint clean
+- 무엇: §3.6 credential 보호 sibling-audit — resolveSafePath(모든 fs도구 공유) deny-list가 .ssh/.env/*.pem/*secret*/id_rsa는 막으나 probe로 **.npmrc(npm토큰)·.netrc·.pgpass·.pypirc·*.pfx·*.jks** 읽기/쓰기 가능 발견(`.p12`은 "secret" 이름일때만). FIX(BASENAME leaf-only): `/^\.(npmrc|netrc|pgpass|pypirc)$/` + `/\.(p12|pfx|jks|keystore)$/`. `.key`는 Keynote 충돌로 제외(slides.key 허용 유지).
+- 왜: credential-deny family도 env-family(16)처럼 미완성이었음 — probe로 흔한 cred 파일이 fs도구로 leak 가능 확인. resolveSafePath라 read/write/edit/grep/list/move/delete 전부에 적용.
+- 리뷰지점: mutation-valid(8 파일 pre-slice ALLOWED→denied), over-block 0(notes/config/package.json/npmrc.md/report.p12.txt/slides.key 허용; exact-dotfile+extension-at-end anchoring), prior corpus 무회귀(143/143). ④b judge PASS. run_command(approval-gated 일반 executor)은 resolveSafePath sandbox 밖=정직히 out-of-scope.
+- 리스크: 낮음 — deny 패턴 2개 추가(leaf-only, anchoring 정밀), 기존 deny/허용 불변. ④b PASS.
+lesson: deny-list류(env-family 16, credential-family 18)는 **probe로 실측**해야 갭이 보인다 — "흔한 X 다 막나?"를 *문서가 아니라 코드 probe*로 확인. .key 같은 collision(Keynote)은 의식적 제외가 정직(over-block보다 niche under-block 선택).
+
+## fire 17 · 2026-06-21 · skill v2.0 · 41f329be (run_command resource clamp; measure-first sharpens the ceiling)
+meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=resource-bound · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1069→1069 (+1 case tools.test clamp + Rust clamp test, mutation-valid) · fabrication 0 · @muse/tools 격리 289 · crates/runner cargo 9 · eval:multifile-fix=early-stop(model-behavior) · pnpm check=박스포화(apps/api LINE 20s, 격리 green) · lint clean
+- 무엇: §3.6-adjacent — `timeoutMs`/`maxOutputBytes`가 모델-supplied인데 하한(.max(1))만, 상한 cap 없음 → `timeoutMs:999_999_999`(~11.5일 hang)/`maxOutputBytes:5e9`(메모리) DoS. FIX 양 레이어(10min/10MB ceiling 동일): TS `readPositiveInteger(value,max)` Math.min, Rust `effective_timeout_ms/output_bytes` clamp(1,MAX), 스키마 `maximum:` 추가. clamp(reject 아님)이라 정당한 9분 빌드는 통과.
+- 왜: 보안/grounding 렌즈(13-16) 후 **resource-bound 렌즈**로 또 실제 갭. 코드-scout(path-safety·run_command exec·file_delete)는 solid지만 resource knob가 미감사였음. 형제-감사(TS+Rust).
+- 리뷰지점: mutation-valid 양 레이어(un-clamp시 RED, Rust 실제 mutate→panic 확인). ④b judge PASS(ceilings 동일, no-TDZ factory-read 스키마 상수, watchdog ≤605s bounded, prior 가드 불변). **measure-first this fire**: 모델이 이제 read(test)→grep→read(source)로 올바르게 조사하나 file_edit 전 멈춤=agentic-persistence 천장의 sharp 재확인(결정론 층 다 작동, 모델이 옳은 파일 도달, 행동만 안 함).
+- 리스크: 낮음 — clamp만 추가(값-타입/env-denylist/command-parse 불변). ④b PASS.
+lesson: 같은 축을 **여러 렌즈**(노출·grounding·security·resource-bound)로 보면 각 렌즈가 다른 실제 갭을 드러낸다 — "scout가 solid"는 *그 렌즈*의 소진이지 축 소진 아님. measure-first는 결정론 층 완성을 확증(모델이 옳은 파일 도달)하고 남은 천장(agentic-persistence)을 model-behavior로 격리.
+
+## fire 16 · 2026-06-21 · skill v2.0 · 00451ce7 (env injection — whole code-injection family; fire-15 sibling-audit)
+meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=security/path-safe · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 1069→1069 (+1 case tools.test family + Rust family test, mutation-valid) · fabrication 0 · @muse/tools 격리 285 · crates/runner cargo 8 · eval:computer-task 무관(env 미사용) · pnpm check=박스포화(web-search fuzz 5s, 격리 green) · lint clean
+- 무엇: fire 15 sibling-audit 완성 — 동적로더(LD_/DYLD_)는 family 1/24였음. NODE_OPTIONS(=`--require`로 node에 코드주입, Muse가 node 실행), shell(BASH_ENV/ENV/SHELLOPTS), interpreter(PERL5OPT/PYTHONSTARTUP/PYTHONPATH/RUBYOPT…), git command-exec(GIT_SSH_COMMAND/GIT_EXTERNAL_DIFF/GIT_PAGER/…+GIT_CONFIG*) 전부 통과하던 걸 `UNSAFE_ENV_EXACT` denylist로 차단. TS+Rust 양 레이어 리스트 IDENTICAL.
+- 왜: fire 15가 "LD_PRELOAD 하나 찾고 dynamic-loader만 막음"=형제-감사 미완. 올바른 질문=「코드주입 env의 *전체 클래스*(per-runtime)는?」. exact-match라 NODE_ENV/GIT_DIR/PYTHONUNBUFFERED 등 legit 보존.
+- 리뷰지점: mutation-valid 양 레이어(fire-15 코드는 NODE_OPTIONS 통과=RED). ④b judge PASS + GIT_CONFIG*(블록된 git-exec hooks로 가는 2차 경로)를 강한 miss로 지적→같은 슬라이스서 추가. over-block 0(exact-match), TS/Rust 동일.
+- 리스크: 낮음 — env denylist 확장만(값-타입/uppercase/LD_/DYLD_/env_clear/PATH 불변). ④b PASS.
+lesson: **형제-감사는 *첫 발견 멤버*가 아니라 *전체 클래스*를 enumerate해야** — fire 15는 1/24 고치고 done이라 함. ④b judge가 또 한 멤버(GIT_CONFIG)를 지적=감사가 2단계로 수렴. "denylist는 미완성이기 쉽다"의 실례; 가능하면 클래스를 한 번에.
+
 ## fire 15 · 2026-06-21 · skill v2.0 · ad6fefb5 (run_command dynamic-loader env injection blocked; 3-fire merge)
 meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=security/path-safe · verdict=PASS · firesSinceDrill=5
 ratchet: testFiles 1069→1069 (+1 case tools.test, mutation-valid) · fabrication 0 · @muse/tools 격리 284 통과 · crates/runner cargo test 7 통과 · eval:computer-task PASS(무회귀) · pnpm check=박스포화(web-search fuzz 15s, 변경패키지 격리 green) · lint clean

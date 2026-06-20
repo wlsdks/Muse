@@ -91,6 +91,22 @@ describe("path sandbox", () => {
     }
   );
 
+  it.each([".npmrc", ".netrc", ".pgpass", ".pypirc", "client.p12", "keystore.pfx", "app.jks", "release.keystore"])(
+    "refuses common credential / key-store file %s",
+    async (name) => {
+      await writeFile(join(root, name), "x");
+      await expect(resolveSafePath(name, opts())).rejects.toMatchObject({ reason: "denied_pattern" });
+    }
+  );
+
+  it.each(["notes.txt", "slides.key", "config.yaml", "package.json"])(
+    "allows a NON-credential file %s (no over-block — .key is Keynote, not a key file here)",
+    async (name) => {
+      await writeFile(join(root, name), "x");
+      await expect(resolveSafePath(name, opts())).resolves.toContain(name);
+    }
+  );
+
   it("allows an ordinary basename that merely contains a safe word", async () => {
     await writeFile(join(root, "environment-notes.md"), "x");
     await expect(resolveSafePath("environment-notes.md", opts())).resolves.toContain("environment-notes.md");

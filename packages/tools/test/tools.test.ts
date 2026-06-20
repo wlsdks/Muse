@@ -15,6 +15,8 @@ import {
   filterToolsForContext,
   isWorkspaceMutationPrompt,
   planToolExecutionOrder,
+  MAX_RUNNER_TIMEOUT_MS,
+  MAX_RUNNER_OUTPUT_BYTES,
   parseRunnerCommandRequest,
   invokeRustRunner,
   runnerWatchdogMs,
@@ -861,6 +863,18 @@ describe("Rust runner tool", () => {
 
   it("rejects blank runner commands before spawning the child process", () => {
     expect(() => parseRunnerCommandRequest({ command: " " })).toThrow("run_command requires");
+  });
+
+  it("clamps a model-supplied timeout / output cap to a sane maximum (no 11-day hang / memory blow-up)", () => {
+    // `timeoutMs`/`maxOutputBytes` are model-controlled with only a lower bound,
+    // so a huge value would hang the runner for days or buffer unbounded output.
+    const r = parseRunnerCommandRequest({ command: "node", timeoutMs: 999_999_999, maxOutputBytes: 5_000_000_000 } as never);
+    expect(r.timeoutMs).toBe(MAX_RUNNER_TIMEOUT_MS);
+    expect(r.maxOutputBytes).toBe(MAX_RUNNER_OUTPUT_BYTES);
+    // a reasonable value passes through unchanged
+    const ok = parseRunnerCommandRequest({ command: "node", timeoutMs: 5_000, maxOutputBytes: 1024 } as never);
+    expect(ok.timeoutMs).toBe(5_000);
+    expect(ok.maxOutputBytes).toBe(1024);
   });
 
   describe("command-line split repair (local model packs the whole line into `command`)", () => {
@@ -1742,6 +1756,27 @@ describe("parseRunnerCommandRequest — adversarial arg fuzz", () => {
       env: { LD_PRELOAD: "/tmp/evil.so", DYLD_INSERT_LIBRARIES: "/tmp/evil.dylib", LD_LIBRARY_PATH: "/tmp", DYLD_LIBRARY_PATH: "/tmp", MY_FLAG: "ok" }
     } as never);
     expect(r.env).toEqual({ MY_FLAG: "ok" });
+  });
+
+  it("drops the WHOLE code-injection env family — node/shell/interpreter/git, not just the dynamic loader", () => {
+    // Sibling-audit of the LD_/DYLD_ fix: NODE_OPTIONS=--require runs arbitrary
+    // code in `node` (the runtime Muse actually shells out to); BASH_ENV runs a
+    // script on non-interactive bash startup; GIT_SSH_COMMAND / GIT_EXTERNAL_DIFF
+    // run a command from inside git; PERL5OPT / PYTHONSTARTUP / RUBYOPT inject
+    // into those interpreters. All are valid uppercase identifiers that the
+    // format-only check let through. A normal NODE_ENV / MY_FLAG survives.
+    const r = parseRunnerCommandRequest({
+      command: "node",
+      args: ["test.mjs"],
+      env: {
+        NODE_OPTIONS: "--require /tmp/evil.js", BASH_ENV: "/tmp/evil.sh", SHELLOPTS: "xtrace",
+        GIT_SSH_COMMAND: "evil", GIT_EXTERNAL_DIFF: "evil", GIT_PAGER: "evil", GIT_PROXY_COMMAND: "evil",
+        GIT_CONFIG_GLOBAL: "/tmp/evil.gitconfig", GIT_CONFIG: "/tmp/evil",
+        PERL5OPT: "-M-evil", PYTHONSTARTUP: "/tmp/evil.py", PYTHONPATH: "/tmp", RUBYOPT: "-revil",
+        NODE_ENV: "test", MY_FLAG: "ok"
+      }
+    } as never);
+    expect(r.env).toEqual({ NODE_ENV: "test", MY_FLAG: "ok" });
   });
 });
 
