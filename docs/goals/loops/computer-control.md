@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 7 · 2026-06-21 · skill v2.0 · <commit-pending> (file_edit code-edit intent; EXPOSURE CHAIN COMPLETE)
+## fire 7 · 2026-06-21 · skill v2.0 · ea75ca36 (file_edit code-edit intent; EXPOSURE CHAIN COMPLETE)
 meta: value-class=new-capability · pkg=@muse/tools · kind=write-intent-gate · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles 1065→1065 (+1 case tools.test, mutation-valid) · fabrication 0 · file_edit 노출 fixed(probe) · eval:computer-task PASS(무회귀) · eval:multifile-fix 여전히 FAIL(노출 아닌 12B 멀티스텝) · pnpm check clean(LINE 웹훅 flaky 격리 854/854) · lint clean
 - 무엇: fire 6 REMAINING(a) 처리 — file_edit(write-risk)가 `write_without_mutation_intent` 게이트의 `isWorkspaceMutationPrompt`(워크스페이스-객체 vocab만)에 막혀 code-fix 프롬프트에 미노출. FIX: 3 힌트 리스트에 code-edit vocab 추가(workspace/target += file/source/code/bug/function+KO, mutation += fix/debug, KO += 고쳐). file_edit 노출됨(probe), tasks.add는 relevance 게이트로 여전히 차단.
