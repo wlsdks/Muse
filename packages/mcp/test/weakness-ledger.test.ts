@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { BKT_PRIOR, MAX_WEAKNESS_ENTRIES, bktUpdate, isMasteredWeakness, readWeaknesses, recordWeakness, recordWeaknessResolved, selectDevFixableWeaknesses, selectRemediableWeaknesses, topicKeyFromMessage, upsertWeakness, writeWeaknesses, type WeaknessEntry } from "../src/weakness-ledger.js";
+import { BKT_PRIOR, MAX_WEAKNESS_ENTRIES, bktUpdate, isMasteredWeakness, readWeaknesses, recordWeakness, recordWeaknessResolved, remediationHint, selectDevFixableWeaknesses, selectRemediableWeaknesses, topicKeyFromMessage, upsertWeakness, writeWeaknesses, type WeaknessEntry } from "../src/weakness-ledger.js";
 
 describe("topicKeyFromMessage — deterministic topic clustering", () => {
   it("keeps salient content words, drops filler, lowercases (EN)", () => {
@@ -181,7 +181,7 @@ describe("selectRemediableWeaknesses — the Whetstone remediation nudge (ground
     expect(out.map((w) => w.topic)).toEqual(["a", "office vpn mtu"]); // 4× then 3×, capped at 2
   });
 
-  it("excludes a single ask (count 1), a stale gap (>30d), and non-grounding axes", () => {
+  it("excludes a single ask (count 1), a stale gap (>30d), and DEV-fixable axes (Muse's own bug, not the user's)", () => {
     const out = selectRemediableWeaknesses([
       e({ topic: "asked once", count: 1 }),
       e({ topic: "old", count: 9, lastSeen: "2026-01-01T00:00:00.000Z" }),
@@ -189,6 +189,25 @@ describe("selectRemediableWeaknesses — the Whetstone remediation nudge (ground
       e({ topic: "real gap", count: 2 })
     ], { nowMs });
     expect(out.map((w) => w.topic)).toEqual(["real gap"]);
+  });
+
+  it("INCLUDES source-conflict (the user's OWN notes disagree — user-remediable) and returns each entry's axis", () => {
+    const out = selectRemediableWeaknesses([
+      e({ topic: "office address", axis: "source-conflict", count: 3 }),
+      e({ topic: "real gap", count: 2 })
+    ], { nowMs });
+    expect(out.find((w) => w.topic === "office address")?.axis).toBe("source-conflict");
+    expect(out.find((w) => w.topic === "real gap")?.axis).toBe("grounding-gap");
+    expect(out).toHaveLength(2);
+  });
+});
+
+describe("remediationHint — per-axis user-facing remediation copy", () => {
+  it("nudges 'add a note' for a grounding-gap, but 'reconcile' for a source-conflict (the actions differ)", () => {
+    expect(remediationHint("grounding-gap", "office vpn mtu")).toMatch(/add a note/i);
+    const conflict = remediationHint("source-conflict", "office address");
+    expect(conflict).toMatch(/reconcile|disagree/i);
+    expect(conflict).not.toMatch(/add a note/i);
   });
 });
 

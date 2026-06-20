@@ -212,16 +212,34 @@ export async function writeWeaknesses(file: string, entries: readonly WeaknessEn
 export interface RemediableWeakness {
   readonly topic: string;
   readonly count: number;
+  readonly axis: WeaknessAxis;
+}
+
+/** The axes the USER fixes (not Muse's bug): a `grounding-gap` (add a note) or a
+ *  `source-conflict` (their own saved notes disagree — reconcile them). */
+const USER_REMEDIABLE_AXES: ReadonlySet<WeaknessAxis> = new Set<WeaknessAxis>(["grounding-gap", "source-conflict"]);
+
+/**
+ * The user-facing remediation action for a remediable weakness, per axis — the two
+ * are DIFFERENT fixes: a `grounding-gap` means Muse has no note (add one), a
+ * `source-conflict` means two of the user's OWN saved notes give different answers
+ * (reconcile them). Single source of the copy so the recap renders each correctly.
+ */
+export function remediationHint(axis: WeaknessAxis, topic: string): string {
+  return axis === "source-conflict"
+    ? `your saved notes about "${topic}" disagree — reconcile them`
+    : `add a note about "${topic}"`;
 }
 
 /**
- * The Whetstone REMEDIATION selector: pick the recurring `grounding-gap` topics
- * — the user asked about something Muse had no note for, repeatedly — so the
- * recap can nudge "add a note and I'll answer next time". Only `grounding-gap`
- * is surfaced: it is the axis the USER can fix (by adding a note); the other
- * axes (unbacked-action, wrong-tool, time-parse) are Muse's own bugs, not the
- * user's to remediate. Filters to count ≥ minCount, seen within recentDays;
- * most-asked first; capped. Pure.
+ * The Whetstone REMEDIATION selector: pick the recurring topics the USER can fix —
+ * a `grounding-gap` (asked about something Muse had no note for, repeatedly → add a
+ * note) OR a `source-conflict` (the user's own saved notes disagree on a field →
+ * reconcile them). Both are the user's to remediate, with DIFFERENT actions (see
+ * {@link remediationHint}); the dev-fixable axes (misgrounding, unbacked-action,
+ * wrong-tool, time-parse) are Muse's OWN bugs and are excluded here (they go to
+ * {@link selectDevFixableWeaknesses}). Filters to count ≥ minCount, seen within
+ * recentDays; most-asked first; capped. Pure.
  */
 export function selectRemediableWeaknesses(
   entries: readonly WeaknessEntry[],
@@ -231,7 +249,7 @@ export function selectRemediableWeaknesses(
   const recentMs = Math.max(1, opts.recentDays ?? 30) * 86_400_000;
   const max = Math.max(1, Math.trunc(opts.maxResults ?? 3));
   return entries
-    .filter((entry) => entry.axis === "grounding-gap" && entry.count >= minCount && !isMasteredWeakness(entry))
+    .filter((entry) => USER_REMEDIABLE_AXES.has(entry.axis) && entry.count >= minCount && !isMasteredWeakness(entry))
     .filter((entry) => {
       const seen = Date.parse(entry.lastSeen);
       return Number.isFinite(seen) && opts.nowMs - seen <= recentMs;
@@ -239,7 +257,7 @@ export function selectRemediableWeaknesses(
     .slice()
     .sort((a, b) => b.count - a.count || Date.parse(b.lastSeen) - Date.parse(a.lastSeen))
     .slice(0, max)
-    .map((entry) => ({ count: entry.count, topic: entry.topic }));
+    .map((entry) => ({ axis: entry.axis, count: entry.count, topic: entry.topic }));
 }
 
 export interface DevFixableWeakness {

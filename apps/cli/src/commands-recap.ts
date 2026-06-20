@@ -1,6 +1,6 @@
 import { openLoops, overdueContacts } from "@muse/agent-core";
 import { resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, resolveWeaknessesFile } from "@muse/autoconfigure";
-import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readContacts, readEpisodes, readFollowups, readReminders, readTasks, readWeaknesses, resolveUpcomingBirthdays, selectRemediableWeaknesses } from "@muse/mcp";
+import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readContacts, readEpisodes, readFollowups, readReminders, readTasks, readWeaknesses, remediationHint, resolveUpcomingBirthdays, selectRemediableWeaknesses } from "@muse/mcp";
 import type { Command } from "commander";
 import { type Dirent, promises as fs } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -135,7 +135,7 @@ export function composeEveningRecap(input: EveningRecapInput): string {
   // Whetstone: topics you keep asking about that Muse can't answer (no note) —
   // metacognition turned into a fix you can make. Honest about its own blind spot.
   if (input.weaknesses.length > 0) {
-    lines.push("", `🔧 I keep coming up short on — add a note and I'll have it next time (${input.weaknesses.length.toString()}):`);
+    lines.push("", `🔧 I keep coming up short — a quick fix each and I'll have it next time (${input.weaknesses.length.toString()}):`);
     for (const item of input.weaknesses.slice(0, 5)) {
       lines.push(`  🔧 ${item}`);
     }
@@ -312,7 +312,7 @@ export async function gatherEveningRecap(
   try {
     const entries = await readWeaknesses(resolveWeaknessesFile(env));
     for (const gap of selectRemediableWeaknesses(entries, { maxResults: 3, nowMs: now.getTime() })) {
-      weaknesses.push(`${gap.topic} (asked ${gap.count.toString()}×)`);
+      weaknesses.push(`${remediationHint(gap.axis, gap.topic)} (asked ${gap.count.toString()}×)`);
     }
   } catch { /* fail-soft — no ledger */ }
   return { comingUp, goneQuiet, now, openFollowups, openLoops: openLoopLines, performedToday, reconnect, sessionsToday, slipping, weaknesses };

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { appendActionLog, writeContacts, writeEpisodes, writeTasks } from "@muse/mcp";
+import { appendActionLog, recordWeakness, writeContacts, writeEpisodes, writeTasks } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -27,9 +27,9 @@ describe("composeEveningRecap — deterministic evening digest", () => {
   });
 
   it("surfaces a Whetstone remediation nudge for recurring grounding gaps", () => {
-    const out = composeEveningRecap(base({ weaknesses: ["office vpn mtu (asked 3×)"] }));
-    expect(out).toContain("🔧 I keep coming up short on");
-    expect(out).toContain("office vpn mtu (asked 3×)");
+    const out = composeEveningRecap(base({ weaknesses: ["add a note about \"office vpn mtu\" (asked 3×)"] }));
+    expect(out).toContain("🔧 I keep coming up short");
+    expect(out).toContain("office vpn mtu");
   });
 
   it("renders the retrospective (actions + sessions), what's coming up, and open follow-ups", () => {
@@ -104,6 +104,25 @@ describe("gatherEveningRecap — overdue detection (the absence signal)", () => 
     expect(input.slipping.some((s) => s.includes("Pay rent"))).toBe(true);
     expect(input.slipping.some((s) => s.includes("Future thing"))).toBe(false);
     expect(input.slipping.some((s) => s.includes("Done thing"))).toBe(false);
+  });
+
+  it("surfaces a recurring source-conflict (the user's OWN notes disagree) as a RECONCILE nudge — not 'add a note' (G1: the unsurfaced axis now reaches the recap)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-recap-conflict-"));
+    const wfile = join(dir, "weaknesses.json");
+    const now = new Date("2026-06-04T21:00:00");
+    const iso = new Date(now.getTime() - 86_400_000).toISOString();
+    await recordWeakness(wfile, { axis: "source-conflict", message: "what's my office address?", nowIso: iso });
+    await recordWeakness(wfile, { axis: "source-conflict", message: "office address", nowIso: iso });
+    const env: Record<string, string | undefined> = {
+      MUSE_WEAKNESSES_FILE: wfile,
+      MUSE_ACTION_LOG_FILE: join(dir, "a.json"), MUSE_EPISODES_FILE: join(dir, "e.json"),
+      MUSE_FOLLOWUPS_FILE: join(dir, "f.json"), MUSE_REMINDERS_FILE: join(dir, "r.json"), MUSE_TASKS_FILE: join(dir, "t.json")
+    };
+    const input = await gatherEveningRecap(env, now);
+    const conflict = input.weaknesses.find((w) => /office address/.test(w));
+    expect(conflict).toBeDefined();
+    expect(conflict).toMatch(/reconcile|disagree/);
+    expect(conflict).not.toMatch(/add a note/);
   });
 
   it("counts a task COMPLETED today as a 'got done' accomplishment (not only action-log entries)", async () => {

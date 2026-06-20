@@ -979,6 +979,7 @@ export {
   readWeaknesses,
   recordWeakness,
   recordWeaknessResolved,
+  remediationHint,
   selectDevFixableWeaknesses,
   selectRemediableWeaknesses,
   topicKeyFromMessage,
