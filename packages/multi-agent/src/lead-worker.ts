@@ -260,6 +260,19 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
     const priorContext = sequenced
       ? executions.flatMap((e) => (e.status === "completed" && e.output ? [e.output] : []))
       : [];
+    // A SEQUENCED dependent step (any step after the first) whose EVERY upstream step
+    // failed/ungrounded has NOTHING to act on — running it blind fabricates a confident
+    // result from an absent dependency (MAST reasoning-action mismatch / information
+    // withholding). Fail-close it instead of executing the worker. The first step (no
+    // priors by design) always runs; an INDEPENDENT list never reaches this branch.
+    if (sequenced && executions.length > 0 && priorContext.length === 0) {
+      executions.push({
+        error: "upstream sequenced step(s) failed — dependent step not run blind (fail-close)",
+        status: "failed",
+        subtask
+      });
+      continue;
+    }
     executions.push(await runOne(subtask, deps, priorContext.length > 0 ? priorContext : undefined));
   }
 
