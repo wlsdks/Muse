@@ -252,3 +252,26 @@ ratchet: testFiles +0 (extended existing) · tools 272 pass · agent-core 2512 p
 - lesson(carry-forward): the durable fix for a hand-mirrored-logic FAIL (fire 5) is to DELETE
   the mirror (share one SoT), not re-align the copies — then the drift class is impossible,
   and a mutation to the SoT propagating to the consumer's test is the structural proof.
+
+## fire 8 · 2026-06-20 · skill v2.0.0 · a056e546
+meta: value-class=micro-fix · pkg=@muse/recall · kind=source-budget-overshoot · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles +0 (extended existing) · recall 353 pass · pnpm check exit0 · pnpm lint exit0 · fabrication 0 · self-eval green
+- **What:** Fixed the per-source char-budget overshoot in `selectFilePassages` (@muse/recall).
+  The admission loop checked `if (budget<=0) break` BEFORE pushing then subtracted the
+  passage length → it admitted a full extra chunk (~1200 chars) whenever ANY budget
+  remained. Now `if (passage.text.length > budget && picked.length > 0) continue;` — a
+  passage is admitted only if it FITS, with a top-1 floor so a single relevant oversized
+  passage is still returned (grounding never starved to empty).
+- **Why:** the `--file`/`--url`/clipboard grounding budget was a soft "stop after I'm over",
+  violating the function's own "never blow the small model's context" docstring. Budget-aware
+  greedy selection = admit only while it fits (AdaGReS arXiv:2512.25052; Context→EDUs
+  arXiv:2512.14244; ContextBudget arXiv:2604.01664 names the overflow→truncation failure).
+  hermes truncates AFTER concatenation (same overshoot class, unfixed); openclaw recency/summary
+  with no per-source budget → Muse's fit-before-admit ceiling widens the deterministic edge.
+- **Review point:** deterministic proof (no Ollama) — Test A asserts total ≤ budget, Test B
+  asserts the top-1 floor returns the lone relevant oversize passage (never empty).
+- **Risk:** none to floor — passages stay VERBATIM, original file order; the fix only TIGHTENS
+  (returns ≤ before), never adds/fabricates; top-1 floor prevents starving a real source.
+  Independent Opus adaptive judge PASS 7/7 + mutation RED→GREEN (revert guard→overshoot RED;
+  drop floor→empty RED). Sibling audit: only char-budget loop in recall (count-capped selectors
+  use slice(0,n), no overshoot class).
