@@ -1,5 +1,5 @@
 import { describeImage, extractStructuredFromImage } from "@muse/agent-core";
-import type { JsonObject } from "@muse/shared";
+import type { JsonObject, JsonValue } from "@muse/shared";
 import type { ModelProvider } from "@muse/model";
 
 /**
@@ -62,6 +62,57 @@ const KIND_EXTRACT: Record<"event" | "receipt" | "contact" | "document", { schem
     schema: { properties: { date: { type: "string" }, merchant: { type: "string" }, total: { type: "string" } }, required: ["merchant"], type: "object" }
   }
 };
+
+// Per-kind REQUIRED field names, DERIVED from the same KIND_EXTRACT schemas the
+// extraction uses — a single source, so the blocking/droppable split can never
+// diverge from what the schema (and route gate) actually demands.
+const REQUIRED_FIELDS: Record<VisionActionKind, ReadonlySet<string>> = {
+  contact: new Set((KIND_EXTRACT.contact.schema.required as string[] | undefined) ?? []),
+  document: new Set((KIND_EXTRACT.document.schema.required as string[] | undefined) ?? []),
+  event: new Set((KIND_EXTRACT.event.schema.required as string[] | undefined) ?? []),
+  other: new Set<string>(),
+  receipt: new Set((KIND_EXTRACT.receipt.schema.required as string[] | undefined) ?? [])
+};
+
+/**
+ * Partition a gated action's `unverified` fields into REQUIRED (blocking) vs
+ * OPTIONAL (droppable). A required field that couldn't be grounded blocks the
+ * WHOLE action (the grounded core is meaningless without it). An un-grounded
+ * OPTIONAL field is droppable — the caller strips it and applies the grounded
+ * core, so a hallucinated `date` never blocks a grounded `merchant`+`total`.
+ * Fabrication floor: a droppable field is DROPPED (never persisted), not kept.
+ */
+export function splitUnverified(action: VisionAction): { droppable: string[]; blocking: string[] } {
+  const required = REQUIRED_FIELDS[action.kind];
+  const blocking: string[] = [];
+  const droppable: string[] = [];
+  for (const name of action.unverified) {
+    (required.has(name) ? blocking : droppable).push(name);
+  }
+  return { blocking, droppable };
+}
+
+/**
+ * Strip un-grounded OPTIONAL field(s) and RECOMPOSE the action deterministically
+ * by re-shaping the surviving fields through `shapeVisionAction` — so any DERIVED
+ * string (the receipt `note`, the document `note`/`path`, the draft text) is
+ * rebuilt WITHOUT the dropped value, guaranteeing it can never leak into the
+ * persisted output. Re-gates so `unverified` reflects only the survivors.
+ */
+export function dropUnverifiedOptional(action: VisionAction, droppable: readonly string[]): VisionAction {
+  if (droppable.length === 0) {
+    return action;
+  }
+  const drop = new Set(droppable);
+  const surviving: Record<string, JsonValue> = { kind: action.kind };
+  for (const [name, value] of Object.entries(action.fields)) {
+    if (!drop.has(name) && !DERIVED_FIELDS.has(name)) {
+      surviving[name] = value;
+    }
+  }
+  const reshaped = shapeVisionAction(surviving);
+  return { ...reshaped, unverified: action.unverified.filter((name) => !drop.has(name)) };
+}
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined);
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fieldIsGrounded, gateVisionAction, normalizeStartsAt, shapeVisionAction } from "./vision-actions.js";
+import { dropUnverifiedOptional, fieldIsGrounded, gateVisionAction, normalizeStartsAt, shapeVisionAction, splitUnverified } from "./vision-actions.js";
 
 describe("shapeVisionAction", () => {
   it("routes an event with title+startsAt to the calendar", () => {
@@ -96,6 +96,57 @@ describe("gateVisionAction — grounding gate over a shaped action", () => {
 
   it("does not gate a non-routed action", () => {
     expect(gateVisionAction(shapeVisionAction({ kind: "other" }), undefined).unverified).toEqual([]);
+  });
+});
+
+describe("splitUnverified — field-level fail-close (REQUIRED blocks, OPTIONAL drops)", () => {
+  it("DROPPABLE: a receipt with grounded merchant+total but an un-grounded date drops the date only", () => {
+    // merchant+total visible, date hallucinated (absent from evidence).
+    const action = shapeVisionAction({ date: "2026-06-99", kind: "receipt", merchant: "Cafe Muse", total: "12,400" });
+    const gated = gateVisionAction(action, "Cafe Muse\nTotal: 12,400 KRW");
+    expect(gated.unverified).toEqual(["date"]);
+    const split = splitUnverified(gated);
+    expect(split).toEqual({ blocking: [], droppable: ["date"] });
+
+    // Recompose drops the date — and it must NOT leak into the persisted note/body.
+    const applied = dropUnverifiedOptional(gated, split.droppable);
+    expect(applied.fields.date).toBeUndefined();
+    expect(String(applied.fields.note)).toBe("Expense — Cafe Muse: 12,400");
+    expect(String(applied.fields.note)).not.toContain("2026-06-99");
+    expect(applied.draftText).not.toContain("2026-06-99");
+    expect(applied.unverified).toEqual([]);
+  });
+
+  it("BLOCKING: a receipt whose REQUIRED merchant is un-grounded blocks the whole action", () => {
+    const action = shapeVisionAction({ kind: "receipt", merchant: "Starbucks", total: "12,400" });
+    const gated = gateVisionAction(action, "Cafe Muse\nTotal: 12,400 KRW");
+    expect(gated.unverified).toContain("merchant");
+    const split = splitUnverified(gated);
+    expect(split.blocking).toContain("merchant");
+    expect(split.blocking.length).toBeGreaterThan(0);
+  });
+
+  it("EMPTY: a fully-grounded action splits to empty/empty and recomposes unchanged", () => {
+    const action = shapeVisionAction({ date: "2026-06-07", kind: "receipt", merchant: "Cafe Muse", total: "12,400" });
+    const gated = gateVisionAction(action, "Cafe Muse\nTotal: 12,400 KRW\nDate: June 7, 2026");
+    expect(splitUnverified(gated)).toEqual({ blocking: [], droppable: [] });
+    expect(dropUnverifiedOptional(gated, [])).toBe(gated);
+  });
+
+  it("EVENT kind: REQUIRED title/startsAt block; OPTIONAL location/notes drop (required-map is not receipt-only)", () => {
+    // title+startsAt grounded, location hallucinated.
+    const action = shapeVisionAction({ kind: "event", location: "Busan", startsAt: "2026-07-18", title: "Jazz Night" });
+    const gated = gateVisionAction(action, "Jazz Night — 2026-07-18 at Seoul Hall");
+    expect(gated.unverified).toEqual(["location"]);
+    expect(splitUnverified(gated)).toEqual({ blocking: [], droppable: ["location"] });
+    const applied = dropUnverifiedOptional(gated, ["location"]);
+    expect(applied.fields.location).toBeUndefined();
+    expect(applied.draftText).not.toContain("Busan");
+    expect(applied.route).toBe("calendar");
+
+    // An un-grounded REQUIRED startsAt blocks.
+    const hall = gateVisionAction(shapeVisionAction({ kind: "event", startsAt: "2099-01-01", title: "Jazz Night" }), "Jazz Night — 2026-07-18");
+    expect(splitUnverified(hall).blocking).toContain("startsAt");
   });
 });
 

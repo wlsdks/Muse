@@ -1557,14 +1557,14 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         }
         const img = imageAttachments[0]!;
         if (options.auto) {
-          const { classifyVisionAction, normalizeStartsAt } = await import("./vision-actions.js");
+          const { classifyVisionAction, normalizeStartsAt, splitUnverified, dropUnverifiedOptional } = await import("./vision-actions.js");
           const action = await classifyVisionAction(assembly.modelProvider, { imageBase64: img.dataBase64, mimeType: img.mimeType, model });
           if ("ok" in action && action.ok === false) {
             io.stderr(`muse ask --auto: ${action.error}\n`);
             process.exitCode = 1;
             return;
           }
-          const act = action as import("./vision-actions.js").VisionAction;
+          let act = action as import("./vision-actions.js").VisionAction;
           io.stdout(`${act.draftText}\n`);
           if (act.route === "none") {
             return;
@@ -1573,13 +1573,21 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
             io.stdout("\n(draft only — re-run with --apply to perform it)\n");
             return;
           }
-          // Grounding gate (fail-close): a field that couldn't be confirmed against
-          // an independent transcription of the image is a fabrication risk, so we
-          // refuse the autonomous write — the user verifies and corrects first.
-          if (act.unverified.length > 0) {
-            io.stderr(`\n⚠ not applied — these field(s) couldn't be verified against the image: ${act.unverified.join(", ")}. Check them and correct the source, then re-run.\n`);
+          // Grounding gate (fail-close, field-level): a field that couldn't be
+          // confirmed against an independent transcription of the image is a
+          // fabrication risk. A REQUIRED un-grounded field blocks the WHOLE action
+          // (the grounded core is meaningless without it). An OPTIONAL un-grounded
+          // field is DROPPED — the action recomposes WITHOUT it (the dropped value
+          // is never persisted) and the grounded core still applies.
+          const { blocking, droppable } = splitUnverified(act);
+          if (blocking.length > 0) {
+            io.stderr(`\n⚠ not applied — these field(s) couldn't be verified against the image: ${blocking.join(", ")}. Check them and correct the source, then re-run.\n`);
             process.exitCode = 1;
             return;
+          }
+          if (droppable.length > 0) {
+            act = dropUnverifiedOptional(act, droppable);
+            io.stdout(`\nℹ dropped unverified optional field(s) — applying the grounded core only: ${droppable.join(", ")}\n`);
           }
           const env = process.env as MuseEnvironment;
           let result: unknown;
