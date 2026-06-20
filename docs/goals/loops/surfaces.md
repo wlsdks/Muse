@@ -491,7 +491,7 @@ ratchet: desktop swift tests 71/71 (+1) · fabrication 0 · self-eval exit 0 · 
 - **리스크**: 없음(헬퍼 추가 + 콜사이트 1줄, 전체 desktop 71/71 무회귀, self-eval exit 0, 독립 Opus ④b judge가 mutation 이빨·경계값·NaN 안전·무접촉 검증 후 PASS).
 - **운영 메모**: 이 fire는 세션-cron `c5b90c94`가 같은 워크트리에서 동시 fire를 돌려 사고성 merge 커밋을 냄(코드는 무사). cron 삭제 + 수동 진행으로 전환 → 이후 fire는 수동.
 
-## fire 55 · 2026-06-20 · skill v2.0.0 · (pending)
+## fire 55 · 2026-06-20 · skill v2.0.0 · 7b2f708c
 meta: surface=web · value-class=micro-fix · pkg=@muse/web · kind=dashboard-percentage-correctness · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles +1 · web tests 56/56 (+6) · fabrication 0 · self-eval exit 0 · 표면 균형 web24·desktop13·cli18
 
