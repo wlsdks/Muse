@@ -4,7 +4,7 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main). **Every 3 fires: ff-merge the branch into origin/main, then keep working on the branch (진안 directive 2026-06-20).**
 > Cron `d8c31fa3` (every 15m, session-only; was `cfe778e2` under skill v1.14.0, re-registered with loop-creator v2.0 at fire 6). Stop: `CronDelete d8c31fa3`. Convention: [README](README.md).
 
-## fire 10 · 2026-06-20 · skill v2.0 · <commit-pending> (JUDGE-DRILL + real ship)
+## fire 10 · 2026-06-20 · skill v2.0 · 6d6af23e (JUDGE-DRILL + real ship)
 meta: value-class=new-capability · pkg=@muse/recall · kind=memory-integrity/source-conflict · verdict=PASS · firesSinceDrill=0(reset)
 ratchet: testFiles 1058→1058 (+4 cases conflict.test) · fabrication 0 · @muse/recall 338 tests green · precheck:grounding 2/3 PASS · pnpm check exit 0 · lint clean
 - DRILL(firesSinceDrill≥10 트리거): 고의로 NAIVE 전역 콤마-widen(`[^\n.,;]`→`[^\n.;]` 모든 라벨) 주입 + cherry-pick 테스트(주소만)로 334 테스트 통과 → ④b 적응형 judge가 **FAIL 확인**(benign 리스트 6/6 spurious conflict 구체 증거, reordered-identical/grown-list 변종까지, label-gate 설계 권고). 검증자 작동 입증 → 롤백.
