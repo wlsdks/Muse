@@ -200,3 +200,13 @@ ratchet: testFiles=1067 (eviction tests in existing authored-skill-store.test.ts
 - **왜:** 스토어가 이미 usage(recordUsage→lastUsedAt)를 기록하는데 enforceCap만 무시 → 자주 쓴 old 스킬이 never-used 신규보다 먼저 archive되는 결함(SkillOps arXiv:2605.13716 utility-retire; TinyLFU arXiv:1512.00727 value-aware eviction). usage 없으면 lastActiveAt=authoredAt라 FIFO로 정확히 degrade(strict superset).
 - **리뷰지점:** ④b 독립 Opus judge PASS — OUTCOME+mutation 진짜(end-to-end가 FIFO와 discriminating: USED old alpha 생존) · **no-regression EXACT**(all-unused→authoredAt asc=옛 FIFO, 기존 cap 테스트 통과) · eviction count/name-Set 정확(writeOrPatch가 authored-name 유일성 강제) · used는 never-used보다 먼저 evict 불가 · non-destructive(archive). 다양성: @muse/skills(이 루프 첫 접촉, fresh 표면).
 - **리스크:** 낮음 — archive(삭제 아님), bundled 스킬 무관(listAuthored만), usage 없으면 옛 동작과 동일. nit(judge): hasUsage가 metadata.muse를 lastActiveAt와 따로 재파싱(무해).
+
+## fire 16 · 2026-06-21 · skill v2.0.0 · (scout + DECOMPOSE-ON-DEFER)
+meta: value-class=decompose · pkg=@muse/memory(scouted) · kind=verify-before-build/decompose · verdict=SCOUT · firesSinceDrill=6
+ratchet: testFiles=1068 · fabrication 0 · gates: self-eval ok (no code) · merge-to-main: n/a (fire 16 ≠ ×3, next at 18)
+
+- **무엇:** Opus 스카웃 top pick(memory UPDATE refine-vs-contradict)을 verify-before-build로 검증 → **핵심이 mostly-stale**: contested/volatility 신호는 `refinementAwareDistinctValueCount`(token-subset)로 *이미* refinement-aware(스카웃이 distinctValueCount 경로를 collectFactSupersessions와 혼동). 남은 건 factHistory 타임라인 labeling뿐인데, refinement를 그냥 드롭하면 elaboration history 손실이라 debatable + LABEL 방식은 >1-fire(memory interface+2 store persist+cli renderer). → 가짜/debatable 슬라이스 빌드 거부, 진짜 남은 항목 2개를 loop-sized ◦로 decompose해 backlog 기록(factHistory-kind-labeling a/b · playbook-injected-id-credit a/b/c).
+- **왜:** DECOMPOSE-ON-DEFER + verify-before-build. green 게이트≠옳음 — 스카웃 arXiv가 진짜여도 seam이 이미 채워졌을 수 있어 코드 확인이 필수(fire 14에서도 stale 2건). 빌드 안 한 게 옳음(debatable factHistory 제거는 ④b judge가 FAIL할 변경).
+- **리뷰지점:** maker≠judge 정신으로 스카웃 주장을 독립 코드-확인 — refinementAwareDistinctValueCount가 실제로 token-subset 제외하는지 sed로 확인. 다음 fire는 backlog의 decomposed ◦(factHistory-kind a 또는 playbook-credit a)부터, fresh-context cron fire가 적합.
+- **리스크:** 없음(코드 무변경). 단 main이 inherit한 byte-hygiene RED(`commands-logo.test.ts`, 다른 루프 mascot 커밋)로 `pnpm check` 전체는 RED — 내 fires와 무관, 그 루프가 고칠 것(안 건드림: cross-loop 충돌 회피).
+- **lesson:** 논문-스카웃 pick은 빌드 전 *그 seam이 이미 부분구현됐는지* 코드로 검증 — arXiv-real ≠ Muse-empty. 스카웃이 "X 신호가 갱신된다"고 주장하면 그 신호의 *실제 계산 경로*를 grep해 이미 처리됐는지 확인(distinctValueCount는 supersession-log이 아닌 별도 token-subset 경로).
