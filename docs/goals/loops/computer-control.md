@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 23 · 2026-06-21 · skill v2.0 · <commit-pending> (run_command spawn-failure → actionable message; pkg pivot off @muse/fs)
+## fire 23 · 2026-06-21 · skill v2.0 · 14ca9d49 (run_command spawn-failure → actionable message; pkg pivot off @muse/fs)
 meta: value-class=new-capability · pkg=crates/runner · kind=reliability-nudge · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles 1071→1071 (+1 cargo test crates/runner; TS 무변경) · fabrication 0 · crates/runner cargo 10 · @muse/tools 격리 289(무회귀) · lint clean
 - 무엇: Rust runner가 spawn 실패에 raw `"failed to spawn command: No such file or directory (os error 2)"` 반환 → 12B가 오타 vs 미설치 구분 불가. FIX(`describe_spawn_error`): `ErrorKind::NotFound`→`"command '<cmd>' not found — not installed or not on PATH; check the name."`, `PermissionDenied`→`"… not executable (permission denied)."`, 그외→원본 generic. `run_request` spawn Err arm에 배선; TS는 `error` 그대로 전달(무편집).
