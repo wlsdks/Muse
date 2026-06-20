@@ -281,3 +281,13 @@ ratchet: testFiles=1071 · fabrication 0 · gates: mcp 1884 + cli build clean + 
 - **리뷰지점:** ④b 독립 Opus PASS — outcome real(현실값 21d/sup3=1.216 > 1d/sup1=1.177도 flip, mutation: recency-only→RED) · salience-vs-relevance 정직(old도 query-filter 없는 top-5였으니 새 off-topic 리스크 없음, new가 retention과 정합·salience는 +1로 saturate해 ancient가 무한 우세 못함) · sibling-complete(ask=유일 recall; commands-brief는 자체 supportCount selector·display/synthesis 경로 정확). 다양성: @muse/mcp reflection(fresh pkg).
 - **리스크:** 낮음 — 이미 RGV-grounded reflection 재정렬만(fabrication 무관), listReflections 불변(디스플레이 무영향), Date.now()는 정상 런타임. nit(judge): selectRetained와 sort 식 중복(무해, 독립가변 유지).
 - **lesson:** 메커니즘을 표면별로 형제-감사 — RETENTION을 salience-aware로 고치면 그 결과를 *소비하는* RECALL/DISPLAY 표면도 같은 신호를 쓰는지 확인(retain≠surface). 보존정책과 표면화정책의 신호 일치가 핵심.
+
+## fire 24 · 2026-06-21 · skill v2.0.0 · `35bd3dd9`
+meta: value-class=new-capability · pkg=@muse/skills · kind=skill-authoring dedup (research-grounded) · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles=1071 · fabrication 0 · gates: skills 70/70 + cli build clean + check(유일 실패=model web-search-policy property-fuzz=fires 19/21 동일 flaky, 격리 16/16 통과; +1 api timeout saturation; skills 무관) + self-eval ok + lint · merge-to-main: fires 22-24 (this fire, ×3)
+
+- **무엇:** Skill 작성 write-time SUBSUMPTION dedup — `writeOrPatch`가 name+description Jaccard만 보고 **body 미비교**라, fresh name이지만 procedure-body가 기존 스킬의 부분집합인 draft가 near-dup으로 author되던 걸(curator가 나중 idle비용 정리), `skillBodyIsSubsumed`(directional containment |draft∩existing|/|draft| ≥0.85)로 write 시점 skip.
+- **왜:** Voyager skill-library novelty gate(arXiv:2305.16291) — 스킬 추가를 라이브러리 novelty로 게이트. directional이라 richer SUPERSET 신규는 절대 억제 안 함, fail-open(빈 body→write 허용), non-destructive(skip, mutate 없음).
+- **리뷰지점:** verify-before-build이 seam 비어있음 확인(writeOrPatch가 정말 body 무시). ④b 독립 Opus PASS — outcome real(테스트의 name+desc Jaccard=0.0 확인→새 body 경로 진짜 행사, mutation: gate 제거→skip 테스트 RED) · false-skip bounded(짧은 draft 꼬리만, 0.85 보수적, recoverable·non-destructive) · sibling-complete(writeOrPatch 단일 write seam·consolidate는 post-hoc). 다양성: @muse/skills authoring-dedup(fire15는 eviction, 다른 kind).
+- **리스크:** 낮음 — subtractive(redundant write 보류만, fabrication 무관), risk-scan quarantine 먼저 실행 불변, enforceCap 우회 없음. nit(judge): consolidate umbrella write의 저확률 subsumption-skip 상호작용 → backlog ◦.
+- **lesson:** 연구-스카웃 pick은 빌드 전 seam 비어있음을 코드로 확인(fires 14/16 stale 교훈) — 이번엔 reflection-synthesis "≥2 source" 후보가 *이미 빌드됨*(DEFAULT_MIN_SUPPORT=2)이라 스카웃이 그 표면 기각하고 빈 seam(skill body dedup)으로 정확히 안내. 대칭 Jaccard match는 directional subset 관계를 표현 못 함 → containment가 별도 신호.
