@@ -53,6 +53,16 @@ export interface FsWriteToolsOptions extends PathSafetyOptions {
    */
   readonly wasPathRead?: (canonicalPath: string) => boolean;
   /**
+   * Stricter read-before-OVERWRITE grounding: file_write replaces a file's WHOLE
+   * contents, so a partial `file_grep` "read" (which also marks `wasPathRead`)
+   * is not enough — the model could overwrite an existing file having seen only
+   * the matched lines, silently dropping the rest. When provided, file_write's
+   * overwrite of an existing file requires a FULL read (this returns true; the
+   * CLI wires it to a set only `file_read` fills, NOT `file_grep`). Absent ⇒
+   * file_write falls back to `wasPathRead` (back-compat).
+   */
+  readonly wasPathFullyRead?: (canonicalPath: string) => boolean;
+  /**
    * Edit-integrity grounding: when true, file_edit / file_multi_edit fail-close
    * on a destructive edit (deletes a definition / unbalances delimiters) BEFORE
    * writing, so a small model's botched edit becomes a guided retry instead of a
@@ -368,12 +378,17 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
         const exists = info !== undefined;
         // Read-before-OVERWRITE: replacing an EXISTING file's whole contents is a
         // mutation of content the model must have grounded in — fail-close unless
-        // it read the file first, exactly as editExecutor does. Creating a NEW
-        // file needs no prior read (there is nothing to ground / lose).
-        if (exists && options.wasPathRead && !options.wasPathRead(safe)) {
+        // it read the file first. A whole-file overwrite needs a FULL read
+        // (`wasPathFullyRead`); a partial `file_grep` match (which also satisfies
+        // `wasPathRead`, for the grep->edit loop) is NOT enough, or the model
+        // could drop every unmatched line. Falls back to `wasPathRead` when the
+        // caller doesn't track full reads separately. Creating a NEW file needs
+        // no prior read (nothing to ground / lose).
+        const wasRead = options.wasPathFullyRead ?? options.wasPathRead;
+        if (exists && wasRead && !wasRead(safe)) {
           return {
             path: safe,
-            reason: "ungrounded overwrite — read the file with file_read before overwriting an existing file (Muse only replaces a file it has actually read)",
+            reason: "ungrounded overwrite — read the FULL file with file_read before overwriting an existing file (a partial grep is not enough; Muse only replaces a file it has actually read)",
             written: false
           };
         }

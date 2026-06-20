@@ -41,6 +41,27 @@ describe("file_read / file_list / file_grep", () => {
       expect(out["truncated"]).toBe(true);
     });
 
+    it("a COMPLETE read fires onFullRead; a truncated (offset/limit) read does NOT", async () => {
+      await writeFile(join(root, "n.txt"), "a\nb\nc\nd\ne");
+      const full: string[] = [];
+      const fullTool = createFileReadTool({ ...opts(), onFullRead: (p) => full.push(p) });
+      await fullTool.execute({ path: join(root, "n.txt") }, ctx);
+      expect(full).toHaveLength(1);
+
+      const partial: string[] = [];
+      const partialTool = createFileReadTool({ ...opts(), onFullRead: (p) => partial.push(p) });
+      await partialTool.execute({ limit: 2, path: join(root, "n.txt") }, ctx);
+      expect(partial).toHaveLength(0);
+
+      // An OFFSET-skipped read sees the TAIL only (truncated=false but lines
+      // before `offset` unseen) — it is NOT a full read.
+      const skipped: string[] = [];
+      const skippedTool = createFileReadTool({ ...opts(), onFullRead: (p) => skipped.push(p) });
+      const out = (await skippedTool.execute({ offset: 4, path: join(root, "n.txt") }, ctx)) as JsonObject;
+      expect(out["truncated"]).toBe(false);
+      expect(skipped).toHaveLength(0);
+    });
+
     it("resolves a NAME fragment within the doc roots to the newest match", async () => {
       await writeFile(join(root, "invoice-old.md"), "old");
       await writeFile(join(root, "invoice-new.md"), "newest invoice body");
@@ -202,6 +223,16 @@ describe("file_read / file_list / file_grep", () => {
       const tool = createFileGrepTool({ ...opts(), onPathRead: (p) => seen.push(p) });
       await tool.execute({ mode: "content", path: root, pattern: "dentist" }, ctx);
       expect(seen.some((p) => p.endsWith("z.md"))).toBe(true);
+    });
+
+    it("content mode marks READ but NOT FULLY-READ — a partial grep cannot ground a whole-file overwrite", async () => {
+      await writeFile(join(root, "z.md"), "alpha\nbeta dentist\ngamma");
+      const read: string[] = [];
+      const full: string[] = [];
+      const tool = createFileGrepTool({ ...opts(), onFullRead: (p) => full.push(p), onPathRead: (p) => read.push(p) });
+      await tool.execute({ mode: "content", path: root, pattern: "dentist" }, ctx);
+      expect(read.some((p) => p.endsWith("z.md"))).toBe(true);
+      expect(full).toHaveLength(0);
     });
 
     it("files mode does NOT mark read (no content shown to ground an edit)", async () => {

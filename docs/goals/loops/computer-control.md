@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 14 · 2026-06-21 · skill v2.0 · <commit-pending> (full-read gate for overwrite — grep/offset can't ground it)
+meta: value-class=new-capability · pkg=@muse/fs+apps/cli · kind=grounding-gate · verdict=PASS(judge2) · firesSinceDrill=4
+ratchet: testFiles 1069→1069 (+3 cases fs read/write, mutation-valid) · fabrication 0 · @muse/fs 격리 131 통과 · eval:computer-task PASS(무회귀) · pnpm check exit 0 · lint clean
+- 무엇: fire-13 refine — overwrite 게이트가 `wasPathRead`(file_grep도 set)로 만족돼, grep 몇 줄 보고 file_write로 전체 overwrite=안 본 줄 손실. FIX: 더 엄격한 `wasPathFullyRead`(overwrite는 `wasPathFullyRead ?? wasPathRead`); file_read만 `onFullRead`를 **COMPLETE read에만**(`start===0 && !truncated`) 발화, file_grep 미발화. file_edit/multi_edit 불변(grep→edit 유지). CLI 2nd set 배선.
+- 왜: read PRESENCE ≠ read COMPLETENESS — "전체 봤다" 게이트는 처음(start===0)부터 끝(!truncated)까지 확인해야. 테마 fabrication=0를 부분-grounding으로부터 보호.
+- 리뷰지점: **maker≠judge가 REAL 슬라이스에서 작동** — ④b judge#1이 FAIL(첫 impl이 `!truncated`만 게이트 → offset:96 read가 truncated=false로 hole 재개방) → 정확한 fix(`start===0 && !truncated`)+offset 테스트 → ④b judge#2(독립) PASS(offset 닫힘, edge 전부, 무회귀, 131/131). mutation-valid(write: partial-grep→fail-close; read: complete→발화, limit/offset/grep→미발화).
+- 리스크: 낮음 — overwrite 게이트만 강화(edit/create/back-compat 불변), 3 onFullRead 사이트만 정확 게이트. ④b#2 PASS.
+lesson: **게이팅 verifier가 드릴 아닌 실제 슬라이스의 결함을 잡음**(judge#1이 offset boundary hole 적발)= maker≠judge 보상통제의 실전 가치. 교훈 자체: read PRESENCE≠COMPLETENESS, `!truncated`는 "뒤 내용 없음"이지 "전체 봄" 아님(offset-skip이 반례). 게이트는 boundary를 양끝 다 확인.
+
 ## fire 13 · 2026-06-21 · skill v2.0 · 982b4f06 (read-before-OVERWRITE gate on file_write — fabrication=0 hole)
 meta: value-class=new-capability · pkg=@muse/fs · kind=grounding-gate · verdict=PASS · firesSinceDrill=3
 ratchet: testFiles 1068→1068 (+3 cases fs-write-tools, mutation-valid) · fabrication 0 · @muse/fs 격리 127 통과 · eval:computer-task PASS(무회귀, file_edit 경로라 무관) · pnpm check=박스포화(@muse/mcp crypto 5-55s 타임아웃, @muse/fs 격리 green) · lint clean
