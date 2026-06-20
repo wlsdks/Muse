@@ -454,7 +454,7 @@ export function createFileEditTool(options: FsWriteToolsOptions, policyPromise?:
         required: ["path", "old_string", "new_string"],
         type: "object"
       },
-      keywords: ["file", "edit", "replace", "change", "modify", "파일", "수정", "바꿔", "고쳐"],
+      keywords: ["file", "edit", "replace", "change", "modify", "파일", "수정", "바꿔", "고쳐", "code", "source", "bug", "fix"],
       name: "file_edit",
       risk: "write"
     },
@@ -503,7 +503,7 @@ export function createFileMultiEditTool(options: FsWriteToolsOptions, policyProm
         required: ["path", "edits"],
         type: "object"
       },
-      keywords: ["file", "edit", "edits", "replace", "multiple", "파일", "수정", "여러", "일괄"],
+      keywords: ["file", "edit", "edits", "replace", "multiple", "파일", "수정", "여러", "일괄", "code", "source", "bug", "fix"],
       name: "file_multi_edit",
       risk: "write"
     },
