@@ -4,6 +4,14 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main). **Every 3 fires: ff-merge the branch into origin/main, then keep working on the branch (진안 directive 2026-06-20).**
 > Cron `d8c31fa3` (every 15m, session-only; was `cfe778e2` under skill v1.14.0, re-registered with loop-creator v2.0 at fire 6). Stop: `CronDelete d8c31fa3`. Convention: [README](README.md).
 
+## fire 8 · 2026-06-20 · skill v2.0 · <commit-pending>
+meta: value-class=micro-fix · pkg=@muse/memory · kind=memory-integrity/spurious-write · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles 1057→1057 (+2 cases memory-operation.test) · fabrication 0 · @muse/memory 456 tests green · pnpm check exit 0 · lint clean
+- 무엇: `classifyMemoryOperation`이 `existing===undefined`(저장된 적 없는 키)여도 retraction 토큰이면 "delete" 반환 → auto-extract가 없는 키에 `store.forget()`를 호출(File/Kysely 백엔드는 persistence 경로를 실제로 건드림). `existing===undefined ? "noop" : "delete"`로 수정 — NOOP은 부수효과 0(Mem0 규율).
+- 왜: 다양성 — non-agent-core(@muse/memory 신규 (pkg,kind)), non-regex(fire 6 한국어 regex vein에서 의도적 이탈). spurious store-mutation 제거 = 메모리-무결성 하드닝.
+- 리뷰지점: 모든 분기 walk(defined+retraction→delete 유지, undefined+retraction→noop, 나머지 불변); 기존 "DELETE on retraction"(existing=Seoul) 테스트 그대로 통과; 정당한 삭제 억제 0(실제 키는 항상 existing defined). 형제-감사: 공유 classifier라 fact+preference 양 namespace 자동 커버. integration은 forget-spy로 0 호출 OUTCOME 검증.
+- 리스크: 낮음 — 1줄 가드, 회귀 0. ④b Opus 적응형 judge PASS (mutation으로 RED 재확인).
+
 ## fire 7 · 2026-06-20 · skill v2.0 · 42b5455d
 meta: value-class=new-capability · pkg=@muse/agent-core · kind=anti-fabrication/floor-total · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles 1057→1057 (+5 cases tool-argument-grounding.test) · fabrication 0 · agent-core 2491 tests green · precheck:grounding 2/3 PASS · pnpm check exit 0 · lint clean
