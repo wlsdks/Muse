@@ -23,9 +23,21 @@ export interface SourceConflict {
 /**
  * `label: value` on a line. The label must NOT be preceded by a word char or
  * digit (so a time `9:30` or `http://` never parses as a field) — it starts at a
- * line/space boundary. Value runs to a clause end.
+ * line/space boundary. The value runs to a clause end, now INCLUDING commas; a
+ * non-address field's value is truncated at the first comma in `fieldsOf` (see
+ * `ADDRESS_LABELS`) so only an address keeps its internal comma.
  */
-const LABELLED_VALUE = /(?<![\w:])([\p{L}][\p{L}\p{N} ]{1,40}?):[ \t]*([^\n.,;]+)/gu;
+const LABELLED_VALUE = /(?<![\w:])([\p{L}][\p{L}\p{N} ]{1,40}?):[ \t]*([^\n.;]+)/gu;
+
+/**
+ * Labels whose value LEGITIMATELY carries an internal comma (a street address).
+ * For these the value spans the comma so `12 Baker St, London` vs `12 Baker St,
+ * Paris` is caught as a real conflict (previously both truncated to "12 Baker St"
+ * = a missed disagreement). EVERY other field truncates at the first comma so a
+ * benign comma LIST (items / tags / attendees / ingredients) can't manufacture a
+ * false "your sources disagree" cue — comma-broadening is label-gated, not global.
+ */
+const ADDRESS_LABELS = new Set(["address", "addr", "addresses", "location", "주소", "주소지", "위치", "소재지", "거주지"]);
 
 /**
  * Common PROSE prefixes that are not real attributes — two notes both opening
@@ -62,8 +74,12 @@ function fieldsOf(snippet: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const match of snippet.matchAll(LABELLED_VALUE)) {
     const field = normalizeField(match[1] ?? "");
-    const value = (match[2] ?? "").trim();
-    if (field.length === 0 || value.length === 0 || !isAttributeLabel(field)) continue;
+    const raw = (match[2] ?? "").trim();
+    if (field.length === 0 || !isAttributeLabel(field)) continue;
+    // Comma-broadening is gated to address-like labels; every other field keeps
+    // the historical first-comma-stop so a benign comma list can't conflict.
+    const value = ADDRESS_LABELS.has(field) ? raw : (raw.split(",")[0] ?? "").trim();
+    if (value.length === 0) continue;
     if (!out.has(field)) out.set(field, value); // first wins — same-hit repeats aren't a cross-source conflict
   }
   return out;

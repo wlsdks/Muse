@@ -4,6 +4,16 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main). **Every 3 fires: ff-merge the branch into origin/main, then keep working on the branch (진안 directive 2026-06-20).**
 > Cron `d8c31fa3` (every 15m, session-only; was `cfe778e2` under skill v1.14.0, re-registered with loop-creator v2.0 at fire 6). Stop: `CronDelete d8c31fa3`. Convention: [README](README.md).
 
+## fire 10 · 2026-06-20 · skill v2.0 · <commit-pending> (JUDGE-DRILL + real ship)
+meta: value-class=new-capability · pkg=@muse/recall · kind=memory-integrity/source-conflict · verdict=PASS · firesSinceDrill=0(reset)
+ratchet: testFiles 1058→1058 (+4 cases conflict.test) · fabrication 0 · @muse/recall 338 tests green · precheck:grounding 2/3 PASS · pnpm check exit 0 · lint clean
+- DRILL(firesSinceDrill≥10 트리거): 고의로 NAIVE 전역 콤마-widen(`[^\n.,;]`→`[^\n.;]` 모든 라벨) 주입 + cherry-pick 테스트(주소만)로 334 테스트 통과 → ④b 적응형 judge가 **FAIL 확인**(benign 리스트 6/6 spurious conflict 구체 증거, reordered-identical/grown-list 변종까지, label-gate 설계 권고). 검증자 작동 입증 → 롤백.
+- 진짜 슬라이스: source-conflict 콤마-값을 **LABEL-GATED**로 — 정규식은 콤마 허용하되 `ADDRESS_LABELS`(address/주소/위치/…)만 콤마 보존, 그 외 모두 첫-콤마 절단(현행 byte-identical). 주소 conflict(London/Paris, 한국어 주소) 잡힘, benign 리스트 0 신규 FP.
+- 왜: source-conflict는 user-facing grounding cue — false-positive=신뢰 침식. fire-9가 전역 widen의 FP를 분석, fire-10 드릴이 그걸 judge로 라이브 확증, gated 설계로 false-negative만 해소(judge가 byte-for-byte 등가 증명).
+- 리뷰지점: ④b가 non-address 경로 byte-for-byte 등가(신규 FP 0) 증명; mutation 양방향(주소=원본 RED, 리스트가드=naive-widen RED). residual: ADDRESS_LABELS가 home/street 누락(같은 FN 방향, additive); 단일-라인 multi-field swallow=cosmetic(conflict는 표면).
+- 리스크: 낮음 — non-address 경로 불변(등가 증명), 순수 additive. ④b Opus 적응형 judge PASS.
+lesson: regex 추출 broadening의 FP는 *전역 대신 LABEL-GATE*로 외과적 해결 — 합법적 콤마-값 클래스(주소)만 열고 나머지는 byte-identical 유지하면 fire-6류 대량오탐 없이 false-negative만 닫는다. 드릴은 실제 후보를 naive로 주입하면 일석이조(검증자 확증 + 곧 진짜 fix).
+
 ## fire 9 · 2026-06-20 · skill v2.0 · 0a6db466 (analysis + 3-fire main merge, no code slice)
 meta: value-class=refactor(work-list) · pkg=docs · kind=exhaustion-analysis+merge · verdict=N/A · firesSinceDrill=9
 ratchet: testFiles 1057→1057 · fabrication 0 · branch fires 7-8 → origin/main ff-merge (3-fire obligation)
