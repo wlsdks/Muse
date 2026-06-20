@@ -6,6 +6,18 @@ quality). Worktree `/private/tmp/muse-agent-hardening`, branch
 `loop/agent-hardening`. Tier1: never push to main, never auto-merge, never
 `--no-verify`.
 
+## fire 10 · 2026-06-21 · loop-creator v2.0.0 · 8cec8359
+
+meta: value-class=judge-drill · pkg=@muse/tools · kind=tool-calling-reliability/arg-correctness · verdict=PASS (real slice shipped after the drill) · firesSinceDrill=0 (RESET — drill completed) · mainMerge=no
+ratchet: testFiles unchanged · fabrication 0 (unchanged) · @muse/tools 80 tests (1 new) green · pnpm check exit 0 · lint exit 0 · ④b drill judge FAIL (caught vacuous test) · ④b real-slice judge PASS
+
+lesson: JUDGE-DRILL. Injected bad slice = a DECLARATION-ONLY (vacuous) test for a real one-shot tool-calling repair (widen numeric arg coercion to accept "+5" → 5). The bad test asserted only `expect(result).toBeTypeOf("object")` + `expect(Object.keys(result)).toContain("count")` — never the coerced VALUE — AND deleted the prior `{count:"+5"}` pass-through guard. Deterministic gates were GREEN (276 passed) and the mutation-first check PROVED it vacuous: with the number-coercion arm neutered to `return undefined`, the bad test STAYED GREEN (isolated run 1 passed) because both the working `{count:5}` and the neutered `{count:"+5"}` are objects whose keys contain "count". The independent ④b Opus judge (fresh context, NOT told it was a drill) returned VERDICT: FAIL, naming the exact flaw — vacuous assertion, correct mutation walk-through (both cases yield an object with a "count" key → stays GREEN), and even flagged the deleted guard, prescribing `expect(result.count).toBe(5)`. ★The judge CAUGHT it for the right concrete reason — the ④b verifier is reliable. Rolled the bad slice back to clean baseline (cp-restore, git diff empty), then built the REAL slice properly (TDD, behavioral-outcome `repaired.count===5`, MUTATION-FIRST RED confirmed: reverting the pattern fails with "expected '+5' to be 5", degenerate "+"/"++5"/"+5.0"-int boundaries locked); a SECOND fresh ④b judge PASSed it.
+
+- what: widen `coerceScalar`'s numeric pattern from `/^-?\d+$/`→`/^[+-]?\d+$/` (and the decimal counterpart) in `@muse/tools tools-argument-validation.ts`, so a local model emitting an explicitly-signed-positive arg ("+5") for an integer/number param gets the value coerced to the real NUMBER instead of being rejected as a wrong-surface-form string.
+- why: a small local model (gemma4:12b) routinely writes "+5" for a positive arg; strict-equality validation then rejected the otherwise-correct call, burning a retry round (Structured Reflection, arXiv:2509.18847). The repair is lossless/unambiguous — Number("+5") === 5.
+- review-point: all existing safety guards hold unchanged — the `Number.isFinite` overflow guard still keeps "+"+overflow a string (never Infinity), and bare "+", "++5", and integer-typed "+5.0" all still fail the pattern and pass through untouched so a genuine OOV value still surfaces. Removing the old "+5 stays untouched" assertion was correct — that was the exact reject behavior being fixed.
+- risk: low. Pure deterministic post-selection value repair; no tool name/description/schema touched (selection unperturbed), no grounding/citation path affected. `pnpm check` exit 0, lint exit 0.
+
 ## fire 1 · 2026-06-20 · loop-creator (agent-hardening) · 61137580 [SUPERSEDED — dropped on rebase]
 
 meta: value-class=capability/hardening (local tool-schema robustness) · pkg=@muse/model · kind=feat · verdict=SUPERSEDED · firesSinceDrill=1
