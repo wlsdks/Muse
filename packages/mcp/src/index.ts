@@ -884,7 +884,10 @@ export {
   addReflections,
   listReflections,
   readReflections,
+  scoreReflectionRetention,
+  selectRetainedReflections,
   type NewReflection,
+  type ReflectionRetentionOptions,
   type StoredReflection
 } from "./reflections-store.js";
 
