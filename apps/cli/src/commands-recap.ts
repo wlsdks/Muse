@@ -1,5 +1,6 @@
 import { openLoops, overdueContacts } from "@muse/agent-core";
 import { resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, resolveWeaknessesFile } from "@muse/autoconfigure";
+import { defaultBeliefProvenanceFile, deriveFactProvenance, readBeliefProvenance, selectVolatileBeliefs } from "@muse/memory";
 import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readContacts, readEpisodes, readFollowups, readReminders, readTasks, readWeaknesses, remediationHint, resolveUpcomingBirthdays, selectRemediableWeaknesses } from "@muse/mcp";
 import type { Command } from "commander";
 import { type Dirent, promises as fs } from "node:fs";
@@ -62,6 +63,8 @@ export interface EveningRecapInput {
    * note and Muse answers next time. "<topic> (asked N×)" lines.
    */
   readonly weaknesses: readonly string[];
+  /** Auto beliefs the extractor keeps flipping — nudge the user to confirm (H4). */
+  readonly volatileBeliefs: readonly string[];
   readonly openFollowups: number;
 }
 
@@ -138,6 +141,15 @@ export function composeEveningRecap(input: EveningRecapInput): string {
     lines.push("", `🔧 I keep coming up short — a quick fix each and I'll have it next time (${input.weaknesses.length.toString()}):`);
     for (const item of input.weaknesses.slice(0, 5)) {
       lines.push(`  🔧 ${item}`);
+    }
+  }
+
+  // Whetstone (H4): beliefs I keep re-learning with DIFFERENT values — I'm not sure
+  // which is right, so confirm and I'll hold it as durable truth.
+  if (input.volatileBeliefs.length > 0) {
+    lines.push("", `🔄 These keep changing — confirm the current value and I'll trust it (${input.volatileBeliefs.length.toString()}):`);
+    for (const item of input.volatileBeliefs.slice(0, 5)) {
+      lines.push(`  🔄 ${item}`);
     }
   }
 
@@ -315,7 +327,17 @@ export async function gatherEveningRecap(
       weaknesses.push(`${remediationHint(gap.axis, gap.topic)} (asked ${gap.count.toString()}×)`);
     }
   } catch { /* fail-soft — no ledger */ }
-  return { comingUp, goneQuiet, now, openFollowups, openLoops: openLoopLines, performedToday, reconnect, sessionsToday, slipping, weaknesses };
+  // Whetstone (H4): auto beliefs the extractor keeps flipping → nudge the user to
+  // confirm the current value (which re-states it as durable user-source).
+  const volatileBeliefs: string[] = [];
+  try {
+    const provFile = env.MUSE_BELIEF_PROVENANCE_FILE ?? defaultBeliefProvenanceFile();
+    const provenance = deriveFactProvenance(await readBeliefProvenance(provFile));
+    for (const b of selectVolatileBeliefs(provenance, { maxResults: 3, now: now.getTime() })) {
+      volatileBeliefs.push(`"${b.key}" (now "${b.currentValue}", ${b.distinctValueCount.toString()} different values) — \`muse memory set ${b.kind} ${b.key} <value>\` to confirm`);
+    }
+  } catch { /* fail-soft — no provenance log */ }
+  return { comingUp, goneQuiet, now, openFollowups, openLoops: openLoopLines, performedToday, reconnect, sessionsToday, slipping, volatileBeliefs, weaknesses };
 }
 
 /**

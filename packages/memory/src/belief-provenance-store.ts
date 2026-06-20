@@ -202,6 +202,42 @@ export function provisionalFactKeys(
   return out;
 }
 
+/** A belief the auto-extractor keeps giving different values for — the user should
+ *  confirm which is right (which promotes it to durable user-source). */
+export interface VolatileBelief {
+  readonly key: string;
+  readonly kind: "fact" | "preference";
+  readonly currentValue: string;
+  readonly distinctValueCount: number;
+}
+
+/**
+ * The user-remediable end of H2 (closes the loop): the recently-active AUTO beliefs
+ * whose value the extractor FLIPPED (`distinctValueCount >= minDistinctValues`) — the
+ * recap nudges the user to confirm the current value, which re-states it as
+ * user-source and promotes it to durable. A USER-stated belief is excluded (the user's
+ * latest is already their deliberate truth, no confirmation needed). Most-volatile
+ * first; capped. Pure.
+ */
+export function selectVolatileBeliefs(
+  provenance: readonly FactProvenance[],
+  opts: { readonly now: number; readonly recentDays?: number; readonly minDistinctValues?: number; readonly maxResults?: number }
+): readonly VolatileBelief[] {
+  const recentMs = Math.max(1, opts.recentDays ?? DEFAULT_FACT_STALE_DAYS) * 86_400_000;
+  const minDistinct = Math.max(2, Math.trunc(opts.minDistinctValues ?? 2));
+  const max = Math.max(1, Math.trunc(opts.maxResults ?? 3));
+  return provenance
+    .filter((p) => p.source === "auto" && p.distinctValueCount >= minDistinct)
+    .filter((p) => {
+      const age = opts.now - Date.parse(p.lastConfirmed);
+      return Number.isFinite(age) && age <= recentMs;
+    })
+    .slice()
+    .sort((a, b) => b.distinctValueCount - a.distinctValueCount)
+    .slice(0, max)
+    .map((p) => ({ currentValue: p.value, distinctValueCount: p.distinctValueCount, key: p.key, kind: p.kind }));
+}
+
 export function defaultBeliefProvenanceFile(): string {
   const fromEnv = process.env.MUSE_BELIEF_PROVENANCE_FILE?.trim();
   if (fromEnv && fromEnv.length > 0) return fromEnv;

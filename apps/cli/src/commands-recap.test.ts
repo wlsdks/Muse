@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { writeBeliefProvenance } from "@muse/memory";
 import { appendActionLog, recordWeakness, writeContacts, writeEpisodes, writeTasks } from "@muse/mcp";
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,7 +12,7 @@ import type { ProgramIO } from "./program.js";
 
 describe("composeEveningRecap — deterministic evening digest", () => {
   const base = (over: Partial<EveningRecapInput> = {}): EveningRecapInput => ({
-    comingUp: [], goneQuiet: [], now: new Date("2026-06-04T21:00:00"), openFollowups: 0, openLoops: [], performedToday: [], reconnect: [], sessionsToday: 0, slipping: [], weaknesses: [], ...over
+    comingUp: [], goneQuiet: [], now: new Date("2026-06-04T21:00:00"), openFollowups: 0, openLoops: [], performedToday: [], reconnect: [], sessionsToday: 0, slipping: [], volatileBeliefs: [], weaknesses: [], ...over
   });
 
   it("surfaces open loops (unfinished + unscheduled) as a distinct section", () => {
@@ -30,6 +31,12 @@ describe("composeEveningRecap — deterministic evening digest", () => {
     const out = composeEveningRecap(base({ weaknesses: ["add a note about \"office vpn mtu\" (asked 3×)"] }));
     expect(out).toContain("🔧 I keep coming up short");
     expect(out).toContain("office vpn mtu");
+  });
+
+  it("surfaces VOLATILE beliefs (keep changing) as a confirm nudge (H4)", () => {
+    const out = composeEveningRecap(base({ volatileBeliefs: ['"address" (now "Z", 3 different values) — `muse memory set fact address <value>` to confirm'] }));
+    expect(out).toContain("🔄 These keep changing");
+    expect(out).toContain("muse memory set fact address");
   });
 
   it("renders the retrospective (actions + sessions), what's coming up, and open follow-ups", () => {
@@ -123,6 +130,28 @@ describe("gatherEveningRecap — overdue detection (the absence signal)", () => 
     expect(conflict).toBeDefined();
     expect(conflict).toMatch(/reconcile|disagree/);
     expect(conflict).not.toMatch(/add a note/);
+  });
+
+  it("surfaces a VOLATILE auto belief (the extractor keeps flipping the value) as a confirm nudge (H4)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-recap-volatile-"));
+    const pfile = join(dir, "prov.json");
+    const now = new Date("2026-06-04T21:00:00");
+    const iso = (d: number): string => new Date(now.getTime() - d * 86_400_000).toISOString();
+    await writeBeliefProvenance(pfile, [
+      { userId: "u", key: "address", kind: "fact", value: "X", learnedAt: iso(10), source: "auto" },
+      { userId: "u", key: "address", kind: "fact", value: "Y", learnedAt: iso(5), source: "auto" },
+      { userId: "u", key: "address", kind: "fact", value: "Z", learnedAt: iso(1), source: "auto" }
+    ]);
+    const env: Record<string, string | undefined> = {
+      MUSE_BELIEF_PROVENANCE_FILE: pfile,
+      MUSE_ACTION_LOG_FILE: join(dir, "a.json"), MUSE_EPISODES_FILE: join(dir, "e.json"),
+      MUSE_FOLLOWUPS_FILE: join(dir, "f.json"), MUSE_REMINDERS_FILE: join(dir, "r.json"), MUSE_TASKS_FILE: join(dir, "t.json")
+    };
+    const input = await gatherEveningRecap(env, now);
+    const note = input.volatileBeliefs.find((b) => b.includes("address"));
+    expect(note).toBeDefined();
+    expect(note).toContain("3 different values");
+    expect(note).toContain("muse memory set fact address"); // runnable: <kind> <key> (the judge's fix)
   });
 
   it("counts a task COMPLETED today as a 'got done' accomplishment (not only action-log entries)", async () => {
@@ -309,7 +338,7 @@ describe("shouldFireRecap — once-a-day evening gate (pure)", () => {
 
 describe("deliverEveningRecapIfDue — proactive fire + dedup (pure deps)", () => {
   const sampleInput: EveningRecapInput = {
-    comingUp: [], goneQuiet: [], now: new Date("2026-06-04T21:30:00"), openFollowups: 0, openLoops: [], performedToday: ["did a thing"], reconnect: [], sessionsToday: 1, slipping: [], weaknesses: []
+    comingUp: [], goneQuiet: [], now: new Date("2026-06-04T21:30:00"), openFollowups: 0, openLoops: [], performedToday: ["did a thing"], reconnect: [], sessionsToday: 1, slipping: [], volatileBeliefs: [], weaknesses: []
   };
   it("fires when due: composes, sends, and records the fire", async () => {
     const sent: string[] = [];

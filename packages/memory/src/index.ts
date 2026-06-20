@@ -376,12 +376,14 @@ export {
   provisionalFactKeys,
   readBeliefProvenance,
   selectPromotableFacts,
+  selectVolatileBeliefs,
   writeBeliefProvenance,
   type BeliefProvenance,
   type BeliefProvenanceStore,
   type FactFreshness,
   type FactProvenance,
-  type PromotableFact
+  type PromotableFact,
+  type VolatileBelief
 } from "./belief-provenance-store.js";
 
 // File-backed UserMemoryStore — the JARVIS-class persistent layer for

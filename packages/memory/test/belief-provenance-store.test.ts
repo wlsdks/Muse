@@ -12,10 +12,35 @@ import {
   provisionalFactKeys,
   readBeliefProvenance,
   selectPromotableFacts,
+  selectVolatileBeliefs,
   writeBeliefProvenance,
   type BeliefProvenance,
   type FactProvenance
 } from "../src/belief-provenance-store.js";
+
+describe("selectVolatileBeliefs — auto beliefs the extractor keeps flipping (H4, closes the H2 loop)", () => {
+  const now = Date.parse("2026-06-20T00:00:00.000Z");
+  const fp = (over: Partial<FactProvenance>): FactProvenance => ({
+    key: "k", kind: "fact", value: "v", firstSeen: "2026-06-01T00:00:00.000Z",
+    lastConfirmed: "2026-06-18T00:00:00.000Z", confirmCount: 3, distinctValueCount: 1, source: "auto", ...over
+  });
+  it("surfaces a recent VOLATILE auto belief (the user should confirm which value is right)", () => {
+    const out = selectVolatileBeliefs([
+      fp({ key: "address", value: "Z", distinctValueCount: 3 }),
+      fp({ key: "city", value: "Seoul", distinctValueCount: 1 })
+    ], { now });
+    expect(out.map((b) => b.key)).toEqual(["address"]);
+    expect(out[0]?.currentValue).toBe("Z");
+    expect(out[0]?.distinctValueCount).toBe(3);
+  });
+  it("does NOT surface a USER-flipped belief (the latest is the user's deliberate truth) or a STALE one", () => {
+    const out = selectVolatileBeliefs([
+      fp({ key: "u", distinctValueCount: 3, source: "user" }),
+      fp({ key: "old", distinctValueCount: 4, lastConfirmed: "2026-01-01T00:00:00.000Z" })
+    ], { now });
+    expect(out).toEqual([]);
+  });
+});
 
 function entry(over: Partial<BeliefProvenance> = {}): BeliefProvenance {
   return {
