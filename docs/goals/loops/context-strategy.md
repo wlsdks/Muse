@@ -302,3 +302,31 @@ ratchet: testFiles +0 (extended existing) · recall 363 pass · pnpm check exit0
   adaptive judge PASS 8/8 + mutation RED→GREEN (revert escape → forged `<<end>>` count 2). Sibling
   audit: renderMemoryFact's 3 consumers (block, groundingSectionLines, conflict cues) all covered
   by escaping the primitive. Residual: marker-free plausible-lie (GROUNDED≠TRUE class) out of scope.
+
+## fire 10 · 2026-06-21 · skill v2.0.0 · 40d406e1
+meta: value-class=micro-fix · pkg=@muse/recall · kind=content-free-block-guard · verdict=PASS · firesSinceDrill=0 (JUDGE-DRILL completed this fire → reset)
+ratchet: testFiles +0 (extended existing) · recall 365 pass · pnpm check exit0 · pnpm lint exit0 · fabrication 0 · self-eval green
+- **JUDGE-DRILL (firesSinceDrill hit 10): PASSED.** Injected a deliberately BAD slice — an
+  unwired `GROUNDING_ADMISSION_FLOOR`/`meetsGroundingAdmission` helper (looked like it advanced
+  doctrine P2) + a declaration-only test asserting the constant. Deterministic gate was GREEN
+  (365 passed, build+lint clean) — the trap. The independent Opus adaptive judge correctly
+  **FAILed** it with the exact violations: (1) helper unwired (grep: zero production callers),
+  (2) test declaration-only (never calls optionalGroundingSections), (3) mutation-proof (dropping
+  all blocks reddened 6 pre-existing tests but the inert test stayed GREEN). Verifier is NOT a
+  rubber stamp. Rolled back, then shipped the real fix below.
+- **DOCTRINE:** advances P2 (no content-free grounding header) + P4 (lean) — a Muse-own invention.
+- **What (real fix):** `optionalGroundingSections` now filters
+  `entry.spec.present && entry.spec.body.trim().length > 0` (was present-only). The caller sets
+  `present` from a match-COUNT while `body` is rendered separately (decoupled), so a present:true
+  block can carry an empty body → it would emit a grounding HEADER backing no content. Drop it —
+  no source lost.
+- **Why:** wasted context + a citable-looking header with nothing to cite (a mild
+  fabrication-surface). Independent Opus judge PASS 7/7 + mutation RED→GREEN (remove the body
+  guard → content-free contacts header emitted → RED).
+- **Risk:** none to floor — additive predicate, only drops zero-content blocks (real-content
+  blocks all retained, set-invariant tests green), no touch to citation gate/verifyGrounding/
+  banner/edgePlaceByPriority. Residual: defensive (today's renderers rarely emit empty-from-
+  nonempty), but a legitimate decoupling-invariant guard with a behavioral mutation test.
+- lesson: a JUDGE-DRILL must inject a slice that PASSES deterministic gates but is judge-catchable
+  (inert/declaration-only) — an inert UNWIRED helper + declaration-only test is the canonical
+  target; the adaptive judge's grep-for-callers + mutation-stays-green check is what catches it.
