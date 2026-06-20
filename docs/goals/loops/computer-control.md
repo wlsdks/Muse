@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 10 · 2026-06-21 · skill v2.0 · <commit-pending> (JUDGE-DRILL ✅ + harden guard + byte-hygiene regression)
+## fire 10 · 2026-06-21 · skill v2.0 · 1599c25a (JUDGE-DRILL ✅ + harden guard + byte-hygiene regression)
 meta: value-class=test-hardening+regression-fix · pkg=@muse/tools+apps/cli · kind=judge-drill · verdict=DRILL-PASS · firesSinceDrill=0(reset)
 ratchet: testFiles 1068→1068 (+1 robust guard tools.test) · fabrication 0 · eval:computer-task 미실행(드릴 fire) · pnpm check=박스포화 false-timeout(crypto/fuzz ~5s, 격리 통과; byte-hygiene 회귀는 수정 후 44 통과) · lint clean
 - JUDGE-DRILL(firesSinceDrill=10 트리거): `nearestToolName`에 고의 결함 주입(`shared>0` 가드 제거 → 무관명도 misleading 제안) + negative 테스트를 tautology로 약화 → **결정론 게이트 통과(281)**. ④b 독립 judge가 추론으로 **FAIL**: delete_everything→run_command(위험) 재현·tautology 테스트 적발·거짓 docstring·grounding-floor 위반·정확한 롤백 권고. → git restore 롤백(executor.ts HEAD 동일 확인).
