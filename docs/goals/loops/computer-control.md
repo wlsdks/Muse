@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 22 · 2026-06-21 · skill v2.0 · <commit-pending> (file_edit/multi_edit missing-file → recovery hint; fire-21 sibling completion)
+## fire 22 · 2026-06-21 · skill v2.0 · 031a414c (file_edit/multi_edit missing-file → recovery hint; fire-21 sibling completion)
 meta: value-class=new-capability · pkg=@muse/fs · kind=reliability-nudge · verdict=PASS · firesSinceDrill=2
 ratchet: testFiles 1071→1071 (+1 strengthened fs-write-tools case, mutation-valid) · fabrication 0 · @muse/fs 격리 164 · pnpm check exit 0 · lint clean
 - 무엇: fire 21이 file_read/grep ENOENT은 고쳤으나 **write actuator(file_edit/multi_edit)는 놓친 형제** — 존재않는 파일 편집 시 동일 raw `ENOENT … stat '/abs'`(완성-단계서 12B dead-end + abs경로 leak). FIX(공유 `refusal`에 ENOENT 분기 1개): `"no file at '<input>' — to create it use file_write; … check the path or use file_list"`. file_edit+multi_edit 둘 다(공유 editExecutor→refusal); file_write는 mkdir -p라 정당 제외.
