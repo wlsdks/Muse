@@ -251,3 +251,13 @@ ratchet: testFiles=1071 (unchanged — drill rolled back) · fabrication 0 · ga
 - **리뷰지점:** ④b 독립 Opus judge(drill임을 모른 채 정상 검증)가 **정확히 FAIL** — 구체적 위반 명시: "caseSensitive는 line 221 선언만·본문 222-238 미read; lexicalTokenList가 knowledge-recall:109에서 이미 lowercase라 case-sensitivity moot; 테스트는 빈 recents에 양 옵션 모두 true 단언=옵션 삭제해도 green인 non-discriminating 가짜 테스트". 올바른 버전이 뭘 해야 하는지까지 제시. → 검증자 신뢰성 입증, 즉시 `git restore` 롤백(워크트리 clean).
 - **리스크:** 없음(드릴 롤백, 코드 무변경). 진짜-fix는 taskMemory File-backing이 적합하나(judge-flagged 형제) nested-dated 배열 3종 직렬화+purge maintenance로 >1-fire라 backlog ◦로 decompose(post-drill add-on 아닌 fresh fire 권장).
 - **lesson:** JUDGE-DRILL이 작동함 — config-only/declared-unused + non-discriminating 테스트(빈 입력에 옵션 무관 동일 결과)는 검증자가 mutation-관점("옵션 삭제해도 green이면 가짜")으로 잡는다. 같은 함정 패턴(선언만 한 옵션, 빈-입력 단언)을 진짜 슬라이스에서도 self-check.
+
+## fire 21 · 2026-06-21 · skill v2.0.0 · `4926fce8`
+meta: value-class=new-capability · pkg=@muse/memory + @muse/autoconfigure · kind=store-persistence/audit-fix-sibling · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles=1071 · fabrication 0 · gates: memory 484 + autoconfigure 618 + pnpm check EXIT=0 (model property-fuzz flaky 이번엔 통과; byte-hygiene 0) + self-eval ok + lint · merge-to-main: fires 19-21 (this fire, ×3)
+
+- **무엇:** fire-19 형제(④b-flagged) 완성 — `createTaskMemoryStore`가 no-DB에서 InMemory 기본이라 in-progress 작업상태(goal/plan/decisions/blockers)가 매 CLI 프로세스 소실되던 걸 `FileTaskMemoryStore`로 영속. **wrap-delegate-persist** 설계(파일→InMemory rehydrate[active-index 재구축+retention/trim, normalize가 timestamp 보존]→위임→entries() 영속). nested Dates(plan/decisions/blockers + top-level) ISO round-trip, atomic·0o600·missing/corrupt→empty. factory no-DB 기본 File(PERSIST=false escape).
+- **왜:** fire-19가 conversation-summary를 영속시킨 것과 같은 갭이 task-memory에도 있었음(judge가 fire-19에서 적발). 이제 진행 중 작업이 세션 간 살아남음 = 진짜 cross-session 자기개선.
+- **리뷰지점:** ④b 독립 Opus PASS — **retention-trap 반박**(normalizeTaskState가 `updatedAt ?? createdAt ?? now`로 보존 → rehydrate가 expiry 안 리셋; purge 테스트가 직접 증명) · outcome+mutation 진짜(fresh instance가 findById/findActiveBySession로 회수, 4개 nested Date exact getTime, rename 무력화→RED) · assembly 테스트 갱신 정당(PERSIST=false로 wiring만 검증·real ~/.muse 회피). 다양성: @muse/memory store-persistence(fire-19와 same kind·다른 store).
+- **리스크:** 낮음 — 순수 storage(fabrication 무관), 로컬 파일 no-egress, wrap이 InMemory 로직 100% 재사용(재구현 최소). nit(judge, 비차단): RMW race(single-user CLI 수용)·read시 expiry-clear 영속 위해 write-back.
+- **lesson:** wrap-delegate-persist = 복잡한 in-memory store(dual-index+retention+trim)를 File-back하는 안전 패턴 — 로직 재구현 대신 rehydrate→delegate→persist(단 normalize가 timestamp 보존하는지 먼저 확인, 안 그러면 retention 리셋 버그). 같은 factory의 형제 store(user/summary/task) 모두 File-default로 수렴.
