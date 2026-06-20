@@ -1,8 +1,10 @@
 /**
  * Idle distill-consumer (B1 Slice 1) — drains the learn-queue ON IDLE, behind
  * the resource brakes, turning a queued correction into a learned strategy
- * with NO manual step. At most ONE event per tick (the LLM call is the cost),
- * then yields. Grounding fence: an event with no real correction text, or a
+ * with NO manual step. At most ONE event per tick (the LLM call is the cost —
+ * note the self-consistency gate draws k=`strategyConsistencySamples` drafts,
+ * default 3, so it is k LLM calls per event; set 1 to disable), then yields.
+ * Grounding fence: an event with no real correction text, or a
  * distiller that returns nothing, writes ZERO strategies — a non-corrective
  * signal never fabricates a "lesson". Every drained event is marked done so
  * the queue drains steadily. (PART A2 / B1.)
@@ -13,6 +15,7 @@
  */
 import type { ModelProvider } from "@muse/model";
 import {
+  distillConsistentStrategy,
   distillStrategyFromCorrection,
   strategyTextSimilarity,
   type CorrectionExchange,
@@ -67,6 +70,8 @@ export interface DistillQueuedDeps {
   readonly newId?: () => string;
   /** Test seam — defaults to the real local-Qwen distiller. */
   readonly distill?: (exchange: CorrectionExchange, options: { model: string; modelProvider: Pick<ModelProvider, "generate">; embed?: (text: string) => Promise<readonly number[]> }) => Promise<DistilledStrategy | undefined>;
+  /** Self-consistency draws for the autonomous write gate (parity with the sync distiller). Default = the gate's own default (3). */
+  readonly strategyConsistencySamples?: number;
 }
 
 /** Returns the number of strategies actually recorded this tick. */
@@ -108,9 +113,19 @@ export async function distillQueuedCorrections(deps: DistillQueuedDeps): Promise
       }
     }
     const exchange = exchangeFromEvent(event);
-    const strategy = await distill(exchange, { model: deps.model, modelProvider: deps.modelProvider, ...(deps.embed ? { embed: deps.embed } : {}) });
+    // Self-consistency WRITE gate (arXiv:2405.01563 / ReasoningBank MaTTS
+    // 2509.25140) — SIBLING PARITY with the sync distiller (chat-distill-corrections):
+    // the autonomous idle learner ALSO draws k drafts and banks one only if they
+    // AGREE, so an unstable (disagreeing ⇒ likely confabulated) distillation is
+    // never auto-written — even though an idle write only lands on probation, a
+    // confabulated probation strategy still gets injected and wastes a slot.
+    const consistent = await distillConsistentStrategy(
+      () => distill(exchange, { model: deps.model, modelProvider: deps.modelProvider, ...(deps.embed ? { embed: deps.embed } : {}) }),
+      deps.strategyConsistencySamples !== undefined ? { samples: deps.strategyConsistencySamples } : {}
+    );
+    const strategy = consistent?.strategy;
     if (!strategy || strategy.text.trim().length === 0) {
-      continue; // distiller fail-soft / NONE ⇒ no write
+      continue; // distiller fail-soft / NONE / inconsistent draws ⇒ no write
     }
     // Bank dedup (ReasoningBank): if this lesson paraphrases one the bank already
     // holds, consolidate instead of writing a duplicate — bump the existing
