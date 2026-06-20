@@ -221,3 +221,13 @@ ratchet: testFiles=1069 · fabrication 0 · gates: autoconfigure 611/611 + check
 - **리스크:** 낮음 — write를 엄격하게만(뱅킹 감소, fabricate 불가), idle write는 여전히 probation. cost k×는 tunable(`strategyConsistencySamples`).
 - **lesson:** 감사 서브에이전트의 file:line cite는 반드시 독립검증 — Opus도 없는 경로를 confident하게 지어냄(Finding 2). 그리고 "메커니즘 출하"≠"기본 경로 적용": 새 guard는 sync/idle/ASK/CHAT 모든 형제 경로 커버를 grep로 확인.
 - **AUDIT 요약(진안 질문 답):** HEALTHY/실작동=whetstone(약점원장 record→BKT→resolve→nudge, ASK/CHAT parity, mastery suppression) · Mem0 auto-extract+belief-provenance(File store, default-on) · Playbook ranking(rankingUtility Wilson-LCB, 과거버그 미재발) · skill 선택+recordUsage+eviction. INERT/기본에선 死=episodic capture(MUSE_EPISODIC_MEMORY_ENABLED off — fire-14 novelty 게이트 포함 기본 미발화) · summary-recall(CLI InMemory store라 매 프로세스 empty) · fade/promote(daemon-only+MUSE_SELFLEARN_ENABLED off). UNMEASURED(최대 갭)=cross-turn "경험이 다음 턴을 돕는다"는 end-to-end 측정이 *전무*; 모든 eval이 single-turn 메커니즘 발화 확인일 뿐, self-eval은 count ratchet(bigger≠better). → backlog ◦로 등록.
+
+## fire 18 · 2026-06-21 · skill v2.0.0 · `7b860f8e`
+meta: value-class=micro-fix · pkg=@muse/autoconfigure + @muse/recall · kind=correctness/audit-fix · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles=1070 · fabrication 0 · gates: recall 366/366 + autoconfigure 612/612 + cli build clean + check(유일 실패=inherited commands-logo byte-hygiene, 다른 루프, 무관) + self-eval ok + lint · merge-to-main: fires 16-18 (this fire, ×3)
+
+- **무엇:** fire-17 감사 Finding 2(`buildPlaybookProvider`가 origin 드롭)를 **재검증→REAL 확인→수정**. + ④b judge가 *같은 ranker를 먹이는 형제 2곳 추가 발견*(`selectPlaybookSection`·`topAppliedStrategy` @muse/recall, 기본 `muse ask` 경로) → 셋 다 origin carry로 패치(CLI `toPlaybookStrategy` sibling과 parity). 이제 모든 entry→PlaybookStrategy 투영이 provenance 보존.
+- **왜:** origin이 REFLECTED_RANK_PENALTY + CBR low-support 게이트를 켜는 키 → 드롭되면 합성(reflected) 전략이 grounded와 동급 랭킹 = "evidence beats synthesis"가 **런타임+기본 ask 경로 모두에서 死**. 우리가 출하한 메커니즘이 정작 안 돌던 것(진안 "메커니즘이 옳은지" 질문의 직접 답).
+- **리뷰지점:** ④b 독립 Opus PASS(bug real·outcome-discriminating: origin이 tie 결정 요인, mutation RED·diversity OK) + judge가 형제 2곳 적발 → *같은 fire에 함께 패치*(형제-완전성). 두 fix 모두 mutation-verified.
+- **리스크:** 낮음 — 조건부 spread(origin 있을 때만), 8개 기존 필드 불변, 랭킹 페널티 복원만(fabrication 무관). input 타입 widening은 back-compat(optional).
+- **lesson(정직성 정정):** fire-17에서 Finding 2를 "hallucination"이라 기각한 건 **내 오류** — `context-engineering-builders.ts`를 @muse/agent-core에서만 찾고 @muse/autoconfigure를 안 봄. 교훈: 감사 cite가 "없는 파일"로 보여도 *전 패키지 grep*으로 확인 후 기각(잘못된 패키지에서 못 찾은 것일 수 있음). 그리고 형제-감사는 grep 범위를 @muse/recall까지 — selector를 먹이는 모든 패키지를 봐야 함(judge가 내 누락을 잡음).
