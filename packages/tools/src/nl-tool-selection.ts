@@ -21,14 +21,18 @@ const NO_TOOL_RE = /\b(no[\s-]?tool|none|no tool is needed|not? (?:a )?tool|n\/a
 
 /**
  * A negation cue sitting immediately before a tool mention — the model is
- * REJECTING that tool ("don't use X", "not X", "X은 쓰지 마"/"X 말고"), so the
- * mention must not count as a selection. Matched on the gap between the end of
- * the cue and the start of the tool name: an EN cue ends right before the name
- * (with optional "use"/article filler), a KO post-positional cue follows the
- * name. Kept tight so a benign "without X" / a trailing "not B" after a real
- * pick does not over-skip.
+ * REJECTING that tool ("don't use X", "not X", "rather than X", "instead of X",
+ * "X은 쓰지 마"/"X 말고"), so the mention must not count as a selection. Matched
+ * on the gap between the end of the cue and the start of the tool name: an EN
+ * cue ends right before the name (with optional "use"/article filler), a KO
+ * post-positional cue follows the name. Kept tight so a benign "without X" / a
+ * trailing "not B" after a real pick does not over-skip. The exclusion phrases
+ * ("rather than"/"instead of"/"in place of") reject the tool they PRECEDE, so
+ * "Instead of time_now, use time_diff" → time_diff even though time_now is
+ * named first; a TRAILING "use A instead of B" still resolves to A because the
+ * earlier non-negated A wins before B's negation is even reached.
  */
-const EN_NEGATION_LEAD_RE = /\b(?:do\s+not|don['’]t|cannot|can['’]t|won['’]t|never|not)\s+(?:use\s+|call\s+|the\s+|a\s+)?$/i;
+const EN_NEGATION_LEAD_RE = /\b(?:do\s+not|don['’]t|cannot|can['’]t|won['’]t|never|not|rather\s+than|instead\s+of|in\s+place\s+of)\s+(?:use\s+|call\s+|the\s+|a\s+)?$/i;
 const KO_NEGATION_TRAIL_RE = /^\s*(?:은|는|을|를|이|가)?\s*(?:쓰지\s*마|쓰지\s*말|사용하지\s*마|사용하지\s*말|말고|대신|빼고)/u;
 
 /**
