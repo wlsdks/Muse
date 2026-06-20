@@ -144,6 +144,50 @@ function hasTextToken(value: string): boolean {
   return /[a-z]/iu.test(value) || /[㐀-鿿가-힯]/u.test(value);
 }
 
+// Field NAMES whose value is a monetary amount (the only numeric-amount field in
+// any KIND_EXTRACT schema is the receipt `total`). An amount-role field grounds
+// only on a digit-run that sits in the evidence ADJACENT to a currency/amount
+// marker — closing the year-coincidence leak ("$2026" matching a "2026" year)
+// without false-dropping a real small total ("$40" next to "$").
+const AMOUNT_FIELD_NAMES: ReadonlySet<string> = new Set(["total"]);
+
+/** Currency / amount markers that anchor an amount run: a symbol, an ISO code,
+ *  or an amount word. Matched case-insensitively. */
+const AMOUNT_MARKER = /[$₩€£¥]|\b(?:krw|usd|eur|gbp|jpy|total|subtotal|amount|due|paid|balance)\b/giu;
+
+/** Is a digit-run from `value` present in `evidence` ADJACENT (within ~2 chars)
+ *  to a currency/amount marker? Anchors an amount field so a bare coincidental
+ *  run (a year, a row number) cannot ground a hallucinated total, while a real
+ *  small total next to a `$`/`total` marker still does. Thousands separators in
+ *  the evidence are normalized so "12,400" matches the run "12400". */
+function amountRunIsAnchored(value: string, evidence: string): boolean {
+  const joinedEv = evidence.replace(/(\d)[,_ ](?=\d{3}\b)/gu, "$1");
+  const runs = [...digitRuns(value)];
+  if (runs.length === 0) {
+    return false;
+  }
+  for (const run of runs) {
+    const runRe = new RegExp(`(?<!\\d)${run}(?!\\d)`, "gu");
+    let m: RegExpExecArray | null;
+    while ((m = runRe.exec(joinedEv)) !== null) {
+      const winStart = Math.max(0, m.index - 8);
+      const winEnd = Math.min(joinedEv.length, m.index + run.length + 8);
+      const window = joinedEv.slice(winStart, winEnd);
+      const runStartInWindow = m.index - winStart;
+      AMOUNT_MARKER.lastIndex = 0;
+      let mk: RegExpExecArray | null;
+      while ((mk = AMOUNT_MARKER.exec(window)) !== null) {
+        const gapBefore = runStartInWindow - (mk.index + mk[0].length);
+        const gapAfter = mk.index - (runStartInWindow + run.length);
+        if ((gapBefore >= 0 && gapBefore <= 2) || (gapAfter >= 0 && gapAfter <= 2)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Is `value` grounded in the image `evidence` transcription? Tolerant by design
  * so a faithfully-extracted field is NOT false-dropped:
@@ -161,8 +205,18 @@ function hasTextToken(value: string): boolean {
  * identity to anchor. Such a value fails CLOSED here (→ recorded unverified). The
  * guard can only make the gate STRICTER; ≥4-digit runs and any text/CJK value are
  * unaffected.
+ *
+ * Amount-role anchoring: when `name` is an amount field (receipt `total`), the
+ * value's digit-run must appear in the evidence ADJACENT to a currency/amount
+ * marker — "$40" grounds (next to "$"), a hallucinated "$2026" does NOT (its
+ * 2026 run sits next to "Concert"/"Hall", a year not an amount). This is STRICTLY
+ * a re-classification of amount fields: `name` is OPTIONAL and absent reproduces
+ * today's behavior exactly; non-amount names take the unchanged text/date path.
  */
-export function fieldIsGrounded(value: string, evidence: string): boolean {
+export function fieldIsGrounded(value: string, evidence: string, name?: string): boolean {
+  if (name !== undefined && AMOUNT_FIELD_NAMES.has(name)) {
+    return amountRunIsAnchored(value, evidence);
+  }
   const ev = evidence.toLowerCase();
   const evDigits = digitRuns(evidence);
   const valDigits = [...digitRuns(value)];
@@ -212,7 +266,7 @@ export function gateVisionAction(action: VisionAction, evidence: string | undefi
     ? fieldNames
     : fieldNames.filter((name) => {
         const value = action.fields[name];
-        return typeof value === "string" && value.trim().length > 0 && !fieldIsGrounded(value, evidenceText);
+        return typeof value === "string" && value.trim().length > 0 && !fieldIsGrounded(value, evidenceText, name);
       });
   return { ...action, draftText: annotateUnverified(action.draftText, unverified), unverified };
 }
