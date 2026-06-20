@@ -33,6 +33,18 @@ Verified existing context-strategy seams (from codegraph, 2026-06-20):
 - **Budgets** — `StepBudgetTracker` / `systemPromptTokenBudget` / step caps.
 
 ### Open follow-ups (next-fire candidates)
+- ◦ **Consolidation-spine (P3) decomposition** (fire-11 scout; fire 11 took #1):
+  (2) chat-ink.ts persona contested/provisional marks — needs async closure + per-turn provenance
+  refresh (sync `personaPrompt` closure over mutating `memoryHolder.current`); (3) surface
+  `classifyFactFreshness` (aging/stale) at point-of-use behind a conservative false-positive guard
+  (today only in `/memory why`); (4) recap→promotion round-trip e2e (confirming a volatile belief
+  re-states it user-source + promotes durable); (5) forgetting surfacing — `selectForgettable`/
+  `consolidationPlan` fade list reported non-destructively, floor-guard never silently drops a
+  still-recalled key; (6) provenance marks for PREFERENCES (today facts only). (apps/cli + @muse/memory)
+- ◦ **ask-vs-chat persona mark asymmetry** (fire-11 judge residual): chat persona is now MORE
+  marked than ask's persona block (ask marks its separate recall block, not the persona); reconcile
+  so the two surfaces are consistent. Also persona-suffix divergence (chat bare userId vs ask
+  `@persona`) means non-default-persona provenance won't surface in chat. (apps/cli)
 
 - ◦ **Grounding-quality eval under the new block order**: assert the edge-placed
   prompt order does not regress answer grounding (the judge flagged no eval
@@ -330,3 +342,28 @@ ratchet: testFiles +0 (extended existing) · recall 365 pass · pnpm check exit0
 - lesson: a JUDGE-DRILL must inject a slice that PASSES deterministic gates but is judge-catchable
   (inert/declaration-only) — an inert UNWIRED helper + declaration-only test is the canonical
   target; the adaptive judge's grep-for-callers + mutation-stays-green check is what catches it.
+
+## fire 11 · 2026-06-21 · skill v2.0.0 · 1d8add6b
+meta: value-class=wiring · pkg=apps/cli+@muse/recall · kind=consolidation-mark-chat-parity · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles +0 (extended existing) · cli 2786 pass · pnpm check exit0 (db saturation cleared on isolated rerun) · pnpm lint exit0 · fabrication 0 · self-eval green
+- **DOCTRINE:** advances principle ③ (cross-session consolidation spine) — the FIRST loop fire on it; scout DECOMPOSED the spine into 6 sub-slices (recorded above), this fire took #1.
+- **What:** the durable-vs-provisional / contested-belief point-of-use cautions live on `muse ask`
+  (via `buildMemoryContextBlock`) are now rendered on the CHAT persona too. `buildMusePersona`
+  (apps/cli/muse-persona.ts) gained optional `contestedKeys`/`provisionalKeys` and appends the SAME
+  mark strings (contested precedence); `chat-repl.ts` resolves provenance mirroring commands-ask
+  (same store/derive/normalizeKey/isInjection) and passes them, fail-soft.
+- **Why:** chat IS the continuous-companion thread, yet it asserted a volatile/once-seen auto-fact
+  as confident truth while ask cautioned it — the doctrine's named worst failure (a confident wrong
+  memory). mem0 (State of AI Agent Memory 2026): a promoted memory carries Provisional→Active status
+  and must surface cautiously at EVERY retrieval surface; OWASP ASI06 (a flip-flopping auto-fact is
+  the contested-value class). hermes/openclaw mark no recalled memory provisional at point-of-use →
+  widens the consolidation-spine moat.
+- **Review point:** mark strings byte-identical to ask (judge verified char-for-char); key lookup
+  uses the raw key form the selectors return (matches production); chat-ink deferred (sub-slice 2 —
+  needs async closure, NOT half-wired).
+- **Risk:** none to floor — additive mark (value defanged first, never altered/dropped; no-opts
+  byte-identical; fabrication=0), fail-soft provenance (error→unmarked, never throws into chat), no
+  touch to citation gate/verifyGrounding/gate-chat answer. Independent Opus adaptive judge PASS 8/8
+  + mutation RED→GREEN (drop ${mark} → 5 caution tests RED, no-opts stayed green). Sibling audit:
+  chat-repl wired; chat-ink deferred; brief/proactive/ask-persona intentional no-op (no double-mark).
+  Residual: no live round-trip (consistent with how ask-side landed); ask-vs-chat persona asymmetry.
