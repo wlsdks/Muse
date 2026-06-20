@@ -75,6 +75,14 @@ export interface SubtaskExecution {
   readonly status: SubtaskStatus;
   readonly output?: string;
   readonly error?: string;
+  /**
+   * The sources this worker retrieved, kept STATUS-LINKED. A gated (ungrounded) or
+   * failed sub-task's sources must NOT leak into the merged evidence the final answer
+   * is graded on — else the synthesis could be marked grounded against a source no
+   * surviving sub-task used (a fabricated citation). The caller filters to
+   * `status === "completed"` before merging.
+   */
+  readonly sources?: readonly string[];
 }
 
 export interface LeadWorkerResult {
@@ -159,8 +167,9 @@ async function runOne(subtask: Subtask, deps: LeadWorkerDeps, priorContext?: rea
   // nothing did NOT complete its sub-task, so it must not be folded into the
   // synthesis as if it had (the "blank = success" trap the handoff validator
   // closes on the orchestrator path — closed here too).
+  const sources = produced.sources;
   if (produced.output.trim().length === 0) {
-    return { error: "empty sub-task output (fail-close)", output: produced.output, status: "failed", subtask };
+    return { error: "empty sub-task output (fail-close)", output: produced.output, ...(sources ? { sources } : {}), status: "failed", subtask };
   }
 
   if (deps.groundingGate) {
@@ -171,11 +180,11 @@ async function runOne(subtask: Subtask, deps: LeadWorkerDeps, priorContext?: rea
       grounded = false;
     }
     if (!grounded) {
-      return { output: produced.output, status: "ungrounded", subtask };
+      return { output: produced.output, ...(sources ? { sources } : {}), status: "ungrounded", subtask };
     }
   }
 
-  return { output: produced.output, status: "completed", subtask };
+  return { output: produced.output, ...(sources ? { sources } : {}), status: "completed", subtask };
 }
 
 /**
@@ -260,6 +269,19 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
     const priorContext = sequenced
       ? executions.flatMap((e) => (e.status === "completed" && e.output ? [e.output] : []))
       : [];
+    // A SEQUENCED dependent step (any step after the first) whose EVERY upstream step
+    // failed/ungrounded has NOTHING to act on — running it blind fabricates a confident
+    // result from an absent dependency (MAST reasoning-action mismatch / information
+    // withholding). Fail-close it instead of executing the worker. The first step (no
+    // priors by design) always runs; an INDEPENDENT list never reaches this branch.
+    if (sequenced && executions.length > 0 && priorContext.length === 0) {
+      executions.push({
+        error: "upstream sequenced step(s) failed — dependent step not run blind (fail-close)",
+        status: "failed",
+        subtask
+      });
+      continue;
+    }
     executions.push(await runOne(subtask, deps, priorContext.length > 0 ? priorContext : undefined));
   }
 

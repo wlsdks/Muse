@@ -55,7 +55,11 @@ const NOTE_A_PRIME_EMBED_TEXT = "note alpha-prime EMBED text";
 
 // Normalized unit vectors.
 const A_VEC: readonly number[] = [0.5, 0.866, 0];
-const A_PRIME_VEC: readonly number[] = [0.4800, 0.8772, 0];
+// A′ is a SIMILAR-but-distinct paraphrase of A: cosine(A,A′)≈0.970 — well above
+// the confident threshold (the inflation this suite guards) yet BELOW the 0.985
+// near-duplicate floor, so the engine-path dedup keeps it as a real bridge. The
+// outright-duplicate (cosine≥0.985) drop is covered by its own dedup test below.
+const A_PRIME_VEC: readonly number[] = [0.2756, 0.9613, 0];
 // A different embedText vector — used to verify embedText is preferred over text.
 const A_PRIME_EMBED_VEC: readonly number[] = [0.3, 0.954, 0];
 
@@ -188,5 +192,76 @@ describe("rankKnowledgeChunksWithHop — query-relative cosine on appended bridg
 
     const empty = await rankKnowledgeChunksWithHop(QUERY, [], { ...inflationOpts, secondHop: true });
     expect(empty).toEqual([]);
+  });
+});
+
+// ── near-duplicate bridge dedup on the engine hop path ──────────────────────────
+//
+// Sibling-audit parity with the ask-window `dedupNearDuplicateChunks`
+// (@muse/recall, agent-hardening fire 5): an appended hop/PPR bridge that is
+// near-identical (cosine ≥ 0.985) to an already-kept chunk pads the small
+// model's grounding window with redundancy. The hop re-queries with a primary's
+// own text, so a paraphrase the ORIGINAL query missed (low query-cosine, below
+// minScore) surfaces as a bridge even though it duplicates a primary.
+//
+// Vector space (unit vecs, angles from the x-axis = query direction):
+//   query  [1, 0, 0]              0°
+//   A      [0.5,    0.866,  0]   60°   query-cos 0.50 (≥minScore 0.49) → PRIMARY
+//   Adup   [0.4695, 0.8829, 0]   62°   query-cos 0.47 (<minScore) → not primary;
+//                                       cos(A,Adup)=0.9994 → hop bridge AND near-dup → DROPPED
+//   B      [0.2588, 0.9659, 0]   75°   query-cos 0.26 (<minScore) → not primary;
+//                                       cos(A,B)=0.966 (>minScore, <0.985) → distinct bridge → KEPT
+const DEDUP_QUERY = "dedup query";
+const DEDUP_VEC: Record<string, readonly number[]> = {
+  [DEDUP_QUERY]: [1, 0, 0],
+  "note A text": [0.5, 0.866, 0],
+  "note A duplicate text": [0.4695, 0.8829, 0],
+  "note B distinct text": [0.2588, 0.9659, 0],
+};
+const dedupEmbed = (text: string): Promise<readonly number[]> =>
+  Promise.resolve(DEDUP_VEC[text] ?? [0, 0, 0]);
+const dedupNotes = [
+  { source: "A.md", text: "note A text" },
+  { source: "Adup.md", text: "note A duplicate text" },
+  { source: "B.md", text: "note B distinct text" },
+];
+const dedupOpts = { embed: dedupEmbed, topK: 3, minScore: 0.49 };
+
+describe("rankKnowledgeChunksWithHop — near-duplicate bridge dedup (engine-path parity)", () => {
+  it("drops a hop bridge that is a near-duplicate (cosine≥0.985) of a primary, keeps a distinct one", async () => {
+    const result = await rankKnowledgeChunksWithHop(DEDUP_QUERY, dedupNotes, { ...dedupOpts, secondHop: true });
+    const sources = result.map((m) => m.source);
+    expect(sources).toContain("A.md");          // primary hit survives
+    expect(sources).not.toContain("Adup.md");   // near-identical paraphrase → redundant → dropped
+    expect(sources).toContain("B.md");          // distinct bridge → multi-hop coverage kept
+  });
+
+  it("AUGMENT-never-displace: the primary prefix is byte-identical with vs without the hop", async () => {
+    const withoutHop = await rankKnowledgeChunksWithHop(DEDUP_QUERY, dedupNotes, dedupOpts);
+    const withHop = await rankKnowledgeChunksWithHop(DEDUP_QUERY, dedupNotes, { ...dedupOpts, secondHop: true });
+    expect(withHop.slice(0, withoutHop.length)).toEqual(withoutHop);
+  });
+
+  it("FAIL-OPEN: an embed failure during the dedup pass keeps the bridge (never wrongly dropped)", async () => {
+    // The duplicate's chunk embeds fine during ranking (so it surfaces as a hop
+    // bridge) but THROWS on the later dedup re-embed → embedFor returns null →
+    // the dedup cannot confirm a near-duplicate and KEEPS it. Fail-open: a
+    // bridge is dropped only on a CONFIRMED match, never on an embed error.
+    let dupEmbedCalls = 0;
+    const flakyEmbed = (text: string): Promise<readonly number[]> => {
+      if (text === "note A duplicate text") {
+        dupEmbedCalls += 1;
+        // Ranking + the query-cosine recompute embed this text first (each with
+        // its own fail-safe); the FINAL call is the dedup re-embed — throw there.
+        if (dupEmbedCalls >= 4) return Promise.reject(new Error("dedup re-embed failed"));
+      }
+      return dedupEmbed(text);
+    };
+    const result = await rankKnowledgeChunksWithHop(DEDUP_QUERY, dedupNotes, {
+      ...dedupOpts,
+      embed: flakyEmbed,
+      secondHop: true,
+    });
+    expect(result.map((m) => m.source)).toContain("Adup.md");
   });
 });

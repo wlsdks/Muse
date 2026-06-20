@@ -112,6 +112,24 @@ describe("runDecomposedAgentAsk — planner + grounding gate are wired (not dead
     expect(result.answer).toBe("SYNTH");
   });
 
+  it("does NOT leak an UNGROUNDED sub-task's sources into the merged evidence (fan-in source-leak: a refused subtask's secret.md must not grade the answer)", async () => {
+    const query = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
+    const runner = {
+      run: async (input: AgentRunInput): Promise<AskAgentRunResult> => {
+        const content = (input.messages[input.messages.length - 1]?.content ?? "") as string;
+        if (content.startsWith("사용자 요청:")) return { response: { output: "SYNTH" }, groundingSources: [{ source: "synth.md", text: "s" }] };
+        if (content.includes("회의록")) return { response: { output: "I'm not sure about that." }, groundingSources: [{ source: "secret.md", text: "x" }] }; // REFUSES → ungrounded
+        if (content.includes("액션")) return { response: { output: "action items extracted" }, groundingSources: [{ source: "actions.md", text: "a" }] };
+        return { response: { output: "scheduled" }, groundingSources: [{ source: "cal.md", text: "c" }] };
+      }
+    };
+    const result = await runDecomposedAgentAsk({ ...baseArgs, query, runner });
+    const names = result.groundingSources.map((s) => s.source);
+    expect(names).not.toContain("secret.md"); // the refused subtask's source is DROPPED
+    expect(names).toContain("actions.md"); // a completed subtask's source survives
+    expect(names).toContain("synth.md"); // the synthesis run's own source survives
+  });
+
   it("flags a cross-subtask CONFLICT when two sub-answers contradict on the same topic (J2 fan-in conflict)", async () => {
     const query = "다음 3개 해줘: 1. 마감일 찾기 2. 마감일 확인 3. 일정 등록";
     const runner = runnerReturning((content) => {

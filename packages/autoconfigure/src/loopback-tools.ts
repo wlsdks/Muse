@@ -41,6 +41,7 @@ import { isWebEgressAllowed } from "@muse/model";
 import type { ModelProvider } from "@muse/model";
 
 import { parseBoolean, parseInteger } from "./env-parsers.js";
+import { resolveWeaknessesFile } from "./provider-paths.js";
 import type { MuseEnvironment } from "./index.js";
 
 export interface LoopbackToolsDeps {
@@ -160,7 +161,10 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
     createRemindersMcpServer({
       file: deps.remindersFile,
       historyFile: deps.reminderHistoryFile,
-      maxListEntries: parseInteger(env.MUSE_REMINDERS_LIST_MAX, 12)
+      maxListEntries: parseInteger(env.MUSE_REMINDERS_LIST_MAX, 12),
+      // Whetstone: an agent `reminder add` with an unparseable dueAt records a
+      // time-parse weakness (the agent-path sibling of CLI `calendar add`, fire 26).
+      weaknessesFile: resolveWeaknessesFile(env)
     })
   );
 

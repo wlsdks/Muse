@@ -11,6 +11,25 @@ import {
   type SubtaskOutput
 } from "../src/index.js";
 
+describe("runOne via runLeadWorkerTask — SubtaskExecution carries the worker's sources, status-linked (fan-in source-leak fix)", () => {
+  const execute = async (s: Subtask): Promise<SubtaskOutput> => {
+    if (s.text.includes("refuse")) return { output: "I'm not sure about that.", sources: ["secret.md"] };
+    return { output: `done:${s.text}`, sources: [`${s.text}.md`] };
+  };
+  it("attaches sources to each execution, so a gated (ungrounded) subtask's sources stay linked to its status", async () => {
+    const result = await runLeadWorkerTask("다음 3개 해줘: 1. refuse this 2. summarize 3. extract", deps({
+      execute,
+      groundingGate: (out) => !out.output.includes("not sure")
+    }));
+    const refused = result.executions.find((e) => e.subtask.text.includes("refuse"));
+    const ok = result.executions.find((e) => e.subtask.text.includes("summarize"));
+    expect(refused?.status).toBe("ungrounded");
+    expect(refused?.sources).toEqual(["secret.md"]); // sources retained, status-linked
+    expect(ok?.status).toBe("completed");
+    expect(ok?.sources).toEqual(["summarize.md"]);
+  });
+});
+
 describe("detectSubtaskConflicts — cross-subtask CONTRADICTION on the fan-in (an internally-inconsistent answer is GROUNDED != TRUE)", () => {
   // stub embed: same-topic vector for deadline statements, orthogonal otherwise
   const embed = async (t: string): Promise<readonly number[]> => (t.toLowerCase().includes("deadline") ? [1, 0] : [0, 1]);
@@ -275,6 +294,62 @@ describe("runLeadWorkerTask — SEQUENCED decomposition threads prior step outpu
     };
     await runLeadWorkerTask("먼저 회의록을 요약하고 그 다음 액션아이템을 추출해줘", deps({ execute }));
     expect(priors[1] ?? []).toEqual([]); // step 2 gets NO prior (the blank failed, not threaded)
+  });
+  it("numbered list WITH back-reference threads step 1's output into step 2's worker (MAST)", async () => {
+    const { priors, execute } = capturePriors();
+    // 3 items so shouldDecompose fires (enumeration >= 3); item 2 has a back-reference → sequenced=true
+    await runLeadWorkerTask(
+      "1. 회의록을 요약해줘 2. 그 요약에서 액션아이템을 추출해줘 3. 일정 등록해줘",
+      deps({ execute })
+    );
+    expect(priors).toHaveLength(3);
+    expect(priors[0]).toBeUndefined(); // step 1 has no prior
+    expect(priors[1]?.some((p) => p.includes("회의록"))).toBe(true); // step 2 SEES step 1's output
+  });
+});
+
+describe("runLeadWorkerTask — SEQUENCED dependent step with a fully-failed upstream is fail-closed, not run blind (MAST reasoning-action mismatch / information withholding)", () => {
+  it("does NOT execute a dependent step when EVERY prior sequenced step failed/ungrounded — marks it failed", async () => {
+    const ran: string[] = [];
+    // Step 1 (회의록 요약) returns blank → failed. Step 2 depends on "그 요약" (that summary)
+    // which never exists — running it blind would fabricate from nothing.
+    const execute = async (s: Subtask): Promise<SubtaskOutput> => {
+      ran.push(s.text);
+      return { output: s.text.includes("회의록") ? "   " : `done:${s.text}` };
+    };
+    const result = await runLeadWorkerTask("먼저 회의록을 요약하고 그 다음 그 요약에서 액션아이템을 추출해줘", deps({ execute }));
+
+    // step 1 ran (and failed); step 2 must NOT have run blind.
+    expect(ran.some((t) => t.includes("회의록"))).toBe(true);
+    expect(ran.some((t) => t.includes("액션아이템"))).toBe(false);
+    const dependent = result.executions.find((e) => e.subtask.text.includes("액션아이템"));
+    expect(dependent?.status).toBe("failed");
+    expect(dependent?.error).toContain("upstream");
+  });
+
+  it("STILL runs a dependent step when at least ONE prior completed (partial upstream is enough to act on)", async () => {
+    const ran: string[] = [];
+    const execute = async (s: Subtask): Promise<SubtaskOutput> => {
+      ran.push(s.text);
+      return { output: `done:${s.text}` }; // every step completes
+    };
+    const result = await runLeadWorkerTask("먼저 회의록을 요약하고 그 다음 그 요약에서 액션아이템을 추출해줘", deps({ execute }));
+    expect(ran.some((t) => t.includes("액션아이템"))).toBe(true);
+    const dependent = result.executions.find((e) => e.subtask.text.includes("액션아이템"));
+    expect(dependent?.status).toBe("completed");
+  });
+
+  it("does NOT fail-close an INDEPENDENT (numbered) list when an earlier item fails — isolation means no dependency", async () => {
+    const ran: string[] = [];
+    const execute = async (s: Subtask): Promise<SubtaskOutput> => {
+      ran.push(s.text);
+      return { output: s.text.includes("회의록") ? "   " : `done:${s.text}` }; // item 1 fails
+    };
+    // independent list (no back-reference) → sequenced=false → later items run regardless
+    const result = await runLeadWorkerTask("다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록", deps({ execute }));
+    expect(ran.some((t) => t.includes("액션아이템"))).toBe(true);
+    const item2 = result.executions.find((e) => e.subtask.text.includes("액션아이템"));
+    expect(item2?.status).toBe("completed");
   });
 });
 

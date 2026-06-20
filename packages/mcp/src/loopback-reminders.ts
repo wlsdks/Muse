@@ -6,6 +6,7 @@ import { errorMessage, readString } from "./loopback-helpers.js";
 import { hasTimeComponent, isTimeOnlyPhrase, isUtcMidnight, recurrenceFromPhrase, startOfLocalDay, withTimeOfDay } from "./loopback-relative-time.js";
 import type { LoopbackMcpServer, LoopbackMcpToolDefinition } from "./loopback.js";
 import { readReminderHistory } from "./personal-reminder-history-store.js";
+import { recordTimeParseWeakness, recordWeakness } from "./weakness-ledger.js";
 import {
   compareRemindersByDueAt,
   filterReminders,
@@ -59,6 +60,12 @@ export interface RemindersMcpServerOptions {
    * MCP server's optional `pollNow` / `pollAll`.
    */
   readonly historyFile?: string;
+  /**
+   * When set, a `dueAt` phrase the deterministic parser CAN'T resolve records a
+   * `time-parse` weakness here — the agent-path sibling of the CLI `calendar add/edit`
+   * producer (fire 26). Omitted ⇒ no whetstone signal (back-compat).
+   */
+  readonly weaknessesFile?: string;
 }
 
 export function createRemindersMcpServer(options: RemindersMcpServerOptions): LoopbackMcpServer {
@@ -136,6 +143,14 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           }
           const parsed = parseReminderDueAt(dueAtRaw, now);
           if (parsed instanceof Error) {
+            // Whetstone (agent-path sibling of `calendar add`, fire 26): the
+            // deterministic parser couldn't resolve this dueAt phrase — record the
+            // time-parse weakness so a recurring misread surfaces. Fail-soft.
+            if (options.weaknessesFile) {
+              try {
+                await recordTimeParseWeakness(dueAtRaw, true, { recordWeakness, weaknessesFile: options.weaknessesFile });
+              } catch { /* ledger write must never surface as a tool error */ }
+            }
             return { error: parsed.message };
           }
           // Coerce, never reject: a one-time reminder whose `recurrence` the
@@ -302,6 +317,13 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
               : now;
             const parsed = parseReminderDueAt(dueAtRaw, anchor);
             if (parsed instanceof Error) {
+              // Whetstone (in-file sibling of `add`): a snooze/reschedule dueAt the
+              // deterministic parser can't resolve is the same time-parse signal. Fail-soft.
+              if (options.weaknessesFile) {
+                try {
+                  await recordTimeParseWeakness(dueAtRaw, true, { recordWeakness, weaknessesFile: options.weaknessesFile });
+                } catch { /* ledger write must never surface as a tool error */ }
+              }
               return { error: parsed.message };
             }
             // A bare DATE ("다음 주 월요일로 옮겨줘") keeps the reminder's time-of-day,

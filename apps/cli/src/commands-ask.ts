@@ -44,7 +44,7 @@ import { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource } 
 export { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource };
 import { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy } from "@muse/recall";
 export { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy };
-import { diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks, shouldSecondHop } from "@muse/recall";
+import { dedupNearDuplicateChunks, diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks, shouldSecondHop } from "@muse/recall";
 import { groundedSourceSummary, optionalGroundingRelevance, optionalGroundingSections } from "@muse/recall";
 import { citationPrecisionNotice, citationRecallNotice, untrustedOnlyGroundingNotice } from "@muse/recall";
 
@@ -1662,6 +1662,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // Compose RAG context block. Edge-place the chunks (most relevant at
       // the start + end, least in the middle) per "Lost in the Middle" so the
       // small local model actually attends to the strongest grounding.
+      // Graph-link + second-hop AUGMENT chunks are appended after MMR and
+      // bypass it, so a near-identical chunk (same fact across two notes, or a
+      // bridge near a seed) can pad the small model's context. Drop provable
+      // near-duplicates first-wins (highest-ranked survives); fail-open on any
+      // chunk without a comparable embedding (e.g. --file ad-hoc passages).
+      scored = dedupNearDuplicateChunks(scored, cosine);
       const contextChunks = reorderForLongContext(scored);
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
@@ -2820,20 +2826,12 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // failure (not just the daily recap) — a deterministic user-facing nudge.
       if (!options.json && askAxis !== null) {
         try {
-          const { askTimeWeaknessNudge, readWeaknesses, topicKeyFromMessage } = await import("@muse/mcp");
+          const { askTimeWeaknessNudge, readWeaknesses, renderAskTimeNudge, topicKeyFromMessage } = await import("@muse/mcp");
           const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
           const weaknessEntries = await readWeaknesses(resolveWeaknessesFile(process.env as Record<string, string | undefined>));
           const nudge = askTimeWeaknessNudge(weaknessEntries, topicKeyFromMessage(query));
           if (nudge) {
-            const ko = /[가-힣]/u.test(query);
-            const msg = nudge.axis === "source-conflict"
-              ? (ko
-                  ? `"${nudge.topic}" 관련 노트가 서로 어긋나요 (${nudge.count.toString()}번째) — 정리해두시면 정확히 답해드릴게요.`
-                  : `your notes on "${nudge.topic}" disagree (${nudge.count.toString()}×) — reconcile them and I'll answer accurately`)
-              : (ko
-                  ? `"${nudge.topic}" 주제는 전에도 막혔는데 노트에 없어요 (${nudge.count.toString()}번째) — 메모를 추가하시면 다음엔 답해드릴게요.`
-                  : `you've hit "${nudge.topic}" ${nudge.count.toString()}× and it's not in your notes — add one and I'll answer next time`);
-            io.stderr(`💡 ${msg}\n`);
+            io.stderr(`💡 ${renderAskTimeNudge(nudge, /[가-힣]/u.test(query))}\n`);
           }
         } catch { /* ledger unavailable — no nudge */ }
       }
