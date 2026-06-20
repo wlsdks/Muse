@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 16 · 2026-06-21 · skill v2.0 · <commit-pending> (env injection — whole code-injection family; fire-15 sibling-audit)
+## fire 16 · 2026-06-21 · skill v2.0 · 00451ce7 (env injection — whole code-injection family; fire-15 sibling-audit)
 meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=security/path-safe · verdict=PASS · firesSinceDrill=6
 ratchet: testFiles 1069→1069 (+1 case tools.test family + Rust family test, mutation-valid) · fabrication 0 · @muse/tools 격리 285 · crates/runner cargo 8 · eval:computer-task 무관(env 미사용) · pnpm check=박스포화(web-search fuzz 5s, 격리 green) · lint clean
 - 무엇: fire 15 sibling-audit 완성 — 동적로더(LD_/DYLD_)는 family 1/24였음. NODE_OPTIONS(=`--require`로 node에 코드주입, Muse가 node 실행), shell(BASH_ENV/ENV/SHELLOPTS), interpreter(PERL5OPT/PYTHONSTARTUP/PYTHONPATH/RUBYOPT…), git command-exec(GIT_SSH_COMMAND/GIT_EXTERNAL_DIFF/GIT_PAGER/…+GIT_CONFIG*) 전부 통과하던 걸 `UNSAFE_ENV_EXACT` denylist로 차단. TS+Rust 양 레이어 리스트 IDENTICAL.
