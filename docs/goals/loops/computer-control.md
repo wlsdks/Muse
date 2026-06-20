@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 8 · 2026-06-21 · skill v2.0 · <commit-pending> (edit no-match nearest-line hint; pivot to fs/edit-repair)
+## fire 8 · 2026-06-21 · skill v2.0 · e83287c5 (edit no-match nearest-line hint; pivot to fs/edit-repair)
 meta: value-class=new-capability · pkg=@muse/fs · kind=edit-repair · verdict=PASS · firesSinceDrill=8
 ratchet: testFiles 1065→1065 (+2 cases fs-write-tools, mutation-valid) · fabrication 0 · eval:computer-task PASS(무회귀) · pnpm check exit 0(LINE 웹훅 20s 타임아웃 flake=박스포화, stash-격리 854/854 통과 확인) · lint clean
 - 무엇: diversity RATCHET(tool-exposure 3연속 4·6·7)로 다른 (pkg,kind) 전환 — @muse/fs 3× scout(path-safety 전 write도구·read-before-edit 형제·edit repair 모두 견고) 후 유일 갭=genuine content-miss 시 `applyEdit`이 "old_string not found"만 반환(self-correct 불가). FIX: `nearestLineHint`(shared-word overlap로 파일의 가장 가까운 줄을 에러에 첨부, threshold·120자·noise 억제). 순수/결정론, 실패-메시지 only(매칭/write 불변).
