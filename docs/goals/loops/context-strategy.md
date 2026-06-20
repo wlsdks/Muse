@@ -11,7 +11,7 @@ each fire commits AND pushes the branch + maintains a draft PR. **Every 5th fire
 then keep working on the branch.** Floor: NO force-push, NO `--no-verify`; the
 5-fire merge is ff-only (re-fetch on conflict, never force).
 
-**Cadence:** session cron `6ba58123`, 20 min. **Stop:** `CronDelete 6ba58123` or cmux.
+**Cadence:** session cron `c66c8b81`, 20 min. **Stop:** `CronDelete c66c8b81` or cmux.
 
 ---
 
