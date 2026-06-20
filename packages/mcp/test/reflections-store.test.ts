@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { addReflections, listReflections, MAX_REFLECTIONS, readReflections, type NewReflection } from "../src/reflections-store.js";
+import { addReflections, listReflections, MAX_REFLECTIONS, readReflections, selectRetainedReflections, type NewReflection, type StoredReflection } from "../src/reflections-store.js";
 
 let dir: string;
 let file: string;
@@ -107,5 +107,43 @@ describe("reflections-store — MAX_REFLECTIONS cap (recency-trimmed, agrees wit
     expect(ids.has("backfill")).toBe(false);
     expect(ids.has("a0")).toBe(true);
     expect(ids.size).toBe(MAX_REFLECTIONS);
+  });
+});
+
+describe("reflections-store — salience-weighted eviction (Generative Agents arXiv:2304.03442)", () => {
+  const DAY = 24 * 60 * 60_000;
+  const NOW = Date.UTC(2026, 5, 21, 0, 0, 0);
+  const sref = (over: Partial<StoredReflection>): StoredReflection => ({
+    createdAtMs: NOW, id: "x", insight: "i", sourceIds: ["e1"], supportCount: 2, ...over
+  });
+
+  it("a high-support OLDER insight survives a cap over a thin NEWER one (the opposite of pure recency)", () => {
+    const entries = [
+      sref({ id: "proven-old", supportCount: 10, createdAtMs: NOW - 10 * DAY }),
+      sref({ id: "thin-new", supportCount: 1, createdAtMs: NOW - 2 * DAY })
+    ];
+    const kept = selectRetainedReflections(entries, NOW, 1).map((r) => r.id);
+    expect(kept).toEqual(["proven-old"]);            // salience wins
+    // pure-recency would have kept "thin-new" (newer createdAtMs)
+  });
+
+  it("with EQUAL support, eviction reduces to recency (legacy-identical) — newest survives", () => {
+    const entries = [
+      sref({ id: "old", supportCount: 3, createdAtMs: NOW - 9 * DAY }),
+      sref({ id: "new", supportCount: 3, createdAtMs: NOW - 1 * DAY })
+    ];
+    expect(selectRetainedReflections(entries, NOW, 1).map((r) => r.id)).toEqual(["new"]);
+  });
+
+  it("END-TO-END: a high-support older insight is protected from cap eviction by a flood of thin recent ones", async () => {
+    const recent: NewReflection[] = Array.from({ length: MAX_REFLECTIONS }, (_, i) => ({
+      createdAtMs: NOW - i * 1000, id: `recent-${i.toString()}`, insight: `thin recent insight ${i.toString()}`, sourceIds: ["e1"], supportCount: 2
+    }));
+    await addReflections(file, recent, { nowMs: NOW });
+    // a strongly-recurring insight from ~12 days ago — older than all 500 recent ones
+    await addReflections(file, [{ createdAtMs: NOW - 12 * DAY, id: "proven", insight: "you consistently defer hard decisions to mornings", sourceIds: ["e1", "e2", "e3"], supportCount: 12 }], { nowMs: NOW });
+    const stored = await readReflections(file);
+    expect(stored).toHaveLength(MAX_REFLECTIONS);
+    expect(stored.some((r) => r.id === "proven")).toBe(true); // salience saved it; pure recency would have dropped it
   });
 });
