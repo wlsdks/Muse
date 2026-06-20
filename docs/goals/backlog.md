@@ -2,6 +2,8 @@
 
 - ✓ vision input gate magic-byte content check — loadImageAttachment fail-closes on non-image bytes + ships sniffed mimeType (MLLM input-integrity arXiv:2404.18930) — grounded-vision fire 1 (`a670dec5`)
 - ✓ chat-ink readImage shared the vision input-integrity gap — `muse chat --image` now content-sniffs via the shared leaf (readImageAttachment), fail-close on non-image bytes (arXiv:2404.18930) — grounded-vision fire 2 (`ae37c354`)
+- ✓ vision field-level partial-apply — drop un-grounded OPTIONAL fields + apply grounded core, fail-close only on a REQUIRED field (no un-grounded value persisted; arXiv:2404.18930) — grounded-vision fire 3 (`0f301103`)
+- ◦ vision contact partial-apply degenerate-action notice: when a contact's name is grounded but its only email/phone is dropped, dropUnverifiedOptional recomposes to route:none/fields:{} and the apply path prints a misleading `✅ Done:{added:false}` (the contacts store fail-closes so there's NO write — cosmetic only). Detect the degenerate (no required method left) and print a clear "couldn't apply — no grounded contact method" instead. Gate: `pnpm --filter @muse/cli test`. (grounded-vision fire-3 judge residual)
 - ✓ content-free grounding-header guard: optionalGroundingSections drops present:true blocks with empty body (no citable-looking header backing nothing; doctrine P2/P4) + JUDGE-DRILL passed (verifier caught an inert unwired-helper slice) — context-strategy fire 10 (detail in docs/goals/loops/context-strategy.md)
 
 - ✓ memory-fact value now wrapper-marker-escaped (escapeSystemPromptMarkers in renderMemoryFact) — closes the <<memory>> block breakout/forged-citation vector (OWASP ASI06, doctrine principle 5) — context-strategy fire 9 (detail in docs/goals/loops/context-strategy.md)

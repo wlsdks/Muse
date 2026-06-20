@@ -27,3 +27,12 @@ ratchet: testFiles 1066→1067 · fabrication 0 · groundedSurfaces=28 (no drop)
 - 왜: 입력단 visual-integrity 구멍이 ask·chat 두 표면에 동일하게 있었음(형제-감사가 fire 1에서 발견). 두 surface 모두 닫아 입력 fabrication floor 완성. 공유 leaf 재사용으로 중복 sniffer 없음. arXiv:2404.18930.
 - 리뷰지점: 독립 적응형 judge가 return/async 계약 정확 보존(undefined-on-failure·consumer `if(img)` 동일 처리·sync→async 변경 아님), over-reject 회귀 없음(실 receipt.png 로드), 가드 revert→DROP/RECONCILE RED 실증, accept-list 불변. 기계적 미러라 Sonnet 빌더 + Opus judge 티어링.
 - 리스크: 낮음 — chat→Ollama 이미지 배선의 라이브 round-trip은 미검증(입력 게이트는 결정론으로 증명, consumer 코드 불변으로 보장). prefix-only sniff 한계는 fire 1과 동일.
+
+## fire 3 · 2026-06-21 · skill v2.0.0 · 0f301103
+meta: value-class=capability · pkg=@muse/cli · kind=vision-routing-grounding · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 1067 · fabrication 0 · groundedSurfaces=28 (no drop) · groundedCases=45 · differentiationBatteries=6 · cli 2794 PASS(+4 신규) · check 2794 · eval:vision-grounding 3/3 라이브 PASS · mutation-first 양방향 RED 확인
+merge: main FF 성공 (fires 1·2·3 origin/main 안착)
+- 무엇: vision --apply가 한 필드라도 unverified면 전체 거부하던 것을 field-level partial-apply로 — un-grounded OPTIONAL 필드는 드롭하고 grounded 코어 적용, REQUIRED 필드 unverified면 전체 fail-close. splitUnverified+dropUnverifiedOptional, REQUIRED_FIELDS는 KIND_EXTRACT 스키마에서 파생.
+- 왜: grounded merchant+total인데 hallucinated date(optional) 하나로 영수증 노트 전체가 막히던 usability+grounding-completeness 갭. fabrication=0 보존: dropUnverifiedOptional이 surviving source 필드로 재구성+shapeVisionAction 재실행해 파생 문자열(note/path/draftText)이 드롭 값 없이 재생성 → un-grounded 값은 절대 영속 안 됨, grounded 형제만 적용. 입력단(fire1·2)에서 라우팅/적용단으로 다운스트림 이동(다양성). arXiv:2404.18930.
+- 리뷰지점: 독립 적응형 judge가 모든 kind의 persist 경로 추적해 드롭 값이 자기 슬롯에 안 남음 확인, required-map 파생+route-gate 일치 검증, mutation 양방향 RED 실증. eval:vision-grounding 라이브 3/3.
+- 리스크: 낮음(cosmetic) — contact의 유일 연락처가 드롭되면 route:none·fields:{} 되어 오해성 "✅ Done:added:false" 출력(스토어가 fail-close라 fabrication/부분쓰기 없음). → backlog ◦.
