@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ query-relevance threaded into the cross-block edge-place — fire-1's dormant relevance? path activated (episode recall score blended with tier on a shared 0-1 scale; arXiv:2410.05983) — context-strategy fire 6 (detail in docs/goals/loops/context-strategy.md)
+
 - ✓ inflection-aware tool-relevance matching — capToolsByRelevance ranking now agrees with the @muse/tools selection layer (lights→light kept past the cap; CJK 할 일 over-match fixed) — context-strategy fire 5 (detail in docs/goals/loops/context-strategy.md)
 
 - ✓ query-anchored span retention in the per-result cap (ACON arXiv:2510.00615 / Lost-in-the-Middle arXiv:2307.03172; keeps the load-bearing middle span the query needs, verbatim, neutralize-first) — context-strategy fire 4 (detail in docs/goals/loops/context-strategy.md)
