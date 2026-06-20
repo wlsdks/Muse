@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 8 · 2026-06-21 · skill v2.0 · <commit-pending> (edit no-match nearest-line hint; pivot to fs/edit-repair)
+meta: value-class=new-capability · pkg=@muse/fs · kind=edit-repair · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles 1065→1065 (+2 cases fs-write-tools, mutation-valid) · fabrication 0 · eval:computer-task PASS(무회귀) · pnpm check exit 0(LINE 웹훅 20s 타임아웃 flake=박스포화, stash-격리 854/854 통과 확인) · lint clean
+- 무엇: diversity RATCHET(tool-exposure 3연속 4·6·7)로 다른 (pkg,kind) 전환 — @muse/fs 3× scout(path-safety 전 write도구·read-before-edit 형제·edit repair 모두 견고) 후 유일 갭=genuine content-miss 시 `applyEdit`이 "old_string not found"만 반환(self-correct 불가). FIX: `nearestLineHint`(shared-word overlap로 파일의 가장 가까운 줄을 에러에 첨부, threshold·120자·noise 억제). 순수/결정론, 실패-메시지 only(매칭/write 불변).
+- 왜: 노출 다 고쳐도 모델이 잘못된 old_string을 주면 repair 피드백이 unhelpful → 실제 텍스트를 줘 next 시도 self-correct. 12B 멀티스텝 신뢰성에 간접 기여(repair 루프 단축). fail-closed posture 불변(no location-guess).
+- 리뷰지점: mutation-valid(헬퍼 stub시 RED). ④b judge PASS(write 유발 0, noise 억제 probe, 결정론 tie-break, scope 정직). LINE 웹훅 flake는 stash-격리로 pre-existing env 타임아웃 확정(내 fs 변경 무관).
+- 리스크: 낮음 — 에러 문자열만 enrich, 매칭/write/fail-close 전부 불변. ④b PASS.
+lesson: 3× scout로 "코드가 이미 견고"를 *코드로 확인*하면 성급-exhaustion(fire 3) 아니라 정당한 vein-상태 파악 — fs primitives는 hardened, 남은 갭은 repair-피드백 품질(작지만 clean)뿐. **computer-control clean-deterministic vein 대부분 소진**: 노출 done(4·6·7)·fs hardened(8), 잔여 multifile 블로커는 12B model-behavior(fuzzy/stochastic, deterministic 슬라이스 아님). 다음=agentic-persistence(전용 eval예산) 또는 mandatory-bloat 리팩터(broad).
+
 ## fire 7 · 2026-06-21 · skill v2.0 · ea75ca36 (file_edit code-edit intent; EXPOSURE CHAIN COMPLETE)
 meta: value-class=new-capability · pkg=@muse/tools · kind=write-intent-gate · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles 1065→1065 (+1 case tools.test, mutation-valid) · fabrication 0 · file_edit 노출 fixed(probe) · eval:computer-task PASS(무회귀) · eval:multifile-fix 여전히 FAIL(노출 아닌 12B 멀티스텝) · pnpm check clean(LINE 웹훅 flaky 격리 854/854) · lint clean
