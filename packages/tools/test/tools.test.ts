@@ -1592,3 +1592,32 @@ describe("parseRunnerCommandRequest — adversarial arg fuzz", () => {
     expect(r.env).toEqual({ OK: "1" });
   });
 });
+
+describe("code-task tool relevance — run_command + file tools surface on a 'run the test / fix the bug' prompt", () => {
+  const noise = (name: string, domain: string, kw: readonly string[]): MuseTool => ({
+    definition: { description: name, domain, inputSchema: {}, keywords: kw, name, risk: "read" },
+    execute: () => "ok"
+  });
+  // A multi-step code task says "run the test, fix the bug" — without run/code
+  // keywords run_command (domain="system") and the file tools score 0 and are
+  // dropped, so the model can never run the test or edit the source (the
+  // eval:multifile-fix failure).
+  // Zero-keyword OPTIONAL tools are treated as always-relevant, so they only
+  // compete with run_command UNDER THE CAP (a tight maxTools). This makes the
+  // run/test keywords load-bearing: without them run_command scores 0, ties the
+  // clutter, and loses the cap tiebreak → the test goes RED on keyword removal.
+  it("run_command WINS a capped slot over zero-keyword clutter on a run/test prompt (mutation-valid)", () => {
+    const runner = createRustRunnerTool({ runnerPath: "/tmp/x" });
+    const sel = filterToolsForContext(
+      [noise("opt.one", "notes", []), noise("opt.two", "notes", []), runner],
+      { localMode: true, maxTools: 1, prompt: "run the test and fix the bug" }
+    );
+    expect(sel.tools.map((t) => t.definition.name)).toContain("run_command");
+  });
+
+  it("does NOT expose run_command for an unrelated prompt (no over-fire on the new keywords)", () => {
+    const runner = createRustRunnerTool({ runnerPath: "/tmp/x" });
+    const sel = filterToolsForContext([runner], { localMode: true, prompt: "what is the capital of France" });
+    expect(sel.tools.map((t) => t.definition.name)).not.toContain("run_command");
+  });
+})

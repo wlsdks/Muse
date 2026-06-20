@@ -169,7 +169,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
         required: ["path"],
         type: "object"
       },
-      keywords: ["file", "read", "open", "contents", "pdf", "문서", "document", "파일", "읽어", "열어", "내용", "요약", "summarize"],
+      keywords: ["file", "read", "open", "contents", "pdf", "문서", "document", "파일", "읽어", "열어", "내용", "요약", "summarize", "code", "source", "bug", "fix"],
       name: "file_read",
       risk: "read"
     },
@@ -375,7 +375,7 @@ export function createFileGrepTool(options: FsReadToolsOptions = {}, policyPromi
         required: ["pattern"],
         type: "object"
       },
-      keywords: ["grep", "search", "contents", "contain", "find", "검색", "내용", "찾아"],
+      keywords: ["grep", "search", "contents", "contain", "find", "검색", "내용", "찾아", "code", "source", "bug", "fix", "test"],
       name: "file_grep",
       risk: "read"
     },
