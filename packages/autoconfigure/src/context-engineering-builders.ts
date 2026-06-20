@@ -431,6 +431,10 @@ export function buildPlaybookProvider(env: MuseEnvironment): PlaybookProvider | 
         ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),
         ...(entry.tag ? { tag: entry.tag } : {}),
         text: entry.text,
+        // origin must survive the projection — the reflected ranking penalty
+        // (playbook.ts) and the CBR low-support gate key on it; dropping it here
+        // makes both inert (parity with the CLI `toPlaybookStrategy` sibling).
+        ...(entry.origin ? { origin: entry.origin } : {}),
         ...(entry.lastReinforcedAt ? { lastReinforcedAt: entry.lastReinforcedAt } : {}),
         ...(entry.createdAt ? { createdAt: entry.createdAt } : {})
       }))

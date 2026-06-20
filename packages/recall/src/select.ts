@@ -450,7 +450,7 @@ export function selectProbationSuggestion(
  * empty bank ⇒ undefined (no block).
  */
 export function selectPlaybookSection(
-  entries: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly reinforcements?: number; readonly decays?: number }[],
+  entries: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly reinforcements?: number; readonly decays?: number; readonly origin?: string }[],
   queryText: string,
   topK?: number
 ): string | undefined {
@@ -460,7 +460,10 @@ export function selectPlaybookSection(
       ...(entry.tag ? { tag: entry.tag } : {}),
       ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),
       ...(typeof entry.reinforcements === "number" ? { reinforcements: entry.reinforcements } : {}),
-      ...(typeof entry.decays === "number" ? { decays: entry.decays } : {})
+      ...(typeof entry.decays === "number" ? { decays: entry.decays } : {}),
+      // origin gates the reflected ranking penalty + CBR low-support gate — drop it
+      // and "evidence beats synthesis" goes inert on the default `muse ask` path.
+      ...(entry.origin ? { origin: entry.origin } : {})
     })),
     queryText,
     topK === undefined ? undefined : { topK }
@@ -477,7 +480,7 @@ export function selectPlaybookSection(
  * to the question, so a recency-floor pick never overclaims "applied".
  */
 export function topAppliedStrategy(
-  entries: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly probation?: boolean; readonly reinforcements?: number; readonly decays?: number }[],
+  entries: readonly { readonly text: string; readonly tag?: string; readonly reward?: number; readonly probation?: boolean; readonly reinforcements?: number; readonly decays?: number; readonly origin?: string }[],
   queryText: string,
   topK?: number
 ): string | undefined {
@@ -488,7 +491,10 @@ export function topAppliedStrategy(
       ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),
       ...(entry.probation ? { probation: true } : {}),
       ...(typeof entry.reinforcements === "number" ? { reinforcements: entry.reinforcements } : {}),
-      ...(typeof entry.decays === "number" ? { decays: entry.decays } : {})
+      ...(typeof entry.decays === "number" ? { decays: entry.decays } : {}),
+      // origin gates the reflected ranking penalty + CBR low-support gate — parity
+      // with selectPlaybookSection so the default `muse ask` path penalises synthesis.
+      ...(entry.origin ? { origin: entry.origin } : {})
     })),
     queryText,
     topK === undefined ? undefined : { topK }
