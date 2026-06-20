@@ -73,7 +73,14 @@ const DEFAULT_DENY_SEGMENT_PATTERNS: readonly RegExp[] = [
 /** Patterns refused on the leaf (filename) only — broader than the segment set. */
 const DEFAULT_DENY_BASENAME_PATTERNS: readonly RegExp[] = [
   ...DEFAULT_DENY_SEGMENT_PATTERNS,
-  /(^|[._-])token([._-]|$)/iu
+  /(^|[._-])token([._-]|$)/iu,
+  // Common credential / secret files (npm auth, ~/.netrc login, postgres
+  // password, PyPI tokens) — sensitive even outside a denied directory.
+  /^\.(npmrc|netrc|pgpass|pypirc)$/iu,
+  // Key-store / private-key container formats (PKCS#12, Java keystore). `.pem`
+  // is already covered above; `.key` is intentionally NOT here (it collides with
+  // Apple Keynote files — far more common than raw key material in a leaf).
+  /\.(p12|pfx|jks|keystore)$/iu
 ];
 
 function expandHome(input: string): string {

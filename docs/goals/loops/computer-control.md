@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 18 · 2026-06-21 · skill v2.0 · <commit-pending> (fs credential deny-list — common cred/key files; 3-fire merge)
+meta: value-class=new-capability · pkg=@muse/fs · kind=security/credential-deny · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles 1071→1071 (+2 it.each fs-path-safety, mutation-valid) · fabrication 0 · @muse/fs 격리 143 · eval:computer-task 무관(cred 미사용) · pnpm check=박스포화(web-search fuzz 9.6s, 격리 green) · lint clean
+- 무엇: §3.6 credential 보호 sibling-audit — resolveSafePath(모든 fs도구 공유) deny-list가 .ssh/.env/*.pem/*secret*/id_rsa는 막으나 probe로 **.npmrc(npm토큰)·.netrc·.pgpass·.pypirc·*.pfx·*.jks** 읽기/쓰기 가능 발견(`.p12`은 "secret" 이름일때만). FIX(BASENAME leaf-only): `/^\.(npmrc|netrc|pgpass|pypirc)$/` + `/\.(p12|pfx|jks|keystore)$/`. `.key`는 Keynote 충돌로 제외(slides.key 허용 유지).
+- 왜: credential-deny family도 env-family(16)처럼 미완성이었음 — probe로 흔한 cred 파일이 fs도구로 leak 가능 확인. resolveSafePath라 read/write/edit/grep/list/move/delete 전부에 적용.
+- 리뷰지점: mutation-valid(8 파일 pre-slice ALLOWED→denied), over-block 0(notes/config/package.json/npmrc.md/report.p12.txt/slides.key 허용; exact-dotfile+extension-at-end anchoring), prior corpus 무회귀(143/143). ④b judge PASS. run_command(approval-gated 일반 executor)은 resolveSafePath sandbox 밖=정직히 out-of-scope.
+- 리스크: 낮음 — deny 패턴 2개 추가(leaf-only, anchoring 정밀), 기존 deny/허용 불변. ④b PASS.
+lesson: deny-list류(env-family 16, credential-family 18)는 **probe로 실측**해야 갭이 보인다 — "흔한 X 다 막나?"를 *문서가 아니라 코드 probe*로 확인. .key 같은 collision(Keynote)은 의식적 제외가 정직(over-block보다 niche under-block 선택).
+
 ## fire 17 · 2026-06-21 · skill v2.0 · 41f329be (run_command resource clamp; measure-first sharpens the ceiling)
 meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=resource-bound · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles 1069→1069 (+1 case tools.test clamp + Rust clamp test, mutation-valid) · fabrication 0 · @muse/tools 격리 289 · crates/runner cargo 9 · eval:multifile-fix=early-stop(model-behavior) · pnpm check=박스포화(apps/api LINE 20s, 격리 green) · lint clean
