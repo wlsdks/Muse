@@ -51,6 +51,12 @@ const REFLECTION_SURFACES = [
     retryMarker: "PLAN_REPAIR_MAX_ROUNDS",
     surface: "plan validation repair",
     verifierMarker: "validatePlan("
+  },
+  {
+    file: "apps/cli/src/chat-reflection.ts",
+    retryMarker: "synthesizeReflection",
+    surface: "in-chat /reflect cross-session insight",
+    verifierMarker: "opts.reverify("
   }
 ];
 
