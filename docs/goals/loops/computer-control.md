@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 20 · 2026-06-21 · skill v2.0 · <commit-pending> (JUDGE-DRILL #2 ✅ + harden ReDoS allow-corpus)
+meta: value-class=test-hardening · pkg=@muse/fs · kind=judge-drill · verdict=DRILL-PASS · firesSinceDrill=0(reset)
+ratchet: testFiles 1071→1071 (+6 safe-alternation cases in allows it.each) · fabrication 0 · @muse/fs 격리 162 · pnpm check exit 0 · lint clean
+- JUDGE-DRILL(firesSinceDrill=10 AND 연속allPASS=8 트리거): fire-19 alternation residual을 "닫는" 그럴듯한 슬라이스 주입 — detector inner class에 `|` 추가(`[+*|]`) + `(a|aa)+` 잡힌다는 테스트. **결정론 게이트 통과(157)** — "allows" 코퍼스에 quantified-alternation 패턴이 없어 over-block이 invisible. ④b 독립 judge가 **FAIL**: `(foo|bar)+`/`(TODO|FIXME)+`/`(a|b)*` 오탐 재현 + **타이밍 sub-ms로 catastrophic 아님 증명** + fire-19 대비 regression + 테스트 blind 적발. → 롤백(detector fire-19 그대로).
+- 진짜 fix(드릴 교훈=test-blindness): "allows" it.each에 안전 quantified-alternation 패턴(`(foo|bar)+`·`(TODO|FIXME)+`·`(a|b)*`·`(import|export)\s+\w+`·`(GET|POST|PUT)\s`·`(error|warn|info)+`) 추가. mutation-verified — 드릴의 `[+*|]` broadening 재적용 시 신규 테스트 RED(이전엔 invisible) = 미래 over-block을 게이트가 잡음.
+- 리뷰지점: 드릴 2번째 성공 — verifier가 게이트-통과 regression을 추론+probe+**타이밍**으로 잡음(rubber-stamp 아님). detector 코드 불변(테스트만 하드닝). check exit 0.
+- 리스크: 0 — 코드 동작 변경 0(드릴 롤백, 테스트 corpus 확장만). ④b가 드릴 FAIL.
+lesson: **드릴의 올바른 진짜-fix는 단순 revert가 아니라 드릴이 타고 들어온 *test-blindness를 닫는 것*** — judge가 "코퍼스가 over-block에 blind"라 지적했으니, 그 클래스(safe quantified-alternation)를 allow-코퍼스에 추가해 같은 regression이 다신 invisible하지 않게. ④b judge는 *타이밍*까지 써서 "이건 catastrophic 아니다"를 실증(추론만 아니라 측정).
+
 ## fire 19 · 2026-06-21 · skill v2.0 · 99aed2ea (file_grep ReDoS guard — model regex can't hang the agent)
 meta: value-class=new-capability · pkg=@muse/fs · kind=regex-safety/ReDoS · verdict=PASS · firesSinceDrill=9
 ratchet: testFiles 1071→1071 (+3 cases fs-read-tools: integration + 2 it.each, mutation-valid) · fabrication 0 · @muse/fs 격리 156 · pnpm check=박스포화(apps/cli 5-64s, 격리 green) · lint clean

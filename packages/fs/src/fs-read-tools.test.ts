@@ -233,7 +233,14 @@ describe("file_read / file_list / file_grep", () => {
       (p) => expect(isCatastrophicGrepPattern(p)).toBe(true)
     );
 
-    it.each(["dentist", "src/math\\.mjs", "TODO|FIXME", "\\bfoo\\b", "a{2,5}", "(abc)+", "[a-z]+\\d+"])(
+    it.each([
+      "dentist", "src/math\\.mjs", "TODO|FIXME", "\\bfoo\\b", "a{2,5}", "(abc)+", "[a-z]+\\d+",
+      // QUANTIFIED-ALTERNATION patterns: a `|` inside a quantified group is NOT
+      // catastrophic when the alternatives don't overlap — these are common in
+      // code search and MUST stay allowed (the guard against a future over-block
+      // that flags `|` blanket-style, which would dead-end the grep→edit loop).
+      "(foo|bar)+", "(TODO|FIXME)+", "(a|b)*", "(import|export)\\s+\\w+", "(GET|POST|PUT)\\s", "(error|warn|info)+"
+    ])(
       "isCatastrophicGrepPattern allows the safe pattern %s (no false-positive)",
       (p) => expect(isCatastrophicGrepPattern(p)).toBe(false)
     );
