@@ -30,6 +30,28 @@ describe("runOne via runLeadWorkerTask — SubtaskExecution carries the worker's
   });
 });
 
+describe("runLeadWorkerTask — threads a PARTIALITY notice into the synthesis prompt when the sub-task list is truncated (the synthesizer must know the answer is partial)", () => {
+  it("the synthesis request carries a partiality directive (with the dropped count) when >MAX_SUBTASKS items are split", async () => {
+    let capturedReq = "";
+    const many = Array.from({ length: 11 }, (_v, i) => `${i + 1}. 항목${i + 1}`).join(" ");
+    const result = await runLeadWorkerTask(`다음 처리해줘: ${many}`, deps({
+      execute: async (s) => ({ output: `done:${s.text}` }),
+      synthesize: async (request) => { capturedReq = request; return "answer"; }
+    }));
+    expect(result.truncated).toBe(true);
+    expect(capturedReq).toContain("부분 응답"); // the model IS told the answer is partial
+    expect(capturedReq).toContain("3"); // 11 - MAX_SUBTASKS(8) = 3 dropped
+  });
+  it("a NON-truncated run's synthesis request is UNCHANGED (no partiality directive — no over-firing)", async () => {
+    let capturedReq = "";
+    await runLeadWorkerTask("다음 3개 해줘: 1. a 2. b 3. c", deps({
+      execute: async (s) => ({ output: `done:${s.text}` }),
+      synthesize: async (request) => { capturedReq = request; return "answer"; }
+    }));
+    expect(capturedReq).not.toContain("부분 응답");
+  });
+});
+
 describe("runLeadWorkerTask — exposes a structured `truncated` flag when the sub-task list is capped (not just a reason string)", () => {
   it("sets truncated=true when > MAX_SUBTASKS items are split, false otherwise", async () => {
     const many = Array.from({ length: 12 }, (_v, i) => `${i + 1}. 항목${i + 1}`).join(" ");

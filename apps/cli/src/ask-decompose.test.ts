@@ -211,4 +211,20 @@ describe("runDecomposedAgentAsk — failure handling (no partial-answer fabricat
     });
     expect(result.answer).toBe("");
   });
+
+  it("END-TO-END: a >MAX_SUBTASKS request delivers the partiality notice into the synthesis prompt the model receives (engine→CLI wiring)", async () => {
+    let synthPrompt = "";
+    const many = Array.from({ length: 11 }, (_v, i) => `${i + 1}. 항목${i + 1}`).join(" ");
+    const runner = {
+      run: vi.fn(async (input: AgentRunInput): Promise<AskAgentRunResult> => {
+        const user = userContentOf(input);
+        if (user.startsWith("사용자 요청:")) { synthPrompt = user; return { response: { output: "SYNTH" } }; }
+        return { response: { output: `done:${user}` } };
+      })
+    };
+    const result = await runDecomposedAgentAsk({ ...baseArgs, query: `다음 처리해줘: ${many}`, runner });
+    expect(result.truncated).toBe(true);
+    expect(synthPrompt).toContain("부분 응답"); // the synthesis prompt the model actually saw carries the partiality caveat
+    expect(synthPrompt).toContain("3"); // 11 - 8 dropped
+  });
 });

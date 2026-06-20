@@ -65,6 +65,18 @@ function reinforceSynthesisRequest(request: string, missing: readonly string[]):
   return `${request}\n\n[누락 보완 — 직전 종합에서 다음 하위 결과가 빠졌다. 이번 답변에는 반드시 모두 반영하라: ${missing.join("; ")}]`;
 }
 
+/**
+ * When the sub-task list was TRUNCATED to MAX_SUBTASKS, tell the synthesizer the answer
+ * is PARTIAL — the dropped items never executed (so verifySynthesisCoverage can't flag
+ * them; they're not in `executions`), and a synthesis that presents the survivors as a
+ * complete answer over a larger request is a GROUNDED≠TRUE leak in the answer TEXT (the
+ * channel the user reads, not just the --json flag). Mirrors reinforceSynthesisRequest:
+ * appends an explicit directive so the model caveats its coverage.
+ */
+function truncatedSynthesisRequest(request: string, dropped: number): string {
+  return `${request}\n\n[부분 응답 — 요청 항목이 많아 ${dropped.toString()}개가 처리되지 않았다. 이 답변은 일부 항목만 다루므로, 누락이 있음을 반드시 명시하라.]`;
+}
+
 export interface SubtaskOutput {
   readonly output: string;
   readonly sources?: readonly string[];
@@ -274,6 +286,7 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
   subtasks = dedupeSubtasks(subtasks);
 
   const truncated = subtasks.length > MAX_SUBTASKS;
+  const droppedCount = truncated ? subtasks.length - MAX_SUBTASKS : 0;
   if (truncated) subtasks = subtasks.slice(0, MAX_SUBTASKS);
 
   const executions: SubtaskExecution[] = [];
@@ -316,7 +329,7 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
     }
   };
 
-  const first = await runSynthesis(request);
+  const first = await runSynthesis(truncated ? truncatedSynthesisRequest(request, droppedCount) : request);
   let finalAnswer = first.answer;
   let synthesisIncomplete = first.missing;
   // Verifier-gated SINGLE re-synthesis (reflection-guard): a bare unverified retry
@@ -327,7 +340,11 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
   // (we keep the original flagged answer rather than claim false coverage). The retry
   // prompt names what was dropped (reinforceSynthesisRequest), not a blind "try again".
   if (synthesisIncomplete && deps.verifySynthesis) {
-    const retry = await runSynthesis(reinforceSynthesisRequest(request, synthesisIncomplete));
+    // Keep the truncation caveat on the retry base too (sibling of the first synthesis):
+    // a re-synthesis must not drop the partiality directive just because it's adding the
+    // missing-coverage one.
+    const retryBase = truncated ? truncatedSynthesisRequest(request, droppedCount) : request;
+    const retry = await runSynthesis(reinforceSynthesisRequest(retryBase, synthesisIncomplete));
     if (retry.verified && (retry.missing?.length ?? 0) < synthesisIncomplete.length) {
       finalAnswer = retry.answer;
       synthesisIncomplete = retry.missing;
