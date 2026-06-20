@@ -59,6 +59,7 @@ import { buildAskConnections, groundingConflictCue } from "@muse/recall";
 export { buildAskConnections };
 import type { FileEntry, IndexChunk } from "@muse/recall";
 
+import { sniffImageMime } from "./image-bytes.js";
 import { parseGitReflog, selectGitCommits, type GitCommit } from "./git-reflog.js";
 import { parseShellHistory, selectShellCommands } from "./shell-history.js";
 
@@ -225,7 +226,11 @@ export async function loadImageAttachment(filePath: string): Promise<LoadedImage
   if (bytes.length === 0) {
     return { error: `muse ask --image: ${filePath} is empty (0 bytes)`, ok: false };
   }
-  return { attachment: { dataBase64: bytes.toString("base64"), mimeType }, ok: true };
+  const sniffedMime = sniffImageMime(bytes);
+  if (sniffedMime === null) {
+    return { error: `muse ask --image: ${filePath} does not contain image data (bytes aren't PNG/JPEG/GIF/WebP/HEIC/BMP) — the extension may be wrong or the file corrupt`, ok: false };
+  }
+  return { attachment: { dataBase64: bytes.toString("base64"), mimeType: sniffedMime }, ok: true };
 }
 
 interface AskOptions {
