@@ -155,3 +155,52 @@ describe("groundToolArguments — drop a fabricated free-text arg the utterance 
     expect(out.dropped).toEqual([]);
   });
 });
+
+describe("groundToolArguments — nested OBJECT value: clean fabricated string leaves (total over value shapes, not string-only)", () => {
+  it("drops a fabricated string leaf inside a nested object, keeps the grounded one — arg SURVIVES (partial, not reported dropped)", () => {
+    const out = groundToolArguments(
+      { meta: { place: "강남역", note: "지어낸내용" }, title: "회의" },
+      ["meta"],
+      "강남역에서 회의 잡아줘"
+    );
+    expect(out.args).toEqual({ meta: { place: "강남역" }, title: "회의" });
+    expect(out.dropped).toEqual([]);
+  });
+
+  it("removes the object arg entirely when EVERY string leaf is fabricated", () => {
+    const out = groundToolArguments(
+      { meta: { place: "부산", note: "지어낸내용" } },
+      ["meta"],
+      "강남역에서 회의 잡아줘"
+    );
+    expect(out.args).toEqual({});
+    expect(out.dropped).toEqual(["meta"]);
+  });
+
+  it("keeps a fully-grounded nested object untouched (not reported as dropped)", () => {
+    const out = groundToolArguments({ meta: { place: "강남역" } }, ["meta"], "강남역 회의");
+    expect(out.args).toEqual({ meta: { place: "강남역" } });
+    expect(out.dropped).toEqual([]);
+  });
+
+  it("preserves NON-string leaves (numbers/booleans) — grounding only assesses free-text", () => {
+    const out = groundToolArguments(
+      { meta: { count: 5, allDay: true, place: "강남역" } },
+      ["meta"],
+      "강남역 회의"
+    );
+    expect(out.args).toEqual({ meta: { count: 5, allDay: true, place: "강남역" } });
+    expect(out.dropped).toEqual([]);
+  });
+
+  it("does NOT corrupt a MIXED array (non-string elements) into an index-keyed object — leaves it untouched", () => {
+    // sibling-audit: arrays are typeof "object"; the object branch must exclude them
+    // so a mixed array isn't rewritten to {0:…,1:…}. A pure string[] is the array
+    // branch's job; anything else is left as-is rather than mangled.
+    const mixed = ["강남역", { note: "지어낸내용" }];
+    const out = groundToolArguments({ items: mixed }, ["items"], "회의");
+    expect(out.args).toEqual({ items: ["강남역", { note: "지어낸내용" }] });
+    expect(Array.isArray((out.args as { items: unknown }).items)).toBe(true);
+    expect(out.dropped).toEqual([]);
+  });
+});

@@ -4,6 +4,15 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main). **Every 3 fires: ff-merge the branch into origin/main, then keep working on the branch (진안 directive 2026-06-20).**
 > Cron `d8c31fa3` (every 15m, session-only; was `cfe778e2` under skill v1.14.0, re-registered with loop-creator v2.0 at fire 6). Stop: `CronDelete d8c31fa3`. Convention: [README](README.md).
 
+## fire 7 · 2026-06-20 · skill v2.0 · <commit-pending>
+meta: value-class=new-capability · pkg=@muse/agent-core · kind=anti-fabrication/floor-total · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1057→1057 (+5 cases tool-argument-grounding.test) · fabrication 0 · agent-core 2491 tests green · precheck:grounding 2/3 PASS · pnpm check exit 0 · lint clean
+- 무엇: `groundToolArguments`(fabrication=0 release-gate)가 string + string[]만 정제하고 **nested object는 무가공 통과** → 조작된 `meta.note` 같은 leaf가 게이트를 타고 PERSIST되던 갭. nested-object 분기 추가: 각 조작 string leaf 정제(grounded+non-string leaf 보존), array 분기와 동일 partial-vs-empty `dropped` 계약. 게이트를 값-형태 전체에 total화.
+- 왜: fabrication=0은 release gate(CLAUDE.md). 게이트가 string-only면 object-valued arg가 우회로. 형제-감사로 `!Array.isArray` 가드 추가(mixed array가 object 분기에서 index-key 객체로 손상되는 버그를 같은 fire에 차단).
+- 리뷰지점: 다양성 — (agent-core, grounding-floor) 3회였으나 kind=anti-fabrication은 신규 (pkg,kind). 정직한 caveat: **현재 object-valued grounded arg를 쓰는 도구 0개**(전부 string/`tags` string[]) — 도구가 그 형태를 ship하기 전 선제 차단(방어적, gold-plating 아님 — ④b가 grep으로 확인). residual: 1-level(array-of-objects/object-in-object 미재귀, 실제 caller 나오면).
+- 리스크: 낮음 — 순수 additive(string/string[] 경로 불변, 회귀 테스트 그대로), no-corruption/no-aliasing 실증(④b). ④b Opus 적응형 judge PASS.
+- note: fire 6은 v2 적응형 judge가 한국어 패턴 68% 오탐을 잡아 rollback(organic verifier-catch — 합성 드릴보다 강한 증거). allPASS 스트릭 fire 6에서 리셋 → fire 7부터 재시작.
+
 ## fire 6 · 2026-06-20 · skill v2.0 · NO-SHIP (rolled back)
 meta: value-class=new-capability · pkg=@muse/agent-core · kind=grounding-floor/multilingual-injection · verdict=FAIL(④b)→ROLLBACK · firesSinceDrill=6
 ratchet: testFiles 1055→1055 (slice reverted) · fabrication 0 · no code shipped · branch==main
