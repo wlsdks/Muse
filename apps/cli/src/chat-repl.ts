@@ -31,7 +31,7 @@ import { countdownDays, detectCountdownQuery, formatCountdown } from "./countdow
 import { detectDateQuery, formatDateAnswer, phraseHasTime } from "./date-query.js";
 import { detectDateDiffQuery, formatDateDiff } from "./date-diff-query.js";
 import { detectTimezoneQuery, formatTimezone } from "./timezone-query.js";
-import { buildQueryRewritePrompt, chatWeaknessAxis, defaultChatConflictEmbedder, factKeysToInject, finalizeGatedChatAnswer, isChatAbstention, needsContextualRewrite, parseQueryRewrite, QUERY_REWRITE_RESPONSE_FORMAT, QUERY_REWRITE_SYSTEM_PROMPT, retrieveChatGrounding, type ChatWeaknessAxis } from "./chat-grounding.js";
+import { buildQueryRewritePrompt, chatWeaknessAxis, defaultChatConflictEmbedder, factKeysToInject, finalizeGatedChatAnswer, isChatAbstention, isChatGroundedSuccess, needsContextualRewrite, parseQueryRewrite, QUERY_REWRITE_RESPONSE_FORMAT, QUERY_REWRITE_SYSTEM_PROMPT, retrieveChatGrounding, type ChatWeaknessAxis } from "./chat-grounding.js";
 import { createQwenReverify } from "./grounding-eval-runner.js";
 import { isRecord } from "./credential-store.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
@@ -698,6 +698,13 @@ export async function runLocalChat(
     await recordChatWeaknessForTurn({ message, answer: finalResponse, matches, refusal: chatRefusal, unbackedAction });
   } else if (!isCasual) {
     await recordChatWeaknessForTurn({ message, answer: finalResponse, matches, refusal: chatRefusal, unbackedAction });
+    // Parity with ask's recordAskWeaknessResolvedLive: a GROUNDED SUCCESS on this
+    // topic resolves its grounding-gap (BKT mastery) so a now-answered recurring
+    // gap stops nudging. Gated on a genuine grounded answer (axis null + real
+    // evidence) — never a refusal/misgrounding/unbacked action.
+    if (isChatGroundedSuccess({ answer: finalResponse, matches, refusal: chatRefusal, unbackedAction })) {
+      await chatResolveWeakness(message);
+    }
     // Whetstone learn→apply at point-of-use: if THIS topic is already a recurring
     // user-remediable weakness in the shared ledger, surface the SAME axis-aware
     // hint the `ask` 💡 cue uses (grounding-gap "add a note" OR source-conflict
@@ -754,6 +761,29 @@ export interface RecordChatWeaknessDeps {
     signal: { readonly axis: ChatWeaknessAxis; readonly message: string }
   ) => Promise<{ readonly count: number } | undefined>;
   readonly weaknessesFile?: string;
+}
+
+export interface ResolveChatWeaknessDeps {
+  /** Injectable ledger resolver + file (tests assert resolution without a live store). */
+  readonly recordWeaknessResolved?: (file: string, message: string) => Promise<unknown>;
+  readonly weaknessesFile?: string;
+}
+
+/**
+ * Mark this topic's grounding-gap weakness RESOLVED after a grounded success —
+ * the parity of ask's `recordAskWeaknessResolvedLive`. Bumps BKT mastery so a
+ * now-answered recurring gap stops nudging. @muse/mcp + @muse/autoconfigure load
+ * LAZILY (a static import breaks the bun-compiled desktop binary). Best-effort:
+ * a ledger write must never surface as a chat error.
+ */
+export async function chatResolveWeakness(message: string, deps: ResolveChatWeaknessDeps = {}): Promise<void> {
+  try {
+    const recordWeaknessResolved = deps.recordWeaknessResolved ?? (await import("@muse/mcp")).recordWeaknessResolved;
+    const file = deps.weaknessesFile ?? (await import("@muse/autoconfigure")).resolveWeaknessesFile(process.env as Record<string, string | undefined>);
+    await recordWeaknessResolved(file, message);
+  } catch {
+    // a ledger write must never surface as a chat error
+  }
 }
 
 /**

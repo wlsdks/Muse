@@ -476,6 +476,23 @@ export function chatWeaknessAxis(args: {
 }
 
 /**
+ * A chat turn was a GROUNDED SUCCESS — a genuine, evidence-backed answer that
+ * signals no weakness (axis null) AND actually cited real grounding (≥1 match).
+ * The parity of ask's `askOutcome === "grounded"` resolve trigger: such a turn
+ * RESOLVES the topic's grounding-gap (BKT mastery) so a now-answered recurring
+ * gap stops nudging. A refusal / misgrounding / unbacked-action (axis non-null)
+ * or a no-evidence answer (matches empty) is NOT a grounded success. Pure.
+ */
+export function isChatGroundedSuccess(args: {
+  readonly refusal: boolean;
+  readonly unbackedAction: boolean;
+  readonly answer: string;
+  readonly matches: readonly KnowledgeMatch[];
+}): boolean {
+  return args.matches.length > 0 && chatWeaknessAxis(args) === null;
+}
+
+/**
  * grounded≠true SOURCE-TRUST cue for the chat surface — the parity of the ask
  * path's `untrustedOnlyGroundingNotice`. Fires on a faithful (non-abstention)
  * answer whose every resolving citation points only at untrusted provenance
