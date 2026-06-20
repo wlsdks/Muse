@@ -39,10 +39,10 @@ Verified existing context-strategy seams (from codegraph, 2026-06-20):
 - ◦ **Grounding-quality eval under the new block order**: assert the edge-placed
   prompt order does not regress answer grounding (the judge flagged no eval
   measured this). Likely `eval:chat-grounding` / `precheck:grounding` case.
-- ◦ **Importance-aware intra-cap** (fire-2 rejected #3): `capToolOutput` head+tail
-  truncates regardless of which span matters; use the importance signal to keep the
-  load-bearing span. Higher fabrication-floor risk — needs a relevance signal the
-  tool layer lacks; design carefully. (@muse/memory)
+- ◦ **Regression test pinning neutralize-before-anchor ordering** (fire-4 judge residual):
+  no dedicated test asserts `neutralizeInjectionSpans` runs before `carveAnchorWindow`;
+  structurally guaranteed + probe-proven, but a refactor could reorder silently.
+  One-line ordering regression test. (@muse/agent-core)
 - ◦ **`muse.context.fetch` re-fetch live e2e** under masking: confirm a masked
   observation is actually re-fetchable by the model in a real run (fire-2 proved
   the ref is recoverable from the store; the end-to-end fetch-tool round-trip is
@@ -129,5 +129,36 @@ ratchet: testFiles +0 (extended existing) · agent-core 2478 pass · pnpm check 
   RED→GREEN (no-cap→length RED; array-order→highest-relevance RED). Residual: a
   poorly-`keywords`-tagged optional tool ranks by input order only (acceptable for a
   soft ceiling; note for tool authors).
+
+---
+
+## fire 4 · 2026-06-20 · skill v2.0.0 · bf3e77cd
+meta: value-class=new-capability · pkg=@muse/memory+@muse/agent-core · kind=importance-aware-cap · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles +0 (extended existing) · memory 464 pass · agent-core 2492 pass · pnpm check exit0 · pnpm lint exit0 · fabrication 0 · self-eval green
+- **What:** Query-anchored span retention in the per-result cap. `trimToolOutput`
+  (@muse/memory) gained optional `anchorTerms`; when a line in the would-be-elided
+  MIDDLE matches a term, it carves a VERBATIM bounded window around that line into the
+  retained text (head/tail shrink, total still ≤ maxChars). `capToolOutput` (model-loop,
+  4 callsites blocking+streaming) derives anchor terms from the latest user message
+  (lowercase, stop-word + <3char filter). Absent/no-match → byte-identical no-op.
+- **Why:** `capToolOutput` kept head+tail and elided the whole middle regardless of
+  which span the user asked about (a "what's my 3pm?" query elided the 3pm line, kept
+  49 irrelevant ones). Grounding: arXiv:2510.00615 (ACON — compression's dominant
+  failure is losing the span the full context succeeded on), arXiv:2307.03172 (Lost in
+  the Middle — head+tail bias is right only if the kept span contains the answer).
+  hermes truncates by fixed char budget with no query awareness; openclaw recency/summary
+  with no per-result anchor → Muse's deterministic query-anchored cap widens the edge.
+- **Review point:** the anchor is a soft retention preference within the SAME budget;
+  full output stays in ContextReferenceStore (re-fetchable). SECURITY: anchor operates
+  on `neutralizeInjectionSpans`-defanged content (judge proved a buried injection
+  co-occurring with a query term surfaces NEUTRALIZED).
+- **Risk:** none to floor — window sliced VERBATIM from real output (no synthesis,
+  fabrication=0), total provably ≤ maxChars (judge checked the budget arithmetic +
+  hostile probes), no-op byte-identity preserved (461 non-anchor tests green under the
+  mutation). Independent Opus *adaptive* judge PASS 7/7 (budget overflow, verbatim-only,
+  no-op identity, neutralize-first, determinism, no-collateral, build). Sibling audit:
+  all 4 capToolOutput callsites patched; capWorkerOutput (multi-agent) intentionally
+  byte-identical no-op. lesson(carry-forward): a multi-call primitive change needs the
+  sibling-audit of EVERY caller enumerated, not just the touched path.
 
 ---
