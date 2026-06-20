@@ -23,8 +23,7 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly, resolveNotesDir, resolveTasksFile } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { actionToolRan, answerClaimsAction, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, isMemoryInjection, requestsToolAction, type KnowledgeMatch } from "@muse/agent-core";
-import { contestedFactKeys, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys } from "@muse/memory";
+import { actionToolRan, answerClaimsAction, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction, type KnowledgeMatch } from "@muse/agent-core";
 import type { AskTimeNudge, WeaknessEntry } from "@muse/mcp";
 
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
@@ -532,30 +531,20 @@ export async function runLocalChat(
     : userMemory;
   // Fact-caution parity with `muse ask`: flag a persona fact that is volatile
   // (contested) or once-seen-unconfirmed (provisional) so chat cautions it at
-  // point-of-use instead of asserting it as confirmed truth. Mirrors the
-  // commands-ask provenance wiring exactly (same store, derive, normalizeKey,
-  // isInjection). Fail-soft: any error ⇒ no sets ⇒ unmarked persona, the same
-  // posture ask falls back to.
+  // point-of-use instead of asserting it. Lazy import — the heavy @muse/memory store
+  // breaks the bun-compiled desktop binary on a static import. Fail-soft: any error
+  // ⇒ no sets ⇒ unmarked persona, the same posture ask falls back to.
   let personaContestedKeys: ReadonlySet<string> = new Set();
   let personaProvisionalKeys: ReadonlySet<string> = new Set();
-  if (personaMemory) {
+  if (personaMemory && Object.keys(personaMemory.facts).length > 0) {
     try {
+      const { FileBeliefProvenanceStore, defaultBeliefProvenanceFile, deriveFactProvenance, contestedFactKeys, provisionalFactKeys, normalizeMemoryKey } = await import("@muse/memory");
+      const { isMemoryInjection } = await import("@muse/agent-core");
       const personaFactKeys = Object.keys(personaMemory.facts);
-      if (personaFactKeys.length > 0) {
-        const provEntries = await new FileBeliefProvenanceStore(defaultBeliefProvenanceFile()).query(userId);
-        const provenance = deriveFactProvenance(provEntries);
-        const nowMs = Date.now();
-        personaProvisionalKeys = provisionalFactKeys(
-          personaFactKeys,
-          provenance,
-          { isInjection: isMemoryInjection, normalizeKey: normalizeMemoryKey, now: nowMs }
-        );
-        personaContestedKeys = contestedFactKeys(
-          personaFactKeys,
-          provenance,
-          { normalizeKey: normalizeMemoryKey, now: nowMs }
-        );
-      }
+      const provenance = deriveFactProvenance(await new FileBeliefProvenanceStore(defaultBeliefProvenanceFile()).query(userId));
+      const nowMs = Date.now();
+      personaProvisionalKeys = provisionalFactKeys(personaFactKeys, provenance, { isInjection: isMemoryInjection, normalizeKey: normalizeMemoryKey, now: nowMs });
+      personaContestedKeys = contestedFactKeys(personaFactKeys, provenance, { normalizeKey: normalizeMemoryKey, now: nowMs });
     } catch { /* provenance unavailable — render the persona without the marks */ }
   }
   const userMemoryBlock = personaMemory
