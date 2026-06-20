@@ -132,6 +132,23 @@ describe("ToolExecutor", () => {
     expect(result.output).not.toContain("run_command");
   });
 
+  it("never suggests a tool that shares ZERO tokens — no unrelated/destructive nudge across a realistic registry", async () => {
+    // Hardens the no-misleading-suggestion invariant the JUDGE-DRILL (fire 10)
+    // showed was under-guarded: with a SINGLE guard a dropped `shared > 0` gate
+    // could steer "delete_everything" → the shell `run_command`. Several unrelated
+    // names against several registered tools must each yield NO "Did you mean".
+    const t = (name: string, risk: "read" | "write" | "execute"): MuseTool => ({
+      definition: { description: name, domain: "system", inputSchema: { type: "object" }, name, risk },
+      execute: () => "ok"
+    });
+    const registry = new ToolRegistry([t("run_command", "execute"), t("file_read", "read"), t("file_edit", "write"), t("muse.tasks.add", "write")]);
+    const executor = new ToolExecutor({ registry });
+    for (const name of ["xyzzy_frobnicate", "delete_everything", "qwxyz", "zzz"]) {
+      const result = await executor.execute({ arguments: {}, context: { runId: "run-1" }, id: name, name });
+      expect(result.output).not.toContain("Did you mean");
+    }
+  });
+
   it("returns the prior result for duplicate idempotency keys", async () => {
     let executions = 0;
     const tool: MuseTool = {

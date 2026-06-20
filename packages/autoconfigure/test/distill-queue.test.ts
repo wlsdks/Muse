@@ -115,3 +115,44 @@ describe("distillQueuedCorrections — drain-idempotency + grounding fence (the 
     expect(await readPendingLearnEvents(queueFile)).toHaveLength(0); // drained despite no lesson
   });
 });
+
+// A distiller whose draft VARIES per call — the self-consistency gate draws k times.
+const distillCycling = (texts: readonly string[]) => {
+  let i = 0;
+  return async (_exchange: CorrectionExchange): Promise<DistilledStrategy | undefined> => ({ text: texts[i++ % texts.length]! });
+};
+
+describe("distillQueuedCorrections — self-consistency write gate (sibling parity with the sync distiller)", () => {
+  it("DISAGREEING drafts (k draws don't agree ⇒ likely confabulated) write ZERO strategies", async () => {
+    const queueFile = freshFile("learnq");
+    const playbookFile = freshFile("playbook");
+    await seedCorrection(queueFile, "you keep getting my preferences wrong");
+
+    const recorded = await distillQueuedCorrections({
+      distill: distillCycling([
+        "always cc the project lead on status updates",
+        "schedule meetings only in the morning slots",
+        "prefer terse bullet points over long prose"
+      ]),
+      model: "m", modelProvider, playbookFile, queueFile, strategyConsistencySamples: 3
+    });
+
+    expect(recorded).toBe(0);                                   // inconsistent ⇒ no auto-write
+    expect((await readPlaybook(playbookFile)).length).toBe(0);  // bank untouched
+    expect((await readPendingLearnEvents(queueFile)).length).toBe(0); // event still drained (no queue jam)
+  });
+
+  it("CONSISTENT drafts (k draws agree) DO write a probation strategy", async () => {
+    const queueFile = freshFile("learnq");
+    const playbookFile = freshFile("playbook");
+    await seedCorrection(queueFile, "always cc the project lead on status updates");
+
+    const recorded = await distillQueuedCorrections({
+      distill: distillReturning("cc the project lead on every status email"),
+      model: "m", modelProvider, playbookFile, queueFile, strategyConsistencySamples: 3
+    });
+
+    expect(recorded).toBe(1);                                   // agreement ⇒ recorded
+    expect((await readPlaybook(playbookFile))[0]?.probation).toBe(true);
+  });
+});

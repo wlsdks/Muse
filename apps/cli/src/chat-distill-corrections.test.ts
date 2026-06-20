@@ -195,6 +195,49 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
     expect(saved.find((e) => e.id === "pb_email")!.reward).toBeUndefined(); // unrelated → never touched
   });
 
+  it("does NOT reward a PROBATION strategy (never-injected) even when it's the most cue-similar — credit scoped to injectable, parity with the decay daemon", async () => {
+    const file = await tmpPlaybook();
+    // pb_prob is on probation (recorded but NEVER injected by contract), and is the MOST
+    // cue-similar to the approval cue. The injectable pb_real is orthogonal. A correct
+    // reward loop must NOT credit the probation guess the user never actually benefited from.
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_prob", probation: true, text: "회의록은 불릿으로 정리한다", userId: "stark" });
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_real", text: "이메일은 네 문장 이내로 작성한다", userId: "stark" });
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: stub("strategy: unused\ntag: -"),
+      embed: async (text: string) => text.includes("회의록") ? [1, 0, 0] : [0, 1, 0], // cue is 회의록-similar → matches pb_prob
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      readLines: async () => [
+        { content: "회의록 정리해줘", role: "user" },
+        { content: "불릿으로 정리했습니다", role: "assistant" },
+        { content: "완벽해! 딱 좋아", role: "user" }
+      ]
+    });
+    expect(res.reinforced.map((r) => r.text)).not.toContain("회의록은 불릿으로 정리한다"); // probation never credited
+    const saved = await queryPlaybook(file, "stark");
+    expect(saved.find((e) => e.id === "pb_prob")!.reward).toBeUndefined(); // unchanged — not injectable
+  });
+
+  it("REGRESSION: an INJECTABLE strategy still gets rewarded normally (the scoping only excludes non-injectable)", async () => {
+    const file = await tmpPlaybook();
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_inj", text: "회의록은 불릿으로 정리한다", userId: "stark" });
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: stub("strategy: unused\ntag: -"),
+      embed: async (text: string) => text.includes("회의록") ? [1, 0, 0] : [0, 1, 0],
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      readLines: async () => [
+        { content: "회의록 정리해줘", role: "user" },
+        { content: "불릿으로 정리했습니다", role: "assistant" },
+        { content: "완벽해! 딱 좋아", role: "user" }
+      ]
+    });
+    expect(res.reinforced.map((r) => r.text)).toContain("회의록은 불릿으로 정리한다");
+    expect((await queryPlaybook(file, "stark")).find((e) => e.id === "pb_inj")!.reward).toBe(1);
+  });
+
   it("asymmetric floor: a borderline cross-distribution correction does NOT decay a strategy (Memory-R2 2605.21768)", async () => {
     const file = await tmpPlaybook();
     // pb_target shares ~no tokens with the Korean cue (cross-distribution). The

@@ -24,6 +24,8 @@ import {
   distillConsistentStrategy,
   distillStrategyFromCorrection,
   extractCurrentSessionTurns,
+  isInjectableStrategy,
+  isStaleStrategy,
   selectCreditTargetSemantic,
   strategyTextSimilarity,
   type DistillStrategyOptions,
@@ -142,7 +144,16 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
     if (cue.trim().length === 0) {
       return undefined;
     }
-    const candidates = existing.filter((entry) => !adjustedIds.has(entry.id));
+    // Credit only a strategy that COULD have steered this session — exactly the set the
+    // injection ranker injects (`isInjectableStrategy && !isStaleStrategy`, playbook.ts).
+    // Without this, a PROBATION guess (never injected by contract) or an AVOIDED/stale
+    // strategy can absorb a cue-similar reward it had no causal role in — a fabricated
+    // reward attribution that replays via experience-following (arXiv:2505.16067). Parity
+    // with the decay daemon (decay-contradicted.ts), which already scopes to injectable.
+    const nowMs = Date.now();
+    const candidates = existing.filter(
+      (entry) => !adjustedIds.has(entry.id) && isInjectableStrategy(entry) && !isStaleStrategy(entry, nowMs)
+    );
     // Asymmetric precision: a DECAY (delta<0) must clear a HIGHER cue↔strategy
     // match than a reinforce — a wrong decay of a (possibly grounded) strategy is
     // costlier than a missed reinforce (Memory-R2 arXiv:2605.21768; WEDGE).

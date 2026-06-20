@@ -169,3 +169,18 @@ describe("selectMemoryFacts", () => {
     expect(selectMemoryFacts(memory, new Set())).toEqual([]);
   });
 });
+
+import { topAppliedStrategy } from "@muse/recall";
+
+describe("topAppliedStrategy — origin survives the projection so reflected loses the tie (default ask path)", () => {
+  it("a grounded strategy is picked over an equally-relevant reflected one inserted first", () => {
+    // Equal relevance to "email" (each shares only that query token), equal reward,
+    // reflected inserted FIRST — only the reflected ranking penalty can flip the pick.
+    const top = topAppliedStrategy([
+      { text: "email use a friendly greeting", origin: "reflected", reward: 0 },
+      { text: "email keep it short", origin: "grounded", reward: 0 }
+    ], "email");
+    expect(top).toContain("keep it short");   // evidence beats synthesis
+    expect(top).not.toContain("friendly greeting");
+  });
+});

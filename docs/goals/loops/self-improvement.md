@@ -200,3 +200,34 @@ ratchet: testFiles=1067 (eviction tests in existing authored-skill-store.test.ts
 - **왜:** 스토어가 이미 usage(recordUsage→lastUsedAt)를 기록하는데 enforceCap만 무시 → 자주 쓴 old 스킬이 never-used 신규보다 먼저 archive되는 결함(SkillOps arXiv:2605.13716 utility-retire; TinyLFU arXiv:1512.00727 value-aware eviction). usage 없으면 lastActiveAt=authoredAt라 FIFO로 정확히 degrade(strict superset).
 - **리뷰지점:** ④b 독립 Opus judge PASS — OUTCOME+mutation 진짜(end-to-end가 FIFO와 discriminating: USED old alpha 생존) · **no-regression EXACT**(all-unused→authoredAt asc=옛 FIFO, 기존 cap 테스트 통과) · eviction count/name-Set 정확(writeOrPatch가 authored-name 유일성 강제) · used는 never-used보다 먼저 evict 불가 · non-destructive(archive). 다양성: @muse/skills(이 루프 첫 접촉, fresh 표면).
 - **리스크:** 낮음 — archive(삭제 아님), bundled 스킬 무관(listAuthored만), usage 없으면 옛 동작과 동일. nit(judge): hasUsage가 metadata.muse를 lastActiveAt와 따로 재파싱(무해).
+
+## fire 16 · 2026-06-21 · skill v2.0.0 · (scout + DECOMPOSE-ON-DEFER)
+meta: value-class=decompose · pkg=@muse/memory(scouted) · kind=verify-before-build/decompose · verdict=SCOUT · firesSinceDrill=6
+ratchet: testFiles=1068 · fabrication 0 · gates: self-eval ok (no code) · merge-to-main: n/a (fire 16 ≠ ×3, next at 18)
+
+- **무엇:** Opus 스카웃 top pick(memory UPDATE refine-vs-contradict)을 verify-before-build로 검증 → **핵심이 mostly-stale**: contested/volatility 신호는 `refinementAwareDistinctValueCount`(token-subset)로 *이미* refinement-aware(스카웃이 distinctValueCount 경로를 collectFactSupersessions와 혼동). 남은 건 factHistory 타임라인 labeling뿐인데, refinement를 그냥 드롭하면 elaboration history 손실이라 debatable + LABEL 방식은 >1-fire(memory interface+2 store persist+cli renderer). → 가짜/debatable 슬라이스 빌드 거부, 진짜 남은 항목 2개를 loop-sized ◦로 decompose해 backlog 기록(factHistory-kind-labeling a/b · playbook-injected-id-credit a/b/c).
+- **왜:** DECOMPOSE-ON-DEFER + verify-before-build. green 게이트≠옳음 — 스카웃 arXiv가 진짜여도 seam이 이미 채워졌을 수 있어 코드 확인이 필수(fire 14에서도 stale 2건). 빌드 안 한 게 옳음(debatable factHistory 제거는 ④b judge가 FAIL할 변경).
+- **리뷰지점:** maker≠judge 정신으로 스카웃 주장을 독립 코드-확인 — refinementAwareDistinctValueCount가 실제로 token-subset 제외하는지 sed로 확인. 다음 fire는 backlog의 decomposed ◦(factHistory-kind a 또는 playbook-credit a)부터, fresh-context cron fire가 적합.
+- **리스크:** 없음(코드 무변경). 단 main이 inherit한 byte-hygiene RED(`commands-logo.test.ts`, 다른 루프 mascot 커밋)로 `pnpm check` 전체는 RED — 내 fires와 무관, 그 루프가 고칠 것(안 건드림: cross-loop 충돌 회피).
+- **lesson:** 논문-스카웃 pick은 빌드 전 *그 seam이 이미 부분구현됐는지* 코드로 검증 — arXiv-real ≠ Muse-empty. 스카웃이 "X 신호가 갱신된다"고 주장하면 그 신호의 *실제 계산 경로*를 grep해 이미 처리됐는지 확인(distinctValueCount는 supersession-log이 아닌 별도 token-subset 경로).
+
+## fire 17 · 2026-06-21 · skill v2.0.0 · `1fd3fb8b`
+meta: value-class=new-capability · pkg=@muse/autoconfigure · kind=audit-driven/fabrication-guard sibling-parity · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles=1069 · fabrication 0 · gates: autoconfigure 611/611 + check(only failure=inherited commands-logo byte-hygiene from another loop's mascot commit, 무관; my files byte-clean) + self-eval ok + lint pass · merge-to-main: n/a (fire 17 ≠ ×3, next at 18)
+
+- **무엇:** 진안 지시("정말 자기개선 되는지·메커니즘 옳은지 알아봐")로 **EFFICACY AUDIT**(3 병렬 Opus, maker≠judge, codegraph/grep 실증) 수행 후, 최우선 *검증된* 발견을 즉시 fix: self-consistency write 게이트가 sync distiller(off-by-default)에만 있고 **default-on idle/daemon 학습자(`distillQueuedCorrections`)엔 없어** 단일 draft를 뱅킹하던 걸, `distillConsistentStrategy`(k draws 합의)로 감싸 sibling-parity 확보(@muse/autoconfigure).
+- **왜:** "선언≠작동" — 우리가 fires 8/10/12에 만든 fabrication-guard가 정작 *기본 자율 학습 경로*를 안 덮고 있었음(형제-감사 누락). 이제 양 경로 모두 불안정(=confabulated) 증류를 auto-write 안 함.
+- **리뷰지점:** ④b 독립 Opus PASS(7/7: outcome-genuine·mutation RED·queue-drain 불변·무회귀·invariant·diversity); cost-honesty nit(k=3× LLM/event)는 헤더 주석에 명시. **verify-before-build이 감사 Finding 2를 REJECT**: Agent A가 없는 파일(`context-engineering-builders.ts:426`)을 cite하며 "buildPlaybookProvider가 origin 드롭"이라 했으나, 실제 CLI 주입은 `toPlaybookStrategy`로 origin carry + 런타임 playbookProvider는 CLI에서 미구성 → 가짜 발견.
+- **리스크:** 낮음 — write를 엄격하게만(뱅킹 감소, fabricate 불가), idle write는 여전히 probation. cost k×는 tunable(`strategyConsistencySamples`).
+- **lesson:** 감사 서브에이전트의 file:line cite는 반드시 독립검증 — Opus도 없는 경로를 confident하게 지어냄(Finding 2). 그리고 "메커니즘 출하"≠"기본 경로 적용": 새 guard는 sync/idle/ASK/CHAT 모든 형제 경로 커버를 grep로 확인.
+- **AUDIT 요약(진안 질문 답):** HEALTHY/실작동=whetstone(약점원장 record→BKT→resolve→nudge, ASK/CHAT parity, mastery suppression) · Mem0 auto-extract+belief-provenance(File store, default-on) · Playbook ranking(rankingUtility Wilson-LCB, 과거버그 미재발) · skill 선택+recordUsage+eviction. INERT/기본에선 死=episodic capture(MUSE_EPISODIC_MEMORY_ENABLED off — fire-14 novelty 게이트 포함 기본 미발화) · summary-recall(CLI InMemory store라 매 프로세스 empty) · fade/promote(daemon-only+MUSE_SELFLEARN_ENABLED off). UNMEASURED(최대 갭)=cross-turn "경험이 다음 턴을 돕는다"는 end-to-end 측정이 *전무*; 모든 eval이 single-turn 메커니즘 발화 확인일 뿐, self-eval은 count ratchet(bigger≠better). → backlog ◦로 등록.
+
+## fire 18 · 2026-06-21 · skill v2.0.0 · `7b860f8e`
+meta: value-class=micro-fix · pkg=@muse/autoconfigure + @muse/recall · kind=correctness/audit-fix · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles=1070 · fabrication 0 · gates: recall 366/366 + autoconfigure 612/612 + cli build clean + check(유일 실패=inherited commands-logo byte-hygiene, 다른 루프, 무관) + self-eval ok + lint · merge-to-main: fires 16-18 (this fire, ×3)
+
+- **무엇:** fire-17 감사 Finding 2(`buildPlaybookProvider`가 origin 드롭)를 **재검증→REAL 확인→수정**. + ④b judge가 *같은 ranker를 먹이는 형제 2곳 추가 발견*(`selectPlaybookSection`·`topAppliedStrategy` @muse/recall, 기본 `muse ask` 경로) → 셋 다 origin carry로 패치(CLI `toPlaybookStrategy` sibling과 parity). 이제 모든 entry→PlaybookStrategy 투영이 provenance 보존.
+- **왜:** origin이 REFLECTED_RANK_PENALTY + CBR low-support 게이트를 켜는 키 → 드롭되면 합성(reflected) 전략이 grounded와 동급 랭킹 = "evidence beats synthesis"가 **런타임+기본 ask 경로 모두에서 死**. 우리가 출하한 메커니즘이 정작 안 돌던 것(진안 "메커니즘이 옳은지" 질문의 직접 답).
+- **리뷰지점:** ④b 독립 Opus PASS(bug real·outcome-discriminating: origin이 tie 결정 요인, mutation RED·diversity OK) + judge가 형제 2곳 적발 → *같은 fire에 함께 패치*(형제-완전성). 두 fix 모두 mutation-verified.
+- **리스크:** 낮음 — 조건부 spread(origin 있을 때만), 8개 기존 필드 불변, 랭킹 페널티 복원만(fabrication 무관). input 타입 widening은 back-compat(optional).
+- **lesson(정직성 정정):** fire-17에서 Finding 2를 "hallucination"이라 기각한 건 **내 오류** — `context-engineering-builders.ts`를 @muse/agent-core에서만 찾고 @muse/autoconfigure를 안 봄. 교훈: 감사 cite가 "없는 파일"로 보여도 *전 패키지 grep*으로 확인 후 기각(잘못된 패키지에서 못 찾은 것일 수 있음). 그리고 형제-감사는 grep 범위를 @muse/recall까지 — selector를 먹이는 모든 패키지를 봐야 함(judge가 내 누락을 잡음).
