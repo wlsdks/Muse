@@ -1,5 +1,7 @@
 # Loop journal — context-strategy
 
+**Doctrine:** docs/strategy/context-doctrine.md (Muse = continuous companion, not a session coding agent; grounding-first context).
+
 **Theme:** Context engineering — assemble the *leanest sufficient* context per
 model turn, never fill it indiscriminately. Strengthen + PROVE Muse's
 selective-context machinery (relevance-gated tool exposure, trimming, tool-output
@@ -11,7 +13,7 @@ each fire commits AND pushes the branch + maintains a draft PR. **Every 5th fire
 then keep working on the branch.** Floor: NO force-push, NO `--no-verify`; the
 5-fire merge is ff-only (re-fetch on conflict, never force).
 
-**Cadence:** session cron `c66c8b81`, 20 min. **Stop:** `CronDelete c66c8b81` or cmux.
+**Cadence:** session cron `f7d80487`, 20 min. **Stop:** `CronDelete f7d80487` or cmux.
 
 ---
 
