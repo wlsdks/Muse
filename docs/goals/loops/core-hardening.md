@@ -4,6 +4,14 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main, NEVER merges to main).
 > Cron `cfe778e2` (every 15m, session-only). Stop: `CronDelete cfe778e2`. Convention: [README](README.md).
 
+## fire 2 · 2026-06-20 · skill v1.14.0 · <commit-pending>
+meta: value-class=wiring · pkg=@muse/mcp · kind=outbound-safety/audit-completeness · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 1054→1054 (+1 describe / 4 cases in test/consented-action.test.ts) · fabrication 0 · @muse/mcp 1860 tests green · pnpm check exit 0 · lint clean
+- 무엇: `performConsentedAction`(@muse/mcp)가 어떤 분기에서도 action-log를 안 남기던 rule-4 갭 — opt-in `actionLogFile?`/`now?`/`idFactory?` + `log()` 헬퍼 추가, 7개 return 분기(veto/no-consent/invalid-url/host-mismatch/timeout-or-transport-failed/redirect/performed) 모두에 rationale 동반 `ActionLogEntry` append.
+- 왜: outbound-safety rule 4 = "sent OR refused 막론 모든 outbound는 리뷰가능 entry 기록". standing-objective 루프에 배선되기 전에 감사 공백을 닫는다. web-action.ts 선례 미러링(동일 await-log-before-return 패턴).
+- 리뷰지점: credential(Bearer)은 어떤 필드에도 안 들어감(authorization 헤더 전용); body는 redactSecretsInText+500자 캡; actionLogFile 부재 시 무로그(back-compat). Residual: caller가 credential을 request.body에 직접 넣으면 generic 토큰은 redaction 미스 가능 — caller 데이터 문제(web-action 동일), Muse 자기-credential 재주입 위협은 차단.
+- 리스크: 낮음 — 순수 additive(제어흐름·게이트 outcome 불변). 로깅 실패 전파는 web-action 선례와 동일. ④b Opus 적대 judge PASS (5문항: 7분기 완전성 enumerate 확인).
+
 ## fire 1 · 2026-06-20 · skill v1.14.0 · f8ef07f8
 meta: value-class=micro-fix · pkg=@muse/agent-core · kind=grounding-floor/injection-hardening · verdict=PASS · firesSinceDrill=1
 ratchet: testFiles 1054→1054 (+3 cases in injection.test.ts) · fabrication 0 · precheck:grounding 2/3 PASS pass^2 (faithfulness-rate env-skip) · pnpm check exit 0 · lint clean
