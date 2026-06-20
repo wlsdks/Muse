@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ episodic-fade reinstatement-on-reaccess: a faded session re-engaged recently (live recallStats) is exempted from FADE_PENALTY — never silently down-rank a still-recalled source (doctrine P3/P4; mem0 decay-unless-reaccessed) — context-strategy fire 12 (detail in docs/goals/loops/context-strategy.md)
+
 - ✓ durable/provisional/contested fact-caution PARITY on chat persona (buildMusePersona marks volatile/once-seen facts like ask does; doctrine P3 consolidation-spine sub-slice 1) — context-strategy fire 11 (detail in docs/goals/loops/context-strategy.md)
 
 - ✓ content-free grounding-header guard: optionalGroundingSections drops present:true blocks with empty body (no citable-looking header backing nothing; doctrine P2/P4) + JUDGE-DRILL passed (verifier caught an inert unwired-helper slice) — context-strategy fire 10 (detail in docs/goals/loops/context-strategy.md)
