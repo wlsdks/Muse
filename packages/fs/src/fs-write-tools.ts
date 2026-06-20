@@ -366,6 +366,17 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
           return { path: safe, reason: `'${path}' is a directory`, written: false };
         }
         const exists = info !== undefined;
+        // Read-before-OVERWRITE: replacing an EXISTING file's whole contents is a
+        // mutation of content the model must have grounded in — fail-close unless
+        // it read the file first, exactly as editExecutor does. Creating a NEW
+        // file needs no prior read (there is nothing to ground / lose).
+        if (exists && options.wasPathRead && !options.wasPathRead(safe)) {
+          return {
+            path: safe,
+            reason: "ungrounded overwrite — read the file with file_read before overwriting an existing file (Muse only replaces a file it has actually read)",
+            written: false
+          };
+        }
         const draft: FsWriteDraft = {
           action: "write",
           path: safe,

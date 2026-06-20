@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 13 · 2026-06-21 · skill v2.0 · <commit-pending> (read-before-OVERWRITE gate on file_write — fabrication=0 hole)
+meta: value-class=new-capability · pkg=@muse/fs · kind=grounding-gate · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 1068→1068 (+3 cases fs-write-tools, mutation-valid) · fabrication 0 · @muse/fs 격리 127 통과 · eval:computer-task PASS(무회귀, file_edit 경로라 무관) · pnpm check=박스포화(@muse/mcp crypto 5-55s 타임아웃, @muse/fs 격리 green) · lint clean
+- 무엇: 테마 핵심 mandate("모든 actuator가 근거 게이트 통과")에서 **미감사 표면 발견** — read-before-edit가 file_edit/multi_edit(editExecutor)엔 강제되나 **file_write엔 누락**. 모델이 안 읽은 기존 파일을 file_write로 overwrite하면 silent 데이터손실+ungrounded 변경(fabrication=0 위반). FIX: `exists && wasPathRead 미충족 → fail-close`(CREATE는 read 불필요). CLI 배선 확인 production-live.
+- 왜: 노출/recovery/adapter(fires 4-11)는 *도구 도달*을 고쳤지만 이건 *근거 게이트* 차원 — 테마의 두 기둥 중 후자에 실제 hole. content-mutation 도구(edit/multi_edit/write-overwrite) 전부 read-before 커버 완성.
+- 리뷰지점: mutation-valid 3-case(overwrite-no-read fail-close + overwrite-with-read 허용 + create-no-read 허용 = two-sided, over-block 아님). ④b judge PASS(create/TOCTOU/approval/symlink 가드 불변, editExecutor 패리티 정확, delete/move는 content 변경 아니라 제외 타당). 형제-감사 완결.
+- 리스크: 낮음 — exists&&wasPathRead 가드만 추가(create/backward-compat 불변), 다른 가드 무손상. ④b PASS.
+lesson: "vein 소진"은 *축*이 아니라 *한 차원*(노출)의 소진일 수 있다 — 테마의 다른 기둥(근거 게이트)을 형제-감사하니 file_write-overwrite라는 실제 fabrication hole이 나옴. measure-first(노출)와 invariant-audit(게이트)는 다른 렌즈; 둘 다 돌려야 축을 다 봤다 할 수 있다.
+
 ## fire 12 · 2026-06-21 · skill v2.0 · c526e24d (measure-first: model-behavior ceiling confirmed; 3-fire merge)
 meta: value-class=measure-first(work-list) · pkg=eval(diagnosis) · kind=ceiling-confirm · verdict=N/A · firesSinceDrill=2
 ratchet: testFiles 1068→1068 · fabrication 0 · eval:multifile-fix FAIL(early-stop 모드: file_read 1회 후 자발 종료) · eval:computer-task PASS(불변) · self-eval green

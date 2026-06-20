@@ -217,6 +217,32 @@ describe("file_write / file_edit / file_multi_edit — gated writes", () => {
         await rm(outside, { force: true, recursive: true });
       }
     });
+
+    describe("read-before-OVERWRITE grounding gate (existing file)", () => {
+      it("fail-closes an overwrite of an existing file the model has NOT read (no fabrication / data loss)", async () => {
+        await writeFile(join(root, "exists.md"), "original");
+        const tool = createFileWriteTool({ ...opts(allow), wasPathRead: () => false });
+        const out = (await tool.execute({ content: "REPLACED", path: join(root, "exists.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(false);
+        expect(String(out["reason"])).toMatch(/read|ungrounded/iu);
+        expect(await readFile(join(root, "exists.md"), "utf8")).toBe("original");
+      });
+
+      it("allows the overwrite once the file has been read", async () => {
+        await writeFile(join(root, "exists.md"), "original");
+        const tool = createFileWriteTool({ ...opts(allow), wasPathRead: () => true });
+        const out = (await tool.execute({ content: "REPLACED", path: join(root, "exists.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(true);
+        expect(await readFile(join(root, "exists.md"), "utf8")).toBe("REPLACED");
+      });
+
+      it("allows CREATING a new file without a prior read (nothing to ground)", async () => {
+        const tool = createFileWriteTool({ ...opts(allow), wasPathRead: () => false });
+        const out = (await tool.execute({ content: "fresh", path: join(root, "brand-new.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(true);
+        expect(out["created"]).toBe(true);
+      });
+    });
   });
 
   describe("file_edit", () => {
