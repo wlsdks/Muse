@@ -226,43 +226,77 @@ function isMandatoryTool(definition: MuseToolDefinition, recentSet: ReadonlySet<
   return !domain || domain === "core";
 }
 
-const ASCII_ONLY_RE = /^[\x00-\x7f]+$/u;
+const NON_ASCII_RE = /[^\u0000-\u007f]/u;
 
 /**
- * Keyword → prompt matcher.
+ * Keyword → prompt matcher — INFLECTION-AWARE, mirroring `@muse/tools`
+ * `tokenMatchesKeywordWord` / `keywordMatchesPromptTokens` exactly so the
+ * agent-core ranking layer (cap / `shouldKeep`) and the `@muse/tools`
+ * selection layer agree on which tools a prompt makes relevant. They used
+ * to disagree: selection accepted inflections (`lights`→`light`) while this
+ * copy demanded a strict `\blight\b`, so a domain tool ranked HIGH by
+ * selection scored 0 here and could be evicted from the ≤6 window.
  *
- * Pre-iter-36 every keyword used raw `promptLower.includes(kw)`. That
- * silently substring-matched short ASCII triggers inside larger
- * words — `"dm"` (legitimate Slack DM keyword) fired on `"admin"`,
- * `"freedom"`, `"wisdom"`, etc, expanding the messaging tool catalog
- * for unrelated prompts. The fix routes ASCII-only keywords through
- * a word-boundary regex (`\b…\b`) while keeping the substring path
- * for CJK keywords — Korean / Japanese / Chinese scripts don't use
- * whitespace word boundaries, and JS's ASCII-flavoured `\b` would
- * never match between two CJK chars.
+ * The rule (per word of the keyword; multi-word keywords need EVERY word to
+ * hit some token):
+ *  - ASCII word ≥4 chars: a token matches when `token.startsWith(word)` and
+ *    the suffix is ≤3 chars — `lights`→`light`, but `research`≠`search`,
+ *    `homework`≠`home`.
+ *  - ASCII word <4 chars: EXACT token only, so `on`/`off` don't prefix-match
+ *    inside `online`/`office`.
+ *  - CJK word: containment (Korean/CJK attach particles to the stem and have
+ *    no whitespace word boundary).
+ *
+ * Tokenization matches `@muse/tools`: lowercase, split on any non-
+ * letter/digit (Unicode-aware).
  */
 function keywordMatchesPrompt(keyword: string, promptLower: string): boolean {
-  const kw = keyword.toLowerCase();
-  if (ASCII_ONLY_RE.test(kw)) {
-    return wordBoundaryRegexFor(kw).test(promptLower);
+  const tokens = tokenizePromptCache(promptLower);
+  if (tokens.size === 0) {
+    return false;
   }
-  return promptLower.includes(kw);
+  const words = keyword
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return false;
+  }
+  return words.every((word) => {
+    for (const token of tokens) {
+      if (tokenMatchesKeywordWord(token, word)) {
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
-const wordBoundaryCache = new Map<string, RegExp>();
+function tokenMatchesKeywordWord(token: string, word: string): boolean {
+  if (token === word) {
+    return true;
+  }
+  if (NON_ASCII_RE.test(word)) {
+    return word.length >= 2 ? token.includes(word) : false;
+  }
+  return word.length >= 4 && token.startsWith(word) && token.length - word.length <= 3;
+}
 
-function wordBoundaryRegexFor(keywordLower: string): RegExp {
-  const cached = wordBoundaryCache.get(keywordLower);
+const promptTokenCache = new Map<string, Set<string>>();
+
+function tokenizePromptCache(promptLower: string): Set<string> {
+  const cached = promptTokenCache.get(promptLower);
   if (cached) {
     return cached;
   }
-  const re = new RegExp(`\\b${escapeRegex(keywordLower)}\\b`, "u");
-  wordBoundaryCache.set(keywordLower, re);
-  return re;
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const tokens = new Set<string>();
+  for (const token of promptLower.split(/[^\p{L}\p{N}]+/u)) {
+    if (token.length > 0) {
+      tokens.add(token);
+    }
+  }
+  promptTokenCache.set(promptLower, tokens);
+  return tokens;
 }
 
 /**

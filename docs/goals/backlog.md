@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ inflection-aware tool-relevance matching — capToolsByRelevance ranking now agrees with the @muse/tools selection layer (lights→light kept past the cap; CJK 할 일 over-match fixed) — context-strategy fire 5 (detail in docs/goals/loops/context-strategy.md)
+
 - ✓ query-anchored span retention in the per-result cap (ACON arXiv:2510.00615 / Lost-in-the-Middle arXiv:2307.03172; keeps the load-bearing middle span the query needs, verbatim, neutralize-first) — context-strategy fire 4 (detail in docs/goals/loops/context-strategy.md)
 - ✓ default relevance-ranked tool-exposure ceiling on the live runtime path (Less-Context-Better-Agents arXiv:2606.10209 / MemTool arXiv:2507.21428; enforces tool-calling.md ≤5-7, lossless tail-drop) — context-strategy fire 3 (detail in docs/goals/loops/context-strategy.md)
 - ✓ stale-observation masking in the model loop (The-Complexity-Trap arXiv:2508.21433 / ACON arXiv:2510.00615; ref-recoverable, fixes unbounded multi-turn context growth) — context-strategy fire 2 (detail in docs/goals/loops/context-strategy.md)

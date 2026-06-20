@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { MuseTool, MuseToolDefinition } from "@muse/tools";
+import { filterToolsForContext } from "@muse/tools";
 
-import { DefaultToolFilter, inferDomain } from "../src/tool-filter.js";
+import { DefaultToolFilter, capToolsByRelevance, inferDomain } from "../src/tool-filter.js";
 
 function tool(definition: MuseToolDefinition): MuseTool {
   return { definition, execute: () => "ok" };
@@ -407,5 +408,110 @@ describe("DefaultToolFilter explicit-domain case handling", () => {
     });
     const kept = filter.filter([mixedCaseTool], { scopeHints: ["CALENDAR"], userMessage: "hi" });
     expect(kept.map((t) => t.definition.name)).toContain("vendor.cal.list");
+  });
+});
+
+describe("inflection-aware keyword matching (agrees with @muse/tools selection)", () => {
+  function readTool(name: string, domain: string, keywords: readonly string[]): MuseTool {
+    return tool({ description: `Tool ${name}`, domain, inputSchema: {}, keywords, name, risk: "read" });
+  }
+
+  it("capToolsByRelevance keeps the inflection-matched tool past the cap", () => {
+    // "turn off the lights" — keyword "light" must score via the inflected
+    // token "lights" (token.startsWith(word), suffix ≤3), the SAME rule
+    // @muse/tools selection ranks it by. The home tool uses a CUSTOM domain
+    // ("smarthome", absent from DEFAULT_DOMAIN_KEYWORDS) so the ONLY thing
+    // that can score it is its own keyword — isolating the inflection rule
+    // from the built-in heuristics (which happen to list both "light" AND
+    // "lights"). Under the old strict `\blight\b` it scores 0. None of the
+    // filler keywords match the prompt either, so they also score 0 — and
+    // because home_state is placed LAST in input order, a strict matcher
+    // sorts it to the very tail and the cap (6 of 7) evicts it. The
+    // inflection score of 1 is what rescues it. Seven optional tools so the
+    // cap truncates by exactly one.
+    const tools: readonly MuseTool[] = [
+      readTool("muse.tasks.list", "tasks", ["task"]),
+      readTool("muse.tasks.add", "tasks", ["todo"]),
+      readTool("muse.notes.search", "notes", ["note"]),
+      readTool("muse.notes.list", "notes", ["memo"]),
+      readTool("muse.messaging.send", "messaging", ["message"]),
+      readTool("muse.calendar.create", "calendar", ["meeting"]),
+      readTool("home_state", "smarthome", ["light"])
+    ];
+
+    const kept = capToolsByRelevance(tools, {
+      maxTools: 6,
+      userMessage: "turn off the lights"
+    });
+    const names = kept.map((t) => t.definition.name);
+
+    expect(kept.length).toBeLessThanOrEqual(6);
+    expect(names).toContain("home_state");
+  });
+
+  it("shouldKeep keeps a domain tool on an inflected prompt", () => {
+    // Custom domain so the keyword (not the built-in heuristics) is the only
+    // thing that can retain the tool — exercises the inflected keyword path.
+    const filter = new DefaultToolFilter();
+    const homeTool = readTool("home_state", "smarthome", ["light"]);
+    const kept = filter.filter([homeTool], { userMessage: "turn off the lights" });
+    expect(kept.map((t) => t.definition.name)).toContain("home_state");
+  });
+
+  it("@muse/tools selection ALSO selects the tool — the two layers agree", () => {
+    const homeTool = readTool("home_state", "smarthome", ["light"]);
+    const selection = filterToolsForContext([homeTool], {
+      maxTools: 6,
+      prompt: "turn off the lights"
+    });
+    expect(selection.tools.map((t) => t.definition.name)).toContain("home_state");
+  });
+
+  it("over-match guard: inflection rule does not introduce IrrelAcc regressions", () => {
+    const filter = new DefaultToolFilter();
+
+    // "research" must NOT satisfy keyword "search" (prefix start matches, but
+    // suffix is >3 chars: research = search? no — research does not start with
+    // search). Use the precise pair the @muse/tools comment pins.
+    const searchTool = readTool("knowledge.search", "notes", ["search"]);
+    expect(
+      filter.filter([searchTool], { userMessage: "i did some research today" })
+    ).toHaveLength(0);
+
+    // "homework" must NOT satisfy keyword "home" (suffix "work" = 4 chars > 3).
+    const homeTool = readTool("home_state", "home", ["home"]);
+    expect(
+      filter.filter([homeTool], { userMessage: "i finished my homework" })
+    ).toHaveLength(0);
+
+    // Short words (<4 chars) require an EXACT token: "on"/"off" must not
+    // prefix-match inside larger words.
+    const shortTool = readTool("toggle.power", "home", ["on", "off"]);
+    expect(
+      filter.filter([shortTool], { userMessage: "the offer is online only" })
+    ).toHaveLength(0);
+    // …but the same short keyword still matches as a standalone token.
+    expect(
+      filter.filter([shortTool], { userMessage: "turn it off" })
+    ).toHaveLength(1);
+  });
+
+  it("over-match guard (CJK): a single-char word in a multi-word keyword must not match by containment", () => {
+    const filter = new DefaultToolFilter();
+    // Mirrors @muse/tools' `word.length >= 2 ? token.includes(word) : false`
+    // guard. The shipped tasks keyword "할 일" splits into single CJK chars
+    // ["할","일"]. They must match only as EXACT tokens, never contained inside
+    // a larger token — else an unrelated Korean prompt ("할머니"=grandmother,
+    // "일했다"=worked) over-fires the tasks domain, disagreeing with the
+    // selection layer (the exact fire-5 judge finding).
+    const taskTool = readTool("muse.tasks.search", "tasks", ["할 일"]);
+    // unrelated: "할" only inside "할머니가", "일" only inside "일했다" → no match
+    expect(
+      filter.filter([taskTool], { userMessage: "할머니가 일했다는 이야기" })
+    ).toHaveLength(0);
+    // genuine task ask: bare "할" and "일" tokens present → still matches
+    expect(
+      filter.filter([taskTool], { userMessage: "내 할 일 목록 보여줘" }).map((t) => t.definition.name)
+    ).toEqual(["muse.tasks.search"]);
   });
 });
