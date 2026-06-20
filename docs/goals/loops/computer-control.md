@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 23 · 2026-06-21 · skill v2.0 · <commit-pending> (run_command spawn-failure → actionable message; pkg pivot off @muse/fs)
+meta: value-class=new-capability · pkg=crates/runner · kind=reliability-nudge · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 1071→1071 (+1 cargo test crates/runner; TS 무변경) · fabrication 0 · crates/runner cargo 10 · @muse/tools 격리 289(무회귀) · lint clean
+- 무엇: Rust runner가 spawn 실패에 raw `"failed to spawn command: No such file or directory (os error 2)"` 반환 → 12B가 오타 vs 미설치 구분 불가. FIX(`describe_spawn_error`): `ErrorKind::NotFound`→`"command '<cmd>' not found — not installed or not on PATH; check the name."`, `PermissionDenied`→`"… not executable (permission denied)."`, 그외→원본 generic. `run_request` spawn Err arm에 배선; TS는 `error` 그대로 전달(무편집).
+- 왜: 다양성 RATCHET — 최근 5 fire(18-22) 전부 @muse/fs라 *다른 패키지*(crates/runner) 강제. reliability-nudge vein을 run_command 액추에이터로 확장(npm/pytest 오타·미설치는 실제 멀티스텝 실패모드).
+- 리뷰지점: mutation-valid(NotFound arm→generic이면 cargo RED; 복원 10 pass). ④b judge PASS — 이미 실패한 spawn의 *메시지 텍스트만*(spawn 동작/보안 불변; blank/path/env 가드 다 선행), request.command 에코(host-path leak 없음), generic fallthrough가 타 에러 verbatim 보존. TS passthrough 확인(error→모델 도달).
+- 리스크: 낮음 — 순수 에러-포맷 추가(실행 경로 0 변경). honest bound: eval 바이너리는 stale copy일 수 있으나 source 정확+cargo 검증. ④b PASS.
+lesson: reliability-nudge vein(actionable 에러)은 *액추에이터를 가로질러* 적용된다 — fs(read/grep/edit) 후 run_command(Rust)로 이어가며 다양성도 충족. raw OS errno(os error 2)는 fs ENOENT와 같은 dead-end 클래스; 패키지 경계 넘어 같은 교훈.
+
 ## fire 22 · 2026-06-21 · skill v2.0 · 031a414c (file_edit/multi_edit missing-file → recovery hint; fire-21 sibling completion)
 meta: value-class=new-capability · pkg=@muse/fs · kind=reliability-nudge · verdict=PASS · firesSinceDrill=2
 ratchet: testFiles 1071→1071 (+1 strengthened fs-write-tools case, mutation-valid) · fabrication 0 · @muse/fs 격리 164 · pnpm check exit 0 · lint clean

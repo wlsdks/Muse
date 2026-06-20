@@ -109,7 +109,7 @@ fn run_request(request: RunnerRequest) -> RunnerResponse {
 
     let mut child = match command.spawn() {
         Ok(child) => child,
-        Err(error) => return error_response(&format!("failed to spawn command: {error}")),
+        Err(error) => return error_response(&describe_spawn_error(&request.command, &error)),
     };
 
     // Drain stdout/stderr on dedicated threads so the child can never block
@@ -243,6 +243,21 @@ fn error_response(message: &str) -> RunnerResponse {
     }
 }
 
+// A raw "No such file or directory (os error 2)" from a failed spawn dead-ends
+// the local model — it can't tell a typo'd command from an uninstalled tool.
+// Map the two common kinds to an actionable message naming the command.
+fn describe_spawn_error(command: &str, error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => {
+            format!("command '{command}' not found — it is not installed or not on PATH; check the name.")
+        }
+        std::io::ErrorKind::PermissionDenied => {
+            format!("command '{command}' is not executable (permission denied).")
+        }
+        _ => format!("failed to spawn command: {error}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,6 +377,22 @@ mod tests {
         for key in ["NODE_ENV", "GIT_DIR", "GIT_AUTHOR_NAME", "MY_FLAG"] {
             assert!(is_safe_env_key(key), "{key} must be allowed");
         }
+    }
+
+    #[test]
+    fn spawn_error_maps_to_actionable_message() {
+        use std::io::{Error, ErrorKind};
+        // command-not-found → names the command, no raw "os error", actionable.
+        let nf = describe_spawn_error("pytest", &Error::new(ErrorKind::NotFound, "No such file or directory (os error 2)"));
+        assert!(nf.contains("pytest"), "names the command: {nf}");
+        assert!(nf.contains("not found") && nf.contains("PATH"), "actionable: {nf}");
+        assert!(!nf.contains("os error"), "no raw errno: {nf}");
+        // sibling: not-executable
+        let pd = describe_spawn_error("script.sh", &Error::new(ErrorKind::PermissionDenied, "denied"));
+        assert!(pd.contains("script.sh") && pd.contains("not executable"), "perm: {pd}");
+        // anything else falls through to the generic message (unchanged).
+        let other = describe_spawn_error("x", &Error::new(ErrorKind::Other, "weird failure"));
+        assert!(other.contains("failed to spawn command") && other.contains("weird failure"), "generic: {other}");
     }
 
     #[test]
