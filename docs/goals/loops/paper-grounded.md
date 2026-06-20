@@ -17,3 +17,11 @@ ratchet: testFiles 1054→1056 · fabrication 0 · groundedSurfaces=28 (no drop)
 - 왜: muse doctor --calibration이 emit하는 캘리브레이션 임계값을 chat은 존중하는데 recall은 무시 → monitor(conformal)→remediate(gate) 루프가 주 grounded 표면에서 끊겨 있었음. KnowNo conformal coverage(arXiv:2307.01928) 출력을 게이트에 배선해 닫음. 차별화 엣지 (a)fabrication=0 floor + (b)RGV verifier STRENGTHEN, 가법적(표면 카운트 불변).
 - 리뷰지점: resolver parse가 chat-grounding.ts와 정확히 일치(분기 없음, fallback 상수만 0.55 vs 0.5). 독립 judge가 chunks.ts threading revert→ent 테스트 RED로 mutation faithfulness 실증. verdict.ts threading은 동일 resolver 재사용이나 전용 mutation 테스트는 없음(기존 recall 328 그린이 가드).
 - 리스크: 낮음 — 캘리브레이션 값을 낮게 set하면 cosine 확신-프레이밍 바가 내려갈 수 있으나 chat 게이트와 동일 계약이고 결정론 citation 게이트가 하드 백스톱이라 fabrication 유입 불가.
+
+## fire 2 · 2026-06-20 · skill v1.14.0 · 1ee899bf
+meta: value-class=new-capability · pkg=@muse/cli · kind=whetstone-misgrounding-chat-parity · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 1056 · fabrication 0 · groundedSurfaces=28 (no drop) · groundedCases=45 · differentiationBatteries=6 · eval:self-improving 28/28 PASS (라이브 misgrounding 배터리 포함) · precheck:grounding recall-citation-gate 2/2 + rubric-reverify 2/2 PASS, faithfulness-rate SKIPPED(box >150s 타임아웃 — pass 아님)
+- 무엇: whetstone misgrounding 축(GROUNDED≠TRUE)을 CHAT 표면에 기록. chat은 신호를 계산만(유저 cue 렌더)하고 weakness ledger에 안 쓰던 것을 — ASK의 동일 primitive(stripCitationMarkers→reportSentenceGroundedness→assertiveUnsupportedFraction→misgroundedOutcome [0.5,1) band)를 재사용한 순수 helper(chatMisgroundingFraction·chatWeaknessAxis)로 분류해 chat-repl이 non-refusal 답의 misgrounding row를 기록. precedence unbacked-action>misgrounding>grounding-gap.
+- 왜: misgrounding 루프가 ASK에만 닫혀 있고 가장 많이 쓰는 chat 표면엔 blind였음 — 차별화 엣지 (d)whetstone metacognition을 새 표면으로 확장. 가법적(기존 WeaknessAxis·DEV_FIXABLE_AXES·muse doctor 파이프라인이 이미 소비, 새 sink 없음). ALCE 인용정밀도(arXiv:2305.14627) + Memp 증거-게이트 ledger(arXiv:2508.06433).
+- 리뷰지점: 독립 judge가 misgrounding 분기 비활성→positive 2 테스트 RED, `<1` 상한 widen→cross-lingual negative RED로 mutation faithfulness 실증. ledger STATE(weaknesses.json) 직접 검증, spy 아님. fraction==1.0(cross-lingual)은 grounded 유지.
+- 리스크: 낮음 — chat misgrounding 신호는 lexical-only(cross-lingual semantic re-judge 없음)라 heavily-paraphrased-but-faithful EN 답이 token coverage [0.5,1)면 false misgrounding 로깅 가능. 단 fuel-only(유저 비노출·verdict 불변)이고, 이를 스트레스할 faithfulness-rate 배터리는 box env-stall로 skip이라 박스에선 미검증.
