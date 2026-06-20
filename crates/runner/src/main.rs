@@ -8,6 +8,20 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 64 * 1024;
+// Upper bounds on the model-controlled resource knobs — a huge `timeout_ms`
+// would hang the runner for days; a huge `max_output_bytes` would buffer
+// unbounded output into memory. Clamp to a generous-but-finite ceiling
+// (the TS parser clamps to the same; this is the authoritative defence).
+const MAX_TIMEOUT_MS: u64 = 600_000;
+const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
+
+fn effective_timeout_ms(requested: Option<u64>) -> u64 {
+    requested.unwrap_or(DEFAULT_TIMEOUT_MS).clamp(1, MAX_TIMEOUT_MS)
+}
+
+fn effective_max_output_bytes(requested: Option<usize>) -> usize {
+    requested.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES).clamp(1, MAX_OUTPUT_BYTES)
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,8 +85,8 @@ fn run_request(request: RunnerRequest) -> RunnerResponse {
         return error_response("command must be an executable name, not a path");
     }
 
-    let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).max(1));
-    let max_output_bytes = request.max_output_bytes.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES).max(1);
+    let timeout = Duration::from_millis(effective_timeout_ms(request.timeout_ms));
+    let max_output_bytes = effective_max_output_bytes(request.max_output_bytes);
     let mut command = Command::new(&request.command);
     command
         .args(&request.args)
@@ -348,6 +362,18 @@ mod tests {
         for key in ["NODE_ENV", "GIT_DIR", "GIT_AUTHOR_NAME", "MY_FLAG"] {
             assert!(is_safe_env_key(key), "{key} must be allowed");
         }
+    }
+
+    #[test]
+    fn clamps_resource_knobs_to_sane_bounds() {
+        // Huge values clamp to the ceiling; sane values pass; absent → default.
+        assert_eq!(effective_timeout_ms(Some(999_999_999)), MAX_TIMEOUT_MS);
+        assert_eq!(effective_timeout_ms(Some(5_000)), 5_000);
+        assert_eq!(effective_timeout_ms(Some(0)), 1);
+        assert_eq!(effective_timeout_ms(None), DEFAULT_TIMEOUT_MS);
+        assert_eq!(effective_max_output_bytes(Some(5_000_000_000)), MAX_OUTPUT_BYTES);
+        assert_eq!(effective_max_output_bytes(Some(1024)), 1024);
+        assert_eq!(effective_max_output_bytes(None), DEFAULT_MAX_OUTPUT_BYTES);
     }
 }
 

@@ -15,6 +15,8 @@ import {
   filterToolsForContext,
   isWorkspaceMutationPrompt,
   planToolExecutionOrder,
+  MAX_RUNNER_TIMEOUT_MS,
+  MAX_RUNNER_OUTPUT_BYTES,
   parseRunnerCommandRequest,
   invokeRustRunner,
   runnerWatchdogMs,
@@ -861,6 +863,18 @@ describe("Rust runner tool", () => {
 
   it("rejects blank runner commands before spawning the child process", () => {
     expect(() => parseRunnerCommandRequest({ command: " " })).toThrow("run_command requires");
+  });
+
+  it("clamps a model-supplied timeout / output cap to a sane maximum (no 11-day hang / memory blow-up)", () => {
+    // `timeoutMs`/`maxOutputBytes` are model-controlled with only a lower bound,
+    // so a huge value would hang the runner for days or buffer unbounded output.
+    const r = parseRunnerCommandRequest({ command: "node", timeoutMs: 999_999_999, maxOutputBytes: 5_000_000_000 } as never);
+    expect(r.timeoutMs).toBe(MAX_RUNNER_TIMEOUT_MS);
+    expect(r.maxOutputBytes).toBe(MAX_RUNNER_OUTPUT_BYTES);
+    // a reasonable value passes through unchanged
+    const ok = parseRunnerCommandRequest({ command: "node", timeoutMs: 5_000, maxOutputBytes: 1024 } as never);
+    expect(ok.timeoutMs).toBe(5_000);
+    expect(ok.maxOutputBytes).toBe(1024);
   });
 
   describe("command-line split repair (local model packs the whole line into `command`)", () => {

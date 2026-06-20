@@ -839,6 +839,8 @@ export {
   attachReadStreamErrorAbsorber,
   createRustRunnerTool,
   invokeRustRunner,
+  MAX_RUNNER_OUTPUT_BYTES,
+  MAX_RUNNER_TIMEOUT_MS,
   parseRunnerCommandRequest,
   runnerWatchdogMs,
   writeRunnerStdin,

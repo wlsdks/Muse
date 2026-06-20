@@ -65,8 +65,8 @@ export function createRustRunnerTool(options: RustRunnerToolOptions = {}): MuseT
           },
           cwd: { description: "Working directory to run in, e.g. '/Users/me/project'. Default: the current directory.", type: "string" },
           env: { additionalProperties: { type: "string" }, type: "object" },
-          maxOutputBytes: { minimum: 1, type: "integer" },
-          timeoutMs: { description: "Kill the command after this many milliseconds, e.g. 5000.", minimum: 1, type: "integer" }
+          maxOutputBytes: { maximum: MAX_RUNNER_OUTPUT_BYTES, minimum: 1, type: "integer" },
+          timeoutMs: { description: "Kill the command after this many milliseconds, e.g. 5000.", maximum: MAX_RUNNER_TIMEOUT_MS, minimum: 1, type: "integer" }
         },
         required: ["command"],
         type: "object"
@@ -230,8 +230,8 @@ export function parseRunnerCommandRequest(value: JsonObject): RunnerCommandReque
     command,
     cwd: typeof value.cwd === "string" && value.cwd.trim().length > 0 ? value.cwd : undefined,
     env: readStringRecord(value.env),
-    maxOutputBytes: readPositiveInteger(value.maxOutputBytes),
-    timeoutMs: readPositiveInteger(value.timeoutMs)
+    maxOutputBytes: readPositiveInteger(value.maxOutputBytes, MAX_RUNNER_OUTPUT_BYTES),
+    timeoutMs: readPositiveInteger(value.timeoutMs, MAX_RUNNER_TIMEOUT_MS)
   };
 }
 
@@ -297,7 +297,19 @@ function readStringRecord(value: unknown): Readonly<Record<string, string>> | un
   );
 }
 
-function readPositiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+/**
+ * Upper bounds on the model-controlled resource knobs. `timeoutMs`/`maxOutputBytes`
+ * have only a lower bound (≥1), so a huge value would hang the runner for days or
+ * buffer unbounded output into memory. Clamp to a generous-but-finite ceiling
+ * (10 min / 10 MB) — the Rust runner clamps to the same, defence-in-depth.
+ */
+export const MAX_RUNNER_TIMEOUT_MS = 600_000;
+export const MAX_RUNNER_OUTPUT_BYTES = 10 * 1024 * 1024;
+
+function readPositiveInteger(value: unknown, max?: number): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    return undefined;
+  }
+  return max !== undefined ? Math.min(value, max) : value;
 }
 

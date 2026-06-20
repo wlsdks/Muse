@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 17 · 2026-06-21 · skill v2.0 · <commit-pending> (run_command resource clamp; measure-first sharpens the ceiling)
+meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=resource-bound · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1069→1069 (+1 case tools.test clamp + Rust clamp test, mutation-valid) · fabrication 0 · @muse/tools 격리 289 · crates/runner cargo 9 · eval:multifile-fix=early-stop(model-behavior) · pnpm check=박스포화(apps/api LINE 20s, 격리 green) · lint clean
+- 무엇: §3.6-adjacent — `timeoutMs`/`maxOutputBytes`가 모델-supplied인데 하한(.max(1))만, 상한 cap 없음 → `timeoutMs:999_999_999`(~11.5일 hang)/`maxOutputBytes:5e9`(메모리) DoS. FIX 양 레이어(10min/10MB ceiling 동일): TS `readPositiveInteger(value,max)` Math.min, Rust `effective_timeout_ms/output_bytes` clamp(1,MAX), 스키마 `maximum:` 추가. clamp(reject 아님)이라 정당한 9분 빌드는 통과.
+- 왜: 보안/grounding 렌즈(13-16) 후 **resource-bound 렌즈**로 또 실제 갭. 코드-scout(path-safety·run_command exec·file_delete)는 solid지만 resource knob가 미감사였음. 형제-감사(TS+Rust).
+- 리뷰지점: mutation-valid 양 레이어(un-clamp시 RED, Rust 실제 mutate→panic 확인). ④b judge PASS(ceilings 동일, no-TDZ factory-read 스키마 상수, watchdog ≤605s bounded, prior 가드 불변). **measure-first this fire**: 모델이 이제 read(test)→grep→read(source)로 올바르게 조사하나 file_edit 전 멈춤=agentic-persistence 천장의 sharp 재확인(결정론 층 다 작동, 모델이 옳은 파일 도달, 행동만 안 함).
+- 리스크: 낮음 — clamp만 추가(값-타입/env-denylist/command-parse 불변). ④b PASS.
+lesson: 같은 축을 **여러 렌즈**(노출·grounding·security·resource-bound)로 보면 각 렌즈가 다른 실제 갭을 드러낸다 — "scout가 solid"는 *그 렌즈*의 소진이지 축 소진 아님. measure-first는 결정론 층 완성을 확증(모델이 옳은 파일 도달)하고 남은 천장(agentic-persistence)을 model-behavior로 격리.
+
 ## fire 16 · 2026-06-21 · skill v2.0 · 00451ce7 (env injection — whole code-injection family; fire-15 sibling-audit)
 meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=security/path-safe · verdict=PASS · firesSinceDrill=6
 ratchet: testFiles 1069→1069 (+1 case tools.test family + Rust family test, mutation-valid) · fabrication 0 · @muse/tools 격리 285 · crates/runner cargo 8 · eval:computer-task 무관(env 미사용) · pnpm check=박스포화(web-search fuzz 5s, 격리 green) · lint clean
