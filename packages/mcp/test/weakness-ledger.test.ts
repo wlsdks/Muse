@@ -493,6 +493,49 @@ describe("recordWeaknessResolved — BKT success update + no partial side-effect
     await recordWeakness(file, { axis: "time-parse", message: QUERY, nowIso: "2026-06-01T00:00:00Z" });
     expect(await recordWeaknessResolved(file, QUERY)).toBeUndefined();
   });
+
+  it("masters BOTH a grounding-gap AND a misgrounding row on the SAME topic from one grounded-success stream (was: only the first-sorted row)", async () => {
+    const file = tmpFile();
+    // The real flow produces a dual-axis topic: Muse first can't answer (grounding-gap),
+    // later answers-but-unsupported (misgrounding). A subsequent grounded success learns
+    // away BOTH — but the loop bumped only the first-sorted row, leaving misgrounding
+    // (the GROUNDED≠TRUE core axis) stuck below mastery forever.
+    await recordWeakness(file, { axis: "grounding-gap", message: QUERY, nowIso: "2026-06-01T00:00:00Z" });
+    await recordWeakness(file, { axis: "misgrounding", message: QUERY, nowIso: "2026-06-02T00:00:00Z" });
+    const topic = topicKeyFromMessage(QUERY);
+    expect((await readWeaknesses(file)).filter((e) => e.topic === topic).map((e) => e.axis).sort())
+      .toEqual(["grounding-gap", "misgrounding"]);
+    for (const t of ["2026-06-13T01:00:00Z", "2026-06-13T02:00:00Z", "2026-06-13T03:00:00Z", "2026-06-13T04:00:00Z", "2026-06-13T05:00:00Z"]) {
+      await recordWeaknessResolved(file, QUERY, t);
+    }
+    const entries = await readWeaknesses(file);
+    const gg = entries.find((e) => e.axis === "grounding-gap" && e.topic === topic)!;
+    const mg = entries.find((e) => e.axis === "misgrounding" && e.topic === topic)!;
+    expect(isMasteredWeakness(gg)).toBe(true);
+    expect(isMasteredWeakness(mg)).toBe(true); // RED before the fix — misgrounding never resolved
+    // Downstream: the doctor stops nagging a topic Muse demonstrably re-learned.
+    expect(selectDevFixableWeaknesses(entries).some((w) => w.topic === topic)).toBe(false);
+  });
+
+  it("resolves ONLY the topic's resolvable axes — a non-resolvable axis on the SAME topic and a different topic are untouched (no collateral)", async () => {
+    const file = tmpFile();
+    const OTHER = "마라톤 훈련 계획 짜줘";
+    await recordWeakness(file, { axis: "misgrounding", message: QUERY, nowIso: "2026-06-01T00:00:00Z" });
+    await recordWeakness(file, { axis: "time-parse", message: QUERY, nowIso: "2026-06-01T01:00:00Z" }); // non-resolvable, SAME topic
+    await recordWeakness(file, { axis: "grounding-gap", message: OTHER, nowIso: "2026-06-01T02:00:00Z" }); // different topic
+    for (const t of ["2026-06-13T01:00:00Z", "2026-06-13T02:00:00Z", "2026-06-13T03:00:00Z", "2026-06-13T04:00:00Z", "2026-06-13T05:00:00Z"]) {
+      await recordWeaknessResolved(file, QUERY, t);
+    }
+    const entries = await readWeaknesses(file);
+    const topic = topicKeyFromMessage(QUERY);
+    const mg = entries.find((e) => e.axis === "misgrounding" && e.topic === topic)!;
+    const tp = entries.find((e) => e.axis === "time-parse" && e.topic === topic)!;
+    const other = entries.find((e) => e.topic === topicKeyFromMessage(OTHER))!;
+    expect(isMasteredWeakness(mg)).toBe(true); // resolvable, same topic → mastered
+    expect(isMasteredWeakness(tp)).toBe(false); // NON-resolvable axis, same topic → untouched (guards an over-broad fix)
+    expect(tp.lastResolved).toBeUndefined();
+    expect(other.lastResolved).toBeUndefined(); // different topic → untouched
+  });
 });
 
 describe("selectDevFixableWeaknesses — mastery-aware (a topic Muse demonstrably re-learned drops off the doctor list)", () => {
