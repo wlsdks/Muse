@@ -476,3 +476,38 @@ describe("sanitizeOllamaToolSchema — normalize JSON-Schema shapes llama.cpp's 
     expect(tools[0]!.function.parameters).toEqual({ type: "object", properties: { when: { type: "string" } }, required: [] });
   });
 });
+
+describe("OllamaProvider — tool-call name sanitisation (leaked chat-template tokens)", () => {
+  // A thinking-capable local model (gemma4) sometimes bleeds harmony/chat-template
+  // channel markers (<|channel|>, <|"|>) into a tool-call NAME. A real tool name is
+  // a clean identifier, so a name corrupted by a trailing leaked token must be
+  // recovered — otherwise `run_command<|channel|>` fails registry lookup as
+  // tool-not-found even though the model meant `run_command`.
+  it("strips a leaked channel token so a corrupted-but-valid name resolves", async () => {
+    const p = new OllamaProvider({
+      fetch: jsonFetch({ message: { tool_calls: [{ function: { arguments: {}, name: "run_command<|channel|>thought" } }] } })
+    });
+    const res = await p.generate(userReq({ tools: [{ description: "run", inputSchema: {}, name: "run_command" }] }));
+    expect(res.toolCalls?.[0]?.name).toBe("run_command");
+  });
+
+  it("leaves a clean tool-call name unchanged", async () => {
+    const p = new OllamaProvider({
+      fetch: jsonFetch({ message: { tool_calls: [{ function: { arguments: {}, name: "file_read" } }] } })
+    });
+    const res = await p.generate(userReq());
+    expect(res.toolCalls?.[0]?.name).toBe("file_read");
+  });
+
+  it("also sanitises a leaked token on the STREAM path (sibling of the generate path)", async () => {
+    const p = new OllamaProvider({
+      fetch: streamFetch([
+        JSON.stringify({ message: { tool_calls: [{ function: { arguments: "{}", name: "run_command<|channel|>thought" }, id: "a" }] } }) + "\n",
+        JSON.stringify({ done: true, model: "gemma4:12b" })
+      ])
+    });
+    const ev = await collect(p.stream(userReq()));
+    const toolCalls = ev.filter((e) => e.type === "tool-call").map((e) => (e as { toolCall: { name: string } }).toolCall);
+    expect(toolCalls[0]?.name).toBe("run_command");
+  });
+});

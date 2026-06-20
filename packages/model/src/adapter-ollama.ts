@@ -112,7 +112,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
               return {
                 arguments: args,
                 id: tc.id ?? `tool-${i.toString()}`,
-                name: tc.function?.name ?? "unknown"
+                name: sanitizeToolCallName(tc.function?.name)
               };
             })
           }
@@ -216,7 +216,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
           const args: JsonObject = (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs))
             ? rawArgs as JsonObject
             : {};
-          const name = tc.function?.name ?? "unknown";
+          const name = sanitizeToolCallName(tc.function?.name);
           const id = tc.id ?? `tool-${(toolFallbackIndex++).toString()}`;
           const key = tc.id ?? `${name}:${JSON.stringify(args)}`;
           if (seenToolKeys.has(key)) continue;
@@ -506,4 +506,21 @@ interface OllamaNativeChatResponse {
 
 function safeParseToolArgs(raw: string): unknown {
   try { return JSON.parse(raw); } catch { return {}; }
+}
+
+/**
+ * A thinking-capable local model (gemma4) sometimes bleeds harmony/chat-template
+ * channel markers (`<|channel|>`, `<|"|>`) into a tool-call NAME. A real tool name
+ * is a clean identifier, so cut at the first such marker and strip control /
+ * zero-width chars — this RECOVERS an otherwise-valid name corrupted by a trailing
+ * leaked token (`run_command<|channel|>` → `run_command`, which then resolves in
+ * the registry instead of failing as tool-not-found). A clean name is unchanged.
+ */
+function sanitizeToolCallName(raw: string | undefined): string {
+  if (typeof raw !== "string" || raw.length === 0) {
+    return "unknown";
+  }
+  const cut = raw.split(/<\|/u)[0] ?? raw;
+  const cleaned = cut.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/gu, "").trim();
+  return cleaned.length > 0 ? cleaned : "unknown";
 }
