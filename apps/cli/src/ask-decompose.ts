@@ -82,8 +82,14 @@ function buildSynthesisPrompt(query: string, completed: readonly SubtaskExecutio
  * parallel speed.
  */
 export async function runDecomposedAgentAsk(args: DecomposedAskArgs): Promise<DecomposedAskResult> {
-  const mergedSources: AskGroundingSource[] = [];
+  // Keep every run's sources by name (text preserved), but DON'T merge eagerly — a
+  // sub-task's sources only become evidence if that sub-task COMPLETED (status-linked
+  // via SubtaskExecution.sources). An ungrounded/failed sub-task's retrieved sources
+  // must not grade the final answer (a fabricated citation on a source no surviving
+  // sub-task used). The synthesis run's own sources are allowed too.
+  const sourceByName = new Map<string, AskGroundingSource>();
   const mergedTools = new Set<string>();
+  let synthesisSourceNames: readonly string[] = [];
 
   const runSubtaskMessage = async (userContent: string): Promise<AskAgentRunResult> => {
     const result = await args.runner.run({
@@ -94,7 +100,7 @@ export async function runDecomposedAgentAsk(args: DecomposedAskArgs): Promise<De
       metadata: args.metadata,
       model: args.model
     } satisfies AgentRunInput);
-    for (const s of result.groundingSources ?? []) mergedSources.push(s);
+    for (const s of result.groundingSources ?? []) sourceByName.set(s.source, s);
     for (const t of result.toolsUsed ?? []) mergedTools.add(t);
     return result;
   };
@@ -137,6 +143,7 @@ export async function runDecomposedAgentAsk(args: DecomposedAskArgs): Promise<De
       if (completed.length === 0) return "";
       if (completed.length === 1) return completed[0]?.output ?? "";
       const result = await runSubtaskMessage(buildSynthesisPrompt(query, completed));
+      synthesisSourceNames = (result.groundingSources ?? []).map((s) => s.source);
       return result.response.output ?? "";
     },
     // Fan-in objective-satisfaction (maker != judge): deterministically flag a
@@ -150,6 +157,18 @@ export async function runDecomposedAgentAsk(args: DecomposedAskArgs): Promise<De
   };
 
   const leadResult = await runLeadWorkerTask(args.query, deps);
+
+  // Source-leak fix: only sources a COMPLETED sub-task (or the synthesis run) used
+  // become the evidence the answer is graded on / shown as receipts. An
+  // ungrounded/failed sub-task's retrieved sources are dropped here (its output was
+  // already withheld by the engine — now its sources are too).
+  const allowedSourceNames = new Set<string>([
+    ...leadResult.executions.filter((e) => e.status === "completed").flatMap((e) => e.sources ?? []),
+    ...synthesisSourceNames
+  ]);
+  const mergedSources = [...allowedSourceNames]
+    .map((name) => sourceByName.get(name))
+    .filter((s): s is AskGroundingSource => s !== undefined);
 
   return {
     answer: leadResult.finalAnswer,

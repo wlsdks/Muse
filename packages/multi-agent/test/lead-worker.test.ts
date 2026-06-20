@@ -11,6 +11,25 @@ import {
   type SubtaskOutput
 } from "../src/index.js";
 
+describe("runOne via runLeadWorkerTask — SubtaskExecution carries the worker's sources, status-linked (fan-in source-leak fix)", () => {
+  const execute = async (s: Subtask): Promise<SubtaskOutput> => {
+    if (s.text.includes("refuse")) return { output: "I'm not sure about that.", sources: ["secret.md"] };
+    return { output: `done:${s.text}`, sources: [`${s.text}.md`] };
+  };
+  it("attaches sources to each execution, so a gated (ungrounded) subtask's sources stay linked to its status", async () => {
+    const result = await runLeadWorkerTask("다음 3개 해줘: 1. refuse this 2. summarize 3. extract", deps({
+      execute,
+      groundingGate: (out) => !out.output.includes("not sure")
+    }));
+    const refused = result.executions.find((e) => e.subtask.text.includes("refuse"));
+    const ok = result.executions.find((e) => e.subtask.text.includes("summarize"));
+    expect(refused?.status).toBe("ungrounded");
+    expect(refused?.sources).toEqual(["secret.md"]); // sources retained, status-linked
+    expect(ok?.status).toBe("completed");
+    expect(ok?.sources).toEqual(["summarize.md"]);
+  });
+});
+
 describe("detectSubtaskConflicts — cross-subtask CONTRADICTION on the fan-in (an internally-inconsistent answer is GROUNDED != TRUE)", () => {
   // stub embed: same-topic vector for deadline statements, orthogonal otherwise
   const embed = async (t: string): Promise<readonly number[]> => (t.toLowerCase().includes("deadline") ? [1, 0] : [0, 1]);
