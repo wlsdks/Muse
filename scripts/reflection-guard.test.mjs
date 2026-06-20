@@ -63,6 +63,12 @@ const REFLECTION_SURFACES = [
     retryMarker: "synthesizeNoticeText",
     surface: "proactive Phase D synthesized notice (unasked push)",
     verifierMarker: "options.reverify("
+  },
+  {
+    file: "packages/multi-agent/src/lead-worker.ts",
+    retryMarker: "reinforceSynthesisRequest",
+    surface: "synthesis-incomplete single re-synthesis",
+    verifierMarker: "verifySynthesisCoverage"
   }
 ];
 

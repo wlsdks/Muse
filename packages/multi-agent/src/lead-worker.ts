@@ -56,6 +56,15 @@ export function verifySynthesisCoverage(finalAnswer: string, executions: readonl
   return { missing, satisfied: missing.length === 0 };
 }
 
+/**
+ * Build the prompt for a verifier-gated re-synthesis: the original request plus an
+ * explicit reminder of the sub-results the previous synthesis dropped, so the retry
+ * is targeted (not a blind "try again" that repeats the same omission).
+ */
+function reinforceSynthesisRequest(request: string, missing: readonly string[]): string {
+  return `${request}\n\n[누락 보완 — 직전 종합에서 다음 하위 결과가 빠졌다. 이번 답변에는 반드시 모두 반영하라: ${missing.join("; ")}]`;
+}
+
 export interface SubtaskOutput {
   readonly output: string;
   readonly sources?: readonly string[];
@@ -254,16 +263,36 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
     executions.push(await runOne(subtask, deps, priorContext.length > 0 ? priorContext : undefined));
   }
 
-  const finalAnswer = await deps.synthesize(request, executions);
   // Fan-in objective-satisfaction (maker != judge): did the synthesis incorporate
   // every completed sub-task, or silently drop one? Fail-soft — a verifier error
   // leaves the answer as-is (never blocks the run).
-  let synthesisIncomplete: readonly string[] | undefined;
-  if (deps.verifySynthesis) {
+  const runSynthesis = async (synthesisRequest: string): Promise<{ answer: string; missing?: readonly string[]; verified: boolean }> => {
+    const answer = await deps.synthesize(synthesisRequest, executions);
+    if (!deps.verifySynthesis) return { answer, verified: false };
     try {
-      const verdict = await deps.verifySynthesis(request, finalAnswer, executions);
-      if (!verdict.satisfied && verdict.missing.length > 0) synthesisIncomplete = verdict.missing;
-    } catch { /* verifier unavailable — surface nothing, return the answer */ }
+      const verdict = await deps.verifySynthesis(request, answer, executions);
+      return { answer, missing: !verdict.satisfied && verdict.missing.length > 0 ? verdict.missing : undefined, verified: true };
+    } catch {
+      return { answer, verified: false }; // verifier unavailable — surface nothing, return the answer
+    }
+  };
+
+  const first = await runSynthesis(request);
+  let finalAnswer = first.answer;
+  let synthesisIncomplete = first.missing;
+  // Verifier-gated SINGLE re-synthesis (reflection-guard): a bare unverified retry
+  // repeats the drop ~85% of the time (arXiv 2510.18254), so the retry is backed by
+  // the deterministic `verifySynthesisCoverage` AND accepted ONLY if the retry was
+  // itself VERIFIED and drops STRICTLY FEWER sub-results — a retry can never make the
+  // answer worse, and a retry whose verifier errored is NOT accepted as "complete"
+  // (we keep the original flagged answer rather than claim false coverage). The retry
+  // prompt names what was dropped (reinforceSynthesisRequest), not a blind "try again".
+  if (synthesisIncomplete && deps.verifySynthesis) {
+    const retry = await runSynthesis(reinforceSynthesisRequest(request, synthesisIncomplete));
+    if (retry.verified && (retry.missing?.length ?? 0) < synthesisIncomplete.length) {
+      finalAnswer = retry.answer;
+      synthesisIncomplete = retry.missing;
+    }
   }
   // Fan-in cross-subtask conflict (the grounding edge on the fan-OUT): are two
   // completed sub-answers internally contradictory? Fail-soft — a detector error

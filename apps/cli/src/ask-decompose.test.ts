@@ -42,17 +42,33 @@ describe("runDecomposedAgentAsk — simple request runs once", () => {
 describe("runDecomposedAgentAsk — fan-out + synthesis", () => {
   const listQuery = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
 
-  it("runs each sub-task in its own run, then a synthesis run (3 + 1 = 4 runs)", async () => {
+  it("runs each sub-task in its own run, then a synthesis run (3 + 1 = 4 runs) when the synthesis is complete", async () => {
+    // A synthesis that COVERS every sub-task output passes verifySynthesisCoverage,
+    // so no re-synthesis fires — the fan-out is exactly 3 sub-tasks + 1 synthesis.
+    const covering = "회의록 요약 · 액션아이템 추출 · 일정 등록 종합 완료";
     const runner = runnerReturning((content) =>
       content.startsWith("사용자 요청:")
-        ? { response: { output: "SYNTH" } }
+        ? { response: { output: covering } }
         : { response: { output: `done:${content}` } }
     );
     const result = await runDecomposedAgentAsk({ ...baseArgs, query: listQuery, runner });
 
     expect(result.decomposed).toBe(true);
     expect(runner.run).toHaveBeenCalledTimes(4);
-    expect(result.answer).toBe("SYNTH");
+    expect(result.answer).toBe(covering);
+  });
+
+  it("re-synthesizes ONCE when the first synthesis drops sub-results (3 + 1 + 1 retry = 5 runs)", async () => {
+    // "SYNTH" shares no tokens with any sub-task output, so verifySynthesisCoverage
+    // flags every sub-result missing → exactly one verifier-gated re-synthesis fires.
+    const runner = runnerReturning((content) =>
+      content.startsWith("사용자 요청:")
+        ? { response: { output: "SYNTH" } }
+        : { response: { output: `done:${content}` } }
+    );
+    const result = await runDecomposedAgentAsk({ ...baseArgs, query: listQuery, runner });
+    expect(runner.run).toHaveBeenCalledTimes(5); // 3 sub-tasks + 1 synthesis + 1 retry, bounded
+    expect(result.answer).toBe("SYNTH"); // retry no better → original kept (never worsens)
   });
 
   it("merges groundingSources from every sub-task AND the synthesis (feeds the citation gate)", async () => {

@@ -132,6 +132,64 @@ describe("runLeadWorkerTask — surfaces cross-subtask conflicts at the fan-in (
   });
 });
 
+describe("runLeadWorkerTask — verifier-gated single re-synthesis recovers a dropped sub-task (H1 follow-up)", () => {
+  const req = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
+
+  it("re-synthesizes ONCE when incomplete and the retry that COVERS everything is accepted (synthesisIncomplete cleared)", async () => {
+    let call = 0;
+    const synthesize = async (): Promise<string> => (++call === 1 ? "partial" : "full");
+    const verifySynthesis = (_r: string, answer: string) =>
+      answer === "full" ? { missing: [], satisfied: true } : { missing: ["일정 등록"], satisfied: false };
+    const result = await runLeadWorkerTask(req, deps({ synthesize, verifySynthesis }));
+    expect(result.finalAnswer).toBe("full");
+    expect(result.synthesisIncomplete).toBeUndefined();
+    expect(call).toBe(2); // exactly one retry, not an unbounded loop
+  });
+
+  it("threads the MISSING sub-results into the retry request (not a bare 'try again')", async () => {
+    const seen: string[] = [];
+    const synthesize = async (request: string): Promise<string> => { seen.push(request); return seen.length === 1 ? "partial" : "full"; };
+    const verifySynthesis = (_r: string, answer: string) =>
+      answer === "full" ? { missing: [], satisfied: true } : { missing: ["일정 등록"], satisfied: false };
+    await runLeadWorkerTask(req, deps({ synthesize, verifySynthesis }));
+    expect(seen[1]).toContain("일정 등록"); // the retry prompt names what was dropped
+  });
+
+  it("accepts a retry that drops FEWER results (2 missing → 1) and keeps the smaller flag", async () => {
+    let call = 0;
+    const synthesize = async (): Promise<string> => (++call === 1 ? "a" : "b");
+    const verifySynthesis = (_r: string, answer: string) =>
+      answer === "a" ? { missing: ["x", "y"], satisfied: false } : { missing: ["y"], satisfied: false };
+    const result = await runLeadWorkerTask(req, deps({ synthesize, verifySynthesis }));
+    expect(result.finalAnswer).toBe("b");
+    expect(result.synthesisIncomplete).toEqual(["y"]);
+  });
+
+  it("REJECTS a retry that is no better — keeps the original answer + flag, retries only ONCE (never worsens)", async () => {
+    let call = 0;
+    const synthesize = async (): Promise<string> => (++call === 1 ? "orig" : "worse");
+    const verifySynthesis = (_r: string, answer: string) =>
+      answer === "orig" ? { missing: ["y"], satisfied: false } : { missing: ["y", "z"], satisfied: false };
+    const result = await runLeadWorkerTask(req, deps({ synthesize, verifySynthesis }));
+    expect(result.finalAnswer).toBe("orig"); // retry was worse → original kept
+    expect(result.synthesisIncomplete).toEqual(["y"]);
+    expect(call).toBe(2); // bounded: one retry attempt only
+  });
+
+  it("does NOT accept a retry whose verifier ERRORED — keeps the original flagged answer (never claims false completeness)", async () => {
+    let call = 0;
+    const synthesize = async (): Promise<string> => (++call === 1 ? "orig" : "retry");
+    let verifyCall = 0;
+    const verifySynthesis = () => {
+      if (++verifyCall === 1) return { missing: ["y"], satisfied: false };
+      throw new Error("verifier down on retry");
+    };
+    const result = await runLeadWorkerTask(req, deps({ synthesize, verifySynthesis }));
+    expect(result.finalAnswer).toBe("orig"); // unverified retry rejected → original kept
+    expect(result.synthesisIncomplete).toEqual(["y"]); // flag NOT cleared by an errored retry
+  });
+});
+
 function deps(overrides: Partial<LeadWorkerDeps> = {}): LeadWorkerDeps {
   return {
     execute: async (subtask: Subtask): Promise<SubtaskOutput> => ({ output: `done:${subtask.text}` }),

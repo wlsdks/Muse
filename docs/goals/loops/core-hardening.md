@@ -4,6 +4,14 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main, NEVER merges to main).
 > Cron `cfe778e2` (every 15m, session-only). Stop: `CronDelete cfe778e2`. Convention: [README](README.md).
 
+## fire 5 · 2026-06-20 · skill v1.14.0 · <commit-pending>
+meta: value-class=new-capability · pkg=@muse/multi-agent · kind=orchestration/verifier-gated-resynthesis · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 1054→1054 (+5 cases lead-worker.test + 1 ask-decompose retry case + reflection-guard registry) · fabrication 0 · @muse/multi-agent 123 tests green · eval:orchestration PASS · pnpm check exit 0 · lint clean
+- 무엇: `runLeadWorkerTask`가 synthesis 불완전 시 flag만 하던 것(H1) → verifier-gated 1회 re-synthesis. `runSynthesis` 헬퍼로 리팩터, retry 프롬프트가 drop된 하위결과를 명시(`reinforceSynthesisRequest`), retry가 **검증됐고 drop 수 strictly 감소** 시에만 채택. reflection-guard registry 등록(verifier=verifySynthesisCoverage).
+- 왜: MAST done-by-self-report 보완 — 떨어진 하위결과를 경고만 말고 1회 복구. arXiv 2510.18254: 외부 verifier 없는 bare retry는 85% 실패 반복 → 결정론 verifier 백킹 필수.
+- 리뷰지점: never-worsens 불변식(drop 수 strictly 감소만 채택, ④b 전케이스 검증) + errored-verifier retry는 flag 미클리어(거짓 완전성 주장 안 함, judge caveat을 in-fire 강화). ask-decompose 소비자 테스트는 4-run(complete)·5-run(retry 1회)로 정직 분리(git show로 회귀 아님 확인). bounded 1회(loop 없음).
+- 리스크: 낮음 — no-verifier/throw 경로 back-compat 동일, synthesize 순수텍스트(부수효과 0). ④b Opus 적대 judge PASS (5문항 + git-history 정직성 검증).
+
 ## fire 4 · 2026-06-20 · skill v1.14.0 · 54c24b66
 meta: value-class=new-capability · pkg=@muse/model · kind=local-tool-calling/schema-sanitizer · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles 1054→1054 (+7 cases in adapter-ollama.test.ts) · fabrication 0 · @muse/model 325 tests green · eval:tools PASS (live local) · pnpm check exit 0 · lint clean
