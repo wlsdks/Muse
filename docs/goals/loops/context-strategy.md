@@ -33,6 +33,11 @@ Verified existing context-strategy seams (from codegraph, 2026-06-20):
 - **Budgets** — `StepBudgetTracker` / `systemPromptTokenBudget` / step caps.
 
 ### Open follow-ups (next-fire candidates)
+- ◦ **Neutralize worker output on the ORCHESTRATE path** (fire-13 follow-up): `capWorkerOutput`/
+  `buildOrchestrationResponse` (packages/multi-agent/src/index.ts) is a SECOND fan-in funnel that
+  lands worker output into the lead but does NOT neutralize — mirror fire-13's `runOne` fix there
+  (OWASP ASI07). Also audit whether any consumer reads `produced.sources` (forged citation in
+  sources would survive). (@muse/multi-agent)
 - ◦ **Consolidation-spine (P3) decomposition** (fire-11 scout; fire 11 took #1):
   (2) chat-ink.ts persona contested/provisional marks — needs async closure + per-turn provenance
   refresh (sync `personaPrompt` closure over mutating `memoryHolder.current`); (3) surface
@@ -388,3 +393,23 @@ ratchet: testFiles +0 (extended existing) · agent-core 2520 pass · pnpm check 
   Independent Opus adaptive judge PASS 8/8 + mutation RED→GREEN (revert to unconditional penalty →
   re-engaged test RED, control stays green). Residual: re-engaged test asserts "not below" (tie via
   stable sort), acceptable per the claim; window/clock prod-coupling fail-open safe.
+
+## fire 13 · 2026-06-21 · skill v2.0.0 · e601662c
+meta: value-class=micro-fix · pkg=@muse/multi-agent · kind=worker-output-neutralization · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles +0 (extended existing) · multi-agent 147 pass · pnpm check exit0 · pnpm lint exit0 · fabrication 0 · self-eval green
+- **DOCTRINE:** advances ⑤ (memory/derived-context = untrusted) at the multi-agent "Isolate" seam — FIRST time the loop hardens inter-agent context (OWASP ASI07).
+- **What:** `runOne` (lead-worker.ts) now applies `neutralizeInjectionSpans` to the worker's output
+  before it becomes `SubtaskExecution.output` — the single fan-in funnel feeding synthesize /
+  verifySynthesisCoverage / detectSubtaskConflicts / sequenced priorContext.
+- **Why:** the tool path (fire 4) and recall (fire 9) neutralize untrusted content, but the
+  multi-agent fan-in returned `produced.output` VERBATIM — a worker that read a poisoned source
+  propagated an embedded instruction / forged `[from system]` citation into the lead's synthesis +
+  final answer. Prompt Infection (arXiv:2410.07283), OWASP ASI07 (insecure inter-agent comms) +
+  ASI06. hermes/openclaw have no inter-agent neutralization seam → widens the moat.
+- **Review point:** empty-check stays on RAW output FIRST (fail-close intact); grounding gate still
+  reads raw `produced` (decision logic unchanged); neutralize is byte-identical on clean text.
+- **Risk:** none to floor — span-level neutralization (benign clause survives, no whole-value drop),
+  byte-identical no-op on clean output (fabrication=0), fail-close preserved. Independent Opus
+  adaptive judge PASS 7/7 + mutation RED→GREEN (revert to produced.output → injection propagates RED).
+  Sibling audit: runOne patched; capWorkerOutput (orchestrate path) DEFERRED (follow-up above);
+  validateWorkerHandoff untouched. Residual: detection-coverage = MEMORY_INJECTION_PATTERNS ceiling.
