@@ -76,6 +76,33 @@ export function groundToolArguments(
         // reported as "dropped" (dropped = args removed entirely, per the contract)
         next[name] = kept;
       }
+      continue;
+    }
+    // A nested OBJECT (e.g. an actuator `meta` of free-text fields) — clean each
+    // fabricated STRING leaf the same way, keeping grounded leaves and all
+    // non-string leaves (numbers/booleans aren't free text to ground). Same
+    // partial-vs-empty contract as the array branch: a partially-cleaned object
+    // SURVIVES (not reported dropped); only an object emptied of all its keys is
+    // removed entirely. So the fabrication gate is total over value shapes, not
+    // string-only — a fabricated `meta.note` can no longer ride a nested object
+    // past the gate and get persisted.
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      const obj = value as Record<string, unknown>;
+      const cleaned: Record<string, unknown> = {};
+      for (const [leafKey, leafValue] of Object.entries(obj)) {
+        if (typeof leafValue === "string" && leafValue.trim().length > 0 && !isGrounded(leafValue)) {
+          continue; // fabricated free-text leaf — drop it
+        }
+        cleaned[leafKey] = leafValue;
+      }
+      const keptCount = Object.keys(cleaned).length;
+      const originalCount = Object.keys(obj).length;
+      if (keptCount === 0 && originalCount > 0) {
+        delete next[name];
+        dropped.push(name);
+      } else if (keptCount < originalCount) {
+        next[name] = cleaned;
+      }
     }
   }
   return { args: next, dropped };

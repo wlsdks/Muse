@@ -39,18 +39,39 @@ export interface ToolFilter {
  *   - the user's message matches the tool's domain by simple
  *     keyword heuristic (e.g. mentions "slack" → messaging)
  */
+/**
+ * Default ceiling on the advertised tool catalog. tool-calling.md #1 caps
+ * the per-turn set at 5–7; 6 sits at the top of that band. A multi-domain
+ * prompt can otherwise keep 10+ tools, blowing past the band and degrading
+ * one-shot selection on the local 12B (arXiv:2606.10209 / 2507.21428). The
+ * cap is a SOFT ceiling over the optional, lowest-relevance tail — it never
+ * drops an always-on (core/untagged) tool or an in-flight (recent) tool.
+ */
+export const DEFAULT_TOOL_EXPOSURE_CEILING = 6;
+
 export class DefaultToolFilter implements ToolFilter {
   private readonly extraKeywords: Readonly<Record<string, readonly string[]>>;
+  private readonly maxTools: number;
 
-  constructor(options: { readonly domainKeywords?: Readonly<Record<string, readonly string[]>> } = {}) {
+  constructor(options: {
+    readonly domainKeywords?: Readonly<Record<string, readonly string[]>>;
+    readonly maxTools?: number;
+  } = {}) {
     this.extraKeywords = options.domainKeywords ?? DEFAULT_DOMAIN_KEYWORDS;
+    this.maxTools = Math.max(1, Math.trunc(options.maxTools ?? DEFAULT_TOOL_EXPOSURE_CEILING));
   }
 
   filter(tools: readonly MuseTool[], context: ToolFilterContext): readonly MuseTool[] {
     const promptLower = context.userMessage.toLowerCase();
     const scopeSet = new Set((context.scopeHints ?? []).map((value) => value.toLowerCase()));
     const recentSet = new Set(context.recentToolNames ?? []);
-    return tools.filter((tool) => this.shouldKeep(tool.definition, promptLower, scopeSet, recentSet));
+    const kept = tools.filter((tool) => this.shouldKeep(tool.definition, promptLower, scopeSet, recentSet));
+    return capToolsByRelevance(kept, {
+      domainKeywords: this.extraKeywords,
+      maxTools: this.maxTools,
+      recentToolNames: context.recentToolNames,
+      userMessage: context.userMessage
+    });
   }
 
   private shouldKeep(
@@ -94,43 +115,188 @@ export class DefaultToolFilter implements ToolFilter {
   }
 }
 
-const ASCII_ONLY_RE = /^[\x00-\x7f]+$/u;
-
-/**
- * Keyword → prompt matcher.
- *
- * Pre-iter-36 every keyword used raw `promptLower.includes(kw)`. That
- * silently substring-matched short ASCII triggers inside larger
- * words — `"dm"` (legitimate Slack DM keyword) fired on `"admin"`,
- * `"freedom"`, `"wisdom"`, etc, expanding the messaging tool catalog
- * for unrelated prompts. The fix routes ASCII-only keywords through
- * a word-boundary regex (`\b…\b`) while keeping the substring path
- * for CJK keywords — Korean / Japanese / Chinese scripts don't use
- * whitespace word boundaries, and JS's ASCII-flavoured `\b` would
- * never match between two CJK chars.
- */
-function keywordMatchesPrompt(keyword: string, promptLower: string): boolean {
-  const kw = keyword.toLowerCase();
-  if (ASCII_ONLY_RE.test(kw)) {
-    return wordBoundaryRegexFor(kw).test(promptLower);
-  }
-  return promptLower.includes(kw);
+export interface ToolExposureCeilingContext {
+  readonly userMessage: string;
+  readonly maxTools?: number;
+  readonly recentToolNames?: readonly string[];
+  readonly domainKeywords?: Readonly<Record<string, readonly string[]>>;
 }
 
-const wordBoundaryCache = new Map<string, RegExp>();
+/**
+ * Enforce the soft exposure ceiling without losing the most-relevant matches.
+ *
+ * Mandatory tools — always-on (core / untagged) and in-flight
+ * (`recentToolNames`) — are ALWAYS retained, even past the cap: dropping an
+ * in-flight follow-up tool or a core capability to satisfy a soft ceiling
+ * would break the turn. The cap applies only to the OPTIONAL tail, which is
+ * truncated by PROMPT-RELEVANCE (keyword-match count, mirroring `@muse/tools`
+ * `relevanceScore`), not array order — with a stable tie-break on the original
+ * input order so the result is deterministic. If mandatory tools alone exceed
+ * the cap they are all kept (the ceiling is soft). Input order of the
+ * surviving set is preserved.
+ *
+ * Reused by both `DefaultToolFilter` (the opt-in domain filter) and the
+ * AgentRuntime (which applies the default ceiling unconditionally, so the
+ * live path is bounded even when the domain filter is off).
+ */
+export function capToolsByRelevance(
+  tools: readonly MuseTool[],
+  context: ToolExposureCeilingContext
+): readonly MuseTool[] {
+  const maxTools = Math.max(1, Math.trunc(context.maxTools ?? DEFAULT_TOOL_EXPOSURE_CEILING));
+  if (tools.length <= maxTools) {
+    return tools;
+  }
 
-function wordBoundaryRegexFor(keywordLower: string): RegExp {
-  const cached = wordBoundaryCache.get(keywordLower);
+  const promptLower = context.userMessage.toLowerCase();
+  const recentSet = new Set(context.recentToolNames ?? []);
+  const heuristics = context.domainKeywords ?? DEFAULT_DOMAIN_KEYWORDS;
+
+  const order = new Map<MuseTool, number>();
+  tools.forEach((tool, index) => order.set(tool, index));
+
+  const mandatory: MuseTool[] = [];
+  const optional: MuseTool[] = [];
+  for (const tool of tools) {
+    if (isMandatoryTool(tool.definition, recentSet)) {
+      mandatory.push(tool);
+    } else {
+      optional.push(tool);
+    }
+  }
+
+  const remaining = Math.max(0, maxTools - mandatory.length);
+  if (remaining === 0) {
+    // Mandatory set alone meets/exceeds the cap — keep ALL mandatory, drop the
+    // entire optional tail. Preserve input order.
+    return tools.filter((tool) => mandatory.includes(tool));
+  }
+
+  const rankedOptional = [...optional].sort((a, b) => {
+    const byScore =
+      relevanceScore(b.definition, promptLower, heuristics) - relevanceScore(a.definition, promptLower, heuristics);
+    if (byScore !== 0) {
+      return byScore;
+    }
+    return (order.get(a) ?? 0) - (order.get(b) ?? 0);
+  });
+
+  const survivors = new Set<MuseTool>([...mandatory, ...rankedOptional.slice(0, remaining)]);
+  return tools.filter((tool) => survivors.has(tool));
+}
+
+/**
+ * Prompt-relevance score for cap ranking: the number of the tool's keywords
+ * (its own + the domain heuristics) that match the prompt. Higher = more
+ * relevant, mirroring `@muse/tools` `relevanceScore` so the live path's two
+ * ranking layers agree.
+ */
+function relevanceScore(
+  definition: MuseToolDefinition,
+  promptLower: string,
+  heuristics: Readonly<Record<string, readonly string[]>>
+): number {
+  let score = 0;
+  for (const keyword of definition.keywords ?? []) {
+    if (isMatchableKeyword(keyword) && keywordMatchesPrompt(keyword, promptLower)) {
+      score += 1;
+    }
+  }
+  const domain = inferDomain(definition);
+  const domainTriggers = domain ? (heuristics[domain] ?? []) : [];
+  for (const trigger of domainTriggers) {
+    if (isMatchableKeyword(trigger) && keywordMatchesPrompt(trigger, promptLower)) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
+/**
+ * A tool that must survive the soft ceiling: an always-on tool (no domain
+ * or `domain === "core"`) or one already in flight this run (`recentSet`).
+ * These are the same tools `shouldKeep` retains unconditionally; the cap
+ * trims only the optional, domain-gated tail beneath them.
+ */
+function isMandatoryTool(definition: MuseToolDefinition, recentSet: ReadonlySet<string>): boolean {
+  if (recentSet.has(definition.name)) {
+    return true;
+  }
+  const domain = inferDomain(definition);
+  return !domain || domain === "core";
+}
+
+const NON_ASCII_RE = /[^\u0000-\u007f]/u;
+
+/**
+ * Keyword → prompt matcher — INFLECTION-AWARE, mirroring `@muse/tools`
+ * `tokenMatchesKeywordWord` / `keywordMatchesPromptTokens` exactly so the
+ * agent-core ranking layer (cap / `shouldKeep`) and the `@muse/tools`
+ * selection layer agree on which tools a prompt makes relevant. They used
+ * to disagree: selection accepted inflections (`lights`→`light`) while this
+ * copy demanded a strict `\blight\b`, so a domain tool ranked HIGH by
+ * selection scored 0 here and could be evicted from the ≤6 window.
+ *
+ * The rule (per word of the keyword; multi-word keywords need EVERY word to
+ * hit some token):
+ *  - ASCII word ≥4 chars: a token matches when `token.startsWith(word)` and
+ *    the suffix is ≤3 chars — `lights`→`light`, but `research`≠`search`,
+ *    `homework`≠`home`.
+ *  - ASCII word <4 chars: EXACT token only, so `on`/`off` don't prefix-match
+ *    inside `online`/`office`.
+ *  - CJK word: containment (Korean/CJK attach particles to the stem and have
+ *    no whitespace word boundary).
+ *
+ * Tokenization matches `@muse/tools`: lowercase, split on any non-
+ * letter/digit (Unicode-aware).
+ */
+function keywordMatchesPrompt(keyword: string, promptLower: string): boolean {
+  const tokens = tokenizePromptCache(promptLower);
+  if (tokens.size === 0) {
+    return false;
+  }
+  const words = keyword
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return false;
+  }
+  return words.every((word) => {
+    for (const token of tokens) {
+      if (tokenMatchesKeywordWord(token, word)) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+function tokenMatchesKeywordWord(token: string, word: string): boolean {
+  if (token === word) {
+    return true;
+  }
+  if (NON_ASCII_RE.test(word)) {
+    return word.length >= 2 ? token.includes(word) : false;
+  }
+  return word.length >= 4 && token.startsWith(word) && token.length - word.length <= 3;
+}
+
+const promptTokenCache = new Map<string, Set<string>>();
+
+function tokenizePromptCache(promptLower: string): Set<string> {
+  const cached = promptTokenCache.get(promptLower);
   if (cached) {
     return cached;
   }
-  const re = new RegExp(`\\b${escapeRegex(keywordLower)}\\b`, "u");
-  wordBoundaryCache.set(keywordLower, re);
-  return re;
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const tokens = new Set<string>();
+  for (const token of promptLower.split(/[^\p{L}\p{N}]+/u)) {
+    if (token.length > 0) {
+      tokens.add(token);
+    }
+  }
+  promptTokenCache.set(promptLower, tokens);
+  return tokens;
 }
 
 /**

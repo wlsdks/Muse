@@ -275,10 +275,18 @@ export function groundingSectionLines(
   return sections.flatMap((section) => (section.present ? [section.header, section.body, section.footer, ""] : []));
 }
 
-/** One optional grounding source: its rendered block + whether it has content this turn. */
+/**
+ * One optional grounding source: its rendered block, whether it has content this
+ * turn, and an OPTIONAL relevance/priority key used to edge-place it in the
+ * cross-block grounding order (highest → HEAD/TAIL, lowest → middle), per
+ * lost-in-the-middle / attention-basin (arXiv:2307.03172, arXiv:2508.05128).
+ * When `relevance` is absent the deterministic per-kind priority tier
+ * (`OPTIONAL_GROUNDING_TIER`) is used instead, so output is always stable.
+ */
 export interface OptionalGroundingSource {
   readonly body: string;
   readonly present: boolean;
+  readonly relevance?: number;
 }
 
 /** The optional grounding sources, keyed by surface, in no particular order (render order is fixed below). */
@@ -297,28 +305,92 @@ export interface OptionalGroundingSources {
 }
 
 /**
- * The optional grounding-prompt sections in their fixed render order, each paired
- * with its header/footer label. Feed to groundingSectionLines, which drops any
- * section whose `present` is false — an empty block bloats the small model's
- * prompt and invites a spurious "[reminder: none]"-style citation. (The notes
- * section is always present and assembled separately.)
+ * Deterministic fallback priority per optional source KIND, used to edge-place a
+ * block when it carries no per-turn `relevance` score. Higher = more important =
+ * closer to an edge (head/tail) of the optional region. Fixed + explicit so the
+ * cross-block prompt order is stable run-to-run (NO stochastic ordering). The
+ * ranking favours time-sensitive/actionable surfaces (tasks, calendar,
+ * reminders, told-me-to-remember facts) over background context (feeds,
+ * reflection). These tiers DON'T touch the user-facing "(grounded on …)" banner,
+ * which keeps its own fixed source order.
+ */
+export const OPTIONAL_GROUNDING_TIER: Readonly<Record<keyof OptionalGroundingSources, number>> = {
+  tasks: 100,
+  reminders: 95,
+  calendar: 90,
+  memories: 85,
+  contacts: 70,
+  actions: 60,
+  git: 55,
+  shell: 50,
+  episodes: 40,
+  feeds: 30,
+  reflection: 20
+};
+
+interface OptionalGroundingSpec {
+  readonly header: string;
+  readonly body: string;
+  readonly footer: string;
+  readonly present: boolean;
+}
+
+/**
+ * Edge-place present grounding blocks by a priority key: highest-priority blocks
+ * land at the HEAD and TAIL of the sequence, lower-priority ones sink toward the
+ * middle. This is the lost-in-the-middle / attention-basin mitigation applied
+ * ACROSS blocks (arXiv:2307.03172, arXiv:2508.05128) — the same interleave Muse
+ * already uses within a block (`reorderForLongContext`). Pure, deterministic and
+ * STABLE: ties keep input order (Array.prototype.sort is stable), so the same
+ * present set always renders in the same order. Set-invariant: returns exactly
+ * the input specs, each once, none added or dropped.
+ */
+function edgePlaceByPriority(
+  specs: ReadonlyArray<{ readonly spec: OptionalGroundingSpec; readonly priority: number }>
+): OptionalGroundingSpec[] {
+  const sorted = specs.map((s, i) => ({ ...s, i })).sort((a, b) => b.priority - a.priority || a.i - b.i);
+  const front: OptionalGroundingSpec[] = [];
+  const back: OptionalGroundingSpec[] = [];
+  sorted.forEach((entry, rank) => {
+    (rank % 2 === 0 ? front : back).push(entry.spec);
+  });
+  return [...front, ...back.reverse()];
+}
+
+/**
+ * The PRESENT optional grounding-prompt sections, edge-placed by relevance so the
+ * highest-priority blocks sit at the head/tail of the optional region (lower ones
+ * sink to the middle) — the cross-block lost-in-the-middle mitigation. Absent
+ * sections are omitted entirely (an empty block bloats the small model's prompt
+ * and invites a spurious "[reminder: none]"-style citation). Each spec carries
+ * its own `relevance` when supplied, else a fixed per-kind tier
+ * (`OPTIONAL_GROUNDING_TIER`); output is deterministic and stable. (The notes
+ * section is always present, the anchored primary, and assembled separately — it
+ * is NOT part of this reorder.) Feed to groundingSectionLines.
  */
 export function optionalGroundingSections(
   sources: OptionalGroundingSources
-): Array<{ readonly header: string; readonly body: string; readonly footer: string; readonly present: boolean }> {
-  return [
-    { body: sources.tasks.body, footer: "=== END TASKS ===", header: "=== USER OPEN TASKS (sorted by due date, most imminent first) ===", present: sources.tasks.present },
-    { body: sources.calendar.body, footer: "=== END CALENDAR ===", header: "=== UPCOMING CALENDAR EVENTS (sorted chronologically) ===", present: sources.calendar.present },
-    { body: sources.reminders.body, footer: "=== END REMINDERS ===", header: "=== PENDING REMINDERS (sorted by due date) ===", present: sources.reminders.present },
-    { body: sources.contacts.body, footer: "=== END CONTACTS ===", header: "=== MATCHING CONTACTS (from your address book) ===", present: sources.contacts.present },
-    { body: sources.memories.body, footer: "=== END REMEMBERED FACTS ===", header: "=== FACTS YOU TOLD MUSE TO REMEMBER (cite as [memory: <topic>]) ===", present: sources.memories.present },
-    { body: sources.shell.body, footer: "=== END SHELL COMMANDS ===", header: "=== MATCHING SHELL COMMANDS (from your shell history) ===", present: sources.shell.present },
-    { body: sources.git.body, footer: "=== END GIT COMMITS ===", header: "=== YOUR RECENT GIT COMMITS (from this repo, newest first) ===", present: sources.git.present },
-    { body: sources.actions.body, footer: "=== END ACTIONS ===", header: "=== ACTIONS MUSE HAS TAKEN ON YOUR BEHALF (your audit log) ===", present: sources.actions.present },
-    { body: sources.episodes.body, footer: "=== END PAST SESSIONS ===", header: "=== PAST SESSION SUMMARIES (your prior conversations) ===", present: sources.episodes.present },
-    { body: sources.feeds.body, footer: "=== END FEED HEADLINES ===", header: "=== RECENT FEED HEADLINES (your watched RSS/Atom feeds, newest first) ===", present: sources.feeds.present },
-    { body: sources.reflection.body, footer: "=== END NOTICED ===", header: "=== WHAT MUSE HAS NOTICED ABOUT YOU (high-level, from past sessions) ===", present: sources.reflection.present }
+): OptionalGroundingSpec[] {
+  const all: Array<{ readonly kind: keyof OptionalGroundingSources; readonly spec: OptionalGroundingSpec; readonly source: OptionalGroundingSource }> = [
+    { kind: "tasks", source: sources.tasks, spec: { body: sources.tasks.body, footer: "=== END TASKS ===", header: "=== USER OPEN TASKS (sorted by due date, most imminent first) ===", present: sources.tasks.present } },
+    { kind: "calendar", source: sources.calendar, spec: { body: sources.calendar.body, footer: "=== END CALENDAR ===", header: "=== UPCOMING CALENDAR EVENTS (sorted chronologically) ===", present: sources.calendar.present } },
+    { kind: "reminders", source: sources.reminders, spec: { body: sources.reminders.body, footer: "=== END REMINDERS ===", header: "=== PENDING REMINDERS (sorted by due date) ===", present: sources.reminders.present } },
+    { kind: "contacts", source: sources.contacts, spec: { body: sources.contacts.body, footer: "=== END CONTACTS ===", header: "=== MATCHING CONTACTS (from your address book) ===", present: sources.contacts.present } },
+    { kind: "memories", source: sources.memories, spec: { body: sources.memories.body, footer: "=== END REMEMBERED FACTS ===", header: "=== FACTS YOU TOLD MUSE TO REMEMBER (cite as [memory: <topic>]) ===", present: sources.memories.present } },
+    { kind: "shell", source: sources.shell, spec: { body: sources.shell.body, footer: "=== END SHELL COMMANDS ===", header: "=== MATCHING SHELL COMMANDS (from your shell history) ===", present: sources.shell.present } },
+    { kind: "git", source: sources.git, spec: { body: sources.git.body, footer: "=== END GIT COMMITS ===", header: "=== YOUR RECENT GIT COMMITS (from this repo, newest first) ===", present: sources.git.present } },
+    { kind: "actions", source: sources.actions, spec: { body: sources.actions.body, footer: "=== END ACTIONS ===", header: "=== ACTIONS MUSE HAS TAKEN ON YOUR BEHALF (your audit log) ===", present: sources.actions.present } },
+    { kind: "episodes", source: sources.episodes, spec: { body: sources.episodes.body, footer: "=== END PAST SESSIONS ===", header: "=== PAST SESSION SUMMARIES (your prior conversations) ===", present: sources.episodes.present } },
+    { kind: "feeds", source: sources.feeds, spec: { body: sources.feeds.body, footer: "=== END FEED HEADLINES ===", header: "=== RECENT FEED HEADLINES (your watched RSS/Atom feeds, newest first) ===", present: sources.feeds.present } },
+    { kind: "reflection", source: sources.reflection, spec: { body: sources.reflection.body, footer: "=== END NOTICED ===", header: "=== WHAT MUSE HAS NOTICED ABOUT YOU (high-level, from past sessions) ===", present: sources.reflection.present } }
   ];
+  const present = all.filter((entry) => entry.spec.present);
+  return edgePlaceByPriority(
+    present.map((entry) => ({
+      priority: entry.source.relevance ?? OPTIONAL_GROUNDING_TIER[entry.kind],
+      spec: entry.spec
+    }))
+  );
 }
 
 /** Per-source counts for the "(grounded on …)" citation banner. */
