@@ -171,6 +171,7 @@ export {
   bm25Scores,
   createKnowledgeSearchTool,
   detectEvidenceContradictions,
+  detectPairwiseContradictions,
   edgeLoadByRelevance,
   enforceAnswerCitations,
   explainGroundingVerdict,

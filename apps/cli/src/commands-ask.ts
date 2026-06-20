@@ -2106,6 +2106,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         try {
           if (useDecomposition) {
             const decomposed = await runDecomposedAgentAsk({
+              embed: (t) => embed(t, embedModel),
               metadata: askMetadata,
               model,
               query,
@@ -2119,6 +2120,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               const capNote = decomposed.reason.includes("capped") ? " — extra items were dropped" : "";
               const incompleteNote = decomposed.synthesisIncomplete && decomposed.synthesisIncomplete.length > 0 ? " — ⚠ some sub-results may be missing; ask me to expand" : "";
               io.stderr(`(decomposed into ${decomposed.subtaskCount} sub-tasks${capNote}${incompleteNote})\n`);
+            }
+            if (!options.json && decomposed.subtaskConflicts && decomposed.subtaskConflicts.length > 0) {
+              io.stderr(`⚠️ sub-results disagree — verify before trusting:\n${decomposed.subtaskConflicts.map((c) => `  • ${c}`).join("\n")}\n`);
             }
           } else {
             const result = await assembly.agentRuntime.run({

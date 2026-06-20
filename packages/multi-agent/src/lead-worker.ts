@@ -1,4 +1,4 @@
-import { lexicalTokens } from "@muse/agent-core";
+import { detectPairwiseContradictions, lexicalTokens } from "@muse/agent-core";
 
 import { decomposeRequestWithKind, shouldDecompose, type Subtask } from "./decompose-trigger.js";
 
@@ -20,6 +20,29 @@ export interface SynthesisVerdict {
  * a COMPLETED, non-empty sub-task whose salient tokens are ENTIRELY absent from the
  * synthesis is flagged dropped; a paraphrase (any shared salient token) passes. Pure.
  */
+/**
+ * Cross-subtask CONTRADICTION on the fan-in (the grounding edge applied to the
+ * fan-OUT): when two COMPLETED workers assert disagreeing values on the SAME topic
+ * (e.g. "deadline is Tuesday" vs "Wednesday"), the synthesis would silently
+ * concatenate an internally-inconsistent answer — both halves individually passed
+ * their per-subtask grounding gate, so the fan-in passes a self-contradicting claim
+ * (a GROUNDED != TRUE fabrication coverage-checking can't catch). Reuses the SHARED
+ * pairwise contradiction detector so the policy never drifts from the evidence layer.
+ * Returns a human caption per conflicting pair. Fail-soft over the injected embed.
+ */
+export async function detectSubtaskConflicts(
+  executions: readonly SubtaskExecution[],
+  embed: (text: string) => Promise<readonly number[]>
+): Promise<readonly string[]> {
+  const completed = executions.filter(
+    (e): e is SubtaskExecution & { output: string } =>
+      e.status === "completed" && typeof e.output === "string" && e.output.trim().length > 0
+  );
+  if (completed.length < 2) return [];
+  const pairs = await detectPairwiseContradictions(completed.map((e) => e.output), embed);
+  return pairs.map((p) => `"${completed[p.aIndex]!.subtask.text}" vs "${completed[p.bIndex]!.subtask.text}"`);
+}
+
 export function verifySynthesisCoverage(finalAnswer: string, executions: readonly SubtaskExecution[]): SynthesisVerdict {
   const answerTokens = lexicalTokens(finalAnswer);
   const missing: string[] = [];
@@ -58,6 +81,13 @@ export interface LeadWorkerResult {
    * caller surfaces it rather than returning a confident-but-incomplete answer.
    */
   readonly synthesisIncomplete?: readonly string[];
+  /**
+   * Set when the fan-in `detectConflicts` found COMPLETED sub-answers that
+   * CONTRADICT each other on the same topic — a caption per conflicting pair. The
+   * caller surfaces it so an internally-inconsistent answer is flagged, not passed
+   * off as a single confident truth.
+   */
+  readonly subtaskConflicts?: readonly string[];
 }
 
 export interface LeadWorkerDeps {
@@ -96,6 +126,14 @@ export interface LeadWorkerDeps {
    * default.
    */
   readonly verifySynthesis?: (request: string, finalAnswer: string, executions: readonly SubtaskExecution[]) => SynthesisVerdict | Promise<SynthesisVerdict>;
+  /**
+   * Fan-in cross-subtask conflict detector (the grounding edge on the fan-OUT):
+   * given the executions, return a caption per pair of COMPLETED sub-answers that
+   * contradict each other. A non-empty result marks {@link LeadWorkerResult.subtaskConflicts}.
+   * Absent ⇒ no conflict check (back-compat). Wire {@link detectSubtaskConflicts}
+   * (bound to a local embed) for the default.
+   */
+  readonly detectConflicts?: (executions: readonly SubtaskExecution[]) => Promise<readonly string[]>;
 }
 
 const MAX_SUBTASKS = 8;
@@ -227,6 +265,16 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
       if (!verdict.satisfied && verdict.missing.length > 0) synthesisIncomplete = verdict.missing;
     } catch { /* verifier unavailable — surface nothing, return the answer */ }
   }
+  // Fan-in cross-subtask conflict (the grounding edge on the fan-OUT): are two
+  // completed sub-answers internally contradictory? Fail-soft — a detector error
+  // leaves the answer as-is.
+  let subtaskConflicts: readonly string[] | undefined;
+  if (deps.detectConflicts) {
+    try {
+      const conflicts = await deps.detectConflicts(executions);
+      if (conflicts.length > 0) subtaskConflicts = conflicts;
+    } catch { /* detector unavailable — surface nothing */ }
+  }
   const split = planned ? "model-planned" : "structural";
   const completed = executions.filter((e) => e.status === "completed").length;
 
@@ -237,8 +285,10 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
     reason:
       `${split} decomposition → ${completed}/${executions.length} sub-tasks grounded` +
       (truncated ? ` (capped at ${MAX_SUBTASKS})` : "") +
-      (synthesisIncomplete ? ` · synthesis incomplete (${synthesisIncomplete.length.toString()} dropped)` : ""),
+      (synthesisIncomplete ? ` · synthesis incomplete (${synthesisIncomplete.length.toString()} dropped)` : "") +
+      (subtaskConflicts ? ` · ${subtaskConflicts.length.toString()} sub-answer conflict(s)` : ""),
     subtasks,
-    ...(synthesisIncomplete ? { synthesisIncomplete } : {})
+    ...(synthesisIncomplete ? { synthesisIncomplete } : {}),
+    ...(subtaskConflicts ? { subtaskConflicts } : {})
   };
 }

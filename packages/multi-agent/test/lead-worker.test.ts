@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   dedupeSubtasks,
+  detectSubtaskConflicts,
   runLeadWorkerTask,
   verifySynthesisCoverage,
   type LeadWorkerDeps,
@@ -9,6 +10,33 @@ import {
   type SubtaskExecution,
   type SubtaskOutput
 } from "../src/index.js";
+
+describe("detectSubtaskConflicts — cross-subtask CONTRADICTION on the fan-in (an internally-inconsistent answer is GROUNDED != TRUE)", () => {
+  // stub embed: same-topic vector for deadline statements, orthogonal otherwise
+  const embed = async (t: string): Promise<readonly number[]> => (t.toLowerCase().includes("deadline") ? [1, 0] : [0, 1]);
+  const ex = (text: string, output: string, status: SubtaskExecution["status"] = "completed"): SubtaskExecution => ({ output, status, subtask: { id: "s", text } });
+  it("flags two completed sub-answers that DISAGREE on the same topic (high sim + high overlap + neither-subset)", async () => {
+    const out = await detectSubtaskConflicts(
+      [ex("find deadline", "the project deadline is tuesday"), ex("confirm deadline", "the project deadline is wednesday")],
+      embed
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain("find deadline");
+    expect(out[0]).toContain("confirm deadline");
+  });
+  it("does NOT flag sub-answers on DIFFERENT topics (low cosine)", async () => {
+    expect(await detectSubtaskConflicts([ex("a", "the project deadline is tuesday"), ex("b", "lunch is kimbap today")], embed)).toEqual([]);
+  });
+  it("does NOT flag an ELABORATION (one is a superset — neither-subset gate)", async () => {
+    expect(await detectSubtaskConflicts([ex("a", "the project deadline is tuesday"), ex("b", "the project deadline is tuesday afternoon")], embed)).toEqual([]);
+  });
+  it("ignores failed / ungrounded sub-tasks — only completed pairs are compared", async () => {
+    expect(await detectSubtaskConflicts([ex("a", "the project deadline is tuesday"), ex("b", "the project deadline is wednesday", "failed")], embed)).toEqual([]);
+  });
+  it("fail-soft: an embed that throws yields no conflicts (never blocks the run)", async () => {
+    expect(await detectSubtaskConflicts([ex("a", "the project deadline is tuesday"), ex("b", "the project deadline is wednesday")], async () => { throw new Error("down"); })).toEqual([]);
+  });
+});
 
 describe("verifySynthesisCoverage — objective-satisfaction on the fan-in (maker != judge)", () => {
   const ex = (text: string, output: string, status: SubtaskExecution["status"] = "completed"): SubtaskExecution => ({ output, status, subtask: { id: "s", text } });
@@ -84,6 +112,22 @@ describe("runLeadWorkerTask — fan-in verifier surfaces a dropped sub-task inst
     expect((await runLeadWorkerTask(req, deps())).synthesisIncomplete).toBeUndefined();
     const throwing = await runLeadWorkerTask(req, deps({ verifySynthesis: () => { throw new Error("boom"); } }));
     expect(throwing.synthesisIncomplete).toBeUndefined();
+    expect(throwing.finalAnswer).not.toBe("");
+  });
+});
+
+describe("runLeadWorkerTask — surfaces cross-subtask conflicts at the fan-in (not silently concatenated)", () => {
+  const req = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
+  it("sets subtaskConflicts + reason when detectConflicts reports a contradiction", async () => {
+    const result = await runLeadWorkerTask(req, deps({ detectConflicts: () => Promise.resolve(['"회의록 요약" vs "액션아이템 추출"']) }));
+    expect(result.subtaskConflicts).toEqual(['"회의록 요약" vs "액션아이템 추출"']);
+    expect(result.reason).toContain("conflict");
+  });
+  it("back-compat: no detector / no conflicts ⇒ unset; a throwing detector is fail-soft", async () => {
+    expect((await runLeadWorkerTask(req, deps({ detectConflicts: () => Promise.resolve([]) }))).subtaskConflicts).toBeUndefined();
+    expect((await runLeadWorkerTask(req, deps())).subtaskConflicts).toBeUndefined();
+    const throwing = await runLeadWorkerTask(req, deps({ detectConflicts: () => { throw new Error("boom"); } }));
+    expect(throwing.subtaskConflicts).toBeUndefined();
     expect(throwing.finalAnswer).not.toBe("");
   });
 });

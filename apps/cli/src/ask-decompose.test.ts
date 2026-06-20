@@ -96,6 +96,20 @@ describe("runDecomposedAgentAsk — planner + grounding gate are wired (not dead
     expect(result.answer).toBe("SYNTH");
   });
 
+  it("flags a cross-subtask CONFLICT when two sub-answers contradict on the same topic (J2 fan-in conflict)", async () => {
+    const query = "다음 3개 해줘: 1. 마감일 찾기 2. 마감일 확인 3. 일정 등록";
+    const runner = runnerReturning((content) => {
+      if (content.startsWith("사용자 요청:")) return { response: { output: "SYNTH" } };
+      if (content.includes("찾기")) return { response: { output: "the project deadline is tuesday" } };
+      if (content.includes("확인")) return { response: { output: "the project deadline is wednesday" } };
+      return { response: { output: "scheduled" } };
+    });
+    const embed = async (t: string): Promise<readonly number[]> => (t.toLowerCase().includes("deadline") ? [1, 0] : [0, 1]);
+    const result = await runDecomposedAgentAsk({ ...baseArgs, embed, query, runner });
+    expect(result.subtaskConflicts).toBeDefined();
+    expect(result.subtaskConflicts?.some((c) => c.includes("마감일 찾기") && c.includes("마감일 확인"))).toBe(true);
+  });
+
   it("threads a prior step's output into the next worker for a SEQUENCED ask (dependent steps see upstream result)", async () => {
     const seen: string[] = [];
     const runner = runnerReturning((content) => {
