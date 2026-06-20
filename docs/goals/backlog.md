@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ malformed-base64 image attachment dropped at the Ollama adapter seam — no silently-dropped image yielding a confident text-only 'vision' answer (arXiv:2404.18930) — grounded-vision fire 7 (`a68647b0`)
+
 - ✓ vision extraction primitive schema-required fail-close — extractStructuredFromImage rejects a hollow/missing-required extraction at the source (no partial result downstream; AppWorld arXiv:2407.18901) — grounded-vision fire 5 (`2f3e933a`)
 
 - ✓ vision input gate magic-byte content check — loadImageAttachment fail-closes on non-image bytes + ships sniffed mimeType (MLLM input-integrity arXiv:2404.18930) — grounded-vision fire 1 (`a670dec5`)

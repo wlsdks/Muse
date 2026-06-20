@@ -62,3 +62,11 @@ merge: main FF 스킵 (origin/main 고경쟁 — fire 3과 동일; fire 6 작업
 - 리뷰지점: 독립 적응형 judge가 새 false-pass 없음·back-compat byte-exact(name 생략시)·테스트 non-inert(revert→4 RED)·ReDoS-safe·cli 2823/2823·byte-clean 확인. fire 4의 잔여 ◦를 fire 6이 self-correct.
 - 리스크: 낮음 — 같은 값+마커 인접의 hallucinated total(티켓 $40 vs 가짜 $40 total)은 구별 불가하나 literal-presence 게이트의 본질적 한계(어떤 게이트도 동일). 단일자리 total($5)은 fail-close(안전).
 - lesson(무관·pre-existing): `pnpm check`가 commands-logo.test.ts의 raw ESC 바이트(타 루프 commit e10ac6c2 "muse goddess mascot", origin/main 존재)로 repo-wide RED — 내 슬라이스 무관(backlog ◦ 기록). [[feedback_no_raw_control_bytes_in_tests]] 재발.
+
+## fire 7 · 2026-06-21 · skill v2.0.0 · a68647b0
+meta: value-class=hardening · pkg=@muse/model · kind=adapter-image-validation · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1070 · fabrication 0 · groundedSurfaces=28 (no drop) · groundedCases=45 · differentiationBatteries=6 · model adapter-ollama 52/52 PASS · @muse/shared byte-hygiene 44/44(commands-logo main-sync 후) · mutation-first 5 RED 확인 · pkg를 cli→model로 이동(다양성 — 5/6 cli 모노컬처 완화)
+- 무엇: Ollama 어댑터 image 경로(adapter-ollama.ts ~340)가 base64를 length>0만 보고 forward하던 것을 — 순수 isWellFormedBase64(canonical RFC-4648, data: prefix는 거부)로 malformed 첨부를 드롭. 메시지가 images 없이 나가 downstream grounding이 fail-close.
+- 왜: malformed base64가 Ollama에 도달하면 Ollama가 이미지를 조용히 버리고 텍스트만으로 "비전" 답을 날조 — transport-seam ungrounded 소스. 입력단(fire1·2 magic-byte)과 다른 seam(어댑터 경계)을 닫음. 모든 valid base64는 byte-identical(실 caller 전부 Buffer.toString 확인). arXiv:2404.18930.
+- 리뷰지점: 독립 적응형 judge가 4개 실 fixture + 모든 base64 producer 추적해 over-drop 없음 확인(canonical만 — 미래 MIME-wrap caller면 over-drop 가능, 문서화), 테스트 non-inert(revert→5 RED wire-body seam), groundedSurfaces=28. 무관 pre-existing commands-logo byte 이슈는 main의 fix를 sync해 해소(check unblock).
+- 리스크: 낮음 — 미래에 MIME-wrap(76-col \n) base64를 이 seam에 보내는 caller가 생기면 decodable 이미지를 fail-close 드롭(현재 call graph 전부 Buffer.toString이라 무해, 문서화됨).
