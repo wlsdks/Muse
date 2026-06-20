@@ -138,23 +138,80 @@ export async function writePlaybook(file: string, entries: readonly PlaybookEntr
 }
 
 /**
+ * Inline byte-faithful replica of agent-core's `wilsonInterval` /
+ * `rankingUtility` (packages/agent-core/src/playbook.ts:309/383). mcp must NOT
+ * depend on agent-core (the reward range above is already mirrored on both
+ * sides for the same reason — a cross-package dep would invert the build graph),
+ * so the PEVI utility eviction uses to choose survivors is replicated here. It
+ * MUST stay identical to the source: λ=1.96, lower = wilsonInterval(r, r+d).lower,
+ * raw = clamp((2·lower − 1)·MAX). A drift would let eviction and the injection
+ * path (which ranks by the agent-core copy) disagree about which strategy is
+ * trustworthy — the exact bug this fix closes.
+ */
+const PLAYBOOK_PEVI_LAMBDA = 1.96;
+
+function wilsonLower(successes: number, total: number, z: number): number {
+  if (!Number.isFinite(successes) || !Number.isFinite(total) || !Number.isFinite(z) || total <= 0) {
+    return 0;
+  }
+  const pHat = successes / total;
+  const z2 = z * z;
+  const denom = 1 + z2 / total;
+  const centre = (pHat + z2 / (2 * total)) / denom;
+  const margin = (z / denom) * Math.sqrt(pHat * (1 - pHat) / total + z2 / (4 * total * total));
+  return Math.max(0, centre - margin);
+}
+
+function hasValidEvictionTally(e: PlaybookEntry): boolean {
+  const r = e.reinforcements;
+  const d = e.decays;
+  return (
+    typeof r === "number" && Number.isFinite(r) && r >= 0 && Number.isInteger(r) &&
+    typeof d === "number" && Number.isFinite(d) && d >= 0 && Number.isInteger(d) &&
+    r + d >= 1
+  );
+}
+
+/**
+ * Eviction utility — the SAME PEVI Wilson-LCB the injection path
+ * (`rankingUtility`) ranks survivors by. A no-tally / invalid-tally entry falls
+ * back byte-identically to the legacy `clampReward(reward)` (absent → 0), so the
+ * legacy reward-only eviction behaviour is unchanged. Recency is NOT folded in
+ * here (the index tiebreak below is the recency proxy, matching the prior sort).
+ */
+function evictionUtility(e: PlaybookEntry): number {
+  if (!hasValidEvictionTally(e)) {
+    const base = e.reward;
+    if (typeof base !== "number" || !Number.isFinite(base)) {
+      return 0;
+    }
+    return Math.max(PLAYBOOK_REWARD_MIN, Math.min(PLAYBOOK_REWARD_MAX, base));
+  }
+  const r = e.reinforcements as number;
+  const d = e.decays as number;
+  const lower = wilsonLower(r, r + d, PLAYBOOK_PEVI_LAMBDA);
+  return Math.max(PLAYBOOK_REWARD_MIN, Math.min(PLAYBOOK_REWARD_MAX, (2 * lower - 1) * PLAYBOOK_REWARD_MAX));
+}
+
+/**
  * Choose which entries survive when the bank overflows `cap` (B1 §3 —
  * reward-/recency-weighted eviction, replacing blind FIFO). Blind FIFO would
  * forget a strategy you reinforced ten times just because it is old, while
  * keeping a never-used newer one — exactly backwards. So eviction keeps the
- * `cap` HIGHEST-value entries, value = (reward, then recency): a high-reward
- * OLD strategy beats a low-reward NEW one; among equal reward the newer
- * survives. Survivors are returned in their ORIGINAL insertion order, because
- * that order is the recency proxy `rankPlaybookStrategies` relies on. A bank
- * at/under `cap` is returned unchanged.
+ * `cap` HIGHEST-value entries by the SAME PEVI Wilson-LCB utility the injection
+ * path ranks by (`evictionUtility`), so a thin-but-lucky strategy can't
+ * destructively evict a battle-tested one the injection path trusts more; among
+ * equal utility the newer survives. Survivors are returned in their ORIGINAL
+ * insertion order, because that order is the recency proxy
+ * `rankPlaybookStrategies` relies on. A bank at/under `cap` is returned unchanged.
  */
 export function retainPlaybookEntries(entries: readonly PlaybookEntry[], cap: number): readonly PlaybookEntry[] {
   if (entries.length <= cap) {
     return entries;
   }
   const ranked = entries
-    .map((entry, index) => ({ entry, index }))
-    .sort((a, b) => (b.entry.reward ?? 0) - (a.entry.reward ?? 0) || b.index - a.index);
+    .map((entry, index) => ({ utility: evictionUtility(entry), index }))
+    .sort((a, b) => b.utility - a.utility || b.index - a.index);
   const keep = new Set(ranked.slice(0, cap).map((r) => r.index));
   return entries.filter((_entry, index) => keep.has(index));
 }

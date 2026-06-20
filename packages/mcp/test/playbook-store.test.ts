@@ -306,6 +306,20 @@ describe("retainPlaybookEntries — reward-/recency-weighted eviction (B1 §3)",
     expect(retainPlaybookEntries(bank, 2).map((x) => x.id)).toEqual(["neutral", "trusted"]);
   });
 
+  it("ranks survival by Wilson-LCB (PEVI), so a proven 11/9 strategy evicts a thin-but-lucky 1/0 one", () => {
+    // Discriminator: matches the injection path's `rankingUtility` (Wilson LCB),
+    // NOT the shrinkage point-estimate `effectiveStrategyReward`. The thin entry
+    // is NEWER (recency would favour it on a tie) yet must lose because its wide
+    // CI gives a low lower bound. Under Wilson: proven raw ≈ -1.58 > thin ≈ -2.93.
+    // Under shrinkage: thin ≈ 1.25 > proven ≈ 0.44 — so replicating the wrong
+    // function flips this assertion. reward fields are deliberately set so the
+    // OLD raw-reward sort would ALSO pick thin (5 > 4), proving the LCB is what runs.
+    const proven: PlaybookEntry = { ...entry("proven"), reward: 4, reinforcements: 11, decays: 9 };
+    const thin: PlaybookEntry = { ...entry("thin"), reward: 5, reinforcements: 1, decays: 0 };
+    const bank = [proven, thin]; // proven inserted OLDER, thin NEWER
+    expect(retainPlaybookEntries(bank, 1).map((x) => x.id)).toEqual(["proven"]);
+  });
+
   it("recordPlaybookStrategy applies weighted eviction: a reinforced old entry survives an overflow of neutral ones", async () => {
     const file = freshFile();
     // Seed AT capacity in one write: champion (high reward) is the OLDEST entry,
