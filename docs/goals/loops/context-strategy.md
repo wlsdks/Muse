@@ -31,11 +31,7 @@ Verified existing context-strategy seams (from codegraph, 2026-06-20):
 - **Budgets** — `StepBudgetTracker` / `systemPromptTokenBudget` / step caps.
 
 ### Open follow-ups (next-fire candidates)
-- ◦ **Thread per-turn query relevance into the cross-block edge-place** (fire-1
-  deferred): wire episode `.score` / contact match score into
-  `OptionalGroundingSource.relevance` at `commands-ask.ts` so the reorder uses
-  query-specific relevance, not just the fixed tier. Needs a shared 0–1 scale so
-  relevance and tier don't scale-mix. (new-capability / @muse/cli+recall)
+
 - ◦ **Grounding-quality eval under the new block order**: assert the edge-placed
   prompt order does not regress answer grounding (the judge flagged no eval
   measured this). Likely `eval:chat-grounding` / `precheck:grounding` case.
@@ -206,3 +202,34 @@ ratchet: testFiles +0 (extended existing) · agent-core 2503 pass · pnpm check 
   touched source state before trusting the next judge's verdict.
 
 ---
+
+## fire 6 · 2026-06-20 · skill v2.0.0 · 8c0341d9
+meta: value-class=wiring · pkg=@muse/recall · kind=query-relevance-wiring · verdict=PASS (after 1 FAIL→fix cycle) · firesSinceDrill=6
+ratchet: testFiles +0 (extended existing) · recall 340 pass · cli 2763 pass · pnpm check exit0 · pnpm lint exit0 · fabrication 0 · self-eval green
+- **What:** Activated fire-1's dormant `relevance?` path. `present.ts` accepted a per-block
+  `relevance?` but `commands-ask.ts` never supplied one → every real ask fell back to the
+  fixed tier (fire-1's reorder was relevance-blind in production). New pure helper
+  `optionalGroundingRelevance(tierKey, perTurnScore?)` blends normalizedTier(0.2–1.0) with
+  a clamped 0–1 per-turn score (W=0.5); commands-ask threads `episodeHits[].score` into the
+  episodes block. The `edgePlaceByPriority` fallback ALSO routes through the helper so every
+  block shares the 0–1 scale.
+- **Why:** arXiv:2410.05983 (Long-Context LLMs Meet RAG — reorder retrieved passages by
+  retriever relevance at the sequence boundaries; gain grows with #passages) + 2504.07104
+  (Relevance Isn't All You Need — blend, don't pure-sort) + fire-1's 2307.03172/2508.05128.
+  hermes/openclaw have no deterministic relevance-ordered cross-block grounding reorder
+  (openclaw MMR for memory dedup only) → widens the differentiator.
+- **Review point:** only the episodes block carries a real per-turn score today (contacts'
+  & memories' scores are discarded upstream → honest tier fallback, no fabricated score);
+  the mechanism is general (any block setting `relevance` benefits). Blend is bounded:
+  a perfect episode climbs above low-tier blocks but not above top actionable surfaces
+  (tasks/reminders) — intentional.
+- **Risk:** none to floor — pure arithmetic feeding the existing permutation; set-equality +
+  fabrication=0 preserved; no touch to citation gate/verifyGrounding/notesFraming/banner;
+  score-less turns byte-identical to fire-1. 2 independent Opus adaptive judges (1st FAILed
+  on a SCALE-MIX: episodes got 0–1 but siblings used raw tier 20–100 → episodes could never
+  outrank → no-op-or-regression, masked by a test that scored ALL blocks; fixed by
+  normalizing the fallback + a production-mix test; final judge PASS, episodes 0.675 → head).
+- lesson: when a helper normalizes ONE input, the FALLBACK for the other inputs must use the
+  SAME normalization — a partial-normalization scale-mix silently makes the feature inert.
+  And the test must replicate the PRODUCTION mix (only the real producer's fields scored),
+  not an idealized all-scored set, or it masks the mix bug.
