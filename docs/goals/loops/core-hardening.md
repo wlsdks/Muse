@@ -4,6 +4,14 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main, NEVER merges to main).
 > Cron `cfe778e2` (every 15m, session-only). Stop: `CronDelete cfe778e2`. Convention: [README](README.md).
 
+## fire 4 · 2026-06-20 · skill v1.14.0 · <commit-pending>
+meta: value-class=new-capability · pkg=@muse/model · kind=local-tool-calling/schema-sanitizer · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles 1054→1054 (+7 cases in adapter-ollama.test.ts) · fabrication 0 · @muse/model 325 tests green · eval:tools PASS (live local) · pnpm check exit 0 · lint clean
+- 무엇: Ollama 네이티브 /api/chat tool 투영이 `inputSchema`를 무가공 전송 — Gemini는 `sanitizeGeminiSchema`가 있는데 Ollama는 없어 union `type`(`["string","null"]`)·nullable anyOf/oneOf가 llama.cpp GBNF tool 문법을 조용히 깨뜨림. `sanitizeOllamaToolSchema`(union→non-null, nullable anyOf→단일 branch, null branch drop, $schema/$id strip, depth64+cycle 재귀) 추가 후 투영에 배선.
+- 왜: tool-calling.md 핵심 = 로컬 모델이 한 샷에 올바른 도구 선택. 깨진 스키마는 도구를 통째로 드롭시켜 선택조차 불가. Gemini sanitizer 선례 미러링(parity, 발명 아님).
+- 리뷰지점: nullable→non-null collapse는 optionality를 `required`가 이미 운반하므로 무손실(required 불변 확인); triple-union은 첫 non-null로 좁힘(GBNF는 단일 type 필요, lossy지만 valid). clean 스키마는 구조적 동일(회귀 0). eval:tools green은 약한 증거(Muse 도구는 flat) — mutation 테스트가 핵심 증거.
+- 리스크: 낮음 — 순수 additive(clean 스키마 pass-through), cyclic/deep 안전 degrade(④b 실증). ④b Opus 적대 judge PASS (5문항, 적대 스키마 프로빙).
+
 ## fire 3 · 2026-06-20 · skill v1.14.0 · 8c91315c
 meta: value-class=new-capability · pkg=@muse/agent-core · kind=grounding-floor/multilingual-injection · verdict=PASS · firesSinceDrill=3
 ratchet: testFiles 1054→1054 (+1 describe / 3 cases in injection.test.ts) · fabrication 0 · agent-core 2477 tests green · precheck:grounding 2/3 PASS pass^2 · pnpm check exit 0 · lint clean
