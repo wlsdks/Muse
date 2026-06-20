@@ -145,3 +145,31 @@ ratchet: testFiles ↑ · fabrication 0 · gates: check EXIT=0 (agent-core 2515 
 - **왜:** Tier1.5 3-fire 머지 지점(fire 9, ×3). 동시 루프들이 같은 LOCAL main에 머지하며 서로의 FF를 밀어내는 알려진 해저드 — 내 작업은 브랜치에 안전했고 cherry-pick으로 손실 0 재landing.
 - **리뷰지점:** cherry-pick 후 `pnpm check` EXIT=0(시맨틱 통합 확인 — correction-distiller가 main이 바꾼 knowledge-recall import해도 무탈). 코드 무충돌, 결정론.
 - **lesson:** 다중 루프 공유 LOCAL main에서 FF가 밀리면 rebase 반복충돌 대신 reset+cherry-pick(코드 무겹침일 때)이 빠르고 안전; 작업은 항상 브랜치가 source-of-truth. 머지 전 cherry-pick된 코드 check 재검증 필수.
+## fire 10 · 2026-06-20 · skill v2.0.0 · `af25e7c2` (JUDGE-DRILL)
+meta: value-class=new-capability · pkg=@muse/agent-core · kind=judge-drill+telemetry · verdict=PASS · firesSinceDrill=0 (drill done, reset)
+ratchet: testFiles=1065 · fabrication 0 · gates: agent-core 2515 + check(model 단일 timeout=포화, 격리 325 GREEN) + self-eval ok + lint pass
+
+- **무엇(JUDGE-DRILL, firesSinceDrill≥10 트리거):** 고의 INERT 슬라이스 주입 — `onReject` 옵션 선언+"reject시 발화" 문서화하되 **본문에서 안 호출** + config-only 테스트(옵션 받아도 안터짐만 확인). ④b 독립 Opus judge가 **FAIL 판정**(죽은 옵션·OUTCOME없는 테스트·미전달 가치 file:line 적시 + 올바른 minimal fix 제시) → 검증자 작동 입증 → forward-fix.
+- **왜:** maker≠judge 보상통제(고정 천장이라 same-model judge일 때 drill이 유일한 보상통제) — verifier가 inert/선언-only를 실제로 잡는지 주기적 증명. 소재는 fire-8 telemetry follow-up(rejected-agreement 노출)이라 드릴이 진짜 가치도 남김.
+- **리뷰지점:** 진짜 fix = `options.onReject?.(agreement)`를 disagreement-reject 경로에서만 발화(read-only, 게이트 결정 불변). spy OUTCOME 테스트(reject시 agreement<0.5로 1회 호출, admit시 미호출) + mutation RED→GREEN. 2차 ④b judge PASS(발화 위치·read-only·early-reject/admit 제외·mutation-sensitive 확인).
+- **리스크:** 매우 낮음 — 선택적 동기 콜백, 반환값/게이트 불변. ◦ NEXT: production sink 배선(caller가 onReject로 카운트/로그).
+- **lesson:** ④b 적응형 judge가 inert("declared but never invoked")를 신뢰성있게 FAIL → maker≠judge 보상통제 健全. 드릴은 미루지 말 것(firesSinceDrill≥10 하드카운터). 드릴 소재는 실제 backlog follow-up을 inert-then-real로 쓰면 검증+가치 동시 확보.
+
+## fire 11 · 2026-06-21 · skill v2.0.0 · `c9e7fe4b`
+meta: value-class=new-capability · pkg=@muse/mcp · kind=research-grounded/reflection-retention · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles=1065 (tests added to existing reflections-store.test.ts) · fabrication 0 · gates: mcp 1879 + check EXIT=0 (타임아웃 0) + self-eval ok + lint pass
+
+- **무엇(연구-기반, 미접촉 reflection 표면):** reflection 스토어 cap-overflow eviction을 **pure recency → recency+salience 가중**으로 교체. `scoreReflectionRetention`(0.5^(age/30d) + min(1,support/5)) + `selectRetainedReflections`. 이미 저장하던 `supportCount`를 처음으로 retention에 사용.
+- **왜:** `writeReflections`가 recency만 봐서, 여러 에피소드에 grounded된 고-support 재발 insight가 one-off 신규보다 먼저 evict됨 — Generative Agents(arXiv:2304.03442) retention=recency+importance. memory 스토어엔 ACT-R/Ebbinghaus 있는데 reflection 스토어엔 둘 다 없던 갭.
+- **리뷰지점:** ④b 독립 Opus judge PASS — legacy 무회귀(동일 support→salience 상수→recency 환원, 기존 1970-epoch cap 테스트 tie→createdAtMs로 동일 결과, 계산+mutation으로 격리 확인) · 균형 sound(saturation+weight 방어가능, NaN/음수/거대 support 가드) · degenerate 안전. 다양성: fires 8/10 agent-core 후 fire11 @muse/mcp(다른 pkg). research-grounded kind.
+- **리스크:** 낮음 — equal-support면 legacy-identical, dedup/atomic-write 무변경, fabrication 무관(어느 grounded insight가 cap을 살아남나만 결정). nit→backlog ◦: listReflections 표시 순서는 여전히 newest-first(retention≠display; 단 기존엔 evict돼 영영 안 보였으니 strictly better).
+
+## fire 12 · 2026-06-21 · skill v2.0.0 · `66d153e4`
+meta: value-class=wiring · pkg=@muse/cli · kind=telemetry-consumption · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles=1065 · fabrication 0 · gates: agent-core 2516 + cli 2781 + check EXIT=0 (타임아웃 0) + self-eval ok + lint pass · merge-to-main: fires 10-12 (this fire, ×3)
+
+- **무엇:** fire-10의 `onReject` telemetry seam을 production에서 **소비** — `distillSessionCorrections`가 low-consistency(disagreement) 거부를 카운트해 `DistillResult.lowConsistencyRejected`로 노출. 이전엔 seam만 있고 consumer 없었음(inert seam → 실측 소비).
+- **왜:** self-consistency 게이트의 0.5 floor false-reject율을 실제 세션에서 관측 가능해야 튜닝 가능(fire-8/10 follow-up). read-only(게이트 결정·뱅킹·decay/reinforce 불변).
+- **리뷰지점:** ④b 독립 Opus judge PASS — 실제 소비(counter 노출·OUTCOME 테스트: disagreeing 3 same-script 드래프트→count 1·status skipped·playbook 0) · disagreement-reject만 카운트(정직 semantic) · 무회귀(identical-stub admit 경로 무변경·양 consumer read-only) · 6 return 전부 필드 설정 · mutation(+=1 제거→RED). 다양성: fire11 mcp 후 fire12 cli/wiring.
+- **리스크:** 낮음 — read-only telemetry, DistillResult union 양 branch+이른 return 4개 0으로 일관. embed 없으면 cross-script support-gate fail-closed로 early-reject(onReject 미발화)되는 게 정상 — 테스트는 same-script+embed로 disagreement 경로 정조준.
+- **lesson:** telemetry seam은 production consumer까지 배선해야 "inert seam" 면함; distill 테스트는 cross-script support-gate 때문에 same-script 드래프트+embed로 disagreement 경로를 정확히 타게 해야 함.
