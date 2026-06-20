@@ -2079,6 +2079,23 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   safe). Fable judge reverted-to-HEAD to PROVE the regression bites (0.9997→"confident" pre-fix,
   0.48→"ambiguous" post). agent-core 1753 green.
 
+- ✓ **Wrong-case enum arg repair (one-shot tool-calling reliability)** — agent-hardening fire 9
+  (`686d76b4`, @muse/tools, tool-calling-reliability/arg-correctness): a small local model emits a
+  closed-vocabulary (enum/const) value with the right MEANING but the wrong surface form ("HEX" for
+  ["binary","octal","decimal","hex"], "  octal  ", "Turn_Off"); strict-equality `validateEnumArguments`
+  then rejected it, burning a retry round or failing the call (Structured Reflection arXiv:2509.18847 —
+  a right value in the wrong surface form invalidates an otherwise-correct call). `coerceToolArguments`
+  already repairs right-value/wrong-TYPE args; this adds the missing enum counterpart `coerceEnumArguments`
+  — rewrites a STRING enum/const arg to the schema's canonical spelling ONLY when, after trim(), it
+  matches an allowed string choice case-insensitively AND matches EXACTLY ONE such choice. Wired into
+  BOTH gates that run `validateEnumArguments` (ReAct agent-runtime + plan-execute, sibling-audit 2/2).
+  Conservative/subtractive: ambiguous case-fold match, already-canonical, non-string value/choice, and
+  unconstrained free-text props are never rewritten (21-value STABLE-0 FP corpus). Selection unperturbed
+  (no tool name/desc/schema changed). MUTATION-FIRST RED on ambiguity guard + match logic + the
+  agent-runtime wiring; @muse/tools 275 + agent-core 2512 green; eval:tools all visible cases PASS live
+  on gemma4:12b; independent Opus ④b judge PASS (3 mutations RED→GREEN, FP-safe, never invents a value).
+  Diversifies cleanly off f5/f6 (recall-dedup), f7 (orchestration), f8 (memory) — a DIFFERENT pkg×kind.
+
 - ✓ **Engine-path near-duplicate bridge dedup** — agent-hardening fire 6 (`96cf6933`, agent-core,
   recall-quality): closed the deferred `◦ 1d-sibling-audit` from fire 5. `rankKnowledgeChunksWithHop`
   (secondHop) and `appendAssociativeBridges` (associative) appended up to 2 hop/PPR bridges to the
