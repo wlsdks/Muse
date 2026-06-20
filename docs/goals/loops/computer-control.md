@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 20 · 2026-06-21 · skill v2.0 · <commit-pending> (JUDGE-DRILL #2 ✅ + harden ReDoS allow-corpus)
+## fire 20 · 2026-06-21 · skill v2.0 · bb46f6f6 (JUDGE-DRILL #2 ✅ + harden ReDoS allow-corpus)
 meta: value-class=test-hardening · pkg=@muse/fs · kind=judge-drill · verdict=DRILL-PASS · firesSinceDrill=0(reset)
 ratchet: testFiles 1071→1071 (+6 safe-alternation cases in allows it.each) · fabrication 0 · @muse/fs 격리 162 · pnpm check exit 0 · lint clean
 - JUDGE-DRILL(firesSinceDrill=10 AND 연속allPASS=8 트리거): fire-19 alternation residual을 "닫는" 그럴듯한 슬라이스 주입 — detector inner class에 `|` 추가(`[+*|]`) + `(a|aa)+` 잡힌다는 테스트. **결정론 게이트 통과(157)** — "allows" 코퍼스에 quantified-alternation 패턴이 없어 over-block이 invisible. ④b 독립 judge가 **FAIL**: `(foo|bar)+`/`(TODO|FIXME)+`/`(a|b)*` 오탐 재현 + **타이밍 sub-ms로 catastrophic 아님 증명** + fire-19 대비 regression + 테스트 blind 적발. → 롤백(detector fire-19 그대로).
