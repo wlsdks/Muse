@@ -52,3 +52,13 @@ ratchet: testFiles 1069 · fabrication 0 · groundedSurfaces=28 (no drop) · gro
 - 왜: hollow `{}`나 merchant 없는 영수증이 ok:true로 라우팅/grounding 레이어에 흘러가던 것을 source에서 차단(no-partial-result, AppWorld arXiv:2407.18901). enforce하는 required는 shapeVisionAction이 이미 라우팅에 요구하던 필드라 working flow 안 깨짐 — 실패를 앞당길 뿐. fires 1-4 전부 cli였는데 pkg를 agent-core로 이동(다양성 RATCHET). primitive 첫 테스트 커버리지.
 - 리뷰지점: 독립 적응형 judge가 7개 실콜러 전수(KIND_EXTRACT 5 + commands-ask 2) 정당 추출 실패 없음 확인, back-compat(absent schema/required→ok:true), 성공경로에서 검증 실행, 테스트 non-inert(call 삭제→4 RED·조건 mutate→8 RED), groundedSurfaces=28. (judge가 실험 중 restore→diff로 byte-faithful 복원, 오케스트레이터가 빌드+23테스트 재확인.)
 - 리스크: 낮음 — 미래에 non-string 타입 추출 prop을 의도적으로 원하는 caller면 fail-close(현재 모든 스키마 string-only라 무해, 향후 주의).
+
+## fire 6 · 2026-06-21 · skill v2.0.0 · f3ca1cb0
+meta: value-class=hardening · pkg=@muse/cli · kind=vision-extraction-grounding · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 1070 · fabrication 0 · groundedSurfaces=28 (no drop) · groundedCases=45 · differentiationBatteries=6 · vision-actions 34/34 PASS · cli 2823/2823 · eval:vision-grounding 3/3 라이브 PASS · mutation-first 양방향 RED 확인
+merge: main FF 스킵 (origin/main 고경쟁 — fire 3과 동일; fire 6 작업은 브랜치 안전, 다음 3배수서 재시도) [⑤c 시도 결과는 push 단계서 확정]
+- 무엇: fieldIsGrounded의 amount 필드 2결함(① $2026이 연도 run에 grounding되는 누수 ② fire-4 weak-numeric 가드가 진짜 $40을 over-drop)을 field-role anchoring으로 한 번에 — 필드명 threading(name optional→back-compat), total=amount role, amount 값의 digit-run이 통화/금액 마커($₩€£¥·KRW/USD·total/amount/due 등)에 ~2자 인접해야 grounding.
+- 왜: $2026(Concert 옆)은 통화마커 없어 FALSE(누수 닫음), $40($옆)은 TRUE(fire-4 over-drop 수리). 확정 fabrication 누수 닫기 + 알려진 over-drop 회복을 한 메커니즘으로. 비-amount 필드 불변. digit-run은 digitRuns의 순수 숫자라 regex-injection 없음(judge 200k 퍼즈 0ms 확인). arXiv:2404.18930.
+- 리뷰지점: 독립 적응형 judge가 새 false-pass 없음·back-compat byte-exact(name 생략시)·테스트 non-inert(revert→4 RED)·ReDoS-safe·cli 2823/2823·byte-clean 확인. fire 4의 잔여 ◦를 fire 6이 self-correct.
+- 리스크: 낮음 — 같은 값+마커 인접의 hallucinated total(티켓 $40 vs 가짜 $40 total)은 구별 불가하나 literal-presence 게이트의 본질적 한계(어떤 게이트도 동일). 단일자리 total($5)은 fail-close(안전).
+- lesson(무관·pre-existing): `pnpm check`가 commands-logo.test.ts의 raw ESC 바이트(타 루프 commit e10ac6c2 "muse goddess mascot", origin/main 존재)로 repo-wide RED — 내 슬라이스 무관(backlog ◦ 기록). [[feedback_no_raw_control_bytes_in_tests]] 재발.
