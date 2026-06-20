@@ -12,6 +12,8 @@
  * Korean") or a benign tool result must pass untouched; only imperative override /
  * role-hijack / output-clamp / fake-system shapes are caught.
  */
+import { normalizeForInjectionDetection } from "@muse/policy";
+
 export const MEMORY_INJECTION_PATTERNS: readonly RegExp[] = [
   /\b(ignore|disregard|forget)\b.{0,24}\b(instruction|instructions|prompt|rule|rules|previous|prior|the user|above|system)\b/iu,
   /\breply only with\b|\brespond only with\b|\boutput only\b/iu,
@@ -34,10 +36,15 @@ export function stripInjectionEvasionChars(text: string): string {
   return text.replace(INJECTION_EVASION_CHARS, (ch) => (ch === "\t" || ch === "\n" || ch === "\r" ? ch : ""));
 }
 
-/** True when a value reads like an injected instruction (evasion chars stripped first). */
+/**
+ * True when a value reads like an injected instruction. Matches against the FULLY
+ * normalized form (`@muse/policy`'s shared `normalizeForInjectionDetection` — entity-
+ * decode + NFKC + zero-width-strip + homoglyph-fold + diacritical-strip) so a
+ * homoglyph (`іgnore`, Cyrillic і) or HTML-entity (`&#105;gnore`) injection can't slip
+ * past the patterns. Unifies the live-surface defense with the user-input path.
+ */
 export function isMemoryInjection(value: string): boolean {
-  const normalized = stripInjectionEvasionChars(value);
-  return MEMORY_INJECTION_PATTERNS.some((re) => re.test(normalized));
+  return MEMORY_INJECTION_PATTERNS.some((re) => re.test(normalizeForInjectionDetection(value)));
 }
 
 /**
@@ -62,7 +69,14 @@ const INJECTION_SPAN_PLACEHOLDER = "[removed: injected instruction]";
  * Deterministic; clean text is returned byte-identical.
  */
 export function neutralizeInjectionSpans(text: string): string {
-  let out = stripInjectionEvasionChars(text);
+  const normalized = normalizeForInjectionDetection(text);
+  // Fast path: clean text — no injection even after entity-decode / NFKC / zero-width
+  // / homoglyph / diacritical folding — is returned BYTE-IDENTICAL. We pay
+  // normalization's collateral (a stripped diacritic, an NFKC-folded ligature) ONLY on
+  // text that ACTUALLY hides an injection, which is untrusted anyway — clean recall
+  // content (incl. accents / fullwidth) is never mangled.
+  if (!MEMORY_INJECTION_PATTERNS.some((re) => re.test(normalized))) return text;
+  let out = normalized;
   for (const pattern of MEMORY_INJECTION_PATTERNS) {
     const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
     out = out.replace(new RegExp(pattern.source, flags), INJECTION_SPAN_PLACEHOLDER);
