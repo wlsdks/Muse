@@ -18,7 +18,7 @@ export const MEMORY_INJECTION_PATTERNS: readonly RegExp[] = [
   /\b(ignore|disregard|forget)\b.{0,24}\b(instruction|instructions|prompt|rule|rules|previous|prior|the user|above|system)\b/iu,
   /\breply only with\b|\brespond only with\b|\boutput only\b/iu,
   /\byou are now\b|\bact as\b.{0,20}\binstead\b/iu,
-  /^\s*system\s*[:>]/iu
+  /^\s*system\s*[:>]/imu
 ];
 
 const INJECTION_EVASION_CHARS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
