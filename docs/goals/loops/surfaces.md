@@ -481,7 +481,7 @@ ratchet: testFiles 1058 (+1) · web tests 50/50 (+2) · fabrication 0 · self-ev
 - **리뷰지점**: mutation-first RED 실증(aria-label 없을 때 2/2 FAIL, 렌더 마크업 `title="done"`에 aria-label 부재 확인). aria-label은 신뢰 i18n 상수(XSS/스킴 무접촉, React JSX 이스케이프). 추출은 className·title·disabled·Icon.check·onClick(`complete.mutate(task.id)`) 동작 byte-동일 보존. 형제-감사: 웹 전체에서 접근명 누락 버튼은 이 2개뿐(App.tsx cmd-trigger는 가시 텍스트 자식으로 접근명 있음 — judge 확인).
 - **리스크**: 없음(단일 pure-component 변경, web build tsc+vite 통과, web 50/50, self-eval exit 0, 독립 Opus ④b judge가 mutation 이빨(각 assertion 자기 버튼 바인딩)·XSS 불변식·동작보존·i18n 검증 후 PASS).
 
-## fire 54 · 2026-06-20 · skill v2.0.0 · (pending)
+## fire 54 · 2026-06-20 · skill v2.0.0 · 2a756c0a
 meta: surface=desktop · value-class=micro-fix · pkg=apps/desktop(MuseDesktopCore) · kind=percentage-display-correctness · verdict=PASS · firesSinceDrill=3
 ratchet: desktop swift tests 71/71 (+1) · fabrication 0 · self-eval exit 0 · 표면 균형 web23·desktop13·cli18
 
