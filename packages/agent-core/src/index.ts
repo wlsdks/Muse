@@ -180,6 +180,7 @@ export {
   fuseByReciprocalRank,
   lexicalOverlap,
   lexicalTokens,
+  monthDayKeys,
   normalizeContactCitations,
   normalizeFromPrefixedCitations,
   normalizeMemoryCitations,
