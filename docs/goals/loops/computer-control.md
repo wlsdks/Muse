@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 10 · 2026-06-21 · skill v2.0 · <commit-pending> (JUDGE-DRILL ✅ + harden guard + byte-hygiene regression)
+meta: value-class=test-hardening+regression-fix · pkg=@muse/tools+apps/cli · kind=judge-drill · verdict=DRILL-PASS · firesSinceDrill=0(reset)
+ratchet: testFiles 1068→1068 (+1 robust guard tools.test) · fabrication 0 · eval:computer-task 미실행(드릴 fire) · pnpm check=박스포화 false-timeout(crypto/fuzz ~5s, 격리 통과; byte-hygiene 회귀는 수정 후 44 통과) · lint clean
+- JUDGE-DRILL(firesSinceDrill=10 트리거): `nearestToolName`에 고의 결함 주입(`shared>0` 가드 제거 → 무관명도 misleading 제안) + negative 테스트를 tautology로 약화 → **결정론 게이트 통과(281)**. ④b 독립 judge가 추론으로 **FAIL**: delete_everything→run_command(위험) 재현·tautology 테스트 적발·거짓 docstring·grounding-floor 위반·정확한 롤백 권고. → git restore 롤백(executor.ts HEAD 동일 확인).
+- 진짜 fix(드릴이 드러낸 약점 메움): no-misleading 속성 가드가 **단 1개**라 쉽게 약화됨 → 여러 무관명(delete_everything 등)×여러 등록도구로 "절대 'Did you mean' 안 함" robust 가드 추가. mutation-verified(드릴 결함 주입 시 신규+기존 가드 둘 다 RED).
+- 회귀 fix: 동시-루프 mascot 커밋(e10ac6c2)이 `commands-logo.test.ts` L23·32에 raw ESC 바이트 → byte-hygiene 게이트가 main check 차단. raw ESC→``(의미 동일, commands-logo 통과 확인). [[feedback_no_raw_control_bytes_in_tests]] 룰.
+- 리스크: 0 코드 동작 변경(executor 불변, 테스트 추가 + 기존파일 바이트 escape만). 박스포화로 full check green은 crypto/fuzz 5s-타임아웃에 막히나 변경 파일 타겟 테스트 전부 통과.
+lesson: **JUDGE-DRILL이 제 역할 입증** — 결정론 게이트(281 green)를 전부 통과한 회귀를 독립 judge가 추론+probe로 잡음(rubber-stamp 아님, maker≠judge 보상통제 작동). 드릴이 "단일 가드는 약하다"를 드러냄 → robust 가드로 하드닝(드릴→진짜fix 사이클). 박스포화(동시 루프 多)는 crypto/fuzz 테스트를 5s 타임아웃시킴 — 격리 재실행이 환경 vs 회귀를 가름.
+
 ## fire 9 · 2026-06-21 · skill v2.0 · 2d0f57ab (hallucinated-tool nearest-name suggestion; 3-fire merge)
 meta: value-class=new-capability · pkg=@muse/tools · kind=tool-error-recovery · verdict=PASS · firesSinceDrill=9
 ratchet: testFiles 1067→1067 (+2 cases tools.test, mutation-valid) · fabrication 0 · eval:computer-task PASS(무회귀) · eval:multifile-fix 여전히 FAIL(다중 stochastic 모드, 노출/이 fix로 미flip) · pnpm check exit 0 · lint clean
