@@ -1080,6 +1080,61 @@ export function selectBestGroundedDraft(
   return best;
 }
 
+/**
+ * Embed a match's text for dedup comparison, preferring the input chunk's
+ * `embedText` (the same embedding space used during ranking — a cache hit).
+ * Returns null on any embed failure so the dedup stays fail-open.
+ */
+async function embedChunkVec(
+  inputChunk: KnowledgeChunk | undefined,
+  match: KnowledgeMatch,
+  embed: (text: string) => Promise<readonly number[]>
+): Promise<readonly number[] | null> {
+  try {
+    return await embed(inputChunk?.embedText ?? match.text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Drop a candidate bridge/addition that is a near-duplicate of a chunk already
+ * kept (a primary hit OR an earlier-kept addition). Mirrors the ask-window
+ * `dedupNearDuplicateChunks` (@muse/recall) on the ENGINE path: a hop/PPR
+ * bridge can surface a chunk near-identical to a primary (same fact across two
+ * notes, or a bridge adjacent to a seed) and pad the small model's grounding
+ * window with redundancy. Greedy first-wins so the higher-ranked chunk survives.
+ *
+ * AUGMENT-never-displace + FAIL-OPEN: only candidate ADDITIONS are filtered —
+ * the primary ranking is never touched. Each chunk's embedding is fetched via
+ * the (caching) embedder; a degenerate/length-mismatched vec yields cosine 0
+ * (< threshold) so it never registers as a duplicate, and an embed FAILURE
+ * keeps the candidate. Redundancy is dropped only on a confident match.
+ */
+async function dropNearDuplicateAdditions(
+  kept: readonly KnowledgeMatch[],
+  additions: readonly KnowledgeMatch[],
+  embedFor: (match: KnowledgeMatch) => Promise<readonly number[] | null>,
+  threshold = 0.985
+): Promise<KnowledgeMatch[]> {
+  if (additions.length === 0) return [];
+  const keptVecs: (readonly number[])[] = [];
+  for (const match of kept) {
+    const vec = await embedFor(match);
+    if (vec !== null) keptVecs.push(vec);
+  }
+  const survivors: KnowledgeMatch[] = [];
+  for (const candidate of additions) {
+    const vec = await embedFor(candidate);
+    const isNearDup =
+      vec !== null && keptVecs.some((kv) => cosineSimilarity(vec, kv) >= threshold);
+    if (!isNearDup) {
+      survivors.push(candidate);
+      if (vec !== null) keptVecs.push(vec);
+    }
+  }
+  return survivors;
+}
 
 /**
  * Append up to 2 associative bridges to `primary` using PPR over the
@@ -1144,7 +1199,10 @@ async function appendAssociativeBridges(
     additions.push({ cosine: queryCosine, score: queryCosine, source: chunk.source, text: chunk.text });
   }
 
-  return [...primary, ...additions];
+  const deduped = await dropNearDuplicateAdditions(primary, additions, (match) =>
+    embedChunkVec(inputByKey.get(keyOf(match)), match, options.embed)
+  );
+  return [...primary, ...deduped];
 }
 
 /**
@@ -1234,7 +1292,10 @@ export async function rankKnowledgeChunksWithHop(
     additions.push({ ...match, cosine: queryCosine });
   }
 
-  return [...primary, ...additions];
+  const deduped = await dropNearDuplicateAdditions(primary, additions, (match) =>
+    embedChunkVec(inputByKey.get(keyOf(match)), match, options.embed)
+  );
+  return [...primary, ...deduped];
 }
 
 export interface GroundingExplanationOptions {
