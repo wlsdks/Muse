@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 17 · 2026-06-21 · skill v2.0 · <commit-pending> (run_command resource clamp; measure-first sharpens the ceiling)
+## fire 17 · 2026-06-21 · skill v2.0 · 41f329be (run_command resource clamp; measure-first sharpens the ceiling)
 meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=resource-bound · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles 1069→1069 (+1 case tools.test clamp + Rust clamp test, mutation-valid) · fabrication 0 · @muse/tools 격리 289 · crates/runner cargo 9 · eval:multifile-fix=early-stop(model-behavior) · pnpm check=박스포화(apps/api LINE 20s, 격리 green) · lint clean
 - 무엇: §3.6-adjacent — `timeoutMs`/`maxOutputBytes`가 모델-supplied인데 하한(.max(1))만, 상한 cap 없음 → `timeoutMs:999_999_999`(~11.5일 hang)/`maxOutputBytes:5e9`(메모리) DoS. FIX 양 레이어(10min/10MB ceiling 동일): TS `readPositiveInteger(value,max)` Math.min, Rust `effective_timeout_ms/output_bytes` clamp(1,MAX), 스키마 `maximum:` 추가. clamp(reject 아님)이라 정당한 9분 빌드는 통과.
