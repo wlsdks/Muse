@@ -51,7 +51,7 @@ export function coerceToolArguments(inputSchema: JsonValue | undefined, args: Js
 function coerceScalar(value: JsonValue, declared: string): JsonValue | undefined {
   if ((declared === "number" || declared === "integer") && typeof value === "string") {
     const trimmed = value.trim();
-    const pattern = declared === "integer" ? /^-?\d+$/u : /^-?\d+(\.\d+)?$/u;
+    const pattern = declared === "integer" ? /^[+-]?\d+$/u : /^[+-]?\d+(\.\d+)?$/u;
     if (pattern.test(trimmed)) {
       const n = Number(trimmed);
       if (Number.isFinite(n)) return n;

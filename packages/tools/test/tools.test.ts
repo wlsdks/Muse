@@ -362,16 +362,29 @@ describe("tool utilities", () => {
       type: "object",
       properties: { count: { type: "integer" }, ratio: { type: "number" }, on: { type: "boolean" }, label: { type: "string" } }
     };
-    // The `-?` in the numeric patterns accepts a negative the model emits.
+    // The `[+-]?` in the numeric patterns accepts a signed value the model emits.
     expect(coerceToolArguments(schema, { count: "-7", ratio: "-3.14" })).toEqual({ count: -7, ratio: -3.14 });
     // `.trim()` strips surrounding whitespace before the pattern test.
     expect(coerceToolArguments(schema, { count: "  42  " })).toEqual({ count: 42 });
     // boolean → its string form (the typeof === "boolean" arm of the string coercion).
     expect(coerceToolArguments(schema, { label: false })).toEqual({ label: "false" });
-    // Deliberate boundaries left untouched: a `+` sign isn't accepted (only `-`),
-    // and an empty string has no digit to match — both stay as-is rather than a guess.
-    expect(coerceToolArguments(schema, { count: "+5" })).toEqual({ count: "+5" });
+    // An empty string has no digit to match — stays as-is rather than a guess.
     expect(coerceToolArguments(schema, { count: "" })).toEqual({ count: "" });
+  });
+
+  it("coerceToolArguments repairs an explicitly-signed-positive numeric string the model emits ('+5' → 5) and rejects degenerate '+' forms", () => {
+    const schema = { type: "object", properties: { count: { type: "integer" }, ratio: { type: "number" } } };
+    // A small local model sometimes writes a positive arg with an explicit '+';
+    // strict pattern then rejected it and the call failed. The repair now yields
+    // the real NUMBER (Number("+5") === 5), not the surface string.
+    const repaired = coerceToolArguments(schema, { count: "+5", ratio: "+3.14" });
+    expect(repaired.count).toBe(5);
+    expect(repaired.ratio).toBe(3.14);
+    expect(coerceToolArguments(schema, { count: "  +5  " })).toEqual({ count: 5 }); // trims around the sign
+    // Degenerate / out-of-vocabulary signed forms still surface untouched (no lossy guess):
+    expect(coerceToolArguments(schema, { count: "+" })).toEqual({ count: "+" }); // no digit
+    expect(coerceToolArguments(schema, { count: "++5" })).toEqual({ count: "++5" }); // double sign
+    expect(coerceToolArguments(schema, { count: "+5.0" })).toEqual({ count: "+5.0" }); // not an integer
   });
 
   it("coerceToolArguments leaves a pattern-valid but overflowing numeric string UNTOUCHED (the isFinite guard — never a lossy Infinity)", () => {
