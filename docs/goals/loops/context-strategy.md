@@ -367,3 +367,24 @@ ratchet: testFiles +0 (extended existing) · cli 2786 pass · pnpm check exit0 (
   + mutation RED→GREEN (drop ${mark} → 5 caution tests RED, no-opts stayed green). Sibling audit:
   chat-repl wired; chat-ink deferred; brief/proactive/ask-persona intentional no-op (no double-mark).
   Residual: no live round-trip (consistent with how ask-side landed); ask-vs-chat persona asymmetry.
+
+## fire 12 · 2026-06-21 · skill v2.0.0 · c20b569f
+meta: value-class=micro-fix · pkg=@muse/agent-core · kind=episodic-fade-reinstatement · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles +0 (extended existing) · agent-core 2520 pass · pnpm check exit0 (api flake cleared on isolated rerun) · pnpm lint exit0 · fabrication 0 · self-eval green
+- **DOCTRINE:** advances ③ (consolidation spine — "forgetting & conflict-resolution first-class", sub-slice 5 rendered as a scoring-time floor) + ④ (load-bearing source survives).
+- **What:** `StoreBackedEpisodicRecallProvider.resolve` now WAIVES the episodic `FADE_PENALTY`
+  for a faded session whose live `recallStats` shows re-engagement within `FADE_REINSTATE_MAX_AGE_MS`
+  (~6h). New pure `isRecentlyReengaged(statsEntry, nowMs, windowMs)` (fail-open). recallStats is
+  already loaded at the callsite — zero new I/O.
+- **Why:** the fade file is written only on ≥6h daemon ticks while recallStats updates every recall,
+  so a session the user JUST re-recalled stayed down-ranked for up to a consolidation interval —
+  silently down-ranking a still-recalled source. Reconsolidation science (PMC6220336) + mem0 (State
+  of AI Agent Memory 2026: "decay UNLESS reinforced by re-access") + MemoryBank (arXiv:2305.10250).
+  hermes/openclaw have no fade-vs-live-reaccess reconciliation at retrieval → widens the moat.
+- **Review point:** penalty only ever WAIVED (0.5→1, never harsher); control test proves it's
+  re-engagement-specific (old recallStats stays faded), not a blanket fade-disable.
+- **Risk:** none to floor — waive-only, no match added/dropped/reordered below minScore; fail-open
+  (absent recallStats ⇒ identical to today); write side (writeFadedMemoryKeys/daemon) untouched.
+  Independent Opus adaptive judge PASS 8/8 + mutation RED→GREEN (revert to unconditional penalty →
+  re-engaged test RED, control stays green). Residual: re-engaged test asserts "not below" (tie via
+  stable sort), acceptable per the claim; window/clock prod-coupling fail-open safe.
