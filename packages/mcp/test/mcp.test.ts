@@ -4867,6 +4867,30 @@ describe("muse.reminders loopback server", () => {
     expect(after).toMatchObject({ total: 1 });
   });
 
+  it("records a time-parse weakness when a reminder `add` dueAt FAILS to parse (the agent-path sibling of `calendar add`, fire 26 follow-up)", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { readWeaknesses } = await import("../src/weakness-ledger.js");
+    const dir = mkdtempSync(join(tmpdir(), "muse-rem-tp-"));
+    const weaknessesFile = join(dir, "weaknesses.json");
+    const server = createRemindersMcpServer({ file: join(dir, "reminders.json"), weaknessesFile });
+    const connection = createLoopbackMcpConnection(server);
+    const bad = await connection.callTool!("add", { dueAt: "blarghday at quux o'clock", text: "Buy milk" });
+    expect(bad).toHaveProperty("error");
+    expect((await readWeaknesses(weaknessesFile)).some((e) => e.axis === "time-parse")).toBe(true);
+    // a VALID dueAt records nothing
+    await connection.callTool!("add", { dueAt: "2026-05-12T09:00:00Z", text: "Pay rent" });
+    expect((await readWeaknesses(weaknessesFile)).filter((e) => e.axis === "time-parse")).toHaveLength(1);
+
+    // SIBLING: snooze with an unparseable dueAt records the same time-parse signal
+    const created = await connection.callTool!("add", { dueAt: "2026-05-12T09:00:00Z", text: "Renew" });
+    const rid = (created.reminder as { id: string }).id;
+    const snoozed = await connection.callTool!("snooze", { dueAt: "flurbsday at norp o'clock", id: rid });
+    expect(snoozed).toHaveProperty("error");
+    expect((await readWeaknesses(weaknessesFile)).filter((e) => e.axis === "time-parse")).toHaveLength(2);
+  });
+
   it("returns structured errors for invalid input + missing ids", async () => {
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
