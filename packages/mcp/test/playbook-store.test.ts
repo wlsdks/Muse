@@ -306,6 +306,25 @@ describe("retainPlaybookEntries — reward-/recency-weighted eviction (B1 §3)",
     expect(retainPlaybookEntries(bank, 2).map((x) => x.id)).toEqual(["neutral", "trusted"]);
   });
 
+  it("survives bank-overflow on PROVEN Wilson-LCB evidence, not a thin-but-lucky raw reward (PEVI parity with the injection ranker, arXiv:2012.15085)", () => {
+    // raw-reward order and Wilson-LCB order DISAGREE here, so this discriminates
+    // the fix from the old behaviour:
+    //   thin    reward=5 (max, lucky) but tally 1/0  → Wilson lower≈0.21 → util≈-2.93
+    //   proven  reward=1 (lower raw)  but tally 11/9 → Wilson lower≈0.34 → util≈-1.58
+    // The old raw-reward sort kept `thin` (5 > 1) and destructively evicted the
+    // battle-tested entry; PEVI (the same ranker the injection path uses) keeps `proven`.
+    const bank = [
+      { ...entry("thin"), reward: 5, reinforcements: 1, decays: 0 },
+      { ...entry("proven"), reward: 1, reinforcements: 11, decays: 9 }
+    ];
+    expect(retainPlaybookEntries(bank, 1).map((x) => x.id)).toEqual(["proven"]);
+  });
+
+  it("a no-tally entry ranks by clampReward(reward) — legacy eviction order is byte-identical", () => {
+    const bank = [e("hi", 4), e("lo", 1)];
+    expect(retainPlaybookEntries(bank, 1).map((x) => x.id)).toEqual(["hi"]);
+  });
+
   it("recordPlaybookStrategy applies weighted eviction: a reinforced old entry survives an overflow of neutral ones", async () => {
     const file = freshFile();
     // Seed AT capacity in one write: champion (high reward) is the OLDEST entry,
