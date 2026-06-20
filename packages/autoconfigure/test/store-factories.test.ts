@@ -32,7 +32,6 @@ describe("store factories toggle on DB presence", () => {
       { inMem: createHookTraceStore(undefined, env), kysely: createHookTraceStore(fakeDb, env), inMemName: "InMemoryHookTraceStore", kyselyName: "KyselyHookTraceStore" },
       { inMem: createDebugReplayCaptureStore(undefined), kysely: createDebugReplayCaptureStore(fakeDb), inMemName: "InMemoryDebugReplayCaptureStore", kyselyName: "KyselyDebugReplayCaptureStore" },
       { inMem: createRuntimeSettingsStore(undefined), kysely: createRuntimeSettingsStore(fakeDb), inMemName: "InMemoryRuntimeSettingsStore", kyselyName: "KyselyRuntimeSettingsStore" },
-      { inMem: createTaskMemoryStore(undefined, env), kysely: createTaskMemoryStore(fakeDb, env), inMemName: "InMemoryTaskMemoryStore", kyselyName: "KyselyTaskMemoryStore" },
       { inMem: createSessionTagStore(undefined), kysely: createSessionTagStore(fakeDb), inMemName: "InMemorySessionTagStore", kyselyName: "KyselySessionTagStore" },
       { inMem: createMcpServerStore(undefined, env), kysely: createMcpServerStore(fakeDb, env), inMemName: "InMemoryMcpServerStore", kyselyName: "KyselyMcpServerStore" },
       { inMem: createMcpSecurityPolicyStore(undefined, {}), kysely: createMcpSecurityPolicyStore(fakeDb, {}), inMemName: "InMemoryMcpSecurityPolicyStore", kyselyName: "KyselyMcpSecurityPolicyStore" },
@@ -97,6 +96,22 @@ describe("createConversationSummaryStore", () => {
   it("falls back to the in-memory store when persistence is explicitly disabled", () => {
     expect(className(createConversationSummaryStore(undefined, { MUSE_CONVERSATION_SUMMARY_PERSIST: "false" } as MuseEnvironment))).toBe(
       "InMemoryConversationSummaryStore",
+    );
+  });
+});
+
+describe("createTaskMemoryStore", () => {
+  it("uses the Kysely store when a DB is present", () => {
+    expect(className(createTaskMemoryStore(fakeDb, env))).toBe("KyselyTaskMemoryStore");
+  });
+
+  it("defaults to the persistent FILE store with no DB — so in-progress task state survives a fresh CLI process", () => {
+    expect(className(createTaskMemoryStore(undefined, env))).toBe("FileTaskMemoryStore");
+  });
+
+  it("falls back to the in-memory store when persistence is explicitly disabled", () => {
+    expect(className(createTaskMemoryStore(undefined, { MUSE_TASK_MEMORY_PERSIST: "false" } as MuseEnvironment))).toBe(
+      "InMemoryTaskMemoryStore",
     );
   });
 });

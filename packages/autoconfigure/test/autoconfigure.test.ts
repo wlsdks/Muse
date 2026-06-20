@@ -63,7 +63,10 @@ import { createPersonalToolExposurePolicy } from "../src/runtime-wiring.js";
 
 describe("autoconfigure", () => {
   it("assembles default runtime without auth when no secret is configured", async () => {
-    const assembly = createMuseRuntimeAssembly({ env: {} });
+    // PERSIST=false keeps the task store in-memory: this test verifies the assembly
+    // WIRES a usable store, not file persistence (covered in store-factories +
+    // file-task-memory-store tests), and must not write to the real ~/.muse.
+    const assembly = createMuseRuntimeAssembly({ env: { MUSE_TASK_MEMORY_PERSIST: "false" } });
 
     expect(assembly.authService).toBeUndefined();
     expect(assembly.requireAuth).toBe(false);
@@ -303,7 +306,8 @@ describe("autoconfigure", () => {
     const options = createApiServerOptions({
       env: {
         MUSE_AUTH_JWT_SECRET: "0123456789abcdef0123456789abcdef",
-        MUSE_REQUIRE_AUTH: "true"
+        MUSE_REQUIRE_AUTH: "true",
+        MUSE_TASK_MEMORY_PERSIST: "false" // in-memory: assert sync purgeExpired, no real-~/.muse write
       }
     });
 

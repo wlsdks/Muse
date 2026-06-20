@@ -20,6 +20,7 @@ import type { Kysely } from "kysely";
 
 import {
   FileConversationSummaryStore,
+  FileTaskMemoryStore,
   InMemoryConversationSummaryStore,
   InMemoryTaskMemoryStore,
   FileUserMemoryStore,
@@ -139,14 +140,20 @@ export function createRuntimeSettingsStore(db: Kysely<MuseDatabase> | undefined)
   return db ? new KyselyRuntimeSettingsStore(db) : new InMemoryRuntimeSettingsStore();
 }
 
-export function createTaskMemoryStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): InMemoryTaskMemoryStore | KyselyTaskMemoryStore {
+export function createTaskMemoryStore(db: Kysely<MuseDatabase> | undefined, env: MuseEnvironment): InMemoryTaskMemoryStore | KyselyTaskMemoryStore | FileTaskMemoryStore {
   const retentionMs = parseInteger(env.MUSE_TASK_MEMORY_RETENTION_MS, 30 * 24 * 60 * 60 * 1_000);
-  return db
-    ? new KyselyTaskMemoryStore(db, { retentionMs })
-    : new InMemoryTaskMemoryStore({
-      maxTasks: parseInteger(env.MUSE_TASK_MEMORY_MAX_TASKS, 10_000),
-      retentionMs
-    });
+  const maxTasks = parseInteger(env.MUSE_TASK_MEMORY_MAX_TASKS, 10_000);
+  if (db) return new KyselyTaskMemoryStore(db, { retentionMs });
+  // DB-less daily-driver (CLI): persist to a JSON file so in-progress task state
+  // (goal/plan/decisions/blockers) survives across `muse ask`/`chat` processes
+  // instead of resetting every invocation. Opt out via
+  // MUSE_TASK_MEMORY_PERSIST=false (tests wanting a clean slate). Parity with the
+  // user-memory + conversation-summary file stores.
+  if (env.MUSE_TASK_MEMORY_PERSIST === "false") {
+    return new InMemoryTaskMemoryStore({ maxTasks, retentionMs });
+  }
+  const file = env.MUSE_TASK_MEMORY_FILE?.trim();
+  return new FileTaskMemoryStore({ maxTasks, retentionMs, ...(file && file.length > 0 ? { file } : {}) });
 }
 
 export function createConversationSummaryStore(
