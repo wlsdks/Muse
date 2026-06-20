@@ -5,6 +5,33 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 15 · 2026-06-21 · skill v2.0 · ad6fefb5 (run_command dynamic-loader env injection blocked; 3-fire merge)
+meta: value-class=new-capability · pkg=@muse/tools+crates/runner · kind=security/path-safe · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 1069→1069 (+1 case tools.test, mutation-valid) · fabrication 0 · @muse/tools 격리 284 통과 · crates/runner cargo test 7 통과 · eval:computer-task PASS(무회귀) · pnpm check=박스포화(web-search fuzz 15s, 변경패키지 격리 green) · lint clean
+- 무엇: §3.6 감사 — run_command은 execFile(no shell)+path-reject지만 모델-supplied `env`가 키 *형식*만 검증돼 **LD_PRELOAD/DYLD_INSERT_LIBRARIES**(유효 대문자식별자)가 통과 → spawn 프로세스에 임의 코드 로드=execFile/path-reject 우회. FIX 양 레이어(defense-in-depth): TS readStringRecord `/^(?:LD|DYLD)_/` 드롭 + Rust is_safe_env_key `LD_`/`DYLD_` 거부(command.env의 authoritative 게이트).
+- 왜: 노출/recovery/adapter/근거게이트(4-14) 다 했고, §3.6 "신뢰불가입력→command"의 마지막 미감사 표면=env 주입. 동적-로더 env는 모델-run 명령에 정당하게 불필요 → 결정론적 거부.
+- 리뷰지점: mutation-valid 양 레이어(pre-fix TS는 LD_PRELOAD 유지·Rust는 true 반환=RED). ④b judge PASS(프리픽스 정밀: 트레일링 `_`라 LDFLAGS/LOAD_PATH/MY_LD_PRELOAD 보존; 양 레이어 동일 family 차단; 기존 env 가드(env_clear/PATH/형식) 불변; 정직한 scope=LD_/DYLD_ 코어). 형제-감사(TS early + Rust boundary).
+- 리스크: 낮음 — env 키 denylist만 추가(args/cwd/command/값-타입필터/uppercase체크 불변). ④b PASS. Rust 변경은 cargo test로만 검증(eval 바이너리는 main copy라 미반영이나 eval은 env 미사용=무관).
+lesson: "no shell이라 안전"은 부분만 — execFile은 *어느 바이너리*만 제약하지 *그 안에 주입되는 코드*(LD_PRELOAD)는 못 막음. env는 별도 공격면이고 형식검증≠의미검증. 다언어(TS+Rust) 보안 fix는 양 레이어 다 테스트(vitest+cargo).
+
+## fire 14 · 2026-06-21 · skill v2.0 · f676d3cc (full-read gate for overwrite — grep/offset can't ground it)
+meta: value-class=new-capability · pkg=@muse/fs+apps/cli · kind=grounding-gate · verdict=PASS(judge2) · firesSinceDrill=4
+ratchet: testFiles 1069→1069 (+3 cases fs read/write, mutation-valid) · fabrication 0 · @muse/fs 격리 131 통과 · eval:computer-task PASS(무회귀) · pnpm check exit 0 · lint clean
+- 무엇: fire-13 refine — overwrite 게이트가 `wasPathRead`(file_grep도 set)로 만족돼, grep 몇 줄 보고 file_write로 전체 overwrite=안 본 줄 손실. FIX: 더 엄격한 `wasPathFullyRead`(overwrite는 `wasPathFullyRead ?? wasPathRead`); file_read만 `onFullRead`를 **COMPLETE read에만**(`start===0 && !truncated`) 발화, file_grep 미발화. file_edit/multi_edit 불변(grep→edit 유지). CLI 2nd set 배선.
+- 왜: read PRESENCE ≠ read COMPLETENESS — "전체 봤다" 게이트는 처음(start===0)부터 끝(!truncated)까지 확인해야. 테마 fabrication=0를 부분-grounding으로부터 보호.
+- 리뷰지점: **maker≠judge가 REAL 슬라이스에서 작동** — ④b judge#1이 FAIL(첫 impl이 `!truncated`만 게이트 → offset:96 read가 truncated=false로 hole 재개방) → 정확한 fix(`start===0 && !truncated`)+offset 테스트 → ④b judge#2(독립) PASS(offset 닫힘, edge 전부, 무회귀, 131/131). mutation-valid(write: partial-grep→fail-close; read: complete→발화, limit/offset/grep→미발화).
+- 리스크: 낮음 — overwrite 게이트만 강화(edit/create/back-compat 불변), 3 onFullRead 사이트만 정확 게이트. ④b#2 PASS.
+lesson: **게이팅 verifier가 드릴 아닌 실제 슬라이스의 결함을 잡음**(judge#1이 offset boundary hole 적발)= maker≠judge 보상통제의 실전 가치. 교훈 자체: read PRESENCE≠COMPLETENESS, `!truncated`는 "뒤 내용 없음"이지 "전체 봄" 아님(offset-skip이 반례). 게이트는 boundary를 양끝 다 확인.
+
+## fire 13 · 2026-06-21 · skill v2.0 · 982b4f06 (read-before-OVERWRITE gate on file_write — fabrication=0 hole)
+meta: value-class=new-capability · pkg=@muse/fs · kind=grounding-gate · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 1068→1068 (+3 cases fs-write-tools, mutation-valid) · fabrication 0 · @muse/fs 격리 127 통과 · eval:computer-task PASS(무회귀, file_edit 경로라 무관) · pnpm check=박스포화(@muse/mcp crypto 5-55s 타임아웃, @muse/fs 격리 green) · lint clean
+- 무엇: 테마 핵심 mandate("모든 actuator가 근거 게이트 통과")에서 **미감사 표면 발견** — read-before-edit가 file_edit/multi_edit(editExecutor)엔 강제되나 **file_write엔 누락**. 모델이 안 읽은 기존 파일을 file_write로 overwrite하면 silent 데이터손실+ungrounded 변경(fabrication=0 위반). FIX: `exists && wasPathRead 미충족 → fail-close`(CREATE는 read 불필요). CLI 배선 확인 production-live.
+- 왜: 노출/recovery/adapter(fires 4-11)는 *도구 도달*을 고쳤지만 이건 *근거 게이트* 차원 — 테마의 두 기둥 중 후자에 실제 hole. content-mutation 도구(edit/multi_edit/write-overwrite) 전부 read-before 커버 완성.
+- 리뷰지점: mutation-valid 3-case(overwrite-no-read fail-close + overwrite-with-read 허용 + create-no-read 허용 = two-sided, over-block 아님). ④b judge PASS(create/TOCTOU/approval/symlink 가드 불변, editExecutor 패리티 정확, delete/move는 content 변경 아니라 제외 타당). 형제-감사 완결.
+- 리스크: 낮음 — exists&&wasPathRead 가드만 추가(create/backward-compat 불변), 다른 가드 무손상. ④b PASS.
+lesson: "vein 소진"은 *축*이 아니라 *한 차원*(노출)의 소진일 수 있다 — 테마의 다른 기둥(근거 게이트)을 형제-감사하니 file_write-overwrite라는 실제 fabrication hole이 나옴. measure-first(노출)와 invariant-audit(게이트)는 다른 렌즈; 둘 다 돌려야 축을 다 봤다 할 수 있다.
+
 ## fire 12 · 2026-06-21 · skill v2.0 · c526e24d (measure-first: model-behavior ceiling confirmed; 3-fire merge)
 meta: value-class=measure-first(work-list) · pkg=eval(diagnosis) · kind=ceiling-confirm · verdict=N/A · firesSinceDrill=2
 ratchet: testFiles 1068→1068 · fabrication 0 · eval:multifile-fix FAIL(early-stop 모드: file_read 1회 후 자발 종료) · eval:computer-task PASS(불변) · self-eval green

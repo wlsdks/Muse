@@ -1483,9 +1483,14 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // Read-before-edit grounding: file_edit / file_multi_edit fail-close on a
         // file this run never read (Muse mutates only what it has actually seen).
         const fsReadPaths = new Set<string>();
+        // A FULL file_read fills this too; a partial file_grep does NOT — so a
+        // whole-file overwrite (file_write) can demand a complete read, not just
+        // a grep of a few lines (which would silently drop the rest).
+        const fsFullReadPaths = new Set<string>();
         const fsReadTools = createFsReadTools({
           ...fsSandbox,
           onPathRead: (canonicalPath) => fsReadPaths.add(canonicalPath),
+          onFullRead: (canonicalPath) => fsFullReadPaths.add(canonicalPath),
           // file_read reads an IMAGE file via the same local vision the screen-
           // read path uses (lazy holder — the assembly/model is bound below).
           describeImage: async (input) => screenVision.current ? screenVision.current(input) : { error: "the local vision model is not available in this run", ok: false }
@@ -1498,6 +1503,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const fsWriteTools = createFsWriteTools({
           ...fsSandbox,
           wasPathRead: (canonicalPath) => fsReadPaths.has(canonicalPath),
+          wasPathFullyRead: (canonicalPath) => fsFullReadPaths.has(canonicalPath),
           checkEditIntegrity: true,
           approvalGate: actuatorMod.buildFsWriteApprovalGate({
             confirmAction: (message: string) => fsConfirm({ message }).then((answer) => !fsIsCancel(answer) && answer === true),

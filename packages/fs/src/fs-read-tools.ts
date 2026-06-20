@@ -74,6 +74,13 @@ export interface FsReadToolsOptions extends PathSafetyOptions {
    * (`wasPathRead`) can require a prior read before mutating that file.
    */
   readonly onPathRead?: (canonicalPath: string) => void;
+  /**
+   * Called ONLY on a FULL file read (file_read), never on a partial file_grep
+   * match. The CLI wires it to a separate set so the stricter read-before-
+   * OVERWRITE gate (`wasPathFullyRead`) can require that file_write's whole-file
+   * replace was preceded by a full read, not just a grep of a few lines.
+   */
+  readonly onFullRead?: (canonicalPath: string) => void;
 }
 
 function looksLikePath(input: string): boolean {
@@ -214,6 +221,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
             return { path: safe, read: false, reason: described.error ?? "the vision model could not read the image" };
           }
           options.onPathRead?.(safe);
+          options.onFullRead?.(safe);
           return { kind: "image", path: safe, read: true, source: safe, text: described.text, truncated: false };
         }
         if (kind === "unsupported") {
@@ -224,6 +232,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
           const extracted = kind === "pdf" ? await extractPdf(data) : await extractDocx(data);
           const truncated = extracted.length > maxTextChars;
           options.onPathRead?.(safe);
+          if (!truncated) options.onFullRead?.(safe);
           return { kind, path: safe, read: true, source: safe, text: truncated ? extracted.slice(0, maxTextChars) : extracted, truncated };
         }
 
@@ -247,6 +256,11 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
           truncated = true;
         }
         options.onPathRead?.(safe);
+        // FULL read = started at the top (`start === 0`, i.e. no offset / offset 1)
+        // AND nothing after the slice (`!truncated`). An OFFSET-skipped read
+        // (offset:96 → truncated false but lines 1-95 unseen) is NOT full, so it
+        // must not ground a whole-file overwrite.
+        if (start === 0 && !truncated) options.onFullRead?.(safe);
         return { kind: "text", numbered, path: safe, read: true, source: safe, text, totalLines, truncated };
       } catch (error) {
         return { ...refusalResult(error, input), read: false };

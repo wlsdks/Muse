@@ -217,6 +217,54 @@ describe("file_write / file_edit / file_multi_edit — gated writes", () => {
         await rm(outside, { force: true, recursive: true });
       }
     });
+
+    describe("read-before-OVERWRITE grounding gate (existing file)", () => {
+      it("fail-closes an overwrite of an existing file the model has NOT read (no fabrication / data loss)", async () => {
+        await writeFile(join(root, "exists.md"), "original");
+        const tool = createFileWriteTool({ ...opts(allow), wasPathRead: () => false });
+        const out = (await tool.execute({ content: "REPLACED", path: join(root, "exists.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(false);
+        expect(String(out["reason"])).toMatch(/read|ungrounded/iu);
+        expect(await readFile(join(root, "exists.md"), "utf8")).toBe("original");
+      });
+
+      it("allows the overwrite once the file has been read", async () => {
+        await writeFile(join(root, "exists.md"), "original");
+        const tool = createFileWriteTool({ ...opts(allow), wasPathRead: () => true });
+        const out = (await tool.execute({ content: "REPLACED", path: join(root, "exists.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(true);
+        expect(await readFile(join(root, "exists.md"), "utf8")).toBe("REPLACED");
+      });
+
+      it("allows CREATING a new file without a prior read (nothing to ground)", async () => {
+        const tool = createFileWriteTool({ ...opts(allow), wasPathRead: () => false });
+        const out = (await tool.execute({ content: "fresh", path: join(root, "brand-new.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(true);
+        expect(out["created"]).toBe(true);
+      });
+
+      it("a PARTIAL grep-read does NOT satisfy an overwrite — needs a FULL read (no silent loss of unmatched lines)", async () => {
+        // file_grep records a path as read so the grep->edit loop works, but a
+        // whole-file OVERWRITE discards everything the model never saw. When the
+        // caller distinguishes full reads (wasPathFullyRead), an existing file
+        // that was only grepped (wasPathRead true, wasPathFullyRead false) must
+        // still fail-close the overwrite.
+        await writeFile(join(root, "exists.md"), "line1\nline2\nline3");
+        const tool = createFileWriteTool({ ...opts(allow), wasPathFullyRead: () => false, wasPathRead: () => true });
+        const out = (await tool.execute({ content: "REPLACED", path: join(root, "exists.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(false);
+        expect(String(out["reason"])).toMatch(/read|ungrounded|full/iu);
+        expect(await readFile(join(root, "exists.md"), "utf8")).toBe("line1\nline2\nline3");
+      });
+
+      it("a FULL read (wasPathFullyRead) DOES satisfy the overwrite", async () => {
+        await writeFile(join(root, "exists.md"), "original");
+        const tool = createFileWriteTool({ ...opts(allow), wasPathFullyRead: () => true, wasPathRead: () => false });
+        const out = (await tool.execute({ content: "REPLACED", path: join(root, "exists.md") }, ctx)) as JsonObject;
+        expect(out["written"]).toBe(true);
+        expect(await readFile(join(root, "exists.md"), "utf8")).toBe("REPLACED");
+      });
+    });
   });
 
   describe("file_edit", () => {
