@@ -30,7 +30,7 @@ import { basename, join, relative } from "node:path";
 import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, classifyRetrievalConfidence, decideRecallClarification, detectEvidenceContradictions, enforceAnswerCitations, explainGroundingVerdict, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, splitCompoundQuery, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type ContradictionPair, type GroundingReverify } from "@muse/agent-core";
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { actionToolRan, answerClaimsAction, answerPromisesAction, assertiveUnsupportedFraction, classifyActionRequest, classifyCasualPrompt, classifyCorpusOverview, classifyMetaPrompt, isMemoryInjection, reportSentenceGroundedness, requestsToolAction, stripCitationMarkers, worstUnsupportedSentence, type CasualPromptKind } from "@muse/agent-core";
-import { defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys } from "@muse/memory";
+import { contestedFactKeys, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys } from "@muse/memory";
 import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveActionLogFile, resolveAnswerTemperature, resolveContactsFile, resolveEpisodesFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
@@ -1811,17 +1811,29 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // grounded cautiously, not asserted as confirmed truth. Fail-soft — no
       // provenance log ⇒ no annotation.
       let provisionalMemoryKeys: ReadonlySet<string> = new Set();
+      let contestedMemoryKeys: ReadonlySet<string> = new Set();
       if (matchedMemories.length > 0) {
         try {
           const provEntries = await new FileBeliefProvenanceStore(defaultBeliefProvenanceFile()).query(userKey);
+          const provenance = deriveFactProvenance(provEntries);
+          const nowMs = Date.now();
           provisionalMemoryKeys = provisionalFactKeys(
             matchedMemories.map((m) => m.key),
-            deriveFactProvenance(provEntries),
-            { isInjection: isMemoryInjection, normalizeKey: normalizeMemoryKey, now: Date.now() }
+            provenance,
+            { isInjection: isMemoryInjection, normalizeKey: normalizeMemoryKey, now: nowMs }
           );
-        } catch { /* provenance unavailable — ground without the provisional mark */ }
+          // CONTESTED: a matched fact whose value FLIPPED across confirmations — surface
+          // the volatile-belief signal (today only the daily recap sees it) at point-of-
+          // use, so a grounded answer says "confirm it's current" instead of a factually
+          // wrong "learned once". Takes precedence over the provisional mark in render.
+          contestedMemoryKeys = contestedFactKeys(
+            matchedMemories.map((m) => m.key),
+            provenance,
+            { normalizeKey: normalizeMemoryKey, now: nowMs }
+          );
+        } catch { /* provenance unavailable — ground without the marks */ }
       }
-      const memoryBlock = buildMemoryContextBlock(matchedMemories, { provisionalKeys: provisionalMemoryKeys });
+      const memoryBlock = buildMemoryContextBlock(matchedMemories, { contestedKeys: contestedMemoryKeys, provisionalKeys: provisionalMemoryKeys });
 
       // OPT-IN shell-history grounding (B3): "what was that command?" — read the
       // user's history ONLY when --shell is passed, match by token overlap, and
