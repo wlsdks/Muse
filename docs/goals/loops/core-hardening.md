@@ -4,7 +4,7 @@
 > Worktree `/tmp/muse-core-hardening` · branch `loop/core-hardening` (Tier2 — pushes to its own branch each fire, periodic rebase from origin/main). **Every 3 fires: ff-merge the branch into origin/main, then keep working on the branch (진안 directive 2026-06-20).**
 > Cron `d8c31fa3` (every 15m, session-only; was `cfe778e2` under skill v1.14.0, re-registered with loop-creator v2.0 at fire 6). Stop: `CronDelete d8c31fa3`. Convention: [README](README.md).
 
-## fire 9 · 2026-06-20 · skill v2.0 · <commit-pending> (analysis + 3-fire main merge, no code slice)
+## fire 9 · 2026-06-20 · skill v2.0 · 0a6db466 (analysis + 3-fire main merge, no code slice)
 meta: value-class=refactor(work-list) · pkg=docs · kind=exhaustion-analysis+merge · verdict=N/A · firesSinceDrill=9
 ratchet: testFiles 1057→1057 · fabrication 0 · branch fires 7-8 → origin/main ff-merge (3-fire obligation)
 - 무엇: 이 세션의 core-edge **easy-clean(non-regex·non-agent-core) 베인이 얇아짐** — 타깃 스카웃이 already-built/non-issue 다수 적발(A2A label bound=이미 fire 63, feeds SSRF=내부피드 non-issue, formatDueLocal=clean+표면불일치위험, classifyMemory=fire 8 done, multi-hop recall=1b'/1c done 잔여 structural-blocked). 남은 고가치(source-conflict 콤마-값)는 1-fire clean이 아님(아래).
