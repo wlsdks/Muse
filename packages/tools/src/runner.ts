@@ -72,6 +72,7 @@ export function createRustRunnerTool(options: RustRunnerToolOptions = {}): MuseT
         type: "object"
       },
       domain: "system",
+      keywords: ["run", "command", "execute", "shell", "test", "compile", "실행", "명령", "테스트", "빌드"],
       name: "run_command",
       risk: "execute"
     },

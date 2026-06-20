@@ -26,6 +26,61 @@ export interface StoredReflection {
 
 export const MAX_REFLECTIONS = 500;
 
+const DAY_MS_REFLECT = 24 * 60 * 60_000;
+/** Half-life (days) of a stored reflection's recency term in the retention score. */
+export const REFLECTION_RETENTION_HALF_LIFE_DAYS = 30;
+/** Weight of the salience (support) term relative to recency in the retention score. */
+export const REFLECTION_SALIENCE_WEIGHT = 1;
+/** Support count at/above which a reflection's salience term saturates to 1. */
+export const REFLECTION_SALIENCE_FULL_SUPPORT = 5;
+
+export interface ReflectionRetentionOptions {
+  readonly halfLifeDays?: number;
+  readonly salienceWeight?: number;
+  readonly fullSupport?: number;
+}
+
+/**
+ * Retention score for cap-overflow eviction — Generative Agents (arXiv:2304.03442):
+ * what survives a capped memory store is recency PLUS salience (importance), not
+ * recency alone. `recency = 0.5^(ageDays/halfLife)` ∈ (0,1]; `salience =
+ * min(1, supportCount/fullSupport)` (a recurring insight grounded in many
+ * episodes is more important). With EQUAL support the salience term is constant
+ * so eviction reduces to recency (legacy-identical); it only diverges to PROTECT
+ * a high-support insight from being evicted for a thinner but newer one. Pure.
+ */
+export function scoreReflectionRetention(
+  reflection: StoredReflection,
+  nowMs: number,
+  options: ReflectionRetentionOptions = {}
+): number {
+  const halfLife = Number.isFinite(options.halfLifeDays) && options.halfLifeDays! > 0 ? options.halfLifeDays! : REFLECTION_RETENTION_HALF_LIFE_DAYS;
+  const weight = Number.isFinite(options.salienceWeight) ? Math.max(0, options.salienceWeight!) : REFLECTION_SALIENCE_WEIGHT;
+  const full = Number.isFinite(options.fullSupport) && options.fullSupport! > 0 ? options.fullSupport! : REFLECTION_SALIENCE_FULL_SUPPORT;
+  const ageDays = Math.max(0, (nowMs - reflection.createdAtMs) / DAY_MS_REFLECT);
+  const recency = Math.pow(0.5, ageDays / halfLife);
+  const support = Number.isFinite(reflection.supportCount) ? Math.max(0, reflection.supportCount) : 0;
+  const salience = Math.min(1, support / full);
+  return recency + weight * salience;
+}
+
+/**
+ * The reflections that survive a cap: the `cap` highest-retention-score entries
+ * (salience-weighted), ties broken by recency so it agrees with the newest-first
+ * display order. A set at/under `cap` is returned unchanged. Pure.
+ */
+export function selectRetainedReflections(
+  entries: readonly StoredReflection[],
+  nowMs: number,
+  cap: number = MAX_REFLECTIONS,
+  options: ReflectionRetentionOptions = {}
+): readonly StoredReflection[] {
+  if (entries.length <= cap) return entries;
+  return [...entries]
+    .sort((a, b) => scoreReflectionRetention(b, nowMs, options) - scoreReflectionRetention(a, nowMs, options) || b.createdAtMs - a.createdAtMs)
+    .slice(0, cap);
+}
+
 function isReflection(value: unknown): value is StoredReflection {
   if (!value || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
@@ -59,14 +114,13 @@ export async function readReflections(file: string): Promise<readonly StoredRefl
   );
 }
 
-async function writeReflections(file: string, entries: readonly StoredReflection[]): Promise<void> {
-  // Trim to the cap by RECENCY (createdAtMs), not insertion order — the cap must
-  // agree with how reflections are surfaced (listReflections is newest-first by
-  // createdAtMs). Trimming by insertion order would let a backfill / out-of-order
-  // pass evict a NEWER insight while keeping a staler one.
-  const trimmed = entries.length > MAX_REFLECTIONS
-    ? [...entries].sort((a, b) => b.createdAtMs - a.createdAtMs).slice(0, MAX_REFLECTIONS)
-    : entries;
+async function writeReflections(file: string, entries: readonly StoredReflection[], nowMs: number): Promise<void> {
+  // Trim to the cap by SALIENCE-weighted retention (recency + support), not pure
+  // recency — a high-support recurring insight must not be evicted for a thinner
+  // but newer one (Generative Agents arXiv:2304.03442). With equal support this
+  // reduces to recency, ties broken by createdAtMs so it still agrees with the
+  // newest-first display order.
+  const trimmed = selectRetainedReflections(entries, nowMs, MAX_REFLECTIONS);
   await atomicWriteFile(file, `${JSON.stringify({ reflections: trimmed }, null, 2)}\n`);
 }
 
@@ -82,8 +136,13 @@ export interface NewReflection {
  * Add new reflections, skipping any whose insight already exists (normalised).
  * Returns how many were actually added.
  */
-export async function addReflections(file: string, incoming: readonly NewReflection[]): Promise<number> {
+export async function addReflections(
+  file: string,
+  incoming: readonly NewReflection[],
+  options: { readonly nowMs?: number } = {}
+): Promise<number> {
   if (incoming.length === 0) return 0;
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs! : Date.now();
   return withFileMutationQueue(file, async () => {
     const existing = await readReflections(file);
     const seen = new Set(existing.map((r) => normalize(r.insight)));
@@ -94,7 +153,7 @@ export async function addReflections(file: string, incoming: readonly NewReflect
       seen.add(key);
       fresh.push({ createdAtMs: r.createdAtMs, id: r.id, insight: r.insight, sourceIds: [...r.sourceIds], supportCount: r.supportCount });
     }
-    if (fresh.length > 0) await writeReflections(file, [...existing, ...fresh]);
+    if (fresh.length > 0) await writeReflections(file, [...existing, ...fresh], nowMs);
     return fresh.length;
   });
 }
