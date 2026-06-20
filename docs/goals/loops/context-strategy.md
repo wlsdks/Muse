@@ -33,6 +33,10 @@ Verified existing context-strategy seams (from codegraph, 2026-06-20):
 - **Budgets** — `StepBudgetTracker` / `systemPromptTokenBudget` / step caps.
 
 ### Open follow-ups (next-fire candidates)
+- ◦ **Periodic IANA drift-check for NON_TLD_FILE_EXTENSIONS** (fire-18 judge residual): the URL-guard
+  filename carve-out is a hand-maintained denylist-inverse; a future gTLD delegation matching a current
+  entry would silently re-open the carve-out. Add a test diffing the set against the IANA root zone (or a
+  bundled snapshot) so drift is caught. (apps/cli)
 - ◦ **Stale + provisional marks on the CHAT persona** (fire-16 ask-first staging): buildMusePersona
   now carries contested+provisional (fire 11) but NOT stale; and chat-ink still lacks all marks
   (sub-slice #2). Bring the freshness/stale caution to the chat persona render for full ask↔chat
@@ -503,3 +507,26 @@ ratchet: testFiles +0 (extended existing) · prompts 41 pass · pnpm check exit0
   grounding sources → fabrication=0 untouched, no citation-gate touch; byte-identical on content-only
   queries. Independent Opus adaptive judge PASS 8/8 + mutation RED→GREEN (delete filter → EN+KO precision
   tests RED). Sibling audit: tokenSet's only caller is scoreExemplar; FullExemplarRetriever/rendering untouched.
+
+## fire 18 · 2026-06-21 · skill v2.0.0 · 79b1ec79
+meta: value-class=micro-fix · pkg=apps/cli · kind=grounding-value-guard-refine · verdict=PASS (after JUDGE-DRILL + 1 FAIL→fix) · firesSinceDrill=0 (drill completed → reset)
+ratchet: testFiles +0 (extended existing) · cli 2816 pass · pnpm lint exit0 · fabrication 0 · self-eval green
+- **JUDGE-DRILL (allPASS≥8): PASSED.** Injected a deliberately bad slice — a WIRED-but-inert
+  `groundingSectionCount` + early-return (byte-identical output for every input, flatMap already handled
+  all-absent) with a TAUTOLOGICAL test (`>= 0` always true). Deterministic gate was GREEN (recall 376).
+  The independent Opus adaptive judge correctly FAILed it: inert code (equivalence-proven) + non-
+  discriminating test (mutation `return 999` stays green = MUTATION-FIRST violation) + false ④ lean claim.
+  A DIFFERENT failure mode than fire 10's unwired-helper → verifier robust across modes. Rolled back, real fix below.
+- **DOCTRINE:** ② grounding-first admission (reduce false-refusal = don't drop a needed answer).
+- **What (real fix):** the fire-15 URL grounding-value guard false-refused a legit answer mentioning a
+  filename (`report.txt` parsed as host.tld). `answerHosts` now skips a BARE token whose last label is in
+  `NON_TLD_FILE_EXTENSIONS` (txt/pdf/png/csv/json/… — verified NOT IANA TLDs); http(s):// URLs always count.
+- **Why:** over-refusal drops a needed answer (anti-②); but the carve-out must NOT include real TLDs.
+- **Risk:** none to floor — reduce-only (real domains incl. zip/mov stay guarded). Independent Opus judge
+  PASS (7/7) after catching the first cut included `zip`+`mov` (real Google gTLDs → would re-open phishing);
+  removed + pinned with zip/mov-stay-guarded tests. Mutation RED→GREEN (remove carve-out → filename test RED).
+- lesson: a file-extension carve-out MUST exclude registrable gTLDs/ccTLDs (zip/mov/md/io/sh/ai are TLDs) —
+  verify every entry against the IANA root zone, never assume "extension ≠ TLD".
+- lesson(process): a test helper defined INSIDE a describe is not visible to an appended top-level describe
+  (add a local copy); and restore mutations with inverse Edit, never fragile perl + `git checkout` (cost
+  extra cycles this fire when a bogus `git checkout` left the carve-out logic stripped).
