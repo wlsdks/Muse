@@ -25,6 +25,25 @@ export function filterTasksByQuery(tasks: readonly TaskRow[], query: string): re
   return tasks.filter((t) => t.title.toLowerCase().includes(q) || (t.notes ?? "").toLowerCase().includes(q));
 }
 
+export function TaskCheckbox({ status, onComplete }: { status: TaskRow["status"]; onComplete: () => void }) {
+  const { t } = useI18n();
+  if (status === "open") {
+    return (
+      <button
+        className="checkbox"
+        title={t("tasks.complete")}
+        aria-label={t("tasks.complete")}
+        onClick={onComplete}
+      />
+    );
+  }
+  return (
+    <button className="checkbox" title={t("filter.done")} aria-label={t("filter.done")} disabled>
+      <Icon.check className="nav-icon" />
+    </button>
+  );
+}
+
 export function TasksView({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
   const qc = useQueryClient();
@@ -108,13 +127,7 @@ export function TasksView({ client }: { client: ApiClient }) {
         <AsyncBlock loading={tasks.isLoading} error={tasks.error} empty={list.length === 0}>
           {list.map((task) => (
             <div className="row" key={task.id}>
-              {task.status === "open" ? (
-                <button className="checkbox" title={t("tasks.complete")} onClick={() => complete.mutate(task.id)} />
-              ) : (
-                <button className="checkbox" title={t("filter.done")} disabled>
-                  <Icon.check className="nav-icon" />
-                </button>
-              )}
+              <TaskCheckbox status={task.status} onComplete={() => complete.mutate(task.id)} />
               <div className="row-main">
                 <div
                   className="row-title"
