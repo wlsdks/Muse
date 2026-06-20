@@ -43,6 +43,13 @@ Verified existing context-strategy seams (from codegraph, 2026-06-20):
   no dedicated test asserts `neutralizeInjectionSpans` runs before `carveAnchorWindow`;
   structurally guaranteed + probe-proven, but a refactor could reorder silently.
   One-line ordering regression test. (@muse/agent-core)
+- ◦ **Share the tool-keyword matcher** (fire-5 DRY follow-up): export
+  `tokenMatchesKeywordWord`/`keywordMatchesPromptTokens` from `@muse/tools` and delete
+  the hand-mirrored agent-core copy in `tool-filter.ts` — removes the layer-drift class
+  structurally (fire 5 fixed one drift by hand). Add the @muse/tools reference to
+  agent-core tsconfig. Also: the CJK `>=2` guard is script-agnostic by name — a
+  whitespace-delimited non-ASCII script (Cyrillic/Greek) 2-char keyword could over-match;
+  not exercised today (KO-only shipped keywords) but worth a word-boundary path. (@muse/tools+agent-core)
 - ◦ **`muse.context.fetch` re-fetch live e2e** under masking: confirm a masked
   observation is actually re-fetchable by the model in a real run (fire-2 proved
   the ref is recoverable from the store; the end-to-end fetch-tool round-trip is
@@ -160,5 +167,42 @@ ratchet: testFiles +0 (extended existing) · memory 464 pass · agent-core 2492 
   all 4 capToolOutput callsites patched; capWorkerOutput (multi-agent) intentionally
   byte-identical no-op. lesson(carry-forward): a multi-call primitive change needs the
   sibling-audit of EVERY caller enumerated, not just the touched path.
+
+---
+
+## fire 5 · 2026-06-20 · skill v2.0.0 · f873af9c
+meta: value-class=micro-fix · pkg=@muse/agent-core · kind=tool-relevance-recall · verdict=PASS (after 1 FAIL→fix cycle) · firesSinceDrill=5
+ratchet: testFiles +0 (extended existing) · agent-core 2503 pass · pnpm check exit0 · pnpm lint exit0 · fabrication 0 · self-eval green
+- **What:** Inflection-aware tool-relevance matching in `tool-filter.ts`
+  `keywordMatchesPrompt`/`tokenMatchesKeywordWord`, mirroring `@muse/tools`'s rule so
+  `capToolsByRelevance` ranking + `DefaultToolFilter.shouldKeep` AGREE with the
+  selection layer. ASCII ≥4: `startsWith && suffix≤3` (lights→light); <4 exact; CJK:
+  `word.length>=2 ? token.includes : false`. One function fixes 3 callsites.
+- **Why:** the cap's scorer used strict word-boundary (`\blight\b`), so "turn off the
+  lights" ranked `home_state` (kw `light`) at 0 → could be evicted from the ≤6 window →
+  model never sees the tool → fabricates "done." A recall/fabrication-adjacent leak that
+  makes fire-3's ceiling faithful. Grounding: tool-retrieval recall (ACL 2025 Findings
+  2025.findings-acl.1258), stemming/inflection IR (SS4MCT arXiv:1605.07852),
+  arXiv:2606.10209/2507.21428 (fire-3 lineage). hermes/openclaw advertise full catalog,
+  no two-layer match-agreement invariant → widens the differentiator.
+- **Review point:** the v2 ADAPTIVE judge caught a real defect the build was green on —
+  the first builder replicated the ASCII branch but DROPPED @muse/tools' CJK
+  `word.length>=2` guard, so the shipped Korean keyword "할 일" (single-char words)
+  over-matched unrelated Korean prompts ("할머니가 일했다") by containment — the two
+  layers DISagreed on Korean (the opposite of the goal, hitting Muse's KO-recall surface).
+  Fixed (1-line guard + CJK over-match regression test); final fresh judge confirmed the
+  layers now agree on both the unrelated (→0) and genuine (→tasks) KO prompts.
+- **Risk:** none to floor — recall-only (retains a relevant tool, never fabricates/widens
+  beyond maxTools), deterministic, @muse/tools untouched, no grounding/citation/approval
+  change. Verified by 3 independent Opus judges (1st FAIL=CJK divergence, final PASS) +
+  MUTATION-FIRST (both ASCII and CJK tests RED on the respective 1-line reverts).
+- lesson: when MIRRORING a sibling matcher/parser, copy EVERY guard (the CJK
+  `length>=2` was the easy-to-miss one) AND add coverage for the non-ASCII/locale path —
+  a fixed checklist misses it; the adaptive judge is what caught it. A shared-import
+  (export from @muse/tools, delete the agent-core copy) would remove the drift class
+  structurally → backlog follow-up.
+- lesson(process): a judge sub-agent that crashes mid-run (e.g. transient 401) can leave
+  an un-restored test mutation in the worktree — after any judge crash, re-check the
+  touched source state before trusting the next judge's verdict.
 
 ---
