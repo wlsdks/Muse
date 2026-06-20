@@ -42,3 +42,11 @@ ratchet: testFiles 1057 · fabrication 0 · groundedSurfaces=28 (no drop) · gro
 - 왜: thin-but-lucky 전략(1승/0패, wide CI)이 검증된 전략(11/9, tight CI)을 파괴적으로 evict하던 eviction↔injection 불일치를 닫음. fire 3이 틀린 함수(effectiveStrategyReward shrinkage) 복제로 롤백된 것을 올바른 함수로 교정. PEVI 비관주의 arXiv:2012.15085.
 - 리뷰지점: 독립 적응형 judge가 9개 (r,d) 삼중쌍으로 evictionUtility vs rankingUtility 6자리까지 동일·순서 동일 실증, fire-3 shrinkage 공식 주입→판별 테스트 RED 확인(이번 테스트는 fire 3이 빠뜨린 판별력 보유). raw-reward mutation도 RED. fire 3과 같은 (mcp, playbook-eviction-PEVI-parity)지만 fire 3은 롤백(미출하)이라 모노컬처 아님.
 - 리스크: 낮음 — parity가 패키지 경계 hand-mirror라 agent-core rankingUtility 변경 시 silent drift 가능. 후속 backlog ◦: cross-package parity 테스트(같은 r,d → 양쪽 동일 utility)로 drift 차단.
+
+## fire 5 · 2026-06-20 · skill v2.0.0 · 2a46383e
+meta: value-class=hardening · pkg=@muse/agent-core,@muse/cli · kind=rgv-perclaim-consensus · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles 1060 · fabrication 0 · groundedSurfaces=28 (no drop) · groundedCases=45 · differentiationBatteries=6 · agent-core 2514 PASS · check exit0(재실행 후) · precheck:grounding recall-citation-gate 2/2 + rubric-reverify 2/2 PASS, faithfulness-rate SKIPPED(박스 stall — pass 아님) · mutation-first RED 확인(단일 reverify로 collapse→dissent 테스트 RED)
+- 무엇: per-claim RGV judge(verifyGroundingPerClaim, --verify-claims 라이브 표면)가 각 claim을 단일 고변량 judge 샘플로 DROP 결정하던 것을 — whole-answer 게이트가 이미 쓰는 k-sample 합의(judgeConsensus)로 확장. reverifySamples(1-5, 기본 1 byte-identical) 추가, 반전 verdict 스트림에 unanimous-keep 적용 → unanimous-NO일 때만 DROP, 어떤 YES든 KEEP, judge 에러도 KEEP(fail-open). CLI는 reverifySamples:3.
+- 왜: 단일 judge 샘플은 거의 임의적(Rating Roulette arXiv:2510.27106)이라 TRUE인 인용 claim을 false-drop할 수 있었음. 합의로 false-drop만 줄임(새 drop·새 refusal 없음, unanimous-NO는 여전히 drop이라 fabrication=0 보존). 차별화 엣지 (b)RGV verifier STRENGTHEN, 가법적. Self-Consistency arXiv:2203.11171.
+- 리뷰지점: 독립 적응형 judge가 polarity 진리표 손검증([NO,YES,YES]→KEEP, [NO,NO,NO]→DROP, 에러→KEEP, 새 drop 케이스 0), k=1 byte-identical 백호환, mutation(단일 collapse→RED) 실증. OUTCOME 테스트(claim KEPT vs DROPPED + 정확한 답/노트 텍스트, mock-count 아님) 6개.
+- 리스크: 낮음(behavior-neutral) — 합의는 라이브 --verify-claims 표면만 reverifySamples:3, 다른 verifyGroundingPerClaim 호출자는 여전히 k=1이라 3× judge 비용/효과가 그 경로 밖에선 미검증. correctness 결함 아님.

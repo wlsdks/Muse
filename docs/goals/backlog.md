@@ -1,5 +1,7 @@
 # Muse dev backlog — the living ledger
 
+- ✓ k-sample self-consistency consensus for the per-claim RGV judge (verifyGroundingPerClaim, --verify-claims) — fewer false-drops, fail-open, unanimous-NO still drops (Self-Consistency arXiv:2203.11171) — paper-grounded fire 5 (`2a46383e`)
+
 - ✓ inflection-aware tool-relevance matching — capToolsByRelevance ranking now agrees with the @muse/tools selection layer (lights→light kept past the cap; CJK 할 일 over-match fixed) — context-strategy fire 5 (detail in docs/goals/loops/context-strategy.md)
 
 - ✓ query-anchored span retention in the per-result cap (ACON arXiv:2510.00615 / Lost-in-the-Middle arXiv:2307.03172; keeps the load-bearing middle span the query needs, verbatim, neutralize-first) — context-strategy fire 4 (detail in docs/goals/loops/context-strategy.md)
