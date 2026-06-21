@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 45 · 2026-06-21 · skill v2.0 · <commit> (eval:multifile-fix grades OUTCOME not path + reflection-guard registry regression fix)
+## fire 45 · 2026-06-21 · skill v2.0 · 8c9746cb (eval:multifile-fix grades OUTCOME not path + reflection-guard registry regression fix)
 meta: value-class=eval-correctness+regression-fix · pkg=scripts/eval · kind=outcome-grading · verdict=PASS · firesSinceDrill=8
 ratchet: testFiles +0 (scripts) / +6 grader cases + reflection-guard repoint · fabrication 0 · self-eval:test 48/48 · grader 6/6 (mutation-verified) · lint 0/0 · pnpm check @muse/resilience SIGABRT(134)=saturation (isolated 26/26, scripts-only change) · Ollama DOWN · ★main ff-merge (fire 45=×3)
 - 무엇(slice B): eval:multifile-fix가 `ok = testPasses && modelRanTest && …`로 채점했는데 `testPasses`는 하니스가 독립적으로 `runTest()`(node로 직접 실행, 모델 무관)로 검증하므로 modelRanTest(run_command 호출 여부)는 **불필요한 PATH-채점** → 모델이 올바로 고쳤지만 자가-실행 안 하면 FAIL로 실제 성공 과소집계(fire-9 잔여, agent-testing.md "OUTCOME 채점"). FIX: 순수 grader `scripts/lib/grade-multifile-fix.mjs`(ok=testPasses&&addIntact&&stringsIntact; ranTest는 관찰용만) 추출+배선+6 node:test. eval:edit-run-verify는 run→verify 체인이 곧 측정 역량이라 modelRanTest 게이트 의도적 유지(형제-감사 per-sibling 판정).
