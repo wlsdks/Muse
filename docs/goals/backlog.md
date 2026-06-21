@@ -2383,11 +2383,15 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   · **C2-core (execution primitive) — DONE fire 5** `runCascade({fast,heavy,run,confidenceOf,threshold})`
   (@muse/multi-agent cascade-run.ts): runs fast → escalates ONCE to heavy on low/unmeasurable confidence,
   bounded (MAST no-loop). Model-agnostic via injected run/confidenceOf (package idiom). REMAINING:
-  · **C2b (autoconfigure wiring)** — wire the REAL injected functions: `run(model)` = a tiered model
-  call requesting logprobs; `confidenceOf` = `summarizeTokenConfidence(result.logprobs).meanLogprob`
-  (@muse/agent-core, already computed at commands-ask.ts:2870). Call `runCascade` from the `muse ask
-  --tiered` fast path (single-query cascade) and/or buildTieredOrchestration's per-worker run. Needs
-  logprobs requested on the fast pass. >1 fire (touches the live ask/orchestration loop). Verify with C3.
+  · **C2b-plumbing (agent-run logprobs) — DONE fire 10** `AgentRunInput.logprobs`/`topLogprobs` now thread
+  through BOTH runtime seams (loopRequest + streamLoopRequest) to `ModelRequest.logprobs`, and round-trip
+  back via `AgentRunResult.response.logprobs`. So an AGENT run can now be confidence-scored
+  (`summarizeTokenConfidence`) — the prerequisite the agent path lacked (the direct ask path at
+  commands-ask.ts:2870 already had logprobs). REMAINING:
+  · **C2b-wiring** — the consumer: build the injected `run`/`confidenceOf` (run = a tiered agent/provider
+  call with `logprobs:true`; confidenceOf = `summarizeTokenConfidence(res.logprobs).meanLogprob`) and call
+  `runCascade` from `muse ask --tiered` and/or buildTieredOrchestration's per-worker run. >1 fire (touches
+  the live ask/orchestration loop). Verify with C3.
   · **C3 (live eval)** — use `bench:local` (fire 1) for the latency win + accuracy parity: cascade vs
   always-heavy on a mixed easy/hard set; assert faster mean latency AND no grounding/answer regression.
   Needs Ollama up.

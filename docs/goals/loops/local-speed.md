@@ -92,3 +92,13 @@ ratchet: (model) 3,7,9 but kind=regression-guard distinct from 2,7 adapter-wirin
 - 리스크: 없음 — test-only, 런타임 무변경.
   검증: model 384 pass(신규 2 가드) · MUTATION-FIRST 2종(독립 judge가 재현 RED) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(가드 슬라이스, 자체 mutation 재현·불변식 실재 확인·env-crash 정직·결함 0). ⚠️full pnpm check는 박스 OOM(SIGABRT, packages/runtime-state 무관)으로 abort하나 packages/model은 그 run 내 384 pass(fire 8 동일 env 클래스).
 lesson: judge-드릴은 가짜-슬라이스를 *결정론 게이트는 통과*하되 *불변식만 위반*하게 설계해야 JUDGE를 시험한다(소스변경으로 기존 테스트를 깨면 ③이 잡아 judge 미검증). grounding 계약은 system 메시지에 탑재 → "프롬프트 다이어트/lean" 류 속도최적화는 거의 항상 floor 위반. 드릴의 부산물(불변식 회귀가드)을 진짜-fix로 출하하면 드릴이 영구 방어로 전환됨.
+
+## fire 10 · 2026-06-21 · local-speed · <commit>
+meta: value-class=wiring · pkg=@muse/agent-core · kind=runtime-logprobs-plumbing · verdict=PASS · firesSinceDrill=1
+ratchet: @muse/agent-core FRESH (fires 1-9 미접촉) · fabrication 0 · default wire byte-identical
+- 무엇: 에이전트 런타임에 opt-in 토큰 logprobs 배선. `AgentRunInput.logprobs`/`topLogprobs` → 양 request-build seam(loopRequest generate + streamLoopRequest stream)에서 `ModelRequest.logprobs`로 전달, `AgentRunResult.response.logprobs`로 round-trip 복귀. `logprobsFromInput()` 헬퍼(미설정→{} = byte-identical, 두 seam 동기화). 이제 AGENT run을 `summarizeTokenConfidence`로 confidence 채점 가능.
+- 왜: cascade C2b의 분해된 FIRST 스텝(DECOMPOSE-ON-DEFER). 에이전트 경로가 logprobs를 forward 안 해서 confidence-gated cascade 불가였음(직접 ask 경로 commands-ask.ts:2870은 이미 logprobs 보유). 이게 그 prerequisite 갭을 닫음. 소비자(runCascade 배선)=C2b-wiring backlog.
+- 리뷰지점: 양 seam 다 배선(stream 경로 누락 시 silent drop — sibling-audit; cache/prepareModelRequest seam은 모델콜 아님 → 불필요), 기본(logprobs 미설정)=ModelRequest에 logprobs 필드 없음 byte-identical(preparedRequest.request는 messages|metadata|model만 → {} spread가 clobber 불가, judge 확인), logprobs는 observational-only(decoding 불변), 비-capable provider는 무시(throw 안 함).
+- 리스크: 낮음 — opt-in 기본-off → 정확성 회귀 0 by construction. logprobs는 관측전용(생성 토큰 불변). dead-layer? round-trip 완결+오늘 summarizeTokenConfidence로 소비가능+분해된 prerequisite(fire 3/5 substrate 선례) → ④ judge가 ACCEPTABLE 명시(filler 아님, 실제 prerequisite 갭 닫음).
+  검증: agent-core 2571 pass(신규 3 round-trip OUTCOME — captureProvider로 request.logprobs + response.logprobs + meanLogprob≈-0.3 채점) · MUTATION-FIRST(헬퍼 게이트 반전 → 3/3 RED 기본-off byte-identical 가드 포함; revert→green) · pnpm check rc=0(agent-core 2571 + api 888 + cli 2878) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(자체 mutation 재현·양seam 완전성 감사·byte-identical airtight 확인·dead-layer crux ACCEPTABLE 판정·결함 0).
+  decompose: C2b-plumbing DONE(이 fire); C2b-wiring(runCascade를 ask --tiered/orchestration에 실연결) + C3(live eval) backlog 잔존.
