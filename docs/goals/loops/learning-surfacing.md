@@ -106,3 +106,12 @@ ratchet: testFiles +0 (recently-learned.test +4, memory-auto-extract.test +1) ·
 - **왜**: fire 10 `onLearned`가 노출한 학습을 사용자 확인 라인으로 — 교정 순간 "알았어, 이제 ~로 안다"가 결정론+인용(현재값=store, 이전값=기록 supersession)으로.
 - **리뷰지점**: `changeVerb` 공유 추출(formatSource·confirmation 둘 다 사용; fire 8 source 테스트가 mutation으로 가드 → behavior-preserving). 현재값 없으면 skip(non-current 학습 미확인). 다음=**(c) chat-ink**가 `onLearned` 구독+`formatLearnedConfirmation` 렌더(=교정-확인 표면 완성).
 - **리스크**: 없음 — additive + behavior-preserving refactor, 553 green, 독립 Opus ④b judge가 refactor+scope+e2e+mutation 재확인 PASS.
+
+## fire 12 · 2026-06-21 · skill v2.1.0 · pending
+meta: value-class=decompose-plan(no-code) · pkg=docs · kind=re-decompose-on-discovery · verdict=N/A · firesSinceDrill=2 · firesSinceMainMerge=1
+ratchet: testFiles +0 · no code change (planner step) · fabrication 0
+
+- **무엇**: 슬라이스 **(c) 재분해** — 탐색 중 분해 전제가 틀렸음 발견: auto-memory 경로가 **둘**. `createUserMemoryAutoExtractHook`(fire 10 `onLearned`)은 `@muse/autoconfigure`가 AgentRuntime에 배선(→ `muse ask`/API), **chat-ink는 안 씀**. chat-ink는 자체 `autoLearn` 클로저(`chat-auto-memory`)로 별도(prior value 미인용). → **(c1) chat-ink 경로**(autoLearn에서 before/after diff + `selectNewSupersessions`+`formatLearnedConfirmation` = fire10/11 **production 첫 소비**), **(c2) ask 경로**(autoconfigure 통해 onLearned threading)로 정확히 재분해해 backlog 기록.
+- **왜**: 틀린 전제 위에 rushed 반-테스트 chat-ink 편집(autoLearn 클로저라 OUTCOME 테스트 난해 + surfaces-contended)을 강행하면 judge FAIL/롤백 낭비. 정확한 재분해가 다음 fire ROI↑ — DECOMPOSE-ON-DEFER.
+- **리뷰지점**: 코드 0줄 → ④b judge N/A. (c1)이 fire 10/11을 드디어 production 소비 + monoculture 깸(@muse/cli). chat-ink는 `loop/surfaces` 소유라 dedup 명시.
+- **lesson**: 분해는 seam을 실제 탐색하기 전엔 전제가 틀릴 수 있다 — **첫 실제 탐색에서 전제가 깨지면 즉시 재분해**(억지로 안 맞는 경로에 끼워넣지 말 것). 무인 루프가 스스로 판단(질문 없이).
