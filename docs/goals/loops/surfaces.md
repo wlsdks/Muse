@@ -583,7 +583,7 @@ ratchet: web tests 92/92 (+4) · testFiles +2 · fabrication 0 · self-eval exit
 - **빌더 deviation(타당)**: 순수 헬퍼를 `skills.ts` 대신 `skill-list.ts`로 명명 — macOS 대소문자 무시 FS에서 `Skills.tsx`와 충돌(TS2305/1261). mcp-status.ts↔McpServers.tsx 동일 패턴.
 - **리스크**: 없음(apps/web 6파일, web build tsc+vite·web 92/92·pnpm check exit 0·smoke:broad 51/0·lint clean, 독립 Opus ④b judge가 행동검증·avoided 정직신호·렌더안전·nav·i18n·다양성·mutation 검증 후 PASS).
 
-## fire 64 · 2026-06-21 · skill v2.0.0 · <pending>
+## fire 64 · 2026-06-21 · skill v2.0.0 · e55867d7
 meta: surface=api · value-class=new-capability · pkg=@muse/api · kind=skill-reward-actuator(STATE-CHANGE) · verdict=PASS · firesSinceDrill=3
 ratchet: api 924/924 isolated · smoke:broad 52/0 (+1) · fabrication 0 · self-eval exit 0 · lint clean · ★첫 웹콘솔 상태변경 라우트
 
