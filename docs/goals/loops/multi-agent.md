@@ -4,6 +4,36 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 9 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=observability(parity) · pkg=@muse/multi-agent+@muse/api · kind=persistence-exposure · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles +0 · fabrication 0 · eval:orchestration/decomposition deterministic cases PASS · consecutive allPASS=5 (drill at ≥8) · cell (multi-agent+api, observability-persistence) = 2 of last 8 (f6,f9) — ratchet does NOT bind
+
+**What** — Closed fire-8's judge-noted gap: persisted the fan-out REDUNDANCY signal in the history.
+Added `redundancies?` to `OrchestrationHistoryEntry`, recorded `raw.redundancies` in the success-path
+`recordHistory` (exact mirror of fire-6's conflicts), exposed in `GET /orchestrations/:runId`. A past
+duplicated-work run is now queryable, not just present in the live response `raw`.
+
+**Why** — Parity completion: fire 6 persisted conflicts/verification; fire 8 added the redundancy advisory
+but left it response-`raw`-only. The fire-8 judge explicitly named history-persistence as the open gap.
+
+**Review points** — (1) MUTATION-FIRST: the package store-query test RED pre-change; the GET mapping was
+independently mutation-verified (break the line → only the redundancy GET test RED, restored). (2) MIRROR
+FAITHFUL: 3 line-faithful copies of the conflicts handling (entry field / recordHistory spread / GET map),
+each with the `.length > 0` empty-array guard; conflicts/verification untouched. (3) BEHAVIORAL: real
+orchestrator.run + real POST→GET, identical-output workers flag redundancy but NOT conflict (tested).
+(4) Success-path only (all-failed throws before recordHistory). Independent Opus ④ judge PASS.
+
+**Risk / DIRECTION** — Pure recording; no model call, no egress, floor untouched. ★ MATURING-THEME SIGNAL
+(judge + builder agree): after 9 fires the multi-agent orchestration coordination guards are COMPREHENSIVE
+(conflict + redundancy detection, persistence, exposure on both lead-worker AND orchestrator paths; injection
+neutralization; fabrication-on-all-failed; bounded termination; observability). The high-value single-fire
+vein is THIN. NEXT FIRE SHOULD PIVOT to a fresh (pkg,kind) / different surface — remaining in-theme work is
+either god-file-untestable (subtaskRedundancies CLI surfacing) or calibration-risky (semantic task-derailment).
+Surfaced async for 진안 to consider a theme repoint.
+
+review: gates green — multi-agent build clean · history-signals 4 pass · api signal-exposure 6 pass · lint 0 ·
+`pnpm check` exit 0 (clean) · independent Opus ④ judge VERDICT PASS.
+
 ## fire 8 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · 19d06314
 meta: value-class=wiring(sibling-completion) · pkg=@muse/multi-agent+@muse/api · kind=detector-wiring(orchestrator) · verdict=PASS · firesSinceDrill=6
 ratchet: testFiles +0 (cases added to orchestrate-synthesis + orchestrate-route-conflict-wiring) · fabrication 0 · eval:orchestration/decomposition deterministic cases PASS · consecutive allPASS=4 (drill at ≥8) · distinct cell (orchestrator fan-out wiring vs f7 lead-worker)

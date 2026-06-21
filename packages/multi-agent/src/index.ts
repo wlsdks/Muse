@@ -456,7 +456,7 @@ export class MultiAgentOrchestrator {
       options.detectRedundancies
     );
     const raw = response.raw as
-      | { readonly conflicts?: readonly string[]; readonly verification?: { readonly satisfied: boolean } }
+      | { readonly conflicts?: readonly string[]; readonly redundancies?: readonly string[]; readonly verification?: { readonly satisfied: boolean } }
       | undefined;
     const completedCount = results.filter((step) => step.status === "completed").length;
     this.recordHistory({
@@ -469,6 +469,7 @@ export class MultiAgentOrchestrator {
       status: "completed",
       workerCount: selectedWorkers.length,
       ...(raw?.conflicts && raw.conflicts.length > 0 ? { conflicts: raw.conflicts } : {}),
+      ...(raw?.redundancies && raw.redundancies.length > 0 ? { redundancies: raw.redundancies } : {}),
       ...(raw?.verification ? { verificationSatisfied: raw.verification.satisfied } : {})
     });
 
