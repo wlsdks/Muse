@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 48 · 2026-06-21 · skill v2.0 · <commit> (measure+DECOMPOSE: dual-eval converges on EARLY-STOP as #1 blocker; 30c decomposed, not rammed; ⑤c delivers 46/47 to main)
+## fire 48 · 2026-06-21 · skill v2.0 · 07110284 (measure+DECOMPOSE: dual-eval converges on EARLY-STOP as #1 blocker; 30c decomposed, not rammed; ⑤c delivers 46/47 to main)
 meta: value-class=refactor(work-list)+measure · pkg=docs/backlog+agent-core(diagnosis) · kind=decompose-design-sensitive · verdict=N/A · firesSinceDrill=2
 ratchet: testFiles unchanged · fabrication 0 · self-eval green · eval:computer-task PASS · eval:multifile-fix FAIL(early-stop) · eval:edit-run-verify FAIL(early-stop) · Ollama UP · ⑤c main-merge(fire 48=×3, delivers 46/47)
 - 측정: Ollama UP에서 두 어려운 eval 전수 측정 — multifile-fix FAIL `tools=[file_read]`, edit-run-verify FAIL `tools=[file_read]`. **둘 다 동일 EARLY-STOP**(읽고 편집/실행 없이 정지, 버그 미수정). single-file computer-task는 PASS. 결정론 tool-call 베인(40-47)은 소진; 남은 #1 블로커는 model-behavior early-stop으로 수렴 확정.
