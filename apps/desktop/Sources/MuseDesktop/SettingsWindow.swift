@@ -55,6 +55,9 @@ private struct SettingsView: View {
     @State private var muted: Bool
     @State private var museURL: String
     @State private var showAdvanced = false
+    @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    @State private var creds = MessagingCredentials.load()
+    @State private var msgSaved = false
 
     private let s = UIStrings.current()
 
@@ -89,6 +92,8 @@ private struct SettingsView: View {
                 chatSection
                 appearanceSection
                 voiceSection
+                startupSection
+                messagingSection
                 privacySection
                 advancedSection
                 footer
@@ -161,6 +166,46 @@ private struct SettingsView: View {
             }
             .toggleStyle(.switch).tint(violet)
             .onChange(of: muted) { _, v in onMute(v) }
+        }
+    }
+
+    private var messagingSection: some View {
+        card(s.sectionMessengers) {
+            Text(s.msgHint).font(.system(size: 11)).foregroundStyle(faint)
+            field(s.msgTelegram, $creds.telegramToken, secure: true)
+            field(s.msgDiscord, $creds.discordToken, secure: true)
+            field(s.msgDiscordChannels, $creds.discordChannels)
+            field(s.msgSlack, $creds.slackToken, secure: true)
+            field(s.msgSlackChannels, $creds.slackChannels)
+            field(s.msgLineToken, $creds.lineAccessToken, secure: true)
+            field(s.msgLineSecret, $creds.lineSecret, secure: true)
+            Button(s.msgSave) {
+                creds.save()
+                ServerManager.shared.restart()
+                msgSaved = true
+            }
+            .buttonStyle(.borderedProminent).tint(violet)
+            if msgSaved { Text(s.msgSaved).font(.system(size: 11)).foregroundStyle(faint) }
+        }
+    }
+
+    @ViewBuilder private func field(_ label: String, _ text: Binding<String>, secure: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 11)).foregroundStyle(dim)
+            Group {
+                if secure { SecureField(label, text: text) } else { TextField(label, text: text) }
+            }
+            .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var startupSection: some View {
+        card(s.sectionStartup) {
+            Toggle(isOn: $launchAtLogin) { Text(s.launchAtLogin).foregroundStyle(ink) }
+                .toggleStyle(.switch).tint(violet)
+                .onChange(of: launchAtLogin) { _, v in
+                    if !LaunchAtLogin.set(v) { launchAtLogin = LaunchAtLogin.isEnabled }  // revert on failure
+                }
         }
     }
 
