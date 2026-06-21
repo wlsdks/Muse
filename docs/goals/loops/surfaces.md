@@ -540,3 +540,13 @@ ratchet: web tests 83/83 (+20) · testFiles +3 · fabrication 0 · self-eval exi
 - **수정**: NAV key "g"→"w"(whetstone)·`LEADER_KEY` export로 useShortcuts 단일출처화·`NavKeys.test.ts` 회귀가드 신설(어떤 NAV 키도 leader와 충돌 못 함, mutation으로 RED 확인). fresh 독립 Opus judge 재판정 PASS.
 - **리스크**: 없음(apps/web 격리 leaf·reference graph 밖, web build tsc+vite·web 83/83·pnpm check exit 0·smoke:broad 51/0·lint clean, 2개 독립 Opus judge[FAIL→fix→PASS]).
 - **lesson**: 웹 NAV 단축키를 추가할 땐 nav-key 충돌뿐 아니라 **예약 leader 키("g")**도 검사하라 — 빌더가 "g가 다른 nav와 안 겹침"만 확인하고 leader 예약을 놓쳐 死 단축키를 냄. 이제 `LEADER_KEY` 단일출처 + `NavKeys.test` 가드가 이 클래스를 기계적으로 막는다. 확률(0~1)을 %로 그리는 모든 새 표면은 `formatProbabilityPct`를 재사용(극값-붕괴 오정보 클래스, fire 55).
+
+## fire 60 · 2026-06-21 · skill v2.0.0 · <pending>
+meta: surface=api · value-class=new-capability · pkg=@muse/api · kind=self-improve-playbook-api · verdict=PASS · firesSinceDrill=9
+ratchet: api tests 880/880 (+8) · testFiles +0(기존 파일 확장) · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 51/0 · consecutive allPASS: fire 59 judge-catch로 리셋 → 다음 fire 61=firesSinceDrill 10 → ★JUDGE-DRILL 강제
+
+- **무엇**: 웹 자기강화 콘솔의 다음 데이터 레이어 — 학습된 전략 playbook(`~/.muse/playbook.json`)을 읽는 read-only `GET /api/self-improvement/playbook` 신설(fire 58 weaknesses 라우트 정확 미러). 순수 `shapePlaybook`(reward DESC 정렬, 동률 recency=`lastReinforcedAt ?? createdAt` DESC, tag/origin/source→null·reward→0·probation→false·timesObserved→1 정규화, total 무드롭) + `playbookFile` 게이트 + server.ts 배선(`resolvePlaybookFile`) + ServerOptions.playbookFile.
+- **왜**: 진안 "muse 자기강화 수준을 웹에서 보고 싶다"의 weaknesses(fire 58/59) 다음 — playbook 전략은 사용자 소유 ~/.muse 데이터(ACE arXiv:2510.04618 학습 도시에)라 가장 "자기강화"다운 표면. 데이터 레이어 먼저(웹 뷰는 다음 fire, fire 58→59 검증된 cadence). 다양성: fire 59=web 뷰였으니 이번은 (api, wiring) 다른 kind.
+- **리뷰지점**: mutation-first — shapePlaybook 단위테스트(reward DESC + recency 동률, absent reward=0, null정규화, probation/timesObserved/reward 디폴트). reward 정렬 뒤집으면 2 RED·probation 디폴트 false→true 바꾸면 RED(둘 다 빌더+독립 judge 확인). 보안: read-only GET·weaknesses와 **동일 auth 게이트**(requireAuthenticated)·write 0·`readPlaybook`는 키 불일치 시 fail-closed throw(정직한 500, empty로 안 삼킴·경로/스택 미노출). 정직한 갭: 웹 뷰 미배선(다음 fire)·learned/eval 스코어보드는 후속.
+- **리스크**: 없음(apps/api만 4파일, api build clean·api 880/880·pnpm check exit 0·smoke:broad 51/0·lint clean, 독립 Opus ④b judge가 shaper정확성·auth·다양성·mutation 검증 후 PASS).
+- **drill-노트**: fire 61은 firesSinceDrill=10 도달 → 다음 슬라이스는 강제 JUDGE-DRILL(고의 나쁜-슬라이스 주입→judge FAIL 확인→롤백→진짜 fix), 미루기 불가.
