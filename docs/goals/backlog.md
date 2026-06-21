@@ -2369,14 +2369,27 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   shipped C1: the escalation-decision primitive `shouldEscalateToHeavy(confidence, threshold)` +
   `planTieredRun` optional `priorConfidence`/`escalateThreshold` (a fast-classified task with a KNOWN
   low fast-pass mean-logprob escalates to heavy; absent = unchanged, byte-identical). REMAINING:
-  · **C2 (runtime two-pass wiring)** — in `muse ask --tiered` / multi-agent runtime, after the FAST
-  pass run `summarizeTokenConfidence` (@muse/agent-core, already computed at commands-ask.ts:2870) on
-  the answer logprobs, feed the mean-logprob into a re-plan (`planTieredRun` with priorConfidence) and
-  re-run escalated tasks on heavy. Needs logprobs requested on the fast pass + the two-pass loop;
-  bound to 1 retry (no unbounded cascade). >1 fire.
+  · **C2-core (execution primitive) — DONE fire 5** `runCascade({fast,heavy,run,confidenceOf,threshold})`
+  (@muse/multi-agent cascade-run.ts): runs fast → escalates ONCE to heavy on low/unmeasurable confidence,
+  bounded (MAST no-loop). Model-agnostic via injected run/confidenceOf (package idiom). REMAINING:
+  · **C2b (autoconfigure wiring)** — wire the REAL injected functions: `run(model)` = a tiered model
+  call requesting logprobs; `confidenceOf` = `summarizeTokenConfidence(result.logprobs).meanLogprob`
+  (@muse/agent-core, already computed at commands-ask.ts:2870). Call `runCascade` from the `muse ask
+  --tiered` fast path (single-query cascade) and/or buildTieredOrchestration's per-worker run. Needs
+  logprobs requested on the fast pass. >1 fire (touches the live ask/orchestration loop). Verify with C3.
   · **C3 (live eval)** — use `bench:local` (fire 1) for the latency win + accuracy parity: cascade vs
   always-heavy on a mixed easy/hard set; assert faster mean latency AND no grounding/answer regression.
   Needs Ollama up.
+- ✓ **doctor: surface the Muse-side speed env — DONE local-speed fire 6** — `museSpeedEnvCheck` +
+  `readMuseSpeedEnv` (apps/cli) report the Muse-PROCESS speed env (`MUSE_OLLAMA_NUM_BATCH` fire-2 lever,
+  `MUSE_OLLAMA_NUM_CTX`, `MUSE_OLLAMA_KEEP_ALIVE`) on every `muse doctor`, with a concrete num_batch
+  tuning hint when unset — so the shipped lever is discoverable, not invisible. Advisory (always ok);
+  distinct surface from `ollamaPerfPostureCheck` (server launchctl env).
+- ◦ **doctor: warn when flash is ON but the model arch is NOT flash-attention-capable** — even with
+  OLLAMA_FLASH_ATTENTION=1, KV quant falls back to f16 unless the model is on Ollama's FA allowlist
+  (gemma3/qwen3/… per ollama/ollama#13337; gemma4 status unverified). Hard to encode (version-fragile
+  allowlist) — deferred; would need to query Ollama's supported-arch list at runtime, not hardcode.
+  (scouted local-speed fire 4)
 - ◦ **local-speed sibling adapter knobs (enumerated fire 2, deferred)** — beyond `num_batch`, Ollama
   exposes `num_thread` (CPU threads) and `num_gpu` (layers offloaded to GPU) as per-request speed
   levers. Deferred: both are hardware-specific and Ollama's auto-detection is usually right, so the
