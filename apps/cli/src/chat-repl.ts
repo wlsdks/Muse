@@ -659,7 +659,11 @@ export async function runLocalChat(
   const reverifyJudge = chatProvider && "generate" in chatProvider
     ? createQwenReverify(chatProvider, model ?? assembly.defaultModel ?? "default")
     : undefined;
-  const withReceipt = await finalizeGatedChatAnswer({
+  // `.display` (answer + receipt + source-check cues) is what this one-shot surface
+  // prints. The cue-free `.forHistory` for the persisted turn (program.ts
+  // appendLastChatTurn) is a tracked sibling slice (poisoned-source backlog) — the
+  // Ink chat persists forHistory today; this path still persists display.
+  const withReceipt = (await finalizeGatedChatAnswer({
     answer: result.response.output,
     history: options.priorHistory ?? [],
     knownFactKeys,
@@ -670,7 +674,7 @@ export async function runLocalChat(
     ...(reverifyJudge ? { reverify: reverifyJudge } : {}),
     toolsUsed: result.toolsUsed ?? [],
     toolGroundingSources: result.groundingSources ?? []
-  });
+  })).display;
 
   // Never hand the desktop a BLANK answer. qwen3:8b occasionally returns an empty
   // completion for a specific phrasing (observed deterministically on "오늘 할 일

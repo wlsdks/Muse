@@ -101,3 +101,34 @@ zero-drift across 11 cases). Sibling ◦ recorded: chat-surface machine twin
 
 RISK: low — additive optional field, deterministic, mutation-proven (neuter the
 helper return → 8 RED), independent Opus ④ judge PASS.
+
+## fire 4 · 2026-06-21 · poisoned-source · (see commit)
+
+meta: value-class=bug-fix · pkg=@muse/cli (chat-grounding/chat-ink) · kind=evidence-hygiene · verdict=PASS · firesSinceDrill=4
+
+ratchet: testFiles +0 (extended chat-finalize + chat-ink-render) · fabrication 0 · pkg/kind ≠ fires 1-3 (new kind=evidence-hygiene) · eval:memory-poisoning PASS · eval:action-log-tamper PASS
+
+WHAT: the Ink chat appended DISPLAY-only source-check cues (untrusted-only /
+citation / conflict ⚠️ warnings) to the answer and then stored that cue-laden
+string into conversation history. `conversationMatches` maps every history turn
+to a cosine-1 TRUSTED grounding match — so Muse's own untrusted-source WARNING
+got replayed as TRUSTED grounding evidence the next turn (grounded≠true
+self-pollution: an untrusted-source warning laundered into trusted evidence).
+FIX (Slice A): `finalizeGatedChatAnswer` returns `{display, forHistory}`
+(forHistory = answer+receipt, no cues); the Ink chat persists `forHistory` at
+all three persist sites (history.push, onCommit→appendLastChatTurn, autoLearn)
+and shows `display` at the display sites.
+
+WHY: a self-poisoning evidence loop on the PRIMARY companion surface — the gate
+itself was being fed Muse's own warning text as trusted evidence. Additive to
+the gate (display + verdict unchanged; only persisted text changed).
+
+REVIEW POINT: decomposed — Slice A (Ink, this fire) + Slice B (one-shot `muse
+chat` persist via program.ts appendLastChatTurn, recorded as backlog ◦). Scope
+care: display vs forHistory routing across 6 sites (3 persist, 3 display);
+sibling-audit confirmed by the ④ judge. Added a render-layer wiring test
+(distinct display/forHistory mock → committed===forHistory) closing the judge's
+noted coverage gap; mutation-proven (persist→display = RED).
+
+RISK: low — only PERSISTED text changed; verdict/displayed answer byte-identical,
+deterministic, mutation-proven at unit + render layers, independent Opus ④ PASS.
