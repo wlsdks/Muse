@@ -8,6 +8,60 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-21
+
+A polish-and-harden release on top of the first cut — **early / experimental,
+macOS only**. The headline is a much richer native macOS companion and a
+deeper "shows its work" grounding edge: poisoned external sources (URL-ingested
+notes, past sessions, tool/feed output) can no longer launder into a confident
+"your own data" answer on any surface.
+
+### Added
+
+- **Native macOS companion, fully fleshed out** — a self-contained app that
+  bundles the server and web UI, an animated goddess mascot (blink, wink, talk,
+  emotion frames), a menu-bar status line (privacy posture · model · server),
+  first-run onboarding with a local-AI readiness check, a Korean-localized UI,
+  and one-tap access to the full app.
+- **Set Muse up entirely from Settings** — install/remove local models, connect
+  calendars (macOS / CalDAV / Google), and connect a messenger (Telegram /
+  Discord / Slack / LINE) without touching a config file.
+- **Source-trust cues across every grounding surface** — an answer (or a
+  proactive nudge) that rests on an externally-ingested note, a past session, or
+  tool/feed output is now marked as resting on an unverified source instead of
+  being presented as your own data; when a poisonable source disagrees with your
+  own note, Muse names the conflict and tells you to trust your own.
+- **Memory you can inspect** — `muse memory show` / `muse memory why` now surface
+  the _forgotten_ half too (what you had Muse forget, and the value-change path
+  behind a fact, not just a count), and `muse status` shows a compact
+  "recently forgotten" line.
+- **Local-first privacy posture, made visible** — surfaced on the chat HUD, the
+  `muse status` dashboard, and the `--help` / first-run screens, with a
+  local-first quickstart.
+- **Steadier multi-agent orchestration** — opt-in per-worker deadlines that
+  explicitly terminate a hung worker, fan-in/synthesis calls bounded by that
+  deadline, and detection of redundant (repeated) sub-tasks surfaced as an
+  advisory.
+- **Self-improvement console** — a learned-strategies section and a reflections
+  API for seeing what Muse has learned about working with you.
+
+### Changed
+
+- **Sharper terminal art** — the goddess mascot now renders in truecolor
+  sextants with a transparent background and legible eyes in the CLI/REPL banner.
+- **Faster, friendlier CLI** — instant `muse --version` via a pre-framework fast
+  path, a discovery on-ramp when you type an unknown command, and honest
+  empty-states (e.g. `muse notes reindex` with no markdown found).
+
+### Fixed
+
+- The floating companion now hides while the full app is open, and its input
+  field grows vertically with an open-full action in the bubble.
+- `muse --version` no longer reports `0.0.0`.
+- Various local-model speed/robustness fixes: opt-in model warmup on server
+  start, valid-UTF-8 truncation of capped command output, and byte-hygiene
+  corrections.
+
 ## [0.1.0] - 2026-06-21
 
 First tagged release — **early / experimental, macOS only**. While the major
