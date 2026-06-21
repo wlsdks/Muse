@@ -5,6 +5,7 @@ import {
   InMemoryAgentMessageBus,
   InMemoryOrchestrationHistoryStore,
   MultiAgentOrchestrator,
+  detectFanInConflicts,
   planTieredRun,
   type AgentMessage,
   type AgentWorker,
@@ -24,6 +25,7 @@ export interface MultiAgentRouteOptions {
   readonly defaultModel?: string;
   readonly historyStore?: OrchestrationHistoryStore;
   readonly modelProvider?: ModelProvider;
+  readonly embed?: (text: string) => Promise<readonly number[]>;
 }
 
 interface ApiError {
@@ -192,6 +194,10 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     const verifier = parsed.value.verify === true
       ? createAnswerVerifier(options.modelProvider, input.model)
       : undefined;
+    const detectConflicts = options.embed
+      ? (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) =>
+          detectFanInConflicts(parts, options.embed!)
+      : undefined;
 
     try {
       const orchestration = await orchestrator.run(input, {
@@ -202,7 +208,8 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
           : {}),
         ...(summarizer ? { summarizeWorkerOutput: summarizer } : {}),
         ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {}),
-        ...(verifier ? { verifyFinalAnswer: verifier } : {})
+        ...(verifier ? { verifyFinalAnswer: verifier } : {}),
+        ...(detectConflicts ? { detectConflicts } : {})
       });
 
       return {
@@ -291,6 +298,10 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     const verifier = parsed.value.verify === true
       ? createAnswerVerifier(options.modelProvider, input.model)
       : undefined;
+    const detectConflicts = options.embed
+      ? (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) =>
+          detectFanInConflicts(parts, options.embed!)
+      : undefined;
     const orchestrationOptions = {
       ...(effectiveMode ? { mode: effectiveMode } : {}),
       ...(parsed.value.maxWorkers !== undefined ? { maxWorkers: parsed.value.maxWorkers } : {}),
@@ -299,7 +310,8 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
         : {}),
       ...(summarizer ? { summarizeWorkerOutput: summarizer } : {}),
       ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {}),
-      ...(verifier ? { verifyFinalAnswer: verifier } : {})
+      ...(verifier ? { verifyFinalAnswer: verifier } : {}),
+      ...(detectConflicts ? { detectConflicts } : {})
     };
 
     reply.header("content-type", "text/event-stream; charset=utf-8");
