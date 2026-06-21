@@ -33,7 +33,7 @@ ratchet: pkg/kind DIFFERS (scripts/infra → model/adapter → multi-agent/casca
 - 리스크: 낮음 — 행동 inert by default. C1은 실제 planner(planTieredRun, apps/api multi-agent-routes.ts:460 호출)에 배선된 행동변화지 dead primitive 아님(④ judge가 declaration-only 아님으로 명시 판정). C2가 priorConfidence를 실제 logprob으로 채우는 런타임 루프.
   검증: multi-agent 215 pass · MUTATION-FIRST 2종(A: `<`→`>` 5 RED; B: `.has` 가드→`!==undefined` ABSENT-untouched 1 RED; revert→green) · pnpm check rc=0(api 880 + cli 2857; 첫 run의 messaging-webhooks 1-FAIL은 병렬 env-leak flake = isolated 880/880 + 내 변경은 api/messaging 무관, rerun rc=0) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(자체 mutation 재현, declaration-only crux HONEST 판정, 결함 0).
 
-## fire 4 · 2026-06-21 · local-speed · <commit>
+## fire 4 · 2026-06-21 · local-speed · b60fbebb
 meta: value-class=micro-fix · pkg=apps/cli · kind=correctness-hardening(doctor) · verdict=PASS · firesSinceDrill=4
 ratchet: pkg/kind DIFFERS (scripts/infra → model/adapter → multi-agent/cascade → cli/correctness) · fabrication 0 · 런타임 무변경(doctor advisory string only)
 - 무엇: `muse doctor`의 `ollamaPerfPostureCheck` 하드닝 — 양자화 KV 캐시(`OLLAMA_KV_CACHE_TYPE=q8_0/q4_0`)가 `OLLAMA_FLASH_ATTENTION=1` 없이는 **INERT**(Ollama가 조용히 f16 KV로 폴백, 이득 0)임을 전용 WARN으로 명시. 기존엔 (kv설정·flash꺼짐) 케이스가 일반 "set flash" 메시지로 떨어져 사용자의 KV 설정이 *아무것도 안 하고 있다*는 걸 숨겼음.
