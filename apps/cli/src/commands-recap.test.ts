@@ -39,6 +39,17 @@ describe("composeEveningRecap — deterministic evening digest", () => {
     expect(out).toContain("muse memory set fact address");
   });
 
+  it("surfaces the cited 'recently learned about you' section", () => {
+    const out = composeEveningRecap(base({ recentlyLearned: ['home city: Busan (changed from "Seoul" on 2026-06-21)'] }));
+    expect(out).toContain("📝 Recently learned about you (1)");
+    expect(out).toContain('home city: Busan (changed from "Seoul" on 2026-06-21)');
+  });
+
+  it("omits the recently-learned section when empty or absent", () => {
+    expect(composeEveningRecap(base({ recentlyLearned: [] }))).not.toContain("📝 Recently learned");
+    expect(composeEveningRecap(base())).not.toContain("📝 Recently learned");
+  });
+
   it("renders the retrospective (actions + sessions), what's coming up, and open follow-ups", () => {
     const out = composeEveningRecap(base({
       comingUp: ["Call the dentist — due 9:00 AM"],

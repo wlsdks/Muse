@@ -124,3 +124,12 @@ ratchet: testFiles +0 (chat-auto-memory.test +3) · @muse/cli 2890 green · lint
 - **왜**: 정체성 "Learns you"의 **가장 직접적 증거** — 교정하는 순간 Muse가 출처 인용과 함께 확인. fire 10/11 프리미티브 **production 첫 소비**, **monoculture 깸**(드디어 @muse/cli).
 - **리뷰지점**: `applyTurnLearnings`로 추출해 OUTCOME 테스트 가능(InMemory store), chat-ink 호출은 thin(fail-open 유지). 현재값=upsert後 store, 이전값=기록 supersession(no model). 기존 "remembered" 동작 보존(non-changed 키).
 - **리스크**: 없음 — refactor behavior-preserving, cli 2890 green, 독립 Opus ④b judge가 production-consumption+diff+dedup mutation+무회귀 재확인 PASS.
+
+## fire 14 · 2026-06-21 · skill v2.1.0 · pending
+meta: value-class=new-capability · pkg=@muse/cli · kind=recap-surface · verdict=PASS · firesSinceDrill=4 · firesSinceMainMerge=1
+ratchet: testFiles +0 (commands-recap.test +2) · @muse/cli 2892 green · lint clean · fabrication 0
+
+- **무엇**: `muse recap`(저녁 다이제스트)에 **"📝 Recently learned about you"** 섹션 — proactive 인용 학습 recap. `composeEveningRecap`(순수)가 렌더, `gatherEveningRecap`가 store→`projectRecentlyLearned`(30일)→`renderRecentlyLearnedLines`→`safeRecapText`(인젝션 중화, fail-soft)로 계산. **발견: (c2) ask 경로는 MOOT**(commands-ask:2181 `skipUserMemoryAutoExtract:true` — recall은 학습 안 함) → drop.
+- **왜**: 테마의 문자 그대로 **"Muse가 배운 걸 *먼저* 보여주는"** — 저녁마다 자발적으로 "이번에 너에 대해 이런 걸 배웠어"(출처 인용). fires 1/2/6 재사용.
+- **리뷰지점**: 🔄 volatileBeliefs(≥2값 confirm-nudge)와 **distinct**(📝 recent supersession informative; judge 확인). fail-soft + safeRecapText. `recentlyLearned` optional(기존 무영향). standalone 명령(chat보다 덜 contended).
+- **리스크**: 없음 — optional 추가, cli 2892 green, 독립 Opus ④b judge가 redundancy(distinct)+fail-soft+security+무회귀 재확인 PASS.

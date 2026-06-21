@@ -1,6 +1,8 @@
 import { openLoops, overdueContacts } from "@muse/agent-core";
 import { resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, resolveWeaknessesFile } from "@muse/autoconfigure";
-import { defaultBeliefProvenanceFile, deriveFactProvenance, readBeliefProvenance, selectVolatileBeliefs } from "@muse/memory";
+import { defaultBeliefProvenanceFile, deriveFactProvenance, FileUserMemoryStore, projectRecentlyLearned, readBeliefProvenance, renderRecentlyLearnedLines, selectVolatileBeliefs } from "@muse/memory";
+
+import { resolveMemoryUserId } from "./commands-memory.js";
 import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readContacts, readEpisodes, readFollowups, readReminders, readTasks, readWeaknesses, remediationHint, resolveUpcomingBirthdays, selectRemediableWeaknesses } from "@muse/mcp";
 import { escapeSystemPromptMarkers, neutralizeInjectionSpans } from "@muse/recall";
 import type { Command } from "commander";
@@ -78,6 +80,13 @@ export interface EveningRecapInput {
   readonly weaknesses: readonly string[];
   /** Auto beliefs the extractor keeps flipping — nudge the user to confirm (H4). */
   readonly volatileBeliefs: readonly string[];
+  /**
+   * RECENTLY LEARNED — the cited "Learns you" recap: deterministic lines of what
+   * Muse recorded about you lately (a fact/preference change with its prior value
+   * and date), within a recency window. Code picks them from the recorded
+   * factHistory, never the model. Optional/back-compat: absent ⇒ no section.
+   */
+  readonly recentlyLearned?: readonly string[];
   readonly openFollowups: number;
 }
 
@@ -163,6 +172,16 @@ export function composeEveningRecap(input: EveningRecapInput): string {
     lines.push("", `🔄 These keep changing — confirm the current value and I'll trust it (${input.volatileBeliefs.length.toString()}):`);
     for (const item of input.volatileBeliefs.slice(0, 5)) {
       lines.push(`  🔄 ${item}`);
+    }
+  }
+
+  // Learns you: what I recently recorded about you, each line citing its prior
+  // value — the proactive "here's what I now know" recap (distinct from the
+  // 🔄 confirm-nudge above: this is informative, not an action request).
+  if (input.recentlyLearned && input.recentlyLearned.length > 0) {
+    lines.push("", `📝 Recently learned about you (${input.recentlyLearned.length.toString()}):`);
+    for (const item of input.recentlyLearned.slice(0, 5)) {
+      lines.push(`  📝 ${item}`);
     }
   }
 
@@ -350,7 +369,19 @@ export async function gatherEveningRecap(
       volatileBeliefs.push(`"${safeRecapText(b.key)}" (now "${safeRecapText(b.currentValue)}", ${b.distinctValueCount.toString()} different values) — \`muse memory set ${b.kind} ${safeRecapText(b.key)} <value>\` to confirm`);
     }
   } catch { /* fail-soft — no provenance log */ }
-  return { comingUp, goneQuiet, now, openFollowups, openLoops: openLoopLines, performedToday, reconnect, sessionsToday, slipping, volatileBeliefs, weaknesses };
+  // Learns you: the cited recent-learnings recap, from the recorded factHistory
+  // within a 30-day window — the same project→render the memory/status surfaces use.
+  const recentlyLearned: string[] = [];
+  try {
+    const store = new FileUserMemoryStore(env.MUSE_USER_MEMORY_FILE ? { file: env.MUSE_USER_MEMORY_FILE } : {});
+    const memory = await store.findByUserId(resolveMemoryUserId(undefined));
+    if (memory) {
+      recentlyLearned.push(
+        ...renderRecentlyLearnedLines(projectRecentlyLearned(memory, { sinceMs: now.getTime() - 30 * DAY_MS })).map(safeRecapText)
+      );
+    }
+  } catch { /* fail-soft — no memory store */ }
+  return { comingUp, goneQuiet, now, openFollowups, openLoops: openLoopLines, performedToday, reconnect, recentlyLearned, sessionsToday, slipping, volatileBeliefs, weaknesses };
 }
 
 /**
