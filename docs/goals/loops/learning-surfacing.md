@@ -51,7 +51,7 @@ ratchet: testFiles +0 (commands-status.test +2 cases) · @muse/cli 245 files/286
 - **리뷰지점**: **typed store 경유 필수** — raw memoryDoc은 `replacedAt`이 string이라 `.getTime()` 정렬이 깨짐(judge가 명시 확인). 빈 시 snapshot 필드/human 라인 둘 다 생략(기존 `workingHours` idiom). `--json` shape는 additive(schemaVersion 무변). surfaces 미접촉(status); `today`는 surfaces 소유 → 별도.
 - **리스크**: 없음 — additive(import+helper+optional field+render line), 독립 Opus ④b judge가 전체 cli 2869 + mutation 재확인 PASS.
 
-## fire 6 · 2026-06-21 · skill v2.1.0 · pending
+## fire 6 · 2026-06-21 · skill v2.1.0 · 2803ce09
 meta: value-class=new-capability · pkg=@muse/memory+@muse/cli · kind=recency-window · verdict=PASS · firesSinceDrill=6 · firesSinceMainMerge=2
 ratchet: testFiles +0 (recently-learned.test +1, commands-status.test +1) · @muse/memory 523 green · @muse/cli status 21 green · lint clean · fabrication 0
 
