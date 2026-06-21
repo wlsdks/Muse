@@ -222,9 +222,18 @@ export async function readTokenCostToday(path: string): Promise<{ readonly avail
  * citation-bearing projectRecentlyLearned → summarizeRecentlyLearned — code, not
  * the model, picks what to show and the line carries its source citation.
  */
-export async function readRecentlyLearnedLine(memoryFile: string, userId: string): Promise<string | undefined> {
+/** A status one-liner only counts a learning as "recent" within this window. */
+const RECENTLY_LEARNED_WINDOW_MS = 30 * 24 * 60 * 60 * 1_000;
+
+export async function readRecentlyLearnedLine(
+  memoryFile: string,
+  userId: string,
+  nowMs: number = Date.now()
+): Promise<string | undefined> {
   const memory = await new FileUserMemoryStore({ file: memoryFile }).findByUserId(userId);
-  return memory ? summarizeRecentlyLearned(projectRecentlyLearned(memory)) : undefined;
+  return memory
+    ? summarizeRecentlyLearned(projectRecentlyLearned(memory, { sinceMs: nowMs - RECENTLY_LEARNED_WINDOW_MS }))
+    : undefined;
 }
 
 interface PersistedTask {

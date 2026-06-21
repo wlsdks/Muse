@@ -50,3 +50,12 @@ ratchet: testFiles +0 (commands-status.test +2 cases) · @muse/cli 245 files/286
 - **왜**: `memory show`(fire 3, 풀 리스트)에 이어 `status`(매일 보는 곳)에 컴팩트 1줄로. 정체성을 일상에서 체감.
 - **리뷰지점**: **typed store 경유 필수** — raw memoryDoc은 `replacedAt`이 string이라 `.getTime()` 정렬이 깨짐(judge가 명시 확인). 빈 시 snapshot 필드/human 라인 둘 다 생략(기존 `workingHours` idiom). `--json` shape는 additive(schemaVersion 무변). surfaces 미접촉(status); `today`는 surfaces 소유 → 별도.
 - **리스크**: 없음 — additive(import+helper+optional field+render line), 독립 Opus ④b judge가 전체 cli 2869 + mutation 재확인 PASS.
+
+## fire 6 · 2026-06-21 · skill v2.1.0 · pending
+meta: value-class=new-capability · pkg=@muse/memory+@muse/cli · kind=recency-window · verdict=PASS · firesSinceDrill=6 · firesSinceMainMerge=2
+ratchet: testFiles +0 (recently-learned.test +1, commands-status.test +1) · @muse/memory 523 green · @muse/cli status 21 green · lint clean · fabrication 0
+
+- **무엇**: `projectRecentlyLearned`에 `sinceMs`(epoch-ms 하한) 옵션 추가 — `replacedAt < sinceMs` 학습은 제외. `muse status`가 **30일 윈도우**(`readRecentlyLearnedLine`의 `nowMs - 30d`)로 배선 → 반년 전 학습이 "recently"로 안 뜸.
+- **왜**: 윈도우 없으면 변경이 드물 때 status가 months-old supersession을 "recently learned"로 표시 = **"recently"가 거짓**. 윈도우가 그 정직성 회복.
+- **리뷰지점**: 옵션 생략 시 무바운드(backward-compat — `memory show`는 전부 계속 표시). `nowMs` injectable(테스트 결정론, 실행은 `Date.now()` 기본). `continue`는 `limit`-break 뒤 → old skip이 limit 슬롯 안 먹음.
+- **리스크**: 없음 — additive 옵션, memory 523 + status 21 green, 독립 Opus ④b judge가 boundary + 양쪽 패키지 mutation 재확인 PASS.

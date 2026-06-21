@@ -61,7 +61,26 @@ describe("readRecentlyLearnedLine", () => {
         ]
       }
     });
-    expect(await readRecentlyLearnedLine(p, "stark")).toBe('home city: Busan (updated from "Seoul" on 2026-06-21) (+1 more)');
+    const nowMs = new Date("2026-06-25T00:00:00.000Z").getTime(); // both within the 30-day window
+    expect(await readRecentlyLearnedLine(p, "stark", nowMs)).toBe('home city: Busan (updated from "Seoul" on 2026-06-21) (+1 more)');
+  });
+
+  it("drops a learning older than the 30-day window so status stays truthfully 'recent'", async () => {
+    const p = memFile({
+      stark: {
+        userId: "stark",
+        facts: { home_city: "Busan", role: "founder" },
+        preferences: {},
+        recentTopics: [],
+        updatedAt: "2026-06-21T00:00:00.000Z",
+        factHistory: [
+          { key: "role", previousValue: "student", replacedAt: "2026-01-01T00:00:00.000Z", kind: "contradict" },
+          { key: "home_city", previousValue: "Seoul", replacedAt: "2026-06-20T00:00:00.000Z", kind: "contradict" }
+        ]
+      }
+    });
+    const nowMs = new Date("2026-06-25T00:00:00.000Z").getTime(); // role (Jan) is >30 days old, home_city (Jun 20) is in-window
+    expect(await readRecentlyLearnedLine(p, "stark", nowMs)).toBe('home city: Busan (updated from "Seoul" on 2026-06-20)');
   });
 });
 

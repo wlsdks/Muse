@@ -57,6 +57,21 @@ describe("projectRecentlyLearned", () => {
     expect(projectRecentlyLearned(mem({ factHistory: history }))).toHaveLength(5);
   });
 
+  it("excludes learnings older than sinceMs (so a surface can say 'recently' truthfully)", () => {
+    const memory = mem({
+      facts: { home_city: "Busan", role: "founder" },
+      factHistory: [
+        { key: "role", previousValue: "student", replacedAt: new Date("2026-01-01T00:00:00Z"), kind: "contradict" },
+        { key: "home_city", previousValue: "Seoul", replacedAt: new Date("2026-06-20T00:00:00Z"), kind: "contradict" }
+      ]
+    });
+    const sinceMs = new Date("2026-06-01T00:00:00Z").getTime();
+    const items = projectRecentlyLearned(memory, { sinceMs });
+    expect(items.map((i) => i.key)).toEqual(["home_city"]); // role (Jan) is outside the window
+    // no bound → both appear
+    expect(projectRecentlyLearned(memory).map((i) => i.key)).toEqual(["home_city", "role"]);
+  });
+
   it("treats a legacy entry with no recorded kind as the conservative 'changed' framing", () => {
     const items = projectRecentlyLearned(
       mem({
