@@ -1,7 +1,7 @@
 import { type KnowledgeMatch } from "@muse/agent-core";
 import { describe, expect, it } from "vitest";
 
-import { citationPrecisionNotice, citationRecallNotice, untrustedFeedMatch, untrustedOnlyGroundingNotice } from "./grounding-notices.js";
+import { citationPrecisionNotice, citationRecallNotice, sourceCheckSignals, untrustedFeedMatch, untrustedOnlyGroundingNotice } from "./grounding-notices.js";
 
 const match = (source: string, text: string, cosine: number, trusted?: boolean): KnowledgeMatch => ({
   cosine,
@@ -90,6 +90,40 @@ describe("untrustedFeedMatch — external feed evidence is tagged trusted:false 
       untrustedFeedMatch("TechBlog", "Acme acquired Beta for $1B")
     ];
     expect(untrustedOnlyGroundingNotice("Acme acquired Beta for $1B [from notes/deals.md].", matches)).toBeUndefined();
+  });
+});
+
+describe("sourceCheckSignals — the machine twin of the source-check cues (grounded≠true on the --json/run-log surface)", () => {
+  it("flags untrustedOnly when a faithful answer rests only on a feed/tool source", () => {
+    const matches = [untrustedFeedMatch("TechBlog", "Acme acquired Beta for $1B")];
+    expect(sourceCheckSignals("Acme acquired Beta for $1B [from feed: TechBlog].", matches)).toEqual({
+      untrustedOnly: true,
+      citationUnsupported: false,
+      citationUncited: false
+    });
+  });
+
+  it("flags citationUnsupported when a cited source doesn't support its claim", () => {
+    const matches = [match("vpn.md", "the office vpn mtu is 1380 on wg0", 0.7)];
+    const signals = sourceCheckSignals("The office MTU is 1380 [from vpn.md]. The flight departs from gate twelve [from vpn.md].", matches);
+    expect(signals?.citationUnsupported).toBe(true);
+  });
+
+  it("flags citationUncited when a groundable claim carries no citation", () => {
+    const matches = [match("vpn.md", "the office vpn mtu is 1380 on wg0", 0.7)];
+    expect(sourceCheckSignals("The office MTU is 1380.", matches)?.citationUncited).toBe(true);
+  });
+
+  it("returns undefined when every source-check is clean (no --json noise on a clean grounded answer)", () => {
+    const matches = [match("notes/vpn.md", "Set the office VPN MTU to 1380 on wg0.", 0.72)];
+    expect(sourceCheckSignals("Set the VPN MTU to 1380 on wg0 [from notes/vpn.md].", matches)).toBeUndefined();
+  });
+
+  it("agrees with the human cues — fires the structured signal exactly when a notice would (no drift)", () => {
+    const matches = [untrustedFeedMatch("TechBlog", "Acme acquired Beta for $1B")];
+    const answer = "Acme acquired Beta for $1B [from feed: TechBlog].";
+    const noticeFired = untrustedOnlyGroundingNotice(answer, matches) !== undefined;
+    expect(Boolean(sourceCheckSignals(answer, matches))).toBe(noticeFired);
   });
 });
 

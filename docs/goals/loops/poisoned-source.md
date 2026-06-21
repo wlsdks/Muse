@@ -72,3 +72,32 @@ vCard-import contact trust — wire `trusted:false` when those external paths la
 
 RISK: low — additive scrutiny cue, deterministic, mutation-proven (drop
 `trusted:false` → feed-only cue test RED), independent Opus ④ judge PASS.
+
+## fire 3 · 2026-06-21 · poisoned-source · (see commit)
+
+meta: value-class=wiring · pkg=@muse/recall (+apps/cli) · kind=machine-surface-signal · verdict=PASS · firesSinceDrill=3
+
+ratchet: testFiles +0 (extended grounding-notices + program-helpers tests) · fabrication 0 · pkg/kind ≠ fires 1-2 · eval:memory-poisoning PASS · eval:action-log-tamper PASS · MERGE→MAIN fire (÷3)
+
+WHAT: the `muse ask` source-check cues (untrusted-only provenance + ALCE
+citation precision/recall) were stderr-only (gated `!options.json`), so a
+`--json`/run-log consumer got `groundedVerdict:"grounded"` with no indication
+the answer rested only on poisonable sources or carried a mis-/un-cited
+citation — the same GROUNDED≠TRUE machine-surface leak V1 closed for fan-out
+signals. New pure `sourceCheckSignals` (@muse/recall, the machine twin — calls
+the same 3 notice fns ⇒ zero-drift) added to the --json payload + run-log.
+
+WHY: closes the GROUNDED≠TRUE leak on the surface a downstream agent reads, and
+feeds the error-analysis flywheel (a grounded-but-untrusted answer is now a
+distinct logged signal, not a clean success). Purely additive (verdict/answer
+untouched; fabrication floor intact).
+
+REVIEW POINT: scope was tricky — the notices live in an inner verdict block
+(8-space) but the run-log/payload are outer (6-space); fixed by lifting a
+`let sourceCheck` to the outer scope (mirroring `groundedVerdictLabel`), same
+gate/args as the stderr cues so machine + human can't diverge (judge-verified
+zero-drift across 11 cases). Sibling ◦ recorded: chat-surface machine twin
+(untrustedOnlyChatNotice) is the natural next slice once it's wired to stderr.
+
+RISK: low — additive optional field, deterministic, mutation-proven (neuter the
+helper return → 8 RED), independent Opus ④ judge PASS.

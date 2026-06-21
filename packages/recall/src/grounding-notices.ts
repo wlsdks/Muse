@@ -59,6 +59,40 @@ export function untrustedFeedMatch(feedName: string, title: string, summary?: st
   return { cosine: 1, score: 1, source: `feed: ${feedName}`, text: summary ? `${title} ${summary}` : title, trusted: false };
 }
 
+/** Structured machine-surface twin of the three human source-check cues. */
+export interface SourceCheckSignals {
+  /** The faithful answer rests ONLY on untrusted (tool/web/MCP/feed) provenance. */
+  readonly untrustedOnly: boolean;
+  /** A cited source resolves but does not support its sentence (ALCE precision). */
+  readonly citationUnsupported: boolean;
+  /** A groundable claim is handed over with no `[from …]` attribution (ALCE recall). */
+  readonly citationUncited: boolean;
+}
+
+/**
+ * The MACHINE twin of {@link untrustedOnlyGroundingNotice} /
+ * {@link citationPrecisionNotice} / {@link citationRecallNotice}: a `muse ask --json`
+ * or run-log consumer (a downstream agent/script) can't read the human stderr cue,
+ * so without this it gets a confident `groundedVerdict:"grounded"` with ZERO
+ * indication the answer rests only on poisonable sources or carries an unsupported /
+ * uncited citation — the same GROUNDED≠TRUE machine-surface leak V1 closed for
+ * FAN-OUT signals, here for the SOURCE-CHECK cues (which were stderr-only). Reuses
+ * the exact same notice predicates (calls the three notice fns) so the human and
+ * machine surfaces can NEVER drift. Returns `undefined` when every check is clean
+ * (so the caller emits no key — no `--json` noise on a clean grounded answer). Pure.
+ */
+export function sourceCheckSignals(
+  answer: string,
+  matches: readonly KnowledgeMatch[]
+): SourceCheckSignals | undefined {
+  const untrustedOnly = untrustedOnlyGroundingNotice(answer, matches) !== undefined;
+  const citationUnsupported = citationPrecisionNotice(answer, matches) !== undefined;
+  const citationUncited = citationRecallNotice(answer, matches) !== undefined;
+  return untrustedOnly || citationUnsupported || citationUncited
+    ? { untrustedOnly, citationUnsupported, citationUncited }
+    : undefined;
+}
+
 /**
  * ALCE citation-precision cue (arXiv:2305.14627): a sentence can carry a `[from
  * <source>]` citation that RESOLVES to a real retrieved note yet that note not
