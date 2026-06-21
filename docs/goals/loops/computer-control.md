@@ -5,6 +5,16 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 45 · 2026-06-21 · skill v2.0 · <commit> (eval:multifile-fix grades OUTCOME not path + reflection-guard registry regression fix)
+meta: value-class=eval-correctness+regression-fix · pkg=scripts/eval · kind=outcome-grading · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles +0 (scripts) / +6 grader cases + reflection-guard repoint · fabrication 0 · self-eval:test 48/48 · grader 6/6 (mutation-verified) · lint 0/0 · pnpm check @muse/resilience SIGABRT(134)=saturation (isolated 26/26, scripts-only change) · Ollama DOWN · ★main ff-merge (fire 45=×3)
+- 무엇(slice B): eval:multifile-fix가 `ok = testPasses && modelRanTest && …`로 채점했는데 `testPasses`는 하니스가 독립적으로 `runTest()`(node로 직접 실행, 모델 무관)로 검증하므로 modelRanTest(run_command 호출 여부)는 **불필요한 PATH-채점** → 모델이 올바로 고쳤지만 자가-실행 안 하면 FAIL로 실제 성공 과소집계(fire-9 잔여, agent-testing.md "OUTCOME 채점"). FIX: 순수 grader `scripts/lib/grade-multifile-fix.mjs`(ok=testPasses&&addIntact&&stringsIntact; ranTest는 관찰용만) 추출+배선+6 node:test. eval:edit-run-verify는 run→verify 체인이 곧 측정 역량이라 modelRanTest 게이트 의도적 유지(형제-감사 per-sibling 판정).
+- 무엇(regression A): 자기 루프 fire 32가 chat-repl false-done re-run을 agent-core `runResistingFalseDone`로 추출하며 `const actNow` 마커 제거 → reflection-guard 레지스트리가 stale → self-eval:test RED. 레지스트리를 false-done-reprompt.ts(runResistingFalseDone+actionToolRan)로 repoint(검증쌍 유지, 약화 0).
+- 왜: 다양성 — scripts/eval(eval-correctness), 최근 @muse/tools/fs/model과 다른 fresh (pkg,kind). Ollama down으로 모델-행동 작업 막힌 동안 측정 무결성 개선이 올바른 시퀀싱(브리틀 채점은 Ollama 복귀 시 진짜 개선을 오도).
+- 리뷰지점: mutation-first 둘 다(grader에 `&& ranTest` 넣으면 정확히 2 OUTCOME 테스트 RED; reflection-guard stale 마커 RED→repoint GREEN). 독립 Opus ④b judge가 (A) 가드 약화 0(surface가 진짜 이동+검증쌍 유지, chat-repl에 잔존 unguarded retry 없음) (B) runTest 모델-독립·edit-run-verify 구분 정직 검증 → VERDICT PASS.
+- 리스크: pnpm check 134는 박스 포화(scripts-only 변경이라 패키지 무관, @muse/resilience 격리 26/26). live eval 미검증(Ollama down)이나 grader는 순수 함수라 결정론 테스트로 완전 커버.
+lesson: 코드 추출/리팩터(심볼 이동)는 reflection-guard 레지스트리 마커도 같이 갱신해야 한다 — fire 32가 추출하며 마커를 안 옮겨 fire 45에서 가드 RED. 추출 슬라이스의 형제-감사 체크리스트에 "reflection-guard 레지스트리 마커 갱신" 추가.
+
 ## fire 44 · 2026-06-21 · skill v2.0 · 9aa8ef28 (run_command silent-truncation flag — model never reads a cut log as complete)
 meta: value-class=new-capability · pkg=@muse/tools · kind=runner-output-truncation-integrity · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles +0 files / +3 cases (cap shortens→truncated true; cap larger→false; runner truncated=true preserved) · fabrication 0 · @muse/tools 92 pass/1 skip · pnpm check exit 0 · lint 0/0 · Ollama DOWN (evals skip) · ★JUDGE-DRILL due fire 46 (consecutive allPASS will hit 8)
