@@ -4,6 +4,32 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 11 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · NO-SHIP (theme exhausted)
+meta: value-class=none(no-ship) · pkg=none · kind=theme-exhaustion-assessment · verdict=NO-SHIP · firesSinceDrill=9
+ratchet: testFiles +0 · fabrication 0 (unchanged) · no source committed · consecutive allPASS streak unbroken (no-ship ≠ FAIL) but counter not incremented
+
+**What (assessed)** — Ran a thorough ① PICK across the whole theme: scanned the backlog (126 open ◦, none a
+clean on-theme high-value single-fire), re-surveyed BOTH orchestration surfaces, and the evals. Confirmed the
+multi-agent orchestration / handoff-reliability theme is MATURE — every clean coordination guard is built,
+wired, tested, and (where applicable) persisted/exposed across the lead-worker fan-out AND the council debate
+paths. The eval:orchestration battery + the unit suites gate them.
+
+**Why no-ship** — The remaining candidates are ALL deferred-class: (a) council cross-lingual consensus — real
+but LOW-impact (wastes one bounded round, no floor violation) AND calibration-heavy (cross-lingual embeddings,
+finicky per [[project_cross_lingual_recall]]); the loop already uses the semantic consensus, so the residual is
+the embedder-prefix problem. (b) RAG-Fusion LLM-decomposition — LLM-based, calibration-risky. (c) god-file CLI
+surfacings — untestable (fire-4 blocker). (d) FM-2.6 semantic-harden — advisory-only so not urgent, and semantic
+cosine doesn't fix the transform-type FP anyway. (e) the highest-value remaining item (council cross-lingual)
+is both low-impact and calibration-risky. Forcing any of these would be make-work or a same-well refinement on
+a theme TWO prior judges (fire 9, fire 10) already flagged as maturing. Per ⑥, a clean honest no-ship + repoint
+surface beats a forced marginal slice.
+
+lesson: A theme genuinely SATURATES — after ~10 ships covering every clean coordination mode across both
+surfaces, the honest move is to recognize it, NOT scrape for a marginal/calibration-murky/same-well slice. The
+two prior judges' "maturing" notes were the early signal; this fire confirmed it by exhaustive scan. ★REPOINT
+RECOMMENDED (surfaced async to 진안 via PushNotification + backlog) — a fresh theme axis will restore high
+marginal value. (Note: fire 12 is the mandatory JUDGE-DRILL per the hard-counter regardless of repoint.)
+
 ## fire 10 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · ae106337
 meta: value-class=new-capability(paper-grounded) · pkg=@muse/multi-agent+@muse/cli · kind=reasoning-action-alignment · verdict=PASS · firesSinceDrill=8
 ratchet: testFiles +0 (cases added to lead-worker + ask-decompose tests) · fabrication 0 · eval:orchestration/decomposition deterministic cases PASS · consecutive allPASS=6 (drill due ~fire 12) · NEW kind (FM-2.6 alignment) — distinct cell vs all prior multi-agent fires
