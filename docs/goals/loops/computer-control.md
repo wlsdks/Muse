@@ -5,6 +5,15 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 41 · 2026-06-21 · skill v2.0 · <commit> (OpenAI-family tool-call NAME sanitization — fire-11 Ollama-adapter sibling)
+meta: value-class=new-capability · pkg=@muse/model · kind=provider-parse-robustness/tool-name-sanitization · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles +0 files / +35 lines (provider-openai-parse: 3 name-sanitization OUTCOME + 3 sanitizeToolCallName unit) · fabrication 0 · @muse/model 375 pass/5 skip · byte-hygiene 44/44 · pnpm check exit 0 · lint 0/0 · Ollama DOWN (evals skip)
+- 무엇: agent-hardening fire-11이 Ollama 네이티브 어댑터에서 고친 tool-call NAME 오염(thinking 로컬모델이 `<|channel|>` 등 chat-template 마커/제어·zero-width 문자를 이름에 흘려 tool-not-found)의 OpenAI-호환 형제. compat 경로(`/v1/chat/completions` — LM Studio·OpenRouter·Ollama-compat, 같은 로컬모델 구동)는 tool-call 이름을 RAW로 파싱. FIX: `sanitizeToolCallName`(fire-11 함수)을 공유 리프 `provider-shared.ts`로 끌어올려(양 어댑터 공유) OpenAI-family 4개 NAME 파싱 사이트 전부 배선 — parseOpenAIToolCalls(compat chat=로컬 주 타깃) + Responses non-stream/stream + chat-stream materialize(델타 청크 아닌 최종 조립 지점; merge는 first-wins라 안전). cut/strip/`"unknown"`만 — 모델 미방출 이름 발명 0(fabrication=0).
+- 왜: 형제-감사(fire 40이 같은 compat 경로의 ARG-drop 형제를 닫음 → 이번이 NAME 형제, 한 쌍). 다양성: @muse/model 2연속이나 8-fire 창에서 2/8(ratchet 미발동), kind는 args→name으로 구분. 4 사이트 동종 변경을 한 슬라이스로 배치(형제 누락 방지).
+- 리뷰지점: mutation-first 확정(site 1 되돌리면 정확히 2 RED, clean-name은 GREEN=no-op 증명). 독립 Opus ④b judge가 스트림 merge 추적·byte-hygiene line 63 리터럴 \\u 확인·relocation git show HEAD~6 대조 → VERDICT PASS. sites 2-4(Responses=주로 클라우드)는 private materializer라 독립 OUTCOME 하네스 대신 공유 단위테스트+1줄 배선(비례적; 로컬-leak 표면은 OUTCOME 커버된 site 1에 집중).
+- 리스크: byte-hygiene 함정 1회 자가적발·수정(Edit가 \\uXXXX를 raw 바이트로 디코드 → perl로 리터럴 \\u 재작성, test는 String.fromCharCode(0x200b) 사용). live OUTCOME 미검증(Ollama down)이나 순수 파서라 결정론 테스트로 완전 커버. fire 41은 3의 배수 아님 → main 머지 없음.
+lesson: Edit/Write 도구는 new_string의 `\\uXXXX`를 raw 제어바이트로 디코드한다 — 소스에 리터럴 escape가 필요하면 (a) perl/sed로 후처리하거나 (b) 런타임 문자가 필요하면 String.fromCharCode를 써라. byte-hygiene 게이트가 잡기 전에 cat -v로 자가확인.
+
 ## fire 40 · 2026-06-21 · skill v2.0 · e94e45be (OpenAI-compatible parseToolArguments recovery — fire-15 Ollama-adapter sibling)
 meta: value-class=new-capability · pkg=@muse/model · kind=provider-parse-robustness/sibling-audit · verdict=PASS · firesSinceDrill=3
 ratchet: testFiles +1 (provider-openai-parse recovery describe, 5 mutation-valid recovery + 1 fabrication-guard) · fabrication 0 · @muse/model 369 pass/5 skip · pnpm check: @muse/auth SIGABRT(134)=box saturation (auth 61/61 isolated, zero @muse/model dep) · byte-hygiene 44/44 · lint 0/0 · Ollama DOWN (eval:computer-task/multifile-fix/edit-run-verify skip)

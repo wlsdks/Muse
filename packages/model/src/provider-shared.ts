@@ -44,6 +44,26 @@ export function parseJson(value: string): unknown {
   }
 }
 
+/**
+ * A thinking-capable local model (gemma4/qwen) sometimes bleeds harmony/chat-
+ * template channel markers (`<|channel|>`, `<|"|>`) into a tool-call NAME. A real
+ * tool name is a clean identifier, so cut at the first such marker and strip
+ * control / zero-width chars — this RECOVERS an otherwise-valid name corrupted by
+ * a trailing leaked token (`run_command<|channel|>` → `run_command`, which then
+ * resolves in the registry instead of failing as tool-not-found). A clean name is
+ * unchanged. Shared by the Ollama native adapter and the OpenAI-compatible
+ * tool-call parsers (the `/v1/chat/completions` path backs LM Studio / OpenRouter
+ * / Ollama-compat, where the same local models run).
+ */
+export function sanitizeToolCallName(raw: string | undefined): string {
+  if (typeof raw !== "string" || raw.length === 0) {
+    return "unknown";
+  }
+  const cut = raw.split(/<\|/u)[0] ?? raw;
+  const cleaned = cut.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/gu, "").trim();
+  return cleaned.length > 0 ? cleaned : "unknown";
+}
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }

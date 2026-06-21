@@ -26,6 +26,7 @@ import {
   createLeadingThinkStripper,
   isRecord,
   parseJson,
+  sanitizeToolCallName,
   stripLeadingThinkBlock
 } from "./provider-shared.js";
 import { parseOpenAIToolCalls, parseOpenAIUsage, parseToolArguments, readOpenAIContent } from "./provider-openai-parse.js";
@@ -191,7 +192,7 @@ export function fromOpenAIResponsesResponse(
     if (it.type === "function_call") {
       // Function tool call output item: extract into ModelToolCall
       if (typeof it.name === "string" && typeof it.call_id === "string") {
-        toolCalls.push({ id: it.call_id, name: it.name, arguments: parseToolArguments(it.arguments) });
+        toolCalls.push({ id: it.call_id, name: sanitizeToolCallName(it.name), arguments: parseToolArguments(it.arguments) });
       }
       continue;
     }
@@ -287,7 +288,7 @@ export async function* parseOpenAIResponsesStream(
       if (typeof item.name === "string" && typeof item.call_id === "string") {
         const toolCall: ModelToolCall = {
           id: item.call_id,
-          name: item.name,
+          name: sanitizeToolCallName(item.name),
           arguments: parseToolArguments(item.arguments)
         };
         toolCalls.push(toolCall);
@@ -537,7 +538,7 @@ function materializeOpenAIStreamToolCalls(
       return [{
         arguments: parseToolArguments(value.argumentsText),
         id: value.id ?? `tool_call_${index}`,
-        name: value.name
+        name: sanitizeToolCallName(value.name)
       }];
     });
 }
