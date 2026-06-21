@@ -85,6 +85,7 @@ export {
   resolveTelegramOffsetFile,
   resolveVetoesFile,
   resolvePlaybookFile,
+  resolveReflectionsFile,
   resolveSuppressedLessonsFile,
   resolveLearningPauseFile,
   resolvePlanCacheFile,

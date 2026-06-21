@@ -1,4 +1,4 @@
-import { readPlaybook, readWeaknesses, readSkillRewards, adjustSkillReward, isSkillAvoided, type PlaybookEntry, type WeaknessEntry } from "@muse/mcp";
+import { readPlaybook, readWeaknesses, readSkillRewards, adjustSkillReward, isSkillAvoided, readReflections, listReflections, type PlaybookEntry, type WeaknessEntry, type StoredReflection } from "@muse/mcp";
 import { loadSkillsFromDirectory, type Skill } from "@muse/skills";
 import type { FastifyInstance } from "fastify";
 
@@ -130,12 +130,40 @@ export function parseRewardDelta(body: unknown): number | undefined {
   return delta;
 }
 
+export interface ReflectionView {
+  readonly id: string;
+  readonly insight: string;
+  readonly supportCount: number;
+  readonly sourceCount: number;
+  readonly createdAt: number;
+}
+
+export interface ReflectionsResponse {
+  readonly total: number;
+  readonly entries: readonly ReflectionView[];
+}
+
+export function shapeReflections(reflections: readonly StoredReflection[]): ReflectionsResponse {
+  const ordered = listReflections(reflections);
+  return {
+    total: reflections.length,
+    entries: ordered.map((r) => ({
+      id: r.id,
+      insight: r.insight,
+      supportCount: r.supportCount,
+      sourceCount: r.sourceIds.length,
+      createdAt: r.createdAtMs
+    }))
+  };
+}
+
 export interface SelfImprovementRoutesGate {
   readonly authService: ServerOptions["authService"];
   readonly weaknessesFile: string;
   readonly playbookFile: string;
   readonly authoredSkillsDir: string;
   readonly skillRewardsFile: string;
+  readonly reflectionsFile: string;
 }
 
 export function registerSelfImprovementRoutes(server: FastifyInstance, gate: SelfImprovementRoutesGate): void {
@@ -172,6 +200,14 @@ export function registerSelfImprovementRoutes(server: FastifyInstance, gate: Sel
       readSkillRewards(gate.skillRewardsFile)
     ]);
     return shapeSkills(skills, rewards);
+  });
+
+  server.get("/api/self-improvement/reflections", async (request, reply) => {
+    if (!authed(request, reply)) {
+      return reply;
+    }
+    const reflections = await readReflections(gate.reflectionsFile);
+    return shapeReflections(reflections);
   });
 
   // Adjust a skill's learned reward (thumbs up/down). Local self-tuning —

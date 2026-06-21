@@ -252,6 +252,7 @@ export {
   resolveLearningPauseFile,
   resolvePlanCacheFile,
   resolveAuthoredSkillsDir,
+  resolveReflectionsFile,
   resolveSkillRewardsFile
 } from "./personal-providers.js";
 import {

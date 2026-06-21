@@ -100,7 +100,10 @@
   - ✓ web 자기강화 대시보드 (whetstone 약점원장 *읽기*) — `SelfImprovementView`가 fire 58의 `GET /api/self-improvement/weaknesses` 소비, 축 라벨·숙달도%·hint read-only 렌더; 형제 `formatProbabilityPct` 공유(Dashboard 위임)·`NavKeys.test` leader-key 가드 — surfaces fire 59 (④b judge가 NAV key="g"↔leader 충돌 FAIL→fix) (`deda3d6c`)
   - ✓ playbook 전략 API — read-only `GET /api/self-improvement/playbook` (shapePlaybook: reward DESC·probation/reward 정규화, ~/.muse/playbook.json, fire 58 weaknesses 미러) — surfaces fire 60 (`e778da32`); NEXT=웹 뷰가 이 API 소비(weaknesses 옆 "전략" 섹션)
   - ✓ web 학습된 전략 섹션 — `SelfImprovementView`가 fire 60 playbook API 소비, active/probation 정직 구분(strategyStatusLabel·summarizeStrategies)·tag·origin·reward 렌더 — surfaces fire 61 (★JUDGE-DRILL: judge#1이 honesty-역전 나쁜슬라이스 FAIL→fix→judge#2 PASS) (`2624028e`)
-  - ◦ web 자기강화 대시보드 (나머지) — learned·eval 스코어보드 *읽기* (eval 스코어보드는 dev-INFRA라 개인 콘솔 노출 여부 재검토; weaknesses+playbook은 done)
+  - ✓ reflections API — read-only `GET /api/self-improvement/reflections`(shapeReflections: listReflections recency정렬·sourceCount=sourceIds.length grounding신호, autoconf resolveReflectionsFile) — surfaces fire 69 (★JUDGE-DRILL: judge#1이 sourceCount필드-conflate FAIL→fix→judge#2 PASS) (`<pending>`); NEXT=웹 reflections 섹션
+  - ◦ web reflections 섹션 — `SelfImprovementView`에 fire 69 reflections API 소비(insight·supportCount·sourceCount·날짜)
+  - ◦ CLI resolveReflectionsFile 통일(형제) — autoconf 공유본으로(skills resolver 통일과 묶음 가능)
+  - ◦ web 자기강화 대시보드 (나머지) — eval 스코어보드 *읽기* (dev-INFRA라 개인 콘솔 노출 여부 재검토; weaknesses+playbook+reflections done)
   - ◦ web 스킬 컨트롤 — skills 목록 + reward/curate/author (신규 API + 웹):
     - ✓ skills 목록 API — read-only `GET /api/self-improvement/skills` (shapeSkills: authored 스킬+reward 병합, reward DESC·name ASC, avoided=isSkillAvoided; autoconfigure `resolveSkillRewardsFile` 신설) — surfaces fire 62 (`cffe2d94`); NEXT=웹 뷰가 이 API 소비(새 Skills 뷰/nav)
     - ✓ web Skills 뷰 — `SkillsView`(자체 nav key "j") fire 62 skills API 소비, 이름·설명·source·reward·avoided 배지(정직신호) read-only 렌더; summarizeSkills 헬퍼 — surfaces fire 63 (`a1f44f18`); reward/curate/author 액션은 후속

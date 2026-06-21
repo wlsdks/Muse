@@ -1,8 +1,8 @@
-import type { PlaybookEntry, WeaknessEntry } from "@muse/mcp";
+import type { PlaybookEntry, StoredReflection, WeaknessEntry } from "@muse/mcp";
 import type { Skill } from "@muse/skills";
 import { describe, expect, it } from "vitest";
 
-import { parseRewardDelta, shapePlaybook, shapeSkills, shapeWeaknesses } from "./self-improvement-routes.js";
+import { parseRewardDelta, shapePlaybook, shapeReflections, shapeSkills, shapeWeaknesses } from "./self-improvement-routes.js";
 
 describe("parseRewardDelta", () => {
   it("returns a positive finite number when delta is valid", () => {
@@ -252,5 +252,57 @@ describe("shapeSkills", () => {
 
   it("an empty skill list is total 0, not a crash", () => {
     expect(shapeSkills([], {})).toEqual({ total: 0, entries: [] });
+  });
+});
+
+function reflectionEntry(partial: Partial<StoredReflection> & { id: string; createdAtMs: number }): StoredReflection {
+  return {
+    insight: "Insight text",
+    sourceIds: [],
+    supportCount: 1,
+    ...partial
+  } as StoredReflection;
+}
+
+describe("shapeReflections", () => {
+  it("orders newest-first by createdAtMs (proves listReflections is applied, not raw order)", () => {
+    const out = shapeReflections([
+      reflectionEntry({ id: "old", createdAtMs: 1000 }),
+      reflectionEntry({ id: "newest", createdAtMs: 3000 }),
+      reflectionEntry({ id: "mid", createdAtMs: 2000 })
+    ]);
+    expect(out.entries.map((e) => e.id)).toEqual(["newest", "mid", "old"]);
+  });
+
+  it("sourceCount equals sourceIds.length", () => {
+    const out = shapeReflections([
+      reflectionEntry({ id: "two-sources", createdAtMs: 2000, sourceIds: ["ep1", "ep2"] }),
+      reflectionEntry({ id: "zero-sources", createdAtMs: 1000, sourceIds: [] })
+    ]);
+    const byId = Object.fromEntries(out.entries.map((e) => [e.id, e]));
+    expect(byId["two-sources"]!.sourceCount).toBe(2);
+    expect(byId["zero-sources"]!.sourceCount).toBe(0);
+  });
+
+  it("total equals reflections.length and never drops entries", () => {
+    const out = shapeReflections([
+      reflectionEntry({ id: "a", createdAtMs: 1000 }),
+      reflectionEntry({ id: "b", createdAtMs: 2000 }),
+      reflectionEntry({ id: "c", createdAtMs: 3000 })
+    ]);
+    expect(out.total).toBe(3);
+    expect(out.entries).toHaveLength(3);
+  });
+
+  it("maps insight and supportCount through unchanged", () => {
+    const out = shapeReflections([
+      reflectionEntry({ id: "x", createdAtMs: 1000, insight: "The user prefers morning notes", supportCount: 7 })
+    ]);
+    expect(out.entries[0]!.insight).toBe("The user prefers morning notes");
+    expect(out.entries[0]!.supportCount).toBe(7);
+  });
+
+  it("an empty list is total 0, not a crash", () => {
+    expect(shapeReflections([])).toEqual({ total: 0, entries: [] });
   });
 });

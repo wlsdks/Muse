@@ -148,6 +148,7 @@ export interface ServerOptions {
   readonly playbookFile?: string;
   readonly authoredSkillsDir?: string;
   readonly skillRewardsFile?: string;
+  readonly reflectionsFile?: string;
   readonly briefingSidecarFile?: string;
   /**
    * Path to the reviewable autonomous-action log (default

@@ -14,6 +14,7 @@ import {
   resolvePlaybookFile,
   resolveWeaknessesFile,
   resolveAuthoredSkillsDir,
+  resolveReflectionsFile,
   resolveSkillRewardsFile
 } from "@muse/autoconfigure";
 import { queryContacts, runActuatorByName } from "@muse/mcp";
@@ -328,7 +329,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     weaknessesFile: options.weaknessesFile ?? resolveWeaknessesFile(process.env),
     playbookFile: options.playbookFile ?? resolvePlaybookFile(process.env),
     authoredSkillsDir: options.authoredSkillsDir ?? resolveAuthoredSkillsDir(process.env),
-    skillRewardsFile: options.skillRewardsFile ?? resolveSkillRewardsFile(process.env)
+    skillRewardsFile: options.skillRewardsFile ?? resolveSkillRewardsFile(process.env),
+    reflectionsFile: options.reflectionsFile ?? resolveReflectionsFile(process.env)
   });
 
   registerSettingsRoutes(server, { authService });
