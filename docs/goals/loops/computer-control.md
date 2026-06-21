@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 43 · 2026-06-21 · skill v2.0 · <commit> (path-refusal names the allowed roots so the 12B can self-correct)
+## fire 43 · 2026-06-21 · skill v2.0 · c8252f57 (path-refusal names the allowed roots so the 12B can self-correct)
 meta: value-class=new-capability · pkg=@muse/fs · kind=refusal-self-correction-hint · verdict=PASS · firesSinceDrill=6
 ratchet: testFiles +0 files / +2 cases (outside_roots names roots+retry guidance; deny-list stays opaque) · fabrication 0 · @muse/fs fs-path-safety 39 pass · pnpm check exit 0 · lint 0/0 · Ollama DOWN (evals skip)
 - 무엇: fs 경로 샌드박스(`resolveSafePath`)의 `outside_roots` 거부 메시지가 "outside the allowed roots and was refused"로 **어떤 root가 허용인지 안 알려줌** → 12B가 나쁜 경로 고르면 self-correct할 단서 0 (맹목 retry). FIX: `outside_roots` 분기에만 `Allowed roots: <policy.roots>. Retry with a path under one of these.` 추가(roots>0 가드). deny-list(비밀경로) 메시지는 불변=opaque 유지. fs 도구는 refusalResult→{error,refused:true}로 이 메시지를 모델에 그대로 전달.
