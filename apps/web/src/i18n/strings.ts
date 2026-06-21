@@ -199,6 +199,9 @@ const en = {
   "auto.phone": "Phone",
   "auto.objNote": "Standing goals Muse keeps re-evaluating until resolved.",
   "auto.vetoNote": "Triggers you vetoed — Muse no longer auto-acts on these.",
+  "auto.vetoBadge": "vetoed",
+  "auto.status.active": "active",
+  "auto.status.done": "done",
 
   "dash.title": "Dashboard",
   "dash.subtitle": "Token cost, tool reliability, and latency over the last 7 days.",
@@ -431,6 +434,9 @@ const ko: Strings = {
   "auto.phone": "전화",
   "auto.objNote": "해결될 때까지 Muse가 계속 재평가하는 상시 목표.",
   "auto.vetoNote": "거부한 트리거 — Muse가 더 이상 자동 실행하지 않습니다.",
+  "auto.vetoBadge": "거부됨",
+  "auto.status.active": "진행 중",
+  "auto.status.done": "완료",
 
   "dash.title": "대시보드",
   "dash.subtitle": "최근 7일간 토큰 비용·도구 신뢰도·레이턴시.",

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AsyncBlock, Badge, Card } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { safeDateTime } from "../lib/datetime.js";
+import { actionResultLabel, objectiveStatusLabel } from "./autonomy-labels.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { ActionsResponse, ObjectivesResponse, VetoesResponse } from "../api/types.js";
@@ -78,7 +79,7 @@ function ActionsTab({ client, locale }: { client: ApiClient; locale: string }) {
                 {a.detail ? ` · ${a.detail}` : ""} · {new Date(a.when).toLocaleString(locale)}
               </div>
             </div>
-            <Badge tone={resultTone(a.result)}>{a.result}</Badge>
+            <Badge tone={resultTone(a.result)}>{actionResultLabel(a.result, t)}</Badge>
           </div>
         ))}
       </AsyncBlock>
@@ -108,7 +109,7 @@ function ObjectivesTab({ client, locale }: { client: ApiClient; locale: string }
                 {o.resolution ? ` · ${o.resolution}` : ""}
               </div>
             </div>
-            <Badge tone={statusTone(o.status)}>{o.status}</Badge>
+            <Badge tone={statusTone(o.status)}>{objectiveStatusLabel(o.status, t)}</Badge>
           </div>
         ))}
       </AsyncBlock>
@@ -138,7 +139,7 @@ function VetoesTab({ client, locale }: { client: ApiClient; locale: string }) {
                 {safeDateTime(v.vetoedAt, locale)}
               </div>
             </div>
-            <Badge tone="warn">veto</Badge>
+            <Badge tone="warn">{t("auto.vetoBadge")}</Badge>
           </div>
         ))}
       </AsyncBlock>

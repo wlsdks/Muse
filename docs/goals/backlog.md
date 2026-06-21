@@ -2930,3 +2930,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ⏳ BLOCKER (shared pnpm check RED, NOT multi-agent): `@muse/autoconfigure` diagnostic-provider runtime-assembly e2e tests (runtime-assembly-e2e / -cache-e2e / -streaming-e2e + autoconfigure.test.ts) time out at 5000ms. PROVEN pre-existing + unrelated to the multi-agent loop (autoconfigure doesn't depend on @muse/multi-agent). Cause is in the recently-merged sibling LOCAL-SPEED loop's Ollama-adapter changes (num_predict cap / num_thread / num_gpu / num_batch). The responsible loop (or 진안) should triage — it blocks the shared `pnpm check` gate for every loop on the box.
 
 - ✓ companion time-of-day greeting (IdleChatter.timeGreeting) — desktop-enhance fire 6
+- ✓ localize Automation status badges (autonomy-labels) — desktop-enhance fire 7
