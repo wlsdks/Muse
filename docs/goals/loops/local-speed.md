@@ -32,3 +32,13 @@ ratchet: pkg/kind DIFFERS (scripts/infra → model/adapter → multi-agent/casca
 - 리뷰지점: 기본(priorConfidence 없음)=plan byte-identical(`.has(id)===true` 가드), heavy task는 절대 de-escalate 안 함(`tier==="fast"` 가드), classifyTier 불변(const→let만), 패키지 결합 없음(plain number, agent-core 타입 import 안 함), strict `<`(정확히 -1.0은 escalate 안 함).
 - 리스크: 낮음 — 행동 inert by default. C1은 실제 planner(planTieredRun, apps/api multi-agent-routes.ts:460 호출)에 배선된 행동변화지 dead primitive 아님(④ judge가 declaration-only 아님으로 명시 판정). C2가 priorConfidence를 실제 logprob으로 채우는 런타임 루프.
   검증: multi-agent 215 pass · MUTATION-FIRST 2종(A: `<`→`>` 5 RED; B: `.has` 가드→`!==undefined` ABSENT-untouched 1 RED; revert→green) · pnpm check rc=0(api 880 + cli 2857; 첫 run의 messaging-webhooks 1-FAIL은 병렬 env-leak flake = isolated 880/880 + 내 변경은 api/messaging 무관, rerun rc=0) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(자체 mutation 재현, declaration-only crux HONEST 판정, 결함 0).
+
+## fire 4 · 2026-06-21 · local-speed · <commit>
+meta: value-class=micro-fix · pkg=apps/cli · kind=correctness-hardening(doctor) · verdict=PASS · firesSinceDrill=4
+ratchet: pkg/kind DIFFERS (scripts/infra → model/adapter → multi-agent/cascade → cli/correctness) · fabrication 0 · 런타임 무변경(doctor advisory string only)
+- 무엇: `muse doctor`의 `ollamaPerfPostureCheck` 하드닝 — 양자화 KV 캐시(`OLLAMA_KV_CACHE_TYPE=q8_0/q4_0`)가 `OLLAMA_FLASH_ATTENTION=1` 없이는 **INERT**(Ollama가 조용히 f16 KV로 폴백, 이득 0)임을 전용 WARN으로 명시. 기존엔 (kv설정·flash꺼짐) 케이스가 일반 "set flash" 메시지로 떨어져 사용자의 KV 설정이 *아무것도 안 하고 있다*는 걸 숨겼음.
+- 왜: 실제 silent 오설정 갭(ollama/ollama#13337이 "server silently falls back to f16 → 예상외 OOM"으로 제기). KV-quant는 named 레버. 출처검증(verify-then-apply): Opus scout가 Ollama FAQ + PR #6279(smcleod.net) + #13337로 확인 — KV-quant는 flash attention AND FA-capable 모델 arch 필요. 경고는 "needs a flash-attention-capable model"로 arch nuance 정직히 커버, 버전-취약 allowlist는 하드코딩 안 함(backlog defer).
+- 리뷰지점: 4 케이스 분기 정확(flash+kv=ok / 둘다없음=set both / flash만=set KV(FLASH 미포함) / kv만=신규 INERT), `.toLowerCase()`로 "Q4_0" 처리, FA-capable-model 미달 케이스(flash+kv+non-FA-model→"ok"이나 실제 inert)는 backlog ◦ defer(런타임 arch-query 필요, 하드코딩 금지).
+- 리스크: 없음 — doctor advisory string 한 케이스만 변경, 모델/런타임/grounding/tool 경로 무관 → 정확성 회귀 0 trivially.
+  검증: cli 2861 pass(신규 2 OUTCOME 케이스) · MUTATION-FIRST(INERT 분기 제거 → 2 RED "expected … to contain INERT"; revert→green) · pnpm check rc=0(api 887 + cli 2861) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(사실주장 정확성 웹검증 재확인, 자체 mutation 재현; 중복주석 결함 1건 지적 → 수정 완료).
+  형제-감사: Muse-process 속도 env(MUSE_OLLAMA_NUM_BATCH 등) doctor 노출 + FA-capable-model-arch 경고 → backlog ◦ 2건.

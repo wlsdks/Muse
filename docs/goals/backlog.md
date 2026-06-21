@@ -2354,6 +2354,18 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   · **C3 (live eval)** — use `bench:local` (fire 1) for the latency win + accuracy parity: cascade vs
   always-heavy on a mixed easy/hard set; assert faster mean latency AND no grounding/answer regression.
   Needs Ollama up.
+- ◦ **doctor: surface the Muse-side speed env (sibling of local-speed fire 4)** — `ollamaPerfPostureCheck`
+  reports SERVER env posture (OLLAMA_FLASH_ATTENTION / OLLAMA_KV_CACHE_TYPE) and now (fire 4) flags a
+  quantized KV cache that's inert without flash attention. SIBLING not yet surfaced: the Muse-PROCESS
+  speed env — `MUSE_OLLAMA_NUM_BATCH` (fire 2 lever), `MUSE_OLLAMA_NUM_CTX`, `MUSE_OLLAMA_KEEP_ALIVE`.
+  A shipped-but-undiscoverable knob is half-delivered; add a `muse doctor` line reporting which Muse
+  speed env are set + a "tune MUSE_OLLAMA_NUM_BATCH for prompt-eval throughput" hint. Separate surface
+  (process env, not launchctl) → its own slice. (enumerated local-speed fire 4)
+- ◦ **doctor: warn when flash is ON but the model arch is NOT flash-attention-capable** — even with
+  OLLAMA_FLASH_ATTENTION=1, KV quant falls back to f16 unless the model is on Ollama's FA allowlist
+  (gemma3/qwen3/… per ollama/ollama#13337; gemma4 status unverified). Hard to encode (version-fragile
+  allowlist) — deferred; would need to query Ollama's supported-arch list at runtime, not hardcode.
+  (scouted local-speed fire 4)
 - ◦ **local-speed sibling adapter knobs (enumerated fire 2, deferred)** — beyond `num_batch`, Ollama
   exposes `num_thread` (CPU threads) and `num_gpu` (layers offloaded to GPU) as per-request speed
   levers. Deferred: both are hardware-specific and Ollama's auto-detection is usually right, so the
