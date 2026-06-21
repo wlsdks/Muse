@@ -32,7 +32,7 @@ ratchet: testFiles +0 (human-formatters.test +2 cases) · @muse/cli 245 files/28
 - **리뷰지점**: local/file 경로 한정(factHistory 있는 곳; API 경로는 부재=정직, 서버측 factHistory 미populate). 섹션은 8B 무관 순수 project→render. surfaces 루프가 commands-memory.ts는 안 만짐(today만) → 충돌 회피 타깃.
 - **리스크**: 없음 — 기존 memory-show 동작(facts/prefs/veto/goal/topics) 무변, 빈/부재 시 헤더 생략(false-header 테스트), 독립 Opus ④b judge가 전체 cli 2861 + mutation 재확인 PASS.
 
-## fire 4 · 2026-06-21 · skill v2.1.0 · pending
+## fire 4 · 2026-06-21 · skill v2.1.0 · 8cf59bcb
 meta: value-class=new-capability · pkg=@muse/memory · kind=learned-summary · verdict=PASS · firesSinceDrill=4 · firesSinceMainMerge=3(fire3 main-merge가 race에서 밀림; 이 fire에서 누적 재시도)
 ratchet: testFiles +0 (recently-learned.test +4 cases) · @muse/memory 519 green · lint clean · fabrication 0
 
