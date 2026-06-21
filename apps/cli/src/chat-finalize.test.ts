@@ -147,4 +147,24 @@ describe("finalizeGatedChatAnswer — forHistory excludes display-only source-ch
     });
     expect(result.forHistory).toBe(result.display); // trusted + cited → no cue appended
   });
+
+  it("reports untrustedOnly=true when the answer rested on untrusted-only sources (feeds the episode-trust bit, MemoryGraft)", async () => {
+    const result = await finalizeGatedChatAnswer({
+      answer: "할 일은 보고서 작성 1건이에요",
+      matches: [],
+      question: "내 할일 뭐 있어?",
+      toolsUsed: ["muse.tasks.list"],
+      toolGroundingSources: [{ source: "muse.tasks.list", text: "할 일: 보고서 작성" }]
+    });
+    expect(result.untrustedOnly).toBe(true);
+  });
+
+  it("reports untrustedOnly=false for a trusted note-grounded answer", async () => {
+    const result = await finalizeGatedChatAnswer({
+      answer: "비밀번호는 muse2026 입니다 [from wifi.md]",
+      matches,
+      question: "사무실 와이파이 비밀번호 뭐야?"
+    });
+    expect(result.untrustedOnly).toBe(false);
+  });
 });

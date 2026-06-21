@@ -263,3 +263,35 @@ verify-then-apply — the episode-trust slice's real cost is the trust-propagati
 threading (turn→store→index→cue), not the store field. When a scout finding is
 multi-layer, DECOMPOSE into sequenced slices the same fire rather than starting a
 fragile partial; the discovery budget is well spent if it yields sequenced fuel.
+
+## fire 9 · 2026-06-21 · poisoned-source · (see commit)
+
+meta: value-class=new-capability(hardening) · pkg=@muse/mcp+@muse/cli · kind=episode-provenance/trust-tagging · verdict=PASS · firesSinceDrill=9
+
+ratchet: testFiles +0 (extended mcp + cli tests) · fabrication 0 · pkg/kind NEW (episode store + capture + recall) · eval:memory-poisoning PASS · eval:action-log-tamper PASS · MERGE→MAIN fire (÷3)
+
+WHAT: shipped EP-1+EP-2 (fire-8 decomposition) — the episode-provenance trust bit,
+closing the LAST untrusted→memory laundering path for the Ink-chat→ask path
+(MemoryGraft arXiv:2512.16962). PersistedEpisode.trusted? (+serialize/validate
+round-trip) ← captureEndOfSessionEpisode(untrustedSession) ← chat-ink bridges the
+session verdict (runChatInk closure set by an onUntrustedAnswer prop, reset on
+/reset, read at the post-unmount capture) ← finalizeGatedChatAnswer now returns
+`untrustedOnly` (same cue computation, no drift). commands-ask tags episode
+grounding evidence trusted:false (store-lookup) so an answer resting solely on a
+poisoned episode trips the untrusted-only cue instead of being laundered as "your
+own history".
+
+WHY: the `trusted:false` bit reached feeds/tool/veto/goal but not episodes — a
+session that grounded on poisoned sources became "trusted" history next session.
+Additive (only adds a scrutiny-cue path; never changes a grounded verdict).
+
+REVIEW POINT: multi-layer slice (store + capture + chat-grounding return + chat-ink
+bridge + ask consumer); the bridge is the subtle part (capture runs post-unmount →
+a runChatInk closure, not a component ref). Honest deferrals (judge-confirmed, in
+backlog): EP-1b (per-turn PERSISTENCE for resumed/one-shot under-mark — current
+in-memory bridge only covers the live Ink process, fail-open) + EP-3 (chat-surface
+cue parity). Judge also flagged the inline ask-tag lacks a direct unit test (minor
+follow-up recorded).
+
+RISK: low — additive, mutation-proven at 3 seams (capture/finalize/store), Opus ④
+PASS (over/under-mark verified, conservative cue, byte-identical clean episodes).

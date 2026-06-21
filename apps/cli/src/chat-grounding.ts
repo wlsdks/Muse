@@ -338,6 +338,14 @@ export interface FinalizedChatAnswer {
    * trusted evidence — a grounded≠true self-pollution). Persist the answer, show the cues.
    */
   readonly forHistory: string;
+  /**
+   * `true` when this answer's grounding rested on UNTRUSTED sources (the
+   * untrusted-only source-check cue fired). The REPL accumulates it across the
+   * session and passes it to `captureEndOfSessionEpisode` so the stored episode is
+   * marked `trusted:false` — closing the episode-laundering vector (MemoryGraft
+   * arXiv:2512.16962). Same computation as the displayed cue (no drift).
+   */
+  readonly untrustedOnly: boolean;
 }
 
 export async function finalizeGatedChatAnswer(args: FinalizeGatedChatAnswerArgs): Promise<FinalizedChatAnswer> {
@@ -388,7 +396,9 @@ export async function finalizeGatedChatAnswer(args: FinalizeGatedChatAnswerArgs)
   // `forHistory` deliberately EXCLUDES the cues appended above (see FinalizedChatAnswer):
   // they are display-only warnings, not answer content, and must never be persisted
   // where conversationMatches would replay them as trusted grounding evidence.
-  return { display: out, forHistory: receipted };
+  // `untrustedOnly` reuses the SAME cue computation (no drift) so the session-level
+  // episode-trust verdict matches what the user was shown.
+  return { display: out, forHistory: receipted, untrustedOnly: untrustedCue !== undefined };
 }
 
 /**

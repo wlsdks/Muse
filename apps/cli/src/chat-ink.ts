@@ -192,7 +192,7 @@ export function MuseChatApp(props: {
     readonly history: readonly { readonly role: string; readonly content: string }[];
     readonly toolsUsed: readonly string[];
     readonly toolGroundingSources?: readonly { readonly source: string; readonly text: string }[];
-  }) => Promise<{ readonly display: string; readonly forHistory: string }>;
+  }) => Promise<{ readonly display: string; readonly forHistory: string; readonly untrustedOnly: boolean }>;
   readonly historyWindow?: number;
   readonly personaPrompt: () => string | undefined;
   readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; grounding?: { source: string; text: string }; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
@@ -204,6 +204,9 @@ export function MuseChatApp(props: {
   readonly onCommit: (user: string, assistant: string) => void;
   readonly autoLearn?: (user: string, assistant: string) => Promise<string | undefined>;
   readonly onReset: () => void;
+  /** Called when an answer rested on untrusted-only sources — runChatInk uses it to
+   *  mark the end-of-session episode trusted:false (episode-laundering defense). */
+  readonly onUntrustedAnswer?: () => void;
   readonly proactiveCheck?: () => Promise<readonly ProactiveItem[]>;
   readonly jobCompletions?: () => Promise<readonly ProactiveItem[]>;
   /** Non-windowed nudges (due check-ins + fireable pattern suggestions), each surfaced once verbatim. */
@@ -596,6 +599,14 @@ export function MuseChatApp(props: {
           setStreaming(accumulated);
         }
         persisted = finalized.forHistory;
+        // Bridge the session's source-trust verdict out to runChatInk (the
+        // end-of-session episode capture runs after this component unmounts): once
+        // ANY answer rested on untrusted-only sources, the stored episode is marked
+        // trusted:false so it can't later launder that content as trusted "your own
+        // history" grounding (MemoryGraft arXiv:2512.16962).
+        if (finalized.untrustedOnly) {
+          props.onUntrustedAnswer?.();
+        }
       }
     }
     historyRef.current.push({ content: message, role: "user" });
@@ -1030,7 +1041,14 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
       return undefined;
     }
   };
+  // Session-level source-trust verdict, bridged from the component (onUntrustedAnswer)
+  // and read at the post-unmount episode capture below: true once any answer rested on
+  // untrusted-only sources → the stored episode is marked trusted:false (MemoryGraft).
+  let sessionUntrusted = false;
   const onReset = (): void => {
+    // A new conversation starts fresh — don't carry a prior conversation's verdict
+    // onto the post-reset episode (the capture summarises turns since the boundary).
+    sessionUntrusted = false;
     void clearLastChatHistory().catch(() => undefined);
   };
 
@@ -1364,6 +1382,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     onCommit,
     autoLearn,
     onReset,
+    onUntrustedAnswer: () => { sessionUntrusted = true; },
     personaPrompt,
     proactiveCheck,
     proactiveNudges,
@@ -1427,7 +1446,10 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     await captureEndOfSessionEpisode({
       model,
       modelProvider: assembly.modelProvider as Parameters<typeof captureEndOfSessionEpisode>[0]["modelProvider"],
-      userId
+      userId,
+      // Mark the episode trusted:false when this session ever grounded on
+      // untrusted-only sources (episode-laundering defense, MemoryGraft).
+      untrustedSession: sessionUntrusted
     }).catch(() => undefined);
 
     // End-of-session auto-distillation: turn any correction the user made this

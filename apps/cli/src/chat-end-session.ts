@@ -83,6 +83,14 @@ export interface CaptureEndOfSessionOptions {
   /** Test seams for the history readers; defaults route through `chat-history.ts`. */
   readonly readLines?: () => Promise<readonly SessionTurnLine[]>;
   readonly readBoundaries?: () => Promise<readonly SessionBoundaryRef[]>;
+  /**
+   * `true` when ANY turn this session produced an answer that rested on
+   * UNTRUSTED-only sources (the REPL accumulates `finalizeGatedChatAnswer`'s
+   * `untrustedOnly` per turn). Marks the stored episode `trusted:false` so a later
+   * recall can't launder the session's tool/feed-grounded content as trusted "your
+   * own history" (MemoryGraft arXiv:2512.16962). Absent/false ⇒ trusted episode.
+   */
+  readonly untrustedSession?: boolean;
 }
 
 export type CaptureResult =
@@ -216,6 +224,11 @@ export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOpt
     summary: redactSecretsInText(summary.summary),
     ...(scrubbedTopics.length > 0 ? { topics: scrubbedTopics } : {}),
     ...(summary.importance !== undefined ? { importance: summary.importance } : {}),
+    // Carry the session's source-trust verdict (the REPL passes true when ANY turn
+    // this session rested on untrusted-only sources) so the episode can't later
+    // launder that content as trusted "your own history" grounding (MemoryGraft
+    // arXiv:2512.16962). Only stored when false; absent ⇒ trusted.
+    ...(options.untrustedSession === true ? { trusted: false } : {}),
     userId: ownerId
   };
 
