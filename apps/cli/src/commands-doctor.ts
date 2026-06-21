@@ -12,6 +12,7 @@
  */
 
 import { existsSync, promises as fs } from "node:fs";
+import { formatRelativeTime } from "./human-formatters.js";
 import { parseAlpha, runCalibrationDoctor } from "./commands-doctor-calibration.js";
 export { buildCalibrationReport, formatCalibration, parseAlpha } from "./commands-doctor-calibration.js";
 import { episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, readMuseSpeedEnv, readOllamaPerfEnv, selfLearningCheck, weaknessFuelCheck, webEgressCheck, type LocalCheck } from "./commands-doctor-checks.js";
@@ -55,12 +56,27 @@ export interface DoctorCommandHelpers {
   readonly writeOutput: (io: ProgramIO, value: unknown, textField?: string) => void;
 }
 
-interface DoctorSummary {
+export interface DoctorSummary {
   readonly allHealthy?: boolean;
   readonly status?: string;
   readonly statusLabel?: string;
   readonly summary?: string;
   readonly generatedAt?: string;
+}
+
+/**
+ * The one-line `muse doctor` summary. The generated-at stamp is humanised
+ * ("3h ago" / local datetime past 7d) so an operator instantly sees how
+ * STALE the health snapshot is — a raw UTC ISO forces mental math. Pure +
+ * exported so the line is testable without the API daemon. `now` injectable
+ * for deterministic tests.
+ */
+export function formatDoctorSummaryLine(snapshot: DoctorSummary, now: Date = new Date()): string {
+  const status = snapshot.status ?? "unknown";
+  const label = snapshot.statusLabel ?? "";
+  const summary = snapshot.summary ?? "";
+  const stamp = snapshot.generatedAt ? formatRelativeTime(snapshot.generatedAt, now) : "";
+  return `[${status}] ${summary}${label ? ` — ${label}` : ""}${stamp ? ` (${stamp})` : ""}`;
 }
 
 
@@ -158,11 +174,7 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
           return "remote";
         }
         const snapshot = response as DoctorSummary;
-        const status = snapshot.status ?? "unknown";
-        const label = snapshot.statusLabel ?? "";
-        const summary = snapshot.summary ?? "";
-        const stamp = snapshot.generatedAt ?? "";
-        io.stdout(`[${status}] ${summary}${label ? ` — ${label}` : ""}${stamp ? ` (${stamp})` : ""}\n`);
+        io.stdout(`${formatDoctorSummaryLine(snapshot)}\n`);
         return "remote";
       };
 
