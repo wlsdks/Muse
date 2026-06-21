@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 33 · 2026-06-21 · skill v2.0 · <commit-pending> (file_read refuses binary-content text files; read↔grep sibling; 3-fire merge)
+## fire 33 · 2026-06-21 · skill v2.0 · db078c66 (file_read refuses binary-content text files; read↔grep sibling; 3-fire merge)
 meta: value-class=micro-fix(real-bug) · pkg=@muse/fs · kind=correctness/reliability · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles 1072→1072 (+1 case fs-read-tools, mutation-valid) · fabrication 0 · @muse/fs 격리 168 · pnpm check exit 0 · lint clean · Ollama DOWN(30c 보류)
 - 무엇: 텍스트-확장자(.txt/.ts)지만 NUL 바이트 포함=binary 파일을 file_read 텍스트 브랜치가 UTF-8 디코드해 corrupted "text"(NUL 포함) 반환 → 모델 edit-poisoning. file_grep은 이미 isProbablyBinary로 skip하는데 file_read는 안 함(형제 불일치). FIX: `rawText` 후 `if isProbablyBinary→read:false`(binary 명시 reason).
