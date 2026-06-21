@@ -130,6 +130,23 @@ describe("file_read / file_list / file_grep", () => {
       expect(out["read"]).toBe(false);
     });
 
+    it("refuses a text-EXTENSION file that is actually BINARY (a NUL byte) instead of returning corrupted text", async () => {
+      // a .txt whose bytes include a NUL — binary disguised as text. file_grep
+      // already skips these; file_read must too, or the model gets corrupted,
+      // edit-poisoning content back.
+      await writeFile(join(root, "fake.txt"), Buffer.from([0x68, 0x69, 0x00, 0x6f]));
+      const tool = createFileReadTool(opts());
+      const out = (await tool.execute({ path: join(root, "fake.txt") }, ctx)) as JsonObject;
+      expect(out["read"]).toBe(false);
+      expect(out["text"]).toBeUndefined();
+      expect(String(out["reason"])).toMatch(/binary|NUL/iu);
+      // a normal text file with the same extension still reads fine.
+      await writeFile(join(root, "real.txt"), "hello\nworld");
+      const ok = (await tool.execute({ path: join(root, "real.txt") }, ctx)) as JsonObject;
+      expect(ok["read"]).toBe(true);
+      expect(ok["text"]).toBe("hello\nworld");
+    });
+
     it("refuses a denied path (fail-close) instead of reading it", async () => {
       await mkdir(join(root, ".ssh"), { recursive: true });
       await writeFile(join(root, ".ssh", "id_rsa"), "KEY");

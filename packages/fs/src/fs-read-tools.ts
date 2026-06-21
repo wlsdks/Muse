@@ -242,6 +242,12 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
         }
 
         const rawText = data.toString("utf8");
+        // A text-EXTENSION file can still be binary (a null byte ⇒ not text). The
+        // model gets corrupted, edit-poisoning output if we hand it back as text,
+        // so refuse with a clear signal — the same binary skip file_grep applies.
+        if (isProbablyBinary(rawText)) {
+          return { path: safe, read: false, reason: `'${basename(safe)}' looks like a binary file (contains a NUL byte), not text — file_read reads text, PDF, Word, and image files.` };
+        }
         const lines = rawText.split("\n");
         const totalLines = lines.length;
         const offset = asPositiveInt(args["offset"]);
