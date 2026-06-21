@@ -46,7 +46,7 @@ import { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingAction
 export { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy };
 import { dedupNearDuplicateChunks, diversifyAskChunks, notesGroundingFraming, secondHopAugmentChunks, shouldSecondHop } from "@muse/recall";
 import { groundedSourceSummary, optionalGroundingRelevance, optionalGroundingSections } from "@muse/recall";
-import { citationPrecisionNotice, citationRecallNotice, sourceCheckSignals, untrustedOnlyGroundingNotice, type SourceCheckSignals } from "@muse/recall";
+import { citationPrecisionNotice, citationRecallNotice, sourceCheckSignals, untrustedEpisodeMatch, untrustedOnlyGroundingNotice, type SourceCheckSignals } from "@muse/recall";
 
 export { citationPrecisionNotice, citationRecallNotice, untrustedOnlyGroundingNotice } from "@muse/recall";
 export { diversifyAskChunks, notesGroundingFraming };
@@ -2510,7 +2510,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           ...openTasks.map((t) => exactMatch(`task: ${t.title}`, `${t.title}${t.notes ? ` ${t.notes}` : ""}${t.dueAt ? ` due ${t.dueAt} ${humanDate(t.dueAt)}` : ""}`)),
           ...upcomingEvents.map((e) => exactMatch(`event: ${e.title}`, `${e.title}${e.location ? ` ${e.location}` : ""} ${humanDate(e.startsAt)} ${humanDate(e.endsAt)}`.trim())),
           ...pendingReminders.map((r) => exactMatch(`reminder: ${r.text}`, `${r.text} ${humanDate(r.dueAt)}`.trim())),
-          ...episodeHits.map((e) => ({ cosine: e.score, score: e.score, source: `session: ${e.id}`, text: e.summary, ...(untrustedEpisodeIds.has(e.id) ? { trusted: false } : {}) })),
+          ...episodeHits.map((e) => untrustedEpisodeIds.has(e.id)
+            ? untrustedEpisodeMatch(e.id, e.summary, e.score)
+            : ({ cosine: e.score, score: e.score, source: `session: ${e.id}`, text: e.summary })),
           ...matchedActions.map((a) => exactMatch(`action: ${a.what}`, `${a.what} ${a.result}${a.detail ? ` ${a.detail}` : ""}`)),
           ...matchedCommands.map((cmd) => exactMatch(`command: ${cmd}`, cmd)),
           ...matchedCommits.map((c) => exactMatch(`commit: ${c.subject}`, c.subject)),
