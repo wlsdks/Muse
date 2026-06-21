@@ -284,3 +284,26 @@ browser-check: n/a (Swift-only; bubble timer is AppKit)
 
 mutation-first: zeroing the length factor (0.09→0.0) turned 3 tests RED;
 restored → 14/14 GREEN. ④b independent Opus judge: PASS.
+
+## fire 13 · 2026-06-22 · skill v2.1.0 · (pending commit)
+meta: value-class=connection-correctness · area=settings · kind=refactor · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles +1 (MessagingEnvTests, 8 cases) · companion×refactor 1 · companion×feature 2 · settings×feature 1 · settings×refactor 1 · server×refactor 1 · web×ux 1 · web×i18n 1 · web×a11y 1 · tests×test 1 · menu×refactor 1 · onboarding×refactor 1 · webview×refactor 1 · fabrication 0
+browser-check: n/a (Swift-only; Keychain/env mapping)
+
+- **What**: extracted MessagingCredentials.serverEnv()'s token→env mapping into a
+  pure MuseDesktopCore.MessagingEnv.build + 8 tests; app struct delegates. Maps
+  Telegram/Discord/Slack/LINE tokens to MUSE_*_ vars, gates poll-enabled flags,
+  sets MUSE_INBOUND_REPLY_ENABLED iff any provider configured.
+- **Why**: this mapping is what actually connects the user's messengers (a feature
+  Jinan asked for); a wrong var name or a half-enabled blank provider would fail
+  the connection silently — now pinned (incl. tokens-don't-cross-wires).
+- **Review point**: byte-equivalent to the old inline code (same trim CharacterSet,
+  same gating); trimming still happens exactly once (app passes raw, build trims).
+  Independent Opus ④b ran 3 mutations (inbound flag, wrong var name, empty-guard)
+  + threat-modeled: blank token sets nothing, no cross-wiring, no secret logged.
+- **Risk**: low — behavior-preserving; .trimmed extension still used by save().
+
+mutation-first: dropping the telegram empty-guard turned 2 tests RED; restored →
+8/8 GREEN. ④b independent Opus judge: PASS.
+sibling follow-up: CalendarCredentials.serverEnv() is the analogous untested
+inline mapping — backlogged for a future fire (same extract+test pattern).

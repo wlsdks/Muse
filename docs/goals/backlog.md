@@ -2938,3 +2938,5 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ extract+test WebView navigation security gate (WebNavPolicy) — desktop-enhance fire 11
 - ◦ WebNavPolicy hardening nits: host.lowercased() for case-symmetry + treat IPv6 [::1] as loopback (fail-safe today) — desktop-enhance follow-up
 - ✓ adaptive idle-bubble display duration (IdleChatter.displaySeconds + cancellable clear) — desktop-enhance fire 12
+- ✓ extract+test messenger serverEnv mapping (MessagingEnv.build) — desktop-enhance fire 13
+- ◦ extract+test CalendarCredentials.serverEnv() mapping into Core (analogous sibling to MessagingEnv) — desktop-enhance follow-up
