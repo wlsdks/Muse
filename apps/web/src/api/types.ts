@@ -256,6 +256,23 @@ export interface WeaknessesResponse {
   entries: WeaknessView[];
 }
 
+export interface PlaybookStrategyView {
+  id: string;
+  text: string;
+  tag: string | null;
+  origin: string | null;
+  reward: number;
+  probation: boolean;
+  timesObserved: number;
+  source: string | null;
+  createdAt: string;
+}
+
+export interface PlaybookStrategiesResponse {
+  total: number;
+  entries: PlaybookStrategyView[];
+}
+
 export interface UserMemoryResponse {
   readonly facts?: Record<string, string>;
   readonly preferences?: Record<string, string>;
