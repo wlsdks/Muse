@@ -175,3 +175,14 @@ ratchet: 변경연관 테스트만(발열정책) · commands-remind formatRemind
 - **리스크**: 낮음. diff 2파일. export+optional param 후방호환. 다양성: info-projection(최근8 중 2회나 다른 surface=remind).
 - live: `node dist/index.js remind list` → 각 overdue 알림에 `(⚠ overdue)`.
 - 레퍼런스: 할일/리마인더 UI의 overdue 강조 관행(빨강/⚠). https://todoist.com/help
+
+## fire 16 · 2026-06-22 · skill v2.1.0 · 335a4741
+meta: value-class=info-projection · pkg=@muse/cli · kind=info-projection · verdict=PASS · firesSinceDrill=6
+ratchet: 변경연관 테스트만(발열정책) · chat-repl formatReminderList 2 green · lint 0 · fabrication 0
+
+- **무엇**: fire-15 형제 완성 — 인-챗 리마인더 리스트("리마인더 뭐 있어?", chat-repl formatReminderList)에도 `(⚠ overdue)`/`(⚠ 지남)` 마커. 포매터에 optional `overdue?` 추가 + 호출부(이미 pending 필터)에서 dueAt<now 계산. korean-aware.
+- **왜**: `muse remind list`(fire 15)와 인-챗 경로 일관성 — 늦은 알림이 두 surface 모두에서 스캔 가능. 결정론(실 dueAt), fabrication 0, fired는 호출부 필터로 제외.
+- **리뷰지점**: 포매터 테스트가 실 출력 grade(KO 지남/EN overdue, future 미표시), mutation-first RED(마커 끄면 2 fail). 인-챗 경로는 모델 intent-gated라 헤드리스 라이브 불가 — 순수 포매터 단위테스트 + 호출부 dueMs<now(fire-15 검증 로직 미러)로 충분. 독립 Opus ④b PASS(6/6). 비-pending은 호출부 필터로 도달 불가.
+- **리스크**: 낮음. diff 2파일. optional 필드 후방호환. 다양성: info-projection(parity 완성).
+- live(테스트 대용): 포매터 단위테스트가 마커 렌더 확인(인-챗 경로는 intent-gated).
+- 레퍼런스: fire 15와 동일(overdue 강조 관행).
