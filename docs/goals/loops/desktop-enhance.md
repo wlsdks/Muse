@@ -32,3 +32,24 @@ browser-check: n/a (Swift-only; idle chatter has no DOM render)
 
 mutation-first: breaking the avoid-repeat guard AND the dedup guard each turned a
 test RED (2 failures); restored → 9/9 GREEN. ④b independent Opus judge: PASS.
+
+## fire 2 · 2026-06-22 · skill v2.1.0 · (pending commit)
+meta: value-class=settings-input-correctness · area=settings · kind=feature · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles +1 (apiUrl.test.ts, 7 cases) · companion×refactor 1 · settings×feature 1 · fabrication 0
+browser-check: Settings — invalid(ftp)→Save disabled+error; schemeless(127.0.0.1:3030)→enabled+normalized; empty→disabled; .content bounded(≤viewport) & scrolls; nav-icon 16px; no new JS console errors
+
+- **What**: new pure `normalizeApiBaseUrl` (apps/web/src/lib/apiUrl.ts) + 7 tests,
+  wired into Settings → Save is disabled on an invalid API URL, shows an inline
+  error, and saves the NORMALIZED url (adds default http:// scheme, strips
+  trailing slash, rejects non-http schemes / hostless garbage).
+- **Why**: the API client builds every request with `new URL(path, baseUrl)`, so
+  a base typed without a scheme ("127.0.0.1:3030") silently breaks every call —
+  this catches a mistyped URL at save time instead of failing every request.
+- **Review point**: scheme-guard order (reject non-http → prepend http:// →
+  parse → hostname check) — independent Opus ④b judge executed it (incl.
+  javascript:/data: → rejected) and traced no join/display regression.
+- **Risk**: low — pure helper + Settings save-path only; absolute API paths mean
+  trailing-slash strip can't change request joining. No security surface.
+
+mutation-first: removing the scheme-prepend turned 1 test RED; restored → 7/7
+GREEN. ④b independent Opus judge: PASS (nit: doc-comment style → fixed).
