@@ -663,7 +663,7 @@ ratchet: cli 2889/2889 · fabrication 0 · self-eval exit 0 · check exit 0 · s
 - **리스크**: 없음(apps/cli 3파일 + 저널 byte-fix, cli build clean·cli 2889/2889·pnpm check exit 0·smoke 52/0·lint clean, 독립 Opus ④b judge가 behavior-preserve·경로정합·mutation·diversity 검증 후 PASS).
 - **lesson**: 저널에 제어바이트(NUL 등)를 *설명*할 때 실수로 literal byte를 박지 마라 — fire 70이 NUL 수정을 기술하며 저널에 literal NUL을 박았고, 커밋시 byte-hygiene grep이 NUL-in-pipeline 에러로 silent 실패해 통과. 교훈: 저널 byte-scan을 git diff 파이프 대신 파일 직접 grep(NUL 안전)으로.
 
-## fire 72 · 2026-06-21 · skill v2.0.0 · <pending>
+## fire 72 · 2026-06-21 · skill v2.0.0 · a3a357a9
 meta: surface=web · value-class=new-capability · pkg=@muse/web+api · kind=mcp-allowlist-editor(STATE-CHANGE) · verdict=PASS · firesSinceDrill=3
 ratchet: web 118/118 · api 942/942 · fabrication 0 · self-eval exit 0 · smoke:broad 52/0 · lint clean · ★judge가 보안-clobber 적발→fix→PASS(maker≠judge)
 
