@@ -621,7 +621,7 @@ ratchet: api 932/932 · fabrication 0 · self-eval exit 0 · check exit 0 · smo
 - **리뷰지점(정직=effective state)**: 6 플래그 기본값이 실제 read-site와 일치해야 거짓 안 함 — 독립 judge가 6개 전부 read-site 대조(episodic chat-end-session:97·home-watch tick-daemons:678·conflict commands-daemon:580·proactive server:351·bg-review autoconf:840·knowledge autoconf:629, 전부 false) 확인. parseBoolean 재사용(truthy={true,1,yes,on}, 손수 `==="true"` 아님→런타임과 안 갈림). mutation-first: 기본값 flip→empty-env 테스트 RED·env 무시→override 테스트 RED. 보안: read-only GET·동일 auth 게이트·고정 6키 화이트리스트(process.env 통째 덤프 아님, 시크릿 노출 0)·불리언만. 정직한 갭: 토글 write·웹 뷰 후속.
 - **리스크**: 없음(apps/api 3파일, api build clean·api 932/932·pnpm check exit 0·smoke:broad 52/0·lint clean, 독립 Opus ④b judge가 6-기본값-정직·parseBoolean재사용·auth·시크릿0·다양성 검증 후 PASS).
 
-## fire 68 · 2026-06-21 · skill v2.0.0 · <pending>
+## fire 68 · 2026-06-21 · skill v2.0.0 · 2433dbfb
 meta: surface=web · value-class=new-capability · pkg=@muse/web · kind=settings-daemons-view · verdict=PASS · firesSinceDrill=7
 ratchet: web tests 107/107 (+3) · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 52/0 · lint clean
 
