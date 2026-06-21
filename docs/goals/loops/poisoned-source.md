@@ -132,3 +132,31 @@ noted coverage gap; mutation-proven (persist→display = RED).
 
 RISK: low — only PERSISTED text changed; verdict/displayed answer byte-identical,
 deterministic, mutation-proven at unit + render layers, independent Opus ④ PASS.
+
+## fire 5 · 2026-06-21 · poisoned-source · (see commit)
+
+meta: value-class=bug-fix · pkg=@muse/cli (chat-repl/program/program-helpers) · kind=evidence-hygiene · verdict=PASS · firesSinceDrill=5
+
+ratchet: testFiles +0 (extended program-helpers test) · fabrication 0 · pkg=cli kind=evidence-hygiene (2nd consecutive — completes the fire-4 decomposition, NOT a new well) · eval:memory-poisoning PASS · eval:action-log-tamper PASS
+
+WHAT: Slice B — the one-shot `muse chat`/desktop sibling of fire 4. `runLocalChat`
+returned the cue-laden `.display`; program.ts persisted it via `appendLastChatTurn`
+→ re-fed as trusted grounding evidence on the next session's `priorHistory`. The
+desktop companion runs ONLY chat, so this was a live recurring path. FIX:
+`runLocalChat` now returns a `responseForHistory` cue-free twin (parallel-tracked
+through every real-content transform; display-only affordances — source-check
+cues + repeat-weakness nudge — excluded); new pure `chatTurnPersistText(body)`
+selects the twin; program.ts persists via it.
+
+WHY: completes the fire-4 Ink fix across BOTH chat surfaces — the self-pollution
+loop (Muse's own warning replayed as trusted evidence) is now closed everywhere a
+chat turn is persisted. Display + run-log byte-identical (only appendLastChatTurn
+changed).
+
+REVIEW POINT: 2nd consecutive (cli, evidence-hygiene) — justified as decomposition
+completion (Slice B of fire 4), not a fresh same-well pick; next fire should
+diversify (pkg/kind). Judge confirmed the parallel-track audit (every transform
+mirrored, nudge correctly excluded). chatTurnPersistText fallback keeps remote/
+legacy paths byte-identical.
+
+RISK: low — only persisted text changed; deterministic, mutation-proven, Opus ④ PASS.
