@@ -653,7 +653,7 @@ ratchet: web tests 110/110 (+3) · fabrication 0 · self-eval exit 0 · smoke:br
 - **리스크**: 없음(apps/web 5 + memory 1 파일, web 110/110·byte-hygiene 8/8·memory 553/553·smoke 52/0·lint clean. cli 5 실패는 saturation 타임아웃[격리 41/41·32/32 그린, 82s/41s 지속시간], 무관. 독립 Opus ④b judge가 honesty경계·기존섹션·byte-fix behavior-preserve 검증 후 PASS).
 - **환경 플레이크 추가**: `chat-ink-render`·`document-reader`·`program`(PDF/Ink) cli 테스트도 saturation 타임아웃 클래스(messaging-webhooks·server.scheduler/mcp·web-search-policy에 추가). merge-check flake-exclusion에 포함.
 
-## fire 71 · 2026-06-21 · skill v2.0.0 · <pending>
+## fire 71 · 2026-06-21 · skill v2.0.0 · 502861bb
 meta: surface=cli · value-class=refactor · pkg=@muse/cli · kind=resolver-unification · verdict=PASS · firesSinceDrill=2
 ratchet: cli 2889/2889 · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 52/0 · lint clean · ★다양성 RATCHET 전환(web-view 5/8→cli refactor)
 
