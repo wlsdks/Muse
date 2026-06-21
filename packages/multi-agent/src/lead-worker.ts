@@ -82,6 +82,24 @@ export async function detectSubtaskRedundancies(
   return pairs.map((p) => `"${completed[p.aIndex]!.subtask.text}" ≈ "${completed[p.bIndex]!.subtask.text}"`);
 }
 
+/**
+ * The orchestrate-path twin of {@link detectSubtaskRedundancies} (and the redundancy
+ * complement of {@link detectFanInConflicts}): given the COMPLETED workers' parts, flag
+ * any pair of workers whose outputs are near-identical — one restated another's answer
+ * adding nothing (MAST FM-1.3 step repetition). In a fan-OUT where several workers answer
+ * the SAME question, this catches a worker that contributed no distinct value. Reuses the
+ * shared {@link detectRedundantPairs}. Returns a caption per pair (by workerId). Fail-soft.
+ */
+export async function detectFanInRedundancy(
+  parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>,
+  embed: (text: string) => Promise<readonly number[]>
+): Promise<readonly string[]> {
+  const nonEmpty = parts.filter((p) => typeof p.output === "string" && p.output.trim().length > 0);
+  if (nonEmpty.length < 2) return [];
+  const pairs = await detectRedundantPairs(nonEmpty.map((p) => p.output), embed);
+  return pairs.map((p) => `"${nonEmpty[p.aIndex]!.workerId}" ≈ "${nonEmpty[p.bIndex]!.workerId}"`);
+}
+
 export function verifySynthesisCoverage(finalAnswer: string, executions: readonly SubtaskExecution[]): SynthesisVerdict {
   const answerTokens = lexicalTokens(finalAnswer);
   const missing: string[] = [];

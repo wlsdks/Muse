@@ -4,6 +4,39 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 8 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=wiring(sibling-completion) · pkg=@muse/multi-agent+@muse/api · kind=detector-wiring(orchestrator) · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles +0 (cases added to orchestrate-synthesis + orchestrate-route-conflict-wiring) · fabrication 0 · eval:orchestration/decomposition deterministic cases PASS · consecutive allPASS=4 (drill at ≥8) · distinct cell (orchestrator fan-out wiring vs f7 lead-worker)
+
+**What** — Completed fire 7's deferred sibling: brought the REDUNDANCY (step-repetition) detector to the
+production API orchestrate FAN-OUT path (mirrors fire 1's conflict wiring). New `detectFanInRedundancy(parts,
+embed)` (workerId-keyed twin of detectFanInConflicts) → `OrchestrationRunOptions.detectRedundancies` →
+`buildOrchestrationResponse` appends an "ℹ Workers produced near-identical answers (possible duplicated
+work)" advisory + records `raw.redundancies` → wired at BOTH POST routes (embed already threaded by fire 1).
+
+**Why** — Sibling-audit completion: fire 7 shipped redundancy on the lead-worker path but left the
+orchestrator fan-out twin dark. In a fan-out where several workers answer the SAME question, a worker that
+restates another's answer adds no distinct value (and isn't independent corroboration) — now surfaced.
+
+**Review points** — (1) MUTATION-FIRST: breaking the advisory string → exactly the orchestrator-advisory
+test RED, restored. (2) MIRROR FAITHFUL: the redundancy block is a faithful copy of the conflict block (same
+`completedParts.length >= 2` guard, fail-soft try/catch, advisory-only) — judge confirmed no positional
+off-by-one in the new `buildOrchestrationResponse` param. (3) CONFLICT-vs-REDUNDANCY distinction TESTED: the
+API test asserts identical-worker output gets the redundancy advisory but NOT the "⚠ disagree" line (identical
+sets fail the conflict neither-subset gate). (4) ADVISORY-ONLY: never drops a worker / blocks synthesis /
+changes finalAnswer. (5) Calibration inherited from fire 7's detector (binding negative re-asserted at this
+layer). (6) Fail-soft + back-compat (no embed→silent control, throwing→silent, <2→[]).
+
+**Risk** — Advisory-only; no model call, no egress, fabrication floor untouched. DEFERRED (judge-noted gap):
+redundancy is NOT yet persisted in `OrchestrationHistoryEntry` (the f6 twin) — currently response-`raw`-only,
+not history-queryable; lower-stakes than a conflict, a future fire can add parity. Also deferred: the
+`commands-ask.ts` god-file stderr surfacing (fire-7 carryover). NOTE: two UNRELATED flaky tests (@muse/model
+web-search fuzz + apps/api messaging-webhooks env-gating) reddened the saturated full `pnpm check` once each,
+both passed isolated + on re-run; neither in this diff.
+
+review: gates green — multi-agent build clean · orchestrate-synthesis 25 pass · api orchestrate-route 5 pass ·
+lint 0 · `pnpm check` exit 0 (re-run) · independent Opus ④ judge VERDICT PASS.
+
 ## fire 7 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · 2eeed6af
 meta: value-class=new-capability · pkg=@muse/agent-core+@muse/multi-agent+@muse/cli · kind=new-detector(paper-grounded) · verdict=PASS · firesSinceDrill=5
 ratchet: testFiles +1 (redundancy-detection) · fabrication 0 · eval:orchestration/decomposition deterministic cases PASS (ran this fire) · consecutive allPASS=3 · NEW (pkg,kind) cell (paper-grounded detector capability)

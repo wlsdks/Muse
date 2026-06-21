@@ -37,7 +37,7 @@ export type {
   SubtaskStatus,
   SynthesisVerdict
 } from "./lead-worker.js";
-export { dedupeSubtasks, detectFanInConflicts, detectSubtaskConflicts, detectSubtaskRedundancies, runLeadWorkerTask, verifySynthesisCoverage } from "./lead-worker.js";
+export { dedupeSubtasks, detectFanInConflicts, detectFanInRedundancy, detectSubtaskConflicts, detectSubtaskRedundancies, runLeadWorkerTask, verifySynthesisCoverage } from "./lead-worker.js";
 
 export interface AgentWorker {
   readonly id: string;
@@ -154,6 +154,13 @@ export interface OrchestrationRunOptions {
    * package stays model-agnostic; fail-soft (throw/empty ⇒ no flag).
    */
   readonly detectConflicts?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<readonly string[]>;
+  /**
+   * Fan-in REDUNDANCY detector (step-repetition): given the COMPLETED workers' parts,
+   * return a caption per pair whose outputs are near-identical (a worker added nothing).
+   * A non-empty result records `response.raw.redundancies` and appends one advisory line.
+   * Caller-provided (model-agnostic); fail-soft (throw/empty ⇒ no flag).
+   */
+  readonly detectRedundancies?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<readonly string[]>;
 }
 
 export interface MultiAgentOrchestrationResult {
@@ -443,7 +450,8 @@ export class MultiAgentOrchestrator {
       options.synthesizeFinalAnswer,
       objectiveFromInput(input),
       options.verifyFinalAnswer,
-      options.detectConflicts
+      options.detectConflicts,
+      options.detectRedundancies
     );
     const raw = response.raw as
       | { readonly conflicts?: readonly string[]; readonly verification?: { readonly satisfied: boolean } }
@@ -694,7 +702,8 @@ async function buildOrchestrationResponse(
   synthesizeFinalAnswer?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>, guidance?: string) => Promise<string>,
   objective?: string,
   verifyFinalAnswer?: (objective: string, output: string) => Promise<{ readonly satisfied: boolean; readonly missing?: string }>,
-  detectConflicts?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<readonly string[]>
+  detectConflicts?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<readonly string[]>,
+  detectRedundancies?: (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) => Promise<readonly string[]>
 ): Promise<AgentRunResult["response"]> {
   const cap = maxOutputCharsPerWorker && maxOutputCharsPerWorker > 0 ? maxOutputCharsPerWorker : undefined;
   // Neutralize each completed worker's output ONCE, BEFORE summarize/cap, and feed
@@ -784,6 +793,23 @@ async function buildOrchestrationResponse(
     }
   }
 
+  // Cross-worker REDUNDANCY (step-repetition, the complement of the conflict check):
+  // two COMPLETED workers produced near-identical answers — one added no distinct value.
+  // Advisory only; fail-soft. Surfaced so duplicated work is visible, not passed off as
+  // independent corroboration.
+  let redundancies: readonly string[] | undefined;
+  if (detectRedundancies && completedParts.length >= 2) {
+    try {
+      const found = await detectRedundancies(completedParts);
+      if (found.length > 0) {
+        redundancies = found;
+        output = `${output}\n\nℹ Workers produced near-identical answers (possible duplicated work): ${found.join("; ")}`;
+      }
+    } catch {
+      // detector unavailable — surface nothing, keep the answer
+    }
+  }
+
   return {
     id: createRunId("multi_agent_response"),
     model,
@@ -795,7 +821,8 @@ async function buildOrchestrationResponse(
         workerId: result.workerId
       })),
       ...(verification ? { verification } : {}),
-      ...(conflicts ? { conflicts } : {})
+      ...(conflicts ? { conflicts } : {}),
+      ...(redundancies ? { redundancies } : {})
     }
   };
 }
