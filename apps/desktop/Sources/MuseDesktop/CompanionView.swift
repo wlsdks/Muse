@@ -13,9 +13,9 @@ struct CompanionView: View {
     private let violet = Color(red: 0.55, green: 0.45, blue: 0.95)
 
     var body: some View {
-        VStack(spacing: 12) {
-            answerCard
+        VStack(spacing: 10) {
             Spacer(minLength: 0)
+            answerCard          // sits directly above the goddess (speech bubble)
             orb
             if model.inputVisible { inputBar }
             Spacer(minLength: 0)
@@ -84,10 +84,11 @@ struct CompanionView: View {
     }
 
     private var inputBar: some View {
-        HStack(alignment: .bottom, spacing: 12) {
+        HStack(alignment: .center, spacing: 11) {
             Button(action: { model.startVoice() }) {
                 Image(systemName: model.orbState == .listening ? "stop.circle.fill" : "mic.fill")
-                    .font(.system(size: model.orbState == .listening ? 17 : 14, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 20)
             }
             .buttonStyle(.plain)
             .foregroundStyle(model.orbState == .listening ? Color(red: 0.95, green: 0.45, blue: 0.5) : Color.secondary)
@@ -102,22 +103,22 @@ struct CompanionView: View {
                 .onSubmit { model.submit() }
 
             Button(action: { model.submit() }) {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 20, weight: .semibold))
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 19, weight: .semibold))
             }
             .buttonStyle(.plain)
             .foregroundStyle(LinearGradient(colors: [violet, Color(red: 0.40, green: 0.62, blue: 0.98)], startPoint: .top, endPoint: .bottom))
             .opacity(model.inputText.trimmingCharacters(in: .whitespaces).isEmpty ? 0.35 : 1)
 
-            // Open the full Muse app — lives here, on the right of the bubble.
+            // Open the full Muse app.
             Button(action: { NotificationCenter.default.post(name: .museOpenFullApp, object: nil) }) {
-                Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 13, weight: .semibold))
+                Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 13, weight: .medium)).frame(width: 18)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Color.secondary.opacity(0.7))
             .help("Open the full Muse app")
         }
-        .padding(.horizontal, 17)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 21, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 21, style: .continuous).strokeBorder(.white.opacity(0.22), lineWidth: 0.8))
         .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 4)
