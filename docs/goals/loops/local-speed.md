@@ -42,3 +42,13 @@ ratchet: pkg/kind DIFFERS (scripts/infra → model/adapter → multi-agent/casca
 - 리스크: 없음 — doctor advisory string 한 케이스만 변경, 모델/런타임/grounding/tool 경로 무관 → 정확성 회귀 0 trivially.
   검증: cli 2861 pass(신규 2 OUTCOME 케이스) · MUTATION-FIRST(INERT 분기 제거 → 2 RED "expected … to contain INERT"; revert→green) · pnpm check rc=0(api 887 + cli 2861) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(사실주장 정확성 웹검증 재확인, 자체 mutation 재현; 중복주석 결함 1건 지적 → 수정 완료).
   형제-감사: Muse-process 속도 env(MUSE_OLLAMA_NUM_BATCH 등) doctor 노출 + FA-capable-model-arch 경고 → backlog ◦ 2건.
+
+## fire 5 · 2026-06-21 · local-speed · <commit>
+meta: value-class=new-capability · pkg=@muse/multi-agent · kind=cascade-execution · verdict=PASS · firesSinceDrill=5
+ratchet: (multi-agent, cascade) 2/5 fires, distinct kind from fire 3 (decision→execution) · fabrication 0 · additive(in-repo caller 0)
+- 무엇: FrugalGPT 캐스케이드 EXECUTION 프리미티브 `runCascade<T>({fast,heavy,run,confidenceOf,threshold})` → `{result,tier,escalated,fastConfidence}` (@muse/multi-agent cascade-run.ts). fast 모델 먼저 실행 → confident면 그 답 수용(모델 1회 실행 = 지연 win), low/측정불가 confidence면 heavy로 ONCE escalate. 단일 escalation 바운드(루프 없음, MAST step-repetition/termination 가드). fire 3의 `shouldEscalateToHeavy` 재사용.
+- 왜: fire 3은 cascade DECISION(승급 여부)+planner 배선이었고, 이건 그 결정을 실제 compute 절약으로 바꾸는 EXECUTION(confident lookup는 heavy 값 안 치름). model-agnostic = caller가 run/confidenceOf 주입(이 패키지 idiom: summarizeWorkerOutput/verifyFinalAnswer/detectConflicts 전부 주입식). 실제 model-run+summarizeTokenConfidence 주입은 C2b(autoconfigure, backlog).
+- 리뷰지점: confident→run 1회만(`calls).toEqual([fast])`로 효율 주장 직접 검증), low→[fast,heavy] 순서·heavy 결과, 둘다-low여도 정확히 2회(재승급 없음), strict `<`(정확히 -1.0 keep), additive(tiering.ts 무변경, index.ts export 2줄만).
+- 리스크: 없음 — 신규·in-repo 호출자 0 → 기존 행동 무변경 → 정확성 회귀 0 by construction. 정직한 한계: capability 출하지 *측정된* 지연 win 아직 아님(C2b/C3에서; backlog 명기).
+  검증: multi-agent 221 pass(신규 5 OUTCOME 케이스, run-count/order/result 채점) · MUTATION-FIRST(게이트 `!` 반전 → 5/5 RED; revert→green) · pnpm check rc=0(api 887 + cli 2861) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(declaration-only crux=NOT declaration-only 명시 판정, 자체 mutation 재현, 무루프 grep 확인, ratchet 2/5 OK, 결함 0).
+  decompose: C2-core DONE; C2b(autoconfigure가 real run+confidenceOf를 ask --tiered/orchestration에 주입) + C3(live eval) backlog 잔존.

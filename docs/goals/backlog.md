@@ -2356,11 +2356,14 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   shipped C1: the escalation-decision primitive `shouldEscalateToHeavy(confidence, threshold)` +
   `planTieredRun` optional `priorConfidence`/`escalateThreshold` (a fast-classified task with a KNOWN
   low fast-pass mean-logprob escalates to heavy; absent = unchanged, byte-identical). REMAINING:
-  · **C2 (runtime two-pass wiring)** — in `muse ask --tiered` / multi-agent runtime, after the FAST
-  pass run `summarizeTokenConfidence` (@muse/agent-core, already computed at commands-ask.ts:2870) on
-  the answer logprobs, feed the mean-logprob into a re-plan (`planTieredRun` with priorConfidence) and
-  re-run escalated tasks on heavy. Needs logprobs requested on the fast pass + the two-pass loop;
-  bound to 1 retry (no unbounded cascade). >1 fire.
+  · **C2-core (execution primitive) — DONE fire 5** `runCascade({fast,heavy,run,confidenceOf,threshold})`
+  (@muse/multi-agent cascade-run.ts): runs fast → escalates ONCE to heavy on low/unmeasurable confidence,
+  bounded (MAST no-loop). Model-agnostic via injected run/confidenceOf (package idiom). REMAINING:
+  · **C2b (autoconfigure wiring)** — wire the REAL injected functions: `run(model)` = a tiered model
+  call requesting logprobs; `confidenceOf` = `summarizeTokenConfidence(result.logprobs).meanLogprob`
+  (@muse/agent-core, already computed at commands-ask.ts:2870). Call `runCascade` from the `muse ask
+  --tiered` fast path (single-query cascade) and/or buildTieredOrchestration's per-worker run. Needs
+  logprobs requested on the fast pass. >1 fire (touches the live ask/orchestration loop). Verify with C3.
   · **C3 (live eval)** — use `bench:local` (fire 1) for the latency win + accuracy parity: cascade vs
   always-heavy on a mixed easy/hard set; assert faster mean latency AND no grounding/answer regression.
   Needs Ollama up.
