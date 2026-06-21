@@ -189,6 +189,12 @@ const en = {
   "dash.samples": "Samples",
   "dash.topTools": "Most-used tools",
 
+  "nav.skills": "Skills",
+  "skills.title": "Skills",
+  "skills.subtitle": "Skills Muse has learned to apply. {n} total, {a} avoided.",
+  "skills.reward": "reward {n}",
+  "skills.avoided": "avoided",
+
   "nav.selfImprovement": "Self-improvement",
   "si.title": "Self-improvement",
   "si.subtitle": "What Muse has noticed it couldn't answer or do. {n} weaknesses across {a} areas.",
@@ -387,6 +393,12 @@ const ko: Strings = {
   "dash.latency": "실행 레이턴시",
   "dash.samples": "표본 수",
   "dash.topTools": "많이 쓴 도구",
+
+  "nav.skills": "스킬",
+  "skills.title": "스킬",
+  "skills.subtitle": "Muse가 적용하도록 학습한 스킬. 총 {n}개, 회피 {a}개.",
+  "skills.reward": "보상 {n}",
+  "skills.avoided": "회피",
 
   "nav.selfImprovement": "자기강화",
   "si.title": "자기강화",

@@ -572,3 +572,13 @@ ratchet: api tests 897/897 (+5) · autoconfigure 88/88 · fabrication 0 · self-
 - **형제(enumerate, 미루기 명시)**: CLI(`apps/cli/src/commands-skills.ts`)에 `resolveAuthoredSkillsDir`/`resolveSkillRewardsFile` private 복제본 존재 — 이번에 autoconfigure 공유본을 만들었으니 CLI를 그것으로 통일하면 gate-asymmetry 제거(별도 슬라이스, CLI 3파일 import 변경이라 backlog 기록).
 - **리스크**: 없음(autoconfigure 3 + apps/api 4 파일, autoconfigure build clean·api 897/897·pnpm check exit 0·smoke:broad 51/0·lint clean[빌더가 남긴 re-export-only import 1건 dead-import 룰대로 제거], 독립 Opus ④b judge가 shaper·경로정합·auth·과노출·다양성·mutation 검증 후 PASS).
 - **lesson**: 빌더가 re-export-from 블록에 더해 import 블록에도 심볼을 넣어 unused-import lint 위반 발생(personal-providers.ts) — `export {X} from "./y"`가 있으면 body 미사용 import는 불필요(code-style.md 재수출 규칙). pnpm check는 lint를 안 도니 ③ 시퀀스의 pnpm lint가 이 클래스를 잡는다.
+
+## fire 63 · 2026-06-21 · skill v2.0.0 · <pending>
+meta: surface=web · value-class=new-capability · pkg=@muse/web · kind=skills-console-view · verdict=PASS · firesSinceDrill=2
+ratchet: web tests 92/92 (+4) · testFiles +2 · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 51/0 · lint clean
+
+- **무엇**: fire 62의 `GET /api/self-improvement/skills`를 소비하는 새 "Skills" 콘솔 뷰(자체 nav, key "j", Icon.tool). authored 스킬을 이름·설명·source 배지·reward·**avoided 배지**(warn 톤, avoided=true일 때만)로 read-only 렌더. 순수 `summarizeSkills`(skill-list.ts: total/active/avoided distinct count) + `SkillView`/`SkillsResponse` 웹 타입 + i18n(en/ko). McpServers/SelfImprovement 뷰 패턴 미러.
+- **왜**: 진안 "스킬도 웹에서 관리"의 fire 62 데이터 레이어 다음 뷰 — 스킬 콘솔 영역 end-to-end 완성(weaknesses 58→59, playbook 60→61, skills 62→63 동일 cadence). **avoided=정직신호**: soft-suppress된(적용 안 되는) 스킬을 배지로 표시해 "이 스킬이 작동 중"이라 오인 안 하게. 자체 nav 영역(스킬은 자기강화와 별개).
+- **리뷰지점**: mutation-first — summarizeSkills(avoided 하드코딩 0→2 RED·active/avoided swap→RED, 둘 다 빌더+독립 judge 확인). 보안: read-only GET·스킬 name/description escaped React children(dangerouslySetInnerHTML 없음)·queryKey `["skills",baseUrl]`(self-improvement과 분리). nav: key "j" free(leader "g" 아님)·NavKeys.test 통과(leader충돌·중복키 가드)·settings 특례 무손상. i18n en/ko 키셋+토큰({n}/{a}) 패리티. 정직한 갭: reward/curate/author 액션은 후속(이번 read-only).
+- **빌더 deviation(타당)**: 순수 헬퍼를 `skills.ts` 대신 `skill-list.ts`로 명명 — macOS 대소문자 무시 FS에서 `Skills.tsx`와 충돌(TS2305/1261). mcp-status.ts↔McpServers.tsx 동일 패턴.
+- **리스크**: 없음(apps/web 6파일, web build tsc+vite·web 92/92·pnpm check exit 0·smoke:broad 51/0·lint clean, 독립 Opus ④b judge가 행동검증·avoided 정직신호·렌더안전·nav·i18n·다양성·mutation 검증 후 PASS).

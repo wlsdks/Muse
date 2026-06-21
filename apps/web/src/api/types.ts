@@ -273,6 +273,19 @@ export interface PlaybookStrategiesResponse {
   entries: PlaybookStrategyView[];
 }
 
+export interface SkillView {
+  name: string;
+  description: string;
+  source: string;
+  reward: number;
+  avoided: boolean;
+}
+
+export interface SkillsResponse {
+  total: number;
+  entries: SkillView[];
+}
+
 export interface UserMemoryResponse {
   readonly facts?: Record<string, string>;
   readonly preferences?: Record<string, string>;
