@@ -5,6 +5,16 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 51 · 2026-06-21 · skill v2.0 · <commit> (run-intent execute-tool exposure reserve — run_command no longer starved by the file cluster; fire-4 sibling)
+meta: value-class=new-capability · pkg=@muse/agent-core · kind=tool-filter/exposure-reserve · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles +0 / +2 cases (run-intent reserve positive+no-over-exposure) · fabrication 0 · @muse/agent-core 2573 · tool-filter 37 · pnpm check exit 0 · lint 0/0 · Ollama UP · ★main ff-merge(fire 51=×3, delivers 49/50/51)
+- 측정: edit-run-verify 재측정 — FAIL이나 **test-passes=true**(버그 수정됨: sum a-b→a+b, file_read→read→edit). model-ran-test=false: 모델이 node_run/muse.skills.run만 시도, run_command 미선택. 코드 정독 결론: capToolsByRelevance에서 mandatory≥cap이면 optional은 relevantReserve(top 3)만 생존, FILE_PATH 부스트로 file 클러스터 3개가 reserve 독점 → **run_command(system/execute, rank 4) DROP** → 모델이 verify용 runner를 선택 불가. fire 4가 file 클러스터 reserve를 만든 것의 execute-tool 형제 갭.
+- 무엇: RUN_INTENT_RE(run/test/build/execute/verify/lint, EN+KO) 추가. run-intent 프롬프트면 relevantReserve에 더해 **top relevant execute-risk optional 도구(run_command) 1개 추가 reserve**. "파일 고치고 테스트 실행" 작업이 file 클러스터+runner 둘 다 유지.
+- 왜: 측정된 starvation(코드로 확증)·on-theme(verify 단계)·결정론·다른 (pkg,kind)=tool-filter/exposure-reserve(fires 47-50 not-exposed 게이트와 다른 메커니즘, fire-50 judge 노트 준수). 가드: execute-risk+score>0+중복방지, 최대 +1, run-intent 없으면 미작동.
+- 리뷰지점: mutation-first(runReserve 무력화 시 정확히 positive 테스트 RED, no-over-exposure GREEN). 독립 Opus ④b judge가 Set-union 비-inert·무회귀(union은 추가만)·precision 가드·band 영향 pre-existing·결정론·다른표면 검증 → VERDICT PASS.
+- 리스크: OUTCOME flip 미확정(run_command 노출은 됐으나 12B 선택은 stochastic — exposure starvation은 코드로 제거, 선택은 모델-행동). 정직. RUN_INTENT_RE 광범위하나 cap-초과+execute+score>0 삼중가드로 무해. ⑤c로 49/50/51 main 전달.
+lesson: edit-run-verify FAIL의 진짜 원인은 모델-행동이 아니라 결정론적 EXPOSURE starvation(run_command가 cap에 밀려 노출 안 됨) — 측정+코드정독이 "모델이 게으르다"는 오진을 막음. fire-4 reserve는 file만 보호했고 execute 형제를 놓쳤음(형제-감사 교훈).
+
 ## fire 50 · 2026-06-21 · skill v2.0 · 7106cab3 (★eval:multifile-fix FAIL→PASS validated; + command-as-name → execute-tool recovery for edit-run-verify)
 meta: value-class=new-capability+measure · pkg=@muse/agent-core · kind=not-exposed-recovery(command-name) · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles +0 / +2 cases (command-name positive+negative integration) · fabrication 0 · @muse/agent-core 2571 · agent-runtime 135 · pnpm check @muse/runtime-settings SIGABRT(격리 통과, 무관) · lint 0/0 · Ollama UP · ★eval:multifile-fix PASS (2/2 관측 this fire, 직전까지 STABLE FAIL)
