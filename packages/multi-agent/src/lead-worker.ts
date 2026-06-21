@@ -1,4 +1,4 @@
-import { detectPairwiseContradictions, lexicalTokens, neutralizeInjectionSpans } from "@muse/agent-core";
+import { detectPairwiseContradictions, detectRedundantPairs, lexicalTokens, neutralizeInjectionSpans } from "@muse/agent-core";
 
 import { decomposeRequestWithKind, shouldDecompose, type Subtask } from "./decompose-trigger.js";
 
@@ -60,6 +60,26 @@ export async function detectFanInConflicts(
   if (nonEmpty.length < 2) return [];
   const pairs = await detectPairwiseContradictions(nonEmpty.map((p) => p.output), embed);
   return pairs.map((p) => `"${nonEmpty[p.aIndex]!.workerId}" vs "${nonEmpty[p.bIndex]!.workerId}"`);
+}
+
+/**
+ * The redundancy (step-repetition) twin of {@link detectSubtaskConflicts}: flag any pair
+ * of COMPLETED sub-answers that are near-identical — one worker restated another's result
+ * adding nothing (MAST FM-1.3, arXiv:2503.13657). Reuses the shared {@link detectRedundantPairs}
+ * so the policy never drifts from the evidence layer. Returns a caption per redundant pair
+ * (by sub-task text). Fail-soft over the injected embed.
+ */
+export async function detectSubtaskRedundancies(
+  executions: readonly SubtaskExecution[],
+  embed: (text: string) => Promise<readonly number[]>
+): Promise<readonly string[]> {
+  const completed = executions.filter(
+    (e): e is SubtaskExecution & { output: string } =>
+      e.status === "completed" && typeof e.output === "string" && e.output.trim().length > 0
+  );
+  if (completed.length < 2) return [];
+  const pairs = await detectRedundantPairs(completed.map((e) => e.output), embed);
+  return pairs.map((p) => `"${completed[p.aIndex]!.subtask.text}" ≈ "${completed[p.bIndex]!.subtask.text}"`);
 }
 
 export function verifySynthesisCoverage(finalAnswer: string, executions: readonly SubtaskExecution[]): SynthesisVerdict {
@@ -143,6 +163,13 @@ export interface LeadWorkerResult {
    * off as a single confident truth.
    */
   readonly subtaskConflicts?: readonly string[];
+  /**
+   * Set when the fan-in `detectRedundancies` found COMPLETED sub-answers that are
+   * near-IDENTICAL — one worker restated another's result adding nothing (MAST
+   * FM-1.3 step repetition). A caption per redundant pair, surfaced so the caller
+   * knows a sub-task did duplicate work (the complement of {@link subtaskConflicts}).
+   */
+  readonly subtaskRedundancies?: readonly string[];
 }
 
 export interface LeadWorkerDeps {
@@ -189,6 +216,14 @@ export interface LeadWorkerDeps {
    * (bound to a local embed) for the default.
    */
   readonly detectConflicts?: (executions: readonly SubtaskExecution[]) => Promise<readonly string[]>;
+  /**
+   * Fan-in REDUNDANCY detector (step-repetition guard): given the executions, return a
+   * caption per pair of COMPLETED sub-answers that are near-identical (one adds nothing).
+   * A non-empty result marks {@link LeadWorkerResult.subtaskRedundancies}. Absent ⇒ no
+   * redundancy check (back-compat). Wire {@link detectSubtaskRedundancies} (bound to a
+   * local embed) for the default.
+   */
+  readonly detectRedundancies?: (executions: readonly SubtaskExecution[]) => Promise<readonly string[]>;
 }
 
 const MAX_SUBTASKS = 8;
@@ -397,6 +432,15 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
       if (conflicts.length > 0) subtaskConflicts = conflicts;
     } catch { /* detector unavailable — surface nothing */ }
   }
+  // Fan-in REDUNDANCY (step-repetition): are two completed sub-answers near-identical
+  // (a worker duplicated another's work)? Fail-soft — a detector error leaves the answer.
+  let subtaskRedundancies: readonly string[] | undefined;
+  if (deps.detectRedundancies) {
+    try {
+      const redundancies = await deps.detectRedundancies(executions);
+      if (redundancies.length > 0) subtaskRedundancies = redundancies;
+    } catch { /* detector unavailable — surface nothing */ }
+  }
   const split = planned ? "model-planned" : "structural";
 
   return {
@@ -407,10 +451,12 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
       `${split} decomposition → ${completed}/${executions.length} sub-tasks grounded` +
       (truncated ? ` (capped at ${MAX_SUBTASKS})` : "") +
       (synthesisIncomplete ? ` · synthesis incomplete (${synthesisIncomplete.length.toString()} dropped)` : "") +
-      (subtaskConflicts ? ` · ${subtaskConflicts.length.toString()} sub-answer conflict(s)` : ""),
+      (subtaskConflicts ? ` · ${subtaskConflicts.length.toString()} sub-answer conflict(s)` : "") +
+      (subtaskRedundancies ? ` · ${subtaskRedundancies.length.toString()} redundant sub-answer(s)` : ""),
     subtasks,
     truncated,
     ...(synthesisIncomplete ? { synthesisIncomplete } : {}),
-    ...(subtaskConflicts ? { subtaskConflicts } : {})
+    ...(subtaskConflicts ? { subtaskConflicts } : {}),
+    ...(subtaskRedundancies ? { subtaskRedundancies } : {})
   };
 }

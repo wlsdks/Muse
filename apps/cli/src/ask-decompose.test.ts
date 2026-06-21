@@ -42,6 +42,23 @@ describe("runDecomposedAgentAsk — simple request runs once", () => {
 describe("runDecomposedAgentAsk — fan-out + synthesis", () => {
   const listQuery = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
 
+  it("flags near-identical (redundant) sub-answers when an embed is supplied — MAST step-repetition surfaced (live wiring)", async () => {
+    // Every sub-task worker returns the SAME output → near-identical → redundant pairs.
+    const runner = runnerReturning((content) =>
+      content.startsWith("사용자 요청:")
+        ? { response: { output: "SYNTH" } }
+        : { response: { output: "the quarterly budget is set at 1250 dollars" } }
+    );
+    const result = await runDecomposedAgentAsk({
+      ...baseArgs,
+      query: listQuery,
+      runner,
+      embed: async () => [0.9, 0.1, 0, 0] // constant vector → cosine 1.0, topic gate always passes
+    });
+    expect(result.subtaskRedundancies).toBeDefined();
+    expect(result.subtaskRedundancies!.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("runs each sub-task in its own run, then a synthesis run (3 + 1 = 4 runs) when the synthesis is complete", async () => {
     // A synthesis that COVERS every sub-task output passes verifySynthesisCoverage,
     // so no re-synthesis fires — the fan-out is exactly 3 sub-tasks + 1 synthesis.

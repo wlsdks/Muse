@@ -37,7 +37,7 @@ export type {
   SubtaskStatus,
   SynthesisVerdict
 } from "./lead-worker.js";
-export { dedupeSubtasks, detectFanInConflicts, detectSubtaskConflicts, runLeadWorkerTask, verifySynthesisCoverage } from "./lead-worker.js";
+export { dedupeSubtasks, detectFanInConflicts, detectSubtaskConflicts, detectSubtaskRedundancies, runLeadWorkerTask, verifySynthesisCoverage } from "./lead-worker.js";
 
 export interface AgentWorker {
   readonly id: string;

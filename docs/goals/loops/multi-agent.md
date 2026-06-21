@@ -4,6 +4,44 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 7 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=new-capability · pkg=@muse/agent-core+@muse/multi-agent+@muse/cli · kind=new-detector(paper-grounded) · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles +1 (redundancy-detection) · fabrication 0 · eval:orchestration/decomposition deterministic cases PASS (ran this fire) · consecutive allPASS=3 · NEW (pkg,kind) cell (paper-grounded detector capability)
+
+**What** — Added REDUNDANCY (step-repetition) detection at the lead-worker fan-in — the COMPLEMENT of the
+existing contradiction detector. `detectRedundantPairs(texts, embed)` (agent-core) flags same-topic
+(cosine≥0.86) + near-identical token sets (lexical Jaccard≥0.9) — the INVERSE of the contradiction
+detector's neither-subset gate. Threaded through `detectSubtaskRedundancies` (multi-agent twin of
+detectSubtaskConflicts) → `deps.detectRedundancies` in `runLeadWorkerTask` + `LeadWorkerResult.subtaskRedundancies`
+→ LIVE in `runDecomposedAgentAsk` (ask-decompose, mirrors the detectConflicts wiring) + `DecomposedAskResult`.
+
+**Why** — MAST FM-1.3 Step Repetition is 15.7% of multi-agent failures (arXiv:2503.13657); the
+semantic-redundancy signal is the carrying feature in cycle detection (arXiv:2511.10650). Muse's
+pre-execution exact-text `dedupeSubtasks` can't catch it — distinct sub-task TEXT whose workers CONVERGE to
+the same OUTPUT, or a sequenced step that just echoes its upstream. This is the runtime OUTPUT-level guard.
+
+**Review points** — (1) CALIBRATION (the binding risk — Muse rejected naive semantic dedup that over-merges
+"1분기"/"2분기"): the Jaccard≥0.9 floor means distinct-value pairs (Q1 5억 vs Q2 7억, ~0.2) and elaborations
+(~0.5) are NOT flagged — only near-verbatim echo (~1.0). The independent Opus ④ judge did the math and
+confirmed no realistic distinct-but-valuable pair clears 0.9. (2) SURFACE-ONLY: advisory annotation
+(`subtaskRedundancies` field + reason line), never drops a worker / blocks synthesis / changes finalAnswer —
+a residual false positive degrades to a spurious note. (3) INVERSE correctness: contradiction (neither-subset,
+overlap≥0.5) and redundancy (Jaccard≥0.9) are complementary — a high-Jaccard pair has no meaningful unique
+token so it can't also be a conflict. (4) MUTATION-FIRST: detector test had a real RED→GREEN (cross-topic
+fixture); engine wiring mutation-verified (broke the field spread → exactly the positive test RED). (5)
+Fail-soft + back-compat (throwing embed→[], <2→[], no dep→unset, cross-script→[]).
+
+**Risk** — Reuses the local embedder (no new egress); fabrication/local-only untouched. Tests use a constant
+fake embed (neutralizes the topic gate so Jaccard alone decides) — production supplies the real topic signal;
+worst case is still only a spurious advisory note. Deferred siblings: orchestrator fan-out twin
+`detectFanInRedundancy`; god-file `commands-ask.ts` stderr surfacing. NOTE: a pre-existing FLAKY
+`@muse/model` web-search-policy property-fuzz (another loop's) intermittently reddened `pnpm check` — passed
+on re-run, not in this diff.
+
+review: gates green — agent-core/multi-agent/cli builds clean · agent-core redundancy 7 pass · multi-agent
+223 pass · cli ask-decompose 18 pass · lint 0 · `pnpm check` exit 0 (re-run; flaky model fuzz unrelated) ·
+independent Opus ④ judge VERDICT PASS.
+
 ## fire 6 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · 25e28b52
 meta: value-class=observability · pkg=@muse/multi-agent+@muse/api · kind=persistence-exposure · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles +1 (orchestrate-history-signals) · fabrication 0 · eval:orchestration/decomposition SKIP (Ollama down) · consecutive allPASS=2 · NEW (pkg,kind) cell (observability/persistence)

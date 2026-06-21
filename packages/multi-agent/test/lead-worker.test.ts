@@ -224,6 +224,22 @@ describe("runLeadWorkerTask — a decomposed run where ZERO sub-tasks ground is 
   });
 });
 
+describe("runLeadWorkerTask — surfaces near-identical (redundant) sub-answers at the fan-in (MAST step-repetition)", () => {
+  const req = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
+  it("sets subtaskRedundancies + reason when detectRedundancies reports a near-identical pair", async () => {
+    const result = await runLeadWorkerTask(req, deps({ detectRedundancies: () => Promise.resolve(['"회의록 요약" ≈ "액션아이템 추출"']) }));
+    expect(result.subtaskRedundancies).toEqual(['"회의록 요약" ≈ "액션아이템 추출"']);
+    expect(result.reason).toContain("redundant");
+  });
+  it("back-compat: no detector / no redundancies ⇒ unset; a throwing detector is fail-soft", async () => {
+    expect((await runLeadWorkerTask(req, deps({ detectRedundancies: () => Promise.resolve([]) }))).subtaskRedundancies).toBeUndefined();
+    expect((await runLeadWorkerTask(req, deps())).subtaskRedundancies).toBeUndefined();
+    const throwing = await runLeadWorkerTask(req, deps({ detectRedundancies: () => { throw new Error("boom"); } }));
+    expect(throwing.subtaskRedundancies).toBeUndefined();
+    expect(throwing.finalAnswer).not.toBe("");
+  });
+});
+
 describe("runLeadWorkerTask — verifier-gated single re-synthesis recovers a dropped sub-task (H1 follow-up)", () => {
   const req = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
 
