@@ -573,7 +573,7 @@ ratchet: api tests 897/897 (+5) · autoconfigure 88/88 · fabrication 0 · self-
 - **리스크**: 없음(autoconfigure 3 + apps/api 4 파일, autoconfigure build clean·api 897/897·pnpm check exit 0·smoke:broad 51/0·lint clean[빌더가 남긴 re-export-only import 1건 dead-import 룰대로 제거], 독립 Opus ④b judge가 shaper·경로정합·auth·과노출·다양성·mutation 검증 후 PASS).
 - **lesson**: 빌더가 re-export-from 블록에 더해 import 블록에도 심볼을 넣어 unused-import lint 위반 발생(personal-providers.ts) — `export {X} from "./y"`가 있으면 body 미사용 import는 불필요(code-style.md 재수출 규칙). pnpm check는 lint를 안 도니 ③ 시퀀스의 pnpm lint가 이 클래스를 잡는다.
 
-## fire 63 · 2026-06-21 · skill v2.0.0 · <pending>
+## fire 63 · 2026-06-21 · skill v2.0.0 · a1f44f18
 meta: surface=web · value-class=new-capability · pkg=@muse/web · kind=skills-console-view · verdict=PASS · firesSinceDrill=2
 ratchet: web tests 92/92 (+4) · testFiles +2 · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 51/0 · lint clean
 
