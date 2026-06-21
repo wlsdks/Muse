@@ -240,6 +240,13 @@ export interface LeadWorkerResult {
    * upstream output (MAST FM-2.6 reasoning-action mismatch). A caption per blind step.
    */
   readonly reasoningActionGaps?: readonly string[];
+  /**
+   * Machine-readable coordination-health summary for a DECOMPOSED run: true ONLY when the
+   * fan-in is clean — no `subtaskConflicts`, no `subtaskRedundancies`, no `reasoningActionGaps`,
+   * and no `synthesisIncomplete`. DERIVED from those signals (never asserted), so it can never
+   * claim health it didn't check. Undefined for a single-agent / all-failed run (no fan-in to summarize).
+   */
+  readonly coordinationHealthy?: boolean;
 }
 
 export interface LeadWorkerDeps {
@@ -523,6 +530,11 @@ export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): 
   const split = planned ? "model-planned" : "structural";
 
   return {
+    // Derived from the REAL fan-in signals (each local is undefined when clean, a
+    // non-empty caption list when not): a single machine-readable boolean a consumer
+    // can trust — true ONLY when no contradiction, no redundancy, no blind sequenced
+    // step, and no dropped sub-result. Never a hardcoded green.
+    coordinationHealthy: !subtaskConflicts && !subtaskRedundancies && !reasoningActionGaps && !synthesisIncomplete,
     decomposed: subtasks.length > 1,
     executions,
     finalAnswer,

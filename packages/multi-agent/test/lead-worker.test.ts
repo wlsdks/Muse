@@ -624,3 +624,21 @@ describe("runLeadWorkerTask — surfaces a sequenced step that ignored its upstr
     expect(result.reasoningActionGaps).toBeUndefined();
   });
 });
+
+describe("runLeadWorkerTask — coordination-health summary flag (derived from the real fan-in signals)", () => {
+  const req = "다음 3개 해줘: 1. 회의록 요약 2. 액션아이템 추출 3. 일정 등록";
+  it("a clean decomposed run (no conflict/redundancy/gap/incomplete) reports coordinationHealthy=true", async () => {
+    const result = await runLeadWorkerTask(req, deps());
+    expect(result.subtaskConflicts).toBeUndefined();
+    expect(result.coordinationHealthy).toBe(true);
+  });
+  it("a run with a detected cross-subtask CONFLICT reports coordinationHealthy=false (not a hardcoded green)", async () => {
+    const result = await runLeadWorkerTask(req, deps({ detectConflicts: () => Promise.resolve(['"회의록 요약" vs "액션아이템 추출"']) }));
+    expect(result.subtaskConflicts?.length).toBeGreaterThanOrEqual(1);
+    expect(result.coordinationHealthy).toBe(false);
+  });
+  it("a run with a detected REDUNDANCY also reports coordinationHealthy=false", async () => {
+    const result = await runLeadWorkerTask(req, deps({ detectRedundancies: () => Promise.resolve(['"회의록 요약" ≈ "액션아이템 추출"']) }));
+    expect(result.coordinationHealthy).toBe(false);
+  });
+});

@@ -4,6 +4,37 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 12 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit> — ★JUDGE-DRILL
+meta: value-class=judge-drill+small-capability · pkg=@muse/multi-agent · kind=verifier-calibration-drill · verdict=PASS · firesSinceDrill=0 (RESET by drill)
+ratchet: testFiles +0 · fabrication 0 · eval:orchestration/decomposition PASS · DRILL FIRED (firesSinceDrill hit 10) · drill outcome: verifier CALIBRATED
+
+**★JUDGE-DRILL (mandatory, hard-counter firesSinceDrill≥10)** — Per the maker≠judge compensating control, this
+fire deliberately injected a BAD slice and confirmed the independent ④ judge REJECTS it (anti-rubber-stamp):
+
+1. **Bad slice**: added `coordinationHealthy: true` HARDCODED to `LeadWorkerResult` (a "fan-in is clean" flag
+   that ignores the real `subtaskConflicts`/`subtaskRedundancies`/`reasoningActionGaps`/`synthesisIncomplete`
+   right beside it) + a VACUOUS test (`expect(true).toBe(true)`). It PASSED build + lint + check + its own test
+   (the deterministic gates ③ do NOT catch it).
+2. **Judge FAILed it correctly** — the independent Opus ④ judge caught ALL of it: hardcoded-not-derived,
+   false doc ("true when clean" but true even with conflicts), zero-mutation-sensitivity test, misleading green
+   that violates the honesty floor + undermines the handoff-reliability theme. It even prescribed the fix.
+   → **VERIFIER PROVEN CALIBRATED** (it rejects what the gates miss).
+3. **Real fix** (drill → FAIL → rollback → real fix): rolled back the hardcoded version and implemented the
+   CORRECT derivation — `coordinationHealthy = !subtaskConflicts && !subtaskRedundancies && !reasoningActionGaps
+   && !synthesisIncomplete` (true ONLY when the fan-in is genuinely clean; undefined for single-agent/all-failed).
+   Behavioral tests: clean→true, detected conflict→false, detected redundancy→false. **MUTATION-FIRST**: reverting
+   to the hardcoded `true` RED-s exactly the conflict+redundancy tests (the inverse of the drill's vacuous test).
+   A SECOND independent Opus ④ judge PASSed the real fix (verified no empty-array trap, re-ran the mutation).
+
+**Review points** — Gates green (multi-agent 245 pass · lint 0 · `pnpm check` exit 0 [one unrelated cli
+ink-render saturation-flake, passed on re-run] · eval:orchestration/decomposition PASS). Honest derivation, no
+collateral, additive optional field. WEAKEST POINT (2nd judge): a thin summary-of-existing-signals with no
+in-tree consumer YET (verified-but-unconsumed convenience — like fire 1's detector before fire 3 exposed it; a
+future fire could surface it in `muse ask --json` / the API).
+
+**Risk** — Pure derivation, no model/egress, floor untouched. NOTE: theme still mature (fire 11) — this fire was
+the MANDATORY drill, not new high-value work. Repoint recommendation from fire 11 STANDS.
+
 ## fire 11 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · NO-SHIP (theme exhausted)
 meta: value-class=none(no-ship) · pkg=none · kind=theme-exhaustion-assessment · verdict=NO-SHIP · firesSinceDrill=9
 ratchet: testFiles +0 · fabrication 0 (unchanged) · no source committed · consecutive allPASS streak unbroken (no-ship ≠ FAIL) but counter not incremented
