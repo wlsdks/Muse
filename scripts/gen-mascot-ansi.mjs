@@ -1,149 +1,160 @@
 // Regenerate the Muse mascot terminal art (apps/cli/src/muse-mascot-ansi.ts)
 // from a PNG, with ZERO third-party deps — Node's built-in zlib does the
-// DEFLATE inflate, the rest is plain buffer work. The goddess is monochrome,
-// so we render to the 256-color grayscale ramp (broad terminal compatibility)
-// using half-block characters (one cell = two vertical pixels).
+// DEFLATE inflate/deflate, the rest is plain buffer work.
+//
+// Rendering: TRUECOLOR (24-bit) half-blocks (one cell = two vertical pixels),
+// with ALPHA honoured — transparent pixels become the terminal's own
+// background (no black box). Uses ▀ (upper), ▄ (lower) or a space depending
+// on which of the two stacked pixels are opaque.
 //
 //   node scripts/gen-mascot-ansi.mjs <input.png> <cols> <out.ts>
-//   node scripts/gen-mascot-ansi.mjs docs/assets/muse-goddess.png 72 apps/cli/src/muse-mascot-ansi.ts
+//   node scripts/gen-mascot-ansi.mjs <input.png> <cols> preview-png:<file.png>   # visual check
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { inflateSync } from "node:zlib";
+import { inflateSync, deflateSync } from "node:zlib";
 
 const [, , inputArg, colsArg, outArg] = process.argv;
-const input = inputArg ?? "docs/assets/muse-goddess.png";
-const cols = Number(colsArg ?? 72);
+const input = inputArg ?? "docs/assets/muse-goddess-alpha.png";
+const cols = Number(colsArg ?? 56);
 const out = outArg ?? "apps/cli/src/muse-mascot-ansi.ts";
+const ALPHA_THRESHOLD = 110;
 
 function decodePng(buf) {
   const sig = "\x89PNG\r\n\x1a\n";
-  for (let i = 0; i < 8; i++) {
-    if (buf[i] !== sig.charCodeAt(i)) throw new Error("not a PNG");
-  }
-  const width = buf.readUInt32BE(16);
-  const height = buf.readUInt32BE(20);
-  const bitDepth = buf[24];
-  const colorType = buf[25];
-  const interlace = buf[28];
-  if (bitDepth !== 8) throw new Error(`unsupported bitDepth ${bitDepth} (need 8)`);
+  for (let i = 0; i < 8; i++) if (buf[i] !== sig.charCodeAt(i)) throw new Error("not a PNG");
+  const width = buf.readUInt32BE(16), height = buf.readUInt32BE(20);
+  const bitDepth = buf[24], colorType = buf[25], interlace = buf[28];
+  if (bitDepth !== 8) throw new Error(`unsupported bitDepth ${bitDepth}`);
   if (interlace !== 0) throw new Error("interlaced PNG not supported");
   const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
   if (!channels) throw new Error(`unsupported colorType ${colorType}`);
-
   const idat = [];
   let pos = 8;
   while (pos < buf.length) {
     const len = buf.readUInt32BE(pos);
     const type = buf.toString("ascii", pos + 4, pos + 8);
-    const start = pos + 8;
-    if (type === "IDAT") idat.push(buf.subarray(start, start + len));
-    pos = start + len + 4;
+    if (type === "IDAT") idat.push(buf.subarray(pos + 8, pos + 8 + len));
+    pos += 12 + len;
     if (type === "IEND") break;
   }
   const raw = inflateSync(Buffer.concat(idat));
-
-  const bpp = channels;
-  const stride = width * bpp;
-  const pixels = Buffer.alloc(stride * height);
+  const bpp = channels, stride = width * bpp;
+  const px = Buffer.alloc(stride * height);
   const paeth = (a, b, c) => {
-    const p = a + b - c;
-    const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+    const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
     return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
   };
   let rp = 0;
   for (let y = 0; y < height; y++) {
-    const filter = raw[rp++];
+    const f = raw[rp++];
     for (let x = 0; x < stride; x++) {
       const cur = raw[rp++];
-      const a = x >= bpp ? pixels[y * stride + x - bpp] : 0;
-      const b = y > 0 ? pixels[(y - 1) * stride + x] : 0;
-      const c = x >= bpp && y > 0 ? pixels[(y - 1) * stride + x - bpp] : 0;
+      const a = x >= bpp ? px[y * stride + x - bpp] : 0;
+      const b = y > 0 ? px[(y - 1) * stride + x] : 0;
+      const c = x >= bpp && y > 0 ? px[(y - 1) * stride + x - bpp] : 0;
       let v;
-      switch (filter) {
-        case 0: v = cur; break;
-        case 1: v = cur + a; break;
-        case 2: v = cur + b; break;
-        case 3: v = cur + ((a + b) >> 1); break;
-        case 4: v = cur + paeth(a, b, c); break;
-        default: throw new Error(`bad filter ${filter}`);
+      switch (f) {
+        case 0: v = cur; break; case 1: v = cur + a; break; case 2: v = cur + b; break;
+        case 3: v = cur + ((a + b) >> 1); break; case 4: v = cur + paeth(a, b, c); break;
+        default: throw new Error(`bad filter ${f}`);
       }
-      pixels[y * stride + x] = v & 0xff;
+      px[y * stride + x] = v & 0xff;
     }
   }
-  return { width, height, channels, pixels };
+  return { width, height, channels, pixels: px };
 }
 
-// luminance of a source pixel, alpha composited over black
-function lumAt(img, x, y) {
+function rgbaAt(img, x, y) {
   const { channels, width, pixels } = img;
   const i = (y * width + x) * channels;
-  let r, g, b, alpha;
-  if (channels >= 3) { r = pixels[i]; g = pixels[i + 1]; b = pixels[i + 2]; alpha = channels === 4 ? pixels[i + 3] : 255; }
-  else { r = g = b = pixels[i]; alpha = channels === 2 ? pixels[i + 1] : 255; }
-  const l = 0.299 * r + 0.587 * g + 0.114 * b;
-  return (l * alpha) / 255; // composite over black bg
+  if (channels >= 3) return [pixels[i], pixels[i + 1], pixels[i + 2], channels === 4 ? pixels[i + 3] : 255];
+  const g = pixels[i];
+  return [g, g, g, channels === 2 ? pixels[i + 1] : 255];
 }
 
-// box-average downscale to (cols x rowsPx) grayscale
+// box-average downscale to (cols x rowsPx), alpha-weighted RGB + mean alpha
 function downscale(img, cols) {
-  const aspect = img.height / img.width;
-  const rowsPx = Math.round(cols * aspect * 0.5) * 2; // even, terminal cell ~2:1 corrected by half-block
-  const grid = new Float64Array(cols * rowsPx);
+  const rowsPx = Math.round((cols * img.height) / img.width / 2) * 2;
+  const cell = new Array(cols * rowsPx);
   for (let oy = 0; oy < rowsPx; oy++) {
     const sy0 = Math.floor((oy / rowsPx) * img.height);
     const sy1 = Math.max(sy0 + 1, Math.floor(((oy + 1) / rowsPx) * img.height));
     for (let ox = 0; ox < cols; ox++) {
       const sx0 = Math.floor((ox / cols) * img.width);
       const sx1 = Math.max(sx0 + 1, Math.floor(((ox + 1) / cols) * img.width));
-      let sum = 0, n = 0;
-      for (let y = sy0; y < sy1; y++) for (let x = sx0; x < sx1; x++) { sum += lumAt(img, x, y); n++; }
-      grid[oy * cols + ox] = sum / n;
+      let r = 0, g = 0, b = 0, a = 0, wsum = 0, n = 0;
+      for (let y = sy0; y < sy1; y++) for (let x = sx0; x < sx1; x++) {
+        const [pr, pg, pb, pa] = rgbaAt(img, x, y);
+        const w = pa / 255;
+        r += pr * w; g += pg * w; b += pb * w; a += pa; wsum += w; n++;
+      }
+      const k = wsum > 0 ? 1 / wsum : 0;
+      cell[oy * cols + ox] = { r: Math.round(r * k), g: Math.round(g * k), b: Math.round(b * k), a: Math.round(a / n) };
     }
   }
-  return { grid, cols, rowsPx };
-}
-
-// xterm-256 grayscale candidates: 16 (black), 232..255 (ramp), 231 (white)
-const GRAYS = [[16, 0], ...Array.from({ length: 24 }, (_, i) => [232 + i, 8 + i * 10]), [231, 255]];
-function gray256(v) {
-  let best = 16, bestD = Infinity;
-  for (const [idx, gv] of GRAYS) { const d = Math.abs(gv - v); if (d < bestD) { bestD = d; best = idx; } }
-  return best;
+  return { cell, cols, rowsPx };
 }
 
 const img = decodePng(readFileSync(input));
-const { grid, rowsPx } = downscale(img, cols);
-
-// build real-ANSI rows (ESC = \x1b)
+const { cell, rowsPx } = downscale(img, cols);
+const rows = rowsPx / 2;
 const ESC = "\x1b";
+const opaque = (p) => p.a >= ALPHA_THRESHOLD;
+
 const rowsAnsi = [];
 for (let r = 0; r < rowsPx; r += 2) {
   let line = "";
   for (let c = 0; c < cols; c++) {
-    const top = gray256(grid[r * cols + c]);
-    const bot = gray256(grid[(r + 1) * cols + c]);
-    line += `${ESC}[38;5;${top};48;5;${bot}m▀`;
+    const top = cell[r * cols + c], bot = cell[(r + 1) * cols + c];
+    const to = opaque(top), bo = opaque(bot);
+    if (to && bo) line += `${ESC}[38;2;${top.r};${top.g};${top.b};48;2;${bot.r};${bot.g};${bot.b}m▀`;
+    else if (to) line += `${ESC}[49;38;2;${top.r};${top.g};${top.b}m▀`;
+    else if (bo) line += `${ESC}[49;38;2;${bot.r};${bot.g};${bot.b}m▄`;
+    else line += `${ESC}[0m `;
   }
   line += `${ESC}[0m`;
   rowsAnsi.push(line);
 }
-const rows = rowsPx / 2;
 
-if (out === "preview") {
-  process.stdout.write(rowsAnsi.join("\n") + "\n");
-  console.error(`preview: ${cols} cols x ${rows} rows (from ${img.width}x${img.height})`);
-  process.exit(0);
+// ---- preview PNG (nearest-neighbour upscale, composited over terminal bg) ----
+function encodePng(width, height, rgba) {
+  const stride = width * 4;
+  const raw = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y++) { raw[y * (stride + 1)] = 0; rgba.copy(raw, y * (stride + 1) + 1, y * stride, y * stride + stride); }
+  const crcTable = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = (b) => { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = crcTable[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type, "ascii"), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td)); return Buffer.concat([len, td, crc]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from("\x89PNG\r\n\x1a\n", "binary"), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 
-const lines = rowsAnsi.map((line) => "  `" + line.replaceAll(ESC, "\\x1b") + "`");
-const ts = `// Muse mascot for the terminal — the goddess rendered as 256-color grayscale
-// half-block art (one char = two vertical pixels). 256-color is chosen over
-// truecolor for broad terminal compatibility.
+if (out.startsWith("preview-png:")) {
+  const file = out.slice("preview-png:".length);
+  const scale = 10;
+  const bg = [17, 17, 17]; // simulate Ghostty's near-black background
+  const W = cols * scale, H = rowsPx * scale;
+  const rgba = Buffer.alloc(W * H * 4);
+  for (let py = 0; py < H; py++) for (let px2 = 0; px2 < W; px2++) {
+    const p = cell[Math.floor(py / scale) * cols + Math.floor(px2 / scale)];
+    const a = p.a / 255;
+    const i = (py * W + px2) * 4;
+    rgba[i] = Math.round(p.r * a + bg[0] * (1 - a));
+    rgba[i + 1] = Math.round(p.g * a + bg[1] * (1 - a));
+    rgba[i + 2] = Math.round(p.b * a + bg[2] * (1 - a));
+    rgba[i + 3] = 255;
+  }
+  writeFileSync(file, encodePng(W, H, rgba));
+  console.log(`wrote preview ${file}: ${cols} cols x ${rows} rows (source ${img.width}x${img.height})`);
+} else {
+  const lines = rowsAnsi.map((l) => "  `" + l.replaceAll(ESC, "\\x1b") + "`");
+  const ts = `// Muse mascot for the terminal — the goddess rendered as TRUECOLOR (24-bit)
+// half-block art (one char = two vertical pixels), alpha honoured so the
+// transparent background shows the terminal's own colour (no black box).
 //
 // GENERATED by scripts/gen-mascot-ansi.mjs from ${input} — do NOT hand-edit.
 // Regenerate: node scripts/gen-mascot-ansi.mjs ${input} ${cols} ${out}
 
-/** Columns (half-blocks) per row. */
+/** Columns (half-block cells) per row. */
 export const MUSE_MASCOT_WIDTH = ${cols};
 /** Rows of half-blocks (each row = two source pixels tall). */
 export const MUSE_MASCOT_ROWS = ${rows};
@@ -153,5 +164,6 @@ export const MUSE_MASCOT_ANSI: string = [
 ${lines.join(",\n")}
 ].join("\\n");
 `;
-writeFileSync(out, ts);
-console.log(`wrote ${out}: ${cols} cols x ${rows} rows (from ${img.width}x${img.height})`);
+  writeFileSync(out, ts);
+  console.log(`wrote ${out}: ${cols} cols x ${rows} rows (from ${img.width}x${img.height})`);
+}
