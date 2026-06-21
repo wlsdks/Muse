@@ -5,6 +5,14 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 53 · 2026-06-21 · skill v2.0 · <commit> (eval:multistep aggregator — lock the 3-eval FAIL→PASS gains as one regression gate; scripts/eval pivot)
+meta: value-class=new-capability(regression-lock) · pkg=scripts/eval · kind=eval-aggregator-gate · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles unchanged · fabrication 0 · eval:multistep ALL PASS 3/3 (live) · skip→exit0 · fail→exit1 verified · lint 0/0 · Ollama UP
+- 무엇: fires 40-51이 세 멀티스텝 eval(computer-task/multifile-fix/edit-run-verify)을 FAIL→PASS로 뒤집음(fire 52 검증). 이 이득을 silent-regression으로부터 잠그려 `eval:multistep` 애그리게이터 추가 — eval:self-improving 패턴 그대로(Ollama-reachable skip→exit0, 3 배터리 spawnSync, status!==0면 FAIL, any-fail→exit1, MUSE_EVAL_REPEAT 패스스루로 pass^k). package.json 엔트리(빌드 union=fs+tools+autoconfigure).
+- 왜: agent-testing.md "배터리를 한 게이트로 묶어라; CI-gate 안 하면 썩는다" + pass^k. 다양성 RATCHET: agent-core 우물 과채굴(judge 2회 노트) → scripts/eval로 의도적 pivot(fresh pkg,kind). 양 hard eval PASS 직후 "이득 잠그기"가 자연스러운 다음 단계.
+- 리뷰지점: 라이브 실행 ALL PASS 3/3(exit 0), skip-path(bad URL)→exit0, fail-path(non-zero sub→exit1) 로직 검증. 독립 Opus ④b judge가 aggregation/exit 계약·build-prefix union·skip-vs-fail(3 sub-eval 전수)·REPEAT 패스스루·doctrine 가치·비-inert 검증 → VERDICT PASS.
+- 리스크: Ollama/runner 없으면 sub-eval SKIP(exit0)이라 게이트가 비어도 green일 수 있음(skip≠pass; 메커니즘별 단위테스트가 진짜 CI lock, 이건 라이브 regression layer). 순수 test-runner 인프라(제품/state 무변경). fire 53은 ×3 아님 → main 머지 없음.
+
 ## fire 52 · 2026-06-21 · skill v2.0 · e9a8a3a0 (★MILESTONE validated: BOTH hard multi-step evals now PASS — theme goal achieved; consolidation + next-direction)
 meta: value-class=measure(milestone-validation) · pkg=docs(validation) · kind=outcome-validation · verdict=N/A · firesSinceDrill=6
 ratchet: testFiles unchanged · fabrication 0 · self-eval green · ★eval:multifile-fix PASS · ★eval:edit-run-verify PASS(fire 52, model-ran-test=true) · eval:computer-task PASS · Ollama UP
