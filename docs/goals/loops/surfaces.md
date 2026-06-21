@@ -694,7 +694,7 @@ ratchet: self-eval exit 0 · main up-to-date · gap-scout CLEAN · fabrication 0
 - **리스크**: 없음(no-ship, 코드변경 0).
 - **lesson**: 우물 고갈+gap-scout clean+남은게 중앙-조립 아키텍처 변경이면, 무인 마라톤 꼬리에서 강행 금지 — speculative/위험 슬라이스보다 정직한 블로커가 옳다(⑥). 테마는 살아있되(토글 가치 큼) deliberate fire 대상.
 
-## fire 75 · 2026-06-21 · skill v2.0.0 · <pending>
+## fire 75 · 2026-06-21 · skill v2.0.0 · 177d7ba9
 meta: surface=web · value-class=a11y-hardening · pkg=@muse/web · kind=input-accessible-names · verdict=PASS · firesSinceDrill=6
 ratchet: web 121/121 · fabrication 0 · self-eval exit 0 · lint clean · ★다양성 전환(web,a11y) + judge가 vacuous-test 적발→couple-to-prod fix → PASS · ⚠pnpm check는 타루프 autoconfigure HANG으로 RED(무관)
 
